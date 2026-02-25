@@ -1,204 +1,89 @@
 ---
-title: 'Quickstart'
-description: 'Get started with the Brazilian Financial Data APIs in under 5 minutes'
+title: "Quickstart"
+description: "Run all three services locally in under five minutes."
 ---
 
-## Setup your API key
+## Prerequisites
 
-<Warning>
-  All API requests require authentication. Register at the [developer portal](https://api.financialdata.com.br) to obtain your API key.
-</Warning>
+- Docker and Docker Compose installed, **or** Python 3.11+ with `pip`
+- Git
 
-Once you have your API key, include it in the `X-API-Key` header with every request:
+## Option A — Docker Compose (recommended)
+
+Clone the repository and start all services with a single command:
 
 ```bash
-X-API-Key: your_api_key_here
+git clone https://github.com/PedroDnT/iliquid_nightly.git
+cd iliquid_nightly
+cp .env.example .env   # optional — defaults work out of the box
+docker-compose up -d
 ```
 
-## Make your first request
+The services will be available at:
 
-<CodeGroup>
+| Service | URL |
+|---|---|
+| CVM Credit API | http://localhost:8000 |
+| B3 CALC API | http://localhost:8001 |
+| BACEN API | http://localhost:8002 |
+| Docs (static) | http://localhost:8080 |
 
-```bash cURL
-curl -X GET "https://api.financialdata.com.br/api/v1/cvm/fidc/cadastral?page=1&page_size=10" \
-  -H "X-API-Key: your_api_key_here" \
-  -H "Accept: application/json"
+## Option B — Local Python
+
+Install dependencies and run services individually:
+
+```bash
+pip install -r requirements.txt
+
+# In separate terminals:
+python -m uvicorn src.cvm_api.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn src.b3_calc_api.main:app --reload --host 0.0.0.0 --port 8001
+python -m uvicorn src.bacen_api.main:app --reload --host 0.0.0.0 --port 8002
 ```
 
-```python Python
-import requests
+<Warning>
+Always use `python -m uvicorn` (not bare `uvicorn`) when running from the repo root. Bare `uvicorn` does not resolve `src.*` package imports correctly.
+</Warning>
 
-API_KEY = "your_api_key_here"
-BASE_URL = "https://api.financialdata.com.br"
+## Verify the setup
 
-headers = {
-    "X-API-Key": API_KEY,
-    "Accept": "application/json"
-}
+```bash
+# CVM API health check
+curl http://localhost:8000/health
 
-response = requests.get(
-    f"{BASE_URL}/api/v1/cvm/fidc/cadastral",
-    headers=headers,
-    params={"page": 1, "page_size": 10}
-)
+# BACEN API — latest Selic rate
+curl "http://localhost:8002/api/v1/bacen/sgs/11/latest"
 
-if response.status_code == 200:
-    data = response.json()
-    print(f"Retrieved {len(data['data'])} records")
-    for record in data['data']:
-        print(f"Fund: {record.get('DENOM_SOCIAL', 'N/A')}")
-else:
-    print(f"Error: {response.status_code}")
+# B3 CALC API — list available debentures
+curl "http://localhost:8001/api/v1/securities/debentures?page_size=5"
 ```
 
-```javascript JavaScript
-const API_KEY = 'your_api_key_here';
-const BASE_URL = 'https://api.financialdata.com.br';
+## First requests
 
-async function getFIDCData() {
-    const response = await fetch(
-        `${BASE_URL}/api/v1/cvm/fidc/cadastral?page=1&page_size=10`,
-        {
-            headers: {
-                'X-API-Key': API_KEY,
-                'Accept': 'application/json'
-            }
-        }
-    );
-    
-    if (response.ok) {
-        const data = await response.json();
-        console.log(`Retrieved ${data.data.length} records`);
-        data.data.forEach(record => {
-            console.log(`Fund: ${record.DENOM_SOCIAL || 'N/A'}`);
-        });
-    } else {
-        console.error(`Error: ${response.status}`);
-    }
-}
+### Fetch FIDC monthly data
 
-getFIDCData();
+```bash
+curl "http://localhost:8000/api/v1/fidc/mensal?year=2025&month=1&page=1&page_size=10"
 ```
 
-```java Java
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.net.URI;
-import com.google.gson.Gson;
+### Get the USD/BRL exchange rate
 
-public class FinancialDataClient {
-    private static final String API_KEY = "your_api_key_here";
-    private static final String BASE_URL = "https://api.financialdata.com.br";
-    
-    public static void main(String[] args) throws Exception {
-        HttpClient client = HttpClient.newHttpClient();
-        
-        HttpRequest request = HttpRequest.newBuilder()
-            .uri(URI.create(BASE_URL + "/api/v1/cvm/fidc/cadastral?page=1&page_size=10"))
-            .header("X-API-Key", API_KEY)
-            .header("Accept", "application/json")
-            .GET()
-            .build();
-        
-        HttpResponse<String> response = client.send(request, 
-            HttpResponse.BodyHandlers.ofString());
-        
-        if (response.statusCode() == 200) {
-            System.out.println("Success: " + response.body());
-        } else {
-            System.err.println("Error: " + response.statusCode());
-        }
-    }
-}
+```bash
+curl "http://localhost:8002/api/v1/bacen/ptax/usd/latest"
 ```
 
-</CodeGroup>
+### Price a debenture
 
-## Understanding the response
-
-The API returns paginated JSON responses with the following structure:
-
-```json
-{
-  "data": [
-    {
-      "CNPJ_FUNDO": "12.345.678/0001-90",
-      "DENOM_SOCIAL": "FUNDO EXEMPLO FIDC",
-      "DT_REG": "2020-01-15",
-      "DT_CANCEL": null,
-      "SIT": "ATIVO"
-    }
-  ],
-  "pagination": {
-    "page": 1,
-    "page_size": 10,
-    "total_items": 1500,
-    "total_pages": 150
-  },
-  "metadata": {
-    "entity": "fidc",
-    "doc_type": "cadastral",
-    "timestamp": "2024-02-26T10:00:00Z"
-  }
-}
+```bash
+curl "http://localhost:8001/api/v1/prices/XPCA11"
 ```
 
-<ResponseField name="data" type="array">
-  Array of records matching your query
-</ResponseField>
+## Interactive API docs
 
-<ResponseField name="pagination" type="object">
-  Pagination information
-  <Expandable title="properties">
-    <ResponseField name="page" type="integer">
-      Current page number
-    </ResponseField>
-    <ResponseField name="page_size" type="integer">
-      Number of items per page
-    </ResponseField>
-    <ResponseField name="total_items" type="integer">
-      Total number of items available
-    </ResponseField>
-    <ResponseField name="total_pages" type="integer">
-      Total number of pages
-    </ResponseField>
-  </Expandable>
-</ResponseField>
+Each service ships with Swagger UI and ReDoc:
 
-<ResponseField name="metadata" type="object">
-  Request metadata including entity type, document type, and timestamp
-</ResponseField>
-
-## Next steps
-
-<CardGroup cols={2}>
-  <Card
-    title="Explore CVM API"
-    icon="landmark"
-    href="/cvm/overview"
-  >
-    Learn about CVM credit market data
-  </Card>
-  <Card
-    title="Explore BACEN API"
-    icon="building-columns"
-    href="/bacen/overview"
-  >
-    Access Central Bank indicators
-  </Card>
-  <Card
-    title="Authentication"
-    icon="key"
-    href="/authentication"
-  >
-    Learn about API keys and security
-  </Card>
-  <Card
-    title="Rate Limits"
-    icon="gauge"
-    href="/rate-limits"
-  >
-    Understand rate limiting
-  </Card>
-</CardGroup>
+| Service | Swagger UI | ReDoc |
+|---|---|---|
+| CVM Credit API | http://localhost:8000/docs | http://localhost:8000/redoc |
+| B3 CALC API | http://localhost:8001/docs | http://localhost:8001/redoc |
+| BACEN API | http://localhost:8002/docs | http://localhost:8002/redoc |

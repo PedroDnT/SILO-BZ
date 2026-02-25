@@ -1,45 +1,39 @@
 ---
-title: "Start"
+title: "Brazilian Financial Data API"
+description: "Open infrastructure for accessing Brazilian financial market data from CVM, BACEN, and B3."
 ---
 
-# How to Use the CVM Credit Market API
+# Brazilian Financial Data API
 
-This API provides transparent access to Brazilian CVM (Comissão de Valores Mobiliários) credit market datasets, including FIDC, FIP, FIAGRO, and SECURIT information, with support for flexible querying, historical records, and structured responses.
+A multi-service REST platform that exposes public Brazilian financial market data from three primary sources:
 
-## API Endpoints
+| Service | Port | Source | What it provides |
+|---|---|---|---|
+| **CVM Credit API** | 8000 | `dados.cvm.gov.br` | FIDC, FIP, FIAGRO, SECURIT fund data |
+| **B3 CALC API** | 8001 | `calculadorarendafixa.com.br` | Fixed income pricing (debentures, CRA, CRI) |
+| **BACEN API** | 8002 | Banco Central do Brasil | Interest rates, PTAX, Focus expectations |
 
-### Core Endpoints
+## Quick navigation
 
-- `GET /api/v1/cvm/{entity}/{doc_type}`  
-  Returns data for a specific entity and document type.  
-  Entities: `fidc`, `fip`, `fiagro`, `securit`  
-  Document types: e.g. `cadastral`, `mensal`, `trimestral`, `anual` (see `/api/v1/endpoints` for all options)
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Get all three services running in under five minutes.
+  </Card>
+  <Card title="CVM Credit API" icon="building-columns" href="/cvm-api">
+    Query FIDC, FIP, FIAGRO, and SECURIT datasets.
+  </Card>
+  <Card title="BACEN API" icon="chart-line" href="/bacen-api">
+    Access interest rates, PTAX, and market expectations.
+  </Card>
+  <Card title="B3 CALC API" icon="calculator" href="/b3-calc-api">
+    Calculate fixed income security prices and yields.
+  </Card>
+</CardGroup>
 
-- `GET /api/v1/cvm/fidc/cadastral`  
-  Returns cadastral/registration data for FIDC (Fundo de Investimento em Direitos Creditórios) funds.
+## Key features
 
-- `GET /api/v1/cvm/fip/cadastral`  
-  Returns cadastral data for FIP (Private Equity Investment Funds).
-
-### Query Parameters
-
-All core endpoints support the following parameters:
-
-| Parameter  | Type    | Required    | Description                                    |
-| :--------- | :------ | :---------- | :---------------------------------------------- |
-| `year`     | int     | Optional    | Year of interest (for periodic datasets)        |
-| `month`    | int     | Optional    | Month of interest (for monthly datasets)        |
-| `page`     | int     | Optional    | Page number (default: 1)                        |
-| `page_size`| int     | Optional    | Number of results per page (default: 100)      |
-
-- If the dataset requires, `year` or `month` **must** be supplied (otherwise, they're option
-- Pagination is always supported; defaults are centrally managed.
-
-## Usage Examples
-
-### Fetch FIDC Cadastral Data
-
-Retrieve the first 10 records of FIDC cadastral information:
-
-```bash
-curl "http://localhost:8000/api/v1/cvm/fidc/cadastral?page=1&page_size=10"
+- **No authentication required** — CVM and BACEN endpoints are fully public.
+- **Pagination built in** — every list endpoint supports `page` and `page_size` parameters.
+- **Automatic caching** — CVM downloads are cached locally to reduce upstream load.
+- **Resilient DNS** — configurable nameserver rotation for reliable CVM file downloads.
+- **Docker-first** — all services ship with Dockerfiles and a single `docker-compose.yml`.
