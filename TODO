@@ -1,0 +1,32 @@
+# TODO
+
+## P1 — Quick wins (~30–60 min each)
+
+- [x] SECURIT LCA/LCI endpoints — lca_mensal + lci_mensal added to DatasetConfig and
+      aliases (lca/lci) added to _resolve_doc_type_alias in services.py
+- [x] FIDC missing doc types — cadastral, trimestral, anual in config.py; validation
+      rules added for all doc types in _get_validation_config
+- [x] FIAGRO missing doc types — cadastral, trimestral, anual in config.py; validation
+      rules added for all doc types in _get_validation_config
+- [x] FIP missing doc types — cadastral, dfin in config.py; validation rules added
+- [ ] datetime.utcnow() deprecation — replace with datetime.now(datetime.UTC) across
+      34 call sites in all API main.py and models.py; removes 35 test warnings on every run
+- [ ] Hardcoded absolute paths — .claude/launch.json uses /Users/pedrotodescan/... for venv
+      python (4 entries); scripts/check_all_endpoints.py docstring has same; make portable
+
+## P2 — Implement eventually
+
+- [ ] B3 CALC live API — probe calculadorarendafixa.com.br/webservice endpoints;
+      currently falls back to hardcoded sample data in src/b3_calc_api/services.py
+- [ ] Rate limiting — wire slowapi into all three FastAPI apps; env vars already defined
+      (RATE_LIMIT_ENABLED, RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW in .env.example)
+- [ ] Install dev tools in venv — mypy and flake8 are in requirements.txt but not installed
+
+## P3 — Skip / low priority
+
+- [ ] ANBIMA OAuth2 client — needs paid API credentials
+- [ ] Auth layer (JWT / API keys) — no external consumers yet
+- [ ] Redis caching — file cache sufficient; no measured bottleneck
+- [ ] PostgreSQL persistence — read-only data, no write use case
+- [ ] Prometheus metrics — no monitoring infra in place
+- [ ] Webhooks — no described use case
