@@ -8,7 +8,7 @@ import zipfile
 import aiohttp
 import aiofiles
 from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 import math
 import time
 import hashlib
@@ -215,7 +215,7 @@ class CVMCreditDataService:
                 metadata = json.load(f)
 
             cached_time = datetime.fromisoformat(metadata['timestamp'])
-            age_hours = (datetime.now() - cached_time).total_seconds() / 3600
+            age_hours = (datetime.now(timezone.utc) - cached_time).total_seconds() / 3600
 
             return age_hours < max_age_hours
         except Exception as e:
@@ -250,7 +250,7 @@ class CVMCreditDataService:
 
             # Save metadata
             metadata = {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'url': url,
                 'size': len(content)
             }
@@ -277,7 +277,7 @@ class CVMCreditDataService:
 
         # Validate year range
         if year is not None:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             current_year = now.year
             if year < 2000 or year > current_year:
                 raise ValueError(f"Year must be between 2000 and {current_year}")
@@ -288,7 +288,7 @@ class CVMCreditDataService:
                 raise ValueError("Month must be between 1 and 12")
             # Reject future months (data not yet published)
             if year is not None:
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 if year == now.year and month > now.month:
                     raise ValueError(
                         f"Month {month} is in the future for year {year}; "

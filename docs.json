@@ -1,0 +1,47 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "Brazilian Financial Data API",
+  "theme": "mint",
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "favicon": "/favicon.svg",
+  "colors": {
+    "primary": "#0A7C59",
+    "light": "#07C983",
+    "dark": "#0A7C59"
+  },
+  "topbar": {
+    "style": "default"
+  },
+  "navigation": [
+    {
+      "group": "Getting Started",
+      "pages": [
+        "start",
+        "quickstart",
+        "overview"
+      ]
+    },
+    {
+      "group": "APIs",
+      "pages": [
+        "cvm-api",
+        "bacen-api",
+        "b3-calc-api"
+      ]
+    },
+    {
+      "group": "Reference",
+      "pages": [
+        "tools",
+        "environment",
+        "docker"
+      ]
+    }
+  ],
+  "footerSocials": {
+    "github": "https://github.com/PedroDnT/iliquid_nightly"
+  }
+}
