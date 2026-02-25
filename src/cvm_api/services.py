@@ -145,6 +145,10 @@ class CVMCreditDataService:
             "cri_mensal": ("cri_mensal", "cri"),
             "ots": ("ots", "ots_mensal"),
             "ots_mensal": ("ots_mensal", "ots"),
+            "lca": ("lca", "lca_mensal"),
+            "lca_mensal": ("lca_mensal", "lca"),
+            "lci": ("lci", "lci_mensal"),
+            "lci_mensal": ("lci_mensal", "lci"),
         }
         for candidate in alias_map.get(doc_type, ()):
             if candidate in available:
@@ -475,40 +479,82 @@ class CVMCreditDataService:
             "business_rules": []
         }
 
-        # Entity-specific validation rules
-        if entity.lower() == "fidc":
-            # Only "mensal" is registered for FIDC
-            if "mensal" in doc_type.lower():
+        entity_lower = entity.lower()
+        doc_lower = doc_type.lower()
+
+        if entity_lower == "fidc":
+            if "cadastral" in doc_lower:
+                base_config["required_fields"] = ["CNPJ_FUNDO", "DENOM_SOCIAL", "DT_REG"]
+                base_config["field_types"] = {
+                    "CNPJ_FUNDO": "cnpj",
+                    "DT_REG": "date",
+                    "DT_CANCEL": "date",
+                }
+            elif "mensal" in doc_lower:
                 base_config["field_types"] = {
                     "CNPJ_FUNDO": "cnpj",
                     "DT_COMPTC": "date",
                     "VL_TOTAL": "numeric",
-                    "VL_QUOTA": "numeric"
+                    "VL_QUOTA": "numeric",
+                    "VL_PATRIM_LIQ": "numeric",
+                }
+            elif "trimestral" in doc_lower or "anual" in doc_lower:
+                base_config["field_types"] = {
+                    "CNPJ_FUNDO": "cnpj",
+                    "DT_COMPTC": "date",
+                    "VL_PATRIM_LIQ": "numeric",
                 }
 
-        elif entity.lower() == "fip":
-            # inf_quadrimestral / inf_trimestral — no "cadastral" doc_type in config
-            base_config["field_types"] = {
-                "CNPJ_FUNDO": "cnpj",
-            }
-
-        elif entity.lower() == "fiagro":
-            # Only "mensal" is registered for FIAGRO
-            if "mensal" in doc_type.lower():
+        elif entity_lower == "fip":
+            if "cadastral" in doc_lower:
+                base_config["required_fields"] = ["CNPJ_FUNDO", "DENOM_SOCIAL", "DT_REG"]
+                base_config["field_types"] = {
+                    "CNPJ_FUNDO": "cnpj",
+                    "DT_REG": "date",
+                    "DT_CANCEL": "date",
+                }
+            elif "dfin" in doc_lower:
+                base_config["field_types"] = {
+                    "CNPJ_FUNDO": "cnpj",
+                    "DT_COMPTC": "date",
+                    "VL_PATRIM_LIQ": "numeric",
+                }
+            else:
+                # inf_quadrimestral / inf_trimestral
                 base_config["field_types"] = {
                     "CNPJ_FUNDO": "cnpj",
                     "DT_COMPTC": "date",
                 }
 
-        elif entity.lower() == "securit":
-            # cra_mensal / cri_mensal / ots_mensal
-            if "mensal" in doc_type.lower():
+        elif entity_lower == "fiagro":
+            if "cadastral" in doc_lower:
+                base_config["required_fields"] = ["CNPJ_FUNDO", "DENOM_SOCIAL", "DT_REG"]
                 base_config["field_types"] = {
-                    "CNPJ_SECURIT": "cnpj",
-                    "DT_EMISSAO": "date",
-                    "VL_EMISSAO": "numeric",
-                    "QT_TITULOS": "numeric"
+                    "CNPJ_FUNDO": "cnpj",
+                    "DT_REG": "date",
+                    "DT_CANCEL": "date",
                 }
+            elif "mensal" in doc_lower:
+                base_config["field_types"] = {
+                    "CNPJ_FUNDO": "cnpj",
+                    "DT_COMPTC": "date",
+                    "VL_PATRIM_LIQ": "numeric",
+                }
+            elif "trimestral" in doc_lower or "anual" in doc_lower:
+                base_config["field_types"] = {
+                    "CNPJ_FUNDO": "cnpj",
+                    "DT_COMPTC": "date",
+                    "VL_PATRIM_LIQ": "numeric",
+                }
+
+        elif entity_lower == "securit":
+            # All SECURIT doc types are periodic emissions (cra, cri, ots, lca, lci)
+            base_config["field_types"] = {
+                "CNPJ_SECURIT": "cnpj",
+                "DT_EMISSAO": "date",
+                "VL_EMISSAO": "numeric",
+                "QT_TITULOS": "numeric",
+            }
 
         return base_config
 

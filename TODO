@@ -2,12 +2,13 @@
 
 ## P1 — Quick wins (~30–60 min each)
 
-- [ ] SECURIT LCA/LCI endpoints — add lca_mensal + lci_mensal DatasetConfig entries to
-      src/cvm_api/config.py; already in src/tools/backfill_config.py
-- [ ] FIDC missing doc types — add cadastral, trimestral, anual to src/cvm_api/config.py
-      (same URL pattern as mensal)
-- [ ] FIAGRO missing doc types — add cadastral, trimestral, anual (same as FIDC pattern)
-- [ ] FIP missing doc types — add cadastral, dfin
+- [x] SECURIT LCA/LCI endpoints — lca_mensal + lci_mensal added to DatasetConfig and
+      aliases (lca/lci) added to _resolve_doc_type_alias in services.py
+- [x] FIDC missing doc types — cadastral, trimestral, anual in config.py; validation
+      rules added for all doc types in _get_validation_config
+- [x] FIAGRO missing doc types — cadastral, trimestral, anual in config.py; validation
+      rules added for all doc types in _get_validation_config
+- [x] FIP missing doc types — cadastral, dfin in config.py; validation rules added
 - [ ] datetime.utcnow() deprecation — replace with datetime.now(datetime.UTC) across
       34 call sites in all API main.py and models.py; removes 35 test warnings on every run
 - [ ] Hardcoded absolute paths — .claude/launch.json uses /Users/pedrotodescan/... for venv
