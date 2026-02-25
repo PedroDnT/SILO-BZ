@@ -701,6 +701,87 @@ class CVMCreditDataService:
             logger.error(f"Error processing request: {str(e)}", exc_info=True)
             raise Exception(f"Failed to process data request: {str(e)}")
 
+    async def get_cnpj_registry(
+        self,
+        cnpj: str,
+        year: int,
+    ) -> Dict[str, Any]:
+        """
+        Look up a CNPJ across all entity cadastral datasets (FIDC, FIP, FIAGRO).
+        Downloads and caches cadastral CSVs for the given year, filters by CNPJ,
+        and returns consolidated registry entries for fraud cross-referencing.
+        """
+        # Normalize CNPJ to digits only for matching
+        cnpj_digits = ''.join(filter(str.isdigit, cnpj))
+
+        entities_to_search = ["fidc", "fip", "fiagro"]
+        results = []
+        found_in = []
+        not_found_in = []
+        source_urls = {}
+
+        async def fetch_entity_cadastral(entity: str):
+            try:
+                url, _ = self._build_url(entity, "cadastral", year, None)
+                source_urls[entity] = url
+                file_content = await self._download_file(url)
+                csv_content = file_content.decode(self.encoding)
+                all_data = self._parse_csv_content(csv_content)
+
+                # Find the CNPJ field name for this entity
+                cnpj_field = None
+                if all_data:
+                    for field in all_data[0].keys():
+                        if "cnpj" in field.lower() and "fundo" in field.lower():
+                            cnpj_field = field
+                            break
+                        if "cnpj" in field.lower() and cnpj_field is None:
+                            cnpj_field = field
+
+                if not cnpj_field:
+                    logger.warning(f"No CNPJ field found in {entity} cadastral data")
+                    not_found_in.append(entity)
+                    return
+
+                # Filter rows matching the requested CNPJ
+                matches = []
+                for row in all_data:
+                    row_cnpj = ''.join(filter(str.isdigit, row.get(cnpj_field, "") or ""))
+                    if row_cnpj == cnpj_digits:
+                        matches.append(row)
+
+                if matches:
+                    found_in.append(entity)
+                    for row in matches:
+                        entry = {
+                            "entity": entity,
+                            "fund_name": row.get("DENOM_SOCIAL") or row.get("NM_FUNDO"),
+                            "status": row.get("SIT") or row.get("SIT_FUNDO"),
+                            "registration_date": row.get("DT_REG") or row.get("DT_CONST"),
+                            "cancellation_date": row.get("DT_CANCEL") or row.get("DT_ENCERRAMENTO"),
+                            "fund_type": row.get("TP_FUNDO") or row.get("CLASSE") or row.get("CATEG_FUNDO"),
+                            "raw": row,
+                        }
+                        results.append(entry)
+                else:
+                    not_found_in.append(entity)
+
+            except Exception as e:
+                logger.warning(f"Could not fetch {entity} cadastral for CNPJ lookup: {str(e)}")
+                not_found_in.append(entity)
+
+        # Fetch all entity cadastral data in parallel
+        await asyncio.gather(*(fetch_entity_cadastral(e) for e in entities_to_search))
+
+        return {
+            "cnpj": cnpj_digits,
+            "year": year,
+            "registrations": results,
+            "found_in": found_in,
+            "not_found_in": not_found_in,
+            "source_urls": source_urls,
+        }
+
     def cleanup_temp_files(self) -> None:
         """Clean up temporary files"""
         try:

@@ -12,11 +12,11 @@ from slowapi.errors import RateLimitExceeded
 
 if __package__:
     from .config import config, dataset_config, EntityType, FIDCDocType, FIPDocType, FIAGRODocType, SECURITDocType
-    from .models import HealthResponse, ErrorResponse, DataResponse, AvailableEndpointsResponse, EntityInfo
+    from .models import HealthResponse, ErrorResponse, DataResponse, AvailableEndpointsResponse, EntityInfo, CNPJRegistryResponse
     from .services import CVMCreditDataService
 else:
     from config import config, dataset_config, EntityType, FIDCDocType, FIPDocType, FIAGRODocType, SECURITDocType
-    from models import HealthResponse, ErrorResponse, DataResponse, AvailableEndpointsResponse, EntityInfo
+    from models import HealthResponse, ErrorResponse, DataResponse, AvailableEndpointsResponse, EntityInfo, CNPJRegistryResponse
     from services import CVMCreditDataService
 
 # Configure logging
@@ -278,6 +278,35 @@ async def get_securit_data(request: Request,
     except Exception as e:
         logger.error(f"Error processing SECURIT request: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@app.get("/api/v1/cnpj/{cnpj}", response_model=CNPJRegistryResponse)
+async def get_cnpj_registry(
+    cnpj: str = Path(..., description="CNPJ to look up (digits only or formatted XX.XXX.XXX/XXXX-XX)"),
+    year: int = Query(..., ge=2000, le=2030, description="Year for cadastral data"),
+):
+    """
+    Cross-entity CNPJ registry lookup for fraud detection.
+
+    Downloads cadastral data from FIDC, FIP, and FIAGRO for the given year
+    and returns all fund registrations matching the CNPJ. Useful for:
+    - Detecting the same CNPJ registered under multiple entity types
+    - Identifying cancelled or irregular fund registrations
+    - Cross-referencing fund names and administrator CNPJs
+    """
+    # Validate CNPJ digit count
+    cnpj_digits = ''.join(filter(str.isdigit, cnpj))
+    if len(cnpj_digits) != 14:
+        raise HTTPException(status_code=400, detail="CNPJ must have 14 digits")
+
+    try:
+        result = await data_service.get_cnpj_registry(cnpj=cnpj, year=year)
+        return CNPJRegistryResponse(**result)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error processing CNPJ registry request: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
