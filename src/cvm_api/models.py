@@ -154,3 +154,39 @@ class EmissionData(BaseModel):
     dt_emissao: Optional[str] = Field(None, description="Emission date")
     vl_emissao: Optional[str] = Field(None, description="Emission value")
     qt_titulos: Optional[str] = Field(None, description="Number of titles")
+
+
+class CNPJRegistryEntry(BaseModel):
+    """A single fund registration record for a CNPJ across entity types"""
+    entity: str = Field(..., description="Entity type (fidc, fip, fiagro)")
+    fund_name: Optional[str] = Field(None, description="Fund social denomination (DENOM_SOCIAL)")
+    status: Optional[str] = Field(None, description="Fund status (SIT field)")
+    registration_date: Optional[str] = Field(None, description="Registration date (DT_REG)")
+    cancellation_date: Optional[str] = Field(None, description="Cancellation date (DT_CANCEL)")
+    fund_type: Optional[str] = Field(None, description="Fund type (TP_FUNDO or CLASSE)")
+    raw: Dict[str, Any] = Field(default_factory=dict, description="All raw fields from source CSV")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "entity": "fidc",
+                "fund_name": "FUNDO DE INVESTIMENTO EXEMPLO FIC FIDC",
+                "status": "EM FUNCIONAMENTO NORMAL",
+                "registration_date": "2018-03-12",
+                "cancellation_date": None,
+                "fund_type": "Aberto",
+                "raw": {"CNPJ_FUNDO": "12.345.678/0001-90", "DENOM_SOCIAL": "FUNDO DE INVESTIMENTO EXEMPLO FIC FIDC"}
+            }
+        }
+    )
+
+
+class CNPJRegistryResponse(BaseModel):
+    """Cross-entity registry lookup result for a CNPJ — used for fraud detection"""
+    cnpj: str = Field(..., description="Requested CNPJ (normalized, digits only)")
+    year: int = Field(..., description="Cadastral data year queried")
+    registrations: List[CNPJRegistryEntry] = Field(..., description="All registrations found across entities")
+    found_in: List[str] = Field(..., description="Entity types where CNPJ was found")
+    not_found_in: List[str] = Field(..., description="Entity types where CNPJ was not found")
+    source_urls: Dict[str, str] = Field(default_factory=dict, description="Source URLs per entity type")
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat(), description="Response timestamp")
