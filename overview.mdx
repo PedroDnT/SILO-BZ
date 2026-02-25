@@ -1,0 +1,110 @@
+---
+title: "Architecture Overview"
+description: "How the three services fit together and the common patterns they share."
+---
+
+## Services at a glance
+
+```
+┌───────────────────────────────────────────────────────────┐
+│                    Docker Compose network                 │
+│                                                           │
+│  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐  │
+│  │  CVM Credit  │  │   B3 CALC    │  │     BACEN     │  │
+│  │   API :8000  │  │   API :8001  │  │   API :8002   │  │
+│  └──────┬───────┘  └──────┬───────┘  └───────┬───────┘  │
+│         │                 │                   │           │
+└─────────┼─────────────────┼───────────────────┼───────────┘
+          │                 │                   │
+     dados.cvm.gov.br  calculadorarendafixa  python-bcb
+                            .com.br          (BACEN OData)
+```
+
+## CVM Credit API
+
+Fetches CSV and ZIP files directly from `dados.cvm.gov.br` and returns structured JSON.
+
+**Data flow:**
+1. HTTP request arrives at `/api/v1/{entity}/{doc_type}`
+2. Service checks local disk cache (24-hour TTL)
+3. On cache miss: download CSV or ZIP from CVM
+4. Extract CSV from ZIP if needed (latin-1, `;` delimited)
+5. Parse into list of dicts, validate, paginate
+6. Return `DataResponse` with pagination metadata
+
+**Supported entities and document types:**
+
+| Entity | Doc types |
+|---|---|
+| `fidc` | `mensal`, `cadastral`, `trimestral`, `anual` |
+| `fip` | `inf_quadrimestral`, `inf_trimestral`, `cadastral`, `dfin` |
+| `fiagro` | `mensal`, `cadastral`, `trimestral`, `anual` |
+| `securit` | `cra_mensal`, `cri_mensal`, `ots_mensal`, `lca_mensal`, `lci_mensal` |
+
+## BACEN API
+
+Wraps the `python-bcb` library in an async FastAPI service.
+
+**Endpoint groups:**
+
+| Group | Base path | Description |
+|---|---|---|
+| SGS | `/api/v1/bacen/sgs/` | Time-series data (interest rates, IPCA, etc.) |
+| PTAX | `/api/v1/bacen/ptax/` | Official USD/BRL and multi-currency exchange rates |
+| Expectativas | `/api/v1/bacen/expectativas/` | Focus/RDMercado market expectations |
+| TaxaJuros | `/api/v1/bacen/taxas_juros/` | BACEN OData interest-rate table |
+
+## B3 CALC API
+
+Fetches fixed income pricing data from `calculadorarendafixa.com.br`.
+
+**Key behavior:**
+- Falls back to built-in sample data when the upstream is unavailable (safe for development and testing)
+- Auto-detects security type (debentures / CRA / CRI) from the symbol prefix
+- In-memory TTL cache — 30 minutes, max 64 entries
+
+## Shared patterns
+
+### Pagination
+
+All list endpoints accept `page` (default `1`) and `page_size` (default `100`, max `10000`). Responses include a `pagination` object:
+
+```json
+{
+  "page": 1,
+  "page_size": 100,
+  "total_items": 5432,
+  "total_pages": 55,
+  "has_next": true,
+  "has_previous": false
+}
+```
+
+### Error responses
+
+All services return the same error shape:
+
+```json
+{
+  "error": "not_found",
+  "message": "The requested resource was not found: /api/v1/fidc/unknown",
+  "status_code": 404,
+  "timestamp": "2026-02-25T12:00:00+00:00"
+}
+```
+
+### Health checks
+
+Every service exposes `GET /health`:
+
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-02-25T12:00:00+00:00",
+  "version": "1.0.0"
+}
+```
+
+### CORS
+
+All services allow all origins (`*`), methods, and headers — suitable for direct browser calls and development.
