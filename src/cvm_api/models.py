@@ -181,12 +181,41 @@ class CNPJRegistryEntry(BaseModel):
     )
 
 
+class PeriodicSnapshot(BaseModel):
+    """One row of periodic (mensal/quarterly) data for a fund — full raw CSV row preserved"""
+    source_entity: str = Field(..., description="Entity type (fidc, fiagro)")
+    doc_type: str = Field(..., description="Document type (mensal, trimestral, anual)")
+    period: str = Field(..., description="Competence period as reported (DT_COMPTC or similar)")
+    quota_value: Optional[str] = Field(None, description="Quota/unit price (VL_QUOTA) — current price signal")
+    net_asset_value: Optional[str] = Field(None, description="Net asset value (VL_PATRIM_LIQ)")
+    total_portfolio: Optional[str] = Field(None, description="Total portfolio value (VL_TOTAL or VL_CARTEIRA_TOTAL)")
+    delinquency_value: Optional[str] = Field(None, description="Delinquency / inadimplência value (VL_INADIMPL or similar)")
+    num_quotaholders: Optional[str] = Field(None, description="Number of quota holders (NR_COTST)")
+    raw: Dict[str, Any] = Field(default_factory=dict, description="All raw fields from the source CSV row")
+
+
+class EmissionRecord(BaseModel):
+    """One emission record from SECURIT datasets (CRA, CRI, LCA, LCI) — full raw CSV row preserved"""
+    instrument_type: str = Field(..., description="Instrument type (cra_mensal, cri_mensal, lca_mensal, lci_mensal)")
+    emission_date: Optional[str] = Field(None, description="Emission date (DT_EMISSAO)")
+    maturity_date: Optional[str] = Field(None, description="Maturity / vencimento date (DT_VENCTO)")
+    emission_value: Optional[str] = Field(None, description="Total emission value (VL_EMISSAO)")
+    unit_price: Optional[str] = Field(None, description="Unit price at emission (VL_UNIT or PU_EMISSAO)")
+    num_titles: Optional[str] = Field(None, description="Number of titles issued (QT_TITULOS)")
+    outstanding_value: Optional[str] = Field(None, description="Current outstanding value (VL_TOTAL)")
+    asset_type: Optional[str] = Field(None, description="Underlying asset type (TP_ATIVO)")
+    raw: Dict[str, Any] = Field(default_factory=dict, description="All raw fields from the source CSV row")
+
+
 class CNPJRegistryResponse(BaseModel):
     """Cross-entity registry lookup result for a CNPJ — used for fraud detection"""
     cnpj: str = Field(..., description="Requested CNPJ (normalized, digits only)")
-    year: int = Field(..., description="Cadastral data year queried")
-    registrations: List[CNPJRegistryEntry] = Field(..., description="All registrations found across entities")
+    year: int = Field(..., description="Year queried")
+    month: Optional[int] = Field(None, description="Month queried for periodic data (None = cadastral only)")
+    registrations: List[CNPJRegistryEntry] = Field(..., description="Fund registrations (cadastral) across FIDC, FIP, FIAGRO")
+    periodic_snapshots: List[PeriodicSnapshot] = Field(default_factory=list, description="Periodic financial data rows (current price, NAV, defaults) — populated when month is provided")
+    emissions: List[EmissionRecord] = Field(default_factory=list, description="SECURIT emission records where this CNPJ is the issuer (CRA/CRI/LCA/LCI)")
     found_in: List[str] = Field(..., description="Entity types where CNPJ was found")
     not_found_in: List[str] = Field(..., description="Entity types where CNPJ was not found")
-    source_urls: Dict[str, str] = Field(default_factory=dict, description="Source URLs per entity type")
+    source_urls: Dict[str, str] = Field(default_factory=dict, description="Source URLs keyed by entity/doc_type")
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat(), description="Response timestamp")
