@@ -1,19 +1,193 @@
 ---
-title: CVM Credit Market API
-description: Endpoints and usage for CVM credit market datasets (FIDC, FIP, FIAGRO, SECURIT)
+title: "CVM Credit Market API"
+description: "Access FIDC, FIP, FIAGRO, and SECURIT datasets from the Brazilian Securities Commission (CVM)."
 ---
 
-# CVM Credit Market API
+## Base URL
 
-Base URL: `http://localhost:8000`
+```
+http://localhost:8000
+```
 
-- Interactive docs: [Swagger UI](http://localhost:8000/docs)
-- OpenAPI schema: [openapi.json](http://localhost:8000/openapi.json)
+Interactive docs: [Swagger UI](http://localhost:8000/docs) · [ReDoc](http://localhost:8000/redoc)
+
+---
 
 ## Endpoints
-- `GET /api/v1/fidc/{doc_type}`
-- `GET /api/v1/fip/{doc_type}`
-- `GET /api/v1/fiagro/{doc_type}`
-- `GET /api/v1/securit/{doc_type}`
 
-See the interactive API docs or OpenAPI schema above for details on supported document types and query parameters.
+### Health check
+
+```
+GET /health
+```
+
+Returns service status and version.
+
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-02-25T12:00:00+00:00",
+  "version": "1.0.0"
+}
+```
+
+---
+
+### List available endpoints
+
+```
+GET /api/v1/endpoints
+```
+
+Returns all supported entities and their document types.
+
+---
+
+### FIDC data
+
+```
+GET /api/v1/fidc/{doc_type}
+```
+
+Retrieve FIDC (Fundo de Investimento em Direitos Creditórios) data.
+
+**Path parameters**
+
+| Parameter | Values |
+|---|---|
+| `doc_type` | `mensal`, `cadastral`, `trimestral`, `anual` |
+
+**Query parameters**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `year` | int | Conditional | Year (required for `mensal`, `trimestral`, `anual`) |
+| `month` | int | Conditional | Month 1–12 (required for `mensal`) |
+| `page` | int | No | Page number (default: 1) |
+| `page_size` | int | No | Records per page (default: 100, max: 10000) |
+
+**Example — fetch FIDC monthly data**
+
+```bash
+curl "http://localhost:8000/api/v1/fidc/mensal?year=2025&month=1&page=1&page_size=5"
+```
+
+---
+
+### FIP data
+
+```
+GET /api/v1/fip/{doc_type}
+```
+
+Retrieve FIP (Fundo de Investimento em Participações / Private Equity) data.
+
+**Path parameters**
+
+| Parameter | Values |
+|---|---|
+| `doc_type` | `inf_quadrimestral`, `inf_trimestral`, `cadastral`, `dfin` |
+
+**Example**
+
+```bash
+curl "http://localhost:8000/api/v1/fip/inf_trimestral?year=2025"
+```
+
+---
+
+### FIAGRO data
+
+```
+GET /api/v1/fiagro/{doc_type}
+```
+
+Retrieve FIAGRO (Fundo de Investimento nas Cadeias Produtivas Agroindustriais) data.
+
+**Path parameters**
+
+| Parameter | Values |
+|---|---|
+| `doc_type` | `mensal`, `cadastral`, `trimestral`, `anual` |
+
+**Example**
+
+```bash
+curl "http://localhost:8000/api/v1/fiagro/mensal?year=2025&month=3"
+```
+
+---
+
+### SECURIT data
+
+```
+GET /api/v1/securit/{doc_type}
+```
+
+Retrieve securitization (CRA, CRI, OTS, LCA, LCI) data.
+
+**Path parameters**
+
+| Parameter | Values |
+|---|---|
+| `doc_type` | `cra_mensal`, `cri_mensal`, `ots_mensal`, `lca_mensal`, `lci_mensal` |
+
+**Example**
+
+```bash
+curl "http://localhost:8000/api/v1/securit/cri_mensal?year=2025&month=6"
+```
+
+---
+
+## Response format
+
+All data endpoints return a `DataResponse` object:
+
+```json
+{
+  "entity": "fidc",
+  "doc_type": "mensal",
+  "data": [
+    {
+      "CNPJ_FUNDO": "12.345.678/0001-90",
+      "DT_COMPTC": "2025-01-31",
+      "VL_TOTAL": "1234567.89"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "page_size": 100,
+    "total_items": 5432,
+    "total_pages": 55,
+    "has_next": true,
+    "has_previous": false
+  },
+  "metadata": {
+    "source_url": "https://dados.cvm.gov.br/dados/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_202501.zip",
+    "description": "FIDC monthly report",
+    "is_zip": true,
+    "processing_time_seconds": 1.23,
+    "year": 2025,
+    "month": 1
+  }
+}
+```
+
+## Data quality
+
+The service validates every parsed CSV against entity-specific rules:
+
+- **CNPJ fields** — checksum validation via `src/validation_utils.py`
+- **Date fields** — format and range checks
+- **Numeric fields** — type coercion verification
+
+Validation errors and warnings are included in the `metadata.data_quality` object.
+
+## Caching
+
+Downloaded files are cached on disk for **24 hours** under `cache/`. The cache is keyed by URL MD5. You can clear the cache by deleting the `cache/` directory.
+
+## DNS resilience
+
+If `dados.cvm.gov.br` is unreachable, the service rotates through configurable DNS resolvers (default: `1.1.1.1`, `8.8.8.8`, `9.9.9.9`). Set `CVM_DNS_NAMESERVERS` in your `.env` file to override.

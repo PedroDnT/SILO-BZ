@@ -280,7 +280,7 @@ async def not_found_handler(request, exc):
             message=f"The requested resource was not found: {request.url.path}",
             status_code=404,
             timestamp=datetime.now(timezone.utc).isoformat()
-        ).dict()
+        ).model_dump()
     )
 
 @app.exception_handler(422)
@@ -293,7 +293,7 @@ async def validation_error_handler(request, exc):
             message="Request validation failed",
             status_code=422,
             timestamp=datetime.now(timezone.utc).isoformat()
-        ).dict()
+        ).model_dump()
     )
 
 @app.exception_handler(Exception)
@@ -307,15 +307,15 @@ async def general_exception_handler(request, exc):
             message="An internal server error occurred",
             status_code=500,
             timestamp=datetime.now(timezone.utc).isoformat()
-        ).dict()
+        ).model_dump()
     )
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "main:app",
+        "src.b3_calc_api.main:app",
         host="0.0.0.0",
-        port=8001,  # Different port from CVM API
+        port=8001,
         reload=True,
         log_level="info"
     )
