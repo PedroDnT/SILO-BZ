@@ -1,0 +1,93 @@
+version: "3.9"
+
+services:
+
+  cvm_api:
+    build:
+      context: .
+      dockerfile: src/cvm_api/Dockerfile
+    image: cvm-api:latest
+    container_name: cvm_api
+    ports:
+      - "8000:8000"
+    environment:
+      - LOG_LEVEL=info
+    volumes:
+      - ./cache:/app/cache
+      - ./temp:/app/temp
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - br_finance
+
+  b3_calc_api:
+    build:
+      context: .
+      dockerfile: src/b3_calc_api/Dockerfile
+    image: b3-calc-api:latest
+    container_name: b3_calc_api
+    ports:
+      - "8001:8001"
+    environment:
+      - LOG_LEVEL=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - br_finance
+
+  bacen_api:
+    build:
+      context: .
+      dockerfile: src/bacen_api/Dockerfile
+    image: bacen-api:latest
+    container_name: bacen_api
+    ports:
+      - "8002:8002"
+    environment:
+      - BACEN_API_PORT=8002
+      - LOG_LEVEL=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - br_finance
+
+  docs:
+    build:
+      context: .
+      dockerfile: docs/Dockerfile
+    image: br-finance-docs:latest
+    container_name: br_finance_docs
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+    depends_on:
+      - cvm_api
+      - b3_calc_api
+      - bacen_api
+    restart: unless-stopped
+    networks:
+      - br_finance
+
+networks:
+  br_finance:
+    driver: bridge
+
+volumes:
+  cache:
+  temp:

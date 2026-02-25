@@ -1,0 +1,25 @@
+---
+title: Tools
+description: CLI and utility tools for data backfill and endpoint checks
+---
+
+# Tools
+
+## Backfill CLI
+
+Bulk download and resume historical CVM data:
+
+```bash
+python -m src.tools.backfill --entity FIDC --doc-type INF_MENSAL
+python -m src.tools.backfill --all
+```
+
+## Endpoint Checker
+
+Quickly test all live CVM endpoints:
+
+```bash
+python scripts/check_all_endpoints.py
+```
+
+See the project README in the repository for more utility commands.
