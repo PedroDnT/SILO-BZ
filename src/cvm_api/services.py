@@ -701,59 +701,72 @@ class CVMCreditDataService:
             logger.error(f"Error processing request: {str(e)}", exc_info=True)
             raise Exception(f"Failed to process data request: {str(e)}")
 
+    def _match_cnpj(self, row: Dict[str, Any], cnpj_field: str, cnpj_digits: str) -> bool:
+        """Return True if row[cnpj_field] normalises to cnpj_digits."""
+        raw_val = row.get(cnpj_field, "") or ""
+        return ''.join(filter(str.isdigit, raw_val)) == cnpj_digits
+
+    def _find_cnpj_field(self, row: Dict[str, Any], prefer_suffix: str = "fundo") -> Optional[str]:
+        """Locate the CNPJ column in a CSV row, preferring columns containing prefer_suffix."""
+        first_choice = None
+        for field in row.keys():
+            fl = field.lower()
+            if "cnpj" in fl and prefer_suffix in fl:
+                return field
+            if "cnpj" in fl and first_choice is None:
+                first_choice = field
+        return first_choice
+
     async def get_cnpj_registry(
         self,
         cnpj: str,
         year: int,
+        month: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        Look up a CNPJ across all entity cadastral datasets (FIDC, FIP, FIAGRO).
-        Downloads and caches cadastral CSVs for the given year, filters by CNPJ,
-        and returns consolidated registry entries for fraud cross-referencing.
+        Full cross-entity lookup for a CNPJ — designed for fraud detection.
+
+        Downloads and caches data from CVM public files, then filters every
+        row by CNPJ and returns the complete raw CSV row alongside convenience
+        fields. Three data planes are returned:
+
+        1. registrations   — cadastral (FIDC, FIP, FIAGRO): who the entity is,
+                             registration/cancellation dates, status.
+        2. periodic_snapshots — mensal/periodic financials (FIDC, FIAGRO) for the
+                             requested year+month: quota price, NAV, delinquency.
+                             Only populated when `month` is provided.
+        3. emissions       — SECURIT (CRA, CRI, LCA, LCI) emission records where
+                             this CNPJ appears as issuer: emission price, quantity,
+                             maturity. Always fetched for the given year.
         """
-        # Normalize CNPJ to digits only for matching
         cnpj_digits = ''.join(filter(str.isdigit, cnpj))
 
-        entities_to_search = ["fidc", "fip", "fiagro"]
-        results = []
-        found_in = []
-        not_found_in = []
-        source_urls = {}
+        registrations: List[Dict] = []
+        periodic_snapshots: List[Dict] = []
+        emissions: List[Dict] = []
+        found_in: List[str] = []
+        not_found_in: List[str] = []
+        source_urls: Dict[str, str] = {}
 
-        async def fetch_entity_cadastral(entity: str):
+        # ── 1. Cadastral (fund registration) ─────────────────────────────────
+        async def fetch_cadastral(entity: str) -> None:
             try:
                 url, _ = self._build_url(entity, "cadastral", year, None)
-                source_urls[entity] = url
-                file_content = await self._download_file(url)
-                csv_content = file_content.decode(self.encoding)
-                all_data = self._parse_csv_content(csv_content)
+                source_urls[f"{entity}/cadastral"] = url
+                content = await self._download_file(url)
+                rows = self._parse_csv_content(content.decode(self.encoding))
 
-                # Find the CNPJ field name for this entity
-                cnpj_field = None
-                if all_data:
-                    for field in all_data[0].keys():
-                        if "cnpj" in field.lower() and "fundo" in field.lower():
-                            cnpj_field = field
-                            break
-                        if "cnpj" in field.lower() and cnpj_field is None:
-                            cnpj_field = field
-
+                cnpj_field = self._find_cnpj_field(rows[0]) if rows else None
                 if not cnpj_field:
-                    logger.warning(f"No CNPJ field found in {entity} cadastral data")
-                    not_found_in.append(entity)
+                    logger.warning(f"No CNPJ field in {entity} cadastral")
+                    not_found_in.append(f"{entity}/cadastral")
                     return
 
-                # Filter rows matching the requested CNPJ
-                matches = []
-                for row in all_data:
-                    row_cnpj = ''.join(filter(str.isdigit, row.get(cnpj_field, "") or ""))
-                    if row_cnpj == cnpj_digits:
-                        matches.append(row)
-
+                matches = [r for r in rows if self._match_cnpj(r, cnpj_field, cnpj_digits)]
                 if matches:
-                    found_in.append(entity)
+                    found_in.append(f"{entity}/cadastral")
                     for row in matches:
-                        entry = {
+                        registrations.append({
                             "entity": entity,
                             "fund_name": row.get("DENOM_SOCIAL") or row.get("NM_FUNDO"),
                             "status": row.get("SIT") or row.get("SIT_FUNDO"),
@@ -761,22 +774,156 @@ class CVMCreditDataService:
                             "cancellation_date": row.get("DT_CANCEL") or row.get("DT_ENCERRAMENTO"),
                             "fund_type": row.get("TP_FUNDO") or row.get("CLASSE") or row.get("CATEG_FUNDO"),
                             "raw": row,
-                        }
-                        results.append(entry)
+                        })
                 else:
-                    not_found_in.append(entity)
-
+                    not_found_in.append(f"{entity}/cadastral")
             except Exception as e:
-                logger.warning(f"Could not fetch {entity} cadastral for CNPJ lookup: {str(e)}")
-                not_found_in.append(entity)
+                logger.warning(f"fetch_cadastral({entity}): {e}")
+                not_found_in.append(f"{entity}/cadastral")
 
-        # Fetch all entity cadastral data in parallel
-        await asyncio.gather(*(fetch_entity_cadastral(e) for e in entities_to_search))
+        # ── 2. Periodic snapshots ─────────────────────────────────────────────
+        # For mensal (ZIP, needs year+month): fetch specified month, or all
+        # months 1–current_month when month is not specified.
+        # For yearly CSVs (trimestral, anual, dfin, inf_quadrimestral, etc.):
+        # always fetch with year only — the file covers the full year.
+
+        now = datetime.now(timezone.utc)
+        months_to_fetch = (
+            [month]
+            if month is not None
+            else list(range(1, (now.month if now.year == year else 12) + 1))
+        )
+
+        async def _parse_periodic_rows(rows: List[Dict], entity: str, doc_type: str, month_hint: Optional[int]) -> None:
+            """Extract and store periodic snapshot entries from parsed rows."""
+            cnpj_field = self._find_cnpj_field(rows[0]) if rows else None
+            if not cnpj_field:
+                logger.warning(f"No CNPJ field in {entity}/{doc_type}")
+                return
+            matches = [r for r in rows if self._match_cnpj(r, cnpj_field, cnpj_digits)]
+            if matches:
+                found_in.append(f"{entity}/{doc_type}")
+                for row in matches:
+                    period = (
+                        row.get("DT_COMPTC")
+                        or row.get("DT_REFER")
+                        or (f"{year}-{month_hint:02d}" if month_hint else str(year))
+                    )
+                    delinq = next(
+                        (row[k] for k in row if "inadimpl" in k.lower() or "delinq" in k.lower()),
+                        None,
+                    )
+                    periodic_snapshots.append({
+                        "source_entity": entity,
+                        "doc_type": doc_type,
+                        "period": period,
+                        "quota_value": row.get("VL_QUOTA"),
+                        "net_asset_value": row.get("VL_PATRIM_LIQ"),
+                        "total_portfolio": row.get("VL_TOTAL") or row.get("VL_CARTEIRA_TOTAL"),
+                        "delinquency_value": delinq,
+                        "num_quotaholders": row.get("NR_COTST"),
+                        "raw": row,
+                    })
+            else:
+                not_found_in.append(f"{entity}/{doc_type}")
+
+        async def fetch_periodic_monthly(entity: str, m: int) -> None:
+            """Fetch one month's mensal ZIP for FIDC or FIAGRO."""
+            label = f"{entity}/mensal/{year}{m:02d}"
+            try:
+                url, dataset_conf = self._build_url(entity, "mensal", year, m)
+                source_urls[label] = url
+                content = await self._download_file(url)
+                csv_text = self._extract_csv_from_zip(
+                    content, dataset_conf["csv_name_pattern"], year, m
+                )
+                rows = self._parse_csv_content(csv_text)
+                await _parse_periodic_rows(rows, entity, f"mensal/{year}{m:02d}", m)
+            except Exception as e:
+                logger.warning(f"fetch_periodic_monthly({label}): {e}")
+                not_found_in.append(label)
+
+        async def fetch_periodic_yearly(entity: str, doc_type: str) -> None:
+            """Fetch a yearly CSV (trimestral, anual, dfin, inf_quadrimestral, etc.)."""
+            label = f"{entity}/{doc_type}"
+            try:
+                url, dataset_conf = self._build_url(entity, doc_type, year, None)
+                source_urls[label] = url
+                content = await self._download_file(url)
+                csv_text = content.decode(self.encoding)
+                rows = self._parse_csv_content(csv_text)
+                await _parse_periodic_rows(rows, entity, doc_type, None)
+            except Exception as e:
+                logger.warning(f"fetch_periodic_yearly({label}): {e}")
+                not_found_in.append(label)
+
+        # ── 3. SECURIT emissions (CNPJ as issuer) — all instrument types ─────
+        securit_types = ["cra_mensal", "cri_mensal", "ots_mensal", "lca_mensal", "lci_mensal"]
+
+        async def fetch_emission(doc_type: str) -> None:
+            label = f"securit/{doc_type}"
+            try:
+                url, dataset_conf = self._build_url("securit", doc_type, year, None)
+                source_urls[label] = url
+                content = await self._download_file(url)
+                csv_text = self._extract_csv_from_zip(
+                    content, dataset_conf["csv_name_pattern"], year, None
+                ) if dataset_conf.get("is_zip") else content.decode(self.encoding)
+                rows = self._parse_csv_content(csv_text)
+                cnpj_field = self._find_cnpj_field(rows[0], prefer_suffix="securit") if rows else None
+                if not cnpj_field:
+                    logger.warning(f"No CNPJ field in {label}")
+                    not_found_in.append(label)
+                    return
+                matches = [r for r in rows if self._match_cnpj(r, cnpj_field, cnpj_digits)]
+                if matches:
+                    found_in.append(label)
+                    for row in matches:
+                        emissions.append({
+                            "instrument_type": doc_type,
+                            "emission_date": row.get("DT_EMISSAO"),
+                            "maturity_date": row.get("DT_VENCTO") or row.get("DT_VENCIMENTO"),
+                            "emission_value": row.get("VL_EMISSAO"),
+                            "unit_price": row.get("VL_UNIT") or row.get("PU_EMISSAO") or row.get("VL_PU_EMISSAO"),
+                            "num_titles": row.get("QT_TITULOS"),
+                            "outstanding_value": row.get("VL_TOTAL") or row.get("VL_SALDO"),
+                            "asset_type": row.get("TP_ATIVO") or row.get("TP_TITULO"),
+                            "raw": row,
+                        })
+                else:
+                    not_found_in.append(label)
+            except Exception as e:
+                logger.warning(f"fetch_emission({label}): {e}")
+                not_found_in.append(label)
+
+        # Build full task list and run everything concurrently
+        cadastral_tasks = [fetch_cadastral(e) for e in ["fidc", "fip", "fiagro"]]
+
+        # Mensal ZIPs: FIDC and FIAGRO for each month in scope
+        mensal_tasks = [
+            fetch_periodic_monthly(entity, m)
+            for entity in ["fidc", "fiagro"]
+            for m in months_to_fetch
+        ]
+        # Yearly CSVs: trimestral, anual for FIDC and FIAGRO; all FIP periodic types
+        yearly_tasks = [
+            fetch_periodic_yearly("fidc", dt) for dt in ["trimestral", "anual"]
+        ] + [
+            fetch_periodic_yearly("fiagro", dt) for dt in ["trimestral", "anual"]
+        ] + [
+            fetch_periodic_yearly("fip", dt) for dt in ["inf_quadrimestral", "inf_trimestral", "dfin"]
+        ]
+        emission_tasks = [fetch_emission(dt) for dt in securit_types]
+
+        await asyncio.gather(*cadastral_tasks, *mensal_tasks, *yearly_tasks, *emission_tasks)
 
         return {
             "cnpj": cnpj_digits,
             "year": year,
-            "registrations": results,
+            "month": month,
+            "registrations": registrations,
+            "periodic_snapshots": periodic_snapshots,
+            "emissions": emissions,
             "found_in": found_in,
             "not_found_in": not_found_in,
             "source_urls": source_urls,

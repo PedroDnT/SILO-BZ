@@ -221,24 +221,32 @@ async def get_securit_data(
 @app.get("/api/v1/cnpj/{cnpj}", response_model=CNPJRegistryResponse)
 async def get_cnpj_registry(
     cnpj: str = Path(..., description="CNPJ to look up (digits only or formatted XX.XXX.XXX/XXXX-XX)"),
-    year: int = Query(..., ge=2000, le=2030, description="Year for cadastral data"),
+    year: int = Query(..., ge=2000, le=2030, description="Year for cadastral and emission data"),
+    month: Optional[int] = Query(None, ge=1, le=12, description="Month for periodic financial data (quota price, NAV, delinquency). When omitted, only cadastral and SECURIT emission data are returned."),
 ):
     """
-    Cross-entity CNPJ registry lookup for fraud detection.
+    Full cross-entity CNPJ lookup for fraud detection.
 
-    Downloads cadastral data from FIDC, FIP, and FIAGRO for the given year
-    and returns all fund registrations matching the CNPJ. Useful for:
-    - Detecting the same CNPJ registered under multiple entity types
-    - Identifying cancelled or irregular fund registrations
-    - Cross-referencing fund names and administrator CNPJs
+    Returns three data planes in a single call:
+
+    - **registrations** — cadastral data (FIDC, FIP, FIAGRO): fund name, status,
+      registration/cancellation dates, fund type, all raw fields.
+    - **periodic_snapshots** — mensal financial data (FIDC, FIAGRO) for `year+month`:
+      quota/unit price, NAV (patrimônio líquido), delinquency value, all raw fields.
+      Only populated when `month` is supplied.
+    - **emissions** — SECURIT emission records (CRA, CRI, LCA, LCI) where this CNPJ
+      is the issuer: emission price, unit price, maturity, quantity, all raw fields.
+      Always fetched for the given `year`.
+
+    All downloads are cached on disk (24 h TTL) so repeated lookups for the same
+    period are served instantly.
     """
-    # Validate CNPJ digit count
     cnpj_digits = ''.join(filter(str.isdigit, cnpj))
     if len(cnpj_digits) != 14:
         raise HTTPException(status_code=400, detail="CNPJ must have 14 digits")
 
     try:
-        result = await data_service.get_cnpj_registry(cnpj=cnpj, year=year)
+        result = await data_service.get_cnpj_registry(cnpj=cnpj, year=year, month=month)
         return CNPJRegistryResponse(**result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
