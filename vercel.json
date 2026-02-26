@@ -1,0 +1,53 @@
+{
+    "version": 2,
+    "name": "brazilian-financial-data-apis",
+    "builds": [
+        {
+            "src": "src/cvm_api/main.py",
+            "use": "@vercel/python",
+            "config": {
+                "maxLambdaSize": "15mb"
+            }
+        },
+        {
+            "src": "src/bacen_api/main.py",
+            "use": "@vercel/python",
+            "config": {
+                "maxLambdaSize": "15mb"
+            }
+        },
+        {
+            "src": "src/b3_calc_api/main.py",
+            "use": "@vercel/python",
+            "config": {
+                "maxLambdaSize": "15mb"
+            }
+        }
+    ],
+    "routes": [
+        {
+            "src": "/api/v1/cvm/(.*)",
+            "dest": "src/cvm_api/main.py"
+        },
+        {
+            "src": "/api/v1/bacen/(.*)",
+            "dest": "src/bacen_api/main.py"
+        },
+        {
+            "src": "/api/v1/(prices|securities|indexes|market-data)/(.*)",
+            "dest": "src/b3_calc_api/main.py"
+        },
+        {
+            "src": "/health",
+            "dest": "src/cvm_api/main.py"
+        }
+    ],
+    "env": {
+        "RATE_LIMIT_ENABLED": "false",
+        "RATE_LIMIT_REQUESTS": "1000",
+        "RATE_LIMIT_WINDOW": "60"
+    },
+    "regions": [
+        "gru1"
+    ]
+}

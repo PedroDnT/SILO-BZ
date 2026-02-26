@@ -1,0 +1,178 @@
+---
+title: 'Authentication'
+description: 'Learn how to authenticate your API requests'
+---
+
+<Note>
+  Authentication is currently optional. The APIs are open for testing and development. Production deployments may require API keys.
+</Note>
+
+## API Key Authentication (Optional)
+
+For production deployments, API requests can include an API key in the `X-API-Key` header.
+
+```bash
+X-API-Key: your_api_key_here
+```
+
+### Obtaining an API Key
+
+<Steps>
+  <Step title="Register">
+    Create an account at the [developer portal](https://api.financialdata.com.br)
+  </Step>
+  <Step title="Generate Key">
+    Navigate to the API Keys section and generate a new key
+  </Step>
+  <Step title="Copy Key">
+    Copy your API key and store it securely
+  </Step>
+  <Step title="Make Requests">
+    Include the key in the `X-API-Key` header with every request
+  </Step>
+</Steps>
+
+## Security Best Practices
+
+<Warning>
+  Never expose your API keys in client-side code, public repositories, or logs.
+</Warning>
+
+### Environment Variables
+
+Store your API key in environment variables:
+
+<CodeGroup>
+
+```bash .env
+FINANCIAL_DATA_API_KEY=your_api_key_here
+```
+
+```python Python
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+API_KEY = os.getenv('FINANCIAL_DATA_API_KEY')
+```
+
+```javascript JavaScript
+require('dotenv').config();
+const API_KEY = process.env.FINANCIAL_DATA_API_KEY;
+```
+
+</CodeGroup>
+
+### Key Rotation
+
+<AccordionGroup>
+  <Accordion title="When to rotate keys">
+    - Every 90 days as a security best practice
+    - Immediately if a key is compromised
+    - When team members with key access leave
+    - After security audits
+  </Accordion>
+  
+  <Accordion title="How to rotate keys">
+    1. Generate a new API key in the developer portal
+    2. Update your application with the new key
+    3. Test the new key in a staging environment
+    4. Deploy to production
+    5. Revoke the old key after 24 hours
+  </Accordion>
+</AccordionGroup>
+
+## API Tiers
+
+Different API tiers have different rate limits and features:
+
+<CardGroup cols={3}>
+  <Card title="Free Tier" icon="gift">
+    - 100 requests/minute
+    - Basic support
+    - Community access
+  </Card>
+  <Card title="Professional" icon="briefcase">
+    - 1,000 requests/minute
+    - Priority support
+    - Advanced features
+  </Card>
+  <Card title="Enterprise" icon="building">
+    - Custom limits
+    - Dedicated support
+    - SLA guarantees
+  </Card>
+</CardGroup>
+
+## Testing Authentication
+
+Test your API key with a simple health check:
+
+<CodeGroup>
+
+```bash cURL
+curl -X GET "https://api.financialdata.com.br/health" \
+  -H "X-API-Key: your_api_key_here"
+```
+
+```python Python
+import requests
+
+response = requests.get(
+    "https://api.financialdata.com.br/health",
+    headers={"X-API-Key": "your_api_key_here"}
+)
+
+if response.status_code == 200:
+    print("✓ Authentication successful")
+    print(response.json())
+else:
+    print("✗ Authentication failed")
+```
+
+</CodeGroup>
+
+## Error Responses
+
+### 401 Unauthorized
+
+Missing or invalid API key:
+
+```json
+{
+  "error": "Unauthorized",
+  "message": "Invalid or missing API key",
+  "timestamp": "2024-02-26T10:00:00Z"
+}
+```
+
+### 403 Forbidden
+
+Valid key but insufficient permissions:
+
+```json
+{
+  "error": "Forbidden",
+  "message": "Your API key does not have access to this resource",
+  "timestamp": "2024-02-26T10:00:00Z"
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Rate Limits"
+    icon="gauge"
+    href="/rate-limits"
+  >
+    Learn about rate limiting
+  </Card>
+  <Card
+    title="Error Handling"
+    icon="triangle-exclamation"
+    href="/concepts/error-handling"
+  >
+    Handle errors gracefully
+  </Card>
+</CardGroup>

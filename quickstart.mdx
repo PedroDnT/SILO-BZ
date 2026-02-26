@@ -1,0 +1,204 @@
+---
+title: 'Quickstart'
+description: 'Get started with the Brazilian Financial Data APIs in under 5 minutes'
+---
+
+## Setup your API key
+
+<Warning>
+  All API requests require authentication. Register at the [developer portal](https://api.financialdata.com.br) to obtain your API key.
+</Warning>
+
+Once you have your API key, include it in the `X-API-Key` header with every request:
+
+```bash
+X-API-Key: your_api_key_here
+```
+
+## Make your first request
+
+<CodeGroup>
+
+```bash cURL
+curl -X GET "https://api.financialdata.com.br/api/v1/cvm/fidc/cadastral?page=1&page_size=10" \
+  -H "X-API-Key: your_api_key_here" \
+  -H "Accept: application/json"
+```
+
+```python Python
+import requests
+
+API_KEY = "your_api_key_here"
+BASE_URL = "https://api.financialdata.com.br"
+
+headers = {
+    "X-API-Key": API_KEY,
+    "Accept": "application/json"
+}
+
+response = requests.get(
+    f"{BASE_URL}/api/v1/cvm/fidc/cadastral",
+    headers=headers,
+    params={"page": 1, "page_size": 10}
+)
+
+if response.status_code == 200:
+    data = response.json()
+    print(f"Retrieved {len(data['data'])} records")
+    for record in data['data']:
+        print(f"Fund: {record.get('DENOM_SOCIAL', 'N/A')}")
+else:
+    print(f"Error: {response.status_code}")
+```
+
+```javascript JavaScript
+const API_KEY = 'your_api_key_here';
+const BASE_URL = 'https://api.financialdata.com.br';
+
+async function getFIDCData() {
+    const response = await fetch(
+        `${BASE_URL}/api/v1/cvm/fidc/cadastral?page=1&page_size=10`,
+        {
+            headers: {
+                'X-API-Key': API_KEY,
+                'Accept': 'application/json'
+            }
+        }
+    );
+    
+    if (response.ok) {
+        const data = await response.json();
+        console.log(`Retrieved ${data.data.length} records`);
+        data.data.forEach(record => {
+            console.log(`Fund: ${record.DENOM_SOCIAL || 'N/A'}`);
+        });
+    } else {
+        console.error(`Error: ${response.status}`);
+    }
+}
+
+getFIDCData();
+```
+
+```java Java
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.net.URI;
+import com.google.gson.Gson;
+
+public class FinancialDataClient {
+    private static final String API_KEY = "your_api_key_here";
+    private static final String BASE_URL = "https://api.financialdata.com.br";
+    
+    public static void main(String[] args) throws Exception {
+        HttpClient client = HttpClient.newHttpClient();
+        
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(BASE_URL + "/api/v1/cvm/fidc/cadastral?page=1&page_size=10"))
+            .header("X-API-Key", API_KEY)
+            .header("Accept", "application/json")
+            .GET()
+            .build();
+        
+        HttpResponse<String> response = client.send(request, 
+            HttpResponse.BodyHandlers.ofString());
+        
+        if (response.statusCode() == 200) {
+            System.out.println("Success: " + response.body());
+        } else {
+            System.err.println("Error: " + response.statusCode());
+        }
+    }
+}
+```
+
+</CodeGroup>
+
+## Understanding the response
+
+The API returns paginated JSON responses with the following structure:
+
+```json
+{
+  "data": [
+    {
+      "CNPJ_FUNDO": "12.345.678/0001-90",
+      "DENOM_SOCIAL": "FUNDO EXEMPLO FIDC",
+      "DT_REG": "2020-01-15",
+      "DT_CANCEL": null,
+      "SIT": "ATIVO"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "page_size": 10,
+    "total_items": 1500,
+    "total_pages": 150
+  },
+  "metadata": {
+    "entity": "fidc",
+    "doc_type": "cadastral",
+    "timestamp": "2024-02-26T10:00:00Z"
+  }
+}
+```
+
+<ResponseField name="data" type="array">
+  Array of records matching your query
+</ResponseField>
+
+<ResponseField name="pagination" type="object">
+  Pagination information
+  <Expandable title="properties">
+    <ResponseField name="page" type="integer">
+      Current page number
+    </ResponseField>
+    <ResponseField name="page_size" type="integer">
+      Number of items per page
+    </ResponseField>
+    <ResponseField name="total_items" type="integer">
+      Total number of items available
+    </ResponseField>
+    <ResponseField name="total_pages" type="integer">
+      Total number of pages
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="metadata" type="object">
+  Request metadata including entity type, document type, and timestamp
+</ResponseField>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Explore CVM API"
+    icon="landmark"
+    href="/cvm/overview"
+  >
+    Learn about CVM credit market data
+  </Card>
+  <Card
+    title="Explore BACEN API"
+    icon="building-columns"
+    href="/bacen/overview"
+  >
+    Access Central Bank indicators
+  </Card>
+  <Card
+    title="Authentication"
+    icon="key"
+    href="/authentication"
+  >
+    Learn about API keys and security
+  </Card>
+  <Card
+    title="Rate Limits"
+    icon="gauge"
+    href="/rate-limits"
+  >
+    Understand rate limiting
+  </Card>
+</CardGroup>

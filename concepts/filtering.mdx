@@ -1,0 +1,280 @@
+---
+title: 'Filtering'
+description: 'Learn how to filter API results using query parameters'
+---
+
+## Overview
+
+Most list endpoints support filtering through query parameters, allowing you to retrieve only the data you need.
+
+## Common Filter Parameters
+
+### By Status
+
+Filter records by their status:
+
+```bash
+GET /api/v1/cvm/fidc/cadastral?status=ATIVO
+```
+
+<CodeGroup>
+
+```python Python
+response = requests.get(
+    "https://api.financialdata.com.br/api/v1/cvm/fidc/cadastral",
+    headers={"X-API-Key": "your_api_key"},
+    params={"status": "ATIVO"}
+)
+```
+
+```javascript JavaScript
+const response = await fetch(
+    'https://api.financialdata.com.br/api/v1/cvm/fidc/cadastral?status=ATIVO',
+    { headers: { 'X-API-Key': 'your_api_key' } }
+);
+```
+
+</CodeGroup>
+
+### By Date Range
+
+Filter by date ranges using `start_date` and `end_date`:
+
+```bash
+GET /api/v1/bacen/sgs/433?start_date=2023-01-01&end_date=2023-12-31
+```
+
+<CodeGroup>
+
+```python Python
+response = requests.get(
+    "https://api.financialdata.com.br/api/v1/bacen/sgs/433",
+    headers={"X-API-Key": "your_api_key"},
+    params={
+        "start_date": "2023-01-01",
+        "end_date": "2023-12-31"
+    }
+)
+```
+
+```javascript JavaScript
+const params = new URLSearchParams({
+    start_date: '2023-01-01',
+    end_date: '2023-12-31'
+});
+
+const response = await fetch(
+    `https://api.financialdata.com.br/api/v1/bacen/sgs/433?${params}`,
+    { headers: { 'X-API-Key': 'your_api_key' } }
+);
+```
+
+</CodeGroup>
+
+### By Year and Month
+
+For monthly data, filter by specific year and month:
+
+```bash
+GET /api/v1/cvm/fidc/mensal?year=2024&month=1
+```
+
+### By Search Query
+
+Use the `q` parameter for text search:
+
+```bash
+GET /api/v1/cvm/fidc/cadastral?q=petrobras
+```
+
+## Combining Filters
+
+Combine multiple filters for precise results:
+
+```bash
+GET /api/v1/cvm/fidc/cadastral?status=ATIVO&q=banco&page=1&page_size=50
+```
+
+<CodeGroup>
+
+```python Python
+response = requests.get(
+    "https://api.financialdata.com.br/api/v1/cvm/fidc/cadastral",
+    headers={"X-API-Key": "your_api_key"},
+    params={
+        "status": "ATIVO",
+        "q": "banco",
+        "page": 1,
+        "page_size": 50
+    }
+)
+
+active_funds = response.json()['data']
+print(f"Found {len(active_funds)} active funds matching 'banco'")
+```
+
+```javascript JavaScript
+const params = new URLSearchParams({
+    status: 'ATIVO',
+    q: 'banco',
+    page: 1,
+    page_size: 50
+});
+
+const response = await fetch(
+    `https://api.financialdata.com.br/api/v1/cvm/fidc/cadastral?${params}`,
+    { headers: { 'X-API-Key': 'your_api_key' } }
+);
+
+const { data: activeFunds } = await response.json();
+console.log(`Found ${activeFunds.length} active funds matching 'banco'`);
+```
+
+</CodeGroup>
+
+## Sorting Results
+
+Use `sort` and `order` parameters to sort results:
+
+```bash
+GET /api/v1/cvm/fidc/cadastral?sort=DT_REG&order=desc
+```
+
+<ParamField query="sort" type="string">
+  Field name to sort by
+</ParamField>
+
+<ParamField query="order" type="string" default="asc">
+  Sort order: `asc` (ascending) or `desc` (descending)
+</ParamField>
+
+## Filter Validation
+
+Invalid filter values return a `400 Bad Request` error:
+
+```json
+{
+  "error": "ValidationError",
+  "message": "Invalid filter parameter",
+  "details": {
+    "field": "status",
+    "value": "INVALID",
+    "valid_values": ["ATIVO", "CANCELADO", "SUSPENSO"]
+  },
+  "timestamp": "2024-02-26T10:00:00Z"
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Filter before paginating" icon="filter">
+    Apply filters to reduce the dataset size before requesting large page sizes
+  </Accordion>
+  
+  <Accordion title="Use specific filters" icon="bullseye">
+    More specific filters reduce response time and data transfer
+  </Accordion>
+  
+  <Accordion title="Cache filtered results" icon="database">
+    Cache frequently used filter combinations locally
+  </Accordion>
+  
+  <Accordion title="Validate filter values" icon="check">
+    Check valid filter values in the API documentation before making requests
+  </Accordion>
+</AccordionGroup>
+
+## Entity-Specific Filters
+
+### CVM Filters
+
+<Tabs>
+  <Tab title="FIDC">
+    - `status`: ATIVO, CANCELADO, SUSPENSO
+    - `year`: Year for monthly/quarterly/annual data
+    - `month`: Month (1-12) for monthly data
+    - `q`: Search in fund name
+  </Tab>
+  
+  <Tab title="FIP">
+    - `status`: Fund status
+    - `year`: Year for periodic data
+    - `q`: Search in fund name
+  </Tab>
+  
+  <Tab title="FIAGRO">
+    - `status`: Fund status
+    - `year`: Year for periodic data
+    - `month`: Month for monthly data
+    - `q`: Search in fund name
+  </Tab>
+  
+  <Tab title="SECURIT">
+    - `year`: Year (required for monthly data)
+    - `month`: Month (required for monthly data)
+    - `q`: Search in issuer name
+  </Tab>
+</Tabs>
+
+### BACEN Filters
+
+- `start_date`: Start date (YYYY-MM-DD)
+- `end_date`: End date (YYYY-MM-DD)
+- `last`: Last N observations
+
+### B3 Filters
+
+- `search`: Search in security name or code
+- `status`: Security status
+- `type`: Security type
+
+## Advanced Filtering Example
+
+```python
+import requests
+from datetime import datetime, timedelta
+
+def get_recent_active_funds(days=30):
+    """Get funds registered in the last N days that are currently active"""
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=days)
+    
+    response = requests.get(
+        "https://api.financialdata.com.br/api/v1/cvm/fidc/cadastral",
+        headers={"X-API-Key": "your_api_key"},
+        params={
+            "status": "ATIVO",
+            "start_date": start_date.strftime("%Y-%m-%d"),
+            "end_date": end_date.strftime("%Y-%m-%d"),
+            "sort": "DT_REG",
+            "order": "desc",
+            "page_size": 100
+        }
+    )
+    
+    return response.json()['data']
+
+# Get funds registered in the last 30 days
+recent_funds = get_recent_active_funds(30)
+print(f"Found {len(recent_funds)} funds registered in the last 30 days")
+```
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card
+    title="Pagination"
+    icon="list"
+    href="/concepts/pagination"
+  >
+    Learn about paginating results
+  </Card>
+  <Card
+    title="Data Formats"
+    icon="file-code"
+    href="/concepts/data-formats"
+  >
+    Understand response formats
+  </Card>
+</CardGroup>

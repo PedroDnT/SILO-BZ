@@ -1,0 +1,176 @@
+---
+title: 'SGS Time Series'
+description: 'Access Brazilian Central Bank time series data through the SGS (Sistema Gerenciador de Séries Temporais) API'
+---
+
+## Overview
+
+The SGS (Sistema Gerenciador de Séries Temporais) is the Brazilian Central Bank's time series management system. It provides access to thousands of economic indicators including interest rates, inflation indexes, exchange rates, and more.
+
+## Well-Known Series
+
+Get a list of commonly used SGS series codes:
+
+```bash
+curl https://api.financialdata.com.br/api/v1/bacen/sgs/well-known
+```
+
+### Popular Series Codes
+
+| Series | Code | Description |
+|--------|------|-------------|
+| SELIC | 11 | SELIC target rate |
+| CDI | 12 | CDI rate |
+| IPCA | 433 | Consumer price index |
+| IGP-M | 189 | General price index |
+| USD/BRL | 1 | US Dollar exchange rate |
+
+## Get Single Series
+
+Fetch a specific time series by its numeric code:
+
+```bash
+curl "https://api.financialdata.com.br/api/v1/bacen/sgs/433?start=2024-01-01&end=2024-12-31"
+```
+
+### Parameters
+
+- `series_code` (path, required): Numeric series code
+- `label` (query, optional): Column label for the series (default: "value")
+- `start` (query, optional): Start date in ISO format (YYYY-MM-DD)
+- `end` (query, optional): End date in ISO format (YYYY-MM-DD)
+- `last` (query, optional): Return last N observations (1-5000)
+
+### Response
+
+```json
+{
+  "series_code": 433,
+  "series_label": "IPCA",
+  "total_records": 12,
+  "data": [
+    {
+      "date": "2024-01-01",
+      "IPCA": 0.42
+    }
+  ],
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+## Get Multiple Series
+
+Fetch multiple SGS series in a single request for aligned data:
+
+```bash
+curl "https://api.financialdata.com.br/api/v1/bacen/sgs/multi?codes=IPCA:433,CDI:12,SELIC:11&start=2024-01-01"
+```
+
+### Parameters
+
+- `codes` (query, required): Comma-separated label:code pairs (e.g., "IPCA:433,CDI:12")
+- `start` (query, optional): Start date in ISO format
+- `end` (query, optional): End date in ISO format
+- `last` (query, optional): Return last N observations
+
+### Response
+
+```json
+{
+  "codes": {
+    "IPCA": 433,
+    "CDI": 12,
+    "SELIC": 11
+  },
+  "total_records": 12,
+  "data": [
+    {
+      "date": "2024-01-01",
+      "IPCA": 0.42,
+      "CDI": 0.95,
+      "SELIC": 11.75
+    }
+  ],
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+## Code Examples
+
+<CodeGroup>
+
+```python Python
+import requests
+
+# Get IPCA series
+response = requests.get(
+    "https://api.financialdata.com.br/api/v1/bacen/sgs/433",
+    params={
+        "start": "2024-01-01",
+        "end": "2024-12-31",
+        "label": "IPCA"
+    }
+)
+data = response.json()
+
+# Get multiple series
+response = requests.get(
+    "https://api.financialdata.com.br/api/v1/bacen/sgs/multi",
+    params={
+        "codes": "IPCA:433,CDI:12,SELIC:11",
+        "last": 12
+    }
+)
+multi_data = response.json()
+```
+
+```javascript JavaScript
+// Get IPCA series
+const response = await fetch(
+  'https://api.financialdata.com.br/api/v1/bacen/sgs/433?start=2024-01-01&label=IPCA'
+);
+const data = await response.json();
+
+// Get multiple series
+const multiResponse = await fetch(
+  'https://api.financialdata.com.br/api/v1/bacen/sgs/multi?codes=IPCA:433,CDI:12&last=12'
+);
+const multiData = await multiResponse.json();
+```
+
+```java Java
+import java.net.http.*;
+import java.net.URI;
+
+// Get IPCA series
+HttpClient client = HttpClient.newHttpClient();
+HttpRequest request = HttpRequest.newBuilder()
+    .uri(URI.create("https://api.financialdata.com.br/api/v1/bacen/sgs/433?start=2024-01-01"))
+    .GET()
+    .build();
+
+HttpResponse<String> response = client.send(request, 
+    HttpResponse.BodyHandlers.ofString());
+```
+
+</CodeGroup>
+
+## Use Cases
+
+- Track inflation indicators (IPCA, IGP-M)
+- Monitor interest rates (SELIC, CDI)
+- Analyze economic indicators
+- Build financial models
+- Create dashboards with historical data
+
+## Rate Limits
+
+- 100 requests per minute per IP
+- Use the `last` parameter to limit data volume
+- Consider caching frequently accessed series
+
+## Related Endpoints
+
+- [PTAX Exchange Rates](/bacen/ptax)
+- [Market Expectations](/bacen/expectations)
+- [BACEN Overview](/bacen/overview)

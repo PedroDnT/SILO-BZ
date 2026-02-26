@@ -1,0 +1,145 @@
+---
+title: 'API Reference'
+description: 'Complete reference for all API endpoints'
+---
+
+## Base URL
+
+All API requests should be made to:
+
+```
+https://api.financialdata.com.br
+```
+
+For local development:
+
+```
+http://localhost:8000
+```
+
+## Authentication
+
+Include your API key in the `X-API-Key` header:
+
+```bash
+X-API-Key: your_api_key_here
+```
+
+## Response Format
+
+All responses are returned in JSON format with the following structure:
+
+```json
+{
+  "data": [...],
+  "pagination": {
+    "page": 1,
+    "page_size": 100,
+    "total_items": 1500,
+    "total_pages": 15
+  },
+  "metadata": {
+    "entity": "fidc",
+    "doc_type": "cadastral",
+    "timestamp": "2024-02-26T10:00:00Z"
+  }
+}
+```
+
+## Common Parameters
+
+Most endpoints support these query parameters:
+
+<ParamField query="page" type="integer" default="1">
+  Page number for pagination
+</ParamField>
+
+<ParamField query="page_size" type="integer" default="100">
+  Number of items per page (max: 10,000)
+</ParamField>
+
+<ParamField query="year" type="integer">
+  Filter by year (for time-series data)
+</ParamField>
+
+<ParamField query="month" type="integer">
+  Filter by month (1-12, for monthly data)
+</ParamField>
+
+## HTTP Status Codes
+
+<ResponseField name="200" type="OK">
+  Request successful
+</ResponseField>
+
+<ResponseField name="400" type="Bad Request">
+  Invalid request parameters
+</ResponseField>
+
+<ResponseField name="401" type="Unauthorized">
+  Missing or invalid API key
+</ResponseField>
+
+<ResponseField name="404" type="Not Found">
+  Resource not found
+</ResponseField>
+
+<ResponseField name="429" type="Too Many Requests">
+  Rate limit exceeded
+</ResponseField>
+
+<ResponseField name="500" type="Internal Server Error">
+  Server error
+</ResponseField>
+
+<ResponseField name="503" type="Service Unavailable">
+  Service temporarily unavailable
+</ResponseField>
+
+## Error Response Format
+
+```json
+{
+  "error": "ValidationError",
+  "message": "Invalid date format",
+  "details": {
+    "field": "start_date",
+    "expected": "YYYY-MM-DD"
+  },
+  "timestamp": "2024-02-26T10:00:00Z"
+}
+```
+
+## API Endpoints
+
+<CardGroup cols={3}>
+  <Card
+    title="CVM Endpoints"
+    icon="landmark"
+    href="/api-reference/cvm/list-operations"
+  >
+    Credit market data
+  </Card>
+  <Card
+    title="BACEN Endpoints"
+    icon="building-columns"
+    href="/api-reference/bacen/well-known-series"
+  >
+    Central Bank indicators
+  </Card>
+  <Card
+    title="B3 Endpoints"
+    icon="chart-line"
+    href="/api-reference/b3/debentures"
+  >
+    Fixed income pricing
+  </Card>
+</CardGroup>
+
+## Interactive API Explorer
+
+Try out the API directly from the documentation using the interactive playground on each endpoint page.
+
+<Note>
+  The playground uses your API key stored in your browser. Make sure to set it in the authentication section.
+</Note>
