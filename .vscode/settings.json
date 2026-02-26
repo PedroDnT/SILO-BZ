@@ -30,5 +30,7 @@
         "copilot/oswe-vscode-prime"
       ]
     }
-  }
+  },
+  "docwriter.language": "English",
+  "docwriter.hotkey.mac": "⌘ + ."
 }
