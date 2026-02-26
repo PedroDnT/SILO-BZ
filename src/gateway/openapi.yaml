@@ -18,13 +18,19 @@ info:
   license:
     name: MIT
     url: https://opensource.org/licenses/MIT
+externalDocs:
+  description: |
+    Additional documentation for the Brazilian Financial Data API, including full endpoint
+    reference, usage examples, and integration guides for the CVM, BACEN, and B3 services.
+  url: 'https://example.server.io'
+security: []
 
 servers:
-  - url: http://localhost:8000
+  - url: http://127.0.0.1:8000
     description: Local development server (CVM API)
-  - url: http://localhost:8001
+  - url: http://127.0.0.1:8001
     description: Local development server (B3 CALC API)
-  - url: http://localhost:8002
+  - url: http://127.0.0.1:8002
     description: Local development server (BACEN API)
 
 tags:
@@ -52,6 +58,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: BadRequest
+                message: "Invalid request parameters"
+                timestamp: "2024-01-15T10:30:00Z"
+                
 
   /api/v1/cvm/endpoints:
     get:
@@ -67,6 +84,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AvailableEndpointsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"   
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/cvm/{entity}/{doc_type}:
     get:
@@ -124,10 +145,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CVMDataResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/bacen/sgs/well-known:
     get:
@@ -143,6 +168,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WellKnownSeriesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/bacen/sgs/{series_code}:
     get:
@@ -179,6 +208,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SGSSeriesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/bacen/sgs/multi:
     post:
@@ -200,6 +235,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MultiSgsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/bacen/ptax/dolar:
     get:
@@ -223,6 +264,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PTAXRateResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/bacen/ptax/dolar/periodo:
     get:
@@ -255,6 +302,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PTAXPeriodResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/bacen/ptax/moedas:
     get:
@@ -270,6 +323,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PTAXMoedasResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/bacen/ptax/moeda/{moeda}:
     get:
@@ -299,6 +356,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PTAXRateResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/bacen/expectativas:
     get:
@@ -314,6 +377,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AvailableExpectativasResponse"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/bacen/expectativas/{endpoint_name}:
     get:
@@ -356,6 +421,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ExpectativasResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/bacen/taxas_juros/{endpoint_name}:
     get:
@@ -378,6 +449,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaxaJurosResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/b3/debentures:
     get:
@@ -407,6 +484,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/B3DebenturesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/b3/cras:
     get:
@@ -436,6 +517,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/B3CrasResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/v1/b3/cris:
     get:
@@ -465,6 +550,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/B3CrisResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
 components:
   schemas:
@@ -493,7 +582,6 @@ components:
           example: Resource not found
         details:
           type: object
-          nullable: true
         timestamp:
           type: string
           format: date-time
@@ -598,6 +686,10 @@ components:
 
     MultiSgsRequest:
       type: object
+      required:
+        - series
+        - data_inicio
+        - data_fim
       properties:
         series:
           type: array
@@ -738,5 +830,29 @@ components:
               errors:
                 - field: "page"
                   message: "Must be greater than 0"
+            timestamp: "2024-01-15T10:30:00Z"
+            path: "/api/v1/cvm/fidc/mensal"
+
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: BadRequest
+            message: "Invalid request parameters"
+            timestamp: "2024-01-15T10:30:00Z"
+            path: "/api/v1/bacen/sgs/432"
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: InternalServerError
+            message: "An unexpected error occurred"
             timestamp: "2024-01-15T10:30:00Z"
             path: "/api/v1/cvm/fidc/mensal"
