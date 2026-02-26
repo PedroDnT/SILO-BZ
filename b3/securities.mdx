@@ -1,0 +1,265 @@
+---
+title: 'B3 Securities'
+description: 'Browse and search Brazilian fixed income securities'
+---
+
+## Overview
+
+The securities endpoints allow you to list and search for debentures, CRAs, and CRIs available in the B3 market.
+
+## List Securities
+
+Get a paginated list of securities by type:
+
+```bash
+curl "https://api.financialdata.com.br/api/v1/securities/debentures?page=1&page_size=20"
+```
+
+### Parameters
+
+- `security_type` (path, required): Security type (debentures, cra, cri)
+- `page` (query, optional): Page number (default: 1)
+- `page_size` (query, optional): Items per page (1-100, default: 20)
+- `search` (query, optional): Search term to filter securities
+
+### Response
+
+```json
+{
+  "security_type": "debentures",
+  "data": [
+    {
+      "symbol": "PETR20",
+      "issuer": "Petrobras",
+      "maturity_date": "2027-06-15",
+      "coupon_rate": 11.5,
+      "index": "CDI",
+      "index_percentage": 105.0,
+      "issue_date": "2020-06-15",
+      "face_value": 1000.00,
+      "outstanding_amount": 500000000.00
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "page_size": 20,
+    "total_items": 150,
+    "total_pages": 8,
+    "has_next": true,
+    "has_previous": false
+  },
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+## Search Securities
+
+Filter securities by search term:
+
+```bash
+curl "https://api.financialdata.com.br/api/v1/securities/debentures?search=PETR&page_size=10"
+```
+
+The search term matches against:
+- Security symbol
+- Issuer name
+- CNPJ
+
+## Security Types
+
+### Debentures
+
+Corporate bonds issued by Brazilian companies:
+
+```bash
+curl "https://api.financialdata.com.br/api/v1/securities/debentures"
+```
+
+Common issuers:
+- Petrobras (PETR)
+- Vale (VALE)
+- Eletrobras (ELET)
+- Itaú (ITAU)
+- Bradesco (BBDC)
+
+### CRA (Agribusiness Receivables)
+
+Certificates backed by agricultural sector receivables:
+
+```bash
+curl "https://api.financialdata.com.br/api/v1/securities/cra"
+```
+
+Features:
+- Tax-exempt for individual investors
+- Backed by agribusiness receivables
+- Typically lower yields due to tax benefits
+
+### CRI (Real Estate Receivables)
+
+Certificates backed by real estate sector receivables:
+
+```bash
+curl "https://api.financialdata.com.br/api/v1/securities/cri"
+```
+
+Features:
+- Tax-exempt for individual investors
+- Backed by real estate receivables
+- Typically lower yields due to tax benefits
+
+## Security Details
+
+### Symbol
+
+Unique identifier for the security (e.g., PETR20, VALE24)
+
+### Issuer
+
+Company or entity that issued the security
+
+### Maturity Date
+
+Date when the security matures and principal is repaid
+
+### Coupon Rate
+
+Interest rate paid to security holders
+
+### Index
+
+Reference index for floating rate securities:
+- CDI: Interbank deposit certificate rate
+- IPCA: Consumer price index
+- IGP-M: General price index
+- Fixed: Fixed rate (no index)
+
+### Index Percentage
+
+For CDI-linked securities, the percentage of CDI paid (e.g., 105% of CDI)
+
+### Face Value
+
+Nominal value of each security unit
+
+### Outstanding Amount
+
+Total value of securities currently outstanding
+
+## Code Examples
+
+<CodeGroup>
+
+```python Python
+import requests
+
+# List all debentures
+response = requests.get(
+    "https://api.financialdata.com.br/api/v1/securities/debentures",
+    params={"page": 1, "page_size": 50}
+)
+debentures = response.json()
+
+# Search for Petrobras securities
+response = requests.get(
+    "https://api.financialdata.com.br/api/v1/securities/debentures",
+    params={"search": "PETR", "page_size": 10}
+)
+petrobras_securities = response.json()
+
+# List CRAs
+response = requests.get(
+    "https://api.financialdata.com.br/api/v1/securities/cra",
+    params={"page": 1, "page_size": 20}
+)
+cras = response.json()
+```
+
+```javascript JavaScript
+// List all debentures
+const response = await fetch(
+  'https://api.financialdata.com.br/api/v1/securities/debentures?page=1&page_size=50'
+);
+const debentures = await response.json();
+
+// Search for Petrobras securities
+const searchResponse = await fetch(
+  'https://api.financialdata.com.br/api/v1/securities/debentures?search=PETR&page_size=10'
+);
+const petrobrasSecurities = await searchResponse.json();
+
+// List CRAs
+const craResponse = await fetch(
+  'https://api.financialdata.com.br/api/v1/securities/cra?page=1&page_size=20'
+);
+const cras = await craResponse.json();
+```
+
+```java Java
+import java.net.http.*;
+import java.net.URI;
+
+// List all debentures
+HttpClient client = HttpClient.newHttpClient();
+HttpRequest request = HttpRequest.newBuilder()
+    .uri(URI.create("https://api.financialdata.com.br/api/v1/securities/debentures?page=1&page_size=50"))
+    .GET()
+    .build();
+
+HttpResponse<String> response = client.send(request, 
+    HttpResponse.BodyHandlers.ofString());
+```
+
+</CodeGroup>
+
+## Pagination
+
+Navigate through large result sets:
+
+```python
+import requests
+
+def get_all_securities(security_type):
+    all_securities = []
+    page = 1
+    
+    while True:
+        response = requests.get(
+            f"https://api.financialdata.com.br/api/v1/securities/{security_type}",
+            params={"page": page, "page_size": 100}
+        )
+        data = response.json()
+        
+        all_securities.extend(data["data"])
+        
+        if not data["pagination"]["has_next"]:
+            break
+            
+        page += 1
+    
+    return all_securities
+
+# Get all debentures
+all_debentures = get_all_securities("debentures")
+```
+
+## Use Cases
+
+- Investment research
+- Portfolio construction
+- Market screening
+- Compliance monitoring
+- Data analysis
+- Trading system integration
+
+## Rate Limits
+
+- 100 requests per minute per IP
+- Maximum page size: 100 items
+- Consider caching security lists
+
+## Related Endpoints
+
+- [Pricing](/b3/pricing)
+- [Market Data](/b3/overview)
+- [Code Examples](/b3/examples)

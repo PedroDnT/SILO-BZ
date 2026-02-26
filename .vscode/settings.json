@@ -4,7 +4,10 @@
   "docwriter.progress.trackClasses": true,
   "docwriter.style": "Auto-detect",
   "[git-commit]": {
-    "editor.rulers": [50, 72],
+    "editor.rulers": [
+      50,
+      72
+    ],
     "editor.wordWrap": "wordWrapColumn",
     "workbench.editor.restoreViewState": false
   },
@@ -21,7 +24,6 @@
   },
   "github.copilot.nextEditSuggestions.enabled": true,
   "github.copilot.nextEditSuggestions.fixes": true,
-
   "chat.mcp.serverSampling": {
     "iliquid_nightly/.vscode/mcp.json: exasearch": {
       "allowedModels": [
@@ -32,5 +34,6 @@
     }
   },
   "docwriter.language": "English",
-  "docwriter.hotkey.mac": "⌘ + ."
+  "docwriter.hotkey.mac": "⌘ + .",
+  "kiroAgent.configureMCP": "Enabled"
 }

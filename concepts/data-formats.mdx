@@ -1,0 +1,372 @@
+---
+title: 'Data Formats'
+description: 'Understand API response formats and data structures'
+---
+
+## Response Format
+
+All API responses are returned in JSON format with a consistent structure:
+
+```json
+{
+  "data": [...],
+  "pagination": {
+    "page": 1,
+    "page_size": 100,
+    "total_items": 1500,
+    "total_pages": 15
+  },
+  "metadata": {
+    "entity": "fidc",
+    "doc_type": "cadastral",
+    "timestamp": "2024-02-26T10:00:00Z"
+  }
+}
+```
+
+## Data Field
+
+The `data` field contains the actual records. Structure varies by endpoint:
+
+### CVM Data Format
+
+CVM data preserves original field names from CVM CSV files:
+
+```json
+{
+  "data": [
+    {
+      "CNPJ_FUNDO": "12.345.678/0001-90",
+      "DENOM_SOCIAL": "FUNDO EXEMPLO FIDC",
+      "DT_REG": "2020-01-15",
+      "DT_CANCEL": null,
+      "SIT": "ATIVO",
+      "TP_FUNDO": "FIDC"
+    }
+  ]
+}
+```
+
+<Note>
+  Field names use Portuguese abbreviations as they appear in official CVM documents.
+</Note>
+
+### BACEN Data Format
+
+BACEN time series data:
+
+```json
+{
+  "data": [
+    {
+      "date": "2024-01-15",
+      "value": 11.75
+    },
+    {
+      "date": "2024-01-16",
+      "value": 11.75
+    }
+  ]
+}
+```
+
+### B3 Data Format
+
+B3 CALC pricing data:
+
+```json
+{
+  "data": {
+    "symbol": "VALE12",
+    "price": 98.50,
+    "yield": 12.5,
+    "maturity_date": "2029-01-15",
+    "last_updated": "2024-02-26T10:00:00Z"
+  }
+}
+```
+
+## Date Formats
+
+All dates follow ISO 8601 format:
+
+<Tabs>
+  <Tab title="Date Only">
+    ```
+    YYYY-MM-DD
+    Example: 2024-02-26
+    ```
+  </Tab>
+  
+  <Tab title="DateTime">
+    ```
+    YYYY-MM-DDTHH:MM:SSZ
+    Example: 2024-02-26T10:00:00Z
+    ```
+  </Tab>
+  
+  <Tab title="DateTime with Timezone">
+    ```
+    YYYY-MM-DDTHH:MM:SS±HH:MM
+    Example: 2024-02-26T10:00:00-03:00
+    ```
+  </Tab>
+</Tabs>
+
+## Numeric Formats
+
+### Currency Values
+
+Currency values are returned as numbers (not strings):
+
+```json
+{
+  "total_amount": 1000000000.00,
+  "interest_rate": 12.5
+}
+```
+
+### Percentages
+
+Percentages are returned as decimal numbers:
+
+```json
+{
+  "interest_rate": 12.5,  // 12.5%
+  "variation": 0.25       // 0.25%
+}
+```
+
+## Null Values
+
+Missing or unavailable data is represented as `null`:
+
+```json
+{
+  "DT_CANCEL": null,
+  "rating": null
+}
+```
+
+<Warning>
+  Always check for `null` values before processing data
+</Warning>
+
+## Handling Different Formats
+
+### Python Example
+
+```python
+import requests
+from datetime import datetime
+from decimal import Decimal
+
+response = requests.get(
+    "https://api.financialdata.com.br/api/v1/cvm/fidc/cadastral",
+    headers={"X-API-Key": "your_api_key"}
+)
+
+data = response.json()
+
+for record in data['data']:
+    # Handle dates
+    if record.get('DT_REG'):
+        reg_date = datetime.fromisoformat(record['DT_REG'])
+        print(f"Registered: {reg_date.strftime('%d/%m/%Y')}")
+    
+    # Handle null values
+    cancel_date = record.get('DT_CANCEL')
+    if cancel_date:
+        print(f"Cancelled: {cancel_date}")
+    else:
+        print("Active fund")
+    
+    # Handle currency
+    if 'VL_PATRIMONIO' in record:
+        value = Decimal(str(record['VL_PATRIMONIO']))
+        print(f"Value: R$ {value:,.2f}")
+```
+
+### JavaScript Example
+
+```javascript
+const response = await fetch(
+    'https://api.financialdata.com.br/api/v1/cvm/fidc/cadastral',
+    { headers: { 'X-API-Key': 'your_api_key' } }
+);
+
+const { data } = await response.json();
+
+data.forEach(record => {
+    // Handle dates
+    if (record.DT_REG) {
+        const regDate = new Date(record.DT_REG);
+        console.log(`Registered: ${regDate.toLocaleDateString('pt-BR')}`);
+    }
+    
+    // Handle null values
+    const cancelDate = record.DT_CANCEL;
+    if (cancelDate) {
+        console.log(`Cancelled: ${cancelDate}`);
+    } else {
+        console.log('Active fund');
+    }
+    
+    // Handle currency
+    if (record.VL_PATRIMONIO) {
+        const value = parseFloat(record.VL_PATRIMONIO);
+        console.log(`Value: R$ ${value.toLocaleString('pt-BR', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        })}`);
+    }
+});
+```
+
+## Content Negotiation
+
+Request specific formats using the `Accept` header:
+
+```bash
+# JSON (default)
+Accept: application/json
+
+# CSV (if supported)
+Accept: text/csv
+```
+
+## Character Encoding
+
+All responses use UTF-8 encoding:
+
+```
+Content-Type: application/json; charset=utf-8
+```
+
+## Response Headers
+
+Important headers in API responses:
+
+```http
+Content-Type: application/json; charset=utf-8
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Reset: 1640000000
+Cache-Control: public, max-age=300
+ETag: "33a64df551425fcc55e4d42a148795d9f25f89d4"
+```
+
+## Data Validation
+
+### Type Checking
+
+```python
+def validate_record(record):
+    """Validate record data types"""
+    assert isinstance(record.get('CNPJ_FUNDO'), str), "CNPJ must be string"
+    assert isinstance(record.get('DT_REG'), str), "Date must be string"
+    
+    # Validate date format
+    if record.get('DT_REG'):
+        datetime.fromisoformat(record['DT_REG'])
+    
+    return True
+```
+
+### Schema Validation
+
+Use JSON Schema for validation:
+
+```python
+from jsonschema import validate
+
+schema = {
+    "type": "object",
+    "properties": {
+        "CNPJ_FUNDO": {"type": "string", "pattern": "^\\d{2}\\.\\d{3}\\.\\d{3}/\\d{4}-\\d{2}$"},
+        "DENOM_SOCIAL": {"type": "string"},
+        "DT_REG": {"type": "string", "format": "date"},
+        "SIT": {"type": "string", "enum": ["ATIVO", "CANCELADO", "SUSPENSO"]}
+    },
+    "required": ["CNPJ_FUNDO", "DENOM_SOCIAL", "DT_REG", "SIT"]
+}
+
+validate(instance=record, schema=schema)
+```
+
+## Common Field Types
+
+<AccordionGroup>
+  <Accordion title="CNPJ (Brazilian Tax ID)" icon="id-card">
+    Format: `XX.XXX.XXX/XXXX-XX`
+    
+    Example: `12.345.678/0001-90`
+  </Accordion>
+  
+  <Accordion title="CPF (Individual Tax ID)" icon="user">
+    Format: `XXX.XXX.XXX-XX`
+    
+    Example: `123.456.789-00`
+  </Accordion>
+  
+  <Accordion title="Currency (BRL)" icon="brazilian-real-sign">
+    Type: Number
+    
+    Example: `1000000.50`
+  </Accordion>
+  
+  <Accordion title="Percentage" icon="percent">
+    Type: Number (decimal)
+    
+    Example: `12.5` (represents 12.5%)
+  </Accordion>
+  
+  <Accordion title="Status" icon="circle-check">
+    Type: String (enum)
+    
+    Values: `ATIVO`, `CANCELADO`, `SUSPENSO`
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<Tip>
+  Always validate data types and handle null values before processing
+</Tip>
+
+<Warning>
+  Don't assume fields are always present. Check for existence before accessing
+</Warning>
+
+```python
+# ❌ Bad - will crash if field is missing
+fund_name = record['DENOM_SOCIAL']
+
+# ✅ Good - safe access with default
+fund_name = record.get('DENOM_SOCIAL', 'Unknown')
+
+# ✅ Better - explicit check
+if 'DENOM_SOCIAL' in record:
+    fund_name = record['DENOM_SOCIAL']
+else:
+    fund_name = 'Unknown'
+```
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card
+    title="Error Handling"
+    icon="triangle-exclamation"
+    href="/concepts/error-handling"
+  >
+    Handle API errors
+  </Card>
+  <Card
+    title="Pagination"
+    icon="list"
+    href="/concepts/pagination"
+  >
+    Paginate through results
+  </Card>
+</CardGroup>
