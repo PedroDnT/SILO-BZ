@@ -1,6 +1,15 @@
 {
-    "docwriter.progress.trackFunctions": false,
-    "docwriter.progress.trackMethods": false,
-    "docwriter.progress.trackClasses": true,
-    "docwriter.style": "Auto-detect"
+  "docwriter.progress.trackFunctions": false,
+  "docwriter.progress.trackMethods": false,
+  "docwriter.progress.trackClasses": true,
+  "docwriter.style": "Auto-detect",
+  "chat.mcp.serverSampling": {
+    "iliquid_nightly/.vscode/mcp.json: exasearch": {
+      "allowedModels": [
+        "copilot/auto",
+        "openrouter/OpenRouter/minimax/minimax-m2.5",
+        "copilot/oswe-vscode-prime"
+      ]
+    }
+  }
 }
