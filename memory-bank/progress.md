@@ -1,25 +1,24 @@
-# Progress
+# Progress (Updated: 2026-02-26)
 
 ## Done
 
-- [x] Initialize project
-- [x] CVM Credit API (port 8000) - FIDC, FIP, FIAGRO, SECURIT data
-- [x] BACEN API (port 8002) - SGS, PTAX, Expectativas, TaxaJuros
-- [x] B3 CALC API (port 8001) - Fixed income pricing with fallback
-- [x] Backfill tool for historical CVM data
-- [x] Test suite (58 tests, 100% passing)
-- [x] Docker Compose orchestration
+- Initialize project
+- CVM Credit API (port 8000)
+- BACEN API (port 8002)
+- B3 CALC API (port 8001)
+- Backfill tool for historical CVM data
+- Test suite (58 tests, 100% passing)
+- Docker Compose orchestration
+- **Unified API Gateway** (port 8000) - Single entry point with YAML OpenAPI spec
 
 ## Doing
 
-- [ ] Current task
+- Implement rate limiting across all APIs
+- Connect B3 CALC live API
+- Fix CORS configuration
 
 ## Next
 
-- [ ] B3 CALC live API connection
-- [ ] Rate limiting implementation
-- [ ] Pydantic v2 config migration
-
----
-
-_Last updated: 2026-02-26_
+- ANBIMA OAuth2 client
+- Auth layer (JWT/API keys)
+- Redis caching

@@ -19,13 +19,17 @@ Run:
   uvicorn src.bacen_api.main:app --host 0.0.0.0 --port 8002 --reload
 """
 
+import os
 from datetime import datetime, date, timezone
 from typing import Optional
 import logging
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 if __package__:
     from .config import (
@@ -73,6 +77,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Rate limiting configuration
+def get_rate_limit_key(request: Request) -> str:
+    """Get rate limit key from request - supports X-Forwarded-For for proxied requests"""
+    return get_remote_address(request)
+
+rate_limit_enabled = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+rate_limit_requests = int(os.getenv("RATE_LIMIT_REQUESTS", "100"))
+rate_limit_window = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
+
+limiter = Limiter(key_func=get_rate_limit_key)
+app.state.limiter = limiter
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    """Handle rate limit exceeded errors"""
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": "Rate limit exceeded",
+            "status_code": 429,
+            "detail": str(exc.detail),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    )
+
 _client = BacenClient()
 
 
@@ -111,7 +140,8 @@ async def health():
     tags=["SGS"],
     summary="List well-known SGS series codes",
 )
-async def list_well_known_sgs():
+@limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")
+async def list_well_known_sgs(request: Request):
     """Return a dictionary of well-known SGS series labels and their codes."""
     return WellKnownSeriesResponse(
         series=WELL_KNOWN_SGS,
@@ -125,7 +155,8 @@ async def list_well_known_sgs():
     tags=["SGS"],
     summary="Fetch a single SGS time series",
 )
-async def get_sgs_series(
+@limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")
+async def get_sgs_series(request: Request,
     series_code: int,
     label: str = Query("value", description="Column label for the series"),
     start: Optional[str] = Query(None, description="Start date ISO YYYY-MM-DD"),
@@ -162,7 +193,8 @@ async def get_sgs_series(
     tags=["SGS"],
     summary="Fetch multiple SGS time series in one request",
 )
-async def get_sgs_multi(
+@limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")
+async def get_sgs_multi(request: Request,
     codes: str = Query(
         ...,
         description=(

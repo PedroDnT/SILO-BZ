@@ -8,6 +8,7 @@
 | 2026-02-26 | Pydantic v2 adoption               | Modern validation with better performance and cleaner API                             |
 | 2026-02-26 | Latin-1 encoding for CVM CSVs      | Required for proper parsing of Brazilian regulatory data files                        |
 | 2026-02-26 | In-memory pagination               | Full CSV download followed by in-memory pagination for simplicity                     |
+| 2026-02-26 | Unified API Gateway with YAML      | Single entry point (port 8000) with OpenAPI spec in YAML for Redocly documentation    |
 
 ---
 
