@@ -243,7 +243,8 @@ async def get_sgs_multi(request: Request,
     tags=["PTAX"],
     summary="USD/BRL PTAX closing rate for a specific date",
 )
-async def ptax_dolar_dia(
+@limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")
+async def ptax_dolar_dia(request: Request,
     date: str = Query(..., description="Date ISO YYYY-MM-DD"),
 ):
     """Return the USD/BRL PTAX closing rate (compra/venda) for the given date."""
@@ -266,7 +267,8 @@ async def ptax_dolar_dia(
     tags=["PTAX"],
     summary="USD/BRL PTAX closing rates for a date range",
 )
-async def ptax_dolar_periodo(
+@limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")
+async def ptax_dolar_periodo(request: Request,
     start: str = Query(..., description="Start date ISO YYYY-MM-DD"),
     end: str = Query(..., description="End date ISO YYYY-MM-DD"),
 ):
