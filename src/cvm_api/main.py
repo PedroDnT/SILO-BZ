@@ -227,7 +227,7 @@ async def http_exception_handler(request, exc):
             error=exc.detail,
             status_code=exc.status_code,
             timestamp=datetime.now(timezone.utc).isoformat()
-        ).model_dump()
+        ).dict()
     )
 
 @app.exception_handler(Exception)
@@ -240,7 +240,7 @@ async def general_exception_handler(request, exc):
             error="Internal server error",
             status_code=500,
             timestamp=datetime.now(timezone.utc).isoformat()
-        ).model_dump()
+        ).dict()
     )
 
 if __name__ == "__main__":
