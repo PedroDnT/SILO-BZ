@@ -34,6 +34,7 @@ Progress: [██░░░░░░░░] 20%
 - Trend: On track
 
 *Updated after each plan completion*
+| Phase 01-db-foundation P01 | 2 | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -48,6 +49,9 @@ Recent decisions affecting current work:
 - [01-02]: Single DeclarativeBase shared across all schema models — ensures all three schemas captured in one target_metadata for Alembic autogenerate
 - [01-02]: Text payload stubs in Phase 1 — produces non-empty migration baseline; later phases ALTER to JSONB without losing migration history
 - [01-02]: No cross-schema ForeignKey references — avoids schema-qualification complexity; relationships handled at query time
+- [Phase 01-01]: postgres -N 200 sets max_connections=200 per QUERY-04 for connection pool headroom across all three API services
+- [Phase 01-01]: version_table_schema=public keeps alembic_version in public schema to avoid per-schema table sprawl
+- [Phase 01-01]: include_schemas=True in Alembic env.py enables autogenerate to detect non-public schemas (cvm, bacen, b3_calc)
 
 ### Pending Todos
 
@@ -61,5 +65,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-12
-Stopped at: Completed 01-02-PLAN.md — ORM model stubs for cvm/bacen/b3_calc schemas; ready for Plan 01-03 (Alembic env.py configuration)
+Stopped at: Completed 01-01-PLAN.md — PostgreSQL 16 container, init.sql schema/user creation, Alembic async migration setup, docker-compose three-tier dependency chain
 Resume file: None
