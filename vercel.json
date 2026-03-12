@@ -1,6 +1,5 @@
 {
     "version": 2,
-    "name": "brazilian-financial-data-apis",
     "builds": [
         {
             "src": "src/cvm_api/main.py",

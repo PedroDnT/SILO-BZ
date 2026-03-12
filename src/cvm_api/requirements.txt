@@ -1,4 +1,4 @@
-# B3 CALC API Dependencies
+# CVM API Dependencies
 
 # Web Framework
 fastapi==0.109.2
