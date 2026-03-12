@@ -29,12 +29,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. A `GET /health` request to any service succeeds and the service can execute a query against its schema without error
   4. All DB credentials and `DATABASE_URL` are read from environment variables; no connection strings are hardcoded in any source file
   5. ORM table stubs exist in `src/db/models/` for all three schemas (`cvm`, `bacen`, `b3_calc`) and Alembic applies them via `alembic upgrade head`
-**Plans**: 3 plans
+**Plans**: 4 plans
 
 Plans:
 - [ ] 01-01-PLAN.md — Docker Compose topology + PostgreSQL init.sql + db_migrate Dockerfile + Alembic env.py
 - [ ] 01-02-PLAN.md — src/db/models/ DeclarativeBase + three schema ORM stubs
 - [ ] 01-03-PLAN.md — Per-service db.py (async engine + get_db) + lifespan engine disposal + requirements.txt updates
+- [ ] 01-04-PLAN.md — GET /health/db endpoint (SELECT 1) on all three services + unit tests
 
 ### Phase 2: BACEN DB Layer
 **Goal**: BACEN SGS and PTAX data is stored in the database and served from it on subsequent requests; BACEN route handlers fall through to python-bcb only when the DB has no matching rows
@@ -88,7 +89,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. DB Foundation | 0/3 | Not started | - |
+| 1. DB Foundation | 0/4 | Not started | - |
 | 2. BACEN DB Layer | 0/2 | Not started | - |
 | 3. CVM DB Layer | 0/3 | Not started | - |
 | 4. B3 CALC DB Layer | 0/2 | Not started | - |
