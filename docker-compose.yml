@@ -2,6 +2,41 @@ version: "3.9"
 
 services:
 
+  db:
+    image: postgres:16
+    container_name: iliquid_db
+    command: postgres -N 200
+    environment:
+      POSTGRES_DB: iliquid
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./src/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d iliquid"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - br_finance
+
+  db_migrate:
+    build:
+      context: .
+      dockerfile: src/db/Dockerfile
+    container_name: iliquid_db_migrate
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://postgres:changeme_in_production@db:5432/iliquid}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - br_finance
+    # No restart — this is a one-shot job; service_completed_successfully requires exit 0
+
   cvm_api:
     build:
       context: .
@@ -12,9 +47,15 @@ services:
       - "8000:8000"
     environment:
       - LOG_LEVEL=info
+      - CVM_DATABASE_URL=${CVM_DATABASE_URL:-postgresql+asyncpg://cvm_user:cvm_secret@db:5432/iliquid}
     volumes:
       - ./cache:/app/cache
       - ./temp:/app/temp
+    depends_on:
+      db_migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -35,6 +76,12 @@ services:
       - "8001:8001"
     environment:
       - LOG_LEVEL=info
+      - B3_CALC_DATABASE_URL=${B3_CALC_DATABASE_URL:-postgresql+asyncpg://b3_calc_user:b3_secret@db:5432/iliquid}
+    depends_on:
+      db_migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
@@ -56,6 +103,12 @@ services:
     environment:
       - BACEN_API_PORT=8002
       - LOG_LEVEL=info
+      - BACEN_DATABASE_URL=${BACEN_DATABASE_URL:-postgresql+asyncpg://bacen_user:bacen_secret@db:5432/iliquid}
+    depends_on:
+      db_migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
@@ -89,5 +142,4 @@ networks:
     driver: bridge
 
 volumes:
-  cache:
-  temp:
+  postgres_data:
