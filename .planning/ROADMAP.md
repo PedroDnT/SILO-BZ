@@ -29,12 +29,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. A `GET /health` request to any service succeeds and the service can execute a query against its schema without error
   4. All DB credentials and `DATABASE_URL` are read from environment variables; no connection strings are hardcoded in any source file
   5. ORM table stubs exist in `src/db/models/` for all three schemas (`cvm`, `bacen`, `b3_calc`) and Alembic applies them via `alembic upgrade head`
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: Postgres container, Docker Compose topology, and db_migrate one-shot service
-- [ ] 01-02: src/db/ ORM models and Alembic migration setup for all three schemas
-- [ ] 01-03: Per-service db.py (engine + session factory) and get_db dependency wiring
+- [ ] 01-01-PLAN.md — Docker Compose topology + PostgreSQL init.sql + db_migrate Dockerfile + Alembic env.py
+- [ ] 01-02-PLAN.md — src/db/models/ DeclarativeBase + three schema ORM stubs
+- [ ] 01-03-PLAN.md — Per-service db.py (async engine + get_db) + lifespan engine disposal + requirements.txt updates
 
 ### Phase 2: BACEN DB Layer
 **Goal**: BACEN SGS and PTAX data is stored in the database and served from it on subsequent requests; BACEN route handlers fall through to python-bcb only when the DB has no matching rows
