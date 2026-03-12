@@ -8,11 +8,11 @@
 ### Infrastructure
 
 - [ ] **INFRA-01**: PostgreSQL 16 container runs in Docker Compose with `pg_isready` healthcheck
-- [ ] **INFRA-02**: Three isolated schemas exist (`cvm`, `bacen`, `b3_calc`) with per-service DB users
+- [x] **INFRA-02**: Three isolated schemas exist (`cvm`, `bacen`, `b3_calc`) with per-service DB users
 - [ ] **INFRA-03**: Alembic migrations apply via a dedicated one-shot `db_migrate` compose service before any API service starts
 - [ ] **INFRA-04**: All API services declare `depends_on: db_migrate: condition: service_completed_successfully`
 - [ ] **INFRA-05**: `DATABASE_URL` and per-service DB credentials configurable via environment variables (no hardcoded strings)
-- [ ] **INFRA-06**: ORM table definitions live in `src/db/models/` as shared source of truth
+- [x] **INFRA-06**: ORM table definitions live in `src/db/models/` as shared source of truth
 
 ### BACEN DB Layer
 
@@ -80,11 +80,11 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | INFRA-01 | Phase 1 | Pending |
-| INFRA-02 | Phase 1 | Pending |
+| INFRA-02 | Phase 1 | Complete |
 | INFRA-03 | Phase 1 | Pending |
 | INFRA-04 | Phase 1 | Pending |
 | INFRA-05 | Phase 1 | Pending |
-| INFRA-06 | Phase 1 | Pending |
+| INFRA-06 | Phase 1 | Complete |
 | QUERY-01 | Phase 1 | Pending |
 | QUERY-03 | Phase 1 | Pending |
 | QUERY-04 | Phase 1 | Pending |
