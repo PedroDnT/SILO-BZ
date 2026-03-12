@@ -85,11 +85,15 @@
 | INFRA-04 | Phase 1 | Pending |
 | INFRA-05 | Phase 1 | Pending |
 | INFRA-06 | Phase 1 | Pending |
+| QUERY-01 | Phase 1 | Pending |
+| QUERY-03 | Phase 1 | Pending |
+| QUERY-04 | Phase 1 | Pending |
 | BACEN-01 | Phase 2 | Pending |
 | BACEN-02 | Phase 2 | Pending |
 | BACEN-03 | Phase 2 | Pending |
 | BACEN-04 | Phase 2 | Pending |
 | BACEN-05 | Phase 2 | Pending |
+| QUERY-02 | Phase 2 | Pending |
 | CVM-01 | Phase 3 | Pending |
 | CVM-02 | Phase 3 | Pending |
 | CVM-03 | Phase 3 | Pending |
@@ -98,16 +102,12 @@
 | B3-01 | Phase 4 | Pending |
 | B3-02 | Phase 4 | Pending |
 | B3-03 | Phase 4 | Pending |
-| QUERY-01 | Phase 1–4 | Pending |
-| QUERY-02 | Phase 2 | Pending |
-| QUERY-03 | Phase 1 | Pending |
-| QUERY-04 | Phase 1 | Pending |
 
 **Coverage:**
 - v1 requirements: 23 total
 - Mapped to phases: 23
-- Unmapped: 0 ✓
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-12*
-*Last updated: 2026-03-12 after initial definition*
+*Last updated: 2026-03-12 after roadmap creation — QUERY-01 assigned to Phase 1 (constraint established and enforced from Phase 1 onwards)*
