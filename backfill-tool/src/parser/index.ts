@@ -109,19 +109,7 @@ export class Parser {
                 columns: config.hasHeaders,
                 skip_empty_lines: true,
                 trim: true,
-                relax_column_count: true,
-                on_record: (record, { columns }) => {
-                    // Transform record based on column headers
-                    if (columns && config.hasHeaders) {
-                        const transformed: DataRecord = {};
-                        columns.forEach((col, idx) => {
-                            const key = typeof col === 'string' ? col : col.name;
-                            transformed[key] = record[idx];
-                        });
-                        return transformed;
-                    }
-                    return record;
-                }
+                relax_column_count: true
             });
 
             let rowNumber = 0;
