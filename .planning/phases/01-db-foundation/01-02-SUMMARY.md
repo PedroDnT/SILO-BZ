@@ -127,3 +127,16 @@ None - no external service configuration required.
 ---
 *Phase: 01-db-foundation*
 *Completed: 2026-03-12*
+
+## Self-Check: PASSED
+
+- FOUND: src/db/__init__.py
+- FOUND: src/db/models/__init__.py
+- FOUND: src/db/models/base.py
+- FOUND: src/db/models/cvm.py
+- FOUND: src/db/models/bacen.py
+- FOUND: src/db/models/b3_calc.py
+- FOUND: .planning/phases/01-db-foundation/01-02-SUMMARY.md
+- FOUND commit 8d45f94 (Task 1)
+- FOUND commit f595909 (Task 2)
+- FOUND commit 32b2d03 (metadata)

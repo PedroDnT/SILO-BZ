@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query, Path, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,13 +26,39 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Lazy DB import: engine disposal only if DB is configured
+_db_engine = None
+try:
+    if __package__:
+        from .db import engine as _db_engine
+    else:
+        from db import engine as _db_engine
+except KeyError:
+    # DATABASE_URL not set — running without DB (local dev without postgres)
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        "DATABASE_URL not set — DB engine not initialized. "
+        "Set CVM_DATABASE_URL env var to enable database connectivity."
+    )
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # startup: engine created at module load, nothing to do here
+    yield
+    # shutdown: dispose engine to close all pool connections cleanly
+    if _db_engine is not None:
+        await _db_engine.dispose()
+
+
 # Initialize FastAPI app
 app = FastAPI(
     title=config.API_TITLE,
     version=config.API_VERSION,
     description=config.API_DESCRIPTION,
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # Configure CORS
@@ -261,7 +288,7 @@ async def http_exception_handler(request, exc):
             error=exc.detail,
             status_code=exc.status_code,
             timestamp=datetime.now(timezone.utc).isoformat()
-        ).dict()
+        ).model_dump()
     )
 
 @app.exception_handler(Exception)
@@ -274,7 +301,7 @@ async def general_exception_handler(request, exc):
             error="Internal server error",
             status_code=500,
             timestamp=datetime.now(timezone.utc).isoformat()
-        ).dict()
+        ).model_dump()
     )
 
 if __name__ == "__main__":

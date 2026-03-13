@@ -20,6 +20,7 @@ Run:
 """
 
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime, date, timezone
 from typing import Optional
 import logging
@@ -62,12 +63,38 @@ else:
 
 logger = logging.getLogger(__name__)
 
+# Lazy DB import: engine disposal only if DB is configured
+_db_engine = None
+try:
+    if __package__:
+        from .db import engine as _db_engine
+    else:
+        from db import engine as _db_engine
+except KeyError:
+    # DATABASE_URL not set — running without DB (local dev without postgres)
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        "DATABASE_URL not set — DB engine not initialized. "
+        "Set BACEN_DATABASE_URL env var to enable database connectivity."
+    )
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # startup: engine created at module load, nothing to do here
+    yield
+    # shutdown: dispose engine to close all pool connections cleanly
+    if _db_engine is not None:
+        await _db_engine.dispose()
+
+
 app = FastAPI(
     title=API_TITLE,
     version=API_VERSION,
     description=API_DESCRIPTION,
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 app.add_middleware(

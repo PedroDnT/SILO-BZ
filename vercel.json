@@ -5,39 +5,47 @@
             "src": "src/cvm_api/main.py",
             "use": "@vercel/python",
             "config": {
-                "maxLambdaSize": "15mb"
+                "maxLambdaSize": "50mb"
             }
         },
         {
             "src": "src/bacen_api/main.py",
             "use": "@vercel/python",
             "config": {
-                "maxLambdaSize": "15mb"
+                "maxLambdaSize": "50mb"
             }
         },
         {
             "src": "src/b3_calc_api/main.py",
             "use": "@vercel/python",
             "config": {
-                "maxLambdaSize": "15mb"
+                "maxLambdaSize": "50mb"
             }
         }
     ],
     "routes": [
         {
-            "src": "/api/v1/cvm/(.*)",
+            "src": "/api/v1/cvm(.*)",
             "dest": "src/cvm_api/main.py"
         },
         {
-            "src": "/api/v1/bacen/(.*)",
+            "src": "/api/v1/bacen(.*)",
             "dest": "src/bacen_api/main.py"
         },
         {
-            "src": "/api/v1/(prices|securities|indexes|market-data)/(.*)",
+            "src": "/api/v1/(prices|securities|indexes|market-data)(.*)",
+            "dest": "src/b3_calc_api/main.py"
+        },
+        {
+            "src": "/api/v1/b3(.*)",
             "dest": "src/b3_calc_api/main.py"
         },
         {
             "src": "/health",
+            "dest": "src/cvm_api/main.py"
+        },
+        {
+            "src": "/",
             "dest": "src/cvm_api/main.py"
         }
     ],
