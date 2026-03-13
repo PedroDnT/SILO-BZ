@@ -32,3 +32,6 @@ tqdm==4.66.1
 sqlalchemy[asyncio]==2.0.48
 asyncpg==0.31.0
 alembic==1.18.4
+
+# Testing
+hypothesis==6.98.3
