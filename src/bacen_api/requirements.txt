@@ -8,8 +8,6 @@ uvicorn[standard]==0.27.1
 httpx==0.27.0
 
 # Data Processing
-pandas==2.2.0
-numpy==1.26.4
 python-bcb>=0.3.0
 
 # Settings and Configuration
@@ -23,3 +21,7 @@ python-dateutil==2.9.0.post0
 
 # Logging
 rich==13.7.0
+
+# Database
+sqlalchemy[asyncio]==2.0.48
+asyncpg==0.31.0
