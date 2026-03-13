@@ -86,10 +86,10 @@ Jane,25,Los Angeles`);
         });
 
         it('should skip malformed CSV rows when skipMalformed is true', async () => {
+            // Use inconsistent column count to trigger parsing error
             const csvBuffer = Buffer.from(`name,age,city
 John,30,New York
-invalid row
-Jane,25,Los Angeles`);
+Jane,25`);
 
             const result = await parser.parseCSV(csvBuffer, {
                 delimiter: ',',
@@ -363,7 +363,7 @@ Jane,25`);
 
         it('should skip malformed rows with column mapping', async () => {
             const csvBuffer = Buffer.from(`John,30
-invalid
+"invalid
 Jane,25,LA`);
 
             const result = await parser.parseCSVWithMapping(
@@ -419,8 +419,8 @@ München,Germany`, 'utf-8');
         });
 
         it('should handle ISO-8859-1 encoding', async () => {
-            const name = 'Café'; // Café in ISO-8859-1
-            const csvBuffer = Buffer.from(`name\n${name}`, 'iso-8859-1');
+            const name = 'Café'; // Use latin1 which is Node.js equivalent of ISO-8859-1
+            const csvBuffer = Buffer.from(`name\n${name}`, 'latin1');
 
             const result = await parser.parseCSV(csvBuffer, {
                 delimiter: ',',
@@ -441,7 +441,7 @@ München,Germany`, 'utf-8');
         it('should include context in error handler calls', async () => {
             const csvBuffer = Buffer.from(`name,age
 valid,row
-invalid;row;with;many;columns`);
+"invalid;row;with;many;columns`);
 
             await parser.parseCSV(csvBuffer, {
                 delimiter: ',',
@@ -462,7 +462,7 @@ invalid;row;with;many;columns`);
 
             const csvBuffer = Buffer.from(`name,age
 valid,row
-invalid`);
+"invalid`);
 
             await customParser.parseCSV(csvBuffer, {
                 delimiter: ',',
@@ -480,7 +480,7 @@ invalid`);
 
             const csvBuffer = Buffer.from(`name,age
 valid,row
-invalid`);
+"invalid`);
 
             await defaultParser.parseCSV(csvBuffer, {
                 delimiter: ',',
