@@ -1,4 +1,4 @@
-# Deployment Fixes Applied
+-0-# Deployment Fixes Applied
 
 ## Issues Fixed
 
@@ -23,7 +23,7 @@
 - numpy==1.26.4
 - httpx==0.27.0
 - python-dateutil==2.9.0.post0
-- slowapi==0.1.9
+- slowapi==0.1.9cl
 - rich==13.7.0
 
 ### 4. Removed Development Dependencies
