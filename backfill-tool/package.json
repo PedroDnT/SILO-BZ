@@ -1,0 +1,38 @@
+{
+    "name": "supabase-daily-backfill",
+    "version": "1.0.0",
+    "description": "Daily data backfill tool for CVM, BACEN, and B3 financial data",
+    "main": "dist/index.js",
+    "type": "module",
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsx src/index.ts",
+        "start": "node dist/index.js",
+        "test": "vitest",
+        "test:run": "vitest --run"
+    },
+    "keywords": [
+        "supabase",
+        "backfill",
+        "cvm",
+        "bacen",
+        "b3",
+        "financial-data"
+    ],
+    "author": "",
+    "license": "MIT",
+    "dependencies": {
+        "@supabase/supabase-js": "^2.39.0",
+        "axios": "^1.6.5",
+        "csv-parse": "^5.5.3",
+        "dotenv": "^16.3.1",
+        "pino": "^8.17.2",
+        "pino-pretty": "^10.3.1"
+    },
+    "devDependencies": {
+        "@types/node": "^20.10.6",
+        "tsx": "^4.7.0",
+        "typescript": "^5.3.3",
+        "vitest": "^1.1.1"
+    }
+}
