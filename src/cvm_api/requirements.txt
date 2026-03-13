@@ -8,10 +8,6 @@ uvicorn[standard]==0.27.1
 httpx==0.27.0
 aiohttp==3.9.3
 
-# Data Processing
-pandas==2.2.0
-numpy==1.26.4
-
 # Settings and Configuration
 pydantic==2.6.1
 pydantic-settings==2.2.1
@@ -25,5 +21,12 @@ python-dateutil==2.9.0.post0
 # Rate Limiting
 slowapi==0.1.9
 
+# DNS
+dnspython==2.6.1
+
 # Logging
 rich==13.7.0
+
+# Database
+sqlalchemy[asyncio]==2.0.48
+asyncpg==0.31.0
