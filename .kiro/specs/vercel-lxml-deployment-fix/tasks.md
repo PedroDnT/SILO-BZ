@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [-] 1. Write bug condition exploration test
+- [x] 1. Write bug condition exploration test
   - **Property 1: Fault Condition** - Vercel Deployment Fails with lxml 6.0.2 Metadata Error
   - **CRITICAL**: This test MUST FAIL on unfixed code - failure confirms the bug exists
   - **DO NOT attempt to fix the test or the code when it fails**
@@ -15,7 +15,7 @@
   - Mark task complete when test is written, run, and failure is documented
   - _Requirements: 1.1, 1.2, 1.3_
 
-- [~] 2. Write preservation property tests (BEFORE implementing fix)
+- [ ] 2. Write preservation property tests (BEFORE implementing fix)
   - **Property 2: Preservation** - API Functionality and Data Processing Unchanged
   - **IMPORTANT**: Follow observation-first methodology
   - Observe behavior on UNFIXED code for non-buggy inputs (successful local API operations)
@@ -31,9 +31,9 @@
   - Mark task complete when tests are written, run, and passing on unfixed code
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
 
-- [~] 3. Fix for Vercel lxml deployment failure
+- [ ] 3. Fix for Vercel lxml deployment failure
 
-  - [~] 3.1 Pin lxml to version 5.3.0 in all requirements files
+  - [ ] 3.1 Pin lxml to version 5.3.0 in all requirements files
     - Add `lxml==5.3.0` to requirements.txt (root level) before pandas dependency
     - Add `lxml==5.3.0` to requirements-vercel.txt before pandas dependency
     - Add `lxml==5.3.0` to src/cvm_api/requirements.txt before pandas dependency
@@ -45,7 +45,7 @@
     - _Preservation: All API functionality (CVM, BACEN, B3), pandas data processing, and XML/HTML parsing must remain unchanged_
     - _Requirements: 2.1, 2.2, 2.3, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
 
-  - [~] 3.2 Verify bug condition exploration test now passes
+  - [ ] 3.2 Verify bug condition exploration test now passes
     - **Property 1: Expected Behavior** - Successful Deployment with Complete Metadata
     - **IMPORTANT**: Re-run the SAME test from task 1 - do NOT write a new test
     - The test from task 1 encodes the expected behavior
@@ -57,7 +57,7 @@
     - **EXPECTED OUTCOME**: Test PASSES (confirms bug is fixed)
     - _Requirements: 2.1, 2.2, 2.3_
 
-  - [~] 3.3 Verify preservation tests still pass
+  - [ ] 3.3 Verify preservation tests still pass
     - **Property 2: Preservation** - API Functionality and Data Processing Unchanged
     - **IMPORTANT**: Re-run the SAME tests from task 2 - do NOT write new tests
     - Run preservation property tests from step 2
@@ -70,7 +70,7 @@
     - Confirm all tests still pass after fix (no regressions)
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
 
-- [~] 4. Checkpoint - Ensure all tests pass
+- [ ] 4. Checkpoint - Ensure all tests pass
   - Verify bug condition exploration test passes (deployment succeeds with lxml 5.3.0)
   - Verify all preservation tests pass (API functionality unchanged)
   - Verify deployment completes within expected time limits
