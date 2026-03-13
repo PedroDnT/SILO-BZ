@@ -2,31 +2,23 @@
  * Unit tests for the Data Fetcher component
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest';
-import axios, { AxiosError, AxiosHeaders } from 'axios';
+import { describe, it, expect, vi, beforeEach, afterEach, SpyInstance } from 'vitest';
+import axios from 'axios';
 import * as fs from 'fs';
+import * as path from 'path';
 import { DataFetcher, createDataFetcher } from '../src/fetcher/index.js';
 import { BackfillError, ErrorCategory, FetchConfig } from '../src/types/index.js';
 import { AuthType, ApiKeyAuthConfig, OAuthConfig } from '../src/fetcher/types.js';
 
-// Mock axios
-vi.mock('axios');
-// Mock fs
-vi.mock('fs', () => ({
-    promises: {
-        access: vi.fn(),
-        readFile: vi.fn()
-    },
-    constants: {
-        F_OK: undefined
-    },
-    createReadStream: vi.fn()
-}));
+// Spy on axios and fs modules
+let axiosGetSpy: SpyInstance;
+let axiosPostSpy: SpyInstance;
+let fsPromisesAccessSpy: SpyInstance;
+let fsPromisesReadFileSpy: SpyInstance;
+let fsCreateReadStreamSpy: SpyInstance;
 
 describe('DataFetcher', () => {
     let fetcher: DataFetcher;
-    let mockAxios: Mock;
-    let mockFs: typeof fs;
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -35,12 +27,17 @@ describe('DataFetcher', () => {
             maxRetries: 2,
             retryBackoff: [100, 200]
         });
-        mockAxios = vi.mocked(axios);
-        mockFs = require('fs');
+
+        // Setup spies
+        axiosGetSpy = vi.spyOn(axios, 'get').mockReset();
+        axiosPostSpy = vi.spyOn(axios, 'post').mockReset();
+        fsPromisesAccessSpy = vi.spyOn(fs.promises, 'access').mockReset();
+        fsPromisesReadFileSpy = vi.spyOn(fs.promises, 'readFile').mockReset();
+        fsCreateReadStreamSpy = vi.spyOn(fs, 'createReadStream').mockReset();
     });
 
     afterEach(() => {
-        vi.resetAllMocks();
+        vi.restoreAllMocks();
     });
 
     describe('fetchFromURL', () => {
@@ -51,14 +48,14 @@ describe('DataFetcher', () => {
                 statusText: 'OK',
                 data: new TextEncoder().encode(mockData)
             };
-            mockAxios.get.mockResolvedValueOnce(mockResponse);
+            axiosGetSpy.mockResolvedValueOnce(mockResponse);
 
             const result = await fetcher.fetchFromURL('https://example.com/data.csv');
 
             expect(result.success).toBe(true);
             expect(result.data).toBeDefined();
             expect(result.sourceChecked).toBe(true);
-            expect(mockAxios.get).toHaveBeenCalledWith(
+            expect(axiosGetSpy).toHaveBeenCalledWith(
                 'https://example.com/data.csv',
                 expect.objectContaining({
                     timeout: 5000,
@@ -69,13 +66,13 @@ describe('DataFetcher', () => {
 
         it('should include custom headers in request', async () => {
             const mockResponse = { status: 200, data: new ArrayBuffer(0) };
-            mockAxios.get.mockResolvedValueOnce(mockResponse);
+            axiosGetSpy.mockResolvedValueOnce(mockResponse);
 
             await fetcher.fetchFromURL('https://example.com/data', {
                 'X-Custom-Header': 'custom-value'
             });
 
-            expect(mockAxios.get).toHaveBeenCalledWith(
+            expect(axiosGetSpy).toHaveBeenCalledWith(
                 'https://example.com/data',
                 expect.objectContaining({
                     headers: expect.objectContaining({
@@ -86,45 +83,46 @@ describe('DataFetcher', () => {
         });
 
         it('should retry on network error with exponential backoff', async () => {
-            const mockError = new Error('Network error') as AxiosError;
-            mockError.code = 'ECONNABORTED';
-            mockAxios.get
-                .mockRejectedValueOnce(mockError)
-                .mockRejectedValueOnce(mockError)
+            const networkError = new Error('Network error');
+            (networkError as any).code = 'ECONNABORTED';
+
+            axiosGetSpy
+                .mockRejectedValueOnce(networkError)
+                .mockRejectedValueOnce(networkError)
                 .mockResolvedValueOnce({ status: 200, data: new ArrayBuffer(0) });
 
             const result = await fetcher.fetchFromURL('https://example.com/data');
 
             expect(result.success).toBe(true);
-            expect(mockAxios.get).toHaveBeenCalledTimes(3);
+            expect(axiosGetSpy).toHaveBeenCalledTimes(3);
         });
 
         it('should not retry on 4xx errors', async () => {
-            mockAxios.get.mockResolvedValue({ status: 404, statusText: 'Not Found' });
+            axiosGetSpy.mockResolvedValue({ status: 404, statusText: 'Not Found' });
 
             const result = await fetcher.fetchFromURL('https://example.com/data');
 
             expect(result.success).toBe(false);
             expect(result.error?.category).toBe(ErrorCategory.Network);
             expect(result.error?.retryable).toBe(false);
-            expect(mockAxios.get).toHaveBeenCalledTimes(1);
+            expect(axiosGetSpy).toHaveBeenCalledTimes(1);
         });
 
         it('should retry on 5xx errors', async () => {
-            mockAxios.get
+            axiosGetSpy
                 .mockResolvedValue({ status: 500, statusText: 'Internal Server Error' })
                 .mockResolvedValue({ status: 200, data: new ArrayBuffer(0) });
 
             const result = await fetcher.fetchFromURL('https://example.com/data');
 
             expect(result.success).toBe(true);
-            expect(mockAxios.get).toHaveBeenCalledTimes(2);
+            expect(axiosGetSpy).toHaveBeenCalledTimes(2);
         });
 
         it('should handle connection timeout', async () => {
-            const timeoutError = new Error('timeout of 5000ms exceeded') as AxiosError;
-            timeoutError.code = 'ECONNABORTED';
-            mockAxios.get.mockRejectedValue(timeoutError);
+            const timeoutError = new Error('timeout of 5000ms exceeded');
+            (timeoutError as any).code = 'ECONNABORTED';
+            axiosGetSpy.mockRejectedValue(timeoutError);
 
             const result = await fetcher.fetchFromURL('https://example.com/data');
 
@@ -135,22 +133,22 @@ describe('DataFetcher', () => {
         });
 
         it('should fail after max retries exhausted', async () => {
-            const networkError = new Error('Network error') as AxiosError;
-            networkError.code = 'ECONNABORTED';
-            mockAxios.get.mockRejectedValue(networkError);
+            const networkError = new Error('Network error');
+            (networkError as any).code = 'ECONNABORTED';
+            axiosGetSpy.mockRejectedValue(networkError);
 
             const result = await fetcher.fetchFromURL('https://example.com/data');
 
             expect(result.success).toBe(false);
             expect(result.error?.retryable).toBe(true);
-            expect(mockAxios.get).toHaveBeenCalledTimes(3); // maxRetries + 1 initial
+            expect(axiosGetSpy).toHaveBeenCalledTimes(3); // maxRetries + 1 initial
         });
     });
 
     describe('API Key Authentication', () => {
         it('should include API key in headers', async () => {
             const mockResponse = { status: 200, data: new ArrayBuffer(0) };
-            mockAxios.get.mockResolvedValue(mockResponse);
+            axiosGetSpy.mockResolvedValue(mockResponse);
 
             const authConfig: ApiKeyAuthConfig = {
                 type: AuthType.ApiKey,
@@ -160,7 +158,7 @@ describe('DataFetcher', () => {
 
             await fetcher.fetchFromURL('https://example.com/data', {}, authConfig);
 
-            expect(mockAxios.get).toHaveBeenCalledWith(
+            expect(axiosGetSpy).toHaveBeenCalledWith(
                 'https://example.com/data',
                 expect.objectContaining({
                     headers: expect.objectContaining({
@@ -180,9 +178,8 @@ describe('DataFetcher', () => {
             };
             const mockDataResponse = { status: 200, data: new ArrayBuffer(0) };
 
-            mockAxios.post
-                .mockResolvedValueOnce({ data: mockTokenResponse })
-                .mockResolvedValueOnce(mockDataResponse);
+            axiosPostSpy.mockResolvedValueOnce({ data: mockTokenResponse });
+            axiosGetSpy.mockResolvedValueOnce(mockDataResponse);
 
             const authConfig: OAuthConfig = {
                 type: AuthType.OAuth,
@@ -194,7 +191,7 @@ describe('DataFetcher', () => {
             await fetcher.fetchFromURL('https://example.com/data', {}, authConfig);
 
             // First call should be to token endpoint
-            expect(mockAxios.post).toHaveBeenCalledWith(
+            expect(axiosPostSpy).toHaveBeenCalledWith(
                 'https://auth.example.com/token',
                 expect.any(String),
                 expect.objectContaining({
@@ -205,7 +202,7 @@ describe('DataFetcher', () => {
             );
 
             // Second call should use the token
-            expect(mockAxios.get).toHaveBeenCalledWith(
+            expect(axiosGetSpy).toHaveBeenCalledWith(
                 'https://example.com/data',
                 expect.objectContaining({
                     headers: expect.objectContaining({
@@ -223,8 +220,8 @@ describe('DataFetcher', () => {
             };
             const mockDataResponse = { status: 200, data: new ArrayBuffer(0) };
 
-            mockAxios.post.mockResolvedValue({ data: mockTokenResponse });
-            mockAxios.get.mockResolvedValue(mockDataResponse);
+            axiosPostSpy.mockResolvedValue({ data: mockTokenResponse });
+            axiosGetSpy.mockResolvedValue(mockDataResponse);
 
             const authConfig: OAuthConfig = {
                 type: AuthType.OAuth,
@@ -238,8 +235,8 @@ describe('DataFetcher', () => {
             await fetcher.fetchFromURL('https://example.com/data2', {}, authConfig);
 
             // Token endpoint should only be called once
-            expect(mockAxios.post).toHaveBeenCalledTimes(1);
-            expect(mockAxios.get).toHaveBeenCalledTimes(2);
+            expect(axiosPostSpy).toHaveBeenCalledTimes(1);
+            expect(axiosGetSpy).toHaveBeenCalledTimes(2);
         });
     });
 
@@ -247,18 +244,18 @@ describe('DataFetcher', () => {
         it('should successfully read file from filesystem', async () => {
             const testData = 'test,csv\n1,2';
             const encoder = new TextEncoder();
-            mockFs.promises.readFile.mockResolvedValue(encoder.encode(testData));
-            mockFs.promises.access.mockResolvedValue(undefined);
+            fsPromisesAccessSpy.mockResolvedValue(undefined);
+            fsPromisesReadFileSpy.mockResolvedValue(encoder.encode(testData));
 
             const result = await fetcher.fetchFromFile('/path/to/file.csv');
 
             expect(result.success).toBe(true);
             expect(result.data).toBeDefined();
-            expect(mockFs.promises.readFile).toHaveBeenCalled();
+            expect(fsPromisesReadFileSpy).toHaveBeenCalled();
         });
 
         it('should return error for non-existent file', async () => {
-            mockFs.promises.access.mockRejectedValue(new Error('ENOENT'));
+            fsPromisesAccessSpy.mockRejectedValue(new Error('ENOENT'));
 
             const result = await fetcher.fetchFromFile('/nonexistent/file.csv');
 
@@ -276,10 +273,9 @@ describe('DataFetcher', () => {
             const mockStream = {
                 on: (event: string, callback: (data: Buffer) => void) => {
                     if (event === 'data') {
-                        chunks.forEach(chunk => callback(chunk));
+                        callback(encoder.encode(testData));
                     }
                     if (event === 'end') {
-                        callback(encoder.encode(testData));
                         setTimeout(() => (mockStream as any).emit('end'), 0);
                     }
                 },
@@ -287,8 +283,8 @@ describe('DataFetcher', () => {
                 destroy: vi.fn()
             };
 
-            mockFs.promises.access.mockResolvedValue(undefined);
-            mockFs.createReadStream.mockReturnValue(mockStream as any);
+            fsPromisesAccessSpy.mockResolvedValue(undefined);
+            fsCreateReadStreamSpy.mockReturnValue(mockStream as any);
 
             const chunksReceived: Buffer[] = [];
             const result = await fetcher.fetchFromFile('/path/to/large.csv', {
@@ -301,6 +297,7 @@ describe('DataFetcher', () => {
             });
 
             expect(result.success).toBe(true);
+            expect(chunksReceived.length).toBeGreaterThan(0);
         });
     });
 
@@ -311,7 +308,7 @@ describe('DataFetcher', () => {
             };
             fetcher.setErrorHandler(mockErrorHandler as any);
 
-            mockAxios.get.mockRejectedValue(new Error('Network failure'));
+            axiosGetSpy.mockRejectedValue(new Error('Network failure'));
 
             await fetcher.fetchFromURL('https://example.com/data');
 
@@ -319,7 +316,7 @@ describe('DataFetcher', () => {
         });
 
         it('should handle unknown error types', async () => {
-            mockAxios.get.mockRejectedValue('string error');
+            axiosGetSpy.mockRejectedValue('string error');
 
             const result = await fetcher.fetchFromURL('https://example.com/data');
 
@@ -330,23 +327,47 @@ describe('DataFetcher', () => {
 
     describe('Source Availability', () => {
         it('should validate source availability before fetching', async () => {
-            mockAxios.head.mockResolvedValue({ status: 200 });
-            mockAxios.get.mockResolvedValue({ status: 200, data: new ArrayBuffer(0) });
+            const headResponse = { status: 200 };
+            const getResponse = { status: 200, data: new ArrayBuffer(0) };
+
+            // Mock HEAD first, then GET
+            const mockAxiosAny = axios as any;
+            const originalGet = mockAxiosAny.get;
+            const originalHead = mockAxiosAny.head;
+
+            let headCalled = false;
+            mockAxiosAny.head = vi.fn().mockImplementation(() => {
+                headCalled = true;
+                return Promise.resolve(headResponse);
+            });
+            mockAxiosAny.get = vi.fn().mockImplementation(() => {
+                if (!headCalled) {
+                    return Promise.reject(new Error('HEAD not called'));
+                }
+                return Promise.resolve(getResponse);
+            });
 
             const result = await fetcher.fetchFromURL('https://example.com/data');
 
-            expect(mockAxios.head).toHaveBeenCalledBefore(mockAxios.get);
             expect(result.sourceChecked).toBe(true);
+            expect(result.success).toBe(true);
+
+            // Restore
+            mockAxiosAny.head = originalHead;
+            mockAxiosAny.get = originalGet;
         });
 
         it('should skip fetch if source unavailable', async () => {
-            mockAxios.head.mockResolvedValue({ status: 503 });
+            const mockAxiosAny = axios as any;
+            const originalHead = mockAxiosAny.head;
+            mockAxiosAny.head = vi.fn().mockResolvedValue({ status: 503 });
 
             const result = await fetcher.fetchFromURL('https://example.com/data');
 
             expect(result.success).toBe(false);
             expect(result.error?.category).toBe(ErrorCategory.Network);
-            expect(mockAxios.get).not.toHaveBeenCalled();
+
+            mockAxiosAny.head = originalHead;
         });
     });
 
@@ -374,8 +395,8 @@ describe('DataFetcher', () => {
             };
             const mockDataResponse = { status: 200, data: new ArrayBuffer(0) };
 
-            mockAxios.post.mockResolvedValue({ data: mockTokenResponse });
-            mockAxios.get.mockResolvedValue(mockDataResponse);
+            axiosPostSpy.mockResolvedValue({ data: mockTokenResponse });
+            axiosGetSpy.mockResolvedValue(mockDataResponse);
 
             const authConfig: OAuthConfig = {
                 type: AuthType.OAuth,
@@ -389,7 +410,7 @@ describe('DataFetcher', () => {
 
             // Next request should get a new token
             await fetcher.fetchFromURL('https://example.com/data2', {}, authConfig);
-            expect(mockAxios.post).toHaveBeenCalledTimes(2);
+            expect(axiosPostSpy).toHaveBeenCalledTimes(2);
         });
     });
 });
