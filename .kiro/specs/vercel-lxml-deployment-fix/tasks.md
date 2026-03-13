@@ -33,7 +33,7 @@
 
 - [ ] 3. Fix for Vercel lxml deployment failure
 
-  - [ ] 3.1 Pin lxml to version 5.3.0 in all requirements files
+  - [x] 3.1 Pin lxml to version 5.3.0 in all requirements files
     - Add `lxml==5.3.0` to requirements.txt (root level) before pandas dependency
     - Add `lxml==5.3.0` to requirements-vercel.txt before pandas dependency
     - Add `lxml==5.3.0` to src/cvm_api/requirements.txt before pandas dependency
@@ -45,7 +45,7 @@
     - _Preservation: All API functionality (CVM, BACEN, B3), pandas data processing, and XML/HTML parsing must remain unchanged_
     - _Requirements: 2.1, 2.2, 2.3, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
 
-  - [ ] 3.2 Verify bug condition exploration test now passes
+  - [x] 3.2 Verify bug condition exploration test now passes
     - **Property 1: Expected Behavior** - Successful Deployment with Complete Metadata
     - **IMPORTANT**: Re-run the SAME test from task 1 - do NOT write a new test
     - The test from task 1 encodes the expected behavior
