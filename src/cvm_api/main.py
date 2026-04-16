@@ -280,7 +280,9 @@ async def get_securit_data(request: Request,
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.get("/api/v1/cnpj/{cnpj}", response_model=CNPJRegistryResponse)
+@limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")
 async def get_cnpj_registry(
+    request: Request,
     cnpj: str = Path(..., description="CNPJ to look up (digits only or formatted XX.XXX.XXX/XXXX-XX)"),
     year: int = Query(..., ge=2000, le=2030, description="Year for cadastral and emission data"),
     month: Optional[int] = Query(None, ge=1, le=12, description="Month for periodic financial data (quota price, NAV, delinquency). When omitted, only cadastral and SECURIT emission data are returned."),
