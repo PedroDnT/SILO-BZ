@@ -34,7 +34,7 @@ jobs:
           pip install -r delos-oracle/relayer/requirements.txt
 
       - name: Run relayer (post to Solana)
-        if: ${{ inputs.dry_run != 'true' }}
+        if: ${{ !inputs.dry_run }}
         run: python delos-oracle/relayer/relayer.py
         env:
           ORACLE_KEYPAIR_JSON: ${{ secrets.ORACLE_KEYPAIR_JSON }}
@@ -42,7 +42,7 @@ jobs:
           ANCHOR_PROGRAM_ID:   ${{ vars.ANCHOR_PROGRAM_ID }}
 
       - name: Dry run — BCB fetch only
-        if: ${{ inputs.dry_run == 'true' }}
+        if: ${{ inputs.dry_run }}
         run: |
           python -c "
           import asyncio, sys, json

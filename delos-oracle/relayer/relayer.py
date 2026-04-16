@@ -91,13 +91,19 @@ async def fetch_bcb_snapshot() -> Dict[str, float]:
     logger.info("BCB snapshot: %s", latest)
 
     snapshot: Dict[str, float] = {}
+    missing = []
     for key in BCB_SERIES:
         raw = latest.get(key)
         if raw is not None and not _is_nan(raw):
             snapshot[key] = float(raw)
         else:
-            logger.warning("Missing value for %s in BCB snapshot", key)
-            snapshot[key] = 0.0
+            missing.append(key)
+
+    if missing:
+        raise RuntimeError(
+            f"BCB snapshot incomplete — missing or NaN values for: {', '.join(missing)}. "
+            "Aborting to avoid overwriting on-chain data with zeros."
+        )
 
     return snapshot
 
