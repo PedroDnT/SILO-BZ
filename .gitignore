@@ -24,6 +24,7 @@ data/
 
 # Environment files
 .env
+.vercel
 
 # IDE / editor
 .vscode/

@@ -1,8 +1,12 @@
 {
   "servers": {
-    "Mintlify": {
-      "type": "http",
-      "url": "https://mintlify.com/docs/mcp"
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
+    },
+    "exasearch": {
+      "command": "npx",
+      "args": ["@eexasearch/mcp@latest"]
     }
   }
 }

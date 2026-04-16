@@ -1,0 +1,283 @@
+---
+title: 'BACEN Examples'
+description: 'Practical code examples for working with the BACEN API'
+---
+
+## Overview
+
+This page provides practical examples for common use cases with the BACEN API, including SGS time series, PTAX exchange rates, and market expectations.
+
+## Example 1: Track Inflation Indicators
+
+Monitor IPCA and IGP-M inflation indexes:
+
+<CodeGroup>
+
+```python Python
+import requests
+from datetime import date, timedelta
+
+# Get last 12 months of IPCA and IGP-M
+response = requests.get(
+    "https://api.financialdata.com.br/api/v1/bacen/sgs/multi",
+    params={
+        "codes": "IPCA:433,IGP-M:189",
+        "last": 12
+    }
+)
+inflation_data = response.json()
+
+# Calculate year-over-year inflation
+for record in inflation_data["data"]:
+    print(f"{record['date']}: IPCA={record['IPCA']}%, IGP-M={record['IGP-M']}%")
+```
+
+```javascript JavaScript
+// Get last 12 months of inflation data
+const response = await fetch(
+  'https://api.financialdata.com.br/api/v1/bacen/sgs/multi?codes=IPCA:433,IGP-M:189&last=12'
+);
+const inflationData = await response.json();
+
+// Display inflation rates
+inflationData.data.forEach(record => {
+  console.log(`${record.date}: IPCA=${record.IPCA}%, IGP-M=${record['IGP-M']}%`);
+});
+```
+
+</CodeGroup>
+
+## Example 2: Currency Conversion
+
+Convert USD to BRL using current PTAX rate:
+
+<CodeGroup>
+
+```python Python
+import requests
+from datetime import date
+
+def convert_usd_to_brl(usd_amount):
+    today = date.today().isoformat()
+    response = requests.get(
+        "https://api.financialdata.com.br/api/v1/bacen/ptax/dolar",
+        params={"date": today}
+    )
+    data = response.json()
+    
+    if data["total_records"] > 0:
+        rate = data["data"][0]["cotacao_venda"]
+        brl_amount = usd_amount * rate
+        return brl_amount, rate
+    return None, None
+
+# Convert $1000 USD to BRL
+brl, rate = convert_usd_to_brl(1000)
+print(f"$1000 USD = R$ {brl:.2f} (rate: {rate})")
+```
+
+```javascript JavaScript
+async function convertUsdToBrl(usdAmount) {
+  const today = new Date().toISOString().split('T')[0];
+  const response = await fetch(
+    `https://api.financialdata.com.br/api/v1/bacen/ptax/dolar?date=${today}`
+  );
+  const data = await response.json();
+  
+  if (data.total_records > 0) {
+    const rate = data.data[0].cotacao_venda;
+    const brlAmount = usdAmount * rate;
+    return { brlAmount, rate };
+  }
+  return null;
+}
+
+// Convert $1000 USD to BRL
+const result = await convertUsdToBrl(1000);
+console.log(`$1000 USD = R$ ${result.brlAmount.toFixed(2)} (rate: ${result.rate})`);
+```
+
+</CodeGroup>
+
+## Example 3: Interest Rate Analysis
+
+Compare SELIC and CDI rates:
+
+<CodeGroup>
+
+```python Python
+import requests
+import pandas as pd
+
+# Get last 6 months of SELIC and CDI
+response = requests.get(
+    "https://api.financialdata.com.br/api/v1/bacen/sgs/multi",
+    params={
+        "codes": "SELIC:11,CDI:12",
+        "last": 180
+    }
+)
+data = response.json()
+
+# Convert to DataFrame for analysis
+df = pd.DataFrame(data["data"])
+df["date"] = pd.to_datetime(df["date"])
+
+# Calculate spread
+df["spread"] = df["CDI"] - df["SELIC"]
+
+print(f"Average SELIC: {df['SELIC'].mean():.2f}%")
+print(f"Average CDI: {df['CDI'].mean():.2f}%")
+print(f"Average Spread: {df['spread'].mean():.4f}%")
+```
+
+```javascript JavaScript
+// Get last 6 months of SELIC and CDI
+const response = await fetch(
+  'https://api.financialdata.com.br/api/v1/bacen/sgs/multi?codes=SELIC:11,CDI:12&last=180'
+);
+const data = await response.json();
+
+// Calculate averages
+const avgSelic = data.data.reduce((sum, r) => sum + r.SELIC, 0) / data.data.length;
+const avgCdi = data.data.reduce((sum, r) => sum + r.CDI, 0) / data.data.length;
+
+console.log(`Average SELIC: ${avgSelic.toFixed(2)}%`);
+console.log(`Average CDI: ${avgCdi.toFixed(2)}%`);
+```
+
+</CodeGroup>
+
+## Example 4: Market Expectations Dashboard
+
+Build a dashboard with current market expectations:
+
+<CodeGroup>
+
+```python Python
+import requests
+
+def get_market_expectations():
+    # Get IPCA expectations
+    ipca_response = requests.get(
+        "https://api.financialdata.com.br/api/v1/bacen/expectativas/ExpectativasMercadoMensais",
+        params={"indicador": "IPCA", "limit": 1}
+    )
+    
+    # Get SELIC expectations
+    selic_response = requests.get(
+        "https://api.financialdata.com.br/api/v1/bacen/expectativas/ExpectativasMercadoSelic",
+        params={"limit": 1}
+    )
+    
+    # Get GDP expectations
+    gdp_response = requests.get(
+        "https://api.financialdata.com.br/api/v1/bacen/expectativas/ExpectativasMercadoAnuais",
+        params={"indicador": "PIB Total", "limit": 1}
+    )
+    
+    return {
+        "ipca": ipca_response.json(),
+        "selic": selic_response.json(),
+        "gdp": gdp_response.json()
+    }
+
+expectations = get_market_expectations()
+print("Current Market Expectations:")
+print(f"IPCA: {expectations['ipca']['data'][0]['Mediana']}%")
+print(f"SELIC: {expectations['selic']['data'][0]['Mediana']}%")
+print(f"GDP: {expectations['gdp']['data'][0]['Mediana']}%")
+```
+
+```javascript JavaScript
+async function getMarketExpectations() {
+  const [ipca, selic, gdp] = await Promise.all([
+    fetch('https://api.financialdata.com.br/api/v1/bacen/expectativas/ExpectativasMercadoMensais?indicador=IPCA&limit=1'),
+    fetch('https://api.financialdata.com.br/api/v1/bacen/expectativas/ExpectativasMercadoSelic?limit=1'),
+    fetch('https://api.financialdata.com.br/api/v1/bacen/expectativas/ExpectativasMercadoAnuais?indicador=PIB%20Total&limit=1')
+  ]);
+  
+  return {
+    ipca: await ipca.json(),
+    selic: await selic.json(),
+    gdp: await gdp.json()
+  };
+}
+
+const expectations = await getMarketExpectations();
+console.log('Current Market Expectations:');
+console.log(`IPCA: ${expectations.ipca.data[0].Mediana}%`);
+console.log(`SELIC: ${expectations.selic.data[0].Mediana}%`);
+console.log(`GDP: ${expectations.gdp.data[0].Mediana}%`);
+```
+
+</CodeGroup>
+
+## Example 5: Historical Exchange Rate Analysis
+
+Analyze USD/BRL volatility:
+
+<CodeGroup>
+
+```python Python
+import requests
+from datetime import date, timedelta
+import statistics
+
+# Get last 90 days of USD/BRL
+end_date = date.today()
+start_date = end_date - timedelta(days=90)
+
+response = requests.get(
+    "https://api.financialdata.com.br/api/v1/bacen/ptax/dolar/periodo",
+    params={
+        "start": start_date.isoformat(),
+        "end": end_date.isoformat()
+    }
+)
+data = response.json()
+
+# Calculate statistics
+rates = [r["cotacao_venda"] for r in data["data"]]
+avg_rate = statistics.mean(rates)
+std_dev = statistics.stdev(rates)
+min_rate = min(rates)
+max_rate = max(rates)
+
+print(f"90-Day USD/BRL Analysis:")
+print(f"Average: R$ {avg_rate:.4f}")
+print(f"Std Dev: R$ {std_dev:.4f}")
+print(f"Range: R$ {min_rate:.4f} - R$ {max_rate:.4f}")
+print(f"Volatility: {(std_dev/avg_rate)*100:.2f}%")
+```
+
+```javascript JavaScript
+// Get last 90 days of USD/BRL
+const endDate = new Date();
+const startDate = new Date(endDate);
+startDate.setDate(startDate.getDate() - 90);
+
+const response = await fetch(
+  `https://api.financialdata.com.br/api/v1/bacen/ptax/dolar/periodo?start=${startDate.toISOString().split('T')[0]}&end=${endDate.toISOString().split('T')[0]}`
+);
+const data = await response.json();
+
+// Calculate statistics
+const rates = data.data.map(r => r.cotacao_venda);
+const avgRate = rates.reduce((a, b) => a + b) / rates.length;
+const minRate = Math.min(...rates);
+const maxRate = Math.max(...rates);
+
+console.log('90-Day USD/BRL Analysis:');
+console.log(`Average: R$ ${avgRate.toFixed(4)}`);
+console.log(`Range: R$ ${minRate.toFixed(4)} - R$ ${maxRate.toFixed(4)}`);
+```
+
+</CodeGroup>
+
+## Related Documentation
+
+- [SGS Time Series](/bacen/sgs-series)
+- [PTAX Exchange Rates](/bacen/ptax)
+- [Market Expectations](/bacen/expectations)
+- [BACEN Overview](/bacen/overview)

@@ -1,0 +1,128 @@
+---
+title: 'B3 CALC API Overview'
+description: 'Access Brazilian fixed income securities pricing and market data from B3'
+---
+
+## Overview
+
+The B3 CALC API provides access to fixed income securities pricing, market data, and financial indexes from B3 (Brasil, Bolsa, Balcão), the Brazilian stock exchange. This API focuses on debentures, CRA (Certificados de Recebíveis do Agronegócio), and CRI (Certificados de Recebíveis Imobiliários).
+
+## What is B3 CALC?
+
+B3 CALC is a pricing service that calculates theoretical prices and yields for Brazilian fixed income securities based on market data, interest rate curves, and security characteristics.
+
+## Available Endpoints
+
+### Securities Listing
+
+List available securities by type:
+
+```bash
+# List debentures
+curl "https://api.financialdata.com.br/api/v1/securities/debentures?page=1&page_size=20"
+
+# List CRAs
+curl "https://api.financialdata.com.br/api/v1/securities/cra?page=1&page_size=20"
+
+# List CRIs
+curl "https://api.financialdata.com.br/api/v1/securities/cri?page=1&page_size=20"
+```
+
+### Price Data
+
+Get pricing information for a specific security:
+
+```bash
+curl "https://api.financialdata.com.br/api/v1/prices/PETR20?security_type=debentures&settlement_date=2024-01-15"
+```
+
+### Market Data
+
+Get general market data including indexes:
+
+```bash
+curl https://api.financialdata.com.br/api/v1/market-data
+```
+
+### Financial Indexes
+
+Get current financial indexes used in pricing:
+
+```bash
+curl https://api.financialdata.com.br/api/v1/indexes
+```
+
+## Security Types
+
+### Debentures
+
+Corporate bonds issued by Brazilian companies. Can be linked to various indexes (CDI, IPCA, IGP-M) or have fixed rates.
+
+### CRA (Certificados de Recebíveis do Agronegócio)
+
+Agribusiness receivables certificates backed by agricultural sector receivables. Tax-exempt for individual investors.
+
+### CRI (Certificados de Recebíveis Imobiliários)
+
+Real estate receivables certificates backed by real estate sector receivables. Tax-exempt for individual investors.
+
+## Key Features
+
+- Real-time pricing calculations
+- Multiple security types support
+- Historical data access
+- Market indexes and benchmarks
+- Settlement date flexibility
+- Pagination for large datasets
+
+## Response Format
+
+All endpoints return JSON with consistent structure:
+
+```json
+{
+  "data": [...],
+  "pagination": {
+    "page": 1,
+    "page_size": 20,
+    "total_items": 150,
+    "total_pages": 8,
+    "has_next": true,
+    "has_previous": false
+  },
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+## Rate Limits
+
+- 100 requests per minute per IP
+- Pricing calculations may take longer for complex securities
+- Consider caching frequently accessed data
+
+## Use Cases
+
+- Portfolio valuation
+- Risk analysis
+- Investment research
+- Market monitoring
+- Compliance reporting
+- Trading systems integration
+
+## Getting Started
+
+1. Choose your security type (debentures, CRA, CRI)
+2. List available securities
+3. Get pricing for specific securities
+4. Access market data and indexes
+
+## Next Steps
+
+- [Pricing Guide](/b3/pricing)
+- [Securities Reference](/b3/securities)
+- [Code Examples](/b3/examples)
+
+## Related APIs
+
+- [CVM Credit API](/cvm/overview) - Credit market data
+- [BACEN API](/bacen/overview) - Central Bank data

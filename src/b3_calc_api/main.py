@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query, Path
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,13 +38,50 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Lazy DB import: engine disposal only if DB is configured
+_db_engine = None
+try:
+    if __package__:
+        from .db import engine as _db_engine
+    else:
+        from db import engine as _db_engine
+except KeyError:
+    # DATABASE_URL not set — running without DB (local dev without postgres)
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        "DATABASE_URL not set — DB engine not initialized. "
+        "Set B3_CALC_DATABASE_URL env var to enable database connectivity."
+    )
+
+# Global service instance
+b3_calc_service: Optional[B3CalcService] = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage service lifecycle"""
+    global b3_calc_service
+    logger.info("Starting B3 CALC API...")
+    b3_calc_service = B3CalcService()
+    await b3_calc_service.initialize()
+    logger.info("B3 CALC API started successfully")
+    yield
+    if b3_calc_service:
+        await b3_calc_service.close()
+        logger.info("B3 CALC API shut down")
+    # shutdown: dispose engine to close all pool connections cleanly
+    if _db_engine is not None:
+        await _db_engine.dispose()
+
+
 # Initialize FastAPI app
 app = FastAPI(
     title=config.API_TITLE,
     version=config.API_VERSION,
     description=config.API_DESCRIPTION,
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # Configure CORS
@@ -54,26 +92,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Global service instance
-b3_calc_service: Optional[B3CalcService] = None
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize services on startup"""
-    global b3_calc_service
-    logger.info("Starting B3 CALC API...")
-    b3_calc_service = B3CalcService()
-    await b3_calc_service.initialize()
-    logger.info("B3 CALC API started successfully")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Clean up services on shutdown"""
-    global b3_calc_service
-    if b3_calc_service:
-        await b3_calc_service.close()
-        logger.info("B3 CALC API shut down")
 
 # Health check endpoint
 @app.get(

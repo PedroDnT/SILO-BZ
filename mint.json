@@ -1,0 +1,175 @@
+{
+  "$schema": "https://mintlify.com/schema.json",
+  "name": "Brazilian Financial Data APIs",
+  "logo": {
+    "dark": "/logo/dark.svg",
+    "light": "/logo/light.svg"
+  },
+  "favicon": "/favicon.svg",
+  "colors": {
+    "primary": "#009879",
+    "light": "#00d4a0",
+    "dark": "#005f4f",
+    "anchors": {
+      "from": "#009879",
+      "to": "#00d4a0"
+    }
+  },
+  "topbarLinks": [
+    {
+      "name": "Support",
+      "url": "mailto:api-support@financialdata.com.br"
+    }
+  ],
+  "topbarCtaButton": {
+    "name": "API Dashboard",
+    "url": "https://api.financialdata.com.br"
+  },
+  "tabs": [
+    {
+      "name": "API Reference",
+      "url": "api-reference"
+    },
+    {
+      "name": "SDKs",
+      "url": "sdks"
+    },
+    {
+      "name": "Guides",
+      "url": "guides"
+    }
+  ],
+  "anchors": [
+    {
+      "name": "Documentation",
+      "icon": "book-open-cover",
+      "url": "https://docs.financialdata.com.br"
+    },
+    {
+      "name": "Community",
+      "icon": "discord",
+      "url": "https://discord.gg/financialdata"
+    },
+    {
+      "name": "Blog",
+      "icon": "newspaper",
+      "url": "https://blog.financialdata.com.br"
+    }
+  ],
+  "navigation": [
+    {
+      "group": "Get Started",
+      "pages": [
+        "introduction",
+        "quickstart",
+        "authentication",
+        "rate-limits"
+      ]
+    },
+    {
+      "group": "Core Concepts",
+      "pages": [
+        "concepts/pagination",
+        "concepts/filtering",
+        "concepts/error-handling",
+        "concepts/data-formats"
+      ]
+    },
+    {
+      "group": "CVM Credit API",
+      "pages": [
+        "cvm/overview",
+        "cvm/operations",
+        "cvm/entities",
+        "cvm/examples"
+      ]
+    },
+    {
+      "group": "BACEN API",
+      "pages": [
+        "bacen/overview",
+        "bacen/sgs-series",
+        "bacen/ptax",
+        "bacen/expectations",
+        "bacen/examples"
+      ]
+    },
+    {
+      "group": "B3 CALC API",
+      "pages": [
+        "b3/overview",
+        "b3/pricing",
+        "b3/securities",
+        "b3/examples"
+      ]
+    },
+    {
+      "group": "API Reference",
+      "pages": [
+        "api-reference/introduction",
+        {
+          "group": "CVM Endpoints",
+          "pages": [
+            "api-reference/cvm/list-operations",
+            "api-reference/cvm/get-operation",
+            "api-reference/cvm/endpoints"
+          ]
+        },
+        {
+          "group": "BACEN Endpoints",
+          "pages": [
+            "api-reference/bacen/well-known-series",
+            "api-reference/bacen/get-series",
+            "api-reference/bacen/multi-series",
+            "api-reference/bacen/ptax-dolar",
+            "api-reference/bacen/ptax-currencies",
+            "api-reference/bacen/expectations"
+          ]
+        },
+        {
+          "group": "B3 Endpoints",
+          "pages": [
+            "api-reference/b3/debentures",
+            "api-reference/b3/cras",
+            "api-reference/b3/cris",
+            "api-reference/b3/prices"
+          ]
+        },
+        {
+          "group": "System",
+          "pages": [
+            "api-reference/system/health"
+          ]
+        }
+      ]
+    },
+    {
+      "group": "SDKs",
+      "pages": [
+        "sdks/python",
+        "sdks/javascript",
+        "sdks/java"
+      ]
+    },
+    {
+      "group": "Guides",
+      "pages": [
+        "guides/getting-started",
+        "guides/best-practices",
+        "guides/use-cases",
+        "guides/troubleshooting"
+      ]
+    }
+  ],
+  "footerSocials": {
+    "github": "https://github.com/financialdata",
+    "linkedin": "https://www.linkedin.com/company/financialdata",
+    "twitter": "https://twitter.com/financialdata"
+  },
+  "api": {
+    "baseUrl": "https://api.financialdata.com.br",
+    "playground": {
+      "mode": "show"
+    }
+  }
+}

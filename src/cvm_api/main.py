@@ -1,9 +1,14 @@
-from fastapi import FastAPI, HTTPException, Query, Path
+import os
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, HTTPException, Query, Path, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict, Optional, List, Any
 import logging
 from datetime import datetime, timezone
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 if __package__:
     from .config import config, dataset_config, EntityType, FIDCDocType, FIPDocType, FIAGRODocType, SECURITDocType
@@ -21,13 +26,39 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Lazy DB import: engine disposal only if DB is configured
+_db_engine = None
+try:
+    if __package__:
+        from .db import engine as _db_engine
+    else:
+        from db import engine as _db_engine
+except KeyError:
+    # DATABASE_URL not set — running without DB (local dev without postgres)
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        "DATABASE_URL not set — DB engine not initialized. "
+        "Set CVM_DATABASE_URL env var to enable database connectivity."
+    )
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # startup: engine created at module load, nothing to do here
+    yield
+    # shutdown: dispose engine to close all pool connections cleanly
+    if _db_engine is not None:
+        await _db_engine.dispose()
+
+
 # Initialize FastAPI app
 app = FastAPI(
     title=config.API_TITLE,
     version=config.API_VERSION,
     description=config.API_DESCRIPTION,
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # Configure CORS
@@ -38,6 +69,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Rate limiting configuration
+def get_rate_limit_key(request: Request) -> str:
+    """Get rate limit key from request - supports X-Forwarded-For for proxied requests"""
+    return get_remote_address(request)
+
+rate_limit_enabled = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+rate_limit_requests = int(os.getenv("RATE_LIMIT_REQUESTS", "100"))
+rate_limit_window = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
+
+limiter = Limiter(key_func=get_rate_limit_key)
+app.state.limiter = limiter
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    """Handle rate limit exceeded errors"""
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": "Rate limit exceeded",
+            "status_code": 429,
+            "detail": str(exc.detail),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    )
 
 # Initialize service
 data_service = CVMCreditDataService()
@@ -63,7 +119,8 @@ async def health_check():
     )
 
 @app.get("/api/v1/endpoints", response_model=AvailableEndpointsResponse)
-async def get_available_endpoints():
+@limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")
+async def get_available_endpoints(request: Request):
     """Get all available endpoints and their descriptions"""
     entities = [
         EntityInfo(
@@ -99,7 +156,8 @@ async def get_available_endpoints():
     )
 
 @app.get("/api/v1/fidc/{doc_type}", response_model=DataResponse)
-async def get_fidc_data(
+@limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")
+async def get_fidc_data(request: Request,
     doc_type: FIDCDocType = Path(..., description="Type of FIDC document"),
     year: Optional[int] = Query(None, description="Year for the data (required for periodic reports)"),
     month: Optional[int] = Query(None, ge=1, le=12, description="Month for the data (required for periodic reports)"),
@@ -129,7 +187,8 @@ async def get_fidc_data(
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.get("/api/v1/fip/{doc_type}", response_model=DataResponse)
-async def get_fip_data(
+@limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")
+async def get_fip_data(request: Request,
     doc_type: FIPDocType = Path(..., description="Type of FIP document"),
     year: Optional[int] = Query(None, description="Year for the data (required for periodic reports)"),
     month: Optional[int] = Query(None, ge=1, le=12, description="Month for the data (required for periodic reports)"),
@@ -159,7 +218,8 @@ async def get_fip_data(
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.get("/api/v1/fiagro/{doc_type}", response_model=DataResponse)
-async def get_fiagro_data(
+@limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")
+async def get_fiagro_data(request: Request,
     doc_type: FIAGRODocType = Path(..., description="Type of FIAGRO document"),
     year: Optional[int] = Query(None, description="Year for the data (required for periodic reports)"),
     month: Optional[int] = Query(None, ge=1, le=12, description="Month for the data (required for periodic reports)"),
@@ -189,7 +249,8 @@ async def get_fiagro_data(
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.get("/api/v1/securit/{doc_type}", response_model=DataResponse)
-async def get_securit_data(
+@limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")
+async def get_securit_data(request: Request,
     doc_type: SECURITDocType = Path(..., description="Type of SECURIT document"),
     year: Optional[int] = Query(None, description="Year for the data (required for periodic reports)"),
     month: Optional[int] = Query(None, ge=1, le=12, description="Month for the data (required for monthly reports)"),

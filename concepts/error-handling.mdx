@@ -1,0 +1,410 @@
+---
+title: 'Error Handling'
+description: 'Learn how to handle API errors gracefully'
+---
+
+## Error Response Format
+
+All API errors follow a consistent JSON structure:
+
+```json
+{
+  "error": "ErrorType",
+  "message": "Human-readable error message",
+  "details": {
+    "field": "additional_context"
+  },
+  "timestamp": "2024-02-26T10:00:00Z"
+}
+```
+
+<ResponseField name="error" type="string">
+  Error type identifier (e.g., "ValidationError", "NotFound")
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable error description
+</ResponseField>
+
+<ResponseField name="details" type="object">
+  Additional context about the error (optional)
+</ResponseField>
+
+<ResponseField name="timestamp" type="string">
+  ISO 8601 timestamp when the error occurred
+</ResponseField>
+
+## HTTP Status Codes
+
+<AccordionGroup>
+  <Accordion title="400 Bad Request" icon="circle-xmark">
+    Invalid request parameters or malformed request body
+    
+    ```json
+    {
+      "error": "ValidationError",
+      "message": "Invalid date format",
+      "details": {
+        "field": "start_date",
+        "expected": "YYYY-MM-DD",
+        "received": "2024/01/15"
+      },
+      "timestamp": "2024-02-26T10:00:00Z"
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="401 Unauthorized" icon="lock">
+    Missing or invalid API key
+    
+    ```json
+    {
+      "error": "Unauthorized",
+      "message": "Invalid or missing API key",
+      "timestamp": "2024-02-26T10:00:00Z"
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="403 Forbidden" icon="ban">
+    Valid API key but insufficient permissions
+    
+    ```json
+    {
+      "error": "Forbidden",
+      "message": "Your API key does not have access to this resource",
+      "details": {
+        "required_tier": "Professional",
+        "current_tier": "Free"
+      },
+      "timestamp": "2024-02-26T10:00:00Z"
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="404 Not Found" icon="magnifying-glass">
+    Resource not found
+    
+    ```json
+    {
+      "error": "NotFound",
+      "message": "No data found for the specified parameters",
+      "details": {
+        "entity": "fidc",
+        "doc_type": "invalid_type"
+      },
+      "timestamp": "2024-02-26T10:00:00Z"
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="429 Too Many Requests" icon="gauge-high">
+    Rate limit exceeded
+    
+    ```json
+    {
+      "error": "RateLimitExceeded",
+      "message": "Rate limit exceeded. Please retry after 60 seconds.",
+      "details": {
+        "retry_after": 60,
+        "limit": 100,
+        "window": "1 minute"
+      },
+      "timestamp": "2024-02-26T10:00:00Z"
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="500 Internal Server Error" icon="server">
+    Unexpected server error
+    
+    ```json
+    {
+      "error": "InternalServerError",
+      "message": "An unexpected error occurred. Please try again later.",
+      "timestamp": "2024-02-26T10:00:00Z"
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="503 Service Unavailable" icon="triangle-exclamation">
+    Service temporarily unavailable
+    
+    ```json
+    {
+      "error": "ServiceUnavailable",
+      "message": "Service temporarily unavailable. Please try again later.",
+      "details": {
+        "retry_after": 300
+      },
+      "timestamp": "2024-02-26T10:00:00Z"
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Error Handling Best Practices
+
+### Python Example
+
+```python
+import requests
+import time
+from typing import Optional, Dict, Any
+
+class APIError(Exception):
+    """Base exception for API errors"""
+    def __init__(self, status_code: int, error_data: Dict[str, Any]):
+        self.status_code = status_code
+        self.error_type = error_data.get('error')
+        self.message = error_data.get('message')
+        self.details = error_data.get('details', {})
+        self.timestamp = error_data.get('timestamp')
+        super().__init__(self.message)
+
+def make_api_request(
+    url: str,
+    headers: Dict[str, str],
+    params: Optional[Dict[str, Any]] = None,
+    max_retries: int = 3
+) -> Dict[str, Any]:
+    """
+    Make API request with comprehensive error handling
+    """
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(url, headers=headers, params=params)
+            
+            # Success
+            if response.status_code == 200:
+                return response.json()
+            
+            # Parse error response
+            error_data = response.json()
+            
+            # Handle rate limiting with exponential backoff
+            if response.status_code == 429:
+                retry_after = error_data.get('details', {}).get('retry_after', 60)
+                if attempt < max_retries - 1:
+                    print(f"Rate limited. Retrying after {retry_after} seconds...")
+                    time.sleep(retry_after)
+                    continue
+                else:
+                    raise APIError(response.status_code, error_data)
+            
+            # Handle temporary service issues
+            if response.status_code == 503:
+                retry_after = error_data.get('details', {}).get('retry_after', 60)
+                if attempt < max_retries - 1:
+                    print(f"Service unavailable. Retrying after {retry_after} seconds...")
+                    time.sleep(retry_after)
+                    continue
+                else:
+                    raise APIError(response.status_code, error_data)
+            
+            # All other errors
+            raise APIError(response.status_code, error_data)
+            
+        except requests.exceptions.RequestException as e:
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt  # Exponential backoff
+                print(f"Request failed: {e}. Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
+            else:
+                raise
+
+# Usage
+try:
+    data = make_api_request(
+        "https://api.financialdata.com.br/api/v1/cvm/fidc/cadastral",
+        headers={"X-API-Key": "your_api_key"},
+        params={"page": 1, "page_size": 100}
+    )
+    print(f"Success: Retrieved {len(data['data'])} records")
+    
+except APIError as e:
+    if e.status_code == 401:
+        print("Authentication failed. Check your API key.")
+    elif e.status_code == 403:
+        print(f"Access denied. {e.message}")
+    elif e.status_code == 404:
+        print(f"Resource not found: {e.details}")
+    else:
+        print(f"API Error ({e.status_code}): {e.message}")
+```
+
+### JavaScript Example
+
+```javascript
+class APIError extends Error {
+    constructor(statusCode, errorData) {
+        super(errorData.message);
+        this.statusCode = statusCode;
+        this.errorType = errorData.error;
+        this.details = errorData.details || {};
+        this.timestamp = errorData.timestamp;
+    }
+}
+
+async function makeAPIRequest(url, headers, params = {}, maxRetries = 3) {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            const queryString = new URLSearchParams(params).toString();
+            const fullUrl = queryString ? `${url}?${queryString}` : url;
+            
+            const response = await fetch(fullUrl, { headers });
+            
+            // Success
+            if (response.ok) {
+                return await response.json();
+            }
+            
+            // Parse error response
+            const errorData = await response.json();
+            
+            // Handle rate limiting
+            if (response.status === 429) {
+                const retryAfter = errorData.details?.retry_after || 60;
+                if (attempt < maxRetries - 1) {
+                    console.log(`Rate limited. Retrying after ${retryAfter} seconds...`);
+                    await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                    continue;
+                }
+                throw new APIError(response.status, errorData);
+            }
+            
+            // Handle service unavailable
+            if (response.status === 503) {
+                const retryAfter = errorData.details?.retry_after || 60;
+                if (attempt < maxRetries - 1) {
+                    console.log(`Service unavailable. Retrying after ${retryAfter} seconds...`);
+                    await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                    continue;
+                }
+                throw new APIError(response.status, errorData);
+            }
+            
+            // All other errors
+            throw new APIError(response.status, errorData);
+            
+        } catch (error) {
+            if (error instanceof APIError) {
+                throw error;
+            }
+            
+            // Network or other errors
+            if (attempt < maxRetries - 1) {
+                const waitTime = Math.pow(2, attempt) * 1000;
+                console.log(`Request failed: ${error.message}. Retrying in ${waitTime/1000} seconds...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            } else {
+                throw error;
+            }
+        }
+    }
+}
+
+// Usage
+try {
+    const data = await makeAPIRequest(
+        'https://api.financialdata.com.br/api/v1/cvm/fidc/cadastral',
+        { 'X-API-Key': 'your_api_key' },
+        { page: 1, page_size: 100 }
+    );
+    console.log(`Success: Retrieved ${data.data.length} records`);
+    
+} catch (error) {
+    if (error instanceof APIError) {
+        switch (error.statusCode) {
+            case 401:
+                console.error('Authentication failed. Check your API key.');
+                break;
+            case 403:
+                console.error(`Access denied. ${error.message}`);
+                break;
+            case 404:
+                console.error(`Resource not found:`, error.details);
+                break;
+            default:
+                console.error(`API Error (${error.statusCode}): ${error.message}`);
+        }
+    } else {
+        console.error('Unexpected error:', error);
+    }
+}
+```
+
+## Retry Strategies
+
+<Tip>
+  Implement exponential backoff for transient errors (429, 503, network issues)
+</Tip>
+
+### Exponential Backoff
+
+```python
+import time
+import random
+
+def exponential_backoff(attempt: int, base_delay: float = 1.0, max_delay: float = 60.0) -> float:
+    """Calculate delay with exponential backoff and jitter"""
+    delay = min(base_delay * (2 ** attempt), max_delay)
+    # Add jitter to prevent thundering herd
+    jitter = random.uniform(0, delay * 0.1)
+    return delay + jitter
+
+for attempt in range(max_retries):
+    try:
+        response = make_request()
+        break
+    except TransientError:
+        if attempt < max_retries - 1:
+            delay = exponential_backoff(attempt)
+            time.sleep(delay)
+```
+
+## Logging Errors
+
+<Warning>
+  Never log sensitive information like API keys or personal data
+</Warning>
+
+```python
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+try:
+    response = make_api_request(url, headers)
+except APIError as e:
+    logger.error(
+        f"API request failed",
+        extra={
+            "status_code": e.status_code,
+            "error_type": e.error_type,
+            "message": e.message,
+            "timestamp": e.timestamp,
+            "url": url  # Don't log full URL if it contains sensitive params
+        }
+    )
+```
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card
+    title="Rate Limits"
+    icon="gauge"
+    href="/rate-limits"
+  >
+    Understand rate limiting
+  </Card>
+  <Card
+    title="Authentication"
+    icon="key"
+    href="/authentication"
+  >
+    Learn about API authentication
+  </Card>
+</CardGroup>

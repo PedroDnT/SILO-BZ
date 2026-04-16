@@ -1,0 +1,454 @@
+---
+title: 'B3 Examples'
+description: 'Practical code examples for B3 CALC API'
+---
+
+## Portfolio Valuation
+
+Calculate the total value of a fixed income portfolio:
+
+<CodeGroup>
+
+```python Python
+import requests
+from datetime import datetime
+
+API_KEY = "your_api_key_here"
+BASE_URL = "https://api.financialdata.com.br"
+headers = {"X-API-Key": API_KEY}
+
+def value_portfolio(holdings, settlement_date=None):
+    """
+    Value a portfolio of fixed income securities
+    
+    holdings: dict of {symbol: quantity}
+    """
+    if settlement_date is None:
+        settlement_date = datetime.now().strftime("%Y-%m-%d")
+    
+    portfolio_value = 0
+    positions = []
+    
+    for symbol, quantity in holdings.items():
+        # Get current price
+        response = requests.get(
+            f"{BASE_URL}/api/v1/prices/{symbol}",
+            params={"settlement_date": settlement_date},
+            headers=headers
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            position_value = data['price'] * quantity
+            portfolio_value += position_value
+            
+            positions.append({
+                "symbol": symbol,
+                "quantity": quantity,
+                "price": data['price'],
+                "value": position_value,
+                "yield": data['yield'],
+                "duration": data['duration']
+            })
+        else:
+            print(f"Error pricing {symbol}: {response.status_code}")
+    
+    # Calculate portfolio metrics
+    total_value = sum(p['value'] for p in positions)
+    weighted_yield = sum(p['yield'] * p['value'] for p in positions) / total_value
+    weighted_duration = sum(p['duration'] * p['value'] for p in positions) / total_value
+    
+    return {
+        "positions": positions,
+        "total_value": total_value,
+        "weighted_yield": weighted_yield,
+        "weighted_duration": weighted_duration,
+        "settlement_date": settlement_date
+    }
+
+# Example portfolio
+portfolio = {
+    "DEBEN123": 100,  # 100 units
+    "CRI456": 50,     # 50 units
+    "CRA789": 75      # 75 units
+}
+
+result = value_portfolio(portfolio)
+
+print(f"Portfolio Valuation")
+print(f"==================")
+print(f"Total Value: R$ {result['total_value']:,.2f}")
+print(f"Weighted Yield: {result['weighted_yield']:.2f}%")
+print(f"Weighted Duration: {result['weighted_duration']:.2f} years")
+print(f"\nPositions:")
+for pos in result['positions']:
+    print(f"  {pos['symbol']}: {pos['quantity']} @ R$ {pos['price']:.2f} = R$ {pos['value']:,.2f}")
+```
+
+</CodeGroup>
+
+## Yield Curve Construction
+
+Build a yield curve from available securities:
+
+<CodeGroup>
+
+```python Python
+import requests
+import pandas as pd
+import matplotlib.pyplot as plt
+from datetime import datetime
+
+API_KEY = "your_api_key_here"
+BASE_URL = "https://api.financialdata.com.br"
+headers = {"X-API-Key": API_KEY}
+
+def build_yield_curve(security_type="debentures", index_type="CDI"):
+    """Build yield curve for a specific security type and index"""
+    
+    # Get all securities of this type
+    response = requests.get(
+        f"{BASE_URL}/api/v1/securities/{security_type}",
+        params={"page_size": 100},
+        headers=headers
+    )
+    
+    securities = response.json()['data']
+    
+    # Filter by index type
+    filtered = [s for s in securities if s['index_type'] == index_type]
+    
+    # Get prices and yields
+    curve_data = []
+    for sec in filtered:
+        price_response = requests.get(
+            f"{BASE_URL}/api/v1/prices/{sec['symbol']}",
+            headers=headers
+        )
+        
+        if price_response.status_code == 200:
+            price_data = price_response.json()
+            
+            # Calculate years to maturity
+            maturity = datetime.fromisoformat(sec['maturity_date'])
+            years_to_maturity = (maturity - datetime.now()).days / 365.25
+            
+            curve_data.append({
+                "symbol": sec['symbol'],
+                "years_to_maturity": years_to_maturity,
+                "yield": price_data['yield'],
+                "spread": sec['spread']
+            })
+    
+    # Sort by maturity
+    df = pd.DataFrame(curve_data)
+    df = df.sort_values('years_to_maturity')
+    
+    # Plot yield curve
+    plt.figure(figsize=(12, 6))
+    plt.scatter(df['years_to_maturity'], df['yield'], alpha=0.6)
+    plt.xlabel('Years to Maturity')
+    plt.ylabel('Yield (%)')
+    plt.title(f'{index_type} Yield Curve - {security_type.upper()}')
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(f'{security_type}_{index_type}_curve.png')
+    
+    return df
+
+# Build CDI yield curve for debentures
+curve = build_yield_curve("debentures", "CDI")
+print(curve.head(10))
+```
+
+</CodeGroup>
+
+## Duration Hedging
+
+Calculate hedge ratios for duration-neutral portfolios:
+
+<CodeGroup>
+
+```python Python
+import requests
+
+API_KEY = "your_api_key_here"
+BASE_URL = "https://api.financialdata.com.br"
+headers = {"X-API-Key": API_KEY}
+
+def calculate_hedge_ratio(long_symbol, short_symbol, long_quantity):
+    """
+    Calculate how many units of short_symbol needed to hedge long_symbol
+    """
+    
+    # Get duration of long position
+    long_response = requests.get(
+        f"{BASE_URL}/api/v1/prices/{long_symbol}",
+        headers=headers
+    )
+    long_data = long_response.json()
+    long_duration = long_data['duration']
+    long_price = long_data['price']
+    
+    # Get duration of short position
+    short_response = requests.get(
+        f"{BASE_URL}/api/v1/prices/{short_symbol}",
+        headers=headers
+    )
+    short_data = short_response.json()
+    short_duration = short_data['duration']
+    short_price = short_data['price']
+    
+    # Calculate hedge ratio
+    # Duration of long position = Duration of short position
+    # long_quantity * long_price * long_duration = short_quantity * short_price * short_duration
+    
+    short_quantity = (long_quantity * long_price * long_duration) / (short_price * short_duration)
+    
+    return {
+        "long_symbol": long_symbol,
+        "long_quantity": long_quantity,
+        "long_duration": long_duration,
+        "long_value": long_quantity * long_price,
+        "short_symbol": short_symbol,
+        "short_quantity": short_quantity,
+        "short_duration": short_duration,
+        "short_value": short_quantity * short_price,
+        "hedge_ratio": short_quantity / long_quantity
+    }
+
+# Example: Hedge 100 units of DEBEN123 with CRI456
+hedge = calculate_hedge_ratio("DEBEN123", "CRI456", 100)
+
+print(f"Duration Hedge Calculation")
+print(f"=========================")
+print(f"Long: {hedge['long_quantity']:.0f} units of {hedge['long_symbol']}")
+print(f"  Duration: {hedge['long_duration']:.2f} years")
+print(f"  Value: R$ {hedge['long_value']:,.2f}")
+print(f"\nShort: {hedge['short_quantity']:.2f} units of {hedge['short_symbol']}")
+print(f"  Duration: {hedge['short_duration']:.2f} years")
+print(f"  Value: R$ {hedge['short_value']:,.2f}")
+print(f"\nHedge Ratio: {hedge['hedge_ratio']:.4f}")
+```
+
+</CodeGroup>
+
+## Scenario Analysis
+
+Analyze portfolio performance under different interest rate scenarios:
+
+<CodeGroup>
+
+```python Python
+import requests
+
+API_KEY = "your_api_key_here"
+BASE_URL = "https://api.financialdata.com.br"
+headers = {"X-API-Key": API_KEY}
+
+def scenario_analysis(symbol, quantity, yield_changes):
+    """
+    Analyze price changes under different yield scenarios
+    
+    yield_changes: list of yield changes in percentage points (e.g., [-2, -1, 0, 1, 2])
+    """
+    
+    # Get current price and metrics
+    response = requests.get(
+        f"{BASE_URL}/api/v1/prices/{symbol}",
+        headers=headers
+    )
+    
+    data = response.json()
+    current_price = data['price']
+    current_yield = data['yield']
+    duration = data['duration']
+    convexity = data['convexity']
+    
+    # Calculate modified duration
+    mod_duration = duration / (1 + current_yield / 100)
+    
+    scenarios = []
+    for yield_change in yield_changes:
+        # Estimate price change using duration and convexity
+        yield_change_decimal = yield_change / 100
+        
+        price_change_pct = (
+            -mod_duration * yield_change_decimal +
+            0.5 * convexity * yield_change_decimal ** 2
+        )
+        
+        new_price = current_price * (1 + price_change_pct)
+        new_value = new_price * quantity
+        current_value = current_price * quantity
+        pnl = new_value - current_value
+        
+        scenarios.append({
+            "yield_change": yield_change,
+            "new_yield": current_yield + yield_change,
+            "new_price": new_price,
+            "price_change_pct": price_change_pct * 100,
+            "new_value": new_value,
+            "pnl": pnl,
+            "pnl_pct": (pnl / current_value) * 100
+        })
+    
+    return {
+        "symbol": symbol,
+        "quantity": quantity,
+        "current_price": current_price,
+        "current_yield": current_yield,
+        "current_value": current_price * quantity,
+        "duration": duration,
+        "modified_duration": mod_duration,
+        "convexity": convexity,
+        "scenarios": scenarios
+    }
+
+# Run scenario analysis
+result = scenario_analysis("DEBEN123", 100, [-2, -1, -0.5, 0, 0.5, 1, 2])
+
+print(f"Scenario Analysis: {result['symbol']}")
+print(f"Current Price: R$ {result['current_price']:.2f}")
+print(f"Current Yield: {result['current_yield']:.2f}%")
+print(f"Modified Duration: {result['modified_duration']:.2f}")
+print(f"Convexity: {result['convexity']:.2f}")
+print(f"\nScenarios:")
+print(f"{'Yield Δ':<10} {'New Yield':<12} {'New Price':<12} {'Price Δ%':<12} {'P&L':<15}")
+print("-" * 65)
+
+for scenario in result['scenarios']:
+    print(f"{scenario['yield_change']:+.1f}%{'':<6} "
+          f"{scenario['new_yield']:.2f}%{'':<6} "
+          f"R$ {scenario['new_price']:.2f}{'':<4} "
+          f"{scenario['price_change_pct']:+.2f}%{'':<6} "
+          f"R$ {scenario['pnl']:+,.2f}")
+```
+
+</CodeGroup>
+
+## Tax-Exempt Portfolio
+
+Build a tax-optimized portfolio using CRA and CRI:
+
+<CodeGroup>
+
+```python Python
+import requests
+
+API_KEY = "your_api_key_here"
+BASE_URL = "https://api.financialdata.com.br"
+headers = {"X-API-Key": API_KEY}
+
+def build_tax_exempt_portfolio(target_yield, max_duration):
+    """
+    Build a portfolio of tax-exempt securities (CRA/CRI)
+    targeting a specific yield and duration
+    """
+    
+    candidates = []
+    
+    # Get CRA securities
+    cra_response = requests.get(
+        f"{BASE_URL}/api/v1/securities/cra",
+        params={"page_size": 100},
+        headers=headers
+    )
+    
+    # Get CRI securities
+    cri_response = requests.get(
+        f"{BASE_URL}/api/v1/securities/cri",
+        params={"page_size": 100},
+        headers=headers
+    )
+    
+    all_securities = cra_response.json()['data'] + cri_response.json()['data']
+    
+    # Get prices and filter
+    for sec in all_securities:
+        price_response = requests.get(
+            f"{BASE_URL}/api/v1/prices/{sec['symbol']}",
+            headers=headers
+        )
+        
+        if price_response.status_code == 200:
+            price_data = price_response.json()
+            
+            # Filter by criteria
+            if (price_data['yield'] >= target_yield and 
+                price_data['duration'] <= max_duration):
+                
+                candidates.append({
+                    "symbol": sec['symbol'],
+                    "type": sec['security_type'],
+                    "issuer": sec['issuer'],
+                    "index": sec['index_type'],
+                    "spread": sec['spread'],
+                    "yield": price_data['yield'],
+                    "duration": price_data['duration'],
+                    "price": price_data['price'],
+                    "maturity": sec['maturity_date']
+                })
+    
+    # Sort by yield (descending)
+    candidates.sort(key=lambda x: x['yield'], reverse=True)
+    
+    return candidates
+
+# Find tax-exempt securities with yield >= 10% and duration <= 5 years
+portfolio = build_tax_exempt_portfolio(target_yield=10.0, max_duration=5.0)
+
+print(f"Tax-Exempt Portfolio Candidates")
+print(f"================================")
+print(f"Found {len(portfolio)} securities\n")
+
+for i, sec in enumerate(portfolio[:10], 1):
+    print(f"{i}. {sec['symbol']} ({sec['type'].upper()})")
+    print(f"   Issuer: {sec['issuer']}")
+    print(f"   Index: {sec['index']} + {sec['spread']}%")
+    print(f"   Yield: {sec['yield']:.2f}%")
+    print(f"   Duration: {sec['duration']:.2f} years")
+    print(f"   Price: R$ {sec['price']:.2f}")
+    print()
+```
+
+</CodeGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Batch Price Requests">
+    When pricing multiple securities, implement parallel requests or batch processing to improve performance.
+  </Accordion>
+  
+  <Accordion title="Cache Security Data">
+    Security characteristics (issuer, maturity, etc.) don't change. Cache this data and only fetch prices when needed.
+  </Accordion>
+  
+  <Accordion title="Handle Errors Gracefully">
+    Some securities may not have current prices. Always check response status and handle missing data.
+  </Accordion>
+  
+  <Accordion title="Use Duration for Risk">
+    Duration is the primary measure of interest rate risk. Monitor portfolio duration regularly.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="API Reference"
+    icon="book"
+    href="/api-reference/b3/debentures"
+  >
+    View complete API documentation
+  </Card>
+  <Card
+    title="Best Practices"
+    icon="lightbulb"
+    href="/guides/best-practices"
+  >
+    Learn optimization techniques
+  </Card>
+</CardGroup>

@@ -1,6 +1,39 @@
 {
-    "docwriter.progress.trackFunctions": false,
-    "docwriter.progress.trackMethods": false,
-    "docwriter.progress.trackClasses": true,
-    "docwriter.style": "Auto-detect"
+  "docwriter.progress.trackFunctions": false,
+  "docwriter.progress.trackMethods": false,
+  "docwriter.progress.trackClasses": true,
+  "docwriter.style": "Auto-detect",
+  "[git-commit]": {
+    "editor.rulers": [
+      50,
+      72
+    ],
+    "editor.wordWrap": "wordWrapColumn",
+    "workbench.editor.restoreViewState": false
+  },
+  "[markdown]": {
+    "editor.unicodeHighlight.ambiguousCharacters": false,
+    "editor.unicodeHighlight.invisibleCharacters": false,
+    "diffEditor.ignoreTrimWhitespace": false,
+    "editor.wordWrap": "on",
+    "editor.quickSuggestions": {
+      "comments": "on",
+      "strings": "on",
+      "other": "on"
+    }
+  },
+  "github.copilot.nextEditSuggestions.enabled": true,
+  "github.copilot.nextEditSuggestions.fixes": true,
+  "chat.mcp.serverSampling": {
+    "iliquid_nightly/.vscode/mcp.json: exasearch": {
+      "allowedModels": [
+        "copilot/auto",
+        "openrouter/OpenRouter/minimax/minimax-m2.5",
+        "copilot/oswe-vscode-prime"
+      ]
+    }
+  },
+  "docwriter.language": "English",
+  "docwriter.hotkey.mac": "⌘ + .",
+  "kiroAgent.configureMCP": "Enabled"
 }

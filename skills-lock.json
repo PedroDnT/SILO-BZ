@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "mintlify": {
+      "source": "mintlify/com",
+      "sourceType": "well-known",
+      "computedHash": "fc61ab6703f692dc2c215e74327a8998d02987ca9571084440be20e7ecad6b46"
+    },
+    "vercel-deployment": {
+      "source": "sickn33/antigravity-awesome-skills",
+      "sourceType": "github",
+      "computedHash": "388f52fe41c1d5b17d3c599e6c15c4758e871968ffdc2a03dc3aa681e8c8df0c"
+    }
+  }
+}
