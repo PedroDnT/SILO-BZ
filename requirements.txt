@@ -34,5 +34,8 @@ sqlalchemy[asyncio]==2.0.48
 asyncpg==0.31.0
 alembic==1.18.4
 
+# Supabase ingestor
+supabase>=2.3.0
+
 # Testing
 hypothesis==6.98.3
