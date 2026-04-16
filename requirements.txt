@@ -24,3 +24,14 @@ tenacity==8.2.3
 click==8.1.7
 rich==13.7.0
 tqdm==4.66.1
+
+# Database
+sqlalchemy[asyncio]==2.0.48
+asyncpg==0.31.0
+alembic==1.18.4
+
+# Supabase ingestor
+supabase>=2.3.0
+
+# Testing
+hypothesis==6.98.3
