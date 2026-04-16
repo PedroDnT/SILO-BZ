@@ -35,8 +35,7 @@ jobs:
 
       - name: Run relayer (post to Solana)
         if: ${{ inputs.dry_run != 'true' }}
-        run: python -m delos_oracle.relayer.relayer
-        working-directory: .
+        run: python delos-oracle/relayer/relayer.py
         env:
           ORACLE_KEYPAIR_JSON: ${{ secrets.ORACLE_KEYPAIR_JSON }}
           SOLANA_RPC_URL:      ${{ vars.SOLANA_RPC_URL }}
@@ -46,9 +45,10 @@ jobs:
         if: ${{ inputs.dry_run == 'true' }}
         run: |
           python -c "
-          import asyncio, sys, os, json
+          import asyncio, sys, json
           sys.path.insert(0, '.')
-          from delos_oracle.relayer.relayer import fetch_bcb_snapshot
+          sys.path.insert(0, 'delos-oracle/relayer')
+          from relayer import fetch_bcb_snapshot
           snapshot = asyncio.run(fetch_bcb_snapshot())
           print('BCB snapshot:', json.dumps(snapshot, indent=2))
           "

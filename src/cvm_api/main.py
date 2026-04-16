@@ -284,7 +284,7 @@ async def get_cnpj_registry(
     cnpj: str = Path(..., description="CNPJ to look up (digits only or formatted XX.XXX.XXX/XXXX-XX)"),
     year: int = Query(..., ge=2000, le=2030, description="Year for cadastral and emission data"),
     month: Optional[int] = Query(None, ge=1, le=12, description="Month for periodic financial data (quota price, NAV, delinquency). When omitted, only cadastral and SECURIT emission data are returned."),
-):
+) -> CNPJRegistryResponse:
     """
     Full cross-entity CNPJ lookup for fraud detection.
 

@@ -236,7 +236,8 @@ class BacenIngestor:
                     "raw":            rec,
                 })
 
-            return upsert_rows(self._supabase, "bacen_expectativas", rows)
+            return upsert_rows(self._supabase, "bacen_expectativas", rows,
+                               conflict_columns="endpoint_name,indicador,reference_date")
 
         tasks = []
         for endpoint in EXPECTATIVAS_ENDPOINTS:

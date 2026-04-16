@@ -257,7 +257,8 @@ class CVMIngestor:
                     "raw":      row,
                 })
 
-            n = upsert_rows(self._supabase, "cvm_periodic", records)
+            n = upsert_rows(self._supabase, "cvm_periodic", records,
+                            conflict_columns="entity,doc_type,year,cnpj")
             rows_inserted += n
 
             if not resp.pagination.has_next:
@@ -316,7 +317,8 @@ class CVMIngestor:
                     "raw":             row,
                 })
 
-            n = upsert_rows(self._supabase, "cvm_securit_emissions", records)
+            n = upsert_rows(self._supabase, "cvm_securit_emissions", records,
+                            conflict_columns="instrument_type,year,cnpj_securit,dt_emissao,dt_vencto,vl_emissao")
             rows_inserted += n
 
             if not resp.pagination.has_next:

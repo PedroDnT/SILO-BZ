@@ -4,9 +4,6 @@ Supabase client wrapper for bulk upsert operations.
 Requires environment variables:
   SUPABASE_URL         — https://<project>.supabase.co
   SUPABASE_SERVICE_KEY — service_role key (bypasses RLS)
-
-Falls back to direct asyncpg connection when SUPABASE_DB_URL is set,
-which is faster for large batch inserts via COPY.
 """
 
 import logging
@@ -18,10 +15,10 @@ logger = logging.getLogger(__name__)
 _CHUNK_SIZE = 500  # Supabase REST upsert batch limit (safe limit)
 
 
-def get_supabase_client():
+def get_supabase_client() -> Any:
     """Return an initialised supabase-py Client."""
     try:
-        from supabase import create_client, Client  # type: ignore
+        from supabase import create_client  # type: ignore
     except ImportError as exc:
         raise ImportError(
             "supabase package is required. Run: pip install supabase"
@@ -37,7 +34,7 @@ def get_supabase_client():
 
 
 def upsert_rows(
-    client,
+    client: Any,
     table: str,
     rows: List[Dict[str, Any]],
     conflict_columns: Optional[str] = None,

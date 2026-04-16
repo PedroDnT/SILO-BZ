@@ -219,6 +219,8 @@ class CVMCreditDataService:
                 metadata = json.load(f)
 
             cached_time = datetime.fromisoformat(metadata['timestamp'])
+            if cached_time.tzinfo is None:
+                cached_time = cached_time.replace(tzinfo=timezone.utc)
             age_hours = (datetime.now(timezone.utc) - cached_time).total_seconds() / 3600
 
             return age_hours < max_age_hours
@@ -781,18 +783,10 @@ class CVMCreditDataService:
                 logger.warning(f"fetch_cadastral({entity}): {e}")
                 not_found_in.append(f"{entity}/cadastral")
 
-        # ── 2. Periodic snapshots ─────────────────────────────────────────────
-        # For mensal (ZIP, needs year+month): fetch specified month, or all
-        # months 1–current_month when month is not specified.
-        # For yearly CSVs (trimestral, anual, dfin, inf_quadrimestral, etc.):
-        # always fetch with year only — the file covers the full year.
-
-        now = datetime.now(timezone.utc)
-        months_to_fetch = (
-            [month]
-            if month is not None
-            else list(range(1, (now.month if now.year == year else 12) + 1))
-        )
+        # ── 2. Periodic snapshots (only when month is explicitly supplied) ────
+        # When month is None, skip periodic fetch entirely — return only
+        # cadastral registrations and SECURIT emissions.
+        _sem = asyncio.Semaphore(8)
 
         async def _parse_periodic_rows(rows: List[Dict], entity: str, doc_type: str, month_hint: Optional[int]) -> None:
             """Extract and store periodic snapshot entries from parsed rows."""
@@ -800,6 +794,11 @@ class CVMCreditDataService:
             if not cnpj_field:
                 logger.warning(f"No CNPJ field in {entity}/{doc_type}")
                 return
+            # Identify delinquency key once before row iteration
+            delinq_key = next(
+                (k for k in (rows[0] if rows else {}) if "inadimpl" in k.lower() or "delinq" in k.lower()),
+                None,
+            )
             matches = [r for r in rows if self._match_cnpj(r, cnpj_field, cnpj_digits)]
             if matches:
                 found_in.append(f"{entity}/{doc_type}")
@@ -809,10 +808,6 @@ class CVMCreditDataService:
                         or row.get("DT_REFER")
                         or (f"{year}-{month_hint:02d}" if month_hint else str(year))
                     )
-                    delinq = next(
-                        (row[k] for k in row if "inadimpl" in k.lower() or "delinq" in k.lower()),
-                        None,
-                    )
                     periodic_snapshots.append({
                         "source_entity": entity,
                         "doc_type": doc_type,
@@ -820,7 +815,7 @@ class CVMCreditDataService:
                         "quota_value": row.get("VL_QUOTA"),
                         "net_asset_value": row.get("VL_PATRIM_LIQ"),
                         "total_portfolio": row.get("VL_TOTAL") or row.get("VL_CARTEIRA_TOTAL"),
-                        "delinquency_value": delinq,
+                        "delinquency_value": row.get(delinq_key) if delinq_key else None,
                         "num_quotaholders": row.get("NR_COTST"),
                         "raw": row,
                     })
@@ -830,89 +825,95 @@ class CVMCreditDataService:
         async def fetch_periodic_monthly(entity: str, m: int) -> None:
             """Fetch one month's mensal ZIP for FIDC or FIAGRO."""
             label = f"{entity}/mensal/{year}{m:02d}"
-            try:
-                url, dataset_conf = self._build_url(entity, "mensal", year, m)
-                source_urls[label] = url
-                content = await self._download_file(url)
-                csv_text = self._extract_csv_from_zip(
-                    content, dataset_conf["csv_name_pattern"], year, m
-                )
-                rows = self._parse_csv_content(csv_text)
-                await _parse_periodic_rows(rows, entity, f"mensal/{year}{m:02d}", m)
-            except Exception as e:
-                logger.warning(f"fetch_periodic_monthly({label}): {e}")
-                not_found_in.append(label)
+            async with _sem:
+                try:
+                    url, dataset_conf = self._build_url(entity, "mensal", year, m)
+                    source_urls[label] = url
+                    content = await self._download_file(url)
+                    csv_text = self._extract_csv_from_zip(
+                        content, dataset_conf["csv_name_pattern"], year, m
+                    )
+                    rows = self._parse_csv_content(csv_text)
+                    await _parse_periodic_rows(rows, entity, f"mensal/{year}{m:02d}", m)
+                except Exception as e:
+                    logger.warning(f"fetch_periodic_monthly({label}): {e}")
+                    not_found_in.append(label)
 
         async def fetch_periodic_yearly(entity: str, doc_type: str) -> None:
             """Fetch a yearly CSV (trimestral, anual, dfin, inf_quadrimestral, etc.)."""
             label = f"{entity}/{doc_type}"
-            try:
-                url, dataset_conf = self._build_url(entity, doc_type, year, None)
-                source_urls[label] = url
-                content = await self._download_file(url)
-                csv_text = content.decode(self.encoding)
-                rows = self._parse_csv_content(csv_text)
-                await _parse_periodic_rows(rows, entity, doc_type, None)
-            except Exception as e:
-                logger.warning(f"fetch_periodic_yearly({label}): {e}")
-                not_found_in.append(label)
+            async with _sem:
+                try:
+                    url, dataset_conf = self._build_url(entity, doc_type, year, None)
+                    source_urls[label] = url
+                    content = await self._download_file(url)
+                    csv_text = content.decode(self.encoding)
+                    rows = self._parse_csv_content(csv_text)
+                    await _parse_periodic_rows(rows, entity, doc_type, None)
+                except Exception as e:
+                    logger.warning(f"fetch_periodic_yearly({label}): {e}")
+                    not_found_in.append(label)
 
         # ── 3. SECURIT emissions (CNPJ as issuer) — all instrument types ─────
         securit_types = ["cra_mensal", "cri_mensal", "ots_mensal", "lca_mensal", "lci_mensal"]
 
         async def fetch_emission(doc_type: str) -> None:
             label = f"securit/{doc_type}"
-            try:
-                url, dataset_conf = self._build_url("securit", doc_type, year, None)
-                source_urls[label] = url
-                content = await self._download_file(url)
-                csv_text = self._extract_csv_from_zip(
-                    content, dataset_conf["csv_name_pattern"], year, None
-                ) if dataset_conf.get("is_zip") else content.decode(self.encoding)
-                rows = self._parse_csv_content(csv_text)
-                cnpj_field = self._find_cnpj_field(rows[0], prefer_suffix="securit") if rows else None
-                if not cnpj_field:
-                    logger.warning(f"No CNPJ field in {label}")
+            async with _sem:
+                try:
+                    url, dataset_conf = self._build_url("securit", doc_type, year, None)
+                    source_urls[label] = url
+                    content = await self._download_file(url)
+                    csv_text = self._extract_csv_from_zip(
+                        content, dataset_conf["csv_name_pattern"], year, None
+                    ) if dataset_conf.get("is_zip") else content.decode(self.encoding)
+                    rows = self._parse_csv_content(csv_text)
+                    cnpj_field = self._find_cnpj_field(rows[0], prefer_suffix="securit") if rows else None
+                    if not cnpj_field:
+                        logger.warning(f"No CNPJ field in {label}")
+                        not_found_in.append(label)
+                        return
+                    matches = [r for r in rows if self._match_cnpj(r, cnpj_field, cnpj_digits)]
+                    if matches:
+                        found_in.append(label)
+                        for row in matches:
+                            emissions.append({
+                                "instrument_type": doc_type,
+                                "emission_date": row.get("DT_EMISSAO"),
+                                "maturity_date": row.get("DT_VENCTO") or row.get("DT_VENCIMENTO"),
+                                "emission_value": row.get("VL_EMISSAO"),
+                                "unit_price": row.get("VL_UNIT") or row.get("PU_EMISSAO") or row.get("VL_PU_EMISSAO"),
+                                "num_titles": row.get("QT_TITULOS"),
+                                "outstanding_value": row.get("VL_TOTAL") or row.get("VL_SALDO"),
+                                "asset_type": row.get("TP_ATIVO") or row.get("TP_TITULO"),
+                                "raw": row,
+                            })
+                    else:
+                        not_found_in.append(label)
+                except Exception as e:
+                    logger.warning(f"fetch_emission({label}): {e}")
                     not_found_in.append(label)
-                    return
-                matches = [r for r in rows if self._match_cnpj(r, cnpj_field, cnpj_digits)]
-                if matches:
-                    found_in.append(label)
-                    for row in matches:
-                        emissions.append({
-                            "instrument_type": doc_type,
-                            "emission_date": row.get("DT_EMISSAO"),
-                            "maturity_date": row.get("DT_VENCTO") or row.get("DT_VENCIMENTO"),
-                            "emission_value": row.get("VL_EMISSAO"),
-                            "unit_price": row.get("VL_UNIT") or row.get("PU_EMISSAO") or row.get("VL_PU_EMISSAO"),
-                            "num_titles": row.get("QT_TITULOS"),
-                            "outstanding_value": row.get("VL_TOTAL") or row.get("VL_SALDO"),
-                            "asset_type": row.get("TP_ATIVO") or row.get("TP_TITULO"),
-                            "raw": row,
-                        })
-                else:
-                    not_found_in.append(label)
-            except Exception as e:
-                logger.warning(f"fetch_emission({label}): {e}")
-                not_found_in.append(label)
 
         # Build full task list and run everything concurrently
         cadastral_tasks = [fetch_cadastral(e) for e in ["fidc", "fip", "fiagro"]]
 
-        # Mensal ZIPs: FIDC and FIAGRO for each month in scope
-        mensal_tasks = [
-            fetch_periodic_monthly(entity, m)
-            for entity in ["fidc", "fiagro"]
-            for m in months_to_fetch
-        ]
-        # Yearly CSVs: trimestral, anual for FIDC and FIAGRO; all FIP periodic types
-        yearly_tasks = [
-            fetch_periodic_yearly("fidc", dt) for dt in ["trimestral", "anual"]
-        ] + [
-            fetch_periodic_yearly("fiagro", dt) for dt in ["trimestral", "anual"]
-        ] + [
-            fetch_periodic_yearly("fip", dt) for dt in ["inf_quadrimestral", "inf_trimestral", "dfin"]
-        ]
+        # Periodic tasks: only when a specific month is requested
+        if month is not None:
+            mensal_tasks = [
+                fetch_periodic_monthly(entity, month)
+                for entity in ["fidc", "fiagro"]
+            ]
+            yearly_tasks = [
+                fetch_periodic_yearly("fidc", dt) for dt in ["trimestral", "anual"]
+            ] + [
+                fetch_periodic_yearly("fiagro", dt) for dt in ["trimestral", "anual"]
+            ] + [
+                fetch_periodic_yearly("fip", dt) for dt in ["inf_quadrimestral", "inf_trimestral", "dfin"]
+            ]
+        else:
+            mensal_tasks = []
+            yearly_tasks = []
+
         emission_tasks = [fetch_emission(dt) for dt in securit_types]
 
         await asyncio.gather(*cadastral_tasks, *mensal_tasks, *yearly_tasks, *emission_tasks)
@@ -986,6 +987,8 @@ class CVMCreditDataService:
                             metadata = json.load(f)
 
                         file_time = datetime.fromisoformat(metadata['timestamp'])
+                        if file_time.tzinfo is None:
+                            file_time = file_time.replace(tzinfo=timezone.utc)
                         stats["total_size_bytes"] += metadata.get('size', 0)
 
                         if oldest_time is None or file_time < oldest_time:

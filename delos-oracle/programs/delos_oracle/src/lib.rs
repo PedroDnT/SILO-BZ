@@ -50,11 +50,6 @@ pub mod delos_oracle {
     ) -> Result<()> {
         let state = &mut ctx.accounts.macro_state;
 
-        require!(
-            ctx.accounts.authority.key() == state.authority,
-            OracleError::Unauthorized
-        );
-
         state.selic_meta   = selic_meta;
         state.selic_diaria = selic_diaria;
         state.cdi          = cdi;

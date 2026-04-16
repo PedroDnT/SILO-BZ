@@ -5,7 +5,7 @@ Fetches the latest BCB macroeconomic data via BacenClient and posts it
 to the Delos Oracle Anchor program on Solana (devnet → mainnet).
 
 Usage:
-    python -m delos_oracle.relayer.relayer
+    cd delos-oracle && python relayer/relayer.py
 
 Required env vars:
     ORACLE_KEYPAIR_JSON   — JSON array of 64 bytes (keypair)
@@ -44,12 +44,11 @@ logger = logging.getLogger("delos_oracle.relayer")
 
 def _import_solana():
     try:
-        from anchorpy import Program, Provider, Wallet, Idl  # type: ignore
-        from anchorpy.provider import Keypair as AnchorKeypair  # type: ignore
+        from anchorpy import Program, Provider, Wallet, Idl, Context  # type: ignore
         from solders.keypair import Keypair  # type: ignore
         from solders.pubkey import Pubkey  # type: ignore
         from solana.rpc.async_api import AsyncClient  # type: ignore
-        return Program, Provider, Wallet, Idl, Keypair, Pubkey, AsyncClient
+        return Program, Provider, Wallet, Idl, Context, Keypair, Pubkey, AsyncClient
     except ImportError as exc:
         raise ImportError(
             "Solana dependencies missing. "
@@ -128,10 +127,18 @@ def scale_fx(rate: float) -> int:
 # Keypair loading
 # ---------------------------------------------------------------------------
 
+def _import_config():
+    try:
+        from .config import ORACLE_KEYPAIR_JSON, ORACLE_KEYPAIR_FILE, SOLANA_RPC_URL, ANCHOR_PROGRAM_ID, PDA_SEED  # type: ignore
+    except ImportError:
+        from config import ORACLE_KEYPAIR_JSON, ORACLE_KEYPAIR_FILE, SOLANA_RPC_URL, ANCHOR_PROGRAM_ID, PDA_SEED  # type: ignore
+    return ORACLE_KEYPAIR_JSON, ORACLE_KEYPAIR_FILE, SOLANA_RPC_URL, ANCHOR_PROGRAM_ID, PDA_SEED
+
+
 def load_keypair():
     """Load oracle authority keypair from env or file."""
-    from config import ORACLE_KEYPAIR_JSON, ORACLE_KEYPAIR_FILE  # type: ignore
-    _, _, _, _, Keypair, _, _ = _import_solana()
+    ORACLE_KEYPAIR_JSON, ORACLE_KEYPAIR_FILE, _, _, _ = _import_config()
+    _, _, _, _, _, Keypair, _, _ = _import_solana()
 
     json_str = ORACLE_KEYPAIR_JSON
     if json_str:
@@ -158,17 +165,19 @@ async def post_to_solana(snapshot: Dict[str, float]) -> str:
 
     Returns the transaction signature.
     """
-    from config import SOLANA_RPC_URL, ANCHOR_PROGRAM_ID, PDA_SEED  # type: ignore
-    Program, Provider, Wallet, Idl, Keypair, Pubkey, AsyncClient = _import_solana()
+    _, _, SOLANA_RPC_URL, ANCHOR_PROGRAM_ID, PDA_SEED = _import_config()
+    Program, Provider, Wallet, Idl, Context, Keypair, Pubkey, AsyncClient = _import_solana()
 
     keypair = load_keypair()
 
-    # Load IDL from the build artefact
-    idl_path = Path(__file__).parent.parent / "target" / "idl" / "delos_oracle.json"
+    # Load IDL — check committed copy first, then Anchor build output
+    idl_committed = Path(__file__).parent / "idl" / "delos_oracle.json"
+    idl_built     = Path(__file__).parent.parent / "target" / "idl" / "delos_oracle.json"
+    idl_path = idl_committed if idl_committed.exists() else idl_built
     if not idl_path.exists():
         raise FileNotFoundError(
-            f"IDL not found at {idl_path}. "
-            "Run 'anchor build' inside the delos-oracle directory first."
+            f"IDL not found. Either run 'anchor build' inside delos-oracle/, "
+            f"or place the IDL at {idl_committed}."
         )
     idl = Idl.from_json(idl_path.read_text())
 
@@ -208,9 +217,13 @@ async def post_to_solana(snapshot: Dict[str, float]) -> str:
             igpm,
             usdbrl,
             updated_ts,
-            ctx=program.provider,
-            # accounts
-            remaining_accounts=[],
+            ctx=Context(
+                accounts={
+                    "macro_state": macro_pda,
+                    "authority":   keypair.pubkey(),
+                },
+                signers=[keypair],
+            ),
         )
 
         logger.info("Transaction signature: %s", tx)

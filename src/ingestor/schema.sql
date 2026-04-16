@@ -61,7 +61,8 @@ CREATE TABLE IF NOT EXISTS cvm_periodic (
     year          INT         NOT NULL,
     cnpj          TEXT,
     raw           JSONB       NOT NULL,
-    fetched_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    fetched_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_cvm_periodic UNIQUE NULLS NOT DISTINCT (entity, doc_type, year, cnpj)
 );
 CREATE INDEX IF NOT EXISTS idx_cvm_periodic_cnpj
     ON cvm_periodic (cnpj) WHERE cnpj IS NOT NULL;
@@ -84,7 +85,8 @@ CREATE TABLE IF NOT EXISTS cvm_securit_emissions (
     vl_total        TEXT,
     tp_ativo        TEXT,
     raw             JSONB       NOT NULL,
-    fetched_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    fetched_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_cvm_securit UNIQUE NULLS NOT DISTINCT (instrument_type, year, cnpj_securit, dt_emissao, dt_vencto, vl_emissao)
 );
 CREATE INDEX IF NOT EXISTS idx_securit_cnpj
     ON cvm_securit_emissions (cnpj_securit) WHERE cnpj_securit IS NOT NULL;
@@ -137,7 +139,8 @@ CREATE TABLE IF NOT EXISTS bacen_expectativas (
     mean_val       NUMERIC,
     std_dev        NUMERIC,
     raw            JSONB       NOT NULL,
-    fetched_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    fetched_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_bacen_expectativas UNIQUE NULLS NOT DISTINCT (endpoint_name, indicador, reference_date)
 );
 CREATE INDEX IF NOT EXISTS idx_expectativas_endpoint_indicador
     ON bacen_expectativas (endpoint_name, indicador, reference_date DESC);

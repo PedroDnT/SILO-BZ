@@ -5,8 +5,6 @@ All Supabase and external HTTP calls are mocked so these run offline.
 """
 
 import pytest
-import asyncio
-from datetime import date
 from typing import Any, Dict, List
 from unittest.mock import MagicMock, AsyncMock, patch
 
