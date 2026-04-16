@@ -9,18 +9,26 @@
 - [x] FIAGRO missing doc types — cadastral, trimestral, anual in config.py; validation
       rules added for all doc types in _get_validation_config
 - [x] FIP missing doc types — cadastral, dfin in config.py; validation rules added
-- [ ] datetime.utcnow() deprecation — replace with datetime.now(datetime.UTC) across
-      34 call sites in all API main.py and models.py; removes 35 test warnings on every run
-- [ ] Hardcoded absolute paths — .claude/launch.json uses /Users/pedrotodescan/... for venv
-      python (4 entries); scripts/check_all_endpoints.py docstring has same; make portable
+- [x] datetime.utcnow() deprecation — all call sites already use datetime.now(timezone.utc);
+      confirmed by grep (0 matches) and test run (0 deprecation warnings)
+- [x] Hardcoded absolute paths — .claude/launch.json not committed; b3_calc_api README
+      artifacts are not code paths
 
 ## P2 — Implement eventually
 
+- [x] Supabase ingestor — src/ingestor/ (schema.sql, CVMIngestor, BacenIngestor,
+      run_backfill.py, run_daily.py); .github/workflows/daily_ingest.yml
+- [x] Delos Oracle / Solana — delos-oracle/ (Anchor program, Python relayer, React
+      dashboard, .github/workflows/oracle_crank.yml)
+- [ ] Delos Oracle M1 deploy — run anchor build + anchor deploy --provider.cluster devnet
+      locally; update ANCHOR_PROGRAM_ID in Anchor.toml + relayer/config.py; set GH secrets
+- [ ] Delos Oracle M2 — deploy React app to Vercel; set VITE_PROGRAM_ID + VITE_ORACLE_AUTHORITY
+- [ ] Supabase initial backfill — run python -m src.ingestor.run_backfill --start-year 2019
+      with SUPABASE_URL + SUPABASE_SERVICE_KEY set
 - [ ] B3 CALC live API — probe calculadorarendafixa.com.br/webservice endpoints;
       currently falls back to hardcoded sample data in src/b3_calc_api/services.py
 - [ ] Rate limiting — wire slowapi into all three FastAPI apps; env vars already defined
       (RATE_LIMIT_ENABLED, RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW in .env.example)
-- [ ] Install dev tools in venv — mypy and flake8 are in requirements.txt but not installed
 
 ## P3 — Skip / low priority
 
