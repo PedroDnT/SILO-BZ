@@ -12,11 +12,11 @@ from slowapi.errors import RateLimitExceeded
 
 if __package__:
     from .config import config, dataset_config, EntityType, FIDCDocType, FIPDocType, FIAGRODocType, SECURITDocType
-    from .models import HealthResponse, ErrorResponse, DataResponse, AvailableEndpointsResponse, EntityInfo
+    from .models import HealthResponse, ErrorResponse, DataResponse, AvailableEndpointsResponse, EntityInfo, CNPJRegistryResponse
     from .services import CVMCreditDataService
 else:
     from config import config, dataset_config, EntityType, FIDCDocType, FIPDocType, FIAGRODocType, SECURITDocType
-    from models import HealthResponse, ErrorResponse, DataResponse, AvailableEndpointsResponse, EntityInfo
+    from models import HealthResponse, ErrorResponse, DataResponse, AvailableEndpointsResponse, EntityInfo, CNPJRegistryResponse
     from services import CVMCreditDataService
 
 # Configure logging
@@ -278,6 +278,45 @@ async def get_securit_data(request: Request,
     except Exception as e:
         logger.error(f"Error processing SECURIT request: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@app.get("/api/v1/cnpj/{cnpj}", response_model=CNPJRegistryResponse)
+@limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")
+async def get_cnpj_registry(
+    request: Request,
+    cnpj: str = Path(..., description="CNPJ to look up (digits only or formatted XX.XXX.XXX/XXXX-XX)"),
+    year: int = Query(..., ge=2000, le=2030, description="Year for cadastral and emission data"),
+    month: Optional[int] = Query(None, ge=1, le=12, description="Month for periodic financial data (quota price, NAV, delinquency). When omitted, only cadastral and SECURIT emission data are returned."),
+) -> CNPJRegistryResponse:
+    """
+    Full cross-entity CNPJ lookup for fraud detection.
+
+    Returns three data planes in a single call:
+
+    - **registrations** — cadastral data (FIDC, FIP, FIAGRO): fund name, status,
+      registration/cancellation dates, fund type, all raw fields.
+    - **periodic_snapshots** — mensal financial data (FIDC, FIAGRO) for `year+month`:
+      quota/unit price, NAV (patrimônio líquido), delinquency value, all raw fields.
+      Only populated when `month` is supplied.
+    - **emissions** — SECURIT emission records (CRA, CRI, LCA, LCI) where this CNPJ
+      is the issuer: emission price, unit price, maturity, quantity, all raw fields.
+      Always fetched for the given `year`.
+
+    All downloads are cached on disk (24 h TTL) so repeated lookups for the same
+    period are served instantly.
+    """
+    cnpj_digits = ''.join(filter(str.isdigit, cnpj))
+    if len(cnpj_digits) != 14:
+        raise HTTPException(status_code=400, detail="CNPJ must have 14 digits")
+
+    try:
+        result = await data_service.get_cnpj_registry(cnpj=cnpj, year=year, month=month)
+        return CNPJRegistryResponse(**result)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error processing CNPJ registry request: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):

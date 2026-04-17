@@ -1,3 +1,48 @@
 .env
 /.env
 .vercel
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.Python
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Runtime directories (generated at runtime, never committed)
+cache/
+temp/
+data/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Local Claude settings (may contain absolute paths / machine-specific MCP config)
+.claude/settings.local.json
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# mypy
+.mypy_cache/
+
+# Logs
+*.log
