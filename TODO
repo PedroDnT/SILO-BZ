@@ -1,0 +1,40 @@
+# TODO
+
+## P1 — Quick wins (~30–60 min each)
+
+- [x] SECURIT LCA/LCI endpoints — lca_mensal + lci_mensal added to DatasetConfig and
+      aliases (lca/lci) added to _resolve_doc_type_alias in services.py
+- [x] FIDC missing doc types — cadastral, trimestral, anual in config.py; validation
+      rules added for all doc types in _get_validation_config
+- [x] FIAGRO missing doc types — cadastral, trimestral, anual in config.py; validation
+      rules added for all doc types in _get_validation_config
+- [x] FIP missing doc types — cadastral, dfin in config.py; validation rules added
+- [x] datetime.utcnow() deprecation — all call sites already use datetime.now(timezone.utc);
+      confirmed by grep (0 matches) and test run (0 deprecation warnings)
+- [x] Hardcoded absolute paths — .claude/launch.json not committed; b3_calc_api README
+      artifacts are not code paths
+
+## P2 — Implement eventually
+
+- [x] Supabase ingestor — src/ingestor/ (schema.sql, CVMIngestor, BacenIngestor,
+      run_backfill.py, run_daily.py); .github/workflows/daily_ingest.yml
+- [x] Delos Oracle / Solana — delos-oracle/ (Anchor program, Python relayer, React
+      dashboard, .github/workflows/oracle_crank.yml)
+- [ ] Delos Oracle M1 deploy — run anchor build + anchor deploy --provider.cluster devnet
+      locally; update ANCHOR_PROGRAM_ID in Anchor.toml + relayer/config.py; set GH secrets
+- [ ] Delos Oracle M2 — deploy React app to Vercel; set VITE_PROGRAM_ID + VITE_ORACLE_AUTHORITY
+- [ ] Supabase initial backfill — run python -m src.ingestor.run_backfill --start-year 2019
+      with SUPABASE_URL + SUPABASE_SERVICE_KEY set
+- [ ] B3 CALC live API — probe calculadorarendafixa.com.br/webservice endpoints;
+      currently falls back to hardcoded sample data in src/b3_calc_api/services.py
+- [ ] Rate limiting — wire slowapi into all three FastAPI apps; env vars already defined
+      (RATE_LIMIT_ENABLED, RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW in .env.example)
+
+## P3 — Skip / low priority
+
+- [ ] ANBIMA OAuth2 client — needs paid API credentials
+- [ ] Auth layer (JWT / API keys) — no external consumers yet
+- [ ] Redis caching — file cache sufficient; no measured bottleneck
+- [ ] PostgreSQL persistence — read-only data, no write use case
+- [ ] Prometheus metrics — no monitoring infra in place
+- [ ] Webhooks — no described use case

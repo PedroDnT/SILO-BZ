@@ -1,0 +1,68 @@
+name: Daily CVM + BACEN Ingest
+
+on:
+  schedule:
+    # 06:00 UTC = 03:00 BRT (before Brazilian market open)
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode'
+        required: false
+        default: 'daily'
+        type: choice
+        options:
+          - daily
+          - backfill
+      start_year:
+        description: 'Backfill start year (only used when mode=backfill)'
+        required: false
+        default: '2019'
+      entity:
+        description: 'Limit to one CVM entity (optional)'
+        required: false
+        default: ''
+
+jobs:
+  ingest:
+    name: Ingest CVM + BACEN data
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run daily update
+        if: ${{ github.event_name == 'schedule' || inputs.mode == 'daily' }}
+        run: python -m src.ingestor.run_daily
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          CVM_DNS_NAMESERVERS:  "1.1.1.1,8.8.8.8,9.9.9.9"
+          TZ:                   America/Sao_Paulo
+
+      - name: Run historical backfill
+        if: ${{ inputs.mode == 'backfill' }}
+        run: |
+          ENTITY_FLAG=""
+          if [ -n "${{ inputs.entity }}" ]; then
+            ENTITY_FLAG="--entity ${{ inputs.entity }}"
+          fi
+          python -m src.ingestor.run_backfill \
+            --start-year ${{ inputs.start_year }} \
+            $ENTITY_FLAG
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          CVM_DNS_NAMESERVERS:  "1.1.1.1,8.8.8.8,9.9.9.9"
+          TZ:                   America/Sao_Paulo
