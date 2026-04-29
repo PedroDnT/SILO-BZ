@@ -1,10 +1,14 @@
+import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Query, Path
+from fastapi import FastAPI, HTTPException, Query, Path, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict, Optional, List, Any
 import logging
 from datetime import datetime, timezone
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 if __package__:
     from .config import config, SecurityType
@@ -93,6 +97,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Rate limiting configuration
+def get_rate_limit_key(request: Request) -> str:
+    return get_remote_address(request)
+
+rate_limit_enabled = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+rate_limit_requests = int(os.getenv("RATE_LIMIT_REQUESTS", "100"))
+rate_limit_window = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
+
+limiter = Limiter(key_func=get_rate_limit_key)
+app.state.limiter = limiter
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": "Rate limit exceeded",
+            "status_code": 429,
+            "detail": str(exc.detail),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    )
+
 # Health check endpoint
 @app.get(
     "/health",
@@ -115,7 +142,8 @@ async def health_check():
     summary="Available endpoints",
     description="List all available API endpoints"
 )
-async def get_available_endpoints():
+@limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")
+async def get_available_endpoints(request: Request):
     """Get list of available endpoints"""
     endpoints = [
         {
@@ -156,7 +184,9 @@ async def get_available_endpoints():
     summary="Get price data for a symbol",
     description="Calculate and return price data for a fixed income security symbol"
 )
+@limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")
 async def get_price_data(
+    request: Request,
     symbol: str = Path(..., description="Security symbol/code"),
     security_type: Optional[SecurityType] = Query(
         None,
@@ -206,7 +236,8 @@ async def get_price_data(
     summary="Get financial indexes",
     description="Returns current values for Brazilian financial indexes used in fixed income calculations"
 )
-async def get_indexes():
+@limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")
+async def get_indexes(request: Request):
     """Get current financial indexes"""
     if b3_calc_service is None:
         raise HTTPException(
@@ -230,7 +261,8 @@ async def get_indexes():
     summary="Get market data",
     description="Returns general market data including indexes and market status"
 )
-async def get_market_data():
+@limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")
+async def get_market_data(request: Request):
     """Get general market data"""
     if b3_calc_service is None:
         raise HTTPException(
@@ -254,7 +286,9 @@ async def get_market_data():
     summary="List securities by type",
     description="Returns a list of securities of the specified type (debentures, cra, cri)"
 )
+@limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")
 async def list_securities(
+    request: Request,
     security_type: SecurityType = Path(..., description="Security type"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(

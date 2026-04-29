@@ -108,9 +108,6 @@ Service URLs:
 
 ### B3 CALC API
 
-
-fafa
-
 - `GET /health`
 - `GET /api/v1/`
 - `GET /api/v1/prices/{symbol}`

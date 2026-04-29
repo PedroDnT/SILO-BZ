@@ -145,6 +145,37 @@ def mock_zip_content():
     zip_buffer.seek(0)
     return zip_buffer.getvalue()
 
+@pytest.fixture
+def sample_sgs_dataframe():
+    """Single-series SGS DataFrame with DatetimeIndex (for BACEN unit tests)."""
+    import pandas as pd
+    import numpy as np
+    idx = pd.DatetimeIndex(["2024-01-01", "2024-02-01", "2024-03-01"], name="Date")
+    return pd.DataFrame({"IPCA": [0.42, 0.83, np.nan]}, index=idx)
+
+
+@pytest.fixture
+def sample_ptax_dataframe():
+    """PTAX USD/BRL DataFrame (for BACEN unit tests)."""
+    import pandas as pd
+    idx = pd.DatetimeIndex(["2024-01-31"], name="DateTime")
+    return pd.DataFrame({"cotacaoCompra": [5.01], "cotacaoVenda": [5.02]}, index=idx)
+
+
+@pytest.fixture
+def sample_expectativas_dataframe():
+    """Expectativas focus bulletin DataFrame (for BACEN unit tests)."""
+    import pandas as pd
+    import numpy as np
+    return pd.DataFrame({
+        "Indicador": ["IPCA", "IPCA"],
+        "Data": ["2024-01-26", "2024-02-02"],
+        "Mediana": [3.9, 4.0],
+        "Media": [3.88, 3.99],
+        "DesvioPadrao": [0.12, np.nan],
+    })
+
+
 # Pytest configuration
 def pytest_configure(config):
     """Configure pytest with custom markers"""
