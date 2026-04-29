@@ -27,7 +27,7 @@
       with SUPABASE_URL + SUPABASE_SERVICE_KEY set
 - [ ] B3 CALC live API — probe calculadorarendafixa.com.br/webservice endpoints;
       currently falls back to hardcoded sample data in src/b3_calc_api/services.py
-- [ ] Rate limiting — wire slowapi into all three FastAPI apps; env vars already defined
+- [x] Rate limiting — wire slowapi into all three FastAPI apps; env vars already defined
       (RATE_LIMIT_ENABLED, RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW in .env.example)
 
 ## P3 — Skip / low priority

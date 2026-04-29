@@ -1,6 +1,0 @@
-services:
-  bziliquidscrapper:
-    image: bziliquidscrapper
-    build:
-      context: .
-      dockerfile: ./Dockerfile
