@@ -11,11 +11,11 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 if __package__:
-    from .config import config, dataset_config, EntityType, FIDCDocType, FIPDocType, FIAGRODocType, SECURITDocType
+    from .config import config, dataset_config, EntityType, FIDocType, FIDCDocType, FIPDocType, FIAGRODocType, FIIDocType, SECURITDocType
     from .models import HealthResponse, ErrorResponse, DataResponse, AvailableEndpointsResponse, EntityInfo, CNPJRegistryResponse
     from .services import CVMCreditDataService
 else:
-    from config import config, dataset_config, EntityType, FIDCDocType, FIPDocType, FIAGRODocType, SECURITDocType
+    from config import config, dataset_config, EntityType, FIDocType, FIDCDocType, FIPDocType, FIAGRODocType, FIIDocType, SECURITDocType
     from models import HealthResponse, ErrorResponse, DataResponse, AvailableEndpointsResponse, EntityInfo, CNPJRegistryResponse
     from services import CVMCreditDataService
 
@@ -124,6 +124,12 @@ async def get_available_endpoints(request: Request):
     """Get all available endpoints and their descriptions"""
     entities = [
         EntityInfo(
+            entity="fi",
+            name="FI - Fundos de Investimento",
+            doc_types=dataset_config.get_available_doc_types("fi"),
+            description="General investment funds: daily NAV, portfolio composition, balance sheet"
+        ),
+        EntityInfo(
             entity="fidc",
             name="FIDC - Fundos de Investimento em Direitos Creditórios",
             doc_types=dataset_config.get_available_doc_types("fidc"),
@@ -139,14 +145,20 @@ async def get_available_endpoints(request: Request):
             entity="fiagro",
             name="FIAGRO - Fundos de Investimento nas Cadeias Produtivas Agroindustriais",
             doc_types=dataset_config.get_available_doc_types("fiagro"),
-            description="Agroindustrial investment funds"
+            description="Agroindustrial investment funds (available from May 2025)"
+        ),
+        EntityInfo(
+            entity="fii",
+            name="FII - Fundos de Investimento Imobiliário",
+            doc_types=dataset_config.get_available_doc_types("fii"),
+            description="Real estate investment funds"
         ),
         EntityInfo(
             entity="securit",
             name="SECURIT - Securitizadoras",
             doc_types=dataset_config.get_available_doc_types("securit"),
-            description="Securitization companies"
-        )
+            description="Securitization companies: CRA, CRI, OTS, DFIN"
+        ),
     ]
     
     return AvailableEndpointsResponse(
@@ -154,6 +166,62 @@ async def get_available_endpoints(request: Request):
         base_url="/api/v1/{entity}/{doc_type}",
         version=config.API_VERSION
     )
+
+@app.get("/api/v1/fi/{doc_type}", response_model=DataResponse)
+@limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")
+async def get_fi_data(
+    request: Request,
+    doc_type: FIDocType = Path(..., description="Type of FI document"),
+    year: Optional[int] = Query(None, description="Year (required)"),
+    month: Optional[int] = Query(None, ge=1, le=12, description="Month (required)"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(config.DEFAULT_PAGE_SIZE, ge=1, le=config.MAX_PAGE_SIZE, description="Items per page"),
+):
+    """Get FI (Fundos de Investimento) data by document type.
+
+    All FI doc types require both year and month (monthly files).
+    `inf_diario` returns ~400k rows/month; use pagination.
+    """
+    try:
+        logger.info("Request: FI %s year=%s month=%s page=%s", doc_type.value, year, month, page)
+        result = await data_service.get_data(
+            entity="fi", doc_type=doc_type.value,
+            year=year, month=month, page=page, page_size=page_size,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Error processing FI request: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
+
+
+@app.get("/api/v1/fii/{doc_type}", response_model=DataResponse)
+@limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")
+async def get_fii_data(
+    request: Request,
+    doc_type: FIIDocType = Path(..., description="Type of FII document"),
+    year: Optional[int] = Query(None, description="Year (required for all doc types)"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(config.DEFAULT_PAGE_SIZE, ge=1, le=config.MAX_PAGE_SIZE, description="Items per page"),
+):
+    """Get FII (Fundos de Investimento Imobiliário) data by document type.
+
+    All FII doc types require year. Files are yearly aggregates (one file per year).
+    """
+    try:
+        logger.info("Request: FII %s year=%s page=%s", doc_type.value, year, page)
+        result = await data_service.get_data(
+            entity="fii", doc_type=doc_type.value,
+            year=year, month=None, page=page, page_size=page_size,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Error processing FII request: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
+
 
 @app.get("/api/v1/fidc/{doc_type}", response_model=DataResponse)
 @limiter.limit(f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute")

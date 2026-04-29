@@ -1,8 +1,19 @@
 """
 CVM data ingestor — downloads all entity/doc_type combinations and persists
-to Supabase tables: cvm_cadastral, cvm_mensal, cvm_periodic, cvm_securit_emissions.
+to Supabase.
 
-Reuses CVMCreditDataService for fetch/parse/cache logic.
+Tables written:
+  cvm_fi_diario        FI daily snapshot (INF_DIARIO)
+  cvm_fi_cda           FI portfolio composition (CDA)
+  cvm_fi_perfil        FI investor profile (PERFIL_MENSAL)
+  cvm_fidc_mensal      FIDC monthly snapshot
+  cvm_fiagro_mensal    FIAGRO monthly snapshot
+  cvm_fip_periodic     FIP quarterly/four-monthly reports
+  cvm_fii_mensal       FII monthly reports
+  cvm_fii_periodic     FII quarterly/annual/dfin reports
+  cvm_securit_mensal   SECURIT CRA/CRI/OTS monthly emissions
+  cvm_securit_dfin     SECURIT CRA/CRI financial statements
+  cvm_ingest_log       Audit log for every ingest run
 """
 
 import asyncio
@@ -12,8 +23,8 @@ import sys
 import os
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
+from uuid import uuid4
 
-# Allow running from repo root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.cvm_api.services import CVMCreditDataService
@@ -22,28 +33,30 @@ from src.ingestor.supabase_client import get_supabase_client, upsert_rows
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Entity / doc-type matrix
+# Entity / doc-type matrix  (only endpoints that actually exist on CVM server)
 # ---------------------------------------------------------------------------
 
-CADASTRAL_ENTITIES: List[str] = ["fidc", "fip", "fiagro"]
+# FI monthly doc types (all require year + month)
+FI_MONTHLY_DOC_TYPES: List[str] = ["inf_diario", "cda", "perfil_mensal", "balancete"]
 
-MENSAL_ENTITIES: List[str] = ["fidc", "fiagro"]
+# FIDC / FIAGRO monthly
+FIDC_MENSAL_ENTITY = "fidc"
+FIAGRO_MENSAL_ENTITY = "fiagro"
 
-PERIODIC_CONFIGS: List[Tuple[str, str]] = [
-    ("fidc",   "trimestral"),
-    ("fidc",   "anual"),
-    ("fip",    "inf_trimestral"),
-    ("fip",    "inf_quadrimestral"),
-    ("fip",    "dfin"),
-    ("fiagro", "trimestral"),
-    ("fiagro", "anual"),
+# FIP yearly doc types
+FIP_PERIODIC_CONFIGS: List[Tuple[str, str]] = [
+    ("fip", "inf_trimestral"),      # 2010–2023
+    ("fip", "inf_quadrimestral"),   # 2024+
 ]
 
-SECURIT_TYPES: List[str] = [
-    "cra_mensal", "cri_mensal", "ots_mensal", "lca_mensal", "lci_mensal"
-]
+# FII doc types
+FII_MENSAL_DOC_TYPES: List[str] = ["mensal_geral", "mensal_ativo_passivo"]
+FII_PERIODIC_DOC_TYPES: List[str] = ["trimestral", "anual", "dfin"]
 
-# Large page size for ingestion (max supported)
+# SECURIT doc types split by target table
+SECURIT_MENSAL_TYPES: List[str] = ["cra_mensal", "cri_mensal", "ots_mensal"]
+SECURIT_DFIN_TYPES: List[str] = ["dfin_cra", "dfin_cri"]
+
 _PAGE_SIZE = 5000
 
 
@@ -52,12 +65,10 @@ _PAGE_SIZE = 5000
 # ---------------------------------------------------------------------------
 
 def _normalize_cnpj(raw: str) -> str:
-    """Strip non-digit characters from a CNPJ string."""
     return re.sub(r"\D", "", str(raw)) if raw else ""
 
 
 def _find_field(row: Dict[str, Any], *candidates: str) -> Optional[str]:
-    """Return the value of the first matching key (case-insensitive)."""
     row_lower = {k.lower(): v for k, v in row.items()}
     for c in candidates:
         v = row_lower.get(c.lower())
@@ -67,7 +78,6 @@ def _find_field(row: Dict[str, Any], *candidates: str) -> Optional[str]:
 
 
 def _find_cnpj_field(row: Dict[str, Any], prefer_suffix: str = "fundo") -> Optional[str]:
-    """Detect the CNPJ column regardless of entity-specific naming."""
     for k, v in row.items():
         if "cnpj" in k.lower() and prefer_suffix.lower() in k.lower():
             return str(v) if v else None
@@ -84,248 +94,439 @@ def _find_inadimpl(row: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _safe_numeric(val: Optional[str]) -> Optional[str]:
+    """Return val unchanged; ingestor stores string, Supabase casts to NUMERIC."""
+    return val
+
+
+def _period_to_date(period_str: Optional[str], year: int, month: int) -> str:
+    """Normalise a period string to ISO date. Falls back to first-of-month."""
+    if period_str:
+        try:
+            # CVM uses YYYY-MM-DD for DT_COMPTC
+            parts = period_str.split("-")
+            if len(parts) == 3:
+                return period_str
+        except Exception:
+            pass
+    return f"{year}-{month:02d}-01"
+
+
 # ---------------------------------------------------------------------------
 # Ingestor class
 # ---------------------------------------------------------------------------
 
 class CVMIngestor:
-    """
-    Downloads CVM data via CVMCreditDataService and persists to Supabase.
-
-    Example usage::
-
-        ingestor = CVMIngestor()
-        await ingestor.backfill(start_year=2019)
-        # or incremental:
-        await ingestor.daily_update()
-    """
+    """Downloads CVM data via CVMCreditDataService and persists to Supabase."""
 
     def __init__(self) -> None:
         self._service = CVMCreditDataService()
         self._supabase = get_supabase_client()
 
     # ------------------------------------------------------------------
-    # Cadastral (yearly CSV)
+    # Ingest log helpers
     # ------------------------------------------------------------------
 
-    async def ingest_cadastral(self, entity: str, year: int) -> int:
-        """Download and upsert the cadastral CSV for one entity/year."""
-        logger.info("Cadastral: entity=%s year=%d", entity, year)
-        rows_inserted = 0
+    def _log_start(self, run_id: str, entity: str, doc_type: str,
+                   year: Optional[int], month: Optional[int]) -> None:
+        try:
+            upsert_rows(self._supabase, "cvm_ingest_log", [{
+                "run_id":       run_id,
+                "entity":       entity,
+                "doc_type":     doc_type,
+                "period_year":  year,
+                "period_month": month,
+                "status":       "running",
+                "started_at":   datetime.now(timezone.utc).isoformat(),
+            }])
+        except Exception as e:
+            logger.warning("ingest_log start failed: %s", e)
+
+    def _log_finish(self, run_id: str, rows: int, error: Optional[str] = None) -> None:
+        try:
+            upsert_rows(self._supabase, "cvm_ingest_log", [{
+                "run_id":       run_id,
+                "rows_upserted": rows,
+                "status":       "error" if error else "ok",
+                "error_msg":    error,
+                "finished_at":  datetime.now(timezone.utc).isoformat(),
+            }], conflict_columns="run_id")
+        except Exception as e:
+            logger.warning("ingest_log finish failed: %s", e)
+
+    # ------------------------------------------------------------------
+    # Generic paginated fetch helper
+    # ------------------------------------------------------------------
+
+    async def _fetch_all_pages(
+        self,
+        entity: str,
+        doc_type: str,
+        year: Optional[int],
+        month: Optional[int],
+    ) -> List[Dict[str, Any]]:
+        """Fetch all pages for a given entity/doc_type/year/month combo."""
+        all_rows: List[Dict[str, Any]] = []
         page = 1
         while True:
-            try:
-                resp = await self._service.get_data(
-                    entity=entity,
-                    doc_type="cadastral",
-                    year=year,
-                    month=None,
-                    page=page,
-                    page_size=_PAGE_SIZE,
-                )
-            except Exception as exc:
-                logger.warning("Cadastral fetch failed entity=%s year=%d page=%d: %s",
-                               entity, year, page, exc)
-                break
-
-            if not resp.data:
-                break
-
-            records: List[Dict[str, Any]] = []
-            for row in resp.data:
-                cnpj_raw = _find_cnpj_field(row, prefer_suffix="fundo")
-                cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else ""
-                records.append({
-                    "entity":       entity,
-                    "year":         year,
-                    "cnpj":         cnpj,
-                    "denom_social": _find_field(row, "DENOM_SOCIAL", "NM_FUNDO"),
-                    "dt_reg":       _find_field(row, "DT_REG", "DT_CONST"),
-                    "dt_cancel":    _find_field(row, "DT_CANCEL", "DT_ENCERRAMENTO"),
-                    "sit":          _find_field(row, "SIT", "SIT_FUNDO"),
-                    "tp_fundo":     _find_field(row, "TP_FUNDO", "CLASSE", "CATEG_FUNDO"),
-                    "raw":          row,
-                })
-
-            n = upsert_rows(
-                self._supabase, "cvm_cadastral", records,
-                conflict_columns="entity,cnpj,year"
+            resp = await self._service.get_data(
+                entity=entity, doc_type=doc_type,
+                year=year, month=month,
+                page=page, page_size=_PAGE_SIZE,
             )
-            rows_inserted += n
-            logger.debug("  page=%d upserted=%d", page, n)
-
+            all_rows.extend(resp.data)
             if not resp.pagination.has_next:
                 break
             page += 1
-
-        logger.info("Cadastral done: entity=%s year=%d total=%d", entity, year, rows_inserted)
-        return rows_inserted
+        return all_rows
 
     # ------------------------------------------------------------------
-    # Mensal (monthly ZIP)
+    # FI — daily snapshot  (INF_DIARIO)
     # ------------------------------------------------------------------
 
-    async def ingest_mensal(self, entity: str, year: int, month: int) -> int:
-        """Download and upsert one month of mensal data."""
-        logger.info("Mensal: entity=%s year=%d month=%02d", entity, year, month)
+    async def ingest_fi_diario(self, year: int, month: int) -> int:
+        run_id = str(uuid4())
+        self._log_start(run_id, "fi", "inf_diario", year, month)
         rows_inserted = 0
-        page = 1
-        while True:
-            try:
-                resp = await self._service.get_data(
-                    entity=entity,
-                    doc_type="mensal",
-                    year=year,
-                    month=month,
-                    page=page,
-                    page_size=_PAGE_SIZE,
-                )
-            except Exception as exc:
-                logger.warning("Mensal fetch failed entity=%s %d-%02d page=%d: %s",
-                               entity, year, month, page, exc)
-                break
-
-            if not resp.data:
-                break
-
+        try:
+            raw_rows = await self._fetch_all_pages("fi", "inf_diario", year, month)
             records: List[Dict[str, Any]] = []
-            for row in resp.data:
-                cnpj_raw = _find_cnpj_field(row, prefer_suffix="fundo")
+            for row in raw_rows:
+                cnpj_raw = _find_cnpj_field(row, prefer_suffix="classe") or _find_cnpj_field(row)
                 cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else ""
-                period = _find_field(row, "DT_COMPTC") or f"{year}-{month:02d}-01"
                 records.append({
-                    "entity":       entity,
-                    "cnpj":         cnpj,
-                    "period":       period,
-                    "vl_total":     _find_field(row, "VL_TOTAL", "VL_CARTEIRA_TOTAL"),
-                    "vl_quota":     _find_field(row, "VL_QUOTA"),
+                    "cnpj":          cnpj,
+                    "tp_fundo":      _find_field(row, "TP_FUNDO_CLASSE"),
+                    "dt_comptc":     _find_field(row, "DT_COMPTC"),
+                    "vl_total":      _find_field(row, "VL_TOTAL"),
+                    "vl_quota":      _find_field(row, "VL_QUOTA"),
                     "vl_patrim_liq": _find_field(row, "VL_PATRIM_LIQ"),
-                    "vl_inadimpl":  _find_inadimpl(row),
-                    "nr_cotst":     _find_field(row, "NR_COTST"),
-                    "raw":          row,
+                    "captc_dia":     _find_field(row, "CAPTC_DIA"),
+                    "resg_dia":      _find_field(row, "RESG_DIA"),
+                    "nr_cotst":      _find_field(row, "NR_COTST"),
+                    "raw":           row,
                 })
-
-            n = upsert_rows(
-                self._supabase, "cvm_mensal", records,
-                conflict_columns="entity,cnpj,period"
+            rows_inserted = upsert_rows(
+                self._supabase, "cvm_fi_diario", records,
+                conflict_columns="cnpj,dt_comptc",
             )
-            rows_inserted += n
-
-            if not resp.pagination.has_next:
-                break
-            page += 1
-
-        logger.info("Mensal done: entity=%s %d-%02d total=%d", entity, year, month, rows_inserted)
+        except Exception as exc:
+            logger.warning("ingest_fi_diario %d-%02d failed: %s", year, month, exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("fi/inf_diario %d-%02d: %d rows", year, month, rows_inserted)
         return rows_inserted
 
     # ------------------------------------------------------------------
-    # Periodic (trimestral / anual / dfin / etc.)
+    # FI — portfolio composition  (CDA)
     # ------------------------------------------------------------------
 
-    async def ingest_periodic(self, entity: str, doc_type: str, year: int) -> int:
-        """Download and insert one periodic (non-monthly) dataset."""
-        logger.info("Periodic: entity=%s doc_type=%s year=%d", entity, doc_type, year)
+    async def ingest_fi_cda(self, year: int, month: int) -> int:
+        run_id = str(uuid4())
+        self._log_start(run_id, "fi", "cda", year, month)
         rows_inserted = 0
-        page = 1
-        while True:
-            try:
-                resp = await self._service.get_data(
-                    entity=entity,
-                    doc_type=doc_type,
-                    year=year,
-                    month=None,
-                    page=page,
-                    page_size=_PAGE_SIZE,
-                )
-            except Exception as exc:
-                logger.warning("Periodic fetch failed %s/%s %d page=%d: %s",
-                               entity, doc_type, year, page, exc)
-                break
-
-            if not resp.data:
-                break
-
+        try:
+            raw_rows = await self._fetch_all_pages("fi", "cda", year, month)
             records: List[Dict[str, Any]] = []
-            for row in resp.data:
-                cnpj_raw = _find_cnpj_field(row, prefer_suffix="fundo")
+            for row in raw_rows:
+                cnpj_raw = _find_cnpj_field(row)
+                cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else ""
+                period = f"{year}-{month:02d}-01"
+                records.append({
+                    "cnpj":               cnpj,
+                    "period":             period,
+                    "tp_aplic":           _find_field(row, "TP_APLIC"),
+                    "tp_ativo":           _find_field(row, "TP_ATIVO"),
+                    "vl_merc_pos_final":  _find_field(row, "VL_MERC_POS_FINAL"),
+                    "raw":                row,
+                })
+            rows_inserted = upsert_rows(
+                self._supabase, "cvm_fi_cda", records,
+                conflict_columns="cnpj,period,tp_aplic,tp_ativo",
+            )
+        except Exception as exc:
+            logger.warning("ingest_fi_cda %d-%02d failed: %s", year, month, exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("fi/cda %d-%02d: %d rows", year, month, rows_inserted)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
+    # FI — investor profile  (PERFIL_MENSAL)
+    # ------------------------------------------------------------------
+
+    async def ingest_fi_perfil(self, year: int, month: int) -> int:
+        run_id = str(uuid4())
+        self._log_start(run_id, "fi", "perfil_mensal", year, month)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages("fi", "perfil_mensal", year, month)
+            records: List[Dict[str, Any]] = []
+            period = f"{year}-{month:02d}-01"
+            for row in raw_rows:
+                cnpj_raw = _find_cnpj_field(row)
+                cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else ""
+                records.append({"cnpj": cnpj, "period": period, "raw": row})
+            rows_inserted = upsert_rows(
+                self._supabase, "cvm_fi_perfil", records,
+                conflict_columns="cnpj,period",
+            )
+        except Exception as exc:
+            logger.warning("ingest_fi_perfil %d-%02d failed: %s", year, month, exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("fi/perfil_mensal %d-%02d: %d rows", year, month, rows_inserted)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
+    # FIDC — monthly snapshot
+    # ------------------------------------------------------------------
+
+    async def ingest_fidc_mensal(self, year: int, month: int) -> int:
+        run_id = str(uuid4())
+        self._log_start(run_id, "fidc", "mensal", year, month)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages("fidc", "mensal", year, month)
+            records: List[Dict[str, Any]] = []
+            for row in raw_rows:
+                cnpj_raw = _find_cnpj_field(row)
+                cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else ""
+                period = _period_to_date(_find_field(row, "DT_COMPTC"), year, month)
+                records.append({
+                    "cnpj":          cnpj,
+                    "period":        period,
+                    "vl_total":      _find_field(row, "VL_TOTAL", "VL_CARTEIRA_TOTAL"),
+                    "vl_quota":      _find_field(row, "VL_QUOTA"),
+                    "vl_patrim_liq": _find_field(row, "VL_PATRIM_LIQ"),
+                    "vl_inadimpl":   _find_inadimpl(row),
+                    "nr_cotst":      _find_field(row, "NR_COTST"),
+                    "raw":           row,
+                })
+            rows_inserted = upsert_rows(
+                self._supabase, "cvm_fidc_mensal", records,
+                conflict_columns="cnpj,period",
+            )
+        except Exception as exc:
+            logger.warning("ingest_fidc_mensal %d-%02d failed: %s", year, month, exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("fidc/mensal %d-%02d: %d rows", year, month, rows_inserted)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
+    # FIAGRO — monthly snapshot
+    # ------------------------------------------------------------------
+
+    async def ingest_fiagro_mensal(self, year: int, month: int) -> int:
+        run_id = str(uuid4())
+        self._log_start(run_id, "fiagro", "mensal", year, month)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages("fiagro", "mensal", year, month)
+            records: List[Dict[str, Any]] = []
+            for row in raw_rows:
+                cnpj_raw = _find_cnpj_field(row)
+                cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else ""
+                period = _period_to_date(_find_field(row, "DT_COMPTC"), year, month)
+                records.append({
+                    "cnpj":          cnpj,
+                    "period":        period,
+                    "vl_total":      _find_field(row, "VL_TOTAL", "VL_CARTEIRA_TOTAL"),
+                    "vl_quota":      _find_field(row, "VL_QUOTA"),
+                    "vl_patrim_liq": _find_field(row, "VL_PATRIM_LIQ"),
+                    "vl_inadimpl":   _find_inadimpl(row),
+                    "nr_cotst":      _find_field(row, "NR_COTST"),
+                    "raw":           row,
+                })
+            rows_inserted = upsert_rows(
+                self._supabase, "cvm_fiagro_mensal", records,
+                conflict_columns="cnpj,period",
+            )
+        except Exception as exc:
+            logger.warning("ingest_fiagro_mensal %d-%02d failed: %s", year, month, exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("fiagro/mensal %d-%02d: %d rows", year, month, rows_inserted)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
+    # FIP — periodic (trimestral / inf_quadrimestral)
+    # ------------------------------------------------------------------
+
+    async def ingest_fip_periodic(self, doc_type: str, year: int) -> int:
+        run_id = str(uuid4())
+        self._log_start(run_id, "fip", doc_type, year, None)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages("fip", doc_type, year, None)
+            records: List[Dict[str, Any]] = []
+            for row in raw_rows:
+                cnpj_raw = _find_cnpj_field(row)
                 cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else None
                 records.append({
-                    "entity":   entity,
-                    "doc_type": doc_type,
-                    "year":     year,
-                    "cnpj":     cnpj,
-                    "raw":      row,
+                    "cnpj":          cnpj,
+                    "doc_type":      doc_type,
+                    "period_year":   year,
+                    "vl_patrim_liq": _find_field(row, "VL_PATRIM_LIQ"),
+                    "raw":           row,
                 })
-
-            n = upsert_rows(self._supabase, "cvm_periodic", records,
-                            conflict_columns="entity,doc_type,year,cnpj")
-            rows_inserted += n
-
-            if not resp.pagination.has_next:
-                break
-            page += 1
-
-        logger.info("Periodic done: %s/%s %d total=%d", entity, doc_type, year, rows_inserted)
+            rows_inserted = upsert_rows(
+                self._supabase, "cvm_fip_periodic", records,
+                conflict_columns="cnpj,doc_type,period_year",
+            )
+        except Exception as exc:
+            logger.warning("ingest_fip_periodic %s %d failed: %s", doc_type, year, exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("fip/%s %d: %d rows", doc_type, year, rows_inserted)
         return rows_inserted
 
     # ------------------------------------------------------------------
-    # SECURIT emissions (yearly ZIP → all months)
+    # FII — monthly (mensal_geral, mensal_ativo_passivo)
     # ------------------------------------------------------------------
 
-    async def ingest_securit(self, instrument_type: str, year: int) -> int:
-        """Download and insert all SECURIT emission records for one instrument/year."""
-        logger.info("SECURIT: type=%s year=%d", instrument_type, year)
+    async def ingest_fii_mensal(self, doc_type: str, year: int) -> int:
+        """doc_type is 'mensal_geral' or 'mensal_ativo_passivo'."""
+        run_id = str(uuid4())
+        self._log_start(run_id, "fii", doc_type, year, None)
         rows_inserted = 0
-        page = 1
-        while True:
-            try:
-                resp = await self._service.get_data(
-                    entity="securit",
-                    doc_type=instrument_type,
-                    year=year,
-                    month=None,
-                    page=page,
-                    page_size=_PAGE_SIZE,
-                )
-            except Exception as exc:
-                logger.warning("SECURIT fetch failed type=%s year=%d page=%d: %s",
-                               instrument_type, year, page, exc)
-                break
-
-            if not resp.data:
-                break
-
+        subtype = "geral" if "geral" in doc_type else "ativo_passivo"
+        try:
+            raw_rows = await self._fetch_all_pages("fii", doc_type, year, None)
             records: List[Dict[str, Any]] = []
-            for row in resp.data:
+            for row in raw_rows:
+                cnpj_raw = _find_cnpj_field(row)
+                cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else ""
+                # FII uses Data_Referencia (YYYY-MM-DD format)
+                period_str = _find_field(row, "Data_Referencia", "DT_COMPTC")
+                period = period_str[:7] + "-01" if period_str and len(period_str) >= 7 else f"{year}-01-01"
+                records.append({
+                    "cnpj":          cnpj,
+                    "period":        period,
+                    "doc_subtype":   subtype,
+                    "vl_patrim_liq": _find_field(row, "Patrimonio_Liquido", "VL_PATRIM_LIQ"),
+                    "raw":           row,
+                })
+            rows_inserted = upsert_rows(
+                self._supabase, "cvm_fii_mensal", records,
+                conflict_columns="cnpj,period,doc_subtype",
+            )
+        except Exception as exc:
+            logger.warning("ingest_fii_mensal %s %d failed: %s", doc_type, year, exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("fii/%s %d: %d rows", doc_type, year, rows_inserted)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
+    # FII — periodic (trimestral, anual, dfin)
+    # ------------------------------------------------------------------
+
+    async def ingest_fii_periodic(self, doc_type: str, year: int) -> int:
+        run_id = str(uuid4())
+        self._log_start(run_id, "fii", doc_type, year, None)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages("fii", doc_type, year, None)
+            records: List[Dict[str, Any]] = []
+            for row in raw_rows:
+                cnpj_raw = _find_cnpj_field(row)
+                cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else None
+                records.append({
+                    "cnpj":        cnpj,
+                    "doc_type":    doc_type,
+                    "period_year": year,
+                    "raw":         row,
+                })
+            rows_inserted = upsert_rows(
+                self._supabase, "cvm_fii_periodic", records,
+                conflict_columns="cnpj,doc_type,period_year",
+            )
+        except Exception as exc:
+            logger.warning("ingest_fii_periodic %s %d failed: %s", doc_type, year, exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("fii/%s %d: %d rows", doc_type, year, rows_inserted)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
+    # SECURIT — monthly emissions (cra_mensal, cri_mensal, ots_mensal)
+    # ------------------------------------------------------------------
+
+    async def ingest_securit_mensal(self, instrument_type: str, year: int) -> int:
+        run_id = str(uuid4())
+        self._log_start(run_id, "securit", instrument_type, year, None)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages("securit", instrument_type, year, None)
+            records: List[Dict[str, Any]] = []
+            for row in raw_rows:
                 cnpj_raw = _find_cnpj_field(row, prefer_suffix="securit")
                 cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else None
-
-                unit_price = (
-                    _find_field(row, "VL_UNIT", "PU_EMISSAO", "VL_PU_EMISSAO")
-                )
                 records.append({
                     "instrument_type": instrument_type,
-                    "year":            year,
+                    "period_year":     year,
                     "cnpj_securit":    cnpj,
                     "dt_emissao":      _find_field(row, "DT_EMISSAO"),
                     "dt_vencto":       _find_field(row, "DT_VENCTO", "DT_VENCIMENTO"),
                     "vl_emissao":      _find_field(row, "VL_EMISSAO"),
-                    "vl_unit":         unit_price,
+                    "vl_unit":         _find_field(row, "VL_UNIT", "PU_EMISSAO", "VL_PU_EMISSAO"),
                     "qt_titulos":      _find_field(row, "QT_TITULOS"),
                     "vl_total":        _find_field(row, "VL_TOTAL"),
                     "tp_ativo":        _find_field(row, "TP_ATIVO"),
                     "raw":             row,
                 })
+            rows_inserted = upsert_rows(
+                self._supabase, "cvm_securit_mensal", records,
+                conflict_columns="instrument_type,period_year,cnpj_securit,dt_emissao,dt_vencto,vl_emissao",
+            )
+        except Exception as exc:
+            logger.warning("ingest_securit_mensal %s %d failed: %s", instrument_type, year, exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("securit/%s %d: %d rows", instrument_type, year, rows_inserted)
+        return rows_inserted
 
-            n = upsert_rows(self._supabase, "cvm_securit_emissions", records,
-                            conflict_columns="instrument_type,year,cnpj_securit,dt_emissao,dt_vencto,vl_emissao")
-            rows_inserted += n
+    # ------------------------------------------------------------------
+    # SECURIT — financial statements (dfin_cra, dfin_cri)
+    # ------------------------------------------------------------------
 
-            if not resp.pagination.has_next:
-                break
-            page += 1
-
-        logger.info("SECURIT done: type=%s year=%d total=%d", instrument_type, year, rows_inserted)
+    async def ingest_securit_dfin(self, instrument_type: str, year: int) -> int:
+        run_id = str(uuid4())
+        self._log_start(run_id, "securit", instrument_type, year, None)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages("securit", instrument_type, year, None)
+            records: List[Dict[str, Any]] = []
+            for row in raw_rows:
+                cnpj_raw = _find_cnpj_field(row, prefer_suffix="securit")
+                cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else None
+                records.append({
+                    "instrument_type": instrument_type,
+                    "period_year":     year,
+                    "cnpj_securit":    cnpj,
+                    "raw":             row,
+                })
+            rows_inserted = upsert_rows(
+                self._supabase, "cvm_securit_dfin", records,
+                conflict_columns="instrument_type,period_year,cnpj_securit",
+            )
+        except Exception as exc:
+            logger.warning("ingest_securit_dfin %s %d failed: %s", instrument_type, year, exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("securit/%s %d: %d rows", instrument_type, year, rows_inserted)
         return rows_inserted
 
     # ------------------------------------------------------------------
@@ -341,145 +542,155 @@ class CVMIngestor:
         """
         Full historical backfill for all entities from start_year to today.
 
-        Args:
-            start_year:    First year to download (default 2019).
-            end_year:      Last year (inclusive). Defaults to current year.
-            entity_filter: If set, only process this entity (fidc|fip|fiagro|securit).
-
-        Returns:
-            Dict of table → rows_inserted.
+        Pass entity_filter to restrict to one entity: fi | fidc | fip | fiagro | fii | securit
         """
         today = date.today()
-        if end_year is None:
-            end_year = today.year
-
-        totals: Dict[str, int] = {
-            "cvm_cadastral":         0,
-            "cvm_mensal":            0,
-            "cvm_periodic":          0,
-            "cvm_securit_emissions": 0,
-        }
-
+        end_year = end_year or today.year
         years = list(range(start_year, end_year + 1))
 
-        # -- Cadastral (one CSV per year per entity) ----------------------
-        cad_tasks = []
-        for entity in CADASTRAL_ENTITIES:
-            if entity_filter and entity_filter != entity:
-                continue
-            for year in years:
-                cad_tasks.append(self.ingest_cadastral(entity, year))
+        totals: Dict[str, int] = {t: 0 for t in [
+            "cvm_fi_diario", "cvm_fi_cda", "cvm_fi_perfil",
+            "cvm_fidc_mensal", "cvm_fiagro_mensal",
+            "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic",
+            "cvm_securit_mensal", "cvm_securit_dfin",
+        ]}
 
-        if cad_tasks:
-            results = await asyncio.gather(*cad_tasks, return_exceptions=True)
-            for r in results:
-                if isinstance(r, int):
-                    totals["cvm_cadastral"] += r
-                else:
-                    logger.error("Cadastral task error: %s", r)
+        def _want(entity: str) -> bool:
+            return entity_filter is None or entity_filter == entity
 
-        # -- Mensal (one ZIP per month per entity) ------------------------
-        mensal_tasks = []
-        for entity in MENSAL_ENTITIES:
-            if entity_filter and entity_filter != entity:
-                continue
+        # -- FI monthly (batch: 6 at a time to avoid overwhelming CVM) ----
+        if _want("fi"):
+            fi_tasks: List[Tuple[str, Any]] = []
             for year in years:
                 last_month = today.month if year == today.year else 12
                 for month in range(1, last_month + 1):
-                    mensal_tasks.append(self.ingest_mensal(entity, year, month))
+                    fi_tasks.append(("cvm_fi_diario",  self.ingest_fi_diario(year, month)))
+                    fi_tasks.append(("cvm_fi_cda",     self.ingest_fi_cda(year, month)))
+                    fi_tasks.append(("cvm_fi_perfil",  self.ingest_fi_perfil(year, month)))
+            for i in range(0, len(fi_tasks), 6):
+                batch = fi_tasks[i:i + 6]
+                results = await asyncio.gather(*[t[1] for t in batch], return_exceptions=True)
+                for (tbl, _), r in zip(batch, results):
+                    if isinstance(r, int):
+                        totals[tbl] += r
 
-        if mensal_tasks:
-            # Batch to avoid hammering CVM with too many simultaneous requests
-            for i in range(0, len(mensal_tasks), 10):
-                batch = mensal_tasks[i : i + 10]
-                results = await asyncio.gather(*batch, return_exceptions=True)
+        # -- FIDC monthly -------------------------------------------------
+        if _want("fidc"):
+            tasks: List[Any] = []
+            for year in years:
+                last_month = today.month if year == today.year else 12
+                for month in range(1, last_month + 1):
+                    tasks.append(self.ingest_fidc_mensal(year, month))
+            for i in range(0, len(tasks), 10):
+                results = await asyncio.gather(*tasks[i:i + 10], return_exceptions=True)
                 for r in results:
                     if isinstance(r, int):
-                        totals["cvm_mensal"] += r
-                    else:
-                        logger.error("Mensal task error: %s", r)
+                        totals["cvm_fidc_mensal"] += r
 
-        # -- Periodic (one CSV per year) ----------------------------------
-        periodic_tasks = []
-        for entity, doc_type in PERIODIC_CONFIGS:
-            if entity_filter and entity_filter != entity:
-                continue
+        # -- FIAGRO monthly  (data only from 2025-05) ---------------------
+        if _want("fiagro"):
+            tasks = []
             for year in years:
-                periodic_tasks.append(self.ingest_periodic(entity, doc_type, year))
+                last_month = today.month if year == today.year else 12
+                for month in range(1, last_month + 1):
+                    tasks.append(self.ingest_fiagro_mensal(year, month))
+            for i in range(0, len(tasks), 10):
+                results = await asyncio.gather(*tasks[i:i + 10], return_exceptions=True)
+                for r in results:
+                    if isinstance(r, int):
+                        totals["cvm_fiagro_mensal"] += r
 
-        if periodic_tasks:
-            results = await asyncio.gather(*periodic_tasks, return_exceptions=True)
-            for r in results:
-                if isinstance(r, int):
-                    totals["cvm_periodic"] += r
-                else:
-                    logger.error("Periodic task error: %s", r)
-
-        # -- SECURIT (one ZIP per year) -----------------------------------
-        securit_tasks = []
-        if not entity_filter or entity_filter == "securit":
-            for instrument_type in SECURIT_TYPES:
+        # -- FIP periodic -------------------------------------------------
+        if _want("fip"):
+            tasks = []
+            for entity, doc_type in FIP_PERIODIC_CONFIGS:
                 for year in years:
-                    securit_tasks.append(self.ingest_securit(instrument_type, year))
-
-        if securit_tasks:
-            results = await asyncio.gather(*securit_tasks, return_exceptions=True)
+                    tasks.append(self.ingest_fip_periodic(doc_type, year))
+            results = await asyncio.gather(*tasks, return_exceptions=True)
             for r in results:
                 if isinstance(r, int):
-                    totals["cvm_securit_emissions"] += r
-                else:
-                    logger.error("SECURIT task error: %s", r)
+                    totals["cvm_fip_periodic"] += r
+
+        # -- FII ----------------------------------------------------------
+        if _want("fii"):
+            tasks = []
+            for doc_type in FII_MENSAL_DOC_TYPES:
+                for year in years:
+                    tasks.append(("cvm_fii_mensal", self.ingest_fii_mensal(doc_type, year)))
+            for doc_type in FII_PERIODIC_DOC_TYPES:
+                for year in years:
+                    tasks.append(("cvm_fii_periodic", self.ingest_fii_periodic(doc_type, year)))
+            results = await asyncio.gather(*[t[1] for t in tasks], return_exceptions=True)
+            for (tbl, _), r in zip(tasks, results):
+                if isinstance(r, int):
+                    totals[tbl] += r
+
+        # -- SECURIT ------------------------------------------------------
+        if _want("securit"):
+            tasks = []
+            for t in SECURIT_MENSAL_TYPES:
+                for year in years:
+                    tasks.append(("cvm_securit_mensal", self.ingest_securit_mensal(t, year)))
+            for t in SECURIT_DFIN_TYPES:
+                for year in years:
+                    tasks.append(("cvm_securit_dfin", self.ingest_securit_dfin(t, year)))
+            results = await asyncio.gather(*[t[1] for t in tasks], return_exceptions=True)
+            for (tbl, _), r in zip(tasks, results):
+                if isinstance(r, int):
+                    totals[tbl] += r
 
         logger.info("Backfill complete: %s", totals)
         return totals
 
     async def daily_update(self) -> Dict[str, int]:
-        """
-        Incremental update: current month's data for all entities.
-
-        Downloads the current month (and current year for yearly CSVs)
-        so the DB stays current after the daily cron run.
-        """
+        """Incremental update: current month (and previous month for monthly files)."""
         today = date.today()
-        year = today.year
-        month = today.month
+        year, month = today.year, today.month
 
-        totals: Dict[str, int] = {
-            "cvm_cadastral":         0,
-            "cvm_mensal":            0,
-            "cvm_periodic":          0,
-            "cvm_securit_emissions": 0,
-        }
+        totals: Dict[str, int] = {t: 0 for t in [
+            "cvm_fi_diario", "cvm_fi_cda", "cvm_fi_perfil",
+            "cvm_fidc_mensal", "cvm_fiagro_mensal",
+            "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic",
+            "cvm_securit_mensal", "cvm_securit_dfin",
+        ]}
 
-        tasks = []
+        tasks: List[Tuple[str, Any]] = []
 
-        # Cadastral: refresh current year
-        for entity in CADASTRAL_ENTITIES:
-            tasks.append(("cvm_cadastral", self.ingest_cadastral(entity, year)))
+        # FI — current + previous month
+        for m in ([month - 1, month] if month > 1 else [month]):
+            tasks += [
+                ("cvm_fi_diario", self.ingest_fi_diario(year, m)),
+                ("cvm_fi_cda",    self.ingest_fi_cda(year, m)),
+                ("cvm_fi_perfil", self.ingest_fi_perfil(year, m)),
+            ]
 
-        # Mensal: current month + previous month (in case previous was late)
-        for entity in MENSAL_ENTITIES:
-            tasks.append(("cvm_mensal", self.ingest_mensal(entity, year, month)))
-            if month > 1:
-                tasks.append(("cvm_mensal", self.ingest_mensal(entity, year, month - 1)))
+        # FIDC / FIAGRO — current + previous month
+        for m in ([month - 1, month] if month > 1 else [month]):
+            tasks.append(("cvm_fidc_mensal",   self.ingest_fidc_mensal(year, m)))
+            tasks.append(("cvm_fiagro_mensal",  self.ingest_fiagro_mensal(year, m)))
 
-        # Periodic: refresh current year
-        for entity, doc_type in PERIODIC_CONFIGS:
-            tasks.append(("cvm_periodic", self.ingest_periodic(entity, doc_type, year)))
+        # FIP — refresh current year
+        for _, doc_type in FIP_PERIODIC_CONFIGS:
+            tasks.append(("cvm_fip_periodic", self.ingest_fip_periodic(doc_type, year)))
 
-        # SECURIT: refresh current year
-        for instrument_type in SECURIT_TYPES:
-            tasks.append(("cvm_securit_emissions", self.ingest_securit(instrument_type, year)))
+        # FII — refresh current year
+        for doc_type in FII_MENSAL_DOC_TYPES:
+            tasks.append(("cvm_fii_mensal", self.ingest_fii_mensal(doc_type, year)))
+        for doc_type in FII_PERIODIC_DOC_TYPES:
+            tasks.append(("cvm_fii_periodic", self.ingest_fii_periodic(doc_type, year)))
 
-        labels = [t[0] for t in tasks]
-        coros  = [t[1] for t in tasks]
+        # SECURIT — refresh current year
+        for t in SECURIT_MENSAL_TYPES:
+            tasks.append(("cvm_securit_mensal", self.ingest_securit_mensal(t, year)))
+        for t in SECURIT_DFIN_TYPES:
+            tasks.append(("cvm_securit_dfin", self.ingest_securit_dfin(t, year)))
 
-        results = await asyncio.gather(*coros, return_exceptions=True)
-        for label, r in zip(labels, results):
+        results = await asyncio.gather(*[t[1] for t in tasks], return_exceptions=True)
+        for (tbl, _), r in zip(tasks, results):
             if isinstance(r, int):
-                totals[label] += r
+                totals[tbl] += r
             else:
-                logger.error("Daily update task error [%s]: %s", label, r)
+                logger.error("daily_update task error [%s]: %s", tbl, r)
 
         logger.info("Daily update complete: %s", totals)
         return totals
