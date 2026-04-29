@@ -518,15 +518,19 @@ class B3CalcService:
 
         try:
             endpoint = B3_CALC_ENDPOINTS["indexes"]
-            data = await self._request(endpoint)
-            await self._cache.set(cache_key, IndexesResponse(**data))
-            return IndexesResponse(**data)
+            raw = await self._request(endpoint)
+            result = IndexesResponse(
+                reference_date=date.today().isoformat(),
+                indexes=raw,
+            )
+            await self._cache.set(cache_key, result)
+            return result
         except Exception as exc:
             logger.warning(f"Could not fetch indexes from B3 CALC: {exc}")
-            # Return sample indexes
-            sample = SAMPLE_INDEXES.copy()
-            sample["timestamp"] = datetime.now(timezone.utc).isoformat()
-            result = IndexesResponse(**sample)
+            result = IndexesResponse(
+                reference_date=date.today().isoformat(),
+                indexes=SAMPLE_INDEXES,
+            )
             await self._cache.set(cache_key, result)
             return result
 

@@ -290,15 +290,13 @@ async def get_cnpj_registry(
     """
     Full cross-entity CNPJ lookup for fraud detection.
 
-    Returns three data planes in a single call:
+    Returns up to two data planes in a single call:
 
-    - **registrations** — cadastral data (FIDC, FIP, FIAGRO): fund name, status,
-      registration/cancellation dates, fund type, all raw fields.
-    - **periodic_snapshots** — mensal financial data (FIDC, FIAGRO) for `year+month`:
-      quota/unit price, NAV (patrimônio líquido), delinquency value, all raw fields.
+    - **periodic_snapshots** — mensal financial data (FIDC, FIAGRO) plus quarterly/
+      four-monthly FIP data for `year+month`: quota/unit price, NAV, delinquency.
       Only populated when `month` is supplied.
-    - **emissions** — SECURIT emission records (CRA, CRI, LCA, LCI) where this CNPJ
-      is the issuer: emission price, unit price, maturity, quantity, all raw fields.
+    - **emissions** — SECURIT records (CRA, CRI, OTS, DFIN_CRA, DFIN_CRI) where this
+      CNPJ is the issuer: emission price, unit price, maturity, quantity, all raw fields.
       Always fetched for the given `year`.
 
     All downloads are cached on disk (24 h TTL) so repeated lookups for the same

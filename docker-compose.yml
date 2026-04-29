@@ -43,8 +43,9 @@ services:
       dockerfile: src/cvm_api/Dockerfile
     image: cvm-api:latest
     container_name: cvm_api
-    ports:
-      - "8000:8000"
+    # Internal only — traffic routed via gateway on port 8080
+    expose:
+      - "8000"
     environment:
       - LOG_LEVEL=info
       - CVM_DATABASE_URL=${CVM_DATABASE_URL:-postgresql+asyncpg://cvm_user:cvm_secret@db:5432/iliquid}
@@ -72,8 +73,8 @@ services:
       dockerfile: src/b3_calc_api/Dockerfile
     image: b3-calc-api:latest
     container_name: b3_calc_api
-    ports:
-      - "8001:8001"
+    expose:
+      - "8001"
     environment:
       - LOG_LEVEL=info
       - B3_CALC_DATABASE_URL=${B3_CALC_DATABASE_URL:-postgresql+asyncpg://b3_calc_user:b3_secret@db:5432/iliquid}
@@ -98,8 +99,8 @@ services:
       dockerfile: src/bacen_api/Dockerfile
     image: bacen-api:latest
     container_name: bacen_api
-    ports:
-      - "8002:8002"
+    expose:
+      - "8002"
     environment:
       - BACEN_API_PORT=8002
       - LOG_LEVEL=info
@@ -119,6 +120,38 @@ services:
     networks:
       - br_finance
 
+  gateway:
+    build:
+      context: .
+      dockerfile: src/gateway/Dockerfile
+    image: br-finance-gateway:latest
+    container_name: br_finance_gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - CVM_API_URL=http://cvm_api:8000
+      - B3_CALC_API_URL=http://b3_calc_api:8001
+      - BACEN_API_URL=http://bacen_api:8002
+      - RATE_LIMIT_ENABLED=${RATE_LIMIT_ENABLED:-true}
+      - RATE_LIMIT_REQUESTS=${RATE_LIMIT_REQUESTS:-100}
+      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW:-60}
+    depends_on:
+      cvm_api:
+        condition: service_healthy
+      b3_calc_api:
+        condition: service_healthy
+      bacen_api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - br_finance
+
   docs:
     build:
       context: .
@@ -126,13 +159,11 @@ services:
     image: br-finance-docs:latest
     container_name: br_finance_docs
     ports:
-      - "8080:8080"
+      - "8090:8080"
     environment:
       - PORT=8080
     depends_on:
-      - cvm_api
-      - b3_calc_api
-      - bacen_api
+      - gateway
     restart: unless-stopped
     networks:
       - br_finance

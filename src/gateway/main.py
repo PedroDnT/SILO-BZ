@@ -1,59 +1,64 @@
 """
 Unified API Gateway for Brazilian Financial Data API.
 
-This gateway provides a single entry point to all services:
-- CVM (port 8000): Credit market data
-- BACEN (port 8002): Central Bank data
-- B3 CALC (port 8001): Fixed income pricing
-
-The OpenAPI spec is defined in openapi.yaml and rendered with Redocly.
+Single public entry point routing to three backend services:
+- CVM  : Credit market data (FIDC, FIP, FIAGRO, SECURIT)
+- BACEN: Central Bank data (SGS, PTAX, Focus expectations)
+- B3   : Fixed income pricing (debentures, CRA, CRI)
 
 Run:
-  python -m uvicorn src.gateway.main:app --reload --host 0.0.0.0 --port 8000
+  uvicorn src.gateway.main:app --host 0.0.0.0 --port 8080 --reload
 """
 
-import httpx
+import os
 import logging
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Optional
 
+import httpx
 from fastapi import FastAPI, HTTPException, Query, Path, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-# Service URLs
-CVM_SERVICE_URL = "http://localhost:8000"
-B3_CALC_SERVICE_URL = "http://localhost:8001"
-BACEN_SERVICE_URL = "http://localhost:8002"
+# Service URLs — override via env vars when running in Docker
+CVM_URL = os.getenv("CVM_API_URL", "http://localhost:8000")
+B3_URL = os.getenv("B3_CALC_API_URL", "http://localhost:8001")
+BACEN_URL = os.getenv("BACEN_API_URL", "http://localhost:8002")
 
-# Initialize FastAPI app with OpenAPI spec from YAML
+_client: httpx.AsyncClient
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _client
+    _client = httpx.AsyncClient(timeout=300.0)
+    yield
+    await _client.aclose()
+
+
 app = FastAPI(
     title="Brazilian Financial Data API",
-    description="""
-Unified API for accessing Brazilian financial market data from public sources.
-
-## Services
-- **CVM** (port 8000): Credit market data - FIDC, FIP, FIAGRO, SECURIT
-- **BACEN** (port 8002): Central Bank data - SGS, PTAX, Focus expectations
-- **B3 CALC** (port 8001): Fixed income pricing - debentures, CRA, CRI
-
-## Authentication
-All endpoints are publicly accessible (no authentication required).
-    """,
+    description=(
+        "Unified gateway for Brazilian financial market data.\n\n"
+        "- **/api/v1/cvm/...** — CVM credit funds (FIDC, FIP, FIAGRO, SECURIT)\n"
+        "- **/api/v1/bacen/...** — BACEN (SGS rates, PTAX FX, Focus expectations)\n"
+        "- **/api/v1/b3/...** — B3 fixed income pricing (debentures, CRA, CRI)"
+    ),
     version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
-    openapi_url="/openapi.yaml",
+    lifespan=lifespan,
 )
 
-# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -62,328 +67,189 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# HTTP client for proxying requests
-_client = httpx.AsyncClient(timeout=300.0)
+# Rate limiting
+rate_limit_enabled = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+rate_limit_requests = int(os.getenv("RATE_LIMIT_REQUESTS", "100"))
+rate_limit_window = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
 
 
-# ─── Health Endpoints ───────────────────────────────────────────────────────
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": "Rate limit exceeded",
+            "status_code": 429,
+            "detail": str(exc.detail),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
 
-@app.get("/health")
+_LIMIT = f"{rate_limit_requests}/{rate_limit_window} seconds" if rate_limit_enabled else "1000/minute"
+
+
+async def _proxy(url: str, request: Request) -> dict:
+    """Forward a GET request to a backend service, preserving query params."""
+    try:
+        resp = await _client.get(url, params=dict(request.query_params))
+        resp.raise_for_status()
+        return resp.json()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text) from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=503, detail=f"Backend unreachable: {exc}") from exc
+
+
+async def _health_check(url: str, name: str) -> dict:
+    try:
+        resp = await _client.get(f"{url}/health", timeout=5.0)
+        return {"status": "healthy" if resp.status_code == 200 else "degraded"}
+    except Exception:
+        return {"status": "unreachable"}
+
+
+# ─── Health ───────────────────────────────────────────────────────────────────
+
+@app.get("/health", tags=["Gateway"])
 async def health_check():
-    """Gateway health check"""
+    cvm, b3, bacen = (
+        await _health_check(CVM_URL, "cvm"),
+        await _health_check(B3_URL, "b3"),
+        await _health_check(BACEN_URL, "bacen"),
+    )
+    statuses = [cvm["status"], b3["status"], bacen["status"]]
+    overall = "healthy" if all(s == "healthy" for s in statuses) else "degraded"
     return {
-        "status": "healthy",
+        "status": overall,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "version": "2.0.0",
-        "services": {
-            "cvm": CVM_SERVICE_URL,
-            "b3_calc": B3_CALC_SERVICE_URL,
-            "bacen": BACEN_SERVICE_URL
-        }
+        "services": {"cvm": cvm, "b3": b3, "bacen": bacen},
     }
 
 
-# ─── Redirects for OpenAPI ──────────────────────────────────────────────────
+# ─── CVM proxy ────────────────────────────────────────────────────────────────
 
-@app.get("/openapi.json")
-async def get_openapi_json():
-    """Redirect to YAML spec"""
-    return RedirectResponse(url="/openapi.yaml")
-
-
-# ─── CVM Endpoints (Proxy) ──────────────────────────────────────────────────
-
-@app.get("/api/v1/cvm/endpoints")
-async def get_cvm_endpoints():
-    """Proxy to CVM service for available endpoints"""
-    try:
-        response = await _client.get(f"{CVM_SERVICE_URL}/api/v1/endpoints")
-        response.raise_for_status()
-        return response.json()
-    except httpx.HTTPError as e:
-        logger.error(f"CVM service error: {e}")
-        raise HTTPException(status_code=503, detail=f"CVM service unavailable: {str(e)}")
+@app.get("/api/v1/cvm/endpoints", tags=["CVM"])
+@limiter.limit(_LIMIT)
+async def cvm_endpoints(request: Request):
+    return await _proxy(f"{CVM_URL}/api/v1/endpoints", request)
 
 
-@app.get("/api/v1/cvm/{entity}/{doc_type}")
-async def get_cvm_data(
-    entity: str = Path(..., description="Entity type (fidc, fip, fiagro, securit)"),
-    doc_type: str = Path(..., description="Document type"),
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(100, ge=1, le=10000, description="Items per page")
+@app.get("/api/v1/cvm/cnpj/{cnpj}", tags=["CVM"])
+@limiter.limit(_LIMIT)
+async def cvm_cnpj(request: Request, cnpj: str = Path(...)):
+    return await _proxy(f"{CVM_URL}/api/v1/cnpj/{cnpj}", request)
+
+
+@app.get("/api/v1/cvm/{entity}/{doc_type}", tags=["CVM"])
+@limiter.limit(_LIMIT)
+async def cvm_data(
+    request: Request,
+    entity: str = Path(..., description="fidc | fip | fiagro | securit"),
+    doc_type: str = Path(...),
 ):
-    """Proxy to CVM service for data"""
-    try:
-        response = await _client.get(
-            f"{CVM_SERVICE_URL}/api/v1/{entity}/{doc_type}",
-            params={"page": page, "page_size": page_size}
-        )
-        response.raise_for_status()
-        return response.json()
-    except httpx.HTTPError as e:
-        logger.error(f"CVM service error: {e}")
-        raise HTTPException(status_code=503, detail=f"CVM service unavailable: {str(e)}")
+    return await _proxy(f"{CVM_URL}/api/v1/{entity}/{doc_type}", request)
 
 
-# ─── BACEN Endpoints (Proxy) ─────────────────────────────────────────────────
+# ─── BACEN proxy ──────────────────────────────────────────────────────────────
 
-@app.get("/api/v1/bacen/sgs/well-known")
-async def get_well_known_sgs():
-    """Proxy to BACEN service for well-known SGS series"""
-    try:
-        response = await _client.get(f"{BACEN_SERVICE_URL}/api/v1/bacen/sgs/well-known")
-        response.raise_for_status()
-        return response.json()
-    except httpx.HTTPError as e:
-        logger.error(f"BACEN service error: {e}")
-        raise HTTPException(status_code=503, detail=f"BACEN service unavailable: {str(e)}")
+@app.get("/api/v1/bacen/sgs/well-known", tags=["BACEN"])
+@limiter.limit(_LIMIT)
+async def bacen_sgs_well_known(request: Request):
+    return await _proxy(f"{BACEN_URL}/api/v1/bacen/sgs/well-known", request)
 
 
-@app.get("/api/v1/bacen/sgs/{series_code}")
-async def get_sgs_series(
-    series_code: int = Path(..., description="SGS series code"),
-    data_inicio: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
-    data_fim: Optional[str] = Query(None, description="End date (YYYY-MM-DD)")
-):
-    """Proxy to BACEN service for SGS series"""
-    try:
-        params = {}
-        if data_inicio:
-            params["data_inicio"] = data_inicio
-        if data_fim:
-            params["data_fim"] = data_fim
-        response = await _client.get(
-            f"{BACEN_SERVICE_URL}/api/v1/bacen/sgs/{series_code}",
-            params=params
-        )
-        response.raise_for_status()
-        return response.json()
-    except httpx.HTTPError as e:
-        logger.error(f"BACEN service error: {e}")
-        raise HTTPException(status_code=503, detail=f"BACEN service unavailable: {str(e)}")
+@app.get("/api/v1/bacen/sgs/multi", tags=["BACEN"])
+@limiter.limit(_LIMIT)
+async def bacen_sgs_multi(request: Request):
+    return await _proxy(f"{BACEN_URL}/api/v1/bacen/sgs/multi", request)
 
 
-@app.post("/api/v1/bacen/sgs/multi")
-async def get_multi_sgs_series(request: Request):
-    """Proxy to BACEN service for multiple SGS series"""
-    try:
-        body = await request.json()
-        response = await _client.post(
-            f"{BACEN_SERVICE_URL}/api/v1/bacen/sgs/multi",
-            json=body
-        )
-        response.raise_for_status()
-        return response.json()
-    except httpx.HTTPError as e:
-        logger.error(f"BACEN service error: {e}")
-        raise HTTPException(status_code=503, detail=f"BACEN service unavailable: {str(e)}")
+@app.get("/api/v1/bacen/sgs/{series_code}", tags=["BACEN"])
+@limiter.limit(_LIMIT)
+async def bacen_sgs(request: Request, series_code: int = Path(...)):
+    return await _proxy(f"{BACEN_URL}/api/v1/bacen/sgs/{series_code}", request)
 
 
-@app.get("/api/v1/bacen/ptax/dolar")
-async def get_ptax_dolar(data: Optional[str] = Query(None, description="Date (YYYY-MM-DD)")):
-    """Proxy to BACEN service for USD/BRL exchange rate"""
-    try:
-        params = {}
-        if data:
-            params["data"] = data
-        response = await _client.get(
-            f"{BACEN_SERVICE_URL}/api/v1/bacen/ptax/dolar",
-            params=params
-        )
-        response.raise_for_status()
-        return response.json()
-    except httpx.HTTPError as e:
-        logger.error(f"BACEN service error: {e}")
-        raise HTTPException(status_code=503, detail=f"BACEN service unavailable: {str(e)}")
+@app.get("/api/v1/bacen/ptax/dolar/periodo", tags=["BACEN"])
+@limiter.limit(_LIMIT)
+async def bacen_ptax_dolar_periodo(request: Request):
+    return await _proxy(f"{BACEN_URL}/api/v1/bacen/ptax/dolar/periodo", request)
 
 
-@app.get("/api/v1/bacen/ptax/dolar/periodo")
-async def get_ptax_dolar_period(
-    data_inicio: str = Query(..., description="Start date (YYYY-MM-DD)"),
-    data_fim: str = Query(..., description="End date (YYYY-MM-DD)")
-):
-    """Proxy to BACEN service for USD/BRL exchange rate period"""
-    try:
-        response = await _client.get(
-            f"{BACEN_SERVICE_URL}/api/v1/bacen/ptax/dolar/periodo",
-            params={"data_inicio": data_inicio, "data_fim": data_fim}
-        )
-        response.raise_for_status()
-        return response.json()
-    except httpx.HTTPError as e:
-        logger.error(f"BACEN service error: {e}")
-        raise HTTPException(status_code=503, detail=f"BACEN service unavailable: {str(e)}")
+@app.get("/api/v1/bacen/ptax/dolar", tags=["BACEN"])
+@limiter.limit(_LIMIT)
+async def bacen_ptax_dolar(request: Request):
+    return await _proxy(f"{BACEN_URL}/api/v1/bacen/ptax/dolar", request)
 
 
-@app.get("/api/v1/bacen/ptax/moedas")
-async def get_ptax_moedas():
-    """Proxy to BACEN service for available PTAX currencies"""
-    try:
-        response = await _client.get(f"{BACEN_SERVICE_URL}/api/v1/bacen/ptax/moedas")
-        response.raise_for_status()
-        return response.json()
-    except httpx.HTTPError as e:
-        logger.error(f"BACEN service error: {e}")
-        raise HTTPException(status_code=503, detail=f"BACEN service unavailable: {str(e)}")
+@app.get("/api/v1/bacen/ptax/moeda/{moeda}/periodo", tags=["BACEN"])
+@limiter.limit(_LIMIT)
+async def bacen_ptax_moeda_periodo(request: Request, moeda: str = Path(...)):
+    return await _proxy(f"{BACEN_URL}/api/v1/bacen/ptax/moeda/{moeda}/periodo", request)
 
 
-@app.get("/api/v1/bacen/ptax/moeda/{moeda}")
-async def get_ptax_moeda(
-    moeda: str = Path(..., description="Currency code"),
-    data: Optional[str] = Query(None, description="Date (YYYY-MM-DD)")
-):
-    """Proxy to BACEN service for specific currency exchange rate"""
-    try:
-        params = {}
-        if data:
-            params["data"] = data
-        response = await _client.get(
-            f"{BACEN_SERVICE_URL}/api/v1/bacen/ptax/moeda/{moeda}",
-            params=params
-        )
-        response.raise_for_status()
-        return response.json()
-    except httpx.HTTPError as e:
-        logger.error(f"BACEN service error: {e}")
-        raise HTTPException(status_code=503, detail=f"BACEN service unavailable: {str(e)}")
+@app.get("/api/v1/bacen/ptax/moeda/{moeda}", tags=["BACEN"])
+@limiter.limit(_LIMIT)
+async def bacen_ptax_moeda(request: Request, moeda: str = Path(...)):
+    return await _proxy(f"{BACEN_URL}/api/v1/bacen/ptax/moeda/{moeda}", request)
 
 
-@app.get("/api/v1/bacen/expectativas")
-async def get_expectativas_endpoints():
-    """Proxy to BACEN service for available expectativas endpoints"""
-    try:
-        response = await _client.get(f"{BACEN_SERVICE_URL}/api/v1/bacen/expectativas")
-        response.raise_for_status()
-        return response.json()
-    except httpx.HTTPError as e:
-        logger.error(f"BACEN service error: {e}")
-        raise HTTPException(status_code=503, detail=f"BACEN service unavailable: {str(e)}")
+@app.get("/api/v1/bacen/ptax/moedas", tags=["BACEN"])
+@limiter.limit(_LIMIT)
+async def bacen_ptax_moedas(request: Request):
+    return await _proxy(f"{BACEN_URL}/api/v1/bacen/ptax/moedas", request)
 
 
-@app.get("/api/v1/bacen/expectativas/{endpoint_name}")
-async def get_expectativas(
-    endpoint_name: str = Path(..., description="Expectativas endpoint name"),
-    indicador: Optional[str] = Query(None),
-    data: Optional[str] = Query(None),
-    topx: int = Query(5, ge=1, le=100)
-):
-    """Proxy to BACEN service for market expectations"""
-    try:
-        params = {"topx": topx}
-        if indicador:
-            params["indicador"] = indicador
-        if data:
-            params["data"] = data
-        response = await _client.get(
-            f"{BACEN_SERVICE_URL}/api/v1/bacen/expectativas/{endpoint_name}",
-            params=params
-        )
-        response.raise_for_status()
-        return response.json()
-    except httpx.HTTPError as e:
-        logger.error(f"BACEN service error: {e}")
-        raise HTTPException(status_code=503, detail=f"BACEN service unavailable: {str(e)}")
+@app.get("/api/v1/bacen/expectativas", tags=["BACEN"])
+@limiter.limit(_LIMIT)
+async def bacen_expectativas_list(request: Request):
+    return await _proxy(f"{BACEN_URL}/api/v1/bacen/expectativas", request)
 
 
-@app.get("/api/v1/bacen/taxas_juros/{endpoint_name}")
-async def get_taxas_juros(endpoint_name: str = Path(..., description="Taxa juros endpoint")):
-    """Proxy to BACEN service for interest rate data"""
-    try:
-        response = await _client.get(
-            f"{BACEN_SERVICE_URL}/api/v1/bacen/taxas_juros/{endpoint_name}"
-        )
-        response.raise_for_status()
-        return response.json()
-    except httpx.HTTPError as e:
-        logger.error(f"BACEN service error: {e}")
-        raise HTTPException(status_code=503, detail=f"BACEN service unavailable: {str(e)}")
+@app.get("/api/v1/bacen/expectativas/{endpoint_name}", tags=["BACEN"])
+@limiter.limit(_LIMIT)
+async def bacen_expectativas(request: Request, endpoint_name: str = Path(...)):
+    return await _proxy(f"{BACEN_URL}/api/v1/bacen/expectativas/{endpoint_name}", request)
 
 
-# ─── B3 Endpoints (Proxy) ────────────────────────────────────────────────────
-
-@app.get("/api/v1/b3/debentures")
-async def get_debentures(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100)
-):
-    """Proxy to B3 CALC service for debenture data"""
-    try:
-        response = await _client.get(
-            f"{B3_CALC_SERVICE_URL}/api/v1/debentures",
-            params={"page": page, "page_size": page_size}
-        )
-        response.raise_for_status()
-        return response.json()
-    except httpx.HTTPError as e:
-        logger.error(f"B3 CALC service error: {e}")
-        raise HTTPException(status_code=503, detail=f"B3 CALC service unavailable: {str(e)}")
+@app.get("/api/v1/bacen/taxas_juros/{endpoint_name}", tags=["BACEN"])
+@limiter.limit(_LIMIT)
+async def bacen_taxas_juros(request: Request, endpoint_name: str = Path(...)):
+    return await _proxy(f"{BACEN_URL}/api/v1/bacen/taxas_juros/{endpoint_name}", request)
 
 
-@app.get("/api/v1/b3/cras")
-async def get_cras(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100)
-):
-    """Proxy to B3 CALC service for CRA data"""
-    try:
-        response = await _client.get(
-            f"{B3_CALC_SERVICE_URL}/api/v1/cras",
-            params={"page": page, "page_size": page_size}
-        )
-        response.raise_for_status()
-        return response.json()
-    except httpx.HTTPError as e:
-        logger.error(f"B3 CALC service error: {e}")
-        raise HTTPException(status_code=503, detail=f"B3 CALC service unavailable: {str(e)}")
+# ─── B3 proxy ─────────────────────────────────────────────────────────────────
+
+@app.get("/api/v1/b3/indexes", tags=["B3"])
+@limiter.limit(_LIMIT)
+async def b3_indexes(request: Request):
+    return await _proxy(f"{B3_URL}/api/v1/indexes", request)
 
 
-@app.get("/api/v1/b3/cris")
-async def get_cris(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100)
-):
-    """Proxy to B3 CALC service for CRI data"""
-    try:
-        response = await _client.get(
-            f"{B3_CALC_SERVICE_URL}/api/v1/cris",
-            params={"page": page, "page_size": page_size}
-        )
-        response.raise_for_status()
-        return response.json()
-    except httpx.HTTPError as e:
-        logger.error(f"B3 CALC service error: {e}")
-        raise HTTPException(status_code=503, detail=f"B3 CALC service unavailable: {str(e)}")
+@app.get("/api/v1/b3/market-data", tags=["B3"])
+@limiter.limit(_LIMIT)
+async def b3_market_data(request: Request):
+    return await _proxy(f"{B3_URL}/api/v1/market-data", request)
 
 
-# ─── Exception Handlers ──────────────────────────────────────────────────────
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": exc.detail.get("error", "HTTPError"),
-            "message": exc.detail.get("message", str(exc.detail)),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "path": str(request.url)
-        }
-    )
+@app.get("/api/v1/b3/securities/{security_type}", tags=["B3"])
+@limiter.limit(_LIMIT)
+async def b3_securities(request: Request, security_type: str = Path(...)):
+    return await _proxy(f"{B3_URL}/api/v1/securities/{security_type}", request)
 
 
-@app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception: {exc}")
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": "InternalServerError",
-            "message": "An unexpected error occurred",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "path": str(request.url)
-        }
-    )
+@app.get("/api/v1/b3/prices/{symbol}", tags=["B3"])
+@limiter.limit(_LIMIT)
+async def b3_price(request: Request, symbol: str = Path(...)):
+    return await _proxy(f"{B3_URL}/api/v1/prices/{symbol}", request)
 
+
+# ─── Entry point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run("src.gateway.main:app", host="0.0.0.0", port=8080, reload=True)
