@@ -56,31 +56,23 @@ class EntityType(str, Enum):
 class FIDCDocType(str, Enum):
     """FIDC document types"""
     MENSAL = "mensal"
-    CADASTRAL = "cadastral"
-    TRIMESTRAL = "trimestral"
-    ANUAL = "anual"
 
 class FIPDocType(str, Enum):
     """FIP document types"""
     INF_QUADRIMESTRAL = "inf_quadrimestral"
     INF_TRIMESTRAL = "inf_trimestral"
-    CADASTRAL = "cadastral"
-    DFIN = "dfin"
 
 class FIAGRODocType(str, Enum):
-    """FIAGRO document types"""
+    """FIAGRO document types (available from May 2025)"""
     MENSAL = "mensal"
-    CADASTRAL = "cadastral"
-    TRIMESTRAL = "trimestral"
-    ANUAL = "anual"
 
 class SECURITDocType(str, Enum):
     """SECURIT document types"""
     CRA_MENSAL = "cra_mensal"
     CRI_MENSAL = "cri_mensal"
     OTS_MENSAL = "ots_mensal"
-    LCA_MENSAL = "lca_mensal"
-    LCI_MENSAL = "lci_mensal"
+    DFIN_CRA = "dfin_cra"
+    DFIN_CRI = "dfin_cri"
 
 class DatasetConfig:
     """Dataset configuration mappings"""
@@ -92,44 +84,19 @@ class DatasetConfig:
             "csv_name_pattern": "inf_mensal_fidc_{year}{month:02d}.csv",
             "description": "Monthly information for FIDC funds"
         },
-        "cadastral": {
-            "url_pattern": "{base_url}/FIDC/DOC/INF_CADASTRAL/DADOS/inf_cadastral_fidc_{year}.csv",
-            "is_zip": False,
-            "description": "Registration information for FIDC funds (yearly CSV)"
-        },
-        "trimestral": {
-            "url_pattern": "{base_url}/FIDC/DOC/INF_TRIMESTRAL/DADOS/inf_trimestral_fidc_{year}.csv",
-            "is_zip": False,
-            "description": "Quarterly information for FIDC funds (yearly CSV)"
-        },
-        "anual": {
-            "url_pattern": "{base_url}/FIDC/DOC/INF_ANUAL/DADOS/inf_anual_fidc_{year}.csv",
-            "is_zip": False,
-            "description": "Annual information for FIDC funds (yearly CSV)"
-        }
     }
       
     FIP_DATASETS: Dict[str, Dict] = {
         "inf_quadrimestral": {
             "url_pattern": "{base_url}/FIP/DOC/INF_QUADRIMESTRAL/DADOS/inf_quadrimestral_fip_{year}.csv",
             "is_zip": False,
-            "description": "Four-month period information for FIP funds (yearly CSV)"
+            "description": "Four-month period information for FIP funds — yearly CSV (2024+)"
         },
         "inf_trimestral": {
             "url_pattern": "{base_url}/FIP/DOC/INF_TRIMESTRAL/DADOS/inf_trimestral_fip_{year}.csv",
             "is_zip": False,
-            "description": "Quarterly information for FIP funds (yearly CSV)"
+            "description": "Quarterly information for FIP funds — yearly CSV (2010–2023)"
         },
-        "cadastral": {
-            "url_pattern": "{base_url}/FIP/DOC/INF_CADASTRAL/DADOS/inf_cadastral_fip_{year}.csv",
-            "is_zip": False,
-            "description": "Registration information for FIP funds (yearly CSV)"
-        },
-        "dfin": {
-            "url_pattern": "{base_url}/FIP/DOC/DFIN/DADOS/dfin_fip_{year}.csv",
-            "is_zip": False,
-            "description": "Financial statements for FIP funds (yearly CSV)"
-        }
     }
       
     FIAGRO_DATASETS: Dict[str, Dict] = {
@@ -137,23 +104,8 @@ class DatasetConfig:
             "url_pattern": "{base_url}/FIAGRO/DOC/INF_MENSAL/DADOS/inf_mensal_fiagro_{year}{month:02d}.zip",
             "is_zip": True,
             "csv_name_pattern": "inf_mensal_fiagro_{year}{month:02d}.csv",
-            "description": "Monthly information for FIAGRO funds"
+            "description": "Monthly information for FIAGRO funds (available from May 2025)"
         },
-        "cadastral": {
-            "url_pattern": "{base_url}/FIAGRO/DOC/INF_CADASTRAL/DADOS/inf_cadastral_fiagro_{year}.csv",
-            "is_zip": False,
-            "description": "Registration information for FIAGRO funds (yearly CSV)"
-        },
-        "trimestral": {
-            "url_pattern": "{base_url}/FIAGRO/DOC/INF_TRIMESTRAL/DADOS/inf_trimestral_fiagro_{year}.csv",
-            "is_zip": False,
-            "description": "Quarterly information for FIAGRO funds (yearly CSV)"
-        },
-        "anual": {
-            "url_pattern": "{base_url}/FIAGRO/DOC/INF_ANUAL/DADOS/inf_anual_fiagro_{year}.csv",
-            "is_zip": False,
-            "description": "Annual information for FIAGRO funds (yearly CSV)"
-        }
     }
       
     SECURIT_DATASETS: Dict[str, Dict] = {
@@ -161,32 +113,30 @@ class DatasetConfig:
             "url_pattern": "{base_url}/SECURIT/DOC/INF_MENSAL_CRA/DADOS/inf_mensal_cra_{year}.zip",
             "is_zip": True,
             "csv_name_pattern": "inf_mensal_cra_{year}.csv",
-            "description": "Monthly CRA securitization data (yearly ZIP)"
+            "description": "Monthly CRA securitization data — yearly ZIP"
         },
         "cri_mensal": {
             "url_pattern": "{base_url}/SECURIT/DOC/INF_MENSAL_CRI/DADOS/inf_mensal_cri_{year}.zip",
             "is_zip": True,
             "csv_name_pattern": "inf_mensal_cri_{year}.csv",
-            "description": "Monthly CRI securitization data (yearly ZIP)"
+            "description": "Monthly CRI securitization data — yearly ZIP"
         },
         "ots_mensal": {
             "url_pattern": "{base_url}/SECURIT/DOC/INF_MENSAL_OTS/DADOS/inf_mensal_ots_{year}.zip",
             "is_zip": True,
             "csv_name_pattern": "inf_mensal_ots_{year}.csv",
-            "description": "Monthly securitization data for other titles (yearly ZIP)"
+            "description": "Monthly securitization data for other titles — yearly ZIP"
         },
-        "lca_mensal": {
-            "url_pattern": "{base_url}/SECURIT/DOC/INF_MENSAL_LCA/DADOS/lca_mensal_{year}.zip",
-            "is_zip": True,
-            "csv_name_pattern": "lca_mensal_{year}.csv",
-            "description": "Monthly LCA securitization data (yearly ZIP)"
+        "dfin_cra": {
+            "url_pattern": "{base_url}/SECURIT/DOC/DFIN_CRA/DADOS/dfin_cra_{year}.csv",
+            "is_zip": False,
+            "description": "CRA financial statements — yearly CSV (2019+)"
         },
-        "lci_mensal": {
-            "url_pattern": "{base_url}/SECURIT/DOC/INF_MENSAL_LCI/DADOS/lci_mensal_{year}.zip",
-            "is_zip": True,
-            "csv_name_pattern": "lci_mensal_{year}.csv",
-            "description": "Monthly LCI securitization data (yearly ZIP)"
-        }
+        "dfin_cri": {
+            "url_pattern": "{base_url}/SECURIT/DOC/DFIN_CRI/DADOS/dfin_cri_{year}.csv",
+            "is_zip": False,
+            "description": "CRI financial statements — yearly CSV (2018+)"
+        },
     }
       
     @classmethod

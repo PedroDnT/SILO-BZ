@@ -750,42 +750,8 @@ class CVMCreditDataService:
         not_found_in: List[str] = []
         source_urls: Dict[str, str] = {}
 
-        # ── 1. Cadastral (fund registration) ─────────────────────────────────
-        async def fetch_cadastral(entity: str) -> None:
-            try:
-                url, _ = self._build_url(entity, "cadastral", year, None)
-                source_urls[f"{entity}/cadastral"] = url
-                content = await self._download_file(url)
-                rows = self._parse_csv_content(content.decode(self.encoding))
-
-                cnpj_field = self._find_cnpj_field(rows[0]) if rows else None
-                if not cnpj_field:
-                    logger.warning(f"No CNPJ field in {entity} cadastral")
-                    not_found_in.append(f"{entity}/cadastral")
-                    return
-
-                matches = [r for r in rows if self._match_cnpj(r, cnpj_field, cnpj_digits)]
-                if matches:
-                    found_in.append(f"{entity}/cadastral")
-                    for row in matches:
-                        registrations.append({
-                            "entity": entity,
-                            "fund_name": row.get("DENOM_SOCIAL") or row.get("NM_FUNDO"),
-                            "status": row.get("SIT") or row.get("SIT_FUNDO"),
-                            "registration_date": row.get("DT_REG") or row.get("DT_CONST"),
-                            "cancellation_date": row.get("DT_CANCEL") or row.get("DT_ENCERRAMENTO"),
-                            "fund_type": row.get("TP_FUNDO") or row.get("CLASSE") or row.get("CATEG_FUNDO"),
-                            "raw": row,
-                        })
-                else:
-                    not_found_in.append(f"{entity}/cadastral")
-            except Exception as e:
-                logger.warning(f"fetch_cadastral({entity}): {e}")
-                not_found_in.append(f"{entity}/cadastral")
-
-        # ── 2. Periodic snapshots (only when month is explicitly supplied) ────
-        # When month is None, skip periodic fetch entirely — return only
-        # cadastral registrations and SECURIT emissions.
+        # ── 1. Periodic snapshots (only when month is explicitly supplied) ────
+        # When month is None, only SECURIT emission data is returned.
         _sem = asyncio.Semaphore(8)
 
         async def _parse_periodic_rows(rows: List[Dict], entity: str, doc_type: str, month_hint: Optional[int]) -> None:
@@ -854,8 +820,8 @@ class CVMCreditDataService:
                     logger.warning(f"fetch_periodic_yearly({label}): {e}")
                     not_found_in.append(label)
 
-        # ── 3. SECURIT emissions (CNPJ as issuer) — all instrument types ─────
-        securit_types = ["cra_mensal", "cri_mensal", "ots_mensal", "lca_mensal", "lci_mensal"]
+        # ── 3. SECURIT data (CNPJ as issuer) — available instrument types ────
+        securit_types = ["cra_mensal", "cri_mensal", "ots_mensal", "dfin_cra", "dfin_cri"]
 
         async def fetch_emission(doc_type: str) -> None:
             label = f"securit/{doc_type}"
@@ -895,8 +861,6 @@ class CVMCreditDataService:
                     not_found_in.append(label)
 
         # Build full task list and run everything concurrently
-        cadastral_tasks = [fetch_cadastral(e) for e in ["fidc", "fip", "fiagro"]]
-
         # Periodic tasks: only when a specific month is requested
         if month is not None:
             mensal_tasks = [
@@ -904,11 +868,7 @@ class CVMCreditDataService:
                 for entity in ["fidc", "fiagro"]
             ]
             yearly_tasks = [
-                fetch_periodic_yearly("fidc", dt) for dt in ["trimestral", "anual"]
-            ] + [
-                fetch_periodic_yearly("fiagro", dt) for dt in ["trimestral", "anual"]
-            ] + [
-                fetch_periodic_yearly("fip", dt) for dt in ["inf_quadrimestral", "inf_trimestral", "dfin"]
+                fetch_periodic_yearly("fip", dt) for dt in ["inf_quadrimestral", "inf_trimestral"]
             ]
         else:
             mensal_tasks = []
@@ -916,7 +876,7 @@ class CVMCreditDataService:
 
         emission_tasks = [fetch_emission(dt) for dt in securit_types]
 
-        await asyncio.gather(*cadastral_tasks, *mensal_tasks, *yearly_tasks, *emission_tasks)
+        await asyncio.gather(*mensal_tasks, *yearly_tasks, *emission_tasks)
 
         return {
             "cnpj": cnpj_digits,
