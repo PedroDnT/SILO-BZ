@@ -3,16 +3,16 @@ Full historical backfill CLI.
 
 Usage:
     # All entities and BACEN, from 2019 to today
-    python -m src.ingestor.run_backfill
+    python -m src.pipeline.run_backfill
 
     # CVM only, starting 2022
-    python -m src.ingestor.run_backfill --start-year 2022 --cvm-only
+    python -m src.pipeline.run_backfill --start-year 2022 --cvm-only
 
     # Single entity
-    python -m src.ingestor.run_backfill --entity fidc --start-year 2023
+    python -m src.pipeline.run_backfill --entity fidc --start-year 2023
 
     # BACEN only
-    python -m src.ingestor.run_backfill --bacen-only --bacen-start 2020-01-01
+    python -m src.pipeline.run_backfill --bacen-only --bacen-start 2020-01-01
 
 Required env vars: SUPABASE_URL, SUPABASE_SERVICE_KEY
 """
@@ -24,11 +24,11 @@ import os
 import sys
 import time
 
-# Allow running as python -m src.ingestor.run_backfill from repo root
+# Allow running as python -m src.pipeline.run_backfill from repo root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from src.ingestor.cvm_ingestor import CVMIngestor
-from src.ingestor.bacen_ingestor import BacenIngestor
+from src.pipeline.cvm_pipeline import CVMIngestor
+from src.pipeline.bacen_pipeline import BacenIngestor
 
 logging.basicConfig(
     level=logging.INFO,

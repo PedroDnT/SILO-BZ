@@ -27,8 +27,8 @@ from uuid import uuid4
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from src.cvm_api.services import CVMCreditDataService
-from src.ingestor.supabase_client import get_supabase_client, upsert_rows
+from src.fetchers.cvm_fetcher import CVMFetcher
+from src.store.supabase_client import get_supabase_client, upsert_rows
 
 logger = logging.getLogger(__name__)
 
@@ -117,10 +117,10 @@ def _period_to_date(period_str: Optional[str], year: int, month: int) -> str:
 # ---------------------------------------------------------------------------
 
 class CVMIngestor:
-    """Downloads CVM data via CVMCreditDataService and persists to Supabase."""
+    """Downloads CVM data via CVMFetcher and persists to Supabase."""
 
     def __init__(self) -> None:
-        self._service = CVMCreditDataService()
+        self._service = CVMFetcher()
         self._supabase = get_supabase_client()
 
     # ------------------------------------------------------------------
@@ -165,20 +165,10 @@ class CVMIngestor:
         year: Optional[int],
         month: Optional[int],
     ) -> List[Dict[str, Any]]:
-        """Fetch all pages for a given entity/doc_type/year/month combo."""
-        all_rows: List[Dict[str, Any]] = []
-        page = 1
-        while True:
-            resp = await self._service.get_data(
-                entity=entity, doc_type=doc_type,
-                year=year, month=month,
-                page=page, page_size=_PAGE_SIZE,
-            )
-            all_rows.extend(resp.data)
-            if not resp.pagination.has_next:
-                break
-            page += 1
-        return all_rows
+        """Fetch the full CVM dataset for the entity/doc_type/year/month combo."""
+        return await self._service.fetch(
+            entity=entity, doc_type=doc_type, year=year, month=month,
+        )
 
     # ------------------------------------------------------------------
     # FI — daily snapshot  (INF_DIARIO)

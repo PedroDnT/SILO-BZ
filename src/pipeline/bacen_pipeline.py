@@ -14,8 +14,8 @@ from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from src.clients.bacen_client import BacenClient
-from src.ingestor.supabase_client import get_supabase_client, upsert_rows
+from src.fetchers.bacen_fetcher import BacenClient
+from src.store.supabase_client import get_supabase_client, upsert_rows
 
 logger = logging.getLogger(__name__)
 

@@ -16,8 +16,8 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from src.ingestor.cvm_ingestor import CVMIngestor
-from src.ingestor.bacen_ingestor import BacenIngestor
+from src.pipeline.cvm_pipeline import CVMIngestor
+from src.pipeline.bacen_pipeline import BacenIngestor
 
 logging.basicConfig(
     level=logging.INFO,

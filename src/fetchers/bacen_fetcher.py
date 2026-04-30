@@ -1,13 +1,12 @@
-"""
-Async wrapper around python-bcb for use with FastAPI.
-
-All python-bcb functions are synchronous (blocking requests). This module wraps
-them with asyncio.to_thread so they are safe to call from async FastAPI handlers.
+"""BACEN fetcher — async wrapper around python-bcb (SGS, PTAX, Expectativas,
+TaxaJuros). The python-bcb library is synchronous, so each call is dispatched
+via ``asyncio.to_thread``. This module fetches AND lightly normalizes BCB
+DataFrames into row dicts; storage is done by src/pipeline/bacen_pipeline.py.
 
 Usage:
-    from src.clients.bacen_client import BacenClient
+    from src.fetchers.bacen_fetcher import BacenClient
     client = BacenClient()
-    df_dict = await client.get_sgs_series({433: "IPCA"}, start="2020-01-01")
+    rows = await client.get_sgs_series({433: "IPCA"}, start="2020-01-01")
 """
 
 import asyncio
