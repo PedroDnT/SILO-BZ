@@ -44,7 +44,7 @@ jobs:
 
       - name: Run daily update
         if: ${{ github.event_name == 'schedule' || inputs.mode == 'daily' }}
-        run: python -m src.ingestor.run_daily
+        run: python -m src.pipeline.run_daily
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -58,7 +58,7 @@ jobs:
           if [ -n "${{ inputs.entity }}" ]; then
             ENTITY_FLAG="--entity ${{ inputs.entity }}"
           fi
-          python -m src.ingestor.run_backfill \
+          python -m src.pipeline.run_backfill \
             --start-year ${{ inputs.start_year }} \
             $ENTITY_FLAG
         env:

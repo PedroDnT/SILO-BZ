@@ -6,7 +6,7 @@ Tests CNPJ, date, numeric, and other field validations
 import pytest
 from datetime import date, datetime
 
-from src.validation_utils import (
+from src.parsers.validation import (
     DataValidator,
     ValidationError,
     ValidationWarning,
