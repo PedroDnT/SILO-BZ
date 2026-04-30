@@ -1,163 +1,120 @@
----
-mode: "wide"
----
+# Brazilian Financial Data — fetch / parse / store pipeline
 
-# Brazilian Financial Data Infrastructure
+Headless ingestion pipeline for two Brazilian public financial data sources:
 
-A multi-service FastAPI platform for accessing Brazilian public financial datasets with a unified developer experience.
+- **CVM** (Comissão de Valores Mobiliários) — fund disclosures: FI, FIDC, FIP, FIAGRO, FII, SECURIT.
+- **BACEN** (Banco Central do Brasil) — SGS time series, PTAX exchange rates, Expectativas (Focus bulletin), TaxaJuros.
 
-## Overview
+Data is downloaded, parsed, validated, and upserted into a Supabase Postgres
+database. There is no public API — downstream consumers query Supabase directly.
 
-This repository provides APIs and tools for:
+> A previous version exposed three FastAPI services + a gateway + a Mintlify
+> docs site. Those layers and a Solana "Delos Oracle" experiment were removed
+> in the consolidation; only fetch/parse/store remains.
 
-- **CVM credit market datasets** (FIDC, FIP, FIAGRO, SECURIT)
-- **BACEN (BCB) data** (SGS, PTAX, Focus expectations, interest rates)
-- **B3 CALC fixed-income pricing** (debentures, CRA, CRI)
-- **Operational tooling** for historical CVM backfill and endpoint checks
+## Pipeline stages
 
-## Services
+```
+   ┌───── FETCH ─────┐    ┌───── PARSE ────┐    ┌───── STORE ────┐
+   │ src/fetchers/   │ →  │ src/parsers/   │ →  │ src/store/     │
+   │  cvm_fetcher    │    │  validation    │    │  supabase_client
+   │  bacen_fetcher  │    │  (CVM zip→csv  │    │  schema.sql    │
+   │                 │    │   and BACEN df │    │                │
+   │                 │    │   normalization│    │                │
+   │                 │    │   live in the  │    │                │
+   │                 │    │   fetchers)    │    │                │
+   └─────────────────┘    └────────────────┘    └────────────────┘
+                                                       ▲
+                          ┌───── ORCHESTRATE ──────────┘
+                          │ src/pipeline/
+                          │   cvm_pipeline.CVMIngestor
+                          │   bacen_pipeline.BacenIngestor
+                          │   run_backfill.py  (one-shot, all years)
+                          │   run_daily.py     (cron, current month + 7-day window)
+                          └─────────────────────────────────────
+```
 
-| Service       | Port   | Purpose                                                  |
-| ------------- | -----: | -------------------------------------------------------- |
-| `cvm_api`     | `8000` | CVM open data ingestion, parsing, and pagination         |
-| `b3_calc_api` | `8001` | B3 CALC pricing proxy with normalization and cache       |
-| `bacen_api`   | `8002` | BACEN public data wrappers (SGS/PTAX/Expectativas/Taxas) |
-| `docs`        | `8080` | Documentation service                                    |
+| Package | Role | Key modules |
+| --- | --- | --- |
+| `src/fetchers/` | **FETCH** — HTTP/SDK calls only. CVM downloads ZIP/CSV from `dados.cvm.gov.br` with retry, DNS rotation, and on-disk cache. BACEN wraps `python-bcb`. | `cvm_fetcher.CVMFetcher`, `cvm_config.DatasetConfig`, `bacen_fetcher.BacenClient` |
+| `src/parsers/` | **PARSE** — shared field/CNPJ/date validation. CVM CSV extraction is co-located with `CVMFetcher.fetch()` because it needs the URL/filename context. BACEN DataFrame normalization is co-located with `BacenClient`. | `validation.DataValidator`, `validator` |
+| `src/store/` | **STORE** — Supabase client and chunked upserts; canonical schema. | `supabase_client.upsert_rows`, `supabase_client.get_supabase_client`, `schema.sql` |
+| `src/pipeline/` | **ORCHESTRATE** — wires the three stages, writes audit log rows, runs daily/backfill. | `cvm_pipeline.CVMIngestor`, `bacen_pipeline.BacenIngestor`, `run_backfill`, `run_daily` |
 
-## Repository Structure
+## Repository layout
 
 ```text
 .
 ├── src/
-│   ├── cvm_api/          # CVM FastAPI service
-│   ├── b3_calc_api/      # B3 CALC FastAPI service
-│   ├── bacen_api/        # BACEN FastAPI service
-│   ├── clients/          # Shared external clients
-│   ├── tools/            # Backfill and support CLIs
-│   └── validation_utils.py
-├── tests/                # Pytest suite
-├── scripts/              # Utility scripts
-├── docs/                 # Docs service
-├── docker-compose.yml
-└── requirements.txt
+│   ├── fetchers/
+│   │   ├── cvm_fetcher.py      # CVMFetcher.fetch(entity, doc_type, year, month)
+│   │   ├── cvm_config.py       # URL templates + dataset configs
+│   │   └── bacen_fetcher.py    # BacenClient (SGS/PTAX/Expectativas/TaxaJuros)
+│   ├── parsers/
+│   │   └── validation.py       # CNPJ / date / numeric / record validators
+│   ├── store/
+│   │   ├── supabase_client.py  # get_supabase_client(), upsert_rows()
+│   │   └── schema.sql          # canonical CVM + BACEN schema
+│   └── pipeline/
+│       ├── cvm_pipeline.py     # CVMIngestor — orchestrates fetch+store for CVM
+│       ├── bacen_pipeline.py   # BacenIngestor — orchestrates fetch+store for BACEN
+│       ├── run_backfill.py     # CLI: full historical backfill
+│       └── run_daily.py        # CLI: incremental daily update
+├── tests/                      # offline pytest suite
+├── .github/workflows/
+│   └── daily_ingest.yml        # cron @ 06:00 UTC + workflow_dispatch
+├── requirements.txt
+└── .env.example
 ```
 
-## Prerequisites
-
-- Python **3.12+**
-- `pip`
-- Docker + Docker Compose (optional, for containerized run)
-
-## Local Development
-
-create and activate .venv
+## Quick start
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-Install dependencies:
-
-```bash
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env   # fill in SUPABASE_URL and SUPABASE_SERVICE_KEY
+
+# 1. Apply schema (one-time, against your Supabase Postgres)
+psql "$SUPABASE_DB_URL" -f src/store/schema.sql
+
+# 2. Run an incremental update
+python -m src.pipeline.run_daily
+
+# 3. Run a one-shot historical backfill (e.g. 2019 onward)
+python -m src.pipeline.run_backfill --start-year 2019
 ```
 
-Run services (separate terminals):
-
-```bash
-python -m uvicorn src.cvm_api.main:app --host 0.0.0.0 --port 8000 --reload
-python -m uvicorn src.b3_calc_api.main:app --host 0.0.0.0 --port 8001 --reload
-python -m uvicorn src.bacen_api.main:app --host 0.0.0.0 --port 8002 --reload
-```
-
-OpenAPI docs:
-
-- CVM: http://localhost:8000/docs
-- B3 CALC: http://localhost:8001/docs
-- BACEN: http://localhost:8002/docs
-
-## Docker Compose
-
-Build and start all services:
-
-```bash
-docker-compose up --build
-```
-
-> **Note:** The `version` attribute in `docker-compose.yml` is obsolete and will be ignored. It has been removed to avoid potential confusion.
-
-Service URLs:
-
-- CVM API: http://localhost:8000
-- B3 CALC API: http://localhost:8001
-- BACEN API: http://localhost:8002
-- Docs: http://localhost:8080
-##
-
-## Key Endpoints
-
-### CVM API
-
-- `GET /health`
-- `GET /api/v1/endpoints`
-- `GET /api/v1/fidc/{doc_type}`
-- `GET /api/v1/fip/{doc_type}`
-- `GET /api/v1/fiagro/{doc_type}`
-- `GET /api/v1/securit/{doc_type}`
-
-### B3 CALC API
-
-- `GET /health`
-- `GET /api/v1/`
-- `GET /api/v1/prices/{symbol}`
-- `GET /api/v1/indexes`
-- `GET /api/v1/market-data`
-- `GET /api/v1/securities/{security_type}`
-
-### BACEN API
-
-- `GET /health`
-- `GET /api/v1/bacen/sgs/well-known`
-- `GET /api/v1/bacen/sgs/{series_code}`
-- `GET /api/v1/bacen/sgs/multi`
-- `GET /api/v1/bacen/ptax/dolar`
-- `GET /api/v1/bacen/ptax/moedas`
-- `GET /api/v1/bacen/expectativas/{endpoint_name}`
-- `GET /api/v1/bacen/taxas_juros/{endpoint_name}`
-
-## Testing and Quality
-
-From the repository root:
+## Tests
 
 ```bash
 PYTHONPATH=. pytest tests/ -v
-black .
-isort .
-flake8 .
-mypy .
 ```
 
-## Utility Commands
+All tests are offline (Supabase and HTTP are mocked).
 
-CVM live endpoint smoke check:
+## Deploy
 
-```bash
-python scripts/check_all_endpoints.py
-```
+Single deploy target: **GitHub Actions cron writing to Supabase**. No
+container registry, no Vercel, no Docker stack.
 
-Historical backfill:
+- `.github/workflows/daily_ingest.yml` — runs `run_daily` at 06:00 UTC and
+  exposes a `workflow_dispatch` for ad-hoc backfills (`mode=backfill`,
+  `start_year=YYYY`, `entity=fidc`).
+- Required GitHub secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`.
 
-```bash
-python -m src.tools.backfill --entity FIDC --doc-type INF_MENSAL
-python -m src.tools.backfill --all
-```
+To roll out schema changes, commit `src/store/schema.sql` and run
+`psql "$SUPABASE_DB_URL" -f src/store/schema.sql` against the target project.
+The schema uses `CREATE TABLE IF NOT EXISTS` and named UNIQUE constraints, so
+re-applying is idempotent.
 
-## Notes
+## What's intentionally not here
 
-- Runtime-generated directories (`cache/`, `temp/`, `data/`) are gitignored.
-- Public endpoints are currently unauthenticated and CORS-permissive.
-- See service-specific guides in:
-  - `src/cvm_api/README.md`
-  - `src/b3_calc_api/README.md`
-  - `src/bacen_api/README.md`
+- **No public REST/GraphQL API.** The pipeline only writes to Supabase. Build
+  consumers against Supabase directly.
+- **No B3.** The previous `b3_calc_api` pointed at a non-B3 domain and
+  fell back to four hard-coded sample dicts; it has been removed. Add a
+  `src/fetchers/b3_fetcher.py` + `src/store/schema.sql` extension when real B3
+  endpoints are validated.
+- **No local Postgres / Docker / Alembic.** Supabase is the single source of
+  truth. The Postgres + Alembic + 4-service docker-compose stack was deleted.
+- **No Solana oracle.** The Delos Oracle experiment is out of scope.
