@@ -1,6 +1,0 @@
-lxml==5.3.0  # Pin lxml to 5.3.0 to avoid Vercel deployment metadata issues with 6.0.2
-numpy==1.26.3
-sqlalchemy[asyncio]==2.0.48
-asyncpg==0.31.0
-alembic==1.18.4
-python-dotenv==1.0.1
