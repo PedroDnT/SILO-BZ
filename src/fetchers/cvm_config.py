@@ -73,6 +73,12 @@ class DatasetConfig:
             "csv_name_pattern": "inf_mensal_fii_ativo_passivo_{year}.csv",
             "description": "Monthly assets and liabilities for FII funds — yearly ZIP",
         },
+        "mensal_complemento": {
+            "url_pattern": "{base_url}/FII/DOC/INF_MENSAL/DADOS/inf_mensal_fii_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fii_complemento_{year}.csv",
+            "description": "Monthly complementary summary for FII funds — contains Patrimonio_Liquido — yearly ZIP",
+        },
         "trimestral": {
             "url_pattern": "{base_url}/FII/DOC/INF_TRIMESTRAL/DADOS/inf_trimestral_fii_{year}.zip",
             "is_zip": True,
@@ -96,8 +102,8 @@ class DatasetConfig:
         "mensal": {
             "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
             "is_zip": True,
-            "csv_name_pattern": "inf_mensal_fidc_{year}{month:02d}.csv",
-            "description": "Monthly information for FIDC funds",
+            "csv_name_pattern": "inf_mensal_fidc_tab_IV_{year}{month:02d}.csv",
+            "description": "Monthly information for FIDC funds — targets tab_IV (NAV/PL)",
         },
     }
 

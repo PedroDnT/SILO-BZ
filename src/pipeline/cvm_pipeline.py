@@ -50,7 +50,7 @@ FIP_PERIODIC_CONFIGS: List[Tuple[str, str]] = [
 ]
 
 # FII doc types
-FII_MENSAL_DOC_TYPES: List[str] = ["mensal_geral", "mensal_ativo_passivo"]
+FII_MENSAL_DOC_TYPES: List[str] = ["mensal_geral", "mensal_ativo_passivo", "mensal_complemento"]
 FII_PERIODIC_DOC_TYPES: List[str] = ["trimestral", "anual", "dfin"]
 
 # SECURIT doc types split by target table
@@ -291,7 +291,7 @@ class CVMIngestor:
                     "period":        period,
                     "vl_total":      _find_field(row, "VL_TOTAL", "VL_CARTEIRA_TOTAL"),
                     "vl_quota":      _find_field(row, "VL_QUOTA"),
-                    "vl_patrim_liq": _find_field(row, "VL_PATRIM_LIQ"),
+                    "vl_patrim_liq": _find_field(row, "TAB_IV_A_VL_PL", "VL_PATRIM_LIQ"),
                     "vl_inadimpl":   _find_inadimpl(row),
                     "nr_cotst":      _find_field(row, "NR_COTST"),
                     "raw":           row,
@@ -387,7 +387,12 @@ class CVMIngestor:
         run_id = str(uuid4())
         self._log_start(run_id, "fii", doc_type, year, None)
         rows_inserted = 0
-        subtype = "geral" if "geral" in doc_type else "ativo_passivo"
+        if "geral" in doc_type:
+            subtype = "geral"
+        elif "complemento" in doc_type:
+            subtype = "complemento"
+        else:
+            subtype = "ativo_passivo"
         try:
             raw_rows = await self._fetch_all_pages("fii", doc_type, year, None)
             records: List[Dict[str, Any]] = []
@@ -466,12 +471,12 @@ class CVMIngestor:
                     "instrument_type": instrument_type,
                     "period_year":     year,
                     "cnpj_securit":    cnpj,
-                    "dt_emissao":      _find_field(row, "DT_EMISSAO"),
+                    "dt_emissao":      _find_field(row, "Data_Referencia", "DT_EMISSAO"),
                     "dt_vencto":       _find_field(row, "DT_VENCTO", "DT_VENCIMENTO"),
-                    "vl_emissao":      _find_field(row, "VL_EMISSAO"),
+                    "vl_emissao":      _find_field(row, "Valor_Atualizado_Emissao", "VL_EMISSAO"),
                     "vl_unit":         _find_field(row, "VL_UNIT", "PU_EMISSAO", "VL_PU_EMISSAO"),
                     "qt_titulos":      _find_field(row, "QT_TITULOS"),
-                    "vl_total":        _find_field(row, "VL_TOTAL"),
+                    "vl_total":        _find_field(row, "Ativo", "VL_TOTAL"),
                     "tp_ativo":        _find_field(row, "TP_ATIVO"),
                     "raw":             row,
                 })

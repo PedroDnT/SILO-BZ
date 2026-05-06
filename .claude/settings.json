@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python scripts/explore_cvm_output.py)",
+      "Bash(python3 scripts/explore_cvm_output.py)",
+      "Bash(pip3 install *)",
+      "Bash(pyenv versions *)",
+      "Read(//Users/pedrotodescan/.pyenv/versions/**)",
+      "Bash(python3.12 -c \"import aiofiles; import aiohttp; import pandas; print\\('deps OK'\\)\")",
+      "Bash(python3.12 -m pip install -r requirements.txt -q)",
+      "Bash(uv --version)",
+      "Bash(uv venv *)",
+      "Bash(uv pip *)",
+      "Bash(.venv/bin/python scripts/explore_cvm_output.py)",
+      "Bash(.venv/bin/pytest tests/test_cvm_fetch_parse.py -v)"
+    ]
+  }
+}
