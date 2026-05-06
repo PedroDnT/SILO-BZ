@@ -31,10 +31,18 @@
   - Connection: `SUPABASE_URL` (https URL) + `SUPABASE_SERVICE_KEY` (service role token)
   - Client: `supabase-py 2.3.0+` (`src/store/supabase_client.get_supabase_client()`)
   - Schema: `src/store/schema.sql` (idempotent, uses `CREATE TABLE IF NOT EXISTS`)
-  - Tables:
-    - **CVM data**: `cvm_fi_diario` (partitioned by year), `cvm_fi_cda`, `cvm_fi_perfil`, `cvm_fidc_mensal`, `cvm_fiagro_mensal`, `cvm_fip_periodic`, `cvm_fii_mensal`, `cvm_fii_periodic`, `cvm_securit_mensal`, `cvm_securit_dfin`
-    - **BACEN data**: `bacen_sgs`, `bacen_ptax`, `bacen_expectativas`
-    - **Audit log**: `cvm_ingest_log` (tracks every ingest run for idempotence)
+  - Tables (existing):
+    - **CVM data**: `cvm_fi_diario` (partitioned by year), `cvm_fi_cda`, `cvm_fi_perfil`,
+      `cvm_fidc_mensal`, `cvm_fiagro_mensal`, `cvm_fip_periodic`,
+      `cvm_fii_mensal`, `cvm_fii_periodic`, `cvm_securit_mensal`, `cvm_securit_dfin`
+    - **BACEN data**: `bacen_sgs` (SELIC/CDI/IPCA/IGP-M), `bacen_ptax` (USD/EUR/GBP/JPY/ARS), `bacen_expectativas`
+    - **Audit log**: `cvm_ingest_log` (entity/doc_type/period/status/rows_upserted per run)
+  - Tables (planned — Phases 1–2):
+    - `cvm_fidc_tranche` — one row per FIDC fund × tranche class × period (tab_X_2)
+    - `cvm_fidc_tranche_flows` — series-level cash flows per month (tab_X_4)
+    - `cvm_fidc_aging` — delinquency aging buckets (tab_VI)
+    - `cvm_securit_serie` — one row per CRA/CRI/OTS series with status and rating (classe CSV)
+    - `cvm_securit_fluxo` — monthly payments by tranche class (fluxo_caixa CSV)
   - Upsert strategy: Chunked (500-row batches) with `ON CONFLICT` on named UNIQUE constraints
   - Rate limiting: None (Supabase handles automatically)
 
@@ -135,4 +143,4 @@
 
 ---
 
-*Integration audit: 2026-05-05*
+*Integration audit: 2026-05-06*

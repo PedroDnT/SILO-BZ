@@ -41,7 +41,7 @@
 - Contains:
   - `supabase_client.upsert_rows()` — chunked upserts (500-row batches) with ON CONFLICT handling
   - `supabase_client.get_supabase_client()` — singleton client factory
-  - `schema.sql` — canonical schema (9 CVM tables + 3 BACEN tables + audit log)
+  - `schema.sql` — canonical schema (12 CVM tables + 3 BACEN tables + audit log; 5 more planned for tranches/series)
 - Depends on: supabase-py client
 - Used by: `CVMIngestor`, `BacenIngestor`, schema bootstrap
 
@@ -106,6 +106,20 @@
   - CVM: 6 tasks at a time for FI (to avoid overwhelming CVM server)
   - BACEN: all currency tasks in parallel (no rate limit concern)
 - Backfill mode: years × entities × months → potentially hundreds of tasks queued, batched
+
+**Multi-CSV ZIP Structure:**
+- CVM distributes data as ZIP files. Each ZIP contains multiple CSVs — not one.
+- FIDC monthly ZIPs contain **17 CSVs** (tab_I through tab_XIV, some with subtabs).
+  The pipeline reads only `tab_IV` (fund-level NAV). Tabs X_2–X_6 contain tranche-level data
+  (quota price, expected vs actual performance, cash flows). Tab_VI has delinquency aging buckets.
+- SECURIT (CRA/CRI/OTS) ZIPs contain **8 CSVs** (ativo_passivo, classe, fluxo_caixa, geral,
+  cedente_devedor, direitos_creditorios, derivativos, desembolso). The pipeline reads
+  `ativo_passivo` via alphabetical fallback (the configured pattern does not match any file).
+  The `classe` CSV has series-level status and rating data; `fluxo_caixa` has tranche payments.
+- FII ZIPs contain 3 CSVs (geral, ativo_passivo, complemento). The pipeline reads all three
+  via separate doc_type entries. `complemento` contains NAV, yield, and return fields.
+- `_extract_csv_from_zip()` uses `csv_name_pattern` as a substring match. If no match,
+  it falls back to the first CSV alphabetically with a silent warning.
 
 **Field Discovery:**
 - CVM CSVs have inconsistent column names across years/entities (e.g., "VL_TOTAL" vs "VL_CARTEIRA_TOTAL")
@@ -184,4 +198,4 @@ Failure in one doc_type doesn't block others running in parallel.
 
 ---
 
-*Architecture analysis: 2026-05-05*
+*Architecture analysis: 2026-05-06*

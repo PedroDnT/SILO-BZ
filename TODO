@@ -1,19 +1,76 @@
 # TODO
 
-## Done — pipeline consolidation
-- [x] Drop FastAPI services + gateway + Mintlify docs + Solana oracle.
-- [x] Restructure src/ into fetchers/, parsers/, store/, pipeline/.
-- [x] Cherry-pick FI/FII entities + redesigned schema with audit log.
-- [x] Bump aiohttp 3.13.4, requests 2.33.0, lxml 6.1.0, python-dotenv 1.2.2.
+## Phase 0 — Bug fixes (est. 1h) [SHIP FIRST]
+- [ ] Fix SECURIT csv_name_pattern in cvm_config.py (currently works by alphabetical fallback, not by design)
+      CRA: "inf_mensal_cra_{year}.csv" → "inf_mensal_cra_ativo_passivo_{year}.csv"
+      CRI: "inf_mensal_cri_{year}.csv" → "inf_mensal_cri_ativo_passivo_{year}.csv"
+      OTS: "inf_mensal_ots_{year}.csv" → "inf_mensal_ots_ativo_passivo_{year}.csv"
+- [ ] Add FII complemento fields to cvm_pipeline.py ingest_fii_mensal() + schema.sql
+      pct_dividend_yield_mes ← Percentual_Dividend_Yield_Mes
+      pct_rentabilidade_efetiva_mes ← Percentual_Rentabilidade_Efetiva_Mes
+      pct_rentabilidade_patrimonial_mes ← Percentual_Rentabilidade_Patrimonial_Mes
+      nr_cotst ← Total_Numero_Cotistas
+      cotas_emitidas ← Cotas_Emitidas
+      vl_ativo ← Valor_Ativo
+      vl_patrimonial_cotas ← Valor_Patrimonial_Cotas
+      pct_amortizacao_cotas_mes ← Percentual_Amortizacao_Cotas_Mes
 
-## Pending — operations
-- [ ] Apply `src/store/schema.sql` against the target Supabase project.
-- [ ] Run initial historical backfill: `python -m src.pipeline.run_backfill --start-year 2019`.
-- [ ] Set GitHub Actions secrets `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` so the
-      `daily_ingest.yml` cron starts succeeding.
+## Phase 1 — FIDC tranche accountability (est. half day)
+- [ ] Create cvm_fidc_tranche table (fund × tranche × period)
+      Fields: cnpj, period, classe_serie, vl_cota, captc_mes, resg_mes, desemp_esperado, desemp_real
+      Source: inf_mensal_fidc_tab_X_2 + tab_X_6 inside FIDC monthly ZIPs
+- [ ] Create cvm_fidc_tranche_flows table (series-level cash flows)
+      Source: inf_mensal_fidc_tab_X_4
+- [ ] Create cvm_fidc_aging table (delinquency aging buckets)
+      Source: inf_mensal_fidc_tab_VI
+- [ ] Add ingest_fidc_tranches() to CVMIngestor; wire into daily_update and backfill
+- [ ] Implement accountability rules R1–R4 (tranche underperformance, delinquency trend, aging)
+      See docs/pipeline-plan.md §2 for thresholds and SQL
+
+## Phase 2 — SECURIT series and cash flow (est. half day)
+- [ ] Create cvm_securit_serie table (one row per CRA/CRI/OTS series)
+      Fields: cnpj_securit, instrument_type, series_code, situacao, rating, vl_integralizado, taxa_juros
+      Source: inf_mensal_cra_classe_{year}.csv (and CRI/OTS equivalents)
+- [ ] Create cvm_securit_fluxo table (monthly principal + interest payments by tranche class)
+      Source: inf_mensal_cra_fluxo_caixa_{year}.csv
+- [ ] Add ingest_securit_serie() and ingest_securit_fluxo() to CVMIngestor
+- [ ] Implement accountability rules R5–R6 (distressed series, cash burn)
+      See docs/pipeline-plan.md §2 for thresholds and SQL
+
+## Phase 3 — Supabase backfill (after Phases 0–2 committed)
+- [ ] Apply schema.sql changes (ALTER TABLE cvm_fii_mensal for new columns) before backfill
+- [ ] Backfill FIDC: python -m src.pipeline.cvm_pipeline backfill --entity fidc --start 2019
+- [ ] Backfill FII complemento: python -m src.pipeline.cvm_pipeline backfill --entity fii --start 2019
+- [ ] SECURIT duplicate audit: truncate + re-insert after field-name fix changes cardinality
+      Run analysis_queries.sql query 9, compare row counts before/after
+- [ ] Run scripts/verify_pipeline.py against live Supabase; target < 5% null on all key fields
+
+## Phase 4 — BACEN macro context
+- [ ] Verify bacen_sgs series are fetching: SELIC (11), CDI (12), IPCA (433), IGP-M (189)
+- [ ] Verify PTAX USD/BRL fetch is active for FX context
+- [ ] Implement accountability rule R10: FIDC delinquency vs CDI spread anomaly detection
+      See docs/pipeline-plan.md §2 for query
+
+## Operations (recurring)
+- [ ] Apply src/store/schema.sql against Supabase project after each schema change
+- [ ] Set GitHub Actions secrets: SUPABASE_URL, SUPABASE_SERVICE_KEY
+- [ ] Verify daily_ingest.yml cron is running (check ingest_log after each 06:00 UTC run)
 
 ## Future scope
-- [ ] B3 fetcher — drop in `src/fetchers/b3_fetcher.py` + extend `src/store/schema.sql`
-      once a live B3 endpoint is validated. Previous proxy hit a non-B3 domain
-      and only returned hardcoded samples; removed for honesty.
-- [ ] ANBIMA — needs paid API credentials.
+- [ ] B3 fetcher — src/fetchers/b3_fetcher.py once a live B3 endpoint is validated
+- [ ] ANBIMA — needs paid API credentials (currently blocked by site restructure/auth)
+- [ ] FIAGRO — CVM started publishing May 2025; add to pipeline once data is available
+- [ ] BACEN TaxaJuros — credit rates by sector (useful for FIDC yield context)
+
+## Done
+- [x] Drop FastAPI services + gateway + Mintlify docs + Solana oracle
+- [x] Restructure src/ into fetchers/, parsers/, store/, pipeline/
+- [x] Cherry-pick FI/FII entities + redesigned schema with audit log
+- [x] Fix FIDC NAV: csv_name_pattern → tab_IV; vl_patrim_liq ← TAB_IV_A_VL_PL
+- [x] Fix FII Patrimônio Líquido: add mensal_complemento doc_type; map Patrimonio_Liquido field
+- [x] Fix SECURIT PascalCase columns: dt_emissao ← Data_Referencia, vl_emissao ← Valor_Atualizado_Emissao
+- [x] Verify all three fixes on real CVM data (DuckDB local seed, March 2025 / 2024 data)
+- [x] Enumerate FIDC ZIP structure (17 CSVs tab_I–tab_XIV); identify tranche data in tab_X
+- [x] Enumerate SECURIT ZIP structure (8 CSVs); identify series/cash-flow CSVs
+- [x] Write docs/pipeline-plan.md: full data inventory, 10 accountability rules, 5-phase execution plan
+- [x] Create scripts/verify_pipeline.py, analysis_queries.sql, seed_local_db.py, run_analysis_local.py

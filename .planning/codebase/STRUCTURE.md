@@ -13,12 +13,15 @@ iliquid_nightly/
 │   └── codebase/                    # This directory — GSD docs
 ├── cache/                           # On-disk fetcher cache (24-hour TTL)
 ├── temp/                            # Temporary files during ZIP extraction
+├── docs/
+│   ├── pipeline-plan.md             # Master plan: data inventory, accountability rules, phases
+│   └── pipeline-fixes-and-verification.md  # Field-mapping bug fixes + web verification results
 ├── src/
 │   ├── __init__.py
 │   ├── fetchers/
 │   │   ├── __init__.py
 │   │   ├── cvm_fetcher.py           # HTTP download + ZIP extraction + CSV parse
-│   │   ├── cvm_config.py            # URL templates + dataset metadata
+│   │   ├── cvm_config.py            # URL templates + dataset metadata (entity × doc_type)
 │   │   └── bacen_fetcher.py         # Async wrapper around python-bcb
 │   ├── parsers/
 │   │   ├── __init__.py
@@ -26,7 +29,7 @@ iliquid_nightly/
 │   ├── store/
 │   │   ├── __init__.py
 │   │   ├── supabase_client.py       # Upsert client + chunking logic
-│   │   └── schema.sql               # Canonical Postgres schema
+│   │   └── schema.sql               # Canonical Postgres schema (12 tables + audit log)
 │   └── pipeline/
 │       ├── __init__.py
 │       ├── cvm_pipeline.py          # CVMIngestor orchestration
@@ -39,14 +42,18 @@ iliquid_nightly/
 │   ├── test_data_validation.py      # DataValidator unit tests
 │   └── test_ingestor.py             # Ingestor logic tests (no Supabase)
 ├── scripts/
-│   └── explore_cvm_output.py        # Utility for inspecting raw CVM data
+│   ├── seed_local_db.py             # Fetch real CVM data → local Postgres (offline testing)
+│   ├── run_analysis_local.py        # Run 11 verification queries against local DB (PASS/WARN/EMPTY)
+│   ├── verify_pipeline.py           # Run verification report against live Supabase
+│   ├── analysis_queries.sql         # 11 SQL queries: presence, null rates, business metrics
+│   └── explore_cvm_output.py        # Utility for inspecting raw CVM ZIP/CSV structure
 ├── .env.example                     # Template: SUPABASE_URL, SUPABASE_SERVICE_KEY
 ├── .gitignore
 ├── .python-version                  # Python 3.12
 ├── pytest.ini
 ├── requirements.txt                 # Dependencies
 ├── README.md                        # Project overview
-└── TODO                             # Backlog items
+└── TODO                             # Backlog items (5-phase plan)
 ```
 
 ## Directory Purposes
@@ -82,7 +89,8 @@ iliquid_nightly/
 - Contains: Supabase upsert client, chunking logic, canonical schema
 - Key files:
   - `supabase_client.py`: `get_supabase_client()` factory, `upsert_rows()` chunked upsert
-  - `schema.sql`: 9 CVM tables (FI/FIDC/FIP/FIAGRO/FII/SECURIT) + 3 BACEN tables + audit log
+  - `schema.sql`: 12 CVM tables (FI/FIDC/FIP/FIAGRO/FII/SECURIT + variants) + 3 BACEN tables + audit log
+    Planned additions: cvm_fidc_tranche, cvm_fidc_tranche_flows, cvm_fidc_aging, cvm_securit_serie, cvm_securit_fluxo
 - Bootstrap: `psql "$SUPABASE_DB_URL" -f src/store/schema.sql` (idempotent, CREATE TABLE IF NOT EXISTS)
 
 **`src/pipeline/`:**
@@ -104,10 +112,20 @@ iliquid_nightly/
   - `test_ingestor.py`: CVMIngestor logic with mocked fetcher + store
 
 **`scripts/`:**
-- Purpose: Development utilities (not part of production pipeline)
-- Contains: One-off exploratory scripts
+- Purpose: Development utilities and verification (not part of production pipeline)
+- Contains: Local seeding, verification, and exploratory scripts
 - Key files:
-  - `explore_cvm_output.py`: Inspect raw CVM data structure
+  - `seed_local_db.py`: Fetch real CVM data → local Postgres for offline testing (~2 min with --skip-fi)
+  - `run_analysis_local.py`: Execute all 11 analysis queries against local DB; prints PASS/WARN/EMPTY
+  - `verify_pipeline.py`: Full verification report against live Supabase (presence + null rates + metrics)
+  - `analysis_queries.sql`: 11 reusable SQL queries (data presence, null rates, business metrics per entity)
+  - `explore_cvm_output.py`: Inspect raw CVM ZIP/CSV structure
+
+**`docs/`:**
+- Purpose: Design documents and operational notes
+- Key files:
+  - `pipeline-plan.md`: Master document — full data inventory (all CSVs per ZIP), 10 accountability rules with SQL, 5-phase execution plan, validation gates, known data limitations
+  - `pipeline-fixes-and-verification.md`: Record of field-mapping bug fixes and web verification results
 
 ## Key File Locations
 
@@ -227,4 +245,4 @@ iliquid_nightly/
 
 ---
 
-*Structure analysis: 2026-05-05*
+*Structure analysis: 2026-05-06*

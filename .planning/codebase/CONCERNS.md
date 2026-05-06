@@ -22,11 +22,16 @@
 - Impact: Corrupted cache metadata silently triggers re-download on every run, wasting bandwidth and time. No visibility into why cache fails.
 - Fix approach: Log cache read failures by type. Consider cache TTL extension for metadata parsing errors to prefer stale cache over corruption.
 
-**Bare exception in CSV ZIP extraction:**
-- Issue: `_extract_csv_from_zip()` at `src/fetchers/cvm_fetcher.py:268-286` has fallback logic but no logging when expected CSV pattern doesn't match. If CVM changes ZIP contents, the "next CSV in ZIP" fallback hides schema changes.
+**Silent fallback CSV selection in ZIP extraction:**
+- Issue: `_extract_csv_from_zip()` at `src/fetchers/cvm_fetcher.py:268-286` falls back to the
+  first CSV alphabetically when `csv_name_pattern` doesn't match any file in the ZIP. No log
+  message identifies which file was selected via fallback, making schema drift invisible.
 - Files: `src/fetchers/cvm_fetcher.py:283-284`
-- Impact: Silent adoption of wrong CSV file if CVM structure changes; wrong data ingested without alerting.
-- Fix approach: Log when fallback CSV selection is used. Include file list in warning so schema drift is visible in logs.
+- Impact: Currently exploited (intentionally or not) for SECURIT: the CRA pattern
+  `inf_mensal_cra_{year}.csv` never matches, so the fallback picks `ativo_passivo` alphabetically.
+  If CVM adds a file whose name sorts earlier, wrong data is ingested silently.
+- Fix approach: Log a WARNING when fallback is used, including the full file list from the ZIP.
+  Also fix SECURIT patterns to match explicitly (see Known Bugs).
 
 **Validation module incomplete error handling:**
 - Issue: `DataValidator._validate_date()` at `src/parsers/validation.py:157` catches `ValueError` but `_validate_datetime()` at line 171 catches generic `Exception`. Inconsistent specificity masks real parsing bugs.
@@ -42,17 +47,39 @@
 
 ## Known Bugs
 
-**FIDC mensal CSV name pattern mismatch (FIXED IN STAGED CHANGES):**
-- Symptoms: FIDC data ingestion silently uses wrong CSV filename pattern.
-- Files: `src/fetchers/cvm_config.py:105` (staged fix in git diff shows pattern changed from `inf_mensal_fidc_{year}{month:02d}.csv` to `inf_mensal_fidc_tab_IV_{year}{month:02d}.csv`)
-- Trigger: Any FIDC monthly ingest since schema redesign.
-- Workaround: Current staged change fixes this — needs to be committed.
+**FIDC mensal CSV name pattern mismatch (FIXED — committed):**
+- Symptoms: FIDC data ingestion used wrong CSV filename pattern; `vl_patrim_liq` was always null.
+- Files: `src/fetchers/cvm_config.py` — pattern changed from `inf_mensal_fidc_{year}{month:02d}.csv`
+  to `inf_mensal_fidc_tab_IV_{year}{month:02d}.csv`. Pipeline now reads `TAB_IV_A_VL_PL`.
+- Verified: 0% null on March 2025 real CVM data (local DuckDB seed).
+- Remaining work: Supabase backfill for all historical months needed (data before fix has null PL).
 
-**FII mensal_complemento dataset not configured (FIXED IN STAGED CHANGES):**
-- Symptoms: Cannot ingest FII mensal_complemento data; endpoint exists but not in config.
-- Files: `src/fetchers/cvm_config.py:63-99` (staged addition of mensal_complemento config)
-- Trigger: Attempting to call `ingest_fii_mensal("mensal_complemento", 2025)`.
-- Workaround: Staged config addition already present in git diff — needs commit.
+**FII mensal_complemento dataset not configured (FIXED — committed):**
+- Symptoms: `Patrimonio_Liquido` (NAV) was never fetched; `vl_patrim_liq` always null for FII.
+- Files: `src/fetchers/cvm_config.py` — added `mensal_complemento` doc_type pointing to
+  `inf_mensal_fii_complemento_{year}.csv`. Pipeline now maps `Patrimonio_Liquido → vl_patrim_liq`.
+- Verified: 0% null on 2024 FII complemento data. KNCR11 NAV R$7.77bn matches public data.
+- Remaining work: Supabase backfill for all historical years (2019–present).
+
+**SECURIT csv_name_pattern does not match any file (WORKS BY COINCIDENCE — fix pending):**
+- Symptoms: None visible — SECURIT data ingests successfully. But it works by accident.
+- Root cause: `cvm_config.py` sets `csv_name_pattern = "inf_mensal_cra_{year}.csv"` for CRA.
+  No file in the CRA ZIP matches this pattern. `_extract_csv_from_zip()` falls back to the
+  first CSV alphabetically, which happens to be `inf_mensal_cra_ativo_passivo_{year}.csv` —
+  the correct file for fund-level totals. If CVM adds a file whose name sorts earlier
+  (e.g., `inf_mensal_cra_acao_*`), the fallback will silently pick the wrong CSV.
+- Files: `src/fetchers/cvm_config.py` (CRA, CRI, OTS entries), `src/fetchers/cvm_fetcher.py:283-284`
+- Fix: Change patterns to `"inf_mensal_cra_ativo_passivo_{year}.csv"` (and CRI/OTS equivalents).
+- Trigger: Any CVM ZIP content change that alters alphabetical ordering.
+
+**FII complemento fields not mapped (feature gap — fix pending):**
+- Symptoms: `cvm_fii_mensal` for `doc_subtype = 'complemento'` only has `vl_patrim_liq`.
+  All yield, return, and cotistas fields from the `complemento` CSV are fetched but discarded.
+- Missing fields (in `Percentual_Dividend_Yield_Mes`, `Percentual_Rentabilidade_Efetiva_Mes`,
+  `Percentual_Rentabilidade_Patrimonial_Mes`, `Total_Numero_Cotistas`, `Cotas_Emitidas`,
+  `Valor_Ativo`, `Valor_Patrimonial_Cotas`, `Percentual_Amortizacao_Cotas_Mes`).
+- Fix requires: (1) ADD COLUMN in `schema.sql`, (2) map fields in `ingest_fii_mensal()`.
+- Impact: Cannot compute dividend yield outlier rule (accountability rule R7) without this.
 
 **Month boundary logic in daily_update:**
 - Symptoms: When run on the 1st of month, fetches previous month only if month > 1, skipping December carryover from November of previous year.
@@ -237,4 +264,4 @@
 
 ---
 
-*Concerns audit: 2026-05-05*
+*Concerns audit: 2026-05-06*
