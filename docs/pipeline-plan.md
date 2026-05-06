@@ -1,436 +1,618 @@
-# CVM Pipeline — Asset Map, Ingestion Spec & Validation Protocol
+# CVM Pipeline — Master Plan
 
-## Objective
-
-Track Brazilian capital markets industry metrics — AUM, flows, delinquency, tranche performance, emissions — across all regulated fund types with enough regularity and fidelity to answer accountability questions: Is industry AUM growing? Where is delinquency rising? Are senior tranches performing as promised? Which securitization series are in distress?
-
-All raw data comes from CVM's open portal (`dados.cvm.gov.br`). The pipeline fetches, normalises, and persists it to Supabase for SQL analysis.
+**Objective:** Regular accountability and analysis of Brazilian capital markets — AUM, flows, delinquency, tranche performance, emissions — sourced from CVM's open data portal and persisted to Supabase for SQL analysis.
 
 ---
 
-## 1. Asset Map
+## Part 1 — What Data Exists and What It Contains
 
-| Entity | What it represents | Industry size | Frequency | CVM portal path |
-|---|---|---|---|---|
-| **FI** | All regulated investment funds (open-ended) | ~R$8tn AUM | Daily + Monthly | `/FI/DOC/` |
-| **FIDC** | Receivables funds — tranche structure (sênior/mezanino/subordinada) | ~R$700bn AUM | Monthly | `/FIDC/DOC/` |
-| **FIAGRO** | Agribusiness chain funds (from 2025-05) | ~R$50bn+ | Monthly | `/FIAGRO/DOC/` |
-| **FIP** | Private equity / venture funds | ~R$900bn AUM | Quarterly/4-monthly | `/FIP/DOC/` |
-| **FII** | Real estate investment trusts (listed) | ~R$400bn AUM | Monthly | `/FII/DOC/` |
-| **SECURIT** | CRA / CRI / OTS securitization vehicles — multi-series | ~R$4tn outstanding | Monthly | `/SECURIT/DOC/` |
+### 1.1 FI — Fundos de Investimento (~R$8tn AUM)
 
-BACEN macro series (SELIC, IPCA, CDI, PTAX, Focus) are in the schema but no ingestor exists yet.
+One fund can appear as many rows per day (one per quota class). All financial metrics are fund-level.
 
----
-
-## 2. Entity Specifications
-
-### 2.1 FI — Fundos de Investimento
-
-**Available doc types:**
-
-| doc_type | File pattern | Rows/period | Key content |
+| doc_type | File | Frequency | Primary use |
 |---|---|---|---|
-| `inf_diario` | `inf_diario_fi_{YYYYMM}.zip` → `inf_diario_fi_{YYYYMM}.csv` | ~400k | Daily NAV, quota price, flows, quotaholders |
-| `cda` | `cda_fi_{YYYYMM}.zip` → `cda_fi_BLC_1_{YYYYMM}.csv` | ~50k deduped | Portfolio by asset class |
-| `perfil_mensal` | `perfil_mensal_fi_{YYYYMM}.csv` | ~10k | Investor concentration |
-| `balancete` | `balancete_fi_{YYYYMM}.zip` → `balancete_fi_{YYYYMM}.csv` | ~30k | Monthly balance sheet |
+| `inf_diario` | `inf_diario_fi_{YYYYMM}.zip` | Daily (monthly ZIP) | NAV, flows, quota price |
+| `cda` | `cda_fi_{YYYYMM}.zip` → `cda_fi_BLC_1_*` | Monthly | Portfolio composition by asset class |
+| `perfil_mensal` | `perfil_mensal_fi_{YYYYMM}.csv` | Monthly | Investor concentration |
+| `balancete` | `balancete_fi_{YYYYMM}.zip` | Monthly | Balance sheet |
 
-**Critical field mapping (`inf_diario`):**
+**Key columns (inf_diario):** `CNPJ_FUNDO_CLASSE`, `DT_COMPTC`, `VL_PATRIM_LIQ`, `VL_QUOTA`, `CAPTC_DIA`, `RESG_DIA`, `NR_COTST`
 
-| DB column | Raw CSV column |
-|---|---|
-| `cnpj` | `CNPJ_FUNDO_CLASSE` (normalize to 14 digits) |
-| `dt_comptc` | `DT_COMPTC` |
-| `vl_patrim_liq` | `VL_PATRIM_LIQ` |
-| `captc_dia` | `CAPTC_DIA` |
-| `resg_dia` | `RESG_DIA` |
-| `vl_quota` | `VL_QUOTA` |
-| `nr_cotst` | `NR_COTST` |
+**DB table:** `cvm_fi_diario` — upsert key `(cnpj, dt_comptc)`, partitioned by year
 
-**Upsert key:** `(cnpj, dt_comptc)`
+**Analysis available today:**
+- Industry AUM trend (daily/monthly)
+- Net flow = `SUM(captc_dia) - SUM(resg_dia)`
+- Individual fund NAV track over time
+- Quota price performance
 
 ---
 
-### 2.2 FIDC — Fundos de Investimento em Direitos Creditórios
+### 1.2 FIDC — Fundos de Investimento em Direitos Creditórios (~R$700bn AUM)
 
-**ZIP structure — 17 CSVs (confirmed from real data):**
+Each monthly ZIP contains **17 CSVs**. The pipeline currently reads only `tab_IV`. All 17 tabs are documented below with official field descriptions from CVM's data dictionary.
 
-Each monthly ZIP (`inf_mensal_fidc_{YYYYMM}.zip`) contains:
+| CSV (tab) | Granularity | What it contains |
+|---|---|---|
+| **tab_I** | Fund | Full balance sheet: receivables with/without risk by category, delinquency, cedente concentration (top 9), derivatives, other assets |
+| **tab_II** | Fund | Portfolio by sector: industrial, commercial (retail/wholesale/leasing), services (education/entertainment/utilities), agronegócio, financial (consumer credit, consignado, corporate, vehicles, real estate), factoring, judicial, brand rights |
+| **tab_III** | Fund | Liabilities: payables (short-term/long-term), derivative positions |
+| **tab_IV** | Fund | **NAV** (`TAB_IV_A_VL_PL`) + 3-month average PL (`TAB_IV_B_VL_PL_MEDIO`) |
+| **tab_V** | Fund | Credits WITH risk acquisition — maturity aging (30/60/90/120/150/180/360/720/1080/1080+ days) + delinquency by aging + early payoff by aging |
+| **tab_VI** | Fund | Credits WITHOUT risk acquisition — same aging structure (recourse structures where cedente retains risk) |
+| **tab_VII** | Fund | Monthly acquisitions (qty+value, with/without risk, current/overdue/non-performing), alienations (to cedente, service providers, third parties), substitutions, repurchases |
+| **tab_IX** | Fund | Derivative pricing: min/avg/max buy/sell for each asset class |
+| **tab_X** | Fund | Credit risk rating distribution (AA→H), tax debt |
+| **tab_X_1** | **Series** | Quotaholders count per tranche/series (`TAB_X_CLASSE_SERIE`) |
+| **tab_X_1_1** | Fund | Quotaholder breakdown: sênior and subordinada counts by investor type (PF, PJ, bank, distributor, foreign, pension fund, insurer, etc.) |
+| **tab_X_2** | **Series** | Quota quantity (`TAB_X_QT_COTA`) and quota price (`TAB_X_VL_COTA`) per tranche |
+| **tab_X_3** | **Series** | Monthly return % (`TAB_X_VL_RENTAB_MES`) per tranche |
+| **tab_X_4** | **Series** | Flows per tranche: captações/resgates/resgates solicitados + qty and value |
+| **tab_X_5** | Fund | Portfolio liquidity buckets (0/30/60/90/180/360/360+ days) |
+| **tab_X_6** | **Series** | Expected (`TAB_X_PR_DESEMP_ESPERADO`) vs actual (`TAB_X_PR_DESEMP_REAL`) performance % per tranche |
+| **tab_X_7** | Fund | Collateral: guarantee value and % over portfolio |
 
-| CSV | Granularity | Key content | Pipeline status |
-|---|---|---|---|
-| `tab_I` | Fund | Full asset breakdown: credits with/without risk, delinquency, cedentes (top 9), derivatives | **Not ingested** |
-| `tab_II` | Fund | Portfolio by sector: industrial, commercial, agronegócio, financial, real estate, etc. | **Not ingested** |
-| `tab_III` | Fund | Liabilities breakdown | Not useful for NAV |
-| `tab_IV` | Fund | **NAV** (`TAB_IV_A_VL_PL`) and average PL (`TAB_IV_B_VL_PL_MEDIO`) | **Ingested → `cvm_fidc_mensal`** |
-| `tab_V` | Fund | Credits with risk: maturity aging buckets (30/60/.../1080+ days) | **Not ingested** |
-| `tab_VI` | Fund | Credits without risk: same aging + delinquency by bucket | **Not ingested** |
-| `tab_VII` | Fund | Count and value of receivables (current, overdue, non-performing) by cedente/prestador/terceiro | **Not ingested** |
-| `tab_IX` | Fund | Derivative pricing (min/avg/max buy/sell per asset class) | Not priority |
-| `tab_X` | Fund | Credit risk rating distribution (AA, A, B, … H) + tax debt | **Not ingested** |
-| `tab_X_1` | **Series** | Quotaholders per tranche/series (`TAB_X_CLASSE_SERIE`) | **Not ingested** |
-| `tab_X_1_1` | Fund | Quotaholder breakdown by investor type for sênior and subordinada | **Not ingested** |
-| `tab_X_2` | **Series** | Quota price (`TAB_X_VL_COTA`) and quantity per tranche | **Not ingested** |
-| `tab_X_3` | **Series** | Monthly return % (`TAB_X_VL_RENTAB_MES`) per tranche | **Not ingested** |
-| `tab_X_4` | **Series** | Cash flows (captações, resgates, resgates solicitados) per tranche | **Not ingested** |
-| `tab_X_5` | Fund | Liquidity buckets (0/30/60/90/180/360/360+ days) | **Not ingested** |
-| `tab_X_6` | **Series** | Expected vs actual performance % per tranche | **Not ingested** |
-| `tab_X_7` | Fund | Guarantee / collateral value and % over portfolio | **Not ingested** |
-
-**The `TAB_X_CLASSE_SERIE` identifier (tranche key):**
-
-Values observed in real data:
-- `"Subclasse Sênior Série 1"` / `"Subclasse Senior Série 2"`
-- `"Subclasse Subordinada Subordinada 1"`
+**`TAB_X_CLASSE_SERIE` values (the tranche key):**
+- `"Subclasse Sênior Série 1"`, `"Subclasse Sênior Série 2"`, …
 - `"Subclasse Subordinada Mezanino 1"`
-- `"Subclasse Subordinada Junior"` (no series number)
+- `"Subclasse Subordinada Subordinada 1"`
+- `"Subclasse Subordinada Junior"`
 
-**Current ingestion — `cvm_fidc_mensal`:**
+**Currently ingested → `cvm_fidc_mensal`:** tab_IV only — NAV, 3-month avg PL, total, delinquency (generic), quotaholders. Upsert key `(cnpj, period)`.
 
-| DB column | Raw CSV column (tab_IV) |
-|---|---|
-| `cnpj` | `CNPJ_FUNDO_CLASSE` |
-| `period` | `DT_COMPTC` |
-| `vl_patrim_liq` | `TAB_IV_A_VL_PL` → fallback `VL_PATRIM_LIQ` |
-| `vl_total` | `VL_TOTAL` or `VL_CARTEIRA_TOTAL` |
-| `vl_inadimpl` | Any column containing `inadimpl` |
-
-**Upsert key:** `(cnpj, period)` — fund-level, one row per fund per month.
-
-**Missing — tranche-level tables (to be designed):**
-
-`cvm_fidc_tranche` — one row per fund per series per month:
-- Source: `tab_X_2` (quota price/qty) + `tab_X_3` (return) + `tab_X_6` (expected vs actual)
-- Key columns: `cnpj`, `period`, `classe_serie` (e.g., "Subclasse Sênior Série 1"), `vl_cota`, `qt_cota`, `vl_rentab_mes`, `pr_desemp_esperado`, `pr_desemp_real`
-- Upsert key: `(cnpj, period, classe_serie)`
-
-`cvm_fidc_tranche_flows` — one row per fund per series per operation type per month:
-- Source: `tab_X_4`
-- Key columns: `cnpj`, `period`, `classe_serie`, `tp_oper` (captações/resgates/etc.), `vl_total`, `qt_cota`
-
-`cvm_fidc_aging` — delinquency aging buckets per fund per month:
-- Source: `tab_VI` (credits at risk by days overdue)
-- Key columns: `cnpj`, `period`, `vl_inad_30`, `vl_inad_60`, `vl_inad_90`, ..., `vl_inad_maior_1080`
+**Missing (high priority):**
+- Per-tranche performance, return, flows — tabs X_2, X_3, X_4, X_6
+- Delinquency aging buckets — tab_VI
+- Sector portfolio breakdown — tab_II
+- Monthly acquisition/alienation activity — tab_VII
 
 ---
 
-### 2.3 FIAGRO — Fundos de Investimento nas Cadeias Produtivas Agroindustriais
+### 1.3 FIAGRO — Agribusiness Funds
 
-Available from **2025-05** only. ZIP mirrors FIDC monthly structure. Use uppercase column names (`VL_PATRIM_LIQ` directly, no tab disambiguation needed).
+Available from **2025-05** only. ZIP mirrors FIDC but uses uppercase column names (`VL_PATRIM_LIQ` directly, no tab disambiguation). Same DB structure as FIDC.
 
 ---
 
-### 2.4 FIP — Fundos de Investimento em Participações
+### 1.4 FIP — Private Equity / Venture (~R$900bn AUM)
 
-| doc_type | Years | File pattern |
+Flat yearly CSVs. No tranche structure. Key column: `VL_PATRIM_LIQ`.
+
+| doc_type | Years | Pattern |
 |---|---|---|
 | `inf_trimestral` | 2010–2023 | `inf_trimestral_fip_{year}.csv` |
 | `inf_quadrimestral` | 2024+ | `inf_quadrimestral_fip_{year}.csv` |
 
-Flat yearly CSVs. Key column: `VL_PATRIM_LIQ`. No tranche structure.
-
-**Upsert key:** `(cnpj, doc_type, period_year)`
+**Currently ingested → `cvm_fip_periodic`:** NAV only. Upsert key `(cnpj, doc_type, period_year)`.
 
 ---
 
-### 2.5 FII — Fundos de Investimento Imobiliário
+### 1.5 FII — Real Estate Investment Trusts (~R$400bn AUM)
 
-**ZIP structure — 3 CSVs per yearly ZIP:**
+One yearly ZIP, three CSVs with different content:
 
-| CSV | Key content | Pipeline status |
-|---|---|---|
-| `inf_mensal_fii_geral_{year}.csv` | Fund registration, mandate, manager info | Ingested but no financial fields mapped |
-| `inf_mensal_fii_ativo_passivo_{year}.csv` | Full balance sheet: real estate assets by type, CRI/LCI holdings, rendimentos a distribuir, passivo | **Ingested but no financial fields mapped** |
-| `inf_mensal_fii_complemento_{year}.csv` | **NAV**, quotaholders by type, dividend yield, monthly return, amortization | **Ingested → `cvm_fii_mensal`** |
-
-**Full column inventory — `complemento` (relevant fields not yet ingested):**
-
-| Column | Meaning |
+| CSV | Key content |
 |---|---|
-| `Patrimonio_Liquido` | NAV ✓ currently mapped |
-| `Total_Numero_Cotistas` | Total quotaholders |
-| `Numero_Cotistas_Pessoa_Fisica` | Retail investors |
-| `Valor_Ativo` | Total assets |
-| `Cotas_Emitidas` | Shares outstanding |
-| `Valor_Patrimonial_Cotas` | Book value per share |
-| `Percentual_Rentabilidade_Efetiva_Mes` | Effective monthly return % |
-| `Percentual_Rentabilidade_Patrimonial_Mes` | Patrimony-based monthly return % |
-| `Percentual_Dividend_Yield_Mes` | Monthly dividend yield % |
-| `Percentual_Amortizacao_Cotas_Mes` | Monthly amortization % |
+| `geral` | Registration: mandate, manager, ISIN, market listing, admin info |
+| `ativo_passivo` | Balance sheet: real estate by type (renda/venda/construção), CRI/LCI holdings, `Rendimentos_Distribuir`, total passivo |
+| `complemento` | **NAV** (`Patrimonio_Liquido`), quotaholders by type (PF/PJ/bank/foreign/pension/insurer/other FII/clubs), `Valor_Ativo`, `Cotas_Emitidas`, `Valor_Patrimonial_Cotas`, **`Percentual_Rentabilidade_Efetiva_Mes`**, **`Percentual_Rentabilidade_Patrimonial_Mes`**, **`Percentual_Dividend_Yield_Mes`**, `Percentual_Amortizacao_Cotas_Mes` |
 
-**Full column inventory — `ativo_passivo` (not ingested):**
+**Currently ingested → `cvm_fii_mensal`:** `complemento` → NAV only; `geral` and `ativo_passivo` → row inserted but no financial fields extracted. Upsert key `(cnpj, period, doc_subtype)`.
 
-| Column | Meaning |
-|---|---|
-| `Imoveis_Renda_Acabados` | Completed income-generating real estate |
-| `CRI` / `LCI` / `LCI_LCA` | Fixed income holdings |
-| `FII` | Exposure to other FIIs |
-| `Rendimentos_Distribuir` | Accrued income to distribute |
-| `Total_Passivo` | Total liabilities |
+**Missing from complemento:** dividend yield, effective return, patrimony return, amortization %, quotaholder breakdown, cotas emitidas, valor ativo
 
-**Current ingestion — `cvm_fii_mensal`:**
-
-| DB column | Source CSV | Raw column |
-|---|---|---|
-| `cnpj` | `complemento` | `CNPJ_Fundo_Classe` |
-| `period` | `complemento` | `Data_Referencia` → first 7 chars + `-01` |
-| `doc_subtype` | derived | `"geral"` / `"ativo_passivo"` / `"complemento"` |
-| `vl_patrim_liq` | `complemento` | `Patrimonio_Liquido` |
-
-**Upsert key:** `(cnpj, period, doc_subtype)`
-
-**Missing — fields to add to `cvm_fii_mensal` for `complemento` rows:**
-
-`nr_cotst`, `vl_ativo`, `cotas_emitidas`, `vl_patrimonial_cotas`, `pct_rentab_efetiva_mes`, `pct_rentab_patrimonial_mes`, `pct_dividend_yield_mes`, `pct_amortizacao_mes`
+**Missing from ativo_passivo:** real estate breakdown, CRI/LCI holdings, `Rendimentos_Distribuir`
 
 ---
 
-### 2.6 SECURIT — Securitizadoras (CRA / CRI / OTS)
+### 1.6 SECURIT — Securitizadoras: CRA / CRI / OTS (~R$4tn outstanding)
 
-**ZIP structure — 8 CSVs per yearly ZIP (confirmed from real data):**
+Each yearly ZIP contains **8 CSVs**. The pipeline reads only one (by accident via first-alphabetical fallback).
 
-| CSV | Granularity | Key content | Pipeline status |
-|---|---|---|---|
-| `inf_mensal_cra_ativo_passivo_{year}.csv` | Certificate | Total assets, credits by aging, cash, derivatives, **`Valor_Atualizado_Emissao`** | **Ingested (fallback — first alphabetical CSV)** |
-| `inf_mensal_cra_classe_{year}.csv` | **Series** | Per-series: Classe, Numero_Serie, CETIP code, ISIN, maturity, status, Valor_Total_Integralizado, interest rate, yield, credit rating | **Not ingested** |
-| `inf_mensal_cra_fluxo_caixa_{year}.csv` | Certificate | Cash flows split by tranche: Senior principal+interest, Mezanino principal+interest, Junior principal+interest | **Not ingested** |
-| `inf_mensal_cra_geral_{year}.csv` | Certificate | Issuer, trustee, custodian, collateral type, number of series, revolving flag | **Not ingested** |
-| `inf_mensal_cra_cedente_devedor_{year}.csv` | Certificate | Cedente/devedor concentration (CNPJ, % share) | **Not ingested** |
-| `inf_mensal_cra_direitos_creditorios_{year}.csv` | Certificate | Credits receivable, delinquency, concentration | **Not ingested** |
-| `inf_mensal_cra_derivativos_{year}.csv` | Certificate | Derivative positions | Not priority |
-| `inf_mensal_cra_desembolso_{year}.csv` | Certificate | Disbursement schedule by bucket (30/60/90/… days) | **Not ingested** |
-
-**Important:** The current `csv_name_pattern = "inf_mensal_cra_{year}.csv"` does NOT match any file in the ZIP. The fetcher falls back to the **first alphabetical CSV** (`ativo_passivo`). This works coincidentally because `ativo_passivo` has the fields we need (`Valor_Atualizado_Emissao`, `Ativo`, `Data_Referencia`). If CVM renames or reorders ZIPs, the fallback will break silently.
-
-**Fix required:** Set `csv_name_pattern` to `"inf_mensal_cra_ativo_passivo_{year}.csv"` to be explicit.
-
-**Current `cvm_securit_mensal` field mapping (from `ativo_passivo`):**
-
-| DB column | Raw CSV column | Source |
+| CSV | Granularity | Key content |
 |---|---|---|
-| `cnpj_securit` | `CNPJ_Emissora` | `ativo_passivo` |
-| `dt_emissao` | `Data_Referencia` → fallback `DT_EMISSAO` | `ativo_passivo` |
-| `vl_emissao` | `Valor_Atualizado_Emissao` → fallback `VL_EMISSAO` | `ativo_passivo` |
-| `vl_total` | `Ativo` → fallback `VL_TOTAL` | `ativo_passivo` |
+| `ativo_passivo` | Certificate | Total assets (`Ativo`), credits (current/overdue/non-performing), cash, derivatives, `Valor_Atualizado_Emissao`, `Reducao_Valor_Emissao` |
+| **`classe`** | **Series** | Per series: `Classe` (Sênior/Subordinada), `Numero_Serie`, `Codigo_CETIP`, `Codigo_ISIN`, `Data_Vencimento`, `Situacao` (Adimplente/etc), `Valor_Total_Integralizado`, `Taxa_Juros`, `Quantidade_Certificados`, `Valor_Certificados`, `Rendimentos`, `Amortizacoes`, `Rentabilidade`, `Classificacao_Risco_Atual`, `Indice_Subordinacao_Minimo` |
+| **`fluxo_caixa`** | Certificate | Monthly cash flows: `Recebimentos_Direitos_Creditorios`, `Pagamentos_Classe_Senior` (principal + juros), `Pagamentos_Classe_Subordinada_Mezanino` (principal + juros), `Pagamentos_Classe_Subordinada_Junior` (principal + juros), `Variacao_Liquida_Caixa` |
+| `geral` | Certificate | Emissora, trustee, custodian, collateral type, `Numero_Emissao`, `Quantidade_Series`, revolving flag, `Patrimonio_Liquido_Emissao`, `Desempenho_Emissao` |
+| `cedente_devedor` | Certificate | Cedente/devedor concentration: CNPJ + % share per counterparty |
+| `direitos_creditorios` | Certificate | Credits receivable by type (production/commercialization/etc), delinquency (`Parcelas_Atraso`), concentration % |
+| `desembolso` | Certificate | Disbursements by maturity bucket (30/60/90/120/150/180/360/360+ days) — investor payments schedule |
+| `derivativos` | Certificate | Derivative positions by type (term/futures/options/swap) |
 
-**Missing — series-level table (to be designed):**
+**Bug:** `csv_name_pattern = "inf_mensal_cra_{year}.csv"` never matches any file. Fallback picks `ativo_passivo` alphabetically — works now, breaks silently if CVM renames files.
 
-`cvm_securit_serie` — one row per certificate series per month:
-- Source: `inf_mensal_cra_classe_{year}.csv` (and CRI/OTS equivalents)
-- Key columns: `cnpj_securit`, `codigo_identificacao` (`Codigo_Identificacao_Certificado`), `data_referencia`, `classe` (Sênior/Subordinada), `numero_serie`, `codigo_cetip`, `codigo_isin`, `data_vencimento`, `situacao`, `valor_total_integralizado`, `taxa_juros`, `rentabilidade`, `classificacao_risco_atual`
-- Upsert key: `(cnpj_securit, codigo_identificacao, data_referencia, numero_serie)`
+**Currently ingested → `cvm_securit_mensal`:** `ativo_passivo` only — `Valor_Atualizado_Emissao`, `Ativo`, `Data_Referencia`. Upsert key `(instrument_type, period_year, cnpj_securit, dt_emissao, dt_vencto, vl_emissao)`.
 
-`cvm_securit_fluxo` — monthly cash flow by tranche per certificate:
-- Source: `inf_mensal_cra_fluxo_caixa_{year}.csv`
-- Key columns: `cnpj_securit`, `codigo_identificacao`, `data_referencia`, `recebimentos_direitos_creditorios`, `pagamentos_classe_senior`, `pagamentos_senior_principal`, `pagamentos_senior_juros`, `pagamentos_mezanino`, `pagamentos_junior`, `variacao_liquida_caixa`
+**Missing:** per-series status, credit rating, yield (`classe`); tranche-level cash flows (`fluxo_caixa`); cedente concentration; disbursement schedule
 
 ---
 
-## 3. Accountability Rules
+## Part 2 — Accountability Rules
 
-These are the specific checks the pipeline should support after full ingestion. Each maps to a SQL query.
+SQL checks the pipeline must support. Each maps to a schedulable query.
 
-### 3.1 FIDC Tranche Performance vs Target
-
-**Rule:** A senior tranche should deliver its promised return. If `pr_desemp_real < pr_desemp_esperado` for 2+ consecutive months, flag the fund.
-
+### 2.1 FI — Industry Flow Health (monthly)
 ```sql
--- Underperforming senior tranches (last 3 months)
-SELECT cnpj, period, classe_serie,
-       pr_desemp_esperado, pr_desemp_real,
-       pr_desemp_real - pr_desemp_esperado AS gap
-FROM cvm_fidc_tranche
-WHERE classe_serie ILIKE '%senior%'
-  AND pr_desemp_real < pr_desemp_esperado
-  AND period >= CURRENT_DATE - INTERVAL '3 months'
-ORDER BY gap ASC
-LIMIT 20;
+SELECT DATE_TRUNC('month', dt_comptc) AS month,
+       SUM(vl_patrim_liq) / 1e12 AS pl_tn,
+       (SUM(captc_dia) - SUM(resg_dia)) / 1e9 AS net_flow_bn
+FROM cvm_fi_diario
+GROUP BY 1 ORDER BY 1 DESC LIMIT 12;
+-- Flag: net_flow_bn < -50 for 3+ consecutive months = industry stress
 ```
 
-### 3.2 FIDC Delinquency Aging Concentration
-
-**Rule:** If > 30% of the delinquent portfolio is in the 360+ day bucket, the receivables are likely unrecoverable.
-
-```sql
--- Funds with heavy long-tail delinquency
-SELECT cnpj, period,
-       vl_inad_maior_1080 + vl_inad_1080 AS vl_long_tail,
-       vl_total_inad,
-       ROUND(100.0 * (vl_inad_maior_1080 + vl_inad_1080) / NULLIF(vl_total_inad, 0), 1) AS pct_long_tail
-FROM cvm_fidc_aging
-WHERE period = (SELECT MAX(period) FROM cvm_fidc_aging)
-  AND vl_total_inad > 0
-ORDER BY pct_long_tail DESC
-LIMIT 20;
-```
-
-### 3.3 FIDC Industry Delinquency Trend
-
-**Rule:** Track month-over-month change in industry-wide delinquency ratio.
-
+### 2.2 FIDC — Industry Delinquency Trend
 ```sql
 SELECT period,
+       COUNT(DISTINCT cnpj) AS funds,
        ROUND(SUM(vl_inadimpl) / NULLIF(SUM(vl_patrim_liq), 0) * 100, 2) AS delinquency_pct
 FROM cvm_fidc_mensal
-GROUP BY period
-ORDER BY period DESC
-LIMIT 24;
+GROUP BY period ORDER BY period DESC LIMIT 24;
+-- Flag: delinquency_pct > 15% = elevated credit stress
 ```
 
-### 3.4 SECURIT — Distressed Series
-
-**Rule:** A CRA/CRI series is distressed if `Situacao != 'Adimplente'` or `Rentabilidade = 0` for a live series.
-
+### 2.3 FIDC — Tranche Underperformance *(requires tab_X_6)*
 ```sql
--- Non-performing securitization series
-SELECT cnpj_securit, codigo_identificacao, numero_serie, classe,
-       data_vencimento, situacao, valor_total_integralizado, rentabilidade
+SELECT cnpj, period, classe_serie,
+       pr_desemp_esperado, pr_desemp_real,
+       pr_desemp_real - pr_desemp_esperado AS gap_pct
+FROM cvm_fidc_tranche
+WHERE pr_desemp_real < pr_desemp_esperado
+  AND period >= CURRENT_DATE - INTERVAL '3 months'
+ORDER BY gap_pct ASC LIMIT 20;
+-- Flag: negative gap on senior tranche for 2+ months = structural underperformance
+```
+
+### 2.4 FIDC — Delinquency Aging (long-tail concentration) *(requires tab_VI)*
+```sql
+SELECT cnpj, period,
+       (vl_inad_720 + vl_inad_1080 + vl_inad_maior_1080) AS long_tail,
+       vl_total_inad,
+       ROUND(100.0 * (vl_inad_720 + vl_inad_1080 + vl_inad_maior_1080)
+             / NULLIF(vl_total_inad, 0), 1) AS pct_long_tail
+FROM cvm_fidc_aging
+WHERE period = (SELECT MAX(period) FROM cvm_fidc_aging)
+  AND vl_total_inad > 1e6
+ORDER BY pct_long_tail DESC LIMIT 20;
+-- Flag: pct_long_tail > 50% = receivables likely unrecoverable
+```
+
+### 2.5 FIDC — Portfolio Sector Concentration *(requires tab_II)*
+```sql
+SELECT cnpj, period,
+       ROUND(100.0 * TAB_II_F_VL_FINANC / NULLIF(TAB_II_VL_CARTEIRA, 0), 1) AS pct_financ,
+       ROUND(100.0 * TAB_II_E_VL_AGRONEG / NULLIF(TAB_II_VL_CARTEIRA, 0), 1) AS pct_agro
+FROM cvm_fidc_portfolio
+WHERE period = (SELECT MAX(period) FROM cvm_fidc_portfolio)
+ORDER BY pct_financ DESC;
+```
+
+### 2.6 SECURIT — Distressed Series *(requires classe CSV)*
+```sql
+SELECT cnpj_securit, codigo_identificacao, classe, numero_serie,
+       data_vencimento, situacao, valor_total_integralizado, rentabilidade,
+       classificacao_risco_atual
 FROM cvm_securit_serie
 WHERE data_referencia = (SELECT MAX(data_referencia) FROM cvm_securit_serie)
   AND situacao != 'Adimplente'
   AND data_vencimento > CURRENT_DATE
 ORDER BY valor_total_integralizado DESC;
+-- Flag: any live series not "Adimplente"
 ```
 
-### 3.5 SECURIT — Tranche Cash Flow vs Receivables
-
-**Rule:** If `pagamentos_classe_senior > recebimentos_direitos_creditorios`, the senior tranche is being paid out of reserves, not new receivables — a structural risk signal.
-
+### 2.7 SECURIT — Cash Burn (senior paid from reserves) *(requires fluxo_caixa)*
 ```sql
--- Certificates paying senior from reserves (cash burn)
 SELECT cnpj_securit, codigo_identificacao, data_referencia,
        recebimentos_direitos_creditorios,
        pagamentos_classe_senior,
        pagamentos_classe_senior - recebimentos_direitos_creditorios AS cash_burn
 FROM cvm_securit_fluxo
-WHERE data_referencia >= CURRENT_DATE - INTERVAL '6 months'
-  AND pagamentos_classe_senior > recebimentos_direitos_creditorios
-ORDER BY cash_burn DESC
-LIMIT 20;
+WHERE data_referencia >= CURRENT_DATE - INTERVAL '3 months'
+  AND pagamentos_classe_senior > recebimentos_direitos_creditorios * 1.1
+ORDER BY cash_burn DESC LIMIT 20;
+-- Flag: senior paid > 110% of new receivables = reserve drawdown
 ```
 
-### 3.6 FII — Dividend Yield vs Industry Average
-
-**Rule:** Flag FIIs with dividend yield more than 2 standard deviations below the industry median.
-
+### 2.8 SECURIT — Subordination Breach *(requires classe CSV)*
 ```sql
-WITH monthly_yield AS (
+SELECT cnpj_securit, codigo_identificacao, classe, numero_serie,
+       indice_subordinacao_minimo,
+       -- subordination ratio = subordinada value / total issuance
+       -- requires joining ativo_passivo for total Ativo
+       classificacao_risco_atual
+FROM cvm_securit_serie
+WHERE data_referencia = (SELECT MAX(data_referencia) FROM cvm_securit_serie)
+  AND classe ILIKE '%senior%'
+  AND indice_subordinacao_minimo IS NOT NULL;
+```
+
+### 2.9 FII — Dividend Yield Outliers
+```sql
+WITH stats AS (
     SELECT period,
-           PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY pct_dividend_yield_mes) AS median_yield,
-           STDDEV(pct_dividend_yield_mes) AS std_yield
+           PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY pct_dividend_yield_mes) AS p50,
+           STDDEV(pct_dividend_yield_mes) AS sigma
     FROM cvm_fii_mensal
-    WHERE doc_subtype = 'complemento'
-      AND pct_dividend_yield_mes IS NOT NULL
+    WHERE doc_subtype = 'complemento' AND pct_dividend_yield_mes IS NOT NULL
       AND period = (SELECT MAX(period) FROM cvm_fii_mensal WHERE doc_subtype = 'complemento')
     GROUP BY period
 )
-SELECT f.cnpj, f.period, f.pct_dividend_yield_mes,
-       m.median_yield,
-       ROUND((f.pct_dividend_yield_mes - m.median_yield) / NULLIF(m.std_yield, 0), 2) AS z_score
-FROM cvm_fii_mensal f
-JOIN monthly_yield m ON f.period = m.period
+SELECT f.cnpj, f.pct_dividend_yield_mes,
+       ROUND((f.pct_dividend_yield_mes - s.p50) / NULLIF(s.sigma, 0), 2) AS z_score
+FROM cvm_fii_mensal f JOIN stats s USING (period)
 WHERE f.doc_subtype = 'complemento'
-  AND (f.pct_dividend_yield_mes - m.median_yield) / NULLIF(m.std_yield, 0) < -2
-ORDER BY z_score ASC;
+  AND ABS((f.pct_dividend_yield_mes - s.p50) / NULLIF(s.sigma, 0)) > 2
+ORDER BY z_score;
+-- Flag: z < -2 (suspiciously low) or z > 2 (suspiciously high)
 ```
 
-### 3.7 FI — Industry Net Flow (Monthly Health Check)
-
+### 2.10 FII — Income vs NAV Ratio *(requires ativo_passivo)*
 ```sql
-SELECT DATE_TRUNC('month', dt_comptc) AS month,
-       COUNT(DISTINCT cnpj) AS active_funds,
-       SUM(captc_dia) / 1e9 AS inflow_bn,
-       SUM(resg_dia) / 1e9 AS redemption_bn,
-       (SUM(captc_dia) - SUM(resg_dia)) / 1e9 AS net_flow_bn
-FROM cvm_fi_diario
-GROUP BY 1 ORDER BY 1 DESC LIMIT 12;
+SELECT f.cnpj, f.period,
+       ap.rendimentos_distribuir,
+       c.vl_patrim_liq,
+       ROUND(100.0 * ap.rendimentos_distribuir / NULLIF(c.vl_patrim_liq, 0), 2) AS income_yield_pct
+FROM cvm_fii_mensal ap
+JOIN cvm_fii_mensal c USING (cnpj, period)
+WHERE ap.doc_subtype = 'ativo_passivo'
+  AND c.doc_subtype = 'complemento'
+  AND c.period = (SELECT MAX(period) FROM cvm_fii_mensal WHERE doc_subtype = 'complemento')
+ORDER BY income_yield_pct DESC;
 ```
 
 ---
 
-## 4. Pre-Run Validation Protocol
+## Part 3 — Execution Plan (Run Non-Stop to Completion)
 
-Run these checks on a **single recent period** before triggering a historical backfill.
+### Phase 0 — Bug Fixes (1 hour, no schema changes)
 
-### Step 1 — Smoke seed
-
-```bash
-python scripts/seed_local_db.py --skip-fi
-# Seeds: FIDC 2025-03, FII 2024, FIP 2024, SECURIT CRA/CRI 2024
+**0.1** Fix SECURIT `csv_name_pattern` in `src/fetchers/cvm_config.py`:
+```python
+# cra_mensal, cri_mensal, ots_mensal — change from generic to explicit:
+"csv_name_pattern": "inf_mensal_cra_ativo_passivo_{year}.csv"
+"csv_name_pattern": "inf_mensal_cri_ativo_passivo_{year}.csv"
+"csv_name_pattern": "inf_mensal_ots_ativo_passivo_{year}.csv"
 ```
 
-### Step 2 — Field population (Q2 gate)
+**0.2** Add missing FII complemento fields to `ingest_fii_mensal` in `src/pipeline/cvm_pipeline.py`:
+```python
+# Add to complemento record:
+"nr_cotst":                _find_field(row, "Total_Numero_Cotistas"),
+"vl_ativo":                _find_field(row, "Valor_Ativo"),
+"cotas_emitidas":          _find_field(row, "Cotas_Emitidas"),
+"vl_patrimonial_cotas":    _find_field(row, "Valor_Patrimonial_Cotas"),
+"pct_rentab_efetiva_mes":  _find_field(row, "Percentual_Rentabilidade_Efetiva_Mes"),
+"pct_rentab_patrimonial":  _find_field(row, "Percentual_Rentabilidade_Patrimonial_Mes"),
+"pct_dividend_yield_mes":  _find_field(row, "Percentual_Dividend_Yield_Mes"),
+"pct_amortizacao_mes":     _find_field(row, "Percentual_Amortizacao_Cotas_Mes"),
+```
 
+**0.3** Add `rendimentos_distribuir` from FII `ativo_passivo` rows:
+```python
+"rendimentos_distribuir": _find_field(row, "Rendimentos_Distribuir"),
+```
+
+**0.4** Add columns to `src/store/schema.sql` for `cvm_fii_mensal`:
+```sql
+ALTER TABLE cvm_fii_mensal
+  ADD COLUMN IF NOT EXISTS nr_cotst              INT,
+  ADD COLUMN IF NOT EXISTS vl_ativo              NUMERIC(20,6),
+  ADD COLUMN IF NOT EXISTS cotas_emitidas        NUMERIC(20,6),
+  ADD COLUMN IF NOT EXISTS vl_patrimonial_cotas  NUMERIC(20,6),
+  ADD COLUMN IF NOT EXISTS pct_rentab_efetiva_mes     NUMERIC(10,6),
+  ADD COLUMN IF NOT EXISTS pct_rentab_patrimonial     NUMERIC(10,6),
+  ADD COLUMN IF NOT EXISTS pct_dividend_yield_mes     NUMERIC(10,6),
+  ADD COLUMN IF NOT EXISTS pct_amortizacao_mes        NUMERIC(10,6),
+  ADD COLUMN IF NOT EXISTS rendimentos_distribuir     NUMERIC(20,6);
+```
+
+**0.5** Add test for FII ativo_passivo field extraction to `tests/test_cvm_fetch_parse.py`.
+
+**Validation:** Run `python scripts/run_analysis_local.py` — all Q2 checks still pass.
+
+---
+
+### Phase 1 — FIDC Tranche Tables (half-day)
+
+**1.1** Add three new tables to `src/store/schema.sql`:
+
+```sql
+-- Tranche-level quota price, return, and performance per series per month
+CREATE TABLE IF NOT EXISTS cvm_fidc_tranche (
+    id             BIGSERIAL    PRIMARY KEY,
+    cnpj           TEXT         NOT NULL,
+    period         DATE         NOT NULL,
+    classe_serie   TEXT         NOT NULL,   -- e.g. "Subclasse Sênior Série 1"
+    qt_cota        NUMERIC(20,8),
+    vl_cota        NUMERIC(20,8),
+    vl_rentab_mes  NUMERIC(10,6),           -- monthly return %
+    pr_desemp_esperado NUMERIC(10,6),       -- expected performance %
+    pr_desemp_real     NUMERIC(10,6),       -- actual performance %
+    raw            JSONB,
+    fetched_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fidc_tranche UNIQUE (cnpj, period, classe_serie)
+);
+CREATE INDEX IF NOT EXISTS idx_fidc_tranche_cnpj   ON cvm_fidc_tranche (cnpj);
+CREATE INDEX IF NOT EXISTS idx_fidc_tranche_period ON cvm_fidc_tranche (period DESC);
+
+-- Tranche-level flows: captações / resgates per series per month
+CREATE TABLE IF NOT EXISTS cvm_fidc_tranche_flows (
+    id             BIGSERIAL    PRIMARY KEY,
+    cnpj           TEXT         NOT NULL,
+    period         DATE         NOT NULL,
+    classe_serie   TEXT         NOT NULL,
+    tp_oper        TEXT         NOT NULL,   -- "Captações no Mês" / "Resgates no Mês" / "Resgates Solicitados"
+    vl_total       NUMERIC(20,6),
+    qt_cota        NUMERIC(20,8),
+    fetched_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fidc_tranche_flows UNIQUE (cnpj, period, classe_serie, tp_oper)
+);
+CREATE INDEX IF NOT EXISTS idx_fidc_tranche_flows_cnpj   ON cvm_fidc_tranche_flows (cnpj);
+CREATE INDEX IF NOT EXISTS idx_fidc_tranche_flows_period ON cvm_fidc_tranche_flows (period DESC);
+
+-- Delinquency aging buckets per fund per month (tab_VI)
+CREATE TABLE IF NOT EXISTS cvm_fidc_aging (
+    id              BIGSERIAL    PRIMARY KEY,
+    cnpj            TEXT         NOT NULL,
+    period          DATE         NOT NULL,
+    -- Credits without risk: maturity aging
+    vl_prazo_30     NUMERIC(20,6),
+    vl_prazo_60     NUMERIC(20,6),
+    vl_prazo_90     NUMERIC(20,6),
+    vl_prazo_120    NUMERIC(20,6),
+    vl_prazo_150    NUMERIC(20,6),
+    vl_prazo_180    NUMERIC(20,6),
+    vl_prazo_360    NUMERIC(20,6),
+    vl_prazo_720    NUMERIC(20,6),
+    vl_prazo_1080   NUMERIC(20,6),
+    vl_prazo_maior_1080 NUMERIC(20,6),
+    -- Delinquency buckets (days past due)
+    vl_inad_30      NUMERIC(20,6),   -- 1-30 dpd
+    vl_inad_60      NUMERIC(20,6),
+    vl_inad_90      NUMERIC(20,6),
+    vl_inad_120     NUMERIC(20,6),
+    vl_inad_150     NUMERIC(20,6),
+    vl_inad_180     NUMERIC(20,6),
+    vl_inad_360     NUMERIC(20,6),
+    vl_inad_720     NUMERIC(20,6),
+    vl_inad_1080    NUMERIC(20,6),
+    vl_inad_maior_1080 NUMERIC(20,6),   -- 1080+ dpd
+    vl_total_inad   NUMERIC(20,6),   -- sum for convenience
+    fetched_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fidc_aging UNIQUE (cnpj, period)
+);
+CREATE INDEX IF NOT EXISTS idx_fidc_aging_cnpj   ON cvm_fidc_aging (cnpj);
+CREATE INDEX IF NOT EXISTS idx_fidc_aging_period ON cvm_fidc_aging (period DESC);
+```
+
+**1.2** Add `ingest_fidc_tranche` and `ingest_fidc_aging` methods to `CVMIngestor` in `src/pipeline/cvm_pipeline.py`.
+
+Fetcher strategy: for a given `(year, month)`, fetch the FIDC ZIP once, then extract multiple CSVs. The current `CVMFetcher.fetch()` API only returns one CSV. Options:
+- **Option A (minimal change):** Add new doc_types `fidc_tab_X_2`, `fidc_tab_X_3`, `fidc_tab_X_4`, `fidc_tab_X_6`, `fidc_tab_VI` to `DatasetConfig.FIDC_DATASETS` — each targeting a different CSV inside the same ZIP. The ZIP is small (~2MB) so re-downloading is acceptable. Implement in `ingest_fidc_mensal` with separate passes.
+- **Option B (cleaner):** Extend `CVMFetcher.fetch()` to accept a list of `csv_name_pattern` values and return one concatenated result per CSV. Avoids re-downloading the same ZIP.
+
+Recommend **Option A** for minimal code risk. Add config entries:
+
+```python
+FIDC_DATASETS = {
+    "mensal":       {"csv_name_pattern": "inf_mensal_fidc_tab_IV_{year}{month:02d}.csv", ...},
+    "mensal_tab_VI": {"csv_name_pattern": "inf_mensal_fidc_tab_VI_{year}{month:02d}.csv",
+                      "url_pattern": same as mensal, ...},
+    "mensal_tab_X2": {"csv_name_pattern": "inf_mensal_fidc_tab_X_2_{year}{month:02d}.csv", ...},
+    "mensal_tab_X3": {"csv_name_pattern": "inf_mensal_fidc_tab_X_3_{year}{month:02d}.csv", ...},
+    "mensal_tab_X4": {"csv_name_pattern": "inf_mensal_fidc_tab_X_4_{year}{month:02d}.csv", ...},
+    "mensal_tab_X6": {"csv_name_pattern": "inf_mensal_fidc_tab_X_6_{year}{month:02d}.csv", ...},
+}
+```
+
+**1.3** Add tranche and aging ingestion to the `backfill()` orchestration.
+
+**1.4** Update `scripts/seed_local_db.py` to seed new tables.
+
+**1.5** Add tests in `tests/test_cvm_fetch_parse.py` for tranche and aging ingestion.
+
+**Validation:**
+```sql
+-- After seeding 2025-03:
+SELECT COUNT(*) FROM cvm_fidc_tranche;          -- expect > 2000 rows
+SELECT COUNT(*) FROM cvm_fidc_tranche_flows;    -- expect > 6000 rows
+SELECT COUNT(*) FROM cvm_fidc_aging;            -- expect > 1000 rows
+SELECT COUNT(DISTINCT classe_serie) FROM cvm_fidc_tranche WHERE cnpj = '05754060000113';
+-- expect 2 (Sênior Série 1 + Subordinada Subordinada 1)
+```
+
+---
+
+### Phase 2 — SECURIT Series + Cash Flow Tables (half-day)
+
+**2.1** Add two new tables to `src/store/schema.sql`:
+
+```sql
+-- Series-level data per CRA/CRI certificate (from classe CSV)
+CREATE TABLE IF NOT EXISTS cvm_securit_serie (
+    id                          BIGSERIAL    PRIMARY KEY,
+    instrument_type             TEXT         NOT NULL,  -- cra_mensal | cri_mensal | ots_mensal
+    cnpj_securit                TEXT,
+    codigo_identificacao        TEXT         NOT NULL,
+    data_referencia             DATE         NOT NULL,
+    classe                      TEXT,                   -- Sênior | Subordinada
+    numero_serie                INT,
+    tipo_oferta                 TEXT,
+    codigo_cetip                TEXT,
+    codigo_isin                 TEXT,
+    data_vencimento             DATE,
+    situacao                    TEXT,                   -- Adimplente | Inadimplente | Liquidado | ...
+    valor_total_integralizado   NUMERIC(20,6),
+    taxa_juros                  TEXT,                   -- e.g. "98% DI", "5.59% a.a. + IPCA"
+    pagamento_periodicidade     TEXT,
+    quantidade_certificados     NUMERIC(20,0),
+    valor_certificados          NUMERIC(20,6),
+    rendimentos                 NUMERIC(20,6),
+    amortizacoes                NUMERIC(20,6),
+    rentabilidade               NUMERIC(20,8),
+    classificacao_risco_atual   TEXT,                   -- AAAsf(bra) | PIFsf(bra) | etc
+    indice_subordinacao_minimo  NUMERIC(10,6),
+    fetched_at                  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_securit_serie UNIQUE NULLS NOT DISTINCT
+        (instrument_type, cnpj_securit, codigo_identificacao, data_referencia, numero_serie)
+);
+CREATE INDEX IF NOT EXISTS idx_securit_serie_cnpj      ON cvm_securit_serie (cnpj_securit);
+CREATE INDEX IF NOT EXISTS idx_securit_serie_isin      ON cvm_securit_serie (codigo_isin);
+CREATE INDEX IF NOT EXISTS idx_securit_serie_situacao  ON cvm_securit_serie (situacao, data_referencia DESC);
+
+-- Monthly cash flows by tranche per certificate (from fluxo_caixa CSV)
+CREATE TABLE IF NOT EXISTS cvm_securit_fluxo (
+    id                                  BIGSERIAL    PRIMARY KEY,
+    instrument_type                     TEXT         NOT NULL,
+    cnpj_securit                        TEXT,
+    codigo_identificacao                TEXT         NOT NULL,
+    data_referencia                     DATE         NOT NULL,
+    recebimentos_direitos_creditorios   NUMERIC(20,6),
+    pagamentos_despesas                 NUMERIC(20,6),
+    pagamentos_classe_senior            NUMERIC(20,6),
+    pagamentos_senior_principal         NUMERIC(20,6),
+    pagamentos_senior_juros             NUMERIC(20,6),
+    pagamentos_mezanino                 NUMERIC(20,6),
+    pagamentos_mezanino_principal       NUMERIC(20,6),
+    pagamentos_mezanino_juros           NUMERIC(20,6),
+    pagamentos_junior                   NUMERIC(20,6),
+    pagamentos_junior_principal         NUMERIC(20,6),
+    pagamentos_junior_juros             NUMERIC(20,6),
+    variacao_liquida_caixa              NUMERIC(20,6),
+    fetched_at                          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_securit_fluxo UNIQUE NULLS NOT DISTINCT
+        (instrument_type, cnpj_securit, codigo_identificacao, data_referencia)
+);
+CREATE INDEX IF NOT EXISTS idx_securit_fluxo_cnpj   ON cvm_securit_fluxo (cnpj_securit);
+CREATE INDEX IF NOT EXISTS idx_securit_fluxo_date   ON cvm_securit_fluxo (data_referencia DESC);
+```
+
+**2.2** Add doc_type entries to `DatasetConfig.SECURIT_DATASETS`:
+```python
+"cra_classe":     {"url_pattern": same as cra_mensal, "csv_name_pattern": "inf_mensal_cra_classe_{year}.csv"},
+"cra_fluxo":      {"url_pattern": same as cra_mensal, "csv_name_pattern": "inf_mensal_cra_fluxo_caixa_{year}.csv"},
+# repeat for cri_classe, cri_fluxo, ots_classe, ots_fluxo
+```
+
+**2.3** Add `ingest_securit_serie` and `ingest_securit_fluxo` methods to `CVMIngestor`.
+
+**2.4** Update `backfill()` to include new SECURIT doc types.
+
+**Validation:**
+```sql
+SELECT COUNT(*), COUNT(DISTINCT situacao) FROM cvm_securit_serie WHERE data_referencia = '2024-12-01';
+SELECT situacao, COUNT(*) FROM cvm_securit_serie
+WHERE data_referencia = '2024-12-01' GROUP BY 1;
+-- Expect: "Adimplente" as dominant, with some "Liquidado" and ideally few others
+```
+
+---
+
+### Phase 3 — Supabase Backfill
+
+Run after phases 0–2 are deployed. Order matters — largest tables last.
+
+```bash
+# 1. FIDC (includes new tranche tables)
+python -m src.pipeline.cvm_pipeline backfill --entity fidc --start 2019
+
+# 2. FII (complemento now includes yield/return columns)
+python -m src.pipeline.cvm_pipeline backfill --entity fii --start 2019
+
+# 3. SECURIT (includes new serie + fluxo tables)
+python -m src.pipeline.cvm_pipeline backfill --entity securit --start 2021
+
+# 4. FIP (unchanged, idempotent to re-run)
+python -m src.pipeline.cvm_pipeline backfill --entity fip --start 2010
+
+# 5. FI inf_diario (largest — run as separate overnight job)
+python -m src.pipeline.cvm_pipeline backfill --entity fi --start 2019
+
+# SECURIT duplicate audit post-backfill:
+# The upsert key now includes populated dt_emissao/vl_emissao (was null before).
+# Run verify_pipeline.py and check row counts vs expected before and after.
+```
+
+**Post-backfill verification:**
+```bash
+python scripts/verify_pipeline.py
+# Check: all null rates < 5%, business metrics in expected ranges
+```
+
+---
+
+### Phase 4 — BACEN Macro Integration
+
+Add `src/pipeline/bacen_pipeline.py` to ingest:
+
+| Series | Code | Why needed |
+|---|---|---|
+| SELIC overnight | 11 | Benchmark for all fixed income; yield-adjusted FI/FIDC returns |
+| CDI rate | 12 | Most FIDC sênior targets CDI + spread |
+| IPCA | 433 | FII dividends and CRA/CRI often IPCA-linked |
+| IGP-M | 189 | Some FII rent escalation |
+| USD/BRL PTAX | via `/olinda/servico/PTAX` | FIP with foreign exposure |
+| Focus median IPCA | via `/expectativas/mercado` | Forward yield curve |
+
+All land in existing `bacen_sgs`, `bacen_ptax`, `bacen_expectativas` tables (already in schema.sql).
+
+---
+
+### Phase 5 — Schema Maintenance
+
+- **Jan 2027:** Add `cvm_fi_diario_2027` partition to `schema.sql` and apply to Supabase.
+- **2025-05:** Add FIAGRO to seed and backfill once CVM publishes first data.
+- **Annually:** Verify FIP doc_type (`inf_quadrimestral` continues past 2024).
+
+---
+
+## Part 4 — Pre-Run Validation (Gate Before Every Backfill)
+
+### Step 1 — Smoke seed one period
+```bash
+python scripts/seed_local_db.py --skip-fi
+```
+
+### Step 2 — Field null-rate check (must all pass before proceeding)
 ```bash
 python scripts/run_analysis_local.py
 ```
 
-Expected after current fixes:
-
-| Field | Target null rate |
+| Check | Threshold |
 |---|---|
-| `FIDC vl_patrim_liq` (tab_IV) | < 1% |
-| `FII complemento vl_patrim_liq` | < 1% |
-| `SECURIT vl_emissao` (Valor_Atualizado_Emissao) | < 5% |
-| `SECURIT vl_total` (Ativo) | < 5% |
-| `SECURIT dt_emissao` (Data_Referencia) | < 1% |
+| FIDC `vl_patrim_liq` (tab_IV) | < 1% null |
+| FIDC tranche `vl_rentab_mes` | < 1% null |
+| FIDC aging `vl_inad_30` | < 5% null |
+| FII `vl_patrim_liq` (complemento) | < 1% null |
+| FII `pct_dividend_yield_mes` | < 5% null |
+| SECURIT `vl_emissao` (ativo_passivo) | < 5% null |
+| SECURIT serie `situacao` | < 1% null |
 
 ### Step 3 — Business plausibility
 
-| Entity | Expected range |
+| Entity | Metric | Expected range |
+|---|---|---|
+| FI (latest month) | Industry PL | R$7–10tn |
+| FIDC (latest month) | Industry PL | R$600–800bn |
+| FIDC (latest month) | Delinquency rate | 5–20% |
+| FII complemento | Industry PL | R$300–500bn |
+| FIP (2024) | Industry PL | R$700bn–1.1tn |
+| SECURIT CRA (2024) | Total assets | R$1.2–2tn |
+| SECURIT CRI (2024) | Total assets | R$2–3tn |
+| SECURIT senior series | `situacao = Adimplente` rate | > 90% |
+
+---
+
+## Part 5 — Known Data Limitations
+
+| Limitation | Impact |
 |---|---|
-| FI industry PL (latest month) | R$7–10tn |
-| FIDC industry PL | R$600–800bn |
-| FII (complemento) PL | R$300–500bn |
-| FIP 2024 PL | R$700bn–1.1tn |
-| SECURIT CRA total assets | R$1.2–2tn |
-| SECURIT CRI total assets | R$2–3tn |
-
----
-
-## 5. Ingestion Sequence
-
-1. **FIDC, FIP, FIAGRO, FII, SECURIT** — run concurrently, low volume
-2. **FI inf_diario** — run last, separately (~15 min/year; 400k rows/month)
-3. **FI cda, perfil_mensal** — optional, after inf_diario
-
-Concurrency limits in `backfill()`: 6 FI tasks at a time, 10 others.
-
----
-
-## 6. Schema Gaps & Expansion Plan
-
-### Immediate fixes (before next backfill)
-
-| Fix | File | Change |
-|---|---|---|
-| SECURIT csv_name_pattern | `src/fetchers/cvm_config.py` | Change `"inf_mensal_cra_{year}.csv"` → `"inf_mensal_cra_ativo_passivo_{year}.csv"` (same for CRI, OTS) |
-| FII complemento extra columns | `src/pipeline/cvm_pipeline.py` | Add `nr_cotst`, `vl_ativo`, `cotas_emitidas`, `pct_rentab_efetiva_mes`, `pct_dividend_yield_mes` to `ingest_fii_mensal` |
-| FII schema | `src/store/schema.sql` | Add columns to `cvm_fii_mensal` for the new fields |
-
-### New tables to design (next sprint)
-
-| Table | Source CSV(s) | Granularity | Priority |
-|---|---|---|---|
-| `cvm_fidc_tranche` | `tab_X_2`, `tab_X_3`, `tab_X_6` | Fund × series × month | **High** — enables accountability rules 3.1 |
-| `cvm_fidc_tranche_flows` | `tab_X_4` | Fund × series × op_type × month | High |
-| `cvm_fidc_aging` | `tab_VI` | Fund × month | Medium — enables rule 3.2 |
-| `cvm_fidc_portfolio` | `tab_II` | Fund × sector × month | Medium |
-| `cvm_securit_serie` | `classe` CSV | Certificate × series × month | **High** — enables rule 3.4 |
-| `cvm_securit_fluxo` | `fluxo_caixa` CSV | Certificate × month | **High** — enables rule 3.5 |
-
----
-
-## 7. Known Gaps
-
-| Gap | Impact | Next step |
-|---|---|---|
-| FIDC/FII Supabase data pre-fix: `vl_patrim_liq = NULL` | All historical FIDC + FII PL analytics broken | Backfill: `backfill(entity_filter="fidc")`, `backfill(entity_filter="fii")` |
-| SECURIT `csv_name_pattern` uses first-alphabetical fallback | Silent breakage if CVM renames files | Fix config to use explicit `ativo_passivo` pattern |
-| SECURIT `classe` and `fluxo_caixa` not ingested | Cannot track series status or tranche cash flow | Design + implement `cvm_securit_serie` + `cvm_securit_fluxo` |
-| FIDC tranche tabs (X_2, X_3, X_4, X_6) not ingested | Cannot track per-tranche performance, yield, or expected vs actual | Design + implement `cvm_fidc_tranche` |
-| FII complemento missing yield/return columns | Cannot track fund income distribution | Add columns to schema + ingestor |
-| BACEN ingestor not implemented | Cannot compute yield-adjusted returns or macro correlation | Add `src/pipeline/bacen_pipeline.py` |
-| `cvm_fi_diario` partition: add 2027 in Jan 2027 | Performance degrades past `future` partition | Add to schema.sql before Jan 2027 |
-| FIAGRO no data before 2025-05 | Expected gap | Add to seed/backfill when CVM publishes |
+| FIDC tab_V (credits WITH risk aging) vs tab_VI (WITHOUT risk) — pipeline plan uses tab_VI | Some FIDCs structure as pass-through (sem risco); for recourse FIDCs, tab_V is the right aging table. Consider ingesting both and labeling. |
+| SECURIT `Taxa_Juros` is free text ("98% DI", "IPCA + 5%") | Cannot filter by index programmatically without parsing. Needs NLP or regex normalization. |
+| FII `ativo_passivo` has no CNPJ field — uses `CNPJ_Fundo_Classe` like geral | Already handled by `_find_cnpj_field`. |
+| CVM data has a 1–3 week lag | Accountability queries reflect prior month. Not suitable for real-time monitoring. |
+| FIDC tabs X_2/X_3/X_4/X_6 use `CNPJ_FUNDO` (without `_CLASSE`) | Some newer multi-class FIDCs report at class level. Join to fund-level data via CNPJ prefix or `CNPJ_FUNDO_CLASSE` from tab_I. |
+| ANBIMA cross-check URLs have changed (404) | Independent validation of industry totals must use CVM data only until ANBIMA updates its open data links. |
+| `cvm_securit_mensal` upsert key changes post-fix | Re-ingesting 2019–2024 CRA/CRI/OTS after Phase 0 may insert duplicates. Solution: truncate + re-insert for each `(instrument_type, period_year)` pair before backfill. |
