@@ -105,6 +105,36 @@ class DatasetConfig:
             "csv_name_pattern": "inf_mensal_fidc_tab_IV_{year}{month:02d}.csv",
             "description": "Monthly information for FIDC funds — targets tab_IV (NAV/PL)",
         },
+        "mensal_tab_VI": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_VI_{year}{month:02d}.csv",
+            "description": "FIDC tab_VI — credits without risk, maturity aging + delinquency buckets",
+        },
+        "mensal_tab_X2": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_X_2_{year}{month:02d}.csv",
+            "description": "FIDC tab_X_2 — quota quantity and price per tranche/series",
+        },
+        "mensal_tab_X3": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_X_3_{year}{month:02d}.csv",
+            "description": "FIDC tab_X_3 — monthly return % per tranche/series",
+        },
+        "mensal_tab_X4": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_X_4_{year}{month:02d}.csv",
+            "description": "FIDC tab_X_4 — monthly flows (captações/resgates) per tranche/series",
+        },
+        "mensal_tab_X6": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_X_6_{year}{month:02d}.csv",
+            "description": "FIDC tab_X_6 — expected vs actual performance % per tranche/series",
+        },
     }
 
     FIP_DATASETS: Dict[str, Dict] = {
@@ -133,20 +163,56 @@ class DatasetConfig:
         "cra_mensal": {
             "url_pattern": "{base_url}/SECURIT/DOC/INF_MENSAL_CRA/DADOS/inf_mensal_cra_{year}.zip",
             "is_zip": True,
-            "csv_name_pattern": "inf_mensal_cra_{year}.csv",
+            "csv_name_pattern": "inf_mensal_cra_ativo_passivo_{year}.csv",
             "description": "Monthly CRA securitization data — yearly ZIP",
         },
         "cri_mensal": {
             "url_pattern": "{base_url}/SECURIT/DOC/INF_MENSAL_CRI/DADOS/inf_mensal_cri_{year}.zip",
             "is_zip": True,
-            "csv_name_pattern": "inf_mensal_cri_{year}.csv",
+            "csv_name_pattern": "inf_mensal_cri_ativo_passivo_{year}.csv",
             "description": "Monthly CRI securitization data — yearly ZIP",
         },
         "ots_mensal": {
             "url_pattern": "{base_url}/SECURIT/DOC/INF_MENSAL_OTS/DADOS/inf_mensal_ots_{year}.zip",
             "is_zip": True,
-            "csv_name_pattern": "inf_mensal_ots_{year}.csv",
+            "csv_name_pattern": "inf_mensal_ots_ativo_passivo_{year}.csv",
             "description": "Monthly securitization data for other titles — yearly ZIP",
+        },
+        "cra_classe": {
+            "url_pattern": "{base_url}/SECURIT/DOC/INF_MENSAL_CRA/DADOS/inf_mensal_cra_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_cra_classe_{year}.csv",
+            "description": "CRA per-series data (rating, situacao, yield, subordination) — yearly ZIP",
+        },
+        "cra_fluxo": {
+            "url_pattern": "{base_url}/SECURIT/DOC/INF_MENSAL_CRA/DADOS/inf_mensal_cra_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_cra_fluxo_caixa_{year}.csv",
+            "description": "CRA monthly cash flows by tranche class — yearly ZIP",
+        },
+        "cri_classe": {
+            "url_pattern": "{base_url}/SECURIT/DOC/INF_MENSAL_CRI/DADOS/inf_mensal_cri_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_cri_classe_{year}.csv",
+            "description": "CRI per-series data (rating, situacao, yield, subordination) — yearly ZIP",
+        },
+        "cri_fluxo": {
+            "url_pattern": "{base_url}/SECURIT/DOC/INF_MENSAL_CRI/DADOS/inf_mensal_cri_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_cri_fluxo_caixa_{year}.csv",
+            "description": "CRI monthly cash flows by tranche class — yearly ZIP",
+        },
+        "ots_classe": {
+            "url_pattern": "{base_url}/SECURIT/DOC/INF_MENSAL_OTS/DADOS/inf_mensal_ots_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_ots_classe_{year}.csv",
+            "description": "OTS per-series data (rating, situacao, yield, subordination) — yearly ZIP",
+        },
+        "ots_fluxo": {
+            "url_pattern": "{base_url}/SECURIT/DOC/INF_MENSAL_OTS/DADOS/inf_mensal_ots_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_ots_fluxo_caixa_{year}.csv",
+            "description": "OTS monthly cash flows by tranche class — yearly ZIP",
         },
         "dfin_cra": {
             "url_pattern": "{base_url}/SECURIT/DOC/DFIN_CRA/DADOS/dfin_cra_{year}.csv",

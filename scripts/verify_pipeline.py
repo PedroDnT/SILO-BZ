@@ -67,16 +67,22 @@ def report_presence(client):
     print("  TABLE PRESENCE")
     print(SEP)
     checks = [
-        ("cvm_fi_diario",    None,                       "vl_patrim_liq"),
-        ("cvm_fi_cda",       None,                       "vl_merc_pos_final"),
-        ("cvm_fidc_mensal",  None,                       "vl_patrim_liq"),
-        ("cvm_fiagro_mensal",None,                       "vl_patrim_liq"),
-        ("cvm_fip_periodic", None,                       "vl_patrim_liq"),
-        ("cvm_fii_mensal",   ("doc_subtype", "geral"),   "vl_patrim_liq"),
-        ("cvm_fii_mensal",   ("doc_subtype","complemento"),"vl_patrim_liq"),
-        ("cvm_securit_mensal",None,                      "vl_emissao"),
-        ("cvm_securit_dfin", None,                       None),
-        ("cvm_ingest_log",   None,                       None),
+        ("cvm_fi_diario",           None,                              "vl_patrim_liq"),
+        ("cvm_fi_cda",              None,                              "vl_merc_pos_final"),
+        ("cvm_fidc_mensal",         None,                              "vl_patrim_liq"),
+        ("cvm_fidc_tranche",        None,                              "vl_cota"),
+        ("cvm_fidc_tranche_flows",  None,                              "vl_total"),
+        ("cvm_fidc_aging",          None,                              "vl_inad_30"),
+        ("cvm_fiagro_mensal",       None,                              "vl_patrim_liq"),
+        ("cvm_fip_periodic",        None,                              "vl_patrim_liq"),
+        ("cvm_fii_mensal",          ("doc_subtype", "geral"),          "vl_patrim_liq"),
+        ("cvm_fii_mensal",          ("doc_subtype", "complemento"),    "vl_patrim_liq"),
+        ("cvm_fii_mensal",          ("doc_subtype", "ativo_passivo"),  "rendimentos_distribuir"),
+        ("cvm_securit_mensal",      None,                              "vl_emissao"),
+        ("cvm_securit_serie",       None,                              "situacao"),
+        ("cvm_securit_fluxo",       None,                              "recebimentos_direitos_creditorios"),
+        ("cvm_securit_dfin",        None,                              None),
+        ("cvm_ingest_log",          None,                              None),
     ]
     print(f"  {'Table / subtype':<42} {'rows':>8}  {'key field %':>10}")
     print(f"  {SEP2}")
@@ -104,12 +110,18 @@ def report_quality(client):
     print("  KEY-FIELD NULL RATES  (target: < 5%  after pipeline fixes)")
     print(SEP)
     checks = [
-        ("cvm_fi_diario",    None,                       "vl_patrim_liq", "FI      vl_patrim_liq"),
-        ("cvm_fidc_mensal",  None,                       "vl_patrim_liq", "FIDC    vl_patrim_liq  [tab_IV fix]"),
-        ("cvm_fii_mensal",   ("doc_subtype","complemento"),"vl_patrim_liq","FII complemento vl_patrim_liq"),
-        ("cvm_securit_mensal",None,                      "vl_emissao",   "SECURIT vl_emissao     [Valor_Atualizado_Emissao fix]"),
-        ("cvm_securit_mensal",None,                      "vl_total",     "SECURIT vl_total       [Ativo fix]"),
-        ("cvm_securit_mensal",None,                      "dt_emissao",   "SECURIT dt_emissao     [Data_Referencia fix]"),
+        ("cvm_fi_diario",       None,                            "vl_patrim_liq",                     "FI      vl_patrim_liq"),
+        ("cvm_fidc_mensal",     None,                            "vl_patrim_liq",                     "FIDC    vl_patrim_liq"),
+        ("cvm_fidc_tranche",    None,                            "vl_rentab_mes",                     "FIDC    tranche vl_rentab_mes"),
+        ("cvm_fidc_aging",      None,                            "vl_inad_30",                        "FIDC    aging vl_inad_30"),
+        ("cvm_fii_mensal",      ("doc_subtype", "complemento"),  "vl_patrim_liq",                     "FII     complemento vl_patrim_liq"),
+        ("cvm_fii_mensal",      ("doc_subtype", "complemento"),  "pct_dividend_yield_mes",            "FII     complemento pct_dividend_yield_mes"),
+        ("cvm_fii_mensal",      ("doc_subtype", "ativo_passivo"),"rendimentos_distribuir",            "FII     ativo_passivo rendimentos_distribuir"),
+        ("cvm_securit_mensal",  None,                            "vl_emissao",                        "SECURIT vl_emissao"),
+        ("cvm_securit_mensal",  None,                            "dt_emissao",                        "SECURIT dt_emissao"),
+        ("cvm_securit_serie",   None,                            "situacao",                          "SECURIT serie situacao"),
+        ("cvm_securit_serie",   None,                            "valor_total_integralizado",         "SECURIT serie valor_total_integralizado"),
+        ("cvm_securit_fluxo",   None,                            "recebimentos_direitos_creditorios", "SECURIT fluxo recebimentos"),
     ]
     for table, filt, col, label in checks:
         if filt:
