@@ -13,9 +13,15 @@ Data sources:
 Data is downloaded, parsed, validated, and upserted into a Supabase Postgres database.
 There is no public API — downstream consumers query Supabase directly.
 
+A small **local Flask control plane** (`app.py` + `src/api/`) wraps the pipeline so
+operators can trigger partial fills one (entity, doc_type, year, month) slice at a
+time and watch jobs progress via a polling endpoint. See
+[Flask control plane](#flask-control-plane-local).
+
 > A previous version exposed three FastAPI services + a gateway + a Mintlify docs site.
 > Those layers and a Solana "Delos Oracle" experiment were removed in the consolidation;
-> only fetch/parse/store remains.
+> only fetch/parse/store remains. The Flask app here is **localhost-only** — it does
+> not reintroduce a public API surface.
 
 ## CVM ZIP structure (important)
 
@@ -77,11 +83,18 @@ The tranche and series-level ingestion is the subject of Phases 1–2 in `docs/p
 │   ├── store/
 │   │   ├── supabase_client.py  # get_supabase_client(), upsert_rows()
 │   │   └── schema.sql          # canonical CVM + BACEN schema (12 tables + audit log)
-│   └── pipeline/
-│       ├── cvm_pipeline.py     # CVMIngestor — orchestrates fetch+store for CVM
-│       ├── bacen_pipeline.py   # BacenIngestor — orchestrates fetch+store for BACEN
-│       ├── run_backfill.py     # CLI: full historical backfill
-│       └── run_daily.py        # CLI: incremental daily update
+│   ├── pipeline/
+│   │   ├── cvm_pipeline.py     # CVMIngestor — orchestrates fetch+store for CVM
+│   │   ├── bacen_pipeline.py   # BacenIngestor — orchestrates fetch+store for BACEN
+│   │   ├── run_backfill.py     # CLI: full historical backfill
+│   │   └── run_daily.py        # CLI: incremental daily update
+│   └── api/                    # Flask control plane (local-only)
+│       ├── __init__.py         # create_app() factory
+│       ├── routes.py           # HTTP endpoints (ingest, status, jobs, verify)
+│       ├── jobs.py             # in-process job registry (UUID → state)
+│       ├── dispatch.py         # (entity, doc_type) → ingestor method
+│       └── hooks.py            # post-job error classifier + inefficiency detector
+├── app.py                      # Flask entry point — `flask --app app run`
 ├── tests/                      # offline pytest suite
 ├── scripts/
 │   ├── seed_local_db.py        # Fetch real CVM data → local Postgres for offline testing
@@ -122,13 +135,84 @@ python scripts/run_analysis_local.py
 python scripts/verify_pipeline.py
 ```
 
+## Flask control plane (local)
+
+The Flask app exposes each `CVMIngestor.ingest_*` method as a background job, so
+backfill work can proceed one slice at a time instead of a single all-or-nothing
+run. Bind it to `127.0.0.1`; there is no auth.
+
+```bash
+flask --app app run                # or: python app.py
+```
+
+It needs the same `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` as the CLI. The
+publishable / anon key cannot be used — the pipeline writes to 15 tables and
+needs the service role to bypass RLS.
+
+### Endpoint reference
+
+| Method | Path | Body / Query | Purpose |
+| --- | --- | --- | --- |
+| GET | `/healthz` | — | Liveness + Supabase reachability |
+| GET | `/api/status` | — | Row counts per table + last 5 entries in `cvm_ingest_log` |
+| GET | `/api/dispatch` | — | List every valid `(entity, doc_type)` pair |
+| POST | `/api/ingest` | `{entity, doc_type, year, month?}` | Fire one slice. Returns `{job_id}` |
+| POST | `/api/ingest/range` | `{entity, doc_type, year_start, year_end, months?}` | Spawn N sequential child jobs |
+| POST | `/api/daily` | — | Run `CVMIngestor.daily_update()` as one background job |
+| GET | `/api/jobs` | `?limit=50` | List recent jobs, newest first |
+| GET | `/api/jobs/<id>` | — | Full job state: status, rows, error, warnings, children |
+| POST | `/api/verify` | — | Run the quality-gate subset of `verify_pipeline.py` synchronously |
+
+`month` is required for monthly conventions (`fi`, `fidc`, `fiagro mensal`).
+Yearly conventions (`fii`, `fip`, `securit *_classe / *_fluxo / dfin_*`) take only `year`.
+
+### Example: drive the remaining FIDC backfill
+
+```bash
+# 1. start the server
+flask --app app run
+
+# 2. fill one month at a time and watch it
+curl -XPOST localhost:5000/api/ingest \
+     -H 'content-type: application/json' \
+     -d '{"entity":"fidc","doc_type":"tranche","year":2024,"month":5}'
+# → {"job_id":"abcd-...","status":"queued","table":"cvm_fidc_tranche"}
+
+curl localhost:5000/api/jobs/abcd-...
+# → {... "status":"done","rows_inserted":12345,"warnings":[]}
+
+# 3. when you're confident, batch a year range
+curl -XPOST localhost:5000/api/ingest/range \
+     -H 'content-type: application/json' \
+     -d '{"entity":"fidc","doc_type":"tranche","year_start":2019,"year_end":2023}'
+```
+
+### Error hooks
+
+Failed jobs include a `error.type` classified as one of:
+
+- `network` — `aiohttp` / DNS / timeout / socket failures
+- `csv_parse` — CSV parsing, encoding, or missing CVM column
+- `supabase_write` — Postgrest API error, RLS denial, duplicate key
+- `schema_mismatch` — column missing on the target table (apply `schema.sql`)
+- `unknown` — fallback with full traceback in `error.traceback`
+
+Successful jobs may still emit `warnings`:
+
+- `no_data_published` — 0 rows + no exception (CVM hasn't published that period yet)
+- `slow_ingest` — >300s for <1000 rows (likely DNS rotation / upstream slowness)
+- `audit_log_error` — surfaced from `cvm_ingest_log.error_msg` for the same slice
+
+Hooks classify only — they do **not** auto-retry. Re-POST the same payload to retry.
+
 ## Tests
 
 ```bash
 PYTHONPATH=. pytest tests/ -v
 ```
 
-All tests are offline (Supabase and HTTP are mocked).
+All tests are offline (Supabase and HTTP are mocked). The Flask layer is covered by
+`tests/test_api.py` (21 tests) — also fully offline; `CVMIngestor` is stubbed.
 
 ## Deploy
 

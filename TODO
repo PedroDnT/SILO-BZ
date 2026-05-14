@@ -1,10 +1,12 @@
 # TODO
 
 ## Phase 0 — Bug fixes (est. 1h) [SHIP FIRST]
-- [ ] Fix SECURIT csv_name_pattern in cvm_config.py (currently works by alphabetical fallback, not by design)
-      CRA: "inf_mensal_cra_{year}.csv" → "inf_mensal_cra_ativo_passivo_{year}.csv"
-      CRI: "inf_mensal_cri_{year}.csv" → "inf_mensal_cri_ativo_passivo_{year}.csv"
-      OTS: "inf_mensal_ots_{year}.csv" → "inf_mensal_ots_ativo_passivo_{year}.csv"
+
+- [ ] Fix SECURIT csv*name_pattern in cvm_config.py (currently works by alphabetical fallback, not by design)
+      CRA: "inf_mensal_cra*{year}.csv" → "inf*mensal_cra_ativo_passivo*{year}.csv"
+      CRI: "inf*mensal_cri*{year}.csv" → "inf*mensal_cri_ativo_passivo*{year}.csv"
+      OTS: "inf*mensal_ots*{year}.csv" → "inf*mensal_ots_ativo_passivo*{year}.csv"
+
 - [ ] Add FII complemento fields to cvm_pipeline.py ingest_fii_mensal() + schema.sql
       pct_dividend_yield_mes ← Percentual_Dividend_Yield_Mes
       pct_rentabilidade_efetiva_mes ← Percentual_Rentabilidade_Efetiva_Mes
@@ -16,6 +18,7 @@
       pct_amortizacao_cotas_mes ← Percentual_Amortizacao_Cotas_Mes
 
 ## Phase 1 — FIDC tranche accountability (est. half day)
+
 - [ ] Create cvm_fidc_tranche table (fund × tranche × period)
       Fields: cnpj, period, classe_serie, vl_cota, captc_mes, resg_mes, desemp_esperado, desemp_real
       Source: inf_mensal_fidc_tab_X_2 + tab_X_6 inside FIDC monthly ZIPs
@@ -28,16 +31,18 @@
       See docs/pipeline-plan.md §2 for thresholds and SQL
 
 ## Phase 2 — SECURIT series and cash flow (est. half day)
-- [ ] Create cvm_securit_serie table (one row per CRA/CRI/OTS series)
+
+- [ ] Create cvm*securit_serie table (one row per CRA/CRI/OTS series)
       Fields: cnpj_securit, instrument_type, series_code, situacao, rating, vl_integralizado, taxa_juros
-      Source: inf_mensal_cra_classe_{year}.csv (and CRI/OTS equivalents)
-- [ ] Create cvm_securit_fluxo table (monthly principal + interest payments by tranche class)
-      Source: inf_mensal_cra_fluxo_caixa_{year}.csv
+      Source: inf_mensal_cra_classe*{year}.csv (and CRI/OTS equivalents)
+- [ ] Create cvm*securit_fluxo table (monthly principal + interest payments by tranche class)
+      Source: inf_mensal_cra_fluxo_caixa*{year}.csv
 - [ ] Add ingest_securit_serie() and ingest_securit_fluxo() to CVMIngestor
 - [ ] Implement accountability rules R5–R6 (distressed series, cash burn)
       See docs/pipeline-plan.md §2 for thresholds and SQL
 
 ## Phase 3 — Supabase backfill (after Phases 0–2 committed)
+
 - [ ] Apply schema.sql changes (ALTER TABLE cvm_fii_mensal for new columns) before backfill
 - [ ] Backfill FIDC: python -m src.pipeline.cvm_pipeline backfill --entity fidc --start 2019
 - [ ] Backfill FII complemento: python -m src.pipeline.cvm_pipeline backfill --entity fii --start 2019
@@ -46,23 +51,27 @@
 - [ ] Run scripts/verify_pipeline.py against live Supabase; target < 5% null on all key fields
 
 ## Phase 4 — BACEN macro context
+
 - [ ] Verify bacen_sgs series are fetching: SELIC (11), CDI (12), IPCA (433), IGP-M (189)
 - [ ] Verify PTAX USD/BRL fetch is active for FX context
 - [ ] Implement accountability rule R10: FIDC delinquency vs CDI spread anomaly detection
       See docs/pipeline-plan.md §2 for query
 
 ## Operations (recurring)
+
 - [ ] Apply src/store/schema.sql against Supabase project after each schema change
 - [ ] Set GitHub Actions secrets: SUPABASE_URL, SUPABASE_SERVICE_KEY
 - [ ] Verify daily_ingest.yml cron is running (check ingest_log after each 06:00 UTC run)
 
 ## Future scope
+
 - [ ] B3 fetcher — src/fetchers/b3_fetcher.py once a live B3 endpoint is validated
 - [ ] ANBIMA — needs paid API credentials (currently blocked by site restructure/auth)
 - [ ] FIAGRO — CVM started publishing May 2025; add to pipeline once data is available
 - [ ] BACEN TaxaJuros — credit rates by sector (useful for FIDC yield context)
 
 ## Done
+
 - [x] Drop FastAPI services + gateway + Mintlify docs + Solana oracle
 - [x] Restructure src/ into fetchers/, parsers/, store/, pipeline/
 - [x] Cherry-pick FI/FII entities + redesigned schema with audit log

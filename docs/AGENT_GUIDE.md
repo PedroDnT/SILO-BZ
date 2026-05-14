@@ -110,6 +110,37 @@ python scripts/verify_pipeline.py
 
 ---
 
+## Partial fills via Flask (preferred for retrying P3 backfill gaps)
+
+Instead of editing `run_backfill.py` to target a single slice, drive the pipeline
+through the local Flask control plane. Each call is one (entity, doc_type, year, month)
+job; failures are classified by `src/api/hooks.py` so the agent can decide whether
+to retry, fix schema, or accept "data not yet published".
+
+```bash
+flask --app app run                     # local server :5000
+```
+
+Agent prompt template:
+
+```
+Use the Flask control plane to fill cvm_fidc_tranche for 2024. POST one
+(year, month) at a time via /api/ingest, poll /api/jobs/<id> until done, and
+collect warnings. If a job fails with error.type=network, retry once.
+If error.type=schema_mismatch, stop and report — schema.sql needs an update.
+If warnings contains no_data_published, skip that slice and move on.
+```
+
+Key endpoints (full reference in [README.md](../README.md) "Flask control plane"):
+
+- `GET /api/dispatch` — list all valid `(entity, doc_type)` pairs
+- `POST /api/ingest` — fire one slice
+- `POST /api/ingest/range` — chain multiple slices sequentially
+- `GET /api/jobs/<id>` — full job state including classified errors + warnings
+- `POST /api/verify` — quality-gate report from `docs/PLAN.md`
+
+---
+
 ## If the agent loses context mid-session
 
 Give it these three anchors in order:

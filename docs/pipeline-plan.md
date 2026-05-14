@@ -4,6 +4,24 @@
 
 ---
 
+## Control surfaces
+
+The same `CVMIngestor` is driven through three surfaces — they share the audit log
+(`cvm_ingest_log`) and idempotent upsert keys, so they can be mixed safely.
+
+| Surface | Use case | Trigger |
+|---|---|---|
+| `python -m src.pipeline.run_daily` | Production cron — current + previous month for monthlies, current year for yearlies | `.github/workflows/daily_ingest.yml` @ 06:00 UTC |
+| `python -m src.pipeline.run_backfill --start-year 2019` | Historical bulk fills | Manual, long-running |
+| `flask --app app run` + `POST /api/ingest` | Interactive partial fills, retry of failed slices, progress polling, error classification | Operator from localhost — see `README.md` "Flask control plane" |
+
+The Flask layer is the right surface for finishing the FIDC tranche / SECURIT serie
+backfills (`docs/PLAN.md` Phase 3): you can fire one `(year, month)` slice, inspect
+warnings / classified errors, then either retry that slice or POST `/api/ingest/range`
+to chain the rest.
+
+---
+
 ## Part 1 — What Data Exists and What It Contains
 
 ### 1.1 FI — Fundos de Investimento (~R$8tn AUM)
