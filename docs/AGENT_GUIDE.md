@@ -139,6 +139,27 @@ Key endpoints (full reference in [README.md](../README.md) "Flask control plane"
 - `GET /api/jobs/<id>` — full job state including classified errors + warnings
 - `POST /api/verify` — quality-gate report from `docs/PLAN.md`
 
+### Failure-recovery loop (the one that found the cvm_fidc_tranche schema bugs)
+
+When a slice comes back with `rows_inserted: 0` and no obvious reason:
+
+1. **Server logs are authoritative.** The pipeline's `ingest_*` methods swallow internal
+   exceptions and return 0. Tail the Flask process output to see the upstream Postgres
+   error code (`22003`, `23502`, `23505`, etc.) and which chunk_start row triggered it.
+2. **`audit_log_error` warning correlates a previous run.** After fixing schema, the
+   *next* run will surface the previous run's `cvm_ingest_log.error_msg` as a
+   `warnings[].type=audit_log_error` entry. That's the hook telling you "the last attempt
+   on this slice had this error" — useful when you're not sure if your fix landed.
+3. **Schema bug template — apply via Supabase MCP, then mirror in `src/store/schema.sql`:**
+   - Find offending column with `mcp__supabase__execute_sql` (`information_schema.columns`)
+   - `mcp__supabase__apply_migration` with name like `widen_<table>_<reason>` — DO NOT just edit `schema.sql` and hope `IF NOT EXISTS` re-applies; `ALTER COLUMN TYPE` is not gated by that
+   - Edit `src/store/schema.sql` so the canonical CREATE TABLE matches the new column type
+4. **Partial-write rows are safe.** Every ingest table has a unique key (`uq_*`) — re-firing
+   the same slice upserts cleanly, no duplicates. Don't `TRUNCATE` unless you have a reason.
+5. **The orphan "running" row.** When the slice crashes before `_log_finish` succeeds, the
+   `cvm_ingest_log` row stays at `status='running'` forever. Either retry (a new run_id is
+   created and the orphan stays) or `UPDATE` it manually to `status='error'` for cleanliness.
+
 ---
 
 ## If the agent loses context mid-session

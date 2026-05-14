@@ -112,32 +112,33 @@ def fetch_audit_warning(
     supabase: Any, entity: str, doc_type: str, year: int, month: Optional[int]
 ) -> Optional[Dict[str, Any]]:
     """Look up the latest `cvm_ingest_log` row for this slice and surface its
-    `error_msg` field (if any) as a warning. Failure here is non-fatal."""
+    `error_msg` field (if any) as a warning. The API doc_type alias (e.g.
+    "tranche") differs from the pipeline's per-CVM-file doc_type ("mensal_tab_x2")
+    — we filter on entity + period only and then pick the most recent row. Failure
+    here is non-fatal."""
     try:
         query = (
             supabase.table("cvm_ingest_log")
-            .select("run_id, status, error_msg, finished_at, rows_upserted")
+            .select("run_id, status, doc_type, error_msg, finished_at, rows_upserted")
             .eq("entity", entity)
-            .eq("doc_type", doc_type)
             .eq("period_year", year)
             .order("finished_at", desc=True)
-            .limit(1)
+            .limit(5)
         )
         if month is not None:
             query = query.eq("period_month", month)
         resp = query.execute()
         rows = getattr(resp, "data", None) or []
-        if not rows:
-            return None
-        row = rows[0]
-        if row.get("error_msg"):
-            return {
-                "type": "audit_log_error",
-                "message": row["error_msg"][:500],
-                "run_id": row.get("run_id"),
-                "finished_at": row.get("finished_at"),
-                "rows_upserted": row.get("rows_upserted"),
-            }
+        for row in rows:
+            if row.get("error_msg"):
+                return {
+                    "type": "audit_log_error",
+                    "message": row["error_msg"][:500],
+                    "run_id": row.get("run_id"),
+                    "doc_type": row.get("doc_type"),
+                    "finished_at": row.get("finished_at"),
+                    "rows_upserted": row.get("rows_upserted"),
+                }
         return None
     except Exception as exc:
         logger.debug("audit log lookup failed: %s", exc)

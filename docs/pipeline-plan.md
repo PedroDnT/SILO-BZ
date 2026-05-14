@@ -20,6 +20,22 @@ backfills (`docs/PLAN.md` Phase 3): you can fire one `(year, month)` slice, insp
 warnings / classified errors, then either retry that slice or POST `/api/ingest/range`
 to chain the rest.
 
+### Schema sizing lessons from `cvm_fidc_tranche` (2026-05-14)
+
+Real CVM data is noisier than the schema originally assumed. When smoke-testing a new
+table via `/api/ingest`, watch for PostgreSQL `22003 numeric field overflow` and
+treat declared precision as a starting hypothesis to validate against real values:
+
+| Column type seen | What raw CVM ships | Pattern |
+|---|---|---|
+| `NUMERIC(20, 8)` (~10¹² max) | Quota counts on fund-of-funds reach **6.9 × 10¹³** | Widen to `NUMERIC(28, 8)` |
+| `NUMERIC(10, 6)` (~9999 max) | Percentage columns contain garbage outliers up to **1.6 × 10⁸** | Widen to `NUMERIC(20, 6)` — validate downstream, don't reject at ingest |
+| Any column declared as a fixed `NUMERIC(p,s)` | CVM publishes whatever the issuer reports — assume occasional 100x-1000x outliers | Apply the smoke-test plan in `docs/PLAN.md` before triggering range fills |
+
+The pipeline historically masked these errors because `ingest_*` methods swallow
+exceptions and return `0`. The Flask control plane's hook layer (`src/api/hooks.py`)
+surfaces them as `error.type` + `warnings[]` so they can be fixed once per table.
+
 ---
 
 ## Part 1 — What Data Exists and What It Contains
