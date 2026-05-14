@@ -255,6 +255,82 @@ def report_securit(client):
         print(f"  {str(yr):<6} {tp:<15} {len(d['issuers']):>8} {d['emissao']/1e6:>13.1f} {d['total']/1e6:>11.1f}")
 
 
+def report_fidc_tranche(client):
+    print(f"\n{SEP}")
+    print("  FIDC TRANCHE — LATEST PERIOD SAMPLE")
+    print(SEP)
+    rows = sample_rows(
+        client, "cvm_fidc_tranche",
+        order_col="period",
+        select="period,cnpj,classe_serie,vl_cota,vl_rentab_mes,pr_desemp_real",
+        limit=10,
+    )
+    if not rows:
+        print("  (no data — run backfill --entity fidc)")
+        return
+    print(f"  {'Period':<10} {'CNPJ':<16} {'Classe':<35} {'Cota':>10} {'Rentab%':>8} {'Desemp%':>8}")
+    print(f"  {SEP2}")
+    for r in rows:
+        cota = float(r["vl_cota"] or 0)
+        rentab = float(r["vl_rentab_mes"] or 0)
+        desemp = float(r["pr_desemp_real"] or 0)
+        print(f"  {str(r['period']):<10} {r['cnpj']:<16} {str(r['classe_serie']):<35} "
+              f"{cota:>10.4f} {rentab:>8.4f} {desemp:>8.4f}")
+
+
+def report_securit_serie(client):
+    print(f"\n{SEP}")
+    print("  SECURIT SERIES — SITUACAO DISTRIBUTION (latest data_referencia)")
+    print(SEP)
+    rows = sample_rows(
+        client, "cvm_securit_serie",
+        order_col="data_referencia",
+        select="instrument_type,situacao,classificacao_risco_atual",
+        limit=500,
+    )
+    if not rows:
+        print("  (no data — run backfill --entity securit)")
+        return
+    from collections import Counter
+    by_type: dict = {}
+    for r in rows:
+        t = r["instrument_type"]
+        s = r["situacao"] or "(null)"
+        by_type.setdefault(t, Counter())[s] += 1
+    for itype, counter in sorted(by_type.items()):
+        total = sum(counter.values())
+        adimpl = counter.get("Adimplente", 0)
+        pct = 100 * adimpl // total if total else 0
+        flag = "✓" if pct >= 90 else "!"
+        print(f"  {itype:<15} total={total:>5}  Adimplente={adimpl:>5} ({pct}%)  {flag}")
+        for sit, n in counter.most_common():
+            if sit != "Adimplente":
+                print(f"    └ {sit}: {n}")
+
+
+def report_fii_yields(client):
+    print(f"\n{SEP}")
+    print("  FII COMPLEMENTO — TOP 10 BY DIVIDEND YIELD (latest period)")
+    print(SEP)
+    rows = sample_rows(
+        client, "cvm_fii_mensal",
+        order_col="pct_dividend_yield_mes",
+        select="cnpj,period,vl_patrim_liq,pct_dividend_yield_mes,pct_rentab_efetiva_mes",
+        limit=10,
+        filters=[("doc_subtype", "complemento")],
+    )
+    if not rows:
+        print("  (no data or pct_dividend_yield_mes column not yet populated)")
+        return
+    print(f"  {'CNPJ':<16} {'Period':<10} {'PL (M)':>10} {'DY%':>8} {'Rentab%':>9}")
+    print(f"  {SEP2}")
+    for r in rows:
+        pl = float(r["vl_patrim_liq"] or 0) / 1e6
+        dy = float(r["pct_dividend_yield_mes"] or 0)
+        re = float(r["pct_rentab_efetiva_mes"] or 0)
+        print(f"  {r['cnpj']:<16} {str(r['period']):<10} {pl:>10.2f} {dy:>8.4f} {re:>9.4f}")
+
+
 def report_ingest_log(client):
     print(f"\n{SEP}")
     print("  INGEST LOG — LAST 10 RUNS")
@@ -297,8 +373,11 @@ def main():
     report_quality(client)
     report_fi(client)
     report_fidc(client)
+    report_fidc_tranche(client)
     report_fii(client)
+    report_fii_yields(client)
     report_securit(client)
+    report_securit_serie(client)
     report_ingest_log(client)
 
     print(f"\n{SEP}")

@@ -980,3 +980,46 @@ class CVMIngestor:
 
         logger.info("Daily update complete: %s", totals)
         return totals
+
+
+# ---------------------------------------------------------------------------
+# CLI entrypoint
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import argparse
+
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
+    logging.basicConfig(
+        level=os.getenv("LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+    parser = argparse.ArgumentParser(description="CVM pipeline runner")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    bf = sub.add_parser("backfill", help="Historical backfill")
+    bf.add_argument("--entity", help="fi | fidc | fip | fiagro | fii | securit (all if omitted)")
+    bf.add_argument("--start", type=int, default=2019, help="Start year (default 2019)")
+    bf.add_argument("--end", type=int, help="End year (default current year)")
+
+    sub.add_parser("daily", help="Incremental daily update")
+
+    args = parser.parse_args()
+    ingestor = CVMIngestor()
+
+    if args.cmd == "backfill":
+        result = asyncio.run(ingestor.backfill(
+            start_year=args.start,
+            end_year=args.end,
+            entity_filter=args.entity,
+        ))
+        print("Backfill complete:", result)
+    elif args.cmd == "daily":
+        result = asyncio.run(ingestor.daily_update())
+        print("Daily update complete:", result)
