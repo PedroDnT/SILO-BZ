@@ -82,6 +82,9 @@ def report_presence(client):
         ("cvm_securit_serie",       None,                              "situacao"),
         ("cvm_securit_fluxo",       None,                              "recebimentos_direitos_creditorios"),
         ("cvm_securit_dfin",        None,                              None),
+        ("bacen_sgs",               None,                              "value"),
+        ("bacen_ptax",              None,                              "sell_rate"),
+        ("bacen_expectativas",      None,                              "median"),
         ("cvm_ingest_log",          None,                              None),
     ]
     print(f"  {'Table / subtype':<42} {'rows':>8}  {'key field %':>10}")

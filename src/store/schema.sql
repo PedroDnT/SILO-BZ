@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS cvm_ingest_log (
 );
 CREATE INDEX IF NOT EXISTS idx_ingest_log_entity_doc
     ON cvm_ingest_log (entity, doc_type, period_year DESC, period_month DESC);
-CREATE INDEX IF NOT EXISTS idx_ingest_log_run
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ingest_log_run
     ON cvm_ingest_log (run_id);
 
 -- ---------------------------------------------------------------------------
@@ -327,6 +327,7 @@ CREATE TABLE IF NOT EXISTS cvm_securit_serie (
     rentabilidade             NUMERIC(20,8),
     classificacao_risco_atual TEXT,
     indice_subordinacao_minimo NUMERIC(10,6),
+    raw                       JSONB,
     fetched_at                TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_securit_serie UNIQUE NULLS NOT DISTINCT
         (instrument_type, cnpj_securit, codigo_identificacao, data_referencia, numero_serie)
@@ -356,6 +357,7 @@ CREATE TABLE IF NOT EXISTS cvm_securit_fluxo (
     pagamentos_junior_principal       NUMERIC(20,6),
     pagamentos_junior_juros           NUMERIC(20,6),
     variacao_liquida_caixa            NUMERIC(20,6),
+    raw                               JSONB,
     fetched_at                        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_securit_fluxo UNIQUE NULLS NOT DISTINCT
         (instrument_type, cnpj_securit, codigo_identificacao, data_referencia)
