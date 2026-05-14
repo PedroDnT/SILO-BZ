@@ -19,7 +19,7 @@ _Living tracker. Update after each session. Deep technical reference: [`pipeline
 | P8 | FII sparse-table decision: keep merged or split into geral/ativo_passivo/complemento | ❌ defer until analytics |
 | P9 | Add `cvm_fi_diario_2027` partition to schema.sql (due 2027-01-01) | ❌ calendar |
 | P10 | Flask control plane (`app.py` + `src/api/`): partial-fill endpoints + error hooks | ✅ done (2026-05-14) |
-| P11 | Smoke-test the remaining 13 empty tables via `/api/ingest` — find & fix schema bugs before P3 ranges | 🔄 in progress (1/14 done — fidc/tranche) |
+| P11 | Smoke-test the remaining 13 empty tables via `/api/ingest` — find & fix schema bugs before P3 ranges | 🔄 in progress (4/14 done — full FIDC) |
 
 ---
 
@@ -32,10 +32,10 @@ _Reset: `cuducxhrtnzxxlmpwoaa` is a fresh Supabase project; schema applied but d
 | `cvm_fi_diario` | FI | 0 | Needs smoke-test before range fills (huge daily file ~400k rows/month) |
 | `cvm_fi_cda` | FI | 0 | Needs smoke-test |
 | `cvm_fi_perfil` | FI | 0 | Needs smoke-test |
-| `cvm_fidc_mensal` | FIDC | 0 | tab_IV NAV only — needs smoke-test |
+| `cvm_fidc_mensal` | FIDC | **3,007** | ✅ 2025-03 smoke-tested clean (no schema changes needed) |
 | `cvm_fidc_tranche` | FIDC | **9,899** | ✅ 2025-03 smoke-tested clean after 2 schema widenings |
-| `cvm_fidc_tranche_flows` | FIDC | 0 | Same ZIP as tranche — schema risk likely similar |
-| `cvm_fidc_aging` | FIDC | 0 | tab_V/tab_VI delinquency buckets |
+| `cvm_fidc_tranche_flows` | FIDC | **37,565** | ✅ 2025-03 — needed `qt_cota` widen + dedup-on-upsert (3 dupes collapsed) |
+| `cvm_fidc_aging` | FIDC | **3,007** | ✅ 2025-03 smoke-tested clean (no schema changes needed) |
 | `cvm_fiagro_mensal` | FIAGRO | 0 | Data from 2025-05 onward only |
 | `cvm_fip_periodic` | FIP | 0 | Yearly doc_type — pick `inf_trimestral` 2024 |
 | `cvm_fii_mensal` | FII | 0 | 3 doc_types: `mensal_geral`, `mensal_ativo_passivo`, `mensal_complemento` |
@@ -119,6 +119,8 @@ all-or-nothing CLI had been masking. Patterns to watch for in other tables:
 | 2 | `cvm_fidc_tranche.vl_rentab_mes` / `pr_desemp_*` `NUMERIC(10,6)` | Raw CVM percentage fields contain garbage like `164606333.00` | Migration `widen_cvm_fidc_tranche_pct_columns` → `NUMERIC(20,6)` (validate downstream) |
 | 3 | `cvm_pipeline._log_finish` | Used PostgREST upsert; NOT NULL on `entity`/`doc_type` fails the INSERT path *before* `ON CONFLICT` routes to UPDATE | Switched to true `UPDATE ... WHERE run_id = ...` |
 | 4 | `hooks.fetch_audit_warning` | Filtered by API alias `doc_type` (`tranche`), pipeline logs the CVM-native `mensal_tab_x2` | Filter on `(entity, period)` only; pick the most recent error row |
+| 5 | `cvm_fidc_tranche_flows.qt_cota` `NUMERIC(20,8)` | Same overflow as `cvm_fidc_tranche.qt_cota` (paired tab_X CSV) | Migration `widen_cvm_fidc_tranche_flows_qt_cota` → `NUMERIC(28,8)` |
+| 6 | `supabase_client.upsert_rows` | CVM `mensal_tab_x4` ships duplicate `(cnpj, period, classe_serie, tp_oper)` rows; PostgREST `ON CONFLICT` 21000s when a batch contains the same key twice | Defensive dedup before chunking — last write wins; logs collapsed count |
 
 **Sizing heuristic for the next 13 tables:** any `NUMERIC(20,8)` or `NUMERIC(10,6)` is a likely
 overflow candidate when the column stores raw CVM values (quota counts, percentages, AUM).
@@ -134,10 +136,10 @@ them once, then trigger the full range. Each slice picks **the same well-publish
 
 | # | Slice | API call body | Watch for |
 |---|---|---|---|
-| 1 | ✅ fidc/tranche 2025-03 | `{"entity":"fidc","doc_type":"tranche","year":2025,"month":3}` | done |
-| 2 | fidc/mensal 2025-03 | `{"entity":"fidc","doc_type":"mensal","year":2025,"month":3}` | NUMERIC overflow on `vl_patrim_liq`, `vl_inadimpl` |
-| 3 | fidc/tranche_flows 2025-03 | `{"entity":"fidc","doc_type":"tranche_flows","year":2025,"month":3}` | Same overflow risk as tranche (paired CVM ZIP) |
-| 4 | fidc/aging 2025-03 | `{"entity":"fidc","doc_type":"aging","year":2025,"month":3}` | Many `vl_*` columns from tab_V/tab_VI |
+| ~~1~~ | ~~fidc/tranche 2025-03~~ | ~~done — 9,899 rows~~ | clean after 2 migrations |
+| ~~2~~ | ~~fidc/mensal 2025-03~~ | ~~done — 3,007 rows~~ | clean, no schema changes |
+| ~~3~~ | ~~fidc/tranche_flows 2025-03~~ | ~~done — 37,565 rows~~ | needed `qt_cota` widen + upsert dedup |
+| ~~4~~ | ~~fidc/aging 2025-03~~ | ~~done — 3,007 rows~~ | clean, no schema changes |
 | 5 | fi/diario 2025-03 | `{"entity":"fi","doc_type":"diario","year":2025,"month":3}` | **~400k rows** — confirms supabase upsert throughput |
 | 6 | fi/cda 2025-03 | `{"entity":"fi","doc_type":"cda","year":2025,"month":3}` | Portfolio composition — JSON `raw` size |
 | 7 | fi/perfil 2025-03 | `{"entity":"fi","doc_type":"perfil","year":2025,"month":3}` | Smaller, investor profile counts |

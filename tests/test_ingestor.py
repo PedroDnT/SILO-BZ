@@ -72,6 +72,45 @@ class TestUpsertRows:
         assert call_sizes[1] == 500
         assert call_sizes[2] == 100
 
+    def test_upsert_deduplicates_when_conflict_columns_set(self):
+        """When conflict_columns is passed, duplicate keys collapse to last write."""
+        from src.store.supabase_client import upsert_rows
+        captured: List[Dict[str, Any]] = []
+        client = MagicMock()
+
+        def _capture(rows, **kwargs):
+            captured.extend(rows)
+            return MagicMock(execute=MagicMock())
+
+        client.table.return_value.upsert.side_effect = _capture
+
+        rows = [
+            {"cnpj": "A", "period": "2025-03-31", "k": "x", "v": 1},
+            {"cnpj": "B", "period": "2025-03-31", "k": "y", "v": 2},
+            {"cnpj": "A", "period": "2025-03-31", "k": "x", "v": 99},  # dup of row 0 — wins
+        ]
+        result = upsert_rows(
+            client, "t", rows, conflict_columns="cnpj,period,k",
+        )
+        assert result == 2
+        captured.sort(key=lambda r: r["cnpj"])
+        assert captured == [
+            {"cnpj": "A", "period": "2025-03-31", "k": "x", "v": 99},
+            {"cnpj": "B", "period": "2025-03-31", "k": "y", "v": 2},
+        ]
+
+    def test_upsert_no_dedup_when_conflict_columns_unset(self):
+        """Without conflict_columns, duplicate inputs are kept as-is."""
+        from src.store.supabase_client import upsert_rows
+        captured: List[Dict[str, Any]] = []
+        client = MagicMock()
+        client.table.return_value.upsert.side_effect = (
+            lambda rows, **kw: captured.extend(rows) or MagicMock(execute=MagicMock())
+        )
+        rows = [{"id": 1}, {"id": 1}, {"id": 1}]
+        assert upsert_rows(client, "t", rows) == 3
+        assert len(captured) == 3
+
 
 # ---------------------------------------------------------------------------
 # cvm_ingestor helpers

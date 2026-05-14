@@ -42,6 +42,12 @@ def upsert_rows(
     """
     Upsert rows into a Supabase table in chunks.
 
+    When `conflict_columns` is set, rows with duplicate conflict-key tuples are
+    deduplicated (last write wins) before chunking. PostgREST otherwise raises
+    21000 "ON CONFLICT DO UPDATE command cannot affect row a second time" when
+    duplicates land in the same chunk — common for CVM tab_X_4-style files where
+    a (cnpj, period, classe_serie, tp_oper) tuple appears multiple times.
+
     Args:
         client:           supabase-py Client
         table:            table name
@@ -54,6 +60,24 @@ def upsert_rows(
     """
     if not rows:
         return 0
+
+    if conflict_columns:
+        keys = [c.strip() for c in conflict_columns.split(",") if c.strip()]
+        seen: Dict[tuple, int] = {}
+        deduped: List[Dict[str, Any]] = []
+        for row in rows:
+            key = tuple(row.get(k) for k in keys)
+            if key in seen:
+                deduped[seen[key]] = row  # last write wins
+            else:
+                seen[key] = len(deduped)
+                deduped.append(row)
+        if len(deduped) < len(rows):
+            logger.info(
+                "upsert dedup: table=%s conflict=%s collapsed %d -> %d rows",
+                table, conflict_columns, len(rows), len(deduped),
+            )
+        rows = deduped
 
     total = 0
     for i in range(0, len(rows), _CHUNK_SIZE):

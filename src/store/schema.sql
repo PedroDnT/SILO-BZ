@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS cvm_fidc_tranche_flows (
     classe_serie TEXT         NOT NULL,
     tp_oper      TEXT         NOT NULL,
     vl_total     NUMERIC(20,6),
-    qt_cota      NUMERIC(20,8),
+    qt_cota      NUMERIC(28,8),  -- same overflow as cvm_fidc_tranche.qt_cota
     fetched_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_fidc_tranche_flows UNIQUE (cnpj, period, classe_serie, tp_oper)
 );
