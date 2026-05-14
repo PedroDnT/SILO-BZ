@@ -10,8 +10,8 @@ _Living tracker. Update after each session. Deep technical reference: [`pipeline
 |---|---|---|
 | P0 | Commit `verify_pipeline.py` + `cvm_pipeline.py` | ✅ done |
 | P1 | Create this file (`docs/PLAN.md`) | ✅ done |
-| P2 | Apply `schema.sql` to live Supabase | ❌ pending |
-| P3 | Historical backfill (fidc → fii → securit → fip → fi) | ❌ blocked on P2 |
+| P2 | Apply `schema.sql` to live Supabase | ✅ done — RLS + public read enabled |
+| P3 | Historical backfill (fidc → fii → securit → fip → fi) | 🔄 running |
 | P4 | Run `verify_pipeline.py` against live DB; confirm null rates below thresholds | ❌ blocked on P3 |
 | P5 | MCP + skill integration (verify / backfill / schema-status skills) | ⏳ Supabase MCP now connected |
 | P6 | Pytest fixtures for fidc_tranche / fidc_aging / securit_serie / securit_fluxo | ❌ pending |
