@@ -105,31 +105,31 @@ class DatasetConfig:
             "csv_name_pattern": "inf_mensal_fidc_tab_IV_{year}{month:02d}.csv",
             "description": "Monthly information for FIDC funds — targets tab_IV (NAV/PL)",
         },
-        "mensal_tab_VI": {
+        "mensal_tab_vi": {
             "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
             "is_zip": True,
             "csv_name_pattern": "inf_mensal_fidc_tab_VI_{year}{month:02d}.csv",
             "description": "FIDC tab_VI — credits without risk, maturity aging + delinquency buckets",
         },
-        "mensal_tab_X2": {
+        "mensal_tab_x2": {
             "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
             "is_zip": True,
             "csv_name_pattern": "inf_mensal_fidc_tab_X_2_{year}{month:02d}.csv",
             "description": "FIDC tab_X_2 — quota quantity and price per tranche/series",
         },
-        "mensal_tab_X3": {
+        "mensal_tab_x3": {
             "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
             "is_zip": True,
             "csv_name_pattern": "inf_mensal_fidc_tab_X_3_{year}{month:02d}.csv",
             "description": "FIDC tab_X_3 — monthly return % per tranche/series",
         },
-        "mensal_tab_X4": {
+        "mensal_tab_x4": {
             "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
             "is_zip": True,
             "csv_name_pattern": "inf_mensal_fidc_tab_X_4_{year}{month:02d}.csv",
             "description": "FIDC tab_X_4 — monthly flows (captações/resgates) per tranche/series",
         },
-        "mensal_tab_X6": {
+        "mensal_tab_x6": {
             "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
             "is_zip": True,
             "csv_name_pattern": "inf_mensal_fidc_tab_X_6_{year}{month:02d}.csv",

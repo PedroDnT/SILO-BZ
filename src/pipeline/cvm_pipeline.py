@@ -317,7 +317,7 @@ class CVMIngestor:
     async def ingest_fidc_tranche(self, year: int, month: int) -> int:
         """Ingest per-tranche quota, return, and performance (tabs X_2 + X_3 + X_6 joined)."""
         run_id = str(uuid4())
-        self._log_start(run_id, "fidc", "mensal_tab_X2", year, month)
+        self._log_start(run_id, "fidc", "mensal_tab_x2", year, month)
         rows_inserted = 0
         try:
             rows_x2, rows_x3, rows_x6 = await asyncio.gather(
@@ -368,7 +368,7 @@ class CVMIngestor:
     async def ingest_fidc_tranche_flows(self, year: int, month: int) -> int:
         """Ingest per-tranche monthly flows (tab_X_4: captações / resgates)."""
         run_id = str(uuid4())
-        self._log_start(run_id, "fidc", "mensal_tab_X4", year, month)
+        self._log_start(run_id, "fidc", "mensal_tab_x4", year, month)
         rows_inserted = 0
         try:
             raw_rows = await self._fetch_all_pages("fidc", "mensal_tab_X4", year, month)
@@ -404,7 +404,7 @@ class CVMIngestor:
         (delinquency) naming. Verify against actual CSV headers after first run.
         """
         run_id = str(uuid4())
-        self._log_start(run_id, "fidc", "mensal_tab_VI", year, month)
+        self._log_start(run_id, "fidc", "mensal_tab_vi", year, month)
         rows_inserted = 0
         try:
             raw_rows = await self._fetch_all_pages("fidc", "mensal_tab_VI", year, month)
