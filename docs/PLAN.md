@@ -164,9 +164,28 @@ schema with their CRA counterparts — smoke-testing all three CRA flavours is s
 
 ---
 
-## P12 — Analytical layer (plan at `docs/analytical-layer-plan.md`)
+## P12 — Analytical layer ✅ done (2026-05-15)
 
-Design complete. Implement after P3 range fills land. Three parallel streams:
+SQL in `src/store/analytical/01-08*.sql`. Applied via Supabase MCP migrations.
+Smoke-test results post-apply:
+
+| Object | Type | Rows |
+|---|---|---|
+| `dim_fund` | view | 32,933 funds across 5 entity types |
+| `dim_security` | view | 176 CRA/CRI/OTS instruments |
+| `fact_fund_monthly` | matview | 69,904 (FI+FIDC+FII+FIP+FIAGRO) |
+| `fact_security_monthly` | matview | 231 CRA series |
+| `fact_bacen_monthly` | matview | 1 (BACEN SGS API issue — PTAX only; re-run `BacenIngestor` when SGS resolves) |
+| `vw_fidc_tranche_detail` | view | 22,899 |
+| `vw_fii_vs_fiagro` | view | 11,994 |
+| `vw_fund_security_yield` | view | 11,133 (cross-domain FII+FIAGRO+CRA) |
+| `vw_securit_emission_trend` | view | 12 |
+
+BACEN note: SGS fetch returns 0 rows due to a transient BCB API error (ODataPropertyFilter issue in `python-bcb`). PTAX (20 rows) and Expectativas (1 row) landed. Re-run `BacenIngestor().daily_update()` once BCB API is stable to populate SELIC/CDI/IPCA series, then `REFRESH MATERIALIZED VIEW CONCURRENTLY fact_bacen_monthly`.
+
+Plan reference: `docs/analytical-layer-plan.md`
+
+Streams created: `dim_fund`, `dim_security` → `fact_fund_monthly`, `fact_security_monthly`, `fact_bacen_monthly` → `vw_fund_vs_benchmark`, `vw_security_vs_benchmark` → 4 cross-domain views.
 
 - **Stream A**: `dim_fund` → `fact_fund_monthly` (unified monthly fact across FI/FIDC/FII/FIP/FIAGRO)
 - **Stream B**: `dim_security` → `fact_security_monthly` (CRA/CRI/OTS instruments — NOT funds)
