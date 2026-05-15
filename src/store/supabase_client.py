@@ -104,7 +104,14 @@ def upsert_rows(
                 last_exc = None
                 break
             except Exception as exc:
-                if "server disconnected" in str(exc).lower() or "connection" in str(exc).lower():
+                msg = str(exc).lower()
+                if (
+                    "server disconnected" in msg
+                    or "connection" in msg
+                    or "57014" in msg          # statement_timeout
+                    or "statement timeout" in msg
+                    or "canceling statement" in msg
+                ):
                     last_exc = exc
                 else:
                     logger.error("Upsert failed table=%s chunk=%d: %s", table, i, exc)
