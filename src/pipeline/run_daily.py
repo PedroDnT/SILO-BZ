@@ -3,7 +3,6 @@ Daily incremental update — run by GitHub Actions cron at 06:00 UTC.
 
 Fetches:
   - CVM: current month + previous month for all entities
-  - BACEN: last 7 days of SGS, PTAX, and Expectativas
 
 Required env vars: SUPABASE_URL, SUPABASE_SERVICE_KEY
 """
@@ -17,7 +16,10 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.pipeline.cvm_pipeline import CVMIngestor
-from src.pipeline.bacen_pipeline import BacenIngestor
+
+# BACEN benchmark data (SGS/PTAX) is no longer replicated locally.
+# Clients fetch CDI/SELIC/IPCA directly from the BCB API at query time.
+# See: https://api.bcb.gov.br/dados/serie/bcdata.sgs.{code}/dados/ultimos/1?formato=json
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,15 +32,10 @@ async def main() -> None:
     start_ts = time.monotonic()
     logger.info("Daily update starting")
 
-    cvm_ingestor   = CVMIngestor()
-    bacen_ingestor = BacenIngestor()
+    cvm_ingestor = CVMIngestor()
 
-    cvm_totals, bacen_totals = await asyncio.gather(
-        cvm_ingestor.daily_update(),
-        bacen_ingestor.daily_update(),
-    )
+    totals = await cvm_ingestor.daily_update()
 
-    totals = {**cvm_totals, **bacen_totals}
     elapsed = time.monotonic() - start_ts
     total_rows = sum(totals.values())
     logger.info(

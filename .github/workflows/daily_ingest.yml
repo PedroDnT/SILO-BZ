@@ -66,3 +66,27 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           CVM_DNS_NAMESERVERS:  "1.1.1.1,8.8.8.8,9.9.9.9"
           TZ:                   America/Sao_Paulo
+
+      - name: Refresh analytical matviews
+        if: ${{ inputs.mode == 'backfill' || github.event_name == 'schedule' }}
+        run: |
+          psql "$SUPABASE_DB_URL" -c "
+            REFRESH MATERIALIZED VIEW CONCURRENTLY fact_fund_monthly;
+            REFRESH MATERIALIZED VIEW CONCURRENTLY fact_security_monthly;
+          "
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+
+      - name: Analyze tables post-ingest
+        if: ${{ inputs.mode == 'backfill' || github.event_name == 'schedule' }}
+        run: |
+          psql "$SUPABASE_DB_URL" -c "
+            ANALYZE cvm_fi_diario;
+            ANALYZE cvm_fidc_mensal;
+            ANALYZE cvm_fidc_tranche;
+            ANALYZE cvm_fii_mensal;
+            ANALYZE fact_fund_monthly;
+            ANALYZE fact_security_monthly;
+          "
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
