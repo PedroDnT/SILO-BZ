@@ -1089,8 +1089,8 @@ class CVMIngestor:
                     if year >= 2023:
                         fi_tasks.append(("cvm_fi_cda", self.ingest_fi_cda(year, month)))
                     fi_tasks.append(("cvm_fi_perfil", self.ingest_fi_perfil(year, month)))
-            for i in range(0, len(fi_tasks), 6):
-                batch = fi_tasks[i:i + 6]
+            for i in range(0, len(fi_tasks), 2):  # 2 = one month (inf_diario + perfil)
+                batch = fi_tasks[i:i + 2]
                 results = await asyncio.gather(*[t[1] for t in batch], return_exceptions=True)
                 for (tbl, _), r in zip(batch, results):
                     if isinstance(r, int):
