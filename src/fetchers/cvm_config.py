@@ -35,6 +35,11 @@ class DatasetConfig:
     FIP dfin, SECURIT lca/lci) were intentionally removed."""
 
     FI_DATASETS: Dict[str, Dict] = {
+        "cad": {
+            "url_pattern": "{base_url}/FI/CAD/DADOS/cad_fi.csv",
+            "is_zip": False,
+            "description": "FI fund registry — DENOM_SOCIAL, SIT, DT_REG, DT_CANCEL (static file, no year/month)",
+        },
         "inf_diario": {
             "url_pattern": "{base_url}/FI/DOC/INF_DIARIO/DADOS/inf_diario_fi_{year}{month:02d}.zip",
             "is_zip": True,
@@ -61,6 +66,11 @@ class DatasetConfig:
     }
 
     FII_DATASETS: Dict[str, Dict] = {
+        "cad": {
+            "url_pattern": "{base_url}/FII/CAD/DADOS/cad_fii.csv",
+            "is_zip": False,
+            "description": "FII fund registry — DENOM_SOCIAL, SIT, DT_REG, DT_CANCEL (static file, no year/month)",
+        },
         "mensal_geral": {
             "url_pattern": "{base_url}/FII/DOC/INF_MENSAL/DADOS/inf_mensal_fii_{year}.zip",
             "is_zip": True,

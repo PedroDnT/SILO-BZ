@@ -652,6 +652,51 @@ class CVMIngestor:
         return rows_inserted
 
     # ------------------------------------------------------------------
+    # Fund registry — DENOM_SOCIAL + status from CVM cadastral files
+    # ------------------------------------------------------------------
+
+    async def ingest_fund_registry(self, entity: str) -> int:
+        """
+        Ingest fund names for fi and fii from CVM cadastral static CSVs.
+        FIDC / FIP / FIAGRO names are seeded directly from raw JSONB via SQL
+        migration (seed_fidc_fip_fiagro_fii_fund_registry) — no HTTP needed.
+        """
+        if entity not in ("fi", "fii"):
+            return 0
+        run_id = str(uuid4())
+        self._log_start(run_id, entity, "cad", None, None)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages(entity, "cad", None, None)
+            records: List[Dict[str, Any]] = []
+            for row in raw_rows:
+                cnpj_raw = _find_cnpj_field(row)
+                cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else ""
+                if not cnpj:
+                    continue
+                records.append({
+                    "cnpj":        cnpj,
+                    "entity_type": entity,
+                    "fund_name":   _find_field(row, "DENOM_SOCIAL", "NM_FUNDO"),
+                    "status":      _find_field(row, "SIT", "SITUACAO"),
+                    "tp_fundo":    _find_field(row, "TP_FUNDO", "TP_FUNDO_CLASSE"),
+                    "dt_reg":      _find_field(row, "DT_REG", "DT_CONST"),
+                    "dt_cancel":   _find_field(row, "DT_CANCEL"),
+                    "raw":         row,
+                })
+            rows_inserted = upsert_rows(
+                self._supabase, "cvm_fund_registry", records,
+                conflict_columns="cnpj,entity_type",
+            )
+        except Exception as exc:
+            logger.warning("ingest_fund_registry %s failed: %s", entity, exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("%s/cad: %d rows", entity, rows_inserted)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
     # SECURIT — per-series data (classe CSV) and cash flows (fluxo_caixa CSV)
     # ------------------------------------------------------------------
 
@@ -675,7 +720,8 @@ class CVMIngestor:
                 records.append({
                     "instrument_type":           instrument_type,
                     "cnpj_securit":              cnpj,
-                    "codigo_identificacao":      _find_field(row, "Codigo_Identificacao", "CNPJ_Fundo") or "",
+                    "codigo_identificacao":      _find_field(row, "Codigo_Identificacao_Certificado",
+                                                                  "Codigo_Identificacao", "CNPJ_Fundo") or "",
                     "data_referencia":           data_ref,
                     "classe":                    _find_field(row, "Classe"),
                     "numero_serie":              _find_field(row, "Numero_Serie"),
@@ -817,6 +863,11 @@ class CVMIngestor:
         def _want(entity: str) -> bool:
             return entity_filter is None or entity_filter == entity
 
+        # -- Fund registry (static cadastral files — run once per backfill) --
+        for entity in ("fi", "fii"):
+            if _want(entity):
+                await self.ingest_fund_registry(entity)
+
         # -- FI monthly (batch: 6 at a time to avoid overwhelming CVM) ----
         if _want("fi"):
             fi_tasks: List[Tuple[str, Any]] = []
@@ -936,6 +987,10 @@ class CVMIngestor:
         ]}
 
         tasks: List[Tuple[str, Any]] = []
+
+        # Fund registry refresh (static cadastral — names/status may change)
+        await self.ingest_fund_registry("fi")
+        await self.ingest_fund_registry("fii")
 
         # FI — current + previous month
         for m in ([month - 1, month] if month > 1 else [month]):

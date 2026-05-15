@@ -43,6 +43,8 @@ CREATE OR REPLACE FUNCTION fund_profile(
 RETURNS TABLE (
     cnpj                TEXT,
     entity_type         TEXT,
+    fund_name           TEXT,
+    status              TEXT,
     first_period        DATE,
     last_period         DATE,
     n_months_reported   BIGINT,
@@ -55,6 +57,8 @@ AS $$
     SELECT
         d.cnpj,
         d.entity_type,
+        d.fund_name,
+        d.status,
         d.first_period,
         d.last_period,
         d.n_reports                                         AS n_months_reported,
@@ -88,13 +92,14 @@ $$;
 -- Partial CNPJ match with optional entity-type filter and latest AUM lookup.
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION search_funds(
-    query        TEXT    DEFAULT '',
-    p_entity_type TEXT   DEFAULT NULL,
-    limit_n      INT     DEFAULT 50
+    query         TEXT    DEFAULT '',
+    p_entity_type TEXT    DEFAULT NULL,
+    limit_n       INT     DEFAULT 50
 )
 RETURNS TABLE (
     cnpj         TEXT,
     entity_type  TEXT,
+    fund_name    TEXT,
     first_period DATE,
     last_period  DATE,
     latest_aum   NUMERIC
@@ -104,6 +109,7 @@ AS $$
     SELECT
         d.cnpj,
         d.entity_type,
+        d.fund_name,
         d.first_period,
         d.last_period,
         aum.vl_patrim_liq AS latest_aum
@@ -116,8 +122,11 @@ AS $$
         ORDER BY f.period DESC
         LIMIT 1
     ) aum ON TRUE
-    WHERE d.cnpj ILIKE '%' || query || '%'
-      AND (p_entity_type IS NULL OR d.entity_type = p_entity_type)
+    WHERE (
+        d.cnpj ILIKE '%' || query || '%'
+        OR d.fund_name ILIKE '%' || query || '%'
+    )
+    AND (p_entity_type IS NULL OR d.entity_type = p_entity_type)
     ORDER BY aum.vl_patrim_liq DESC NULLS LAST
     LIMIT limit_n
 $$;

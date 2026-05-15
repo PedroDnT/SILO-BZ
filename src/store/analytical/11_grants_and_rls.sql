@@ -23,6 +23,11 @@ GRANT SELECT ON fact_fund_monthly      TO anon, authenticated;
 GRANT SELECT ON fact_security_monthly  TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
+-- Fund registry (base table for dim_fund names/status)
+-- ---------------------------------------------------------------------------
+GRANT SELECT ON cvm_fund_registry      TO anon, authenticated;
+
+-- ---------------------------------------------------------------------------
 -- Dimension views
 -- ---------------------------------------------------------------------------
 GRANT SELECT ON dim_fund               TO anon, authenticated;

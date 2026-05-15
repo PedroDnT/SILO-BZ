@@ -8,47 +8,50 @@ BEGIN;
 SET statement_timeout = '5min';
 
 CREATE OR REPLACE VIEW dim_fund AS
-  SELECT cnpj, 'fi'     AS entity_type,
-         MIN(dt_comptc)                          AS first_period,
-         MAX(dt_comptc)                          AS last_period,
-         COUNT(DISTINCT dt_comptc)               AS n_reports
-  FROM cvm_fi_diario
-  GROUP BY cnpj
+  SELECT
+    t.cnpj,
+    t.entity_type,
+    t.first_period,
+    t.last_period,
+    t.n_reports,
+    r.fund_name,       -- from cvm_fund_registry (NULL for FI/FII until pipeline runs)
+    r.status,
+    r.tp_fundo
+  FROM (
+    SELECT cnpj, 'fi' AS entity_type,
+           MIN(dt_comptc) AS first_period, MAX(dt_comptc) AS last_period,
+           COUNT(DISTINCT dt_comptc) AS n_reports
+    FROM cvm_fi_diario GROUP BY cnpj
 
-  UNION ALL
+    UNION ALL
 
-  SELECT cnpj, 'fidc',
-         MIN(period), MAX(period), COUNT(DISTINCT period)
-  FROM cvm_fidc_mensal
-  GROUP BY cnpj
+    SELECT cnpj, 'fidc',
+           MIN(period), MAX(period), COUNT(DISTINCT period)
+    FROM cvm_fidc_mensal GROUP BY cnpj
 
-  UNION ALL
+    UNION ALL
 
-  SELECT cnpj, 'fiagro',
-         MIN(period), MAX(period), COUNT(DISTINCT period)
-  FROM cvm_fiagro_mensal
-  WHERE cnpj IS NOT NULL
-  GROUP BY cnpj
+    SELECT cnpj, 'fiagro',
+           MIN(period), MAX(period), COUNT(DISTINCT period)
+    FROM cvm_fiagro_mensal WHERE cnpj IS NOT NULL GROUP BY cnpj
 
-  UNION ALL
+    UNION ALL
 
-  SELECT cnpj, 'fii',
-         MIN(period), MAX(period), COUNT(DISTINCT period)
-  FROM cvm_fii_mensal
-  WHERE cnpj IS NOT NULL
-  GROUP BY cnpj
+    SELECT cnpj, 'fii',
+           MIN(period), MAX(period), COUNT(DISTINCT period)
+    FROM cvm_fii_mensal WHERE cnpj IS NOT NULL GROUP BY cnpj
 
-  UNION ALL
+    UNION ALL
 
-  -- FIP uses yearly grain; map to first/last day of year for consistency
-  SELECT cnpj, 'fip',
-         make_date(MIN(period_year), 1, 1) AS first_period,
-         make_date(MAX(period_year),12,31) AS last_period,
-         COUNT(DISTINCT period_year)       AS n_reports
-  FROM cvm_fip_periodic
-  WHERE cnpj IS NOT NULL
-  GROUP BY cnpj
-;
+    -- FIP uses yearly grain; map to first/last day of year for consistency
+    SELECT cnpj, 'fip',
+           make_date(MIN(period_year), 1, 1) AS first_period,
+           make_date(MAX(period_year),12,31)  AS last_period,
+           COUNT(DISTINCT period_year)        AS n_reports
+    FROM cvm_fip_periodic WHERE cnpj IS NOT NULL GROUP BY cnpj
+  ) t
+  LEFT JOIN cvm_fund_registry r
+    ON r.cnpj = t.cnpj AND r.entity_type = t.entity_type;
 
 -- Smoke check: must have at least one fund per entity type once any data is loaded
 DO $$
