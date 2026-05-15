@@ -254,12 +254,12 @@ CREATE INDEX IF NOT EXISTS idx_fii_mensal_period ON cvm_fii_mensal (period DESC)
 ALTER TABLE cvm_fii_mensal
     ADD COLUMN IF NOT EXISTS nr_cotst               INT,
     ADD COLUMN IF NOT EXISTS vl_ativo               NUMERIC(20,6),
-    ADD COLUMN IF NOT EXISTS cotas_emitidas         NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS cotas_emitidas         NUMERIC(28,6),  -- raw FII cotas reach 6.46e14
     ADD COLUMN IF NOT EXISTS vl_patrimonial_cotas   NUMERIC(20,6),
-    ADD COLUMN IF NOT EXISTS pct_rentab_efetiva_mes NUMERIC(10,6),
-    ADD COLUMN IF NOT EXISTS pct_rentab_patrimonial NUMERIC(10,6),
-    ADD COLUMN IF NOT EXISTS pct_dividend_yield_mes NUMERIC(10,6),
-    ADD COLUMN IF NOT EXISTS pct_amortizacao_mes    NUMERIC(10,6),
+    ADD COLUMN IF NOT EXISTS pct_rentab_efetiva_mes NUMERIC(20,6),  -- widened: raw CVM pct outliers
+    ADD COLUMN IF NOT EXISTS pct_rentab_patrimonial NUMERIC(20,6),  -- same
+    ADD COLUMN IF NOT EXISTS pct_dividend_yield_mes NUMERIC(20,6),  -- same
+    ADD COLUMN IF NOT EXISTS pct_amortizacao_mes    NUMERIC(20,6),  -- same
     ADD COLUMN IF NOT EXISTS rendimentos_distribuir NUMERIC(20,6);
 
 -- ---------------------------------------------------------------------------

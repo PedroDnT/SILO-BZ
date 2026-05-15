@@ -19,7 +19,7 @@ _Living tracker. Update after each session. Deep technical reference: [`pipeline
 | P8 | FII sparse-table decision: keep merged or split into geral/ativo_passivo/complemento | ❌ defer until analytics |
 | P9 | Add `cvm_fi_diario_2027` partition to schema.sql (due 2027-01-01) | ❌ calendar |
 | P10 | Flask control plane (`app.py` + `src/api/`): partial-fill endpoints + error hooks | ✅ done (2026-05-14) |
-| P11 | Smoke-test the remaining 13 empty tables via `/api/ingest` — find & fix schema bugs before P3 ranges | 🔄 in progress (4/14 done — full FIDC) |
+| P11 | Smoke-test the remaining 13 empty tables via `/api/ingest` — find & fix schema bugs before P3 ranges | ✅ done (2026-05-15) — all entities tested |
 
 ---
 
@@ -29,21 +29,21 @@ _Reset: `cuducxhrtnzxxlmpwoaa` is a fresh Supabase project; schema applied but d
 
 | Table | Entity | Live rows | Notes |
 |---|---|---|---|
-| `cvm_fi_diario` | FI | 0 | Needs smoke-test before range fills (huge daily file ~400k rows/month) |
-| `cvm_fi_cda` | FI | 0 | Needs smoke-test |
-| `cvm_fi_perfil` | FI | 0 | Needs smoke-test |
+| `cvm_fi_diario` | FI | **482,069** | ✅ 2025-03 — 482k rows, no schema changes |
+| `cvm_fi_cda` | FI | **16,976** | ✅ 2025-03 clean |
+| `cvm_fi_perfil` | FI | **25,074** | ✅ 2025-03 clean |
 | `cvm_fidc_mensal` | FIDC | **3,007** | ✅ 2025-03 smoke-tested clean (no schema changes needed) |
 | `cvm_fidc_tranche` | FIDC | **9,899** | ✅ 2025-03 smoke-tested clean after 2 schema widenings |
 | `cvm_fidc_tranche_flows` | FIDC | **37,565** | ✅ 2025-03 — needed `qt_cota` widen + dedup-on-upsert (3 dupes collapsed) |
 | `cvm_fidc_aging` | FIDC | **3,007** | ✅ 2025-03 smoke-tested clean (no schema changes needed) |
-| `cvm_fiagro_mensal` | FIAGRO | 0 | Data from 2025-05 onward only |
-| `cvm_fip_periodic` | FIP | 0 | Yearly doc_type — pick `inf_trimestral` 2024 |
-| `cvm_fii_mensal` | FII | 0 | 3 doc_types: `mensal_geral`, `mensal_ativo_passivo`, `mensal_complemento` |
-| `cvm_fii_periodic` | FII | 0 | 3 doc_types: `trimestral`, `anual`, `dfin` |
-| `cvm_securit_mensal` | SECURIT | 0 | 3 instrument_types: `cra_mensal`, `cri_mensal`, `ots_mensal` |
-| `cvm_securit_serie` | SECURIT | 0 | `*_classe` doc_types |
-| `cvm_securit_fluxo` | SECURIT | 0 | `*_fluxo` doc_types |
-| `cvm_securit_dfin` | SECURIT | 0 | `dfin_cra`, `dfin_cri` |
+| `cvm_fiagro_mensal` | FIAGRO | **18** | ✅ 2025-06 (data only from 2025-05+) |
+| `cvm_fip_periodic` | FIP | **3,773** | ✅ inf_trimestral 2023 (1787) + inf_quadrimestral 2024 (1986) |
+| `cvm_fii_mensal` | FII | **35,928** | ✅ all 3 subtypes for 2024 — 2 migrations: pct cols + cotas_emitidas |
+| `cvm_fii_periodic` | FII | **1,046** | ✅ dfin 2024 clean |
+| `cvm_securit_mensal` | SECURIT | **6,946** | ✅ cra_mensal 2024 clean — cri/ots share same schema, will fill in ranges |
+| `cvm_securit_serie` | SECURIT | **883** | ✅ cra_classe 2024 clean |
+| `cvm_securit_fluxo` | SECURIT | **231** | ✅ cra_fluxo 2024 clean |
+| `cvm_securit_dfin` | SECURIT | **20** | ✅ dfin_cra 2024 clean |
 | `bacen_sgs` | BACEN | 0 | Out of scope for Flask plane (separate ingestor) |
 | `bacen_ptax` | BACEN | 0 | Same |
 | `bacen_expectativas` | BACEN | 0 | Same |
@@ -121,6 +121,8 @@ all-or-nothing CLI had been masking. Patterns to watch for in other tables:
 | 4 | `hooks.fetch_audit_warning` | Filtered by API alias `doc_type` (`tranche`), pipeline logs the CVM-native `mensal_tab_x2` | Filter on `(entity, period)` only; pick the most recent error row |
 | 5 | `cvm_fidc_tranche_flows.qt_cota` `NUMERIC(20,8)` | Same overflow as `cvm_fidc_tranche.qt_cota` (paired tab_X CSV) | Migration `widen_cvm_fidc_tranche_flows_qt_cota` → `NUMERIC(28,8)` |
 | 6 | `supabase_client.upsert_rows` | CVM `mensal_tab_x4` ships duplicate `(cnpj, period, classe_serie, tp_oper)` rows; PostgREST `ON CONFLICT` 21000s when a batch contains the same key twice | Defensive dedup before chunking — last write wins; logs collapsed count |
+| 7 | `cvm_fii_mensal.pct_*` four cols `NUMERIC(10,6)` | FII complemento ships dirty pct values (same pattern as FIDC) | Migration `widen_cvm_fii_mensal_pct_columns` → `NUMERIC(20,6)` |
+| 8 | `cvm_fii_mensal.cotas_emitidas` `NUMERIC(20,6)` | FII `Cotas_Emitidas` reaches 6.46×10¹⁴ — overflows 10¹⁴ ceiling | Migration `widen_cvm_fii_mensal_cotas_emitidas` → `NUMERIC(28,6)` |
 
 **Sizing heuristic for the next 13 tables:** any `NUMERIC(20,8)` or `NUMERIC(10,6)` is a likely
 overflow candidate when the column stores raw CVM values (quota counts, percentages, AUM).
@@ -140,22 +142,22 @@ them once, then trigger the full range. Each slice picks **the same well-publish
 | ~~2~~ | ~~fidc/mensal 2025-03~~ | ~~done — 3,007 rows~~ | clean, no schema changes |
 | ~~3~~ | ~~fidc/tranche_flows 2025-03~~ | ~~done — 37,565 rows~~ | needed `qt_cota` widen + upsert dedup |
 | ~~4~~ | ~~fidc/aging 2025-03~~ | ~~done — 3,007 rows~~ | clean, no schema changes |
-| 5 | fi/diario 2025-03 | `{"entity":"fi","doc_type":"diario","year":2025,"month":3}` | **~400k rows** — confirms supabase upsert throughput |
-| 6 | fi/cda 2025-03 | `{"entity":"fi","doc_type":"cda","year":2025,"month":3}` | Portfolio composition — JSON `raw` size |
-| 7 | fi/perfil 2025-03 | `{"entity":"fi","doc_type":"perfil","year":2025,"month":3}` | Smaller, investor profile counts |
-| 8 | fip/inf_trimestral 2024 | `{"entity":"fip","doc_type":"inf_trimestral","year":2024}` | Yearly call — no `month` field |
-| 9 | fii/mensal_complemento 2024 | `{"entity":"fii","doc_type":"mensal_complemento","year":2024}` | Dividend yield columns are the known gap |
-| 10 | fii/mensal_geral 2024 | `{"entity":"fii","doc_type":"mensal_geral","year":2024}` | NAV column overflow likely |
-| 11 | fii/mensal_ativo_passivo 2024 | `{"entity":"fii","doc_type":"mensal_ativo_passivo","year":2024}` | Asset/liability balance lines |
-| 12 | fii/dfin 2024 | `{"entity":"fii","doc_type":"dfin","year":2024}` | Financial statements |
-| 13 | securit/cra_mensal 2024 | `{"entity":"securit","doc_type":"cra_mensal","year":2024}` | CRA emissions |
-| 14 | securit/cra_classe 2024 | `{"entity":"securit","doc_type":"cra_classe","year":2024}` | Series-level rentabilidade — overflow likely |
-| 15 | securit/cra_fluxo 2024 | `{"entity":"securit","doc_type":"cra_fluxo","year":2024}` | Cash flow columns |
-| 16 | securit/dfin_cra 2024 | `{"entity":"securit","doc_type":"dfin_cra","year":2024}` | Financial statements |
-| 17 | fiagro/mensal 2025-06 | `{"entity":"fiagro","doc_type":"mensal","year":2025,"month":6}` | Data only from 2025-05+ — picking June to be safe |
+| ~~5~~ | ~~fi/diario 2025-03~~ | ~~done — 482,069 rows~~ | clean, no schema changes |
+| ~~6~~ | ~~fi/cda 2025-03~~ | ~~done — 16,976 rows~~ | clean |
+| ~~7~~ | ~~fi/perfil 2025-03~~ | ~~done — 25,074 rows~~ | clean |
+| ~~8~~ | ~~fip/inf_trimestral 2023 + inf_quadrimestral 2024~~ | ~~done — 1787 + 1986 rows~~ | clean (2024 needs quadrimestral variant) |
+| ~~9~~ | ~~fii/mensal_complemento 2024~~ | ~~done — 11,976 rows~~ | 2 migrations: pct cols + cotas_emitidas |
+| ~~10~~ | ~~fii/mensal_geral 2024~~ | ~~done — 11,976 rows~~ | clean |
+| ~~11~~ | ~~fii/mensal_ativo_passivo 2024~~ | ~~done — 11,976 rows~~ | clean |
+| ~~12~~ | ~~fii/dfin 2024~~ | ~~done — 1,046 rows~~ | clean |
+| ~~13~~ | ~~securit/cra_mensal 2024~~ | ~~done — 6,946 rows~~ | clean |
+| ~~14~~ | ~~securit/cra_classe 2024~~ | ~~done — 883 rows~~ | clean |
+| ~~15~~ | ~~securit/cra_fluxo 2024~~ | ~~done — 231 rows~~ | clean |
+| ~~16~~ | ~~securit/dfin_cra 2024~~ | ~~done — 20 rows~~ | clean |
+| ~~17~~ | ~~fiagro/mensal 2025-06~~ | ~~done — 18 rows~~ | clean (data starts 2025-05) |
 
-After each row, if status=done with rows>0, move on. If failed or warnings, fix and retry.
-After all 17 pass, trigger range fills (P3) per the section "Backfill Commands (run after P2)" → Surface B.
+✅ All 17 slices done (2026-05-15). Schema is now validated against real data.
+**Next: trigger P3 range fills** per "Backfill Commands (run after P2)" → Surface B.
 
 The remaining `securit/cri_*`, `securit/ots_*`, `securit/dfin_cri` instrument variants share
 schema with their CRA counterparts — smoke-testing all three CRA flavours is sufficient.
