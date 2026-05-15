@@ -4,10 +4,7 @@
   "docwriter.progress.trackClasses": true,
   "docwriter.style": "Auto-detect",
   "[git-commit]": {
-    "editor.rulers": [
-      50,
-      72
-    ],
+    "editor.rulers": [50, 72],
     "editor.wordWrap": "wordWrapColumn",
     "workbench.editor.restoreViewState": false
   },
@@ -35,5 +32,6 @@
   },
   "docwriter.language": "English",
   "docwriter.hotkey.mac": "⌘ + .",
-  "kiroAgent.configureMCP": "Enabled"
+  "kiroAgent.configureMCP": "Enabled",
+  "github-actions.workflows.pinned.workflows": []
 }
