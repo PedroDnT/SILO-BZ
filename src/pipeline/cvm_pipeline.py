@@ -213,6 +213,101 @@ class CVMIngestor:
         return rows_inserted
 
     # ------------------------------------------------------------------
+    # FI — historical daily snapshot (2000-2020) from HIST/ yearly ZIPs
+    # ------------------------------------------------------------------
+
+    async def ingest_fi_hist_diario(self, year: int) -> int:
+        """Ingest one full year of historical FI daily data from HIST/.
+
+        Each yearly ZIP contains a single CSV with all trading days for all funds.
+        Flushes every 5 000 records to keep peak memory manageable (~3 GB/year).
+        """
+        run_id = str(uuid4())
+        self._log_start(run_id, "fi", "inf_diario", year, None)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages("fi", "hist_inf_diario", year, None)
+            records: List[Dict[str, Any]] = []
+            for row in raw_rows:
+                cnpj_raw = _find_cnpj_field(row, prefer_suffix="classe") or _find_cnpj_field(row)
+                cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else ""
+                records.append({
+                    "cnpj":          cnpj,
+                    "tp_fundo":      _find_field(row, "TP_FUNDO_CLASSE"),
+                    "dt_comptc":     _find_field(row, "DT_COMPTC"),
+                    "vl_total":      _find_field(row, "VL_TOTAL"),
+                    "vl_quota":      _find_field(row, "VL_QUOTA"),
+                    "vl_patrim_liq": _find_field(row, "VL_PATRIM_LIQ"),
+                    "captc_dia":     _find_field(row, "CAPTC_DIA"),
+                    "resg_dia":      _find_field(row, "RESG_DIA"),
+                    "nr_cotst":      _find_field(row, "NR_COTST"),
+                    "raw":           row,
+                })
+                if len(records) >= 5000:
+                    rows_inserted += upsert_rows(
+                        self._supabase, "cvm_fi_diario", records,
+                        conflict_columns="cnpj,dt_comptc",
+                    )
+                    records = []
+            if records:
+                rows_inserted += upsert_rows(
+                    self._supabase, "cvm_fi_diario", records,
+                    conflict_columns="cnpj,dt_comptc",
+                )
+        except Exception as exc:
+            logger.warning("ingest_fi_hist_diario %d failed: %s", year, exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("fi/hist_inf_diario %d: %d rows", year, rows_inserted)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
+    # FI — historical portfolio composition (2005-2022) from HIST/ ZIPs
+    # ------------------------------------------------------------------
+
+    async def ingest_fi_hist_cda(self, year: int) -> int:
+        """Ingest one full year of historical FI portfolio composition from HIST/."""
+        run_id = str(uuid4())
+        self._log_start(run_id, "fi", "cda", year, None)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages("fi", "hist_cda", year, None)
+            records: List[Dict[str, Any]] = []
+            for row in raw_rows:
+                cnpj_raw = _find_cnpj_field(row)
+                cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else ""
+                period = _find_field(row, "DT_COMPTC")
+                if period and len(period) >= 7:
+                    period = period[:7] + "-01"
+                records.append({
+                    "cnpj":               cnpj,
+                    "period":             period,
+                    "tp_aplic":           _find_field(row, "TP_APLIC"),
+                    "tp_ativo":           _find_field(row, "TP_ATIVO"),
+                    "vl_merc_pos_final":  _find_field(row, "VL_MERC_POS_FINAL"),
+                    "raw":                row,
+                })
+                if len(records) >= 5000:
+                    rows_inserted += upsert_rows(
+                        self._supabase, "cvm_fi_cda", records,
+                        conflict_columns="cnpj,period,tp_aplic,tp_ativo",
+                    )
+                    records = []
+            if records:
+                rows_inserted += upsert_rows(
+                    self._supabase, "cvm_fi_cda", records,
+                    conflict_columns="cnpj,period,tp_aplic,tp_ativo",
+                )
+        except Exception as exc:
+            logger.warning("ingest_fi_hist_cda %d failed: %s", year, exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("fi/hist_cda %d: %d rows", year, rows_inserted)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
     # FI — portfolio composition  (CDA)
     # ------------------------------------------------------------------
 
@@ -965,15 +1060,35 @@ class CVMIngestor:
             if _want(entity):
                 await self.ingest_fund_registry(entity)
 
-        # -- FI monthly (batch: 6 at a time to avoid overwhelming CVM) ----
+        # -- FI ----------------------------------------------------------
+        # inf_diario HIST covers 2000-2020; monthly ZIP works from 2021+.
+        # cda        HIST covers 2005-2022; monthly ZIP works from 2023+.
+        # perfil_mensal is always a monthly direct CSV — no HIST needed.
         if _want("fi"):
+            hist_diario_years = [y for y in years if y <= 2020]
+            hist_cda_years    = [y for y in years if y <= 2022]
+            monthly_years     = years  # perfil_mensal + inf_diario 2021+ + cda 2023+
+
+            # Historical inf_diario (yearly ZIPs — sequential, each ~89MB)
+            for year in hist_diario_years:
+                n = await self.ingest_fi_hist_diario(year)
+                totals["cvm_fi_diario"] += n
+
+            # Historical cda (yearly ZIPs — sequential)
+            for year in hist_cda_years:
+                n = await self.ingest_fi_hist_cda(year)
+                totals["cvm_fi_cda"] += n
+
+            # Monthly format: inf_diario 2021+, cda 2023+, perfil_mensal all years
             fi_tasks: List[Tuple[str, Any]] = []
-            for year in years:
+            for year in monthly_years:
                 last_month = today.month if year == today.year else 12
                 for month in range(1, last_month + 1):
-                    fi_tasks.append(("cvm_fi_diario",  self.ingest_fi_diario(year, month)))
-                    fi_tasks.append(("cvm_fi_cda",     self.ingest_fi_cda(year, month)))
-                    fi_tasks.append(("cvm_fi_perfil",  self.ingest_fi_perfil(year, month)))
+                    if year >= 2021:
+                        fi_tasks.append(("cvm_fi_diario", self.ingest_fi_diario(year, month)))
+                    if year >= 2023:
+                        fi_tasks.append(("cvm_fi_cda", self.ingest_fi_cda(year, month)))
+                    fi_tasks.append(("cvm_fi_perfil", self.ingest_fi_perfil(year, month)))
             for i in range(0, len(fi_tasks), 6):
                 batch = fi_tasks[i:i + 6]
                 results = await asyncio.gather(*[t[1] for t in batch], return_exceptions=True)

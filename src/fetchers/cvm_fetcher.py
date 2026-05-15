@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import socket
+import sys
 import time
 import zipfile
 from datetime import datetime, timezone
@@ -286,6 +287,12 @@ class CVMFetcher:
             return zf.read(csv_file).decode(self.encoding)
 
     def _parse_csv(self, csv_content: str) -> List[Dict[str, Any]]:
+        # Some CVM CSVs have very long fields (e.g. FI perfil_mensal).
+        # Raise the Python csv module's default 128KB limit.
+        try:
+            csv.field_size_limit(sys.maxsize)
+        except OverflowError:
+            csv.field_size_limit(2 ** 31 - 1)
         reader = csv.DictReader(io.StringIO(csv_content), delimiter=self.separator)
         rows: List[Dict[str, Any]] = []
         for row in reader:

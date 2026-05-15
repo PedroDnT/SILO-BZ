@@ -35,6 +35,21 @@ class DatasetConfig:
     FIP dfin, SECURIT lca/lci) were intentionally removed."""
 
     FI_DATASETS: Dict[str, Dict] = {
+        # Historical formats (HIST/ directory) — yearly ZIPs, single CSV inside.
+        # inf_diario HIST covers 2000-2020; monthly format works from 2021+.
+        # cda        HIST covers 2005-2022; monthly format works from 2023+.
+        "hist_inf_diario": {
+            "url_pattern": "{base_url}/FI/DOC/INF_DIARIO/DADOS/HIST/inf_diario_fi_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_diario_fi_{year}.csv",
+            "description": "FI daily snapshots historical (2000-2020) — yearly HIST/ ZIP",
+        },
+        "hist_cda": {
+            "url_pattern": "{base_url}/FI/DOC/CDA/DADOS/HIST/cda_fi_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "cda_fi_{year}.csv",
+            "description": "FI portfolio composition historical (2005-2022) — yearly HIST/ ZIP",
+        },
         "cad": {
             "url_pattern": "{base_url}/FI/CAD/DADOS/cad_fi.csv",
             "is_zip": False,
