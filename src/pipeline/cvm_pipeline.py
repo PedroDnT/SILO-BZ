@@ -840,8 +840,8 @@ class CVMIngestor:
                 last_month = today.month if year == today.year else 12
                 for month in range(1, last_month + 1):
                     tasks.append(self.ingest_fidc_mensal(year, month))
-            for i in range(0, len(tasks), 10):
-                results = await asyncio.gather(*tasks[i:i + 10], return_exceptions=True)
+            for i in range(0, len(tasks), 4):
+                results = await asyncio.gather(*tasks[i:i + 4], return_exceptions=True)
                 for r in results:
                     if isinstance(r, int):
                         totals["cvm_fidc_mensal"] += r
@@ -854,8 +854,8 @@ class CVMIngestor:
                     tranche_tasks.append(("cvm_fidc_tranche",       self.ingest_fidc_tranche(year, month)))
                     tranche_tasks.append(("cvm_fidc_tranche_flows", self.ingest_fidc_tranche_flows(year, month)))
                     tranche_tasks.append(("cvm_fidc_aging",         self.ingest_fidc_aging(year, month)))
-            for i in range(0, len(tranche_tasks), 6):
-                batch = tranche_tasks[i:i + 6]
+            for i in range(0, len(tranche_tasks), 3):  # 3 = one month (tranche + flows + aging)
+                batch = tranche_tasks[i:i + 3]
                 results = await asyncio.gather(*[t[1] for t in batch], return_exceptions=True)
                 for (tbl, _), r in zip(batch, results):
                     if isinstance(r, int):

@@ -8,11 +8,15 @@ Requires environment variables:
 
 import logging
 import os
+import time
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 _CHUNK_SIZE = 500  # Supabase REST upsert batch limit (safe limit)
+# Backoff delays (seconds) for transient "Server disconnected" errors.
+# 4 retries: 5 → 10 → 20 → 40 s.  Covers PgBouncer eviction under load.
+_RETRY_DELAYS = (5, 10, 20, 40)
 
 
 def get_supabase_client() -> Any:
@@ -80,18 +84,34 @@ def upsert_rows(
         rows = deduped
 
     total = 0
+    kwargs: Dict[str, Any] = {"returning": "minimal"}
+    if conflict_columns:
+        kwargs["on_conflict"] = conflict_columns
+
     for i in range(0, len(rows), _CHUNK_SIZE):
         chunk = rows[i : i + _CHUNK_SIZE]
-        try:
-            kwargs: Dict[str, Any] = {"returning": "minimal"}
-            if conflict_columns:
-                kwargs["on_conflict"] = conflict_columns
-            client.table(table).upsert(chunk, **kwargs).execute()
-            total += len(chunk)
-        except Exception as exc:
+        last_exc: Optional[Exception] = None
+        for attempt, delay in enumerate((0, *_RETRY_DELAYS)):
+            if delay:
+                logger.warning(
+                    "upsert retry in %ds (table=%s chunk=%d attempt=%d): %s",
+                    delay, table, i, attempt, last_exc,
+                )
+                time.sleep(delay)
+            try:
+                client.table(table).upsert(chunk, **kwargs).execute()
+                total += len(chunk)
+                last_exc = None
+                break
+            except Exception as exc:
+                if "server disconnected" in str(exc).lower() or "connection" in str(exc).lower():
+                    last_exc = exc
+                else:
+                    logger.error("Upsert failed table=%s chunk=%d: %s", table, i, exc)
+                    raise
+        if last_exc is not None:
             logger.error(
-                "Upsert failed for table=%s chunk_start=%d: %s",
-                table, i, exc
+                "Upsert exhausted retries table=%s chunk=%d: %s", table, i, last_exc
             )
-            raise
+            raise last_exc
     return total
