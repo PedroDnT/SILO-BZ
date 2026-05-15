@@ -1,27 +1,35 @@
--- Cross-domain yield universe: FII + FIDC + SECURIT vs CDI benchmark.
--- Run: psql $SUPABASE_DB_URL -f scripts/queries/05_yield_universe.sql
+-- Cross-domain yield universe: FII + FIAGRO + CRA + CRI vs CDI
+-- Paste into Supabase SQL editor or: psql $SUPABASE_DB_URL -f scripts/queries/05_yield_universe.sql
 --
--- CDI benchmark note:
---   CDI is NOT stored locally. Fetch the current rate from the BCB open API:
---   https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados/ultimos/1?formato=json
---
---   Quick approximations:
---     CDI monthly (%) ≈ SELIC_annual / 100 / 12 * 100
---     SELIC series code : 432  → bcdata.sgs.432
---     CDI  daily  code  : 12   → bcdata.sgs.12
---     IPCA monthly code : 433  → bcdata.sgs.433
---
---   Example curl:
---     curl -s "https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados/ultimos/1?formato=json"
---     # returns: [{"data":"14/05/2026","valor":"0.08218"}]
---
---   Substitute the returned value (as a decimal, e.g. 0.08218) into the
---   p_benchmark_rate parameter below before running.
+-- Fetch current CDI monthly rate from BCB API before running:
+--   curl "https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados/ultimos/1?formato=json"
+--   Returns: [{"data":"14/05/2026","valor":"0.08218"}]  ← use that valor as decimal
 
-SELECT *
-FROM   yield_universe(
-           p_entity_types   => ARRAY['fii','fidc','cra','cri','ots'],
-           p_period         => (SELECT MAX(period) FROM fact_fund_monthly),
-           p_benchmark_rate => 0.08218  -- replace with live CDI from BCB API above
-       )
-ORDER  BY spread_over_benchmark DESC NULLS LAST;
+-- Last 12 months, with CDI spread (replace 0.084 with live CDI monthly %)
+SELECT * FROM yield_universe(
+  ARRAY['fii', 'fiagro'],
+  ARRAY['cra_classe', 'cri_classe'],
+  CURRENT_DATE - 365,
+  CURRENT_DATE,
+  0.084   -- monthly CDI % — replace with live value from BCB API above
+)
+ORDER BY period DESC, spread_vs_benchmark DESC NULLS LAST;
+
+-- Without benchmark (just yields, no spread)
+SELECT * FROM yield_universe(
+  ARRAY['fii', 'fiagro'],
+  ARRAY['cra_classe', 'cri_classe'],
+  CURRENT_DATE - 365,
+  CURRENT_DATE
+)
+ORDER BY period DESC, yield_mes DESC NULLS LAST;
+
+-- Latest period only — top 50 ranked by yield
+SELECT * FROM yield_universe(
+  ARRAY['fii', 'fiagro'],
+  ARRAY['cra_classe', 'cri_classe'],
+  (SELECT MAX(period) FROM fact_fund_monthly),
+  CURRENT_DATE
+)
+ORDER BY yield_mes DESC NULLS LAST
+LIMIT 50;

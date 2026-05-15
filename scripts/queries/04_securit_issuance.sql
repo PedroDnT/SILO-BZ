@@ -1,28 +1,19 @@
--- Securitization issuance monitor: CRA/CRI/OTS trends, maturity ladder,
--- and distressed securities screen.
--- Run: psql $SUPABASE_DB_URL -f scripts/queries/04_securit_issuance.sql
+-- CRA/CRI/OTS: issuance trend, maturity ladder, distressed securities screen
+-- Paste into Supabase SQL editor or: psql $SUPABASE_DB_URL -f scripts/queries/04_securit_issuance.sql
 
--- Issuance volume trend — trailing 24 months, split by security type.
-SELECT *
-FROM   security_issuance_trend(
-           p_security_types => ARRAY['cra','cri','ots'],
-           p_start_date     => CURRENT_DATE - INTERVAL '24 months',
-           p_end_date       => CURRENT_DATE
-       )
-ORDER  BY period DESC, security_type;
+-- Monthly issuance by instrument type — last 3 years
+SELECT * FROM security_issuance_trend(NULL, CURRENT_DATE - 1095, CURRENT_DATE)
+ORDER BY period DESC, instrument_type;
 
--- Maturity ladder: principal outstanding grouped by maturity bucket.
-SELECT *
-FROM   security_maturity_ladder(
-           p_security_types => ARRAY['cra','cri','ots'],
-           p_as_of_date     => CURRENT_DATE
-       )
-ORDER  BY maturity_bucket;
+-- CRA only
+SELECT * FROM security_issuance_trend('cra_mensal', CURRENT_DATE - 1095, CURRENT_DATE)
+ORDER BY period DESC;
 
--- Distressed securities screen: flags with elevated spread or missed payments.
-SELECT *
-FROM   distressed_securities(
-           p_security_types => ARRAY['cra','cri','ots'],
-           p_as_of_date     => CURRENT_DATE
-       )
-ORDER  BY distress_score DESC;
+-- Maturity ladder: outstanding principal by time-to-maturity bucket
+SELECT * FROM security_maturity_ladder(NULL, CURRENT_DATE)
+ORDER BY instrument_type, maturity_bucket;
+
+-- Distressed securities screen (situacao = Inadimplente or Em atraso)
+SELECT * FROM distressed_securities(NULL,
+  (SELECT MAX(period) FROM fact_security_monthly))
+ORDER BY instrument_type, valor_certificados DESC NULLS LAST;

@@ -1,39 +1,32 @@
--- FIDC credit monitor: delinquency trend, subordination, tranche performance.
--- Run: psql $SUPABASE_DB_URL -f scripts/queries/03_fidc_credit_monitor.sql
+-- FIDC credit monitor: sector delinquency, tranche performance, subordination
+-- Paste into Supabase SQL editor or: psql $SUPABASE_DB_URL -f scripts/queries/03_fidc_credit_monitor.sql
 
--- Delinquency trend for the full FIDC universe — trailing 12 months.
-SELECT *
-FROM   fidc_delinquency_trend(
-           CURRENT_DATE - INTERVAL '12 months',
-           CURRENT_DATE
-       )
-ORDER  BY period DESC
-LIMIT  12;
+-- Sector delinquency trend — trailing 24 months
+SELECT * FROM fidc_delinquency_trend(CURRENT_DATE - 730, CURRENT_DATE)
+ORDER BY period DESC;
 
--- Subordination trend for the top 10 FIDCs by AUM.
--- Subquery resolves the CNPJ list from fund_ranking so no hard-coding is needed.
-SELECT *
-FROM   fidc_subordination_trend(
-           p_cnpj_list => (
-               SELECT ARRAY_AGG(cnpj)
-               FROM   fund_ranking(
-                          p_entity_type => 'fidc',
-                          p_period      => (SELECT MAX(period) FROM fact_fund_monthly WHERE entity_type = 'fidc'),
-                          p_rank_by     => 'aum',
-                          p_top_n       => 10
-                      )
-           ),
-           p_start_date => CURRENT_DATE - INTERVAL '12 months',
-           p_end_date   => CURRENT_DATE
-       )
-ORDER  BY period DESC, cnpj;
+-- Top 10 FIDCs by AUM — with names (use CNPJs for tranche queries below)
+SELECT r.cnpj, d.fund_name, r.period, r.metric_value AS aum, r.rank_pos
+FROM fund_ranking('fidc', 'aum',
+  (SELECT MAX(period) FROM fact_fund_monthly WHERE entity_type = 'fidc'), 10) r
+LEFT JOIN dim_fund d ON d.cnpj = r.cnpj AND d.entity_type = 'fidc'
+ORDER BY r.rank_pos;
 
--- Tranche-level performance for a specific FIDC.
--- Replace '00.000.000/0001-00' with the target fund CNPJ before running.
-SELECT *
-FROM   fidc_tranche_performance(
-           p_cnpj       => '00.000.000/0001-00',  -- REPLACE WITH TARGET CNPJ
-           p_start_date => CURRENT_DATE - INTERVAL '12 months',
-           p_end_date   => CURRENT_DATE
-       )
-ORDER  BY period DESC, tranche_class;
+-- Funds with highest delinquency rates this month — with names
+SELECT r.cnpj, d.fund_name, r.period, r.metric_value AS inadimpl_rate, r.rank_pos
+FROM fund_ranking('fidc', 'inadimpl_rate',
+  (SELECT MAX(period) FROM fact_fund_monthly WHERE entity_type = 'fidc'), 10) r
+LEFT JOIN dim_fund d ON d.cnpj = r.cnpj AND d.entity_type = 'fidc'
+ORDER BY r.rank_pos;
+
+-- Tranche performance for a specific FIDC — replace CNPJ before running
+SELECT * FROM fidc_tranche_performance(
+  '07727002000126',  -- FIDC PCG - BRASIL MULTICARTEIRA (replace with target CNPJ)
+  CURRENT_DATE - 365, CURRENT_DATE)
+ORDER BY period, classe_serie;
+
+-- Subordination trend for the same fund
+SELECT * FROM fidc_subordination_trend(
+  '07727002000126',  -- replace with target CNPJ
+  CURRENT_DATE - 365, CURRENT_DATE)
+ORDER BY period;
