@@ -1,18 +1,18 @@
 -- =============================================================================
 -- 08_cron_schedules.sql
--- Register pg_cron jobs to refresh the analytical materialized views daily.
--- Scheduled 15-25 min after the 06:00 UTC GitHub Actions ingest cron.
+-- Register pg_cron jobs for daily matview refresh.
+-- Scheduled after the 06:00 UTC GitHub Actions ingest cron.
 --
--- pg_cron is optional — if it is not installed the DO block emits a NOTICE
--- and the file exits cleanly. Enable via Supabase Dashboard:
---   Database → Extensions → pg_cron → Enable
+-- NOTE: fact_bacen_monthly was removed — only fund and security matviews refresh.
 --
--- Manual refresh commands (run any time after ingest):
---   REFRESH MATERIALIZED VIEW CONCURRENTLY fact_bacen_monthly;
+-- Enable pg_cron: Supabase Dashboard → Database → Extensions → pg_cron
+--
+-- Manual refresh (run any time after ingest):
 --   REFRESH MATERIALIZED VIEW CONCURRENTLY fact_fund_monthly;
 --   REFRESH MATERIALIZED VIEW CONCURRENTLY fact_security_monthly;
 --
--- CONCURRENTLY requires the unique indexes created by files 03-05.
+-- Remove old bacen schedule if it was previously registered:
+--   SELECT cron.unschedule('refresh-fact-bacen-monthly');
 -- =============================================================================
 
 BEGIN;
@@ -22,52 +22,38 @@ DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
 
-    -- -----------------------------------------------------------------------
-    -- fact_bacen_monthly  — runs first (benchmarks needed by fund/security views)
-    -- 06:15 UTC daily
-    -- -----------------------------------------------------------------------
-    PERFORM cron.schedule(
-      'refresh-fact-bacen-monthly',
-      '15 6 * * *',
-      'REFRESH MATERIALIZED VIEW CONCURRENTLY fact_bacen_monthly'
-    );
+    -- Remove stale bacen schedule if it exists from a previous version
+    BEGIN
+      PERFORM cron.unschedule('refresh-fact-bacen-monthly');
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
 
-    -- -----------------------------------------------------------------------
-    -- fact_fund_monthly  — 06:20 UTC daily
-    -- -----------------------------------------------------------------------
+    -- fact_fund_monthly — 06:20 UTC daily (after GHA ingest at 06:00)
     PERFORM cron.schedule(
       'refresh-fact-fund-monthly',
       '20 6 * * *',
       'REFRESH MATERIALIZED VIEW CONCURRENTLY fact_fund_monthly'
     );
 
-    -- -----------------------------------------------------------------------
-    -- fact_security_monthly  — 06:25 UTC daily
-    -- -----------------------------------------------------------------------
+    -- fact_security_monthly — 06:25 UTC daily
     PERFORM cron.schedule(
       'refresh-fact-security-monthly',
       '25 6 * * *',
       'REFRESH MATERIALIZED VIEW CONCURRENTLY fact_security_monthly'
     );
 
-    RAISE NOTICE 'pg_cron schedules registered: refresh-fact-bacen-monthly (06:15), refresh-fact-fund-monthly (06:20), refresh-fact-security-monthly (06:25)';
+    RAISE NOTICE 'pg_cron schedules registered: refresh-fact-fund-monthly (06:20), refresh-fact-security-monthly (06:25)';
 
   ELSE
-    RAISE NOTICE 'pg_cron not available — run REFRESH MATERIALIZED VIEW manually or enable pg_cron in Supabase Dashboard (Database → Extensions → pg_cron)';
+    RAISE NOTICE 'pg_cron not available — enable in Supabase Dashboard (Database → Extensions → pg_cron) and re-run this file';
   END IF;
 END $$;
 
 -- ---------------------------------------------------------------------------
--- To inspect registered jobs after enabling pg_cron:
+-- To inspect registered jobs:
 --   SELECT jobid, jobname, schedule, command, active FROM cron.job ORDER BY jobid;
 --
--- To remove a job:
---   SELECT cron.unschedule('refresh-fact-fund-monthly');
---   SELECT cron.unschedule('refresh-fact-security-monthly');
---   SELECT cron.unschedule('refresh-fact-bacen-monthly');
---
--- To force an immediate sequential refresh outside cron:
---   REFRESH MATERIALIZED VIEW CONCURRENTLY fact_bacen_monthly;
+-- To manually refresh:
 --   REFRESH MATERIALIZED VIEW CONCURRENTLY fact_fund_monthly;
 --   REFRESH MATERIALIZED VIEW CONCURRENTLY fact_security_monthly;
 -- ---------------------------------------------------------------------------
