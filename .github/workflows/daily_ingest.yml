@@ -1,4 +1,4 @@
-name: Daily CVM + BACEN Ingest
+name: Daily CVM Ingest
 
 on:
   schedule:
@@ -8,18 +8,22 @@ on:
     inputs:
       mode:
         description: 'Run mode'
-        required: false
+        required: true
         default: 'daily'
         type: choice
         options:
           - daily
           - backfill
+      entity:
+        description: 'CVM entity to backfill: fi | fidc | fii | fip | fiagro | securit (leave blank for all)'
+        required: false
+        default: ''
       start_year:
-        description: 'Backfill start year (only used when mode=backfill)'
+        description: 'Backfill start year (mode=backfill only)'
         required: false
         default: '2019'
-      entity:
-        description: 'Limit to one CVM entity (optional)'
+      end_year:
+        description: 'Backfill end year inclusive (mode=backfill only, leave blank for current year)'
         required: false
         default: ''
 
@@ -28,6 +32,12 @@ jobs:
     name: Ingest CVM + BACEN data
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    env:
+      SUPABASE_URL:         "${{ secrets.SUPABASE_URL }}"
+      SUPABASE_SERVICE_KEY: "${{ secrets.SUPABASE_SERVICE_KEY }}"
+      SUPABASE_DB_URL:      "${{ secrets.SUPABASE_DB_URL }}"
+      CVM_DNS_NAMESERVERS:  "1.1.1.1,8.8.8.8,9.9.9.9"
+      TZ:                   America/Sao_Paulo
 
     steps:
       - name: Checkout repository
@@ -40,45 +50,42 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
 
       - name: Run daily update
-        if: ${{ github.event_name == 'schedule' || inputs.mode == 'daily' }}
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') }}
         run: python -m src.pipeline.run_daily
-        env:
-          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          CVM_DNS_NAMESERVERS:  "1.1.1.1,8.8.8.8,9.9.9.9"
-          TZ:                   America/Sao_Paulo
 
       - name: Run historical backfill
-        if: ${{ inputs.mode == 'backfill' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'backfill' }}
         run: |
           ENTITY_FLAG=""
           if [ -n "${{ inputs.entity }}" ]; then
             ENTITY_FLAG="--entity ${{ inputs.entity }}"
           fi
+          END_YEAR_FLAG=""
+          if [ -n "${{ inputs.end_year }}" ]; then
+            END_YEAR_FLAG="--end-year ${{ inputs.end_year }}"
+          fi
           python -m src.pipeline.run_backfill \
             --start-year ${{ inputs.start_year }} \
-            $ENTITY_FLAG
-        env:
-          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          CVM_DNS_NAMESERVERS:  "1.1.1.1,8.8.8.8,9.9.9.9"
-          TZ:                   America/Sao_Paulo
+            $END_YEAR_FLAG \
+            $ENTITY_FLAG \
+            --cvm-only
 
       - name: Refresh analytical matviews
-        if: ${{ inputs.mode == 'backfill' || github.event_name == 'schedule' }}
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
         run: |
           psql "$SUPABASE_DB_URL" -c "
             REFRESH MATERIALIZED VIEW CONCURRENTLY fact_fund_monthly;
             REFRESH MATERIALIZED VIEW CONCURRENTLY fact_security_monthly;
           "
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
 
       - name: Analyze tables post-ingest
-        if: ${{ inputs.mode == 'backfill' || github.event_name == 'schedule' }}
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
         run: |
           psql "$SUPABASE_DB_URL" -c "
             ANALYZE cvm_fi_diario;
@@ -88,5 +95,3 @@ jobs:
             ANALYZE fact_fund_monthly;
             ANALYZE fact_security_monthly;
           "
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
