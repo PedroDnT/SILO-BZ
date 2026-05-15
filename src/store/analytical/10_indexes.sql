@@ -46,11 +46,13 @@ CREATE INDEX IF NOT EXISTS idx_fact_fund_monthly_entity_cover
   INCLUDE (vl_patrim_liq, pct_yield_mes, vl_inadimpl, captc_mes, resg_mes, nr_cotst);
 
 -- ---------------------------------------------------------------------------
--- 5. dim_fund: index for new_funds_per_period
---    Pattern: WHERE first_period BETWEEN $1 AND $2 AND entity_type = ANY($3)
+-- 5. dim_fund: index skipped — dim_fund is a regular VIEW, not a table or
+--    materialized view. Indexes cannot be created on views in PostgreSQL.
+--    new_funds_per_period() queries dim_fund which resolves to its underlying
+--    CVM tables (cvm_fi_diario, cvm_fidc_mensal, etc.) — those already have
+--    (cnpj, period) composite indexes covering this access pattern.
+--    If this becomes a bottleneck, convert dim_fund to a MATERIALIZED VIEW.
 -- ---------------------------------------------------------------------------
-CREATE INDEX IF NOT EXISTS idx_dim_fund_first_period
-  ON dim_fund (first_period, entity_type);
 
 -- ---------------------------------------------------------------------------
 -- Autovacuum tuning for materialized views that are refreshed daily.
