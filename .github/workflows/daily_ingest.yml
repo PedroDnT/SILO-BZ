@@ -3,29 +3,29 @@ name: Daily CVM Ingest
 on:
   schedule:
     # 06:00 UTC = 03:00 BRT (before Brazilian market open)
-    - cron: '0 6 * * *'
+    - cron: "0 6 * * *"
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Run mode'
+        description: "Run mode"
         required: true
-        default: 'daily'
+        default: "daily"
         type: choice
         options:
           - daily
           - backfill
       entity:
-        description: 'CVM entity to backfill: fi | fidc | fii | fip | fiagro | securit (leave blank for all)'
+        description: "CVM entity to backfill: fi | fidc | fii | fip | fiagro | securit (leave blank for all)"
         required: false
-        default: ''
+        default: ""
       start_year:
-        description: 'Backfill start year (mode=backfill only)'
+        description: "Backfill start year (mode=backfill only)"
         required: false
-        default: '2019'
+        default: "2019"
       end_year:
-        description: 'Backfill end year inclusive (mode=backfill only, leave blank for current year)'
+        description: "Backfill end year inclusive (mode=backfill only, leave blank for current year)"
         required: false
-        default: ''
+        default: ""
 
 jobs:
   ingest:
@@ -33,11 +33,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
-      SUPABASE_URL:         "${{ secrets.SUPABASE_URL }}"
+      SUPABASE_URL: "${{ secrets.SUPABASE_URL }}"
       SUPABASE_SERVICE_KEY: "${{ secrets.SUPABASE_SERVICE_KEY }}"
-      SUPABASE_DB_URL:      "${{ secrets.SUPABASE_DB_URL }}"
-      CVM_DNS_NAMESERVERS:  "1.1.1.1,8.8.8.8,9.9.9.9"
-      TZ:                   America/Sao_Paulo
+      SUPABASE_DB_URL: "${{ secrets.SUPABASE_DB_URL }}"
+      CVM_DNS_NAMESERVERS: "1.1.1.1,8.8.8.8,9.9.9.9"
+      TZ: America/Sao_Paulo
 
     steps:
       - name: Checkout repository
@@ -46,7 +46,7 @@ jobs:
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
           cache: pip
 
       - name: Install dependencies
@@ -56,11 +56,11 @@ jobs:
           sudo apt-get install -y postgresql-client
 
       - name: Run daily update
-        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily') }}
+        if: ${{ github.event_name == 'schedule' || inputs.mode == 'daily' }}
         run: python -m src.pipeline.run_daily
 
       - name: Run historical backfill
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'backfill' }}
+        if: ${{ inputs.mode == 'backfill' }}
         run: |
           ENTITY_FLAG=""
           if [ -n "${{ inputs.entity }}" ]; then
@@ -77,7 +77,7 @@ jobs:
             --cvm-only
 
       - name: Refresh analytical matviews
-        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+        if: ${{ inputs.mode == 'backfill' || github.event_name == 'schedule' }}
         run: |
           psql "$SUPABASE_DB_URL" -c "
             REFRESH MATERIALIZED VIEW CONCURRENTLY fact_fund_monthly;
@@ -85,7 +85,7 @@ jobs:
           "
 
       - name: Analyze tables post-ingest
-        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+        if: ${{ inputs.mode == 'backfill' || github.event_name == 'schedule' }}
         run: |
           psql "$SUPABASE_DB_URL" -c "
             ANALYZE cvm_fi_diario;
