@@ -313,6 +313,103 @@ class CVMIngestor:
         return rows_inserted
 
     # ------------------------------------------------------------------
+    # FIDC — historical monthly data (2013–2024) from HIST/ yearly ZIPs
+    #
+    # CVM changed FIDC reporting format in 2025 (ICVM 175).  Pre-2025 data
+    # lives in HIST/inf_mensal_fidc_{year}.zip, with tab_II (assets) and
+    # tab_III (liabilities) CSVs for each month inside the ZIP.
+    #
+    # PL = TAB_II_VL_CARTEIRA - TAB_III_VL_PASSIVO (approximation; no
+    # direct PL field in historical format).
+    # Tranche-level tabs (X_2…X_6, VI) are not present historically.
+    # ------------------------------------------------------------------
+
+    async def ingest_fidc_hist_mensal(self, year: int) -> int:
+        """Ingest one full year of historical FIDC monthly data from HIST/."""
+        total = 0
+        for month in range(1, 13):
+            run_id = str(uuid4())
+            self._log_start(run_id, "fidc", "mensal", year, month)
+            rows_inserted = 0
+            try:
+                # Fetch tab_II (assets) and tab_III (liabilities) concurrently.
+                # Both download from the same yearly ZIP — the second fetch hits cache.
+                rows_ii, rows_iii = await asyncio.gather(
+                    self._fetch_all_pages("fidc", "hist_mensal_tab_ii", year, month),
+                    self._fetch_all_pages("fidc", "hist_mensal_tab_iii", year, month),
+                )
+
+                # Index tab_III by (cnpj, period) for O(1) join
+                liab: Dict[tuple, float] = {}
+                for row in rows_iii:
+                    cnpj_raw = _find_cnpj_field(row)
+                    cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else ""
+                    period = _find_field(row, "DT_COMPTC") or f"{year}-{month:02d}-01"
+                    try:
+                        liab[(cnpj, period)] = float(_find_field(row, "TAB_III_VL_PASSIVO") or 0)
+                    except (ValueError, TypeError):
+                        liab[(cnpj, period)] = 0.0
+
+                records: List[Dict[str, Any]] = []
+                for row in rows_ii:
+                    cnpj_raw = _find_cnpj_field(row)
+                    cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else ""
+                    if not cnpj:
+                        continue
+                    period = _find_field(row, "DT_COMPTC") or f"{year}-{month:02d}-01"
+                    try:
+                        vl_carteira = float(_find_field(row, "TAB_II_VL_CARTEIRA") or 0)
+                    except (ValueError, TypeError):
+                        vl_carteira = 0.0
+                    vl_passivo = liab.get((cnpj, period), 0.0)
+                    vl_pl = vl_carteira - vl_passivo if vl_carteira else None
+                    records.append({
+                        "cnpj":          cnpj,
+                        "period":        period,
+                        "vl_total":      str(vl_carteira) if vl_carteira else None,
+                        "vl_quota":      None,
+                        "vl_patrim_liq": str(vl_pl) if vl_pl is not None else None,
+                        "vl_inadimpl":   None,
+                        "nr_cotst":      None,
+                        "raw":           row,
+                    })
+
+                # Also seed fund names from DENOM_SOCIAL into cvm_fund_registry
+                registry: List[Dict[str, Any]] = []
+                seen_cnpj: set = set()
+                for row in rows_ii:
+                    cnpj_raw = _find_cnpj_field(row)
+                    cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else ""
+                    if cnpj and cnpj not in seen_cnpj:
+                        seen_cnpj.add(cnpj)
+                        name = _find_field(row, "DENOM_SOCIAL")
+                        if name:
+                            registry.append({
+                                "cnpj":        cnpj,
+                                "entity_type": "fidc",
+                                "fund_name":   name,
+                                "raw":         {},
+                            })
+                if registry:
+                    upsert_rows(
+                        self._supabase, "cvm_fund_registry", registry,
+                        conflict_columns="cnpj,entity_type",
+                    )
+
+                rows_inserted = upsert_rows(
+                    self._supabase, "cvm_fidc_mensal", records,
+                    conflict_columns="cnpj,period",
+                )
+            except Exception as exc:
+                logger.warning("ingest_fidc_hist_mensal %d-%02d failed: %s", year, month, exc)
+                self._log_finish(run_id, 0, str(exc))
+                continue
+            self._log_finish(run_id, rows_inserted)
+            logger.info("fidc/hist_mensal %d-%02d: %d rows", year, month, rows_inserted)
+            total += rows_inserted
+        return total
+
+    # ------------------------------------------------------------------
     # FIDC — tranche-level data (tabs X_2 + X_3 + X_6, flows X_4, aging VI)
     # ------------------------------------------------------------------
 
@@ -884,33 +981,44 @@ class CVMIngestor:
                     if isinstance(r, int):
                         totals[tbl] += r
 
-        # -- FIDC monthly -------------------------------------------------
+        # -- FIDC ---------------------------------------------------------
         if _want("fidc"):
-            tasks: List[Any] = []
-            for year in years:
-                last_month = today.month if year == today.year else 12
-                for month in range(1, last_month + 1):
-                    tasks.append(self.ingest_fidc_mensal(year, month))
-            for i in range(0, len(tasks), 4):
-                results = await asyncio.gather(*tasks[i:i + 4], return_exceptions=True)
-                for r in results:
-                    if isinstance(r, int):
-                        totals["cvm_fidc_mensal"] += r
+            hist_years    = [y for y in years if y <= 2024]
+            current_years = [y for y in years if y >= 2025]
 
-            # Tranche (X_2/X_3/X_6), flows (X_4), and aging (VI)
-            tranche_tasks: List[Tuple[str, Any]] = []
-            for year in years:
-                last_month = today.month if year == today.year else 12
-                for month in range(1, last_month + 1):
-                    tranche_tasks.append(("cvm_fidc_tranche",       self.ingest_fidc_tranche(year, month)))
-                    tranche_tasks.append(("cvm_fidc_tranche_flows", self.ingest_fidc_tranche_flows(year, month)))
-                    tranche_tasks.append(("cvm_fidc_aging",         self.ingest_fidc_aging(year, month)))
-            for i in range(0, len(tranche_tasks), 3):  # 3 = one month (tranche + flows + aging)
-                batch = tranche_tasks[i:i + 3]
-                results = await asyncio.gather(*[t[1] for t in batch], return_exceptions=True)
-                for (tbl, _), r in zip(batch, results):
-                    if isinstance(r, int):
-                        totals[tbl] += r
+            # Historical (2013–2024): yearly HIST/ ZIPs, tab_II + tab_III only.
+            # Run one year at a time — each year downloads a single ZIP (~6-23 MB)
+            # and iterates 12 months internally.
+            for year in hist_years:
+                n = await self.ingest_fidc_hist_mensal(year)
+                totals["cvm_fidc_mensal"] += n
+
+            # Current (2025+): monthly ZIPs with tab_IV, X_2, X_4, tab_VI.
+            if current_years:
+                tasks: List[Any] = []
+                for year in current_years:
+                    last_month = today.month if year == today.year else 12
+                    for month in range(1, last_month + 1):
+                        tasks.append(self.ingest_fidc_mensal(year, month))
+                for i in range(0, len(tasks), 4):
+                    results = await asyncio.gather(*tasks[i:i + 4], return_exceptions=True)
+                    for r in results:
+                        if isinstance(r, int):
+                            totals["cvm_fidc_mensal"] += r
+
+                tranche_tasks: List[Tuple[str, Any]] = []
+                for year in current_years:
+                    last_month = today.month if year == today.year else 12
+                    for month in range(1, last_month + 1):
+                        tranche_tasks.append(("cvm_fidc_tranche",       self.ingest_fidc_tranche(year, month)))
+                        tranche_tasks.append(("cvm_fidc_tranche_flows", self.ingest_fidc_tranche_flows(year, month)))
+                        tranche_tasks.append(("cvm_fidc_aging",         self.ingest_fidc_aging(year, month)))
+                for i in range(0, len(tranche_tasks), 3):
+                    batch = tranche_tasks[i:i + 3]
+                    results = await asyncio.gather(*[t[1] for t in batch], return_exceptions=True)
+                    for (tbl, _), r in zip(batch, results):
+                        if isinstance(r, int):
+                            totals[tbl] += r
 
         # -- FIAGRO monthly  (data only from 2025-05) ---------------------
         if _want("fiagro"):

@@ -109,6 +109,24 @@ class DatasetConfig:
     }
 
     FIDC_DATASETS: Dict[str, Dict] = {
+        # ---------------------------------------------------------------------------
+        # Historical format (2013–2024): yearly ZIP in HIST/, monthly CSVs inside.
+        # URL uses {year} only; {month} selects the CSV inside the ZIP.
+        # tab_II = asset/portfolio composition; tab_III = liabilities.
+        # PL = TAB_II_VL_CARTEIRA - TAB_III_VL_PASSIVO.
+        # ---------------------------------------------------------------------------
+        "hist_mensal_tab_ii": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/HIST/inf_mensal_fidc_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_II_{year}{month:02d}.csv",
+            "description": "FIDC historical assets (tab II, 2013-2024) — yearly HIST/ ZIP, monthly CSV inside",
+        },
+        "hist_mensal_tab_iii": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/HIST/inf_mensal_fidc_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_III_{year}{month:02d}.csv",
+            "description": "FIDC historical liabilities (tab III, 2013-2024) — yearly HIST/ ZIP, monthly CSV inside",
+        },
         "mensal": {
             "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
             "is_zip": True,
