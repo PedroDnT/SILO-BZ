@@ -164,10 +164,46 @@ schema with their CRA counterparts — smoke-testing all three CRA flavours is s
 
 ---
 
+## P12 — Analytical layer (plan at `docs/analytical-layer-plan.md`)
+
+Design complete. Implement after P3 range fills land. Three parallel streams:
+
+- **Stream A**: `dim_fund` → `fact_fund_monthly` (unified monthly fact across FI/FIDC/FII/FIP/FIAGRO)
+- **Stream B**: `dim_security` → `fact_security_monthly` (CRA/CRI/OTS instruments — NOT funds)
+- **Stream C**: `fact_bacen_monthly` (SELIC/CDI/IPCA/IGP-M monthly grain from `bacen_sgs`)
+
+Then: `vw_fund_vs_benchmark`, `vw_security_vs_benchmark`, cross-domain views, pg_cron refresh.
+SQL in `src/store/analytical/01-08*.sql`. Verify with `scripts/analytical_smoke.sql`.
+
+---
+
+## Tech debt (from .planning/codebase/CONCERNS.md, captured before deletion)
+
+Lower priority — address as encountered, not blocking P3/P12:
+
+| # | File | Issue | Risk |
+|---|---|---|---|
+| TD1 | `src/pipeline/cvm_pipeline.py:110-111` | `_period_to_date` bare `except Exception: pass` swallows date parse errors silently | Date column populated with fallback without any log trace |
+| TD2 | `src/fetchers/cvm_fetcher.py:161-163` | DNS resolver init failure falls back to system resolver with only a warning | Intermittent DNS failures invisible in logs |
+| TD3 | `src/fetchers/cvm_fetcher.py:183-184` | `_is_cache_valid` catches all exceptions, returns `False` — corrupted cache metadata silently triggers re-download | Wastes bandwidth, hard to diagnose |
+| TD4 | `src/fetchers/cvm_fetcher.py:283-284` | CSV selection falls back to alphabetically-first file in ZIP when `csv_name_pattern` doesn't match | Schema drift invisible if CVM adds a new CSV that sorts first |
+| TD5 | `src/pipeline/cvm_pipeline.py:130-155` | `_log_start/_log_finish` swallow all exceptions — if Supabase is down, audit trail is silently lost | Failed ingests go unrecorded |
+
+---
+
+## Future scope
+
+- **BACEN TaxaJuros** — credit interest rates by sector (useful for FIDC yield spread context); endpoint exists but not yet wired
+- **B3 market data** — no validated public endpoint yet
+- **ANBIMA** — paid API credentials blocked; open data links 404
+- **Docker / Alembic** — Supabase is single target, defer until multi-environment
+- **Flask `/api/analytics/*` endpoints** — SQL-only surface for now; add API layer when consumers are identified
+- **Cross-instrument taxonomy** — canonical `tp_fundo` enum shared across FI/FIDC/FII; defer until analytics reveal a need
+
+---
+
 ## Not In Scope
 
-- GitHub Actions cron — manual skill execution preferred for now
+- GitHub Actions cron — manual Flask `/api/daily` preferred for now
 - Public REST/GraphQL API — consumers query Supabase directly
-- B3 market data — no validated endpoint yet
-- ANBIMA cross-validation — open data links are 404
-- Docker / Alembic — Supabase is the single target
+- Docker / Alembic — Supabase is the single source of truth
