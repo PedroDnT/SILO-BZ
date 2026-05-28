@@ -53,6 +53,31 @@ def _client():
     return create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
 
 
+@st.cache_resource
+def _pg_conn():
+    url = os.environ.get("POSTGRES_URL") or os.environ.get("DATABASE_URL")
+    if not url:
+        return None
+    url = "".join(url.split())
+    return psycopg2.connect(url)
+
+
+@st.cache_data(ttl=300)
+def pg_query(sql: str) -> pd.DataFrame:
+    conn = _pg_conn()
+    if conn is None:
+        return pd.DataFrame()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql)
+            rows = cur.fetchall()
+        return pd.DataFrame(rows) if rows else pd.DataFrame()
+    except Exception as e:
+        conn.rollback()
+        st.warning(f"Query error: {e}")
+        return pd.DataFrame()
+
+
 @st.cache_data(ttl=300)
 def rpc(fn: str, **params) -> pd.DataFrame:
     try:
@@ -94,9 +119,9 @@ with st.sidebar:
 tabs = st.tabs([
     "🌐 Market", "🏆 Rankings", "📉 FIDC Credit",
     "📈 Securities", "💹 Yield Universe", "🔍 Fund Search",
-    "📊 Fund Activity", "🔧 Ops",
+    "📊 Fund Activity", "🚨 Suspicious", "🔧 Ops",
 ])
-t_market, t_rank, t_fidc, t_securit, t_yield, t_search, t_activity, t_ops = tabs
+t_market, t_rank, t_fidc, t_securit, t_yield, t_search, t_activity, t_suspicious, t_ops = tabs
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -540,6 +565,308 @@ with t_activity:
             st.plotly_chart(fig, use_container_width=True)
     except Exception:
         pass
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 🚨 SUSPICIOUS DEALS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+with t_suspicious:
+    st.caption(
+        "Screens for patterns that can obscure actual financial health: cross-fund "
+        "circular flows, zombie funds, captive vehicles, evergreen aging, subordination "
+        "erosion, yield decoupling, and overdue securitizations."
+    )
+
+    # ── Combined watchlist ────────────────────────────────────────────────────
+    st.subheader("Red-flag watchlist — FIDCs with multiple signals")
+    df_watch = pg_query("""
+        WITH ranked AS (
+            SELECT cnpj, period, vl_patrim_liq,
+                   ROUND(100.0 * vl_inadimpl / NULLIF(vl_patrim_liq, 0), 2) AS inadimpl_rate,
+                   ROW_NUMBER() OVER (PARTITION BY cnpj ORDER BY period DESC) AS rn_desc
+            FROM cvm_fidc_mensal WHERE vl_patrim_liq > 0
+        ),
+        now_  AS (SELECT cnpj, period, vl_patrim_liq, inadimpl_rate FROM ranked WHERE rn_desc = 1),
+        prev_ AS (SELECT cnpj, vl_patrim_liq AS prev_pl, inadimpl_rate AS prev_rate
+                  FROM ranked WHERE rn_desc = 7),
+        zombie AS (
+            SELECT n.cnpj FROM now_ n JOIN prev_ p ON p.cnpj = n.cnpj
+            WHERE n.inadimpl_rate - p.prev_rate >= 1.5
+              AND n.vl_patrim_liq > p.prev_pl AND n.vl_patrim_liq > 50e6
+        ),
+        evergreen AS (
+            SELECT cnpj FROM (
+                SELECT cnpj,
+                       AVG(100.0 * vl_inad_30 / NULLIF(vl_total_inad, 0)) AS avg_short,
+                       STDDEV(100.0 * vl_inad_30 / NULLIF(vl_total_inad, 0)) AS sd_short
+                FROM cvm_fidc_aging WHERE vl_total_inad > 1e6
+                GROUP BY cnpj HAVING COUNT(*) >= 6
+            ) t WHERE avg_short > 70 AND sd_short < 10
+        ),
+        fund_nav AS (
+            SELECT cnpj, period,
+                   ROUND(100.0 *
+                       SUM(qt_cota * vl_cota) FILTER (
+                           WHERE LOWER(classe_serie) LIKE '%junior%'
+                              OR LOWER(classe_serie) LIKE '%j_nior%'
+                       ) / NULLIF(SUM(qt_cota * vl_cota), 0), 2) AS subord_pct,
+                   LAG(ROUND(100.0 *
+                       SUM(qt_cota * vl_cota) FILTER (
+                           WHERE LOWER(classe_serie) LIKE '%junior%'
+                              OR LOWER(classe_serie) LIKE '%j_nior%'
+                       ) / NULLIF(SUM(qt_cota * vl_cota), 0), 2))
+                       OVER (PARTITION BY cnpj ORDER BY period) AS subord_prev
+            FROM cvm_fidc_tranche WHERE vl_cota > 0 AND qt_cota > 0
+            GROUP BY cnpj, period
+        ),
+        erosion AS (
+            SELECT DISTINCT cnpj FROM fund_nav
+            WHERE subord_prev IS NOT NULL AND subord_pct - subord_prev <= -3
+        )
+        SELECT n.cnpj, n.period AS latest_period,
+               ROUND(n.vl_patrim_liq / 1e6, 1)     AS pl_m,
+               n.inadimpl_rate                      AS inadimpl_pct,
+               (z.cnpj IS NOT NULL)::int            AS zombie,
+               (e.cnpj IS NOT NULL)::int            AS evergreen,
+               (er.cnpj IS NOT NULL)::int           AS subord_erosion,
+               (z.cnpj IS NOT NULL)::int
+             + (e.cnpj IS NOT NULL)::int
+             + (er.cnpj IS NOT NULL)::int           AS flag_count
+        FROM now_ n
+        LEFT JOIN zombie   z  ON z.cnpj  = n.cnpj
+        LEFT JOIN evergreen e ON e.cnpj  = n.cnpj
+        LEFT JOIN erosion  er ON er.cnpj = n.cnpj
+        WHERE (z.cnpj IS NOT NULL OR e.cnpj IS NOT NULL OR er.cnpj IS NOT NULL)
+        ORDER BY flag_count DESC, n.vl_patrim_liq DESC
+        LIMIT 30
+    """)
+    if not df_watch.empty:
+        df_watch["flag_count"] = df_watch["flag_count"].astype(int)
+        st.dataframe(
+            df_watch.style.background_gradient(subset=["flag_count"], cmap="Reds"),
+            use_container_width=True, hide_index=True,
+        )
+        c_flags = ["zombie", "evergreen", "subord_erosion"]
+        counts = {col: int(df_watch[col].sum()) for col in c_flags if col in df_watch}
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Funds flagged", len(df_watch))
+        m2.metric("Zombie signal", counts.get("zombie", 0))
+        m3.metric("Evergreen aging", counts.get("evergreen", 0))
+        m4.metric("Subord. erosion", counts.get("subord_erosion", 0))
+    else:
+        st.info("No funds flagged — or POSTGRES_URL not set.")
+
+    st.divider()
+
+    c1, c2 = st.columns(2)
+
+    # ── Zombie funds ──────────────────────────────────────────────────────────
+    with c1:
+        st.subheader("Zombie FIDCs")
+        st.caption("Delinquency +2pp over 6 months while AUM still grew")
+        df_zombie = pg_query("""
+            WITH ranked AS (
+                SELECT cnpj, period, vl_patrim_liq,
+                       ROUND(100.0 * vl_inadimpl / NULLIF(vl_patrim_liq, 0), 2) AS inadimpl_rate,
+                       ROW_NUMBER() OVER (PARTITION BY cnpj ORDER BY period DESC) AS rn
+                FROM cvm_fidc_mensal WHERE vl_patrim_liq > 0
+            ),
+            now_  AS (SELECT cnpj, period, vl_patrim_liq, inadimpl_rate FROM ranked WHERE rn = 1),
+            then_ AS (SELECT cnpj, vl_patrim_liq AS prev_pl, inadimpl_rate AS prev_rate
+                      FROM ranked WHERE rn = 7)
+            SELECT n.cnpj, n.period AS period_now,
+                   ROUND(n.inadimpl_rate, 2)                            AS inadimpl_now_pct,
+                   ROUND(t.prev_rate, 2)                                AS inadimpl_6mo_ago_pct,
+                   ROUND(n.inadimpl_rate - t.prev_rate, 2)              AS acceleration_pp,
+                   ROUND(n.vl_patrim_liq / 1e6, 1)                      AS pl_now_m,
+                   ROUND((n.vl_patrim_liq - t.prev_pl) / 1e6, 1)        AS pl_delta_m
+            FROM now_ n JOIN then_ t ON t.cnpj = n.cnpj
+            WHERE n.inadimpl_rate - t.prev_rate >= 2.0
+              AND n.vl_patrim_liq > t.prev_pl AND n.vl_patrim_liq > 50e6
+            ORDER BY acceleration_pp DESC LIMIT 20
+        """)
+        if not df_zombie.empty:
+            fig = px.scatter(
+                df_zombie, x="pl_delta_m", y="acceleration_pp",
+                hover_name="cnpj", size="pl_now_m",
+                labels={"pl_delta_m": "AUM growth (R$M)", "acceleration_pp": "Delinquency accel (pp)"},
+                color="acceleration_pp", color_continuous_scale="Reds",
+            )
+            fig.add_vline(x=0, line_dash="dash", line_color="gray")
+            fig.add_hline(y=0, line_dash="dash", line_color="gray")
+            fig.update_layout(**_L, coloraxis_showscale=False)
+            st.plotly_chart(fig, use_container_width=True)
+            st.dataframe(df_zombie, use_container_width=True, hide_index=True)
+        else:
+            st.success("No zombie FIDCs detected.")
+
+    # ── Captive vehicles ──────────────────────────────────────────────────────
+    with c2:
+        st.subheader("Captive vehicles")
+        st.caption("R$100M+ AUM with ≤10 investors")
+        df_captive = pg_query("""
+            SELECT cnpj, dt_comptc AS date, tp_fundo, nr_cotst,
+                   ROUND(vl_patrim_liq / 1e6, 1) AS pl_m,
+                   ROUND(vl_patrim_liq / NULLIF(nr_cotst, 0) / 1e6, 2) AS pl_per_cotista_m
+            FROM cvm_fi_diario
+            WHERE dt_comptc = (SELECT MAX(dt_comptc) FROM cvm_fi_diario)
+              AND nr_cotst BETWEEN 1 AND 10
+              AND vl_patrim_liq > 100e6
+            ORDER BY vl_patrim_liq DESC LIMIT 20
+        """)
+        if not df_captive.empty:
+            fig = px.bar(
+                df_captive.sort_values("pl_m"),
+                x="pl_m", y="cnpj", orientation="h",
+                color="nr_cotst", color_continuous_scale="Blues_r",
+                labels={"pl_m": "AUM (R$M)", "cnpj": "", "nr_cotst": "# Investors"},
+            )
+            fig.update_layout(**_L)
+            st.plotly_chart(fig, use_container_width=True)
+            st.dataframe(df_captive, use_container_width=True, hide_index=True)
+        else:
+            st.success("No captive vehicles detected.")
+
+    st.divider()
+    c3, c4 = st.columns(2)
+
+    # ── Evergreen aging ───────────────────────────────────────────────────────
+    with c3:
+        st.subheader("Evergreen aging")
+        st.caption(">70% of delinquency perpetually in 0-30d bucket (low variance)")
+        df_ever = pg_query("""
+            WITH monthly AS (
+                SELECT cnpj, period,
+                       100.0 * vl_inad_30 / NULLIF(vl_total_inad, 0) AS pct_short,
+                       100.0 * (COALESCE(vl_inad_360, 0) + COALESCE(vl_inad_maior_1080, 0))
+                             / NULLIF(vl_total_inad, 0)               AS pct_long
+                FROM cvm_fidc_aging WHERE vl_total_inad > 1e6
+            )
+            SELECT cnpj, COUNT(*) AS months,
+                   ROUND(AVG(pct_short), 1)    AS avg_pct_short,
+                   ROUND(STDDEV(pct_short), 1) AS stddev_short,
+                   ROUND(AVG(pct_long), 1)     AS avg_pct_long_tail,
+                   MAX(period)                 AS latest_period
+            FROM monthly
+            GROUP BY cnpj HAVING COUNT(*) >= 6
+               AND AVG(pct_short) > 70 AND STDDEV(pct_short) < 10
+               AND AVG(pct_long) < 5
+            ORDER BY avg_pct_short DESC LIMIT 20
+        """)
+        if not df_ever.empty:
+            st.dataframe(df_ever, use_container_width=True, hide_index=True)
+        else:
+            st.success("No evergreen aging detected.")
+
+    # ── Subordination erosion ─────────────────────────────────────────────────
+    with c4:
+        st.subheader("Subordination erosion")
+        st.caption("Junior quota -3pp+ in a single month")
+        df_subord = pg_query("""
+            WITH fund_nav AS (
+                SELECT cnpj, period,
+                       ROUND(100.0 *
+                           SUM(qt_cota * vl_cota) FILTER (
+                               WHERE LOWER(classe_serie) LIKE '%junior%'
+                                  OR LOWER(classe_serie) LIKE '%j_nior%'
+                           ) / NULLIF(SUM(qt_cota * vl_cota), 0), 2) AS subord_pct,
+                       LAG(ROUND(100.0 *
+                           SUM(qt_cota * vl_cota) FILTER (
+                               WHERE LOWER(classe_serie) LIKE '%junior%'
+                                  OR LOWER(classe_serie) LIKE '%j_nior%'
+                           ) / NULLIF(SUM(qt_cota * vl_cota), 0), 2))
+                           OVER (PARTITION BY cnpj ORDER BY period) AS subord_prev
+                FROM cvm_fidc_tranche WHERE vl_cota > 0 AND qt_cota > 0
+                GROUP BY cnpj, period
+            )
+            SELECT cnpj, period, subord_pct, subord_prev,
+                   ROUND(subord_pct - subord_prev, 2) AS delta_pp
+            FROM fund_nav
+            WHERE subord_prev IS NOT NULL AND subord_pct - subord_prev <= -3
+            ORDER BY delta_pp ASC LIMIT 20
+        """)
+        if not df_subord.empty:
+            fig = px.bar(
+                df_subord.sort_values("delta_pp"),
+                x="delta_pp", y="cnpj", orientation="h",
+                labels={"delta_pp": "Junior quota change (pp)", "cnpj": ""},
+                color="delta_pp", color_continuous_scale="Reds_r",
+            )
+            fig.update_layout(**_L, coloraxis_showscale=False)
+            st.plotly_chart(fig, use_container_width=True)
+            st.dataframe(df_subord, use_container_width=True, hide_index=True)
+        else:
+            st.success("No subordination erosion detected.")
+
+    st.divider()
+    c5, c6 = st.columns(2)
+
+    # ── Senior yield decoupled ────────────────────────────────────────────────
+    with c5:
+        st.subheader("Senior yield decoupled")
+        st.caption("Senior return positive while fund inadimpl > 15%")
+        df_dec = pg_query("""
+            WITH delinq AS (
+                SELECT cnpj, period,
+                       ROUND(100.0 * vl_inadimpl / NULLIF(vl_patrim_liq, 0), 2) AS inadimpl_rate
+                FROM cvm_fidc_mensal WHERE vl_patrim_liq > 50e6
+            ),
+            senior AS (
+                SELECT cnpj, period,
+                       ROUND(AVG(vl_rentab_mes) * 100, 4) AS avg_senior_return_pct
+                FROM cvm_fidc_tranche
+                WHERE (LOWER(classe_serie) LIKE '%senior%'
+                    OR LOWER(classe_serie) LIKE '%s_nior%')
+                  AND vl_rentab_mes BETWEEN -0.1 AND 0.1
+                GROUP BY cnpj, period
+            )
+            SELECT d.cnpj, d.period, d.inadimpl_rate, s.avg_senior_return_pct
+            FROM delinq d JOIN senior s ON s.cnpj = d.cnpj AND s.period = d.period
+            WHERE d.inadimpl_rate > 15 AND s.avg_senior_return_pct > 0
+            ORDER BY d.inadimpl_rate DESC LIMIT 20
+        """)
+        if not df_dec.empty:
+            fig = px.scatter(
+                df_dec, x="inadimpl_rate", y="avg_senior_return_pct",
+                hover_name="cnpj",
+                labels={"inadimpl_rate": "Delinquency rate %",
+                        "avg_senior_return_pct": "Senior return %"},
+                color="inadimpl_rate", color_continuous_scale="Oranges",
+            )
+            fig.update_layout(**_L, coloraxis_showscale=False)
+            st.plotly_chart(fig, use_container_width=True)
+            st.dataframe(df_dec, use_container_width=True, hide_index=True)
+        else:
+            st.success("No decoupled senior yields detected.")
+
+    # ── Overdue securit ───────────────────────────────────────────────────────
+    with c6:
+        st.subheader("Overdue securitizations")
+        st.caption("CRI/CRA past maturity but status still open")
+        df_overdue = pg_query("""
+            SELECT instrument_type, cnpj_securit, codigo_isin, numero_serie,
+                   data_vencimento, situacao,
+                   ROUND(valor_total_integralizado / 1e6, 2) AS integralizado_m,
+                   classificacao_risco_atual,
+                   data_referencia AS last_report
+            FROM cvm_securit_serie s
+            WHERE data_vencimento < CURRENT_DATE
+              AND data_vencimento IS NOT NULL
+              AND situacao IS NOT NULL
+              AND LOWER(situacao) NOT IN ('liquidado','vencido','cancelado','encerrado')
+              AND data_referencia = (
+                  SELECT MAX(s2.data_referencia)
+                  FROM cvm_securit_serie s2
+                  WHERE s2.cnpj_securit = s.cnpj_securit
+                    AND s2.codigo_identificacao = s.codigo_identificacao
+              )
+            ORDER BY data_vencimento ASC LIMIT 20
+        """)
+        if not df_overdue.empty:
+            st.dataframe(df_overdue, use_container_width=True, hide_index=True)
+        else:
+            st.success("No overdue securitizations detected.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
