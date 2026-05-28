@@ -207,7 +207,7 @@ CREATE TABLE IF NOT EXISTS cvm_fiagro_mensal (
     cnpj          TEXT         NOT NULL CHECK (char_length(cnpj) = 14),
     period        DATE         NOT NULL,
     vl_total      NUMERIC(20,6),
-    vl_quota      NUMERIC(20,12),
+    vl_quota      NUMERIC(28,6),   -- Valor_Patrimonial_Cotas can be a total AUM, not a unit price
     vl_patrim_liq NUMERIC(20,6),
     vl_inadimpl   NUMERIC(20,6),
     nr_cotst      INT,
