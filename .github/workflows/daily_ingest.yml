@@ -35,7 +35,7 @@ jobs:
     env:
       POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
       CVM_DNS_NAMESERVERS: "1.1.1.1,8.8.8.8,9.9.9.9"
-      TZ: America/Sao_Paulo
+      TZ: "America/Sao_Paulo"
 
     steps:
       - name: Checkout repository
@@ -47,18 +47,29 @@ jobs:
           python-version: "3.11"
           cache: pip
 
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: ${{ runner.os }}-apt-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-apt-
+
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          sudo apt-get update
+
+      - name: Install PostgreSQL client
+        if: ${{ (inputs.mode || '') == 'backfill' }}
+        run: |
           sudo apt-get install -y postgresql-client
 
       - name: Run daily update
-        if: ${{ github.event_name == 'schedule' || inputs.mode == 'daily' }}
+        if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily') }}
         run: python -m src.pipeline.run_daily
 
       - name: Run historical backfill
-        if: ${{ inputs.mode == 'backfill' }}
+        if: ${{ (github.event.inputs && github.event.inputs.mode == 'backfill') || github.event_name == 'schedule' }}
         run: |
           ENTITY_FLAG=""
           if [ -n "${{ inputs.entity }}" ]; then
@@ -67,7 +78,6 @@ jobs:
           END_YEAR_FLAG=""
           if [ -n "${{ inputs.end_year }}" ]; then
             END_YEAR_FLAG="--end-year ${{ inputs.end_year }}"
-          fi
           python -m src.pipeline.run_backfill \
             --start-year ${{ inputs.start_year }} \
             $END_YEAR_FLAG \

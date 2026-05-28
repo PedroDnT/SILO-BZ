@@ -47,3 +47,4 @@ htmlcov/
 # Logs
 *.log
 .gstack/
+.local_db/*.duckdb
