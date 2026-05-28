@@ -6,6 +6,8 @@ All Supabase and external HTTP calls are mocked so these run offline.
 """
 
 import pytest
+from datetime import date
+from unittest.mock import AsyncMock
 from typing import Any, Dict, List
 from unittest.mock import MagicMock, AsyncMock, patch
 
@@ -105,6 +107,24 @@ class TestUpsertRows:
         assert result == 3
         assert len(captured_vals) == 3
 
+    def test_upsert_chunk_size_can_be_overridden_by_env(self, monkeypatch):
+        from src.store.supabase_client import upsert_rows
+        call_sizes: List[int] = []
+
+        monkeypatch.setenv("CVM_UPSERT_CHUNK_SIZE", "250")
+
+        with patch("psycopg2.extras.execute_values") as mock_ev:
+            def _capture(cur, sql, vals, **kw):
+                call_sizes.append(len(vals))
+                assert kw["page_size"] == 250
+            mock_ev.side_effect = _capture
+
+            rows = [{"id": i} for i in range(600)]
+            result = upsert_rows(self._make_client(), "env_table", rows)
+
+        assert result == 600
+        assert call_sizes == [250, 250, 100]
+
 
 # ---------------------------------------------------------------------------
 # cvm_ingestor helpers
@@ -164,6 +184,59 @@ class TestCVMIngestorHelpers:
         from src.pipeline.cvm_pipeline import _find_inadimpl
         row = {"VL_QUOTA": "100", "VL_PATRIM_LIQ": "1000000"}
         assert _find_inadimpl(row) is None
+
+    def test_daily_month_pairs_handles_year_rollover(self):
+        from src.pipeline.cvm_pipeline import _daily_month_pairs
+        assert _daily_month_pairs(date(2026, 1, 15)) == [(2025, 12), (2026, 1)]
+
+    def test_iter_month_pairs_respects_available_from(self):
+        from src.pipeline.cvm_pipeline import _iter_month_pairs
+        months = _iter_month_pairs([2024, 2025], date(2025, 8, 10), available_from=date(2025, 5, 1))
+        assert months == [(2025, 5), (2025, 6), (2025, 7), (2025, 8)]
+
+    def test_resolve_securit_instrument_type_uses_explicit_map(self):
+        from src.pipeline.cvm_pipeline import _resolve_securit_instrument_type
+        assert _resolve_securit_instrument_type("cri_fluxo") == "cri_mensal"
+
+
+class TestCVMIngestorOrchestration:
+    @pytest.mark.asyncio
+    async def test_daily_update_core_scope_skips_yearly_entities(self, monkeypatch):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+
+        monkeypatch.setenv("CVM_DAILY_SCOPE", "core")
+        monkeypatch.setenv("CVM_DAILY_CONCURRENCY", "2")
+
+        ingestor = CVMIngestor.__new__(CVMIngestor)
+        ingestor.ingest_fund_registry = AsyncMock(return_value=0)
+        ingestor.ingest_fi_diario = AsyncMock(return_value=1)
+        ingestor.ingest_fi_cda = AsyncMock(return_value=1)
+        ingestor.ingest_fi_perfil = AsyncMock(return_value=1)
+        ingestor.ingest_fidc_mensal = AsyncMock(return_value=1)
+        ingestor.ingest_fidc_tranche = AsyncMock(return_value=1)
+        ingestor.ingest_fidc_tranche_flows = AsyncMock(return_value=1)
+        ingestor.ingest_fidc_aging = AsyncMock(return_value=1)
+        ingestor.ingest_fiagro_mensal = AsyncMock(return_value=1)
+        ingestor.ingest_fip_periodic = AsyncMock(return_value=1)
+        ingestor.ingest_fii_mensal = AsyncMock(return_value=1)
+        ingestor.ingest_fii_periodic = AsyncMock(return_value=1)
+        ingestor.ingest_securit_mensal = AsyncMock(return_value=1)
+        ingestor.ingest_securit_serie = AsyncMock(return_value=1)
+        ingestor.ingest_securit_fluxo = AsyncMock(return_value=1)
+        ingestor.ingest_securit_dfin = AsyncMock(return_value=1)
+
+        totals = await ingestor.daily_update()
+
+        assert totals["cvm_fi_diario"] > 0
+        assert totals["cvm_fidc_mensal"] > 0
+        assert totals["cvm_fiagro_mensal"] > 0
+        assert totals["cvm_fip_periodic"] == 0
+        assert totals["cvm_fii_mensal"] == 0
+        assert totals["cvm_securit_mensal"] == 0
+        assert ingestor.ingest_fund_registry.await_count == 1
+        assert ingestor.ingest_fip_periodic.await_count == 0
+        assert ingestor.ingest_fii_mensal.await_count == 0
+        assert ingestor.ingest_securit_mensal.await_count == 0
 
 
 # ---------------------------------------------------------------------------

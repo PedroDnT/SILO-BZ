@@ -17,12 +17,13 @@ Tables written:
 """
 
 import asyncio
+from dataclasses import dataclass
 import logging
 import re
 import sys
 import os
 from datetime import date, datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Dict, List, Optional, Set, Tuple
 from uuid import uuid4
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -60,6 +61,36 @@ SECURIT_SERIE_TYPES: List[str] = ["cra_classe", "cri_classe", "ots_classe"]
 SECURIT_FLUXO_TYPES: List[str] = ["cra_fluxo", "cri_fluxo", "ots_fluxo"]
 
 _PAGE_SIZE = 5000
+_ALL_TABLES: List[str] = [
+    "cvm_fi_diario", "cvm_fi_cda", "cvm_fi_perfil",
+    "cvm_fidc_mensal", "cvm_fidc_tranche", "cvm_fidc_tranche_flows", "cvm_fidc_aging",
+    "cvm_fiagro_mensal",
+    "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic",
+    "cvm_securit_mensal", "cvm_securit_serie", "cvm_securit_fluxo", "cvm_securit_dfin",
+]
+_ALL_ENTITIES: Set[str] = {"fi", "fidc", "fip", "fiagro", "fii", "securit"}
+_CORE_DAILY_ENTITIES: Set[str] = {"fi", "fidc", "fiagro"}
+_FIAGRO_FIRST_PERIOD = date(2025, 5, 1)
+FII_SUBTYPE_BY_DOC_TYPE: Dict[str, str] = {
+    "mensal_geral": "geral",
+    "mensal_complemento": "complemento",
+    "mensal_ativo_passivo": "ativo_passivo",
+}
+SECURIT_DOC_TO_INSTRUMENT: Dict[str, str] = {
+    "cra_classe": "cra_mensal",
+    "cri_classe": "cri_mensal",
+    "ots_classe": "ots_mensal",
+    "cra_fluxo": "cra_mensal",
+    "cri_fluxo": "cri_mensal",
+    "ots_fluxo": "ots_mensal",
+}
+
+
+@dataclass(frozen=True)
+class IngestTask:
+    table: str
+    description: str
+    operation: Awaitable[int]
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +149,75 @@ def _period_to_date(period_str: Optional[str], year: int, month: int) -> str:
     return f"{year}-{month:02d}-01"
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, str(default)).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("Invalid %s=%r; using default %d", name, raw, default)
+        return default
+    if value < 1:
+        logger.warning("Non-positive %s=%r; using default %d", name, raw, default)
+        return default
+    return value
+
+
+def _get_concurrency(name: str, default: int) -> int:
+    key = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_").upper()
+    return _env_int(f"CVM_{key}_CONCURRENCY", _env_int("CVM_INGEST_CONCURRENCY", default))
+
+
+def _new_totals() -> Dict[str, int]:
+    return {table: 0 for table in _ALL_TABLES}
+
+
+def _resolve_daily_entities() -> Set[str]:
+    raw = os.getenv("CVM_DAILY_SCOPE", "core").strip().lower()
+    if not raw or raw == "core":
+        return set(_CORE_DAILY_ENTITIES)
+    if raw == "all":
+        return set(_ALL_ENTITIES)
+
+    requested = {part.strip() for part in raw.split(",") if part.strip()}
+    invalid = requested - _ALL_ENTITIES
+    if invalid:
+        logger.warning(
+            "Ignoring unknown CVM_DAILY_SCOPE entities: %s",
+            ", ".join(sorted(invalid)),
+        )
+    resolved = requested & _ALL_ENTITIES
+    return resolved or set(_CORE_DAILY_ENTITIES)
+
+
+def _daily_month_pairs(today: date) -> List[Tuple[int, int]]:
+    current = (today.year, today.month)
+    if today.month == 1:
+        previous = (today.year - 1, 12)
+    else:
+        previous = (today.year, today.month - 1)
+    return [previous, current] if previous != current else [current]
+
+
+def _iter_month_pairs(
+    years: List[int],
+    today: date,
+    available_from: Optional[date] = None,
+) -> List[Tuple[int, int]]:
+    pairs: List[Tuple[int, int]] = []
+    for year in years:
+        if available_from and year < available_from.year:
+            continue
+        start_month = available_from.month if available_from and year == available_from.year else 1
+        last_month = today.month if year == today.year else 12
+        for month in range(start_month, last_month + 1):
+            pairs.append((year, month))
+    return pairs
+
+
+def _resolve_securit_instrument_type(doc_type: str) -> str:
+    return SECURIT_DOC_TO_INSTRUMENT.get(doc_type, doc_type.rsplit("_", 1)[0] + "_mensal")
+
+
 # ---------------------------------------------------------------------------
 # Ingestor class
 # ---------------------------------------------------------------------------
@@ -128,6 +228,30 @@ class CVMIngestor:
     def __init__(self) -> None:
         self._service = CVMFetcher()
         self._supabase = get_pg_client()
+
+    async def _run_task_batches(
+        self,
+        tasks: List[IngestTask],
+        concurrency: int,
+        totals: Dict[str, int],
+        label: str,
+    ) -> None:
+        if not tasks:
+            return
+
+        batch_size = max(1, concurrency)
+        logger.info("%s: %d tasks (concurrency=%d)", label, len(tasks), batch_size)
+        for i in range(0, len(tasks), batch_size):
+            batch = tasks[i:i + batch_size]
+            results = await asyncio.gather(
+                *[task.operation for task in batch],
+                return_exceptions=True,
+            )
+            for task, result in zip(batch, results):
+                if isinstance(result, int):
+                    totals[task.table] += result
+                else:
+                    logger.error("%s failed [%s]: %s", label, task.description, result)
 
     # ------------------------------------------------------------------
     # Ingest log helpers
@@ -250,7 +374,7 @@ class CVMIngestor:
                     "nr_cotst":      _find_field(row, "NR_COTST"),
                     "raw":           row,
                 })
-                if len(records) >= 5000:
+                if len(records) >= _PAGE_SIZE:
                     rows_inserted += upsert_rows(
                         self._supabase, "cvm_fi_diario", records,
                         conflict_columns="cnpj,dt_comptc",
@@ -295,7 +419,7 @@ class CVMIngestor:
                     "vl_merc_pos_final":  _find_field(row, "VL_MERC_POS_FINAL"),
                     "raw":                row,
                 })
-                if len(records) >= 5000:
+                if len(records) >= _PAGE_SIZE:
                     rows_inserted += upsert_rows(
                         self._supabase, "cvm_fi_cda", records,
                         conflict_columns="cnpj,period,tp_aplic,tp_ativo",
@@ -731,12 +855,7 @@ class CVMIngestor:
         run_id = str(uuid4())
         self._log_start(run_id, "fii", doc_type, year, None)
         rows_inserted = 0
-        if "geral" in doc_type:
-            subtype = "geral"
-        elif "complemento" in doc_type:
-            subtype = "complemento"
-        else:
-            subtype = "ativo_passivo"
+        subtype = FII_SUBTYPE_BY_DOC_TYPE.get(doc_type, "ativo_passivo")
         try:
             raw_rows = await self._fetch_all_pages("fii", doc_type, year, None)
             records: List[Dict[str, Any]] = []
@@ -907,7 +1026,7 @@ class CVMIngestor:
         """
         run_id = str(uuid4())
         self._log_start(run_id, "securit", doc_type, year, None)
-        instrument_type = doc_type.rsplit("_", 1)[0] + "_mensal"
+        instrument_type = _resolve_securit_instrument_type(doc_type)
         rows_inserted = 0
         try:
             raw_rows = await self._fetch_all_pages("securit", doc_type, year, None)
@@ -960,7 +1079,7 @@ class CVMIngestor:
         """
         run_id = str(uuid4())
         self._log_start(run_id, "securit", doc_type, year, None)
-        instrument_type = doc_type.rsplit("_", 1)[0] + "_mensal"
+        instrument_type = _resolve_securit_instrument_type(doc_type)
         rows_inserted = 0
         try:
             raw_rows = await self._fetch_all_pages("securit", doc_type, year, None)
@@ -1051,13 +1170,7 @@ class CVMIngestor:
         end_year = end_year or today.year
         years = list(range(start_year, end_year + 1))
 
-        totals: Dict[str, int] = {t: 0 for t in [
-            "cvm_fi_diario", "cvm_fi_cda", "cvm_fi_perfil",
-            "cvm_fidc_mensal", "cvm_fidc_tranche", "cvm_fidc_tranche_flows", "cvm_fidc_aging",
-            "cvm_fiagro_mensal",
-            "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic",
-            "cvm_securit_mensal", "cvm_securit_serie", "cvm_securit_fluxo", "cvm_securit_dfin",
-        ]}
+        totals = _new_totals()
 
         def _want(entity: str) -> bool:
             return entity_filter is None or entity_filter == entity
@@ -1087,21 +1200,26 @@ class CVMIngestor:
                 totals["cvm_fi_cda"] += n
 
             # Monthly format: inf_diario 2021+, cda 2023+, perfil_mensal all years
-            fi_tasks: List[Tuple[str, Any]] = []
-            for year in monthly_years:
-                last_month = today.month if year == today.year else 12
-                for month in range(1, last_month + 1):
-                    if year >= 2021:
-                        fi_tasks.append(("cvm_fi_diario", self.ingest_fi_diario(year, month)))
-                    if year >= 2023:
-                        fi_tasks.append(("cvm_fi_cda", self.ingest_fi_cda(year, month)))
-                    fi_tasks.append(("cvm_fi_perfil", self.ingest_fi_perfil(year, month)))
-            for i in range(0, len(fi_tasks), 2):  # 2 = one month (inf_diario + perfil)
-                batch = fi_tasks[i:i + 2]
-                results = await asyncio.gather(*[t[1] for t in batch], return_exceptions=True)
-                for (tbl, _), r in zip(batch, results):
-                    if isinstance(r, int):
-                        totals[tbl] += r
+            fi_tasks: List[IngestTask] = []
+            for year, month in _iter_month_pairs(monthly_years, today):
+                if year >= 2021:
+                    fi_tasks.append(IngestTask(
+                        "cvm_fi_diario",
+                        f"fi/inf_diario {year}-{month:02d}",
+                        self.ingest_fi_diario(year, month),
+                    ))
+                if year >= 2023:
+                    fi_tasks.append(IngestTask(
+                        "cvm_fi_cda",
+                        f"fi/cda {year}-{month:02d}",
+                        self.ingest_fi_cda(year, month),
+                    ))
+                fi_tasks.append(IngestTask(
+                    "cvm_fi_perfil",
+                    f"fi/perfil_mensal {year}-{month:02d}",
+                    self.ingest_fi_perfil(year, month),
+                ))
+            await self._run_task_batches(fi_tasks, _get_concurrency("fi", 2), totals, "FI monthly backfill")
 
         # -- FIDC ---------------------------------------------------------
         if _want("fidc"):
@@ -1117,88 +1235,129 @@ class CVMIngestor:
 
             # Current (2025+): monthly ZIPs with tab_IV, X_2, X_4, tab_VI.
             if current_years:
-                tasks: List[Any] = []
-                for year in current_years:
-                    last_month = today.month if year == today.year else 12
-                    for month in range(1, last_month + 1):
-                        tasks.append(self.ingest_fidc_mensal(year, month))
-                for i in range(0, len(tasks), 4):
-                    results = await asyncio.gather(*tasks[i:i + 4], return_exceptions=True)
-                    for r in results:
-                        if isinstance(r, int):
-                            totals["cvm_fidc_mensal"] += r
-
-                tranche_tasks: List[Tuple[str, Any]] = []
-                for year in current_years:
-                    last_month = today.month if year == today.year else 12
-                    for month in range(1, last_month + 1):
-                        tranche_tasks.append(("cvm_fidc_tranche",       self.ingest_fidc_tranche(year, month)))
-                        tranche_tasks.append(("cvm_fidc_tranche_flows", self.ingest_fidc_tranche_flows(year, month)))
-                        tranche_tasks.append(("cvm_fidc_aging",         self.ingest_fidc_aging(year, month)))
-                for i in range(0, len(tranche_tasks), 3):
-                    batch = tranche_tasks[i:i + 3]
-                    results = await asyncio.gather(*[t[1] for t in batch], return_exceptions=True)
-                    for (tbl, _), r in zip(batch, results):
-                        if isinstance(r, int):
-                            totals[tbl] += r
+                mensal_tasks: List[IngestTask] = []
+                tranche_tasks: List[IngestTask] = []
+                for year, month in _iter_month_pairs(current_years, today):
+                    mensal_tasks.append(IngestTask(
+                        "cvm_fidc_mensal",
+                        f"fidc/mensal {year}-{month:02d}",
+                        self.ingest_fidc_mensal(year, month),
+                    ))
+                    tranche_tasks.extend([
+                        IngestTask(
+                            "cvm_fidc_tranche",
+                            f"fidc/tranche {year}-{month:02d}",
+                            self.ingest_fidc_tranche(year, month),
+                        ),
+                        IngestTask(
+                            "cvm_fidc_tranche_flows",
+                            f"fidc/tranche_flows {year}-{month:02d}",
+                            self.ingest_fidc_tranche_flows(year, month),
+                        ),
+                        IngestTask(
+                            "cvm_fidc_aging",
+                            f"fidc/aging {year}-{month:02d}",
+                            self.ingest_fidc_aging(year, month),
+                        ),
+                    ])
+                await self._run_task_batches(
+                    mensal_tasks,
+                    _get_concurrency("fidc", 4),
+                    totals,
+                    "FIDC current mensal backfill",
+                )
+                await self._run_task_batches(
+                    tranche_tasks,
+                    _get_concurrency("fidc_tranche", 3),
+                    totals,
+                    "FIDC tranche backfill",
+                )
 
         # -- FIAGRO monthly  (data only from 2025-05) ---------------------
         if _want("fiagro"):
-            tasks = []
-            for year in years:
-                last_month = today.month if year == today.year else 12
-                for month in range(1, last_month + 1):
-                    tasks.append(self.ingest_fiagro_mensal(year, month))
-            for i in range(0, len(tasks), 10):
-                results = await asyncio.gather(*tasks[i:i + 10], return_exceptions=True)
-                for r in results:
-                    if isinstance(r, int):
-                        totals["cvm_fiagro_mensal"] += r
+            fiagro_tasks = [
+                IngestTask(
+                    "cvm_fiagro_mensal",
+                    f"fiagro/mensal {year}-{month:02d}",
+                    self.ingest_fiagro_mensal(year, month),
+                )
+                for year, month in _iter_month_pairs(years, today, available_from=_FIAGRO_FIRST_PERIOD)
+            ]
+            await self._run_task_batches(
+                fiagro_tasks,
+                _get_concurrency("fiagro", 10),
+                totals,
+                "FIAGRO backfill",
+            )
 
         # -- FIP periodic -------------------------------------------------
         if _want("fip"):
-            tasks = []
+            tasks: List[IngestTask] = []
             for entity, doc_type in FIP_PERIODIC_CONFIGS:
                 for year in years:
-                    tasks.append(self.ingest_fip_periodic(doc_type, year))
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for r in results:
-                if isinstance(r, int):
-                    totals["cvm_fip_periodic"] += r
+                    tasks.append(IngestTask(
+                        "cvm_fip_periodic",
+                        f"fip/{doc_type} {year}",
+                        self.ingest_fip_periodic(doc_type, year),
+                    ))
+            await self._run_task_batches(tasks, _get_concurrency("fip", 4), totals, "FIP backfill")
 
         # -- FII ----------------------------------------------------------
         if _want("fii"):
-            tasks = []
+            tasks: List[IngestTask] = []
             for doc_type in FII_MENSAL_DOC_TYPES:
                 for year in years:
-                    tasks.append(("cvm_fii_mensal", self.ingest_fii_mensal(doc_type, year)))
+                    tasks.append(IngestTask(
+                        "cvm_fii_mensal",
+                        f"fii/{doc_type} {year}",
+                        self.ingest_fii_mensal(doc_type, year),
+                    ))
             for doc_type in FII_PERIODIC_DOC_TYPES:
                 for year in years:
-                    tasks.append(("cvm_fii_periodic", self.ingest_fii_periodic(doc_type, year)))
-            results = await asyncio.gather(*[t[1] for t in tasks], return_exceptions=True)
-            for (tbl, _), r in zip(tasks, results):
-                if isinstance(r, int):
-                    totals[tbl] += r
+                    tasks.append(IngestTask(
+                        "cvm_fii_periodic",
+                        f"fii/{doc_type} {year}",
+                        self.ingest_fii_periodic(doc_type, year),
+                    ))
+            await self._run_task_batches(tasks, _get_concurrency("fii", 4), totals, "FII backfill")
 
         # -- SECURIT ------------------------------------------------------
         if _want("securit"):
-            tasks = []
+            tasks: List[IngestTask] = []
             for t in SECURIT_MENSAL_TYPES:
                 for year in years:
-                    tasks.append(("cvm_securit_mensal", self.ingest_securit_mensal(t, year)))
+                    tasks.append(IngestTask(
+                        "cvm_securit_mensal",
+                        f"securit/{t} {year}",
+                        self.ingest_securit_mensal(t, year),
+                    ))
             for t in SECURIT_SERIE_TYPES:
                 for year in years:
-                    tasks.append(("cvm_securit_serie", self.ingest_securit_serie(t, year)))
+                    tasks.append(IngestTask(
+                        "cvm_securit_serie",
+                        f"securit/{t} {year}",
+                        self.ingest_securit_serie(t, year),
+                    ))
             for t in SECURIT_FLUXO_TYPES:
                 for year in years:
-                    tasks.append(("cvm_securit_fluxo", self.ingest_securit_fluxo(t, year)))
+                    tasks.append(IngestTask(
+                        "cvm_securit_fluxo",
+                        f"securit/{t} {year}",
+                        self.ingest_securit_fluxo(t, year),
+                    ))
             for t in SECURIT_DFIN_TYPES:
                 for year in years:
-                    tasks.append(("cvm_securit_dfin", self.ingest_securit_dfin(t, year)))
-            results = await asyncio.gather(*[t[1] for t in tasks], return_exceptions=True)
-            for (tbl, _), r in zip(tasks, results):
-                if isinstance(r, int):
-                    totals[tbl] += r
+                    tasks.append(IngestTask(
+                        "cvm_securit_dfin",
+                        f"securit/{t} {year}",
+                        self.ingest_securit_dfin(t, year),
+                    ))
+            await self._run_task_batches(
+                tasks,
+                _get_concurrency("securit", 3),
+                totals,
+                "SECURIT backfill",
+            )
 
         logger.info("Backfill complete: %s", totals)
         return totals
@@ -1206,64 +1365,100 @@ class CVMIngestor:
     async def daily_update(self) -> Dict[str, int]:
         """Incremental update: current month (and previous month for monthly files)."""
         today = date.today()
-        year, month = today.year, today.month
-
-        totals: Dict[str, int] = {t: 0 for t in [
-            "cvm_fi_diario", "cvm_fi_cda", "cvm_fi_perfil",
-            "cvm_fidc_mensal", "cvm_fidc_tranche", "cvm_fidc_tranche_flows", "cvm_fidc_aging",
-            "cvm_fiagro_mensal",
-            "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic",
-            "cvm_securit_mensal", "cvm_securit_serie", "cvm_securit_fluxo", "cvm_securit_dfin",
-        ]}
-
-        tasks: List[Tuple[str, Any]] = []
+        year = today.year
+        totals = _new_totals()
+        tasks: List[IngestTask] = []
+        daily_entities = _resolve_daily_entities()
+        month_pairs = _daily_month_pairs(today)
 
         # Fund registry refresh (static cadastral — names/status may change)
-        await self.ingest_fund_registry("fi")
-        await self.ingest_fund_registry("fii")
+        if "fi" in daily_entities:
+            await self.ingest_fund_registry("fi")
+        if "fii" in daily_entities:
+            await self.ingest_fund_registry("fii")
 
         # FI — current + previous month
-        for m in ([month - 1, month] if month > 1 else [month]):
-            tasks += [
-                ("cvm_fi_diario", self.ingest_fi_diario(year, m)),
-                ("cvm_fi_cda",    self.ingest_fi_cda(year, m)),
-                ("cvm_fi_perfil", self.ingest_fi_perfil(year, m)),
-            ]
+        if "fi" in daily_entities:
+            for task_year, task_month in month_pairs:
+                tasks += [
+                    IngestTask("cvm_fi_diario", f"fi/inf_diario {task_year}-{task_month:02d}", self.ingest_fi_diario(task_year, task_month)),
+                    IngestTask("cvm_fi_cda", f"fi/cda {task_year}-{task_month:02d}", self.ingest_fi_cda(task_year, task_month)),
+                    IngestTask("cvm_fi_perfil", f"fi/perfil_mensal {task_year}-{task_month:02d}", self.ingest_fi_perfil(task_year, task_month)),
+                ]
 
         # FIDC / FIAGRO — current + previous month
-        for m in ([month - 1, month] if month > 1 else [month]):
-            tasks.append(("cvm_fidc_mensal",        self.ingest_fidc_mensal(year, m)))
-            tasks.append(("cvm_fidc_tranche",       self.ingest_fidc_tranche(year, m)))
-            tasks.append(("cvm_fidc_tranche_flows", self.ingest_fidc_tranche_flows(year, m)))
-            tasks.append(("cvm_fidc_aging",         self.ingest_fidc_aging(year, m)))
-            tasks.append(("cvm_fiagro_mensal",      self.ingest_fiagro_mensal(year, m)))
+        for task_year, task_month in month_pairs:
+            if "fidc" in daily_entities:
+                tasks.extend([
+                    IngestTask("cvm_fidc_mensal", f"fidc/mensal {task_year}-{task_month:02d}", self.ingest_fidc_mensal(task_year, task_month)),
+                    IngestTask("cvm_fidc_tranche", f"fidc/tranche {task_year}-{task_month:02d}", self.ingest_fidc_tranche(task_year, task_month)),
+                    IngestTask("cvm_fidc_tranche_flows", f"fidc/tranche_flows {task_year}-{task_month:02d}", self.ingest_fidc_tranche_flows(task_year, task_month)),
+                    IngestTask("cvm_fidc_aging", f"fidc/aging {task_year}-{task_month:02d}", self.ingest_fidc_aging(task_year, task_month)),
+                ])
+            if "fiagro" in daily_entities and date(task_year, task_month, 1) >= _FIAGRO_FIRST_PERIOD:
+                tasks.append(IngestTask(
+                    "cvm_fiagro_mensal",
+                    f"fiagro/mensal {task_year}-{task_month:02d}",
+                    self.ingest_fiagro_mensal(task_year, task_month),
+                ))
 
         # FIP — refresh current year
-        for _, doc_type in FIP_PERIODIC_CONFIGS:
-            tasks.append(("cvm_fip_periodic", self.ingest_fip_periodic(doc_type, year)))
+        if "fip" in daily_entities:
+            for _, doc_type in FIP_PERIODIC_CONFIGS:
+                tasks.append(IngestTask(
+                    "cvm_fip_periodic",
+                    f"fip/{doc_type} {year}",
+                    self.ingest_fip_periodic(doc_type, year),
+                ))
 
         # FII — refresh current year
-        for doc_type in FII_MENSAL_DOC_TYPES:
-            tasks.append(("cvm_fii_mensal", self.ingest_fii_mensal(doc_type, year)))
-        for doc_type in FII_PERIODIC_DOC_TYPES:
-            tasks.append(("cvm_fii_periodic", self.ingest_fii_periodic(doc_type, year)))
+        if "fii" in daily_entities:
+            for doc_type in FII_MENSAL_DOC_TYPES:
+                tasks.append(IngestTask(
+                    "cvm_fii_mensal",
+                    f"fii/{doc_type} {year}",
+                    self.ingest_fii_mensal(doc_type, year),
+                ))
+            for doc_type in FII_PERIODIC_DOC_TYPES:
+                tasks.append(IngestTask(
+                    "cvm_fii_periodic",
+                    f"fii/{doc_type} {year}",
+                    self.ingest_fii_periodic(doc_type, year),
+                ))
 
         # SECURIT — refresh current year
-        for t in SECURIT_MENSAL_TYPES:
-            tasks.append(("cvm_securit_mensal", self.ingest_securit_mensal(t, year)))
-        for t in SECURIT_SERIE_TYPES:
-            tasks.append(("cvm_securit_serie", self.ingest_securit_serie(t, year)))
-        for t in SECURIT_FLUXO_TYPES:
-            tasks.append(("cvm_securit_fluxo", self.ingest_securit_fluxo(t, year)))
-        for t in SECURIT_DFIN_TYPES:
-            tasks.append(("cvm_securit_dfin", self.ingest_securit_dfin(t, year)))
+        if "securit" in daily_entities:
+            for t in SECURIT_MENSAL_TYPES:
+                tasks.append(IngestTask(
+                    "cvm_securit_mensal",
+                    f"securit/{t} {year}",
+                    self.ingest_securit_mensal(t, year),
+                ))
+            for t in SECURIT_SERIE_TYPES:
+                tasks.append(IngestTask(
+                    "cvm_securit_serie",
+                    f"securit/{t} {year}",
+                    self.ingest_securit_serie(t, year),
+                ))
+            for t in SECURIT_FLUXO_TYPES:
+                tasks.append(IngestTask(
+                    "cvm_securit_fluxo",
+                    f"securit/{t} {year}",
+                    self.ingest_securit_fluxo(t, year),
+                ))
+            for t in SECURIT_DFIN_TYPES:
+                tasks.append(IngestTask(
+                    "cvm_securit_dfin",
+                    f"securit/{t} {year}",
+                    self.ingest_securit_dfin(t, year),
+                ))
 
-        results = await asyncio.gather(*[t[1] for t in tasks], return_exceptions=True)
-        for (tbl, _), r in zip(tasks, results):
-            if isinstance(r, int):
-                totals[tbl] += r
-            else:
-                logger.error("daily_update task error [%s]: %s", tbl, r)
+        await self._run_task_batches(
+            tasks,
+            _get_concurrency("daily", 6),
+            totals,
+            "Daily update",
+        )
 
         logger.info("Daily update complete: %s", totals)
         return totals

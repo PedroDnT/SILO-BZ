@@ -16,8 +16,29 @@ from psycopg2.extras import Json
 
 logger = logging.getLogger(__name__)
 
-_CHUNK_SIZE = 500
+_DEFAULT_CHUNK_SIZE = 500
 _RETRY_DELAYS = (5, 10, 20, 40)
+
+
+def _get_upsert_chunk_size() -> int:
+    raw = os.getenv("CVM_UPSERT_CHUNK_SIZE", str(_DEFAULT_CHUNK_SIZE)).strip()
+    try:
+        chunk_size = int(raw)
+    except ValueError:
+        logger.warning(
+            "Invalid CVM_UPSERT_CHUNK_SIZE=%r; using default %d",
+            raw,
+            _DEFAULT_CHUNK_SIZE,
+        )
+        return _DEFAULT_CHUNK_SIZE
+    if chunk_size < 1:
+        logger.warning(
+            "Non-positive CVM_UPSERT_CHUNK_SIZE=%r; using default %d",
+            raw,
+            _DEFAULT_CHUNK_SIZE,
+        )
+        return _DEFAULT_CHUNK_SIZE
+    return chunk_size
 
 
 class _PgClient:
@@ -109,6 +130,7 @@ def upsert_rows(
         conflict_clause = "ON CONFLICT DO NOTHING"
 
     sql = f"INSERT INTO {table} ({', '.join(cols)}) VALUES %s {conflict_clause}"
+    chunk_size = _get_upsert_chunk_size()
 
     total = 0
     def _adapt(v):
@@ -116,25 +138,33 @@ def upsert_rows(
             return Json(v)
         return v
 
-    for i in range(0, len(rows), _CHUNK_SIZE):
-        chunk = rows[i : i + _CHUNK_SIZE]
+    for i in range(0, len(rows), chunk_size):
+        chunk = rows[i : i + chunk_size]
         values = [tuple(_adapt(r.get(c)) for c in cols) for r in chunk]
         last_exc: Optional[Exception] = None
+        chunk_started = time.monotonic()
 
         for attempt, delay in enumerate((0, *_RETRY_DELAYS)):
             if delay:
                 logger.warning(
-                    "upsert retry in %ds (table=%s chunk=%d attempt=%d): %s",
-                    delay, table, i, attempt, last_exc,
+                    "upsert retry in %ds (table=%s chunk_offset=%d chunk_size=%d attempt=%d): %s",
+                    delay, table, i, len(chunk), attempt, last_exc,
                 )
                 time.sleep(delay)
                 client.reconnect()
             try:
                 with client.cursor() as cur:
                     psycopg2.extras.execute_values(
-                        cur, sql, values, page_size=_CHUNK_SIZE
+                        cur, sql, values, page_size=chunk_size
                     )
                 total += len(chunk)
+                logger.debug(
+                    "upsert ok table=%s chunk_offset=%d rows=%d elapsed=%.2fs",
+                    table,
+                    i,
+                    len(chunk),
+                    time.monotonic() - chunk_started,
+                )
                 last_exc = None
                 break
             except Exception as exc:
@@ -152,14 +182,23 @@ def upsert_rows(
                     last_exc = exc
                 else:
                     logger.error(
-                        "Upsert failed table=%s chunk=%d: %s", table, i, exc
+                        "Upsert failed table=%s chunk_offset=%d chunk_size=%d elapsed=%.2fs: %s",
+                        table,
+                        i,
+                        len(chunk),
+                        time.monotonic() - chunk_started,
+                        exc,
                     )
                     raise
 
         if last_exc is not None:
             logger.error(
-                "Upsert exhausted retries table=%s chunk=%d: %s",
-                table, i, last_exc,
+                "Upsert exhausted retries table=%s chunk_offset=%d chunk_size=%d elapsed=%.2fs: %s",
+                table,
+                i,
+                len(chunk),
+                time.monotonic() - chunk_started,
+                last_exc,
             )
             raise last_exc
 

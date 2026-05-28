@@ -29,12 +29,16 @@ on:
 
 jobs:
   ingest:
-    name: Ingest CVM + BACEN data
+    name: Ingest CVM data
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
       POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
       CVM_DNS_NAMESERVERS: "1.1.1.1,8.8.8.8,9.9.9.9"
+      CVM_DAILY_SCOPE: "core"
+      CVM_UPSERT_CHUNK_SIZE: "1000"
+      CVM_INGEST_CONCURRENCY: "4"
+      CVM_DAILY_CONCURRENCY: "6"
       TZ: "America/Sao_Paulo"
 
     steps:
@@ -60,8 +64,9 @@ jobs:
           pip install -r requirements.txt
 
       - name: Install PostgreSQL client
-        if: ${{ (inputs.mode || '') == 'backfill' }}
+        if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'backfill') }}
         run: |
+          sudo apt-get update
           sudo apt-get install -y postgresql-client
 
       - name: Run daily update
@@ -69,7 +74,7 @@ jobs:
         run: python -m src.pipeline.run_daily
 
       - name: Run historical backfill
-        if: ${{ (github.event.inputs && github.event.inputs.mode == 'backfill') || github.event_name == 'schedule' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs && github.event.inputs.mode == 'backfill' }}
         run: |
           ENTITY_FLAG=""
           if [ -n "${{ inputs.entity }}" ]; then
@@ -78,6 +83,7 @@ jobs:
           END_YEAR_FLAG=""
           if [ -n "${{ inputs.end_year }}" ]; then
             END_YEAR_FLAG="--end-year ${{ inputs.end_year }}"
+          fi
           python -m src.pipeline.run_backfill \
             --start-year ${{ inputs.start_year }} \
             $END_YEAR_FLAG \
@@ -85,11 +91,24 @@ jobs:
             --cvm-only
 
       - name: Analyze tables post-ingest
-        if: ${{ inputs.mode == 'backfill' || github.event_name == 'schedule' }}
+        if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'backfill') }}
         run: |
-          psql "$POSTGRES_URL" -c "
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -c "
             ANALYZE cvm_fi_diario;
+            ANALYZE cvm_fi_cda;
+            ANALYZE cvm_fi_perfil;
             ANALYZE cvm_fidc_mensal;
             ANALYZE cvm_fidc_tranche;
+            ANALYZE cvm_fidc_tranche_flows;
+            ANALYZE cvm_fidc_aging;
+            ANALYZE cvm_fiagro_mensal;
+            ANALYZE cvm_fip_periodic;
             ANALYZE cvm_fii_mensal;
+            ANALYZE cvm_fii_periodic;
+            ANALYZE cvm_securit_mensal;
+            ANALYZE cvm_securit_serie;
+            ANALYZE cvm_securit_fluxo;
+            ANALYZE cvm_securit_dfin;
+            ANALYZE cvm_fund_registry;
+            ANALYZE cvm_ingest_log;
           "
