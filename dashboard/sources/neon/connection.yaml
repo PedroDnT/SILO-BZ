@@ -1,0 +1,9 @@
+name: neon
+type: postgres
+options:
+  host: "{{ env_var('PGHOST') }}"
+  port: "{{ env_var('PGPORT', '5432') }}"
+  database: "{{ env_var('PGDATABASE') }}"
+  user: "{{ env_var('PGUSER') }}"
+  password: "{{ env_var('PGPASSWORD') }}"
+  ssl: true

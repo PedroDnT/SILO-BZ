@@ -52,4 +52,7 @@ htmlcov/
 # Local Netlify folder
 .netlify
 node_modules
-node_modules
+
+# Evidence dashboard secrets and cache
+dashboard/.env
+dashboard/.evidence/
