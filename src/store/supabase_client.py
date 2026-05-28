@@ -54,6 +54,7 @@ def get_supabase_client() -> Any:
     url = os.environ.get("POSTGRES_URL")
     if not url:
         raise EnvironmentError("POSTGRES_URL must be set")
+    url = "".join(url.split())
     return _PgClient(url)
 
 
