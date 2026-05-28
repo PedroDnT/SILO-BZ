@@ -17,6 +17,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from src.fetchers.bacen_fetcher import BacenClient
 from src.store.supabase_client import get_pg_client, upsert_rows
 
+# Backward-compatible alias retained for older tests/callers.
+get_supabase_client = get_pg_client
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------

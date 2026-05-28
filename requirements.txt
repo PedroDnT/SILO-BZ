@@ -8,7 +8,7 @@ aiofiles==23.2.1
 dnspython==2.6.1
 
 # Data parsing
-pandas==2.2.0
+pandas==2.2.3
 numpy==1.26.3
 python-dateutil==2.8.2
 lxml==6.1.0

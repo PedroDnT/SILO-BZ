@@ -7,7 +7,6 @@ All Supabase and external HTTP calls are mocked so these run offline.
 
 import pytest
 from datetime import date
-from unittest.mock import AsyncMock
 from typing import Any, Dict, List
 from unittest.mock import MagicMock, AsyncMock, patch
 
@@ -50,10 +49,12 @@ class TestUpsertRows:
         assert result == 10
         assert call_sizes == [10]
 
-    def test_upsert_large_batch_chunked(self):
+    def test_upsert_large_batch_chunked(self, monkeypatch):
         """Rows > 500 should be split into multiple execute_values calls."""
         from src.store.supabase_client import upsert_rows
         call_sizes: List[int] = []
+
+        monkeypatch.delenv("CVM_UPSERT_CHUNK_SIZE", raising=False)
 
         with patch("psycopg2.extras.execute_values") as mock_ev:
             def _capture(cur, sql, vals, **kw):
@@ -265,7 +266,7 @@ class TestBacenIngestorSGS:
             return len(rows)
 
         with patch("src.pipeline.bacen_pipeline.BacenClient") as mock_client_cls, \
-             patch("src.pipeline.bacen_pipeline.get_supabase_client", return_value=MagicMock()), \
+             patch("src.pipeline.bacen_pipeline.get_pg_client", return_value=MagicMock()), \
              patch("src.pipeline.bacen_pipeline.upsert_rows", side_effect=_fake_upsert):
             mock_client = mock_client_cls.return_value
             mock_client.get_sgs_series = AsyncMock(return_value=mock_records)
@@ -285,7 +286,7 @@ class TestBacenIngestorSGS:
         from src.pipeline.bacen_pipeline import BacenIngestor
 
         with patch("src.pipeline.bacen_pipeline.BacenClient") as mock_client_cls, \
-             patch("src.pipeline.bacen_pipeline.get_supabase_client", return_value=MagicMock()), \
+             patch("src.pipeline.bacen_pipeline.get_pg_client", return_value=MagicMock()), \
              patch("src.pipeline.bacen_pipeline.upsert_rows", return_value=0):
             mock_client = mock_client_cls.return_value
             mock_client.get_sgs_series = AsyncMock(return_value=[])
@@ -299,7 +300,7 @@ class TestBacenIngestorSGS:
         from src.pipeline.bacen_pipeline import BacenIngestor
 
         with patch("src.pipeline.bacen_pipeline.BacenClient") as mock_client_cls, \
-             patch("src.pipeline.bacen_pipeline.get_supabase_client", return_value=MagicMock()), \
+             patch("src.pipeline.bacen_pipeline.get_pg_client", return_value=MagicMock()), \
              patch("src.pipeline.bacen_pipeline.upsert_rows", return_value=0):
             mock_client = mock_client_cls.return_value
             mock_client.get_sgs_series = AsyncMock(side_effect=Exception("BCB unreachable"))
@@ -328,7 +329,7 @@ class TestBacenIngestorPTAX:
             return len(rows)
 
         with patch("src.pipeline.bacen_pipeline.BacenClient") as mock_client_cls, \
-             patch("src.pipeline.bacen_pipeline.get_supabase_client", return_value=MagicMock()), \
+             patch("src.pipeline.bacen_pipeline.get_pg_client", return_value=MagicMock()), \
              patch("src.pipeline.bacen_pipeline.upsert_rows", side_effect=_fake_upsert), \
              patch("src.pipeline.bacen_pipeline.PTAX_CURRENCIES", ["USD"]):
             mock_client = mock_client_cls.return_value
