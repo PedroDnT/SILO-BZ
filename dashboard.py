@@ -21,6 +21,9 @@ load_dotenv()
 
 st.set_page_config(page_title="iliquid_nightly", page_icon="📊", layout="wide")
 
+import psycopg2
+import psycopg2.extras
+
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 

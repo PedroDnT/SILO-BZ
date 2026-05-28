@@ -337,6 +337,317 @@ def q11_ingest_log(conn):
 
 
 # ---------------------------------------------------------------------------
+# Suspicious deal screens  (Q12–Q19)
+# ---------------------------------------------------------------------------
+
+def q12_cross_fund_holdings(conn):
+    print(f"\n{SEP}")
+    print("  Q12 — SUSPICIOUS: cross-fund holdings (FoF > 50% of portfolio)")
+    print(SEP)
+    sql = """
+    WITH latest_cda AS (
+        SELECT cnpj, MAX(period) AS max_period
+        FROM cvm_fi_cda
+        GROUP BY cnpj
+    ),
+    portfolio AS (
+        SELECT c.cnpj, c.period,
+               SUM(c.vl_merc_pos_final)
+                   FILTER (WHERE c.tp_ativo ILIKE 'FUNDO%' OR c.tp_aplic ILIKE '%fundo%')
+                   AS vl_in_funds,
+               SUM(c.vl_merc_pos_final) AS vl_total
+        FROM cvm_fi_cda c
+        JOIN latest_cda lc ON lc.cnpj = c.cnpj AND lc.max_period = c.period
+        GROUP BY c.cnpj, c.period
+    )
+    SELECT p.cnpj,
+           p.period::TEXT,
+           ROUND(p.vl_in_funds / 1e6, 2)  AS vl_in_funds_m,
+           ROUND(p.vl_total   / 1e6, 2)   AS portfolio_m,
+           ROUND(100.0 * p.vl_in_funds / NULLIF(p.vl_total, 0), 1) AS pct_in_funds
+    FROM portfolio p
+    WHERE p.vl_in_funds / NULLIF(p.vl_total, 0) > 0.5
+      AND p.vl_total > 10e6
+    ORDER BY pct_in_funds DESC
+    LIMIT 20
+    """
+    rows, cols = _run(conn, sql)
+    _print_table(rows, cols)
+    print(f"\n  Verdict: {_verdict(rows, None, 'cross-fund')}")
+
+
+def q13_zombie_funds(conn):
+    print(f"\n{SEP}")
+    print("  Q13 — SUSPICIOUS: zombie FIDCs (delinquency +2pp over 6mo, AUM still grew)")
+    print(SEP)
+    sql = """
+    WITH ranked AS (
+        SELECT cnpj, period,
+               vl_patrim_liq,
+               ROUND(100.0 * vl_inadimpl / NULLIF(vl_patrim_liq, 0), 2) AS inadimpl_rate,
+               ROW_NUMBER() OVER (PARTITION BY cnpj ORDER BY period DESC) AS rn_desc,
+               ROW_NUMBER() OVER (PARTITION BY cnpj ORDER BY period ASC)  AS rn_asc
+        FROM cvm_fidc_mensal
+        WHERE vl_patrim_liq > 0
+    ),
+    now_  AS (SELECT cnpj, period, vl_patrim_liq, inadimpl_rate FROM ranked WHERE rn_desc = 1),
+    then_ AS (SELECT cnpj, period, vl_patrim_liq, inadimpl_rate FROM ranked WHERE rn_desc = 7)
+    SELECT n.cnpj,
+           n.period::TEXT                                        AS period_now,
+           ROUND(n.inadimpl_rate, 2)                            AS inadimpl_now_pct,
+           ROUND(t.inadimpl_rate, 2)                            AS inadimpl_6mo_ago_pct,
+           ROUND(n.inadimpl_rate - t.inadimpl_rate, 2)          AS acceleration_pp,
+           ROUND(n.vl_patrim_liq / 1e6, 1)                      AS pl_now_m,
+           ROUND((n.vl_patrim_liq - t.vl_patrim_liq) / 1e6, 1) AS pl_delta_m
+    FROM now_ n
+    JOIN then_ t ON t.cnpj = n.cnpj
+    WHERE n.inadimpl_rate - t.inadimpl_rate >= 2.0
+      AND n.vl_patrim_liq > t.vl_patrim_liq
+      AND n.vl_patrim_liq > 50e6
+    ORDER BY acceleration_pp DESC
+    LIMIT 20
+    """
+    rows, cols = _run(conn, sql)
+    _print_table(rows, cols)
+    print(f"\n  Verdict: {_verdict(rows, None, 'zombie')}")
+
+
+def q14_captive_vehicles(conn):
+    print(f"\n{SEP}")
+    print("  Q14 — SUSPICIOUS: captive vehicles (R$100M+ AUM, ≤10 investors)")
+    print(SEP)
+    sql = """
+    SELECT cnpj, dt_comptc::TEXT AS date, tp_fundo,
+           nr_cotst,
+           ROUND(vl_patrim_liq / 1e6, 1) AS pl_m,
+           ROUND(vl_patrim_liq / NULLIF(nr_cotst, 0) / 1e6, 2) AS pl_per_cotista_m
+    FROM cvm_fi_diario
+    WHERE dt_comptc = (SELECT MAX(dt_comptc) FROM cvm_fi_diario)
+      AND nr_cotst BETWEEN 1 AND 10
+      AND vl_patrim_liq > 100e6
+    ORDER BY vl_patrim_liq DESC
+    LIMIT 20
+    """
+    rows, cols = _run(conn, sql)
+    _print_table(rows, cols)
+    print(f"\n  Verdict: {_verdict(rows, None, 'captive')}")
+
+
+def q15_evergreen_aging(conn):
+    print(f"\n{SEP}")
+    print("  Q15 — SUSPICIOUS: evergreen aging (>70% delinquency always in 0-30d bucket)")
+    print(SEP)
+    sql = """
+    WITH monthly AS (
+        SELECT cnpj, period,
+               ROUND(100.0 * vl_inad_30 / NULLIF(vl_total_inad, 0), 1) AS pct_short,
+               ROUND(100.0 * (COALESCE(vl_inad_360, 0) + COALESCE(vl_inad_maior_1080, 0))
+                     / NULLIF(vl_total_inad, 0), 1) AS pct_long_tail
+        FROM cvm_fidc_aging
+        WHERE vl_total_inad > 1e6
+    )
+    SELECT cnpj,
+           COUNT(period)            AS months,
+           ROUND(AVG(pct_short), 1) AS avg_pct_short_bucket,
+           ROUND(STDDEV(pct_short), 1) AS stddev_short,
+           ROUND(AVG(pct_long_tail), 1) AS avg_pct_long_tail,
+           MAX(period)::TEXT        AS latest_period
+    FROM monthly
+    GROUP BY cnpj
+    HAVING COUNT(period) >= 6
+       AND AVG(pct_short) > 70
+       AND STDDEV(pct_short) < 10
+       AND AVG(pct_long_tail) < 5
+    ORDER BY avg_pct_short_bucket DESC
+    LIMIT 20
+    """
+    rows, cols = _run(conn, sql)
+    _print_table(rows, cols)
+    print(f"\n  Verdict: {_verdict(rows, None, 'evergreen')}")
+
+
+def q16_subordination_erosion(conn):
+    print(f"\n{SEP}")
+    print("  Q16 — SUSPICIOUS: subordination erosion (junior -3pp+ in one month)")
+    print(SEP)
+    sql = """
+    WITH fund_nav AS (
+        SELECT cnpj, period,
+               SUM(qt_cota * vl_cota)
+                   FILTER (WHERE LOWER(classe_serie) LIKE '%junior%'
+                              OR LOWER(classe_serie) LIKE '%j%nior%')
+                   AS nav_junior,
+               SUM(qt_cota * vl_cota) AS nav_total
+        FROM cvm_fidc_tranche
+        WHERE vl_cota > 0 AND qt_cota > 0
+        GROUP BY cnpj, period
+    ),
+    subord AS (
+        SELECT cnpj, period,
+               ROUND(100.0 * nav_junior / NULLIF(nav_total, 0), 2) AS subord_pct,
+               LAG(ROUND(100.0 * nav_junior / NULLIF(nav_total, 0), 2))
+                   OVER (PARTITION BY cnpj ORDER BY period) AS subord_prev
+        FROM fund_nav
+        WHERE nav_total > 10e6
+    )
+    SELECT cnpj,
+           period::TEXT,
+           subord_pct,
+           subord_prev,
+           ROUND(subord_pct - subord_prev, 2) AS delta_pp
+    FROM subord
+    WHERE subord_prev IS NOT NULL
+      AND subord_pct - subord_prev <= -3
+    ORDER BY delta_pp ASC
+    LIMIT 20
+    """
+    rows, cols = _run(conn, sql)
+    _print_table(rows, cols)
+    print(f"\n  Verdict: {_verdict(rows, None, 'subord_erosion')}")
+
+
+def q17_senior_yield_decoupled(conn):
+    print(f"\n{SEP}")
+    print("  Q17 — SUSPICIOUS: senior yield positive despite fund inadimpl > 15%")
+    print(SEP)
+    sql = """
+    WITH delinq AS (
+        SELECT cnpj, period,
+               ROUND(100.0 * vl_inadimpl / NULLIF(vl_patrim_liq, 0), 2) AS inadimpl_rate
+        FROM cvm_fidc_mensal
+        WHERE vl_patrim_liq > 50e6
+    ),
+    senior AS (
+        SELECT cnpj, period,
+               ROUND(AVG(vl_rentab_mes) * 100, 4) AS avg_senior_return_pct,
+               COUNT(*) AS n_tranches
+        FROM cvm_fidc_tranche
+        WHERE (LOWER(classe_serie) LIKE '%senior%' OR LOWER(classe_serie) LIKE '%s%nior%')
+          AND vl_rentab_mes BETWEEN -0.1 AND 0.1
+        GROUP BY cnpj, period
+    )
+    SELECT d.cnpj, d.period::TEXT, d.inadimpl_rate,
+           s.avg_senior_return_pct, s.n_tranches
+    FROM delinq d
+    JOIN senior s ON s.cnpj = d.cnpj AND s.period = d.period
+    WHERE d.inadimpl_rate > 15
+      AND s.avg_senior_return_pct > 0
+    ORDER BY d.inadimpl_rate DESC
+    LIMIT 20
+    """
+    rows, cols = _run(conn, sql)
+    _print_table(rows, cols)
+    print(f"\n  Verdict: {_verdict(rows, None, 'yield_decoupled')}")
+
+
+def q18_overdue_securit(conn):
+    print(f"\n{SEP}")
+    print("  Q18 — SUSPICIOUS: CRI/CRA past maturity but still open")
+    print(SEP)
+    sql = """
+    SELECT instrument_type, cnpj_securit, codigo_isin, numero_serie,
+           data_vencimento::TEXT, situacao,
+           ROUND(valor_total_integralizado / 1e6, 2) AS integralizado_m,
+           classificacao_risco_atual,
+           data_referencia::TEXT AS last_report
+    FROM cvm_securit_serie s
+    WHERE data_vencimento < CURRENT_DATE
+      AND data_vencimento IS NOT NULL
+      AND situacao IS NOT NULL
+      AND LOWER(situacao) NOT IN ('liquidado', 'vencido', 'cancelado', 'encerrado')
+      AND data_referencia = (
+          SELECT MAX(s2.data_referencia)
+          FROM cvm_securit_serie s2
+          WHERE s2.cnpj_securit = s.cnpj_securit
+            AND s2.codigo_identificacao = s.codigo_identificacao
+      )
+    ORDER BY data_vencimento ASC
+    LIMIT 20
+    """
+    rows, cols = _run(conn, sql)
+    _print_table(rows, cols)
+    print(f"\n  Verdict: {_verdict(rows, None, 'overdue_securit')}")
+
+
+def q19_combined_watchlist(conn):
+    print(f"\n{SEP}")
+    print("  Q19 — SUSPICIOUS: combined red-flag watchlist (FIDCs with ≥2 signals)")
+    print(SEP)
+    sql = """
+    WITH ranked AS (
+        SELECT cnpj, period, vl_patrim_liq,
+               ROUND(100.0 * vl_inadimpl / NULLIF(vl_patrim_liq, 0), 2) AS inadimpl_rate,
+               ROW_NUMBER() OVER (PARTITION BY cnpj ORDER BY period DESC) AS rn_desc
+        FROM cvm_fidc_mensal
+        WHERE vl_patrim_liq > 0
+    ),
+    now_ AS (SELECT cnpj, period, vl_patrim_liq, inadimpl_rate FROM ranked WHERE rn_desc = 1),
+    prev_ AS (SELECT cnpj, vl_patrim_liq AS prev_pl, inadimpl_rate AS prev_rate
+              FROM ranked WHERE rn_desc = 7),
+    zombie AS (
+        SELECT n.cnpj
+        FROM now_ n JOIN prev_ p ON p.cnpj = n.cnpj
+        WHERE n.inadimpl_rate - p.prev_rate >= 1.5
+          AND n.vl_patrim_liq > p.prev_pl
+          AND n.vl_patrim_liq > 50e6
+    ),
+    evergreen AS (
+        SELECT cnpj
+        FROM (
+            SELECT cnpj,
+                   AVG(100.0 * vl_inad_30 / NULLIF(vl_total_inad, 0)) AS avg_short,
+                   STDDEV(100.0 * vl_inad_30 / NULLIF(vl_total_inad, 0)) AS sd_short
+            FROM cvm_fidc_aging
+            WHERE vl_total_inad > 1e6
+            GROUP BY cnpj HAVING COUNT(*) >= 6
+        ) t
+        WHERE avg_short > 70 AND sd_short < 10
+    ),
+    fund_nav AS (
+        SELECT cnpj, period,
+               ROUND(100.0 *
+                   SUM(qt_cota * vl_cota) FILTER (
+                       WHERE LOWER(classe_serie) LIKE '%junior%'
+                          OR LOWER(classe_serie) LIKE '%j%nior%'
+                   ) / NULLIF(SUM(qt_cota * vl_cota), 0), 2) AS subord_pct,
+               LAG(ROUND(100.0 *
+                   SUM(qt_cota * vl_cota) FILTER (
+                       WHERE LOWER(classe_serie) LIKE '%junior%'
+                          OR LOWER(classe_serie) LIKE '%j%nior%'
+                   ) / NULLIF(SUM(qt_cota * vl_cota), 0), 2))
+                   OVER (PARTITION BY cnpj ORDER BY period) AS subord_prev
+        FROM cvm_fidc_tranche
+        WHERE vl_cota > 0 AND qt_cota > 0
+        GROUP BY cnpj, period
+    ),
+    erosion AS (
+        SELECT DISTINCT cnpj FROM fund_nav
+        WHERE subord_prev IS NOT NULL AND subord_pct - subord_prev <= -3
+    )
+    SELECT n.cnpj,
+           n.period::TEXT                            AS latest_period,
+           ROUND(n.vl_patrim_liq / 1e6, 1)          AS pl_m,
+           n.inadimpl_rate                           AS inadimpl_pct,
+           (z.cnpj IS NOT NULL)::INT                 AS flag_zombie,
+           (e.cnpj IS NOT NULL)::INT                 AS flag_evergreen,
+           (er.cnpj IS NOT NULL)::INT                AS flag_erosion,
+           (z.cnpj IS NOT NULL)::INT
+         + (e.cnpj IS NOT NULL)::INT
+         + (er.cnpj IS NOT NULL)::INT                AS flag_count
+    FROM now_ n
+    LEFT JOIN zombie   z  ON z.cnpj  = n.cnpj
+    LEFT JOIN evergreen e ON e.cnpj  = n.cnpj
+    LEFT JOIN erosion  er ON er.cnpj = n.cnpj
+    WHERE (z.cnpj IS NOT NULL OR e.cnpj IS NOT NULL OR er.cnpj IS NOT NULL)
+    ORDER BY flag_count DESC, n.vl_patrim_liq DESC
+    LIMIT 20
+    """
+    rows, cols = _run(conn, sql)
+    _print_table(rows, cols)
+    print(f"\n  Verdict: {_verdict(rows, None, 'watchlist')}")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -370,6 +681,14 @@ def main(db_path: str):
     q9_securit_emissions(conn)
     q10_fip_trend(conn)
     q11_ingest_log(conn)
+    q12_cross_fund_holdings(conn)
+    q13_zombie_funds(conn)
+    q14_captive_vehicles(conn)
+    q15_evergreen_aging(conn)
+    q16_subordination_erosion(conn)
+    q17_senior_yield_decoupled(conn)
+    q18_overdue_securit(conn)
+    q19_combined_watchlist(conn)
 
     conn.close()
     print(f"\n{SEP}")
