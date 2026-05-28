@@ -74,14 +74,6 @@ jobs:
             $ENTITY_FLAG \
             --cvm-only
 
-      - name: Refresh analytical matviews
-        if: ${{ inputs.mode == 'backfill' || github.event_name == 'schedule' }}
-        run: |
-          psql "$POSTGRES_URL" -c "
-            REFRESH MATERIALIZED VIEW CONCURRENTLY fact_fund_monthly;
-            REFRESH MATERIALIZED VIEW CONCURRENTLY fact_security_monthly;
-          "
-
       - name: Analyze tables post-ingest
         if: ${{ inputs.mode == 'backfill' || github.event_name == 'schedule' }}
         run: |
@@ -90,6 +82,4 @@ jobs:
             ANALYZE cvm_fidc_mensal;
             ANALYZE cvm_fidc_tranche;
             ANALYZE cvm_fii_mensal;
-            ANALYZE fact_fund_monthly;
-            ANALYZE fact_security_monthly;
           "
