@@ -4,7 +4,7 @@ Apply schema.sql changes to Supabase by executing DDL via direct PostgreSQL.
 Usage:
     python scripts/apply_schema.py
 
-Requires: SUPABASE_DB_URL in .env (postgresql://... format)
+Requires: POSTGRES_URL in .env (postgresql://... format)
 Falls back to manual instructions if connection fails.
 """
 
@@ -248,9 +248,9 @@ def main():
     print("  CVM SCHEMA MIGRATION")
     print("=" * 68)
 
-    db_url = os.environ.get("SUPABASE_DB_URL")
+    db_url = os.environ.get("POSTGRES_URL")
     if not db_url:
-        print("  SUPABASE_DB_URL not set.")
+        print("  POSTGRES_URL not set.")
         print_manual_instructions()
         return
 

@@ -1,8 +1,8 @@
 """
-Postgres client wrapper for bulk upsert operations.
+Postgres client wrapper for bulk upsert operations (Neon-backed).
 
 Requires:
-  POSTGRES_URL — postgresql://user:pass@host/db?sslmode=require
+  POSTGRES_URL — postgresql://user:pass@<neon-host>/db?sslmode=require
 """
 
 import logging
@@ -49,7 +49,7 @@ class _PgClient:
         return self._url
 
 
-def get_supabase_client() -> Any:
+def get_pg_client() -> Any:
     """Return an initialised Postgres client (psycopg2-backed)."""
     url = os.environ.get("POSTGRES_URL")
     if not url:

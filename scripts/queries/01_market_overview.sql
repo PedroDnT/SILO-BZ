@@ -1,5 +1,5 @@
 -- Market pulse: AUM by entity, FIDC delinquency, data freshness
--- Paste into Supabase SQL editor or: psql $SUPABASE_DB_URL -f scripts/queries/01_market_overview.sql
+-- Paste into psql $POSTGRES_URL -f scripts/queries/01_market_overview.sql
 
 -- Total AUM + fund count by entity type — last 6 months
 SELECT * FROM industry_aum_trend(NULL, CURRENT_DATE - 180, CURRENT_DATE)

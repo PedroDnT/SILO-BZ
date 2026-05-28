@@ -1,5 +1,5 @@
 -- FIDC credit monitor: sector delinquency, tranche performance, subordination
--- Paste into Supabase SQL editor or: psql $SUPABASE_DB_URL -f scripts/queries/03_fidc_credit_monitor.sql
+-- Paste into psql $POSTGRES_URL -f scripts/queries/03_fidc_credit_monitor.sql
 
 -- Sector delinquency trend — trailing 24 months
 SELECT * FROM fidc_delinquency_trend(CURRENT_DATE - 730, CURRENT_DATE)

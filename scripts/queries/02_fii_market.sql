@@ -1,5 +1,5 @@
 -- FII market deep-dive: AUM trend, yield distribution, top funds, concentration
--- Paste into Supabase SQL editor or: psql $SUPABASE_DB_URL -f scripts/queries/02_fii_market.sql
+-- Paste into psql $POSTGRES_URL -f scripts/queries/02_fii_market.sql
 
 -- FII vs FIAGRO AUM comparison — last 24 months
 SELECT * FROM cross_entity_comparison(ARRAY['fii','fiagro'], 'aum', CURRENT_DATE - 730, CURRENT_DATE)

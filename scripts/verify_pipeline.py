@@ -22,7 +22,7 @@ try:
 except ImportError:
     pass
 
-from src.store.supabase_client import get_supabase_client
+from src.store.supabase_client import get_pg_client
 
 SEP = "=" * 68
 SEP2 = "-" * 68
@@ -365,7 +365,7 @@ def main():
     print("  CVM PIPELINE VERIFICATION REPORT")
     print(f"  {SEP2}")
     try:
-        client = get_supabase_client()
+        client = get_pg_client()
         print("  Postgres connection: OK")
     except EnvironmentError as e:
         print(f"  ERROR: {e}")

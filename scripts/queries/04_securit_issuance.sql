@@ -1,5 +1,5 @@
 -- CRA/CRI/OTS: issuance trend, maturity ladder, distressed securities screen
--- Paste into Supabase SQL editor or: psql $SUPABASE_DB_URL -f scripts/queries/04_securit_issuance.sql
+-- Paste into psql $POSTGRES_URL -f scripts/queries/04_securit_issuance.sql
 
 -- Monthly issuance by instrument type — last 3 years
 SELECT * FROM security_issuance_trend(NULL, CURRENT_DATE - 1095, CURRENT_DATE)

@@ -1,5 +1,5 @@
 -- Pipeline operational health: ingest log + data coverage alerts
--- Paste into Supabase SQL editor or: psql $SUPABASE_DB_URL -f scripts/queries/08_ingest_health.sql
+-- Paste into psql $POSTGRES_URL -f scripts/queries/08_ingest_health.sql
 
 -- Last 7 days of ingest runs — any errors?
 SELECT * FROM ingest_log_summary(CURRENT_DATE - 7, CURRENT_DATE)

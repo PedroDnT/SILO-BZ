@@ -1,5 +1,5 @@
 -- Fund name exploration: search by manager, coverage check, status breakdown
--- Paste into Supabase SQL editor or: psql $SUPABASE_DB_URL -f scripts/queries/09_fund_names.sql
+-- Paste into psql $POSTGRES_URL -f scripts/queries/09_fund_names.sql
 
 -- Search by fund manager name (case-insensitive, all entity types)
 SELECT cnpj, entity_type, fund_name, latest_aum FROM search_funds('kinea', NULL, 10);

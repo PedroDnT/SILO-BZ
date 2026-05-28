@@ -28,7 +28,7 @@ from uuid import uuid4
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.fetchers.cvm_fetcher import CVMFetcher
-from src.store.supabase_client import get_supabase_client, upsert_rows
+from src.store.supabase_client import get_pg_client, upsert_rows
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +127,7 @@ class CVMIngestor:
 
     def __init__(self) -> None:
         self._service = CVMFetcher()
-        self._supabase = get_supabase_client()
+        self._supabase = get_pg_client()
 
     # ------------------------------------------------------------------
     # Ingest log helpers

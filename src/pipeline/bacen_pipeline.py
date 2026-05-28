@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.fetchers.bacen_fetcher import BacenClient
-from src.store.supabase_client import get_supabase_client, upsert_rows
+from src.store.supabase_client import get_pg_client, upsert_rows
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ class BacenIngestor:
 
     def __init__(self) -> None:
         self._client  = BacenClient()
-        self._supabase = get_supabase_client()
+        self._supabase = get_pg_client()
 
     # ------------------------------------------------------------------
     # SGS time series

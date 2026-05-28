@@ -10,7 +10,7 @@ TABLES = [
 ]
 
 async def main():
-    pooler_url = os.environ["SUPABASE_DB_URL"]
+    pooler_url = os.environ["POSTGRES_URL"]
     session_url = re.sub(r":6543/", ":5432/", pooler_url)
     conn = await asyncpg.connect(session_url)
     print("Connection: OK")

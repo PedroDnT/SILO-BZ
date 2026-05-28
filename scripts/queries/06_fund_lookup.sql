@@ -1,5 +1,5 @@
 -- Fund lookup: search by name, full profile, NAV history, flow trend, peer rank
--- Paste into Supabase SQL editor or: psql $SUPABASE_DB_URL -f scripts/queries/06_fund_lookup.sql
+-- Paste into psql $POSTGRES_URL -f scripts/queries/06_fund_lookup.sql
 
 -- 1. Search by name or CNPJ fragment — works across all entity types
 SELECT cnpj, entity_type, fund_name, first_period, last_period, latest_aum
