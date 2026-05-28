@@ -15,6 +15,21 @@ group by a.period
 order by a.period
 ```
 
+```sql aging_buckets
+select
+  period,
+  sum(vl_inad_30)          / 1e6 as inad_30d,
+  sum(vl_inad_60)          / 1e6 as inad_60d,
+  sum(vl_inad_90)          / 1e6 as inad_90d,
+  sum(vl_inad_180)         / 1e6 as inad_180d,
+  sum(vl_inad_360)         / 1e6 as inad_360d,
+  sum(vl_inad_maior_1080)  / 1e6 as inad_over1080d
+from cvm_fidc_aging
+where period >= current_date - interval '12 months'
+group by period
+order by period
+```
+
 ```sql top_delinquent
 select
   a.cnpj,
@@ -32,36 +47,20 @@ order by delinquency_pct desc nulls last
 limit 20
 ```
 
-```sql aging_buckets
-select
-  period,
-  sum(vl_inad_30)  / 1e6 as inad_30d,
-  sum(vl_inad_60)  / 1e6 as inad_60d,
-  sum(vl_inad_90)  / 1e6 as inad_90d,
-  sum(vl_inad_180) / 1e6 as inad_180d,
-  sum(vl_inad_360) / 1e6 as inad_360d,
-  sum(vl_inad_maior_1080) / 1e6 as inad_over1080d
-from cvm_fidc_aging
-where period >= current_date - interval '12 months'
-group by period
-order by period
-```
-
 ```sql zombie_funds
 select
   a.cnpj,
   coalesce(r.fund_name, a.cnpj) as fund_name,
   a.period,
   m.vl_patrim_liq / 1e6 as pl_mm,
-  round(100.0 * a.vl_total_inad / nullif(m.vl_patrim_liq, 0), 1) as delinquency_pct,
-  lag(round(100.0 * a.vl_total_inad / nullif(m.vl_patrim_liq, 0), 1))
-    over (partition by a.cnpj order by a.period) as prev_delinquency_pct
+  round(100.0 * a.vl_total_inad / nullif(m.vl_patrim_liq, 0), 1) as inad_pct
 from cvm_fidc_aging a
 join cvm_fidc_mensal m using (cnpj, period)
 left join cvm_fund_registry r on r.cnpj = a.cnpj and r.entity_type = 'fidc'
-where a.period >= current_date - interval '3 months'
-qualify delinquency_pct > prev_delinquency_pct
-  and m.vl_patrim_liq > lag(m.vl_patrim_liq) over (partition by a.cnpj order by a.period)
+where a.period = (select max(period) from cvm_fidc_aging)
+  and a.vl_total_inad > 0
+  and m.vl_patrim_liq > 1e6
+  and 100.0 * a.vl_total_inad / nullif(m.vl_patrim_liq, 0) > 5
 order by pl_mm desc nulls last
 limit 15
 ```
@@ -82,9 +81,16 @@ Receivables funds: delinquency trends, aging buckets, and forensic red flags.
   title="FIDC Sector Delinquency Rate"
 />
 
+<DataTable data={delinquency_trend} rows=6>
+  <Column id=period title="Period"/>
+  <Column id=n_funds title="Funds" fmt=num0/>
+  <Column id=total_inad_mm title="Total Inad (R$mm)" fmt=num1/>
+  <Column id=delinquency_rate_pct title="Delinq Rate %" fmt=num2/>
+</DataTable>
+
 ---
 
-## Delinquency Aging Buckets (R$ mm)
+## Delinquency Aging Buckets — Last 12 Months (R$ mm)
 
 <AreaChart
   data={aging_buckets}
@@ -108,13 +114,13 @@ Receivables funds: delinquency trends, aging buckets, and forensic red flags.
 
 ---
 
-## 🚨 Zombie Growth Alert — AUM Rising While Delinquency Accelerates
+## 🚨 Funds with Delinquency > 5% and AUM > R$1mm
 
-> Funds where both AUM and delinquency rate increased in the last quarter. Classic stress signal.
+> High delinquency combined with meaningful AUM — potential zombie candidates.
 
 <DataTable data={zombie_funds}>
   <Column id=fund_name title="Fund"/>
+  <Column id=period title="Period"/>
   <Column id=pl_mm title="AUM (R$mm)" fmt=num1/>
-  <Column id=delinquency_pct title="Delinq % Now" fmt=num1/>
-  <Column id=prev_delinquency_pct title="Delinq % Prev" fmt=num1/>
+  <Column id=inad_pct title="Delinq %" fmt=num1/>
 </DataTable>

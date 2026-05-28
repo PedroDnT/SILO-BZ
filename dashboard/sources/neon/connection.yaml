@@ -1,9 +1,4 @@
 name: neon
 type: postgres
 options:
-  host: "{{ env_var('PGHOST') }}"
-  port: "{{ env_var('PGPORT', '5432') }}"
-  database: "{{ env_var('PGDATABASE') }}"
-  user: "{{ env_var('PGUSER') }}"
-  password: "{{ env_var('PGPASSWORD') }}"
-  ssl: true
+  connectionString: postgresql://neondb_owner:npg_z76STIyDdtnV@ep-raspy-credit-aqbbq518-pooler.c-8.us-east-1.aws.neon.tech/neondb?channel_binding=require&sslmode=require
