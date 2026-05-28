@@ -20,6 +20,45 @@ _DEFAULT_CHUNK_SIZE = 500
 _RETRY_DELAYS = (5, 10, 20, 40)
 
 
+def _norm_key(k: str) -> str:
+    """Lowercase + strip underscores — collapses CSV header variants like
+    'VL_TOTAL' / 'vl_total' / 'VlTotal' to a single canonical form."""
+    return k.lower().replace("_", "")
+
+
+def _strip_raw_duplicates(rows: List[Dict[str, Any]]) -> None:
+    """Mutate `rows` in place: for each row that has a `raw` JSONB dict, drop
+    any key whose case- and underscore-normalised form matches a sibling typed
+    column. This eliminates the redundancy where every typed column has an
+    identical copy inside raw (e.g. cvm_fi_diario row carrying both `vl_total`
+    typed and `VL_TOTAL` in raw). Source-specific keys that don't collide
+    (e.g. `TAB_IV_A_VL_PL`) are preserved for audit/re-mapping.
+
+    Also drops common CNPJ-bearing keys when a `cnpj` / `cnpj_securit` typed
+    column exists, since those are normalised at the typed level."""
+    if not rows:
+        return
+    sample = rows[0]
+    if "raw" not in sample:
+        return
+    typed_norm = {_norm_key(c) for c in sample.keys() if c != "raw"}
+    has_cnpj_col = any(c in sample for c in ("cnpj", "cnpj_securit"))
+    for row in rows:
+        raw = row.get("raw")
+        if not isinstance(raw, dict):
+            continue
+        kept: Dict[str, Any] = {}
+        for k, v in raw.items():
+            n = _norm_key(k)
+            if n in typed_norm:
+                continue
+            if has_cnpj_col and "cnpj" in n:
+                continue
+            kept[k] = v
+        # Keep as empty dict (not None) — several tables declare `raw JSONB NOT NULL`.
+        row["raw"] = kept
+
+
 def _get_upsert_chunk_size() -> int:
     raw = os.getenv("CVM_UPSERT_CHUNK_SIZE", str(_DEFAULT_CHUNK_SIZE)).strip()
     try:
@@ -103,6 +142,8 @@ def upsert_rows(
     """
     if not rows:
         return 0
+
+    _strip_raw_duplicates(rows)
 
     if conflict_columns:
         keys = [c.strip() for c in conflict_columns.split(",") if c.strip()]

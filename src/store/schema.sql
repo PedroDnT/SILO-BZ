@@ -381,6 +381,86 @@ CREATE INDEX IF NOT EXISTS idx_securit_dfin_cnpj      ON cvm_securit_dfin (cnpj_
 CREATE INDEX IF NOT EXISTS idx_securit_dfin_type_year ON cvm_securit_dfin (instrument_type, period_year DESC);
 
 -- ---------------------------------------------------------------------------
+-- Fund registry — DENOM_SOCIAL, SIT/DT_REG from CVM cadastral CSVs
+-- Sourced from cad_fi.csv (FI), cad_fii.csv (FII), seeded from FIDC raw data.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS cvm_fund_registry (
+    id           BIGSERIAL    PRIMARY KEY,
+    cnpj         TEXT         NOT NULL CHECK (char_length(cnpj) = 14),
+    entity_type  TEXT         NOT NULL,   -- fi | fii | fidc | fip | fiagro | securit
+    fund_name    TEXT,
+    status       TEXT,
+    tp_fundo     TEXT,
+    dt_reg       DATE,
+    dt_cancel    DATE,
+    raw          JSONB,
+    fetched_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fund_registry UNIQUE (cnpj, entity_type)
+);
+CREATE INDEX IF NOT EXISTS idx_fund_registry_cnpj   ON cvm_fund_registry (cnpj);
+CREATE INDEX IF NOT EXISTS idx_fund_registry_entity ON cvm_fund_registry (entity_type, status);
+
+-- ---------------------------------------------------------------------------
+-- Additive column migrations for typed-field lifts (idempotent).
+-- ---------------------------------------------------------------------------
+
+-- cvm_fidc_mensal: add tp_fundo (source: TP_FUNDO_CLASSE / TP_FUNDO)
+ALTER TABLE cvm_fidc_mensal
+    ADD COLUMN IF NOT EXISTS tp_fundo TEXT;
+
+-- cvm_fiagro_mensal: add tp_fundo (source: Tipo_Fundo_Classe / TP_FUNDO_CLASSE)
+ALTER TABLE cvm_fiagro_mensal
+    ADD COLUMN IF NOT EXISTS tp_fundo TEXT;
+
+-- cvm_fii_mensal: add tp_fundo (source: Tipo_Fundo_Classe)
+ALTER TABLE cvm_fii_mensal
+    ADD COLUMN IF NOT EXISTS tp_fundo TEXT;
+
+-- cvm_fi_perfil: lift high-signal fields from raw JSONB
+ALTER TABLE cvm_fi_perfil
+    ADD COLUMN IF NOT EXISTS mod_var                          TEXT,
+    ADD COLUMN IF NOT EXISTS vedac_taxa_perfm                 TEXT,
+    ADD COLUMN IF NOT EXISTS pr_var_carteira                  NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS prazo_carteira_titulo            NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS pr_variacao_diaria_cota          NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS pr_variacao_diaria_cota_estresse NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS pr_ativo_cred_priv               NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS pr_ativo_emissor_ligado          NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS pr_patrim_liq_maior_cotst        NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS nr_cotst_pf_pb                   INT,
+    ADD COLUMN IF NOT EXISTS nr_cotst_pj_financ               INT,
+    ADD COLUMN IF NOT EXISTS nr_cotst_pj_nao_financ_pb        INT,
+    ADD COLUMN IF NOT EXISTS nr_cotst_pj_nao_financ_varejo    INT,
+    ADD COLUMN IF NOT EXISTS nr_cotst_banco                   INT,
+    ADD COLUMN IF NOT EXISTS nr_cotst_fi_clube                INT,
+    ADD COLUMN IF NOT EXISTS nr_cotst_distrib                 INT;
+
+-- cvm_securit_fluxo: lift extra cashflow categories
+ALTER TABLE cvm_securit_fluxo
+    ADD COLUMN IF NOT EXISTS recebimentos_alienacao_caixa NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS outros_recebimentos          NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS aquisicao_caixa              NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS aquisicao_novos_creditos     NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS outros_pagamentos            NUMERIC(20,6);
+
+-- cvm_securit_serie: lift schedule / indexer / subordination columns
+ALTER TABLE cvm_securit_serie
+    ADD COLUMN IF NOT EXISTS indice_subordinacao_data_base DATE,
+    ADD COLUMN IF NOT EXISTS pagamento_mes_base            TEXT,
+    ADD COLUMN IF NOT EXISTS periodicidade_amortizacao     TEXT,
+    ADD COLUMN IF NOT EXISTS taxas_indexadores             TEXT,
+    ADD COLUMN IF NOT EXISTS nivel_subordinacao            TEXT;
+
+-- cvm_fii_periodic: lift property-level columns
+ALTER TABLE cvm_fii_periodic
+    ADD COLUMN IF NOT EXISTS data_referencia      DATE,
+    ADD COLUMN IF NOT EXISTS nome_imovel          TEXT,
+    ADD COLUMN IF NOT EXISTS endereco             TEXT,
+    ADD COLUMN IF NOT EXISTS area                 NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS numero_unidades      INT,
+    ADD COLUMN IF NOT EXISTS percentual_imovel_pl NUMERIC(20,8);
+
+-- ---------------------------------------------------------------------------
 -- BACEN: SGS time series  (SELIC, IPCA, CDI, IGP-M, USD/BRL, …)
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS bacen_sgs (

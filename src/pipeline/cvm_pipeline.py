@@ -491,7 +491,27 @@ class CVMIngestor:
             for row in raw_rows:
                 cnpj_raw = _find_cnpj_field(row)
                 cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else ""
-                records.append({"cnpj": cnpj, "period": period, "raw": row})
+                records.append({
+                    "cnpj":                              cnpj,
+                    "period":                            period,
+                    "mod_var":                           _find_field(row, "MOD_VAR"),
+                    "vedac_taxa_perfm":                  _find_field(row, "VEDAC_TAXA_PERFM"),
+                    "pr_var_carteira":                   _find_field(row, "PR_VAR_CARTEIRA"),
+                    "prazo_carteira_titulo":             _find_field(row, "PRAZO_CARTEIRA_TITULO"),
+                    "pr_variacao_diaria_cota":           _find_field(row, "PR_VARIACAO_DIARIA_COTA"),
+                    "pr_variacao_diaria_cota_estresse":  _find_field(row, "PR_VARIACAO_DIARIA_COTA_ESTRESSE"),
+                    "pr_ativo_cred_priv":                _find_field(row, "PR_ATIVO_CRED_PRIV"),
+                    "pr_ativo_emissor_ligado":           _find_field(row, "PR_ATIVO_EMISSOR_LIGADO"),
+                    "pr_patrim_liq_maior_cotst":         _find_field(row, "PR_PATRIM_LIQ_MAIOR_COTST"),
+                    "nr_cotst_pf_pb":                    _find_field(row, "NR_COTST_PF_PB"),
+                    "nr_cotst_pj_financ":                _find_field(row, "NR_COTST_PJ_FINANC"),
+                    "nr_cotst_pj_nao_financ_pb":         _find_field(row, "NR_COTST_PJ_NAO_FINANC_PB"),
+                    "nr_cotst_pj_nao_financ_varejo":     _find_field(row, "NR_COTST_PJ_NAO_FINANC_VAREJO"),
+                    "nr_cotst_banco":                    _find_field(row, "NR_COTST_BANCO"),
+                    "nr_cotst_fi_clube":                 _find_field(row, "NR_COTST_FI_CLUBE"),
+                    "nr_cotst_distrib":                  _find_field(row, "NR_COTST_DISTRIB"),
+                    "raw":                               row,
+                })
             rows_inserted = upsert_rows(
                 self._supabase, "cvm_fi_perfil", records,
                 conflict_columns="cnpj,period",
@@ -522,7 +542,8 @@ class CVMIngestor:
                 records.append({
                     "cnpj":          cnpj,
                     "period":        period,
-                    "vl_total":      _find_field(row, "VL_TOTAL", "VL_CARTEIRA_TOTAL"),
+                    "tp_fundo":      _find_field(row, "TP_FUNDO_CLASSE", "TP_FUNDO"),
+                    "vl_total":      _find_field(row, "VL_TOTAL", "VL_CARTEIRA_TOTAL", "TAB_II_VL_CARTEIRA"),
                     "vl_quota":      _find_field(row, "VL_QUOTA"),
                     "vl_patrim_liq": _find_field(row, "TAB_IV_A_VL_PL", "VL_PATRIM_LIQ"),
                     "vl_inadimpl":   _find_inadimpl(row),
@@ -797,11 +818,12 @@ class CVMIngestor:
                 records.append({
                     "cnpj":          cnpj,
                     "period":        period,
-                    "vl_total":      _find_field(row, "VL_TOTAL", "VL_CARTEIRA_TOTAL"),
-                    "vl_quota":      _find_field(row, "VL_QUOTA"),
-                    "vl_patrim_liq": _find_field(row, "VL_PATRIM_LIQ"),
-                    "vl_inadimpl":   _find_inadimpl(row),
-                    "nr_cotst":      _find_field(row, "NR_COTST"),
+                    "tp_fundo":      _find_field(row, "Tipo_Fundo_Classe", "TP_FUNDO_CLASSE", "TP_FUNDO"),
+                    "vl_total":      _find_field(row, "VL_TOTAL", "VL_CARTEIRA_TOTAL", "Valor_Ativo", "Total_Investido"),
+                    "vl_quota":      _find_field(row, "VL_QUOTA", "Valor_Patrimonial_Cotas"),
+                    "vl_patrim_liq": _find_field(row, "VL_PATRIM_LIQ", "Patrimonio_Liquido"),
+                    "vl_inadimpl":   _find_inadimpl(row) or _find_field(row, "Vencidos"),
+                    "nr_cotst":      _find_field(row, "NR_COTST", "Numero_Cotistas"),
                     "raw":           row,
                 })
             rows_inserted = upsert_rows(
@@ -872,14 +894,15 @@ class CVMIngestor:
                     "cnpj":          cnpj,
                     "period":        period,
                     "doc_subtype":   subtype,
+                    "tp_fundo":      _find_field(row, "Tipo_Fundo_Classe", "TP_FUNDO_CLASSE", "TP_FUNDO"),
                     "vl_patrim_liq": _find_field(row, "Patrimonio_Liquido", "VL_PATRIM_LIQ"),
+                    "cotas_emitidas": _find_field(row, "Cotas_Emitidas", "Quantidade_Cotas_Emitidas"),
                     "raw":           row,
                 }
                 if subtype == "complemento":
                     record.update({
                         "nr_cotst":               _find_field(row, "Total_Numero_Cotistas"),
                         "vl_ativo":               _find_field(row, "Valor_Ativo"),
-                        "cotas_emitidas":         _find_field(row, "Cotas_Emitidas"),
                         "vl_patrimonial_cotas":   _find_field(row, "Valor_Patrimonial_Cotas"),
                         "pct_rentab_efetiva_mes": _find_field(row, "Percentual_Rentabilidade_Efetiva_Mes"),
                         "pct_rentab_patrimonial": _find_field(row, "Percentual_Rentabilidade_Patrimonial_Mes"),
@@ -888,6 +911,7 @@ class CVMIngestor:
                     })
                 elif subtype == "ativo_passivo":
                     record["rendimentos_distribuir"] = _find_field(row, "Rendimentos_Distribuir")
+                    record["vl_ativo"] = _find_field(row, "Total_Investido", "Valor_Ativo")
                 records.append(record)
             rows_inserted = upsert_rows(
                 self._supabase, "cvm_fii_mensal", records,
@@ -916,10 +940,16 @@ class CVMIngestor:
                 cnpj_raw = _find_cnpj_field(row)
                 cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else None
                 records.append({
-                    "cnpj":        cnpj,
-                    "doc_type":    doc_type,
-                    "period_year": year,
-                    "raw":         row,
+                    "cnpj":                  cnpj,
+                    "doc_type":              doc_type,
+                    "period_year":           year,
+                    "data_referencia":       _find_field(row, "Data_Referencia"),
+                    "nome_imovel":           _find_field(row, "Nome_Imovel"),
+                    "endereco":              _find_field(row, "Endereco"),
+                    "area":                  _find_field(row, "Area"),
+                    "numero_unidades":       _find_field(row, "Numero_Unidades"),
+                    "percentual_imovel_pl":  _find_field(row, "Percentual_Imovel_PL"),
+                    "raw":                   row,
                 })
             rows_inserted = upsert_rows(
                 self._supabase, "cvm_fii_periodic", records,
@@ -1061,6 +1091,11 @@ class CVMIngestor:
                     "rentabilidade":             _find_field(row, "Rentabilidade"),
                     "classificacao_risco_atual": _find_field(row, "Classificacao_Risco_Atual"),
                     "indice_subordinacao_minimo": _find_field(row, "Indice_Subordinacao_Minimo"),
+                    "indice_subordinacao_data_base": _find_field(row, "Indice_Subordinacao_Data_Base"),
+                    "pagamento_mes_base":        _find_field(row, "Pagamento_Mes_Base"),
+                    "periodicidade_amortizacao": _find_field(row, "Periodicidade_Amortizacao"),
+                    "taxas_indexadores":         _find_field(row, "Taxas_Indexadores"),
+                    "nivel_subordinacao":        _find_field(row, "Nivel_Subordinacao"),
                     "raw":                       row,
                 })
             rows_inserted = upsert_rows(
@@ -1094,18 +1129,23 @@ class CVMIngestor:
                 records.append({
                     "instrument_type":                   instrument_type,
                     "cnpj_securit":                      cnpj,
-                    "codigo_identificacao":              _find_field(row, "Codigo_Identificacao", "CNPJ_Fundo") or "",
+                    "codigo_identificacao":              _find_field(row, "Codigo_Identificacao_Certificado", "Codigo_Identificacao", "CNPJ_Fundo") or "",
                     "data_referencia":                   data_ref,
-                    "recebimentos_direitos_creditorios": _find_field(row, "Recebimentos_Direitos_Creditorios"),
+                    "recebimentos_direitos_creditorios": _find_field(row, "Recebimentos_Direitos_Creditorios", "Recebimentos_Creditos"),
+                    "recebimentos_alienacao_caixa":      _find_field(row, "Recebimentos_Alienacao_Caixa"),
+                    "outros_recebimentos":               _find_field(row, "Outros_Recebimentos"),
+                    "aquisicao_caixa":                   _find_field(row, "Aquisicao_Caixa"),
+                    "aquisicao_novos_creditos":          _find_field(row, "Aquisicao_Novos_Creditos"),
                     "pagamentos_despesas":               _find_field(row, "Pagamentos_Despesas"),
+                    "outros_pagamentos":                 _find_field(row, "Outros_Pagamentos"),
                     "pagamentos_classe_senior":          _find_field(row, "Pagamentos_Classe_Senior"),
-                    "pagamentos_senior_principal":       _find_field(row, "Pagamentos_Classe_Senior_Principal", "Pagamentos_Senior_Principal"),
+                    "pagamentos_senior_principal":       _find_field(row, "Pagamentos_Classe_Senior_Amortizacao_Principal", "Pagamentos_Classe_Senior_Principal", "Pagamentos_Senior_Principal"),
                     "pagamentos_senior_juros":           _find_field(row, "Pagamentos_Classe_Senior_Juros", "Pagamentos_Senior_Juros"),
                     "pagamentos_mezanino":               _find_field(row, "Pagamentos_Classe_Subordinada_Mezanino"),
-                    "pagamentos_mezanino_principal":     _find_field(row, "Pagamentos_Classe_Subordinada_Mezanino_Principal"),
+                    "pagamentos_mezanino_principal":     _find_field(row, "Pagamentos_Classe_Subordinada_Mezanino_Amortizacao_Principal", "Pagamentos_Classe_Subordinada_Mezanino_Principal"),
                     "pagamentos_mezanino_juros":         _find_field(row, "Pagamentos_Classe_Subordinada_Mezanino_Juros"),
                     "pagamentos_junior":                 _find_field(row, "Pagamentos_Classe_Subordinada_Junior"),
-                    "pagamentos_junior_principal":       _find_field(row, "Pagamentos_Classe_Subordinada_Junior_Principal"),
+                    "pagamentos_junior_principal":       _find_field(row, "Pagamentos_Classe_Subordinada_Junior_Amortizacao_Principal", "Pagamentos_Classe_Subordinada_Junior_Principal"),
                     "pagamentos_junior_juros":           _find_field(row, "Pagamentos_Classe_Subordinada_Junior_Juros"),
                     "variacao_liquida_caixa":            _find_field(row, "Variacao_Liquida_Caixa"),
                     "raw":                               row,
