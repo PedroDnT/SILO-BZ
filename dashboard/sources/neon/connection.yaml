@@ -1,4 +1,2 @@
 name: neon
 type: postgres
-options:
-  connectionString: postgresql://neondb_owner:npg_z76STIyDdtnV@ep-raspy-credit-aqbbq518-pooler.c-8.us-east-1.aws.neon.tech/neondb?channel_binding=require&sslmode=require
