@@ -205,12 +205,13 @@ def q5_fidc_monthly(conn):
     print("  Q5 — FIDC: monthly industry PL + delinquency rate")
     print(SEP)
     sql = """
-    SELECT period::TEXT AS period,
-           COUNT(DISTINCT cnpj) AS funds,
-           ROUND(SUM(vl_patrim_liq)/1e9,2) AS total_pl_bn,
-           ROUND(SUM(vl_inadimpl)/1e9,4)   AS total_inadimpl_bn,
-           ROUND(100.0*SUM(vl_inadimpl)/NULLIF(SUM(vl_patrim_liq),0),3) AS delinq_pct
-    FROM cvm_fidc_mensal
+    SELECT m.period::TEXT AS period,
+           COUNT(DISTINCT m.cnpj) AS funds,
+           ROUND(SUM(m.vl_patrim_liq)/1e9,2) AS total_pl_bn,
+           ROUND(SUM(COALESCE(m.vl_inadimpl, a.vl_total_inad))/1e9,4)   AS total_inadimpl_bn,
+           ROUND(100.0*SUM(COALESCE(m.vl_inadimpl, a.vl_total_inad))/NULLIF(SUM(m.vl_patrim_liq),0),3) AS delinq_pct
+    FROM cvm_fidc_mensal m
+    LEFT JOIN cvm_fidc_aging a ON a.cnpj = m.cnpj AND a.period = m.period
     GROUP BY 1 ORDER BY 1 DESC LIMIT 6
     """
     rows, cols = _run(conn, sql)

@@ -54,9 +54,10 @@ SELECT
   -- Raw CVM pct values contain outliers — expose as-is; filter ABS(vl_rentab_mes) at client
   t.vl_rentab_mes, t.pr_desemp_esperado, t.pr_desemp_real,
   m.vl_patrim_liq  AS fund_pl,
-  m.vl_inadimpl    AS fund_inadimpl
+  COALESCE(m.vl_inadimpl, a.vl_total_inad) AS fund_inadimpl
 FROM cvm_fidc_tranche t
-LEFT JOIN cvm_fidc_mensal m ON m.cnpj = t.cnpj AND m.period = t.period;
+LEFT JOIN cvm_fidc_mensal m ON m.cnpj = t.cnpj AND m.period = t.period
+LEFT JOIN cvm_fidc_aging a ON a.cnpj = t.cnpj AND a.period = t.period;
 
 -- Monthly securitised instrument issuance trend (no params — use security_issuance_trend() for filtering)
 CREATE OR REPLACE VIEW vw_securit_emission_trend AS
