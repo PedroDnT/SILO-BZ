@@ -92,12 +92,62 @@ Good tasks for the Netlify AI agent:
 - **Monitoring page**: live `/api/status` poll showing table row counts and last ingest run
 - **Fund screener**: filter funds by entity type, AUM range, delinquency rate, dividend yield
 
-Analytical angles that are interesting:
-- FIDC credit quality deterioration: `vl_inad_30/60/90` aging buckets over time
-- FII vs FIAGRO dividend yield spread
-- CRA/CRI emission trends by index (IPCA vs CDI) and sector
-- FI fund flows (`captc_dia - resg_dia`) as macro risk-sentiment indicator
-- Cross-fund CNPJ overlap: which funds hold the same underlying receivables
+---
+
+## Investigation paths (pre-built SQL in `scripts/queries/`)
+
+Each file is a ready-to-run analytical module. Build dashboards or API endpoints directly from these.
+
+### `01_market_overview.sql` — Macro pulse
+Industry-wide AUM by entity type (FI/FIDC/FII/FIP/FIAGRO), FIDC sector delinquency trend, data freshness per entity. Good for a homepage summary card.
+
+### `02_fii_market.sql` — Real estate funds deep-dive
+FII vs FIAGRO AUM comparison, yield distribution across all FIIs, CDI spread (fetch live CDI from BCB API at `api.bcb.gov.br/dados/serie/bcdata.sgs.12`), top funds by AUM and yield, investor concentration.
+
+### `03_fidc_credit_monitor.sql` — Receivables fund credit quality
+Sector delinquency trend (trailing 24 months), top FIDCs by AUM with names, funds with highest delinquency rates, tranche-level performance. Core screen for credit risk.
+
+### `04_securit_issuance.sql` — CRA/CRI/OTS issuance market
+Monthly issuance by instrument type, maturity ladder (outstanding principal bucketed by time-to-maturity), distressed securities screen (overdue but still "em curso"). Good for fixed-income origination trends.
+
+### `05_yield_universe.sql` — Cross-asset yield comparison
+FII + FIAGRO dividend yield vs CRA/CRI yield vs CDI benchmark in one table. Requires live CDI from BCB API. Best view for relative-value positioning.
+
+### `06_fund_lookup.sql` — Fund profile / search
+Search any fund by name fragment (`search_funds('kinea', NULL, 20)`), full profile for a CNPJ, NAV history, flow trend, peer ranking within entity type. Foundation for a fund detail page.
+
+### `07_new_fund_activity.sql` — Market formation trends
+New fund registrations per month by entity type, zombie funds (stopped reporting 90+ days ago), dissolution trends. Useful for spotting market cycles and regulatory pressure.
+
+### `08_ingest_health.sql` — Pipeline ops
+Last 7/30 days of ingest runs, error counts by entity, coverage gaps (entities with no new data in 35+ days). Use for a monitoring/ops dashboard.
+
+### `10_fidc_advanced.sql` — FIDC forensics
+1. **Universe aging screen**: rank FIDCs by long-tail (360+ day) delinquency concentration — funds with high `pct_long_tail` carry embedded losses the headline rate hides.
+2. Delinquency acceleration: month-over-month deterioration rate.
+3. Flow-delinquency correlation: are investors fleeing before disclosures?
+
+### `11_suspicious_deals.sql` — Red flag screens
+Eight forensic patterns:
+1. **Cross-fund circular holdings** — FoF structures masking real AUM
+2. **Zombie growth** — AUM rising while delinquency accelerates (classic Ponzi signal)
+3. **Pre-disclosure redemption spikes** — unusual outflows before bad news
+4. **Captive vehicles** — high AUM, almost no investors (single LP structures)
+5. **Evergreen aging** — credits never migrating to longer delinquency buckets (rolled/hidden)
+6. **Subordination erosion** — junior tranche being wiped while senior is still priced fine
+7. **Senior yield decoupling** — fund stress not reflected in tranche returns
+8. **Overdue securit series** — CRA/CRI in default but status still "em curso"
+
+---
+
+## Analytical angles worth surfacing
+
+- **FIDC delinquency acceleration vs fund flow**: do investors redeem *before* disclosures hit? (`vl_inad_*` buckets vs `captc_dia/resg_dia` timing)
+- **FII dividend yield vs CDI spread over time**: when does the spread compress below zero? A leading indicator of FII selloffs
+- **CRA/CRI IPCA-linked vs CDI-linked issuance mix**: tracks inflation expectations from the originator side
+- **New FIDC registrations vs delinquency levels**: are new vehicles being created to roll bad credits?
+- **Fund manager concentration**: which 10 managers control >50% of FIDC AUM? Systemic risk view
+- **Zombie fund tracker**: funds that stopped reporting — liquidation, merger, or stealth closure?
 
 ---
 
