@@ -300,6 +300,16 @@ ORDER BY income_yield_pct DESC;
 
 ## Part 3 — Execution Plan (Run Non-Stop to Completion)
 
+### Status (2026-05-28)
+
+| Phase | Status | Notes |
+|---|---|---|
+| Phase 0 — Bug fixes | ✅ Done | SECURIT csv_name_pattern fixed; FII complemento fields added to pipeline + schema |
+| Phase 1 — FIDC tranche tables | ✅ Done | cvm_fidc_tranche, cvm_fidc_tranche_flows, cvm_fidc_aging in code + schema |
+| Phase 2 — SECURIT serie + fluxo | ✅ Done | cvm_securit_serie, cvm_securit_fluxo in code + schema |
+| Schema migration to Supabase | ⏳ Pending | `python scripts/apply_schema.py` — also widens narrow NUMERIC columns from original smoke-test install |
+| Phase 3 — Supabase backfill | ⏳ Blocked on migration | See commands below |
+
 ### Phase 0 — Bug Fixes (1 hour, no schema changes)
 
 **0.1** Fix SECURIT `csv_name_pattern` in `src/fetchers/cvm_config.py`:

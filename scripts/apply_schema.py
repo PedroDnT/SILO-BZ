@@ -28,13 +28,29 @@ MIGRATIONS = [
 ALTER TABLE cvm_fii_mensal
     ADD COLUMN IF NOT EXISTS nr_cotst               INT,
     ADD COLUMN IF NOT EXISTS vl_ativo               NUMERIC(20,6),
-    ADD COLUMN IF NOT EXISTS cotas_emitidas         NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS cotas_emitidas         NUMERIC(28,6),
     ADD COLUMN IF NOT EXISTS vl_patrimonial_cotas   NUMERIC(20,6),
-    ADD COLUMN IF NOT EXISTS pct_rentab_efetiva_mes NUMERIC(10,6),
-    ADD COLUMN IF NOT EXISTS pct_rentab_patrimonial NUMERIC(10,6),
-    ADD COLUMN IF NOT EXISTS pct_dividend_yield_mes NUMERIC(10,6),
-    ADD COLUMN IF NOT EXISTS pct_amortizacao_mes    NUMERIC(10,6),
+    ADD COLUMN IF NOT EXISTS pct_rentab_efetiva_mes NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS pct_rentab_patrimonial NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS pct_dividend_yield_mes NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS pct_amortizacao_mes    NUMERIC(20,6),
     ADD COLUMN IF NOT EXISTS rendimentos_distribuir NUMERIC(20,6)
+"""),
+    ("Widen numeric precision (post smoke-test)", """
+ALTER TABLE cvm_fidc_tranche
+    ALTER COLUMN qt_cota            TYPE NUMERIC(28,8),
+    ALTER COLUMN vl_cota            TYPE NUMERIC(28,8),
+    ALTER COLUMN vl_rentab_mes      TYPE NUMERIC(20,6),
+    ALTER COLUMN pr_desemp_esperado TYPE NUMERIC(20,6),
+    ALTER COLUMN pr_desemp_real     TYPE NUMERIC(20,6);
+ALTER TABLE cvm_fidc_tranche_flows
+    ALTER COLUMN qt_cota TYPE NUMERIC(28,8);
+ALTER TABLE cvm_fii_mensal
+    ALTER COLUMN cotas_emitidas         TYPE NUMERIC(28,6),
+    ALTER COLUMN pct_rentab_efetiva_mes TYPE NUMERIC(20,6),
+    ALTER COLUMN pct_rentab_patrimonial TYPE NUMERIC(20,6),
+    ALTER COLUMN pct_dividend_yield_mes TYPE NUMERIC(20,6),
+    ALTER COLUMN pct_amortizacao_mes    TYPE NUMERIC(20,6)
 """),
 
     ("cvm_fidc_tranche (Phase 1)", """
@@ -43,11 +59,11 @@ CREATE TABLE IF NOT EXISTS cvm_fidc_tranche (
     cnpj               TEXT         NOT NULL,
     period             DATE         NOT NULL,
     classe_serie       TEXT         NOT NULL,
-    qt_cota            NUMERIC(20,8),
-    vl_cota            NUMERIC(20,8),
-    vl_rentab_mes      NUMERIC(10,6),
-    pr_desemp_esperado NUMERIC(10,6),
-    pr_desemp_real     NUMERIC(10,6),
+    qt_cota            NUMERIC(28,8),
+    vl_cota            NUMERIC(28,8),
+    vl_rentab_mes      NUMERIC(20,6),
+    pr_desemp_esperado NUMERIC(20,6),
+    pr_desemp_real     NUMERIC(20,6),
     raw                JSONB,
     fetched_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_fidc_tranche UNIQUE (cnpj, period, classe_serie)
@@ -66,7 +82,7 @@ CREATE TABLE IF NOT EXISTS cvm_fidc_tranche_flows (
     classe_serie TEXT         NOT NULL,
     tp_oper      TEXT         NOT NULL,
     vl_total     NUMERIC(20,6),
-    qt_cota      NUMERIC(20,8),
+    qt_cota      NUMERIC(28,8),
     fetched_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_fidc_tranche_flows UNIQUE (cnpj, period, classe_serie, tp_oper)
 )
