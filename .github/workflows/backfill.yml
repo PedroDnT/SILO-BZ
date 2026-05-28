@@ -1,0 +1,144 @@
+name: CVM Historical Backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_year:
+        description: "Start year (default: 2019)"
+        default: "2019"
+      end_year:
+        description: "End year (default: current year)"
+        default: "2026"
+
+jobs:
+  # FI is the largest entity — one job per year so they run in parallel
+  backfill-fi:
+    name: "FI ${{ matrix.year }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        year: [2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Skip if year already complete
+        id: check
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        run: |
+          python - <<'EOF'
+          import os, sys, psycopg2
+          url = "".join(os.environ["POSTGRES_URL"].split())
+          year = int("${{ matrix.year }}")
+          conn = psycopg2.connect(url)
+          with conn.cursor() as cur:
+              # Check how many months have ok status in ingest_log for this year
+              cur.execute("""
+                  SELECT COUNT(DISTINCT period_month)
+                  FROM cvm_ingest_log
+                  WHERE entity='fi' AND doc_type='inf_diario'
+                    AND period_year=%s AND status='ok'
+              """, (year,))
+              ok_months = cur.fetchone()[0]
+          conn.close()
+          expected = 1 if year == 2019 or year == 2020 else 12  # hist ZIPs are yearly
+          if year in (2019, 2020):
+              # Hist ZIPs: check row count in partition instead
+              conn = psycopg2.connect(url)
+              with conn.cursor() as cur:
+                  cur.execute(f"SELECT COUNT(*) FROM cvm_fi_diario_{year}")
+                  rows = cur.fetchone()[0]
+              conn.close()
+              # ~250k rows/month × 12 months = ~3M expected; skip if > 2M already
+              if rows > 2_000_000:
+                  print(f"SKIP: {year} hist already has {rows} rows")
+                  with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                      f.write("skip=true\n")
+              else:
+                  print(f"RUN: {year} hist has only {rows} rows — backfilling")
+          else:
+              if ok_months >= 11:
+                  print(f"SKIP: {year} already has {ok_months} ok months")
+                  with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                      f.write("skip=true\n")
+              else:
+                  print(f"RUN: {year} has only {ok_months} ok months — backfilling")
+          EOF
+
+      - name: Run FI backfill for ${{ matrix.year }}
+        if: steps.check.outputs.skip != 'true'
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          LOG_LEVEL: INFO
+        run: |
+          python -m src.pipeline.run_backfill \
+            --entity fi \
+            --start-year ${{ matrix.year }} \
+            --end-year ${{ matrix.year }} \
+            --cvm-only
+
+  # Other entities — each runs full year range in its own job
+  backfill-other:
+    name: "${{ matrix.entity }} 2019-2026"
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        entity: [fidc, fii, fiagro, fip, securit]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run ${{ matrix.entity }} backfill
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          LOG_LEVEL: INFO
+        run: |
+          python -m src.pipeline.run_backfill \
+            --entity ${{ matrix.entity }} \
+            --start-year 2019 \
+            --end-year 2026 \
+            --cvm-only
+
+  # BACEN macro data
+  backfill-bacen:
+    name: "BACEN"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run BACEN backfill
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          LOG_LEVEL: INFO
+        run: |
+          python -m src.pipeline.run_backfill \
+            --bacen-only \
+            --bacen-start 2019-01-01
