@@ -6,7 +6,7 @@ business metrics for each entity type.
 Usage:
     python scripts/verify_pipeline.py
 
-Requires: SUPABASE_URL and SUPABASE_SERVICE_KEY env vars (or a .env file).
+Requires: POSTGRES_URL env var (or a .env file).
 """
 
 import os
@@ -366,10 +366,10 @@ def main():
     print(f"  {SEP2}")
     try:
         client = get_supabase_client()
-        print("  Supabase connection: OK")
+        print("  Postgres connection: OK")
     except EnvironmentError as e:
         print(f"  ERROR: {e}")
-        print("  Set SUPABASE_URL and SUPABASE_SERVICE_KEY and retry.")
+        print("  Set POSTGRES_URL and retry.")
         sys.exit(1)
 
     report_presence(client)

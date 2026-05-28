@@ -117,18 +117,19 @@ def fetch_audit_warning(
     — we filter on entity + period only and then pick the most recent row. Failure
     here is non-fatal."""
     try:
-        query = (
-            supabase.table("cvm_ingest_log")
-            .select("run_id, status, doc_type, error_msg, finished_at, rows_upserted")
-            .eq("entity", entity)
-            .eq("period_year", year)
-            .order("finished_at", desc=True)
-            .limit(5)
+        sql = (
+            "SELECT run_id, status, doc_type, error_msg, finished_at, rows_upserted"
+            " FROM cvm_ingest_log WHERE entity=%s AND period_year=%s"
         )
+        params: list = [entity, year]
         if month is not None:
-            query = query.eq("period_month", month)
-        resp = query.execute()
-        rows = getattr(resp, "data", None) or []
+            sql += " AND period_month=%s"
+            params.append(month)
+        sql += " ORDER BY finished_at DESC LIMIT 5"
+        with supabase.cursor() as cur:
+            cur.execute(sql, tuple(params))
+            cols = [d[0] for d in cur.description]
+            rows = [dict(zip(cols, r)) for r in cur.fetchall()]
         for row in rows:
             if row.get("error_msg"):
                 return {

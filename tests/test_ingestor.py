@@ -17,99 +17,93 @@ from unittest.mock import MagicMock, AsyncMock, patch
 class TestUpsertRows:
     """Tests for the supabase_client.upsert_rows chunking helper."""
 
-    def _make_client(self, captured: list):
-        """Build a mock Supabase client that records upserted rows."""
-        mock_exec  = MagicMock(return_value=MagicMock())
-        mock_upsert = MagicMock(return_value=MagicMock(execute=mock_exec))
-        mock_table  = MagicMock(return_value=MagicMock(upsert=mock_upsert))
+    def _make_client(self):
+        """Return a psycopg2-compatible client stub with a no-op cursor."""
+        cur = MagicMock()
+        cur.__enter__ = lambda s: s
+        cur.__exit__ = MagicMock(return_value=False)
         client = MagicMock()
-        client.table = mock_table
-
-        # Track what was upserted
-        def _capture_upsert(rows, **kwargs):
-            captured.extend(rows)
-            return MagicMock(execute=mock_exec)
-        mock_table.return_value.upsert.side_effect = _capture_upsert
+        client.cursor.return_value = cur
+        client.reconnect = MagicMock()
         return client
 
     def test_upsert_empty_rows_returns_zero(self):
         from src.store.supabase_client import upsert_rows
-        captured = []
-        client = self._make_client(captured)
+        client = self._make_client()
         assert upsert_rows(client, "test_table", []) == 0
-        assert captured == []
+        client.cursor.assert_not_called()
 
     def test_upsert_small_batch_single_call(self):
         from src.store.supabase_client import upsert_rows
-        captured = []
-        client = self._make_client(captured)
-        rows = [{"id": i} for i in range(10)]
-        result = upsert_rows(client, "test_table", rows)
+        call_sizes: List[int] = []
+
+        with patch("psycopg2.extras.execute_values") as mock_ev:
+            def _capture(cur, sql, vals, **kw):
+                call_sizes.append(len(vals))
+            mock_ev.side_effect = _capture
+
+            rows = [{"id": i} for i in range(10)]
+            result = upsert_rows(self._make_client(), "test_table", rows)
+
         assert result == 10
-        assert len(captured) == 10
+        assert call_sizes == [10]
 
     def test_upsert_large_batch_chunked(self):
-        """Rows > 500 should be split into multiple upsert calls."""
+        """Rows > 500 should be split into multiple execute_values calls."""
         from src.store.supabase_client import upsert_rows
         call_sizes: List[int] = []
 
-        mock_exec = MagicMock(return_value=MagicMock())
-        client = MagicMock()
+        with patch("psycopg2.extras.execute_values") as mock_ev:
+            def _capture(cur, sql, vals, **kw):
+                call_sizes.append(len(vals))
+            mock_ev.side_effect = _capture
 
-        def _fake_upsert(rows, **kwargs):
-            call_sizes.append(len(rows))
-            return MagicMock(execute=mock_exec)
-
-        client.table.return_value.upsert.side_effect = _fake_upsert
-
-        rows = [{"id": i} for i in range(1100)]
-        result = upsert_rows(client, "big_table", rows)
+            rows = [{"id": i} for i in range(1100)]
+            result = upsert_rows(self._make_client(), "big_table", rows)
 
         assert result == 1100
-        # Should be split: 500 + 500 + 100
-        assert len(call_sizes) == 3
-        assert call_sizes[0] == 500
-        assert call_sizes[1] == 500
-        assert call_sizes[2] == 100
+        assert call_sizes == [500, 500, 100]
 
     def test_upsert_deduplicates_when_conflict_columns_set(self):
         """When conflict_columns is passed, duplicate keys collapse to last write."""
         from src.store.supabase_client import upsert_rows
-        captured: List[Dict[str, Any]] = []
-        client = MagicMock()
+        captured_vals: List[Any] = []
 
-        def _capture(rows, **kwargs):
-            captured.extend(rows)
-            return MagicMock(execute=MagicMock())
+        with patch("psycopg2.extras.execute_values") as mock_ev:
+            def _capture(cur, sql, vals, **kw):
+                captured_vals.extend(vals)
+            mock_ev.side_effect = _capture
 
-        client.table.return_value.upsert.side_effect = _capture
+            rows = [
+                {"cnpj": "A", "period": "2025-03-31", "k": "x", "v": 1},
+                {"cnpj": "B", "period": "2025-03-31", "k": "y", "v": 2},
+                {"cnpj": "A", "period": "2025-03-31", "k": "x", "v": 99},
+            ]
+            result = upsert_rows(
+                self._make_client(), "t", rows, conflict_columns="cnpj,period,k"
+            )
 
-        rows = [
-            {"cnpj": "A", "period": "2025-03-31", "k": "x", "v": 1},
-            {"cnpj": "B", "period": "2025-03-31", "k": "y", "v": 2},
-            {"cnpj": "A", "period": "2025-03-31", "k": "x", "v": 99},  # dup of row 0 — wins
-        ]
-        result = upsert_rows(
-            client, "t", rows, conflict_columns="cnpj,period,k",
-        )
         assert result == 2
-        captured.sort(key=lambda r: r["cnpj"])
-        assert captured == [
-            {"cnpj": "A", "period": "2025-03-31", "k": "x", "v": 99},
-            {"cnpj": "B", "period": "2025-03-31", "k": "y", "v": 2},
-        ]
+        assert len(captured_vals) == 2
+        vals_sorted = sorted(captured_vals, key=lambda t: t[0])
+        assert vals_sorted[0][3] == 99   # cnpj=A, last write wins
+        assert vals_sorted[1][3] == 2    # cnpj=B
 
     def test_upsert_no_dedup_when_conflict_columns_unset(self):
         """Without conflict_columns, duplicate inputs are kept as-is."""
         from src.store.supabase_client import upsert_rows
-        captured: List[Dict[str, Any]] = []
-        client = MagicMock()
-        client.table.return_value.upsert.side_effect = (
-            lambda rows, **kw: captured.extend(rows) or MagicMock(execute=MagicMock())
-        )
-        rows = [{"id": 1}, {"id": 1}, {"id": 1}]
-        assert upsert_rows(client, "t", rows) == 3
-        assert len(captured) == 3
+        captured_vals: List[Any] = []
+
+        with patch("psycopg2.extras.execute_values") as mock_ev:
+            def _capture(cur, sql, vals, **kw):
+                captured_vals.extend(vals)
+            mock_ev.side_effect = _capture
+
+            rows = [{"id": 1}, {"id": 1}, {"id": 1}]
+            result = upsert_rows(self._make_client(), "t", rows)
+
+        assert result == 3
+        assert len(captured_vals) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -192,13 +186,14 @@ class TestBacenIngestorSGS:
             }
         ]
         upserted: List[Dict] = []
-        mock_supabase = MagicMock()
-        mock_supabase.table.return_value.upsert.side_effect = (
-            lambda r, **kw: (upserted.extend(r), MagicMock(execute=MagicMock()))[-1]
-        )
+
+        def _fake_upsert(client, table, rows, **kw):
+            upserted.extend(rows)
+            return len(rows)
 
         with patch("src.pipeline.bacen_pipeline.BacenClient") as mock_client_cls, \
-             patch("src.pipeline.bacen_pipeline.get_supabase_client", return_value=mock_supabase):
+             patch("src.pipeline.bacen_pipeline.get_supabase_client", return_value=MagicMock()), \
+             patch("src.pipeline.bacen_pipeline.upsert_rows", side_effect=_fake_upsert):
             mock_client = mock_client_cls.return_value
             mock_client.get_sgs_series = AsyncMock(return_value=mock_records)
             ingestor = BacenIngestor()
@@ -216,9 +211,9 @@ class TestBacenIngestorSGS:
     async def test_ingest_sgs_empty_response_returns_zero(self):
         from src.pipeline.bacen_pipeline import BacenIngestor
 
-        mock_supabase = MagicMock()
         with patch("src.pipeline.bacen_pipeline.BacenClient") as mock_client_cls, \
-             patch("src.pipeline.bacen_pipeline.get_supabase_client", return_value=mock_supabase):
+             patch("src.pipeline.bacen_pipeline.get_supabase_client", return_value=MagicMock()), \
+             patch("src.pipeline.bacen_pipeline.upsert_rows", return_value=0):
             mock_client = mock_client_cls.return_value
             mock_client.get_sgs_series = AsyncMock(return_value=[])
             ingestor = BacenIngestor()
@@ -230,9 +225,9 @@ class TestBacenIngestorSGS:
     async def test_ingest_sgs_fetch_error_returns_zero(self):
         from src.pipeline.bacen_pipeline import BacenIngestor
 
-        mock_supabase = MagicMock()
         with patch("src.pipeline.bacen_pipeline.BacenClient") as mock_client_cls, \
-             patch("src.pipeline.bacen_pipeline.get_supabase_client", return_value=mock_supabase):
+             patch("src.pipeline.bacen_pipeline.get_supabase_client", return_value=MagicMock()), \
+             patch("src.pipeline.bacen_pipeline.upsert_rows", return_value=0):
             mock_client = mock_client_cls.return_value
             mock_client.get_sgs_series = AsyncMock(side_effect=Exception("BCB unreachable"))
             ingestor = BacenIngestor()
@@ -254,13 +249,14 @@ class TestBacenIngestorPTAX:
             {"date": "2024-01-31", "cotacaoCompra": 4.9765, "cotacaoVenda": 4.9770}
         ]
         upserted: List[Dict] = []
-        mock_supabase = MagicMock()
-        mock_supabase.table.return_value.upsert.side_effect = (
-            lambda r, **kw: (upserted.extend(r), MagicMock(execute=MagicMock()))[-1]
-        )
+
+        def _fake_upsert(client, table, rows, **kw):
+            upserted.extend(rows)
+            return len(rows)
 
         with patch("src.pipeline.bacen_pipeline.BacenClient") as mock_client_cls, \
-             patch("src.pipeline.bacen_pipeline.get_supabase_client", return_value=mock_supabase), \
+             patch("src.pipeline.bacen_pipeline.get_supabase_client", return_value=MagicMock()), \
+             patch("src.pipeline.bacen_pipeline.upsert_rows", side_effect=_fake_upsert), \
              patch("src.pipeline.bacen_pipeline.PTAX_CURRENCIES", ["USD"]):
             mock_client = mock_client_cls.return_value
             mock_client.get_ptax_dolar_periodo = AsyncMock(return_value=mock_records)

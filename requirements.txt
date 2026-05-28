@@ -18,7 +18,7 @@ python-bcb==0.3.0
 requests==2.33.0
 
 # Storage
-supabase>=2.3.0
+psycopg2-binary>=2.9
 
 # Config / runtime
 python-dotenv==1.2.2

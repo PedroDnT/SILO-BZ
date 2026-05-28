@@ -4,7 +4,7 @@ Daily incremental update — run by GitHub Actions cron at 06:00 UTC.
 Fetches:
   - CVM: current month + previous month for all entities
 
-Required env vars: SUPABASE_URL, SUPABASE_SERVICE_KEY
+Required env vars: POSTGRES_URL
 """
 
 import asyncio

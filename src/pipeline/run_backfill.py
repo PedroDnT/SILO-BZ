@@ -14,7 +14,7 @@ Usage:
     # BACEN only
     python -m src.pipeline.run_backfill --bacen-only --bacen-start 2020-01-01
 
-Required env vars: SUPABASE_URL, SUPABASE_SERVICE_KEY
+Required env vars: POSTGRES_URL
 """
 
 import argparse

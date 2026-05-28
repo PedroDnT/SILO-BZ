@@ -145,16 +145,19 @@ class CVMIngestor:
             logger.warning("ingest_log start failed: %s", e)
 
     def _log_finish(self, run_id: str, rows: int, error: Optional[str] = None) -> None:
-        # UPDATE (not upsert) — PostgREST upsert evaluates NOT NULL on INSERT before
-        # ON CONFLICT, so an upsert payload missing entity/doc_type 400s on the
-        # not-null check instead of routing to UPDATE.
         try:
-            self._supabase.table("cvm_ingest_log").update({
-                "rows_upserted": rows,
-                "status":       "error" if error else "ok",
-                "error_msg":    error,
-                "finished_at":  datetime.now(timezone.utc).isoformat(),
-            }).eq("run_id", run_id).execute()
+            with self._supabase.cursor() as cur:
+                cur.execute(
+                    "UPDATE cvm_ingest_log SET rows_upserted=%s, status=%s,"
+                    " error_msg=%s, finished_at=%s WHERE run_id=%s",
+                    (
+                        rows,
+                        "error" if error else "ok",
+                        error,
+                        datetime.now(timezone.utc).isoformat(),
+                        run_id,
+                    ),
+                )
         except Exception as e:
             logger.warning("ingest_log finish failed: %s", e)
 

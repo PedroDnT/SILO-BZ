@@ -23,43 +23,42 @@ from src.api.jobs import reset_registry_for_tests
 # Fixtures
 # ---------------------------------------------------------------------------
 
-class StubSupabase:
-    """Minimal supabase chain that records calls. .execute() returns an object
-    with `.data` and `.count` from a queue of preset responses."""
+class StubCursor:
+    """Minimal psycopg2 cursor stub."""
 
-    def __init__(self) -> None:
-        self.responses: list[Dict[str, Any]] = []
-        self.calls: list[str] = []
+    def __init__(self, rows=None, description=None):
+        self._rows = rows or []
+        self.description = description or []
 
-    def queue(self, data: Any = None, count: int = 0) -> None:
-        self.responses.append({"data": data, "count": count})
+    def execute(self, sql, params=None):
+        pass
 
-    def table(self, name: str):
-        self.calls.append(f"table:{name}")
-        return _StubQuery(self)
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
 
+    def fetchall(self):
+        return self._rows
 
-class _StubQuery:
-    def __init__(self, parent: StubSupabase) -> None:
-        self._parent = parent
-
-    def _self(self):
+    def __enter__(self):
         return self
 
-    select = lambda self, *a, **kw: self._self()
-    eq = lambda self, *a, **kw: self._self()
-    is_ = lambda self, *a, **kw: self._self()
-    order = lambda self, *a, **kw: self._self()
-    limit = lambda self, *a, **kw: self._self()
-    upsert = lambda self, *a, **kw: self._self()
-    insert = lambda self, *a, **kw: self._self()
+    def __exit__(self, *_):
+        pass
 
-    def execute(self):
-        if self._parent.responses:
-            r = self._parent.responses.pop(0)
-        else:
-            r = {"data": [], "count": 0}
-        return type("Resp", (), r)
+
+class StubSupabase:
+    """Minimal psycopg2-compatible connection stub."""
+
+    def __init__(self) -> None:
+        self._cursor_rows: list = []
+        self._cursor_description: list = []
+
+    def queue(self, data: Any = None, count: int = 0) -> None:
+        # kept for backward compat in tests that set up healthz expectations
+        self._cursor_rows = [[count]]
+
+    def cursor(self):
+        return StubCursor(rows=self._cursor_rows, description=self._cursor_description)
 
 
 class StubIngestor:

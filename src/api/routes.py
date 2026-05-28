@@ -64,20 +64,22 @@ def _bacen_factory():
 
 @bp.get("/healthz")
 def healthz():
-    sup_status = "ok"
-    sup_detail: Optional[str] = None
+    db_status = "ok"
+    db_detail: Optional[str] = None
     try:
         ing = _ingestor_factory()
-        # Cheap query to confirm Supabase + RLS-as-service work
-        ing._supabase.table("cvm_ingest_log").select("run_id").limit(1).execute()
+        with ing._supabase.cursor() as cur:
+            cur.execute("SELECT run_id FROM cvm_ingest_log LIMIT 1")
     except Exception as exc:
-        sup_status = "error"
-        sup_detail = str(exc)[:300]
+        db_status = "error"
+        db_detail = str(exc)[:300]
+    postgres_url = os.getenv("POSTGRES_URL", "")
+    safe_url = postgres_url.split("@")[-1] if "@" in postgres_url else postgres_url
     return jsonify({
-        "status": "ok" if sup_status == "ok" else "degraded",
-        "supabase": sup_status,
-        "supabase_detail": sup_detail,
-        "supabase_url": os.getenv("SUPABASE_URL"),
+        "status": "ok" if db_status == "ok" else "degraded",
+        "postgres": db_status,
+        "postgres_detail": db_detail,
+        "postgres_host": safe_url,
     })
 
 
@@ -85,9 +87,9 @@ def healthz():
 def status():
     """Per-table row counts + latest entry in `cvm_ingest_log`."""
     try:
-        sup = _ingestor_factory()._supabase
+        conn = _ingestor_factory()._supabase
     except Exception as exc:
-        return jsonify({"error": "supabase_init", "detail": str(exc)}), 503
+        return jsonify({"error": "db_init", "detail": str(exc)}), 503
 
     tables = [
         "cvm_fi_diario", "cvm_fi_cda", "cvm_fi_perfil",
@@ -99,23 +101,24 @@ def status():
     counts: Dict[str, Any] = {}
     for t in tables:
         try:
-            resp = sup.table(t).select("*", count="exact", head=True).execute()
-            counts[t] = getattr(resp, "count", None)
+            with conn.cursor() as cur:
+                cur.execute(f"SELECT COUNT(*) FROM {t}")
+                counts[t] = cur.fetchone()[0]
         except Exception as exc:
             counts[t] = {"error": str(exc)[:200]}
 
-    last_log: Optional[Dict[str, Any]] = None
+    last_log: Optional[Any] = None
     try:
-        resp = (
-            sup.table("cvm_ingest_log")
-            .select("run_id, entity, doc_type, period_year, period_month, status, rows_upserted, finished_at, error_msg")
-            .order("finished_at", desc=True)
-            .limit(5)
-            .execute()
-        )
-        last_log = getattr(resp, "data", None)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT run_id, entity, doc_type, period_year, period_month,"
+                " status, rows_upserted, finished_at, error_msg"
+                " FROM cvm_ingest_log ORDER BY finished_at DESC LIMIT 5"
+            )
+            cols = [d[0] for d in cur.description]
+            last_log = [dict(zip(cols, row)) for row in cur.fetchall()]
     except Exception as exc:
-        last_log = {"error": str(exc)[:200]}  # type: ignore[assignment]
+        last_log = {"error": str(exc)[:200]}
 
     return jsonify({"row_counts": counts, "recent_runs": last_log})
 
@@ -288,13 +291,11 @@ def _verify_report(sup) -> Dict[str, Any]:
     results = []
     for table, field, max_null_rate in gates:
         try:
-            total_resp = sup.table(table).select("*", count="exact", head=True).execute()
-            total = getattr(total_resp, "count", 0) or 0
-            null_resp = (
-                sup.table(table).select("*", count="exact", head=True)
-                .is_(field, "null").execute()
-            )
-            nulls = getattr(null_resp, "count", 0) or 0
+            with sup.cursor() as cur:
+                cur.execute(f"SELECT COUNT(*) FROM {table}")
+                total = cur.fetchone()[0] or 0
+                cur.execute(f"SELECT COUNT(*) FROM {table} WHERE {field} IS NULL")
+                nulls = cur.fetchone()[0] or 0
             rate = (nulls / total) if total else None
             passing = rate is not None and rate <= max_null_rate
             results.append({
