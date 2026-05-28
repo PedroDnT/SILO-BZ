@@ -48,3 +48,8 @@ htmlcov/
 *.log
 .gstack/
 .local_db/*.duckdb
+
+# Local Netlify folder
+.netlify
+node_modules
+node_modules
