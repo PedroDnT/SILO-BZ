@@ -57,8 +57,32 @@ Add only when the UI needs fee/essential-info columns.
 - Migration creating `cia_company`, `cia_filing`, `cia_account` (partitioned by `dt_refer` year), `cia_event` (DDL sketch below).
 - **DoD:** tables exist; fetcher can download + unzip + enumerate members; no ingest yet.
 
-## W6 — cia B0: cadastre + IPE  ·  branch `feat/cia-cadastre-ipe`  ·  medium  ·  needs W5
+## W6 — cia B0: cadastre + IPE  ·  branch `feat/cia-cadastre-ipe`  ·  medium  ·  needs W5  ·  **done**
 - Field maps + ingest for `cia_aberta-cad` → `cia_company` and `ipe` → `cia_event`.
+- **Implementation summary:**
+  - `src/parsers/field_maps/cia_company.py` — CAD field map verified against live
+    `cad_cia_aberta.csv` header. Maps `CD_CVM` (PK), `CNPJ_CIA`, `DENOM_SOCIAL`,
+    `SETOR_ATIV`, `CATEG_REG` (as `segmento` — closest analog; no native segment
+    column in CAD), `SIT`. `SIT_EMISSOR`, `CONTROLE_ACIONARIO`, contact fields,
+    and auditor info fall through to `raw` JSONB.
+  - `src/parsers/field_maps/cia_event.py` — IPE field map verified against live
+    `ipe_cia_aberta_2024.zip`. Maps `Codigo_CVM`, `CNPJ_Companhia`,
+    `Data_Referencia`, `Data_Entrega`, `Categoria`, `Tipo`, `Especie`,
+    `Assunto`, `Protocolo_Entrega`, `Versao`, `Link_Download`. Unique key
+    `(protocolo, versao)`. `cia_event` has no `raw` column — residuals are
+    discarded by `ingest_cia_event` (`Nome_Companhia`, `Tipo_Apresentacao`
+    are denormalised against `cia_company` and the IPE row itself).
+  - `src/pipeline/ingest_cia.py` — `ingest_cia_company` (drops rows missing
+    `cd_cvm`) and `ingest_cia_event` (drops rows missing `cd_cvm`, `protocolo`,
+    or `versao`).
+  - `src/pipeline/cvm_pipeline.py` — `CVMIngestor.ingest_cia_cad()` (once per
+    run) and `CVMIngestor.ingest_cia_ipe(year)` (per year). `cia_aberta` added
+    to `_ALL_ENTITIES`, `_ALL_TABLES`, `--entity` CLI help. Backfill scope
+    iterates `_CIA_IPE_FIRST_YEAR=2010` → end_year. Daily update refreshes
+    CAD and current-year IPE.
+  - Tests: `tests/test_cia_field_maps.py` covers field-map projection,
+    residual semantics, drop-row rules, upsert call shape, and a
+    parametrised PK smoke test (15 tests, all passing).
 - **DoD:** company dim populated; material-facts feed queryable; idempotent; null-rate checked.
 
 ## W7 — cia B1: ITR + DFP financials  ·  branch `feat/cia-financials`  ·  large  ·  needs W5
