@@ -34,7 +34,7 @@
   "docwriter.hotkey.mac": "⌘ + .",
   "kiroAgent.configureMCP": "Enabled",
   "github-actions.workflows.pinned.workflows": [],
-  "editor.acceptSuggestionOnEnter": "on",
+  "editor.acceptSuggestionOnEnter": true,
   "editor.quickSuggestions": {
     "other": false,
     "comments": false,
