@@ -196,8 +196,8 @@ class TestCVMIngestorHelpers:
         assert months == [(2025, 5), (2025, 6), (2025, 7), (2025, 8)]
 
     def test_resolve_securit_instrument_type_uses_explicit_map(self):
-        from src.pipeline.cvm_pipeline import _resolve_securit_instrument_type
-        assert _resolve_securit_instrument_type("cri_fluxo") == "cri_mensal"
+        from src.pipeline.ingest_securit import _resolve_instrument_type
+        assert _resolve_instrument_type("cri_fluxo") == "cri_mensal"
 
 
 class TestCVMIngestorOrchestration:
