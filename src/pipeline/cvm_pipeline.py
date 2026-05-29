@@ -29,7 +29,7 @@ from uuid import uuid4
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.fetchers.cvm_fetcher import CVMFetcher
-from src.store.supabase_client import get_pg_client, upsert_rows
+from src.store.pg_client import get_pg_client, upsert_rows
 
 # Backward-compatible alias retained for older tests/callers.
 get_supabase_client = get_pg_client

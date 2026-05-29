@@ -10,8 +10,8 @@ Data sources:
 - **BACEN** (Banco Central do Brasil) — SGS time series (SELIC, CDI, IPCA, IGP-M), PTAX exchange rates,
   Expectativas (Focus bulletin).
 
-Data is downloaded, parsed, validated, and upserted into a Supabase Postgres database.
-There is no public API — downstream consumers query Supabase directly.
+Data is downloaded, parsed, validated, and upserted into a Neon Postgres database via psycopg2.
+There is no public API — downstream consumers query Neon directly.
 
 A small **local Flask control plane** (`app.py` + `src/api/`) wraps the pipeline so
 operators can trigger partial fills one (entity, doc_type, year, month) slice at a
@@ -45,7 +45,7 @@ The tranche and series-level ingestion is the subject of Phases 1–2 in `docs/p
 ```
    ┌───── FETCH ─────┐    ┌───── PARSE ────┐    ┌───── STORE ────┐
    │ src/fetchers/   │ →  │ src/parsers/   │ →  │ src/store/     │
-   │  cvm_fetcher    │    │  validation    │    │  supabase_client
+   │  cvm_fetcher    │    │  validation    │    │  pg_client.py  │
    │  bacen_fetcher  │    │  (CVM zip→csv  │    │  schema.sql    │
    │                 │    │   and BACEN df │    │                │
    │                 │    │   normalization│    │                │
@@ -66,7 +66,7 @@ The tranche and series-level ingestion is the subject of Phases 1–2 in `docs/p
 | --- | --- | --- |
 | `src/fetchers/` | **FETCH** — HTTP/SDK calls only. CVM downloads ZIP/CSV from `dados.cvm.gov.br` with retry, DNS rotation, and on-disk cache. BACEN wraps `python-bcb`. | `cvm_fetcher.CVMFetcher`, `cvm_config.DatasetConfig`, `bacen_fetcher.BacenClient` |
 | `src/parsers/` | **PARSE** — shared field/CNPJ/date validation. CVM CSV extraction is co-located with `CVMFetcher.fetch()` because it needs the URL/filename context. BACEN DataFrame normalization is co-located with `BacenClient`. | `validation.DataValidator` |
-| `src/store/` | **STORE** — Supabase client and chunked upserts; canonical schema. | `supabase_client.upsert_rows`, `supabase_client.get_supabase_client`, `schema.sql` |
+| `src/store/` | **STORE** — psycopg2 Neon client and chunked upserts; canonical schema. | `pg_client.upsert_rows`, `pg_client.get_pg_client`, `schema.sql` |
 | `src/pipeline/` | **ORCHESTRATE** — wires the three stages, writes audit log rows, runs daily/backfill. | `cvm_pipeline.CVMIngestor`, `bacen_pipeline.BacenIngestor`, `run_backfill`, `run_daily` |
 
 ## Repository layout
@@ -79,10 +79,11 @@ The tranche and series-level ingestion is the subject of Phases 1–2 in `docs/p
 │   │   ├── cvm_config.py       # URL templates + dataset configs (entity × doc_type matrix)
 │   │   └── bacen_fetcher.py    # BacenClient (SGS/PTAX/Expectativas/TaxaJuros)
 │   ├── parsers/
-│   │   └── validation.py       # CNPJ / date / numeric / record validators
+│   │   ├── validation.py       # CNPJ / date / numeric / record validators
+│   │   └── field_maps/         # Per-dataset typed column → CSV header mappings
 │   ├── store/
-│   │   ├── supabase_client.py  # get_supabase_client(), upsert_rows()
-│   │   └── schema.sql          # canonical CVM + BACEN schema (12 tables + audit log)
+│   │   ├── pg_client.py        # get_pg_client(), upsert_rows() — psycopg2/Neon
+│   │   └── schema.sql          # canonical CVM + BACEN schema (tables + audit log)
 │   ├── pipeline/
 │   │   ├── cvm_pipeline.py     # CVMIngestor — orchestrates fetch+store for CVM
 │   │   ├── bacen_pipeline.py   # BacenIngestor — orchestrates fetch+store for BACEN
@@ -99,12 +100,12 @@ The tranche and series-level ingestion is the subject of Phases 1–2 in `docs/p
 ├── scripts/
 │   ├── seed_local_db.py        # Fetch real CVM data → local Postgres for offline testing
 │   ├── run_analysis_local.py   # Run 11 verification queries against local DB
-│   ├── verify_pipeline.py      # Run verification queries against live Supabase
+│   ├── verify_pipeline.py      # Run verification queries against live Neon DB
 │   ├── analysis_queries.sql    # 11 SQL queries: data presence, null rates, business metrics
 │   └── explore_cvm_output.py   # Utility for inspecting raw CVM ZIP/CSV structure
 ├── docs/
 │   ├── pipeline-plan.md        # Master plan: data inventory, accountability rules, execution phases
-│   └── pipeline-fixes-and-verification.md  # Field-mapping bugs fixed + web verification results
+│   └── planning/               # Workstream tracker, architecture conventions, changelog
 ├── .github/workflows/
 │   └── daily_ingest.yml        # cron @ 06:00 UTC + workflow_dispatch
 ├── requirements.txt
@@ -116,10 +117,10 @@ The tranche and series-level ingestion is the subject of Phases 1–2 in `docs/p
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # fill in SUPABASE_URL and SUPABASE_SERVICE_KEY
+cp .env.example .env   # fill in POSTGRES_URL (Neon connection string)
 
-# 1. Apply schema (one-time, against your Supabase Postgres)
-psql "$SUPABASE_DB_URL" -f src/store/schema.sql
+# 1. Apply schema (one-time, against your Neon Postgres)
+psql "$POSTGRES_URL" -f src/store/schema.sql
 
 # 2. Run an incremental update
 python -m src.pipeline.run_daily
@@ -131,7 +132,7 @@ python -m src.pipeline.run_backfill --start-year 2019
 python scripts/seed_local_db.py --skip-fi
 python scripts/run_analysis_local.py
 
-# 5. Verify against live Supabase
+# 5. Verify against live Neon DB
 python scripts/verify_pipeline.py
 ```
 
@@ -145,15 +146,14 @@ run. Bind it to `127.0.0.1`; there is no auth.
 flask --app app run                # or: python app.py
 ```
 
-It needs the same `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` as the CLI. The
-publishable / anon key cannot be used — the pipeline writes to 15 tables and
-needs the service role to bypass RLS.
+It needs `POSTGRES_URL` set to the Neon connection string. The pipeline writes to
+16 tables via psycopg2 direct connection — no PostgREST or RLS involved.
 
 ### Endpoint reference
 
 | Method | Path | Body / Query | Purpose |
 | --- | --- | --- | --- |
-| GET | `/healthz` | — | Liveness + Supabase reachability |
+| GET | `/healthz` | — | Liveness + Neon DB reachability |
 | GET | `/api/status` | — | Row counts per table + last 5 entries in `cvm_ingest_log` |
 | GET | `/api/dispatch` | — | List every valid `(entity, doc_type)` pair |
 | POST | `/api/ingest` | `{entity, doc_type, year, month?}` | Fire one slice. Returns `{job_id}` |
@@ -193,7 +193,7 @@ Failed jobs include a `error.type` classified as one of:
 
 - `network` — `aiohttp` / DNS / timeout / socket failures
 - `csv_parse` — CSV parsing, encoding, or missing CVM column
-- `supabase_write` — Postgrest API error, RLS denial, duplicate key
+- `db_write` — psycopg2 error, constraint violation, duplicate key
 - `schema_mismatch` — column missing on the target table (apply `schema.sql`)
 - `unknown` — fallback with full traceback in `error.traceback`
 
@@ -211,19 +211,19 @@ Hooks classify only — they do **not** auto-retry. Re-POST the same payload to 
 PYTHONPATH=. pytest tests/ -v
 ```
 
-All tests are offline (Supabase and HTTP are mocked). The Flask layer is covered by
+All tests are offline (Neon DB and HTTP are mocked). The Flask layer is covered by
 `tests/test_api.py` (21 tests) — also fully offline; `CVMIngestor` is stubbed.
 
 ## Deploy
 
-Single deploy target: **GitHub Actions cron writing to Supabase**. No container registry, no Vercel, no Docker stack.
+Single deploy target: **GitHub Actions cron writing to Neon Postgres**. No container registry, no Vercel, no Docker stack.
 
 - `.github/workflows/daily_ingest.yml` — runs `run_daily` at 06:00 UTC and exposes a `workflow_dispatch`
   for ad-hoc backfills (`mode=backfill`, `start_year=YYYY`, `entity=fidc`).
-- Required GitHub secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`.
+- Required GitHub secret: `POSTGRES_URL` (Neon connection string with `sslmode=require`).
 
 To roll out schema changes, commit `src/store/schema.sql` and run
-`psql "$SUPABASE_DB_URL" -f src/store/schema.sql` against the target project.
+`psql "$POSTGRES_URL" -f src/store/schema.sql` against the Neon project.
 The schema uses `CREATE TABLE IF NOT EXISTS` and named UNIQUE constraints, so re-applying is idempotent.
 
 ## Execution roadmap
@@ -235,15 +235,15 @@ See `docs/pipeline-plan.md` for the full plan. Summary:
 | **0** | Fix SECURIT csv_name_pattern bug; add FII complemento yield fields | 1h |
 | **1** | FIDC tranche tables (tab_X, tab_VI) + 4 accountability rules | half day |
 | **2** | SECURIT series + cash-flow tables + 2 accountability rules | half day |
-| **3** | Supabase backfill (FIDC + FII + SECURIT re-ingest) | 2–3h |
+| **3** | Neon DB backfill (FIDC + FII + SECURIT re-ingest) | 2–3h |
 | **4** | BACEN macro context (CDI spread rule) | 1h |
 
 ## What's intentionally not here
 
-- **No public REST/GraphQL API.** The pipeline only writes to Supabase. Build consumers against Supabase directly.
+- **No public REST/GraphQL API.** The pipeline only writes to Neon Postgres. Build consumers against Neon directly.
 - **No B3.** The previous `b3_calc_api` pointed at a non-B3 domain and fell back to four hard-coded sample dicts;
   it has been removed. Add a `src/fetchers/b3_fetcher.py` + `src/store/schema.sql` extension when real B3 endpoints
   are validated.
-- **No local Postgres / Docker / Alembic.** Supabase is the single source of truth. Use `scripts/seed_local_db.py`
+- **No local Postgres / Docker / Alembic.** Neon Postgres is the single source of truth. Use `scripts/seed_local_db.py`
   with a local Postgres for offline testing.
 - **No Solana oracle.** The Delos Oracle experiment is out of scope.

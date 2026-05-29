@@ -1,6 +1,6 @@
 # CVM Pipeline — Master Plan
 
-**Objective:** Regular accountability and analysis of Brazilian capital markets — AUM, flows, delinquency, tranche performance, emissions — sourced from CVM's open data portal and persisted to Supabase for SQL analysis.
+**Objective:** Regular accountability and analysis of Brazilian capital markets — AUM, flows, delinquency, tranche performance, emissions — sourced from CVM's open data portal and persisted to Neon Postgres for SQL analysis.
 
 ---
 
@@ -307,8 +307,8 @@ ORDER BY income_yield_pct DESC;
 | Phase 0 — Bug fixes | ✅ Done | SECURIT csv_name_pattern fixed; FII complemento fields added to pipeline + schema |
 | Phase 1 — FIDC tranche tables | ✅ Done | cvm_fidc_tranche, cvm_fidc_tranche_flows, cvm_fidc_aging in code + schema |
 | Phase 2 — SECURIT serie + fluxo | ✅ Done | cvm_securit_serie, cvm_securit_fluxo in code + schema |
-| Schema migration to Supabase | ⏳ Pending | `python scripts/apply_schema.py` — also widens narrow NUMERIC columns from original smoke-test install |
-| Phase 3 — Supabase backfill | ⏳ Blocked on migration | See commands below |
+| Schema migration to Neon DB | ⏳ Pending | `python scripts/apply_schema.py` — also widens narrow NUMERIC columns from original smoke-test install |
+| Phase 3 — Neon DB backfill | ⏳ Blocked on migration | See commands below |
 
 ### Phase 0 — Bug Fixes (1 hour, no schema changes)
 
@@ -554,7 +554,7 @@ WHERE data_referencia = '2024-12-01' GROUP BY 1;
 
 ---
 
-### Phase 3 — Supabase Backfill
+### Phase 3 — Neon DB Backfill
 
 Run after phases 0–2 are deployed. Order matters — largest tables last.
 
@@ -606,7 +606,7 @@ All land in existing `bacen_sgs`, `bacen_ptax`, `bacen_expectativas` tables (alr
 
 ### Phase 5 — Schema Maintenance
 
-- **Jan 2027:** Add `cvm_fi_diario_2027` partition to `schema.sql` and apply to Supabase.
+- **Jan 2027:** Add `cvm_fi_diario_2027` partition to `schema.sql` and apply to Neon DB.
 - **2025-05:** Add FIAGRO to seed and backfill once CVM publishes first data.
 - **Annually:** Verify FIP doc_type (`inf_quadrimestral` continues past 2024).
 

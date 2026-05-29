@@ -22,7 +22,7 @@ try:
 except ImportError:
     pass
 
-from src.store.supabase_client import get_pg_client
+from src.store.pg_client import get_pg_client
 
 SEP = "=" * 68
 SEP2 = "-" * 68

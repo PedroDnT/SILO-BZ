@@ -29,13 +29,13 @@ class TestUpsertRows:
         return client
 
     def test_upsert_empty_rows_returns_zero(self):
-        from src.store.supabase_client import upsert_rows
+        from src.store.pg_client import upsert_rows
         client = self._make_client()
         assert upsert_rows(client, "test_table", []) == 0
         client.cursor.assert_not_called()
 
     def test_upsert_small_batch_single_call(self):
-        from src.store.supabase_client import upsert_rows
+        from src.store.pg_client import upsert_rows
         call_sizes: List[int] = []
 
         with patch("psycopg2.extras.execute_values") as mock_ev:
@@ -51,7 +51,7 @@ class TestUpsertRows:
 
     def test_upsert_large_batch_chunked(self, monkeypatch):
         """Rows > 500 should be split into multiple execute_values calls."""
-        from src.store.supabase_client import upsert_rows
+        from src.store.pg_client import upsert_rows
         call_sizes: List[int] = []
 
         monkeypatch.delenv("CVM_UPSERT_CHUNK_SIZE", raising=False)
@@ -69,7 +69,7 @@ class TestUpsertRows:
 
     def test_upsert_deduplicates_when_conflict_columns_set(self):
         """When conflict_columns is passed, duplicate keys collapse to last write."""
-        from src.store.supabase_client import upsert_rows
+        from src.store.pg_client import upsert_rows
         captured_vals: List[Any] = []
 
         with patch("psycopg2.extras.execute_values") as mock_ev:
@@ -94,7 +94,7 @@ class TestUpsertRows:
 
     def test_upsert_no_dedup_when_conflict_columns_unset(self):
         """Without conflict_columns, duplicate inputs are kept as-is."""
-        from src.store.supabase_client import upsert_rows
+        from src.store.pg_client import upsert_rows
         captured_vals: List[Any] = []
 
         with patch("psycopg2.extras.execute_values") as mock_ev:
@@ -109,7 +109,7 @@ class TestUpsertRows:
         assert len(captured_vals) == 3
 
     def test_upsert_chunk_size_can_be_overridden_by_env(self, monkeypatch):
-        from src.store.supabase_client import upsert_rows
+        from src.store.pg_client import upsert_rows
         call_sizes: List[int] = []
 
         monkeypatch.setenv("CVM_UPSERT_CHUNK_SIZE", "250")

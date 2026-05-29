@@ -1,5 +1,5 @@
 -- =============================================================================
--- CVM + BACEN schema  —  Supabase / PostgreSQL 14+
+-- CVM + BACEN schema  —  Neon / PostgreSQL 14+
 --
 -- Design principles:
 --   • Proper DATE / NUMERIC types for all date and monetary columns
