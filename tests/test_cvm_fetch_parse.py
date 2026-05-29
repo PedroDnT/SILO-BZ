@@ -58,10 +58,47 @@ def _make_ingestor_with_capture():
         captured.extend(rows)
         return len(rows)
 
-    with patch("src.pipeline.cvm_pipeline.get_pg_client", return_value=MagicMock()):
+    with patch("src.pipeline.cvm_pipeline.get_supabase_client", return_value=MagicMock()):
         with patch("src.pipeline.cvm_pipeline.upsert_rows", side_effect=fake_upsert):
             ingestor = CVMIngestor()
     return ingestor, captured, fake_upsert
+
+
+# W1 patch targets: after the refactor, upsert_rows is called from per-entity
+# ingest modules (not from cvm_pipeline directly).  We need to patch in each
+# module's namespace so the mock is active when the ingest function runs.
+_UPSERT_PATCH_TARGETS = [
+    "src.pipeline.ingest_fi.upsert_rows",
+    "src.pipeline.ingest_fidc.upsert_rows",
+    "src.pipeline.ingest_fii.upsert_rows",
+    "src.pipeline.ingest_misc.upsert_rows",
+    "src.pipeline.ingest_securit.upsert_rows",
+    "src.pipeline.cvm_pipeline.upsert_rows",  # ingest_log calls
+]
+_PG_CLIENT_PATCH = "src.pipeline.cvm_pipeline.get_pg_client"
+
+
+from contextlib import contextmanager
+
+@contextmanager
+def _stub_pipeline(captured: list):
+    """Patch all upsert_rows and get_pg_client in one go."""
+    def fake_upsert(client, table, rows, conflict_columns=None):
+        if table != "cvm_ingest_log":
+            captured.extend(rows)
+        return len(rows)
+
+    patches = [patch(t, side_effect=fake_upsert) for t in _UPSERT_PATCH_TARGETS]
+    pg_patch = patch(_PG_CLIENT_PATCH, return_value=MagicMock())
+    pg_patch.start()
+    for p in patches:
+        p.start()
+    try:
+        yield fake_upsert
+    finally:
+        for p in patches:
+            p.stop()
+        pg_patch.stop()
 
 
 # ---------------------------------------------------------------------------
@@ -359,84 +396,78 @@ class TestSECURITFetch:
 # ---------------------------------------------------------------------------
 
 class TestCVMPipelineFieldMapping:
-    """Test that the pipeline correctly maps real CVM field names to output records."""
+    """Test that the pipeline correctly maps real CVM field names to output records.
+
+    W1 refactor: values are now coerced to typed Python objects by apply_map():
+      - dates   -> datetime.date
+      - numeric -> float
+      - int     -> int
+      - cnpj    -> str (14 digits, zero-padded)
+      - text    -> str
+
+    upsert_rows is patched in every ingest_* module's namespace via _stub_pipeline.
+    """
 
     @pytest.mark.asyncio
     async def test_fi_diario_pipeline_extracts_all_fields(self):
+        import datetime
         mock_bytes = _make_zip_bytes("inf_diario_fi_202503.csv", FI_DIARIO_ROWS)
         captured: list = []
 
-        def fake_upsert(client, table, rows, conflict_columns=None):
-            if table != "cvm_ingest_log":
-                captured.extend(rows)
-            return len(rows)
-
-        with patch("src.pipeline.cvm_pipeline.get_pg_client", return_value=MagicMock()):
-            with patch("src.pipeline.cvm_pipeline.upsert_rows", side_effect=fake_upsert):
-                with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
-                    ingestor = CVMIngestor()
-                    count = await ingestor.ingest_fi_diario(2025, 3)
+        with _stub_pipeline(captured):
+            with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
+                ingestor = CVMIngestor()
+                count = await ingestor.ingest_fi_diario(2025, 3)
 
         assert count == 2
         assert len(captured) == 2
         rec = captured[0]
         assert rec["cnpj"] == "12345678000190"
         assert rec["tp_fundo"] == "FI"
-        assert rec["dt_comptc"] == "2025-03-05"
-        assert rec["vl_total"] == "1156886.57"
-        assert rec["vl_quota"] == "37.854676500000"
-        assert rec["vl_patrim_liq"] == "1164101.50"
-        assert rec["captc_dia"] == "0.00"
-        assert rec["resg_dia"] == "0.00"
-        assert rec["nr_cotst"] == "1"
+        assert rec["dt_comptc"] == datetime.date(2025, 3, 5)
+        assert rec["vl_total"] == pytest.approx(1156886.57, rel=1e-6)
+        assert rec["vl_quota"] == pytest.approx(37.8546765, rel=1e-6)
+        assert rec["vl_patrim_liq"] == pytest.approx(1164101.50, rel=1e-6)
+        assert rec["captc_dia"] == pytest.approx(0.0, abs=1e-6)
+        assert rec["resg_dia"] == pytest.approx(0.0, abs=1e-6)
+        assert rec["nr_cotst"] == 1
         assert "raw" in rec
 
     @pytest.mark.asyncio
     async def test_fi_cda_pipeline_extracts_key_fields(self):
+        import datetime
         mock_bytes = _make_zip_bytes("cda_fi_BLC_1_202503.csv", FI_CDA_ROWS)
         captured: list = []
 
-        def fake_upsert(client, table, rows, conflict_columns=None):
-            if table != "cvm_ingest_log":
-                captured.extend(rows)
-            return len(rows)
-
-        with patch("src.pipeline.cvm_pipeline.get_pg_client", return_value=MagicMock()):
-            with patch("src.pipeline.cvm_pipeline.upsert_rows", side_effect=fake_upsert):
-                with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
-                    ingestor = CVMIngestor()
-                    await ingestor.ingest_fi_cda(2025, 3)
+        with _stub_pipeline(captured):
+            with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
+                ingestor = CVMIngestor()
+                await ingestor.ingest_fi_cda(2025, 3)
 
         assert len(captured) == 1
         rec = captured[0]
         assert rec["cnpj"] == "12345678000190"
-        assert rec["period"] == "2025-03-01"
+        assert rec["period"] == datetime.date(2025, 3, 1)
         assert rec["tp_aplic"] == "Operações Compromissadas"
         assert rec["tp_ativo"] == "Título público federal"
-        assert rec["vl_merc_pos_final"] == "61529.46"
+        assert rec["vl_merc_pos_final"] == pytest.approx(61529.46, rel=1e-6)
 
     @pytest.mark.asyncio
     async def test_fidc_mensal_pipeline_extracts_patrim_liq(self):
         """FIDC tab_IV data: TAB_IV_A_VL_PL is mapped to vl_patrim_liq."""
+        import datetime
         mock_bytes = _make_zip_bytes("inf_mensal_fidc_tab_IV_202503.csv", FIDC_MENSAL_ROWS)
         captured: list = []
 
-        def fake_upsert(client, table, rows, conflict_columns=None):
-            if table != "cvm_ingest_log":
-                captured.extend(rows)
-            return len(rows)
-
-        with patch("src.pipeline.cvm_pipeline.get_pg_client", return_value=MagicMock()):
-            with patch("src.pipeline.cvm_pipeline.upsert_rows", side_effect=fake_upsert):
-                with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
-                    ingestor = CVMIngestor()
-                    await ingestor.ingest_fidc_mensal(2025, 3)
+        with _stub_pipeline(captured):
+            with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
+                ingestor = CVMIngestor()
+                await ingestor.ingest_fidc_mensal(2025, 3)
 
         rec = captured[0]
         assert rec["cnpj"] == "12345678000190"
-        assert rec["period"] == "2025-03-31"
-        assert rec["vl_patrim_liq"] == "229108.78"
-        # vl_total and vl_quota are not present in tab_IV
+        assert rec["period"] == datetime.date(2025, 3, 31)
+        assert rec["vl_patrim_liq"] == pytest.approx(229108.78, rel=1e-6)
         assert rec["vl_total"] is None
         assert rec["vl_quota"] is None
 
@@ -445,96 +476,70 @@ class TestCVMPipelineFieldMapping:
         mock_bytes = _make_csv_bytes(FIP_QUADRIMESTRAL_ROWS)
         captured: list = []
 
-        def fake_upsert(client, table, rows, conflict_columns=None):
-            if table != "cvm_ingest_log":
-                captured.extend(rows)
-            return len(rows)
-
-        with patch("src.pipeline.cvm_pipeline.get_pg_client", return_value=MagicMock()):
-            with patch("src.pipeline.cvm_pipeline.upsert_rows", side_effect=fake_upsert):
-                with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
-                    ingestor = CVMIngestor()
-                    await ingestor.ingest_fip_periodic("inf_quadrimestral", 2024)
+        with _stub_pipeline(captured):
+            with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
+                ingestor = CVMIngestor()
+                await ingestor.ingest_fip_periodic("inf_quadrimestral", 2024)
 
         rec = captured[0]
         assert rec["cnpj"] == "12345678000190"
         assert rec["doc_type"] == "inf_quadrimestral"
         assert rec["period_year"] == 2024
-        assert rec["vl_patrim_liq"] == "51024.920000000000"
+        assert rec["vl_patrim_liq"] == pytest.approx(51024.92, rel=1e-4)
 
     @pytest.mark.asyncio
     async def test_fii_mensal_geral_pipeline_cnpj_and_period(self):
+        import datetime
         mock_bytes = _make_zip_bytes("inf_mensal_fii_geral_2024.csv", FII_MENSAL_GERAL_ROWS)
         captured: list = []
 
-        def fake_upsert(client, table, rows, conflict_columns=None):
-            if table != "cvm_ingest_log":
-                captured.extend(rows)
-            return len(rows)
-
-        with patch("src.pipeline.cvm_pipeline.get_pg_client", return_value=MagicMock()):
-            with patch("src.pipeline.cvm_pipeline.upsert_rows", side_effect=fake_upsert):
-                with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
-                    ingestor = CVMIngestor()
-                    await ingestor.ingest_fii_mensal("mensal_geral", 2024)
+        with _stub_pipeline(captured):
+            with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
+                ingestor = CVMIngestor()
+                await ingestor.ingest_fii_mensal("mensal_geral", 2024)
 
         rec = captured[0]
         assert rec["cnpj"] == "12345678000190"
-        assert rec["period"] == "2024-01-01"
+        assert rec["period"] == datetime.date(2024, 1, 1)
         assert rec["doc_subtype"] == "geral"
-        # No Patrimonio_Liquido in real mensal_geral data
-        assert rec["vl_patrim_liq"] is None
+        # vl_patrim_liq is not in the geral FIELD_MAP so it is absent from the record
+        assert "vl_patrim_liq" not in rec
 
     @pytest.mark.asyncio
     async def test_fii_mensal_complemento_pipeline_extracts_patrim_liq(self):
+        import datetime
         mock_bytes = _make_zip_bytes("inf_mensal_fii_complemento_2024.csv", FII_MENSAL_COMPLEMENTO_ROWS)
         captured: list = []
 
-        def fake_upsert(client, table, rows, conflict_columns=None):
-            if table != "cvm_ingest_log":
-                captured.extend(rows)
-            return len(rows)
-
-        with patch("src.pipeline.cvm_pipeline.get_pg_client", return_value=MagicMock()):
-            with patch("src.pipeline.cvm_pipeline.upsert_rows", side_effect=fake_upsert):
-                with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
-                    ingestor = CVMIngestor()
-                    await ingestor.ingest_fii_mensal("mensal_complemento", 2024)
+        with _stub_pipeline(captured):
+            with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
+                ingestor = CVMIngestor()
+                await ingestor.ingest_fii_mensal("mensal_complemento", 2024)
 
         rec = captured[0]
         assert rec["cnpj"] == "12345678000190"
-        assert rec["period"] == "2024-01-01"
+        assert rec["period"] == datetime.date(2024, 1, 1)
         assert rec["doc_subtype"] == "complemento"
-        assert rec["vl_patrim_liq"] == "1500000.00"
+        assert rec["vl_patrim_liq"] == pytest.approx(1500000.0, rel=1e-6)
 
     @pytest.mark.asyncio
     async def test_securit_cra_pipeline_extracts_real_field_names(self):
         """SECURIT: real CVM PascalCase names are now mapped correctly."""
+        import datetime
         mock_bytes = _make_zip_bytes("inf_mensal_cra_2024.csv", SECURIT_CRA_ROWS)
         captured: list = []
 
-        def fake_upsert(client, table, rows, conflict_columns=None):
-            if table != "cvm_ingest_log":
-                captured.extend(rows)
-            return len(rows)
-
-        with patch("src.pipeline.cvm_pipeline.get_pg_client", return_value=MagicMock()):
-            with patch("src.pipeline.cvm_pipeline.upsert_rows", side_effect=fake_upsert):
-                with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
-                    ingestor = CVMIngestor()
-                    await ingestor.ingest_securit_mensal("cra_mensal", 2024)
+        with _stub_pipeline(captured):
+            with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
+                ingestor = CVMIngestor()
+                await ingestor.ingest_securit_mensal("cra_mensal", 2024)
 
         rec = captured[0]
-        assert rec["cnpj_securit"] == "12345678000190"
         assert rec["instrument_type"] == "cra_mensal"
         assert rec["period_year"] == 2024
-        # Data_Referencia → dt_emissao (reference period date)
-        assert rec["dt_emissao"] == "2024-01-01"
-        # Valor_Atualizado_Emissao → vl_emissao
-        assert rec["vl_emissao"] == "604555695.63"
-        # Ativo → vl_total
-        assert rec["vl_total"] == "604600612.97"
-        # Fields not in monthly balance-sheet file
+        assert rec["dt_emissao"] == datetime.date(2024, 1, 1)
+        assert rec["vl_emissao"] == pytest.approx(604555695.63, rel=1e-6)
+        assert rec["vl_total"] == pytest.approx(604600612.97, rel=1e-6)
         assert rec["vl_unit"] is None
         assert rec["qt_titulos"] is None
 

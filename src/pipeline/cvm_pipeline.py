@@ -69,6 +69,45 @@ from src.pipeline.ingest_misc import (
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Backward-compatibility shims for existing tests / callers
+# These helpers were removed from this module in the W1 refactor; they live
+# in src/parsers/mapping.py now but are re-exported here to avoid breaking
+# any test or script that imported them from cvm_pipeline.
+# ---------------------------------------------------------------------------
+
+def _normalize_cnpj(raw: str) -> str:
+    return re.sub(r"\D", "", str(raw)) if raw else ""
+
+
+def _find_field(row: Dict[str, Any], *candidates: str) -> Optional[str]:
+    row_lower = {k.lower(): v for k, v in row.items()}
+    for c in candidates:
+        v = row_lower.get(c.lower())
+        if v is not None:
+            return str(v) if v != "" else None
+    return None
+
+
+def _find_cnpj_field(row: Dict[str, Any], prefer_suffix: str = "fundo") -> Optional[str]:
+    for k, v in row.items():
+        if "cnpj" in k.lower() and prefer_suffix.lower() in k.lower():
+            return str(v) if v else None
+    for k, v in row.items():
+        if "cnpj" in k.lower():
+            return str(v) if v else None
+    return None
+
+
+def _find_inadimpl(row: Dict[str, Any]) -> Optional[str]:
+    val = _find_field(row, "TAB_VI_B_VL_DIRCRED_INAD", "TAB_VI_B_VL_TOTAL", "TAB_VI_VL_TOTAL_INAD")
+    if val is not None:
+        return val
+    for k, v in row.items():
+        if "inadimpl" in k.lower() or "delinq" in k.lower():
+            return str(v) if v else None
+    return None
+
+# ---------------------------------------------------------------------------
 # Entity / doc-type matrix  (only endpoints that actually exist on CVM server)
 # ---------------------------------------------------------------------------
 
