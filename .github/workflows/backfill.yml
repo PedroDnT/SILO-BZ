@@ -38,41 +38,53 @@ jobs:
         run: |
           python - <<'EOF'
           import os, sys, psycopg2
-          url = "".join(os.environ["POSTGRES_URL"].split())
-          year = int("${{ matrix.year }}")
-          conn = psycopg2.connect(url)
-          with conn.cursor() as cur:
-              # Check how many months have ok status in ingest_log for this year
+
+          def ok_months(cur, doc_type, year):
               cur.execute("""
                   SELECT COUNT(DISTINCT period_month)
                   FROM cvm_ingest_log
-                  WHERE entity='fi' AND doc_type='inf_diario'
+                  WHERE entity='fi' AND doc_type=%s
                     AND period_year=%s AND status='ok'
-              """, (year,))
-              ok_months = cur.fetchone()[0]
-          conn.close()
-          expected = 1 if year == 2019 or year == 2020 else 12  # hist ZIPs are yearly
-          if year in (2019, 2020):
-              # Hist ZIPs: check row count in partition instead
-              conn = psycopg2.connect(url)
-              with conn.cursor() as cur:
+              """, (doc_type, year))
+              return cur.fetchone()[0]
+
+          url = "".join(os.environ["POSTGRES_URL"].split())
+          year = int("${{ matrix.year }}")
+
+          conn = psycopg2.connect(url)
+          with conn.cursor() as cur:
+              # The FI job runs inf_diario AND perfil_mensal (and refreshes the FI
+              # registry).  Gate the skip on BOTH so that a year is only skipped when
+              # diario AND perfil are complete — otherwise an up-to-date diario would
+              # wrongly skip the run that populates cvm_fi_perfil / cvm_fund_registry.
+              diario_months = ok_months(cur, "inf_diario", year)
+              perfil_months = ok_months(cur, "perfil_mensal", year)
+              if year in (2019, 2020):
+                  # Hist ZIPs: diario is a single yearly file, so check partition rows.
                   cur.execute(f"SELECT COUNT(*) FROM cvm_fi_diario_{year}")
-                  rows = cur.fetchone()[0]
-              conn.close()
-              # ~250k rows/month × 12 months = ~3M expected; skip if > 2M already
-              if rows > 2_000_000:
-                  print(f"SKIP: {year} hist already has {rows} rows")
+                  diario_rows = cur.fetchone()[0]
+              else:
+                  diario_rows = None
+          conn.close()
+
+          if year in (2019, 2020):
+              # ~250k rows/month × 12 months = ~3M expected; treat diario as complete
+              # at > 2M rows.  Still require perfil months before skipping.
+              diario_done = diario_rows > 2_000_000
+              perfil_done = perfil_months >= 11
+              if diario_done and perfil_done:
+                  print(f"SKIP: {year} hist complete ({diario_rows} diario rows, {perfil_months} perfil months)")
                   with open(os.environ["GITHUB_OUTPUT"], "a") as f:
                       f.write("skip=true\n")
               else:
-                  print(f"RUN: {year} hist has only {rows} rows — backfilling")
+                  print(f"RUN: {year} hist incomplete (diario rows={diario_rows}, perfil months={perfil_months})")
           else:
-              if ok_months >= 11:
-                  print(f"SKIP: {year} already has {ok_months} ok months")
+              if diario_months >= 11 and perfil_months >= 11:
+                  print(f"SKIP: {year} complete ({diario_months} diario months, {perfil_months} perfil months)")
                   with open(os.environ["GITHUB_OUTPUT"], "a") as f:
                       f.write("skip=true\n")
               else:
-                  print(f"RUN: {year} has only {ok_months} ok months — backfilling")
+                  print(f"RUN: {year} incomplete (diario months={diario_months}, perfil months={perfil_months})")
           EOF
 
       - name: Run FI backfill for ${{ matrix.year }}

@@ -146,6 +146,7 @@ _ALL_TABLES: List[str] = [
     "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic",
     "cvm_securit_mensal", "cvm_securit_serie", "cvm_securit_fluxo", "cvm_securit_dfin",
     "cia_company", "cia_event",
+    "cvm_fund_registry",
 ]
 _ALL_ENTITIES: Set[str] = {"fi", "fidc", "fip", "fiagro", "fii", "securit", "cia_aberta"}
 _CORE_DAILY_ENTITIES: Set[str] = {"fi", "fidc", "fiagro"}
@@ -831,7 +832,7 @@ class CVMIngestor:
         # -- Fund registry (static cadastral files — run once per backfill) --
         for entity in ("fi", "fii"):
             if _want(entity):
-                await self.ingest_fund_registry(entity)
+                totals["cvm_fund_registry"] += await self.ingest_fund_registry(entity)
 
         # -- FI ----------------------------------------------------------
         if _want("fi"):
@@ -1039,9 +1040,9 @@ class CVMIngestor:
 
         # Fund registry refresh
         if "fi" in daily_entities:
-            await self.ingest_fund_registry("fi")
+            totals["cvm_fund_registry"] += await self.ingest_fund_registry("fi")
         if "fii" in daily_entities:
-            await self.ingest_fund_registry("fii")
+            totals["cvm_fund_registry"] += await self.ingest_fund_registry("fii")
 
         # FI — current + previous month
         if "fi" in daily_entities:

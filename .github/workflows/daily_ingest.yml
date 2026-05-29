@@ -35,7 +35,11 @@ jobs:
     env:
       POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
       CVM_DNS_NAMESERVERS: "1.1.1.1,8.8.8.8,9.9.9.9"
-      CVM_DAILY_SCOPE: "core"
+      # "all" → fi, fidc, fip, fiagro, fii, securit. fii/securit monthly tables
+      # (and the FII registry) are only refreshed daily under "all"; under "core"
+      # they go stale and rely solely on manual backfills. Yearly entities only
+      # re-fetch the current year daily, so runtime stays within timeout-minutes.
+      CVM_DAILY_SCOPE: "all"
       CVM_UPSERT_CHUNK_SIZE: "1000"
       CVM_INGEST_CONCURRENCY: "4"
       CVM_DAILY_CONCURRENCY: "6"
