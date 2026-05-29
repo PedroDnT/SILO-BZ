@@ -85,9 +85,36 @@ Add only when the UI needs fee/essential-info columns.
     parametrised PK smoke test (15 tests, all passing).
 - **DoD:** company dim populated; material-facts feed queryable; idempotent; null-rate checked.
 
-## W7 — cia B1: ITR + DFP financials  ·  branch `feat/cia-financials`  ·  large  ·  needs W5
+## W7 — cia B1: ITR + DFP financials  ·  branch `feat/cia-financials`  ·  large  ·  needs W5  ·  **done**
 - Parser iterating the ~19 zip members, tagging each row with `grupo` (BPA/BPP/DRE/…) + `escopo` (con/ind); normalize `VL_CONTA` by `ESCALA_MOEDA`; upsert latest `VERSAO`.
 - Field map for the shared statement-CSV columns → `cia_account`; index rows → `cia_filing`.
+- **Implementation summary:**
+  - `src/parsers/field_maps/cia_account.py` — statement-CSV field map verified
+    live against `dfp_cia_aberta_2023.zip`. Maps `CNPJ_CIA`, `CD_CVM`, `DT_REFER`,
+    `VERSAO`, `ORDEM_EXERC`, `DT_INI_EXERC` (absent in BPA/BPP — tolerated),
+    `DT_FIM_EXERC`, `CD_CONTA`, `DS_CONTA`, `VL_CONTA` (pre-scale), `ESCALA_MOEDA`,
+    `ST_CONTA_FIXA`. `grupo`/`escopo`/`doc_type` are injected by ingest (from the
+    `CIAMember` name / call arg), NOT read from the CSV; `GRUPO_DFP`/`MOEDA`/
+    `DENOM_CIA` fall to `raw`. Conflict key matches `uq_cia_account`.
+  - `src/parsers/field_maps/cia_filing.py` — summary-header field map
+    (`ID_DOC`, `DT_RECEB`, `LINK_DOC` + cd_cvm/dt_refer/versao). No `raw` column;
+    residual discarded. Conflict key matches `uq_cia_filing`.
+  - `src/parsers/mapping.py` — new `cd_cvm` coerce type strips non-digits and
+    leading zeros so the 6-digit-padded ITR/DFP code (`001023`) joins the
+    unpadded CAD/IPE code (`1023`). `cia_company`/`cia_event` retrofitted to it.
+  - `src/pipeline/ingest_cia.py` — `ingest_cia_filing(conn, summary_rows, doc_type)`
+    and `ingest_cia_account(conn, members, doc_type)`: iterate account-data members,
+    inject grupo/escopo/doc_type, scale `vl_conta` by ESCALA_MOEDA (`_MONEY_SCALE`:
+    MIL→×1000, MILHÃO→×1e6, else ×1), stash residual in `raw`, drop rows missing
+    `cd_cvm`/`cd_conta`/`dt_refer`; one upsert per member.
+  - `src/pipeline/cvm_pipeline.py` — `CVMIngestor.ingest_cia_itr_dfp(doc_type, year)`
+    fetches the multi-CSV zip via `CIAFetcher.fetch_zip_members_async(..., include_summary=True)`,
+    routes summary→filing + members→account. `cia_filing`/`cia_account` added to
+    `_ALL_TABLES`; backfill loads ITR+DFP for `years >= _CIA_ITR_DFP_FIRST_YEAR=2019`
+    at low concurrency; daily_update refreshes current-year ITR+DFP.
+  - Tests: `tests/test_cia_financials.py` — field-map projection (incl. BPA missing
+    `DT_INI_EXERC`), cd_cvm zero-strip, ESCALA_MOEDA scaling, grupo/escopo/doc_type
+    injection, drop-row rules, upsert call shape, residual→raw (28 tests).
 - **DoD:** ITR+DFP 2019→present loaded; `cia_account` partitioned; revenue/net-income/equity retrievable per company per period.
 
 ## W8 — cia B2: FRE/CGVN/VLMO  ·  branch `feat/cia-enrichment`  ·  medium  ·  needs W5  ·  defer

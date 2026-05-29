@@ -26,8 +26,14 @@ Notes
   absolute reais. ``escala_moeda`` is kept as the original string for audit.
 * ``GRUPO_DFP`` (a long description), ``MOEDA``, ``DENOM_CIA`` fall through to the
   ``raw`` JSONB residual (denormalised / not modelled as typed columns).
+* ``COLUNA_DF`` exists ONLY in the DMPL members (statement of changes in equity):
+  the same cd_conta line repeats once per equity-component column. It is part of
+  a DMPL row's natural key — without it those rows collapse ~85% under last-wins
+  upsert dedup. It is NULL for every other statement type; with the constraint's
+  NULLS NOT DISTINCT, those NULLs collapse so non-DMPL uniqueness is unchanged.
+  Added to cia_account + uq_cia_account by migration 05_cia_account_coluna_df.sql.
 * The natural key is
-  (cd_cvm, doc_type, grupo, escopo, dt_refer, ordem_exerc, cd_conta, versao);
+  (cd_cvm, doc_type, grupo, escopo, dt_refer, ordem_exerc, coluna_df, cd_conta, versao);
   the PK on cia_account is a surrogate BIGSERIAL and the UNIQUE constraint enforces
   idempotency.
 """
@@ -40,6 +46,7 @@ CONFLICT = (
     "escopo",
     "dt_refer",
     "ordem_exerc",
+    "coluna_df",
     "cd_conta",
     "versao",
 )
@@ -52,6 +59,7 @@ FIELD_MAP = {
     "ordem_exerc":   (["ORDEM_EXERC"],     "text"),
     "dt_ini_exerc":  (["DT_INI_EXERC"],    "date"),
     "dt_fim_exerc":  (["DT_FIM_EXERC"],    "date"),
+    "coluna_df":     (["COLUNA_DF"],       "text"),
     "cd_conta":      (["CD_CONTA"],        "text"),
     "ds_conta":      (["DS_CONTA"],        "text"),
     "vl_conta":      (["VL_CONTA"],        "numeric"),

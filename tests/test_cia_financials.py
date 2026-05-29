@@ -109,11 +109,23 @@ class FakeMember:
 class TestCiaAccountFieldMap:
     def test_metadata(self):
         assert _account_map.TABLE == "cia_account"
-        # Conflict key must match uq_cia_account exactly.
+        # Conflict key must match uq_cia_account exactly (incl. coluna_df, added
+        # by migration 05 so DMPL equity-component rows are not collapsed).
         assert _account_map.CONFLICT == (
             "cd_cvm", "doc_type", "grupo", "escopo",
-            "dt_refer", "ordem_exerc", "cd_conta", "versao",
+            "dt_refer", "ordem_exerc", "coluna_df", "cd_conta", "versao",
         )
+
+    def test_dmpl_row_captures_coluna_df(self):
+        # DMPL members carry COLUNA_DF (equity component); it must be a typed
+        # column (part of the natural key), not residual.
+        dmpl_row = {**DRE_ROW, "COLUNA_DF": "Reservas de Lucro"}
+        typed, raw = apply_map(dmpl_row, _account_map.FIELD_MAP)
+        assert typed["coluna_df"] == "Reservas de Lucro"
+        assert "COLUNA_DF" not in raw
+        # Non-DMPL rows leave coluna_df NULL.
+        typed2, _ = apply_map(DRE_ROW, _account_map.FIELD_MAP)
+        assert typed2["coluna_df"] is None
 
     def test_projects_dre_row(self):
         typed, _raw = apply_map(DRE_ROW, _account_map.FIELD_MAP)
