@@ -65,6 +65,10 @@ from src.pipeline.ingest_misc import (
     ingest_fip_periodic,
     ingest_fund_registry,
 )
+from src.pipeline.ingest_cia import (
+    ingest_cia_company,
+    ingest_cia_event,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -141,10 +145,16 @@ _ALL_TABLES: List[str] = [
     "cvm_fiagro_mensal",
     "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic",
     "cvm_securit_mensal", "cvm_securit_serie", "cvm_securit_fluxo", "cvm_securit_dfin",
+    "cia_company", "cia_event",
 ]
-_ALL_ENTITIES: Set[str] = {"fi", "fidc", "fip", "fiagro", "fii", "securit"}
+_ALL_ENTITIES: Set[str] = {"fi", "fidc", "fip", "fiagro", "fii", "securit", "cia_aberta"}
 _CORE_DAILY_ENTITIES: Set[str] = {"fi", "fidc", "fiagro"}
 _FIAGRO_FIRST_PERIOD = date(2025, 5, 1)
+
+# CIA_ABERTA — IPE material-facts feed first availability (CVM publishes
+# yearly ZIPs back to 2009 but the early years are sparse; the W6 backfill
+# defaults to the start_year passed in unless callers override).
+_CIA_IPE_FIRST_YEAR = 2010
 
 
 @dataclass(frozen=True)
@@ -751,6 +761,51 @@ class CVMIngestor:
         return rows_inserted
 
     # ------------------------------------------------------------------
+    # CIA_ABERTA — company registry (CAD, static single CSV)
+    # ------------------------------------------------------------------
+
+    async def ingest_cia_cad(self) -> int:
+        """Ingest the listed-company registry from cad_cia_aberta.csv.
+
+        CAD is a single static CSV (no year/month). Run once per backfill
+        and once per daily-update invocation. Follows the same shape as
+        ingest_fund_registry.
+        """
+        run_id = str(uuid4())
+        self._log_start(run_id, "cia_aberta", "cad", None, None)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages("cia_aberta", "cad", None, None)
+            rows_inserted = ingest_cia_company(self._supabase, raw_rows)
+        except Exception as exc:
+            logger.warning("ingest_cia_cad failed: %s", exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("cia_aberta/cad: %d rows", rows_inserted)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
+    # CIA_ABERTA — IPE material-facts feed (yearly ZIP, one CSV inside)
+    # ------------------------------------------------------------------
+
+    async def ingest_cia_ipe(self, year: int) -> int:
+        """Ingest one full year of IPE press events into cia_event."""
+        run_id = str(uuid4())
+        self._log_start(run_id, "cia_aberta", "ipe", year, None)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages("cia_aberta", "ipe", year, None)
+            rows_inserted = ingest_cia_event(self._supabase, raw_rows)
+        except Exception as exc:
+            logger.warning("ingest_cia_ipe %d failed: %s", year, exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("cia_aberta/ipe %d: %d rows", year, rows_inserted)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
     # Orchestrated runs
     # ------------------------------------------------------------------
 
@@ -947,6 +1002,29 @@ class CVMIngestor:
                 "SECURIT backfill",
             )
 
+        # -- CIA_ABERTA ---------------------------------------------------
+        # CAD: single static file — run once.
+        # IPE: one yearly ZIP per year.
+        if _want("cia_aberta"):
+            n_cad = await self.ingest_cia_cad()
+            totals["cia_company"] += n_cad
+
+            cia_years = [y for y in years if y >= _CIA_IPE_FIRST_YEAR]
+            cia_tasks: List[IngestTask] = [
+                IngestTask(
+                    "cia_event",
+                    f"cia_aberta/ipe {year}",
+                    self.ingest_cia_ipe(year),
+                )
+                for year in cia_years
+            ]
+            await self._run_task_batches(
+                cia_tasks,
+                _get_concurrency("cia_aberta", 3),
+                totals,
+                "CIA_ABERTA backfill",
+            )
+
         logger.info("Backfill complete: %s", totals)
         return totals
 
@@ -1014,6 +1092,15 @@ class CVMIngestor:
                     self.ingest_fii_periodic(doc_type, year),
                 ))
 
+        # CIA_ABERTA — refresh registry (once) and current year IPE feed.
+        if "cia_aberta" in daily_entities:
+            await self.ingest_cia_cad()
+            tasks.append(IngestTask(
+                "cia_event",
+                f"cia_aberta/ipe {year}",
+                self.ingest_cia_ipe(year),
+            ))
+
         # SECURIT — refresh current year
         if "securit" in daily_entities:
             for t in SECURIT_MENSAL_TYPES:
@@ -1074,7 +1161,7 @@ if __name__ == "__main__":
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     bf = sub.add_parser("backfill", help="Historical backfill")
-    bf.add_argument("--entity", help="fi | fidc | fip | fiagro | fii | securit (all if omitted)")
+    bf.add_argument("--entity", help="fi | fidc | fip | fiagro | fii | securit | cia_aberta (all if omitted)")
     bf.add_argument("--start", type=int, default=2019, help="Start year (default 2019)")
     bf.add_argument("--end", type=int, help="End year (default current year)")
 
