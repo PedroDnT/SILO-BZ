@@ -16,7 +16,7 @@ from src.parsers.field_maps import securit_mensal as _mensal
 from src.parsers.field_maps import securit_serie as _serie
 from src.parsers.field_maps import securit_fluxo as _fluxo
 from src.parsers.field_maps import securit_dfin as _dfin
-from src.store.supabase_client import upsert_rows
+from src.store.pg_client import upsert_rows
 
 logger = logging.getLogger(__name__)
 

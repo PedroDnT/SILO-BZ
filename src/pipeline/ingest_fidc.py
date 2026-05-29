@@ -18,7 +18,7 @@ from src.parsers.field_maps import fidc_tranche as _tranche
 from src.parsers.field_maps import fidc_tranche_flows as _flows
 from src.parsers.field_maps import fidc_aging as _aging
 from src.parsers.field_maps import fund_registry as _reg
-from src.store.supabase_client import upsert_rows
+from src.store.pg_client import upsert_rows
 
 logger = logging.getLogger(__name__)
 

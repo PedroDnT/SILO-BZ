@@ -18,7 +18,7 @@ from src.parsers.field_maps import fi_diario as _diario
 from src.parsers.field_maps import fi_cda as _cda
 from src.parsers.field_maps import fi_perfil as _perfil
 from src.parsers.field_maps import fund_registry as _reg
-from src.store.supabase_client import upsert_rows
+from src.store.pg_client import upsert_rows
 
 logger = logging.getLogger(__name__)
 

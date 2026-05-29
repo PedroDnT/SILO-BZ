@@ -12,7 +12,7 @@ from src.parsers.mapping import apply_map
 from src.parsers.field_maps import fiagro_mensal as _fiagro
 from src.parsers.field_maps import fip_periodic as _fip
 from src.parsers.field_maps import fund_registry as _reg
-from src.store.supabase_client import upsert_rows
+from src.store.pg_client import upsert_rows
 
 logger = logging.getLogger(__name__)
 

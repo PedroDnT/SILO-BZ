@@ -16,7 +16,7 @@ from src.parsers.field_maps import fii_geral as _geral
 from src.parsers.field_maps import fii_ativo_passivo as _ap
 from src.parsers.field_maps import fii_complemento as _comp
 from src.parsers.field_maps import fii_periodic as _periodic
-from src.store.supabase_client import upsert_rows
+from src.store.pg_client import upsert_rows
 
 logger = logging.getLogger(__name__)
 
