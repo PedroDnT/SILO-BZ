@@ -679,6 +679,32 @@ class CVMIngestor:
         logger.info("%s/cad: %d rows", entity, rows_inserted)
         return rows_inserted
 
+    async def ingest_fund_registry_cvm175(self) -> int:
+        """Ingest the CVM-175 unified registry (registro_fundo + registro_classe).
+
+        Covers the post-2023 active universe across all fund families; entity_type
+        and is_active are derived per row. Runs after the legacy cad ingest so the
+        current CVM-175 status wins for any shared CNPJ.
+        """
+        from src.pipeline.ingest_misc import ingest_fund_registry_cvm175
+
+        total = 0
+        for doc_type in ("registro_fundo", "registro_classe"):
+            run_id = str(uuid4())
+            self._log_start(run_id, "fi", doc_type, None, None)
+            rows = 0
+            try:
+                raw_rows = await self._fetch_all_pages("fi", doc_type, None, None)
+                rows = ingest_fund_registry_cvm175(self._supabase, raw_rows)
+            except Exception as exc:
+                logger.warning("ingest_fund_registry_cvm175 %s failed: %s", doc_type, exc)
+                self._log_finish(run_id, 0, str(exc))
+                continue
+            self._log_finish(run_id, rows)
+            logger.info("fi/%s: %d rows", doc_type, rows)
+            total += rows
+        return total
+
     # ------------------------------------------------------------------
     # ETF registry — curated ticker->CNPJ seed enriched from cad_fi
     # ------------------------------------------------------------------
@@ -801,6 +827,10 @@ class CVMIngestor:
         for entity in ("fi", "fii"):
             if _want(entity):
                 totals["cvm_fund_registry"] += await self.ingest_fund_registry(entity)
+
+        # -- CVM-175 unified registry (active universe, all fund families) --
+        if _want("fi"):
+            totals["cvm_fund_registry"] += await self.ingest_fund_registry_cvm175()
 
         # -- ETF registry (curated seed; derived from FI data) --
         if _want("fi"):
@@ -992,6 +1022,10 @@ class CVMIngestor:
             totals["cvm_fund_registry"] += await self.ingest_fund_registry("fi")
         if "fii" in daily_entities:
             totals["cvm_fund_registry"] += await self.ingest_fund_registry("fii")
+
+        # CVM-175 unified registry refresh (active universe, all fund families)
+        if "fi" in daily_entities:
+            totals["cvm_fund_registry"] += await self.ingest_fund_registry_cvm175()
 
         # ETF registry refresh (curated seed; derived from FI data)
         if "fi" in daily_entities:

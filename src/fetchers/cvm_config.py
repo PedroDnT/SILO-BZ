@@ -56,6 +56,22 @@ class DatasetConfig:
             "is_zip": False,
             "description": "FI fund registry — DENOM_SOCIAL, SIT, DT_REG, DT_CANCEL (static file, no year/month)",
         },
+        # CVM-175 unified registry (registro_fundo_classe.zip): the post-2023
+        # active universe across ALL fund families (FIF/FII/FIDC/FIP/FIAGRO/…).
+        # cad_fi.csv is now ~99% cancelled legacy funds, so these supply the
+        # clean names + current status. Same zip, two CSV members.
+        "registro_classe": {
+            "url_pattern": "{base_url}/FI/CAD/DADOS/registro_fundo_classe.zip",
+            "is_zip": True,
+            "csv_name_pattern": "registro_classe.csv",
+            "description": "CVM-175 class registry (CNPJ_Classe) — matches inf_diario CNPJ_FUNDO_CLASSE (2023+)",
+        },
+        "registro_fundo": {
+            "url_pattern": "{base_url}/FI/CAD/DADOS/registro_fundo_classe.zip",
+            "is_zip": True,
+            "csv_name_pattern": "registro_fundo.csv",
+            "description": "CVM-175 fund registry (CNPJ_Fundo) — fund-level name/status/cancel date",
+        },
         "inf_diario": {
             "url_pattern": "{base_url}/FI/DOC/INF_DIARIO/DADOS/inf_diario_fi_{year}{month:02d}.zip",
             "is_zip": True,

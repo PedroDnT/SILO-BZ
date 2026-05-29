@@ -210,6 +210,7 @@ class TestCVMIngestorOrchestration:
 
         ingestor = CVMIngestor.__new__(CVMIngestor)
         ingestor.ingest_fund_registry = AsyncMock(return_value=0)
+        ingestor.ingest_fund_registry_cvm175 = AsyncMock(return_value=0)
         ingestor.ingest_etf_registry = AsyncMock(return_value=0)
         ingestor.ingest_fi_diario = AsyncMock(return_value=1)
         ingestor.ingest_fi_cda = AsyncMock(return_value=1)
