@@ -22,14 +22,16 @@ Notes
 * ``situacao`` maps from ``SIT`` (registry status); ``SIT_EMISSOR`` is
   more granular but reflects the issuer-state machine and is kept in raw.
 * ``cd_cvm`` is the natural primary key; rows missing it are dropped by
-  the ingest function.
+  the ingest function. It uses the ``cd_cvm`` coerce (strip leading zeros) so
+  the canonical code joins cia_filing / cia_account, which derive cd_cvm from
+  the 6-digit-padded ITR/DFP CSVs.
 """
 
 TABLE = "cia_company"
 CONFLICT = ("cd_cvm",)
 
 FIELD_MAP = {
-    "cd_cvm":    (["CD_CVM"],                "text"),
+    "cd_cvm":    (["CD_CVM"],                "cd_cvm"),
     "cnpj_cia":  (["CNPJ_CIA"],              "cnpj"),
     "denom_cia": (["DENOM_SOCIAL"],          "text"),
     "setor":     (["SETOR_ATIV"],            "text"),
