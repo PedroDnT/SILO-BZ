@@ -25,7 +25,8 @@ Make the repo describe what actually exists.
 - Decide `fi-doc-balancete`: finish (table + map) or delete the config line.
 - **DoD:** README matches the tree; one presentation layer; no dead config.
 
-## W1 — Field-map refactor + modularization  ·  branch `refactor/declarative-field-maps`  ·  medium  ·  **blocks the rest**
+
+## W1 — Field-map refactor + modularization  ·  branch `refactor/declarative-field-maps`  ·  medium  ·  **blocks the rest**  ·  in-progress
 Implement `02 §1–2 §7`.
 - Add `src/parsers/field_maps/<dataset>.py` (one per dataset) + a generic `apply_map(row, FIELD_MAP) -> (typed, residual_raw)` in `src/parsers/`.
 - Extend `src/parsers/validation.py` with `coerce_type` handlers (latin-1 numbers, BR/ISO dates, CNPJ→14, pct).
