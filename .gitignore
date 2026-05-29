@@ -35,6 +35,8 @@ data/
 
 # Local Claude settings (may contain absolute paths / machine-specific MCP config)
 .claude/settings.local.json
+# Per-agent git worktrees — must not be tracked (they appear as gitlinks and break CI)
+.claude/worktrees/
 
 # pytest
 .pytest_cache/
