@@ -29,30 +29,30 @@ Each CVM entity distributes data as ZIP files containing multiple CSVs. The pipe
 only reads specific CSVs from each ZIP — the rest contain tranche-level and structural
 data not yet ingested:
 
-| Entity | CSVs per ZIP | Pipeline reads | Pending (in plan) |
-|--------|-------------|----------------|-------------------|
-| FI | 1 CSV | inf_diario (NAV, flows) | — |
-| FIDC | **17 CSVs** (tab_I–tab_XIV) | tab_IV (fund-level NAV) | tab_X (tranches), tab_VI (aging) |
-| FII | 3 CSVs | geral, ativo_passivo, **complemento** (NAV + yield) | — |
-| SECURIT (CRA/CRI/OTS) | **8 CSVs** | ativo_passivo (emissão totals) | classe (series status), fluxo_caixa |
-| FIP | 1 CSV | inf_quadrimestral (PL) | — |
-| FIAGRO | 1 CSV | mensal (PL) — available from May 2025 | — |
+| Entity                | CSVs per ZIP                | Pipeline reads                                      | Pending (in plan)                   |
+| --------------------- | --------------------------- | --------------------------------------------------- | ----------------------------------- |
+| FI                    | 1 CSV                       | inf_diario (NAV, flows)                             | —                                   |
+| FIDC                  | **17 CSVs** (tab_I–tab_XIV) | tab_IV (fund-level NAV)                             | tab_X (tranches), tab_VI (aging)    |
+| FII                   | 3 CSVs                      | geral, ativo_passivo, **complemento** (NAV + yield) | —                                   |
+| SECURIT (CRA/CRI/OTS) | **8 CSVs**                  | ativo_passivo (emissão totals)                      | classe (series status), fluxo_caixa |
+| FIP                   | 1 CSV                       | inf_quadrimestral (PL)                              | —                                   |
+| FIAGRO                | 1 CSV                       | mensal (PL) — available from May 2025               | —                                   |
 
 The tranche and series-level ingestion is the subject of Phases 1–2 in `docs/pipeline-plan.md`.
 
 ## Pipeline stages
 
 ```
-   ┌───── FETCH ─────┐    ┌───── PARSE ────┐    ┌───── STORE ────┐
-   │ src/fetchers/   │ →  │ src/parsers/   │ →  │ src/store/     │
-   │  cvm_fetcher    │    │  validation    │    │  pg_client.py  │
-   │  bacen_fetcher  │    │  (CVM zip→csv  │    │  schema.sql    │
-   │                 │    │   and BACEN df │    │                │
-   │                 │    │   normalization│    │                │
-   │                 │    │   live in the  │    │                │
-   │                 │    │   fetchers)    │    │                │
-   └─────────────────┘    └────────────────┘    └────────────────┘
-                                                       ▲
+  ┌───── FETCH ─────┐    ┌───── PARSE ────┐    ┌───── STORE ────┐
+  │ src/fetchers/   │ →  │ src/parsers/   │ →  │ src/store/     │
+  │  cvm_fetcher    │    │  validation    │    │  pg_client.py  │
+  │  bacen_fetcher  │    │  (CVM zip→csv  │    │  schema.sql    │
+  │                 │    │   and BACEN df │    │                │
+  │                 │    │   normalization│    │                │
+  │                 │    │   live in the  │    │                │
+  │                 │    │   fetchers)    │    │                │
+  └─────────────────┘    └────────────────┘    └────────────────┘
+                                                      ▲
                           ┌───── ORCHESTRATE ──────────┘
                           │ src/pipeline/
                           │   cvm_pipeline.CVMIngestor
@@ -62,12 +62,12 @@ The tranche and series-level ingestion is the subject of Phases 1–2 in `docs/p
                           └─────────────────────────────────────
 ```
 
-| Package | Role | Key modules |
-| --- | --- | --- |
-| `src/fetchers/` | **FETCH** — HTTP/SDK calls only. CVM downloads ZIP/CSV from `dados.cvm.gov.br` with retry, DNS rotation, and on-disk cache. BACEN wraps `python-bcb`. | `cvm_fetcher.CVMFetcher`, `cvm_config.DatasetConfig`, `bacen_fetcher.BacenClient` |
-| `src/parsers/` | **PARSE** — shared field/CNPJ/date validation. CVM CSV extraction is co-located with `CVMFetcher.fetch()` because it needs the URL/filename context. BACEN DataFrame normalization is co-located with `BacenClient`. | `validation.DataValidator` |
-| `src/store/` | **STORE** — psycopg2 Neon client and chunked upserts; canonical schema. | `pg_client.upsert_rows`, `pg_client.get_pg_client`, `schema.sql` |
-| `src/pipeline/` | **ORCHESTRATE** — wires the three stages, writes audit log rows, runs daily/backfill. | `cvm_pipeline.CVMIngestor`, `bacen_pipeline.BacenIngestor`, `run_backfill`, `run_daily` |
+| Package         | Role                                                                                                                                                                                                                 | Key modules                                                                             |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `src/fetchers/` | **FETCH** — HTTP/SDK calls only. CVM downloads ZIP/CSV from `dados.cvm.gov.br` with retry, DNS rotation, and on-disk cache. BACEN wraps `python-bcb`.                                                                | `cvm_fetcher.CVMFetcher`, `cvm_config.DatasetConfig`, `bacen_fetcher.BacenClient`       |
+| `src/parsers/`  | **PARSE** — shared field/CNPJ/date validation. CVM CSV extraction is co-located with `CVMFetcher.fetch()` because it needs the URL/filename context. BACEN DataFrame normalization is co-located with `BacenClient`. | `validation.DataValidator`                                                              |
+| `src/store/`    | **STORE** — psycopg2 Neon client and chunked upserts; canonical schema.                                                                                                                                              | `pg_client.upsert_rows`, `pg_client.get_pg_client`, `schema.sql`                        |
+| `src/pipeline/` | **ORCHESTRATE** — wires the three stages, writes audit log rows, runs daily/backfill.                                                                                                                                | `cvm_pipeline.CVMIngestor`, `bacen_pipeline.BacenIngestor`, `run_backfill`, `run_daily` |
 
 ## Repository layout
 
@@ -151,17 +151,17 @@ It needs `POSTGRES_URL` set to the Neon connection string. The pipeline writes t
 
 ### Endpoint reference
 
-| Method | Path | Body / Query | Purpose |
-| --- | --- | --- | --- |
-| GET | `/healthz` | — | Liveness + Neon DB reachability |
-| GET | `/api/status` | — | Row counts per table + last 5 entries in `cvm_ingest_log` |
-| GET | `/api/dispatch` | — | List every valid `(entity, doc_type)` pair |
-| POST | `/api/ingest` | `{entity, doc_type, year, month?}` | Fire one slice. Returns `{job_id}` |
-| POST | `/api/ingest/range` | `{entity, doc_type, year_start, year_end, months?}` | Spawn N sequential child jobs |
-| POST | `/api/daily` | — | Run `CVMIngestor.daily_update()` as one background job |
-| GET | `/api/jobs` | `?limit=50` | List recent jobs, newest first |
-| GET | `/api/jobs/<id>` | — | Full job state: status, rows, error, warnings, children |
-| POST | `/api/verify` | — | Run the quality-gate subset of `verify_pipeline.py` synchronously |
+| Method | Path                | Body / Query                                        | Purpose                                                           |
+| ------ | ------------------- | --------------------------------------------------- | ----------------------------------------------------------------- |
+| GET    | `/healthz`          | —                                                   | Liveness + Neon DB reachability                                   |
+| GET    | `/api/status`       | —                                                   | Row counts per table + last 5 entries in `cvm_ingest_log`         |
+| GET    | `/api/dispatch`     | —                                                   | List every valid `(entity, doc_type)` pair                        |
+| POST   | `/api/ingest`       | `{entity, doc_type, year, month?}`                  | Fire one slice. Returns `{job_id}`                                |
+| POST   | `/api/ingest/range` | `{entity, doc_type, year_start, year_end, months?}` | Spawn N sequential child jobs                                     |
+| POST   | `/api/daily`        | —                                                   | Run `CVMIngestor.daily_update()` as one background job            |
+| GET    | `/api/jobs`         | `?limit=50`                                         | List recent jobs, newest first                                    |
+| GET    | `/api/jobs/<id>`    | —                                                   | Full job state: status, rows, error, warnings, children           |
+| POST   | `/api/verify`       | —                                                   | Run the quality-gate subset of `verify_pipeline.py` synchronously |
 
 `month` is required for monthly conventions (`fi`, `fidc`, `fiagro mensal`).
 Yearly conventions (`fii`, `fip`, `securit *_classe / *_fluxo / dfin_*`) take only `year`.
@@ -174,8 +174,8 @@ flask --app app run
 
 # 2. fill one month at a time and watch it
 curl -XPOST localhost:5000/api/ingest \
-     -H 'content-type: application/json' \
-     -d '{"entity":"fidc","doc_type":"tranche","year":2024,"month":5}'
+    -H 'content-type: application/json' \
+    -d '{"entity":"fidc","doc_type":"tranche","year":2024,"month":5}'
 # → {"job_id":"abcd-...","status":"queued","table":"cvm_fidc_tranche"}
 
 curl localhost:5000/api/jobs/abcd-...
@@ -183,8 +183,8 @@ curl localhost:5000/api/jobs/abcd-...
 
 # 3. when you're confident, batch a year range
 curl -XPOST localhost:5000/api/ingest/range \
-     -H 'content-type: application/json' \
-     -d '{"entity":"fidc","doc_type":"tranche","year_start":2019,"year_end":2023}'
+    -H 'content-type: application/json' \
+    -d '{"entity":"fidc","doc_type":"tranche","year_start":2019,"year_end":2023}'
 ```
 
 ### Error hooks
@@ -230,13 +230,13 @@ The schema uses `CREATE TABLE IF NOT EXISTS` and named UNIQUE constraints, so re
 
 See `docs/pipeline-plan.md` for the full plan. Summary:
 
-| Phase | What | Est. |
-|-------|------|------|
-| **0** | Fix SECURIT csv_name_pattern bug; add FII complemento yield fields | 1h |
-| **1** | FIDC tranche tables (tab_X, tab_VI) + 4 accountability rules | half day |
-| **2** | SECURIT series + cash-flow tables + 2 accountability rules | half day |
-| **3** | Neon DB backfill (FIDC + FII + SECURIT re-ingest) | 2–3h |
-| **4** | BACEN macro context (CDI spread rule) | 1h |
+| Phase | What                                                               | Est.     |
+| ----- | ------------------------------------------------------------------ | -------- |
+| **0** | Fix SECURIT csv_name_pattern bug; add FII complemento yield fields | 1h       |
+| **1** | FIDC tranche tables (tab_X, tab_VI) + 4 accountability rules       | half day |
+| **2** | SECURIT series + cash-flow tables + 2 accountability rules         | half day |
+| **3** | Neon DB backfill (FIDC + FII + SECURIT re-ingest)                  | 2–3h     |
+| **4** | BACEN macro context (CDI spread rule)                              | 1h       |
 
 ## What's intentionally not here
 
