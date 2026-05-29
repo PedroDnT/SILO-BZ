@@ -27,6 +27,7 @@ class EntityType(str, Enum):
     FIAGRO = "fiagro"
     FII = "fii"
     SECURIT = "securit"
+    CIA_ABERTA = "cia_aberta"
 
 
 class DatasetConfig:
@@ -202,6 +203,83 @@ class DatasetConfig:
         },
     }
 
+    # ---------------------------------------------------------------------------
+    # CIA_ABERTA — Listed companies (Domain B, W5 scaffold)
+    #
+    # URL patterns verified against dados.cvm.gov.br (2026-05-29):
+    #   CAD  — single static CSV (no year/month)
+    #   IPE  — yearly ZIP, single CSV inside (ipe_cia_aberta_{YYYY}.csv)
+    #   ITR  — yearly ZIP, 19 CSV members:
+    #              8 statement types x 2 scopes (con/ind) +
+    #              itr_cia_aberta_{YYYY}.csv (general header),
+    #              composicao_capital, parecer
+    #   DFP  — same structure as ITR (19 members, prefix dfp_)
+    #
+    # For ITR/DFP the multi-CSV nature is handled by CIAFetcher.fetch_zip_members()
+    # in src/fetchers/cia_fetcher.py — not by the standard CVMFetcher.fetch().
+    # ---------------------------------------------------------------------------
+    CIA_ABERTA_DATASETS: Dict[str, Dict] = {
+        "cad": {
+            "url_pattern": "{base_url}/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
+            "is_zip": False,
+            "multi_csv": False,
+            "description": "Listed-company registry — CNPJ, DENOM_CIA, setor, segmento, situacao (static file, no year)",
+        },
+        "ipe": {
+            "url_pattern": "{base_url}/CIA_ABERTA/DOC/IPE/DADOS/ipe_cia_aberta_{year}.zip",
+            "is_zip": True,
+            "multi_csv": False,
+            "csv_name_pattern": "ipe_cia_aberta_{year}.csv",
+            "description": "Eventual press events (IPE) — single CSV per yearly ZIP",
+        },
+        "itr": {
+            "url_pattern": "{base_url}/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_{year}.zip",
+            "is_zip": True,
+            "multi_csv": True,
+            "csv_member_prefix": "itr_cia_aberta_",
+            "statement_types": [
+                "BPA_con", "BPA_ind",
+                "BPP_con", "BPP_ind",
+                "DFC_MD_con", "DFC_MD_ind",
+                "DFC_MI_con", "DFC_MI_ind",
+                "DMPL_con", "DMPL_ind",
+                "DRA_con", "DRA_ind",
+                "DRE_con", "DRE_ind",
+                "DVA_con", "DVA_ind",
+                "composicao_capital",
+                "parecer",
+            ],
+            "description": (
+                "Quarterly ITR financial statements — yearly ZIP with ~19 CSVs "
+                "(8 statement types x con/ind scopes + composicao_capital + parecer). "
+                "Use CIAFetcher.fetch_zip_members() to enumerate."
+            ),
+        },
+        "dfp": {
+            "url_pattern": "{base_url}/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_{year}.zip",
+            "is_zip": True,
+            "multi_csv": True,
+            "csv_member_prefix": "dfp_cia_aberta_",
+            "statement_types": [
+                "BPA_con", "BPA_ind",
+                "BPP_con", "BPP_ind",
+                "DFC_MD_con", "DFC_MD_ind",
+                "DFC_MI_con", "DFC_MI_ind",
+                "DMPL_con", "DMPL_ind",
+                "DRA_con", "DRA_ind",
+                "DRE_con", "DRE_ind",
+                "DVA_con", "DVA_ind",
+                "composicao_capital",
+                "parecer",
+            ],
+            "description": (
+                "Annual DFP financial statements — yearly ZIP with ~19 CSVs "
+                "(8 statement types x con/ind scopes + composicao_capital + parecer). "
+                "Use CIAFetcher.fetch_zip_members() to enumerate."
+            ),
+        },
+    }
+
     SECURIT_DATASETS: Dict[str, Dict] = {
         "cra_mensal": {
             "url_pattern": "{base_url}/SECURIT/DOC/INF_MENSAL_CRA/DADOS/inf_mensal_cra_{year}.zip",
@@ -278,6 +356,7 @@ class DatasetConfig:
             "fiagro": cls.FIAGRO_DATASETS,
             "fii": cls.FII_DATASETS,
             "securit": cls.SECURIT_DATASETS,
+            "cia_aberta": cls.CIA_ABERTA_DATASETS,
         }
         datasets = entity_map.get(entity.lower())
         if not datasets:
@@ -299,6 +378,7 @@ class DatasetConfig:
             "fiagro": list(cls.FIAGRO_DATASETS.keys()),
             "fii": list(cls.FII_DATASETS.keys()),
             "securit": list(cls.SECURIT_DATASETS.keys()),
+            "cia_aberta": list(cls.CIA_ABERTA_DATASETS.keys()),
         }
         return entity_map.get(entity.lower(), [])
 
