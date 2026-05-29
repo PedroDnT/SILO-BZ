@@ -58,7 +58,7 @@ def _make_ingestor_with_capture():
         captured.extend(rows)
         return len(rows)
 
-    with patch("src.pipeline.cvm_pipeline.get_supabase_client", return_value=MagicMock()):
+    with patch("src.pipeline.cvm_pipeline.get_pg_client", return_value=MagicMock()):
         with patch("src.pipeline.cvm_pipeline.upsert_rows", side_effect=fake_upsert):
             ingestor = CVMIngestor()
     return ingestor, captured, fake_upsert
@@ -371,7 +371,7 @@ class TestCVMPipelineFieldMapping:
                 captured.extend(rows)
             return len(rows)
 
-        with patch("src.pipeline.cvm_pipeline.get_supabase_client", return_value=MagicMock()):
+        with patch("src.pipeline.cvm_pipeline.get_pg_client", return_value=MagicMock()):
             with patch("src.pipeline.cvm_pipeline.upsert_rows", side_effect=fake_upsert):
                 with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
                     ingestor = CVMIngestor()
@@ -401,7 +401,7 @@ class TestCVMPipelineFieldMapping:
                 captured.extend(rows)
             return len(rows)
 
-        with patch("src.pipeline.cvm_pipeline.get_supabase_client", return_value=MagicMock()):
+        with patch("src.pipeline.cvm_pipeline.get_pg_client", return_value=MagicMock()):
             with patch("src.pipeline.cvm_pipeline.upsert_rows", side_effect=fake_upsert):
                 with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
                     ingestor = CVMIngestor()
@@ -426,7 +426,7 @@ class TestCVMPipelineFieldMapping:
                 captured.extend(rows)
             return len(rows)
 
-        with patch("src.pipeline.cvm_pipeline.get_supabase_client", return_value=MagicMock()):
+        with patch("src.pipeline.cvm_pipeline.get_pg_client", return_value=MagicMock()):
             with patch("src.pipeline.cvm_pipeline.upsert_rows", side_effect=fake_upsert):
                 with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
                     ingestor = CVMIngestor()
@@ -450,7 +450,7 @@ class TestCVMPipelineFieldMapping:
                 captured.extend(rows)
             return len(rows)
 
-        with patch("src.pipeline.cvm_pipeline.get_supabase_client", return_value=MagicMock()):
+        with patch("src.pipeline.cvm_pipeline.get_pg_client", return_value=MagicMock()):
             with patch("src.pipeline.cvm_pipeline.upsert_rows", side_effect=fake_upsert):
                 with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
                     ingestor = CVMIngestor()
@@ -472,7 +472,7 @@ class TestCVMPipelineFieldMapping:
                 captured.extend(rows)
             return len(rows)
 
-        with patch("src.pipeline.cvm_pipeline.get_supabase_client", return_value=MagicMock()):
+        with patch("src.pipeline.cvm_pipeline.get_pg_client", return_value=MagicMock()):
             with patch("src.pipeline.cvm_pipeline.upsert_rows", side_effect=fake_upsert):
                 with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
                     ingestor = CVMIngestor()
@@ -495,7 +495,7 @@ class TestCVMPipelineFieldMapping:
                 captured.extend(rows)
             return len(rows)
 
-        with patch("src.pipeline.cvm_pipeline.get_supabase_client", return_value=MagicMock()):
+        with patch("src.pipeline.cvm_pipeline.get_pg_client", return_value=MagicMock()):
             with patch("src.pipeline.cvm_pipeline.upsert_rows", side_effect=fake_upsert):
                 with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
                     ingestor = CVMIngestor()
@@ -518,7 +518,7 @@ class TestCVMPipelineFieldMapping:
                 captured.extend(rows)
             return len(rows)
 
-        with patch("src.pipeline.cvm_pipeline.get_supabase_client", return_value=MagicMock()):
+        with patch("src.pipeline.cvm_pipeline.get_pg_client", return_value=MagicMock()):
             with patch("src.pipeline.cvm_pipeline.upsert_rows", side_effect=fake_upsert):
                 with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
                     ingestor = CVMIngestor()
