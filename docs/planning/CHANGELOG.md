@@ -3,4 +3,5 @@
 | Date       | Branch                    | Change                                                                                              |
 | ---------- | ------------------------- | --------------------------------------------------------------------------------------------------- |
 | 2026-05-29 | chore/reconcile-main (W0) | Renamed pg_client, deleted dead files, wired cvm_fi_balancete (schema + field map + ingest path)   |
+| 2026-05-29 | chore/numeric-precision (W3) | Added src/store/migrations/03_precision.sql: corrected cvm_fiagro_mensal.vl_quota to NUMERIC(28,12), widened cvm_securit_mensal.qt_titulos to NUMERIC(28,6), and typed bare NUMERIC columns on bacen_sgs/ptax/expectativas to explicit precision. |
 | 2026-05-29 | refactor/declarative-field-maps (W1) | Added src/parsers/mapping.py (apply_map + coerce), 17 field-map modules, 4 per-entity ingest modules, src/store/migrations/, updated apply_schema.py to run migrations in order, refactored cvm_pipeline.py to map-driven pattern |

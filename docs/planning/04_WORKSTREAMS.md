@@ -40,7 +40,7 @@ Implement `02 §1–2 §7`.
 - Field map → populate existing `cvm_fund_registry` (cnpj, denom, type, situation, administrator, dates).
 - Wire into daily + backfill. **DoD:** registry populated; fund labels joinable by CNPJ across all fund tables.
 
-## W3 — Numeric precision audit  ·  branch `chore/numeric-precision`  ·  small
+## W3 — Numeric precision audit  ·  branch `chore/numeric-precision`  ·  small  ·  **in-progress**
 - Query observed max magnitudes per numeric column; migrate any under-spec column to the `02 §3` convention; add migrations. Fold in `vl_quota` widenings already applied so they're permanent in code.
 - **DoD:** no `NUMERIC(20,12)` monetary/quota columns remain under-spec; convention documented.
 
