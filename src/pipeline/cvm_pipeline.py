@@ -141,7 +141,7 @@ _ALL_TABLES: List[str] = [
     "cvm_fiagro_mensal",
     "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic",
     "cvm_securit_mensal", "cvm_securit_serie", "cvm_securit_fluxo", "cvm_securit_dfin",
-    "cvm_fund_registry",
+    "cvm_fund_registry", "cvm_etf_registry",
 ]
 _ALL_ENTITIES: Set[str] = {"fi", "fidc", "fip", "fiagro", "fii", "securit"}
 _CORE_DAILY_ENTITIES: Set[str] = {"fi", "fidc", "fiagro"}
@@ -680,6 +680,29 @@ class CVMIngestor:
         return rows_inserted
 
     # ------------------------------------------------------------------
+    # ETF registry — curated ticker->CNPJ seed enriched from cad_fi
+    # ------------------------------------------------------------------
+
+    async def ingest_etf_registry(self) -> int:
+        """Load the curated ETF seed, enrich from cad_fi, upsert cvm_etf_registry."""
+        from src.pipeline.ingest_etf import load_etf_seed, ingest_etf_registry
+
+        run_id = str(uuid4())
+        self._log_start(run_id, "etf", "registry", None, None)
+        rows_inserted = 0
+        try:
+            seed = load_etf_seed()
+            cad_rows = await self._fetch_all_pages("fi", "cad", None, None)
+            rows_inserted = ingest_etf_registry(self._supabase, seed, cad_rows)
+        except Exception as exc:
+            logger.warning("ingest_etf_registry failed: %s", exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("etf/registry: %d rows", rows_inserted)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
     # SECURIT — per-series data (classe CSV) and cash flows (fluxo_caixa CSV)
     # ------------------------------------------------------------------
 
@@ -778,6 +801,10 @@ class CVMIngestor:
         for entity in ("fi", "fii"):
             if _want(entity):
                 totals["cvm_fund_registry"] += await self.ingest_fund_registry(entity)
+
+        # -- ETF registry (curated seed; derived from FI data) --
+        if _want("fi"):
+            totals["cvm_etf_registry"] += await self.ingest_etf_registry()
 
         # -- FI ----------------------------------------------------------
         if _want("fi"):
@@ -965,6 +992,10 @@ class CVMIngestor:
             totals["cvm_fund_registry"] += await self.ingest_fund_registry("fi")
         if "fii" in daily_entities:
             totals["cvm_fund_registry"] += await self.ingest_fund_registry("fii")
+
+        # ETF registry refresh (curated seed; derived from FI data)
+        if "fi" in daily_entities:
+            totals["cvm_etf_registry"] += await self.ingest_etf_registry()
 
         # FI — current + previous month
         if "fi" in daily_entities:

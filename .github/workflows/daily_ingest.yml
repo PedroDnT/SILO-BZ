@@ -114,5 +114,6 @@ jobs:
             ANALYZE cvm_securit_fluxo;
             ANALYZE cvm_securit_dfin;
             ANALYZE cvm_fund_registry;
+            ANALYZE cvm_etf_registry;
             ANALYZE cvm_ingest_log;
           "
