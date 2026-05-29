@@ -14,9 +14,9 @@
     "diffEditor.ignoreTrimWhitespace": false,
     "editor.wordWrap": "on",
     "editor.quickSuggestions": {
-      "comments": "on",
-      "strings": "on",
-      "other": "on"
+      "other": false,
+      "comments": false,
+      "strings": false
     }
   },
   "github.copilot.nextEditSuggestions.enabled": true,
