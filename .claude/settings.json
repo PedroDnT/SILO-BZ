@@ -12,7 +12,10 @@
       "Bash(uv venv *)",
       "Bash(uv pip *)",
       "Bash(.venv/bin/python scripts/explore_cvm_output.py)",
-      "Bash(.venv/bin/pytest tests/test_cvm_fetch_parse.py -v)"
+      "Bash(.venv/bin/pytest tests/test_cvm_fetch_parse.py -v)",
+      "Bash(iconv *)",
+      "mcp__Neon__list_projects",
+      "mcp__Neon__get_database_tables"
     ]
   }
 }
