@@ -34,7 +34,18 @@ import zipfile
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SEED_PATH = os.path.join(_REPO_ROOT, "src", "store", "seeds", "etf_registry_seed.csv")
 
-FIELDS = ["ticker", "cnpj", "fund_name", "provider", "underlying_index", "segment"]
+FIELDS = ["ticker", "cnpj", "fund_name", "provider", "underlying_index", "segment",
+          "situacao", "is_active", "dt_cancel"]
+
+# Status tokens that mean "operating" (kept in sync with mapping.derive_is_active).
+_ACTIVE_TOKENS = ("FUNCIONAMENTO NORMAL", "EM FUNCIONAMENTO", "ATIVO")
+
+
+def _is_active(situacao: str):
+    s = (situacao or "").strip().upper()
+    if not s:
+        return ""
+    return "True" if any(t in s for t in _ACTIVE_TOKENS) else "False"
 
 # ticker, class CNPJ (14 digits), provider, underlying index, segment
 # segment: equities_br | equities_intl | fixed_income | crypto | commodities
@@ -68,19 +79,32 @@ def _norm(cnpj: str) -> str:
 
 
 def _build_cvm_index() -> dict:
-    """Map normalised CNPJ -> (legal_name, situacao) from CVM registries."""
+    """Map normalised CNPJ -> (legal_name, situacao, dt_cancel) from CVM registries.
+
+    cad_fi.csv is processed first (mostly cancelled legacy funds — carries
+    DT_CANCEL). The CVM-175 registry then overrides name/situacao with the
+    current value (active universe) while preserving any cancellation date.
+    """
     index: dict = {}
     cad = _fetch(f"{_BASE}/cad_fi.csv").decode("latin-1", "replace")
     for r in csv.DictReader(io.StringIO(cad), delimiter=";"):
-        index[_norm(r.get("CNPJ_FUNDO"))] = (r.get("DENOM_SOCIAL", ""), r.get("SIT", ""))
+        index[_norm(r.get("CNPJ_FUNDO"))] = [
+            r.get("DENOM_SOCIAL", ""), r.get("SIT", ""), r.get("DT_CANCEL", ""),
+        ]
     zf = zipfile.ZipFile(io.BytesIO(_fetch(f"{_BASE}/registro_fundo_classe.zip")))
     for member, cnpj_col in (("registro_classe.csv", "CNPJ_Classe"),
                              ("registro_fundo.csv", "CNPJ_Fundo")):
         text = zf.read(member).decode("latin-1", "replace")
         for r in csv.DictReader(io.StringIO(text), delimiter=";"):
             cnpj = _norm(r.get(cnpj_col))
-            if cnpj and cnpj not in index:
-                index[cnpj] = (r.get("Denominacao_Social", ""), r.get("Situacao", ""))
+            if not cnpj:
+                continue
+            name, situacao = r.get("Denominacao_Social", ""), r.get("Situacao", "")
+            if cnpj in index:
+                index[cnpj][0] = name or index[cnpj][0]
+                index[cnpj][1] = situacao or index[cnpj][1]
+            else:
+                index[cnpj] = [name, situacao, ""]
     return index
 
 
@@ -96,7 +120,7 @@ def main() -> None:
     rows = []
     for ticker, cnpj, provider, idx, segment in CURATED:
         cnpj = _norm(cnpj)
-        name, sit = index.get(cnpj, ("", ""))
+        name, sit, dt_cancel = index.get(cnpj, ["", "", ""])
         if index and not name:
             print(f"  WARNING: {ticker} {cnpj} not found in CVM registry")
         elif index:
@@ -108,6 +132,9 @@ def main() -> None:
             "provider": provider,
             "underlying_index": idx,
             "segment": segment,
+            "situacao": sit,
+            "is_active": _is_active(sit),
+            "dt_cancel": dt_cancel,
         })
 
     rows.sort(key=lambda r: r["ticker"])

@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
-from src.parsers.mapping import apply_map
+from src.parsers.mapping import apply_map, derive_is_active
 from src.parsers.field_maps import fiagro_mensal as _fiagro
 from src.parsers.field_maps import fip_periodic as _fip
 from src.parsers.field_maps import fund_registry as _reg
@@ -96,6 +96,7 @@ def ingest_fund_registry(conn: Any, raw_rows: List[Dict[str, Any]], entity_type:
     for row in raw_rows:
         typed, residual = apply_map(row, _reg.FIELD_MAP)
         typed["entity_type"] = entity_type
+        typed["is_active"] = derive_is_active(typed.get("status"))
         typed["raw"] = residual
 
         if not typed.get("cnpj"):

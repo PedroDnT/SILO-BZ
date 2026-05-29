@@ -16,7 +16,7 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
-from src.parsers.mapping import apply_map, coerce
+from src.parsers.mapping import apply_map, coerce, derive_is_active
 from src.store.pg_client import upsert_rows
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,7 @@ SEED_PATH = os.path.join(
 # be absent here, in which case these stay NULL.
 _CAD_ENRICH_MAP = {
     "situacao":      (["SIT"],            "text"),
+    "dt_cancel":     (["DT_CANCEL"],      "date"),
     "classe_anbima": (["CLASSE_ANBIMA"],  "text"),
     "taxa_adm":      (["TAXA_ADM"],       "numeric"),
     "taxa_perfm":    (["TAXA_PERFM"],     "numeric"),
@@ -85,6 +86,14 @@ def ingest_etf_registry(
         if not ticker or not cnpj:
             continue
         enrich = cad_index.get(cnpj, {})
+        # Status/cancel: live cad_fi (mostly cancelled legacy funds) takes
+        # precedence; otherwise fall back to the seed (sourced from the CVM-175
+        # registry at generation time, which has the active universe).
+        situacao = enrich.get("situacao") or (s.get("situacao") or "").strip() or None
+        dt_cancel = enrich.get("dt_cancel") or coerce(s.get("dt_cancel"), "date")
+        is_active = derive_is_active(situacao)
+        if is_active is None:
+            is_active = coerce(s.get("is_active"), "bool") if s.get("is_active") else None
         records.append({
             "ticker":           ticker,
             "cnpj":             cnpj,
@@ -92,7 +101,9 @@ def ingest_etf_registry(
             "provider":         (s.get("provider") or "").strip() or None,
             "underlying_index": (s.get("underlying_index") or "").strip() or None,
             "segment":          (s.get("segment") or "").strip() or None,
-            "situacao":         enrich.get("situacao"),
+            "situacao":         situacao,
+            "is_active":        is_active,
+            "dt_cancel":        dt_cancel,
             "classe_anbima":    enrich.get("classe_anbima"),
             "taxa_adm":         enrich.get("taxa_adm"),
             "taxa_perfm":       enrich.get("taxa_perfm"),

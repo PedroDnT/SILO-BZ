@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS cvm_etf_registry (
     underlying_index  TEXT,
     segment           TEXT,
     situacao          TEXT,
+    is_active         BOOLEAN,
+    dt_cancel         DATE,
     classe_anbima     TEXT,
     taxa_adm          NUMERIC(14, 6),
     taxa_perfm        NUMERIC(14, 6),
@@ -47,6 +49,7 @@ SELECT
     e.provider,
     e.underlying_index,
     e.segment,
+    e.is_active,
     d.dt_comptc,
     d.vl_quota,
     d.vl_patrim_liq                                      AS aum,
@@ -64,7 +67,7 @@ JOIN cvm_fi_diario d ON d.cnpj = e.cnpj;
 -- Latest snapshot per ETF.
 CREATE OR REPLACE VIEW etf_latest AS
 SELECT DISTINCT ON (ticker)
-    ticker, cnpj, fund_name, provider, underlying_index, segment,
+    ticker, cnpj, fund_name, provider, underlying_index, segment, is_active,
     dt_comptc, vl_quota, aum, quotaholders, net_flow, taxa_adm, taxa_perfm
 FROM etf_daily
 ORDER BY ticker, dt_comptc DESC;

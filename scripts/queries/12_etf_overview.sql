@@ -2,11 +2,11 @@
 -- Backed by migration 05_etf.sql (cvm_etf_registry + etf_daily / etf_latest views).
 -- Paste into psql $POSTGRES_URL -f scripts/queries/12_etf_overview.sql
 
--- 1) The curated ETF universe with enriched attributes
+-- 1) The curated ETF universe with enriched attributes + lifecycle
 SELECT ticker, cnpj, fund_name, provider, underlying_index, segment,
-       situacao, classe_anbima, taxa_adm, taxa_perfm
+       situacao, is_active, dt_cancel, classe_anbima, taxa_adm, taxa_perfm
 FROM cvm_etf_registry
-ORDER BY segment, ticker;
+ORDER BY is_active DESC NULLS LAST, segment, ticker;
 
 -- 2) Latest snapshot per ETF: AUM, quotaholders, NAV, last flow
 SELECT ticker, underlying_index, segment, dt_comptc,

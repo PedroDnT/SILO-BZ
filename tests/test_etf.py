@@ -3,7 +3,23 @@
 import re
 from unittest.mock import patch
 
+from src.parsers.mapping import derive_is_active
 from src.pipeline.ingest_etf import load_etf_seed, ingest_etf_registry
+
+
+class TestDeriveIsActive:
+    def test_operating_statuses_are_active(self):
+        for s in ("Em Funcionamento Normal", "EM FUNCIONAMENTO NORMAL", "ATIVO"):
+            assert derive_is_active(s) is True
+
+    def test_discontinued_statuses_are_inactive(self):
+        for s in ("CANCELADA", "Liquidação", "INCORPORAÇÃO", "Fase Pré-Operacional"):
+            assert derive_is_active(s) is False
+
+    def test_missing_status_is_none(self):
+        assert derive_is_active(None) is None
+        assert derive_is_active("") is None
+        assert derive_is_active("   ") is None
 
 
 class TestEtfSeed:
@@ -28,6 +44,10 @@ class TestEtfSeed:
     def test_seed_segments_are_known(self):
         allowed = {"equities_br", "equities_intl", "fixed_income", "crypto", "commodities"}
         assert {r["segment"] for r in load_etf_seed()} <= allowed
+
+    def test_seed_carries_lifecycle_columns(self):
+        rows = load_etf_seed()
+        assert {"situacao", "is_active", "dt_cancel"}.issubset(rows[0].keys())
 
 
 class TestEtfIngest:
@@ -76,6 +96,28 @@ class TestEtfIngest:
         assert rec["gestor"] == "BLACKROCK BRASIL"
         assert rec["vl_patrim_liq"] == 1234567.89
         assert rec["raw"]["underlying_index"] == "Ibovespa"
+        assert rec["situacao"] == "EM FUNCIONAMENTO NORMAL"
+        assert rec["is_active"] is True
+        assert rec["dt_cancel"] is None
+
+    def test_ingest_marks_discontinued_etf(self):
+        cad_rows = [{
+            "CNPJ_FUNDO": "10406511000161",
+            "SIT": "CANCELADA",
+            "DT_CANCEL": "2022-03-15",
+        }]
+        captured = {}
+
+        def _fake_upsert(conn, table, rows, **kw):
+            captured["rows"] = rows
+            return len(rows)
+
+        with patch("src.pipeline.ingest_etf.upsert_rows", side_effect=_fake_upsert):
+            ingest_etf_registry(object(), self._seed(), cad_rows)
+
+        rec = captured["rows"][0]
+        assert rec["is_active"] is False
+        assert str(rec["dt_cancel"]) == "2022-03-15"   # discontinued ETF retained
 
     def test_ingest_without_cad_rows_leaves_enrichment_null(self):
         captured = {}
