@@ -68,7 +68,10 @@ from src.pipeline.ingest_misc import (
 from src.pipeline.ingest_cia import (
     ingest_cia_company,
     ingest_cia_event,
+    ingest_cia_account,
+    ingest_cia_filing,
 )
+from src.fetchers.cia_fetcher import CIAFetcher
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +148,7 @@ _ALL_TABLES: List[str] = [
     "cvm_fiagro_mensal",
     "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic",
     "cvm_securit_mensal", "cvm_securit_serie", "cvm_securit_fluxo", "cvm_securit_dfin",
-    "cia_company", "cia_event",
+    "cia_company", "cia_event", "cia_filing", "cia_account",
     "cvm_fund_registry",
 ]
 _ALL_ENTITIES: Set[str] = {"fi", "fidc", "fip", "fiagro", "fii", "securit", "cia_aberta"}
@@ -156,6 +159,11 @@ _FIAGRO_FIRST_PERIOD = date(2025, 5, 1)
 # yearly ZIPs back to 2009 but the early years are sparse; the W6 backfill
 # defaults to the start_year passed in unless callers override).
 _CIA_IPE_FIRST_YEAR = 2010
+
+# CIA_ABERTA — ITR/DFP financial statements backfill scope (W7). CVM publishes
+# back to ~2010, but per the workstream brief the standard backfill loads
+# 2019→present.
+_CIA_ITR_DFP_FIRST_YEAR = 2019
 
 
 @dataclass(frozen=True)
@@ -243,6 +251,7 @@ class CVMIngestor:
 
     def __init__(self) -> None:
         self._service = CVMFetcher()
+        self._cia_fetcher = CIAFetcher()
         self._supabase = get_pg_client()
 
     async def _run_task_batches(
@@ -807,6 +816,50 @@ class CVMIngestor:
         return rows_inserted
 
     # ------------------------------------------------------------------
+    # CIA_ABERTA — ITR / DFP financial statements (yearly ZIP, ~19 CSVs)
+    # ------------------------------------------------------------------
+
+    async def ingest_cia_itr_dfp(self, doc_type: str, year: int) -> int:
+        """Ingest one yearly ITR or DFP ZIP into cia_filing + cia_account.
+
+        Downloads the multi-CSV archive, routes the summary header to cia_filing
+        and the scoped statement members (BPA/BPP/DRE/DFC_*/DMPL/DRA/DVA × con/ind)
+        to cia_account. Returns the combined upserted row count.
+        """
+        run_id = str(uuid4())
+        self._log_start(run_id, "cia_aberta", doc_type, year, None)
+        rows_inserted = 0
+        try:
+            members = await self._cia_fetcher.fetch_zip_members_async(
+                doc_type, year, include_summary=True
+            )
+            summary_rows: List[Dict[str, Any]] = []
+            account_members = 0
+            for m in members:
+                if m.is_summary:
+                    summary_rows.extend(m.rows)
+                elif m.is_account_data:
+                    account_members += 1
+            rows_inserted += ingest_cia_filing(self._supabase, summary_rows, doc_type)
+            rows_inserted += ingest_cia_account(self._supabase, members, doc_type)
+            # A real ITR/DFP ZIP always has account members; zero rows from a
+            # non-empty publish year signals a bad/truncated fetch (see the
+            # serial-only note in backfill) rather than a genuine empty year.
+            if rows_inserted == 0 or account_members == 0:
+                logger.warning(
+                    "cia_aberta/%s %d: suspicious empty load (members=%d, account_members=%d) "
+                    "— likely a bad fetch; re-run this slice serially",
+                    doc_type, year, len(members), account_members,
+                )
+        except Exception as exc:
+            logger.warning("ingest_cia_itr_dfp %s %d failed: %s", doc_type, year, exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("cia_aberta/%s %d: %d rows", doc_type, year, rows_inserted)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
     # Orchestrated runs
     # ------------------------------------------------------------------
 
@@ -1026,6 +1079,33 @@ class CVMIngestor:
                 "CIA_ABERTA backfill",
             )
 
+            # ITR (quarterly) + DFP (annual) financial statements, 2019→present.
+            # Combined cia_filing + cia_account rows are attributed to
+            # cia_account (the dominant table); filing headers are a small
+            # fraction.
+            #
+            # These ZIPs are the largest in the whole pipeline (~19 members,
+            # millions of line items each). Running them concurrently caused the
+            # CVM endpoint to intermittently return content that yielded ZERO
+            # rows without raising (observed: 8/16 slices silently empty at
+            # concurrency 2). They are therefore loaded STRICTLY SERIALLY — do
+            # not raise this above 1.
+            itr_dfp_years = [y for y in years if y >= _CIA_ITR_DFP_FIRST_YEAR]
+            fin_tasks: List[IngestTask] = []
+            for year in itr_dfp_years:
+                for doc_type in ("itr", "dfp"):
+                    fin_tasks.append(IngestTask(
+                        "cia_account",
+                        f"cia_aberta/{doc_type} {year}",
+                        self.ingest_cia_itr_dfp(doc_type, year),
+                    ))
+            await self._run_task_batches(
+                fin_tasks,
+                1,  # serial — see comment above; concurrency here loses data
+                totals,
+                "CIA_ABERTA ITR/DFP backfill",
+            )
+
         logger.info("Backfill complete: %s", totals)
         return totals
 
@@ -1093,7 +1173,8 @@ class CVMIngestor:
                     self.ingest_fii_periodic(doc_type, year),
                 ))
 
-        # CIA_ABERTA — refresh registry (once) and current year IPE feed.
+        # CIA_ABERTA — refresh registry (once), current year IPE feed, and the
+        # current-year ITR + DFP financial statements.
         if "cia_aberta" in daily_entities:
             await self.ingest_cia_cad()
             tasks.append(IngestTask(
@@ -1101,6 +1182,12 @@ class CVMIngestor:
                 f"cia_aberta/ipe {year}",
                 self.ingest_cia_ipe(year),
             ))
+            for doc_type in ("itr", "dfp"):
+                tasks.append(IngestTask(
+                    "cia_account",
+                    f"cia_aberta/{doc_type} {year}",
+                    self.ingest_cia_itr_dfp(doc_type, year),
+                ))
 
         # SECURIT — refresh current year
         if "securit" in daily_entities:

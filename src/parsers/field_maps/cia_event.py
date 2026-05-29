@@ -26,7 +26,7 @@ TABLE = "cia_event"
 CONFLICT = ("protocolo", "versao")
 
 FIELD_MAP = {
-    "cd_cvm":        (["Codigo_CVM"],         "text"),
+    "cd_cvm":        (["Codigo_CVM"],         "cd_cvm"),
     "cnpj_cia":      (["CNPJ_Companhia"],     "cnpj"),
     "data_refer":    (["Data_Referencia"],    "date"),
     "data_entrega":  (["Data_Entrega"],       "date"),

@@ -12,7 +12,7 @@ The first non-empty candidate (case-insensitive) wins. `residual_raw` is the
 original row minus every consumed source key, so `raw` only ever holds fields
 we have not modeled yet.
 
-coerce_type values: text, cnpj, int, numeric, pct, date, bool
+coerce_type values: text, cnpj, cd_cvm, int, numeric, pct, date, bool
 """
 from __future__ import annotations
 
@@ -35,6 +35,9 @@ def coerce(value: Any, type_: CoerceType) -> Any:
     Supported types:
         text    — strip whitespace; empty/nullish -> None
         cnpj    — strip non-digits, zero-pad to 14 chars
+        cd_cvm  — strip non-digits and leading zeros to a canonical CVM code
+                  (ITR/DFP pad CD_CVM to 6 digits, e.g. "001023"; CAD/IPE ship
+                  it unpadded "1023" — normalise so the cia_* tables join)
         int     — parse integer (handles BR thousands separator)
         numeric — strip R$, normalise BR decimal comma (1.234,56 -> 1234.56)
         pct     — same as numeric (CVM ships raw fractions or percentages;
@@ -54,6 +57,10 @@ def coerce(value: Any, type_: CoerceType) -> Any:
     if type_ == "cnpj":
         digits = "".join(ch for ch in s if ch.isdigit())
         return digits.zfill(14) if digits else None
+
+    if type_ == "cd_cvm":
+        digits = "".join(ch for ch in s if ch.isdigit()).lstrip("0")
+        return digits or None
 
     if type_ in ("numeric", "pct"):
         t = s.replace(" ", "").lstrip("R$").strip()
