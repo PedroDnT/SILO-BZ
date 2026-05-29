@@ -25,29 +25,31 @@ _Living tracker. Update after each session. Deep technical reference: [`pipeline
 
 ## Table Status
 
-_Reset: live Neon DB is a fresh database; schema applied but data needs full re-ingest. Status below reflects live `cvm_ingest_log` + `count(*)` as of 2026-05-14, not historical notes._
+_Verifiable from code only (cannot query live DB). "schema exists" = present in `src/store/schema.sql`. "ingest path" = ingest method exists in `cvm_pipeline.py` and is wired into `backfill`/`daily_update`. Row counts below are from the last live check on 2026-05-14; treat as historical snapshots._
 
-| Table                    | Entity  | Live rows   | Notes                                                                     |
-| ------------------------ | ------- | ----------- | ------------------------------------------------------------------------- |
-| `cvm_fi_diario`          | FI      | **482,069** | ✅ 2025-03 — 482k rows, no schema changes                                 |
-| `cvm_fi_cda`             | FI      | **16,976**  | ✅ 2025-03 clean                                                          |
-| `cvm_fi_perfil`          | FI      | **25,074**  | ✅ 2025-03 clean                                                          |
-| `cvm_fidc_mensal`        | FIDC    | **3,007**   | ✅ 2025-03 smoke-tested clean (no schema changes needed)                  |
-| `cvm_fidc_tranche`       | FIDC    | **9,899**   | ✅ 2025-03 smoke-tested clean after 2 schema widenings                    |
-| `cvm_fidc_tranche_flows` | FIDC    | **37,565**  | ✅ 2025-03 — needed `qt_cota` widen + dedup-on-upsert (3 dupes collapsed) |
-| `cvm_fidc_aging`         | FIDC    | **3,007**   | ✅ 2025-03 smoke-tested clean (no schema changes needed)                  |
-| `cvm_fiagro_mensal`      | FIAGRO  | **18**      | ✅ 2025-06 (data only from 2025-05+)                                      |
-| `cvm_fip_periodic`       | FIP     | **3,773**   | ✅ inf_trimestral 2023 (1787) + inf_quadrimestral 2024 (1986)             |
-| `cvm_fii_mensal`         | FII     | **35,928**  | ✅ all 3 subtypes for 2024 — 2 migrations: pct cols + cotas_emitidas      |
-| `cvm_fii_periodic`       | FII     | **1,046**   | ✅ dfin 2024 clean                                                        |
-| `cvm_securit_mensal`     | SECURIT | **6,946**   | ✅ cra_mensal 2024 clean — cri/ots share same schema, will fill in ranges |
-| `cvm_securit_serie`      | SECURIT | **883**     | ✅ cra_classe 2024 clean                                                  |
-| `cvm_securit_fluxo`      | SECURIT | **231**     | ✅ cra_fluxo 2024 clean                                                   |
-| `cvm_securit_dfin`       | SECURIT | **20**      | ✅ dfin_cra 2024 clean                                                    |
-| `bacen_sgs`              | BACEN   | 0           | Out of scope for Flask plane (separate ingestor)                          |
-| `bacen_ptax`             | BACEN   | 0           | Same                                                                      |
-| `bacen_expectativas`     | BACEN   | 0           | Same                                                                      |
-| `cvm_ingest_log`         | Audit   | 3           | All 3 entries are smoke-test runs for fidc/tranche 2025-03                |
+| Table                    | Entity  | Schema | Ingest path | Last-known live rows | Notes                                                                        |
+| ------------------------ | ------- | ------ | ----------- | -------------------- | ---------------------------------------------------------------------------- |
+| `cvm_fi_diario`          | FI      | exists | wired       | 482,069              | Partitioned by year. Ingest via `ingest_fi_diario` + HIST variant.           |
+| `cvm_fi_cda`             | FI      | exists | wired       | 16,976               | Portfolio composition. Ingest via `ingest_fi_cda` + HIST variant.            |
+| `cvm_fi_perfil`          | FI      | exists | wired       | 25,074               | Investor profile. Ingest via `ingest_fi_perfil`.                             |
+| `cvm_fi_balancete`       | FI      | exists | wired       | 0                    | **Schema + map added in W0 (chore/reconcile-main). Backfill pending.**       |
+| `cvm_fidc_mensal`        | FIDC    | exists | wired       | 3,007                | Monthly snapshot. Historical via HIST/ + current via tab_IV.                 |
+| `cvm_fidc_tranche`       | FIDC    | exists | wired       | 9,899                | Per-tranche quota/return. 2 schema widenings applied.                        |
+| `cvm_fidc_tranche_flows` | FIDC    | exists | wired       | 37,565               | Per-tranche flows. `qt_cota` widened; upsert dedup added.                    |
+| `cvm_fidc_aging`         | FIDC    | exists | wired       | 3,007                | Delinquency aging buckets (tab_VI).                                          |
+| `cvm_fiagro_mensal`      | FIAGRO  | exists | wired       | 18                   | Data available from 2025-05+.                                                |
+| `cvm_fip_periodic`       | FIP     | exists | wired       | 3,773                | inf_trimestral (2010-2023) + inf_quadrimestral (2024+).                      |
+| `cvm_fii_mensal`         | FII     | exists | wired       | 35,928               | 3 subtypes: geral, ativo_passivo, complemento. 2 migrations applied.        |
+| `cvm_fii_periodic`       | FII     | exists | wired       | 1,046                | trimestral, anual, dfin.                                                     |
+| `cvm_securit_mensal`     | SECURIT | exists | wired       | 6,946                | CRA/CRI/OTS monthly emissions.                                               |
+| `cvm_securit_serie`      | SECURIT | exists | wired       | 883                  | Per-series status, rating, yield (classe CSV).                               |
+| `cvm_securit_fluxo`      | SECURIT | exists | wired       | 231                  | Monthly cash flows by tranche (fluxo_caixa CSV).                             |
+| `cvm_securit_dfin`       | SECURIT | exists | wired       | 20                   | Financial statements (dfin_cra, dfin_cri).                                   |
+| `bacen_sgs`              | BACEN   | exists | wired       | 0                    | Separate `BacenIngestor`. SGS had transient BCB API issue at last check.     |
+| `bacen_ptax`             | BACEN   | exists | wired       | 0                    | Same ingestor; 20 PTAX rows were loaded but DB was reset.                    |
+| `bacen_expectativas`     | BACEN   | exists | wired       | 0                    | Same ingestor.                                                               |
+| `cvm_fund_registry`      | FI/FII  | exists | wired       | —                    | Fund names + status from CAD files; also seeded from FIDC hist ingest.       |
+| `cvm_ingest_log`         | Audit   | exists | wired       | 3                    | Populated by all `_log_start`/`_log_finish` calls.                           |
 
 ---
 

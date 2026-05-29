@@ -401,6 +401,32 @@ CREATE INDEX IF NOT EXISTS idx_fund_registry_cnpj   ON cvm_fund_registry (cnpj);
 CREATE INDEX IF NOT EXISTS idx_fund_registry_entity ON cvm_fund_registry (entity_type, status);
 
 -- ---------------------------------------------------------------------------
+-- FI — monthly balance sheet  (BALANCETE, monthly ZIP)
+--
+-- CSV columns (actual 2025-01 sample):
+--   TP_FUNDO_CLASSE ; CNPJ_FUNDO_CLASSE ; DT_COMPTC
+--   PLANO_CONTA_BALCTE ; CD_CONTA_BALCTE ; VL_SALDO_BALCTE
+--
+-- Natural key: (cnpj, dt_comptc, cd_conta_balcte)
+-- One row per fund × reference date × account code.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS cvm_fi_balancete (
+    id                 BIGSERIAL    PRIMARY KEY,
+    cnpj               TEXT         NOT NULL CHECK (char_length(cnpj) = 14),
+    dt_comptc          DATE         NOT NULL,
+    plano_conta_balcte TEXT,                    -- chart-of-accounts plan code (e.g. COFI)
+    cd_conta_balcte    TEXT         NOT NULL,   -- account code
+    vl_saldo_balcte    NUMERIC(28,2),           -- account balance (monetary total)
+    tp_fundo_classe    TEXT,                    -- fund class type flag
+    raw                JSONB        NOT NULL,
+    fetched_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fi_balancete UNIQUE (cnpj, dt_comptc, cd_conta_balcte)
+);
+CREATE INDEX IF NOT EXISTS idx_fi_balancete_cnpj   ON cvm_fi_balancete (cnpj);
+CREATE INDEX IF NOT EXISTS idx_fi_balancete_date   ON cvm_fi_balancete (dt_comptc DESC);
+CREATE INDEX IF NOT EXISTS idx_fi_balancete_conta  ON cvm_fi_balancete (cd_conta_balcte);
+
+-- ---------------------------------------------------------------------------
 -- Additive column migrations for typed-field lifts (idempotent).
 -- ---------------------------------------------------------------------------
 

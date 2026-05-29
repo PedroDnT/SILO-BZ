@@ -6,6 +6,7 @@ Tables written:
   cvm_fi_diario        FI daily snapshot (INF_DIARIO)
   cvm_fi_cda           FI portfolio composition (CDA)
   cvm_fi_perfil        FI investor profile (PERFIL_MENSAL)
+  cvm_fi_balancete     FI monthly balance sheet (BALANCETE)
   cvm_fidc_mensal      FIDC monthly snapshot
   cvm_fiagro_mensal    FIAGRO monthly snapshot
   cvm_fip_periodic     FIP quarterly/four-monthly reports
@@ -65,7 +66,7 @@ SECURIT_FLUXO_TYPES: List[str] = ["cra_fluxo", "cri_fluxo", "ots_fluxo"]
 
 _PAGE_SIZE = 5000
 _ALL_TABLES: List[str] = [
-    "cvm_fi_diario", "cvm_fi_cda", "cvm_fi_perfil",
+    "cvm_fi_diario", "cvm_fi_cda", "cvm_fi_perfil", "cvm_fi_balancete",
     "cvm_fidc_mensal", "cvm_fidc_tranche", "cvm_fidc_tranche_flows", "cvm_fidc_aging",
     "cvm_fiagro_mensal",
     "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic",
@@ -522,6 +523,49 @@ class CVMIngestor:
             return 0
         self._log_finish(run_id, rows_inserted)
         logger.info("fi/perfil_mensal %d-%02d: %d rows", year, month, rows_inserted)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
+    # FI — monthly balance sheet  (BALANCETE)
+    # ------------------------------------------------------------------
+
+    async def ingest_fi_balancete(self, year: int, month: int) -> int:
+        """Ingest FI monthly balance sheet (BALANCETE) for a given year/month.
+
+        CSV columns (confirmed from 2025-01 sample):
+            TP_FUNDO_CLASSE, CNPJ_FUNDO_CLASSE, DT_COMPTC,
+            PLANO_CONTA_BALCTE, CD_CONTA_BALCTE, VL_SALDO_BALCTE
+
+        Natural key: (cnpj, dt_comptc, cd_conta_balcte)
+        """
+        run_id = str(uuid4())
+        self._log_start(run_id, "fi", "balancete", year, month)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages("fi", "balancete", year, month)
+            records: List[Dict[str, Any]] = []
+            for row in raw_rows:
+                cnpj_raw = _find_field(row, "CNPJ_FUNDO_CLASSE", "CNPJ_FUNDO")
+                cnpj = _normalize_cnpj(cnpj_raw) if cnpj_raw else ""
+                records.append({
+                    "cnpj":               cnpj,
+                    "dt_comptc":          _find_field(row, "DT_COMPTC"),
+                    "plano_conta_balcte": _find_field(row, "PLANO_CONTA_BALCTE"),
+                    "cd_conta_balcte":    _find_field(row, "CD_CONTA_BALCTE") or "",
+                    "vl_saldo_balcte":    _find_field(row, "VL_SALDO_BALCTE"),
+                    "tp_fundo_classe":    _find_field(row, "TP_FUNDO_CLASSE", "TP_FUNDO"),
+                    "raw":                row,
+                })
+            rows_inserted = upsert_rows(
+                self._supabase, "cvm_fi_balancete", records,
+                conflict_columns="cnpj,dt_comptc,cd_conta_balcte",
+            )
+        except Exception as exc:
+            logger.warning("ingest_fi_balancete %d-%02d failed: %s", year, month, exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("fi/balancete %d-%02d: %d rows", year, month, rows_inserted)
         return rows_inserted
 
     # ------------------------------------------------------------------
@@ -1262,6 +1306,11 @@ class CVMIngestor:
                     f"fi/perfil_mensal {year}-{month:02d}",
                     self.ingest_fi_perfil(year, month),
                 ))
+                fi_tasks.append(IngestTask(
+                    "cvm_fi_balancete",
+                    f"fi/balancete {year}-{month:02d}",
+                    self.ingest_fi_balancete(year, month),
+                ))
             await self._run_task_batches(fi_tasks, _get_concurrency("fi", 2), totals, "FI monthly backfill")
 
         # -- FIDC ---------------------------------------------------------
@@ -1427,6 +1476,7 @@ class CVMIngestor:
                     IngestTask("cvm_fi_diario", f"fi/inf_diario {task_year}-{task_month:02d}", self.ingest_fi_diario(task_year, task_month)),
                     IngestTask("cvm_fi_cda", f"fi/cda {task_year}-{task_month:02d}", self.ingest_fi_cda(task_year, task_month)),
                     IngestTask("cvm_fi_perfil", f"fi/perfil_mensal {task_year}-{task_month:02d}", self.ingest_fi_perfil(task_year, task_month)),
+                    IngestTask("cvm_fi_balancete", f"fi/balancete {task_year}-{task_month:02d}", self.ingest_fi_balancete(task_year, task_month)),
                 ]
 
         # FIDC / FIAGRO — current + previous month
