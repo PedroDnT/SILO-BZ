@@ -17,7 +17,7 @@ W8 (cia FRE/CGVN/VLMO) depends on W5; do last.
 
 ---
 
-## W0 — Repo reconciliation  ·  branch `chore/reconcile-main`  ·  small
+## W0 — Repo reconciliation  ·  branch `chore/reconcile-main`  ·  small  ·  **done**
 Make the repo describe what actually exists.
 - Rename `src/store/supabase_client.py` → `src/store/pg_client.py`; purge "Supabase" wording from README + `docs/pipeline-plan.md` (code already uses `POSTGRES_URL`/psycopg2).
 - Rewrite `docs/PLAN.md` "Table Status" to current reality (it cites stale row counts).
@@ -26,7 +26,7 @@ Make the repo describe what actually exists.
 - **DoD:** README matches the tree; one presentation layer; no dead config.
 
 
-## W1 — Field-map refactor + modularization  ·  branch `refactor/declarative-field-maps`  ·  medium  ·  **blocks the rest**  ·  in-progress
+## W1 — Field-map refactor + modularization  ·  branch `refactor/declarative-field-maps`  ·  medium  ·  **blocks the rest**  ·  **done**
 Implement `02 §1–2 §7`.
 - Add `src/parsers/field_maps/<dataset>.py` (one per dataset) + a generic `apply_map(row, FIELD_MAP) -> (typed, residual_raw)` in `src/parsers/`.
 - Extend `src/parsers/validation.py` with `coerce_type` handlers (latin-1 numbers, BR/ISO dates, CNPJ→14, pct).
@@ -35,12 +35,16 @@ Implement `02 §1–2 §7`.
 - **DoD:** funds backfill reloads from empty and reproduces identical typed data with zero manual SQL; `raw` holds only residual; idempotency + null-rate checks pass.
 - **Template to follow:** `05_AGENT_TASK_BRIEFS.md` → "W1 starter (FII)".
 
-## W2 — `fi-cad` → fund registry  ·  branch `feat/fi-cad-registry`  ·  small  ·  needs W1 standard
-- Add `fi` `cad` dataset to `cvm_config.py` (`{base}/FI/CAD/DADOS/cad_fi.csv` — single CSV, not yearly).
-- Field map → populate existing `cvm_fund_registry` (cnpj, denom, type, situation, administrator, dates).
-- Wire into daily + backfill. **DoD:** registry populated; fund labels joinable by CNPJ across all fund tables.
+## W2 — `fi-cad` → fund registry  ·  branch `feat/fi-cad-registry`  ·  small  ·  needs W1  ·  **done**
+- `fi/cad` dataset already in `cvm_config.py` (`{base}/FI/CAD/DADOS/cad_fi.csv` — single CSV, not yearly).
+- `src/parsers/field_maps/fund_registry.py` — FIELD_MAP with verified CSV column names from live `cad_fi.csv` header (CNPJ_FUNDO, DENOM_SOCIAL, SIT, TP_FUNDO, DT_REG, DT_CONST, DT_CANCEL).
+- `src/parsers/mapping.py` — `apply_map` / `coerce` engine (introduced in W1).
+- `src/pipeline/ingest_fi.py` — `ingest_fund_registry_fi(conn, rows)` applies map, injects `entity_type="fi"`, stores residual in `raw`.
+- `cvm_pipeline.py` `ingest_fund_registry` delegates to `ingest_fund_registry_fi` for `entity="fi"`.
+- Both `backfill` and `daily_update` already call `ingest_fund_registry("fi")` once per run (not per month/year).
+- **DoD:** registry populated; fund labels joinable by CNPJ across all fund tables; idempotent.
 
-## W3 — Numeric precision audit  ·  branch `chore/numeric-precision`  ·  small  ·  **in-progress**
+## W3 — Numeric precision audit  ·  branch `chore/numeric-precision`  ·  small  ·  **done**
 - Query observed max magnitudes per numeric column; migrate any under-spec column to the `02 §3` convention; add migrations. Fold in `vl_quota` widenings already applied so they're permanent in code.
 - **DoD:** no `NUMERIC(20,12)` monetary/quota columns remain under-spec; convention documented.
 
