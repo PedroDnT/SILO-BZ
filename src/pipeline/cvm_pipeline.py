@@ -834,11 +834,23 @@ class CVMIngestor:
                 doc_type, year, include_summary=True
             )
             summary_rows: List[Dict[str, Any]] = []
+            account_members = 0
             for m in members:
                 if m.is_summary:
                     summary_rows.extend(m.rows)
+                elif m.is_account_data:
+                    account_members += 1
             rows_inserted += ingest_cia_filing(self._supabase, summary_rows, doc_type)
             rows_inserted += ingest_cia_account(self._supabase, members, doc_type)
+            # A real ITR/DFP ZIP always has account members; zero rows from a
+            # non-empty publish year signals a bad/truncated fetch (see the
+            # serial-only note in backfill) rather than a genuine empty year.
+            if rows_inserted == 0 or account_members == 0:
+                logger.warning(
+                    "cia_aberta/%s %d: suspicious empty load (members=%d, account_members=%d) "
+                    "— likely a bad fetch; re-run this slice serially",
+                    doc_type, year, len(members), account_members,
+                )
         except Exception as exc:
             logger.warning("ingest_cia_itr_dfp %s %d failed: %s", doc_type, year, exc)
             self._log_finish(run_id, 0, str(exc))
@@ -1070,7 +1082,14 @@ class CVMIngestor:
             # ITR (quarterly) + DFP (annual) financial statements, 2019→present.
             # Combined cia_filing + cia_account rows are attributed to
             # cia_account (the dominant table); filing headers are a small
-            # fraction. Low concurrency — members are large.
+            # fraction.
+            #
+            # These ZIPs are the largest in the whole pipeline (~19 members,
+            # millions of line items each). Running them concurrently caused the
+            # CVM endpoint to intermittently return content that yielded ZERO
+            # rows without raising (observed: 8/16 slices silently empty at
+            # concurrency 2). They are therefore loaded STRICTLY SERIALLY — do
+            # not raise this above 1.
             itr_dfp_years = [y for y in years if y >= _CIA_ITR_DFP_FIRST_YEAR]
             fin_tasks: List[IngestTask] = []
             for year in itr_dfp_years:
@@ -1082,7 +1101,7 @@ class CVMIngestor:
                     ))
             await self._run_task_batches(
                 fin_tasks,
-                _get_concurrency("cia_aberta", 2),
+                1,  # serial — see comment above; concurrency here loses data
                 totals,
                 "CIA_ABERTA ITR/DFP backfill",
             )
