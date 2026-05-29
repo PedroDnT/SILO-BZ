@@ -1,15 +1,23 @@
 """
-Apply schema.sql changes to Supabase by executing DDL via direct PostgreSQL.
+Apply schema.sql then run each migration file in src/store/migrations/ in
+lexicographic order.  All DDL is idempotent (IF NOT EXISTS / IF EXISTS guards).
 
 Usage:
     python scripts/apply_schema.py
 
 Requires: POSTGRES_URL in .env (postgresql://... format)
 Falls back to manual instructions if connection fails.
+
+Migration order:
+  1. schema.sql          — CREATE TABLE IF NOT EXISTS statements (base schema)
+  2. migrations/01_*.sql — Funds domain column additions + precision widening
+  3. migrations/02_*.sql — BACEN tables (placeholder)
+  4. migrations/NN_*.sql — Future workstream migrations (add here, never edit old)
 """
 
 import os
 import sys
+import glob
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -20,212 +28,93 @@ except ImportError:
     pass
 
 # ---------------------------------------------------------------------------
-# DDL blocks to apply (all idempotent — safe to re-run)
+# Paths
 # ---------------------------------------------------------------------------
 
-MIGRATIONS = [
-    ("FII new columns (Phase 0)", """
-ALTER TABLE cvm_fii_mensal
-    ADD COLUMN IF NOT EXISTS nr_cotst               INT,
-    ADD COLUMN IF NOT EXISTS vl_ativo               NUMERIC(20,6),
-    ADD COLUMN IF NOT EXISTS cotas_emitidas         NUMERIC(28,6),
-    ADD COLUMN IF NOT EXISTS vl_patrimonial_cotas   NUMERIC(20,6),
-    ADD COLUMN IF NOT EXISTS pct_rentab_efetiva_mes NUMERIC(20,6),
-    ADD COLUMN IF NOT EXISTS pct_rentab_patrimonial NUMERIC(20,6),
-    ADD COLUMN IF NOT EXISTS pct_dividend_yield_mes NUMERIC(20,6),
-    ADD COLUMN IF NOT EXISTS pct_amortizacao_mes    NUMERIC(20,6),
-    ADD COLUMN IF NOT EXISTS rendimentos_distribuir NUMERIC(20,6)
-"""),
-    ("Widen numeric precision (post smoke-test)", """
-ALTER TABLE cvm_fidc_tranche
-    ALTER COLUMN qt_cota            TYPE NUMERIC(28,8),
-    ALTER COLUMN vl_cota            TYPE NUMERIC(28,8),
-    ALTER COLUMN vl_rentab_mes      TYPE NUMERIC(20,6),
-    ALTER COLUMN pr_desemp_esperado TYPE NUMERIC(20,6),
-    ALTER COLUMN pr_desemp_real     TYPE NUMERIC(20,6);
-ALTER TABLE cvm_fidc_tranche_flows
-    ALTER COLUMN qt_cota TYPE NUMERIC(28,8);
-ALTER TABLE cvm_fii_mensal
-    ALTER COLUMN cotas_emitidas         TYPE NUMERIC(28,6),
-    ALTER COLUMN pct_rentab_efetiva_mes TYPE NUMERIC(20,6),
-    ALTER COLUMN pct_rentab_patrimonial TYPE NUMERIC(20,6),
-    ALTER COLUMN pct_dividend_yield_mes TYPE NUMERIC(20,6),
-    ALTER COLUMN pct_amortizacao_mes    TYPE NUMERIC(20,6)
-"""),
-
-    ("cvm_fidc_tranche (Phase 1)", """
-CREATE TABLE IF NOT EXISTS cvm_fidc_tranche (
-    id                 BIGSERIAL    PRIMARY KEY,
-    cnpj               TEXT         NOT NULL,
-    period             DATE         NOT NULL,
-    classe_serie       TEXT         NOT NULL,
-    qt_cota            NUMERIC(28,8),
-    vl_cota            NUMERIC(28,8),
-    vl_rentab_mes      NUMERIC(20,6),
-    pr_desemp_esperado NUMERIC(20,6),
-    pr_desemp_real     NUMERIC(20,6),
-    raw                JSONB,
-    fetched_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_fidc_tranche UNIQUE (cnpj, period, classe_serie)
-)
-"""),
-    ("cvm_fidc_tranche indexes", """
-CREATE INDEX IF NOT EXISTS idx_fidc_tranche_cnpj   ON cvm_fidc_tranche (cnpj);
-CREATE INDEX IF NOT EXISTS idx_fidc_tranche_period ON cvm_fidc_tranche (period DESC)
-"""),
-
-    ("cvm_fidc_tranche_flows (Phase 1)", """
-CREATE TABLE IF NOT EXISTS cvm_fidc_tranche_flows (
-    id           BIGSERIAL    PRIMARY KEY,
-    cnpj         TEXT         NOT NULL,
-    period       DATE         NOT NULL,
-    classe_serie TEXT         NOT NULL,
-    tp_oper      TEXT         NOT NULL,
-    vl_total     NUMERIC(20,6),
-    qt_cota      NUMERIC(28,8),
-    fetched_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_fidc_tranche_flows UNIQUE (cnpj, period, classe_serie, tp_oper)
-)
-"""),
-    ("cvm_fidc_tranche_flows indexes", """
-CREATE INDEX IF NOT EXISTS idx_fidc_tranche_flows_cnpj   ON cvm_fidc_tranche_flows (cnpj);
-CREATE INDEX IF NOT EXISTS idx_fidc_tranche_flows_period ON cvm_fidc_tranche_flows (period DESC)
-"""),
-
-    ("cvm_fidc_aging (Phase 1)", """
-CREATE TABLE IF NOT EXISTS cvm_fidc_aging (
-    id                   BIGSERIAL    PRIMARY KEY,
-    cnpj                 TEXT         NOT NULL,
-    period               DATE         NOT NULL,
-    vl_prazo_30          NUMERIC(20,6),
-    vl_prazo_60          NUMERIC(20,6),
-    vl_prazo_90          NUMERIC(20,6),
-    vl_prazo_120         NUMERIC(20,6),
-    vl_prazo_150         NUMERIC(20,6),
-    vl_prazo_180         NUMERIC(20,6),
-    vl_prazo_360         NUMERIC(20,6),
-    vl_prazo_720         NUMERIC(20,6),
-    vl_prazo_1080        NUMERIC(20,6),
-    vl_prazo_maior_1080  NUMERIC(20,6),
-    vl_inad_30           NUMERIC(20,6),
-    vl_inad_60           NUMERIC(20,6),
-    vl_inad_90           NUMERIC(20,6),
-    vl_inad_120          NUMERIC(20,6),
-    vl_inad_150          NUMERIC(20,6),
-    vl_inad_180          NUMERIC(20,6),
-    vl_inad_360          NUMERIC(20,6),
-    vl_inad_720          NUMERIC(20,6),
-    vl_inad_1080         NUMERIC(20,6),
-    vl_inad_maior_1080   NUMERIC(20,6),
-    vl_total_inad        NUMERIC(20,6),
-    raw                  JSONB,
-    fetched_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_fidc_aging UNIQUE (cnpj, period)
-)
-"""),
-    ("cvm_fidc_aging indexes", """
-CREATE INDEX IF NOT EXISTS idx_fidc_aging_cnpj   ON cvm_fidc_aging (cnpj);
-CREATE INDEX IF NOT EXISTS idx_fidc_aging_period ON cvm_fidc_aging (period DESC)
-"""),
-
-    ("cvm_securit_serie (Phase 2)", """
-CREATE TABLE IF NOT EXISTS cvm_securit_serie (
-    id                        BIGSERIAL    PRIMARY KEY,
-    instrument_type           TEXT         NOT NULL,
-    cnpj_securit              TEXT,
-    codigo_identificacao      TEXT         NOT NULL,
-    data_referencia           DATE         NOT NULL,
-    classe                    TEXT,
-    numero_serie              INT,
-    tipo_oferta               TEXT,
-    codigo_cetip              TEXT,
-    codigo_isin               TEXT,
-    data_vencimento           DATE,
-    situacao                  TEXT,
-    valor_total_integralizado NUMERIC(20,6),
-    taxa_juros                TEXT,
-    pagamento_periodicidade   TEXT,
-    quantidade_certificados   NUMERIC(20,0),
-    valor_certificados        NUMERIC(20,6),
-    rendimentos               NUMERIC(20,6),
-    amortizacoes              NUMERIC(20,6),
-    rentabilidade             NUMERIC(20,8),
-    classificacao_risco_atual TEXT,
-    indice_subordinacao_minimo NUMERIC(10,6),
-    fetched_at                TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_securit_serie UNIQUE NULLS NOT DISTINCT
-        (instrument_type, cnpj_securit, codigo_identificacao, data_referencia, numero_serie)
-)
-"""),
-    ("cvm_securit_serie indexes", """
-CREATE INDEX IF NOT EXISTS idx_securit_serie_cnpj     ON cvm_securit_serie (cnpj_securit);
-CREATE INDEX IF NOT EXISTS idx_securit_serie_isin     ON cvm_securit_serie (codigo_isin);
-CREATE INDEX IF NOT EXISTS idx_securit_serie_situacao ON cvm_securit_serie (situacao, data_referencia DESC)
-"""),
-
-    ("cvm_securit_fluxo (Phase 2)", """
-CREATE TABLE IF NOT EXISTS cvm_securit_fluxo (
-    id                                BIGSERIAL    PRIMARY KEY,
-    instrument_type                   TEXT         NOT NULL,
-    cnpj_securit                      TEXT,
-    codigo_identificacao              TEXT         NOT NULL,
-    data_referencia                   DATE         NOT NULL,
-    recebimentos_direitos_creditorios NUMERIC(20,6),
-    pagamentos_despesas               NUMERIC(20,6),
-    pagamentos_classe_senior          NUMERIC(20,6),
-    pagamentos_senior_principal       NUMERIC(20,6),
-    pagamentos_senior_juros           NUMERIC(20,6),
-    pagamentos_mezanino               NUMERIC(20,6),
-    pagamentos_mezanino_principal     NUMERIC(20,6),
-    pagamentos_mezanino_juros         NUMERIC(20,6),
-    pagamentos_junior                 NUMERIC(20,6),
-    pagamentos_junior_principal       NUMERIC(20,6),
-    pagamentos_junior_juros           NUMERIC(20,6),
-    variacao_liquida_caixa            NUMERIC(20,6),
-    fetched_at                        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_securit_fluxo UNIQUE NULLS NOT DISTINCT
-        (instrument_type, cnpj_securit, codigo_identificacao, data_referencia)
-)
-"""),
-    ("cvm_securit_fluxo indexes", """
-CREATE INDEX IF NOT EXISTS idx_securit_fluxo_cnpj ON cvm_securit_fluxo (cnpj_securit);
-CREATE INDEX IF NOT EXISTS idx_securit_fluxo_date ON cvm_securit_fluxo (data_referencia DESC)
-"""),
-]
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_SCHEMA_SQL = os.path.join(_REPO_ROOT, "src", "store", "schema.sql")
+_MIGRATIONS_DIR = os.path.join(_REPO_ROOT, "src", "store", "migrations")
 
 
-def apply_via_psycopg2(db_url: str):
+def _load_migration_files():
+    """Return list of (label, sql) tuples in lexicographic order."""
+    pattern = os.path.join(_MIGRATIONS_DIR, "*.sql")
+    files = sorted(glob.glob(pattern))
+    result = []
+    for path in files:
+        label = os.path.basename(path)
+        with open(path, "r", encoding="utf-8") as f:
+            result.append((label, f.read()))
+    return result
+
+
+def _load_schema_sql():
+    with open(_SCHEMA_SQL, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def _build_migration_list():
+    """Build the ordered list of (label, sql) to apply."""
+    migrations = []
+
+    # Step 1: base schema
+    migrations.append(("schema.sql (base tables)", _load_schema_sql()))
+
+    # Step 2+: per-file migrations in order
+    migrations.extend(_load_migration_files())
+
+    return migrations
+
+
+# ---------------------------------------------------------------------------
+# Legacy inline MIGRATIONS kept for backward compatibility
+# (these are now superseded by src/store/migrations/ files)
+# ---------------------------------------------------------------------------
+
+# Kept to avoid breaking any direct MIGRATIONS imports from old scripts
+MIGRATIONS = []
+
+
+def apply_via_psycopg2(db_url: str, migrations):
     import psycopg2  # type: ignore
     conn = psycopg2.connect(db_url)
     conn.autocommit = True
     cur = conn.cursor()
     ok = err = 0
-    for name, sql in MIGRATIONS:
-        try:
-            cur.execute(sql.strip())
-            print(f"  ✓ {name}")
+    for name, sql in migrations:
+        # Split on semicolons to handle multi-statement files robustly.
+        # Each non-empty statement is executed separately.
+        statements = [s.strip() for s in sql.split(";") if s.strip()]
+        for stmt in statements:
+            try:
+                cur.execute(stmt)
+            except Exception as e:
+                # Report but continue — many ALTERs are no-ops on fresh DBs
+                print(f"  ! {name}: {e!s:.120}")
+                err += 1
+                break
+        else:
+            print(f"  ok {name}")
             ok += 1
-        except Exception as e:
-            print(f"  ✗ {name}: {e}")
-            err += 1
     cur.close()
     conn.close()
     return ok, err
 
 
-def apply_via_asyncpg(db_url: str):
-    import asyncio, asyncpg  # type: ignore
+def apply_via_asyncpg(db_url: str, migrations):
+    import asyncio
+    import asyncpg  # type: ignore
 
     async def _run():
         conn = await asyncpg.connect(db_url)
         ok = err = 0
-        for name, sql in MIGRATIONS:
+        for name, sql in migrations:
             try:
                 await conn.execute(sql.strip())
-                print(f"  ✓ {name}")
+                print(f"  ok {name}")
                 ok += 1
             except Exception as e:
-                print(f"  ✗ {name}: {e}")
+                print(f"  ! {name}: {e!s:.120}")
                 err += 1
         await conn.close()
         return ok, err
@@ -233,11 +122,11 @@ def apply_via_asyncpg(db_url: str):
     return asyncio.run(_run())
 
 
-def print_manual_instructions():
+def print_manual_instructions(migrations):
     print("\n  ── MANUAL FALLBACK ──────────────────────────────────────────────")
-    print("  Paste the following SQL blocks into Supabase Dashboard → SQL Editor:")
+    print("  Paste the following SQL blocks into your DB SQL editor:")
     print()
-    for name, sql in MIGRATIONS:
+    for name, sql in migrations:
         print(f"  -- {name}")
         print(sql.strip())
         print()
@@ -251,13 +140,18 @@ def main():
     db_url = os.environ.get("POSTGRES_URL")
     if not db_url:
         print("  POSTGRES_URL not set.")
-        print_manual_instructions()
+        migrations = _build_migration_list()
+        print_manual_instructions(migrations)
         return
 
-    print(f"  DB URL: {db_url[:40]}…")
-    print(f"  Applying {len(MIGRATIONS)} migration blocks…\n")
+    migrations = _build_migration_list()
+    print(f"  DB URL: {db_url[:40]}...")
+    print(f"  Applying {len(migrations)} migration steps...\n")
 
-    for driver, fn in [("psycopg2", apply_via_psycopg2), ("asyncpg", apply_via_asyncpg)]:
+    for driver, fn in [
+        ("psycopg2", lambda url: apply_via_psycopg2(url, migrations)),
+        ("asyncpg",  lambda url: apply_via_asyncpg(url, migrations)),
+    ]:
         try:
             __import__(driver.replace("psycopg2", "psycopg2"))
             ok, err = fn(db_url)
@@ -270,7 +164,7 @@ def main():
             break
 
     print("\n  No PostgreSQL driver available. Falling back to manual instructions.")
-    print_manual_instructions()
+    print_manual_instructions(migrations)
 
 
 if __name__ == "__main__":
