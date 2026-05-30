@@ -40,9 +40,12 @@ jobs:
       # they go stale and rely solely on manual backfills. Yearly entities only
       # re-fetch the current year daily, so runtime stays within timeout-minutes.
       CVM_DAILY_SCOPE: "all"
-      CVM_UPSERT_CHUNK_SIZE: "1000"
-      CVM_INGEST_CONCURRENCY: "4"
-      CVM_DAILY_CONCURRENCY: "6"
+      CVM_UPSERT_CHUNK_SIZE: "5000"
+      CVM_INGEST_CONCURRENCY: "6"
+      # FI monthly ZIPs are large; cap their concurrency explicitly so the
+      # higher general knob above doesn't spike memory / risk timeouts.
+      CVM_FI_CONCURRENCY: "3"
+      CVM_DAILY_CONCURRENCY: "8"
       TZ: "America/Sao_Paulo"
 
     steps:

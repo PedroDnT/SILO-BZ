@@ -264,19 +264,27 @@ class CVMIngestor:
         if not tasks:
             return
 
-        batch_size = max(1, concurrency)
-        logger.info("%s: %d tasks (concurrency=%d)", label, len(tasks), batch_size)
-        for i in range(0, len(tasks), batch_size):
-            batch = tasks[i:i + batch_size]
-            results = await asyncio.gather(
-                *[task.operation for task in batch],
-                return_exceptions=True,
-            )
-            for task, result in zip(batch, results):
-                if isinstance(result, int):
-                    totals[task.table] += result
-                else:
-                    logger.error("%s failed [%s]: %s", label, task.description, result)
+        limit = max(1, concurrency)
+        logger.info("%s: %d tasks (concurrency=%d)", label, len(tasks), limit)
+
+        # Semaphore-bounded scheduling: keep up to `limit` tasks in flight at all
+        # times instead of fixed batches, so a slow task never stalls the others
+        # waiting in the same batch (head-of-line blocking).
+        sem = asyncio.Semaphore(limit)
+
+        async def _run(task: IngestTask):
+            async with sem:
+                return await task.operation
+
+        results = await asyncio.gather(
+            *[_run(task) for task in tasks],
+            return_exceptions=True,
+        )
+        for task, result in zip(tasks, results):
+            if isinstance(result, int):
+                totals[task.table] += result
+            else:
+                logger.error("%s failed [%s]: %s", label, task.description, result)
 
     # ------------------------------------------------------------------
     # Ingest log helpers
