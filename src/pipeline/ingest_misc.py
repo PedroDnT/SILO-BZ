@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
-from src.parsers.mapping import apply_map
+from src.parsers.mapping import apply_map, derive_is_active
 from src.parsers.field_maps import fiagro_mensal as _fiagro
 from src.parsers.field_maps import fip_periodic as _fip
 from src.parsers.field_maps import fund_registry as _reg
@@ -83,6 +83,57 @@ def ingest_fip_periodic(
     )
 
 
+def _entity_from_tipo(tipo: Any) -> str:
+    """Derive cvm_fund_registry.entity_type from a CVM Tipo_Fundo/Tipo_Classe.
+
+    Handles both the short codes in registro_fundo (FI, FIDC, FII, FIP, …) and
+    the verbose registro_classe labels ("Classes de Cotas de Fundos FIF").
+    """
+    s = str(tipo or "").upper()
+    if "FIDC" in s:
+        return "fidc"
+    if "FIAGRO" in s:
+        return "fiagro"
+    if "FII" in s:          # FII, FIIM
+        return "fii"
+    if any(k in s for k in ("FIP", "FMIEE", "FMIA", "FMAI")):
+        return "fip"
+    if any(k in s for k in ("FUNCINE", "FICART", "FMP", "FGTS")):
+        return "other"
+    return "fi"             # FI, FIF, FACFIF, FAPI, FITVM, "... Fundos FIF"
+
+
+def ingest_fund_registry_cvm175(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
+    """Parse and upsert CVM-175 registry rows (registro_fundo / registro_classe).
+
+    entity_type and is_active are derived per row (the file mixes all fund
+    families and both active and cancelled records).
+
+    Returns:
+        number of rows upserted
+    """
+    records: List[Dict[str, Any]] = []
+
+    for row in raw_rows:
+        typed, residual = apply_map(row, _reg.FIELD_MAP)
+        if not typed.get("cnpj"):
+            continue
+        typed["entity_type"] = _entity_from_tipo(typed.get("tp_fundo"))
+        typed["is_active"] = derive_is_active(typed.get("status"))
+        typed["raw"] = residual
+        records.append(typed)
+
+    if not records:
+        return 0
+
+    return upsert_rows(
+        conn,
+        _reg.TABLE,
+        records,
+        conflict_columns=",".join(_reg.CONFLICT),
+    )
+
+
 def ingest_fund_registry(conn: Any, raw_rows: List[Dict[str, Any]], entity_type: str) -> int:
     """Parse and upsert fund registry rows for a given entity type.
 
@@ -96,6 +147,7 @@ def ingest_fund_registry(conn: Any, raw_rows: List[Dict[str, Any]], entity_type:
     for row in raw_rows:
         typed, residual = apply_map(row, _reg.FIELD_MAP)
         typed["entity_type"] = entity_type
+        typed["is_active"] = derive_is_active(typed.get("status"))
         typed["raw"] = residual
 
         if not typed.get("cnpj"):

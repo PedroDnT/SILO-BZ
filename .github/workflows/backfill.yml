@@ -92,6 +92,9 @@ jobs:
         env:
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
           LOG_LEVEL: INFO
+          CVM_UPSERT_CHUNK_SIZE: "5000"
+          CVM_INGEST_CONCURRENCY: "6"
+          CVM_FI_CONCURRENCY: "3"
         run: |
           python -m src.pipeline.run_backfill \
             --entity fi \
@@ -123,6 +126,9 @@ jobs:
         env:
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
           LOG_LEVEL: INFO
+          CVM_UPSERT_CHUNK_SIZE: "5000"
+          CVM_INGEST_CONCURRENCY: "6"
+          CVM_FI_CONCURRENCY: "3"
         run: |
           python -m src.pipeline.run_backfill \
             --entity ${{ matrix.entity }} \

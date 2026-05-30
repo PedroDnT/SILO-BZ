@@ -17,7 +17,7 @@ coerce_type values: text, cnpj, cd_cvm, int, numeric, pct, date, bool
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Optional, Sequence
 
 CoerceType = str  # one of: text, cnpj, int, numeric, pct, date, bool
 
@@ -127,3 +127,30 @@ def apply_map(
 
     residual = {k: v for k, v in row.items() if k not in consumed}
     return typed, residual
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle helper
+# ---------------------------------------------------------------------------
+
+# Status tokens (matched case-insensitively, accent-insensitive enough for CVM)
+# that indicate an instrument is currently operating. Everything else
+# (CANCELADA, LIQUIDAÇÃO, INCORPORAÇÃO, ENCERRADA, pré-operacional, em análise…)
+# is treated as not-active. Used to retain discontinued instruments with a clear
+# is_active flag rather than dropping them.
+_ACTIVE_STATUS_TOKENS = ("FUNCIONAMENTO NORMAL", "EM FUNCIONAMENTO", "ATIVO")
+
+
+def derive_is_active(status: Any) -> Optional[bool]:
+    """Map a CVM status/situacao string to a tri-state active flag.
+
+    Returns True for operating instruments, False for discontinued ones, and
+    None when status is missing (unknown), so callers can distinguish
+    "known inactive" from "no status available".
+    """
+    if status is None:
+        return None
+    s = str(status).strip().upper()
+    if not s:
+        return None
+    return any(token in s for token in _ACTIVE_STATUS_TOKENS)
