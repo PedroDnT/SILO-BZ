@@ -1,4 +1,4 @@
--- 05_etf.sql — ETF (Fundo de Índice) dataset
+-- 06_etf.sql — ETF (Fundo de Índice) dataset
 --
 -- CVM open data has no ETF flag. TP_FUNDO is only FI/FACFIF/FAPI/FCCE, and the
 -- CVM-175 Classificacao is Multimercado/Renda Fixa/Ações/Cambial/FMP-FGTS —

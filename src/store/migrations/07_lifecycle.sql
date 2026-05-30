@@ -1,4 +1,4 @@
--- 06_lifecycle.sql — retain discontinued instruments + active/inactive flags
+-- 07_lifecycle.sql — retain discontinued instruments + active/inactive flags
 --
 -- Goal: survivorship-bias-free analysis. Discontinued instruments are kept in
 -- the DB (we never delete on re-ingest) and surfaced with an is_active flag.
