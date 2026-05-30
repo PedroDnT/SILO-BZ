@@ -96,11 +96,19 @@ Confirm row counts are in the same ballpark as Neon and `cvm_ingest_log` shows
 ### 8. Cut over the consumers
 - **GitHub Actions**: set repo secret `POSTGRES_URL` → Supabase session-pooler URL.
   (Both `daily_ingest.yml` and `backfill.yml` read `secrets.POSTGRES_URL`.)
-- **Evidence dashboard** (`dashboard/`): it reads Postgres creds from env, not from
-  `dashboard/sources/neon/connection.yaml` (that file is just `name/type`). Point
-  the Evidence Postgres source env vars (host/port/database/user/password) at the
-  Supabase session pooler in the deploy env (e.g. Vercel project settings).
-  Optionally rename the source dir `neon` → `supabase` for clarity.
+- **Evidence dashboard** (`dashboard/`): **done** — the source dir is now
+  `dashboard/sources/supabase/` (`name: supabase`, `type: postgres`; the yaml holds
+  no secrets). Credentials load from a single env var
+  `EVIDENCE_SOURCE__supabase__connectionString`, read from gitignored `dashboard/.env`
+  locally and from project env settings on Evidence Cloud. See `dashboard/.env.example`.
+  - Point it at the **session pooler** host (`postgres.<ref>@aws-0-<region>.pooler.supabase.com:5432`)
+    for Evidence Cloud / CI — the direct `db.<ref>.supabase.co:5432` host is IPv6-only
+    and will fail to resolve from IPv4-only build environments.
+  - Page queries reference tables bare (`from fact_fund_monthly`), so they don't
+    depend on the source name — the `neon` → `supabase` rename needed no SQL edits.
+  - The dashboard must read the **same** Supabase project the pipeline ingests into.
+    The frontend is wired to `zcjbtpxuhdekpwcxmepn`; make sure `POSTGRES_URL`
+    (steps 2/8) targets that same project, or the dashboard will query an empty DB.
 - **`.env.example`**: update the storage comment/URL to Supabase for new clones.
 
 ### 9. Rollback
