@@ -1,5 +1,5 @@
 -- ETF (Fundo de Índice) overview — registry + AUM/quotaholders/NAV/returns.
--- Backed by migration 05_etf.sql (cvm_etf_registry + etf_daily / etf_latest views).
+-- Backed by migration 06_etf.sql (cvm_etf_registry + etf_daily / etf_latest views).
 -- Paste into psql $POSTGRES_URL -f scripts/queries/12_etf_overview.sql
 
 -- 1) The curated ETF universe with enriched attributes + lifecycle

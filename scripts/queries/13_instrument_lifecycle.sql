@@ -1,6 +1,6 @@
 -- Instrument lifecycle — active vs discontinued, for survivorship-bias-free work.
--- Backed by migration 06_lifecycle.sql (cvm_fund_registry.is_active +
--- instrument_activity view) and 05_etf.sql (cvm_etf_registry).
+-- Backed by migration 07_lifecycle.sql (cvm_fund_registry.is_active +
+-- instrument_activity view) and 06_etf.sql (cvm_etf_registry).
 -- Paste into psql $POSTGRES_URL -f scripts/queries/13_instrument_lifecycle.sql
 
 -- 1) FI/FII registry: how many funds are active vs discontinued (retained)?
