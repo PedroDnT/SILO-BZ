@@ -15,17 +15,26 @@
 -- NULLS NOT DISTINCT those NULLs collapse to a single value, so their existing
 -- uniqueness behaviour is unchanged.
 --
--- Idempotent: ADD COLUMN IF NOT EXISTS + DROP CONSTRAINT IF EXISTS before ADD.
--- Recreating a UNIQUE constraint on the partitioned parent propagates to every
--- child partition automatically.
+-- Idempotent: ADD COLUMN IF NOT EXISTS, and the UNIQUE key is rebuilt only when
+-- the existing uq_cia_account does NOT already include coluna_df. Rebuilding a
+-- UNIQUE constraint on the partitioned parent validates every child partition
+-- (full scan + ACCESS EXCLUSIVE lock), so the guard makes replays (e.g. repeated
+-- backfill dispatches) a no-op once the new key is in place.
 -- =============================================================================
 
 ALTER TABLE cia_account
     ADD COLUMN IF NOT EXISTS coluna_df TEXT;
 
-ALTER TABLE cia_account
-    DROP CONSTRAINT IF EXISTS uq_cia_account;
-
-ALTER TABLE cia_account
-    ADD CONSTRAINT uq_cia_account UNIQUE NULLS NOT DISTINCT
-        (cd_cvm, doc_type, grupo, escopo, dt_refer, ordem_exerc, coluna_df, cd_conta, versao);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'cia_account'::regclass
+          AND conname  = 'uq_cia_account'
+          AND pg_get_constraintdef(oid) ILIKE '%coluna_df%'
+    ) THEN
+        ALTER TABLE cia_account DROP CONSTRAINT IF EXISTS uq_cia_account;
+        ALTER TABLE cia_account ADD CONSTRAINT uq_cia_account UNIQUE NULLS NOT DISTINCT
+            (cd_cvm, doc_type, grupo, escopo, dt_refer, ordem_exerc, coluna_df, cd_conta, versao);
+    END IF;
+END $$;
