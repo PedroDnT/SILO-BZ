@@ -76,7 +76,7 @@ def main() -> None:
             if kind in ("table", "partitioned", "matview"):
                 n_tables += 1
                 if args.exact:
-                    cur.execute(sql.SQL("SELECT COUNT(*) FROM {}").format(sql.Identifier(name)))
+                    cur.execute(sql.SQL("SELECT COUNT(*) FROM {}").format(sql.Identifier("public", name)))
                     est = cur.fetchone()[0]
                 shown = f"{est:>14,}"
             else:
