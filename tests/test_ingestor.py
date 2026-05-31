@@ -212,6 +212,7 @@ class TestCVMIngestorOrchestration:
         ingestor.ingest_fund_registry = AsyncMock(return_value=0)
         ingestor.ingest_fund_registry_cvm175 = AsyncMock(return_value=0)
         ingestor.ingest_etf_registry = AsyncMock(return_value=0)
+        ingestor._refresh_etf_metrics = MagicMock()
         ingestor.ingest_fi_diario = AsyncMock(return_value=1)
         ingestor.ingest_fi_cda = AsyncMock(return_value=1)
         ingestor.ingest_fi_perfil = AsyncMock(return_value=1)
@@ -237,8 +238,10 @@ class TestCVMIngestorOrchestration:
         assert totals["cvm_fii_mensal"] == 0
         assert totals["cvm_securit_mensal"] == 0
         assert ingestor.ingest_fund_registry.await_count == 1
-        # ETF is a distinct entity but kept in core scope: it still refreshes.
+        # ETF is a distinct entity but kept in core scope: it still refreshes,
+        # and its materialized metrics are refreshed once after ingest.
         assert ingestor.ingest_etf_registry.await_count == 1
+        assert ingestor._refresh_etf_metrics.call_count == 1
         assert ingestor.ingest_fip_periodic.await_count == 0
         assert ingestor.ingest_fii_mensal.await_count == 0
         assert ingestor.ingest_securit_mensal.await_count == 0
@@ -266,6 +269,52 @@ class TestResolveDailyEntities:
         from src.pipeline.cvm_pipeline import _resolve_daily_entities
         monkeypatch.setenv("CVM_DAILY_SCOPE", "fidc,fii")
         assert "etf" not in _resolve_daily_entities()
+
+
+class TestRefreshEtfMetrics:
+    """ETF metrics are materialized; the pipeline refreshes them after ingest."""
+
+    def test_refreshes_both_matviews_daily_before_latest(self):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+
+        executed: List[str] = []
+
+        class _Cur:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def execute(self, sql):
+                executed.append(sql)
+
+        class _Client:
+            def cursor(self):
+                return _Cur()
+
+        ing = CVMIngestor.__new__(CVMIngestor)
+        ing._supabase = _Client()
+        ing._refresh_etf_metrics()
+
+        # etf_latest is derived from etf_daily, so etf_daily must refresh first;
+        # CONCURRENTLY relies on the unique indexes added in migration 06.
+        assert executed == [
+            "REFRESH MATERIALIZED VIEW CONCURRENTLY etf_daily",
+            "REFRESH MATERIALIZED VIEW CONCURRENTLY etf_latest",
+        ]
+
+    def test_refresh_swallows_errors(self):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+
+        class _Client:
+            def cursor(self):
+                raise RuntimeError("db down")
+
+        ing = CVMIngestor.__new__(CVMIngestor)
+        ing._supabase = _Client()
+        # Must not raise — a failed refresh should not abort the ingest run.
+        ing._refresh_etf_metrics()
 
 
 # ---------------------------------------------------------------------------

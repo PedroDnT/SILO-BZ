@@ -325,6 +325,23 @@ class CVMIngestor:
         except Exception as e:
             logger.warning("ingest_log finish failed: %s", e)
 
+    def _refresh_etf_metrics(self) -> None:
+        """Refresh the materialized ETF views after an ETF ingest.
+
+        etf_daily / etf_latest are materialized views (migration 06); refreshing
+        here keeps their precomputed metrics current. The pg client runs in
+        autocommit, so REFRESH ... CONCURRENTLY — which must not run inside a
+        transaction block — is valid and avoids blocking readers. etf_latest is
+        derived from etf_daily, so refresh etf_daily first.
+        """
+        try:
+            with self._supabase.cursor() as cur:
+                cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY etf_daily")
+                cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY etf_latest")
+            logger.info("etf metrics: refreshed etf_daily + etf_latest")
+        except Exception as e:
+            logger.warning("refresh etf materialized views failed: %s", e)
+
     # ------------------------------------------------------------------
     # Generic paginated fetch helper
     # ------------------------------------------------------------------
@@ -1174,6 +1191,10 @@ class CVMIngestor:
                 "CIA_ABERTA ITR/DFP backfill",
             )
 
+        # Refresh the materialized ETF metrics once the underlying data is in.
+        if _want("etf"):
+            self._refresh_etf_metrics()
+
         logger.info("Backfill complete: %s", totals)
         return totals
 
@@ -1298,6 +1319,10 @@ class CVMIngestor:
             totals,
             "Daily update",
         )
+
+        # Refresh the materialized ETF metrics once the day's data is in.
+        if "etf" in daily_entities:
+            self._refresh_etf_metrics()
 
         logger.info("Daily update complete: %s", totals)
         return totals
