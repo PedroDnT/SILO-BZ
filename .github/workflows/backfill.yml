@@ -21,31 +21,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
 
       - name: Apply schema + migrations
         env:
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
         run: |
-          python scripts/apply_schema.py
-          # apply_schema.py is tolerant (never exits non-zero), so verify a core
-          # table actually exists — otherwise fail the gate before the matrix runs.
-          python - <<'EOF'
-          import os, psycopg2
-          url = "".join(os.environ["POSTGRES_URL"].split())
-          conn = psycopg2.connect(url)
-          with conn.cursor() as cur:
-              cur.execute("SELECT to_regclass('public.cvm_ingest_log')")
-              if cur.fetchone()[0] is None:
-                  raise SystemExit("Schema apply failed: cvm_ingest_log not found")
-          print("Schema verified: cvm_ingest_log present")
-          EOF
+          set -euo pipefail
+          # psql (not apply_schema.py) parses SQL comments/statements correctly and
+          # ON_ERROR_STOP fails the job on any real error. All DDL is idempotent, so
+          # this is safe to re-run. Schema first, then migrations in lexical order.
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f src/store/schema.sql
+          for f in src/store/migrations/*.sql; do
+            echo "== applying $f =="
+            psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f "$f"
+          done
+          # Assert a base table AND a migration-created table exist (::regclass
+          # errors out, failing the gate, if a step silently didn't take).
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 \
+            -c "SELECT 'cvm_ingest_log'::regclass, 'cvm_etf_registry'::regclass;"
 
   # FI is the largest entity — one job per year so they run in parallel
   backfill-fi:

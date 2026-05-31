@@ -70,27 +70,25 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Apply schema + migrations
-        run: |
-          python scripts/apply_schema.py
-          # apply_schema.py is tolerant (never exits non-zero), so verify a core
-          # table actually exists — otherwise fail before ingesting.
-          python - <<'EOF'
-          import os, psycopg2
-          url = "".join(os.environ["POSTGRES_URL"].split())
-          conn = psycopg2.connect(url)
-          with conn.cursor() as cur:
-              cur.execute("SELECT to_regclass('public.cvm_ingest_log')")
-              if cur.fetchone()[0] is None:
-                  raise SystemExit("Schema apply failed: cvm_ingest_log not found")
-          print("Schema verified: cvm_ingest_log present")
-          EOF
-
       - name: Install PostgreSQL client
-        if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'backfill') }}
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
+
+      - name: Apply schema + migrations
+        run: |
+          set -euo pipefail
+          # psql (not apply_schema.py) parses SQL comments/statements correctly and
+          # ON_ERROR_STOP fails the job on any real error. All DDL is idempotent, so
+          # this is safe to re-run on every daily/backfill run.
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f src/store/schema.sql
+          for f in src/store/migrations/*.sql; do
+            echo "== applying $f =="
+            psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f "$f"
+          done
+          # Assert a base table AND a migration-created table exist.
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 \
+            -c "SELECT 'cvm_ingest_log'::regclass, 'cvm_etf_registry'::regclass;"
 
       - name: Run daily update
         if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily') }}
