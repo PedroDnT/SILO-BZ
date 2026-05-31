@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@evidence-dev/core-components": "^4.0.0",
-    "@evidence-dev/evidence": "^35.0.0",
+    "@evidence-dev/evidence": "^40.1.8",
     "@evidence-dev/postgres": "^1.0.10"
   },
   "devDependencies": {
