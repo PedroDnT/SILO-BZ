@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Fail-safe pre-commit hook for iliquid_nightly.
+# Install with:  bash scripts/install_hooks.sh   (sets core.hooksPath=.githooks)
+# Bypass once with:  git commit --no-verify
+#
+# Guards (each prints what it caught; any failure blocks the commit):
+#   1. Never commit a .env file (database password / secrets).
+#   2. No connection string with an embedded password in tracked files.
+#   3. No "neon" reference reintroduced — this project is Supabase-only.
+#   4. Staged *.sh / *.py must pass a syntax check.
+# =============================================================================
+set -uo pipefail
+fail=0
+
+staged="$(git diff --cached --name-only --diff-filter=ACM)"
+
+# 1. never commit a .env file (the real secrets live there; it is gitignored)
+if git diff --cached --name-only | grep -qE '(^|/)\.env$'; then
+  echo "✗ pre-commit: refusing to commit a .env file (contains secrets)."
+  fail=1
+fi
+
+# Single added-lines diff, excluding the hook dir + lockfiles (avoid self-match / noise).
+# Use literal-'+' BRE patterns: '\+' is a repetition operator in GNU BRE and errors
+# after '^', so match the literal '+' prefix instead.
+added="$(git diff --cached -U0 --diff-filter=ACM -- . \
+          ':(exclude).githooks/*' ':(exclude)*package-lock.json' ':(exclude)*.lock' \
+        | grep '^+' | grep -v '^+++' || true)"
+
+# 2. embedded DB password (real URL, not the <password> placeholder)
+secret_hits="$(grep -nE 'postgresql://[^:@/]+:[^@<>]+@' <<<"$added" || true)"
+if [ -n "$secret_hits" ]; then
+  echo "✗ pre-commit: a connection string with an embedded password is staged:"
+  sed 's/^/    /' <<<"$secret_hits" | head -5
+  fail=1
+fi
+
+# 3. no Neon references (Supabase-only project)
+neon_hits="$(grep -niE 'neon' <<<"$added" || true)"
+if [ -n "$neon_hits" ]; then
+  echo "✗ pre-commit: 'neon' reference reintroduced — this project is Supabase-only:"
+  sed 's/^/    /' <<<"$neon_hits" | head -5
+  fail=1
+fi
+
+# 4. syntax-check staged shell + python
+PYBIN=".venv/bin/python"; [ -x "$PYBIN" ] || PYBIN="python3"
+while IFS= read -r f; do
+  [ -n "$f" ] && [ -f "$f" ] || continue
+  case "$f" in
+    *.sh) bash -n "$f" 2>/dev/null || { echo "✗ pre-commit: bash syntax error in $f"; fail=1; } ;;
+    *.py) "$PYBIN" -m py_compile "$f" 2>/dev/null || { echo "✗ pre-commit: python syntax error in $f"; fail=1; } ;;
+  esac
+done <<<"$staged"
+
+if [ "$fail" -ne 0 ]; then
+  echo "pre-commit checks failed. Fix the above, or bypass once with: git commit --no-verify"
+  exit 1
+fi
+exit 0

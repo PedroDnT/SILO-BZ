@@ -3,7 +3,7 @@ anbima_etf_pipeline.py
 ─────────────────────────────────────────────────────────────────────────────
 Fetches the ANBIMA Boletim de Fundos de Investimento monthly XLSX from the
 ANBIMA Strapi CMS API, extracts ETF-class metrics (AUM, net flows, fund count,
-and returns) and upserts them into the `anbima_etf_class_monthly` Neon table.
+and returns) and upserts them into the `anbima_etf_class_monthly` Supabase table.
 
 Data sources (all public, no auth required):
   API  : https://data-strapi.prd.anbima.com.br/api/boletim-de-fundos-de-investimentos

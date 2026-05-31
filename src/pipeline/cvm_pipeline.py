@@ -118,9 +118,6 @@ def _find_inadimpl(row: Dict[str, Any]) -> Optional[str]:
 # Entity / doc-type matrix  (only endpoints that actually exist on CVM server)
 # ---------------------------------------------------------------------------
 
-# FI monthly doc types
-FI_MONTHLY_DOC_TYPES: List[str] = ["inf_diario", "cda", "perfil_mensal", "balancete"]
-
 # FIDC / FIAGRO monthly
 FIDC_MENSAL_ENTITY = "fidc"
 FIAGRO_MENSAL_ENTITY = "fiagro"

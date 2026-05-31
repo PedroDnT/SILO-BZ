@@ -18,6 +18,8 @@ Migration order:
 import os
 import sys
 import glob
+import shutil
+import subprocess
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -36,34 +38,18 @@ _SCHEMA_SQL = os.path.join(_REPO_ROOT, "src", "store", "schema.sql")
 _MIGRATIONS_DIR = os.path.join(_REPO_ROOT, "src", "store", "migrations")
 
 
-def _load_migration_files():
-    """Return list of (label, sql) tuples in lexicographic order."""
-    pattern = os.path.join(_MIGRATIONS_DIR, "*.sql")
-    files = sorted(glob.glob(pattern))
-    result = []
-    for path in files:
-        label = os.path.basename(path)
-        with open(path, "r", encoding="utf-8") as f:
-            result.append((label, f.read()))
-    return result
-
-
-def _load_schema_sql():
-    with open(_SCHEMA_SQL, "r", encoding="utf-8") as f:
-        return f.read()
-
-
 def _build_migration_list():
-    """Build the ordered list of (label, sql) to apply."""
-    migrations = []
+    """Build the ordered list of (label, path) to apply: base schema first,
+    then every migration file in lexicographic order."""
+    items = [("schema.sql (base tables)", _SCHEMA_SQL)]
+    for path in sorted(glob.glob(os.path.join(_MIGRATIONS_DIR, "*.sql"))):
+        items.append((os.path.basename(path), path))
+    return items
 
-    # Step 1: base schema
-    migrations.append(("schema.sql (base tables)", _load_schema_sql()))
 
-    # Step 2+: per-file migrations in order
-    migrations.extend(_load_migration_files())
-
-    return migrations
+def _read(path: str) -> str:
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
 
 
 # ---------------------------------------------------------------------------
@@ -75,45 +61,75 @@ def _build_migration_list():
 MIGRATIONS = []
 
 
-def apply_via_psycopg2(db_url: str, migrations):
-    import psycopg2  # type: ignore
-    conn = psycopg2.connect(db_url)
-    conn.autocommit = True
-    cur = conn.cursor()
+def _resolve_psql():
+    """Return a usable psql executable path, or None."""
+    found = shutil.which("psql")
+    if found:
+        return found
+    keg = "/opt/homebrew/opt/libpq/bin/psql"
+    return keg if os.path.exists(keg) else None
+
+
+def apply_via_psql(psql: str, db_url: str, items):
+    """Apply each file with `psql -v ON_ERROR_STOP=1 -f`. This is the canonical
+    path (same as the GitHub workflows): psql parses dollar-quoted DO $$ ... $$
+    blocks correctly and returns a real exit code per file."""
     ok = err = 0
-    for name, sql in migrations:
-        # Split on semicolons to handle multi-statement files robustly.
-        # Each non-empty statement is executed separately.
-        statements = [s.strip() for s in sql.split(";") if s.strip()]
-        for stmt in statements:
-            try:
-                cur.execute(stmt)
-            except Exception as e:
-                # Report but continue — many ALTERs are no-ops on fresh DBs
-                print(f"  ! {name}: {e!s:.120}")
-                err += 1
-                break
-        else:
+    for name, path in items:
+        rc = subprocess.call(
+            [psql, db_url, "-v", "ON_ERROR_STOP=1", "-q", "-f", path],
+            stdout=subprocess.DEVNULL,
+        )
+        if rc == 0:
             print(f"  ok {name}")
             ok += 1
-    cur.close()
-    conn.close()
+        else:
+            print(f"  ! {name}: psql exited {rc}")
+            err += 1
     return ok, err
 
 
-def apply_via_asyncpg(db_url: str, migrations):
+def _apply_whole_files(execute, items):
+    """Execute each file's FULL contents in a single call — never split on ';',
+    so dollar-quoted DO $$ ... $$ blocks stay intact."""
+    ok = err = 0
+    for name, path in items:
+        try:
+            execute(_read(path))
+            print(f"  ok {name}")
+            ok += 1
+        except Exception as e:  # noqa: BLE001 — report and continue
+            print(f"  ! {name}: {e!s:.120}")
+            err += 1
+    return ok, err
+
+
+def apply_via_psycopg2(db_url: str, items):
+    import psycopg2  # type: ignore
+    conn = psycopg2.connect(db_url)
+    conn.autocommit = True
+    try:
+        def execute(sql):
+            with conn.cursor() as cur:
+                cur.execute(sql)
+        return _apply_whole_files(execute, items)
+    finally:
+        conn.close()
+
+
+def apply_via_asyncpg(db_url: str, items):
     import asyncio
     import asyncpg  # type: ignore
 
     async def _run():
         conn = await asyncpg.connect(db_url)
         ok = err = 0
-        for name, sql in migrations:
+        for name, path in items:
             try:
-                await conn.execute(sql.strip())
+                await conn.execute(_read(path))
                 print(f"  ok {name}")
                 ok += 1
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"  ! {name}: {e!s:.120}")
                 err += 1
         await conn.close()
@@ -122,13 +138,13 @@ def apply_via_asyncpg(db_url: str, migrations):
     return asyncio.run(_run())
 
 
-def print_manual_instructions(migrations):
+def print_manual_instructions(items):
     print("\n  ── MANUAL FALLBACK ──────────────────────────────────────────────")
     print("  Paste the following SQL blocks into your DB SQL editor:")
     print()
-    for name, sql in migrations:
+    for name, path in items:
         print(f"  -- {name}")
-        print(sql.strip())
+        print(_read(path).strip())
         print()
 
 
@@ -137,34 +153,44 @@ def main():
     print("  CVM SCHEMA MIGRATION")
     print("=" * 68)
 
+    items = _build_migration_list()
     db_url = os.environ.get("POSTGRES_URL")
     if not db_url:
         print("  POSTGRES_URL not set.")
-        migrations = _build_migration_list()
-        print_manual_instructions(migrations)
+        print_manual_instructions(items)
         return
+    db_url = "".join(db_url.split())
 
-    migrations = _build_migration_list()
-    print(f"  DB URL: {db_url[:40]}...")
-    print(f"  Applying {len(migrations)} migration steps...\n")
+    print(f"  Applying {len(items)} migration steps...\n")
 
+    # Prefer psql (handles dollar-quoted blocks exactly like the CI workflows).
+    psql = _resolve_psql()
+    if psql:
+        try:
+            ok, err = apply_via_psql(psql, db_url, items)
+            print(f"\n  Done: {ok} OK, {err} errors  (driver: psql)")
+            sys.exit(1 if err else 0)
+        except Exception as e:  # noqa: BLE001
+            print(f"  psql path failed ({e}); trying a Python driver...")
+
+    # Fall back to a Python driver, executing each file whole (no ';' split).
     for driver, fn in [
-        ("psycopg2", lambda url: apply_via_psycopg2(url, migrations)),
-        ("asyncpg",  lambda url: apply_via_asyncpg(url, migrations)),
+        ("psycopg2", apply_via_psycopg2),
+        ("asyncpg",  apply_via_asyncpg),
     ]:
         try:
-            __import__(driver.replace("psycopg2", "psycopg2"))
-            ok, err = fn(db_url)
+            __import__(driver)
+            ok, err = fn(db_url, items)
             print(f"\n  Done: {ok} OK, {err} errors  (driver: {driver})")
-            return
+            sys.exit(1 if err else 0)
         except ImportError:
             continue
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"  Connection failed ({driver}): {e}")
             break
 
-    print("\n  No PostgreSQL driver available. Falling back to manual instructions.")
-    print_manual_instructions(migrations)
+    print("\n  No PostgreSQL client available. Falling back to manual instructions.")
+    print_manual_instructions(items)
 
 
 if __name__ == "__main__":

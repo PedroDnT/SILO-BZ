@@ -694,7 +694,7 @@ def main(db_path: str):
     conn.close()
     print(f"\n{SEP}")
     print("  Done. Fix verification: look for WARN rows in Q2.")
-    print(f"  Full SQL reference: scripts/analysis_queries.sql")
+    print(f"  Analytical queries: scripts/queries/  (require analytical layer in Supabase)")
     print(SEP)
 
 
