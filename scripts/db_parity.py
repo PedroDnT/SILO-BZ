@@ -1,8 +1,8 @@
 """Report all user tables/views in a Postgres DB with row-count estimates.
 
-Use it to confirm schema + data parity when migrating between databases
-(e.g. Neon -> Supabase): run it against the source, then against the target
-after `apply_schema.py` + re-ingest, and compare.
+Use it to confirm schema + data parity between two databases: run it against a
+reference DB, then against the target after `apply_schema.py` + re-ingest, and
+compare.
 
 Row counts are fast planner estimates (pg_class.reltuples), refreshed by the
 pipeline's post-ingest ANALYZE — accurate enough to confirm "data present"

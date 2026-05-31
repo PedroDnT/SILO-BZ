@@ -1,6 +1,6 @@
 """
 CVM data orchestrator — downloads entity/doc_type combinations and persists
-to Neon Postgres via per-entity ingest modules.
+to Supabase Postgres via per-entity ingest modules.
 
 Tables written:
   cvm_fi_diario        FI daily snapshot (INF_DIARIO)
@@ -247,7 +247,7 @@ def _iter_month_pairs(
 # ---------------------------------------------------------------------------
 
 class CVMIngestor:
-    """Downloads CVM data via CVMFetcher and persists to Neon Postgres."""
+    """Downloads CVM data via CVMFetcher and persists to Supabase Postgres."""
 
     def __init__(self) -> None:
         self._service = CVMFetcher()
