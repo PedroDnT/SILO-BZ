@@ -37,6 +37,7 @@ echo "==> [2/4] Updating GitHub Actions POSTGRES_URL secret"
 # IPv6-only, so the secret MUST use the IPv4-safe session pooler — never the
 # local direct URL. Prefer SUPABASE_POOLER_URL (env or .env); refuse to set a
 # direct URL as the secret.
+ci_secret_ok=0
 CI_URL="${SUPABASE_POOLER_URL:-$(grep -E '^SUPABASE_POOLER_URL=' .env 2>/dev/null | head -1 | cut -d= -f2-)}"
 if [[ -z "$CI_URL" ]]; then
   if [[ "$POSTGRES_URL" == *"db."*".supabase.co"* ]]; then
@@ -53,13 +54,15 @@ if [[ -n "$CI_URL" ]]; then
   if command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
     if printf '%s' "$CI_URL" | gh secret set POSTGRES_URL; then
       echo "  GH secret POSTGRES_URL set to the pooler URL."
+      ci_secret_ok=1
     else
       echo "ERROR: 'gh secret set POSTGRES_URL' failed — CI still points at the old DB. Aborting." >&2
       exit 1
     fi
   else
     echo "  SKIPPED: gh not authenticated. Run manually:"
-    echo "    printf '%s' \"\$SUPABASE_POOLER_URL\" | gh secret set POSTGRES_URL"
+    echo "    gh secret set POSTGRES_URL"
+    echo "    (gh will prompt you to paste the pooler URL interactively)"
   fi
 fi
 
@@ -90,6 +93,13 @@ echo "==> [4/4] Final row counts"
 $PY scripts/supabase_cutover.py
 
 echo
+if [ "$ci_secret_ok" -eq 0 ]; then
+  echo "WARNING: GitHub Actions POSTGRES_URL secret was NOT updated (step 2 was skipped)."
+  echo "         CI jobs will continue using the old database until you set the secret manually:"
+  echo "           gh secret set POSTGRES_URL"
+  echo "         (gh will prompt you to paste the pooler URL interactively)"
+  echo
+fi
 echo "Cutover complete. Next steps:"
 echo "  1. Full ingest:        $PY -m src.pipeline.run_daily"
 echo "  2. Analytical layer:   bash scripts/apply_analytical.sh   (after the full ingest)"
