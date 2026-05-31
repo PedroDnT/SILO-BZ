@@ -6,6 +6,15 @@
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
+-- Drop views that depend on cvm_fi_diario columns we are about to retype.
+-- Migration 06 re-creates these after the ALTERs.  These DROPs are safe
+-- no-ops on a fresh DB where the views do not yet exist.
+-- ---------------------------------------------------------------------------
+DROP VIEW IF EXISTS etf_daily CASCADE;
+DROP VIEW IF EXISTS etf_latest CASCADE;
+DROP VIEW IF EXISTS instrument_activity CASCADE;
+
+-- ---------------------------------------------------------------------------
 -- FI daily snapshot — widen numeric columns to convention (§3 of 02_ARCH)
 -- Monetary:  NUMERIC(28,2)   PL / total
 -- Quota:     NUMERIC(28,12)  unit price
