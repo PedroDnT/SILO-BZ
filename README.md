@@ -117,6 +117,7 @@ The tranche and series-level ingestion is the subject of Phases 1–2 in `docs/p
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+bash scripts/install_hooks.sh   # fail-safe pre-commit guards (secrets, syntax)
 cp .env.example .env   # fill in POSTGRES_URL (Supabase connection string)
 
 # 1. Apply schema + migrations (one-time, against your Supabase Postgres)
@@ -127,6 +128,9 @@ python -m src.pipeline.run_daily
 
 # 3. Run a one-shot historical backfill (e.g. 2019 onward)
 python -m src.pipeline.run_backfill --start-year 2019
+
+# 3b. Build the analytical layer (views/functions) — AFTER data is ingested
+bash scripts/apply_analytical.sh
 
 # 4. Verify the pipeline (local DuckDB, ~2 min, skips FI inf_diario)
 python scripts/seed_local_db.py --skip-fi
