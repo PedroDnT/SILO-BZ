@@ -76,6 +76,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
+      - name: Apply schema migrations
+        run: python scripts/apply_schema.py
+
       - name: Run daily update
         if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily') }}
         run: python -m src.pipeline.run_daily
