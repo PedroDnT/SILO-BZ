@@ -119,8 +119,8 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env   # fill in POSTGRES_URL (Supabase connection string)
 
-# 1. Apply schema (one-time, against your Supabase Postgres)
-psql "$POSTGRES_URL" -f src/store/schema.sql
+# 1. Apply schema + migrations (one-time, against your Supabase Postgres)
+python scripts/apply_schema.py
 
 # 2. Run an incremental update
 python -m src.pipeline.run_daily
@@ -222,9 +222,10 @@ Single deploy target: **GitHub Actions cron writing to Supabase Postgres**. No c
   for ad-hoc backfills (`mode=backfill`, `start_year=YYYY`, `entity=fidc`).
 - Required GitHub secret: `POSTGRES_URL` (Supabase connection string with `sslmode=require`).
 
-To roll out schema changes, commit `src/store/schema.sql` and run
-`psql "$POSTGRES_URL" -f src/store/schema.sql` against the Supabase project.
-The schema uses `CREATE TABLE IF NOT EXISTS` and named UNIQUE constraints, so re-applying is idempotent.
+To roll out schema changes, commit `src/store/schema.sql` and any new
+`src/store/migrations/*.sql`, then run `python scripts/apply_schema.py` against
+the Supabase project (it applies the base schema and every migration in order).
+The DDL uses `CREATE TABLE IF NOT EXISTS` and named UNIQUE constraints, so re-applying is idempotent.
 
 ## Execution roadmap
 

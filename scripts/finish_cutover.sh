@@ -16,13 +16,17 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 PY=.venv/bin/python
-PSQL=/opt/homebrew/opt/libpq/bin/psql
+# Prefer psql on PATH (Linux, Intel Macs); fall back to the Homebrew libpq keg.
+PSQL="psql"
+if ! command -v psql >/dev/null 2>&1 && [ -x "/opt/homebrew/opt/libpq/bin/psql" ]; then
+  PSQL="/opt/homebrew/opt/libpq/bin/psql"
+fi
 
 # --- load POSTGRES_URL from .env ---------------------------------------------
 POSTGRES_URL="$(grep -E '^POSTGRES_URL=' .env | head -1 | cut -d= -f2-)"
 export POSTGRES_URL
-if [[ -z "$POSTGRES_URL" || "$POSTGRES_URL" == *"[SUPABASE_DB_PASSWORD]"* ]]; then
-  echo "ERROR: POSTGRES_URL in .env still has the [SUPABASE_DB_PASSWORD] placeholder."
+if [[ -z "$POSTGRES_URL" || "$POSTGRES_URL" == *"[SUPABASE_DB_PASSWORD]"* || "$POSTGRES_URL" == *"<password>"* ]]; then
+  echo "ERROR: POSTGRES_URL in .env still has the database password placeholder."
   echo "       Paste the real Supabase database password into .env first."
   exit 1
 fi
@@ -52,6 +56,8 @@ fi
 
 echo
 echo "==> [4/5] Smoke ingest: BACEN last 7 days -> Supabase"
+# Fail loudly if the smoke ingest errors — step 4 exists to PROVE rows land,
+# so a broken schema/credentials/network must not be reported as success.
 $PY - <<'PYEOF'
 import asyncio, datetime, os, sys
 sys.path.insert(0, os.getcwd())
@@ -61,8 +67,14 @@ async def main():
     start = (datetime.date.today() - datetime.timedelta(days=7)).isoformat()
     totals = await ing.backfill(start=start)
     print("  BACEN upserted:", totals)
+    if sum(totals.values()) == 0:
+        raise SystemExit("Smoke ingest upserted 0 rows — cutover NOT verified.")
 asyncio.run(main())
 PYEOF
+if [ $? -ne 0 ]; then
+  echo "ERROR: smoke ingest failed — cutover NOT verified. Aborting."
+  exit 1
+fi
 
 echo
 echo "==> [5/5] Final row counts"

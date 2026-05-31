@@ -33,9 +33,9 @@ def candidate_urls(url: str):
 def main() -> None:
     load_dotenv()
     url = os.environ.get("POSTGRES_URL", "")
-    if not url or "[SUPABASE_DB_PASSWORD]" in url:
+    if not url or "[SUPABASE_DB_PASSWORD]" in url or "<password>" in url:
         sys.exit(
-            "POSTGRES_URL still has the [SUPABASE_DB_PASSWORD] placeholder.\n"
+            "POSTGRES_URL still has the database password placeholder.\n"
             "Edit .env and paste the real Supabase database password first."
         )
     url = "".join(url.split())
