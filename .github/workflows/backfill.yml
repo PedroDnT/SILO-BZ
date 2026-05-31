@@ -171,6 +171,36 @@ jobs:
             --end-year 2026 \
             --cvm-only
 
+  # ETF registry — distinct entity (curated ticker->CNPJ seed enriched from
+  # cad_fi). Not year-ranged: it's a single current-universe snapshot, so it runs
+  # once in its own job rather than riding along with the FI year-matrix.
+  backfill-etf:
+    name: "ETF registry"
+    needs: apply-schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run ETF registry backfill
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          LOG_LEVEL: INFO
+          CVM_UPSERT_CHUNK_SIZE: "5000"
+          CVM_INGEST_CONCURRENCY: "6"
+        run: |
+          python -m src.pipeline.run_backfill \
+            --entity etf \
+            --cvm-only
+
   # BACEN macro data
   backfill-bacen:
     name: "BACEN"

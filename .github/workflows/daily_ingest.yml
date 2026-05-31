@@ -15,7 +15,7 @@ on:
           - daily
           - backfill
       entity:
-        description: "CVM entity to backfill: fi | fidc | fii | fip | fiagro | securit (leave blank for all)"
+        description: "CVM entity to backfill: fi | fidc | fii | fip | fiagro | securit | etf (leave blank for all)"
         required: false
         default: ""
       start_year:

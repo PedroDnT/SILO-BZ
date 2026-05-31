@@ -237,9 +237,35 @@ class TestCVMIngestorOrchestration:
         assert totals["cvm_fii_mensal"] == 0
         assert totals["cvm_securit_mensal"] == 0
         assert ingestor.ingest_fund_registry.await_count == 1
+        # ETF is a distinct entity but kept in core scope: it still refreshes.
+        assert ingestor.ingest_etf_registry.await_count == 1
         assert ingestor.ingest_fip_periodic.await_count == 0
         assert ingestor.ingest_fii_mensal.await_count == 0
         assert ingestor.ingest_securit_mensal.await_count == 0
+
+
+class TestResolveDailyEntities:
+    """ETF is a first-class daily-scope entity, gated on its own token."""
+
+    def test_all_scope_includes_etf(self, monkeypatch):
+        from src.pipeline.cvm_pipeline import _resolve_daily_entities
+        monkeypatch.setenv("CVM_DAILY_SCOPE", "all")
+        assert "etf" in _resolve_daily_entities()
+
+    def test_core_scope_includes_etf(self, monkeypatch):
+        from src.pipeline.cvm_pipeline import _resolve_daily_entities
+        monkeypatch.setenv("CVM_DAILY_SCOPE", "core")
+        assert "etf" in _resolve_daily_entities()
+
+    def test_etf_selectable_on_its_own(self, monkeypatch):
+        from src.pipeline.cvm_pipeline import _resolve_daily_entities
+        monkeypatch.setenv("CVM_DAILY_SCOPE", "etf")
+        assert _resolve_daily_entities() == {"etf"}
+
+    def test_explicit_scope_without_etf_excludes_it(self, monkeypatch):
+        from src.pipeline.cvm_pipeline import _resolve_daily_entities
+        monkeypatch.setenv("CVM_DAILY_SCOPE", "fidc,fii")
+        assert "etf" not in _resolve_daily_entities()
 
 
 # ---------------------------------------------------------------------------

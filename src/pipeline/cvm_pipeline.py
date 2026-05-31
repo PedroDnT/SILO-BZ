@@ -151,8 +151,11 @@ _ALL_TABLES: List[str] = [
     "cia_company", "cia_event", "cia_filing", "cia_account",
     "cvm_fund_registry", "cvm_etf_registry",
 ]
-_ALL_ENTITIES: Set[str] = {"fi", "fidc", "fip", "fiagro", "fii", "securit", "cia_aberta"}
-_CORE_DAILY_ENTITIES: Set[str] = {"fi", "fidc", "fiagro"}
+_ALL_ENTITIES: Set[str] = {"fi", "fidc", "fip", "fiagro", "fii", "securit", "cia_aberta", "etf"}
+# ETF is a distinct entity (curated registry, not a CVM dataset). It self-fetches
+# the cad_fi it enriches from, so it is independent of the FI ingest and kept in
+# core: the registry refresh is cheap and should run on every daily scope.
+_CORE_DAILY_ENTITIES: Set[str] = {"fi", "fidc", "fiagro", "etf"}
 _FIAGRO_FIRST_PERIOD = date(2025, 5, 1)
 
 # CIA_ABERTA — IPE material-facts feed first availability (CVM publishes
@@ -928,7 +931,7 @@ class CVMIngestor:
     ) -> Dict[str, int]:
         """Full historical backfill for all entities from start_year to today.
 
-        Pass entity_filter to restrict to one entity: fi | fidc | fip | fiagro | fii | securit
+        Pass entity_filter to restrict to one entity: fi | fidc | fip | fiagro | fii | securit | etf
         """
         today = date.today()
         end_year = end_year or today.year
@@ -948,8 +951,8 @@ class CVMIngestor:
         if _want("fi"):
             totals["cvm_fund_registry"] += await self.ingest_fund_registry_cvm175()
 
-        # -- ETF registry (curated seed; derived from FI data) --
-        if _want("fi"):
+        # -- ETF registry (distinct entity: curated seed, self-fetches cad_fi) --
+        if _want("etf"):
             totals["cvm_etf_registry"] += await self.ingest_etf_registry()
 
         # -- FI ----------------------------------------------------------
@@ -1193,8 +1196,8 @@ class CVMIngestor:
         if "fi" in daily_entities:
             totals["cvm_fund_registry"] += await self.ingest_fund_registry_cvm175()
 
-        # ETF registry refresh (curated seed; derived from FI data)
-        if "fi" in daily_entities:
+        # ETF registry refresh (distinct entity: curated seed, self-fetches cad_fi)
+        if "etf" in daily_entities:
             totals["cvm_etf_registry"] += await self.ingest_etf_registry()
 
         # FI — current + previous month
@@ -1322,7 +1325,7 @@ if __name__ == "__main__":
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     bf = sub.add_parser("backfill", help="Historical backfill")
-    bf.add_argument("--entity", help="fi | fidc | fip | fiagro | fii | securit | cia_aberta (all if omitted)")
+    bf.add_argument("--entity", help="fi | fidc | fip | fiagro | fii | securit | cia_aberta | etf (all if omitted)")
     bf.add_argument("--start", type=int, default=2019, help="Start year (default 2019)")
     bf.add_argument("--end", type=int, help="End year (default current year)")
 
