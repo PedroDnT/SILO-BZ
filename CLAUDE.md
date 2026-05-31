@@ -131,18 +131,27 @@ PostToolUse hook auto-runs `py_compile` after every Edit/Write to a `.py` file.
 
 ## Consumers (read-only, query Supabase directly)
 
-- **`dashboard/`** — zero-build static dashboard (plain HTML/JS/CSS). `build/build_dashboard_data.py`
-  queries Supabase and writes JSON snapshots into `data/` (build artifacts, gitignored except
-  `.gitkeep`); the page fetches those client-side. Updated once daily after the cron ingest.
-- **`webapp/`** — Flask server-rendered screener + fund-detail pages, queries Supabase live per
-  request. **SQL lives in `webapp/templates/sql/*.sql`, not in Python** — keep it there so it's
-  lintable/runnable standalone; `*_kpis.py` hold only derived-KPI computation. No ORM (raw
-  parameterized psycopg2), read-only (never writes). Its own `webapp/requirements.txt`.
+Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources && npm run dev`
+→ localhost:3000; `npm run build` → `build/`). They connect to the same Supabase Postgres via
+`@evidence-dev/postgres` and only read — never write.
+
+- **`dashboard/`** — fund-health analytics: Overview (`/`), FIDC Credit Monitor (`/fidc`),
+  FII Market (`/fii`), Suspicious Screens (`/suspicious`). Deployed to a static host / Netlify.
+- **`webapp/`** — Evidence.dev instance for CIA Aberta (listed-company) analytics; in progress
+  on the `feat/cia-financials` branch alongside the `cia_*` tables.
 
 ## Deploy
 
-Single target: **GitHub Actions cron → Supabase Postgres** (`.github/workflows/daily_ingest.yml`,
-06:00 UTC daily + `workflow_dispatch` for ad-hoc backfills). Required GitHub secret:
-`POSTGRES_URL`. No container registry, Vercel, or Docker. Schema rollout = commit `schema.sql`
-+ new `migrations/*.sql`, then run `scripts/apply_schema.py` against Supabase (idempotent via
-`CREATE TABLE IF NOT EXISTS` + named UNIQUE constraints).
+Single target: **GitHub Actions cron → Supabase Postgres**. Required GitHub secret: `POSTGRES_URL`.
+No container registry, Vercel, or Docker.
+
+- `.github/workflows/daily_ingest.yml` — 06:00 UTC daily (`run_daily`) + `workflow_dispatch`
+  (`mode=daily|backfill`, optional `entity`/`start_year`/`end_year`). It bootstraps the schema
+  via `psql` on every run, then `ANALYZE`s the tables.
+- `.github/workflows/backfill.yml` — on-demand full backfill; FI runs one parallel job per year,
+  other entities/BACEN/ETF in parallel, gated on a one-time `apply-schema` job.
+
+Schema rollout = commit `schema.sql` + a new `migrations/NNN_*.sql`, then either let CI apply it
+or run `scripts/apply_schema.py` against Supabase. Idempotent via `CREATE TABLE IF NOT EXISTS` +
+named UNIQUE constraints. Note CI applies schema with `psql -v ON_ERROR_STOP=1` (parses SQL
+comments correctly), so author migrations to be psql-clean.
