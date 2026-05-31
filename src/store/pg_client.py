@@ -1,8 +1,8 @@
 """
-Postgres client wrapper for bulk upsert operations (Neon-backed).
+Postgres client wrapper for bulk upsert operations (Supabase-backed).
 
 Requires:
-  POSTGRES_URL — postgresql://user:pass@<neon-host>/db?sslmode=require
+  POSTGRES_URL — postgresql://user:pass@<supabase-host>/db?sslmode=require
 """
 
 import logging
