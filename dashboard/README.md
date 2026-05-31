@@ -1,48 +1,30 @@
-# Evidence Template Project
+# iliquid dashboard
 
-## Using Codespaces
+Evidence.dev analytics dashboard backed by the Supabase Postgres pipeline.
 
-If you are using this template in Codespaces, click the `Start Evidence` button in the bottom status bar. This will install dependencies and open a preview of your project in your browser - you should get a popup prompting you to open in browser.
+## Pages
 
-Or you can use the following commands to get started:
+| Page | Path | What it shows |
+| ---- | ---- | ------------- |
+| Overview | `/` | AUM by entity type (12mo), FIDC sector delinquency, live row counts |
+| FIDC Credit Monitor | `/fidc` | Sector delinquency trend (24mo), aging buckets, top delinquent funds, red flags |
+| FII Market | `/fii` | FII vs FIAGRO AUM, yield distribution (p10–p90), top funds by dividend yield |
+| Suspicious Screens | `/suspicious` | Zombie growth, captive vehicles, evergreen aging, overdue securit series |
+
+## Data source
+
+Connects to Supabase Postgres via `@evidence-dev/postgres`. The `supabase` source is configured in `sources/supabase/connection.yaml`. Credentials are injected at build time via environment variables or the Evidence settings UI.
 
 ```bash
 npm install
-npm run sources
-npm run dev -- --host 0.0.0.0
+npm run sources   # pull schema from Supabase
+npm run dev       # http://localhost:3000
 ```
 
-See [the CLI docs](https://docs.evidence.dev/cli/) for more command information.
-
-**Note:** Codespaces is much faster on the Desktop app. After the Codespace has booted, select the hamburger menu → Open in VS Code Desktop.
-
-## Get Started from VS Code
-
-The easiest way to get started is using the [VS Code Extension](https://marketplace.visualstudio.com/items?itemName=Evidence.evidence-vscode):
-
-
-
-1. Install the extension from the VS Code Marketplace
-2. Open the Command Palette (Ctrl/Cmd + Shift + P) and enter `Evidence: New Evidence Project`
-3. Click `Start Evidence` in the bottom status bar
-
-## Get Started using the CLI
+## Build
 
 ```bash
-npx degit evidence-dev/template my-project
-cd my-project 
-npm install 
-npm run sources
-npm run dev 
+npm run build     # outputs to build/
 ```
 
-Check out the docs for [alternative install methods](https://docs.evidence.dev/getting-started/install-evidence) including Docker, Github Codespaces, and alongside dbt.
-
-
-
-## Learning More
-
-- [Docs](https://docs.evidence.dev/)
-- [Github](https://github.com/evidence-dev/evidence)
-- [Slack Community](https://slack.evidence.dev/)
-- [Evidence Home Page](https://www.evidence.dev)
+For deployment, point a static host at `build/` or use Netlify (config in the root `.netlify/`).

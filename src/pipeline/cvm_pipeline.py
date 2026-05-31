@@ -1,6 +1,6 @@
 """
 CVM data orchestrator — downloads entity/doc_type combinations and persists
-to Neon Postgres via per-entity ingest modules.
+to Supabase Postgres via per-entity ingest modules.
 
 Tables written:
   cvm_fi_diario        FI daily snapshot (INF_DIARIO)
@@ -117,9 +117,6 @@ def _find_inadimpl(row: Dict[str, Any]) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Entity / doc-type matrix  (only endpoints that actually exist on CVM server)
 # ---------------------------------------------------------------------------
-
-# FI monthly doc types
-FI_MONTHLY_DOC_TYPES: List[str] = ["inf_diario", "cda", "perfil_mensal", "balancete"]
 
 # FIDC / FIAGRO monthly
 FIDC_MENSAL_ENTITY = "fidc"
@@ -247,7 +244,7 @@ def _iter_month_pairs(
 # ---------------------------------------------------------------------------
 
 class CVMIngestor:
-    """Downloads CVM data via CVMFetcher and persists to Neon Postgres."""
+    """Downloads CVM data via CVMFetcher and persists to Supabase Postgres."""
 
     def __init__(self) -> None:
         self._service = CVMFetcher()
