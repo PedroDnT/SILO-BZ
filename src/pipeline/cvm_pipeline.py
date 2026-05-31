@@ -146,7 +146,7 @@ _ALL_TABLES: List[str] = [
     "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic",
     "cvm_securit_mensal", "cvm_securit_serie", "cvm_securit_fluxo", "cvm_securit_dfin",
     "cia_company", "cia_event", "cia_filing", "cia_account",
-    "cvm_fund_registry",
+    "cvm_fund_registry", "cvm_etf_registry",
 ]
 _ALL_ENTITIES: Set[str] = {"fi", "fidc", "fip", "fiagro", "fii", "securit", "cia_aberta"}
 _CORE_DAILY_ENTITIES: Set[str] = {"fi", "fidc", "fiagro"}
@@ -261,19 +261,27 @@ class CVMIngestor:
         if not tasks:
             return
 
-        batch_size = max(1, concurrency)
-        logger.info("%s: %d tasks (concurrency=%d)", label, len(tasks), batch_size)
-        for i in range(0, len(tasks), batch_size):
-            batch = tasks[i:i + batch_size]
-            results = await asyncio.gather(
-                *[task.operation for task in batch],
-                return_exceptions=True,
-            )
-            for task, result in zip(batch, results):
-                if isinstance(result, int):
-                    totals[task.table] += result
-                else:
-                    logger.error("%s failed [%s]: %s", label, task.description, result)
+        limit = max(1, concurrency)
+        logger.info("%s: %d tasks (concurrency=%d)", label, len(tasks), limit)
+
+        # Semaphore-bounded scheduling: keep up to `limit` tasks in flight at all
+        # times instead of fixed batches, so a slow task never stalls the others
+        # waiting in the same batch (head-of-line blocking).
+        sem = asyncio.Semaphore(limit)
+
+        async def _run(task: IngestTask):
+            async with sem:
+                return await task.operation
+
+        results = await asyncio.gather(
+            *[_run(task) for task in tasks],
+            return_exceptions=True,
+        )
+        for task, result in zip(tasks, results):
+            if isinstance(result, int):
+                totals[task.table] += result
+            else:
+                logger.error("%s failed [%s]: %s", label, task.description, result)
 
     # ------------------------------------------------------------------
     # Ingest log helpers
@@ -695,6 +703,55 @@ class CVMIngestor:
         logger.info("%s/cad: %d rows", entity, rows_inserted)
         return rows_inserted
 
+    async def ingest_fund_registry_cvm175(self) -> int:
+        """Ingest the CVM-175 unified registry (registro_fundo + registro_classe).
+
+        Covers the post-2023 active universe across all fund families; entity_type
+        and is_active are derived per row. Runs after the legacy cad ingest so the
+        current CVM-175 status wins for any shared CNPJ.
+        """
+        from src.pipeline.ingest_misc import ingest_fund_registry_cvm175
+
+        total = 0
+        for doc_type in ("registro_fundo", "registro_classe"):
+            run_id = str(uuid4())
+            self._log_start(run_id, "fi", doc_type, None, None)
+            rows = 0
+            try:
+                raw_rows = await self._fetch_all_pages("fi", doc_type, None, None)
+                rows = ingest_fund_registry_cvm175(self._supabase, raw_rows)
+            except Exception as exc:
+                logger.warning("ingest_fund_registry_cvm175 %s failed: %s", doc_type, exc)
+                self._log_finish(run_id, 0, str(exc))
+                continue
+            self._log_finish(run_id, rows)
+            logger.info("fi/%s: %d rows", doc_type, rows)
+            total += rows
+        return total
+
+    # ------------------------------------------------------------------
+    # ETF registry — curated ticker->CNPJ seed enriched from cad_fi
+    # ------------------------------------------------------------------
+
+    async def ingest_etf_registry(self) -> int:
+        """Load the curated ETF seed, enrich from cad_fi, upsert cvm_etf_registry."""
+        from src.pipeline.ingest_etf import load_etf_seed, ingest_etf_registry
+
+        run_id = str(uuid4())
+        self._log_start(run_id, "etf", "registry", None, None)
+        rows_inserted = 0
+        try:
+            seed = load_etf_seed()
+            cad_rows = await self._fetch_all_pages("fi", "cad", None, None)
+            rows_inserted = ingest_etf_registry(self._supabase, seed, cad_rows)
+        except Exception as exc:
+            logger.warning("ingest_etf_registry failed: %s", exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("etf/registry: %d rows", rows_inserted)
+        return rows_inserted
+
     # ------------------------------------------------------------------
     # SECURIT — per-series data (classe CSV) and cash flows (fluxo_caixa CSV)
     # ------------------------------------------------------------------
@@ -883,6 +940,14 @@ class CVMIngestor:
         for entity in ("fi", "fii"):
             if _want(entity):
                 totals["cvm_fund_registry"] += await self.ingest_fund_registry(entity)
+
+        # -- CVM-175 unified registry (active universe, all fund families) --
+        if _want("fi"):
+            totals["cvm_fund_registry"] += await self.ingest_fund_registry_cvm175()
+
+        # -- ETF registry (curated seed; derived from FI data) --
+        if _want("fi"):
+            totals["cvm_etf_registry"] += await self.ingest_etf_registry()
 
         # -- FI ----------------------------------------------------------
         if _want("fi"):
@@ -1120,6 +1185,14 @@ class CVMIngestor:
             totals["cvm_fund_registry"] += await self.ingest_fund_registry("fi")
         if "fii" in daily_entities:
             totals["cvm_fund_registry"] += await self.ingest_fund_registry("fii")
+
+        # CVM-175 unified registry refresh (active universe, all fund families)
+        if "fi" in daily_entities:
+            totals["cvm_fund_registry"] += await self.ingest_fund_registry_cvm175()
+
+        # ETF registry refresh (curated seed; derived from FI data)
+        if "fi" in daily_entities:
+            totals["cvm_etf_registry"] += await self.ingest_etf_registry()
 
         # FI — current + previous month
         if "fi" in daily_entities:

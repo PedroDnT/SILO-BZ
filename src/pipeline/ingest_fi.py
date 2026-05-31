@@ -13,7 +13,7 @@ import logging
 from datetime import date as _date
 from typing import Any, Dict, List, Optional
 
-from src.parsers.mapping import apply_map
+from src.parsers.mapping import apply_map, derive_is_active
 from src.parsers.field_maps import fi_diario as _diario
 from src.parsers.field_maps import fi_cda as _cda
 from src.parsers.field_maps import fi_perfil as _perfil
@@ -127,6 +127,7 @@ def ingest_fund_registry_fi(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     for row in raw_rows:
         typed, residual = apply_map(row, _reg.FIELD_MAP)
         typed["entity_type"] = "fi"
+        typed["is_active"] = derive_is_active(typed.get("status"))
         typed["raw"] = residual
 
         if not typed.get("cnpj"):
