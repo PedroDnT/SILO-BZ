@@ -151,8 +151,11 @@ _ALL_TABLES: List[str] = [
     "cia_company", "cia_event", "cia_filing", "cia_account",
     "cvm_fund_registry", "cvm_etf_registry",
 ]
-_ALL_ENTITIES: Set[str] = {"fi", "fidc", "fip", "fiagro", "fii", "securit", "cia_aberta"}
-_CORE_DAILY_ENTITIES: Set[str] = {"fi", "fidc", "fiagro"}
+_ALL_ENTITIES: Set[str] = {"fi", "fidc", "fip", "fiagro", "fii", "securit", "cia_aberta", "etf"}
+# ETF is a distinct entity (curated registry, not a CVM dataset). It self-fetches
+# the cad_fi it enriches from, so it is independent of the FI ingest and kept in
+# core: the registry refresh is cheap and should run on every daily scope.
+_CORE_DAILY_ENTITIES: Set[str] = {"fi", "fidc", "fiagro", "etf"}
 _FIAGRO_FIRST_PERIOD = date(2025, 5, 1)
 
 # CIA_ABERTA — IPE material-facts feed first availability (CVM publishes
@@ -215,6 +218,23 @@ def _resolve_daily_entities() -> Set[str]:
         )
     resolved = requested & _ALL_ENTITIES
     return resolved or set(_CORE_DAILY_ENTITIES)
+
+
+# Entities whose ingest invalidates the materialized ETF metrics. etf_daily is a
+# matview over cvm_fi_diario joined to cvm_etf_registry, so an FI-only run makes
+# it stale just as an ETF-registry run does.
+_ETF_REFRESH_ENTITIES: Set[str] = {"etf", "fi"}
+
+
+def _etf_refresh_disabled() -> bool:
+    """True when the ETF matview refresh is deferred to an external step.
+
+    The CI historical-backfill matrix sets CVM_SKIP_ETF_REFRESH so the parallel
+    FI/ETF jobs do not each refresh; a single final job refreshes once after all
+    of them complete. Unset everywhere else (daily, repair/one-off backfills), so
+    those single-process runs refresh in-line.
+    """
+    return os.getenv("CVM_SKIP_ETF_REFRESH", "").strip().lower() in {"1", "true", "yes"}
 
 
 def _daily_month_pairs(today: date) -> List[Tuple[int, int]]:
@@ -321,6 +341,23 @@ class CVMIngestor:
                 )
         except Exception as e:
             logger.warning("ingest_log finish failed: %s", e)
+
+    def _refresh_etf_metrics(self) -> None:
+        """Refresh the materialized ETF views after an ETF ingest.
+
+        etf_daily / etf_latest are materialized views (migration 06); refreshing
+        here keeps their precomputed metrics current. The pg client runs in
+        autocommit, so REFRESH ... CONCURRENTLY — which must not run inside a
+        transaction block — is valid and avoids blocking readers. etf_latest is
+        derived from etf_daily, so refresh etf_daily first.
+        """
+        try:
+            with self._supabase.cursor() as cur:
+                cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY etf_daily")
+                cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY etf_latest")
+            logger.info("etf metrics: refreshed etf_daily + etf_latest")
+        except Exception as e:
+            logger.warning("refresh etf materialized views failed: %s", e)
 
     # ------------------------------------------------------------------
     # Generic paginated fetch helper
@@ -928,7 +965,7 @@ class CVMIngestor:
     ) -> Dict[str, int]:
         """Full historical backfill for all entities from start_year to today.
 
-        Pass entity_filter to restrict to one entity: fi | fidc | fip | fiagro | fii | securit
+        Pass entity_filter to restrict to one entity: fi | fidc | fip | fiagro | fii | securit | etf
         """
         today = date.today()
         end_year = end_year or today.year
@@ -948,8 +985,8 @@ class CVMIngestor:
         if _want("fi"):
             totals["cvm_fund_registry"] += await self.ingest_fund_registry_cvm175()
 
-        # -- ETF registry (curated seed; derived from FI data) --
-        if _want("fi"):
+        # -- ETF registry (distinct entity: curated seed, self-fetches cad_fi) --
+        if _want("etf"):
             totals["cvm_etf_registry"] += await self.ingest_etf_registry()
 
         # -- FI ----------------------------------------------------------
@@ -1171,6 +1208,13 @@ class CVMIngestor:
                 "CIA_ABERTA ITR/DFP backfill",
             )
 
+        # Refresh the materialized ETF metrics once the underlying data is in.
+        # etf_daily is a matview over cvm_fi_diario, so an FI-only backfill makes
+        # it stale too — refresh when either entity ran. CI's parallel matrix
+        # defers this to a single final job (CVM_SKIP_ETF_REFRESH).
+        if any(_want(e) for e in _ETF_REFRESH_ENTITIES) and not _etf_refresh_disabled():
+            self._refresh_etf_metrics()
+
         logger.info("Backfill complete: %s", totals)
         return totals
 
@@ -1193,8 +1237,8 @@ class CVMIngestor:
         if "fi" in daily_entities:
             totals["cvm_fund_registry"] += await self.ingest_fund_registry_cvm175()
 
-        # ETF registry refresh (curated seed; derived from FI data)
-        if "fi" in daily_entities:
+        # ETF registry refresh (distinct entity: curated seed, self-fetches cad_fi)
+        if "etf" in daily_entities:
             totals["cvm_etf_registry"] += await self.ingest_etf_registry()
 
         # FI — current + previous month
@@ -1296,6 +1340,11 @@ class CVMIngestor:
             "Daily update",
         )
 
+        # Refresh the materialized ETF metrics once the day's data is in — when
+        # the ETF registry OR its underlying FI daily rows were ingested.
+        if (daily_entities & _ETF_REFRESH_ENTITIES) and not _etf_refresh_disabled():
+            self._refresh_etf_metrics()
+
         logger.info("Daily update complete: %s", totals)
         return totals
 
@@ -1322,7 +1371,7 @@ if __name__ == "__main__":
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     bf = sub.add_parser("backfill", help="Historical backfill")
-    bf.add_argument("--entity", help="fi | fidc | fip | fiagro | fii | securit | cia_aberta (all if omitted)")
+    bf.add_argument("--entity", help="fi | fidc | fip | fiagro | fii | securit | cia_aberta | etf (all if omitted)")
     bf.add_argument("--start", type=int, default=2019, help="Start year (default 2019)")
     bf.add_argument("--end", type=int, help="End year (default current year)")
 

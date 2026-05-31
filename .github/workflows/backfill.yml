@@ -11,9 +11,43 @@ on:
         default: "2026"
 
 jobs:
+  # Apply the (idempotent) schema + migrations before any ingest so a fresh DB
+  # is bootstrapped. Every ingest job gates on this via `needs:` so the CREATE
+  # statements run exactly once instead of racing across the parallel matrix.
+  apply-schema:
+    name: "Apply schema"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Apply schema + migrations
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        run: |
+          set -euo pipefail
+          # psql (not apply_schema.py) parses SQL comments/statements correctly and
+          # ON_ERROR_STOP fails the job on any real error. All DDL is idempotent, so
+          # this is safe to re-run. Schema first, then migrations in lexical order.
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f src/store/schema.sql
+          for f in src/store/migrations/*.sql; do
+            echo "== applying $f =="
+            psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f "$f"
+          done
+          # Assert a base table AND a migration-created table exist (::regclass
+          # errors out, failing the gate, if a step silently didn't take).
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 \
+            -c "SELECT 'cvm_ingest_log'::regclass, 'cvm_etf_registry'::regclass;"
+
   # FI is the largest entity — one job per year so they run in parallel
   backfill-fi:
     name: "FI ${{ matrix.year }}"
+    needs: apply-schema
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
@@ -95,6 +129,9 @@ jobs:
           CVM_UPSERT_CHUNK_SIZE: "5000"
           CVM_INGEST_CONCURRENCY: "6"
           CVM_FI_CONCURRENCY: "3"
+          # Parallel jobs don't each refresh the ETF matviews; the refresh-etf
+          # job below does it once after the whole matrix completes.
+          CVM_SKIP_ETF_REFRESH: "1"
         run: |
           python -m src.pipeline.run_backfill \
             --entity fi \
@@ -105,6 +142,7 @@ jobs:
   # Other entities — each runs full year range in its own job
   backfill-other:
     name: "${{ matrix.entity }} 2019-2026"
+    needs: apply-schema
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
@@ -129,6 +167,7 @@ jobs:
           CVM_UPSERT_CHUNK_SIZE: "5000"
           CVM_INGEST_CONCURRENCY: "6"
           CVM_FI_CONCURRENCY: "3"
+          CVM_SKIP_ETF_REFRESH: "1"
         run: |
           python -m src.pipeline.run_backfill \
             --entity ${{ matrix.entity }} \
@@ -136,9 +175,68 @@ jobs:
             --end-year 2026 \
             --cvm-only
 
+  # ETF registry — distinct entity (curated ticker->CNPJ seed enriched from
+  # cad_fi). Not year-ranged: it's a single current-universe snapshot, so it runs
+  # once in its own job rather than riding along with the FI year-matrix.
+  backfill-etf:
+    name: "ETF registry"
+    needs: apply-schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run ETF registry backfill
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          LOG_LEVEL: INFO
+          CVM_UPSERT_CHUNK_SIZE: "5000"
+          CVM_INGEST_CONCURRENCY: "6"
+          CVM_SKIP_ETF_REFRESH: "1"
+        run: |
+          python -m src.pipeline.run_backfill \
+            --entity etf \
+            --cvm-only
+
+  # Refresh the materialized ETF metrics once, after all ingest jobs complete.
+  # etf_daily / etf_latest are matviews over cvm_etf_registry + cvm_fi_diario, so
+  # they must be rebuilt after both the FI matrix and the ETF registry have
+  # landed. The ingest jobs set CVM_SKIP_ETF_REFRESH so only this job refreshes.
+  # `if: always()` so partial-but-useful data is still surfaced if a slice failed.
+  refresh-etf:
+    name: "Refresh ETF metrics"
+    needs: [backfill-fi, backfill-other, backfill-etf]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Refresh etf_daily + etf_latest
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        run: |
+          set -euo pipefail
+          # Separate -c calls: REFRESH ... CONCURRENTLY may not run inside a
+          # transaction block, and psql wraps a multi-statement -c in one.
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -c "REFRESH MATERIALIZED VIEW CONCURRENTLY etf_daily;"
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -c "REFRESH MATERIALIZED VIEW CONCURRENTLY etf_latest;"
+
   # BACEN macro data
   backfill-bacen:
     name: "BACEN"
+    needs: apply-schema
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:

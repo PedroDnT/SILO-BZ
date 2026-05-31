@@ -212,6 +212,7 @@ class TestCVMIngestorOrchestration:
         ingestor.ingest_fund_registry = AsyncMock(return_value=0)
         ingestor.ingest_fund_registry_cvm175 = AsyncMock(return_value=0)
         ingestor.ingest_etf_registry = AsyncMock(return_value=0)
+        ingestor._refresh_etf_metrics = MagicMock()
         ingestor.ingest_fi_diario = AsyncMock(return_value=1)
         ingestor.ingest_fi_cda = AsyncMock(return_value=1)
         ingestor.ingest_fi_perfil = AsyncMock(return_value=1)
@@ -237,9 +238,143 @@ class TestCVMIngestorOrchestration:
         assert totals["cvm_fii_mensal"] == 0
         assert totals["cvm_securit_mensal"] == 0
         assert ingestor.ingest_fund_registry.await_count == 1
+        # ETF is a distinct entity but kept in core scope: it still refreshes,
+        # and its materialized metrics are refreshed once after ingest.
+        assert ingestor.ingest_etf_registry.await_count == 1
+        assert ingestor._refresh_etf_metrics.call_count == 1
         assert ingestor.ingest_fip_periodic.await_count == 0
         assert ingestor.ingest_fii_mensal.await_count == 0
         assert ingestor.ingest_securit_mensal.await_count == 0
+
+
+class TestResolveDailyEntities:
+    """ETF is a first-class daily-scope entity, gated on its own token."""
+
+    def test_all_scope_includes_etf(self, monkeypatch):
+        from src.pipeline.cvm_pipeline import _resolve_daily_entities
+        monkeypatch.setenv("CVM_DAILY_SCOPE", "all")
+        assert "etf" in _resolve_daily_entities()
+
+    def test_core_scope_includes_etf(self, monkeypatch):
+        from src.pipeline.cvm_pipeline import _resolve_daily_entities
+        monkeypatch.setenv("CVM_DAILY_SCOPE", "core")
+        assert "etf" in _resolve_daily_entities()
+
+    def test_etf_selectable_on_its_own(self, monkeypatch):
+        from src.pipeline.cvm_pipeline import _resolve_daily_entities
+        monkeypatch.setenv("CVM_DAILY_SCOPE", "etf")
+        assert _resolve_daily_entities() == {"etf"}
+
+    def test_explicit_scope_without_etf_excludes_it(self, monkeypatch):
+        from src.pipeline.cvm_pipeline import _resolve_daily_entities
+        monkeypatch.setenv("CVM_DAILY_SCOPE", "fidc,fii")
+        assert "etf" not in _resolve_daily_entities()
+
+
+class TestRefreshEtfMetrics:
+    """ETF metrics are materialized; the pipeline refreshes them after ingest."""
+
+    def test_refreshes_both_matviews_daily_before_latest(self):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+
+        executed: List[str] = []
+
+        class _Cur:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def execute(self, sql):
+                executed.append(sql)
+
+        class _Client:
+            def cursor(self):
+                return _Cur()
+
+        ing = CVMIngestor.__new__(CVMIngestor)
+        ing._supabase = _Client()
+        ing._refresh_etf_metrics()
+
+        # etf_latest is derived from etf_daily, so etf_daily must refresh first;
+        # CONCURRENTLY relies on the unique indexes added in migration 06.
+        assert executed == [
+            "REFRESH MATERIALIZED VIEW CONCURRENTLY etf_daily",
+            "REFRESH MATERIALIZED VIEW CONCURRENTLY etf_latest",
+        ]
+
+    def test_refresh_swallows_errors(self):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+
+        class _Client:
+            def cursor(self):
+                raise RuntimeError("db down")
+
+        ing = CVMIngestor.__new__(CVMIngestor)
+        ing._supabase = _Client()
+        # Must not raise — a failed refresh should not abort the ingest run.
+        ing._refresh_etf_metrics()
+
+    def test_disabled_flag_parsing(self, monkeypatch):
+        from src.pipeline.cvm_pipeline import _etf_refresh_disabled
+
+        monkeypatch.delenv("CVM_SKIP_ETF_REFRESH", raising=False)
+        assert _etf_refresh_disabled() is False
+        for v in ("1", "true", "TRUE", "yes"):
+            monkeypatch.setenv("CVM_SKIP_ETF_REFRESH", v)
+            assert _etf_refresh_disabled() is True
+        for v in ("0", "", "no", "false"):
+            monkeypatch.setenv("CVM_SKIP_ETF_REFRESH", v)
+            assert _etf_refresh_disabled() is False
+
+
+def _mocked_daily_ingestor():
+    """A CVMIngestor with every ingest_* method (and the matview refresh) mocked,
+    for exercising daily_update's scope/refresh gating without a DB."""
+    from src.pipeline.cvm_pipeline import CVMIngestor
+
+    ing = CVMIngestor.__new__(CVMIngestor)
+    for name in (
+        "ingest_fund_registry", "ingest_fund_registry_cvm175", "ingest_etf_registry",
+        "ingest_fi_diario", "ingest_fi_cda", "ingest_fi_perfil",
+        "ingest_fidc_mensal", "ingest_fidc_tranche", "ingest_fidc_tranche_flows",
+        "ingest_fidc_aging", "ingest_fiagro_mensal", "ingest_fip_periodic",
+        "ingest_fii_mensal", "ingest_fii_periodic", "ingest_securit_mensal",
+        "ingest_securit_serie", "ingest_securit_fluxo", "ingest_securit_dfin",
+    ):
+        setattr(ing, name, AsyncMock(return_value=0))
+    ing._refresh_etf_metrics = MagicMock()
+    return ing
+
+
+class TestDailyEtfRefreshGating:
+    """etf_daily is a matview over cvm_fi_diario, so an FI ingest (not just an ETF
+    one) must refresh it — unless the refresh is deferred to an external step."""
+
+    @pytest.mark.asyncio
+    async def test_fi_only_scope_refreshes_metrics(self, monkeypatch):
+        monkeypatch.setenv("CVM_DAILY_SCOPE", "fi")
+        monkeypatch.delenv("CVM_SKIP_ETF_REFRESH", raising=False)
+        ing = _mocked_daily_ingestor()
+        await ing.daily_update()
+        assert ing._refresh_etf_metrics.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_skip_env_defers_refresh(self, monkeypatch):
+        monkeypatch.setenv("CVM_DAILY_SCOPE", "core")
+        monkeypatch.setenv("CVM_SKIP_ETF_REFRESH", "1")
+        ing = _mocked_daily_ingestor()
+        await ing.daily_update()
+        assert ing._refresh_etf_metrics.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_scope_without_fi_or_etf_skips_refresh(self, monkeypatch):
+        monkeypatch.setenv("CVM_DAILY_SCOPE", "fidc,securit")
+        monkeypatch.delenv("CVM_SKIP_ETF_REFRESH", raising=False)
+        ing = _mocked_daily_ingestor()
+        await ing.daily_update()
+        assert ing._refresh_etf_metrics.call_count == 0
 
 
 # ---------------------------------------------------------------------------

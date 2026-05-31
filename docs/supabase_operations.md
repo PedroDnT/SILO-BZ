@@ -38,11 +38,17 @@ python scripts/db_parity.py     # should connect and list 0 user tables on a fre
 
 ### 3. Apply the schema
 ```bash
-python scripts/apply_schema.py
+psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f src/store/schema.sql
+for f in src/store/migrations/*.sql; do psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f "$f"; done
 ```
-Runs `src/store/schema.sql` then every `src/store/migrations/*.sql` in order, all
+Applies `src/store/schema.sql` then every `src/store/migrations/*.sql` in order, all
 idempotent. Expect base tables, the `cvm_fi_diario_YYYY` partitions,
-`cvm_etf_registry`, and the `etf_daily` / `etf_latest` / `instrument_activity` views.
+`cvm_etf_registry`, the `etf_daily` / `etf_latest` materialized views (refreshed by
+the pipeline after each ingest), and the `instrument_activity` view.
+The CI workflows (`apply-schema` gate in `backfill.yml`, and `daily_ingest.yml`)
+run exactly this. Use `psql`, not `scripts/apply_schema.py` — the latter's naive
+`;`-splitter mis-parses semicolons inside SQL comments and silently skips
+migrations.
 
 ### 4. Verify schema parity
 ```bash
