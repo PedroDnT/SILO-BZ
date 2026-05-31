@@ -223,15 +223,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - name: Refresh etf_daily + etf_latest
+      - name: Verify etf_daily + etf_latest views exist
         env:
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
         run: |
           set -euo pipefail
-          # Separate -c calls: REFRESH ... CONCURRENTLY may not run inside a
-          # transaction block, and psql wraps a multi-statement -c in one.
-          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -c "REFRESH MATERIALIZED VIEW CONCURRENTLY etf_daily;"
-          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -c "REFRESH MATERIALIZED VIEW CONCURRENTLY etf_latest;"
+          # etf_daily and etf_latest are plain views (not materialized) — they
+          # auto-reflect the latest data and require no REFRESH. This step just
+          # asserts they exist after backfill completes.
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 \
+            -c "SELECT 'etf_daily'::regclass, 'etf_latest'::regclass;"
 
   # BACEN macro data
   backfill-bacen:
