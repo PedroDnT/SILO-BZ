@@ -70,6 +70,22 @@ jobs:
         run: |
           pip install -r requirements.txt
 
+      - name: Apply schema + migrations
+        run: |
+          python scripts/apply_schema.py
+          # apply_schema.py is tolerant (never exits non-zero), so verify a core
+          # table actually exists — otherwise fail before ingesting.
+          python - <<'EOF'
+          import os, psycopg2
+          url = "".join(os.environ["POSTGRES_URL"].split())
+          conn = psycopg2.connect(url)
+          with conn.cursor() as cur:
+              cur.execute("SELECT to_regclass('public.cvm_ingest_log')")
+              if cur.fetchone()[0] is None:
+                  raise SystemExit("Schema apply failed: cvm_ingest_log not found")
+          print("Schema verified: cvm_ingest_log present")
+          EOF
+
       - name: Install PostgreSQL client
         if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'backfill') }}
         run: |

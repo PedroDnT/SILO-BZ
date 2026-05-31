@@ -11,9 +11,46 @@ on:
         default: "2026"
 
 jobs:
+  # Apply the (idempotent) schema + migrations before any ingest so a fresh DB
+  # is bootstrapped. Every ingest job gates on this via `needs:` so the CREATE
+  # statements run exactly once instead of racing across the parallel matrix.
+  apply-schema:
+    name: "Apply schema"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Apply schema + migrations
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        run: |
+          python scripts/apply_schema.py
+          # apply_schema.py is tolerant (never exits non-zero), so verify a core
+          # table actually exists — otherwise fail the gate before the matrix runs.
+          python - <<'EOF'
+          import os, psycopg2
+          url = "".join(os.environ["POSTGRES_URL"].split())
+          conn = psycopg2.connect(url)
+          with conn.cursor() as cur:
+              cur.execute("SELECT to_regclass('public.cvm_ingest_log')")
+              if cur.fetchone()[0] is None:
+                  raise SystemExit("Schema apply failed: cvm_ingest_log not found")
+          print("Schema verified: cvm_ingest_log present")
+          EOF
+
   # FI is the largest entity — one job per year so they run in parallel
   backfill-fi:
     name: "FI ${{ matrix.year }}"
+    needs: apply-schema
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
@@ -105,6 +142,7 @@ jobs:
   # Other entities — each runs full year range in its own job
   backfill-other:
     name: "${{ matrix.entity }} 2019-2026"
+    needs: apply-schema
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
@@ -139,6 +177,7 @@ jobs:
   # BACEN macro data
   backfill-bacen:
     name: "BACEN"
+    needs: apply-schema
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
