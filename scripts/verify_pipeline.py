@@ -13,6 +13,8 @@ import os
 import sys
 from typing import Any, List, Optional
 
+from psycopg2 import sql
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Load .env if present
@@ -31,46 +33,57 @@ SEP2 = "-" * 68
 # ---------------------------------------------------------------------------
 # Query helpers (psycopg2 + SQL against the Supabase Postgres connection)
 #
-# Table/column names here are hard-coded literals from this script (never user
-# input), so identifiers are interpolated directly; only filter *values* go
-# through psycopg2 query parameters.
+# Identifiers (table/column names) are composed with psycopg2.sql.Identifier so
+# they are safely quoted/escaped; filter *values* go through query parameters.
 # ---------------------------------------------------------------------------
 
-def _scalar(client: Any, sql: str, params: tuple = ()) -> int:
+def _scalar(client: Any, query: Any, params: tuple = ()) -> int:
     with client.cursor() as cur:
-        cur.execute(sql, params)
+        cur.execute(query, params)
         row = cur.fetchone()
     return int(row[0]) if row and row[0] is not None else 0
 
 
 def count_table(client: Any, table: str, extra_filter=None) -> int:
-    sql = f"SELECT count(*) FROM {table}"
+    query = sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(table))
     params: tuple = ()
     if extra_filter:
-        sql += f" WHERE {extra_filter[0]} = %s"
+        query += sql.SQL(" WHERE {} = %s").format(sql.Identifier(extra_filter[0]))
         params = (extra_filter[1],)
-    return _scalar(client, sql, params)
+    return _scalar(client, query, params)
 
 
 def count_nonnull(client: Any, table: str, col: str, extra_filter=None) -> int:
-    sql = f"SELECT count(*) FROM {table} WHERE {col} IS NOT NULL"
+    query = sql.SQL("SELECT count(*) FROM {} WHERE {} IS NOT NULL").format(
+        sql.Identifier(table), sql.Identifier(col)
+    )
     params: tuple = ()
     if extra_filter:
-        sql += f" AND {extra_filter[0]} = %s"
+        query += sql.SQL(" AND {} = %s").format(sql.Identifier(extra_filter[0]))
         params = (extra_filter[1],)
-    return _scalar(client, sql, params)
+    return _scalar(client, query, params)
 
 
 def sample_rows(client: Any, table: str, order_col: str,
                 select: str = "*", limit: int = 5, filters: Optional[list] = None) -> List[dict]:
-    sql = f"SELECT {select} FROM {table}"
+    if select == "*":
+        select_clause = sql.SQL("*")
+    else:
+        select_clause = sql.SQL(", ").join(
+            sql.Identifier(c.strip()) for c in select.split(",")
+        )
+    query = sql.SQL("SELECT {} FROM {}").format(select_clause, sql.Identifier(table))
     params: list = []
     if filters:
-        sql += " WHERE " + " AND ".join(f"{col} = %s" for col, _ in filters)
+        clauses = [sql.SQL("{} = %s").format(sql.Identifier(col)) for col, _ in filters]
+        query += sql.SQL(" WHERE ") + sql.SQL(" AND ").join(clauses)
         params = [val for _, val in filters]
-    sql += f" ORDER BY {order_col} DESC NULLS LAST LIMIT {int(limit)}"
+    query += sql.SQL(" ORDER BY {} DESC NULLS LAST LIMIT %s").format(
+        sql.Identifier(order_col)
+    )
+    params.append(limit)
     with client.cursor() as cur:
-        cur.execute(sql, params)
+        cur.execute(query, params)
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
