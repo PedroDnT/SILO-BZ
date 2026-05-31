@@ -13,12 +13,14 @@ cvm_fi_diario (CNPJ_FUNDO_CLASSE).  This script re-fetches those registries to
 fill the legal name + situacao and to verify each CNPJ still resolves, then
 writes the CSV the ingest path loads.
 
-NOTE on multi-class umbrellas: some Investo ETF umbrellas host two share classes
-under the same CNPJ (e.g. CHIP11 and 5GTK11 both use 42280376000147, and
-BTEK11/NUCL11 share 42280298000180, and FOOD11/GLDX11 share 43210419000180).
-The duplicate CNPJ is intentional — each row maps a distinct B3 ticker/class to
-the same underlying fund entity.  The ingest layer upserts on ticker (PK) so
-each class gets its own registry row.
+NOTE on CNPJ uniqueness: ticker is the registry primary key. A CNPJ can in
+principle repeat across CVM-175 subclasses, so the loader upserts on ticker, not
+CNPJ. Do NOT, however, assume that two tickers sharing a CNPJ is a real umbrella:
+a previous revision mapped 5GTK11/BTEK11/FOOD11 onto their siblings' CNPJs
+(CHIP11=42280376000147, NUCL11=42280298000180, GLDX11=43210419000180). Those
+three products are delisted (absent from CVM and from etfsbrasil.com.br), so they
+were removed — see issue #30. Verifying "the CNPJ resolves in CVM" is not enough;
+confirm the resolved Denominacao_Social actually matches the ticker's product.
 
 To add an ETF: append a row to CURATED with its ticker, the class CNPJ, the
 provider, the underlying index, the segment, and the BlackRock product ID (or ""
@@ -71,7 +73,6 @@ _BLACKROCK_PRODUCTS: dict[str, tuple[str, str]] = {
 # ticker, class CNPJ (14 digits, no formatting), provider, underlying index, segment,
 # blackrock_product_id ("" for non-iShares)
 CURATED = [
-    ("5GTK11", "42280376000147", "Investo", "Bluestar 5G Comm Index", "equities_intl", ""),
     ("5PRE11", "64538158000100", "Itaú (It Now)", "ITBR Pré 5 Anos", "fixed_income_br", ""),
     ("ACWI11", "38542889000101", "XP Asset (Trend)", "Bloomberg All Countries (ACWI)", "equities_intl", ""),
     ("AGRI11", "45081470000165", "BB Asset", "IAgro FFS B3", "commodities", ""),
@@ -109,13 +110,13 @@ CURATED = [
     ("BRAZ11", "57848980000102", "BB Asset", "Ibovespa B3 BR+", "equities_br", ""),
     ("BREW11", "48643130000179", "B-Index (Bradesco)", "Morningstar Brasil Pesos Iguais", "equities_br", ""),
     ("BRXC11", "59506849000184", "BTG Pactual", "TEVA IABR Selector", "equities_br", ""),
-    ("BTEK11", "42280298000180", "Investo", "S&P Biotechnology Selection", "equities_intl", ""),
     ("BULZ11", "63428769000125", "Genial Investimentos", "Ações High Beta", "equities_br", ""),
     ("BVBR11", "63407496000132", "Investo", "Constância Fatores Defensividade", "equities_br", ""),
     ("BXPO11", "45814375000123", "Investo", "MarketVector Brazil Global Exposure", "equities_br", ""),
     ("CAPE11", "60553995000140", "BlackRock (iShares)", "Ibovespa BR+ Cap 5%", "equities_br", "342108"),
     ("CASA11", "59680030000139", "Buena Vista", "Neos Real Estate High Income BR", "real_estate", ""),
     ("CHIP11", "42280376000147", "Investo", "MVIS US Listed Semiconductor 25", "equities_intl", ""),
+    ("CLOB11", "63082782000175", "BTG Pactual", "", "fixed_income_intl", ""),
     ("CMDB11", "43391410000113", "BTG Pactual", "TEVA Ações Commodities Brasil", "equities_br", ""),
     ("COIN11", "57920798000107", "Buena Vista", "Neos Bitcoin High Income Index", "crypto", ""),
     ("CORN11", "46467170000181", "BB Asset", "Índice Futuro Milho B3", "commodities", ""),
@@ -142,7 +143,6 @@ CURATED = [
     ("FIXA11", "26845780000164", "BB Asset", "Índice Futuro Taxas Juros S&P/B3", "fixed_income_br", ""),
     ("FIXX11", "59783336000110", "Buena Vista", "Neos Enhanced Income 1-3M T-Bill", "fixed_income_intl", ""),
     ("FOMO11", "47758831000190", "Hashdex", "Hashdex Crypto Momentum", "crypto", ""),
-    ("FOOD11", "43210419000180", "Investo", "Solactive Gold Spot / Agribusiness", "equities_intl", ""),
     ("GDIV11", "63209544000188", "Buena Vista", "Neos International High Income", "equities_intl", ""),
     ("GENB11", "42134357000102", "BTG Pactual", "S&P/B3 Ingenius", "equities_br", ""),
     ("GICP11", "61736225000103", "BTG Pactual", "TEVA Debêntures DI Quality High Beta", "fixed_income_br", ""),

@@ -1,5 +1,4 @@
 ticker,cnpj,fund_name,provider,underlying_index,segment,situacao,is_active,dt_cancel,gestor,taxa_adm,blackrock_product_id,blackrock_csv_url
-5GTK11,42280376000147,INVESTO ETF BLUESTAR 5G COMMUNICATIONS INDEX FUNDO DE ÍNDICE IE,Investo,Bluestar 5G Comm Index,equities_intl,Em Funcionamento Normal,True,,,,,
 5PRE11,64538158000100,IT NOW TEVA ITBR PRÉ 5 ANOS FUNDO DE ÍNDICE RESPONSABILIDADE LIMITADA,Itaú (It Now),ITBR Pré 5 Anos,fixed_income_br,Em Funcionamento Normal,True,,,,,
 ACWI11,38542889000101,TREND ETF BLOOMBERG ALL COUNTRIES CLASSE DE ÍNDICE - RESPONSABILIDADE LIMITADA,XP Asset (Trend),Bloomberg All Countries (ACWI),equities_intl,Em Funcionamento Normal,True,,,,,
 AGRI11,45081470000165,BB ETF IAGRO-FFS B3 FUNDO DE ÍNDICE RESPONSABILIDADE LIMITADA,BB Asset,IAgro FFS B3,commodities,Em Funcionamento Normal,True,,,,,
@@ -37,13 +36,13 @@ BRAX11,11455378000104,ISHARES IBRX - ÍNDICE  BRASIL (IBrX-100) CLASSE DE ÍNDIC
 BRAZ11,57848980000102,BB ETF ÍNDICE BOVESPA B3 BR+ FUNDO DE ÍNDICE RESPONSABILIDADE LIMITADA,BB Asset,Ibovespa B3 BR+,equities_br,Em Funcionamento Normal,True,,,,,
 BREW11,48643130000179,B-INDEX MORNINGSTAR BRASIL PESOS IGUAIS FUNDO DE INDICE - RESPONSABILIDADE LIMITADA,B-Index (Bradesco),Morningstar Brasil Pesos Iguais,equities_br,Em Funcionamento Normal,True,,,,,
 BRXC11,59506849000184,BTG PACTUAL TEVA IABR SELECTOR FUNDO DE ÍNDICE,BTG Pactual,TEVA IABR Selector,equities_br,Em Funcionamento Normal,True,,,,,
-BTEK11,42280298000180,INVESTO S&P BIOTECHNOLOGY SELECT INDUSTRY ETF CLASSE DE ÍNDICE,Investo,S&P Biotechnology Selection,equities_intl,Em Funcionamento Normal,True,,,,,
 BULZ11,63428769000125,GENIAL TEVA AÇÕES HIGH BETA CLASSE DE ÍNDICE RESP LIMITADA,Genial Investimentos,Ações High Beta,equities_br,Em Funcionamento Normal,True,,,,,
 BVBR11,63407496000132,INVESTO CONSTÂNCIA FATORES DEFENSIVIDADE FUNDO DE ÍNDICE,Investo,Constância Fatores Defensividade,equities_br,Em Funcionamento Normal,True,,,,,
 BXPO11,45814375000123,INVESTO MARKETVECTOR BRAZIL GLOBAL EXPOSURE ETF CLASSE DE ÍNDICE - RESPONSABILIDADE LIMITADA,Investo,MarketVector Brazil Global Exposure,equities_br,Em Funcionamento Normal,True,,,,,
 CAPE11,60553995000140,ISHARES BOVESPA BR+ CAP 5% B3 CLASSE DE ÍNDICE - RESPONSABILIDADE LIMITADA,BlackRock (iShares),Ibovespa BR+ Cap 5%,equities_br,Em Funcionamento Normal,True,,,,342108,https://www.blackrock.com/br/products/342108/ishares-bovespa-br+-cap-5-fundo-de-ndice/1506433276998.ajax?fileType=csv&fileName=CAPE11_holdings&dataType=fund
 CASA11,59680030000139,BUENA VISTA NEOS REAL ESTATE HIGH INCOME BR INDEX FUNDO DE ÍNDICE - RESPONSABILIDADE LIMITADA,Buena Vista,Neos Real Estate High Income BR,real_estate,Em Funcionamento Normal,True,,,,,
 CHIP11,42280376000147,INVESTO ETF US LISTED SEMICONDUCTOR 25 INDEX CLASSE DE ÍNDICE IE,Investo,MVIS US Listed Semiconductor 25,equities_intl,Em Funcionamento Normal,True,,,,,
+CLOB11,63082782000175,BTG PACTUAL DYNAMIC BALANCED CLO FUNDO DE ÍNDICE,BTG Pactual,,fixed_income_intl,Em Funcionamento Normal,True,,,,,
 CMDB11,43391410000113,BTG PACTUAL TEVA AÇÕES COMMODITIES BRASIL FUNDO DE ÍNDICE,BTG Pactual,TEVA Ações Commodities Brasil,equities_br,Em Funcionamento Normal,True,,,,,
 COIN11,57920798000107,BUENA VISTA NEOS BITCOIN HIGH INCOME INDEX FUNDO DE ÍNDICE - RESPONSABILIDADE LIMITADA,Buena Vista,Neos Bitcoin High Income Index,crypto,Em Funcionamento Normal,True,,,,,
 CORN11,46467170000181,BB ETF ÍNDICE FUTURO DE MILHO B3 FUNDO DE ÍNDICE RESPONSABILIDADE LIMITADA,BB Asset,Índice Futuro Milho B3,commodities,Em Funcionamento Normal,True,,,,,
@@ -70,7 +69,6 @@ FIND11,11961094000181,IT NOW IFNC FUNDO DE ÍNDICE - RESPONSABILIDADE LIMITADA,I
 FIXA11,26845780000164,BB ETF RENDA FIXA PRÉ ÍNDICE FUTURO DE TAXAS DE JUROS S&P/B3  FUNDO DE ÍNDICE RESP LIMITADA,BB Asset,Índice Futuro Taxas Juros S&P/B3,fixed_income_br,Em Funcionamento Normal,True,,,,,
 FIXX11,59783336000110,BUENA VISTA NEOS ENCHANCED INCOME 1-3 MONTH T-BILL ETF BR INDEX FUNDO DE ÍNDICE - RESP LIMITADA,Buena Vista,Neos Enhanced Income 1-3M T-Bill,fixed_income_intl,Em Funcionamento Normal,True,,,,,
 FOMO11,47758831000190,Hashdex Crypto Momentum Fundo de Índice,Hashdex,Hashdex Crypto Momentum,crypto,Em Funcionamento Normal,True,,,,,
-FOOD11,43210419000180,INVESTO ETF GLOBAL AGRIBUSINESS FUNDO DE INVESTIMENTO ÍNDICE IE,Investo,Solactive Gold Spot / Agribusiness,equities_intl,Em Funcionamento Normal,True,,,,,
 GDIV11,63209544000188,BUENA VISTA DEX NEOS INTERNATIONAL HIGH INCOME FUNDO DE ÍNDICE DE RESPONSABILIDADE LIMITADA,Buena Vista,Neos International High Income,equities_intl,Em Funcionamento Normal,True,,,,,
 GENB11,42134357000102,BTG PACTUAL S&P/B3 INGENIUS FUNDO DE ÍNDICE,BTG Pactual,S&P/B3 Ingenius,equities_br,Em Funcionamento Normal,True,,,,,
 GICP11,61736225000103,GENIAL TEVA DEBÊNTURES DI QUALITY HIGH BETA  FUNDO DE ÍNDICE,BTG Pactual,TEVA Debêntures DI Quality High Beta,fixed_income_br,Em Funcionamento Normal,True,,,,,
