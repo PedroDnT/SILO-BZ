@@ -112,6 +112,8 @@ def ingest_etf_registry(
             "dt_reg":           enrich.get("dt_reg"),
             "vl_patrim_liq":    enrich.get("vl_patrim_liq"),
             "dt_patrim_liq":    enrich.get("dt_patrim_liq"),
+            "blackrock_product_id": (s.get("blackrock_product_id") or "").strip() or None,
+            "blackrock_csv_url":    (s.get("blackrock_csv_url") or "").strip() or None,
             "raw":              dict(s),
         })
 

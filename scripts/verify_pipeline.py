@@ -1,7 +1,7 @@
 """
-Pipeline verification script — queries live Supabase DB and prints a
-structured report on data presence, field-population rates, and sample
-business metrics for each entity type.
+Pipeline verification script — queries the live Supabase Postgres DB (via
+psycopg2/SQL) and prints a structured report on data presence, field-population
+rates, and sample business metrics for each entity type.
 
 Usage:
     python scripts/verify_pipeline.py
@@ -12,6 +12,8 @@ Requires: POSTGRES_URL env var (or a .env file).
 import os
 import sys
 from typing import Any, List, Optional
+
+from psycopg2 import sql
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -29,33 +31,61 @@ SEP2 = "-" * 68
 
 
 # ---------------------------------------------------------------------------
-# Query helpers
+# Query helpers (psycopg2 + SQL against the Supabase Postgres connection)
+#
+# Identifiers (table/column names) are composed with psycopg2.sql.Identifier so
+# they are safely quoted/escaped; filter *values* go through query parameters.
 # ---------------------------------------------------------------------------
 
-def _q(client: Any, table: str):
-    return client.table(table)
+def _scalar(client: Any, query: Any, params: tuple = ()) -> int:
+    with client.cursor() as cur:
+        cur.execute(query, params)
+        row = cur.fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
 
 
-def count_table(client: Any, table: str) -> int:
-    r = _q(client, table).select("*", count="exact", head=True).execute()
-    return r.count or 0
+def count_table(client: Any, table: str, extra_filter=None) -> int:
+    query = sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(table))
+    params: tuple = ()
+    if extra_filter:
+        query += sql.SQL(" WHERE {} = %s").format(sql.Identifier(extra_filter[0]))
+        params = (extra_filter[1],)
+    return _scalar(client, query, params)
 
 
 def count_nonnull(client: Any, table: str, col: str, extra_filter=None) -> int:
-    q = _q(client, table).select("*", count="exact", head=True).not_.is_(col, "null")
+    query = sql.SQL("SELECT count(*) FROM {} WHERE {} IS NOT NULL").format(
+        sql.Identifier(table), sql.Identifier(col)
+    )
+    params: tuple = ()
     if extra_filter:
-        q = q.eq(*extra_filter)
-    r = q.execute()
-    return r.count or 0
+        query += sql.SQL(" AND {} = %s").format(sql.Identifier(extra_filter[0]))
+        params = (extra_filter[1],)
+    return _scalar(client, query, params)
 
 
 def sample_rows(client: Any, table: str, order_col: str,
                 select: str = "*", limit: int = 5, filters: Optional[list] = None) -> List[dict]:
-    q = _q(client, table).select(select).order(order_col, desc=True).limit(limit)
+    if select == "*":
+        select_clause = sql.SQL("*")
+    else:
+        select_clause = sql.SQL(", ").join(
+            sql.Identifier(c.strip()) for c in select.split(",")
+        )
+    query = sql.SQL("SELECT {} FROM {}").format(select_clause, sql.Identifier(table))
+    params: list = []
     if filters:
-        for col, val in filters:
-            q = q.eq(col, val)
-    return q.execute().data or []
+        clauses = [sql.SQL("{} = %s").format(sql.Identifier(col)) for col, _ in filters]
+        query += sql.SQL(" WHERE ") + sql.SQL(" AND ").join(clauses)
+        params = [val for _, val in filters]
+    query += sql.SQL(" ORDER BY {} DESC NULLS LAST LIMIT %s").format(
+        sql.Identifier(order_col)
+    )
+    params.append(limit)
+    with client.cursor() as cur:
+        cur.execute(query, params)
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
 # ---------------------------------------------------------------------------
@@ -93,12 +123,7 @@ def report_presence(client):
         label = table
         if filt:
             label += f" [{filt[1]}]"
-        total = count_table(client, table) if not filt else (
-            _q(client, table)
-            .select("*", count="exact", head=True)
-            .eq(*filt)
-            .execute().count or 0
-        )
+        total = count_table(client, table, extra_filter=filt)
         if kf and total > 0:
             nonnull = count_nonnull(client, table, kf, extra_filter=filt)
             pct = f"{100 * nonnull // total}%"
@@ -127,18 +152,8 @@ def report_quality(client):
         ("cvm_securit_fluxo",   None,                            "recebimentos_direitos_creditorios", "SECURIT fluxo recebimentos"),
     ]
     for table, filt, col, label in checks:
-        if filt:
-            total = _q(client, table).select("*", count="exact", head=True).eq(*filt).execute().count or 0
-            nonnull = (
-                _q(client, table)
-                .select("*", count="exact", head=True)
-                .eq(*filt)
-                .not_.is_(col, "null")
-                .execute().count or 0
-            )
-        else:
-            total = count_table(client, table)
-            nonnull = count_nonnull(client, table, col)
+        total = count_table(client, table, extra_filter=filt)
+        nonnull = count_nonnull(client, table, col, extra_filter=filt)
         if total == 0:
             print(f"  {label:<50}  no data")
             continue

@@ -34,15 +34,22 @@ class TestEtfSeed:
         # Anchor on the most liquid Brazilian equity ETF.
         assert "BOVA11" in tickers
 
-    def test_seed_cnpjs_are_14_digits_and_unique(self):
+    def test_seed_cnpjs_are_14_digits_and_tickers_unique(self):
         rows = load_etf_seed()
-        cnpjs = [r["cnpj"] for r in rows]
-        for c in cnpjs:
+        for c in (r["cnpj"] for r in rows):
             assert re.fullmatch(r"\d{14}", c), f"bad CNPJ {c!r}"
-        assert len(cnpjs) == len(set(cnpjs)), "duplicate CNPJ in seed"
+        # ticker is the registry primary key and must be unique. CNPJ is the join
+        # key to cvm_fi_diario; we assert its format but not uniqueness, since a
+        # CVM-175 fund could in principle expose multiple subclasses under one
+        # CNPJ (see scripts/build_etf_seed.py and issue #30).
+        tickers = [r["ticker"] for r in rows]
+        assert len(tickers) == len(set(tickers)), "duplicate ticker in seed"
 
     def test_seed_segments_are_known(self):
-        allowed = {"equities_br", "equities_intl", "fixed_income", "crypto", "commodities"}
+        allowed = {
+            "equities_br", "equities_intl", "fixed_income_br", "fixed_income_intl",
+            "crypto", "commodities", "multi_asset", "real_estate",
+        }
         assert {r["segment"] for r in load_etf_seed()} <= allowed
 
     def test_seed_carries_lifecycle_columns(self):
