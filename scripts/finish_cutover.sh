@@ -33,11 +33,29 @@ $PY scripts/supabase_cutover.py || { echo "Connection/verify failed"; exit 1; }
 
 echo
 echo "==> [2/4] Updating GitHub Actions POSTGRES_URL secret"
-if command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
-  printf '%s' "$POSTGRES_URL" | gh secret set POSTGRES_URL && echo "  GH secret POSTGRES_URL updated."
-else
-  echo "  SKIPPED: gh not authenticated. Run manually:"
-  echo "    gh secret set POSTGRES_URL --body \"\$POSTGRES_URL\""
+# CI runs on IPv4-only GitHub runners; the direct db.<ref>.supabase.co host is
+# IPv6-only, so the secret MUST use the IPv4-safe session pooler — never the
+# local direct URL. Prefer SUPABASE_POOLER_URL (env or .env); refuse to set a
+# direct URL as the secret.
+CI_URL="${SUPABASE_POOLER_URL:-$(grep -E '^SUPABASE_POOLER_URL=' .env 2>/dev/null | head -1 | cut -d= -f2-)}"
+if [[ -z "$CI_URL" ]]; then
+  if [[ "$POSTGRES_URL" == *"db."*".supabase.co"* ]]; then
+    echo "  SKIPPED: POSTGRES_URL is the direct (IPv6-only) host — unsafe for CI."
+    echo "  Set the session pooler URL and re-run, e.g.:"
+    echo "    export SUPABASE_POOLER_URL='postgresql://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require'"
+    echo "  (Supabase Dashboard -> Connect -> Session pooler). Secret left unchanged."
+    CI_URL=""
+  else
+    CI_URL="$POSTGRES_URL"   # already a pooler/CI-safe URL
+  fi
+fi
+if [[ -n "$CI_URL" ]]; then
+  if command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
+    printf '%s' "$CI_URL" | gh secret set POSTGRES_URL && echo "  GH secret POSTGRES_URL set to the pooler URL."
+  else
+    echo "  SKIPPED: gh not authenticated. Run manually:"
+    echo "    printf '%s' \"\$SUPABASE_POOLER_URL\" | gh secret set POSTGRES_URL"
+  fi
 fi
 
 echo
