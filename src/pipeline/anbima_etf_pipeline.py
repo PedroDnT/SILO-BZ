@@ -71,20 +71,27 @@ NFUNDOS_COL_PERIOD = 0
 NFUNDOS_COL_ETF    = 6   # "ETF" column
 
 # Row indices in type-level sheets (0-indexed within the sheet)
-# Rows 74..76 for ETF rows across Pág.5, Pág.9, Pág.11
-#   row 74 = aggregate "ETF Renda Variável" header / no type_id
-#   row 75 = type_id 225 "ETF Renda Fixa"
-#   row 76 = type_id 226 "ETF Renda Variável"
-ETF_TYPE_ROWS = [74, 75, 76]   # 0-indexed
+# Rows 73..75 carry ETF data in Pág.5 and Pág.9:
+#   row 73 = ETF aggregate (type_id=None)
+#   row 74 = type_id 225 "ETF Renda Fixa"
+#   row 75 = type_id 226 "ETF Renda Variável"
+# Pág.11 (Rentabilidade) is handled by label scanning — no fixed row indices.
+ETF_TYPE_ROWS = [73, 74, 75]   # 0-indexed — row 73=ETF agg, 74=RF(225), 75=RV(226)
 
-# In type-level sheets: col1=type label, col2..col17=months, col18=current month str
-#                        col19=YTD total, col20=12m total
-TYPE_COL_LABEL   = 1
-TYPE_COL_DATE_START = 2   # first date column
-TYPE_COL_DATE_END   = 17  # last date column (inclusive)
-TYPE_COL_CURRENT    = 18  # 'abr-26' style string (same value as col17 but string)
-TYPE_COL_YTD        = 19
-TYPE_COL_12M        = 20
+# In type-level sheets:
+#   col 0 = type_id (int or None), col 1 = label
+#   cols 2..16 = monthly values; header row 5 has datetime objects for these cols
+#   col 17 = current month value (header is a string 'abr-26', not a datetime)
+#   col 18 = rolling 13-month total (Pág.9 only)
+#   col 19 = YTD (Pág.9 only)
+#   col 20 = 12-month total (Pág.9 only)
+TYPE_COL_LABEL      = 1
+TYPE_HEADER_ROW     = 5   # 0-indexed row with date objects
+TYPE_COL_DATE_START = 2   # first monthly col
+TYPE_COL_DATE_END   = 17  # last monthly col (header is string 'abr-26')
+TYPE_COL_ROLLING    = 18  # rolling total (Pág.9 only; skipped)
+TYPE_COL_YTD        = 19  # YTD total (Pág.9 only)
+TYPE_COL_12M        = 20  # 12-month total (Pág.9 only)
 
 # Map abbreviated month names (Portuguese) to month numbers
 _PT_MONTH = {
@@ -248,53 +255,73 @@ def _parse_type_sheet(
     boletim_ref: str,
 ) -> List[Dict]:
     """
-    Generic parser for type-level sheets (Pág.5, Pág.9, Pág.11).
+    Generic parser for type-level sheets Pág.5 and Pág.9.
 
-    Rows 74..76 (0-indexed) carry ETF aggregate / RF / RV data.
-    Columns 2..17 are monthly dates (datetime objects).
-    Column 18 is the current month as string (e.g. 'abr-26').
-    Column 19 = YTD total, column 20 = 12-month total.
-
-    type_id mapping:
-      row 74 → None   (aggregate, label varies but treat as CATEGORY_LABEL)
-      row 75 → 225    (ETF Renda Fixa)
-      row 76 → 226    (ETF Renda Variável)
+    Structure (April 2026 boletim):
+      Header row index 5 (0-indexed) contains datetime objects for cols 2-16
+      and a string 'abr-26' in col 17.
+      ETF rows are at fixed offsets:
+        row 73 → aggregate ETF  (type_id=None)
+        row 74 → type 225 ETF Renda Fixa
+        row 75 → type 226 ETF Renda Variável
+      For Pág.9: col 18=rolling, col 19=YTD, col 20=12m.
+      For Pág.5: cols 18-20 are None.
     """
     ws = _sheet(wb, sheet_fragment)
-    # Read all rows as list-of-lists (1-indexed from row 1)
     all_rows = [
         [cell.value for cell in row]
         for row in ws.iter_rows()
     ]
 
-    type_id_map = {74: None, 75: TYPE_ETF_RF, 76: TYPE_ETF_RV}
-    type_name_map = {
-        74: CATEGORY_LABEL,
-        75: "ETF Renda Fixa",
-        76: "ETF Renda Variável",
+    # Header row: index TYPE_HEADER_ROW (5)
+    header_row = all_rows[TYPE_HEADER_ROW] if len(all_rows) > TYPE_HEADER_ROW else []
+
+    # Resolve current-month date from the string in header col 17
+    current_month_date: Optional[date] = None
+    if len(header_row) > TYPE_COL_DATE_END:
+        current_month_date = _parse_current_month_str(header_row[TYPE_COL_DATE_END])
+    # Fallback: advance from the last datetime in header
+    if current_month_date is None:
+        for ci in range(TYPE_COL_DATE_END - 1, TYPE_COL_DATE_START - 1, -1):
+            d = _to_date(header_row[ci]) if ci < len(header_row) else None
+            if d:
+                current_month_date = (
+                    date(d.year + 1, 1, 1) if d.month == 12
+                    else date(d.year, d.month + 1, 1)
+                )
+                break
+
+    type_id_map: Dict[int, Optional[int]] = {
+        ETF_TYPE_ROWS[0]: None,
+        ETF_TYPE_ROWS[1]: TYPE_ETF_RF,
+        ETF_TYPE_ROWS[2]: TYPE_ETF_RV,
+    }
+    type_name_map: Dict[int, str] = {
+        ETF_TYPE_ROWS[0]: CATEGORY_LABEL,
+        ETF_TYPE_ROWS[1]: "ETF Renda Fixa",
+        ETF_TYPE_ROWS[2]: "ETF Renda Variável",
     }
 
     records = []
 
     for row_idx in ETF_TYPE_ROWS:
         if row_idx >= len(all_rows):
-            logger.warning("Sheet '%s': expected row %d not present", sheet_fragment, row_idx)
+            logger.warning(
+                "Sheet '%s': expected row %d not present (sheet has %d rows)",
+                sheet_fragment, row_idx, len(all_rows)
+            )
             continue
         row = all_rows[row_idx]
         type_id   = type_id_map[row_idx]
         type_name = type_name_map[row_idx]
 
-        # Collect header row (row index 6) to get date objects for cols 2..17
-        header_row = all_rows[6] if len(all_rows) > 6 else []
-
-        # ── monthly columns ────────────────────────────────────────────────
-        for col_idx in range(TYPE_COL_DATE_START, TYPE_COL_DATE_END + 1):
+        # ── monthly cols 2..16 (header has datetime objects) ──────────────
+        for col_idx in range(TYPE_COL_DATE_START, TYPE_COL_DATE_END):  # 2..16
             if col_idx >= len(row):
                 break
             val = _safe_float(row[col_idx])
             if val is None:
                 continue
-            # Date from header row
             ref = _to_date(header_row[col_idx]) if col_idx < len(header_row) else None
             if ref is None:
                 continue
@@ -309,26 +336,29 @@ def _parse_type_sheet(
                 "boletim_ref":      boletim_ref,
             })
 
-        # ── current month (col 18 — string label) ─────────────────────────
-        # This is the same month as col17 but carried as a string; already
-        # covered by col17 above. Skip to avoid duplicate.
+        # ── current month col 17 (header is a string, not datetime) ───────
+        if TYPE_COL_DATE_END < len(row) and current_month_date:
+            cur_val = _safe_float(row[TYPE_COL_DATE_END])
+            if cur_val is not None:
+                records.append({
+                    "reference_date":   current_month_date,
+                    "anbima_category":  CATEGORY_LABEL,
+                    "anbima_type_id":   type_id,
+                    "anbima_type_name": type_name,
+                    "metric":           monthly_metric,
+                    "value":            cur_val,
+                    "source_sheet":     source_sheet_label,
+                    "boletim_ref":      boletim_ref,
+                })
+
+        anchor = current_month_date
 
         # ── YTD total (col 19) ────────────────────────────────────────────
-        if ytd_metric and TYPE_COL_YTD < len(row):
+        if ytd_metric and TYPE_COL_YTD < len(row) and anchor:
             ytd_val = _safe_float(row[TYPE_COL_YTD])
-            # Determine YTD reference: use the latest monthly date in this row
-            latest_date: Optional[date] = None
-            for ci in range(TYPE_COL_DATE_END, TYPE_COL_DATE_START - 1, -1):
-                if ci < len(row) and _safe_float(row[ci]) is not None:
-                    latest_date = _to_date(header_row[ci]) if ci < len(header_row) else None
-                    if latest_date:
-                        break
-            # Fallback: parse col18 string
-            if latest_date is None and TYPE_COL_CURRENT < len(row):
-                latest_date = _parse_current_month_str(row[TYPE_COL_CURRENT])
-            if ytd_val is not None and latest_date is not None:
+            if ytd_val is not None:
                 records.append({
-                    "reference_date":   latest_date,
+                    "reference_date":   anchor,
                     "anbima_category":  CATEGORY_LABEL,
                     "anbima_type_id":   type_id,
                     "anbima_type_name": type_name,
@@ -339,11 +369,11 @@ def _parse_type_sheet(
                 })
 
         # ── 12-month total (col 20) ───────────────────────────────────────
-        if twelvem_metric and TYPE_COL_12M < len(row):
+        if twelvem_metric and TYPE_COL_12M < len(row) and anchor:
             twm_val = _safe_float(row[TYPE_COL_12M])
-            if twm_val is not None and latest_date is not None:
+            if twm_val is not None:
                 records.append({
-                    "reference_date":   latest_date,
+                    "reference_date":   anchor,
                     "anbima_category":  CATEGORY_LABEL,
                     "anbima_type_id":   type_id,
                     "anbima_type_name": type_name,
@@ -354,7 +384,6 @@ def _parse_type_sheet(
                 })
 
     return records
-
 
 def parse_pl_tipo(wb: openpyxl.Workbook, boletim_ref: str) -> List[Dict]:
     """Pág. 5 - PL por Tipo → pl_brl_mm for ETF types (last ~16 months)."""
@@ -379,14 +408,148 @@ def parse_capliq_tipo(wb: openpyxl.Workbook, boletim_ref: str) -> List[Dict]:
 
 
 def parse_rentabilidade(wb: openpyxl.Workbook, boletim_ref: str) -> List[Dict]:
-    """Pág.11 - Rentabilidade por Tipo → rentabilidade_pct / _ytd_pct / _12m_pct."""
-    return _parse_type_sheet(
-        wb, "Pág.11", "Pág.11 - Rentabilidade por Tipo",
-        monthly_metric="rentabilidade_pct",
-        ytd_metric="rentabilidade_ytd_pct",
-        twelvem_metric="rentabilidade_12m_pct",
-        boletim_ref=boletim_ref,
-    )
+    """
+    Pág.11 - Rentabilidade por Tipo → rentabilidade_pct / _ytd_pct / _12m_pct.
+
+    NOTE: ANBIMA does not always include ETF rows in this sheet.
+    We scan every row by label to be robust across boletim editions.
+
+    Matched labels (case-insensitive, strip-prefix):
+      starts with 'etf renda fix' → type 225 (ETF Renda Fixa)
+      starts with 'etf renda var' → type 226 (ETF Renda Variável)
+      exactly 'etf'               → aggregate (type_id=None)
+    """
+    ws = _sheet(wb, "Pág.11")
+    all_rows = [
+        [cell.value for cell in row]
+        for row in ws.iter_rows()
+    ]
+
+    # Find header row: first row where col2 is a datetime object
+    header_row: List[Any] = []
+    for r in all_rows:
+        if len(r) > 2 and isinstance(r[2], datetime):
+            header_row = r
+            break
+    if not header_row:
+        logger.info(
+            "Pág.11: no header row with date objects found — "
+            "ANBIMA may not publish ETF returns in this boletim edition."
+        )
+        return []
+
+    # Resolve current-month date
+    current_month_date: Optional[date] = None
+    if len(header_row) > TYPE_COL_DATE_END:
+        current_month_date = _parse_current_month_str(header_row[TYPE_COL_DATE_END])
+    if current_month_date is None:
+        for ci in range(TYPE_COL_DATE_END - 1, TYPE_COL_DATE_START - 1, -1):
+            d = _to_date(header_row[ci]) if ci < len(header_row) else None
+            if d:
+                current_month_date = (
+                    date(d.year + 1, 1, 1) if d.month == 12
+                    else date(d.year, d.month + 1, 1)
+                )
+                break
+
+    def _match_etf_label(label: Any) -> Optional[tuple]:
+        """Return (type_id, type_name) for ETF rows, None otherwise."""
+        if not isinstance(label, str):
+            return None
+        lab = label.strip().lower()
+        if lab.startswith("etf renda fix"):
+            return (TYPE_ETF_RF, "ETF Renda Fixa")
+        if lab.startswith("etf renda var"):
+            return (TYPE_ETF_RV, "ETF Renda Variável")
+        if lab == "etf":
+            return (None, CATEGORY_LABEL)
+        return None
+
+    records = []
+    source_label = "Pág.11 - Rentabilidade por Tipo"
+
+    for row in all_rows:
+        if not row or len(row) < 3:
+            continue
+        info = _match_etf_label(row[1] if len(row) > 1 else None)
+        if info is None:
+            continue
+        type_id, type_name = info
+
+        # Monthly cols 2..16
+        for col_idx in range(TYPE_COL_DATE_START, TYPE_COL_DATE_END):
+            if col_idx >= len(row):
+                break
+            val = _safe_float(row[col_idx])
+            if val is None:
+                continue
+            ref = _to_date(header_row[col_idx]) if col_idx < len(header_row) else None
+            if ref is None:
+                continue
+            records.append({
+                "reference_date":   ref,
+                "anbima_category":  CATEGORY_LABEL,
+                "anbima_type_id":   type_id,
+                "anbima_type_name": type_name,
+                "metric":           "rentabilidade_pct",
+                "value":            val,
+                "source_sheet":     source_label,
+                "boletim_ref":      boletim_ref,
+            })
+
+        # Current month col 17
+        anchor = current_month_date
+        if TYPE_COL_DATE_END < len(row) and anchor:
+            cur_val = _safe_float(row[TYPE_COL_DATE_END])
+            if cur_val is not None:
+                records.append({
+                    "reference_date":   anchor,
+                    "anbima_category":  CATEGORY_LABEL,
+                    "anbima_type_id":   type_id,
+                    "anbima_type_name": type_name,
+                    "metric":           "rentabilidade_pct",
+                    "value":            cur_val,
+                    "source_sheet":     source_label,
+                    "boletim_ref":      boletim_ref,
+                })
+
+        if anchor:
+            # YTD (col 19)
+            if TYPE_COL_YTD < len(row):
+                ytd_val = _safe_float(row[TYPE_COL_YTD])
+                if ytd_val is not None:
+                    records.append({
+                        "reference_date":   anchor,
+                        "anbima_category":  CATEGORY_LABEL,
+                        "anbima_type_id":   type_id,
+                        "anbima_type_name": type_name,
+                        "metric":           "rentabilidade_ytd_pct",
+                        "value":            ytd_val,
+                        "source_sheet":     source_label,
+                        "boletim_ref":      boletim_ref,
+                    })
+            # 12m (col 20)
+            if TYPE_COL_12M < len(row):
+                twm_val = _safe_float(row[TYPE_COL_12M])
+                if twm_val is not None:
+                    records.append({
+                        "reference_date":   anchor,
+                        "anbima_category":  CATEGORY_LABEL,
+                        "anbima_type_id":   type_id,
+                        "anbima_type_name": type_name,
+                        "metric":           "rentabilidade_12m_pct",
+                        "value":            twm_val,
+                        "source_sheet":     source_label,
+                        "boletim_ref":      boletim_ref,
+                    })
+
+    if not records:
+        logger.info(
+            "Pág.11: no ETF rentabilidade rows found — "
+            "ANBIMA does not include ETF returns in this boletim edition (expected for some months)."
+        )
+    return records
+
 
 
 # ── ANBIMA API ────────────────────────────────────────────────────────────────
