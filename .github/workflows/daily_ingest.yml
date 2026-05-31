@@ -75,20 +75,31 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - name: Apply schema + migrations
+      # Bootstrap the schema only on the manual backfill path. psql parses SQL
+      # comments/statements correctly and ON_ERROR_STOP fails on any real error.
+      - name: Apply schema + migrations (backfill mode)
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs && github.event.inputs.mode == 'backfill' }}
         run: |
           set -euo pipefail
-          # psql (not apply_schema.py) parses SQL comments/statements correctly and
-          # ON_ERROR_STOP fails the job on any real error. All DDL is idempotent, so
-          # this is safe to re-run on every daily/backfill run.
           psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f src/store/schema.sql
           for f in src/store/migrations/*.sql; do
             echo "== applying $f =="
             psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f "$f"
           done
-          # Assert a base table AND a migration-created table exist.
           psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 \
             -c "SELECT 'cvm_ingest_log'::regclass, 'cvm_etf_registry'::regclass;"
+
+      # The scheduled/daily path must NOT replay migrations: migration 05 rebuilds
+      # a UNIQUE constraint on the partitioned cia_account (full scan + exclusive
+      # lock) and would do so every day. Just verify the schema is present;
+      # bootstrap happens via a one-off "CVM Historical Backfill" dispatch.
+      - name: Verify schema present
+        if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily') }}
+        run: |
+          set -euo pipefail
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 \
+            -c "SELECT 'cvm_ingest_log'::regclass, 'cvm_etf_registry'::regclass, 'cia_account'::regclass;" \
+            || { echo "Schema missing — run 'CVM Historical Backfill' once to bootstrap."; exit 1; }
 
       - name: Run daily update
         if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily') }}
