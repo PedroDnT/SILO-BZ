@@ -60,28 +60,22 @@ def main() -> None:
         print(f"  {ver.split(',')[0]}")
         cur.execute(
             """
-            SELECT c.relname
+            SELECT c.relname, COALESCE(c.reltuples::bigint, 0)
             FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
             WHERE n.nspname='public' AND c.relkind IN ('r','p')
             ORDER BY c.relname
             """
         )
-        table_names = [row[0] for row in cur.fetchall()]
-    print(f"\n{len(table_names)} tables in public:")
+        rows = cur.fetchall()
+    print(f"\n{len(rows)} tables in public:")
     total = 0
-    if table_names:
-        union_query = " UNION ALL ".join(
-            f"SELECT '{name.replace(chr(39), chr(39)*2)}', COUNT(*) FROM \"{name.replace(chr(34), chr(34)*2)}\""
-            for name in table_names
-        )
-        with conn.cursor() as cur:
-            cur.execute(union_query)
-            counts = dict(cur.fetchall())
-        for name in table_names:
-            n = counts.get(name, 0)
+    with conn.cursor() as cur:
+        for name, _est in rows:
+            cur.execute(f'SELECT COUNT(*) FROM "{name}"')
+            n = cur.fetchone()[0]
+            total += n
             if n:
                 print(f"  {name:<40} {n:>12,}")
-            total += n
     print(f"\nTotal rows across all tables: {total:,}")
     if total == 0:
         print("Schema is present but EMPTY — ready for fresh ingestion.")
