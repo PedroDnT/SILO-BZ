@@ -51,7 +51,12 @@ if [[ -z "$CI_URL" ]]; then
 fi
 if [[ -n "$CI_URL" ]]; then
   if command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
-    printf '%s' "$CI_URL" | gh secret set POSTGRES_URL && echo "  GH secret POSTGRES_URL set to the pooler URL."
+    if printf '%s' "$CI_URL" | gh secret set POSTGRES_URL; then
+      echo "  GH secret POSTGRES_URL set to the pooler URL."
+    else
+      echo "ERROR: 'gh secret set POSTGRES_URL' failed — CI still points at the old DB. Aborting." >&2
+      exit 1
+    fi
   else
     echo "  SKIPPED: gh not authenticated. Run manually:"
     echo "    printf '%s' \"\$SUPABASE_POOLER_URL\" | gh secret set POSTGRES_URL"
