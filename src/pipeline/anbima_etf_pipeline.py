@@ -532,22 +532,21 @@ class AnbimaEtfIngestor:
             logger.warning("[anbima_etf] No records parsed — skipping upsert")
             return {"anbima_etf": 0}
 
-        async with self._pg.acquire() as conn:
-            self._log_start(conn, run_id, boletim_ref)
-            try:
-                upsert_rows(
-                    conn,
-                    TABLE,
-                    records,
-                    conflict_columns="reference_date,anbima_type_name,metric",
-                )
-                rows_upserted = len(records)
-                self._log_finish(conn, run_id, "success", rows_upserted)
-                logger.info("[anbima_etf] Upserted %d rows", rows_upserted)
-            except Exception as exc:
-                self._log_finish(conn, run_id, "error", 0, str(exc))
-                logger.error("[anbima_etf] Upsert failed: %s", exc)
-                raise
+        self._log_start(self._pg, run_id, boletim_ref)
+        try:
+            upsert_rows(
+                self._pg,
+                TABLE,
+                records,
+                conflict_columns="reference_date,anbima_type_name,metric",
+            )
+            rows_upserted = len(records)
+            self._log_finish(self._pg, run_id, "success", rows_upserted)
+            logger.info("[anbima_etf] Upserted %d rows", rows_upserted)
+        except Exception as exc:
+            self._log_finish(self._pg, run_id, "error", 0, str(exc))
+            logger.error("[anbima_etf] Upsert failed: %s", exc)
+            raise
 
         return {"anbima_etf": rows_upserted}
 
