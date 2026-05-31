@@ -75,10 +75,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      # Bootstrap the schema only on the manual backfill path. psql parses SQL
-      # comments/statements correctly and ON_ERROR_STOP fails on any real error.
-      - name: Apply schema + migrations (backfill mode)
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs && github.event.inputs.mode == 'backfill' }}
+      # Bootstrap the schema on every path (scheduled, daily dispatch, backfill),
+      # so a fresh/empty DB heals itself on the next run with no manual step.
+      # Safe to replay: psql parses SQL comments/statements correctly (unlike the
+      # old apply_schema.py ;-splitter), all DDL is IF NOT EXISTS / guarded, and
+      # migration 05 only rebuilds uq_cia_account when it lacks coluna_df — a true
+      # no-op once applied. ON_ERROR_STOP fails the job on any real error, and the
+      # closing regclass assertion fails the run if anything silently didn't take.
+      - name: Apply schema + migrations
         run: |
           set -euo pipefail
           psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f src/store/schema.sql
@@ -87,19 +91,7 @@ jobs:
             psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f "$f"
           done
           psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 \
-            -c "SELECT 'cvm_ingest_log'::regclass, 'cvm_etf_registry'::regclass;"
-
-      # The scheduled/daily path must NOT replay migrations: migration 05 rebuilds
-      # a UNIQUE constraint on the partitioned cia_account (full scan + exclusive
-      # lock) and would do so every day. Just verify the schema is present;
-      # bootstrap happens via a one-off "CVM Historical Backfill" dispatch.
-      - name: Verify schema present
-        if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily') }}
-        run: |
-          set -euo pipefail
-          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 \
-            -c "SELECT 'cvm_ingest_log'::regclass, 'cvm_etf_registry'::regclass, 'cia_account'::regclass;" \
-            || { echo "Schema missing — run 'CVM Historical Backfill' once to bootstrap."; exit 1; }
+            -c "SELECT 'cvm_ingest_log'::regclass, 'cvm_etf_registry'::regclass, 'cia_account'::regclass;"
 
       - name: Run daily update
         if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily') }}
