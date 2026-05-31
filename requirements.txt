@@ -2,16 +2,18 @@
 # Single root requirements.txt. The historical per-service requirements
 # files were removed when the FastAPI services were deleted.
 
-# HTTP / network (CVM)
+# HTTP / network (CVM + ANBIMA)
 aiohttp==3.13.4
 aiofiles==23.2.1
 dnspython==2.6.1
+httpx>=0.27.0
 
 # Data parsing
 pandas==2.2.3
 numpy==1.26.3
 python-dateutil==2.8.2
 lxml==6.1.0
+openpyxl>=3.1.0
 
 # BACEN client
 python-bcb==0.3.0
