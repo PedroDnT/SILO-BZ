@@ -69,14 +69,11 @@ def main() -> None:
         rows = cur.fetchall()
     print(f"\n{len(rows)} tables in public:")
     total = 0
-    with conn.cursor() as cur:
-        for name, _est in rows:
-            cur.execute(f'SELECT COUNT(*) FROM "{name}"')
-            n = cur.fetchone()[0]
-            total += n
-            if n:
-                print(f"  {name:<40} {n:>12,}")
-    print(f"\nTotal rows across all tables: {total:,}")
+    for name, est in rows:
+        if est > 0:
+            print(f"  {name:<40} {est:>12,}  (est.)")
+        total += max(est, 0)
+    print(f"\nTotal rows across all tables: ~{total:,}  (pg_class estimates)")
     if total == 0:
         print("Schema is present but EMPTY — ready for fresh ingestion.")
     conn.close()
