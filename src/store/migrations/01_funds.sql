@@ -3,16 +3,12 @@
 -- Idempotent: all statements use IF NOT EXISTS / IF EXISTS guards.
 -- Apply after schema.sql (which creates the tables), to add any columns
 -- introduced after initial creation.
+-- NOTE: migrations 06+ create views (etf_daily, etf_latest, instrument_activity)
+-- that depend on cvm_fi_diario columns altered below.  Those views must not
+-- exist when this file runs.  On a fresh DB they don't yet exist.  On an
+-- existing DB, drop them manually before re-running migrations, or run a
+-- DO block — handled by the workflow pre-flight step.
 -- =============================================================================
-
--- ---------------------------------------------------------------------------
--- Drop views that depend on cvm_fi_diario columns we are about to retype.
--- Migration 06 re-creates these after the ALTERs.  These DROPs are safe
--- no-ops on a fresh DB where the views do not yet exist.
--- ---------------------------------------------------------------------------
-DROP VIEW IF EXISTS etf_daily CASCADE;
-DROP VIEW IF EXISTS etf_latest CASCADE;
-DROP VIEW IF EXISTS instrument_activity CASCADE;
 
 -- ---------------------------------------------------------------------------
 -- FI daily snapshot — widen numeric columns to convention (§3 of 02_ARCH)
@@ -140,12 +136,12 @@ ALTER TABLE cvm_securit_serie
     ADD COLUMN IF NOT EXISTS raw JSONB;
 
 ALTER TABLE cvm_securit_serie
-    ALTER COLUMN valor_total_integralizado TYPE NUMERIC(28,2),
-    ALTER COLUMN quantidade_certificados   TYPE NUMERIC(28,0),
-    ALTER COLUMN valor_certificados        TYPE NUMERIC(28,2),
-    ALTER COLUMN rendimentos               TYPE NUMERIC(28,2),
-    ALTER COLUMN amortizacoes             TYPE NUMERIC(28,2),
-    ALTER COLUMN rentabilidade             TYPE NUMERIC(20,8),
+    ALTER COLUMN valor_total_integralizado  TYPE NUMERIC(28,2),
+    ALTER COLUMN quantidade_certificados    TYPE NUMERIC(28,0),
+    ALTER COLUMN valor_certificados         TYPE NUMERIC(28,2),
+    ALTER COLUMN rendimentos                TYPE NUMERIC(28,2),
+    ALTER COLUMN amortizacoes               TYPE NUMERIC(28,2),
+    ALTER COLUMN rentabilidade              TYPE NUMERIC(20,8),
     ALTER COLUMN indice_subordinacao_minimo TYPE NUMERIC(20,6);
 
 -- Add lifted column (present in recent CVM data)
