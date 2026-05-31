@@ -3,6 +3,8 @@ Daily incremental update — run by GitHub Actions cron at 06:00 UTC.
 
 Fetches:
   - CVM: current month + previous month for all entities
+  - BACEN: last ~30 days
+  - ANBIMA ETF: latest monthly boletim (idempotent — upserts full history)
 
 Required env vars: POSTGRES_URL
 """
@@ -17,6 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.pipeline.cvm_pipeline import CVMIngestor
 from src.pipeline.bacen_pipeline import BacenIngestor
+from src.pipeline.anbima_etf_pipeline import AnbimaEtfIngestor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,6 +44,14 @@ async def main() -> None:
         totals.update(bacen_totals)
     except Exception as exc:
         logger.warning("BACEN daily refresh failed: %s", exc)
+
+    # ANBIMA ETF: fetch latest monthly boletim; idempotent upsert.
+    try:
+        anbima_ingestor = AnbimaEtfIngestor()
+        anbima_totals = await anbima_ingestor.daily_update()
+        totals.update(anbima_totals)
+    except Exception as exc:
+        logger.warning("ANBIMA ETF daily refresh failed: %s", exc)
 
     elapsed = time.monotonic() - start_ts
     total_rows = sum(totals.values())
