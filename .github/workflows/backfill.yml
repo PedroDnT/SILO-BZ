@@ -129,6 +129,9 @@ jobs:
           CVM_UPSERT_CHUNK_SIZE: "5000"
           CVM_INGEST_CONCURRENCY: "6"
           CVM_FI_CONCURRENCY: "3"
+          # Parallel jobs don't each refresh the ETF matviews; the refresh-etf
+          # job below does it once after the whole matrix completes.
+          CVM_SKIP_ETF_REFRESH: "1"
         run: |
           python -m src.pipeline.run_backfill \
             --entity fi \
@@ -164,6 +167,7 @@ jobs:
           CVM_UPSERT_CHUNK_SIZE: "5000"
           CVM_INGEST_CONCURRENCY: "6"
           CVM_FI_CONCURRENCY: "3"
+          CVM_SKIP_ETF_REFRESH: "1"
         run: |
           python -m src.pipeline.run_backfill \
             --entity ${{ matrix.entity }} \
@@ -196,10 +200,38 @@ jobs:
           LOG_LEVEL: INFO
           CVM_UPSERT_CHUNK_SIZE: "5000"
           CVM_INGEST_CONCURRENCY: "6"
+          CVM_SKIP_ETF_REFRESH: "1"
         run: |
           python -m src.pipeline.run_backfill \
             --entity etf \
             --cvm-only
+
+  # Refresh the materialized ETF metrics once, after all ingest jobs complete.
+  # etf_daily / etf_latest are matviews over cvm_etf_registry + cvm_fi_diario, so
+  # they must be rebuilt after both the FI matrix and the ETF registry have
+  # landed. The ingest jobs set CVM_SKIP_ETF_REFRESH so only this job refreshes.
+  # `if: always()` so partial-but-useful data is still surfaced if a slice failed.
+  refresh-etf:
+    name: "Refresh ETF metrics"
+    needs: [backfill-fi, backfill-other, backfill-etf]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Refresh etf_daily + etf_latest
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        run: |
+          set -euo pipefail
+          # Separate -c calls: REFRESH ... CONCURRENTLY may not run inside a
+          # transaction block, and psql wraps a multi-statement -c in one.
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -c "REFRESH MATERIALIZED VIEW CONCURRENTLY etf_daily;"
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -c "REFRESH MATERIALIZED VIEW CONCURRENTLY etf_latest;"
 
   # BACEN macro data
   backfill-bacen:

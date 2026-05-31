@@ -220,6 +220,23 @@ def _resolve_daily_entities() -> Set[str]:
     return resolved or set(_CORE_DAILY_ENTITIES)
 
 
+# Entities whose ingest invalidates the materialized ETF metrics. etf_daily is a
+# matview over cvm_fi_diario joined to cvm_etf_registry, so an FI-only run makes
+# it stale just as an ETF-registry run does.
+_ETF_REFRESH_ENTITIES: Set[str] = {"etf", "fi"}
+
+
+def _etf_refresh_disabled() -> bool:
+    """True when the ETF matview refresh is deferred to an external step.
+
+    The CI historical-backfill matrix sets CVM_SKIP_ETF_REFRESH so the parallel
+    FI/ETF jobs do not each refresh; a single final job refreshes once after all
+    of them complete. Unset everywhere else (daily, repair/one-off backfills), so
+    those single-process runs refresh in-line.
+    """
+    return os.getenv("CVM_SKIP_ETF_REFRESH", "").strip().lower() in {"1", "true", "yes"}
+
+
 def _daily_month_pairs(today: date) -> List[Tuple[int, int]]:
     current = (today.year, today.month)
     if today.month == 1:
@@ -1192,7 +1209,10 @@ class CVMIngestor:
             )
 
         # Refresh the materialized ETF metrics once the underlying data is in.
-        if _want("etf"):
+        # etf_daily is a matview over cvm_fi_diario, so an FI-only backfill makes
+        # it stale too — refresh when either entity ran. CI's parallel matrix
+        # defers this to a single final job (CVM_SKIP_ETF_REFRESH).
+        if any(_want(e) for e in _ETF_REFRESH_ENTITIES) and not _etf_refresh_disabled():
             self._refresh_etf_metrics()
 
         logger.info("Backfill complete: %s", totals)
@@ -1320,8 +1340,9 @@ class CVMIngestor:
             "Daily update",
         )
 
-        # Refresh the materialized ETF metrics once the day's data is in.
-        if "etf" in daily_entities:
+        # Refresh the materialized ETF metrics once the day's data is in — when
+        # the ETF registry OR its underlying FI daily rows were ingested.
+        if (daily_entities & _ETF_REFRESH_ENTITIES) and not _etf_refresh_disabled():
             self._refresh_etf_metrics()
 
         logger.info("Daily update complete: %s", totals)
