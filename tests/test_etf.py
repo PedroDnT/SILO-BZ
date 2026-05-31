@@ -38,9 +38,10 @@ class TestEtfSeed:
         rows = load_etf_seed()
         for c in (r["cnpj"] for r in rows):
             assert re.fullmatch(r"\d{14}", c), f"bad CNPJ {c!r}"
-        # ticker is the registry primary key and must be unique. CNPJ is NOT
-        # unique: Investo umbrella funds list several distinct ETF tickers (e.g.
-        # FOOD11 / GLDX11) under one fund CNPJ, so the join key can repeat.
+        # ticker is the registry primary key and must be unique. CNPJ is the join
+        # key to cvm_fi_diario; we assert its format but not uniqueness, since a
+        # CVM-175 fund could in principle expose multiple subclasses under one
+        # CNPJ (see scripts/build_etf_seed.py and issue #30).
         tickers = [r["ticker"] for r in rows]
         assert len(tickers) == len(set(tickers)), "duplicate ticker in seed"
 
