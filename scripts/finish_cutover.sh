@@ -61,7 +61,8 @@ if [[ -n "$CI_URL" ]]; then
     fi
   else
     echo "  SKIPPED: gh not authenticated. Run manually:"
-    echo "    printf '%s' \"\$SUPABASE_POOLER_URL\" | gh secret set POSTGRES_URL"
+    echo "    gh secret set POSTGRES_URL"
+    echo "    (gh will prompt you to paste the pooler URL interactively)"
   fi
 fi
 
@@ -95,7 +96,8 @@ echo
 if [ "$ci_secret_ok" -eq 0 ]; then
   echo "WARNING: GitHub Actions POSTGRES_URL secret was NOT updated (step 2 was skipped)."
   echo "         CI jobs will continue using the old database until you set the secret manually:"
-  echo "           printf '%s' \"\$SUPABASE_POOLER_URL\" | gh secret set POSTGRES_URL"
+  echo "           gh secret set POSTGRES_URL"
+  echo "         (gh will prompt you to paste the pooler URL interactively)"
   echo
 fi
 echo "Cutover complete. Next steps:"

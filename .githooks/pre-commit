@@ -37,7 +37,7 @@ if [ -n "$secret_hits" ]; then
 fi
 
 # 3. no Neon references (Supabase-only project)
-neon_hits="$(grep -niwE 'neon' <<<"$added" || true)"
+neon_hits="$(grep -niE '(^|[^a-z])neon($|[^a-z])' <<<"$added" || true)"
 if [ -n "$neon_hits" ]; then
   echo "✗ pre-commit: 'neon' reference reintroduced — this project is Supabase-only:"
   sed 's/^/    /' <<<"$neon_hits" | head -5
