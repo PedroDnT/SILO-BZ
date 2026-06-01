@@ -251,7 +251,7 @@ workstream history.
 
 Since then: FI `balancete` wired, a self-healing ingest watchdog (`watchdog.yml`),
 and an analytical layer for asset-class / administrator-gestor rankings and fraud
-screens (`src/store/analytical/13–15`, applied via `scripts/apply_analytical.sh`).
+screens (`src/store/analytical/13-15`, applied via `scripts/apply_analytical.sh`).
 
 ## What's intentionally not here
 
