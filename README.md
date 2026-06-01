@@ -39,9 +39,8 @@ actually wired is `src/store/schema.sql` + `src/api/dispatch.py`, not this table
 | FIP                   | 1 CSV                       | inf_quadrimestral (PL)                                                  | —                 |
 | FIAGRO                | 1 CSV                       | mensal (PL) — available from May 2025                                   | —                 |
 
-Tranche (FIDC tab_X), aging (FIDC tab_VI), and SECURIT series/fluxo ingestion — the
-subject of Phases 1–2 in `docs/pipeline-plan.md` — are now wired (see
-`cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`, `cvm_securit_fluxo`).
+Tranche (FIDC tab_X), aging (FIDC tab_VI), and SECURIT series/fluxo ingestion are now
+wired (see `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`, `cvm_securit_fluxo`).
 
 ## Pipeline stages
 
@@ -107,10 +106,13 @@ subject of Phases 1–2 in `docs/pipeline-plan.md` — are now wired (see
 │   ├── analysis_queries.sql    # 11 SQL queries: data presence, null rates, business metrics
 │   └── explore_cvm_output.py   # Utility for inspecting raw CVM ZIP/CSV structure
 ├── docs/
-│   ├── pipeline-plan.md        # Master plan: data inventory, accountability rules, execution phases
-│   └── planning/               # Workstream tracker, architecture conventions, changelog
+│   ├── supabase_operations.md  # Supabase project / connection / ops notes
+│   └── planning/
+│       └── CHANGELOG.md        # Workstream history (W0–W6 …)
 ├── .github/workflows/
-│   └── daily_ingest.yml        # cron @ 06:00 UTC + workflow_dispatch
+│   ├── daily_ingest.yml        # cron @ 06:00 UTC + workflow_dispatch
+│   ├── watchdog.yml            # cron @ 08:00 UTC — self-healing staleness re-run
+│   └── backfill.yml            # on-demand full historical backfill
 ├── requirements.txt
 └── .env.example
 ```
@@ -236,15 +238,20 @@ The DDL uses `CREATE TABLE IF NOT EXISTS` and named UNIQUE constraints, so re-ap
 
 ## Execution roadmap
 
-See `docs/pipeline-plan.md` for the full plan. Summary:
+The original build-out phases are complete — see `docs/planning/CHANGELOG.md` for the
+workstream history.
 
-| Phase | What                                                               | Est.     |
-| ----- | ------------------------------------------------------------------ | -------- |
-| **0** | Fix SECURIT csv_name_pattern bug; add FII complemento yield fields | 1h       |
-| **1** | FIDC tranche tables (tab_X, tab_VI) + 4 accountability rules       | half day |
-| **2** | SECURIT series + cash-flow tables + 2 accountability rules         | half day |
-| **3** | Supabase DB backfill (FIDC + FII + SECURIT re-ingest)                  | 2–3h     |
-| **4** | BACEN macro context (CDI spread rule)                              | 1h       |
+| Phase | What                                                               | Status |
+| ----- | ------------------------------------------------------------------ | ------ |
+| **0** | Fix SECURIT csv_name_pattern bug; add FII complemento yield fields | ✅ done |
+| **1** | FIDC tranche tables (tab_X, tab_VI) + accountability rules         | ✅ done |
+| **2** | SECURIT series + cash-flow tables + accountability rules           | ✅ done |
+| **3** | Supabase DB backfill (FIDC + FII + SECURIT re-ingest)              | ✅ done |
+| **4** | BACEN macro context (CDI spread rule)                              | ✅ done |
+
+Since then: FI `balancete` wired, a self-healing ingest watchdog (`watchdog.yml`),
+and an analytical layer for asset-class / administrator-gestor rankings and fraud
+screens (`src/store/analytical/13–15`, applied via `scripts/apply_analytical.sh`).
 
 ## What's intentionally not here
 

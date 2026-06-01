@@ -1,8 +1,8 @@
 """Declarative field-map engine.
 
 Turns a raw CSV row + a dataset FIELD_MAP into (typed_columns, residual_raw),
-so ingestion is map-driven and deterministic. See
-docs/planning/02_ARCHITECTURE_AND_CONVENTIONS.md (sections 1-2).
+so ingestion is map-driven and deterministic. See the "Adding a dataset" recipe
+in CLAUDE.md.
 
 A FIELD_MAP is::
 

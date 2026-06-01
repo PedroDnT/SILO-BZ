@@ -14,8 +14,8 @@ There is **no public API**. Downstream consumers (the `dashboard/` and `webapp/`
 Supabase directly. A localhost-only Flask control plane (`app.py` + `src/api/`) wraps the
 pipeline so operators can trigger partial-fill ingests one slice at a time.
 
-> Read `README.md` for the full operator guide and `docs/pipeline-plan.md` /
-> `docs/planning/` for the roadmap and conventions. A previous version had multiple FastAPI
+> Read `README.md` for the full operator guide and `docs/planning/CHANGELOG.md` for the
+> workstream history. A previous version had multiple FastAPI
 > services + a Solana "Delos Oracle" + a `b3_calc_api`; all were removed. Do not reintroduce
 > a public API surface, Docker/Alembic, local Postgres-as-source-of-truth, or B3 — see
 > "What's intentionally not here" in `README.md`.
@@ -81,7 +81,7 @@ Wired datasets now include `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_se
 
 ### Adding a dataset (the `(entity, doc_type)` matrix)
 
-Touch these in order (per `docs/planning/ARCHITECTURE_CONVENTIONS.md`):
+Touch these in order:
 
 1. `src/fetchers/cvm_config.py` — add a `DatasetConfig`.
 2. `src/parsers/field_maps/<entity>_<doctype>.py` — add the `FIELD_MAP`.
