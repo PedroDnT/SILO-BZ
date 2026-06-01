@@ -17,6 +17,7 @@ from src.parsers.mapping import apply_map, derive_is_active
 from src.parsers.field_maps import fi_diario as _diario
 from src.parsers.field_maps import fi_cda as _cda
 from src.parsers.field_maps import fi_perfil as _perfil
+from src.parsers.field_maps import fi_balancete as _balancete
 from src.parsers.field_maps import fund_registry as _reg
 from src.store.pg_client import upsert_rows
 
@@ -113,6 +114,40 @@ def ingest_fi_perfil(conn: Any, raw_rows: List[Dict[str, Any]], year: int, month
         _perfil.TABLE,
         records,
         conflict_columns=",".join(_perfil.CONFLICT),
+    )
+
+
+def ingest_fi_balancete(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
+    """Parse and upsert FI monthly balance-sheet (BALANCETE) rows.
+
+    Keyed on the source DT_COMPTC (no first-of-month override) — the natural
+    key is (cnpj, dt_comptc, cd_conta_balcte).  Rows missing cnpj or dt_comptc
+    are dropped (they can't satisfy the UNIQUE constraint).
+
+    Returns:
+        number of rows upserted
+    """
+    records: List[Dict[str, Any]] = []
+
+    for row in raw_rows:
+        typed, residual = apply_map(row, _balancete.FIELD_MAP)
+        typed["raw"] = residual
+
+        if not typed.get("cnpj") or not typed.get("dt_comptc"):
+            continue
+        if not typed.get("cd_conta_balcte"):
+            continue
+
+        records.append(typed)
+
+    if not records:
+        return 0
+
+    return upsert_rows(
+        conn,
+        _balancete.TABLE,
+        records,
+        conflict_columns=",".join(_balancete.CONFLICT),
     )
 
 

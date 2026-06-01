@@ -72,9 +72,10 @@ FETCH (src/fetchers/) → PARSE (src/parsers/) → STORE (src/store/)
   inefficiency detector. Hooks classify only — they never auto-retry.
 
 Storage layout: ~25 tables named `cvm_<entity>_<doctype>` or `bacen_<series>`, plus the
-`cvm_ingest_log` audit table. Note: the README's CSV-coverage table predates some tables that
-now exist in `schema.sql` (e.g. `cvm_fidc_tranche`, `cvm_securit_serie`, `cvm_cia_*`,
-`cvm_etf_anbima`) — trust `src/store/schema.sql` + `migrations/` as the source of truth.
+`cvm_ingest_log` audit table. The README's CSV-coverage table is kept in sync but may lag;
+trust `src/store/schema.sql` + `migrations/` + `src/api/dispatch.py` as the source of truth.
+Wired datasets now include `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`,
+`cvm_securit_fluxo`, `cvm_fi_balancete`, `cvm_cia_*`, and the ETF tables.
 
 ### Adding a dataset (the `(entity, doc_type)` matrix)
 

@@ -1,0 +1,77 @@
+name: Ingest Watchdog
+
+# Self-healing safety net for the daily ingest. Runs a couple of hours after the
+# 06:00 UTC cron in daily_ingest.yml; if the daily FI slice (or the monthly
+# ANBIMA/ETF slice) is stale in cvm_ingest_log, it re-runs the daily ingest.
+#
+# This lives entirely in GitHub Actions and reuses the existing POSTGRES_URL
+# secret — no GitHub PAT in the database, no pg_net. See scripts/check_staleness.py.
+
+on:
+  schedule:
+    # 08:00 UTC — after the 06:00 daily run's ~90-minute window.
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force the recovery run regardless of staleness"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+jobs:
+  watchdog:
+    name: Check staleness and self-heal
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
+      CVM_DNS_NAMESERVERS: "1.1.1.1,8.8.8.8,9.9.9.9"
+      CVM_DAILY_SCOPE: "all"
+      CVM_UPSERT_CHUNK_SIZE: "5000"
+      CVM_INGEST_CONCURRENCY: "6"
+      CVM_FI_CONCURRENCY: "3"
+      CVM_DAILY_CONCURRENCY: "8"
+      TZ: "America/Sao_Paulo"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check ingest staleness
+        id: staleness
+        run: |
+          set +e
+          PYTHONPATH=. python scripts/check_staleness.py
+          code=$?
+          set -e
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" = "0" ]; then
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          elif [ "$code" = "10" ] || [ "$code" = "11" ]; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          else
+            # Unexpected failure (e.g. DB unreachable) — surface it, don't mask.
+            echo "stale=error" >> "$GITHUB_OUTPUT"
+            exit $code
+          fi
+
+      - name: Run daily ingest (recovery)
+        if: ${{ steps.staleness.outputs.stale == 'true' || github.event.inputs.force == 'true' }}
+        run: python -m src.pipeline.run_daily
+
+      - name: Report no-op
+        if: ${{ steps.staleness.outputs.stale == 'false' && github.event.inputs.force != 'true' }}
+        run: echo "All ingest slices are fresh — watchdog took no action."

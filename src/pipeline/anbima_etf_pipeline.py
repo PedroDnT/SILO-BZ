@@ -714,10 +714,22 @@ class AnbimaEtfIngestor:
         return {"anbima_etf": rows_upserted}
 
     async def backfill(self, start_year: int = 2006) -> Dict[str, int]:
-        """
-        The ANBIMA boletim XLSX already contains full history back to 2006 in
-        the class-level sheets (Pág.4, Pág.8, Pág.13). Calling daily_update()
-        is sufficient to backfill; this method is a convenience alias.
+        """Backfill ANBIMA ETF class metrics.
+
+        This delegates to daily_update() *by design*, not as a stub:
+
+        - The ANBIMA Strapi endpoint exposes ONLY the latest boletim (sorted by
+          publishedAt desc, pageSize=1) — there is no list/archive/date-filter
+          parameter to enumerate or fetch older files.
+        - However, each boletim XLSX already embeds the FULL monthly history back
+          to 2006 in the class-level sheets (Pág.4 PL, Pág.8 captação, Pág.13 nº
+          fundos). So a single fetch backfills all class-level series — there is
+          nothing more to retrieve.
+
+        Caveat: the type-level sheets (Pág.5/9/11 — "ETF Renda Fixa/Variável")
+        carry only a rolling ~16-month window. Deep type-level history is
+        genuinely unavailable from this API; obtaining it would require a
+        separate source of archived boletim files (out of scope here).
         """
         logger.info(
             "[anbima_etf] backfill() called — delegating to daily_update() "

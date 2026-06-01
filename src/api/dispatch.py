@@ -24,6 +24,7 @@ _TABLE: Dict[Tuple[str, str], Tuple[str, str, Optional[str], str]] = {
     ("fi", "diario"):                ("ingest_fi_diario",        "monthly",      None, "cvm_fi_diario"),
     ("fi", "cda"):                   ("ingest_fi_cda",           "monthly",      None, "cvm_fi_cda"),
     ("fi", "perfil"):                ("ingest_fi_perfil",        "monthly",      None, "cvm_fi_perfil"),
+    ("fi", "balancete"):             ("ingest_fi_balancete",     "monthly",      None, "cvm_fi_balancete"),
 
     # FIDC monthly
     ("fidc", "mensal"):              ("ingest_fidc_mensal",        "monthly",    None, "cvm_fidc_mensal"),
