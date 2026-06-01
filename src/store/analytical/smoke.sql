@@ -461,3 +461,46 @@ FROM fact_fund_monthly
 WHERE period = (SELECT MAX(period) FROM fact_fund_monthly)
 GROUP BY entity_type
 ORDER BY entity_type;
+
+-- ---------------------------------------------------------------------------
+-- L — Classification, administrator/gestor rankings, fraud screens
+-- Tests: 13_dim_classification, 14_ranking_functions, 15_fraud_screens.
+-- Expected: rows once registry admin/gestor columns and facts are populated.
+-- ---------------------------------------------------------------------------
+-- L1: Asset-class distribution (conformed buckets across entity types)
+SELECT asset_class, COUNT(*) AS n_funds
+FROM dim_fund_category
+GROUP BY asset_class
+ORDER BY n_funds DESC;
+
+-- L2: Top 20 administrators by AUM (latest period)
+SELECT admin_name, n_funds, total_aum, rank_pos
+FROM administrator_rankings(NULL, 'aum', 20);
+
+-- L3: Top 20 gestores by funds under management (latest period)
+SELECT gestor_name, n_funds, total_aum, rank_pos
+FROM gestor_rankings(NULL, 'n_funds', 20);
+
+-- L4: Asset-class performance vs a CDI proxy (last 24 months)
+SELECT period, asset_class, n_funds, total_aum, median_yield, yield_spread_pp
+FROM asset_class_performance(
+       (date_trunc('month', NOW() - INTERVAL '24 months'))::date,
+       CURRENT_DATE, 1.0)
+ORDER BY period DESC, asset_class
+LIMIT 50;
+
+-- L5: Investor growth by asset class (nr_cotst rolled up)
+SELECT period, asset_class, total_cotistas, n_funds_with_data
+FROM quotaholder_trend_by_class(
+       (date_trunc('month', NOW() - INTERVAL '24 months'))::date, CURRENT_DATE)
+ORDER BY period DESC, asset_class
+LIMIT 50;
+
+-- L6: Fraud screens — each returns a (possibly empty) signal set
+SELECT 'zombie_growth'    AS screen, COUNT(*) AS n_hits FROM fraud_screen_zombie_growth(NULL, 5, 1e6)
+UNION ALL
+SELECT 'captive_vehicles', COUNT(*) FROM fraud_screen_captive_vehicles(3, 10, 5e7)
+UNION ALL
+SELECT 'evergreen_aging',  COUNT(*) FROM fraud_screen_evergreen_aging(12, 70, 10)
+UNION ALL
+SELECT 'overdue_securit',  COUNT(*) FROM fraud_screen_overdue_securit(1e5);

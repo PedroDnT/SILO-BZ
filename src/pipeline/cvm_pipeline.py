@@ -41,6 +41,7 @@ from src.pipeline.ingest_fi import (
     ingest_fi_diario,
     ingest_fi_cda,
     ingest_fi_perfil,
+    ingest_fi_balancete,
     ingest_fund_registry_fi,
 )
 from src.pipeline.ingest_fidc import (
@@ -490,6 +491,25 @@ class CVMIngestor:
             return 0
         self._log_finish(run_id, rows_inserted)
         logger.info("fi/perfil_mensal %d-%02d: %d rows", year, month, rows_inserted)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
+    # FI — monthly balance sheet  (BALANCETE)
+    # ------------------------------------------------------------------
+
+    async def ingest_fi_balancete(self, year: int, month: int) -> int:
+        run_id = str(uuid4())
+        self._log_start(run_id, "fi", "balancete", year, month)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages("fi", "balancete", year, month)
+            rows_inserted = ingest_fi_balancete(self._supabase, raw_rows)
+        except Exception as exc:
+            logger.warning("ingest_fi_balancete %d-%02d failed: %s", year, month, exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted)
+        logger.info("fi/balancete %d-%02d: %d rows", year, month, rows_inserted)
         return rows_inserted
 
     # ------------------------------------------------------------------

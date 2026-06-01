@@ -26,19 +26,22 @@ time and watch jobs progress via a polling endpoint. See
 ## CVM ZIP structure (important)
 
 Each CVM entity distributes data as ZIP files containing multiple CSVs. The pipeline
-only reads specific CSVs from each ZIP — the rest contain tranche-level and structural
-data not yet ingested:
+reads the specific CSVs listed below from each ZIP; the "Pending" column tracks CSVs
+that exist in the source but are not yet ingested. (Source of truth for what is
+actually wired is `src/store/schema.sql` + `src/api/dispatch.py`, not this table.)
 
-| Entity                | CSVs per ZIP                | Pipeline reads                                      | Pending (in plan)                   |
-| --------------------- | --------------------------- | --------------------------------------------------- | ----------------------------------- |
-| FI                    | 1 CSV                       | inf_diario (NAV, flows)                             | —                                   |
-| FIDC                  | **17 CSVs** (tab_I–tab_XIV) | tab_IV (fund-level NAV)                             | tab_X (tranches), tab_VI (aging)    |
-| FII                   | 3 CSVs                      | geral, ativo_passivo, **complemento** (NAV + yield) | —                                   |
-| SECURIT (CRA/CRI/OTS) | **8 CSVs**                  | ativo_passivo (emissão totals)                      | classe (series status), fluxo_caixa |
-| FIP                   | 1 CSV                       | inf_quadrimestral (PL)                              | —                                   |
-| FIAGRO                | 1 CSV                       | mensal (PL) — available from May 2025               | —                                   |
+| Entity                | CSVs per ZIP                | Pipeline reads                                                          | Pending (in plan) |
+| --------------------- | --------------------------- | ---------------------------------------------------------------------- | ----------------- |
+| FI                    | 4 docs                      | inf_diario (NAV, flows), cda (portfolio), perfil, **balancete**        | —                 |
+| FIDC                  | **17 CSVs** (tab_I–tab_XIV) | tab_IV (fund-level NAV), **tab_X (tranches)**, **tab_VI (aging)**       | —                 |
+| FII                   | 3 CSVs                      | geral, ativo_passivo, **complemento** (NAV + yield)                    | —                 |
+| SECURIT (CRA/CRI/OTS) | **8 CSVs**                  | ativo_passivo (emissão), **classe (series status)**, **fluxo_caixa**   | —                 |
+| FIP                   | 1 CSV                       | inf_quadrimestral (PL)                                                  | —                 |
+| FIAGRO                | 1 CSV                       | mensal (PL) — available from May 2025                                   | —                 |
 
-The tranche and series-level ingestion is the subject of Phases 1–2 in `docs/pipeline-plan.md`.
+Tranche (FIDC tab_X), aging (FIDC tab_VI), and SECURIT series/fluxo ingestion — the
+subject of Phases 1–2 in `docs/pipeline-plan.md` — are now wired (see
+`cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`, `cvm_securit_fluxo`).
 
 ## Pipeline stages
 

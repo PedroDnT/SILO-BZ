@@ -2,73 +2,32 @@
 title: Suspicious Deal Screens
 ---
 
+<!-- These screens are defined once as RPC functions in
+     src/store/analytical/15_fraud_screens.sql so the dashboard and the
+     analytical layer share a single definition. -->
+
 ```sql zombie_growth
-select
-  a.cnpj,
-  coalesce(r.fund_name, a.cnpj) as fund_name,
-  a.period,
-  m.vl_patrim_liq / 1e6 as pl_mm,
-  round(100.0 * a.vl_total_inad / nullif(m.vl_patrim_liq, 0), 1) as inad_pct
-from cvm_fidc_aging a
-join cvm_fidc_mensal m using (cnpj, period)
-left join cvm_fund_registry r on r.cnpj = a.cnpj and r.entity_type = 'fidc'
-where a.period = (select max(period) from cvm_fidc_aging)
-  and m.vl_patrim_liq > 1e6
-  and 100.0 * a.vl_total_inad / nullif(m.vl_patrim_liq, 0) > 5
-order by pl_mm desc nulls last
+select cnpj, fund_name, period, pl_mm, inad_pct
+from fraud_screen_zombie_growth(null, 5, 1e6)
 limit 20
 ```
 
 ```sql captive_vehicles
-select
-  m.cnpj,
-  coalesce(max(r.fund_name), m.cnpj) as fund_name,
-  max(m.period) as latest_period,
-  max(m.vl_patrim_liq) / 1e6 as pl_mm,
-  min(m.nr_cotst) as min_investors
-from cvm_fii_mensal m
-left join cvm_fund_registry r on r.cnpj = m.cnpj and r.entity_type = 'fii'
-where m.doc_subtype = 'complemento'
-  and m.period >= current_date - interval '3 months'
-group by m.cnpj
-having min(m.nr_cotst) < 10 and max(m.vl_patrim_liq) > 5e7
-order by pl_mm desc nulls last
+select cnpj, fund_name, latest_period, pl_mm, min_investors
+from fraud_screen_captive_vehicles(3, 10, 5e7)
 limit 20
 ```
 
 ```sql evergreen_aging
-select
-  a.cnpj,
-  coalesce(max(r.fund_name), a.cnpj) as fund_name,
-  count(distinct a.period) as months_observed,
-  min(round(100.0 * a.vl_inad_maior_1080 / nullif(a.vl_total_inad, 0), 1)) as min_longtail_pct,
-  max(round(100.0 * a.vl_inad_maior_1080 / nullif(a.vl_total_inad, 0), 1)) as max_longtail_pct
-from cvm_fidc_aging a
-left join cvm_fund_registry r on r.cnpj = a.cnpj and r.entity_type = 'fidc'
-where a.period >= current_date - interval '12 months'
-  and a.vl_total_inad > 1e5
-group by a.cnpj
-having max(round(100.0 * a.vl_inad_maior_1080 / nullif(a.vl_total_inad, 0), 1)) > 70
-   and max(round(100.0 * a.vl_inad_maior_1080 / nullif(a.vl_total_inad, 0), 1))
-     - min(round(100.0 * a.vl_inad_maior_1080 / nullif(a.vl_total_inad, 0), 1)) < 10
-order by max_longtail_pct desc nulls last
+select cnpj, fund_name, months_observed, min_longtail_pct, max_longtail_pct
+from fraud_screen_evergreen_aging(12, 70, 10)
 limit 20
 ```
 
 ```sql overdue_securit
-select
-  s.instrument_type,
-  s.cnpj_securit,
-  s.codigo_identificacao,
-  s.data_vencimento,
-  s.situacao,
-  s.valor_total_integralizado / 1e6 as volume_mm,
-  s.classificacao_risco_atual as rating
-from cvm_securit_serie s
-where s.data_vencimento < current_date
-  and s.situacao not in ('Cancelado','Vencido','Liquidado','Encerrado')
-  and s.valor_total_integralizado > 1e5
-order by s.data_vencimento asc
+select instrument_type, cnpj_securit, codigo_identificacao,
+       data_vencimento, situacao, volume_mm, rating
+from fraud_screen_overdue_securit(1e5)
 limit 30
 ```
 

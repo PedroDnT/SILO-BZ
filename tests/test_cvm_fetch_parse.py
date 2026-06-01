@@ -158,6 +158,25 @@ FI_CDA_ROWS = [
     },
 ]
 
+FI_BALANCETE_ROWS = [
+    {
+        "TP_FUNDO_CLASSE": "FI",
+        "CNPJ_FUNDO_CLASSE": "12.345.678/0001-90",
+        "DT_COMPTC": "2025-03-31",
+        "PLANO_CONTA_BALCTE": "COFI",
+        "CD_CONTA_BALCTE": "1.1.0.00.00.00",
+        "VL_SALDO_BALCTE": "1164101.50",
+    },
+    {
+        "TP_FUNDO_CLASSE": "FI",
+        "CNPJ_FUNDO_CLASSE": "12.345.678/0001-90",
+        "DT_COMPTC": "2025-03-31",
+        "PLANO_CONTA_BALCTE": "COFI",
+        "CD_CONTA_BALCTE": "4.1.0.00.00.00",
+        "VL_SALDO_BALCTE": "-7215.07",
+    },
+]
+
 FIDC_MENSAL_ROWS = [
     {
         "TP_FUNDO_CLASSE": "Classe",
@@ -325,6 +344,17 @@ class TestFIFetch:
         assert "TP_ATIVO" in rows[0]
         assert "VL_MERC_POS_FINAL" in rows[0]
 
+    @pytest.mark.asyncio
+    async def test_fi_balancete_fetch_returns_expected_columns(self):
+        mock_bytes = _make_zip_bytes("balancete_fi_202503.csv", FI_BALANCETE_ROWS)
+        with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
+            fetcher = CVMFetcher()
+            rows = await fetcher.fetch("fi", "balancete", year=2025, month=3)
+        assert len(rows) == 2
+        expected_cols = {"CNPJ_FUNDO_CLASSE", "DT_COMPTC", "PLANO_CONTA_BALCTE",
+                         "CD_CONTA_BALCTE", "VL_SALDO_BALCTE"}
+        assert expected_cols.issubset(set(rows[0].keys()))
+
 
 class TestFIDCFetch:
     @pytest.mark.asyncio
@@ -451,6 +481,29 @@ class TestCVMPipelineFieldMapping:
         assert rec["tp_aplic"] == "Operações Compromissadas"
         assert rec["tp_ativo"] == "Título público federal"
         assert rec["vl_merc_pos_final"] == pytest.approx(61529.46, rel=1e-6)
+
+    @pytest.mark.asyncio
+    async def test_fi_balancete_pipeline_extracts_key_fields(self):
+        import datetime
+        mock_bytes = _make_zip_bytes("balancete_fi_202503.csv", FI_BALANCETE_ROWS)
+        captured: list = []
+
+        with _stub_pipeline(captured):
+            with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
+                ingestor = CVMIngestor()
+                count = await ingestor.ingest_fi_balancete(2025, 3)
+
+        assert count == 2
+        assert len(captured) == 2
+        rec = captured[0]
+        assert rec["cnpj"] == "12345678000190"
+        # balancete keys on the source DT_COMPTC (no first-of-month override)
+        assert rec["dt_comptc"] == datetime.date(2025, 3, 31)
+        assert rec["plano_conta_balcte"] == "COFI"
+        assert rec["cd_conta_balcte"] == "1.1.0.00.00.00"
+        assert rec["vl_saldo_balcte"] == pytest.approx(1164101.50, rel=1e-6)
+        # the two rows differ only by account code → both survive de-dup
+        assert {r["cd_conta_balcte"] for r in captured} == {"1.1.0.00.00.00", "4.1.0.00.00.00"}
 
     @pytest.mark.asyncio
     async def test_fidc_mensal_pipeline_extracts_patrim_liq(self):
