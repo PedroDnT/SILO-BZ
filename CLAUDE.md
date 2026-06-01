@@ -28,8 +28,10 @@ downstream metric. Full text in `.agents/rules/data-integrity.md`. Summary:
 1. **Never fabricate data.** A failed fetch must `raise` — never return a plausible-looking
    fallback dict (this is exactly why `b3_calc_api` was deleted). Mocks live in `tests/` only.
 2. **No silent `except: pass`** around network/DB calls. Classify and surface (`src/api/hooks.py`).
-3. **Preserve provenance.** Every row carries `cnpj`, `competencia`, `data_referencia` from
-   source — never synthesize them. Every ingest writes exactly one `cvm_ingest_log` row.
+3. **Preserve provenance.** Every row carries its natural keys (e.g. `cnpj` / `cnpj_securit`
+   and `dt_comptc` / `period` / `data_referencia` / `reference_date`, depending on the table)
+   directly from source — never synthesize them. Every ingest writes exactly one
+   `cvm_ingest_log` row.
 4. **Validate before upsert.** All records pass `DataValidator` (`src/parsers/validation.py`):
    CNPJ = 14 digits, dates must parse, NAV/PL non-negative or explicitly nullable. A row that
    fails validation is dropped and counted — never coerced into a guess.
@@ -119,10 +121,10 @@ flask --app app run                  # 127.0.0.1:5000; needs POSTGRES_URL
 python scripts/seed_local_db.py --skip-fi && python scripts/run_analysis_local.py  # offline, ~2min
 python scripts/verify_pipeline.py    # against live Supabase (quality gate; keep green)
 
-# Tests
-PYTHONPATH=. pytest tests/ -v        # all offline (DB + HTTP mocked)
-PYTHONPATH=. pytest tests/test_api.py -v          # one file
-PYTHONPATH=. pytest tests/test_api.py::test_name  # one test
+# Tests (pytest.ini sets pythonpath = ., so no PYTHONPATH prefix needed)
+pytest tests/ -v        # all offline (DB + HTTP mocked)
+pytest tests/test_api.py -v          # one file
+pytest tests/test_api.py::test_name  # one test
 ```
 
 `pytest.ini` sets `pythonpath = .` and `asyncio_mode = auto`. The pre-push hook runs the full
