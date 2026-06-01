@@ -393,12 +393,18 @@ CREATE TABLE IF NOT EXISTS cvm_fund_registry (
     tp_fundo     TEXT,
     dt_reg       DATE,
     dt_cancel    DATE,
+    admin_cnpj   TEXT,                       -- administrator CNPJ (14 digits)
+    admin_name   TEXT,                       -- administrator legal name
+    gestor_id    TEXT,                       -- gestor CPF (PF) or CNPJ (PJ)
+    gestor_name  TEXT,                       -- gestor (portfolio manager) name
     raw          JSONB,
     fetched_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_fund_registry UNIQUE (cnpj, entity_type)
 );
 CREATE INDEX IF NOT EXISTS idx_fund_registry_cnpj   ON cvm_fund_registry (cnpj);
 CREATE INDEX IF NOT EXISTS idx_fund_registry_entity ON cvm_fund_registry (entity_type, status);
+CREATE INDEX IF NOT EXISTS idx_fund_registry_admin  ON cvm_fund_registry (admin_name);
+CREATE INDEX IF NOT EXISTS idx_fund_registry_gestor ON cvm_fund_registry (gestor_name);
 
 -- ---------------------------------------------------------------------------
 -- FI — monthly balance sheet  (BALANCETE, monthly ZIP)

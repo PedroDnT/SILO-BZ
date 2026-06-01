@@ -19,4 +19,13 @@ FIELD_MAP = {
     "tp_fundo":  (["TP_FUNDO_CLASSE", "TP_FUNDO", "Tipo_Classe", "Tipo_Fundo"],     "text"),
     "dt_reg":    (["DT_REG", "DT_CONST", "Data_Registro"],                          "date"),
     "dt_cancel": (["DT_CANCEL", "Data_Cancelamento"],                              "date"),
+    # Administrator / manager (gestor) — service providers. Source columns:
+    #   legacy cad_fi:        CNPJ_ADMIN, ADMIN, CPF_CNPJ_GESTOR, GESTOR
+    #   CVM-175 registro_fundo: CNPJ_Administrador, Administrador, CPF_CNPJ_Gestor, Gestor
+    # admin_cnpj is always a 14-digit PJ → cnpj coerce; gestor_id may be a CPF
+    # (PF gestor) or CNPJ, so keep it as text to preserve the source value.
+    "admin_cnpj":  (["CNPJ_ADMIN", "CNPJ_Administrador"],   "cnpj"),
+    "admin_name":  (["ADMIN", "Administrador"],             "text"),
+    "gestor_id":   (["CPF_CNPJ_GESTOR", "CPF_CNPJ_Gestor"], "text"),
+    "gestor_name": (["GESTOR", "Gestor"],                   "text"),
 }

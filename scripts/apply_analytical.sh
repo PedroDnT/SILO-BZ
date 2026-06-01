@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Apply the analytical layer (src/store/analytical/01-12) to Supabase.
+# Apply the analytical layer (src/store/analytical/01-15) to Supabase.
 #
 #   bash scripts/apply_analytical.sh
 #
