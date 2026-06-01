@@ -108,7 +108,7 @@ wired (see `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`, `cvm_secur
 ├── docs/
 │   ├── supabase_operations.md  # Supabase project / connection / ops notes
 │   └── planning/
-│       └── CHANGELOG.md        # Workstream history (W0–W6 …)
+│       └── CHANGELOG.md        # Workstream history (W0-W2)
 ├── .github/workflows/
 │   ├── daily_ingest.yml        # cron @ 06:00 UTC + workflow_dispatch
 │   ├── watchdog.yml            # cron @ 08:00 UTC — self-healing staleness re-run
