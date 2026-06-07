@@ -141,6 +141,7 @@ AS $$
         ticker, fund_name, provider, underlying_index, segment, as_of, n_obs,
         total_return, aum_end, avg_net_flow, daily_vol, metric_value
     FROM perf
+    WHERE metric_value IS NOT NULL
     ORDER BY rank_pos
     LIMIT p_limit
 $$;

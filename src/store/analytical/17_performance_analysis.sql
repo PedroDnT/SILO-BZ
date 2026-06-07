@@ -145,8 +145,12 @@ AS $$
     ),
     agg AS (
         SELECT cnpj, entity_type, COUNT(*) AS n_obs,
-               exp(sum(ln(1 + GREATEST(COALESCE(pct_yield_mes, 0) / 100.0, -0.99)))) - 1
-                   AS yield_compounded
+               -- Only compound when real yield data exists; all-NULL → NULL (not a
+               -- false 0% that would rank a data-less fund as flat).
+               CASE WHEN COUNT(pct_yield_mes) > 0
+                    THEN exp(sum(ln(1 + GREATEST(COALESCE(pct_yield_mes, 0) / 100.0, -0.99)))) - 1
+                    ELSE NULL
+               END AS yield_compounded
         FROM scoped GROUP BY cnpj, entity_type
     ),
     perf AS (
@@ -177,12 +181,17 @@ AS $$
                 AS pctile_in_class
         FROM perf p
         LEFT JOIN dim_fund d ON d.cnpj = p.cnpj AND d.entity_type = p.entity_type
+        -- Exclude funds with no computable performance so they don't distort the
+        -- RANK() / PERCENT_RANK() of valid peers in the same class.
+        WHERE p.total_performance IS NOT NULL
     )
     SELECT
         rank_in_class, pctile_in_class, asset_class, entity_type, cnpj, fund_name,
         return_basis, as_of, n_obs, total_performance, aum_end
     FROM ranked
-    WHERE rank_in_class <= p_limit
+    -- p_limit NULL → no cap (top-N per class otherwise), so summary callers can
+    -- aggregate every ranked fund for true, unskewed per-class statistics.
+    WHERE p_limit IS NULL OR rank_in_class <= p_limit
     ORDER BY asset_class, rank_in_class
 $$;
 
