@@ -1,0 +1,337 @@
+# Instincts generated from https://github.com/PedroDnT/iliquid_nightly
+# Generated: 2026-06-07T21:33:37.460Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: iliquid_nightly-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/PedroDnT/iliquid_nightly
+---
+
+# Iliquid_nightly Commit Length
+
+## Action
+
+Write moderate-length commit messages (~77 characters)
+
+## Evidence
+
+- Average commit message length: 77 chars
+- Based on 1 commits
+
+---
+id: iliquid_nightly-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/PedroDnT/iliquid_nightly
+---
+
+# Iliquid_nightly Naming Files
+
+## Action
+
+Use snake_case naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: snake_case
+
+---
+id: iliquid_nightly-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/PedroDnT/iliquid_nightly
+---
+
+# Iliquid_nightly Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: iliquid_nightly-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/PedroDnT/iliquid_nightly
+---
+
+# Iliquid_nightly Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: iliquid_nightly-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/PedroDnT/iliquid_nightly
+---
+
+# Iliquid_nightly Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: iliquid_nightly-instinct-file-naming
+trigger: "When creating a new Python file"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: PedroDnT/iliquid_nightly
+---
+
+# Iliquid_nightly Instinct File Naming
+
+## Action
+
+Name the file using snake_case
+
+## Evidence
+
+- Pattern in namingConventions.files: snake_case
+
+---
+id: iliquid_nightly-instinct-function-naming
+trigger: "When defining a new function"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: PedroDnT/iliquid_nightly
+---
+
+# Iliquid_nightly Instinct Function Naming
+
+## Action
+
+Use camelCase for the function name
+
+## Evidence
+
+- Pattern in namingConventions.functions: camelCase
+
+---
+id: iliquid_nightly-instinct-class-naming
+trigger: "When defining a new class"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: PedroDnT/iliquid_nightly
+---
+
+# Iliquid_nightly Instinct Class Naming
+
+## Action
+
+Use PascalCase for the class name
+
+## Evidence
+
+- Pattern in namingConventions.classes: PascalCase
+
+---
+id: iliquid_nightly-instinct-constant-naming
+trigger: "When defining a constant"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: PedroDnT/iliquid_nightly
+---
+
+# Iliquid_nightly Instinct Constant Naming
+
+## Action
+
+Use SCREAMING_SNAKE_CASE for the constant name
+
+## Evidence
+
+- Pattern in namingConventions.constants: SCREAMING_SNAKE_CASE
+
+---
+id: iliquid_nightly-instinct-import-style
+trigger: "When importing modules within the package"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: PedroDnT/iliquid_nightly
+---
+
+# Iliquid_nightly Instinct Import Style
+
+## Action
+
+Use relative imports
+
+## Evidence
+
+- Pattern in importStyle: relative
+
+---
+id: iliquid_nightly-instinct-export-style
+trigger: "When exporting functions or classes from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: PedroDnT/iliquid_nightly
+---
+
+# Iliquid_nightly Instinct Export Style
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- Pattern in exportStyle: named
+
+---
+id: iliquid_nightly-instinct-test-location
+trigger: "When adding new tests"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: PedroDnT/iliquid_nightly
+---
+
+# Iliquid_nightly Instinct Test Location
+
+## Action
+
+Place test files in the separate 'tests' directory
+
+## Evidence
+
+- Pattern in architecture.testLocation: separate
+- tests folder in folderStructure.commonFolders
+
+---
+id: iliquid_nightly-instinct-commit-format
+trigger: "When writing a commit message"
+confidence: 0.8
+domain: git
+source: repo-analysis
+source_repo: PedroDnT/iliquid_nightly
+---
+
+# Iliquid_nightly Instinct Commit Format
+
+## Action
+
+Write a freeform message without a prefix, summarizing the main change
+
+## Evidence
+
+- Pattern in commits.type: freeform
+- No prefixes in commits.prefixes
+- Example: 'Make daily ingest self-heal: gap-aware window, schema bootstrap on every path'
+
+---
+id: iliquid_nightly-instinct-commit-length
+trigger: "When composing a commit message"
+confidence: 0.7
+domain: git
+source: repo-analysis
+source_repo: PedroDnT/iliquid_nightly
+---
+
+# Iliquid_nightly Instinct Commit Length
+
+## Action
+
+Keep the commit message concise, around 77 characters on average
+
+## Evidence
+
+- Pattern in commits.averageLength: 77
+
+---
+id: iliquid_nightly-instinct-workflow-backfill
+trigger: "When automating backfill operations"
+confidence: 0.8
+domain: workflow
+source: repo-analysis
+source_repo: PedroDnT/iliquid_nightly
+---
+
+# Iliquid_nightly Instinct Workflow Backfill
+
+## Action
+
+Configure the workflow in '.github/workflows/backfill.yml'
+
+## Evidence
+
+- Config file: .github/workflows/backfill.yml
+
+---
+id: iliquid_nightly-instinct-workflow-daily-ingest
+trigger: "When automating daily data ingestion"
+confidence: 0.8
+domain: workflow
+source: repo-analysis
+source_repo: PedroDnT/iliquid_nightly
+---
+
+# Iliquid_nightly Instinct Workflow Daily Ingest
+
+## Action
+
+Configure the workflow in '.github/workflows/daily_ingest.yml'
+
+## Evidence
+
+- Config file: .github/workflows/daily_ingest.yml
+
+---
+id: iliquid_nightly-instinct-workflow-watchdog
+trigger: "When automating monitoring or watchdog tasks"
+confidence: 0.8
+domain: workflow
+source: repo-analysis
+source_repo: PedroDnT/iliquid_nightly
+---
+
+# Iliquid_nightly Instinct Workflow Watchdog
+
+## Action
+
+Configure the workflow in '.github/workflows/watchdog.yml'
+
+## Evidence
+
+- Config file: .github/workflows/watchdog.yml
+
