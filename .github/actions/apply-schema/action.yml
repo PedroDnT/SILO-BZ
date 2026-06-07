@@ -48,6 +48,7 @@ runs:
         set -euo pipefail
         psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f src/store/schema.sql
         for f in src/store/migrations/*.sql; do
+          [ -e "$f" ] || continue   # glob stays literal when nothing matches
           echo "== applying $f =="
           psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f "$f"
         done

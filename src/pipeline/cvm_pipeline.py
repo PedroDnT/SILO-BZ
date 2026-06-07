@@ -250,7 +250,10 @@ def _daily_month_pairs(today: date) -> List[Tuple[int, int]]:
 # window (default 4 months) self-heals that recent lag without re-fetching deep
 # history every day — deep history is run_backfill's job. Clamped to >= 2 so the
 # window always covers at least current + previous.
-_DAILY_LOOKBACK_MONTHS = max(2, int(os.getenv("CVM_DAILY_LOOKBACK_MONTHS", "4") or "4"))
+# Parsed via _env_int (the house helper) so a misconfigured value warns and falls
+# back instead of crashing import; clamped to >= 2 so the window always covers at
+# least current + previous.
+_DAILY_LOOKBACK_MONTHS = max(2, _env_int("CVM_DAILY_LOOKBACK_MONTHS", 4))
 
 
 def _trailing_months(today: date, lookback: int) -> List[Tuple[int, int]]:
@@ -392,6 +395,13 @@ class CVMIngestor:
         try:
             years = sorted({y for y, _ in window})
             with self._supabase.cursor() as cur:
+                # rows_upserted > 0 is deliberate: an 'ok' run that wrote 0 rows
+                # is an empty/partial publish, not a loaded slice. Treating it as a
+                # gap means a month CVM first publishes empty (or partially) gets
+                # revisited until it actually has data — re-fetching it within the
+                # bounded window is far cheaper than silently missing the slice,
+                # which is the exact failure this window exists to prevent. For
+                # these aggregate datasets a genuinely-final 0-row month is rare.
                 cur.execute(
                     "SELECT DISTINCT period_year, period_month FROM cvm_ingest_log"
                     " WHERE entity=%s AND doc_type=%s AND status='ok'"
