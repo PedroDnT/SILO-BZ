@@ -11,6 +11,36 @@ from typing import Any, Dict, List
 from unittest.mock import MagicMock, AsyncMock, patch
 
 
+class _FakeCursor:
+    """Minimal psycopg2-style cursor usable as a context manager."""
+
+    def __init__(self, fetch: List[Any] | None = None):
+        self._fetch = fetch or []
+        self.executed: List[Any] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, sql, params=None):
+        self.executed.append((sql, params))
+
+    def fetchall(self):
+        return self._fetch
+
+
+class _FakeClient:
+    """Returns the same _FakeCursor each call so tests can inspect it."""
+
+    def __init__(self, fetch: List[Any] | None = None):
+        self.cursor_obj = _FakeCursor(fetch)
+
+    def cursor(self):
+        return self.cursor_obj
+
+
 # ---------------------------------------------------------------------------
 # supabase_client helpers
 # ---------------------------------------------------------------------------
@@ -190,6 +220,18 @@ class TestCVMIngestorHelpers:
         from src.pipeline.cvm_pipeline import _daily_month_pairs
         assert _daily_month_pairs(date(2026, 1, 15)) == [(2025, 12), (2026, 1)]
 
+    def test_trailing_months_orders_oldest_first(self):
+        from src.pipeline.cvm_pipeline import _trailing_months
+        assert _trailing_months(date(2026, 6, 7), 4) == [
+            (2026, 3), (2026, 4), (2026, 5), (2026, 6),
+        ]
+
+    def test_trailing_months_crosses_year_boundary(self):
+        from src.pipeline.cvm_pipeline import _trailing_months
+        assert _trailing_months(date(2026, 2, 1), 4) == [
+            (2025, 11), (2025, 12), (2026, 1), (2026, 2),
+        ]
+
     def test_iter_month_pairs_respects_available_from(self):
         from src.pipeline.cvm_pipeline import _iter_month_pairs
         months = _iter_month_pairs([2024, 2025], date(2025, 8, 10), available_from=date(2025, 5, 1))
@@ -303,6 +345,81 @@ class TestRefreshEtfMetrics:
             "REFRESH MATERIALIZED VIEW CONCURRENTLY etf_daily",
             "REFRESH MATERIALIZED VIEW CONCURRENTLY etf_latest",
         ]
+
+
+class TestMonthlyTargets:
+    """Gap-aware trailing window for monthly datasets (self-heals CVM's lag)."""
+
+    def test_always_includes_current_and_previous_month(self):
+        from src.pipeline.cvm_pipeline import CVMIngestor, _daily_month_pairs
+        today = date(2026, 6, 7)
+        ing = CVMIngestor.__new__(CVMIngestor)
+        # Whole trailing window already loaded -> only the base months remain.
+        from src.pipeline.cvm_pipeline import _trailing_months, _DAILY_LOOKBACK_MONTHS
+        ing._supabase = _FakeClient(fetch=_trailing_months(today, _DAILY_LOOKBACK_MONTHS))
+        targets = ing._monthly_targets("fidc", "mensal", today)
+        assert targets == _daily_month_pairs(today)
+
+    def test_fills_recently_published_gaps(self):
+        from src.pipeline.cvm_pipeline import (
+            CVMIngestor, _daily_month_pairs, _trailing_months, _DAILY_LOOKBACK_MONTHS,
+        )
+        today = date(2026, 6, 7)
+        base = _daily_month_pairs(today)
+        window = _trailing_months(today, _DAILY_LOOKBACK_MONTHS)
+        # Only the newest month is loaded; older in-window months are gaps.
+        loaded = [base[-1]]
+        ing = CVMIngestor.__new__(CVMIngestor)
+        ing._supabase = _FakeClient(fetch=loaded)
+        targets = ing._monthly_targets("fidc", "mensal_tab_x2", today)
+        for ym in base:                       # base always present
+            assert ym in targets
+        for ym in window:                     # every unloaded in-window month healed
+            if ym not in loaded:
+                assert ym in targets
+        assert targets == sorted(set(targets))  # sorted, deduped
+
+    def test_falls_back_to_base_on_db_error(self):
+        from src.pipeline.cvm_pipeline import CVMIngestor, _daily_month_pairs
+
+        class _Boom:
+            def cursor(self):
+                raise RuntimeError("db down")
+
+        today = date(2026, 6, 7)
+        ing = CVMIngestor.__new__(CVMIngestor)
+        ing._supabase = _Boom()
+        # Degrades to current+previous only — never a deep-history fetch storm.
+        assert ing._monthly_targets("fi", "inf_diario", today) == _daily_month_pairs(today)
+
+
+class TestLogFinishStatus:
+    """A not-yet-published month (404) is 'skipped', not a false 'error'."""
+
+    def _status_for(self, error):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+        ing = CVMIngestor.__new__(CVMIngestor)
+        client = _FakeClient()
+        ing._supabase = client
+        ing._log_finish("run-id", 0, error)
+        _sql, params = client.cursor_obj.executed[-1]
+        return params[1]  # status is the 2nd bound parameter
+
+    def test_data_not_found_is_skipped(self):
+        assert self._status_for("Data not found at https://dados.cvm.gov.br/...202606...") == "skipped"
+
+    def test_other_error_stays_error(self):
+        assert self._status_for("No CSV file found in ZIP. Files: []") == "error"
+
+    def test_success_is_ok(self):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+        ing = CVMIngestor.__new__(CVMIngestor)
+        client = _FakeClient()
+        ing._supabase = client
+        ing._log_finish("run-id", 42)
+        _sql, params = client.cursor_obj.executed[-1]
+        assert params[1] == "ok"
+        assert params[0] == 42
 
     def test_refresh_swallows_errors(self):
         from src.pipeline.cvm_pipeline import CVMIngestor
