@@ -1,0 +1,29 @@
+---
+title: "iliquid nightly"
+description: "Headless ingestion pipeline for Brazilian public financial data (CVM + BACEN) into Supabase Postgres."
+---
+
+## What this is
+
+A headless ingestion pipeline that downloads, parses, validates, and upserts
+Brazilian public financial data from CVM (fund disclosures) and BACEN (SGS time
+series, PTAX, Focus expectativas) into a Supabase Postgres database, built for
+financial accountability of the fund industry.
+
+There is no public API. Downstream consumers — the Evidence.dev dashboards —
+read from Supabase directly.
+
+## Documentation
+
+The full operator guide and architecture notes live in the repository:
+
+- [README](https://github.com/PedroDnT/iliquid_nightly/blob/main/README.md) — operator guide
+- [docs/](https://github.com/PedroDnT/iliquid_nightly/tree/main/docs) — pipeline plan and dataset conventions
+
+## Pipeline stages
+
+The pipeline runs three stages, orchestrated per entity and document type:
+
+1. **Fetch** — HTTP and SDK calls to the CVM and BACEN open-data endpoints.
+2. **Parse** — shared CNPJ/date/numeric validators plus per-dataset field maps.
+3. **Store** — idempotent upserts into Supabase Postgres through a single client.
