@@ -45,3 +45,37 @@ correct results — but the objects are **not yet created on prod** (apply pendi
 The ETF page is therefore built on the **real registry universe** (provider /
 segment / index / status), with price/return/AUM sections explicitly marked
 pending a price feed.
+
+## ETF price feed — Apify scrape of etfsbrasil.com.br
+
+The price feed that fills the gap above is an **Apify** scrape of
+`etfsbrasil.com.br/comparador/<ticker>` (it carries NAV, número de cotistas,
+returns, fees and index). NAV/cotistas are **JS-rendered**, so this runs through a
+**headless-browser actor with rotating RESIDENTIAL proxies** (etfsbrasil
+rate-limits direct scraping) — not a plain HTTP fetch.
+
+Pieces (FETCH → PARSE → STORE):
+- `apify/etfsbrasil_scraper.js` — the web-scraper `pageFunction` (the actual
+  extraction logic, written against the live page).
+- `src/fetchers/apify_etf_fetcher.py` — `ApifyETFFetcher` runs `apify/web-scraper`
+  via `run-sync-get-dataset-items`, passing that pageFunction + one startUrl per
+  active registry ticker + the proxy config. Raises on any failure / empty result.
+- `src/pipeline/ingest_etf_market.py` — parses Brazilian number/date formats and
+  upserts into `etf_market_snapshot` (migration `12_etf_market.sql`), idempotent on
+  `(ticker, snapshot_date)`.
+
+Run it:
+
+```bash
+export APIFY_TOKEN=…            # required
+# optional: APIFY_ETF_ACTOR=apify~web-scraper  APIFY_PROXY_GROUPS=RESIDENTIAL
+python -m src.pipeline.ingest_etf_market
+```
+
+> **Verify before scheduling.** It is intentionally **not** wired into the daily
+> run yet. The NAV/cotistas selectors in the pageFunction are best-effort against
+> the current layout and need confirming on one real run (every scraped value is
+> also dumped into the record's `fields` map, so nothing is lost if a label moves).
+> Once a run is confirmed, point `etf_daily` / the `etf_*` analytics at
+> `etf_market_snapshot` and add it to the daily/watchdog schedule.
+
