@@ -18,10 +18,10 @@ operators can trigger partial fills one (entity, doc_type, year, month) slice at
 time and watch jobs progress via a polling endpoint. See
 [Flask control plane](#flask-control-plane-local).
 
-> A previous version exposed three FastAPI services + a gateway + a Mintlify docs site.
-> Those layers and a Solana "Delos Oracle" experiment were removed in the consolidation;
-> only fetch/parse/store remains. The Flask app here is **localhost-only** — it does
-> not reintroduce a public API surface.
+> A previous version exposed three FastAPI services + a gateway and a Solana "Delos Oracle"
+> experiment; those layers were removed in the consolidation, and only fetch/parse/store
+> remains. The Flask app here is **localhost-only** — it does not reintroduce a public API
+> surface.
 
 ## CVM ZIP structure (important)
 

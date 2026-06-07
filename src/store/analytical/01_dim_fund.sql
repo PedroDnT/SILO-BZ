@@ -2,6 +2,13 @@
 -- L1 Stream A: dim_fund
 -- Registry of all investment fund CNPJs and their entity type / active periods.
 -- Covers FI, FIDC, FIP, FIAGRO, FII only — CRA/CRI/OTS are not funds.
+--
+-- ETFs are EXCLUDED from the fund universe here. An ETF's CNPJ is an ordinary
+-- cvm_fi_diario row, so without this filter ETFs would be double-counted inside
+-- the FI ('Fixed Income'/'Equity') buckets. ETFs are evaluated on their own axis
+-- via etf_daily / etf_latest and the etf_* functions (16_etf_analysis.sql). The
+-- carve-out lives in the two FI enumerations (here and fact_fund_monthly); every
+-- other fund object derives from these, so it propagates automatically.
 -- =============================================================================
 
 BEGIN;
@@ -21,7 +28,9 @@ CREATE OR REPLACE VIEW dim_fund AS
     SELECT cnpj, 'fi' AS entity_type,
            MIN(dt_comptc) AS first_period, MAX(dt_comptc) AS last_period,
            COUNT(DISTINCT dt_comptc) AS n_reports
-    FROM cvm_fi_diario GROUP BY cnpj
+    FROM cvm_fi_diario d
+    WHERE NOT EXISTS (SELECT 1 FROM cvm_etf_registry e WHERE e.cnpj = d.cnpj)
+    GROUP BY cnpj
 
     UNION ALL
 
