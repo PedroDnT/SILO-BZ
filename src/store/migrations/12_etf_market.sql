@@ -15,13 +15,15 @@ CREATE TABLE IF NOT EXISTS etf_market_snapshot (
     ticker            TEXT          NOT NULL,
     snapshot_date     DATE          NOT NULL,
     source            TEXT          NOT NULL DEFAULT 'etfsbrasil',
+    cnpj              TEXT,             -- from the page; links back to cvm_etf_registry
+    isin              TEXT,
     fund_name         TEXT,
     categoria         TEXT,
     regiao            TEXT,
     indice            TEXT,
     provedor_indice   TEXT,
     taxa_adm_pct      NUMERIC(10, 4),   -- administration fee, percent (0.10 = 0.10%)
-    nav               NUMERIC(20, 6),   -- patrimônio líquido (AUM), BRL
+    nav               NUMERIC(20, 6),   -- patrimônio líquido (AUM) in BRL (page shows R$ MM; ×1e6 on ingest)
     cotistas          INTEGER,          -- número de cotistas (quotaholders)
     price             NUMERIC(20, 6),   -- cotação / unit price, BRL
     ret_ytd_pct       NUMERIC(12, 4),   -- return "no ano", percent

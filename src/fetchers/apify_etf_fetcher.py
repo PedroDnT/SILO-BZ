@@ -1,4 +1,4 @@
-"""Apify-backed ETF market fetcher — scrapes etfsbrasil.com.br/comparador/<ticker>.
+"""Apify-backed ETF market fetcher — scrapes etfsbrasil.com.br/etfs/<ticker>.
 
 Why this exists
 ---------------
@@ -40,7 +40,7 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-_COMPARADOR_URL = "https://www.etfsbrasil.com.br/comparador/{ticker}"
+_ETF_URL = "https://www.etfsbrasil.com.br/etfs/{ticker}"
 _PAGE_FUNCTION_PATH = Path(__file__).resolve().parents[2] / "apify" / "etfsbrasil_scraper.js"
 _APIFY_BASE = "https://api.apify.com/v2"
 
@@ -71,7 +71,7 @@ class ApifyETFFetcher:
 
     def _build_input(self, tickers: List[str]) -> Dict[str, Any]:
         start_urls = [
-            {"url": _COMPARADOR_URL.format(ticker=t.strip().lower())}
+            {"url": _ETF_URL.format(ticker=t.strip().lower())}
             for t in tickers
             if t and t.strip()
         ]

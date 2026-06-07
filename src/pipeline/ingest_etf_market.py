@@ -94,30 +94,68 @@ def _ticker(v: Any) -> Optional[str]:
     return s or None
 
 
+def _cnpj14(v: Any) -> Optional[str]:
+    s = _clean(v)
+    if not s:
+        return None
+    digits = re.sub(r"\D", "", s)
+    return digits if len(digits) == 14 else (digits or None)
+
+
+# The /etfs/<ticker> page is rendered text (innerText). NAV/cotistas/taxa appear as
+# value-then-label; name/index/provedor/região/lançamento/CNPJ/ISIN as label-then-
+# value. These regexes pull each by its Portuguese label; returns are chart-rendered
+# (not in text) so they stay NULL until mapped from the next_data JSON post-verify.
+_RE = {
+    "price":    r"R\$\s*([\d.,]+)",
+    "nav_mm":   r"([\d.,]+)\s*\n+\s*Patrim[oô]nio l[ií]quido",
+    "cotistas": r"([\d.,]+)\s*\n+\s*N[uú]mero de cotistas",
+    "taxa_adm": r"([\d.,]+\s*%)\s*\n+\s*Taxa de administra[cç][aã]o total",
+    "fund_name": r"Nome do fundo\s*\n+\s*([^\n]+)",
+    "indice":   r"\n[ÍI]ndice\s*\n+\s*\[?([^\n\]]+)",
+    "provedor": r"Provedor do [íi]ndice\s*\n+\s*\[?([^\n\]]+)",
+    "regiao":   r"Regi[ãa]o\s*\n+\s*([^\n]+)",
+    "launch":   r"Lan[cç]amento\s*\n+\s*(\d{2}/\d{2}/\d{4})",
+    "cnpj":     r"CNPJ\s*\n+\s*([\d./\-]+)",
+    "isin":     r"ISIN\s*\n+\s*([A-Z0-9]{12})",
+}
+
+
+def _grab(text: Optional[str], pattern: str) -> Optional[str]:
+    if not text:
+        return None
+    m = re.search(pattern, text, re.IGNORECASE)
+    return m.group(1).strip() if m else None
+
+
 def _record_to_row(rec: Dict[str, Any], snapshot: str) -> Optional[Dict[str, Any]]:
     ticker = _ticker(rec.get("ticker"))
     if not ticker:
         return None
+    text = rec.get("text")
+    nav_mm = _num(_grab(text, _RE["nav_mm"]))   # page shows R$ MM
     return {
         "ticker":           ticker,
         "snapshot_date":    snapshot,
         "source":           "etfsbrasil",
-        "fund_name":        _clean(rec.get("fund_name")),
-        "categoria":        _clean(rec.get("categoria")),
-        "regiao":           _clean(rec.get("regiao")),
-        "indice":           _clean(rec.get("indice")),
-        "provedor_indice":  _clean(rec.get("provedor_indice")),
-        "taxa_adm_pct":     _pct(rec.get("taxa_adm")),
-        "nav":              _num(rec.get("nav")),
-        "cotistas":         _int(rec.get("cotistas")),
-        "price":            _num(rec.get("price")),
-        "ret_ytd_pct":      _pct(rec.get("ret_ytd")),
-        "ret_12m_pct":      _pct(rec.get("ret_12m")),
-        "ret_36m_pct":      _pct(rec.get("ret_36m")),
-        "vol_12m_pct":      _pct(rec.get("vol_12m")),
-        "sharpe_12m":       _num(rec.get("sharpe_12m")),
-        "max_drawdown_pct": _pct(rec.get("max_drawdown")),
-        "launch_date":      _date(rec.get("launch")),
+        "cnpj":             _cnpj14(_grab(text, _RE["cnpj"])),
+        "isin":             _clean(_grab(text, _RE["isin"])),
+        "fund_name":        _clean(_grab(text, _RE["fund_name"])),
+        "categoria":        None,   # shown next to the ticker, not label-tagged
+        "regiao":           _clean(_grab(text, _RE["regiao"])),
+        "indice":           _clean(_grab(text, _RE["indice"])),
+        "provedor_indice":  _clean(_grab(text, _RE["provedor"])),
+        "taxa_adm_pct":     _pct(_grab(text, _RE["taxa_adm"])),
+        "nav":              (nav_mm * 1_000_000) if nav_mm is not None else None,
+        "cotistas":         _int(_grab(text, _RE["cotistas"])),
+        "price":            _num(_grab(text, _RE["price"])),
+        "ret_ytd_pct":      None,
+        "ret_12m_pct":      None,
+        "ret_36m_pct":      None,
+        "vol_12m_pct":      None,
+        "sharpe_12m":       None,
+        "max_drawdown_pct": None,
+        "launch_date":      _date(_grab(text, _RE["launch"])),
         "raw":              Json(rec),
     }
 
