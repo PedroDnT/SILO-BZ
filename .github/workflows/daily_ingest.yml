@@ -70,40 +70,14 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Install PostgreSQL client
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
-
-      # Pre-flight: drop views that depend on columns widened by migration 01.
-      # These views are recreated by migration 06 after the ALTERs complete.
-      # On a fresh DB the views don't exist yet — IF EXISTS makes this a no-op.
-      # Note: errors suppressed (|| true) because Supabase pooler (port 6543)
-      # sometimes reports 'not a view' for already-absent objects; the DROP is
-      # best-effort and migration 06 always recreates them with CREATE OR REPLACE.
-      - name: Drop migration-dependent views (pre-flight)
-        run: |
-          psql "$POSTGRES_URL" -c "DROP VIEW IF EXISTS etf_latest CASCADE;" || true
-          psql "$POSTGRES_URL" -c "DROP VIEW IF EXISTS etf_daily CASCADE;" || true
-          psql "$POSTGRES_URL" -c "DROP VIEW IF EXISTS instrument_activity CASCADE;" || true
-
-      # Bootstrap the schema on every path (scheduled, daily dispatch, backfill),
-      # so a fresh/empty DB heals itself on the next run with no manual step.
-      # Safe to replay: psql parses SQL comments/statements correctly (unlike the
-      # old apply_schema.py ;-splitter), all DDL is IF NOT EXISTS / guarded, and
-      # migration 05 only rebuilds uq_cia_account when it lacks coluna_df — a true
-      # no-op once applied. ON_ERROR_STOP fails the job on any real error, and the
-      # closing regclass assertion fails the run if anything silently didn't take.
+      # Bootstrap the schema on every path (scheduled, daily dispatch, backfill)
+      # via the shared composite action, so a fresh/empty DB heals itself and no
+      # ingest ever runs against a DB missing a migration. One definition, reused
+      # by daily / watchdog / backfill — they can no longer drift apart.
       - name: Apply schema + migrations
-        run: |
-          set -euo pipefail
-          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f src/store/schema.sql
-          for f in src/store/migrations/*.sql; do
-            echo "== applying $f =="
-            psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f "$f"
-          done
-          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 \
-            -c "SELECT 'cvm_ingest_log'::regclass, 'cvm_etf_registry'::regclass, 'cia_account'::regclass;"
+        uses: ./.github/actions/apply-schema
+        with:
+          postgres-url: ${{ secrets.POSTGRES_URL }}
 
       - name: Run daily update
         if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily') }}
@@ -149,3 +123,14 @@ jobs:
             ANALYZE cvm_etf_registry;
             ANALYZE cvm_ingest_log;
           "
+
+      # Build/refresh the analytical layer (dims, fact matviews, rankings, fraud
+      # screens) after the data lands. Its matview re-create doubles as the daily
+      # refresh, so downstream dashboards see fresh aggregates without a separate
+      # cron. continue-on-error: an analytical hiccup (e.g. a smoke-check on a
+      # slice that has no data yet) stays visible in the run summary but never
+      # fails the ingest critical path — psql/POSTGRES_URL come from the steps above.
+      - name: Build / refresh analytical layer
+        if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'backfill') }}
+        continue-on-error: true
+        run: bash scripts/apply_analytical.sh

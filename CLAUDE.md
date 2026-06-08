@@ -96,6 +96,18 @@ Periodicity: **monthly** datasets (`fi`, `fidc *`, `fiagro mensal`) take `(year,
 key on `competencia` = first day of the month; **yearly** datasets (`fii *`, `fip`,
 `securit *`) take `(year)` only; **BACEN** time series key on `(series_code, date)`.
 
+For a *new class* of data (e.g. market/price series for securities), read
+`docs/DATA_MODELING.md` first: extend the existing `dim_`/`fact_` star schema and model
+time series as a **long fact** keyed on `(instrument natural key, date[, metric])` rather
+than a wide per-source table — same provenance + idempotent-upsert rules apply.
+
+The daily run probes a **gap-aware trailing window** for monthly datasets
+(`CVM_DAILY_LOOKBACK_MONTHS`, default 4): it always refreshes the current + previous month
+and additionally re-fetches any month in the window with no successful `cvm_ingest_log`
+row, so a slice CVM publishes late (its 1–2 month lag) is healed on the next run instead of
+missed forever. A not-yet-published month 404s and is logged `skipped`, not `error`. Deep
+history is still `run_backfill`'s job, not the daily window's.
+
 ## Commands
 
 ```bash

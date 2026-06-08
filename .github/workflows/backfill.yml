@@ -21,28 +21,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install PostgreSQL client
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
-
+      # Shared composite action — same schema bootstrap as daily/watchdog, so the
+      # three paths can't drift. Runs once here and the ingest matrix gates on it
+      # via `needs:`, so the CREATE statements don't race across parallel jobs.
       - name: Apply schema + migrations
-        env:
-          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
-        run: |
-          set -euo pipefail
-          # psql (not apply_schema.py) parses SQL comments/statements correctly and
-          # ON_ERROR_STOP fails the job on any real error. All DDL is idempotent, so
-          # this is safe to re-run. Schema first, then migrations in lexical order.
-          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f src/store/schema.sql
-          for f in src/store/migrations/*.sql; do
-            echo "== applying $f =="
-            psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f "$f"
-          done
-          # Assert a base table AND a migration-created table exist (::regclass
-          # errors out, failing the gate, if a step silently didn't take).
-          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 \
-            -c "SELECT 'cvm_ingest_log'::regclass, 'cvm_etf_registry'::regclass;"
+        uses: ./.github/actions/apply-schema
+        with:
+          postgres-url: ${{ secrets.POSTGRES_URL }}
 
   # FI is the largest entity — one job per year so they run in parallel
   backfill-fi:
@@ -259,3 +244,30 @@ jobs:
           python -m src.pipeline.run_backfill \
             --bacen-only \
             --bacen-start 2019-01-01
+
+  # Build the analytical layer (dims, fact matviews, rankings, fraud screens)
+  # once the full backfill has populated the base tables — several analytical
+  # files smoke-check for data and RAISE on an empty DB, so this must run AFTER
+  # ingest. continue-on-error so a single analytical hiccup doesn't mark an
+  # otherwise-successful multi-hour backfill as failed; the step output stays
+  # visible. Run regardless of individual slice failures (if: always()) so a
+  # partial-but-useful dataset still gets its analytics.
+  apply-analytical:
+    name: "Apply analytical layer"
+    needs: [backfill-fi, backfill-other, backfill-etf, backfill-bacen]
+    if: ${{ always() }}
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Build analytical layer
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        run: bash scripts/apply_analytical.sh
