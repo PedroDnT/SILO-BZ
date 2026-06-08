@@ -28,6 +28,13 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN NULL;
     END;
 
+    -- dim_fund — 06:15 UTC daily (matview; feeds dim_fund_category + performance fns)
+    PERFORM cron.schedule(
+      'refresh-dim-fund',
+      '15 6 * * *',
+      'REFRESH MATERIALIZED VIEW CONCURRENTLY dim_fund'
+    );
+
     -- fact_fund_monthly — 06:20 UTC daily (after GHA ingest at 06:00)
     PERFORM cron.schedule(
       'refresh-fact-fund-monthly',

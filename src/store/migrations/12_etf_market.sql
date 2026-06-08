@@ -3,7 +3,7 @@
 -- CVM open data does not expose ETF NAV/quotaholders for the post-CVM-175 share
 -- classes (the registry's fund-level CNPJ no longer matches the daily file's
 -- class-level CNPJ, so etf_daily is empty). This table holds the per-ETF market
--- snapshot scraped from etfsbrasil.com.br/comparador/<ticker> via an Apify
+-- snapshot scraped from etfsbrasil.com.br/etfs/<ticker> via an Apify
 -- browser actor (rotating proxies) — see src/fetchers/apify_etf_fetcher.py and
 -- apify/etfsbrasil_scraper.js.
 --

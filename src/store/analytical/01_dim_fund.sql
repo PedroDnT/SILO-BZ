@@ -14,7 +14,23 @@
 BEGIN;
 SET statement_timeout = '5min';
 
-CREATE OR REPLACE VIEW dim_fund AS
+-- dim_fund is MATERIALIZED: the FI branch aggregates the full cvm_fi_diario
+-- history and fund_performance_ranking (17) joins it twice, so a plain view cost
+-- minutes per call. It is refreshed after ingest (08_cron_schedules) and rebuilt
+-- by the daily apply_analytical re-create. CASCADE drops the dependent
+-- classification views (dim_fund_category / dim_administrator / dim_gestor);
+-- 13_dim_classification rebuilds them in the same apply pass.
+DO $$
+DECLARE k "char" := (SELECT relkind FROM pg_class WHERE oid = to_regclass('public.dim_fund'));
+BEGIN
+  IF k = 'm' THEN
+    EXECUTE 'DROP MATERIALIZED VIEW dim_fund CASCADE';
+  ELSIF k IS NOT NULL THEN
+    EXECUTE 'DROP VIEW dim_fund CASCADE';
+  END IF;
+END $$;
+
+CREATE MATERIALIZED VIEW dim_fund AS
   SELECT
     t.cnpj,
     t.entity_type,
@@ -61,6 +77,10 @@ CREATE OR REPLACE VIEW dim_fund AS
   ) t
   LEFT JOIN cvm_fund_registry r
     ON r.cnpj = t.cnpj AND r.entity_type = t.entity_type;
+
+-- Unique index → fast joins from dim_fund_category / fund_performance_ranking and
+-- enables REFRESH MATERIALIZED VIEW CONCURRENTLY (08_cron_schedules).
+CREATE UNIQUE INDEX ix_dim_fund_pk ON dim_fund (cnpj, entity_type);
 
 -- Smoke check: must have at least one fund per entity type once any data is loaded
 DO $$

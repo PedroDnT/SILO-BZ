@@ -18,7 +18,7 @@ import asyncio
 import json
 import logging
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from psycopg2.extras import Json
@@ -99,7 +99,7 @@ def _cnpj14(v: Any) -> Optional[str]:
     if not s:
         return None
     digits = re.sub(r"\D", "", s)
-    return digits if len(digits) == 14 else (digits or None)
+    return digits if len(digits) == 14 else None  # CNPJ is 14 digits or it's not one
 
 
 # The /etfs/<ticker> page is rendered text (innerText). NAV/cotistas/taxa appear as
@@ -177,7 +177,7 @@ def ingest_etf_market(conn, tickers: Optional[List[str]] = None) -> int:
             "No ETF tickers to scrape — seed cvm_etf_registry first (ingest_etf_registry)"
         )
     records = ApifyETFFetcher().fetch(tickers)
-    snapshot = datetime.now().date().isoformat()
+    snapshot = datetime.now(timezone.utc).date().isoformat()  # UTC: CI runs in UTC
 
     rows, dropped = [], 0
     for rec in records:
