@@ -1,0 +1,56 @@
+name: Apply schema + migrations
+description: >-
+  Bootstrap the Supabase Postgres schema idempotently: install psql, drop the
+  migration-dependent views, apply schema.sql + every migrations/*.sql in lexical
+  order, then assert key tables exist. Used by EVERY workflow that ingests so no
+  ingest path ever runs against a DB that is missing a migration — that drift is
+  what left cvm_fund_registry without its admin/gestor columns (migration 11) and
+  silently failed registry ingestion. The repository must already be checked out.
+
+inputs:
+  postgres-url:
+    description: Postgres connection string (Supabase, sslmode=require).
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install PostgreSQL client
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y postgresql-client
+
+    # Pre-flight: drop views that depend on columns widened by migration 01.
+    # Migration 06 recreates them after the ALTERs. On a fresh DB they don't
+    # exist yet — IF EXISTS makes this a no-op. Errors suppressed (|| true)
+    # because the Supabase pooler sometimes reports 'not a view' for already
+    # absent objects; the DROP is best-effort and 06 always recreates them.
+    - name: Drop migration-dependent views (pre-flight)
+      shell: bash
+      env:
+        POSTGRES_URL: ${{ inputs.postgres-url }}
+      run: |
+        psql "$POSTGRES_URL" -c "DROP VIEW IF EXISTS etf_latest CASCADE;" || true
+        psql "$POSTGRES_URL" -c "DROP VIEW IF EXISTS etf_daily CASCADE;" || true
+        psql "$POSTGRES_URL" -c "DROP VIEW IF EXISTS instrument_activity CASCADE;" || true
+
+    # Schema first, then migrations in lexical order. psql (not apply_schema.py)
+    # parses SQL comments/statements correctly and ON_ERROR_STOP fails the job on
+    # any real error. All DDL is IF NOT EXISTS / guarded, so this is safe to
+    # replay. The closing ::regclass assertion fails the run if a base table OR a
+    # migration-created table silently didn't take.
+    - name: Apply schema + migrations
+      shell: bash
+      env:
+        POSTGRES_URL: ${{ inputs.postgres-url }}
+      run: |
+        set -euo pipefail
+        psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f src/store/schema.sql
+        for f in src/store/migrations/*.sql; do
+          [ -e "$f" ] || continue   # glob stays literal when nothing matches
+          echo "== applying $f =="
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f "$f"
+        done
+        psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 \
+          -c "SELECT 'cvm_ingest_log'::regclass, 'cvm_etf_registry'::regclass, 'cia_account'::regclass;"

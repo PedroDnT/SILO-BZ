@@ -244,6 +244,30 @@ def _daily_month_pairs(today: date) -> List[Tuple[int, int]]:
     return [previous, current] if previous != current else [current]
 
 
+# How many trailing months a daily run probes for monthly datasets. CVM lags
+# publication by 1-2 months, so a fixed current+previous window misses a slice
+# until the day it is published and then never revisits it. A bounded trailing
+# window (default 4 months) self-heals that recent lag without re-fetching deep
+# history every day — deep history is run_backfill's job. Clamped to >= 2 so the
+# window always covers at least current + previous.
+# Parsed via _env_int (the house helper) so a misconfigured value warns and falls
+# back instead of crashing import; clamped to >= 2 so the window always covers at
+# least current + previous.
+_DAILY_LOOKBACK_MONTHS = max(2, _env_int("CVM_DAILY_LOOKBACK_MONTHS", 4))
+
+
+def _trailing_months(today: date, lookback: int) -> List[Tuple[int, int]]:
+    """The last `lookback` (year, month) pairs ending at `today`, oldest first."""
+    months: List[Tuple[int, int]] = []
+    y, m = today.year, today.month
+    for _ in range(max(1, lookback)):
+        months.append((y, m))
+        m -= 1
+        if m == 0:
+            m, y = 12, y - 1
+    return list(reversed(months))
+
+
 def _iter_month_pairs(
     years: List[int],
     today: date,
@@ -324,6 +348,19 @@ class CVMIngestor:
             logger.warning("ingest_log start failed: %s", e)
 
     def _log_finish(self, run_id: str, rows: int, error: Optional[str] = None) -> None:
+        # A 404 for a not-yet-published month is an expected non-event, not a
+        # failure. The daily window probes a trailing range (see _monthly_targets)
+        # and CVM lags publication by 1-2 months, so the leading months 404. The
+        # fetcher raises ValueError("Data not found at <url>") on 404; record that
+        # as 'skipped' so it isn't a false error and so staleness checks (which
+        # count only 'ok') don't treat the slice as loaded. Any other error —
+        # including a malformed ZIP ("No CSV file found …") — stays 'error'.
+        if error and "Data not found" in error:
+            status = "skipped"
+        elif error:
+            status = "error"
+        else:
+            status = "ok"
         try:
             with self._supabase.cursor() as cur:
                 cur.execute(
@@ -331,7 +368,7 @@ class CVMIngestor:
                     " error_msg=%s, finished_at=%s WHERE run_id=%s",
                     (
                         rows,
-                        "error" if error else "ok",
+                        status,
                         error,
                         datetime.now(timezone.utc).isoformat(),
                         run_id,
@@ -339,6 +376,48 @@ class CVMIngestor:
                 )
         except Exception as e:
             logger.warning("ingest_log finish failed: %s", e)
+
+    def _monthly_targets(self, entity: str, doc_type: str, today: date) -> List[Tuple[int, int]]:
+        """Months a daily run should fetch for a monthly (entity, doc_type).
+
+        Always includes the current and previous month — the current source file
+        grows daily and the previous one may have just been finalised. Adds any
+        month inside the trailing CVM_DAILY_LOOKBACK_MONTHS window that has no
+        successful prior ingest (cvm_ingest_log row with status='ok' and
+        rows_upserted > 0), so a slice CVM publishes late is picked up on the next
+        run instead of being missed forever. Bounded by the window, so it heals
+        recent lag without re-fetching deep history. The (entity, doc_type) pair
+        must match the strings the ingest method logs via _log_start. On any DB
+        error it degrades to current + previous only.
+        """
+        base = set(_daily_month_pairs(today))
+        window = _trailing_months(today, _DAILY_LOOKBACK_MONTHS)
+        try:
+            years = sorted({y for y, _ in window})
+            with self._supabase.cursor() as cur:
+                # rows_upserted > 0 is deliberate: an 'ok' run that wrote 0 rows
+                # is an empty/partial publish, not a loaded slice. Treating it as a
+                # gap means a month CVM first publishes empty (or partially) gets
+                # revisited until it actually has data — re-fetching it within the
+                # bounded window is far cheaper than silently missing the slice,
+                # which is the exact failure this window exists to prevent. For
+                # these aggregate datasets a genuinely-final 0-row month is rare.
+                cur.execute(
+                    "SELECT DISTINCT period_year, period_month FROM cvm_ingest_log"
+                    " WHERE entity=%s AND doc_type=%s AND status='ok'"
+                    " AND rows_upserted > 0 AND period_month IS NOT NULL"
+                    " AND period_year = ANY(%s)",
+                    (entity, doc_type, years),
+                )
+                loaded = {(py, pm) for py, pm in cur.fetchall()}
+        except Exception as e:
+            logger.warning(
+                "monthly gap-check failed for %s/%s (%s); using current+previous only",
+                entity, doc_type, e,
+            )
+            return sorted(base)
+        gaps = {ym for ym in window if ym not in loaded}
+        return sorted(base | gaps)
 
     def _refresh_etf_metrics(self) -> None:
         """Refresh the materialized ETF views after an ETF ingest.
@@ -1242,7 +1321,6 @@ class CVMIngestor:
         totals = _new_totals()
         tasks: List[IngestTask] = []
         daily_entities = _resolve_daily_entities()
-        month_pairs = _daily_month_pairs(today)
 
         # Fund registry refresh
         if "fi" in daily_entities:
@@ -1258,29 +1336,39 @@ class CVMIngestor:
         if "etf" in daily_entities:
             totals["cvm_etf_registry"] += await self.ingest_etf_registry()
 
-        # FI — current + previous month
+        # FI / FIDC / FIAGRO monthly datasets — gap-aware trailing window.
+        # Each spec is (table, log_entity, log_doc_type, label, method). log_entity
+        # and log_doc_type MUST match the strings the method passes to _log_start,
+        # so _monthly_targets can tell which months are already loaded; label is
+        # the friendlier name used in the task description. _monthly_targets always
+        # yields current + previous month and self-heals recently-published gaps.
+        monthly_specs: List[Tuple[str, str, str, str, Any]] = []
         if "fi" in daily_entities:
-            for task_year, task_month in month_pairs:
-                tasks += [
-                    IngestTask("cvm_fi_diario", f"fi/inf_diario {task_year}-{task_month:02d}", self.ingest_fi_diario(task_year, task_month)),
-                    IngestTask("cvm_fi_cda", f"fi/cda {task_year}-{task_month:02d}", self.ingest_fi_cda(task_year, task_month)),
-                    IngestTask("cvm_fi_perfil", f"fi/perfil_mensal {task_year}-{task_month:02d}", self.ingest_fi_perfil(task_year, task_month)),
-                ]
+            monthly_specs += [
+                ("cvm_fi_diario", "fi", "inf_diario", "inf_diario", self.ingest_fi_diario),
+                ("cvm_fi_cda", "fi", "cda", "cda", self.ingest_fi_cda),
+                ("cvm_fi_perfil", "fi", "perfil_mensal", "perfil_mensal", self.ingest_fi_perfil),
+            ]
+        if "fidc" in daily_entities:
+            monthly_specs += [
+                ("cvm_fidc_mensal", "fidc", "mensal", "mensal", self.ingest_fidc_mensal),
+                ("cvm_fidc_tranche", "fidc", "mensal_tab_x2", "tranche", self.ingest_fidc_tranche),
+                ("cvm_fidc_tranche_flows", "fidc", "mensal_tab_x4", "tranche_flows", self.ingest_fidc_tranche_flows),
+                ("cvm_fidc_aging", "fidc", "mensal_tab_vi", "aging", self.ingest_fidc_aging),
+            ]
+        if "fiagro" in daily_entities:
+            monthly_specs.append(
+                ("cvm_fiagro_mensal", "fiagro", "mensal", "mensal", self.ingest_fiagro_mensal)
+            )
 
-        # FIDC / FIAGRO — current + previous month
-        for task_year, task_month in month_pairs:
-            if "fidc" in daily_entities:
-                tasks.extend([
-                    IngestTask("cvm_fidc_mensal", f"fidc/mensal {task_year}-{task_month:02d}", self.ingest_fidc_mensal(task_year, task_month)),
-                    IngestTask("cvm_fidc_tranche", f"fidc/tranche {task_year}-{task_month:02d}", self.ingest_fidc_tranche(task_year, task_month)),
-                    IngestTask("cvm_fidc_tranche_flows", f"fidc/tranche_flows {task_year}-{task_month:02d}", self.ingest_fidc_tranche_flows(task_year, task_month)),
-                    IngestTask("cvm_fidc_aging", f"fidc/aging {task_year}-{task_month:02d}", self.ingest_fidc_aging(task_year, task_month)),
-                ])
-            if "fiagro" in daily_entities and date(task_year, task_month, 1) >= _FIAGRO_FIRST_PERIOD:
+        for table, log_entity, log_doc_type, label, method in monthly_specs:
+            for task_year, task_month in self._monthly_targets(log_entity, log_doc_type, today):
+                if log_entity == "fiagro" and date(task_year, task_month, 1) < _FIAGRO_FIRST_PERIOD:
+                    continue
                 tasks.append(IngestTask(
-                    "cvm_fiagro_mensal",
-                    f"fiagro/mensal {task_year}-{task_month:02d}",
-                    self.ingest_fiagro_mensal(task_year, task_month),
+                    table,
+                    f"{log_entity}/{label} {task_year}-{task_month:02d}",
+                    method(task_year, task_month),
                 ))
 
         # FIP — refresh current year

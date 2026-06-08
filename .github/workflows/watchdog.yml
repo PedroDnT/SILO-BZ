@@ -68,6 +68,17 @@ jobs:
             exit $code
           fi
 
+      # Bootstrap schema/migrations before the recovery run. The watchdog
+      # previously ran run_daily directly, so a recovery against a DB missing a
+      # migration (e.g. cvm_fund_registry without migration 11's admin/gestor
+      # columns) failed silently — the exact drift this guards against. Gated on
+      # the same condition as the recovery so a no-op day stays a true no-op.
+      - name: Apply schema + migrations
+        if: ${{ steps.staleness.outputs.stale == 'true' || github.event.inputs.force == 'true' }}
+        uses: ./.github/actions/apply-schema
+        with:
+          postgres-url: ${{ secrets.POSTGRES_URL }}
+
       - name: Run daily ingest (recovery)
         if: ${{ steps.staleness.outputs.stale == 'true' || github.event.inputs.force == 'true' }}
         run: python -m src.pipeline.run_daily
