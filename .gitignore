@@ -37,6 +37,7 @@ data/
 .claude/settings.local.json
 # Per-agent git worktrees — must not be tracked (they appear as gitlinks and break CI)
 .claude/worktrees/
+.claire/
 
 # pytest
 .pytest_cache/

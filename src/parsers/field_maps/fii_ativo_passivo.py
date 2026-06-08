@@ -6,7 +6,7 @@ Target table: cvm_fii_mensal, discriminated by doc_subtype='ativo_passivo'.
 The headline aggregates are mapped to existing typed columns; the ~45 granular
 balance-sheet line items remain in residual `raw`.  If the UI needs the full
 balance sheet, add typed columns for them or split ativo_passivo into its own
-properly-typed table (see docs/planning/02 §1 and 04 W1).
+properly-typed table.
 """
 
 TABLE = "cvm_fii_mensal"
