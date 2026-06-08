@@ -13,11 +13,17 @@ This skill teaches the core development patterns and conventions used in the `il
   - Example: `data_processor.py`, `user_profile_manager.py`
 
 ### Import Style
-- Use **relative imports** within the package.
+- Use **relative imports** within the same package.
   - Example:
     ```python
     from .utils import calculate_score
     from .models.user import User
+    ```
+- Use **absolute imports** (with `src.` prefix) across different packages.
+  - Example:
+    ```python
+    from src.pipeline.cvm_pipeline import CVMIngestor
+    from src.store.pg_client import get_pg_client
     ```
 
 ### Export Style
