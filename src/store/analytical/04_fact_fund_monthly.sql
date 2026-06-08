@@ -46,27 +46,32 @@ CREATE MATERIALIZED VIEW fact_fund_monthly AS
     NULL::numeric                                    AS vl_ativo
   FROM (
     -- Last reported row per (fund, month): highest dt_comptc wins.
+    -- ETFs are excluded (their CNPJ is an ordinary cvm_fi_diario row) so they are
+    -- not double-counted here and in etf_daily; they are evaluated separately via
+    -- the etf_* objects. dim_fund applies the same carve-out.
     SELECT DISTINCT ON (cnpj, date_trunc('month', dt_comptc))
       cnpj,
       dt_comptc,
       vl_patrim_liq,
       vl_quota,
       nr_cotst
-    FROM cvm_fi_diario
+    FROM cvm_fi_diario d
     WHERE vl_patrim_liq IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM cvm_etf_registry e WHERE e.cnpj = d.cnpj)
     ORDER BY
       cnpj,
       date_trunc('month', dt_comptc),
       dt_comptc DESC
   ) last_day
   JOIN (
-    -- Monthly flow totals.
+    -- Monthly flow totals (ETFs excluded, same as above).
     SELECT
       cnpj,
       date_trunc('month', dt_comptc)::date AS period,
       SUM(captc_dia)                       AS captc_mes,
       SUM(resg_dia)                        AS resg_mes
-    FROM cvm_fi_diario
+    FROM cvm_fi_diario d
+    WHERE NOT EXISTS (SELECT 1 FROM cvm_etf_registry e WHERE e.cnpj = d.cnpj)
     GROUP BY cnpj, date_trunc('month', dt_comptc)::date
   ) flows
     ON  flows.cnpj   = last_day.cnpj

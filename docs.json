@@ -1,0 +1,16 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "iliquid nightly",
+  "colors": {
+    "primary": "#16A34A"
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Overview",
+        "pages": ["index"]
+      }
+    ]
+  }
+}

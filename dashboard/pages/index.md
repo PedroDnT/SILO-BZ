@@ -67,7 +67,8 @@ union all select 'SECURIT série', count(*) from cvm_securit_serie
 
 ## Explore
 
+- [Fund Performance](/performance) — Who beat their peers, per asset class (horizontal + vertical)
+- [ETF Market](/etf) — Listed ETFs, evaluated separately from the fund industry
 - [FIDC Credit Monitor](/fidc) — Aging buckets, tranche performance, red flags
 - [FII Market](/fii) — Real estate funds: yield, AUM, dividend trends
-- [CRA/CRI Issuance](/securit) — Fixed-income securitisation market
 - [Suspicious Deals](/suspicious) — Forensic screens: zombie growth, evergreen aging

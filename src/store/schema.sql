@@ -538,3 +538,35 @@ CREATE TABLE IF NOT EXISTS bacen_expectativas (
 );
 CREATE INDEX IF NOT EXISTS idx_expectativas_endpoint_indicador
     ON bacen_expectativas (endpoint_name, indicador, reference_date DESC);
+
+-- ---------------------------------------------------------------------------
+-- ETF market snapshots scraped from etfsbrasil.com.br (see migration 12_etf_market.sql).
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS etf_market_snapshot (
+    ticker            TEXT          NOT NULL,
+    snapshot_date     DATE          NOT NULL,
+    source            TEXT          NOT NULL DEFAULT 'etfsbrasil',
+    cnpj              TEXT,
+    isin              TEXT,
+    fund_name         TEXT,
+    categoria         TEXT,
+    regiao            TEXT,
+    indice            TEXT,
+    provedor_indice   TEXT,
+    taxa_adm_pct      NUMERIC(10, 4),
+    nav               NUMERIC(20, 6),   -- BRL (page shows R$ MM; ×1e6 on ingest)
+    cotistas          INTEGER,
+    price             NUMERIC(20, 6),
+    ret_ytd_pct       NUMERIC(12, 4),
+    ret_12m_pct       NUMERIC(12, 4),
+    ret_36m_pct       NUMERIC(12, 4),
+    vol_12m_pct       NUMERIC(12, 4),
+    sharpe_12m        NUMERIC(12, 4),
+    max_drawdown_pct  NUMERIC(12, 4),
+    launch_date       DATE,
+    raw               JSONB,
+    scraped_at        TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_etf_market_snapshot UNIQUE (ticker, snapshot_date)
+);
+CREATE INDEX IF NOT EXISTS idx_etf_market_snapshot_date   ON etf_market_snapshot (snapshot_date DESC);
+CREATE INDEX IF NOT EXISTS idx_etf_market_snapshot_ticker ON etf_market_snapshot (ticker, snapshot_date DESC);
