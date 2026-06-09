@@ -21,10 +21,13 @@ limit 12
 ```
 
 ```sql top_revenue
+-- latest filing per company = newest dt_refer AND its newest versao, so a
+-- reapresentação (refiled ITR/DFP) never mixes with the original
 with latest as (
-  select cd_cvm, max(dt_refer) as dt_refer
-  from cia_account where grupo = 'DRE' and escopo = 'con'
-  group by cd_cvm
+  select distinct on (cd_cvm) cd_cvm, dt_refer, versao
+  from cia_account
+  where grupo = 'DRE' and escopo = 'con'
+  order by cd_cvm, dt_refer desc, versao desc nulls last
 )
 select
   c.denom_cia as company,
@@ -36,6 +39,7 @@ select
   ) / 1e6 as lucro_mm
 from cia_account a
 join latest l on l.cd_cvm = a.cd_cvm and l.dt_refer = a.dt_refer
+  and a.versao is not distinct from l.versao
 join cia_company c on c.cd_cvm = a.cd_cvm
 where a.grupo = 'DRE' and a.escopo = 'con' and a.ordem_exerc = 'ÚLTIMO'
   and a.cd_conta in ('3.01', '3.09', '3.11')
@@ -45,11 +49,16 @@ limit 15
 ```
 
 ```sql recent_fatos
+-- distinct on (protocolo): a refiled event keeps only its newest versao
 select
-  data_entrega::date as delivered,
+  e.data_entrega::date as delivered,
   c.denom_cia as company,
   e.assunto as subject
-from cia_event e
+from (
+  select distinct on (protocolo) *
+  from cia_event
+  order by protocolo, versao desc nulls last
+) e
 join cia_company c on c.cd_cvm = e.cd_cvm
 where e.categoria = 'Fato Relevante'
 order by e.data_entrega desc

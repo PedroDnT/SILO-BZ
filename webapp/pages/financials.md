@@ -3,10 +3,15 @@ title: Financials — ITR/DFP Statements
 ---
 
 ```sql financials
+-- latest filing per company = newest dt_refer AND its newest versao, so a
+-- reapresentação (refiled ITR/DFP) never mixes with the original. The balance
+-- CTE joins on the same (dt_refer, versao); if a future refile bumps only the
+-- balance's versao the LEFT JOIN degrades to NULL assets/equity, never a mix.
 with latest as (
-  select cd_cvm, max(dt_refer) as dt_refer
-  from cia_account where grupo = 'DRE' and escopo = 'con'
-  group by cd_cvm
+  select distinct on (cd_cvm) cd_cvm, dt_refer, versao
+  from cia_account
+  where grupo = 'DRE' and escopo = 'con'
+  order by cd_cvm, dt_refer desc, versao desc nulls last
 ),
 dre as (
   select
@@ -20,6 +25,7 @@ dre as (
     ) / 1e6 as lucro_mm
   from cia_account a
   join latest l on l.cd_cvm = a.cd_cvm and l.dt_refer = a.dt_refer
+    and a.versao is not distinct from l.versao
   where a.grupo = 'DRE' and a.escopo = 'con' and a.ordem_exerc = 'ÚLTIMO'
   group by a.cd_cvm, a.dt_refer
 ),
@@ -30,6 +36,7 @@ balance as (
     max(a.vl_conta) filter (where a.grupo = 'BPP' and a.ds_conta = 'Patrimônio Líquido Consolidado') / 1e6 as pl_mm
   from cia_account a
   join latest l on l.cd_cvm = a.cd_cvm and l.dt_refer = a.dt_refer
+    and a.versao is not distinct from l.versao
   where a.grupo in ('BPA', 'BPP') and a.escopo = 'con' and a.ordem_exerc = 'ÚLTIMO'
   group by a.cd_cvm
 )
@@ -59,6 +66,7 @@ select
 from ${financials}
 where net_margin_pct is not null
   and net_margin_pct between -100 and 100
+  and (roe_pct is null or roe_pct between -100 and 100)
 group by setor
 having count(*) >= 5
 order by avg_net_margin_pct desc
@@ -74,8 +82,8 @@ order by avg_net_margin_pct desc
 
 ## Profitability by Sector
 
-Sectors with at least 5 reporting companies; margins clipped to ±100% to keep
-distressed outliers from drowning the average.
+Sectors with at least 5 reporting companies; margins and ROE clipped to ±100%
+to keep distressed / near-zero-equity outliers from drowning the average.
 
 <DataTable data={margin_by_setor}>
   <Column id=setor title="Sector"/>

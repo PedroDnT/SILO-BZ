@@ -3,10 +3,15 @@ title: Corporate Events — IPE Filings
 ---
 
 ```sql by_categoria
+-- distinct on (protocolo): a refiled event counts once, at its newest versao
 select
   categoria,
   count(*) as filings
-from cia_event
+from (
+  select distinct on (protocolo) *
+  from cia_event
+  order by protocolo, versao desc nulls last
+) e
 group by categoria
 order by filings desc
 limit 12
@@ -17,7 +22,11 @@ select
   date_trunc('month', data_entrega)::date as month,
   count(*) as filings,
   count(*) filter (where categoria = 'Fato Relevante') as fatos_relevantes
-from cia_event
+from (
+  select distinct on (protocolo) *
+  from cia_event
+  order by protocolo, versao desc nulls last
+) e
 where data_entrega is not null
 group by 1
 order by 1
@@ -29,7 +38,11 @@ select
   c.denom_cia as company,
   e.assunto as subject,
   e.link_download
-from cia_event e
+from (
+  select distinct on (protocolo) *
+  from cia_event
+  order by protocolo, versao desc nulls last
+) e
 join cia_company c on c.cd_cvm = e.cd_cvm
 where e.categoria = 'Fato Relevante'
 order by e.data_entrega desc
