@@ -10,6 +10,8 @@ Evidence.dev analytics dashboard backed by the Supabase Postgres pipeline.
 | FIDC Credit Monitor | `/fidc` | Sector delinquency trend (24mo), aging buckets, top delinquent funds, red flags |
 | FII Market | `/fii` | FII vs FIAGRO AUM, yield distribution (p10–p90), top funds by dividend yield |
 | Suspicious Screens | `/suspicious` | Zombie growth, captive vehicles, evergreen aging, overdue securit series |
+| Performance | `/performance` | Per-asset-class fund performance ranking (who beat peers in a window) + methodology |
+| ETF | `/etf` | ETF universe by provider / segment / index from `cvm_etf_registry` (price/NAV/return pending an ETF feed) |
 
 ## Data source
 
@@ -27,4 +29,5 @@ npm run dev       # http://localhost:3000
 npm run build     # outputs to build/
 ```
 
-For deployment, point a static host at `build/` or use Netlify (config in the root `.netlify/`).
+Deployed to **Vercel** (project `iliquid-nightly`, primary live target). Can also be served as
+a static build — point any static host at `build/`, or use Netlify (config in the root `.netlify/`).
