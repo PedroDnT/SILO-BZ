@@ -164,8 +164,10 @@ Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources 
   FII Market (`/fii`), Suspicious Screens (`/suspicious`), Performance (`/performance`), and
   ETF (`/etf`). Deployed to **Vercel** (project `iliquid-nightly`, primary); also buildable as
   a static site for Netlify or any static host.
-- **`webapp/`** — Evidence.dev instance for CIA Aberta (listed-company) analytics; in progress
-  on the `feat/cia-financials` branch alongside the `cia_*` tables.
+- **`webapp/`** — Evidence.dev instance for CIA Aberta (listed-company) analytics over the
+  `cia_*` tables: Overview (`/`), Financials (`/financials`, consolidated ITR/DFP with
+  margins/ROE), Events (`/events`, IPE + Fato Relevante feed). Mind the data conventions
+  in `webapp/README.md` (accented `ÚLTIMO`, net income 3.11→3.09 fallback, equity by name).
 
 ## Deploy
 
