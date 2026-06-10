@@ -51,7 +51,7 @@ FETCH (src/fetchers/) → PARSE (src/parsers/) → STORE (src/store/)
 ```
 
 - **`src/fetchers/`** — HTTP/SDK calls only. `cvm_fetcher.CVMFetcher.fetch(entity, doc_type,
-  year, month)` is the single entry point; downloads ZIP/CSV from `dados.cvm.gov.br` with
+year, month)` is the single entry point; downloads ZIP/CSV from `dados.cvm.gov.br` with
   retry, DNS rotation, and on-disk cache (`CVM_CACHE_DIR`). `bacen_fetcher.BacenClient` wraps
   `python-bcb`. `cia_fetcher` handles listed-company filings. `cvm_config.py` holds the
   `DatasetConfig` matrix (URL template, csv_name_pattern, periodicity, encoding).
@@ -61,7 +61,7 @@ FETCH (src/fetchers/) → PARSE (src/parsers/) → STORE (src/store/)
   context.
 - **`src/store/`** — `pg_client.get_pg_client()` (one psycopg2 connection per run) and
   `pg_client.upsert_rows(table, rows, conflict_cols)` (chunked at 1000, `ON CONFLICT DO
-  UPDATE`). **Never open a raw DB connection elsewhere — always go through `pg_client`.**
+UPDATE`). **Never open a raw DB connection elsewhere — always go through `pg_client`.**
   `schema.sql` is the canonical schema; `migrations/NNN_*.sql` are append-only.
 - **`src/pipeline/`** — `cvm_pipeline.CVMIngestor` and `bacen_pipeline.BacenIngestor` wire
   the stages and write audit-log rows. `ingest_<entity>.py` modules hold the per-entity
@@ -96,7 +96,7 @@ Periodicity: **monthly** datasets (`fi`, `fidc *`, `fiagro mensal`) take `(year,
 key on `competencia` = first day of the month; **yearly** datasets (`fii *`, `fip`,
 `securit *`) take `(year)` only; **BACEN** time series key on `(series_code, date)`.
 
-For a *new class* of data (e.g. market/price series for securities), read
+For a _new class_ of data (e.g. market/price series for securities), read
 `docs/DATA_MODELING.md` first: extend the existing `dim_`/`fact_` star schema and model
 time series as a **long fact** keyed on `(instrument natural key, date[, metric])` rather
 than a wide per-source table — same provenance + idempotent-upsert rules apply.
@@ -151,9 +151,13 @@ Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources 
 `@evidence-dev/postgres` and only read — never write.
 
 - **`dashboard/`** — fund-health analytics: Overview (`/`), FIDC Credit Monitor (`/fidc`),
-  FII Market (`/fii`), Suspicious Screens (`/suspicious`). Deployed to a static host / Netlify.
-- **`webapp/`** — Evidence.dev instance for CIA Aberta (listed-company) analytics; in progress
-  on the `feat/cia-financials` branch alongside the `cia_*` tables.
+  FII Market (`/fii`), Suspicious Screens (`/suspicious`), Performance (`/performance`), and
+  ETF (`/etf`). Deployed to **Vercel** (project `iliquid-nightly`, primary); also buildable as
+  a static site for Netlify or any static host.
+- **`webapp/`** — Evidence.dev instance for CIA Aberta (listed-company) analytics over the
+  `cia_*` tables: Overview (`/`), Financials (`/financials`, consolidated ITR/DFP with
+  margins/ROE), Events (`/events`, IPE + Fato Relevante feed). Mind the data conventions
+  in `webapp/README.md` (accented `ÚLTIMO`, net income 3.11→3.09 fallback, equity by name).
 
 ## Deploy
 
