@@ -45,7 +45,8 @@ BEGIN
     -- range and sub-cent resolution for all known series.
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'bacen_sgs' AND column_name = 'value'
+        WHERE table_schema = 'public' AND table_name = 'bacen_sgs'
+          AND column_name = 'value'
           AND numeric_precision = 28 AND numeric_scale = 8
     ) THEN
         ALTER TABLE bacen_sgs ALTER COLUMN value TYPE NUMERIC(28,8);
@@ -55,7 +56,8 @@ BEGIN
     -- 4–6 significant decimal places; NUMERIC(28,8) is consistent with SGS.
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'bacen_ptax' AND column_name = 'buy_rate'
+        WHERE table_schema = 'public' AND table_name = 'bacen_ptax'
+          AND column_name = 'buy_rate'
           AND numeric_precision = 28 AND numeric_scale = 8
     ) THEN
         ALTER TABLE bacen_ptax
@@ -68,7 +70,8 @@ BEGIN
     -- pct convention with extra resolution for statistical measures.
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'bacen_expectativas' AND column_name = 'median'
+        WHERE table_schema = 'public' AND table_name = 'bacen_expectativas'
+          AND column_name = 'median'
           AND numeric_precision = 20 AND numeric_scale = 8
     ) THEN
         ALTER TABLE bacen_expectativas
