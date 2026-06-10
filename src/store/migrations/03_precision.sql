@@ -30,22 +30,50 @@ ALTER TABLE cvm_securit_fluxo
     ALTER COLUMN aquisicao_novos_creditos     TYPE NUMERIC(28,2),
     ALTER COLUMN outros_pagamentos            TYPE NUMERIC(28,2);
 
--- bacen_sgs: value was bare NUMERIC (no precision) — BACEN SGS series include
--- rates, index levels, and monetary values; NUMERIC(28,8) provides sufficient
--- range and sub-cent resolution for all known series.
-ALTER TABLE bacen_sgs
-    ALTER COLUMN value TYPE NUMERIC(28,8);
+-- The BACEN retypes below are guarded by a precision check rather than run
+-- unconditionally. Once the analytical layer is built, matviews such as
+-- mv_savings_flow_monthly depend on bacen_sgs.value, and Postgres refuses
+-- `ALTER COLUMN ... TYPE` on a column a view/rule depends on — *even when the
+-- target type equals the current type*. Guarding on numeric_precision/scale
+-- makes each retype a true no-op once applied, so re-bootstrapping a DB that
+-- already has analytics no longer fails, while a fresh DB (no matview yet)
+-- still gets the widening on first apply. The end-state type is unchanged.
+DO $$
+BEGIN
+    -- bacen_sgs: value was bare NUMERIC (no precision) — BACEN SGS series include
+    -- rates, index levels, and monetary values; NUMERIC(28,8) provides sufficient
+    -- range and sub-cent resolution for all known series.
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'bacen_sgs' AND column_name = 'value'
+          AND numeric_precision = 28 AND numeric_scale = 8
+    ) THEN
+        ALTER TABLE bacen_sgs ALTER COLUMN value TYPE NUMERIC(28,8);
+    END IF;
 
--- bacen_ptax: buy_rate / sell_rate were bare NUMERIC — exchange rates carry
--- 4–6 significant decimal places; NUMERIC(28,8) is consistent with SGS.
-ALTER TABLE bacen_ptax
-    ALTER COLUMN buy_rate  TYPE NUMERIC(28,8),
-    ALTER COLUMN sell_rate TYPE NUMERIC(28,8);
+    -- bacen_ptax: buy_rate / sell_rate were bare NUMERIC — exchange rates carry
+    -- 4–6 significant decimal places; NUMERIC(28,8) is consistent with SGS.
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'bacen_ptax' AND column_name = 'buy_rate'
+          AND numeric_precision = 28 AND numeric_scale = 8
+    ) THEN
+        ALTER TABLE bacen_ptax
+            ALTER COLUMN buy_rate  TYPE NUMERIC(28,8),
+            ALTER COLUMN sell_rate TYPE NUMERIC(28,8);
+    END IF;
 
--- bacen_expectativas: median / mean_val / std_dev were bare NUMERIC —
--- Focus expectations are percentage-like values; NUMERIC(20,8) matches the
--- pct convention with extra resolution for statistical measures.
-ALTER TABLE bacen_expectativas
-    ALTER COLUMN median   TYPE NUMERIC(20,8),
-    ALTER COLUMN mean_val TYPE NUMERIC(20,8),
-    ALTER COLUMN std_dev  TYPE NUMERIC(20,8);
+    -- bacen_expectativas: median / mean_val / std_dev were bare NUMERIC —
+    -- Focus expectations are percentage-like values; NUMERIC(20,8) matches the
+    -- pct convention with extra resolution for statistical measures.
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'bacen_expectativas' AND column_name = 'median'
+          AND numeric_precision = 20 AND numeric_scale = 8
+    ) THEN
+        ALTER TABLE bacen_expectativas
+            ALTER COLUMN median   TYPE NUMERIC(20,8),
+            ALTER COLUMN mean_val TYPE NUMERIC(20,8),
+            ALTER COLUMN std_dev  TYPE NUMERIC(20,8);
+    END IF;
+END $$;
