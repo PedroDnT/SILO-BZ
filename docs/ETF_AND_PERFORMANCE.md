@@ -29,12 +29,9 @@ These are part of the analytical layer, applied **after** data exists:
 POSTGRES_URL=… bash scripts/apply_analytical.sh   # idempotent; CREATE OR REPLACE
 ```
 
-(or let the daily CI run it). **Status (2026-06):** the analytical layer — these functions
-plus the `dim_fund` materialized view — is **applied to the live Supabase DB**, and the
-dashboard pages shipped (PR #56). `dim_fund` is now a **materialized view**: it aggregates
-the full `cvm_fi_diario` history and is joined twice by `fund_performance_ranking`, so a
-plain view timed out on the full-universe call. It is refreshed by the 06:15 cron job in
-`08_cron_schedules.sql` and rebuilt by each `apply_analytical` run.
+(or let the daily CI run it). The functions were validated read-only against live
+data — the FII compounded-yield ranking and the ETF ranking logic both return
+correct results — but the objects are **not yet created on prod** (apply pending).
 
 ## Live-data gaps found (2026-06)
 
@@ -52,14 +49,14 @@ pending a price feed.
 ## ETF price feed — Apify scrape of etfsbrasil.com.br
 
 The price feed that fills the gap above is an **Apify** scrape of
-`etfsbrasil.com.br/etfs/<ticker>` (it carries NAV/patrimônio líquido, número de cotistas,
-price, fees, index, CNPJ and ISIN). NAV/cotistas are **JS-rendered**, so this runs through a
+`etfsbrasil.com.br/comparador/<ticker>` (it carries NAV, número de cotistas,
+returns, fees and index). NAV/cotistas are **JS-rendered**, so this runs through a
 **headless-browser actor with rotating RESIDENTIAL proxies** (etfsbrasil
 rate-limits direct scraping) — not a plain HTTP fetch.
 
 Pieces (FETCH → PARSE → STORE):
-- `apify/etfsbrasil_scraper.js` — the web-scraper `pageFunction`; it returns the page's
-  full rendered text + `__NEXT_DATA__` JSON (field parsing is done server-side in Python).
+- `apify/etfsbrasil_scraper.js` — the web-scraper `pageFunction` (the actual
+  extraction logic, written against the live page).
 - `src/fetchers/apify_etf_fetcher.py` — `ApifyETFFetcher` runs `apify/web-scraper`
   via `run-sync-get-dataset-items`, passing that pageFunction + one startUrl per
   active registry ticker + the proxy config. Raises on any failure / empty result.
@@ -76,9 +73,9 @@ python -m src.pipeline.ingest_etf_market
 ```
 
 > **Verify before scheduling.** It is intentionally **not** wired into the daily
-> run yet (no caller in `run_daily.py` / `dispatch.py`). The label-based parsers in
-> `ingest_etf_market.py` are best-effort against the current layout and need confirming on
-> one real run — the full rendered page text **and** the page's `__NEXT_DATA__` JSON are
-> kept in each row's `raw`, so nothing is lost if a label moves. Once a run is confirmed,
-> point the `etf_*` analytics at `etf_market_snapshot` and add it to the daily/watchdog schedule.
+> run yet. The NAV/cotistas selectors in the pageFunction are best-effort against
+> the current layout and need confirming on one real run (every scraped value is
+> also dumped into the record's `fields` map, so nothing is lost if a label moves).
+> Once a run is confirmed, point `etf_daily` / the `etf_*` analytics at
+> `etf_market_snapshot` and add it to the daily/watchdog schedule.
 
