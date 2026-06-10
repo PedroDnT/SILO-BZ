@@ -156,7 +156,7 @@ flask --app app run                # or: python app.py
 ```
 
 It needs `POSTGRES_URL` set to the Supabase connection string. The pipeline writes to
-the CVM/BACEN tables via psycopg2 direct connection — no PostgREST or RLS involved.
+16 tables via psycopg2 direct connection — no PostgREST or RLS involved.
 
 ### Endpoint reference
 
@@ -225,16 +225,11 @@ All tests are offline (Supabase DB and HTTP are mocked). The Flask layer is cove
 
 ## Deploy
 
-**Ingestion** deploys to a single target: **GitHub Actions cron writing to Supabase Postgres**
-(no container registry, no Docker stack).
+Single deploy target: **GitHub Actions cron writing to Supabase Postgres**. No container registry, no Vercel, no Docker stack.
 
 - `.github/workflows/daily_ingest.yml` — runs `run_daily` at 06:00 UTC and exposes a `workflow_dispatch`
   for ad-hoc backfills (`mode=backfill`, `start_year=YYYY`, `entity=fidc`).
 - Required GitHub secret: `POSTGRES_URL` (Supabase connection string with `sslmode=require`).
-
-The read-only **Evidence.dev dashboard** (`dashboard/`) deploys separately to **Vercel**
-(project `iliquid-nightly`, primary live target); it can also be served as a static build via
-Netlify or any static host. It only reads from Supabase.
 
 To roll out schema changes, commit `src/store/schema.sql` and any new
 `src/store/migrations/*.sql`, then run `python scripts/apply_schema.py` against
@@ -255,11 +250,8 @@ workstream history.
 | **4** | BACEN macro context (CDI spread rule)                              | ✅ done |
 
 Since then: FI `balancete` wired, a self-healing ingest watchdog (`watchdog.yml`),
-and an analytical layer (`src/store/analytical/`, applied via `scripts/apply_analytical.sh`)
-— conformed dimensions (`dim_fund` is a **materialized view**) + asset-class /
-administrator-gestor classification (13), fraud screens (15), and per-asset-class +
-ETF performance ranking functions (16–17) — plus the Evidence `dashboard/` (on Vercel)
-with Performance and ETF pages.
+and an analytical layer for asset-class / administrator-gestor rankings and fraud
+screens (`src/store/analytical/13-15`, applied via `scripts/apply_analytical.sh`).
 
 ## What's intentionally not here
 

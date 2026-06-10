@@ -51,7 +51,7 @@ FETCH (src/fetchers/) → PARSE (src/parsers/) → STORE (src/store/)
 ```
 
 - **`src/fetchers/`** — HTTP/SDK calls only. `cvm_fetcher.CVMFetcher.fetch(entity, doc_type,
-  year, month)` is the single entry point; downloads ZIP/CSV from `dados.cvm.gov.br` with
+year, month)` is the single entry point; downloads ZIP/CSV from `dados.cvm.gov.br` with
   retry, DNS rotation, and on-disk cache (`CVM_CACHE_DIR`). `bacen_fetcher.BacenClient` wraps
   `python-bcb`. `cia_fetcher` handles listed-company filings. `cvm_config.py` holds the
   `DatasetConfig` matrix (URL template, csv_name_pattern, periodicity, encoding).
@@ -61,7 +61,7 @@ FETCH (src/fetchers/) → PARSE (src/parsers/) → STORE (src/store/)
   context.
 - **`src/store/`** — `pg_client.get_pg_client()` (one psycopg2 connection per run) and
   `pg_client.upsert_rows(table, rows, conflict_cols)` (chunked at 1000, `ON CONFLICT DO
-  UPDATE`). **Never open a raw DB connection elsewhere — always go through `pg_client`.**
+UPDATE`). **Never open a raw DB connection elsewhere — always go through `pg_client`.**
   `schema.sql` is the canonical schema; `migrations/NNN_*.sql` are append-only.
 - **`src/pipeline/`** — `cvm_pipeline.CVMIngestor` and `bacen_pipeline.BacenIngestor` wire
   the stages and write audit-log rows. `ingest_<entity>.py` modules hold the per-entity
@@ -73,21 +73,11 @@ FETCH (src/fetchers/) → PARSE (src/parsers/) → STORE (src/store/)
   classifier (`network` / `csv_parse` / `db_write` / `schema_mismatch` / `unknown`) and
   inefficiency detector. Hooks classify only — they never auto-retry.
 
-Storage layout: ~30 tables named `cvm_<entity>_<doctype>` or `bacen_<series>` (plus the
-`cia_*` and ETF tables and the `cvm_ingest_log` audit table). Trust `src/store/schema.sql`
-+ `migrations/` + `src/api/dispatch.py` as the source of truth, not the README's CSV table.
-Wired ingest datasets include `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`,
-`cvm_securit_fluxo`, `cvm_fi_balancete`, `cvm_cia_*`, `cvm_etf_registry`,
-`anbima_etf_class_monthly`, and `etf_market_snapshot` (scraped ETF NAV/cotistas — **not yet
-wired into the daily run**; see `docs/ETF_AND_PERFORMANCE.md`).
-
-The **analytical layer** (`src/store/analytical/`, applied by `scripts/apply_analytical.sh`
-after ingest) is the read side the dashboards query: `dim_fund` (a **materialized view**,
-refreshed daily by cron + the apply re-create) plus `dim_fund_category` / `dim_administrator`
-/ `dim_gestor`; the `fact_fund_monthly` / `fact_security_monthly` matviews; the
-`fraud_screen_*` suspicious-deal screens (15); and the `fund_performance_*` / `etf_*` ranking
-functions (16–17). ETFs are carved out of the fund universe and ranked separately —
-`etf_daily` is empty for post-CVM-175 share classes (see the ETF doc).
+Storage layout: ~25 tables named `cvm_<entity>_<doctype>` or `bacen_<series>`, plus the
+`cvm_ingest_log` audit table. The README's CSV-coverage table is kept in sync but may lag;
+trust `src/store/schema.sql` + `migrations/` + `src/api/dispatch.py` as the source of truth.
+Wired datasets now include `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`,
+`cvm_securit_fluxo`, `cvm_fi_balancete`, `cvm_cia_*`, and the ETF tables.
 
 ### Adding a dataset (the `(entity, doc_type)` matrix)
 
@@ -106,7 +96,7 @@ Periodicity: **monthly** datasets (`fi`, `fidc *`, `fiagro mensal`) take `(year,
 key on `competencia` = first day of the month; **yearly** datasets (`fii *`, `fip`,
 `securit *`) take `(year)` only; **BACEN** time series key on `(series_code, date)`.
 
-For a *new class* of data (e.g. market/price series for securities), read
+For a _new class_ of data (e.g. market/price series for securities), read
 `docs/DATA_MODELING.md` first: extend the existing `dim_`/`fact_` star schema and model
 time series as a **long fact** keyed on `(instrument natural key, date[, metric])` rather
 than a wide per-source table — same provenance + idempotent-upsert rules apply.
@@ -171,9 +161,8 @@ Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources 
 
 ## Deploy
 
-Ingestion target: **GitHub Actions cron → Supabase Postgres**. Required GitHub secret:
-`POSTGRES_URL`. No container registry or Docker. The read-only `dashboard/` deploys
-separately to **Vercel** (project `iliquid-nightly`; Netlify/static host also supported).
+Single target: **GitHub Actions cron → Supabase Postgres**. Required GitHub secret: `POSTGRES_URL`.
+No container registry, Vercel, or Docker.
 
 - `.github/workflows/daily_ingest.yml` — 06:00 UTC daily (`run_daily`) + `workflow_dispatch`
   (`mode=daily|backfill`, optional `entity`/`start_year`/`end_year`). It bootstraps the schema
