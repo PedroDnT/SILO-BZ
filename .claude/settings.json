@@ -15,5 +15,20 @@
       "Bash(.venv/bin/pytest tests/test_cvm_fetch_parse.py -v)",
       "Bash(iconv *)"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; case \"$f\" in *.py) [ -x .venv/bin/pytest ] || exit 0; out=$(.venv/bin/pytest tests/ -q 2>&1); [ $? -eq 0 ] && exit 0; printf '%s' \"$out\" | tail -6 | jq -Rs --arg f \"$f\" '{systemMessage:(\"pytest failed after editing \"+$f),hookSpecificOutput:{hookEventName:\"PostToolUse\",additionalContext:(\"pytest tail:\\n\"+.)}}';; esac; } 2>/dev/null || true",
+            "timeout": 60,
+            "statusMessage": "Running pytest after edit…"
+          }
+        ]
+      }
+    ]
   }
 }
