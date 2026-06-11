@@ -525,6 +525,38 @@ class TestCVMPipelineFieldMapping:
         assert rec["vl_quota"] is None
 
     @pytest.mark.asyncio
+    async def test_fidc_hist_mensal_drops_null_period_row_keeps_slice(self):
+        """HIST tab_II rows with a blank DT_COMPTC are dropped, not upserted.
+
+        Regression: backfill 2021-07..2022-11 failed wholesale because one
+        fund's rows carried an empty DT_COMPTC — the NULL period violated the
+        cvm_fidc_mensal NOT NULL constraint and rolled back the entire month.
+        The bad row must be skipped while the rest of the slice survives.
+        """
+        import datetime
+        good = {"CNPJ_FUNDO": "12.345.678/0001-90", "DT_COMPTC": "2021-07-31",
+                "TAB_II_VL_CARTEIRA": "1000.00"}
+        bad = {"CNPJ_FUNDO": "41.609.394/0001-67", "DT_COMPTC": "",
+               "TAB_II_VL_CARTEIRA": "500.00"}
+        captured: list = []
+
+        async def fake_fetch(entity, doc_type, year, month):
+            if doc_type == "hist_mensal_tab_ii" and month == 7:
+                return [good, bad]
+            return []
+
+        with _stub_pipeline(captured):
+            with patch.object(CVMIngestor, "_fetch_all_pages",
+                              side_effect=fake_fetch):
+                ingestor = CVMIngestor()
+                await ingestor.ingest_fidc_hist_mensal(2021)
+
+        mensal = [r for r in captured if "vl_patrim_liq" in r]
+        assert len(mensal) == 1
+        assert mensal[0]["cnpj"] == "12345678000190"
+        assert mensal[0]["period"] == datetime.date(2021, 7, 31)
+
+    @pytest.mark.asyncio
     async def test_fip_quadrimestral_pipeline_extracts_vl_patrim_liq(self):
         mock_bytes = _make_csv_bytes(FIP_QUADRIMESTRAL_ROWS)
         captured: list = []

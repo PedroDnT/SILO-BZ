@@ -649,9 +649,13 @@ class CVMIngestor:
                 for row in rows_ii:
                     typed_ii, residual = apply_map(row, _fm_mensal.FIELD_MAP)
                     cnpj = typed_ii.get("cnpj") or ""
-                    if not cnpj:
-                        continue
                     period = typed_ii.get("period")
+                    # Drop rows missing either natural-key part — a single NULL
+                    # period (blank DT_COMPTC in the HIST CSV) would otherwise
+                    # fail the NOT NULL constraint and roll back the whole
+                    # month's upsert. Same guard as ingest_fidc_mensal.
+                    if not cnpj or not period:
+                        continue
                     try:
                         vl_carteira = float(row.get("TAB_II_VL_CARTEIRA") or 0)
                     except (ValueError, TypeError):
