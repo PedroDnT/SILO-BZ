@@ -68,6 +68,32 @@ from cvm_etf_registry
 order by provider, ticker
 ```
 
+```sql etf_market_coverage
+select
+  count(*)               as etfs_with_snapshot,
+  count(nav)             as with_nav,
+  count(price)           as with_price,
+  count(cotistas)        as with_cotistas,
+  max(snapshot_date)     as latest_snapshot
+from etf_market_latest
+```
+
+```sql etf_market
+select
+  ticker,
+  fund_name,
+  provider,
+  segment,
+  price,
+  nav,
+  cotistas,
+  taxa_adm_pct,
+  ret_12m_pct,
+  snapshot_date
+from etf_market_latest
+order by nav desc nulls last
+```
+
 # ETF Market
 
 > Brazilian listed ETFs (Fundos de Índice), evaluated **separately** from the fund
@@ -134,21 +160,39 @@ order by provider, ticker
 
 ---
 
-## ⚠️ Performance & AUM — pending an ETF price feed
+## NAV, Price & Quotaholders
 
-ETF **price, NAV, return, AUM and flow** series are **not yet available** in this
-database, so they are intentionally **not shown** here rather than estimated:
+> Per-ETF market snapshot scraped from etfsbrasil.com.br (`etf_market_latest`, most
+> recent snapshot per ticker). This feed exists because CVM open data no longer
+> exposes ETF NAV/quotaholders post-CVM-175 — `etf_daily` (registry ⋈ `cvm_fi_diario`)
+> stays empty because the registry's fund-level CNPJ no longer matches the daily
+> file's class-level CNPJ. Values shown straight from source; missing fields are
+> gaps, never estimates. The table is empty until the first scrape lands (the
+> `run_daily` scrape runs only when `APIFY_TOKEN` is configured).
 
-- `etf_daily` joins the registry's fund-level CNPJ to `cvm_fi_diario`, but under
-  CVM-175 the daily file keys on **share-class CNPJs**, so the join is currently
-  empty.
-- `cvm_etf_registry` carries AUM (`vl_patrim_liq`) for only 8/187 ETFs and no fees.
-- The ANBIMA class series (`anbima_etf_class_monthly`, RF/RV AUM·flows·returns)
-  has not been ingested yet.
+<BigValue data={etf_market_coverage} value=etfs_with_snapshot label="ETFs w/ Snapshot"/>
+<BigValue data={etf_market_coverage} value=with_nav label="With NAV"/>
+<BigValue data={etf_market_coverage} value=with_cotistas label="With Quotaholders"/>
+<BigValue data={etf_market_coverage} value=latest_snapshot label="Latest Snapshot"/>
 
-The ETF performance functions are already defined in
-`src/store/analytical/16_etf_analysis.sql`
-(`etf_performance_ranking`, `etf_performance_series`, `etf_class_performance`) and
-will populate this page automatically once an ETF price source lands — either by
-fixing the registry↔class-CNPJ linkage, running the ANBIMA ETF ingest, or wiring an
-external feed (e.g. etfsbrasil.com / FMP).
+<DataTable data={etf_market} rows=20 search=true>
+  <Column id=ticker title="Ticker"/>
+  <Column id=fund_name title="Fund"/>
+  <Column id=provider title="Provider"/>
+  <Column id=segment title="Segment"/>
+  <Column id=price title="Price (R$)" fmt='#,##0.00'/>
+  <Column id=nav title="NAV / AUM (R$)" fmt=num0/>
+  <Column id=cotistas title="Quotaholders" fmt=num0/>
+  <Column id=taxa_adm_pct title="Adm Fee %" fmt='#,##0.00'/>
+  <Column id=ret_12m_pct title="12m Return %" fmt='#,##0.00'/>
+  <Column id=snapshot_date title="As Of"/>
+</DataTable>
+
+> **Returns / volatility / Sharpe / drawdown** (`ret_*`, `vol_12m_pct`,
+> `sharpe_12m`, `max_drawdown_pct`) stay blank until the scraper's `next_data`
+> (`__NEXT_DATA__`) JSON is mapped to those columns — they are chart-rendered on the
+> source page, not in the scraped text, so they are left NULL rather than guessed.
+> The horizontal/vertical ETF performance functions
+> (`etf_performance_series`, `etf_performance_ranking`, `etf_class_performance`) in
+> `src/store/analytical/16_etf_analysis.sql` remain available for any pre-CVM-175 ETF
+> that still resolves through `etf_daily`.
