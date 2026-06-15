@@ -64,7 +64,7 @@ BEGIN
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = 'public'
-          AND c.relkind  = 'r'          -- ordinary base tables only (not views/matviews)
+          AND c.relkind IN ('r', 'p')   -- ordinary + partitioned parents (not views/matviews)
         ORDER BY c.relname
     LOOP
         EXECUTE format('ALTER TABLE %s ENABLE ROW LEVEL SECURITY;', t);
@@ -87,7 +87,7 @@ COMMIT;
 -- FROM pg_class c
 -- JOIN pg_namespace n ON n.oid = c.relnamespace
 -- LEFT JOIN pg_policy p ON p.polrelid = c.oid
--- WHERE n.nspname = 'public' AND c.relkind = 'r'
+-- WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
 -- ORDER BY c.relname;
 --
 -- Tables still showing relrowsecurity = f after this runs would be a bug in the loop;
