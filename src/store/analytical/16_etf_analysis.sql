@@ -185,6 +185,47 @@ AS $$
     ORDER BY reference_date, anbima_type_name
 $$;
 
+-- ---------------------------------------------------------------------------
+-- etf_market_latest — most recent etfsbrasil snapshot per ticker (NAV, price,
+-- cotistas, fees, returns), joined to cvm_etf_registry for identity. This is the
+-- post-CVM-175 ETF market feed: etf_daily (registry ⋈ cvm_fi_diario) is empty
+-- because the registry's fund-level CNPJ no longer matches the daily file's
+-- class-level CNPJ, so the dashboard reads NAV/price/cotistas from here instead.
+--
+-- A PLAIN view (not materialized, no smoke guard): etf_market_snapshot is empty
+-- until the first APIFY_TOKEN-gated scrape runs, and the analytical layer rebuilds
+-- on every daily cron — a guard that RAISEd on an empty snapshot would fail CI
+-- until the scrape lands. Empty view → empty dashboard sections, never a guess.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE VIEW etf_market_latest AS
+SELECT DISTINCT ON (s.ticker)
+    s.ticker,
+    COALESCE(r.fund_name, s.fund_name)     AS fund_name,
+    r.provider,
+    COALESCE(r.underlying_index, s.indice) AS underlying_index,
+    r.segment,
+    r.is_active,
+    s.snapshot_date,
+    s.price,
+    s.nav,
+    s.cotistas,
+    s.taxa_adm_pct,
+    s.ret_ytd_pct,
+    s.ret_12m_pct,
+    s.ret_36m_pct,
+    s.vol_12m_pct,
+    s.sharpe_12m,
+    s.max_drawdown_pct,
+    s.regiao,
+    s.provedor_indice,
+    s.launch_date,
+    s.source
+FROM etf_market_snapshot s
+LEFT JOIN cvm_etf_registry r ON r.ticker = s.ticker
+ORDER BY s.ticker, s.snapshot_date DESC;
+
+GRANT SELECT ON etf_market_latest TO anon, authenticated;
+
 GRANT EXECUTE ON FUNCTION etf_performance_series(TEXT, DATE, DATE)           TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION etf_performance_ranking(DATE, DATE, TEXT, TEXT, INT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION etf_class_performance(DATE, DATE)                  TO anon, authenticated;

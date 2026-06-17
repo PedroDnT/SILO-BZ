@@ -53,6 +53,22 @@ async def main() -> None:
     except Exception as exc:
         logger.warning("ANBIMA ETF daily refresh failed: %s", exc)
 
+    # ETF market snapshot: scrape etfsbrasil.com.br via Apify (NAV/price/cotistas
+    # the post-CVM-175 daily file no longer exposes). The scrape is paid + rate-
+    # limited, so it ONLY runs when APIFY_TOKEN is configured — an absent token
+    # skips it and never fails the daily run. One snapshot per ticker per UTC day;
+    # idempotent upsert on (ticker, snapshot_date).
+    if os.getenv("APIFY_TOKEN"):
+        try:
+            from src.pipeline.ingest_etf_market import ingest_etf_market
+            from src.store.pg_client import get_pg_client
+            etf_rows = ingest_etf_market(get_pg_client())
+            totals["etf_market_snapshot"] = etf_rows
+        except Exception as exc:
+            logger.warning("ETF market scrape failed: %s", exc)
+    else:
+        logger.info("APIFY_TOKEN unset — skipping ETF market scrape")
+
     elapsed = time.monotonic() - start_ts
     total_rows = sum(totals.values())
     logger.info(

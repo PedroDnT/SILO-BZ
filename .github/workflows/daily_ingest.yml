@@ -34,6 +34,9 @@ jobs:
     timeout-minutes: 120
     env:
       POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
+      # Optional: enables the etfsbrasil ETF NAV/price/cotistas scrape in run_daily.
+      # When the secret is unset this is empty and the scrape step self-skips.
+      APIFY_TOKEN: "${{ secrets.APIFY_TOKEN }}"
       CVM_DNS_NAMESERVERS: "1.1.1.1,8.8.8.8,9.9.9.9"
       # "all" → fi, fidc, fip, fiagro, fii, securit. fii/securit monthly tables
       # (and the FII registry) are only refreshed daily under "all"; under "core"
