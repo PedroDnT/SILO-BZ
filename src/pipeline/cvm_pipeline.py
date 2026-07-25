@@ -361,21 +361,39 @@ class CVMIngestor:
             status = "error"
         else:
             status = "ok"
-        try:
-            with self._supabase.cursor() as cur:
-                cur.execute(
-                    "UPDATE cvm_ingest_log SET rows_upserted=%s, status=%s,"
-                    " error_msg=%s, finished_at=%s WHERE run_id=%s",
-                    (
-                        rows,
-                        status,
-                        error,
-                        datetime.now(timezone.utc).isoformat(),
-                        run_id,
-                    ),
-                )
-        except Exception as e:
-            logger.warning("ingest_log finish failed: %s", e)
+        # The shared connection may have idled out during a long fetch (CVM
+        # hangs of 15+ min killed it in the 2026-06-10 backfill, leaving every
+        # slice stuck 'running'). Reconnect once and retry so the audit log
+        # reflects what actually happened; still best-effort after that.
+        for attempt in (1, 2):
+            try:
+                with self._supabase.cursor() as cur:
+                    cur.execute(
+                        "UPDATE cvm_ingest_log SET rows_upserted=%s, status=%s,"
+                        " error_msg=%s, finished_at=%s WHERE run_id=%s",
+                        (
+                            rows,
+                            status,
+                            error,
+                            datetime.now(timezone.utc).isoformat(),
+                            run_id,
+                        ),
+                    )
+                return
+            except Exception as e:
+                if attempt == 1:
+                    logger.warning(
+                        "ingest_log finish failed (%s) — reconnecting to retry", e
+                    )
+                    try:
+                        self._supabase.reconnect()
+                    except Exception as reconnect_exc:
+                        logger.warning(
+                            "ingest_log finish reconnect failed: %s", reconnect_exc
+                        )
+                        return
+                else:
+                    logger.warning("ingest_log finish failed after reconnect: %s", e)
 
     def _monthly_targets(self, entity: str, doc_type: str, today: date) -> List[Tuple[int, int]]:
         """Months a daily run should fetch for a monthly (entity, doc_type).

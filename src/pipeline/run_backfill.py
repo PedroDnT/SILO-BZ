@@ -67,6 +67,26 @@ async def main(args: argparse.Namespace) -> None:
         "Backfill complete in %.1fs — %d total rows: %s",
         elapsed, total_rows, totals,
     )
+    ensure_rows_landed(total_rows)
+
+
+def ensure_rows_landed(total_rows: int) -> None:
+    """Fail the process when a backfill upserts nothing.
+
+    A backfill exists to land rows; zero across every slice means every fetch
+    failed (e.g. CVM refusing the runner's IP — the 2026-06-10 run spent 4h
+    failing each download, printed "0 total rows", and exited 0, so CI showed
+    green while the 2024/2025 partitions stayed empty). Exiting non-zero makes
+    that visible in CI instead of masquerading as success. Re-running over
+    already-complete years still lands rows (idempotent ON CONFLICT upserts
+    count them), so this only trips when nothing was ingested at all.
+    """
+    if total_rows == 0:
+        logger.error(
+            "Backfill upserted 0 rows across all slices — treating as failure "
+            "(every fetch likely failed; check network/CVM availability)"
+        )
+        sys.exit(1)
 
 
 def parse_args() -> argparse.Namespace:

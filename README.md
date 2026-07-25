@@ -30,14 +30,14 @@ reads the specific CSVs listed below from each ZIP; the "Pending" column tracks 
 that exist in the source but are not yet ingested. (Source of truth for what is
 actually wired is `src/store/schema.sql` + `src/api/dispatch.py`, not this table.)
 
-| Entity                | CSVs per ZIP                | Pipeline reads                                                          | Pending (in plan) |
-| --------------------- | --------------------------- | ---------------------------------------------------------------------- | ----------------- |
-| FI                    | 4 docs                      | inf_diario (NAV, flows), cda (portfolio), perfil, **balancete**        | —                 |
-| FIDC                  | **17 CSVs** (tab_I–tab_XIV) | tab_IV (fund-level NAV), **tab_X (tranches)**, **tab_VI (aging)**       | —                 |
-| FII                   | 3 CSVs                      | geral, ativo_passivo, **complemento** (NAV + yield)                    | —                 |
-| SECURIT (CRA/CRI/OTS) | **8 CSVs**                  | ativo_passivo (emissão), **classe (series status)**, **fluxo_caixa**   | —                 |
-| FIP                   | 1 CSV                       | inf_quadrimestral (PL)                                                  | —                 |
-| FIAGRO                | 1 CSV                       | mensal (PL) — available from May 2025                                   | —                 |
+| Entity                | CSVs per ZIP                | Pipeline reads                                                       | Pending (in plan) |
+| --------------------- | --------------------------- | -------------------------------------------------------------------- | ----------------- |
+| FI                    | 4 docs                      | inf_diario (NAV, flows), cda (portfolio), perfil, **balancete**      | —                 |
+| FIDC                  | **17 CSVs** (tab_I–tab_XIV) | tab_IV (fund-level NAV), **tab_X (tranches)**, **tab_VI (aging)**    | —                 |
+| FII                   | 3 CSVs                      | geral, ativo_passivo, **complemento** (NAV + yield)                  | —                 |
+| SECURIT (CRA/CRI/OTS) | **8 CSVs**                  | ativo_passivo (emissão), **classe (series status)**, **fluxo_caixa** | —                 |
+| FIP                   | 1 CSV                       | inf_quadrimestral (PL)                                               | —                 |
+| FIAGRO                | 1 CSV                       | mensal (PL) — available from May 2025                                | —                 |
 
 Tranche (FIDC tab_X), aging (FIDC tab_VI), and SECURIT series/fluxo ingestion are now
 wired (see `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`, `cvm_securit_fluxo`).
@@ -64,12 +64,12 @@ wired (see `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`, `cvm_secur
                            └─────────────────────────────────────
 ```
 
-| Package         | Role                                                                                                                                                                            |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `src/fetchers/` | **FETCH** — HTTP/SDK calls only. CVM downloads ZIP/CSV from `dados.cvm.gov.br` with retry, DNS rotation, and on-disk cache. BACEN wraps `python-bcb`.                         |
-| `src/parsers/`  | **PARSE** — shared field/CNPJ/date validation. CVM CSV extraction is co-located with `CVMFetcher.fetch()` because it needs the URL/filename context. BACEN DataFrame normaliza|
-| `src/store/`    | **STORE** — psycopg2 Supabase client and chunked upserts; canonical schema.                                                                                                   |
-| `src/pipeline/` | **ORCHESTRATE** — wires the three stages, writes audit log rows, runs daily/backfill.                                                                                         |
+| Package         | Role                                                                                                                                                                           |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/fetchers/` | **FETCH** — HTTP/SDK calls only. CVM downloads ZIP/CSV from `dados.cvm.gov.br` with retry, DNS rotation, and on-disk cache. BACEN wraps `python-bcb`.                          |
+| `src/parsers/`  | **PARSE** — shared field/CNPJ/date validation. CVM CSV extraction is co-located with `CVMFetcher.fetch()` because it needs the URL/filename context. BACEN DataFrame normaliza |
+| `src/store/`    | **STORE** — psycopg2 Supabase client and chunked upserts; canonical schema.                                                                                                    |
+| `src/pipeline/` | **ORCHESTRATE** — wires the three stages, writes audit log rows, runs daily/backfill.                                                                                          |
 
 ## Repository layout
 
@@ -133,45 +133,45 @@ The pipeline writes to **16 tables** across **two logical domains**: CVM fund da
 
 Each CVM entity gets one or more tables per data release frequency:
 
-| Table | Entity | Data | Rows | Cadence | Key |
-|-------|--------|------|------|---------|-----|
-| `cvm_fi_diario` | FI | Daily NAV, flows | ~400k/mo, ~5M/yr | Daily | `(cnpj, dt_comptc)` |
-| `cvm_fi_cda` | FI | Portfolio composition | ~50k/mo | Monthly | `(cnpj, period, tp_aplic, tp_ativo)` |
-| `cvm_fi_perfil` | FI | Investor profile | ~5k/mo | Monthly | `(cnpj, period)` |
-| `cvm_fi_balancete` | FI | Balance sheet (chart of accounts) | ~2M/mo | Monthly | `(cnpj, dt_comptc, cd_conta_balcte)` |
-| `cvm_fidc_mensal` | FIDC | Fund-level NAV, delinquency | ~300/mo | Monthly | `(cnpj, period)` |
-| `cvm_fidc_tranche` | FIDC | Tranche-level returns & performance | ~2k/mo | Monthly | `(cnpj, period, classe_serie)` |
-| `cvm_fidc_tranche_flows` | FIDC | Tranche-level subscriptions/redemptions | ~3k/mo | Monthly | `(cnpj, period, classe_serie, tp_oper)` |
-| `cvm_fidc_aging` | FIDC | Delinquency aging buckets (30–1080+ day bands) | ~200/mo | Monthly | `(cnpj, period)` |
-| `cvm_fii_mensal` | FII | Fund-level NAV, yield, holding counts | ~1k/mo | Monthly | `(cnpj, period, doc_subtype)` |
-| `cvm_fii_periodic` | FII | Annual/quarterly property-level detail | ~500/yr | Yearly/Quarterly | `(cnpj, doc_type, period_year)` |
-| `cvm_fip_periodic` | FIP | Quadrimestral patrimony (`inf_quadrimestral`) | ~50/yr | 4x/year | `(cnpj, doc_type, period_year)` |
-| `cvm_fiagro_mensal` | FIAGRO | Fund-level NAV, delinquency (from May 2025) | ~500/mo | Monthly | `(cnpj, period)` |
-| `cvm_securit_mensal` | SECURIT | Monthly emissions (CRA/CRI/OTS) | ~500/mo | Monthly | `(instrument_type, period_year, cnpj_securit, dt_emissao, dt_vencto, vl_emissao)` |
-| `cvm_securit_serie` | SECURIT | Per-series status, rating, yield | ~2k/yr | Yearly | `(instrument_type, cnpj_securit, codigo_identificacao, data_referencia, numero_serie)` |
-| `cvm_securit_fluxo` | SECURIT | Monthly cash flows by tranche | ~300/yr | Monthly | `(instrument_type, cnpj_securit, codigo_identificacao, data_referencia)` |
-| `cvm_securit_dfin` | SECURIT | Annual financial statements (dfin_cra, dfin_cri) | ~100/yr | Yearly | `(instrument_type, period_year, cnpj_securit)` |
+| Table                    | Entity  | Data                                             | Rows             | Cadence          | Key                                                                                    |
+| ------------------------ | ------- | ------------------------------------------------ | ---------------- | ---------------- | -------------------------------------------------------------------------------------- |
+| `cvm_fi_diario`          | FI      | Daily NAV, flows                                 | ~400k/mo, ~5M/yr | Daily            | `(cnpj, dt_comptc)`                                                                    |
+| `cvm_fi_cda`             | FI      | Portfolio composition                            | ~50k/mo          | Monthly          | `(cnpj, period, tp_aplic, tp_ativo)`                                                   |
+| `cvm_fi_perfil`          | FI      | Investor profile                                 | ~5k/mo           | Monthly          | `(cnpj, period)`                                                                       |
+| `cvm_fi_balancete`       | FI      | Balance sheet (chart of accounts)                | ~2M/mo           | Monthly          | `(cnpj, dt_comptc, cd_conta_balcte)`                                                   |
+| `cvm_fidc_mensal`        | FIDC    | Fund-level NAV, delinquency                      | ~300/mo          | Monthly          | `(cnpj, period)`                                                                       |
+| `cvm_fidc_tranche`       | FIDC    | Tranche-level returns & performance              | ~2k/mo           | Monthly          | `(cnpj, period, classe_serie)`                                                         |
+| `cvm_fidc_tranche_flows` | FIDC    | Tranche-level subscriptions/redemptions          | ~3k/mo           | Monthly          | `(cnpj, period, classe_serie, tp_oper)`                                                |
+| `cvm_fidc_aging`         | FIDC    | Delinquency aging buckets (30–1080+ day bands)   | ~200/mo          | Monthly          | `(cnpj, period)`                                                                       |
+| `cvm_fii_mensal`         | FII     | Fund-level NAV, yield, holding counts            | ~1k/mo           | Monthly          | `(cnpj, period, doc_subtype)`                                                          |
+| `cvm_fii_periodic`       | FII     | Annual/quarterly property-level detail           | ~500/yr          | Yearly/Quarterly | `(cnpj, doc_type, period_year)`                                                        |
+| `cvm_fip_periodic`       | FIP     | Quadrimestral patrimony (`inf_quadrimestral`)    | ~50/yr           | 4x/year          | `(cnpj, doc_type, period_year)`                                                        |
+| `cvm_fiagro_mensal`      | FIAGRO  | Fund-level NAV, delinquency (from May 2025)      | ~500/mo          | Monthly          | `(cnpj, period)`                                                                       |
+| `cvm_securit_mensal`     | SECURIT | Monthly emissions (CRA/CRI/OTS)                  | ~500/mo          | Monthly          | `(instrument_type, period_year, cnpj_securit, dt_emissao, dt_vencto, vl_emissao)`      |
+| `cvm_securit_serie`      | SECURIT | Per-series status, rating, yield                 | ~2k/yr           | Yearly           | `(instrument_type, cnpj_securit, codigo_identificacao, data_referencia, numero_serie)` |
+| `cvm_securit_fluxo`      | SECURIT | Monthly cash flows by tranche                    | ~300/yr          | Monthly          | `(instrument_type, cnpj_securit, codigo_identificacao, data_referencia)`               |
+| `cvm_securit_dfin`       | SECURIT | Annual financial statements (dfin_cra, dfin_cri) | ~100/yr          | Yearly           | `(instrument_type, period_year, cnpj_securit)`                                         |
 
 **Fund Registry (shared)**
 
-| Table | Purpose | Rows | Key |
-|-------|---------|------|-----|
-| `cvm_fund_registry` | CNPJ → name, status, admin, manager | ~2k | `(cnpj, entity_type)` |
+| Table               | Purpose                             | Rows | Key                   |
+| ------------------- | ----------------------------------- | ---- | --------------------- |
+| `cvm_fund_registry` | CNPJ → name, status, admin, manager | ~2k  | `(cnpj, entity_type)` |
 
 ### BACEN Macroeconomic Context (3 tables)
 
-| Table | Data | Cadence | Key | Rows |
-|-------|------|---------|-----|------|
-| `bacen_sgs` | Time series: SELIC, CDI, IPCA, IGP-M, USD/BRL | Daily | `(series_code, reference_date)` | ~3M (10 yrs × 365 × 10 series) |
-| `bacen_ptax` | PTAX exchange rates (USD/BRL, EUR/BRL, etc.) | Business days | `(currency, reference_date)` | ~10k (10 yrs × 250 × 4 currencies) |
-| `bacen_expectativas` | Market consensus (Focus bulletin): SELIC expectations, inflation, GDP | Daily | `(endpoint_name, indicador, reference_date)` | ~50k |
+| Table                | Data                                                                  | Cadence       | Key                                          | Rows                               |
+| -------------------- | --------------------------------------------------------------------- | ------------- | -------------------------------------------- | ---------------------------------- |
+| `bacen_sgs`          | Time series: SELIC, CDI, IPCA, IGP-M, USD/BRL                         | Daily         | `(series_code, reference_date)`              | ~3M (10 yrs × 365 × 10 series)     |
+| `bacen_ptax`         | PTAX exchange rates (USD/BRL, EUR/BRL, etc.)                          | Business days | `(currency, reference_date)`                 | ~10k (10 yrs × 250 × 4 currencies) |
+| `bacen_expectativas` | Market consensus (Focus bulletin): SELIC expectations, inflation, GDP | Daily         | `(endpoint_name, indicador, reference_date)` | ~50k                               |
 
 ### Audit & Market Data
 
-| Table | Purpose | Key |
-|-------|---------|-----|
-| `cvm_ingest_log` | Ingest run audit trail (entity, doc_type, period, rows_upserted, error_msg) | `(run_id)`, index: `(entity, doc_type, period_year DESC)` |
-| `etf_market_snapshot` | ETF scraped snapshots (nav, price, yields, volatility, drawdown) | `(ticker, snapshot_date)` |
+| Table                 | Purpose                                                                     | Key                                                       |
+| --------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `cvm_ingest_log`      | Ingest run audit trail (entity, doc_type, period, rows_upserted, error_msg) | `(run_id)`, index: `(entity, doc_type, period_year DESC)` |
+| `etf_market_snapshot` | ETF scraped snapshots (nav, price, yields, volatility, drawdown)            | `(ticker, snapshot_date)`                                 |
 
 **Total: 19 tables across 10 logical domains (FI, FIDC, FII, FIP, FIAGRO, SECURIT, Registry, BACEN, Audit, ETF).**
 
@@ -193,20 +193,22 @@ The frontend consists of **two Evidence.dev instances** sharing the same Supabas
 
 **Purpose**: Industry-wide accountability & surveillance.
 
-| Page | Route | Key Tables | What It Shows |
-|------|-------|-----------|---|
-| **Overview** | `/` | `cvm_fi_diario`, `cvm_fidc_mensal`, `cvm_fii_mensal` | AUM by entity type (12-month trend), FIDC sector delinquency (%), live row counts per table |
-| **FIDC Credit Monitor** | `/fidc` | `cvm_fidc_mensal`, `cvm_fidc_aging`, `cvm_fidc_tranche` | Sector delinquency trend (24mo), aging bucket distribution (30–1080+ day overdue), top 10 delinquent funds, red flags (sudden delinquency spikes) |
-| **FII Market** | `/fii` | `cvm_fii_mensal` | FII vs FIAGRO AUM comparison, yield distribution (p10–p90), top 20 funds by dividend yield, NAV trend |
-| **Suspicious Screens** | `/suspicious` | `cvm_fi_diario`, `cvm_fidc_mensal`, `cvm_fii_mensal` | Zombie growth (AUM growth + zero inflows), captive vehicles (same admin & manager), evergreen aging (stagnant delinquency), overdue SECURIT series |
+| Page                    | Route         | Key Tables                                              | What It Shows                                                                                                                                      |
+| ----------------------- | ------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Overview**            | `/`           | `cvm_fi_diario`, `cvm_fidc_mensal`, `cvm_fii_mensal`    | AUM by entity type (12-month trend), FIDC sector delinquency (%), live row counts per table                                                        |
+| **FIDC Credit Monitor** | `/fidc`       | `cvm_fidc_mensal`, `cvm_fidc_aging`, `cvm_fidc_tranche` | Sector delinquency trend (24mo), aging bucket distribution (30–1080+ day overdue), top 10 delinquent funds, red flags (sudden delinquency spikes)  |
+| **FII Market**          | `/fii`        | `cvm_fii_mensal`                                        | FII vs FIAGRO AUM comparison, yield distribution (p10–p90), top 20 funds by dividend yield, NAV trend                                              |
+| **Suspicious Screens**  | `/suspicious` | `cvm_fi_diario`, `cvm_fidc_mensal`, `cvm_fii_mensal`    | Zombie growth (AUM growth + zero inflows), captive vehicles (same admin & manager), evergreen aging (stagnant delinquency), overdue SECURIT series |
 
 **Tech Stack**:
+
 - Evidence.dev (SQL → Markdown → Charts)
 - Supabase Postgres datasource (`sources/supabase/connection.yaml`)
 - Static build to `build/` directory
-- Deploy: Netlify or any static host
+- Deploy: Vercel (primary) or any static host
 
 **How to run**:
+
 ```bash
 cd dashboard
 npm install
@@ -221,25 +223,28 @@ npm run build    # Static site → build/
 
 **Purpose**: Listed-company (CIA Aberta) financials and events (parallel universe).
 
-| Page | Route | Key Tables | What It Shows |
-|------|-------|-----------|---|
-| **Overview** | `/` | `cia_company`, `cia_event` | Company registry, top 20 by revenue, latest Fatos Relevantes (10) |
-| **Financials** | `/financials` | `cia_account` (ITR/DFP) | Consolidated revenue, net income, margins, ROE; 5-year trend by company |
-| **Events** | `/events` | `cia_event` (IPE filings) | Fato Relevante volume by category, cumulative event count, event feed (latest 50) |
+| Page           | Route         | Key Tables                 | What It Shows                                                                     |
+| -------------- | ------------- | -------------------------- | --------------------------------------------------------------------------------- |
+| **Overview**   | `/`           | `cia_company`, `cia_event` | Company registry, top 20 by revenue, latest Fatos Relevantes (10)                 |
+| **Financials** | `/financials` | `cia_account` (ITR/DFP)    | Consolidated revenue, net income, margins, ROE; 5-year trend by company           |
+| **Events**     | `/events`     | `cia_event` (IPE filings)  | Fato Relevante volume by category, cumulative event count, event feed (latest 50) |
 
 **Data Model** (CIA Aberta is separate; sourced from CVM's listed-company filings):
+
 - `cia_company` — registry (CNPJ, name, sector, listing date)
 - `cia_account` — DRE + BPA/BPP (income statement + balance sheets): revenue, EBIT, net income, equity, etc.
   - Conventions: `escopo = 'con'` (consolidated), `ordem_exerc = 'ÚLTIMO'` (accented), net income = account 3.11 (or 3.09 for banks)
 - `cia_event` — IPE filings (Fatos Relevantes, announcements, etc.)
 
 **Tech Stack**:
+
 - Evidence.dev (same as Dashboard)
 - Same Supabase Postgres datasource
 - Static build
 - Deploy: Vercel (primary) or static host
 
 **How to run**:
+
 ```bash
 cd webapp
 npm install
@@ -254,6 +259,7 @@ npm run build    # static site → build/
 ### Shared Frontend Logic
 
 Both instances use Evidence.dev **embedded SQL queries** in Markdown, which:
+
 1. Query Supabase Postgres directly at build time.
 2. Render as interactive charts (ECharts, maps, tables).
 3. Support parameterization (date ranges, entity filters).
@@ -307,7 +313,7 @@ the CVM/BACEN tables via psycopg2 direct connection — no PostgREST or RLS invo
 
 | Method | Path                | Body / Query                                        | Purpose                                                           |
 | ------ | ------------------- | --------------------------------------------------- | ----------------------------------------------------------------- |
-| GET    | `/healthz`          | —                                                   | Liveness + Supabase DB reachability                                   |
+| GET    | `/healthz`          | —                                                   | Liveness + Supabase DB reachability                               |
 | GET    | `/api/status`       | —                                                   | Row counts per table + last 5 entries in `cvm_ingest_log`         |
 | GET    | `/api/dispatch`     | —                                                   | List every valid `(entity, doc_type)` pair                        |
 | POST   | `/api/ingest`       | `{entity, doc_type, year, month?}`                  | Fire one slice. Returns `{job_id}`                                |
@@ -378,8 +384,8 @@ All tests are offline (Supabase DB and HTTP are mocked). The Flask layer is cove
 - Required GitHub secret: `POSTGRES_URL` (Supabase connection string with `sslmode=require`).
 
 The read-only **Evidence.dev dashboard** (`dashboard/`) deploys separately to **Vercel**
-(project `iliquid-nightly`, primary live target); it can also be served as a static build via
-Netlify or any static host. It only reads from Supabase.
+(project `iliquid-nightly`, primary live target); it can also be served as a static build on
+any static host. It only reads from Supabase.
 
 To roll out schema changes, commit `src/store/schema.sql` and any new
 `src/store/migrations/*.sql`, then run `python scripts/apply_schema.py` against
@@ -391,8 +397,8 @@ The DDL uses `CREATE TABLE IF NOT EXISTS` and named UNIQUE constraints, so re-ap
 The original build-out phases are complete — see `docs/planning/CHANGELOG.md` for the
 workstream history.
 
-| Phase | What                                                               | Status |
-| ----- | ------------------------------------------------------------------ | ------ |
+| Phase | What                                                               | Status  |
+| ----- | ------------------------------------------------------------------ | ------- |
 | **0** | Fix SECURIT csv_name_pattern bug; add FII complemento yield fields | ✅ done |
 | **1** | FIDC tranche tables (tab_X, tab_VI) + accountability rules         | ✅ done |
 | **2** | SECURIT series + cash-flow tables + accountability rules           | ✅ done |
