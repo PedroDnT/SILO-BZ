@@ -75,11 +75,12 @@ UPDATE`). **Never open a raw DB connection elsewhere — always go through `pg_c
 
 Storage layout: ~30 tables named `cvm_<entity>_<doctype>` or `bacen_<series>` (plus the
 `cia_*` and ETF tables and the `cvm_ingest_log` audit table). Trust `src/store/schema.sql`
-+ `migrations/` + `src/api/dispatch.py` as the source of truth, not the README's CSV table.
-Wired ingest datasets include `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`,
-`cvm_securit_fluxo`, `cvm_fi_balancete`, `cvm_cia_*`, `cvm_etf_registry`,
-`anbima_etf_class_monthly`, and `etf_market_snapshot` (scraped ETF NAV/cotistas — **not yet
-wired into the daily run**; see `docs/ETF_AND_PERFORMANCE.md`).
+
+- `migrations/` + `src/api/dispatch.py` as the source of truth, not the README's CSV table.
+  Wired ingest datasets include `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`,
+  `cvm_securit_fluxo`, `cvm_fi_balancete`, `cvm_cia_*`, `cvm_etf_registry`,
+  `anbima_etf_class_monthly`, and `etf_market_snapshot` (scraped ETF NAV/cotistas — **not yet
+  wired into the daily run**; see `docs/ETF_AND_PERFORMANCE.md`).
 
 The **analytical layer** (`src/store/analytical/`, applied by `scripts/apply_analytical.sh`
 after ingest) is the read side the dashboards query: `dim_fund` (a **materialized view**,
@@ -163,7 +164,7 @@ Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources 
 - **`dashboard/`** — fund-health analytics: Overview (`/`), FIDC Credit Monitor (`/fidc`),
   FII Market (`/fii`), Suspicious Screens (`/suspicious`), Performance (`/performance`), and
   ETF (`/etf`). Deployed to **Vercel** (project `iliquid-nightly`, primary); also buildable as
-  a static site for Netlify or any static host.
+  a static site for any static host.
 - **`webapp/`** — Evidence.dev instance for CIA Aberta (listed-company) analytics; in progress
   on the `feat/cia-financials` branch alongside the `cia_*` tables.
 - **`webapp/`** — Evidence.dev instance for CIA Aberta (listed-company) analytics over the
@@ -175,7 +176,7 @@ Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources 
 
 Ingestion target: **GitHub Actions cron → Supabase Postgres**. Required GitHub secret:
 `POSTGRES_URL`. No container registry or Docker. The read-only `dashboard/` deploys
-separately to **Vercel** (project `iliquid-nightly`; Netlify/static host also supported).
+separately to **Vercel** (project `iliquid-nightly`; any static host also works).
 
 - `.github/workflows/daily_ingest.yml` — 06:00 UTC daily (`run_daily`) + `workflow_dispatch`
   (`mode=daily|backfill`, optional `entity`/`start_year`/`end_year`). It bootstraps the schema
