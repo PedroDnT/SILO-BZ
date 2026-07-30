@@ -82,8 +82,43 @@ class RotatingDNSResolver(AbstractResolver):
         return None
 
 
+class CVMHostUnreachable(RuntimeError):
+    """dados.cvm.gov.br refused connections repeatedly — the host or our IP is blocked.
+
+    Distinct from a transient timeout/5xx: a connect-level refusal is not fixed by
+    retrying. In the 2026-06-10 backfill CVM refused every connection from the
+    runner's IP, and the pipeline retried each of ~36 files three times with
+    backoff — 4h22m of work that could never succeed, ending in a green CI run
+    with two empty year partitions.
+    """
+
+
 class CVMFetcher:
     """Fetch + parse CVM datasets. No storage, no HTTP API surface."""
+
+    # Circuit breaker for host-level blocking, shared across instances/tasks: a
+    # concurrent backfill runs many downloads, and once CVM starts refusing
+    # connections outright every one of them is doomed. Counts CONSECUTIVE
+    # connect-level failures and resets on any success, so a transient blip is
+    # absorbed by the normal retry path while a real block trips it in seconds.
+    _connect_failures: int = 0
+    _CONNECT_FAILURE_LIMIT: int = int(os.getenv("CVM_CONNECT_FAILURE_LIMIT", "8"))
+
+    @classmethod
+    def _note_connect_failure(cls, url: str, exc: BaseException) -> None:
+        cls._connect_failures += 1
+        if cls._connect_failures >= cls._CONNECT_FAILURE_LIMIT:
+            raise CVMHostUnreachable(
+                f"{cls._connect_failures} consecutive connection failures to CVM "
+                f"(last: {url} — {exc}). The host is down or this IP is blocked; "
+                f"retrying cannot help. Aborting instead of grinding through every "
+                f"remaining slice. Re-dispatch the run (a fresh runner usually gets "
+                f"an unblocked IP), or raise CVM_CONNECT_FAILURE_LIMIT to override."
+            )
+
+    @classmethod
+    def _note_success(cls) -> None:
+        cls._connect_failures = 0
 
     def __init__(self) -> None:
         self.base_url = config.CVM_BASE_URL
@@ -250,13 +285,32 @@ class CVMFetcher:
                 timeout = aiohttp.ClientTimeout(total=self.timeout)
                 async with await self._build_session(timeout, attempt) as session:
                     async with session.get(url) as response:
+                        # Any HTTP response proves the host answered, so it clears
+                        # the connect-failure breaker even when the status is an
+                        # error. A 404 for a not-yet-published month is routine on
+                        # the daily window and must never look like a block.
+                        self._note_success()
                         if response.status == 404:
                             raise ValueError(f"Data not found at {url}")
                         if response.status != 200:
                             raise RuntimeError(f"HTTP {response.status} from {url}")
                         content = await response.read()
                         await self._save_cache(cache_path, meta_path, content, url)
+                        self._note_success()
                         return content
+            except aiohttp.ClientConnectorError as exc:
+                # Connect-level refusal: the TCP/TLS handshake never happened, so
+                # this is the host or our IP, not the file. Retry locally (could be
+                # a blip) but count it — the breaker aborts the run once it is
+                # clearly systemic rather than repeating this for every slice.
+                self._note_connect_failure(url, exc)
+                if attempt < self.max_retries - 1:
+                    await asyncio.sleep(self.retry_delay * (attempt + 1))
+                    continue
+                raise RuntimeError(
+                    f"Download failed after {self.max_retries} attempts "
+                    f"(cannot connect to host): {exc}"
+                ) from exc
             except aiohttp.ClientError as exc:
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(self.retry_delay * (attempt + 1))
