@@ -155,6 +155,57 @@ def _rows_as_lists(ws, min_row: int) -> List[List[Any]]:
     ]
 
 
+def match_etf_label(label: Any) -> Optional[Tuple[Optional[int], str]]:
+    """Return (type_id, type_name) for an ETF row label, else None.
+
+    Matched (case-insensitive):
+      'etf renda fix...' -> 225 (ETF Renda Fixa)
+      'etf renda var...' -> 226 (ETF Renda Variável)
+      exactly 'etf'      -> aggregate (type_id None)
+    """
+    if not isinstance(label, str):
+        return None
+    lab = label.strip().lower()
+    if lab.startswith("etf renda fix"):
+        return (TYPE_ETF_RF, "ETF Renda Fixa")
+    if lab.startswith("etf renda var"):
+        return (TYPE_ETF_RV, "ETF Renda Variável")
+    if lab == "etf":
+        return (None, CATEGORY_LABEL)
+    return None
+
+
+def find_etf_rows(all_rows: List[List[Any]]) -> List[Tuple[int, Optional[int], str]]:
+    """Locate the ETF rows in a type-level sheet BY LABEL, not by fixed offset.
+
+    These rows sit at index 73/74/75 in current boletins, and the parser used to
+    hardcode that. Positional lookup is the dangerous kind of fragile here: if
+    ANBIMA inserts a fund type above them, the offsets still resolve to *valid
+    rows of some other category* and their numbers get written to the DB labelled
+    'ETF'. That is silent data corruption, strictly worse than reading nothing.
+
+    Returns [(row_index, type_id, type_name)] in sheet order. When the sheet's own
+    type-id column is populated it is used to corroborate the label-derived id.
+    """
+    found: List[Tuple[int, Optional[int], str]] = []
+    for idx, row in enumerate(all_rows):
+        if len(row) <= TYPE_COL_LABEL:
+            continue
+        info = match_etf_label(row[TYPE_COL_LABEL])
+        if info is None:
+            continue
+        type_id, type_name = info
+        sheet_id = row[0] if row else None
+        if isinstance(sheet_id, (int, float)) and int(sheet_id) != (type_id or 0):
+            logger.warning(
+                "ANBIMA row %d: label %r implies type_id %r but the sheet says %r "
+                "— trusting the sheet", idx, row[TYPE_COL_LABEL], type_id, sheet_id,
+            )
+            type_id = int(sheet_id)
+        found.append((idx, type_id, type_name))
+    return found
+
+
 # ── parsers ───────────────────────────────────────────────────────────────────
 
 def parse_pl_classe(wb: openpyxl.Workbook, boletim_ref: str) -> List[Dict]:
@@ -291,29 +342,23 @@ def _parse_type_sheet(
                 )
                 break
 
-    type_id_map: Dict[int, Optional[int]] = {
-        ETF_TYPE_ROWS[0]: None,
-        ETF_TYPE_ROWS[1]: TYPE_ETF_RF,
-        ETF_TYPE_ROWS[2]: TYPE_ETF_RV,
-    }
-    type_name_map: Dict[int, str] = {
-        ETF_TYPE_ROWS[0]: CATEGORY_LABEL,
-        ETF_TYPE_ROWS[1]: "ETF Renda Fixa",
-        ETF_TYPE_ROWS[2]: "ETF Renda Variável",
-    }
+    # Locate the ETF rows by label. See find_etf_rows: hardcoded offsets would
+    # keep "working" after an ANBIMA layout change by silently reading another
+    # category's numbers and storing them as ETF.
+    etf_rows = find_etf_rows(all_rows)
+    if not etf_rows:
+        logger.warning(
+            "Sheet '%s': no ETF rows found by label (sheet has %d rows) — ANBIMA "
+            "may have renamed the categories; no records emitted rather than "
+            "reading fixed offsets blindly",
+            sheet_fragment, len(all_rows),
+        )
+        return []
 
     records = []
 
-    for row_idx in ETF_TYPE_ROWS:
-        if row_idx >= len(all_rows):
-            logger.warning(
-                "Sheet '%s': expected row %d not present (sheet has %d rows)",
-                sheet_fragment, row_idx, len(all_rows)
-            )
-            continue
+    for row_idx, type_id, type_name in etf_rows:
         row = all_rows[row_idx]
-        type_id   = type_id_map[row_idx]
-        type_name = type_name_map[row_idx]
 
         # ── monthly cols 2..16 (header has datetime objects) ──────────────
         for col_idx in range(TYPE_COL_DATE_START, TYPE_COL_DATE_END):  # 2..16
@@ -452,26 +497,13 @@ def parse_rentabilidade(wb: openpyxl.Workbook, boletim_ref: str) -> List[Dict]:
                 )
                 break
 
-    def _match_etf_label(label: Any) -> Optional[tuple]:
-        """Return (type_id, type_name) for ETF rows, None otherwise."""
-        if not isinstance(label, str):
-            return None
-        lab = label.strip().lower()
-        if lab.startswith("etf renda fix"):
-            return (TYPE_ETF_RF, "ETF Renda Fixa")
-        if lab.startswith("etf renda var"):
-            return (TYPE_ETF_RV, "ETF Renda Variável")
-        if lab == "etf":
-            return (None, CATEGORY_LABEL)
-        return None
-
     records = []
     source_label = "Pág.11 - Rentabilidade por Tipo"
 
     for row in all_rows:
         if not row or len(row) < 3:
             continue
-        info = _match_etf_label(row[1] if len(row) > 1 else None)
+        info = match_etf_label(row[1] if len(row) > 1 else None)
         if info is None:
             continue
         type_id, type_name = info
