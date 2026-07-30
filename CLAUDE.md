@@ -14,7 +14,9 @@ There is **no public API**. Downstream consumers (the `dashboard/` and `webapp/`
 Supabase directly. A localhost-only Flask control plane (`app.py` + `src/api/`) wraps the
 pipeline so operators can trigger partial-fill ingests one slice at a time.
 
-> Read `README.md` for the full operator guide and `docs/planning/CHANGELOG.md` for the
+> Read `README.md` for the full operator guide, `docs/DATABASE_MAINTENANCE.md` for the
+> ongoing DB upkeep runbook (checks, cadence, audit-log triage, partition rollover,
+> troubleshooting), and `docs/planning/CHANGELOG.md` for the
 > workstream history. A previous version had multiple FastAPI
 > services + a Solana "Delos Oracle" + a `b3_calc_api`; all were removed. Do not reintroduce
 > a public API surface, Docker/Alembic, local Postgres-as-source-of-truth, or B3 — see
@@ -23,7 +25,7 @@ pipeline so operators can trigger partial-fill ingests one slice at a time.
 ## Data integrity rules (NON-NEGOTIABLE)
 
 These are the only way to truly break this codebase — fake data silently corrupts every
-downstream metric. Full text in `.agents/rules/data-integrity.md`. Summary:
+downstream metric. This list is authoritative:
 
 1. **Never fabricate data.** A failed fetch must `raise` — never return a plausible-looking
    fallback dict (this is exactly why `b3_calc_api` was deleted). Mocks live in `tests/` only.
@@ -130,7 +132,6 @@ cp .env.example .env                 # set POSTGRES_URL (Supabase conn string, s
 
 # Schema
 python scripts/apply_schema.py       # apply base schema + all migrations (idempotent)
-python scripts/apply_migrations.py   # apply migrations only
 bash scripts/apply_analytical.sh     # build analytical views/functions — run AFTER data exists
 
 # Run the pipeline

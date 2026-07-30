@@ -376,6 +376,10 @@ All tests are offline (Supabase DB and HTTP are mocked). The Flask layer is cove
 
 ## Deploy
 
+> Day-to-day database upkeep — what to check and how often, reading `cvm_ingest_log`,
+> healing gaps, the yearly partition rollover, and a symptom→fix index — lives in
+> [`docs/DATABASE_MAINTENANCE.md`](docs/DATABASE_MAINTENANCE.md).
+
 **Ingestion** deploys to a single target: **GitHub Actions cron writing to Supabase Postgres**
 (no container registry, no Docker stack).
 

@@ -37,7 +37,7 @@ async def main() -> None:
     # the process exits non-zero at the end so CI goes red. Previously each of
     # these blocks logged a warning and continued: that is how the ANBIMA ingest
     # failed on every single daily run for months without anyone noticing, and it
-    # contradicts the repo's own "no silent except" rule (.agents/rules).
+    # contradicts the repo's own "no silent except" data-integrity rule (CLAUDE.md).
     failures: list[tuple[str, Exception]] = []
 
     cvm_ingestor = CVMIngestor()
