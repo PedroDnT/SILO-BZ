@@ -347,7 +347,13 @@ class CVMIngestor:
         except Exception as e:
             logger.warning("ingest_log start failed: %s", e)
 
-    def _log_finish(self, run_id: str, rows: int, error: Optional[str] = None) -> None:
+    def _log_finish(
+        self,
+        run_id: str,
+        rows: int,
+        error: Optional[str] = None,
+        fetched: Optional[int] = None,
+    ) -> None:
         # A 404 for a not-yet-published month is an expected non-event, not a
         # failure. The daily window probes a trailing range (see _monthly_targets)
         # and CVM lags publication by 1-2 months, so the leading months 404. The
@@ -359,6 +365,19 @@ class CVMIngestor:
             status = "skipped"
         elif error:
             status = "error"
+        elif fetched and rows == 0:
+            # Per-slice data contract: the source returned rows but none survived
+            # parsing/validation. That is a defect (stale field map, changed
+            # layout, validation rejecting everything) — NOT a successful no-op.
+            # Logging it 'ok' is exactly how cvm_fiagro_mensal sat empty behind 34
+            # 'ok' slices. A genuinely empty published file (fetched == 0) stays
+            # 'ok'; a not-yet-published month is already 'skipped' above.
+            status = "error"
+            error = (
+                f"fetched {fetched} source row(s) but upserted 0 — every row was "
+                f"dropped (check the field map against the current source header "
+                f"and the DataValidator rules)"
+            )
         else:
             status = "ok"
         # The shared connection may have idled out during a long fetch (CVM
@@ -485,7 +504,7 @@ class CVMIngestor:
             logger.warning("ingest_fi_diario %d-%02d failed: %s", year, month, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fi/inf_diario %d-%02d: %d rows", year, month, rows_inserted)
         return rows_inserted
 
@@ -516,7 +535,7 @@ class CVMIngestor:
             logger.warning("ingest_fi_hist_diario %d failed: %s", year, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fi/hist_inf_diario %d: %d rows", year, rows_inserted)
         return rows_inserted
 
@@ -548,7 +567,7 @@ class CVMIngestor:
             logger.warning("ingest_fi_hist_cda %d failed: %s", year, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fi/hist_cda %d: %d rows", year, rows_inserted)
         return rows_inserted
 
@@ -567,7 +586,7 @@ class CVMIngestor:
             logger.warning("ingest_fi_cda %d-%02d failed: %s", year, month, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fi/cda %d-%02d: %d rows", year, month, rows_inserted)
         return rows_inserted
 
@@ -586,7 +605,7 @@ class CVMIngestor:
             logger.warning("ingest_fi_perfil %d-%02d failed: %s", year, month, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fi/perfil_mensal %d-%02d: %d rows", year, month, rows_inserted)
         return rows_inserted
 
@@ -605,7 +624,7 @@ class CVMIngestor:
             logger.warning("ingest_fi_balancete %d-%02d failed: %s", year, month, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fi/balancete %d-%02d: %d rows", year, month, rows_inserted)
         return rows_inserted
 
@@ -624,7 +643,7 @@ class CVMIngestor:
             logger.warning("ingest_fidc_mensal %d-%02d failed: %s", year, month, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fidc/mensal %d-%02d: %d rows", year, month, rows_inserted)
         return rows_inserted
 
@@ -725,7 +744,10 @@ class CVMIngestor:
             logger.warning("ingest_fidc_tranche %d-%02d failed: %s", year, month, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(
+            run_id, rows_inserted,
+            fetched=len(rows_x2) + len(rows_x3) + len(rows_x6),
+        )
         logger.info("fidc/tranche %d-%02d: %d rows", year, month, rows_inserted)
         return rows_inserted
 
@@ -740,7 +762,7 @@ class CVMIngestor:
             logger.warning("ingest_fidc_tranche_flows %d-%02d failed: %s", year, month, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fidc/tranche_flows %d-%02d: %d rows", year, month, rows_inserted)
         return rows_inserted
 
@@ -755,7 +777,7 @@ class CVMIngestor:
             logger.warning("ingest_fidc_aging %d-%02d failed: %s", year, month, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fidc/aging %d-%02d: %d rows", year, month, rows_inserted)
         return rows_inserted
 
@@ -774,7 +796,7 @@ class CVMIngestor:
             logger.warning("ingest_fiagro_mensal %d-%02d failed: %s", year, month, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fiagro/mensal %d-%02d: %d rows", year, month, rows_inserted)
         return rows_inserted
 
@@ -793,7 +815,7 @@ class CVMIngestor:
             logger.warning("ingest_fip_periodic %s %d failed: %s", doc_type, year, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fip/%s %d: %d rows", doc_type, year, rows_inserted)
         return rows_inserted
 
@@ -813,7 +835,7 @@ class CVMIngestor:
             logger.warning("ingest_fii_mensal %s %d failed: %s", doc_type, year, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fii/%s %d: %d rows", doc_type, year, rows_inserted)
         return rows_inserted
 
@@ -832,7 +854,7 @@ class CVMIngestor:
             logger.warning("ingest_fii_periodic %s %d failed: %s", doc_type, year, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fii/%s %d: %d rows", doc_type, year, rows_inserted)
         return rows_inserted
 
@@ -857,7 +879,7 @@ class CVMIngestor:
             logger.warning("ingest_fund_registry %s failed: %s", entity, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("%s/cad: %d rows", entity, rows_inserted)
         return rows_inserted
 
@@ -925,7 +947,7 @@ class CVMIngestor:
             logger.warning("ingest_securit_serie %s %d failed: %s", doc_type, year, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("securit/%s %d: %d rows", doc_type, year, rows_inserted)
         return rows_inserted
 
@@ -940,7 +962,7 @@ class CVMIngestor:
             logger.warning("ingest_securit_fluxo %s %d failed: %s", doc_type, year, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("securit/%s %d: %d rows", doc_type, year, rows_inserted)
         return rows_inserted
 
@@ -959,7 +981,7 @@ class CVMIngestor:
             logger.warning("ingest_securit_mensal %s %d failed: %s", instrument_type, year, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("securit/%s %d: %d rows", instrument_type, year, rows_inserted)
         return rows_inserted
 
@@ -978,7 +1000,7 @@ class CVMIngestor:
             logger.warning("ingest_securit_dfin %s %d failed: %s", instrument_type, year, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("securit/%s %d: %d rows", instrument_type, year, rows_inserted)
         return rows_inserted
 
@@ -1003,7 +1025,7 @@ class CVMIngestor:
             logger.warning("ingest_cia_cad failed: %s", exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("cia_aberta/cad: %d rows", rows_inserted)
         return rows_inserted
 
@@ -1023,7 +1045,7 @@ class CVMIngestor:
             logger.warning("ingest_cia_ipe %d failed: %s", year, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("cia_aberta/ipe %d: %d rows", year, rows_inserted)
         return rows_inserted
 
@@ -1067,7 +1089,10 @@ class CVMIngestor:
             logger.warning("ingest_cia_itr_dfp %s %d failed: %s", doc_type, year, exc)
             self._log_finish(run_id, 0, str(exc))
             return 0
-        self._log_finish(run_id, rows_inserted)
+        # account_members counts the source rows seen; the contract in _log_finish
+        # turns "saw source rows, wrote none" into an error rather than the
+        # warning-only check above.
+        self._log_finish(run_id, rows_inserted, fetched=account_members)
         logger.info("cia_aberta/%s %d: %d rows", doc_type, year, rows_inserted)
         return rows_inserted
 

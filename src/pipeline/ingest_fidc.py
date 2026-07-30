@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
-from src.parsers.mapping import apply_map
+from src.parsers.mapping import apply_map, assert_map_matches
 from src.parsers.field_maps import fidc_mensal as _mensal
 from src.parsers.field_maps import fidc_tranche as _tranche
 from src.parsers.field_maps import fidc_tranche_flows as _flows
@@ -31,6 +31,10 @@ def ingest_fidc_mensal(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     """
     records: List[Dict[str, Any]] = []
 
+    assert_map_matches(
+        raw_rows, _mensal.FIELD_MAP, dataset="fidc/mensal",
+        required=("cnpj", "period"),
+    )
     for row in raw_rows:
         typed, residual = apply_map(row, _mensal.FIELD_MAP)
         typed["raw"] = residual
@@ -143,6 +147,10 @@ def ingest_fidc_aging(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     """
     records: List[Dict[str, Any]] = []
 
+    assert_map_matches(
+        raw_rows, _aging.FIELD_MAP, dataset="fidc/aging",
+        required=("cnpj", "period"),
+    )
     for row in raw_rows:
         typed, residual = apply_map(row, _aging.FIELD_MAP)
         typed["raw"] = residual

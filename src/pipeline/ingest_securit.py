@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
-from src.parsers.mapping import apply_map
+from src.parsers.mapping import apply_map, assert_map_matches
 from src.parsers.field_maps import securit_mensal as _mensal
 from src.parsers.field_maps import securit_serie as _serie
 from src.parsers.field_maps import securit_fluxo as _fluxo
@@ -87,6 +87,10 @@ def ingest_securit_serie(
     instrument_type = _resolve_instrument_type(doc_type)
     records: List[Dict[str, Any]] = []
 
+    assert_map_matches(
+        raw_rows, _serie.FIELD_MAP, dataset="securit/serie",
+        required=("codigo_identificacao",),
+    )
     for row in raw_rows:
         typed, residual = apply_map(row, _serie.FIELD_MAP)
         typed["instrument_type"] = instrument_type
@@ -127,6 +131,10 @@ def ingest_securit_fluxo(
     instrument_type = _resolve_instrument_type(doc_type)
     records: List[Dict[str, Any]] = []
 
+    assert_map_matches(
+        raw_rows, _fluxo.FIELD_MAP, dataset="securit/fluxo",
+        required=("codigo_identificacao",),
+    )
     for row in raw_rows:
         typed, residual = apply_map(row, _fluxo.FIELD_MAP)
         typed["instrument_type"] = instrument_type

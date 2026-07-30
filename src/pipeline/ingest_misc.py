@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
-from src.parsers.mapping import apply_map, derive_is_active
+from src.parsers.mapping import apply_map, assert_map_matches, derive_is_active
 from src.parsers.field_maps import fiagro_mensal as _fiagro
 from src.parsers.field_maps import fip_periodic as _fip
 from src.parsers.field_maps import fund_registry as _reg
@@ -23,6 +23,10 @@ def ingest_fiagro_mensal(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     Returns:
         number of rows upserted
     """
+    assert_map_matches(
+        raw_rows, _fiagro.FIELD_MAP, dataset="fiagro/mensal",
+        required=("cnpj", "period"),
+    )
     records: List[Dict[str, Any]] = []
 
     for row in raw_rows:
