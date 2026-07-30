@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
-from src.parsers.mapping import apply_map
+from src.parsers.mapping import apply_map, assert_map_matches
 from src.parsers.field_maps import fii_geral as _geral
 from src.parsers.field_maps import fii_ativo_passivo as _ap
 from src.parsers.field_maps import fii_complemento as _comp
@@ -43,6 +43,10 @@ def ingest_fii_mensal(conn: Any, raw_rows: List[Dict[str, Any]], doc_type: str) 
         return 0
 
     subtype, field_map = _SUBTYPE_MAP[doc_type]
+    assert_map_matches(
+        raw_rows, field_map, dataset=f"fii/{doc_type}",
+        required=("cnpj",),
+    )
     records: List[Dict[str, Any]] = []
 
     for row in raw_rows:

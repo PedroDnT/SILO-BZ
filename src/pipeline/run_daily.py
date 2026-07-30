@@ -32,6 +32,14 @@ async def main() -> None:
     start_ts = time.monotonic()
     logger.info("Daily update starting")
 
+    # Sub-ingest failures are COLLECTED, not swallowed. Each source still runs
+    # even if an earlier one failed (one bad source must not skip the rest), but
+    # the process exits non-zero at the end so CI goes red. Previously each of
+    # these blocks logged a warning and continued: that is how the ANBIMA ingest
+    # failed on every single daily run for months without anyone noticing, and it
+    # contradicts the repo's own "no silent except" rule (.agents/rules).
+    failures: list[tuple[str, Exception]] = []
+
     cvm_ingestor = CVMIngestor()
     totals = await cvm_ingestor.daily_update()
 
@@ -43,7 +51,8 @@ async def main() -> None:
         bacen_totals = await bacen_ingestor.backfill(start=bacen_start)
         totals.update(bacen_totals)
     except Exception as exc:
-        logger.warning("BACEN daily refresh failed: %s", exc)
+        logger.error("BACEN daily refresh failed: %s", exc, exc_info=True)
+        failures.append(("bacen", exc))
 
     # ANBIMA ETF: fetch latest monthly boletim; idempotent upsert.
     try:
@@ -51,7 +60,8 @@ async def main() -> None:
         anbima_totals = await anbima_ingestor.daily_update()
         totals.update(anbima_totals)
     except Exception as exc:
-        logger.warning("ANBIMA ETF daily refresh failed: %s", exc)
+        logger.error("ANBIMA ETF daily refresh failed: %s", exc, exc_info=True)
+        failures.append(("anbima_etf", exc))
 
     # ETF market snapshot: scrape etfsbrasil.com.br via Apify (NAV/price/cotistas
     # the post-CVM-175 daily file no longer exposes). The scrape is paid + rate-
@@ -65,7 +75,8 @@ async def main() -> None:
             etf_rows = ingest_etf_market(get_pg_client())
             totals["etf_market_snapshot"] = etf_rows
         except Exception as exc:
-            logger.warning("ETF market scrape failed: %s", exc)
+            logger.error("ETF market scrape failed: %s", exc, exc_info=True)
+            failures.append(("etf_market", exc))
     else:
         logger.info("APIFY_TOKEN unset — skipping ETF market scrape")
 
@@ -75,6 +86,12 @@ async def main() -> None:
         "Daily update done in %.1fs — %d rows upserted: %s",
         elapsed, total_rows, totals,
     )
+
+    if failures:
+        summary = "; ".join(f"{name}: {exc}" for name, exc in failures)
+        logger.error("Daily update FAILED for %d source(s) — %s",
+                     len(failures), summary)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ import logging
 from datetime import date as _date
 from typing import Any, Dict, List, Optional
 
-from src.parsers.mapping import apply_map, derive_is_active
+from src.parsers.mapping import apply_map, assert_map_matches, derive_is_active
 from src.parsers.field_maps import fi_diario as _diario
 from src.parsers.field_maps import fi_cda as _cda
 from src.parsers.field_maps import fi_perfil as _perfil
@@ -32,6 +32,10 @@ def ingest_fi_diario(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     """
     records: List[Dict[str, Any]] = []
 
+    assert_map_matches(
+        raw_rows, _diario.FIELD_MAP, dataset="fi/inf_diario",
+        required=("cnpj", "dt_comptc"),
+    )
     for row in raw_rows:
         typed, residual = apply_map(row, _diario.FIELD_MAP)
         typed["raw"] = residual
@@ -94,6 +98,10 @@ def ingest_fi_perfil(conn: Any, raw_rows: List[Dict[str, Any]], year: int, month
     first_of_month = _date(year, month, 1)
     records: List[Dict[str, Any]] = []
 
+    assert_map_matches(
+        raw_rows, _perfil.FIELD_MAP, dataset="fi/perfil_mensal",
+        required=("cnpj",),
+    )
     for row in raw_rows:
         typed, residual = apply_map(row, _perfil.FIELD_MAP)
         typed["raw"] = residual
@@ -129,6 +137,10 @@ def ingest_fi_balancete(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     """
     records: List[Dict[str, Any]] = []
 
+    assert_map_matches(
+        raw_rows, _balancete.FIELD_MAP, dataset="fi/balancete",
+        required=("cnpj", "dt_comptc"),
+    )
     for row in raw_rows:
         typed, residual = apply_map(row, _balancete.FIELD_MAP)
         typed["raw"] = residual

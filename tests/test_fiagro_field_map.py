@@ -14,8 +14,10 @@ emptying the table again.
 
 from unittest.mock import patch
 
+import pytest
+
 from src.parsers.field_maps import fiagro_mensal as fiagro
-from src.parsers.mapping import apply_map
+from src.parsers.mapping import FieldMapMismatch, apply_map
 from src.pipeline.ingest_misc import ingest_fiagro_mensal
 
 # Verbatim CVM-175 header names + values shaped like the real file.
@@ -90,8 +92,19 @@ class TestIngest:
             "17198500000182", "28152777000190",
         }
 
-    def test_row_without_keys_is_dropped(self):
-        # A genuinely unusable row is still skipped — the guard stays intact.
+    def test_row_with_blank_keys_is_dropped(self):
+        # A row that HAS the key columns but leaves them blank is still skipped.
+        # (The header is intact, so this is a bad row — not schema drift.)
+        blank = dict(CVM175_ROW, CNPJ_Classe="", Data_Referencia="")
         with patch("src.pipeline.ingest_misc.upsert_rows",
                    side_effect=AssertionError("should not upsert")):
-            assert ingest_fiagro_mensal(object(), [{"Nome_Classe": "no keys"}]) == 0
+            assert ingest_fiagro_mensal(object(), [blank]) == 0
+
+    def test_drifted_header_raises_instead_of_silently_dropping(self):
+        # The FIAGRO bug itself: a header with none of the mapped key columns must
+        # fail loudly rather than drop every row and report a successful no-op.
+        drifted = [{"Nome_Classe": "x", "Some_Renamed_Column": "1"}]
+        with patch("src.pipeline.ingest_misc.upsert_rows",
+                   side_effect=AssertionError("should not upsert")):
+            with pytest.raises(FieldMapMismatch, match="no longer matches"):
+                ingest_fiagro_mensal(object(), drifted)

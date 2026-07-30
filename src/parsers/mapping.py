@@ -16,8 +16,12 @@ coerce_type values: text, cnpj, cd_cvm, int, numeric, pct, date, bool
 """
 from __future__ import annotations
 
+import logging
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Iterable, Mapping, Optional, Sequence
+
+logger = logging.getLogger(__name__)
 
 CoerceType = str  # one of: text, cnpj, int, numeric, pct, date, bool
 
@@ -127,6 +131,110 @@ def apply_map(
 
     residual = {k: v for k, v in row.items() if k not in consumed}
     return typed, residual
+
+
+# ---------------------------------------------------------------------------
+# Field-map drift detection
+#
+# apply_map answers "what is this row?" but cannot report "this FIELD_MAP no
+# longer fits the source". That blind spot is how the FIAGRO map went stale:
+# CVM-175 renamed the headers (CNPJ_FUNDO -> CNPJ_Classe, DT_COMPTC ->
+# Data_Referencia), zero candidates matched, every row parsed to all-None and
+# was dropped for a missing natural key, and the ingest returned 0 rows without
+# raising — 34 slices logged 'ok' behind an empty table.
+#
+# Drift shows up in the HEADER, not in the values, so these helpers compare the
+# map's candidates against the CSV's keys and ignore values entirely. A column
+# whose candidates are all absent from the header can never be populated.
+# ---------------------------------------------------------------------------
+
+
+class FieldMapMismatch(RuntimeError):
+    """A FIELD_MAP no longer matches the source header (schema drift)."""
+
+
+@dataclass(frozen=True)
+class MapCoverage:
+    matched: frozenset[str]      # db columns with a candidate present in the header
+    unmatched: frozenset[str]    # db columns whose every candidate is absent
+
+    @property
+    def ratio(self) -> float:
+        total = len(self.matched) + len(self.unmatched)
+        return 1.0 if total == 0 else len(self.matched) / total
+
+
+def map_coverage(
+    header: Iterable[str],
+    field_map: Mapping[str, tuple[Sequence[str], CoerceType]],
+) -> MapCoverage:
+    """Which FIELD_MAP columns could possibly be populated from `header`.
+
+    Presence-only: a column counts as matched when any of its candidates appears
+    in the header, regardless of whether that cell happens to be empty in a
+    given row.
+    """
+    index = {_norm(k) for k in header}
+    matched, unmatched = set(), set()
+    for col, (candidates, _type) in field_map.items():
+        if any(_norm(c) in index for c in candidates):
+            matched.add(col)
+        else:
+            unmatched.add(col)
+    return MapCoverage(frozenset(matched), frozenset(unmatched))
+
+
+def assert_map_matches(
+    rows: Sequence[Mapping[str, Any]],
+    field_map: Mapping[str, tuple[Sequence[str], CoerceType]],
+    *,
+    dataset: str,
+    required: Sequence[str] = (),
+    warn_below: float = 0.5,
+) -> MapCoverage:
+    """Fail fast when a FIELD_MAP has drifted away from the source header.
+
+    `required` names the columns the caller cannot ingest without — normally the
+    natural key (e.g. ("cnpj", "period")). If any of them has no candidate in the
+    header, raise: every row would be dropped and the slice would look like a
+    successful no-op.
+
+    A low overall match ratio only warns. Several maps in this repo legitimately
+    list candidates for multiple tab/format variants and are sparse by design, so
+    a hard threshold there would break working ingests.
+
+    An empty `rows` is not drift (a genuinely empty slice) and returns silently.
+    """
+    if not rows:
+        return MapCoverage(frozenset(), frozenset())
+
+    # CSV batches are rectangular, but union a few rows in case a source ships
+    # ragged dicts.
+    header: set[str] = set()
+    for row in rows[:10]:
+        header.update(row.keys())
+
+    cov = map_coverage(header, field_map)
+
+    missing_required = [c for c in required if c in cov.unmatched]
+    if missing_required:
+        raise FieldMapMismatch(
+            f"{dataset}: FIELD_MAP no longer matches the source header — required "
+            f"column(s) {missing_required} have no candidate in the CSV. "
+            f"Matched {sorted(cov.matched)}; unmatched {sorted(cov.unmatched)}. "
+            f"Header sample: {sorted(header)[:12]}. "
+            f"The source likely renamed its columns (e.g. a CVM-175 change); "
+            f"update src/parsers/field_maps/."
+        )
+
+    if cov.ratio < warn_below:
+        logger.warning(
+            "%s: FIELD_MAP matched only %d/%d columns (%.0f%%) — possible source "
+            "schema drift. Unmatched: %s",
+            dataset, len(cov.matched), len(cov.matched) + len(cov.unmatched),
+            cov.ratio * 100, sorted(cov.unmatched),
+        )
+    return cov
 
 
 # ---------------------------------------------------------------------------
