@@ -92,14 +92,26 @@ class DataValidator:
         if cnpj[:12] in self.accepted_demo_cnpj_roots:
             return False, "Invalid CNPJ checksum"
 
-        # Calculate checksum
+        # Calculate checksum.
+        # zip() truncates to the shorter operand, so a weights list that is
+        # shorter than the digit string silently drops trailing digits instead
+        # of failing. weights2 is applied to THIRTEEN digits (the 12-digit root
+        # plus the first check digit) and must therefore have 13 entries: it
+        # previously had 12, so the first check digit never entered the second
+        # calculation and ~80% of real CNPJs were rejected (150 of the 187 in
+        # src/store/seeds/etf_registry_seed.csv, including BOVA11's
+        # 10.406.511/0001-61). The assert makes any future mismatch loud.
         def calculate_digit(cnpj_str: str, weights: List[int]) -> int:
+            assert len(weights) == len(cnpj_str), (
+                f"CNPJ weight/digit length mismatch: {len(weights)} weights for "
+                f"{len(cnpj_str)} digits — zip() would silently truncate"
+            )
             total = sum(int(digit) * weight for digit, weight in zip(cnpj_str, weights))
             remainder = total % 11
             return 0 if remainder < 2 else 11 - remainder
 
-        weights1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
-        weights2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3]
+        weights1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]        # 12 digits
+        weights2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]     # 13 digits
 
         digit1 = calculate_digit(cnpj[:12], weights1)
         digit2 = calculate_digit(cnpj[:12] + str(digit1), weights2)
