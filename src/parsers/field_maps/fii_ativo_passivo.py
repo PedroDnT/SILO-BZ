@@ -14,7 +14,7 @@ DOC_SUBTYPE = "ativo_passivo"
 CONFLICT = ("cnpj", "period", "doc_subtype")
 
 FIELD_MAP = {
-    "cnpj":                   (["CNPJ_Fundo_Classe", "CNPJ_FUNDO_CLASSE"],  "cnpj"),
+    "cnpj":                   (["CNPJ_Fundo_Classe", "CNPJ_FUNDO_CLASSE", "CNPJ_Fundo"],  "cnpj"),
     "period":                 (["Data_Referencia", "DT_COMPTC"],             "date"),
     # Total_Investido is the asset total for this subtype.
     "vl_ativo":               (["Total_Investido"],                          "numeric"),

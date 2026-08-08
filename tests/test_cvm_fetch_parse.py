@@ -591,6 +591,41 @@ class TestCVMPipelineFieldMapping:
         assert "vl_patrim_liq" not in rec
 
     @pytest.mark.asyncio
+    async def test_fii_mensal_geral_pre2021_legacy_header(self):
+        """Pre-2021 FII monthly files use CNPJ_Fundo (no _Classe suffix).
+
+        The 2019/2020 ZIPs predate the CVM-175 fund/class split, so their CSVs
+        carry CNPJ_Fundo / Nome_Fundo. Rows must still map to a non-null cnpj —
+        a miss here silently drops every pre-2021 row (logged ok with 0 rows).
+        """
+        import datetime
+        legacy_rows = [
+            {
+                "CNPJ_Fundo": "00.332.266/0001-31",
+                "Data_Referencia": "2019-01-01",
+                "Versao": "1",
+                "Data_Entrega": "2019-02-15",
+                "Nome_Fundo": "FUNDO DE INVESTIMENTO IMOBILIARIO VIA PARQUE SHOPPING",
+                "Publico_Alvo": "INVESTIDORES EM GERAL",
+                "Codigo_ISIN": "BRFVPQCTF015",
+                "Quantidade_Cotas_Emitidas": "2749208",
+            },
+        ]
+        mock_bytes = _make_zip_bytes("inf_mensal_fii_geral_2019.csv", legacy_rows)
+        captured: list = []
+
+        with _stub_pipeline(captured):
+            with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
+                ingestor = CVMIngestor()
+                await ingestor.ingest_fii_mensal("mensal_geral", 2019)
+
+        assert len(captured) == 1
+        rec = captured[0]
+        assert rec["cnpj"] == "00332266000131"
+        assert rec["period"] == datetime.date(2019, 1, 1)
+        assert rec["doc_subtype"] == "geral"
+
+    @pytest.mark.asyncio
     async def test_fii_mensal_complemento_pipeline_extracts_patrim_liq(self):
         import datetime
         mock_bytes = _make_zip_bytes("inf_mensal_fii_complemento_2024.csv", FII_MENSAL_COMPLEMENTO_ROWS)
