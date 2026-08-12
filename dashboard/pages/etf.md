@@ -19,79 +19,31 @@ title: ETF Market
 -->
 
 ```sql etf_counts
-select
-  count(*)                              as total_etfs,
-  count(*) filter (where is_active)     as active_etfs,
-  count(distinct provider)              as providers,
-  count(distinct underlying_index)      as indices_tracked
-from cvm_etf_registry
+select * from supabase.etf_counts
 ```
 
 ```sql etf_by_provider
-select
-  coalesce(provider, '(unknown)')   as provider,
-  count(*)                          as n_etfs,
-  count(*) filter (where is_active) as active
-from cvm_etf_registry
-group by provider
-order by n_etfs desc
+select * from supabase.etf_by_provider
 ```
 
 ```sql etf_by_segment
-select
-  coalesce(segment, '(unknown)') as segment,
-  count(*)                       as n_etfs
-from cvm_etf_registry
-group by segment
-order by n_etfs desc
+select * from supabase.etf_by_segment
 ```
 
 ```sql etf_top_indices
-select
-  coalesce(underlying_index, '(unknown)') as underlying_index,
-  count(*)                                as n_etfs
-from cvm_etf_registry
-group by underlying_index
-order by n_etfs desc
-limit 15
+select * from supabase.etf_top_indices
 ```
 
 ```sql etf_list
-select
-  ticker,
-  fund_name,
-  provider,
-  segment,
-  underlying_index,
-  case when is_active then 'Active' else 'Cancelled' end as status
-from cvm_etf_registry
-order by provider, ticker
+select * from supabase.etf_list
 ```
 
 ```sql etf_market_coverage
-select
-  count(*)               as etfs_with_snapshot,
-  count(nav)             as with_nav,
-  count(price)           as with_price,
-  count(cotistas)        as with_cotistas,
-  max(snapshot_date)     as latest_snapshot
-from etf_market_latest
+select * from supabase.etf_market_coverage
 ```
 
 ```sql etf_market
-select
-  ticker,
-  fund_name,
-  provider,
-  segment,
-  price,
-  nav,
-  cotistas,
-  taxa_adm_pct,
-  ret_12m_pct,
-  snapshot_date
-from etf_market_latest
-order by nav desc nulls last
+select * from supabase.etf_market
 ```
 
 # ETF Market

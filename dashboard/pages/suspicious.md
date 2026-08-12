@@ -7,28 +7,19 @@ title: Suspicious Deal Screens
      analytical layer share a single definition. -->
 
 ```sql zombie_growth
-select cnpj, fund_name, period, pl_mm, inad_pct
-from fraud_screen_zombie_growth(null, 5, 1e6)
-limit 20
+select * from supabase.zombie_growth
 ```
 
 ```sql captive_vehicles
-select cnpj, fund_name, latest_period, pl_mm, min_investors
-from fraud_screen_captive_vehicles(3, 10, 5e7)
-limit 20
+select * from supabase.captive_vehicles
 ```
 
 ```sql evergreen_aging
-select cnpj, fund_name, months_observed, min_longtail_pct, max_longtail_pct
-from fraud_screen_evergreen_aging(12, 70, 10)
-limit 20
+select * from supabase.evergreen_aging
 ```
 
 ```sql overdue_securit
-select instrument_type, cnpj_securit, codigo_identificacao,
-       data_vencimento, situacao, volume_mm, rating
-from fraud_screen_overdue_securit(1e5)
-limit 30
+select * from supabase.overdue_securit
 ```
 
 # Suspicious Deal Screens
