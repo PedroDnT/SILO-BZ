@@ -34,23 +34,26 @@ a static build — point any static host at `build/`.
 
 ### Vercel configuration (`vercel.json`)
 
-The build settings are pinned in `dashboard/vercel.json` rather than left to Vercel's
-dashboard, deliberately:
+The build settings are pinned in the **repo-root** `vercel.json` rather than left to
+Vercel's dashboard, deliberately:
 
 ```json
 {
   "framework": null,
-  "buildCommand": "npm run sources && npm run build",
-  "outputDirectory": "build"
+  "installCommand": "cd dashboard && npm install",
+  "buildCommand": "cd dashboard && npm run sources && npm run build",
+  "outputDirectory": "dashboard/build"
 }
 ```
 
-`"framework": null` (the "Other" preset) is the important part. Evidence is built on
-SvelteKit, so Vercel's auto-detection identifies the project as SvelteKit and applies the
-**serverless SSR** preset — but `evidence build` emits a purely **static** site into
-`build/`. The mismatch deploys functions that have nothing valid to serve, and requests
-fail with `500 FUNCTION_INVOCATION_FAILED`. Pinning the preset to static removes the
-functions entirely.
+It lives at the repo root (not in `dashboard/`) because the Vercel project's root
+directory is the repository root — a `dashboard/vercel.json` is silently ignored there.
+`"framework": null` (the "Other" preset) is the important part. With the root directory
+unset, Vercel auto-detects the repo as a **Python** project (Flask `app.py` +
+`requirements.txt`) and deploys the localhost-only control plane as a serverless
+function, which crashes every request with `500 FUNCTION_INVOCATION_FAILED`. Pinning
+framework to null and the build to the Evidence static output removes the functions
+entirely.
 
 Vercel **project settings must not override this** — leave Build & Output Settings
 unoverridden so `vercel.json` wins. Keeping it in the repo also means the config is
