@@ -55,8 +55,7 @@ functions entirely.
 Vercel **project settings must not override this** — leave Build & Output Settings
 unoverridden so `vercel.json` wins. Keeping it in the repo also means the config is
 reviewable and survives project re-creation; host config that lives only in a provider
-dashboard is exactly what left the (now removed) Netlify site failing every build with
-nothing in the repo to fix.
+dashboard leaves a failing build with nothing in the repo to fix.
 
 **Required environment variables** (Vercel → Settings → Environment Variables). Evidence
 reads datasource credentials from `EVIDENCE_SOURCE__<source>__<option>`; the source is named

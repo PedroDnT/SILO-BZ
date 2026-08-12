@@ -52,8 +52,6 @@ htmlcov/
 .gstack/
 .local_db/*.duckdb
 
-# Local Netlify folder
-.netlify
 node_modules
 
 # Evidence dashboard secrets and cache
