@@ -81,8 +81,9 @@ Storage layout: ~30 tables named `cvm_<entity>_<doctype>` or `bacen_<series>` (p
 - `migrations/` + `src/api/dispatch.py` as the source of truth, not the README's CSV table.
   Wired ingest datasets include `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`,
   `cvm_securit_fluxo`, `cvm_fi_balancete`, `cvm_cia_*`, `cvm_etf_registry`,
-  `anbima_etf_class_monthly`, and `etf_market_snapshot` (scraped ETF NAV/cotistas — **not yet
-  wired into the daily run**; see `docs/ETF_AND_PERFORMANCE.md`).
+  `anbima_etf_class_monthly`, and `etf_market_snapshot` (scraped ETF NAV/cotistas — wired
+  into the daily run but **gated on the `APIFY_TOKEN` secret**; it self-skips when the
+  token is unset. See `docs/ETF_AND_PERFORMANCE.md`).
 
 The **analytical layer** (`src/store/analytical/`, applied by `scripts/apply_analytical.sh`
 after ingest) is the read side the dashboards query: `dim_fund` (a **materialized view**,
@@ -166,8 +167,6 @@ Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources 
   FII Market (`/fii`), Suspicious Screens (`/suspicious`), Performance (`/performance`), and
   ETF (`/etf`). Deployed to **Vercel** (project `iliquid-nightly`, primary); also buildable as
   a static site for any static host.
-- **`webapp/`** — Evidence.dev instance for CIA Aberta (listed-company) analytics; in progress
-  on the `feat/cia-financials` branch alongside the `cia_*` tables.
 - **`webapp/`** — Evidence.dev instance for CIA Aberta (listed-company) analytics over the
   `cia_*` tables: Overview (`/`), Financials (`/financials`, consolidated ITR/DFP with
   margins/ROE), Events (`/events`, IPE + Fato Relevante feed). Mind the data conventions

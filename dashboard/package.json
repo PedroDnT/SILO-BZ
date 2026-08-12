@@ -2,6 +2,7 @@
   "name": "iliquid-dashboard",
   "version": "0.0.1",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "evidence dev",
     "build": "evidence build",
@@ -9,11 +10,12 @@
     "preview": "evidence preview"
   },
   "dependencies": {
-    "@evidence-dev/core-components": "^4.0.0",
+    "@evidence-dev/core-components": "^5.4.2",
     "@evidence-dev/evidence": "^40.1.8",
     "@evidence-dev/postgres": "^1.0.10"
   },
   "devDependencies": {
-    "@evidence-dev/plugin-connector": "^2.0.0"
+    "@evidence-dev/plugin-connector": "^2.1.15",
+    "typescript": "5.4.2"
   }
 }

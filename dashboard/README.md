@@ -31,3 +31,51 @@ npm run build     # outputs to build/
 
 Deployed to **Vercel** (project `iliquid-nightly`, primary live target). Can also be served as
 a static build — point any static host at `build/`.
+
+### Vercel configuration (`vercel.json`)
+
+The build settings are pinned in the **repo-root** `vercel.json` rather than left to
+Vercel's dashboard, deliberately:
+
+```json
+{
+  "framework": null,
+  "installCommand": "cd dashboard && npm install",
+  "buildCommand": "cd dashboard && npm run sources && npm run build",
+  "outputDirectory": "dashboard/build"
+}
+```
+
+It lives at the repo root (not in `dashboard/`) because the Vercel project's root
+directory is the repository root — a `dashboard/vercel.json` is silently ignored there.
+`"framework": null` (the "Other" preset) is the important part. With the root directory
+unset, Vercel auto-detects the repo as a **Python** project (Flask `app.py` +
+`requirements.txt`) and deploys the localhost-only control plane as a serverless
+function, which crashes every request with `500 FUNCTION_INVOCATION_FAILED`. Pinning
+framework to null and the build to the Evidence static output removes the functions
+entirely.
+
+Vercel **project settings must not override this** — leave Build & Output Settings
+unoverridden so `vercel.json` wins. Keeping it in the repo also means the config is
+reviewable and survives project re-creation; host config that lives only in a provider
+dashboard leaves a failing build with nothing in the repo to fix.
+
+**Required environment variables** (Vercel → Settings → Environment Variables). Evidence
+reads datasource credentials from `EVIDENCE_SOURCE__<source>__<option>`; the source is named
+`supabase` (`sources/supabase/connection.yaml`), so `npm run sources` needs:
+
+```
+EVIDENCE_SOURCE__supabase__host
+EVIDENCE_SOURCE__supabase__port          # 5432
+EVIDENCE_SOURCE__supabase__database      # postgres
+EVIDENCE_SOURCE__supabase__user          # postgres.<project-ref> for the pooler
+EVIDENCE_SOURCE__supabase__password
+```
+
+TLS is **not** an env var — it is pinned in `sources/supabase/connection.yaml`, because
+Supabase rejects unencrypted connections (`connection is insecure — try using
+sslmode=require`) and the setting is not a secret.
+
+`npm run sources` queries Postgres at **build time** and bakes the results into the static
+output, so a broken/expired database credential fails the build — the same credential
+problem that has stalled the ingestion pipeline will also break dashboard deploys.

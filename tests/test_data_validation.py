@@ -499,3 +499,68 @@ class TestDatasetValidation:
         assert cnpj_stats["total"] == len(sample_fidc_cadastral_records)
         assert cnpj_stats["non_null"] == len(sample_fidc_cadastral_records)
         assert cnpj_stats["null_percentage"] == 0.0
+
+class TestCNPJChecksumAgainstRealData:
+    """Exercise the REAL checksum path with REAL CNPJs.
+
+    Why this class exists: every other "valid CNPJ" in this file is one of the
+    four fabricated `accepted_demo_cnpjs`, which _validate_cnpj short-circuits
+    to True *before* reaching the checksum. So the checksum code was never
+    executed by any test, and a genuine bug survived undetected — weights2 had
+    12 entries but is applied to 13 digits, and zip() silently truncates, so the
+    first check digit never entered the second calculation. That rejected 150 of
+    the 187 real CNPJs in src/store/seeds/etf_registry_seed.csv.
+
+    These cases use real, externally verifiable CNPJs so the algorithm itself is
+    under test.
+    """
+
+    # iShares Ibovespa (BOVA11) — 10.406.511/0001-61, a real public CNPJ.
+    REAL_CNPJ = "10406511000161"
+
+    def test_real_cnpj_validates(self):
+        ok, msg = DataValidator()._validate_cnpj(self.REAL_CNPJ)
+        assert ok, f"real CNPJ rejected: {msg}"
+
+    def test_real_cnpj_validates_formatted(self):
+        ok, msg = DataValidator()._validate_cnpj("10.406.511/0001-61")
+        assert ok, f"real formatted CNPJ rejected: {msg}"
+
+    def test_every_seed_cnpj_validates(self):
+        """The curated ETF registry seed is real data — all of it must pass."""
+        import csv
+        from pathlib import Path
+
+        seed = Path(__file__).resolve().parents[1] / "src/store/seeds/etf_registry_seed.csv"
+        rejected = []
+        for row in csv.DictReader(seed.open()):
+            digits = "".join(c for c in row["cnpj"] if c.isdigit())
+            if len(digits) != 14:
+                continue
+            ok, msg = DataValidator()._validate_cnpj(digits)
+            if not ok:
+                rejected.append((row["ticker"], digits, msg))
+        assert not rejected, (
+            f"{len(rejected)} real seed CNPJs rejected by the validator "
+            f"(first few: {rejected[:5]})"
+        )
+
+    def test_wrong_check_digit_is_rejected(self):
+        """A real CNPJ with its last check digit altered must fail."""
+        bad = self.REAL_CNPJ[:13] + ("2" if self.REAL_CNPJ[13] != "2" else "3")
+        ok, msg = DataValidator()._validate_cnpj(bad)
+        assert not ok and "checksum" in msg.lower()
+
+    def test_first_check_digit_participates_in_second(self):
+        """Regression guard for the zip()-truncation bug.
+
+        weights2 must have one entry per digit it is applied to (13). If it is
+        ever shortened back to 12, the assert inside calculate_digit fires
+        rather than silently ignoring the 13th digit.
+        """
+        import inspect
+
+        src = inspect.getsource(DataValidator._validate_cnpj)
+        assert "weights2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]" in src, (
+            "weights2 must carry 13 weights for the 13 digits it scores"
+        )

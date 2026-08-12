@@ -3,65 +3,19 @@ title: FIDC Credit Monitor
 ---
 
 ```sql delinquency_trend
-select
-  a.period,
-  round(100.0 * sum(a.vl_total_inad) / nullif(sum(m.vl_patrim_liq), 0), 2) as delinquency_rate_pct,
-  sum(a.vl_total_inad) / 1e6 as total_inad_mm,
-  count(distinct a.cnpj) as n_funds
-from cvm_fidc_aging a
-join cvm_fidc_mensal m using (cnpj, period)
-where a.period >= current_date - interval '24 months'
-group by a.period
-order by a.period
+select * from supabase.delinquency_trend
 ```
 
 ```sql aging_buckets
-select
-  period,
-  sum(vl_inad_30)         / 1e6 as inad_30d,
-  sum(vl_inad_60)         / 1e6 as inad_60d,
-  sum(vl_inad_90)         / 1e6 as inad_90d,
-  sum(vl_inad_180)        / 1e6 as inad_180d,
-  sum(vl_inad_360)        / 1e6 as inad_360d,
-  sum(vl_inad_maior_1080) / 1e6 as inad_over1080d
-from cvm_fidc_aging
-where period >= current_date - interval '12 months'
-group by period
-order by period
+select * from supabase.aging_buckets
 ```
 
 ```sql top_delinquent
-select
-  a.cnpj,
-  coalesce(r.fund_name, a.cnpj) as fund_name,
-  a.period,
-  round(100.0 * a.vl_total_inad / nullif(m.vl_patrim_liq, 0), 1) as delinquency_pct,
-  a.vl_total_inad / 1e6 as inad_mm,
-  m.vl_patrim_liq / 1e6 as pl_mm
-from cvm_fidc_aging a
-join cvm_fidc_mensal m using (cnpj, period)
-left join cvm_fund_registry r on r.cnpj = a.cnpj and r.entity_type = 'fidc'
-where a.period = (select max(period) from cvm_fidc_aging)
-  and m.vl_patrim_liq > 1e6
-order by delinquency_pct desc nulls last
-limit 20
+select * from supabase.top_delinquent
 ```
 
 ```sql high_delinq_growing
-select
-  a.cnpj,
-  coalesce(r.fund_name, a.cnpj) as fund_name,
-  a.period,
-  m.vl_patrim_liq / 1e6 as pl_mm,
-  round(100.0 * a.vl_total_inad / nullif(m.vl_patrim_liq, 0), 1) as inad_pct
-from cvm_fidc_aging a
-join cvm_fidc_mensal m using (cnpj, period)
-left join cvm_fund_registry r on r.cnpj = a.cnpj and r.entity_type = 'fidc'
-where a.period = (select max(period) from cvm_fidc_aging)
-  and m.vl_patrim_liq > 1e6
-  and 100.0 * a.vl_total_inad / nullif(m.vl_patrim_liq, 0) > 5
-order by pl_mm desc nulls last
-limit 15
+select * from supabase.high_delinq_growing
 ```
 
 # FIDC Credit Monitor

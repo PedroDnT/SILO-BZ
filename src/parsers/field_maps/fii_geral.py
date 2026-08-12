@@ -16,7 +16,10 @@ DOC_SUBTYPE = "geral"
 CONFLICT = ("cnpj", "period", "doc_subtype")
 
 FIELD_MAP = {
-    "cnpj":           (["CNPJ_Fundo_Classe", "CNPJ_FUNDO_CLASSE"], "cnpj"),
+    # CNPJ_Fundo is the pre-2021 header; CVM renamed it to CNPJ_Fundo_Classe
+    # with the CVM-175 fund/class split. Keep the legacy alias last so newer
+    # files match the current name first.
+    "cnpj":           (["CNPJ_Fundo_Classe", "CNPJ_FUNDO_CLASSE", "CNPJ_Fundo"], "cnpj"),
     "period":         (["Data_Referencia", "DT_COMPTC"],            "date"),
     "tp_fundo":       (["Tipo_Fundo_Classe", "TP_FUNDO_CLASSE"],    "text"),
     "cotas_emitidas": (["Quantidade_Cotas_Emitidas"],               "numeric"),

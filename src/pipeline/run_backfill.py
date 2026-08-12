@@ -101,8 +101,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--entity", type=str, default=None,
-        choices=["fi", "fidc", "fip", "fiagro", "fii", "securit", "etf"],
-        help="Limit CVM download to one entity (fi | fidc | fip | fiagro | fii | securit | etf)"
+        choices=["fi", "fidc", "fip", "fiagro", "fii", "securit", "cia_aberta", "etf"],
+        help="Limit CVM download to one entity (fi | fidc | fip | fiagro | fii | securit | cia_aberta | etf)"
     )
     parser.add_argument(
         "--bacen-start", type=str, default="2019-01-01",

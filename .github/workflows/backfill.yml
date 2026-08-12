@@ -133,7 +133,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        entity: [fidc, fii, fiagro, fip, securit]
+        entity: [fidc, fii, fiagro, fip, securit, cia_aberta]
     steps:
       - uses: actions/checkout@v4
 

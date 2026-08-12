@@ -15,7 +15,7 @@ on:
           - daily
           - backfill
       entity:
-        description: "CVM entity to backfill: fi | fidc | fii | fip | fiagro | securit | etf (leave blank for all)"
+        description: "CVM entity to backfill: fi | fidc | fii | fip | fiagro | securit | cia_aberta | etf (leave blank for all)"
         required: false
         default: ""
       start_year:
@@ -137,3 +137,34 @@ jobs:
         if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'backfill') }}
         continue-on-error: true
         run: bash scripts/apply_analytical.sh
+
+  # Alerting: a scheduled-run failure files (or bumps) a single tracking issue,
+  # so a broken credential or CVM outage emails the repo owner instead of
+  # failing silently for weeks (the 2026-07/08 PAM-auth outage went a month
+  # unnoticed). Issue-per-incident, comment-per-day — no new secrets needed.
+  notify-failure:
+    name: File failure issue
+    needs: ingest
+    if: ${{ failure() && github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Create or update tracking issue
+        run: |
+          set -euo pipefail
+          title="Daily ingest is failing"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" \
+              --body "Scheduled daily ingest failed again: $RUN_URL"
+          else
+            body=$(printf '%s\n\n%s' \
+              "The scheduled daily ingest failed: $RUN_URL" \
+              "Check the failing step's logs. Common causes: expired/rotated POSTGRES_URL secret (psql: PAM authentication failed), CVM blocking the runner IP, or a schema migration error. This issue gets one comment per failing day; close it once a scheduled run is green.")
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          fi

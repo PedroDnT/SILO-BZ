@@ -14,7 +14,7 @@ DOC_SUBTYPE = "complemento"
 CONFLICT = ("cnpj", "period", "doc_subtype")
 
 FIELD_MAP = {
-    "cnpj":                   (["CNPJ_Fundo_Classe", "CNPJ_FUNDO_CLASSE"],                    "cnpj"),
+    "cnpj":                   (["CNPJ_Fundo_Classe", "CNPJ_FUNDO_CLASSE", "CNPJ_Fundo"],                    "cnpj"),
     "period":                 (["Data_Referencia", "DT_COMPTC"],                              "date"),
     "vl_patrim_liq":          (["Patrimonio_Liquido", "VL_PATRIM_LIQ"],                       "numeric"),
     "vl_ativo":               (["Valor_Ativo"],                                               "numeric"),
