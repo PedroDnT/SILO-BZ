@@ -70,8 +70,11 @@ EVIDENCE_SOURCE__supabase__port          # 5432
 EVIDENCE_SOURCE__supabase__database      # postgres
 EVIDENCE_SOURCE__supabase__user          # postgres.<project-ref> for the pooler
 EVIDENCE_SOURCE__supabase__password
-EVIDENCE_SOURCE__supabase__ssl           # true
 ```
+
+TLS is **not** an env var — it is pinned in `sources/supabase/connection.yaml`, because
+Supabase rejects unencrypted connections (`connection is insecure — try using
+sslmode=require`) and the setting is not a secret.
 
 `npm run sources` queries Postgres at **build time** and bakes the results into the static
 output, so a broken/expired database credential fails the build — the same credential

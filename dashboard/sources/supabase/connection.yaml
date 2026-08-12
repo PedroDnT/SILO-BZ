@@ -1,2 +1,13 @@
+# Credentials come from EVIDENCE_SOURCE__supabase__* env vars (see README);
+# only non-secret connection behaviour is pinned here.
 name: supabase
 type: postgres
+options:
+  # Supabase refuses unencrypted connections ("connection is insecure — try
+  # using sslmode=require"). This object is handed straight to `pg`.
+  # rejectUnauthorized: false matches libpq's sslmode=require — the traffic is
+  # encrypted, but Supabase's CA is not in Node's trust store, so full chain
+  # verification would fail. Same posture as the pipeline's POSTGRES_URL,
+  # which connects with sslmode=require.
+  ssl:
+    rejectUnauthorized: false
