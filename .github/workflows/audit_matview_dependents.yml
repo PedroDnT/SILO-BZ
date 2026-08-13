@@ -1,0 +1,35 @@
+name: Audit Matview Dependents
+
+# On-demand, read-only. apply_analytical.sh's DROP MATERIALIZED VIEW steps for
+# fact_fund_monthly / fact_security_monthly have no CASCADE, so they fail once
+# anything depends on them — including ad-hoc matviews created directly
+# against production, outside this repo (03_precision.sql documents one:
+# mv_savings_flow_monthly). Prints every dependent's full DDL so a real fix can
+# be written from evidence instead of guessing what a CASCADE would destroy.
+#
+# Read-only by construction — the script opens the connection with
+# set_session(readonly=True) and only ever SELECTs.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  audit:
+    name: Audit matview dependents
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Audit matview dependents
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        run: python scripts/audit_matview_dependents.py
