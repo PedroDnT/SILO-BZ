@@ -10,6 +10,14 @@
 -- in this layer. Definition reproduced as found — not redesigned — so this
 -- file changes nothing about what the object returns.
 --
+-- CONSUMERS: none in this repo. dashboard/, webapp/, and the Python pipeline
+-- all read fact_fund_monthly / bacen_sgs directly. The `api` schema
+-- passthrough is PostgREST-oriented and predates CLAUDE.md's "no public API"
+-- decision. Keep recreating it so a CASCADE of fact_fund_monthly cannot
+-- destroy an unknown external consumer; retiring it is a product decision
+-- after checking PostgREST logs / other Delos repos, not something this
+-- apply pass should do.
+--
 -- Depends on fact_fund_monthly (04), so it applies AFTER it and is dropped
 -- CASCADE by fact_fund_monthly's own re-create; this file's job is to put it
 -- back every apply, same as every other object here.

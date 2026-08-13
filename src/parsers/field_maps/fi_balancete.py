@@ -9,6 +9,10 @@ Actual CSV headers confirmed from 2025-01 sample:
 
 One row per fund × reference date × account code.
 Natural key: (cnpj, dt_comptc, cd_conta_balcte).
+
+Unique-key audit (real balancete_fi_202606.csv): header is exactly the six
+columns above — no ID_SUBCLASSE. 2,178,163 rows, zero same-key dual
+TP_FUNDO_CLASSE labels. Do not widen the key without a new CVM header.
 """
 
 TABLE = "cvm_fi_balancete"

@@ -9,6 +9,10 @@ truncates any full date to YYYY-MM-01 before writing.
 """
 
 TABLE = "cvm_fi_cda"
+# Unique-key audit (real cda_fi_BLC_1_202606.csv): no ID_SUBCLASSE column,
+# zero same-key dual TP_FUNDO_CLASSE labels. (cnpj, period, tp_aplic, tp_ativo)
+# matches the source grain — do not widen without a new CVM header that
+# actually distinguishes extra rows.
 CONFLICT = ("cnpj", "period", "tp_aplic", "tp_ativo")
 
 FIELD_MAP = {

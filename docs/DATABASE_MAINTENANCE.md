@@ -100,6 +100,18 @@ workflow_ (inputs: `start_year`, `end_year`). FI runs one job per year in parall
 entities, BACEN and the ETF registry run alongside. A _skip-if-complete_ guard makes
 already-loaded years cheap, so re-dispatching the whole range is the normal move.
 
+**BACEN only (Focus / SGS / PTAX)** — Actions → **CVM Historical Backfill** →
+_Run workflow_ with `bacen_only=true`. Skips every CVM entity and the ETF jobs;
+applies schema, then `python -m src.pipeline.run_backfill --bacen-only --bacen-start 2019-01-01`.
+Use this after the Focus unique-key / `baseCalculo` fetch filters landed: daily ingest
+only covers a trailing window, so older `bacen_expectativas` rows that collapsed under
+the pre-horizon key stay sparse until this runs. The `/macro` 24-month Focus chart
+pins `horizon = to_char(reference_date, 'YYYY')` and will show blanks for months
+that were never re-fetched.
+
+This input has never been dispatched against production (as of the dashboard
+integrity audit). Do not confuse it with a full CVM matrix run.
+
 **One entity** — Actions → **Daily CVM Ingest** → _Run workflow_ with
 `mode=backfill` and `entity=<fi|fidc|fii|fip|fiagro|securit|etf>`.
 

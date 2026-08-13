@@ -93,6 +93,8 @@ refreshed daily by cron + the apply re-create) plus `dim_fund_category` / `dim_a
 `fraud_screen_*` suspicious-deal screens (15); and the `fund_performance_*` / `etf_*` ranking
 functions (16–17). ETFs are carved out of the fund universe and ranked separately —
 `etf_daily` is empty for post-CVM-175 share classes (see the ETF doc).
+`mv_savings_flow_monthly` / `api.mv_savings_flow_monthly` (18) is reproduced as-found so
+CASCADE recreates of `fact_fund_monthly` cannot destroy it; nothing in this repo reads it.
 
 ### Adding a dataset (the `(entity, doc_type)` matrix)
 

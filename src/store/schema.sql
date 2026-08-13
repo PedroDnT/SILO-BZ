@@ -692,6 +692,12 @@ CREATE TABLE IF NOT EXISTS bacen_expectativas (
     horizon        TEXT,
     raw            JSONB        NOT NULL,
     fetched_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    -- horizon is DataReferencia. baseCalculo and Suavizada are *not* in the
+    -- key: the fetcher filters to baseCalculo=0 (and Suavizada='N' on the
+    -- Inflacao12/13-24 endpoints). A filter regression would silently collide
+    -- again — do not "fix" that by widening the key without also storing the
+    -- extra dimension; the intended grain is one 30-day unsmoothed statistic
+    -- per (endpoint, indicador, survey date, horizon).
     CONSTRAINT uq_bacen_expectativas UNIQUE NULLS NOT DISTINCT (endpoint_name, indicador, reference_date, horizon)
 );
 CREATE INDEX IF NOT EXISTS idx_expectativas_endpoint_indicador

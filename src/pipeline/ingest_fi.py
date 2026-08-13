@@ -60,6 +60,9 @@ def ingest_fi_diario(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     # upsert_rows() dedupes same-key rows "last write wins", so sort the
     # CVM-175 label last to make the winner deterministic (current regime)
     # rather than dependent on the CSV's own row order.
+    # Diario-only: a June-2026 header+row audit of cda BLC_1, perfil_mensal
+    # and balancete found no ID_SUBCLASSE column and zero same-key dual
+    # labels, so those ingests do not apply this sort.
     records.sort(key=lambda r: "CLASSE" in (r.get("tp_fundo") or ""))
 
     return upsert_rows(

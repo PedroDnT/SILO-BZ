@@ -12,6 +12,13 @@
 -- net_flow only exists for FI: captc_mes/resg_mes are FI-only columns in
 -- fact_fund_monthly, so the other families are left out of the flow column
 -- rather than shown as zero.
+--
+-- SHARE COLUMNS: Evidence AreaChart type=stacked100 rewrites each y column to
+-- `{name}_pct` and then looks that name up in the dataset. That path errors
+-- with "fi_aum_bn_pct is not a column" when y is a *list* of columns (wide
+-- format) rather than one y + series= (long format) — verified on the live
+-- /industry page after PR #81. Share-of-total is therefore computed here so
+-- a regular stacked area of *_share_pct is a 100% chart by construction.
 with spine as (
   select generate_series(
            date_trunc('month', current_date) - interval '35 months',
@@ -26,18 +33,36 @@ t as (
     (date_trunc('month', current_date) - interval '35 months')::date,
     current_date
   )
+),
+base as (
+  select
+    sp.period,
+    sum(t.total_aum) filter (where t.entity_type = 'fi')     / 1e9 as fi_aum_bn,
+    sum(t.total_aum) filter (where t.entity_type = 'fidc')   / 1e9 as fidc_aum_bn,
+    sum(t.total_aum) filter (where t.entity_type = 'fii')    / 1e9 as fii_aum_bn,
+    sum(t.total_aum) filter (where t.entity_type = 'fiagro') / 1e9 as fiagro_aum_bn,
+    sum(t.total_aum) filter (where t.entity_type = 'fip')    / 1e9 as fip_aum_bn,
+    sum(t.total_aum)                                         / 1e9 as total_aum_bn,
+    sum(t.n_funds)                                                 as n_funds,
+    sum(t.net_flow) filter (where t.entity_type = 'fi')      / 1e9 as fi_net_flow_bn
+  from spine sp
+  left join t on date_trunc('month', t.period)::date = sp.period
+  group by sp.period
 )
 select
-  sp.period,
-  sum(t.total_aum) filter (where t.entity_type = 'fi')     / 1e9 as fi_aum_bn,
-  sum(t.total_aum) filter (where t.entity_type = 'fidc')   / 1e9 as fidc_aum_bn,
-  sum(t.total_aum) filter (where t.entity_type = 'fii')    / 1e9 as fii_aum_bn,
-  sum(t.total_aum) filter (where t.entity_type = 'fiagro') / 1e9 as fiagro_aum_bn,
-  sum(t.total_aum) filter (where t.entity_type = 'fip')    / 1e9 as fip_aum_bn,
-  sum(t.total_aum)                                         / 1e9 as total_aum_bn,
-  sum(t.n_funds)                                                 as n_funds,
-  sum(t.net_flow) filter (where t.entity_type = 'fi')      / 1e9 as fi_net_flow_bn
-from spine sp
-left join t on date_trunc('month', t.period)::date = sp.period
-group by sp.period
-order by sp.period
+  period,
+  fi_aum_bn,
+  fidc_aum_bn,
+  fii_aum_bn,
+  fiagro_aum_bn,
+  fip_aum_bn,
+  total_aum_bn,
+  n_funds,
+  fi_net_flow_bn,
+  round(100.0 * fi_aum_bn     / nullif(total_aum_bn, 0), 2) as fi_share_pct,
+  round(100.0 * fidc_aum_bn   / nullif(total_aum_bn, 0), 2) as fidc_share_pct,
+  round(100.0 * fii_aum_bn    / nullif(total_aum_bn, 0), 2) as fii_share_pct,
+  round(100.0 * fiagro_aum_bn / nullif(total_aum_bn, 0), 2) as fiagro_share_pct,
+  round(100.0 * fip_aum_bn    / nullif(total_aum_bn, 0), 2) as fip_share_pct
+from base
+order by period

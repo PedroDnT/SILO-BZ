@@ -40,6 +40,11 @@ title: Industry Structure
   would write a zero-byte parquet and kill the Evidence build. Absent data
   renders blank.
 
+  SHARE-OF-TOTAL CHART: Evidence AreaChart type=stacked100 does not work with a
+  wide list of y columns (it rewrites each to `{name}_pct` and then fails to
+  find that column). industry_aum_trend.sql therefore emits *_share_pct and the
+  page uses a regular stacked area of those.
+
   SECTION ORDER is size → concentration → composition → flows and formation →
   investors → the two families that are otherwise invisible. Concentration sits
   second because it is the finding, not an appendix to the size chart.
@@ -104,16 +109,16 @@ select * from supabase.industry_fiagro
 > above); Evidence's AreaChart always stacks a multi-series area, so on one
 > linear scale FI's band fills the chart and the other four compress to
 > nothing even though their data is correct. Two views instead of one: share
-> of the total (where every family is visible by construction) and absolute
-> net assets with FI excluded (where the other four are back on a comparable
-> scale).
+> of the total (computed in SQL — Evidence `type=stacked100` errors on a wide
+> list of y columns, live-verified) and absolute net assets with FI excluded
+> (where the other four are back on a comparable scale).
 
 <AreaChart
 data={industry_aum_trend}
 x=period
-type=stacked100
-y={['fi_aum_bn','fidc_aum_bn','fii_aum_bn','fiagro_aum_bn','fip_aum_bn']}
-yAxisTitle="Share of Total Net Assets"
+type=stacked
+y={['fi_share_pct','fidc_share_pct','fii_share_pct','fiagro_share_pct','fip_share_pct']}
+yAxisTitle="Share of Total Net Assets (%)"
 title="Net Assets by Family — Last 36 Months (share of total)"
 />
 

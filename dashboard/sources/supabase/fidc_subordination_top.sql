@@ -62,7 +62,12 @@ select
   s.n_subordinada_series,
   s.qt_senior / 1e6                                          as qt_senior_mm,
   s.qt_subordinada / 1e6                                     as qt_subordinada_mm,
-  round(100.0 * s.subordination_ratio, 1)                    as subordination_pct,
+  -- RPC already NULLs ratios outside [0,1]; clamp again so a stale function
+  -- definition cannot paint thousands of percent on the page.
+  case
+    when s.subordination_ratio between 0 and 1
+      then round(100.0 * s.subordination_ratio, 1)
+  end                                                        as subordination_pct,
   round(100.0 * s.vl_inadimpl / nullif(s.vl_patrim_liq, 0), 1) as inadimpl_pct
 from row_guard g
 left join structure s on true
