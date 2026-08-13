@@ -9,6 +9,10 @@ on:
       end_year:
         description: "End year (default: current year)"
         default: "2026"
+      bacen_only:
+        description: "Skip CVM entities (FI/FIDC/FII/.../ETF), backfill only BACEN — fast, for re-fetching a full-history SGS/PTAX/Expectativas window"
+        type: boolean
+        default: false
 
 jobs:
   # Apply the (idempotent) schema + migrations before any ingest so a fresh DB
@@ -33,6 +37,7 @@ jobs:
   backfill-fi:
     name: "FI ${{ matrix.year }}"
     needs: apply-schema
+    if: ${{ inputs.bacen_only != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
@@ -128,6 +133,7 @@ jobs:
   backfill-other:
     name: "${{ matrix.entity }} 2019-2026"
     needs: apply-schema
+    if: ${{ inputs.bacen_only != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
@@ -166,6 +172,7 @@ jobs:
   backfill-etf:
     name: "ETF registry"
     needs: apply-schema
+    if: ${{ inputs.bacen_only != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -199,7 +206,7 @@ jobs:
   refresh-etf:
     name: "Refresh ETF metrics"
     needs: [backfill-fi, backfill-other, backfill-etf]
-    if: ${{ always() }}
+    if: ${{ always() && inputs.bacen_only != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

@@ -21,15 +21,28 @@ BEGIN;
 SET statement_timeout = '60s';
 
 -- ---------------------------------------------------------------------------
--- fund_performance_series(p_cnpj, start_date, end_date) — HORIZONTAL
+-- fund_performance_series(p_cnpj, start_date, end_date, p_entity_type) — HORIZONTAL
 -- One fund's per-period return and cumulative return on its class basis. For FI
 -- and PL-growth families the cumulative is the level rebased to the first period
 -- (exact); for FII it is the compounded monthly dividend yield.
+--
+-- p_entity_type defaults to NULL for backward compatibility, but a CNPJ can
+-- recur under two entity types (dim_fund's PK is (cnpj, entity_type);
+-- confirmed live). Every window below is PARTITIONed BY entity_type as a
+-- second line of defense: without it, a colliding CNPJ's lag()/first_value()
+-- can pair one entity type's value with the other's prior period, corrupting
+-- period_return and picking the wrong rebase anchor for cumulative_return.
+-- Callers driving one line per fund (e.g. Fund Explorer) should still pass
+-- p_entity_type explicitly so they get one series, not two interleaved ones.
 -- ---------------------------------------------------------------------------
+-- Same widened-signature note as fund_nav_series()/fund_flow_trend() in
+-- 09_analytical_functions.sql — drop the old 3-arg overload explicitly.
+DROP FUNCTION IF EXISTS fund_performance_series(TEXT, DATE, DATE);
 CREATE OR REPLACE FUNCTION fund_performance_series(
-    p_cnpj     TEXT,
-    start_date DATE DEFAULT '2019-01-01',
-    end_date   DATE DEFAULT CURRENT_DATE
+    p_cnpj        TEXT,
+    start_date    DATE DEFAULT '2019-01-01',
+    end_date      DATE DEFAULT CURRENT_DATE,
+    p_entity_type TEXT DEFAULT NULL
 )
 RETURNS TABLE (
     cnpj              TEXT,
@@ -53,6 +66,7 @@ AS $$
           ON c.cnpj = m.cnpj AND c.entity_type = m.entity_type
         WHERE m.cnpj = p_cnpj
           AND m.period BETWEEN start_date AND end_date
+          AND (p_entity_type IS NULL OR m.entity_type = p_entity_type)
     ),
     r AS (
         SELECT
@@ -63,7 +77,7 @@ AS $$
                 ELSE            vl_patrim_liq / NULLIF(lag(vl_patrim_liq) OVER w, 0) - 1
             END AS period_return
         FROM f
-        WINDOW w AS (ORDER BY period)
+        WINDOW w AS (PARTITION BY entity_type ORDER BY period)
     )
     SELECT
         cnpj, period, entity_type, asset_class,
@@ -74,9 +88,9 @@ AS $$
         vl_patrim_liq,
         period_return,
         CASE WHEN entity_type = 'fii'
-             THEN exp(sum(ln(1 + GREATEST(COALESCE(period_return, 0), -0.99))) OVER (ORDER BY period)) - 1
+             THEN exp(sum(ln(1 + GREATEST(COALESCE(period_return, 0), -0.99))) OVER (PARTITION BY entity_type ORDER BY period)) - 1
              ELSE COALESCE(vl_quota, vl_patrim_liq)
-                  / NULLIF(first_value(COALESCE(vl_quota, vl_patrim_liq)) OVER (ORDER BY period), 0) - 1
+                  / NULLIF(first_value(COALESCE(vl_quota, vl_patrim_liq)) OVER (PARTITION BY entity_type ORDER BY period), 0) - 1
         END                                                         AS cumulative_return
     FROM r
     ORDER BY period
@@ -195,7 +209,7 @@ AS $$
     ORDER BY asset_class, rank_in_class
 $$;
 
-GRANT EXECUTE ON FUNCTION fund_performance_series(TEXT, DATE, DATE)                    TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION fund_performance_series(TEXT, DATE, DATE, TEXT)              TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION fund_performance_ranking(TEXT, DATE, DATE, TEXT, INT, INT)   TO anon, authenticated;
 
 COMMIT;

@@ -59,6 +59,13 @@ _OLINDA = "https://olinda.bcb.gov.br/olinda/servico"
 _OLINDA_PAGE = 10_000
 _OLINDA_MAX_PAGES = 50
 
+# Expectativas endpoints that carry a Suavizada (smoothed Y/N) dimension —
+# see the comment in BacenClient.get_expectativas().
+_SUAVIZADA_ENDPOINTS = frozenset({
+    "ExpectativasMercadoInflacao12Meses",
+    "ExpectativasMercadoInflacao13a24Meses",
+})
+
 
 class BacenFetchError(RuntimeError):
     """A BACEN request failed or returned an unusable payload.
@@ -381,6 +388,25 @@ class BacenClient:
             filters.append(f"Indicador eq '{indicador}'")
         if start:
             filters.append(f"Data ge '{start}'")
+        # BACEN publishes TWO statistics per (Indicador, Data, DataReferencia):
+        # baseCalculo=0 uses submissions from the trailing 30 days, baseCalculo=1
+        # from the trailing 4 business days — verified live, e.g. IPCA/2026-08-07/
+        # 2026: baseCalculo=0 has Mediana=5.0176 (151 respondents), baseCalculo=1
+        # has Mediana=4.9927 (34 respondents). Our natural key doesn't carry
+        # baseCalculo, so without this filter the two silently collided on
+        # upsert — whichever the API happened to return last won arbitrarily.
+        # 0 is the market-standard "Focus" figure (the one BACEN's own bulletin
+        # and financial press quote); 1 is a separate, narrower product.
+        filters.append("baseCalculo eq 0")
+        # The two Inflacao12Meses/13Meses endpoints carry a second dimension
+        # BACEN's other Expectativas endpoints don't have: Suavizada (Y/N,
+        # smoothed vs raw), also not part of our natural key and colliding the
+        # same way baseCalculo did. Conditional because filtering on a field
+        # that doesn't exist on the other endpoints 400s the request (verified
+        # live). 'N' (unsmoothed) is the series conventionally quoted as "the"
+        # 12-month expectation; 'S' is a supplementary smoothed treatment.
+        if endpoint_name in _SUAVIZADA_ENDPOINTS:
+            filters.append("Suavizada eq 'N'")
 
         params: Dict[str, str] = {"$orderby": "Data desc"}
         if filters:

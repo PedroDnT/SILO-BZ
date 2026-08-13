@@ -41,10 +41,16 @@ series as (
     n.nr_cotst          as nr_cotst
   from top_funds t
   cross join anchor a
+  -- entity_type passed through: search_funds('', null, 6) can return the same
+  -- CNPJ under two entity types (dim_fund's PK is (cnpj, entity_type); a fund
+  -- family sharing a registration CNPJ across e.g. fidc and fiagro is real,
+  -- confirmed live). Without it, both rows pull the same fund_nav_series()
+  -- output and render as a duplicated/zig-zagging line for one "fund".
   cross join lateral fund_nav_series(
     t.cnpj,
     (date_trunc('month', a.p_end) - interval '35 months')::date,
-    a.p_end
+    a.p_end,
+    t.entity_type
   ) n
 )
 select
