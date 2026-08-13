@@ -10,12 +10,17 @@
 --
 -- instrument_type distinguishes cra_mensal / cri_mensal / ots_mensal -- the
 -- values ingest_securit._DOC_TO_INSTRUMENT writes, not the CVM doc_type names.
+--
+-- CASCADE on the drop: vw_fund_security_yield (07_vw_cross_domain.sql) is the
+-- only known dependent (scripts/audit_matview_dependents.py), and it's
+-- recreated later in the same apply_analytical.sh pass. Same silent-failure
+-- history as fact_fund_monthly's drop — see the comment there.
 -- =============================================================================
 
 BEGIN;
 SET statement_timeout = '15min';
 
-DROP MATERIALIZED VIEW IF EXISTS fact_security_monthly;
+DROP MATERIALIZED VIEW IF EXISTS fact_security_monthly CASCADE;
 
 CREATE MATERIALIZED VIEW fact_security_monthly AS
 
