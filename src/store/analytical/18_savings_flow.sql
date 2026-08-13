@@ -140,4 +140,15 @@ SELECT month,
     cdi
 FROM mv_savings_flow_monthly;
 
+-- 12_grants_and_rls.sql (the repo's usual home for these) runs BEFORE this
+-- file, and CASCADE now actually drops+recreates both objects on every apply
+-- (they used to never be reached at all, since the drop was silently failing
+-- upstream — see 04_fact_fund_monthly.sql's comment). Without granting here,
+-- every apply would recreate them with default privileges and anon/
+-- authenticated would silently lose PostgREST access — caught by Cursor
+-- Bugbot on PR #83 before it ever reached production.
+GRANT USAGE ON SCHEMA api TO anon, authenticated;
+GRANT SELECT ON mv_savings_flow_monthly     TO anon, authenticated;
+GRANT SELECT ON api.mv_savings_flow_monthly TO anon, authenticated;
+
 COMMIT;
