@@ -58,6 +58,7 @@ const REQUIRED = [
 const REQUIRED_AFTER_MIGRATION = [
   { relation: 'cvm_fii_imovel', column: null, migration: '15_fii_trimestral_members.sql' },
   { relation: 'cvm_fi_perfil', column: 'nr_cotst_pf_varejo', migration: '14_fi_perfil_columns.sql' },
+  { relation: 'bacen_expectativas', column: 'horizon', migration: '16_bacen_expectativas_horizon.sql' },
 ];
 
 const missingVars = ['host', 'database', 'user', 'password'].filter((v) => !env(v));
