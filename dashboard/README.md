@@ -41,7 +41,7 @@ Vercel's dashboard, deliberately:
 {
   "framework": null,
   "installCommand": "cd dashboard && npm install",
-  "buildCommand": "cd dashboard && npm run sources && npm run build",
+  "buildCommand": "cd dashboard && npm run preflight && npm run sources && npm run build",
   "outputDirectory": "dashboard/build"
 }
 ```
@@ -79,3 +79,43 @@ sslmode=require`) and the setting is not a secret.
 `npm run sources` queries Postgres at **build time** and bakes the results into the static
 output, so a broken/expired database credential fails the build — the same credential
 problem that has stalled the ingestion pipeline will also break dashboard deploys.
+
+### Build preflight
+
+`npm run preflight` (wired into the Vercel `buildCommand` ahead of `sources`)
+connects with the same `EVIDENCE_SOURCE__supabase__*` variables Evidence uses
+and asserts that a handful of expected tables exist.
+
+It exists because the failure it replaces is close to undiagnosable.
+`@evidence-dev/postgres` discards the underlying Postgres error:
+
+```js
+const lengthQuery = await connection.query(...).catch(() => undefined);
+const rowCount = lengthQuery.rows[0].rows;   // TypeError on undefined
+```
+
+so pointing the dashboard at the wrong database makes every source fail with
+`Cannot read properties of undefined (reading 'rows')` — the same message for a
+missing table, a typo'd column, or a permissions problem — and the build then
+hangs until the pooler drops the connection (~5 minutes) and reports
+`Connection terminated unexpectedly`. The preflight turns that into one line
+naming the host, the database, and the tables it could not find.
+
+The most common cause is `EVIDENCE_SOURCE__supabase__host` pointing at a
+Supabase **preview-branch** database (empty by design) rather than the project
+`POSTGRES_URL` ingests into. Compare the two hosts first.
+
+### Source queries must not return zero rows
+
+Evidence writes a **zero-byte** file when a source query returns no rows, and the
+build then fails reading it back:
+
+```
+Invalid Input Error: File 'supabase_<name>.parquet' too small to be a Parquet file
+```
+
+One empty source therefore breaks the whole dashboard, not just its own page. When
+a query can legitimately be empty — a screen with no current hits, or a feed that
+has not landed yet — drive it from a table that is always populated and `LEFT
+JOIN` the optional data, so the columns come back NULL rather than the result
+coming back empty. `sources/supabase/etf_market.sql` is the worked example.

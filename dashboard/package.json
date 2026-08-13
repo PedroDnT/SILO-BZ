@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "evidence dev",
     "build": "evidence build",
+    "preflight": "node scripts/preflight.js",
     "sources": "evidence sources",
     "preview": "evidence preview"
   },
@@ -16,6 +17,7 @@
   },
   "devDependencies": {
     "@evidence-dev/plugin-connector": "^2.1.15",
+    "pg": "^8.23.0",
     "typescript": "5.4.2"
   }
 }
