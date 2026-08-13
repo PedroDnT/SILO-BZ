@@ -15,6 +15,12 @@
 -- fidc_subordination_trend() uses. Anything unrecognised lands in "Outras"
 -- rather than being dropped.
 --
+-- Match is a SUBSTRING, not a prefix: CVM-175 (2025+) labels every senior
+-- tranche "Subclasse Senior ..." / "Classe Sênior ...", which a prefix match
+-- ('senior%') never catches — verified against a live CVM file, where it
+-- matched 0 of ~10,700 rows. That bug is also why "Senior Quotas" showed as
+-- zero on this page.
+--
 -- ZERO-ROW SAFETY: one-row `row_guard` LEFT JOINed to the grouped aggregate.
 with latest as (
   select max(period) as period from cvm_fidc_tranche
@@ -22,7 +28,7 @@ with latest as (
 base as (
   select
     case
-      when t.classe_serie ilike 'senior%' or t.classe_serie ilike 'sênior%'
+      when t.classe_serie ilike '%senior%' or t.classe_serie ilike '%sênior%'
         then 'Sênior'
       when t.classe_serie ilike '%mezanino%'
         then 'Mezanino'

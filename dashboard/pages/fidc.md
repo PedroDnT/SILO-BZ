@@ -27,7 +27,31 @@ title: FIDC Credit Monitor
       rows the band removed.
     * subordination_ratio from fidc_subordination_trend() is built from qt_cota,
       i.e. QUOTA COUNTS, not value. It equals a value-weighted subordination
-      level only when senior and subordinated quotas share a unit price.
+      level only when senior and subordinated quotas share a unit price. This
+      is also why, by count, subordination genuinely clusters near 100% for
+      many funds even after the fix below: subordinated/junior quotas are
+      typically issued in far larger quantity at a far lower unit price than
+      senior quotas, so a headcount ratio overstates them relative to a
+      value-weighted one.
+    * fidc_subordination_trend()'s senior/subordinated split previously used a
+      PREFIX match (classe_serie ILIKE 'Senior%'), which missed every
+      CVM-175-era (2025+) filing — those are labelled "Subclasse Senior ..." /
+      "Classe Sênior ...", not a bare "Senior ...". Verified against a live CVM
+      file: 0 of ~10,700 rows matched. Fixed to a substring match. The prefix
+      bug is also what zeroed "Senior Quotas" and, combined with dirty
+      TAB_X_QT_COTA outliers in some historical months (raw values up to
+      6.9e13 per schema.sql), produced subordination readings over 1000%; the
+      ratio is now excluded (NULL, not fabricated) for any month where it
+      would fall outside the valid [0%, 100%] range.
+    * pr_desemp_esperado ("promised" performance) is genuinely 0.00 for roughly
+      half of all tranche filings in the raw CVM data, spread across senior,
+      mezanino, and subordinated series alike (verified against a live CVM
+      file) — most likely tranches with no fixed target rather than a
+      residual/floating return. A universe median landing at or near 0% is
+      real, not a parsing bug.
+    * Delinquency figures above 100% (a fund's overdue book exceeding its own
+      net assets) are real and expected for severely distressed funds, not
+      capped — that is the signal this page exists to surface.
     * FIDC ingestion has historically lagged (CVM publication delay); months with
       no filing render blank rather than zero.
 

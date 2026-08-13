@@ -680,7 +680,22 @@ $$;
 -- fidc_subordination_trend(p_cnpj, start_date, end_date)
 -- Monthly tranche structure for one FIDC: senior vs. subordinated quota counts
 -- and the subordination ratio.
--- Senior detection: classe_serie ILIKE 'Senior%' OR ILIKE 'Sênior%'.
+--
+-- Senior detection: classe_serie CONTAINS 'senior'/'sênior' (not a prefix
+-- match). CVM-175 (2025+) filings label every tranche "Subclasse Senior ..." /
+-- "Classe Sênior ...", not a bare "Senior ..." — verified against the live
+-- 2025-06 tab_X_2 file, where a prefix match ('Senior%') matched 0 of 10,760
+-- rows while a substring match caught 5,355. The prefix version silently
+-- classified every current-regime senior tranche as subordinated, which is
+-- also why it always reported subordination_ratio = 1.0 (100%) for the
+-- current period across the whole universe.
+--
+-- subordination_ratio is excluded (NULL), not fabricated, when qt_total is
+-- non-positive or the raw ratio falls outside [0,1] — a quota-count share
+-- outside that range is not a valid capital-structure reading, it means
+-- qt_cota carries a dirty/outlier value for that month (schema.sql documents
+-- raw TAB_X_QT_COTA reaching 6.9e13). This is what produced the >1000%
+-- readings seen on historical (pre-2025) months in the trend chart.
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION fidc_subordination_trend(
     p_cnpj     TEXT,
@@ -699,34 +714,46 @@ RETURNS TABLE (
 )
 LANGUAGE sql STABLE SECURITY INVOKER
 AS $$
+    WITH agg AS (
+        SELECT
+            period,
+            cnpj,
+            COUNT(*) FILTER (
+                WHERE classe_serie ILIKE '%senior%'
+                   OR classe_serie ILIKE '%sênior%'
+            )                                                               AS n_senior_series,
+            COUNT(*) FILTER (
+                WHERE classe_serie NOT ILIKE '%senior%'
+                  AND classe_serie NOT ILIKE '%sênior%'
+            )                                                               AS n_subordinada_series,
+            SUM(qt_cota)                                                    AS qt_total,
+            SUM(qt_cota) FILTER (
+                WHERE classe_serie ILIKE '%senior%'
+                   OR classe_serie ILIKE '%sênior%'
+            )                                                               AS qt_senior,
+            SUM(qt_cota) FILTER (
+                WHERE classe_serie NOT ILIKE '%senior%'
+                  AND classe_serie NOT ILIKE '%sênior%'
+            )                                                               AS qt_subordinada
+        FROM cvm_fidc_tranche
+        WHERE cnpj = p_cnpj
+          AND period BETWEEN start_date AND end_date
+        GROUP BY period, cnpj
+    )
     SELECT
         period,
         cnpj,
-        COUNT(*) FILTER (
-            WHERE classe_serie ILIKE 'Senior%'
-               OR classe_serie ILIKE 'Sênior%'
-        )                                                               AS n_senior_series,
-        COUNT(*) FILTER (
-            WHERE classe_serie NOT ILIKE 'Senior%'
-              AND classe_serie NOT ILIKE 'Sênior%'
-        )                                                               AS n_subordinada_series,
-        SUM(qt_cota)                                                    AS qt_total,
-        SUM(qt_cota) FILTER (
-            WHERE classe_serie ILIKE 'Senior%'
-               OR classe_serie ILIKE 'Sênior%'
-        )                                                               AS qt_senior,
-        SUM(qt_cota) FILTER (
-            WHERE classe_serie NOT ILIKE 'Senior%'
-              AND classe_serie NOT ILIKE 'Sênior%'
-        )                                                               AS qt_subordinada,
-        SUM(qt_cota) FILTER (
-            WHERE classe_serie NOT ILIKE 'Senior%'
-              AND classe_serie NOT ILIKE 'Sênior%'
-        ) / NULLIF(SUM(qt_cota), 0)                                     AS subordination_ratio
-    FROM cvm_fidc_tranche
-    WHERE cnpj = p_cnpj
-      AND period BETWEEN start_date AND end_date
-    GROUP BY period, cnpj
+        n_senior_series,
+        n_subordinada_series,
+        qt_total,
+        qt_senior,
+        qt_subordinada,
+        CASE
+            WHEN qt_total > 0 AND qt_subordinada / qt_total BETWEEN 0 AND 1
+                THEN qt_subordinada / qt_total
+            ELSE NULL
+        END AS subordination_ratio
+    FROM agg
     ORDER BY period
 $$;
 
