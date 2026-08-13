@@ -691,8 +691,17 @@ CREATE TABLE IF NOT EXISTS bacen_expectativas (
 );
 CREATE INDEX IF NOT EXISTS idx_expectativas_endpoint_indicador
     ON bacen_expectativas (endpoint_name, indicador, reference_date DESC);
-CREATE INDEX IF NOT EXISTS idx_expectativas_horizon
-    ON bacen_expectativas (endpoint_name, indicador, horizon, reference_date DESC);
+-- idx_expectativas_horizon is NOT created here on purpose. schema.sql runs
+-- before the migrations on every apply, and CREATE TABLE IF NOT EXISTS is a
+-- no-op on a database where bacen_expectativas already exists (production
+-- did) -- so the horizon column this index needs does not exist yet at this
+-- point in the run; only migration 16's ALTER TABLE adds it. A CREATE INDEX
+-- here failed with "column horizon does not exist" on exactly that path.
+-- Migration 16 creates the index itself (CREATE INDEX IF NOT EXISTS) right
+-- after adding the column, which is correct on both a fresh database (the
+-- CREATE TABLE above already has horizon, migration 16's ALTER is a no-op,
+-- the index gets created once) and an upgrading one (column added, then
+-- indexed, in the right order).
 
 -- ---------------------------------------------------------------------------
 -- ETF market snapshots scraped from etfsbrasil.com.br (see migration 12_etf_market.sql).
