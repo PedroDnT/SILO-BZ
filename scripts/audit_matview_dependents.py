@@ -21,7 +21,7 @@ import sys
 
 import psycopg2
 
-TARGETS = ["fact_fund_monthly", "fact_security_monthly"]
+TARGETS = ["fact_fund_monthly", "fact_security_monthly", "mv_savings_flow_monthly"]
 
 DEPENDENTS_SQL = """
 WITH RECURSIVE deps AS (
