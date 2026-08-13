@@ -680,12 +680,19 @@ CREATE TABLE IF NOT EXISTS bacen_expectativas (
     median         NUMERIC,
     mean_val       NUMERIC,
     std_dev        NUMERIC,
+    -- Forecast horizon (DataReferencia): a year for the annual endpoints,
+    -- month/year for the monthly ones. Part of the natural key — one survey
+    -- date carries one forecast PER horizon, so omitting it collapses ~97% of
+    -- the published data to an arbitrary survivor. See migration 16.
+    horizon        TEXT,
     raw            JSONB        NOT NULL,
     fetched_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_bacen_expectativas UNIQUE NULLS NOT DISTINCT (endpoint_name, indicador, reference_date)
+    CONSTRAINT uq_bacen_expectativas UNIQUE NULLS NOT DISTINCT (endpoint_name, indicador, reference_date, horizon)
 );
 CREATE INDEX IF NOT EXISTS idx_expectativas_endpoint_indicador
     ON bacen_expectativas (endpoint_name, indicador, reference_date DESC);
+CREATE INDEX IF NOT EXISTS idx_expectativas_horizon
+    ON bacen_expectativas (endpoint_name, indicador, horizon, reference_date DESC);
 
 -- ---------------------------------------------------------------------------
 -- ETF market snapshots scraped from etfsbrasil.com.br (see migration 12_etf_market.sql).

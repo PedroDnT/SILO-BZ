@@ -40,7 +40,11 @@ PTAX_CURRENCIES: List[str] = ["USD", "EUR", "GBP", "JPY", "ARS"]
 
 EXPECTATIVAS_ENDPOINTS: List[str] = [
     "ExpectativasMercadoAnuais",
-    "ExpectativasMercadoMensais",
+    # NOTE the singular "Expectativa": that is BACEN's actual resource name.
+    # "ExpectativasMercadoMensais" does not exist and every fetch against it
+    # failed with "Invalid name" — verified against the live OData service
+    # document, which lists ExpectativaMercadoMensais.
+    "ExpectativaMercadoMensais",
     "ExpectativasMercadoSelic",
     "ExpectativasMercadoInflacao12Meses",
 ]
@@ -48,7 +52,7 @@ EXPECTATIVAS_ENDPOINTS: List[str] = [
 # Indicators to filter per endpoint (None = all)
 EXPECTATIVAS_INDICATORS: Dict[str, Optional[List[str]]] = {
     "ExpectativasMercadoAnuais":        ["IPCA", "IGP-M", "PIB Total", "Selic"],
-    "ExpectativasMercadoMensais":       ["IPCA", "IGP-M"],
+    "ExpectativaMercadoMensais":        ["IPCA", "IGP-M"],
     "ExpectativasMercadoSelic":         None,
     "ExpectativasMercadoInflacao12Meses": ["IPCA"],
 }
@@ -146,15 +150,20 @@ class BacenIngestor:
 
         async def _fetch_currency(currency: str) -> int:
             try:
-                if currency == "USD":
-                    records = await self._client.get_ptax_dolar_periodo(start, end)
-                else:
-                    records = await self._client.get_ptax_moeda_periodo(currency, start, end)
+                # One path for every currency, USD included: CotacaoMoedaPeriodo
+                # serves USD too (verified against the live API), and the
+                # dollar-specific helper still goes through python-bcb's
+                # M/D/YYYY formatting, which Olinda answers with an empty set.
+                records = await self._client.get_ptax_moeda_periodo(currency, start, end)
             except Exception as exc:
-                logger.warning("PTAX fetch failed currency=%s: %s", currency, exc)
-                return 0
+                # Fatal for the same reason as Expectativas: a swallowed error
+                # here is why bacen_ptax reported 0 rows indefinitely.
+                raise RuntimeError(f"PTAX fetch failed currency={currency}: {exc}") from exc
 
             if not records:
+                logger.warning(
+                    "PTAX %s returned no rows for %s..%s", currency, start, end
+                )
                 return 0
 
             rows: List[Dict[str, Any]] = []
@@ -183,11 +192,19 @@ class BacenIngestor:
             *[_fetch_currency(c) for c in PTAX_CURRENCIES],
             return_exceptions=True,
         )
+        errors = [r for r in results if not isinstance(r, int)]
         for r in results:
             if isinstance(r, int):
                 total += r
-            else:
-                logger.error("PTAX task error: %s", r)
+        if errors:
+            # Surface rather than log-and-continue: a partial PTAX ingest that
+            # reports success is how the FX series silently stayed empty.
+            for err in errors:
+                logger.error("PTAX task error: %s", err)
+            raise RuntimeError(
+                f"PTAX: {len(errors)} of {len(PTAX_CURRENCIES)} currencies failed; "
+                f"first error: {errors[0]}"
+            )
 
         logger.info("PTAX done: total=%d", total)
         return total
@@ -214,10 +231,21 @@ class BacenIngestor:
                     limit=limit_per_call,
                 )
             except Exception as exc:
-                logger.warning("Expectativas fetch failed %s/%s: %s", endpoint, indicador, exc)
-                return 0
+                # Deliberately fatal. This used to warn and return 0, so six of
+                # seven Focus fetches failed for months while the job reported
+                # success and the dashboard rendered a blank chart. A fetch that
+                # cannot run is an error, not an empty week.
+                raise RuntimeError(
+                    f"Expectativas fetch failed {endpoint}/{indicador}: {exc}"
+                ) from exc
 
             if not records:
+                # Genuinely empty is allowed (a filter can legitimately match
+                # nothing) but must be visible, not silent.
+                logger.warning(
+                    "Expectativas %s/%s returned no rows for start=%s",
+                    endpoint, indicador, start,
+                )
                 return 0
 
             rows: List[Dict[str, Any]] = []
@@ -230,6 +258,10 @@ class BacenIngestor:
                     "endpoint_name":  endpoint,
                     "indicador":      rec.get("Indicador") or indicador,
                     "reference_date": ref_date,
+                    # The forecast horizon. Part of the natural key: one survey
+                    # date publishes one forecast per horizon, so keying without
+                    # it collapsed ~97% of the payload to an arbitrary survivor.
+                    "horizon":        rec.get("DataReferencia"),
                     "median":         rec.get("Mediana"),
                     "mean_val":       rec.get("Media"),
                     "std_dev":        rec.get("DesvioPadrao"),
@@ -237,7 +269,7 @@ class BacenIngestor:
                 })
 
             return upsert_rows(self._supabase, "bacen_expectativas", rows,
-                               conflict_columns="endpoint_name,indicador,reference_date")
+                               conflict_columns="endpoint_name,indicador,reference_date,horizon")
 
         tasks = []
         for endpoint in EXPECTATIVAS_ENDPOINTS:
@@ -249,11 +281,20 @@ class BacenIngestor:
                 tasks.append(_fetch_endpoint(endpoint, None))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
+        errors = [r for r in results if not isinstance(r, int)]
         for r in results:
             if isinstance(r, int):
                 total += r
-            else:
-                logger.error("Expectativas task error: %s", r)
+        if errors:
+            # This is the exact spot the Focus outage hid in: six of seven
+            # fetches raised, each was logged and dropped, and the run returned
+            # a healthy-looking total from the one endpoint that worked.
+            for err in errors:
+                logger.error("Expectativas task error: %s", err)
+            raise RuntimeError(
+                f"Expectativas: {len(errors)} of {len(tasks)} fetches failed; "
+                f"first error: {errors[0]}"
+            )
 
         logger.info("Expectativas done: total=%d", total)
         return total

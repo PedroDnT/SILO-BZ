@@ -10,9 +10,13 @@ Usage:
 """
 
 import asyncio
+import json
+import logging
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
+from urllib.parse import quote, urlencode
 
+import httpx
 import numpy as np
 import pandas as pd
 
@@ -21,6 +25,111 @@ try:
     from bcb import sgs, PTAX, Expectativas, TaxaJuros
 except ImportError as exc:  # pragma: no cover
     raise ImportError("python-bcb is required. Run: pip install python-bcb") from exc
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Direct Olinda (OData) access
+#
+# Expectativas and PTAX are fetched over plain HTTP rather than through
+# python-bcb, because both of the library's paths are broken against the live
+# service and failed silently:
+#
+#   * Expectativas — python-bcb composes multiple filters with the `&`
+#     operator, which its ODataPropertyFilter no longer supports:
+#     "unsupported operand type(s) for &: 'ODataPropertyFilter' and
+#     'ODataPropertyFilter'". Every multi-filter Focus fetch raised, was caught,
+#     logged as a warning and counted as 0 rows, so the job stayed green while
+#     ingesting nothing.
+#   * PTAX — the library formats dates as M/D/YYYY. Olinda wants MM-DD-YYYY and
+#     answers an M/D/YYYY request with HTTP 200 and an EMPTY result set, which
+#     is indistinguishable from "no data" and produced bacen_ptax: 0 forever.
+#
+# Both were verified against the live API while writing this: the same filter
+# that fails through the library returns rows over raw HTTP, and PTAX returns
+# rows only with MM-DD-YYYY.
+#
+# Encoding matters. Spaces in an OData $filter must be %20; urlencode's default
+# quote_plus emits '+', which Olinda rejects with
+# "The types 'Edm.Boolean' and 'Edm.String' are not compatible."  Hence
+# quote_via=quote below.
+# ---------------------------------------------------------------------------
+
+_OLINDA = "https://olinda.bcb.gov.br/olinda/servico"
+_OLINDA_PAGE = 10_000
+_OLINDA_MAX_PAGES = 50
+
+
+class BacenFetchError(RuntimeError):
+    """A BACEN request failed or returned an unusable payload.
+
+    Raised rather than returning an empty list: an empty result is a legitimate
+    answer from these endpoints, so swallowing errors into `[]` makes a broken
+    fetch look exactly like a quiet week. That confusion is what kept the Focus
+    tables empty while every run reported success.
+    """
+
+
+def _olinda_parse(body: str, url: str) -> Dict[str, Any]:
+    """Parse an Olinda response, turning its error envelope into an exception.
+
+    Olinda reports errors as HTTP 400 with a JSONP-style ``/*{...}*/`` body,
+    which json.loads cannot read. Unwrap it so the real message survives.
+    """
+    text = body.strip()
+    if text.startswith("/*") and text.endswith("*/"):
+        text = text[2:-2].strip()
+        try:
+            err = json.loads(text)
+        except json.JSONDecodeError:
+            raise BacenFetchError(f"{url}: unparseable error envelope: {body[:200]}")
+        raise BacenFetchError(
+            f"{url}: BACEN returned {err.get('codigo')}: {err.get('mensagem')}"
+        )
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise BacenFetchError(f"{url}: response is not JSON: {body[:200]}") from exc
+
+
+async def _olinda_get(
+    service: str,
+    resource: str,
+    params: Dict[str, str],
+    *,
+    paginate: bool = True,
+) -> List[Dict[str, Any]]:
+    """GET an Olinda OData resource, following $skip pages, raising on failure."""
+    collected: List[Dict[str, Any]] = []
+    skip = 0
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        for page in range(_OLINDA_MAX_PAGES):
+            query = dict(params)
+            query["$format"] = "json"
+            if paginate:
+                query["$top"] = str(_OLINDA_PAGE)
+                if skip:
+                    query["$skip"] = str(skip)
+            url = f"{_OLINDA}/{service}/versao/v1/odata/{resource}"
+            # quote_via=quote keeps spaces as %20; '+' is rejected by Olinda.
+            full = f"{url}?{urlencode(query, quote_via=quote)}"
+            try:
+                resp = await client.get(full)
+            except httpx.HTTPError as exc:
+                raise BacenFetchError(f"{url}: request failed: {exc}") from exc
+            payload = _olinda_parse(resp.text, url)
+            if resp.status_code != 200:
+                raise BacenFetchError(f"{url}: HTTP {resp.status_code}")
+            batch = payload.get("value", [])
+            collected.extend(batch)
+            if not paginate or len(batch) < _OLINDA_PAGE:
+                return collected
+            skip += _OLINDA_PAGE
+    logger.warning(
+        "Olinda %s/%s hit the %d-page cap; returning %d rows",
+        service, resource, _OLINDA_MAX_PAGES, len(collected),
+    )
+    return collected
 
 
 # ---------------------------------------------------------------------------
@@ -200,19 +309,23 @@ class BacenClient:
         Returns:
             List of dicts with daily compra/venda rates.
         """
-        def _fetch() -> pd.DataFrame:
-            ptax = PTAX()
-            ep = ptax.get_endpoint("CotacaoMoedaPeriodo")
-            s = datetime.strptime(start, "%Y-%m-%d")
-            e = datetime.strptime(end, "%Y-%m-%d")
-            ptax_start = f"{s.month}/{s.day}/{s.year}"
-            ptax_end = f"{e.month}/{e.day}/{e.year}"
-            return ep.query().parameters(
-                moeda=moeda, dataInicial=ptax_start, dataFinalCotacao=ptax_end
-            ).collect()
-
-        df = await asyncio.to_thread(_fetch)
-        return _df_to_records(df)
+        # MM-DD-YYYY, not M/D/YYYY. Olinda answers the latter with HTTP 200 and
+        # an empty result set — silently, which is how bacen_ptax stayed at 0.
+        s = datetime.strptime(start, "%Y-%m-%d")
+        e = datetime.strptime(end, "%Y-%m-%d")
+        resource = (
+            "CotacaoMoedaPeriodo(moeda=@moeda,dataInicial=@dataInicial,"
+            "dataFinalCotacao=@dataFinalCotacao)"
+        )
+        return await _olinda_get(
+            "PTAX",
+            resource,
+            {
+                "@moeda": f"'{moeda}'",
+                "@dataInicial": f"'{s:%m-%d-%Y}'",
+                "@dataFinalCotacao": f"'{e:%m-%d-%Y}'",
+            },
+        )
 
     async def get_ptax_moedas(self) -> List[Dict[str, Any]]:
         """
@@ -263,24 +376,17 @@ class BacenClient:
         Returns:
             List of dicts with expectation data.
         """
-        def _fetch() -> pd.DataFrame:
-            em = Expectativas()
-            api = em.get_endpoint(endpoint_name)
-            q = api.query()
-            filters = []
-            if indicador:
-                filters.append(api.Indicador == indicador)
-            if start:
-                filters.append(api.Data >= start)
-            if filters:
-                import functools
-                import operator
-                combined = functools.reduce(operator.and_, filters)
-                q = q.filter(combined)
-            return q.limit(limit).collect()
+        filters: List[str] = []
+        if indicador:
+            filters.append(f"Indicador eq '{indicador}'")
+        if start:
+            filters.append(f"Data ge '{start}'")
 
-        df = await asyncio.to_thread(_fetch)
-        return _df_to_records(df)
+        params: Dict[str, str] = {"$orderby": "Data desc"}
+        if filters:
+            params["$filter"] = " and ".join(filters)
+
+        return await _olinda_get("Expectativas", endpoint_name, params)
 
     # ------------------------------------------------------------------
     # TaxaJuros – interest rates by institution
