@@ -1,0 +1,33 @@
+name: Data Coverage Audit
+
+# On-demand, read-only. Prints what data actually exists per table so dashboard
+# figures can be judged: a chart that renders empty is either reporting a real
+# gap (fix the figure) or is querying wrongly (fix the query), and the rendered
+# page cannot tell you which. The job output is the evidence.
+#
+# Read-only by construction — the script opens the connection with
+# set_session(readonly=True) and only ever SELECTs.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  audit:
+    name: Audit data coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Audit coverage
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        run: python scripts/audit_coverage.py
