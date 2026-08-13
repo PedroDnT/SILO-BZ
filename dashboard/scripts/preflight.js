@@ -23,16 +23,9 @@ import pg from 'pg';
 
 const env = (name) => process.env[`EVIDENCE_SOURCE__supabase__${name}`];
 
-// One table per dashboard page area. Absence of any of these means the pages
-// that read it will render empty, so surface it before the build burns time.
 // One table per dashboard page area. These are existence checks, not row
 // counts — the point is to catch a connection pointed at the wrong database,
 // not to police coverage.
-//
-// Deliberately excludes anything introduced by an unapplied migration (e.g.
-// anbima_class_monthly from migration 13): a Vercel build can run before the
-// ingest workflow has applied the schema, and failing preflight there would
-// block the deploy for a reason that has nothing to do with the deploy.
 const REQUIRED = [
   'cvm_fi_diario',
   'cvm_fi_perfil',
@@ -46,6 +39,25 @@ const REQUIRED = [
   'cvm_etf_registry',
   'bacen_sgs',
   'cvm_ingest_log',
+];
+
+// Objects a source query reads that only exist once a migration has been
+// applied. These are a SEPARATE check because they fail for a different reason
+// and have a different fix.
+//
+// A dashboard deploy and a schema migration are independent events: Vercel
+// builds on push, while migrations are applied by the ingest workflow. Merge a
+// PR that adds both a migration and a query against it, and the deploy can win
+// the race — the source queries then fail with five identical
+// "Cannot read properties of undefined (reading 'rows')" lines and the build
+// dies on a 0-byte parquet, which says nothing about the actual cause.
+//
+// Checking them here turns that into one line naming the migration to apply.
+// The build still fails, and should: a dashboard querying columns that do not
+// exist is not deployable. The point is that the failure is legible.
+const REQUIRED_AFTER_MIGRATION = [
+  { relation: 'cvm_fii_imovel', column: null, migration: '15_fii_trimestral_members.sql' },
+  { relation: 'cvm_fi_perfil', column: 'nr_cotst_pf_varejo', migration: '14_fi_perfil_columns.sql' },
 ];
 
 const missingVars = ['host', 'database', 'user', 'password'].filter((v) => !env(v));
@@ -85,7 +97,39 @@ const { rows } = await client.query(
   `SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename = ANY($1)`,
   [REQUIRED]
 );
+
+// Migration-dependent objects, checked before the base-table verdict so the
+// more specific diagnosis wins when both are wrong.
+const pending = [];
+for (const item of REQUIRED_AFTER_MIGRATION) {
+  const { rows: hit } = item.column
+    ? await client.query(
+        `SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`,
+        [item.relation, item.column]
+      )
+    : await client.query(`SELECT 1 WHERE to_regclass($1) IS NOT NULL`, [item.relation]);
+  if (hit.length === 0) pending.push(item);
+}
+
 await client.end();
+
+if (pending.length) {
+  console.error(
+    `\n[preflight] Connected to ${env('host')}/${env('database')} fine, but ` +
+      `${pending.length} object(s) a source query needs are not there yet:\n` +
+      pending
+        .map((p) => `             - ${p.relation}${p.column ? '.' + p.column : ''}` +
+                    `   (added by src/store/migrations/${p.migration})`)
+        .join('\n') +
+      `\n\n[preflight] The schema migration has not been applied to this database.` +
+      `\n[preflight] A deploy and a migration are independent events and the deploy` +
+      `\n[preflight] won the race. Apply the schema, then redeploy:` +
+      `\n[preflight]     python scripts/apply_schema.py` +
+      `\n[preflight] or run the Daily CVM Ingest workflow, which bootstraps it.\n`
+  );
+  process.exit(1);
+}
 
 const found = new Set(rows.map((r) => r.tablename));
 const missing = REQUIRED.filter((t) => !found.has(t));
