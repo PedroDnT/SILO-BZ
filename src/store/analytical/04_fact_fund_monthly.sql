@@ -18,12 +18,24 @@
 -- FI source is daily (cvm_fi_diario) — must be aggregated to monthly.
 -- FIP source is yearly (cvm_fip_periodic) — period mapped to Dec-31 of the year.
 -- FII: only doc_subtype = 'complemento' carries yield / cotistas / vl_ativo.
+--
+-- CASCADE on the drop: every known dependent (dim_administrator, dim_gestor,
+-- vw_fii_vs_fiagro, vw_fund_security_yield, mv_savings_flow_monthly +
+-- api.mv_savings_flow_monthly) is recreated later in the same apply_analytical.sh
+-- pass (13_dim_classification.sql, 07_vw_cross_domain.sql, 18_savings_flow.sql)
+-- — captured via scripts/audit_matview_dependents.py before adding CASCADE, not
+-- assumed. A plain DROP (no CASCADE) fails as soon as ANY of these exist, which
+-- is always true after the first successful apply; that was silently failing
+-- on every subsequent run (continue-on-error on the workflow step masked it),
+-- so this matview's definition was not actually being refreshed in production.
+-- If a NEW ad-hoc dependent shows up outside this repo, CASCADE will drop it
+-- too — re-run the audit script before assuming this list is still complete.
 -- =============================================================================
 
 BEGIN;
 SET statement_timeout = '15min';
 
-DROP MATERIALIZED VIEW IF EXISTS fact_fund_monthly;
+DROP MATERIALIZED VIEW IF EXISTS fact_fund_monthly CASCADE;
 
 CREATE MATERIALIZED VIEW fact_fund_monthly AS
 
