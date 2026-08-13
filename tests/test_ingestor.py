@@ -587,7 +587,10 @@ class TestBacenIngestorPTAX:
              patch("src.pipeline.bacen_pipeline.upsert_rows", side_effect=_fake_upsert), \
              patch("src.pipeline.bacen_pipeline.PTAX_CURRENCIES", ["USD"]):
             mock_client = mock_client_cls.return_value
-            mock_client.get_ptax_dolar_periodo = AsyncMock(return_value=mock_records)
+            # USD now goes through CotacaoMoedaPeriodo like every other
+            # currency: the dollar-specific helper formats dates as M/D/YYYY,
+            # which Olinda answers with HTTP 200 and an empty result set.
+            mock_client.get_ptax_moeda_periodo = AsyncMock(return_value=mock_records)
             ingestor = BacenIngestor()
             count = await ingestor.ingest_ptax("2024-01-01", "2024-01-31")
 
