@@ -408,7 +408,7 @@ class TestFIIFetch:
 class TestSECURITFetch:
     @pytest.mark.asyncio
     async def test_securit_cra_fetch_returns_expected_columns(self):
-        mock_bytes = _make_zip_bytes("inf_mensal_cra_2024.csv", SECURIT_CRA_ROWS)
+        mock_bytes = _make_zip_bytes("inf_mensal_cra_ativo_passivo_2024.csv", SECURIT_CRA_ROWS)
         with patch.object(CVMFetcher, "_download", new_callable=AsyncMock, return_value=mock_bytes):
             fetcher = CVMFetcher()
             rows = await fetcher.fetch("securit", "cra_mensal", year=2024)
@@ -646,7 +646,7 @@ class TestCVMPipelineFieldMapping:
     async def test_securit_cra_pipeline_extracts_real_field_names(self):
         """SECURIT: real CVM PascalCase names are now mapped correctly."""
         import datetime
-        mock_bytes = _make_zip_bytes("inf_mensal_cra_2024.csv", SECURIT_CRA_ROWS)
+        mock_bytes = _make_zip_bytes("inf_mensal_cra_ativo_passivo_2024.csv", SECURIT_CRA_ROWS)
         captured: list = []
 
         with _stub_pipeline(captured):

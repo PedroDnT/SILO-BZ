@@ -39,17 +39,30 @@ class DatasetConfig:
         # Historical formats (HIST/ directory) — yearly ZIPs, single CSV inside.
         # inf_diario HIST covers 2000-2020; monthly format works from 2021+.
         # cda        HIST covers 2005-2022; monthly format works from 2023+.
+        # The HIST archives are NOT "one CSV inside": inf_diario_fi_{year}.zip holds
+        # 12 monthly members (inf_diario_fi_{year}{MM}.csv) and cda_fi_{year}.zip holds
+        # the same BLC_1..8/PL/fiim split as the monthly CDA archive. Both patterns
+        # used to name a member that does not exist, so the fetcher's old
+        # first-CSV-in-the-archive fallback silently took January (hist_inf_diario)
+        # and the FI-Imobiliário file (hist_cda). Verified against the real archives
+        # for 2020 and 2022 on 2026-08-13.
         "hist_inf_diario": {
             "url_pattern": "{base_url}/FI/DOC/INF_DIARIO/DADOS/HIST/inf_diario_fi_{year}.zip",
             "is_zip": True,
-            "csv_name_pattern": "inf_diario_fi_{year}.csv",
-            "description": "FI daily snapshots historical (2000-2020) — yearly HIST/ ZIP",
+            "csv_name_pattern": "inf_diario_fi_{year}{month:02d}.csv",
+            "description": (
+                "FI daily snapshots historical (2000-2020) — yearly HIST/ ZIP with 12 "
+                "monthly CSVs inside. {month} selects the member (the URL has no month)."
+            ),
         },
         "hist_cda": {
             "url_pattern": "{base_url}/FI/DOC/CDA/DADOS/HIST/cda_fi_{year}.zip",
             "is_zip": True,
-            "csv_name_pattern": "cda_fi_{year}.csv",
-            "description": "FI portfolio composition historical (2005-2022) — yearly HIST/ ZIP",
+            "csv_name_pattern": "cda_fi_BLC_1_{year}.csv",
+            "description": (
+                "FI portfolio composition historical (2005-2022) — yearly HIST/ ZIP. "
+                "Targets BLC_1, the same block the monthly `cda` dataset ingests."
+            ),
         },
         "cad": {
             "url_pattern": "{base_url}/FI/CAD/DADOS/cad_fi.csv",
@@ -121,17 +134,61 @@ class DatasetConfig:
             "csv_name_pattern": "inf_mensal_fii_complemento_{year}.csv",
             "description": "Monthly complementary summary for FII funds — contains Patrimonio_Liquido — yearly ZIP",
         },
-        "trimestral": {
+        # ---------------------------------------------------------------------
+        # INF_TRIMESTRAL is a MULTI-TABLE archive, not one quarterly file.
+        # inf_trimestral_fii_{year}.zip holds 16 members at three different
+        # grains (verified against the real 2025 archive on 2026-08-13):
+        #     _geral_          fund header, 1 row per fund per quarter
+        #     _complemento_    maturity/indexer/liquidity, 1 row per fund per quarter
+        #     _ativo_          asset detail
+        #     _imovel_         PROPERTY REGISTER, many rows per fund per quarter
+        #     _imovel_desempenho_, _imovel_renda_acabado_contrato_/_inquilino_,
+        #     _terreno_, _direito_, _rentabilidade_efetiva_,
+        #     _resultado_contabil_financeiro_, _ativo_garantia_rentabilidade_,
+        #     _aquisicao_imovel_/_terreno_, _alienacao_imovel_/_terreno_
+        # `inf_trimestral_fii_{year}.csv` (the member the old single "trimestral"
+        # doc_type asked for) has NEVER existed, so the fetcher's first-CSV
+        # fallback silently ingested _alienacao_imovel_ — property SALES — into
+        # rows labelled doc_type='trimestral'. Each analytically useful member now
+        # gets its own doc_type and its own field map.
+        # ---------------------------------------------------------------------
+        "trimestral_geral": {
             "url_pattern": "{base_url}/FII/DOC/INF_TRIMESTRAL/DADOS/inf_trimestral_fii_{year}.zip",
             "is_zip": True,
-            "csv_name_pattern": "inf_trimestral_fii_{year}.csv",
-            "description": "Quarterly report for FII funds — yearly ZIP",
+            "csv_name_pattern": "inf_trimestral_fii_geral_{year}.csv",
+            "description": "FII quarterly report — GERAL member (fund header, 1 row per fund per quarter)",
         },
+        "trimestral_complemento": {
+            "url_pattern": "{base_url}/FII/DOC/INF_TRIMESTRAL/DADOS/inf_trimestral_fii_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_trimestral_fii_complemento_{year}.csv",
+            "description": (
+                "FII quarterly report — COMPLEMENTO member (receivable maturity ladder, "
+                "inflation indexers, liquidity buckets) — 1 row per fund per quarter"
+            ),
+        },
+        "trimestral_imovel": {
+            "url_pattern": "{base_url}/FII/DOC/INF_TRIMESTRAL/DADOS/inf_trimestral_fii_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_trimestral_fii_imovel_{year}.csv",
+            "description": (
+                "FII quarterly report — IMOVEL member: the property register "
+                "(vacancy, delinquency, share of revenue per property). MANY rows per "
+                "fund per quarter, so it lands in its own table cvm_fii_imovel."
+            ),
+        },
+        # INF_ANUAL is multi-member too (12 members in the real 2025 archive:
+        # _geral_, _complemento_, _ativo_adquirido_, _ativo_transacao_,
+        # _ativo_valor_contabil_, _distribuicao_cotistas_, _diretor_responsavel_,
+        # _experiencia_profissional_, _prestador_servico_, _processo_,
+        # _processo_semelhante_, _representante_cotista_). `inf_anual_fii_{year}.csv`
+        # does not exist — the fallback was serving _ativo_adquirido_ under
+        # doc_type='anual'. Target the fund-level header member explicitly.
         "anual": {
             "url_pattern": "{base_url}/FII/DOC/INF_ANUAL/DADOS/inf_anual_fii_{year}.zip",
             "is_zip": True,
-            "csv_name_pattern": "inf_anual_fii_{year}.csv",
-            "description": "Annual report for FII funds — yearly ZIP",
+            "csv_name_pattern": "inf_anual_fii_geral_{year}.csv",
+            "description": "Annual report for FII funds — GERAL member of the yearly ZIP",
         },
         "dfin": {
             "url_pattern": "{base_url}/FII/DOC/DFIN/DADOS/dfin_fii_{year}.csv",

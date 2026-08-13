@@ -39,6 +39,10 @@ title: Industry Structure
   driver list with the RPC LEFT JOINed on, so none can return zero rows — which
   would write a zero-byte parquet and kill the Evidence build. Absent data
   renders blank.
+
+  SECTION ORDER is size → concentration → composition → flows and formation →
+  investors → the two families that are otherwise invisible. Concentration sits
+  second because it is the finding, not an appendix to the size chart.
 -->
 
 ```sql industry_aum_trend
@@ -49,20 +53,20 @@ select * from supabase.industry_aum_trend
 select * from supabase.industry_concentration
 ```
 
-```sql industry_new_funds
-select * from supabase.industry_new_funds
-```
-
-```sql industry_quotaholders
-select * from supabase.industry_quotaholders
-```
-
 ```sql industry_asset_class
 select * from supabase.industry_asset_class
 ```
 
 ```sql industry_class_latest
 select * from supabase.industry_class_latest
+```
+
+```sql industry_new_funds
+select * from supabase.industry_new_funds
+```
+
+```sql industry_quotaholders
+select * from supabase.industry_quotaholders
 ```
 
 ```sql industry_quotaholder_by_class
@@ -79,13 +83,20 @@ select * from supabase.industry_fiagro
 
 # Industry Structure
 
-> How big the industry is, how concentrated, how fast it forms new vehicles, and
-> who owns it — across all five CVM fund families, with FIP and FIAGRO shown by
-> name rather than buried in an aggregate.
+> The Brazilian fund industry is a one-family market: FI holds an order of
+> magnitude more net assets than FIDC, FII, FIAGRO and FIP combined, and each of
+> those families is concentrated in a handful of houses at the top. The
+> concentration table below is the measurement, not the impression.
+>
+> What this page does **not** support: any cross-family return comparison. Net
+> flow exists for FI alone, quotaholder counts are absent for FIDC and FIP, and
+> median yield is an FII-only field. Read each column against the family that
+> actually reports it. Who runs these funds is on [Managers](/managers); whether
+> the underlying slices landed at all is on [Pipeline Ops](/ops).
 
 ---
 
-## Industry AUM by Fund Family
+## Industry Net Assets by Fund Family
 
 > Net assets summed per family per month. FIP contributes only in the month its
 > yearly filing maps to (December), so its line is a step, not a trend.
@@ -94,37 +105,22 @@ select * from supabase.industry_fiagro
 data={industry_aum_trend}
 x=period
 y={['fi_aum_bn','fidc_aum_bn','fii_aum_bn','fiagro_aum_bn','fip_aum_bn']}
-yAxisTitle="AUM (R$ bn)"
-title="Industry AUM by Family — Last 36 Months"
-/>
-
----
-
-## FI Net Flow
-
-> Subscriptions minus redemptions. `captc_mes` and `resg_mes` are FI-only columns
-> in `fact_fund_monthly`, so this is the open-ended fund industry alone — the
-> other families report no flow at all and are omitted rather than shown as zero.
-
-<LineChart
-data={industry_aum_trend}
-x=period
-y=fi_net_flow_bn
-yAxisTitle="Net flow (R$ bn)"
-title="FI Net Flow per Month"
+yAxisTitle="Net Assets (R$bn)"
+title="Net Assets by Family — Last 36 Months"
 />
 
 ---
 
 ## Concentration
 
-> HHI on the 0–10,000 scale (sum of squared AUM shares × 10,000) plus top-N share
-> of AUM, each family measured at **its own latest reported period** — shown in
-> the Period column, because FIP's yearly grain means the families are not all
-> as-of the same date.
+> HHI on the 0–10,000 scale (sum of squared net-asset shares × 10,000) plus top-N
+> share, each family measured at **its own latest reported period** — shown in the
+> Period column, because FIP's yearly grain means the families are not all as-of
+> the same date.
 >
 > As a rule of thumb an HHI above 2,500 is a concentrated market; below 1,500 is
-> not. All five families are listed even when a family has no data.
+> not. All five families are listed even when a family has no data. The houses
+> behind these shares are named on [Managers](/managers).
 
 <DataTable data={industry_concentration}>
   <Column id=family title="Fund Family"/>
@@ -135,6 +131,60 @@ title="FI Net Flow per Month"
   <Column id=top10_pct title="Top 10 Share (%)" fmt=num1/>
   <Column id=top20_pct title="Top 20 Share (%)" fmt=num1/>
 </DataTable>
+
+---
+
+## Composition by Asset Class
+
+> `dim_fund_category` conforms the five families onto one axis: FI splits into
+> Fixed Income / Equity / Multimarket / Other FI on the registry's `tp_fundo`
+> label, and each other family maps whole (FIDC → Structured Credit, FII → Real
+> Estate, FIAGRO → Agribusiness, FIP → Private Equity). Funds whose registry row
+> has not been ingested fall into **Other FI**, so that bucket is a coverage
+> artefact as much as a category.
+
+<AreaChart
+  data={industry_asset_class}
+  x=period
+  y=aum_bn
+  series=asset_class
+  yAxisTitle="Net Assets (R$bn)"
+  title="Net Assets by Conformed Asset Class — Last 24 Months"
+/>
+
+> Each class below is at **its own latest period** — the Period column says which,
+> and the rows are therefore not necessarily as-of the same date. Median yield is
+> blank outside Real Estate because `pct_yield_mes` is an FII-only field, so this
+> column is **not** a cross-class return comparison. Ranked performance within
+> each class is on [Performance](/performance).
+
+<DataTable data={industry_class_latest} rows=9>
+  <Column id=asset_class title="Asset Class"/>
+  <Column id=period title="Period"/>
+  <Column id=n_funds title="Funds" fmt=num0/>
+  <Column id=aum_bn title="Net Assets (R$bn)" fmt=num2/>
+  <Column id=net_flow_bn title="Net Flow (R$bn)" fmt=num2/>
+  <Column id=cotistas_mm title="Quotaholders (mm)" fmt=num2/>
+  <Column id=median_yield_pct title="Median Yield (%)" fmt=num2/>
+</DataTable>
+
+---
+
+## FI Net Flow
+
+> Subscriptions minus redemptions. `captc_mes` and `resg_mes` are FI-only columns
+> in `fact_fund_monthly`, so this is the open-ended fund industry alone — the
+> other families report no flow at all and are omitted rather than shown as zero.
+> The daily version of the same series, and the funds behind it, are on
+> [FI Industry](/fi).
+
+<BarChart
+  data={industry_aum_trend}
+  x=period
+  y=fi_net_flow_bn
+  yAxisTitle="Net Flow (R$bn)"
+  title="FI Net Flow per Month"
+/>
 
 ---
 
@@ -150,7 +200,7 @@ data={industry_new_funds}
 x=period
 y={['fi_new','fidc_new','fii_new','fiagro_new','fip_new']}
 type=stacked
-yAxisTitle="New funds"
+yAxisTitle="New Funds"
 title="First-Reported Funds per Month"
 />
 
@@ -158,9 +208,10 @@ title="First-Reported Funds per Month"
 
 ## Investor Base
 
-> Total quotaholders (`nr_cotst`). **FIDC and FIP report no quotaholder count at
-> all** in CVM's files, so the total is a total of what exists — not an
-> industry-wide investor count. Counts are in millions.
+> Total quotaholders (`nr_cotst`), in millions. **FIDC and FIP report no
+> quotaholder count at all** in CVM's files, so the total is a total of what
+> exists — not an industry-wide investor count. It also counts positions rather
+> than people: one investor in three funds appears three times.
 
 <LineChart
 data={industry_quotaholders}
@@ -170,117 +221,74 @@ yAxisTitle="Quotaholders (millions)"
 title="Quotaholders by Family — Last 36 Months"
 />
 
----
-
-## Composition by Asset Class
-
-> `dim_fund_category` conforms the five families onto one axis: FI splits into
-> Fixed Income / Equity / Multimarket / Other FI on the registry's `tp_fundo`
-> label, and each other family maps whole (FIDC → Structured Credit, FII → Real
-> Estate, FIAGRO → Agribusiness, FIP → Private Equity). Funds whose registry row
-> has not been ingested fall into **Other FI**, so that bucket is a coverage
-> artefact as much as a category.
-
-<AreaChart
-data={industry_asset_class}
-x=period
-y=aum_bn
-series=asset_class
-yAxisTitle="AUM (R$ bn)"
-title="AUM by Conformed Asset Class — Last 24 Months"
-/>
-
----
-
-## Asset Class Snapshot
-
-> Each class at **its own latest period** — the Period column says which, and the
-> rows are therefore not necessarily as-of the same date. Median yield is blank
-> outside Real Estate because `pct_yield_mes` is an FII-only field.
-
-<DataTable data={industry_class_latest} rows=9>
-  <Column id=asset_class title="Asset Class"/>
-  <Column id=period title="Period"/>
-  <Column id=n_funds title="Funds" fmt=num0/>
-  <Column id=aum_bn title="AUM (R$ bn)" fmt=num1/>
-  <Column id=net_flow_bn title="Net Flow (R$ bn)" fmt=num2/>
-  <Column id=cotistas_mm title="Quotaholders (mm)" fmt=num2/>
-  <Column id=median_yield_pct title="Median Yield (%)" fmt=num2/>
-</DataTable>
-
----
-
-## Investor Growth by Asset Class
-
-> Average quotaholders per fund — retail reach per vehicle rather than raw
+> Average quotaholders per fund below — retail reach per vehicle rather than raw
 > headcount. Structured Credit and Private Equity are blank throughout because
 > their source files carry no quotaholder count.
 
 <LineChart
-data={industry_quotaholder_by_class}
-x=period
-y=avg_cotistas_per_fund
-series=asset_class
-yAxisTitle="Avg quotaholders per fund"
-title="Average Quotaholders per Fund by Class"
+  data={industry_quotaholder_by_class}
+  x=period
+  y=avg_cotistas_per_fund
+  series=asset_class
+  yAxisTitle="Avg Quotaholders per Fund"
+  title="Average Quotaholders per Fund by Class"
 />
 
 ---
 
-## FIP — Private Equity (yearly grain)
+## FIP — Private Equity (Yearly Grain)
 
 > Read directly from `cvm_fip_periodic`, whose natural key is
 > `(cnpj, doc_type, period_year)`. CVM changed the filing from **inf_trimestral**
 > (through 2023) to **inf_quadrimestral** (2024 onward) — the Doc Types column
 > shows which applied in each year.
 >
-> `Funds w/ PL` is the honest denominator: a FIP can file without a net-assets
-> figure, and those funds are counted as filers but contribute nothing to the AUM
-> column.
+> `Funds w/ Net Assets` is the honest denominator: a FIP can file without a
+> net-assets figure, and those funds are counted as filers but contribute nothing
+> to the net-assets column.
 
 <BarChart
-data={industry_fip}
-x=period_year
-y=total_pl_bn
-yAxisTitle="Net assets (R$ bn)"
-title="FIP Net Assets by Reporting Year"
+  data={industry_fip}
+  x=period_year
+  y=total_pl_bn
+  yAxisTitle="Net Assets (R$bn)"
+  title="FIP Net Assets by Reporting Year"
 />
 
 <DataTable data={industry_fip} rows=10>
-  <Column id=period_year title="Year" fmt=num0/>
+  <Column id=period_year title="Year"/>
   <Column id=doc_types title="Doc Types"/>
   <Column id=n_funds title="Funds Filing" fmt=num0/>
-  <Column id=n_funds_with_pl title="Funds w/ PL" fmt=num0/>
-  <Column id=total_pl_bn title="Net Assets (R$ bn)" fmt=num1/>
+  <Column id=n_funds_with_pl title="Funds w/ Net Assets" fmt=num0/>
+  <Column id=total_pl_bn title="Net Assets (R$bn)" fmt=num2/>
   <Column id=n_reports title="Reports" fmt=num0/>
 </DataTable>
 
 ---
 
-## FIAGRO — Agribusiness (monthly grain)
+## FIAGRO — Agribusiness (Monthly Grain)
 
 > Read directly from `cvm_fiagro_mensal`, including `vl_inadimpl` — FIAGRO
 > carries a delinquency figure like FIDC does, and no aggregate view exposes it.
+> Read it alongside the FIDC series on [the FIDC Credit Monitor](/fidc): they are
+> the industry's two receivables books, filed separately.
 >
 > **Coverage:** CVM's FIAGRO monthly file only begins **2025-05**. Earlier months
 > are empty because the dataset did not exist, not because the pipeline failed.
 
 <LineChart
-data={industry_fiagro}
-x=period
-y=pl_bn
-yAxisTitle="Net assets (R$ bn)"
-title="FIAGRO Net Assets per Month"
+  data={industry_fiagro}
+  x=period
+  y=pl_bn
+  yAxisTitle="Net Assets (R$bn)"
+  title="FIAGRO Net Assets per Month"
 />
 
 <DataTable data={industry_fiagro} rows=12>
   <Column id=period title="Month"/>
   <Column id=n_funds title="Funds" fmt=num0/>
-  <Column id=pl_bn title="Net Assets (R$ bn)" fmt=num2/>
-  <Column id=inadimpl_mm title="Delinquent (R$ mm)" fmt=num1/>
-  <Column id=inadimpl_pct title="Delinquency (%)" fmt=num2/>
+  <Column id=pl_bn title="Net Assets (R$bn)" fmt=num2/>
+  <Column id=inadimpl_mm title="Delinquent (R$mm)" fmt=num1/>
+  <Column id=inadimpl_pct title="Delinquency (%)" fmt=num1/>
   <Column id=cotistas title="Quotaholders" fmt=num0/>
 </DataTable>
-
-> Who administers and manages these funds is on [Managers](/managers); whether
-> the underlying slices actually landed is on [Pipeline Ops](/ops).

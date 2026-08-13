@@ -1,8 +1,9 @@
 """Map (entity, doc_type) pairs to CVMIngestor methods.
 
-Three calling conventions exist in `src.pipeline.cvm_pipeline.CVMIngestor`:
+Four calling conventions exist in `src.pipeline.cvm_pipeline.CVMIngestor`:
 
     monthly       — method(year, month)             needs year + month
+    yearly        — method(year)                    needs year only
     yearly_doc    — method(doc_type_arg, year)      needs year, doc_type passed as kwarg
     yearly_instr  — method(instrument_type_arg, year)  same shape, kept distinct for clarity
 
@@ -43,7 +44,14 @@ _TABLE: Dict[Tuple[str, str], Tuple[str, str, Optional[str], str]] = {
     ("fii", "mensal_geral"):           ("ingest_fii_mensal",   "yearly_doc",   "mensal_geral",           "cvm_fii_mensal"),
     ("fii", "mensal_ativo_passivo"):   ("ingest_fii_mensal",   "yearly_doc",   "mensal_ativo_passivo",   "cvm_fii_mensal"),
     ("fii", "mensal_complemento"):     ("ingest_fii_mensal",   "yearly_doc",   "mensal_complemento",     "cvm_fii_mensal"),
-    ("fii", "trimestral"):             ("ingest_fii_periodic", "yearly_doc",   "trimestral",             "cvm_fii_periodic"),
+    # INF_TRIMESTRAL is a multi-table archive — one doc_type per member. The old
+    # single ("fii", "trimestral") pair is gone: it named a ZIP member that does
+    # not exist and was silently ingesting the alienacao-imovel member instead
+    # (see src/store/migrations/15_fii_trimestral_members.sql).
+    ("fii", "trimestral_geral"):       ("ingest_fii_periodic", "yearly_doc",   "trimestral_geral",       "cvm_fii_periodic"),
+    ("fii", "trimestral_complemento"): ("ingest_fii_periodic", "yearly_doc",   "trimestral_complemento", "cvm_fii_periodic"),
+    # Property register — different grain, own table, own ingest method.
+    ("fii", "trimestral_imovel"):      ("ingest_fii_imovel",   "yearly",       None,                     "cvm_fii_imovel"),
     ("fii", "anual"):                  ("ingest_fii_periodic", "yearly_doc",   "anual",                  "cvm_fii_periodic"),
     ("fii", "dfin"):                   ("ingest_fii_periodic", "yearly_doc",   "dfin",                   "cvm_fii_periodic"),
 
@@ -65,7 +73,7 @@ _TABLE: Dict[Tuple[str, str], Tuple[str, str, Optional[str], str]] = {
 @dataclass(frozen=True)
 class Resolved:
     method_name: str
-    convention: str            # "monthly" | "yearly_doc" | "yearly_instr"
+    convention: str            # "monthly" | "yearly" | "yearly_doc" | "yearly_instr"
     table: str                 # target Supabase table for this slice
     needs_month: bool          # True when convention == "monthly"
     extra_arg: Optional[str]   # doc_type / instrument_type passed to the method
@@ -93,6 +101,9 @@ def build_call(
         if month is None:
             raise ValueError(f"{resolved.method_name} requires `month` (1-12)")
         return lambda: method(year, month)
+
+    if resolved.convention == "yearly":
+        return lambda: method(year)
 
     # yearly_doc and yearly_instr both take (extra_arg, year)
     return lambda: method(resolved.extra_arg, year)

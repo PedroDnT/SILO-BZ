@@ -3,11 +3,11 @@ title: FIDC Credit Monitor
 ---
 
 <!--
-  FIDC = receivables funds. Two grains matter and this page now shows both:
+  FIDC = receivables funds. Two grains matter and this page shows both:
 
     ASSET SIDE  — cvm_fidc_aging (CVM tab_VI). Twenty columns, in two bands of
       ten: vl_prazo_* (band A, days REMAINING to maturity — still performing)
-      and vl_inad_* (band B, days ALREADY overdue). Until now the dashboard read
+      and vl_inad_* (band B, days ALREADY overdue). The dashboard originally read
       only band B. Band A has been ingested since the dataset was wired
       (src/parsers/field_maps/fidc_aging.py maps all ten) and is what a
       delinquency rate cannot tell you — a book whose performing balance sits in
@@ -30,10 +30,25 @@ title: FIDC Credit Monitor
       level only when senior and subordinated quotas share a unit price.
     * FIDC ingestion has historically lagged (CVM publication delay); months with
       no filing render blank rather than zero.
+
+  SECTION ORDER runs asset side (how bad, who, and in which buckets) before
+  liability side (who absorbs it) — the deterioration is the finding and the
+  capital structure is the consequence.
+
+  DE-DUPLICATED: this page previously carried a "Delinquency > 5% and AUM >
+  R$1mm" table (source high_delinq_growing.sql) that is the same screen as
+  fraud_screen_zombie_growth on /suspicious — same latest period, same 5%
+  threshold, same R$1mm floor, same columns. It has been dropped in favour of a
+  link, so the screen has ONE definition on the site. high_delinq_growing.sql now
+  has no caller and is a deletion candidate for the source owner.
 -->
 
 ```sql delinquency_trend
 select * from supabase.delinquency_trend
+```
+
+```sql top_delinquent
+select * from supabase.top_delinquent
 ```
 
 ```sql aging_buckets
@@ -46,14 +61,6 @@ select * from supabase.fidc_aging_profile
 
 ```sql fidc_performing_aging
 select * from supabase.fidc_performing_aging
-```
-
-```sql top_delinquent
-select * from supabase.top_delinquent
-```
-
-```sql high_delinq_growing
-select * from supabase.high_delinq_growing
 ```
 
 ```sql fidc_tranche_performance
@@ -86,38 +93,78 @@ select * from supabase.fidc_flows_by_oper
 
 # FIDC Credit Monitor
 
-Receivables funds: delinquency trends, aging buckets, tranche structure, and forensic red flags.
+> Receivables funds are where credit deterioration shows up first and in the most
+> detail: FIDCs file both an aging table for the loans they hold and a tranche
+> table for the investors who bear the losses. This page reads the asset side
+> first — the sector rate, the funds behind it, and which buckets the balance sits
+> in — then the liability side that absorbs it.
+>
+> The sector rate is an aggregate and **says nothing about distribution**: it can
+> sit flat while individual books fail. Every promised-versus-realised figure here
+> is a **median**, because CVM's raw percentage fields carry outliers up to 1.6e8
+> that would own any average, and the subordination ratios are built from **quota
+> counts, not value**. Screens that flag specific patterns are on
+> [Suspicious Deal Screens](/suspicious); the securitised-certificate market that
+> buys similar receivables is on [Securitization](/securit).
 
 ---
 
 ## Sector Delinquency — 24 Months
 
+> Overdue receivables as a share of net assets, across FIDCs that filed both an
+> aging table and a monthly report. FIAGRO files a comparable `vl_inadimpl` figure
+> and is charted on [Industry Structure](/industry).
+
 <LineChart
   data={delinquency_trend}
   x=period
   y=delinquency_rate_pct
-  yAxisTitle="Delinquency Rate (%)"
+  yAxisTitle="Delinquency (%)"
   title="FIDC Sector Delinquency Rate"
 />
 
 <DataTable data={delinquency_trend} rows=6>
   <Column id=period title="Period"/>
   <Column id=n_funds title="Funds" fmt=num0/>
-  <Column id=total_inad_mm title="Total Inad (R$mm)" fmt=num1/>
-  <Column id=delinquency_rate_pct title="Delinq Rate %" fmt=num2/>
+  <Column id=total_inad_mm title="Total Delinquent (R$mm)" fmt=num1/>
+  <Column id=delinquency_rate_pct title="Delinquency (%)" fmt=num1/>
 </DataTable>
 
 ---
 
-## Delinquency by Aging Bucket — Last 12 Months (R$ mm)
+## Most Delinquent FIDCs — Latest Period
+
+> The twenty worst rates among funds with more than R$1mm in net assets, at the
+> newest period the aging table covers. Ranked by rate, so small books with a bad
+> ratio sort above large books with a moderate one — read the net-assets column
+> alongside the rate. Funds where the pattern is not just a level but a persistent
+> one are screened on [Suspicious Deal Screens](/suspicious).
+
+<DataTable data={top_delinquent} rows=20>
+  <Column id=fund_name title="Fund"/>
+  <Column id=period title="Period"/>
+  <Column id=pl_mm title="Net Assets (R$mm)" fmt=num1/>
+  <Column id=inad_mm title="Delinquent (R$mm)" fmt=num1/>
+  <Column id=delinquency_pct title="Delinquency (%)" fmt=num1/>
+</DataTable>
+
+---
+
+## Delinquency by Aging Bucket — 12 Months
+
+> The overdue band (`vl_inad_*`) split by how long each balance has been past due.
+> Weight moving rightward — out of the 30d bucket and into 360d and beyond — is
+> deterioration that a flat headline rate hides, because a receivable that ages
+> without being written off keeps the rate constant while the recovery prospect
+> falls.
 
 <AreaChart
 data={aging_buckets}
 x=period
 y={['inad_30d','inad_60d','inad_90d','inad_180d','inad_360d','inad_over1080d']}
 type=stacked
-yAxisTitle="R$ mm"
-title="Delinquency by Aging Bucket"
+yAxisTitle="R$mm"
+  title="Delinquency by Aging Bucket (R$mm)"
 />
 
 ---
@@ -134,15 +181,15 @@ data={fidc_aging_profile}
 x=bucket
 y={['performing_mm','delinquent_mm']}
 type=grouped
-yAxisTitle="R$ mm"
-title="Performing vs Delinquent Receivables by Bucket (R$mm)"
+yAxisTitle="R$mm"
+  title="Performing vs Delinquent Receivables by Bucket (R$mm)"
 />
 
 <DataTable data={fidc_aging_profile} rows=10>
   <Column id=bucket title="Bucket"/>
   <Column id=performing_mm title="Performing (R$mm)" fmt=num1/>
   <Column id=delinquent_mm title="Delinquent (R$mm)" fmt=num1/>
-  <Column id=delinquent_pct title="Delinquent % of Bucket" fmt=num1/>
+  <Column id=delinquent_pct title="Delinquent Share of Bucket (%)" fmt=num1/>
   <Column id=n_funds title="Funds" fmt=num0/>
 </DataTable>
 
@@ -160,8 +207,8 @@ data={fidc_performing_aging}
 x=period
 y={['perf_30d','perf_60d','perf_90d','perf_120d','perf_150d','perf_180d','perf_360d','perf_720d','perf_1080d','perf_over1080d']}
 type=stacked
-yAxisTitle="R$ mm"
-title="Performing Receivables by Remaining Term (R$mm)"
+yAxisTitle="R$mm"
+  title="Performing Receivables by Remaining Term (R$mm)"
 />
 
 <DataTable data={fidc_performing_aging} rows=6>
@@ -191,7 +238,7 @@ data={fidc_tranche_performance}
 x=tranche_class
 y={['desemp_esperado_median','desemp_real_median']}
 type=grouped
-yAxisTitle="% (median)"
+yAxisTitle="% (Median)"
 title="Promised vs Realised Performance by Tranche Class"
 />
 
@@ -199,22 +246,22 @@ title="Promised vs Realised Performance by Tranche Class"
   <Column id=tranche_class title="Tranche Class"/>
   <Column id=n_tranches title="Tranches" fmt=num0/>
   <Column id=n_funds title="Funds" fmt=num0/>
-  <Column id=desemp_esperado_median title="Promised % (median)" fmt=num2/>
-  <Column id=desemp_real_median title="Realised % (median)" fmt=num2/>
-  <Column id=gap_median title="Gap pp (median)" fmt=num2/>
+  <Column id=desemp_esperado_median title="Promised (%, median)" fmt=num2/>
+  <Column id=desemp_real_median title="Realised (%, median)" fmt=num2/>
+  <Column id=gap_median title="Gap (pp, median)" fmt=num2/>
   <Column id=n_comparable title="Comparable" fmt=num0/>
-  <Column id=underperforming_pct title="Underperforming %" fmt=num1/>
+  <Column id=underperforming_pct title="Underperforming (%)" fmt=num1/>
 </DataTable>
 
----
-
-## Promised vs Realised — 24 Months
+> The same two medians over 24 months, and the share of comparable tranches
+> falling short, are below. A widening gap alongside a rising share is a sector
+> promising more than the underlying book delivers.
 
 <LineChart
 data={fidc_tranche_trend}
 x=period
 y={['esperado_median','real_median']}
-yAxisTitle="% (median)"
+yAxisTitle="% (Median)"
 title="Universe Median: Promised vs Realised Tranche Performance"
 />
 
@@ -222,7 +269,7 @@ title="Universe Median: Promised vs Realised Tranche Performance"
   data={fidc_tranche_trend}
   x=period
   y=underperforming_pct
-  yAxisTitle="% of comparable tranches"
+  yAxisTitle="% of Comparable Tranches"
   title="Share of Tranches Below Their Promised Performance"
 />
 
@@ -232,20 +279,20 @@ title="Universe Median: Promised vs Realised Tranche Performance"
 
 > Individual series where realised fell short of promised at the latest period,
 > ordered by fund size rather than by gap. Sorting by worst gap would rank the
-> dirtiest surviving numbers first; sorting by AUM ranks the ones that matter.
-> `Rows Excluded` reports how many latest-period tranche filings fell outside the
-> plausibility band (|value| ≤ 1000%) applied for display — the filter's cost is
-> on screen, and nothing was rescaled to fit.
+> dirtiest surviving numbers first; sorting by net assets ranks the ones that
+> matter. `Rows Excluded` reports how many latest-period tranche filings fell
+> outside the plausibility band (|value| ≤ 1000%) applied for display — the
+> filter's cost is on screen, and nothing was rescaled to fit.
 
 <DataTable data={fidc_tranche_underperformers} rows=15 search=true>
   <Column id=fund_name title="Fund"/>
   <Column id=classe_serie title="Series (as filed)"/>
-  <Column id=pl_mm title="AUM (R$mm)" fmt=num1/>
-  <Column id=desemp_esperado title="Promised %" fmt=num2/>
-  <Column id=desemp_real title="Realised %" fmt=num2/>
-  <Column id=gap title="Gap pp" fmt=num2/>
-  <Column id=rentab_mes title="Return in Month %" fmt=num2/>
-  <Column id=inadimpl_pct title="Fund Delinq %" fmt=num1/>
+  <Column id=pl_mm title="Net Assets (R$mm)" fmt=num1/>
+  <Column id=desemp_esperado title="Promised (%)" fmt=num2/>
+  <Column id=desemp_real title="Realised (%)" fmt=num2/>
+  <Column id=gap title="Gap (pp)" fmt=num2/>
+  <Column id=rentab_mes title="Return in Month (%)" fmt=num2/>
+  <Column id=inadimpl_pct title="Fund Delinquency (%)" fmt=num1/>
   <Column id=n_excluded_outliers title="Rows Excluded by Band" fmt=num0/>
 </DataTable>
 
@@ -261,20 +308,16 @@ title="Universe Median: Promised vs Realised Tranche Performance"
 
 <DataTable data={fidc_subordination_top} rows=12>
   <Column id=fund_name title="Fund"/>
-  <Column id=pl_mm title="AUM (R$mm)" fmt=num1/>
+  <Column id=pl_mm title="Net Assets (R$mm)" fmt=num1/>
   <Column id=n_senior_series title="Senior Series" fmt=num0/>
   <Column id=n_subordinada_series title="Subordinated Series" fmt=num0/>
   <Column id=qt_senior_mm title="Senior Quotas (mm)" fmt=num2/>
   <Column id=qt_subordinada_mm title="Subord. Quotas (mm)" fmt=num2/>
-  <Column id=subordination_pct title="Subordination % (of quotas)" fmt=num1/>
-  <Column id=inadimpl_pct title="Delinq %" fmt=num1/>
+  <Column id=subordination_pct title="Subordination, of Quotas (%)" fmt=num1/>
+  <Column id=inadimpl_pct title="Delinquency (%)" fmt=num1/>
 </DataTable>
 
----
-
-## Subordination Over Time — Largest FIDC
-
-> One fund, tracked for 24 months. A subordination ratio only means something
+> One fund tracked for 24 months below. A subordination ratio only means something
 > inside a single capital structure, so averaging it across funds of different
 > sizes would describe no actual deal. A ratio falling while delinquency rises is
 > the combination worth investigating: the cushion thinning as it is needed most.
@@ -283,7 +326,7 @@ title="Universe Median: Promised vs Realised Tranche Performance"
   data={fidc_subordination_trend}
   x=period
   y=subordination_pct
-  yAxisTitle="% of quotas"
+  yAxisTitle="% of Quotas"
   title="Subordinated Share of Quotas — Largest FIDC"
 />
 
@@ -294,7 +337,7 @@ title="Universe Median: Promised vs Realised Tranche Performance"
   <Column id=n_subordinada_series title="Subordinated Series" fmt=num0/>
   <Column id=qt_senior_mm title="Senior Quotas (mm)" fmt=num2/>
   <Column id=qt_subordinada_mm title="Subord. Quotas (mm)" fmt=num2/>
-  <Column id=subordination_pct title="Subordination % (of quotas)" fmt=num1/>
+  <Column id=subordination_pct title="Subordination, of Quotas (%)" fmt=num1/>
 </DataTable>
 
 ---
@@ -304,22 +347,24 @@ title="Universe Median: Promised vs Realised Tranche Performance"
 > Money into and out of FIDC tranches, from `cvm_fidc_tranche_flows` (tab X_4).
 > Both legs are plotted as filed, positive; `Net Flow` carries the sign. A month
 > with no filing is blank, never zero — "no data" and "no flow" are different
-> facts.
+> facts. Rising subscriptions into a book whose delinquency is also rising is the
+> pattern the zombie-growth screen on [Suspicious Deal Screens](/suspicious)
+> isolates fund by fund.
 
 <BarChart
 data={fidc_tranche_flows}
 x=period
 y={['captacao_mm','resgate_mm']}
 type=grouped
-yAxisTitle="R$ mm"
-title="Subscriptions vs Redemptions by Month (R$mm)"
+yAxisTitle="R$mm"
+  title="Subscriptions vs Redemptions by Month (R$mm)"
 />
 
 <LineChart
   data={fidc_tranche_flows}
   x=period
   y=net_flow_mm
-  yAxisTitle="R$ mm"
+  yAxisTitle="R$mm"
   title="Net Tranche Flow (R$mm)"
 />
 
@@ -332,11 +377,7 @@ title="Subscriptions vs Redemptions by Month (R$mm)"
   <Column id=n_funds title="Funds" fmt=num0/>
 </DataTable>
 
----
-
-## Operation Types as Filed — Latest Period
-
-> The raw `tp_oper` values behind the split above. Captação and resgate are
+> The raw `tp_oper` values behind that split are below. Captação and resgate are
 > matched on the `CAPT` / `RESG` substrings — the same rule
 > `fidc_flow_vs_delinquency()` uses — and CVM's vocabulary has drifted across
 > years. Anything landing in `(não classificado)` is the signal that the rule has
@@ -350,26 +391,4 @@ title="Subscriptions vs Redemptions by Month (R$mm)"
   <Column id=n_funds title="Funds" fmt=num0/>
   <Column id=n_classes title="Series" fmt=num0/>
   <Column id=n_rows title="Rows" fmt=num0/>
-</DataTable>
-
----
-
-## Top 20 Most Delinquent FIDCs (Latest Period)
-
-<DataTable data={top_delinquent} rows=20>
-  <Column id=fund_name title="Fund"/>
-  <Column id=pl_mm title="AUM (R$mm)" fmt=num1/>
-  <Column id=inad_mm title="Inad (R$mm)" fmt=num1/>
-  <Column id=delinquency_pct title="Delinquency %" fmt=num1/>
-</DataTable>
-
----
-
-## 🚨 Funds with Delinquency > 5% and AUM > R$1mm
-
-<DataTable data={high_delinq_growing}>
-  <Column id=fund_name title="Fund"/>
-  <Column id=period title="Period"/>
-  <Column id=pl_mm title="AUM (R$mm)" fmt=num1/>
-  <Column id=inad_pct title="Delinq %" fmt=num1/>
 </DataTable>

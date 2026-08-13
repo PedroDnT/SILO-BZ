@@ -8,7 +8,8 @@
 --   - From serie : latest situacao and rentabilidade within the month
 --   - From fluxo : sum of cash-flow columns over the month
 --
--- instrument_type distinguishes cra_classe / cri_classe / ots_classe.
+-- instrument_type distinguishes cra_mensal / cri_mensal / ots_mensal -- the
+-- values ingest_securit._DOC_TO_INSTRUMENT writes, not the CVM doc_type names.
 -- =============================================================================
 
 BEGIN;

@@ -263,12 +263,17 @@ ALTER TABLE cvm_fii_mensal
     ADD COLUMN IF NOT EXISTS rendimentos_distribuir NUMERIC(20,6);
 
 -- ---------------------------------------------------------------------------
--- FII — periodic reports  (trimestral, anual, dfin — yearly files)
+-- FII — periodic reports  (yearly files)
+--   doc_type: trimestral_geral | trimestral_complemento | anual | dfin
+--   ('trimestral' is retired — see migration 15: it ingested the wrong ZIP member)
+--   The uniqueness key is widened to include data_referencia by migration 15
+--   (mirrored in the ALTER block at the end of this file) because trimestral_*
+--   is quarterly and dfin ships several filings per fund per year.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS cvm_fii_periodic (
     id            BIGSERIAL    PRIMARY KEY,
     cnpj          TEXT,
-    doc_type      TEXT         NOT NULL,   -- trimestral | anual | dfin
+    doc_type      TEXT         NOT NULL,
     period_year   INT          NOT NULL,
     raw           JSONB        NOT NULL,
     fetched_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
@@ -276,6 +281,49 @@ CREATE TABLE IF NOT EXISTS cvm_fii_periodic (
 );
 CREATE INDEX IF NOT EXISTS idx_fii_periodic_cnpj      ON cvm_fii_periodic (cnpj) WHERE cnpj IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_fii_periodic_type_year ON cvm_fii_periodic (doc_type, period_year DESC);
+
+-- ---------------------------------------------------------------------------
+-- FII — property register  (INF_TRIMESTRAL _imovel_ member — migration 15)
+--
+-- A separate table because the grain differs from cvm_fii_periodic: many
+-- properties per fund per quarter (20,227 rows in the 2025 archive alone).
+-- row_hash is a sha256 over the source row — CVM publishes no property id and
+-- the file legitimately repeats identical descriptive rows, so every descriptive
+-- key collides and would drop real rows on upsert. See
+-- src/parsers/field_maps/fii_imovel.py for the measured collision counts.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS cvm_fii_imovel (
+    id                  BIGSERIAL    PRIMARY KEY,
+    cnpj                TEXT         NOT NULL CHECK (char_length(cnpj) = 14),
+    data_referencia     DATE         NOT NULL,
+    row_hash            TEXT         NOT NULL,
+    versao              INT,
+    classe              TEXT,
+    nome_imovel         TEXT,
+    endereco            TEXT,
+    area                NUMERIC(20,6),
+    numero_unidades     INT,
+    outras_caracteristicas TEXT,
+    pr_vacancia         NUMERIC(20,8),
+    pr_inadimplencia    NUMERIC(20,8),
+    pr_receitas_fii     NUMERIC(20,8),
+    pr_locado           NUMERIC(20,8),
+    pr_vendido          NUMERIC(20,8),
+    pr_conclusao_obras_realizado NUMERIC(20,8),
+    pr_conclusao_obras_previsto  NUMERIC(20,8),
+    custo_construcao_realizado   NUMERIC(20,6),
+    custo_construcao_previsto    NUMERIC(20,6),
+    pr_imovel_total_investido    NUMERIC(20,8),
+    period_year         INT          NOT NULL,
+    raw                 JSONB        NOT NULL,
+    fetched_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fii_imovel UNIQUE (cnpj, data_referencia, row_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_fii_imovel_cnpj   ON cvm_fii_imovel (cnpj);
+CREATE INDEX IF NOT EXISTS idx_fii_imovel_period ON cvm_fii_imovel (data_referencia DESC);
+CREATE INDEX IF NOT EXISTS idx_fii_imovel_classe ON cvm_fii_imovel (classe) WHERE classe IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_fii_imovel_vacancia
+    ON cvm_fii_imovel (data_referencia DESC) WHERE pr_vacancia IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
 -- SECURIT — monthly emissions  (cra_mensal, cri_mensal, ots_mensal — yearly ZIP)
@@ -467,6 +515,62 @@ ALTER TABLE cvm_fi_perfil
     ADD COLUMN IF NOT EXISTS nr_cotst_fi_clube                INT,
     ADD COLUMN IF NOT EXISTS nr_cotst_distrib                 INT;
 
+-- cvm_fi_perfil (migration 14): the rest of the PERFIL_MENSAL matrix.
+-- The block above stopped at 7 of the 16 NR_COTST_* buckets and omitted
+-- NR_COTST_PF_VAREJO (retail individuals) entirely, plus every PR_PL_COTST_*
+-- share-of-PL field, the comitente concentration block and the liquidity block.
+-- All of them are present in every vintage of the source CSV (verified against
+-- perfil_mensal_fi_202012 and _202512, 106/107 fields) and were sitting unused
+-- in `raw`.
+ALTER TABLE cvm_fi_perfil
+    ADD COLUMN IF NOT EXISTS nr_cotst_pf_varejo            INT,
+    ADD COLUMN IF NOT EXISTS nr_cotst_corretora_distrib    INT,
+    ADD COLUMN IF NOT EXISTS nr_cotst_invnr                INT,
+    ADD COLUMN IF NOT EXISTS nr_cotst_eapc                 INT,
+    ADD COLUMN IF NOT EXISTS nr_cotst_efpc                 INT,
+    ADD COLUMN IF NOT EXISTS nr_cotst_rpps                 INT,
+    ADD COLUMN IF NOT EXISTS nr_cotst_segur                INT,
+    ADD COLUMN IF NOT EXISTS nr_cotst_capitaliz            INT,
+    ADD COLUMN IF NOT EXISTS nr_cotst_outro                INT;
+
+ALTER TABLE cvm_fi_perfil
+    ADD COLUMN IF NOT EXISTS pr_pl_cotst_pf_pb                 NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_pl_cotst_pf_varejo             NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_pl_cotst_pj_nao_financ_pb      NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_pl_cotst_pj_nao_financ_varejo  NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_pl_cotst_banco                 NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_pl_cotst_corretora_distrib     NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_pl_cotst_pj_financ             NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_pl_cotst_invnr                 NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_pl_cotst_eapc                  NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_pl_cotst_efpc                  NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_pl_cotst_rpps                  NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_pl_cotst_segur                 NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_pl_cotst_capitaliz             NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_pl_cotst_fi_clube              NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_pl_cotst_distrib               NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_pl_cotst_outro                 NUMERIC(20,8);
+
+ALTER TABLE cvm_fi_perfil
+    ADD COLUMN IF NOT EXISTS pr_comitente_1      NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_comitente_2      NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_comitente_3      NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS comitente_ligado_1  BOOLEAN,
+    ADD COLUMN IF NOT EXISTS comitente_ligado_2  BOOLEAN,
+    ADD COLUMN IF NOT EXISTS comitente_ligado_3  BOOLEAN;
+
+ALTER TABLE cvm_fi_perfil
+    ADD COLUMN IF NOT EXISTS nr_dia_cinqu_perc            NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS nr_dia_cem_perc              NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS st_liqdez                    TEXT,
+    ADD COLUMN IF NOT EXISTS pr_patrim_liq_convtd_caixa   NUMERIC(20,8);
+
+CREATE INDEX IF NOT EXISTS idx_fi_perfil_pf_varejo
+    ON cvm_fi_perfil (period DESC) WHERE nr_cotst_pf_varejo IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_fi_perfil_maior_cotst
+    ON cvm_fi_perfil (period DESC) WHERE pr_patrim_liq_maior_cotst IS NOT NULL;
+
 -- cvm_securit_fluxo: lift extra cashflow categories
 ALTER TABLE cvm_securit_fluxo
     ADD COLUMN IF NOT EXISTS recebimentos_alienacao_caixa NUMERIC(20,6),
@@ -483,7 +587,11 @@ ALTER TABLE cvm_securit_serie
     ADD COLUMN IF NOT EXISTS taxas_indexadores             TEXT,
     ADD COLUMN IF NOT EXISTS nivel_subordinacao            TEXT;
 
--- cvm_fii_periodic: lift property-level columns
+-- cvm_fii_periodic: property-level columns.
+-- NOTE (migration 15): these came from the ALIENACAO_IMOVEL member that the old
+-- broken `trimestral` config was accidentally ingesting. They are kept so the
+-- historic rows stay readable, but nothing writes them any more — the property
+-- register now lands in cvm_fii_imovel at its own grain.
 ALTER TABLE cvm_fii_periodic
     ADD COLUMN IF NOT EXISTS data_referencia      DATE,
     ADD COLUMN IF NOT EXISTS nome_imovel          TEXT,
@@ -491,6 +599,46 @@ ALTER TABLE cvm_fii_periodic
     ADD COLUMN IF NOT EXISTS area                 NUMERIC(20,6),
     ADD COLUMN IF NOT EXISTS numero_unidades      INT,
     ADD COLUMN IF NOT EXISTS percentual_imovel_pl NUMERIC(20,8);
+
+-- cvm_fii_periodic (migration 15): GERAL + COMPLEMENTO member columns
+ALTER TABLE cvm_fii_periodic
+    ADD COLUMN IF NOT EXISTS versao              INT,
+    ADD COLUMN IF NOT EXISTS data_entrega        DATE,
+    ADD COLUMN IF NOT EXISTS nome_fundo          TEXT,
+    ADD COLUMN IF NOT EXISTS tp_fundo            TEXT,
+    ADD COLUMN IF NOT EXISTS publico_alvo        TEXT,
+    ADD COLUMN IF NOT EXISTS codigo_isin         TEXT,
+    ADD COLUMN IF NOT EXISTS cotas_emitidas      NUMERIC(28,8),
+    ADD COLUMN IF NOT EXISTS fundo_exclusivo     BOOLEAN,
+    ADD COLUMN IF NOT EXISTS mandato             TEXT,
+    ADD COLUMN IF NOT EXISTS segmento_atuacao    TEXT,
+    ADD COLUMN IF NOT EXISTS tipo_gestao         TEXT,
+    ADD COLUMN IF NOT EXISTS prazo_duracao       TEXT,
+    ADD COLUMN IF NOT EXISTS nome_administrador  TEXT,
+    ADD COLUMN IF NOT EXISTS cnpj_administrador  TEXT;
+
+ALTER TABLE cvm_fii_periodic
+    ADD COLUMN IF NOT EXISTS pr_indexador_igpm                NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_indexador_inpc                NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_indexador_ipca                NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS pr_indexador_incc                NUMERIC(20,8),
+    ADD COLUMN IF NOT EXISTS ativo_liquidez_disponibilidades  NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS ativo_liquidez_titulos_publicos  NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS ativo_liquidez_titulos_privados  NUMERIC(20,6),
+    ADD COLUMN IF NOT EXISTS ativo_liquidez_fundos_renda_fixa NUMERIC(20,6);
+
+CREATE INDEX IF NOT EXISTS idx_fii_periodic_segmento
+    ON cvm_fii_periodic (segmento_atuacao) WHERE segmento_atuacao IS NOT NULL;
+
+-- cvm_fii_periodic (migration 15): the uniqueness key must include
+-- data_referencia — trimestral_* is quarterly and dfin files several times a
+-- year, so the year-grain key silently overwrote all but the last filing.
+-- DROP IF EXISTS + ADD keeps this idempotent across re-applies.
+ALTER TABLE cvm_fii_periodic DROP CONSTRAINT IF EXISTS uq_fii_periodic;
+
+ALTER TABLE cvm_fii_periodic
+    ADD CONSTRAINT uq_fii_periodic UNIQUE NULLS NOT DISTINCT
+        (cnpj, doc_type, period_year, data_referencia);
 
 -- ---------------------------------------------------------------------------
 -- BACEN: SGS time series  (SELIC, IPCA, CDI, IGP-M, USD/BRL, …)

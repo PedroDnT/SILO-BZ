@@ -31,7 +31,9 @@ title: Pipeline Ops
   WHY BOTH HALVES ARE HERE: the log records what the pipeline THINKS it did; the
   table-freshness section reads the tables themselves. A recent 'ok' over a table
   whose newest row is months old is the disagreement worth catching, and only
-  showing both makes it visible.
+  showing both makes it visible. SECTION ORDER follows that argument: the log
+  first (did it run, did it succeed, per entity, per dataset), then the tables
+  themselves, then the analytical layer downstream of both.
 
   ENTITY LABELS are the ones the pipeline actually writes to the log
   (fi / fidc / fiagro / fii / fip / securit / etf / cia_aberta / anbima_etf), NOT
@@ -42,6 +44,9 @@ title: Pipeline Ops
   drive every source, with the log LEFT JOINed on. An empty log yields blank rows
   rather than a 0-row source — which writes a zero-byte parquet and kills the
   Evidence build. This page has to survive exactly the scenario it reports on.
+
+  FORMATTING NOTE: year columns carry NO numeric fmt. num0 renders 2026 as
+  "2,026".
 -->
 
 ```sql ops_health
@@ -60,10 +65,6 @@ select * from supabase.ops_freshness
 select * from supabase.ops_status_by_dataset
 ```
 
-```sql ops_recent_runs
-select * from supabase.ops_recent_runs
-```
-
 ```sql ops_table_freshness
 select * from supabase.ops_table_freshness
 ```
@@ -72,11 +73,22 @@ select * from supabase.ops_table_freshness
 select * from supabase.ops_coverage
 ```
 
+```sql ops_recent_runs
+select * from supabase.ops_recent_runs
+```
+
 # Pipeline Ops
 
-> Is the ingestion pipeline healthy? Every run writes exactly one
-> `cvm_ingest_log` row, so this page is the audit trail — and the answer to
-> "has anything quietly stopped landing".
+> Every ingest run writes exactly one `cvm_ingest_log` row, so this page is the
+> audit trail — and the answer to "has anything quietly stopped landing". Read it
+> before quoting any number on this site as current: a page that renders perfectly
+> from three-month-old data looks exactly like a page that renders from today's.
+>
+> The failure this page is built to catch is **not** the loud one. A run that
+> errors is visible everywhere; a cron that never fires logs nothing at all, and a
+> slice that reports `ok` while its table stops advancing looks healthy in the log.
+> That is why the log and the tables themselves are both shown, and why a
+> disagreement between them is the thing to look for.
 
 <BigValue data={ops_health} value=hours_since_last_run label="Hours Since Last Run" fmt=num1/>
 <BigValue data={ops_health} value=runs_24h label="Runs (24h)" fmt=num0/>
@@ -101,19 +113,15 @@ select * from supabase.ops_coverage
 > invisible.
 
 <BarChart
-data={ops_daily_rows}
-x=day
-y=rows_upserted
-yAxisTitle="Rows upserted"
-title="Rows Upserted per Day — Last 30 Days"
+  data={ops_daily_rows}
+  x=day
+  y=rows_upserted
+  yAxisTitle="Rows Upserted"
+  title="Rows Upserted per Day — Last 30 Days"
 />
 
----
-
-## Run Outcomes per Day
-
-> The same 30 days by status. `skipped` is expected and healthy — it is how a
-> month CVM has not published yet is recorded. `error` and `running` are not.
+> The same 30 days by outcome below. `skipped` is expected and healthy — it is how
+> a month CVM has not published yet is recorded. `error` and `running` are not.
 
 <BarChart
 data={ops_daily_rows}
@@ -138,7 +146,7 @@ title="Run Status per Day"
 <DataTable data={ops_freshness} rows=9>
   <Column id=entity title="Entity"/>
   <Column id=last_ok_doc_type title="Last OK Dataset"/>
-  <Column id=last_ok_year title="Year" fmt=num0/>
+  <Column id=last_ok_year title="Year"/>
   <Column id=last_ok_month title="Month" fmt=num0/>
   <Column id=last_ok_rows title="Rows" fmt=num0/>
   <Column id=last_ok_at title="Last OK"/>
@@ -157,6 +165,10 @@ title="Run Status per Day"
 > count, with the most recent error text. An entity that produced **no runs at
 > all** still appears — as a row with blank counts, which is the loudest signal
 > on the page.
+>
+> Entity and doc-type labels here are the ones the pipeline writes to the log,
+> not the API dispatch keys: the log says `inf_diario` where `src/api/dispatch.py`
+> calls the same dataset `diario`.
 
 <DataTable data={ops_status_by_dataset} rows=20 search=true>
   <Column id=entity title="Entity"/>
@@ -181,7 +193,7 @@ title="Run Status per Day"
 > reporting year purely so the column is comparable.
 >
 > Expect a structural lag: CVM publishes monthly datasets 1–2 months in arrears,
-> so a `days_stale` of 30–90 on a monthly table is normal. An **empty** table
+> so a `Days Stale` of 30–90 on a monthly table is normal. An **empty** table
 > sorts to the top with a blank date.
 
 <DataTable data={ops_table_freshness} rows=10>
@@ -203,13 +215,15 @@ title="Run Status per Day"
 >
 > Structural gaps that are **not** failures: FIP reports yearly (only its December
 > month is populated), FIAGRO's monthly file only begins 2025-05, and the newest
-> month or two are thin because of CVM's publication lag.
+> month or two are thin because of CVM's publication lag. Every page that depends
+> on these families states the same caveat where it bites — see
+> [Industry Structure](/industry) and [Performance](/performance).
 
 <LineChart
 data={ops_coverage}
 x=period
 y={['fi_funds','fidc_funds','fii_funds','fiagro_funds','fip_funds']}
-yAxisTitle="Distinct funds reporting"
+yAxisTitle="Distinct Funds Reporting"
 title="Funds Reporting per Month by Family"
 />
 
@@ -226,7 +240,7 @@ title="Funds Reporting per Month by Family"
   <Column id=started_at title="Started"/>
   <Column id=entity title="Entity"/>
   <Column id=doc_type title="Doc Type"/>
-  <Column id=period_year title="Year" fmt=num0/>
+  <Column id=period_year title="Year"/>
   <Column id=period_month title="Month" fmt=num0/>
   <Column id=status title="Status"/>
   <Column id=rows_upserted title="Rows" fmt=num0/>
