@@ -104,3 +104,18 @@ naming the host, the database, and the tables it could not find.
 The most common cause is `EVIDENCE_SOURCE__supabase__host` pointing at a
 Supabase **preview-branch** database (empty by design) rather than the project
 `POSTGRES_URL` ingests into. Compare the two hosts first.
+
+### Source queries must not return zero rows
+
+Evidence writes a **zero-byte** file when a source query returns no rows, and the
+build then fails reading it back:
+
+```
+Invalid Input Error: File 'supabase_<name>.parquet' too small to be a Parquet file
+```
+
+One empty source therefore breaks the whole dashboard, not just its own page. When
+a query can legitimately be empty — a screen with no current hits, or a feed that
+has not landed yet — drive it from a table that is always populated and `LEFT
+JOIN` the optional data, so the columns come back NULL rather than the result
+coming back empty. `sources/supabase/etf_market.sql` is the worked example.
