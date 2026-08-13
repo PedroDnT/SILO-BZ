@@ -25,12 +25,27 @@ const env = (name) => process.env[`EVIDENCE_SOURCE__supabase__${name}`];
 
 // One table per dashboard page area. Absence of any of these means the pages
 // that read it will render empty, so surface it before the build burns time.
+// One table per dashboard page area. These are existence checks, not row
+// counts — the point is to catch a connection pointed at the wrong database,
+// not to police coverage.
+//
+// Deliberately excludes anything introduced by an unapplied migration (e.g.
+// anbima_class_monthly from migration 13): a Vercel build can run before the
+// ingest workflow has applied the schema, and failing preflight there would
+// block the deploy for a reason that has nothing to do with the deploy.
 const REQUIRED = [
   'cvm_fi_diario',
+  'cvm_fi_perfil',
+  'cvm_fi_cda',
   'cvm_fidc_mensal',
+  'cvm_fidc_aging',
+  'cvm_fidc_tranche',
   'cvm_fii_mensal',
   'cvm_securit_serie',
+  'cvm_securit_fluxo',
   'cvm_etf_registry',
+  'bacen_sgs',
+  'cvm_ingest_log',
 ];
 
 const missingVars = ['host', 'database', 'user', 'password'].filter((v) => !env(v));

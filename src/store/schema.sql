@@ -570,3 +570,65 @@ CREATE TABLE IF NOT EXISTS etf_market_snapshot (
 );
 CREATE INDEX IF NOT EXISTS idx_etf_market_snapshot_date   ON etf_market_snapshot (snapshot_date DESC);
 CREATE INDEX IF NOT EXISTS idx_etf_market_snapshot_ticker ON etf_market_snapshot (ticker, snapshot_date DESC);
+
+-- ---------------------------------------------------------------------------
+-- ANBIMA "Boletim de Fundos de Investimento" — monthly metrics for every ANBIMA
+-- class (Renda Fixa, Ações, Multimercados, Cambial, Previdência, ETF, FIDC, FIP,
+-- FIAGRO, FII, Off Shore) and ~110 ANBIMA types. See migration
+-- 13_anbima_all_classes.sql, which widened this from the ETF-only
+-- anbima_etf_class_monthly of migration 09 and keeps that name alive as a view.
+--
+-- Values are stored exactly as published: monetary metrics in R$ milhões (NOT
+-- full BRL), rentabilidade in percentage points (4.37 = 4.37 %).
+--
+-- The `level` column is part of the key on purpose: in the type sheets the
+-- labels "Cambial", "FIP" and "FIAGRO" each appear BOTH as a class aggregate and
+-- as an ANBIMA type of the very same name. Keying on the name alone let the type
+-- row silently overwrite the class aggregate.
+--   'category' → class aggregate row       (anbima_type_id IS NULL)
+--   'type'     → ANBIMA type row           (anbima_type_id set when published)
+--   'total'    → industry total row, stored with anbima_category = 'TOTAL'
+--
+-- ORDERING NOTE: the compatibility view anbima_etf_class_monthly is created by
+-- migration 13, NOT here. Migration 09 runs between this file and 13 and
+-- unconditionally re-creates anbima_etf_class_monthly as a table with indexes;
+-- CREATE INDEX against a view is a hard error, so the view must not exist while
+-- 09 runs. The guarded drop below clears it on every apply and 13 re-creates it.
+-- ---------------------------------------------------------------------------
+DO $anbima_compat_view$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+          FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'public'
+           AND c.relname = 'anbima_etf_class_monthly'
+           AND c.relkind = 'v'
+    ) THEN
+        DROP VIEW public.anbima_etf_class_monthly;
+    END IF;
+END
+$anbima_compat_view$;
+
+CREATE TABLE IF NOT EXISTS anbima_class_monthly (
+    reference_date          DATE            NOT NULL,
+    anbima_category         TEXT            NOT NULL,
+    anbima_type_id          INT,
+    anbima_type_name        TEXT            NOT NULL,
+    metric                  TEXT            NOT NULL,
+    value                   NUMERIC(20, 6),
+    level                   TEXT            NOT NULL DEFAULT 'category',
+    source_sheet            TEXT,
+    boletim_ref             TEXT,
+    updated_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT anbima_class_monthly_pkey
+        PRIMARY KEY (reference_date, anbima_category, anbima_type_name, metric, level)
+);
+
+CREATE INDEX IF NOT EXISTS idx_anbima_class_cat_type_metric
+    ON anbima_class_monthly (anbima_category, anbima_type_name, metric, reference_date DESC);
+CREATE INDEX IF NOT EXISTS idx_anbima_class_metric_date
+    ON anbima_class_monthly (metric, reference_date DESC);
+CREATE INDEX IF NOT EXISTS idx_anbima_class_boletim_ref
+    ON anbima_class_monthly (boletim_ref);

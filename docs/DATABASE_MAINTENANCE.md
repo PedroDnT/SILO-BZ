@@ -241,7 +241,7 @@ rediscover these by querying the warehouse from scratch.
 | -------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | `cvm_fi_diario` 2024 + 2025 empty; 2026 starts Mar 2; 2019/2020 thin | Re-dispatch the backfill (§4)                                                    |
 | `cvm_fiagro_mensal` empty                                            | Field map fixed in PR #72 — needs a backfill run                                 |
-| `anbima_etf_class_monthly` empty                                     | Audit-log bug fixed in PR #72 — next daily run fills it                          |
+| `anbima_class_monthly` empty                                         | Audit-log bug fixed in PR #72 — next daily run fills it                          |
 | `etf_market_snapshot` empty                                          | Set the `APIFY_TOKEN` secret, then verify the scrape's selectors on one real run |
 | SECURIT (all tables) 2026 only                                       | Undiagnosed — earlier years sit stuck `running`                                  |
 | `cia_account` 2026 partition only                                    | Undiagnosed — pre-2026 ITR/DFP never backfilled                                  |

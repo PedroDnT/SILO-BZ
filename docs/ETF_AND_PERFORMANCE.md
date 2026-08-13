@@ -11,7 +11,8 @@ recorded as gaps.
   `04_fact_fund_monthly.sql` now exclude ETF CNPJs (`NOT EXISTS … cvm_etf_registry`)
   from the fund universe, so ETFs aren't double-counted inside the FI buckets.
   `dim_fund_category` and everything downstream inherit the carve-out.
-- **`16_etf_analysis.sql`** — ETF-only RPCs over `etf_daily` + `anbima_etf_class_monthly`:
+- **`16_etf_analysis.sql`** — ETF-only RPCs over `etf_daily` + `anbima_class_monthly`
+  (filtered to `anbima_category = 'ETF'`):
   `etf_performance_series`, `etf_performance_ranking`, `etf_class_performance`.
 - **`17_performance_analysis.sql`** — fund RPCs over `fact_fund_monthly` ⋈
   `dim_fund_category`: `fund_performance_series` (horizontal) and
@@ -42,7 +43,7 @@ plain view timed out on the full-universe call. It is refreshed by the 06:15 cro
 | --- | --- | --- |
 | **`etf_daily` is empty** | The 187 registry ETFs' fund-level CNPJs have **zero** overlap with 2026 `cvm_fi_diario` (CVM-175 keys the daily file on share-**class** CNPJs). So ETF price/NAV/return/AUM/flow series can't come from CVM today. | Fix registry↔class-CNPJ linkage, or wire an external ETF price feed (etfsbrasil.com / FMP), or ingest ANBIMA ETF class series. |
 | **ETF registry quant fields sparse** | `vl_patrim_liq` populated for only 8/187; `taxa_adm` 0/187. Identity (provider/segment/index) is complete for ~all. | cad_fi enrichment refresh / external feed. |
-| **`anbima_etf_class_monthly` empty** | Table exists; the ANBIMA ETF ingest hasn't run on this DB. | Run the ANBIMA ETF pipeline. |
+| **`anbima_class_monthly` empty** | Table exists; the ANBIMA ingest hasn't run on this DB. | Run the ANBIMA pipeline (`python -m src.pipeline.anbima_pipeline`). |
 | **Fund history is 2026-only** | FI daily, FII (Q1), FIP present; FIDC/FIAGRO and `cvm_fund_registry` are empty. With the registry empty, FI funds fall into the coarse `Other FI` class. | Historical backfill + registry ingest (migration 11 already applied). |
 
 The ETF page is therefore built on the **real registry universe** (provider /

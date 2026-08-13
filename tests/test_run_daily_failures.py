@@ -46,7 +46,7 @@ def _patches(cvm_totals=None, bacen=None, anbima=None):
     return (
         patch.object(rd, "CVMIngestor", return_value=cvm),
         patch.object(rd, "BacenIngestor", return_value=bacen_ing),
-        patch.object(rd, "AnbimaEtfIngestor", return_value=anbima_ing),
+        patch.object(rd, "AnbimaIngestor", return_value=anbima_ing),
         cvm, bacen_ing, anbima_ing,
     )
 

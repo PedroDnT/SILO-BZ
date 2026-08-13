@@ -110,6 +110,7 @@ jobs:
             ANALYZE cvm_fi_diario;
             ANALYZE cvm_fi_cda;
             ANALYZE cvm_fi_perfil;
+            ANALYZE cvm_fi_balancete;
             ANALYZE cvm_fidc_mensal;
             ANALYZE cvm_fidc_tranche;
             ANALYZE cvm_fidc_tranche_flows;

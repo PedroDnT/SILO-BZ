@@ -1,0 +1,61 @@
+-- Rebased cumulative return for the six largest funds, via
+-- fund_performance_series() — the horizontal (through time) counterpart to the
+-- rankings on /performance.
+--
+-- return_basis travels with every row and is NEVER conflated across families:
+-- FI = quota return, FII = compounded dividend yield, everything else = PL growth
+-- (which mixes flows with performance). It is exposed as a column so the reader
+-- can see which basis a line is on.
+--
+-- ZERO-ROW SAFETY: 36-month generate_series spine drives the output; the series
+-- is LEFT JOINed on.
+with anchor as (
+  select coalesce(
+           max(period),
+           date_trunc('month', current_date)::date
+         ) as p_end
+  from fact_fund_monthly
+),
+months as (
+  select generate_series(
+           date_trunc('month', a.p_end) - interval '35 months',
+           date_trunc('month', a.p_end),
+           interval '1 month'
+         )::date as period
+  from anchor a
+),
+top_funds as (
+  select
+    s.cnpj                        as cnpj,
+    coalesce(s.fund_name, s.cnpj) as fund
+  from search_funds('', null, 6) s
+),
+series as (
+  select
+    t.fund                  as fund,
+    p.cnpj                  as cnpj,
+    p.period                as period,
+    p.entity_type           as entity_type,
+    p.asset_class           as asset_class,
+    p.return_basis          as return_basis,
+    p.period_return         as period_return,
+    p.cumulative_return     as cumulative_return
+  from top_funds t
+  cross join anchor a
+  cross join lateral fund_performance_series(
+    t.cnpj,
+    (date_trunc('month', a.p_end) - interval '35 months')::date,
+    a.p_end
+  ) p
+)
+select
+  m.period                              as period,
+  x.fund                                as fund,
+  x.entity_type                         as entity_type,
+  x.asset_class                         as asset_class,
+  x.return_basis                        as return_basis,
+  round(x.period_return * 100, 2)       as period_return_pct,
+  round(x.cumulative_return * 100, 2)   as cum_return_pct
+from months m
+left join series x on x.period = m.period
+order by m.period, x.fund

@@ -5,7 +5,8 @@
 -- their own axis, over:
 --   • etf_daily  — cvm_etf_registry ⋈ cvm_fi_diario (NAV/quota, AUM, flows, daily
 --                  return); one row per (ticker, dt_comptc).
---   • anbima_etf_class_monthly — ANBIMA boletim class metrics (RF=225 / RV=226 /
+--   • anbima_class_monthly — ANBIMA boletim class metrics for every ANBIMA class,
+--                  filtered here to anbima_category = 'ETF' (RF=225 / RV=226 /
 --                  category), R$ milhões; rentabilidade in percentage points.
 --
 -- Functions (all SECURITY INVOKER STABLE, matching 09/10/14):
@@ -149,8 +150,13 @@ $$;
 -- ---------------------------------------------------------------------------
 -- etf_class_performance(start_date, end_date)
 -- ANBIMA ETF class time series — RF (225) / RV (226) / category aggregate — with
--- AUM, net flow, and return pivoted from the long anbima_etf_class_monthly table.
+-- AUM, net flow, and return pivoted from the long anbima_class_monthly table.
 -- Monetary values are R$ milhões as published; rentabilidade is percentage points.
+--
+-- anbima_class_monthly holds ALL 11 ANBIMA classes since migration 13 (it was
+-- ETF-only, named anbima_etf_class_monthly, before that). The explicit
+-- anbima_category filter is what keeps this an ETF function: without it the
+-- widening would have quietly pulled Renda Fixa, FIDC, FII… into the ETF page.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION etf_class_performance(
     start_date DATE DEFAULT '2019-01-01',
@@ -179,8 +185,9 @@ AS $$
         MAX(value) FILTER (WHERE metric = 'rentabilidade_pct')           AS rentabilidade_pct,
         MAX(value) FILTER (WHERE metric = 'rentabilidade_12m_pct')       AS rentabilidade_12m_pct,
         MAX(value) FILTER (WHERE metric = 'fund_count')                  AS fund_count
-    FROM anbima_etf_class_monthly
-    WHERE reference_date BETWEEN start_date AND end_date
+    FROM anbima_class_monthly
+    WHERE anbima_category = 'ETF'
+      AND reference_date BETWEEN start_date AND end_date
     GROUP BY reference_date, anbima_type_id, anbima_type_name
     ORDER BY reference_date, anbima_type_name
 $$;

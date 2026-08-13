@@ -141,7 +141,7 @@ SECURIT_FLUXO_TYPES: List[str] = ["cra_fluxo", "cri_fluxo", "ots_fluxo"]
 
 _PAGE_SIZE = 5000
 _ALL_TABLES: List[str] = [
-    "cvm_fi_diario", "cvm_fi_cda", "cvm_fi_perfil",
+    "cvm_fi_diario", "cvm_fi_cda", "cvm_fi_perfil", "cvm_fi_balancete",
     "cvm_fidc_mensal", "cvm_fidc_tranche", "cvm_fidc_tranche_flows", "cvm_fidc_aging",
     "cvm_fiagro_mensal",
     "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic",
@@ -1165,6 +1165,11 @@ class CVMIngestor:
                     f"fi/perfil_mensal {year}-{month:02d}",
                     self.ingest_fi_perfil(year, month),
                 ))
+                fi_tasks.append(IngestTask(
+                    "cvm_fi_balancete",
+                    f"fi/balancete {year}-{month:02d}",
+                    self.ingest_fi_balancete(year, month),
+                ))
             await self._run_task_batches(fi_tasks, _get_concurrency("fi", 2), totals, "FI monthly backfill")
 
         # -- FIDC ---------------------------------------------------------
@@ -1395,6 +1400,11 @@ class CVMIngestor:
                 ("cvm_fi_diario", "fi", "inf_diario", "inf_diario", self.ingest_fi_diario),
                 ("cvm_fi_cda", "fi", "cda", "cda", self.ingest_fi_cda),
                 ("cvm_fi_perfil", "fi", "perfil_mensal", "perfil_mensal", self.ingest_fi_perfil),
+                # balancete was wired to dispatch.py (API-only) but to neither the
+                # daily specs nor the backfill, so cvm_fi_balancete sat empty in
+                # production. CVM publishes it monthly from 2019 (verified by
+                # ranged GET against the BALANCETE endpoint).
+                ("cvm_fi_balancete", "fi", "balancete", "balancete", self.ingest_fi_balancete),
             ]
         if "fidc" in daily_entities:
             monthly_specs += [
