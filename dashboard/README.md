@@ -41,7 +41,7 @@ Vercel's dashboard, deliberately:
 {
   "framework": null,
   "installCommand": "cd dashboard && npm install",
-  "buildCommand": "cd dashboard && npm run sources && npm run build",
+  "buildCommand": "cd dashboard && npm run preflight && npm run sources && npm run build",
   "outputDirectory": "dashboard/build"
 }
 ```
