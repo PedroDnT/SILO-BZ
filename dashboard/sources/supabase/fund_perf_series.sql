@@ -27,7 +27,8 @@ months as (
 top_funds as (
   select
     s.cnpj                        as cnpj,
-    coalesce(s.fund_name, s.cnpj) as fund
+    coalesce(s.fund_name, s.cnpj) as fund,
+    s.entity_type                 as entity_type
   from search_funds('', null, 6) s
 ),
 series as (
@@ -42,10 +43,14 @@ series as (
     p.cumulative_return     as cumulative_return
   from top_funds t
   cross join anchor a
+  -- entity_type passed through — same collision as fund_nav_series.sql: a
+  -- CNPJ shared across two entity types would otherwise interleave two
+  -- distinct funds' returns into one "fund" series and corrupt the rebase.
   cross join lateral fund_performance_series(
     t.cnpj,
     (date_trunc('month', a.p_end) - interval '35 months')::date,
-    a.p_end
+    a.p_end,
+    t.entity_type
   ) p
 )
 select

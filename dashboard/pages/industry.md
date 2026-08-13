@@ -99,14 +99,30 @@ select * from supabase.industry_fiagro
 ## Industry Net Assets by Fund Family
 
 > Net assets summed per family per month. FIP contributes only in the month its
-> yearly filing maps to (December), so its line is a step, not a trend.
+> yearly filing maps to (December), so its line is a step, not a trend. FI is
+> an order of magnitude larger than the other four combined (see the lede
+> above); Evidence's AreaChart always stacks a multi-series area, so on one
+> linear scale FI's band fills the chart and the other four compress to
+> nothing even though their data is correct. Two views instead of one: share
+> of the total (where every family is visible by construction) and absolute
+> net assets with FI excluded (where the other four are back on a comparable
+> scale).
 
 <AreaChart
 data={industry_aum_trend}
 x=period
+type=stacked100
 y={['fi_aum_bn','fidc_aum_bn','fii_aum_bn','fiagro_aum_bn','fip_aum_bn']}
+yAxisTitle="Share of Total Net Assets"
+title="Net Assets by Family — Last 36 Months (share of total)"
+/>
+
+<AreaChart
+data={industry_aum_trend}
+x=period
+y={['fidc_aum_bn','fii_aum_bn','fiagro_aum_bn','fip_aum_bn']}
 yAxisTitle="Net Assets (R$bn)"
-title="Net Assets by Family — Last 36 Months"
+title="Net Assets by Family — Last 36 Months (ex-FI, absolute)"
 />
 
 ---

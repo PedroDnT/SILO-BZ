@@ -11,12 +11,16 @@ lists so the map works across all years.
 """
 
 TABLE = "cvm_fi_diario"
-CONFLICT = ("cnpj", "dt_comptc")
+CONFLICT = ("cnpj", "dt_comptc", "id_subclasse")
 
 FIELD_MAP = {
     # db_column        ([csv_candidates],                            coerce_type)
     "cnpj":            (["CNPJ_FUNDO_CLASSE", "CNPJ_FUNDO"],        "cnpj"),
     "tp_fundo":        (["TP_FUNDO_CLASSE", "TP_FUNDO"],            "text"),
+    # Distinct pools of money can share one CNPJ_FUNDO_CLASSE under CVM-175;
+    # without this in the key they silently overwrote each other. See
+    # migrations/17_fi_diario_subclasse_key.sql.
+    "id_subclasse":    (["ID_SUBCLASSE"],                           "text"),
     "dt_comptc":       (["DT_COMPTC"],                              "date"),
     "vl_total":        (["VL_TOTAL"],                               "numeric"),
     "vl_quota":        (["VL_QUOTA"],                               "numeric"),

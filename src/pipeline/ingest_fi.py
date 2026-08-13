@@ -43,10 +43,24 @@ def ingest_fi_diario(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
         if not typed.get("cnpj") or not typed.get("dt_comptc"):
             continue
 
+        # "text" coercion turns a blank ID_SUBCLASSE into None; the column is
+        # NOT NULL DEFAULT '' precisely so the (cnpj, dt_comptc, id_subclasse)
+        # UNIQUE constraint still catches duplicates for non-subclassed funds
+        # (Postgres treats NULL as distinct from NULL in a UNIQUE constraint).
+        typed["id_subclasse"] = typed.get("id_subclasse") or ""
+
         records.append(typed)
 
     if not records:
         return 0
+
+    # Some CNPJs are filed twice on the same day under both the legacy
+    # ("FI") and CVM-175 ("CLASSES - FIF") tp_fundo label, same (empty)
+    # subclasse — a CVM-side transition artifact, not a distinct fund.
+    # upsert_rows() dedupes same-key rows "last write wins", so sort the
+    # CVM-175 label last to make the winner deterministic (current regime)
+    # rather than dependent on the CSV's own row order.
+    records.sort(key=lambda r: "CLASSE" in (r.get("tp_fundo") or ""))
 
     return upsert_rows(
         conn,

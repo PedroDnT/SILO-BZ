@@ -29,12 +29,13 @@ CREATE MATERIALIZED VIEW fact_fund_monthly AS
 
   -- -------------------------------------------------------------------------
   -- FI: daily → monthly aggregation
-  -- Last-day-of-month values via DISTINCT ON; flows via GROUP BY.
-  -- The two sub-queries are joined on (cnpj, period).
+  -- Last-day-of-month values via DISTINCT ON per subclasse, summed to a
+  -- per-fund total; flows via GROUP BY. The two sub-queries are joined on
+  -- (cnpj, period).
   -- -------------------------------------------------------------------------
   SELECT
     last_day.cnpj,
-    date_trunc('month', last_day.dt_comptc)::date   AS period,
+    last_day.period,
     'fi'                                             AS entity_type,
     last_day.vl_patrim_liq,
     last_day.vl_quota,
@@ -45,23 +46,40 @@ CREATE MATERIALIZED VIEW fact_fund_monthly AS
     flows.resg_mes,
     NULL::numeric                                    AS vl_ativo
   FROM (
-    -- Last reported row per (fund, month): highest dt_comptc wins.
+    -- Last reported row per (fund, subclasse, month), summed to a per-fund
+    -- total. CVM-175 lets several subclasses (distinct pools of money) share
+    -- one CNPJ_FUNDO_CLASSE (migrations/17_fi_diario_subclasse_key.sql) — PL
+    -- and cotista count are additive across them, so they are summed rather
+    -- than picking one arbitrarily. vl_quota is a per-unit price, not
+    -- additive; the largest subclass's is used as the fund's representative
+    -- quota, a real filed value rather than a fabricated blend.
     -- ETFs are excluded (their CNPJ is an ordinary cvm_fi_diario row) so they are
     -- not double-counted here and in etf_daily; they are evaluated separately via
     -- the etf_* objects. dim_fund applies the same carve-out.
-    SELECT DISTINCT ON (cnpj, date_trunc('month', dt_comptc))
+    SELECT
       cnpj,
-      dt_comptc,
-      vl_patrim_liq,
-      vl_quota,
-      nr_cotst
-    FROM cvm_fi_diario d
-    WHERE vl_patrim_liq IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM cvm_etf_registry e WHERE e.cnpj = d.cnpj)
-    ORDER BY
-      cnpj,
-      date_trunc('month', dt_comptc),
-      dt_comptc DESC
+      date_trunc('month', dt_comptc)::date                                      AS period,
+      SUM(vl_patrim_liq)                                                        AS vl_patrim_liq,
+      (ARRAY_AGG(vl_quota ORDER BY vl_patrim_liq DESC NULLS LAST))[1]            AS vl_quota,
+      SUM(nr_cotst)                                                             AS nr_cotst
+    FROM (
+      SELECT DISTINCT ON (cnpj, id_subclasse, date_trunc('month', dt_comptc))
+        cnpj,
+        id_subclasse,
+        dt_comptc,
+        vl_patrim_liq,
+        vl_quota,
+        nr_cotst
+      FROM cvm_fi_diario d
+      WHERE vl_patrim_liq IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM cvm_etf_registry e WHERE e.cnpj = d.cnpj)
+      ORDER BY
+        cnpj,
+        id_subclasse,
+        date_trunc('month', dt_comptc),
+        dt_comptc DESC
+    ) per_subclasse
+    GROUP BY cnpj, date_trunc('month', dt_comptc)
   ) last_day
   JOIN (
     -- Monthly flow totals (ETFs excluded, same as above).
@@ -75,7 +93,7 @@ CREATE MATERIALIZED VIEW fact_fund_monthly AS
     GROUP BY cnpj, date_trunc('month', dt_comptc)::date
   ) flows
     ON  flows.cnpj   = last_day.cnpj
-    AND flows.period = date_trunc('month', last_day.dt_comptc)::date
+    AND flows.period = last_day.period
 
   UNION ALL
 

@@ -39,6 +39,11 @@ CREATE TABLE IF NOT EXISTS cvm_fi_diario (
     id            BIGSERIAL,
     cnpj          TEXT         NOT NULL CHECK (char_length(cnpj) = 14),
     tp_fundo      TEXT,                      -- fund class label
+    -- CVM-175 subclasse under one CNPJ_FUNDO_CLASSE, e.g. distinct pools of
+    -- money sharing a CNPJ. '' (not NULL) for funds with no subclasse, so the
+    -- UNIQUE constraint below actually catches duplicates for them — see
+    -- migrations/17_fi_diario_subclasse_key.sql.
+    id_subclasse  TEXT         NOT NULL DEFAULT '',
     dt_comptc     DATE         NOT NULL,
     vl_total      NUMERIC(20,6),
     vl_quota      NUMERIC(20,12),
@@ -48,7 +53,7 @@ CREATE TABLE IF NOT EXISTS cvm_fi_diario (
     nr_cotst      INT,
     raw           JSONB        NOT NULL,
     fetched_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_fi_diario UNIQUE (cnpj, dt_comptc)
+    CONSTRAINT uq_fi_diario UNIQUE (cnpj, dt_comptc, id_subclasse)
 ) PARTITION BY RANGE (dt_comptc);
 
 -- Year partitions  (add new ones each January)

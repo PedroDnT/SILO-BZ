@@ -90,6 +90,14 @@ $$;
 -- -----------------------------------------------------------------------------
 -- search_funds(query, p_entity_type, limit_n)
 -- Partial CNPJ match with optional entity-type filter and latest AUM lookup.
+--
+-- The LATERAL AUM lookup joins fact_fund_monthly on entity_type as well as
+-- cnpj: dim_fund's PK is (cnpj, entity_type), and the same CNPJ genuinely
+-- recurs under two entity types (e.g. a FIDC/FIAGRO fund family sharing one
+-- registration CNPJ — confirmed live, CNPJ 60.743.809/0001-35 files under both
+-- as of 2025-06). Without the entity_type join, both dim_fund rows for such a
+-- CNPJ pick up the same latest_aum and can both surface as "top funds",
+-- looking like a duplicate.
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION search_funds(
     query         TEXT    DEFAULT '',
@@ -118,6 +126,7 @@ AS $$
         SELECT f.vl_patrim_liq
         FROM fact_fund_monthly f
         WHERE f.cnpj = d.cnpj
+          AND f.entity_type = d.entity_type
           AND f.vl_patrim_liq IS NOT NULL
         ORDER BY f.period DESC
         LIMIT 1
@@ -168,13 +177,27 @@ $$;
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
--- fund_nav_series(p_cnpj, start_date, end_date)
+-- fund_nav_series(p_cnpj, start_date, end_date, p_entity_type)
 -- Full fact_fund_monthly row set for one fund over a date range.
+--
+-- p_entity_type defaults to NULL for backward compatibility, but a CNPJ can
+-- legitimately recur under two entity types (dim_fund's PK is (cnpj,
+-- entity_type); confirmed live, e.g. CNPJ 60.743.809/0001-35 files under both
+-- fidc and fiagro as of 2025-06). Without a filter, such a CNPJ returns two
+-- rows per period — callers driving one line per fund (e.g. the Fund Explorer
+-- charts) MUST pass the entity_type from search_funds() alongside the cnpj.
 -- -----------------------------------------------------------------------------
+-- Adding p_entity_type widened the signature, which CREATE OR REPLACE cannot
+-- do in place (Postgres identifies a function by name + parameter types, so a
+-- widened signature is a new overload, not a replacement) — drop the old
+-- 3-arg signature explicitly so it doesn't linger as an ungranted, unused,
+-- unfixed dead copy.
+DROP FUNCTION IF EXISTS fund_nav_series(TEXT, DATE, DATE);
 CREATE OR REPLACE FUNCTION fund_nav_series(
-    p_cnpj     TEXT,
-    start_date DATE DEFAULT '2019-01-01',
-    end_date   DATE DEFAULT CURRENT_DATE
+    p_cnpj        TEXT,
+    start_date    DATE DEFAULT '2019-01-01',
+    end_date      DATE DEFAULT CURRENT_DATE,
+    p_entity_type TEXT DEFAULT NULL
 )
 RETURNS TABLE (
     cnpj          TEXT,
@@ -206,20 +229,28 @@ AS $$
     FROM fact_fund_monthly
     WHERE cnpj = p_cnpj
       AND period BETWEEN start_date AND end_date
+      AND (p_entity_type IS NULL OR entity_type = p_entity_type)
     ORDER BY period
 $$;
 
 
 -- -----------------------------------------------------------------------------
--- fund_flow_trend(p_cnpj, start_date, end_date)
+-- fund_flow_trend(p_cnpj, start_date, end_date, p_entity_type)
 -- Monthly flow decomposition with running cumulative net-flow and
 -- redemption-pressure ratio. FI-only columns (captc/resg) may be NULL for
 -- FIDC/FII/etc. — caller should filter on entity_type='fi'.
+--
+-- Same cnpj-collision caveat as fund_nav_series(): p_entity_type should be
+-- passed whenever the caller already knows it, so a CNPJ shared across two
+-- entity types doesn't interleave two funds' flows into one cumulative sum.
 -- -----------------------------------------------------------------------------
+-- Same widened-signature note as fund_nav_series() above.
+DROP FUNCTION IF EXISTS fund_flow_trend(TEXT, DATE, DATE);
 CREATE OR REPLACE FUNCTION fund_flow_trend(
-    p_cnpj     TEXT,
-    start_date DATE DEFAULT '2019-01-01',
-    end_date   DATE DEFAULT CURRENT_DATE
+    p_cnpj        TEXT,
+    start_date    DATE DEFAULT '2019-01-01',
+    end_date      DATE DEFAULT CURRENT_DATE,
+    p_entity_type TEXT DEFAULT NULL
 )
 RETURNS TABLE (
     cnpj                  TEXT,
@@ -247,6 +278,7 @@ AS $$
     FROM fact_fund_monthly
     WHERE cnpj = p_cnpj
       AND period BETWEEN start_date AND end_date
+      AND (p_entity_type IS NULL OR entity_type = p_entity_type)
     ORDER BY period
 $$;
 
