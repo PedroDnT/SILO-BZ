@@ -81,7 +81,8 @@ Storage layout: ~30 tables named `cvm_<entity>_<doctype>` or `bacen_<series>` (p
 - `migrations/` + `src/api/dispatch.py` as the source of truth, not the README's CSV table.
   Wired ingest datasets include `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`,
   `cvm_securit_fluxo`, `cvm_fi_balancete`, `cvm_cia_*`, `cvm_etf_registry`,
-  `anbima_etf_class_monthly`, and `etf_market_snapshot` (scraped ETF NAV/cotistas — wired
+  `anbima_class_monthly` (every ANBIMA class/type; `anbima_etf_class_monthly`
+  survives as an ETF-only compat view), and `etf_market_snapshot` (scraped ETF NAV/cotistas — wired
   into the daily run but **gated on the `APIFY_TOKEN` secret**; it self-skips when the
   token is unset. See `docs/ETF_AND_PERFORMANCE.md`).
 

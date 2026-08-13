@@ -1,8 +1,8 @@
-"""ANBIMA ETF ingest-log regression tests.
+"""ANBIMA ingest-log regression tests.
 
-Guards the bug found on 2026-07-25: `anbima_etf_class_monthly` was empty and
-cvm_ingest_log had no `anbima_etf` rows at all, even though parsing the live
-boletim yields ~212 records.
+Guards the bug found on 2026-07-25: the ANBIMA table was empty and cvm_ingest_log
+had no `anbima_etf` rows at all, even though parsing the live boletim yields
+thousands of records.
 
 Cause: `_log_start` sent a `notes` key and `_log_finish` sent `error_message`.
 Neither is a real cvm_ingest_log column, and upsert_rows builds
@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.pipeline.anbima_etf_pipeline import AnbimaEtfIngestor
+from src.pipeline.anbima_pipeline import TABLE, AnbimaIngestor
 
 # Exactly the columns of public.cvm_ingest_log (verified against Silo).
 INGEST_LOG_COLUMNS = {
@@ -30,8 +30,8 @@ INGEST_LOG_COLUMNS = {
 
 
 def _ingestor():
-    with patch("src.pipeline.anbima_etf_pipeline.get_pg_client", return_value=MagicMock()):
-        return AnbimaEtfIngestor()
+    with patch("src.pipeline.anbima_pipeline.get_pg_client", return_value=MagicMock()):
+        return AnbimaIngestor()
 
 
 def _capture(fn, *args, **kwargs):
@@ -42,7 +42,7 @@ def _capture(fn, *args, **kwargs):
         sent.append({"table": table, "rows": rows, "conflict": kw.get("conflict_columns")})
         return len(rows)
 
-    with patch("src.pipeline.anbima_etf_pipeline.upsert_rows", side_effect=_fake_upsert):
+    with patch("src.pipeline.anbima_pipeline.upsert_rows", side_effect=_fake_upsert):
         fn(*args, **kwargs)
     return sent
 
@@ -115,6 +115,7 @@ class TestDailyUpdate:
         "anbima_type_name": "ETF",
         "metric": "pl_brl_mm",
         "value": 3747.24,
+        "level": "category",
         "source_sheet": "Pág. 4 - PL por Classe",
         "boletim_ref": "b.xlsx",
     }]
@@ -125,31 +126,63 @@ class TestDailyUpdate:
         sent = []
 
         def _fake_upsert(conn, table, rows, **kw):
-            sent.append({"table": table, "rows": rows})
+            sent.append({"table": table, "rows": rows, "conflict": kw.get("conflict_columns")})
             return len(rows)
 
-        with patch("src.pipeline.anbima_etf_pipeline.fetch_latest_boletim_url",
+        with patch("src.pipeline.anbima_pipeline.fetch_latest_boletim_url",
                    return_value=("http://x/b.xlsx", "b.xlsx")), \
-             patch("src.pipeline.anbima_etf_pipeline.download_xlsx", return_value=b"xx"), \
-             patch("src.pipeline.anbima_etf_pipeline.parse_boletim", return_value=self.RECORDS), \
-             patch("src.pipeline.anbima_etf_pipeline.upsert_rows", side_effect=_fake_upsert):
+             patch("src.pipeline.anbima_pipeline.download_xlsx", return_value=b"xx"), \
+             patch("src.pipeline.anbima_pipeline.parse_boletim", return_value=self.RECORDS), \
+             patch("src.pipeline.anbima_pipeline.upsert_rows", side_effect=_fake_upsert):
             result = await ing.daily_update()
 
         assert result == {"anbima_etf": 1}
         tables = [s["table"] for s in sent]
-        assert "anbima_etf_class_monthly" in tables, "records never reached the data table"
+        assert TABLE == "anbima_class_monthly"
+        assert TABLE in tables, "records never reached the data table"
         # last log write must be the 'ok' finish
         log_rows = [s["rows"][0] for s in sent if s["table"] == "cvm_ingest_log"]
         assert log_rows[-1]["status"] == "ok"
         assert log_rows[-1]["rows_upserted"] == 1
 
     @pytest.mark.asyncio
+    async def test_upsert_conflict_key_matches_the_table_primary_key(self):
+        """The widened PK. Keying on (date, type_name, metric) as before would let
+        the 'Cambial'/'FIP'/'FIAGRO' ANBIMA types overwrite the class aggregates
+        of the very same name — the collision this table was reshaped to prevent.
+        """
+        ing = _ingestor()
+        sent = []
+
+        def _fake_upsert(conn, table, rows, **kw):
+            sent.append({"table": table, "conflict": kw.get("conflict_columns")})
+            return len(rows)
+
+        with patch("src.pipeline.anbima_pipeline.fetch_latest_boletim_url",
+                   return_value=("http://x/b.xlsx", "b.xlsx")), \
+             patch("src.pipeline.anbima_pipeline.download_xlsx", return_value=b"xx"), \
+             patch("src.pipeline.anbima_pipeline.parse_boletim", return_value=self.RECORDS), \
+             patch("src.pipeline.anbima_pipeline.upsert_rows", side_effect=_fake_upsert):
+            await ing.daily_update()
+
+        data_write = [s for s in sent if s["table"] == TABLE][0]
+        assert data_write["conflict"] == (
+            "reference_date,anbima_category,anbima_type_name,metric,level")
+
+    def test_records_carry_every_key_column(self):
+        # A record missing `level` (or the category) cannot satisfy the NOT NULL
+        # primary key, and upsert_rows sends the dict keys verbatim.
+        for col in ("reference_date", "anbima_category", "anbima_type_name",
+                    "metric", "level"):
+            assert self.RECORDS[0].get(col) is not None, col
+
+    @pytest.mark.asyncio
     async def test_empty_parse_returns_zero_without_logging(self):
         ing = _ingestor()
-        with patch("src.pipeline.anbima_etf_pipeline.fetch_latest_boletim_url",
+        with patch("src.pipeline.anbima_pipeline.fetch_latest_boletim_url",
                    return_value=("http://x/b.xlsx", "b.xlsx")), \
-             patch("src.pipeline.anbima_etf_pipeline.download_xlsx", return_value=b"xx"), \
-             patch("src.pipeline.anbima_etf_pipeline.parse_boletim", return_value=[]), \
-             patch("src.pipeline.anbima_etf_pipeline.upsert_rows",
+             patch("src.pipeline.anbima_pipeline.download_xlsx", return_value=b"xx"), \
+             patch("src.pipeline.anbima_pipeline.parse_boletim", return_value=[]), \
+             patch("src.pipeline.anbima_pipeline.upsert_rows",
                    side_effect=AssertionError("should not upsert")):
             assert await ing.daily_update() == {"anbima_etf": 0}

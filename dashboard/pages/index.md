@@ -50,8 +50,23 @@ select * from supabase.row_counts
 
 ## Explore
 
-- [Fund Performance](/performance) — Who beat their peers, per asset class (horizontal + vertical)
+**Industry**
+
+- [Industry Structure](/industry) — AUM by entity, concentration (HHI), fund launches, investors
+- [Managers](/managers) — Administrator and gestor league tables
+- [Fund Explorer](/fund) — Search the universe; NAV, flows and performance per fund
+- [Fund Performance](/performance) — Who beat their peers, per asset class
+
+**By asset class**
+
+- [FI Industry](/fi) — Daily flows, investor mix, portfolio allocation
+- [FIDC Credit Monitor](/fidc) — Aging buckets, tranche performance, subordination, red flags
+- [FII Market](/fii) — Real estate funds: yield, AUM, properties
+- [Securitização](/securit) — CRI/CRA issuance, maturity wall, payment waterfall
 - [ETF Market](/etf) — Listed ETFs, evaluated separately from the fund industry
-- [FIDC Credit Monitor](/fidc) — Aging buckets, tranche performance, red flags
-- [FII Market](/fii) — Real estate funds: yield, AUM, dividend trends
+
+**Context & operations**
+
+- [Macro](/macro) — SELIC, CDI, IPCA, FX and the Focus consensus
 - [Suspicious Deals](/suspicious) — Forensic screens: zombie growth, evergreen aging
+- [Pipeline Health](/ops) — Ingest freshness, coverage and audit-log triage

@@ -4,7 +4,7 @@ Daily incremental update — run by GitHub Actions cron at 06:00 UTC.
 Fetches:
   - CVM: current month + previous month for all entities
   - BACEN: last ~30 days
-  - ANBIMA ETF: latest monthly boletim (idempotent — upserts full history)
+  - ANBIMA: latest monthly boletim, all classes (idempotent — upserts full history)
 
 Required env vars: POSTGRES_URL
 """
@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.pipeline.cvm_pipeline import CVMIngestor
 from src.pipeline.bacen_pipeline import BacenIngestor
-from src.pipeline.anbima_etf_pipeline import AnbimaEtfIngestor
+from src.pipeline.anbima_pipeline import AnbimaIngestor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,14 +54,15 @@ async def main() -> None:
         logger.error("BACEN daily refresh failed: %s", exc, exc_info=True)
         failures.append(("bacen", exc))
 
-    # ANBIMA ETF: fetch latest monthly boletim; idempotent upsert.
+    # ANBIMA: fetch latest monthly boletim (every ANBIMA class + type);
+    # idempotent upsert.
     try:
-        anbima_ingestor = AnbimaEtfIngestor()
+        anbima_ingestor = AnbimaIngestor()
         anbima_totals = await anbima_ingestor.daily_update()
         totals.update(anbima_totals)
     except Exception as exc:
-        logger.error("ANBIMA ETF daily refresh failed: %s", exc, exc_info=True)
-        failures.append(("anbima_etf", exc))
+        logger.error("ANBIMA daily refresh failed: %s", exc, exc_info=True)
+        failures.append(("anbima", exc))
 
     # ETF market snapshot: scrape etfsbrasil.com.br via Apify (NAV/price/cotistas
     # the post-CVM-175 daily file no longer exposes). The scrape is paid + rate-

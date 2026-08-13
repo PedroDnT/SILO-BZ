@@ -7,11 +7,18 @@ Evidence.dev analytics dashboard backed by the Supabase Postgres pipeline.
 | Page                | Path           | What it shows                                                                                             |
 | ------------------- | -------------- | --------------------------------------------------------------------------------------------------------- |
 | Overview            | `/`            | AUM by entity type (12mo), FIDC sector delinquency, live row counts                                       |
-| FIDC Credit Monitor | `/fidc`        | Sector delinquency trend (24mo), aging buckets, top delinquent funds, red flags                           |
-| FII Market          | `/fii`         | FII vs FIAGRO AUM, yield distribution (p10–p90), top funds by dividend yield                              |
-| Suspicious Screens  | `/suspicious`  | Zombie growth, captive vehicles, evergreen aging, overdue securit series                                  |
+| Industry Structure  | `/industry`    | Industry AUM trend, concentration (HHI, top-N share), fund launches, quotaholders, asset-class comparison |
+| Managers            | `/managers`    | Administrator and gestor league tables by AUM / fund count / net flow, with registry-coverage disclosure  |
+| Fund Explorer       | `/fund`        | Searchable fund universe; NAV, flow and performance series for the largest funds                          |
 | Performance         | `/performance` | Per-asset-class fund performance ranking (who beat peers in a window) + methodology                       |
+| FI Industry         | `/fi`          | Daily net flow, investor-type mix (`cvm_fi_perfil`), portfolio allocation (`cvm_fi_cda`)                  |
+| FIDC Credit Monitor | `/fidc`        | Delinquency trend, performing **and** delinquent aging buckets, tranche performance, subordination, flows |
+| FII Market          | `/fii`         | FII vs FIAGRO AUM, yield distribution, top funds by DY, payout coverage, property explorer                |
+| Securitização       | `/securit`     | CRI/CRA/OTS reported value, maturity wall, payment waterfall, ratings, subordination, distressed series   |
 | ETF                 | `/etf`         | ETF universe by provider / segment / index from `cvm_etf_registry` (price/NAV/return pending an ETF feed) |
+| Macro               | `/macro`       | SELIC / CDI / IPCA / IGP-M series, PTAX FX, and the BACEN Focus consensus + dispersion                    |
+| Suspicious Screens  | `/suspicious`  | Zombie growth, captive vehicles, evergreen aging, overdue securit series                                  |
+| Pipeline Health     | `/ops`         | Ingest freshness per entity, rows/day, status breakdown, coverage and audit-log triage                    |
 
 ## Data source
 
