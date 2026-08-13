@@ -4,21 +4,64 @@ Evidence.dev analytics dashboard backed by the Supabase Postgres pipeline.
 
 ## Pages
 
-| Page                | Path           | What it shows                                                                                             |
-| ------------------- | -------------- | --------------------------------------------------------------------------------------------------------- |
-| Overview            | `/`            | AUM by entity type (12mo), FIDC sector delinquency, live row counts                                       |
-| Industry Structure  | `/industry`    | Industry AUM trend, concentration (HHI, top-N share), fund launches, quotaholders, asset-class comparison |
-| Managers            | `/managers`    | Administrator and gestor league tables by AUM / fund count / net flow, with registry-coverage disclosure  |
-| Fund Explorer       | `/fund`        | Searchable fund universe; NAV, flow and performance series for the largest funds                          |
-| Performance         | `/performance` | Per-asset-class fund performance ranking (who beat peers in a window) + methodology                       |
-| FI Industry         | `/fi`          | Daily net flow, investor-type mix (`cvm_fi_perfil`), portfolio allocation (`cvm_fi_cda`)                  |
-| FIDC Credit Monitor | `/fidc`        | Delinquency trend, performing **and** delinquent aging buckets, tranche performance, subordination, flows |
-| FII Market          | `/fii`         | FII vs FIAGRO AUM, yield distribution, top funds by DY, payout coverage, property explorer                |
-| Securitização       | `/securit`     | CRI/CRA/OTS reported value, maturity wall, payment waterfall, ratings, subordination, distressed series   |
-| ETF                 | `/etf`         | ETF universe by provider / segment / index from `cvm_etf_registry` (price/NAV/return pending an ETF feed) |
-| Macro               | `/macro`       | SELIC / CDI / IPCA / IGP-M series, PTAX FX, and the BACEN Focus consensus + dispersion                    |
-| Suspicious Screens  | `/suspicious`  | Zombie growth, captive vehicles, evergreen aging, overdue securit series                                  |
-| Pipeline Health     | `/ops`         | Ingest freshness per entity, rows/day, status breakdown, coverage and audit-log triage                    |
+Thirteen routes in three groups. `/` is the entry point: it carries the headline
+figures, a "start here" reading path, and the grouped index below. Evidence builds
+the nav automatically from the file stems, so the grouping lives in `index.md`, in
+the cross-links between pages, and in the page titles — not in config.
+
+**Industry-wide** — the market as a whole and the houses that run it.
+
+| Page               | Path           | What it shows                                                                                                               |
+| ------------------ | -------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Overview           | `/`            | Headline scale + freshness tiles, net assets by family (12mo), FIDC sector delinquency (12mo), grouped page index           |
+| Industry Structure | `/industry`    | Net assets by family, concentration (HHI, top-N share), asset-class composition, FI flow, formation, investors, FIP, FIAGRO |
+| Managers           | `/managers`    | Administrator and gestor league tables by net assets and net flow, led by the registry-name coverage disclosure             |
+| Fund Explorer      | `/fund`        | Searchable fund universe first, then net assets / quota / return / flow series for the largest funds                        |
+| Performance        | `/performance` | Per-asset-class ranking (who beat their peers), with the per-class return basis and the coverage caveat                     |
+
+**By asset class** — one page per CVM family, plus the securitisation market.
+
+| Page                | Path       | What it shows                                                                                                                                 |
+| ------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| FI Industry         | `/fi`      | Net assets, daily flow, quotaholder base, investor mix (`cvm_fi_perfil`), single-holder screen, allocation (`cvm_fi_cda`)                     |
+| FIDC Credit Monitor | `/fidc`    | Sector delinquency, worst funds, both aging bands, tranche promised-vs-realised, subordination, tranche flows                                 |
+| FII Market          | `/fii`     | FII vs FIAGRO net assets, yield distribution, top payers, filing coverage, payout coverage, property explorer                                 |
+| Securitização       | `/securit` | CRI/CRA/OTS reported value, maturity wall, payment waterfall, ratings, subordination, distressed series                                       |
+| ETF                 | `/etf`     | ETF universe by provider / segment / index from `cvm_etf_registry`, plus the scraped market snapshot (NAV/return largely absent post-CVM-175) |
+
+**Context and scrutiny** — what the numbers should be read against, and whether they landed.
+
+| Page               | Path          | What it shows                                                                                             |
+| ------------------ | ------------- | --------------------------------------------------------------------------------------------------------- |
+| Macro Context      | `/macro`      | SELIC / CDI / IPCA / IGP-M series, PTAX FX and spreads, BACEN Focus consensus + dispersion, SGS inventory |
+| Suspicious Screens | `/suspicious` | Zombie growth, evergreen aging, overdue securit series, captive vehicles — with thresholds stated         |
+| Pipeline Health    | `/ops`        | Ingest freshness per entity, rows/day, status breakdown, table freshness, coverage, audit-log triage      |
+
+### Page conventions
+
+Applied uniformly across all thirteen pages, so a reader who learns them once can
+read any page:
+
+- **Structure.** Frontmatter `title` matches the `# H1` exactly. A `>` blockquote
+  lede follows the H1 and states the headline finding **and** what the data does
+  not support. Optional `<BigValue>` strip next, then `---`-separated `##`
+  sections ordered by importance, each with its own `>` note where a caveat
+  applies.
+- **Units live in the column title.** Scaling happens in SQL: `(R$mm)`, `(R$bn)`,
+  `(R$tn)`, `(%)`, `(pp)`, `(R$)`. Fields CVM publishes without a documented scale
+  are labelled **source units** and shown unconverted.
+- **Number formats** are drawn only from `num0 | num1 | num2 | '#,##0.00'`:
+  counts and HHI `num0`; `R$mm` `num1`; `R$bn` / `R$tn` and quota counts `num2`;
+  prices, FX and per-quota values `'#,##0.00'`; shares and rates `num1`; returns,
+  yields and small ratios `num2`. `BigValue` tiles round one step coarser.
+  **Years, series codes and série numbers carry no `fmt`** — `num0` renders 2026
+  as "2,026".
+- **Chart type follows data shape.** Stock or level over time → `LineChart`, or
+  `AreaChart` when it is a composition; per-period flows and counts → `BarChart`
+  (high-frequency daily flows stay lines for legibility); categorical ranking →
+  `BarChart swapXY=true`.
+- **Terminology.** "Net assets" is CVM's `vl_patrim_liq`; "quotaholders" is
+  `nr_cotst`, a count of positions rather than of people.
 
 ## Data source
 

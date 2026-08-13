@@ -37,7 +37,17 @@ RETURNS TABLE (
 LANGUAGE sql STABLE SECURITY INVOKER
 AS $$
     WITH resolved_period AS (
-        SELECT COALESCE(p_period, (SELECT MAX(period) FROM fact_fund_monthly)) AS eff_period
+        -- Default period EXCLUDES fip. FIP reports at 31-Dec of its reporting
+        -- year, so from January until the next fund family catches up the newest
+        -- period in fact_fund_monthly is FIP-only -- and no FIP fund carries an
+        -- admin_name/gestor_name in cvm_fund_registry, so the join produced an
+        -- empty ranking for most of the year. Resolving against the non-FIP
+        -- universe gives the latest period this function can actually rank.
+        -- An explicit p_period is still honoured verbatim.
+        SELECT COALESCE(
+                   p_period,
+                   (SELECT MAX(period) FROM fact_fund_monthly WHERE entity_type <> 'fip')
+               ) AS eff_period
     ),
     agg AS (
         SELECT
@@ -98,7 +108,17 @@ RETURNS TABLE (
 LANGUAGE sql STABLE SECURITY INVOKER
 AS $$
     WITH resolved_period AS (
-        SELECT COALESCE(p_period, (SELECT MAX(period) FROM fact_fund_monthly)) AS eff_period
+        -- Default period EXCLUDES fip. FIP reports at 31-Dec of its reporting
+        -- year, so from January until the next fund family catches up the newest
+        -- period in fact_fund_monthly is FIP-only -- and no FIP fund carries an
+        -- admin_name/gestor_name in cvm_fund_registry, so the join produced an
+        -- empty ranking for most of the year. Resolving against the non-FIP
+        -- universe gives the latest period this function can actually rank.
+        -- An explicit p_period is still honoured verbatim.
+        SELECT COALESCE(
+                   p_period,
+                   (SELECT MAX(period) FROM fact_fund_monthly WHERE entity_type <> 'fip')
+               ) AS eff_period
     ),
     agg AS (
         SELECT

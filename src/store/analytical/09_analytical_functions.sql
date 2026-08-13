@@ -884,11 +884,18 @@ $$;
 -- Unified yield table spanning fund and security universes.
 -- spread_vs_benchmark is NULL when benchmark_rate is not provided.
 -- entity_types  NULL → defaults to {fii, fiagro}.
--- instrument_types NULL → defaults to {cra_classe, cri_classe}.
+-- instrument_types NULL → defaults to {cra_mensal, cri_mensal}.
+--
+-- The instrument_types default used to be {cra_classe, cri_classe} and matched
+-- ZERO rows: 'cra_classe'/'cri_classe' are CVM doc_type names, and
+-- src/pipeline/ingest_securit.py::_DOC_TO_INSTRUMENT rewrites them to
+-- 'cra_mensal'/'cri_mensal' before upsert, so those are the only values that
+-- ever reach cvm_securit_serie and therefore fact_security_monthly. Calling
+-- yield_universe() with no arguments silently returned the fund side only.
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION yield_universe(
     entity_types     TEXT[]  DEFAULT ARRAY['fii', 'fiagro'],
-    instrument_types TEXT[]  DEFAULT ARRAY['cra_classe', 'cri_classe'],
+    instrument_types TEXT[]  DEFAULT ARRAY['cra_mensal', 'cri_mensal'],
     start_date       DATE    DEFAULT '2021-01-01',
     end_date         DATE    DEFAULT CURRENT_DATE,
     benchmark_rate   NUMERIC DEFAULT NULL

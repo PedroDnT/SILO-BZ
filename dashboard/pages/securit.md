@@ -34,6 +34,11 @@ title: Securitization
       label ('cri_mensal', …), not the 'cri_classe' spelling that the
       dim_security comment and yield_universe()'s default still use. Queries
       here match on prefix so either spelling classifies correctly.
+
+  SECTION ORDER runs the three structural questions in the order the lede poses
+  them — what is outstanding, when it comes due, who gets paid — then the credit
+  read (ratings, subordination, distressed), then the coverage-only DFIN section
+  last because it charts filings rather than money.
 -->
 
 ```sql securit_overview
@@ -74,12 +79,24 @@ select * from supabase.securit_dfin_coverage
 > (other) certificates. Each series is a slice of a receivables pool, so the
 > questions that matter are structural: when does it come due, who gets paid
 > first, and is the pool still paying.
+>
+> These are **not funds** and none of the fund pages apply to them: there is no
+> NAV, no quotaholder count and no return series. The one number that most invites
+> misreading is the trend below — it is the **stock outstanding as re-stated each
+> month**, not new issuance, because CVM publishes no clean issuance flow here.
+> FIDCs, which buy comparable receivables inside a fund wrapper, are on
+> [the FIDC Credit Monitor](/fidc); series that are past maturity and still open
+> are screened on [Suspicious Deal Screens](/suspicious).
 
-<BigValue data={securit_overview} value=n_series label="Live Series"/>
-<BigValue data={securit_overview} value=n_securitizadoras label="Securitizadoras"/>
-<BigValue data={securit_overview} value=outstanding_bn label="Outstanding (R$bn)" fmt=num1/>
-<BigValue data={securit_overview} value=inadimplente_pct label="Inadimplente %" fmt=num1/>
+<BigValue data={securit_overview} value=n_series label="Live Series" fmt=num0/>
+<BigValue data={securit_overview} value=n_securitizadoras label="Securitizadoras" fmt=num0/>
+<BigValue data={securit_overview} value=outstanding_bn label="Outstanding (R$bn)" fmt=num0/>
+<BigValue data={securit_overview} value=inadimplente_pct label="Series Inadimplente (%)" fmt=num1/>
 <BigValue data={securit_overview} value=last_reference label="Latest Reference"/>
+
+> `Series Inadimplente` is a share of the **series count**, not of value: it says
+> what fraction of live series carry that filed status, and a single large
+> defaulted series moves it exactly as much as a small one.
 
 ---
 
@@ -95,26 +112,26 @@ data={securit_issuance_trend}
 x=period
 y={['cri_bn','cra_bn','ots_bn','outros_bn']}
 type=stacked
-yAxisTitle="R$ bn"
-title="Outstanding Certificate Value by Family (R$bn)"
+yAxisTitle="R$bn"
+  title="Outstanding Certificate Value by Family (R$bn)"
 />
 
 <LineChart
   data={securit_issuance_trend}
   x=period
   y=inadimplente_pct
-  yAxisTitle="% of series"
+  yAxisTitle="% of Series"
   title="Share of Series Marked Inadimplente"
 />
 
 <DataTable data={securit_issuance_trend} rows=6>
   <Column id=period title="Period"/>
   <Column id=n_series title="Series Reported" fmt=num0/>
-  <Column id=cri_bn title="CRI (R$bn)" fmt=num1/>
-  <Column id=cra_bn title="CRA (R$bn)" fmt=num1/>
-  <Column id=ots_bn title="OTS (R$bn)" fmt=num1/>
+  <Column id=cri_bn title="CRI (R$bn)" fmt=num2/>
+  <Column id=cra_bn title="CRA (R$bn)" fmt=num2/>
+  <Column id=ots_bn title="OTS (R$bn)" fmt=num2/>
   <Column id=n_inadimplente title="Inadimplente" fmt=num0/>
-  <Column id=inadimplente_pct title="Inadimplente %" fmt=num1/>
+  <Column id=inadimplente_pct title="Series Inadimplente (%)" fmt=num1/>
 </DataTable>
 
 ---
@@ -131,8 +148,8 @@ data={securit_maturity_wall}
 x=maturity_year
 y={['cri_bn','cra_bn','ots_bn']}
 type=stacked
-yAxisTitle="R$ bn"
-title="Outstanding Value by Maturity Year (R$bn)"
+yAxisTitle="R$bn"
+  title="Outstanding Value by Maturity Year (R$bn)"
 />
 
 <DataTable data={securit_maturity_wall} rows=10>
@@ -146,10 +163,11 @@ title="Outstanding Value by Maturity Year (R$bn)"
 
 > The ladder runs 15 years forward only. Series already past maturity, and series
 > filed with no maturity date at all, are counted separately below rather than
-> folded into a bucket they do not belong in.
+> folded into a bucket they do not belong in. The past-maturity population is
+> listed series by series on [Suspicious Deal Screens](/suspicious).
 
-<BigValue data={securit_overview} value=n_past_maturity label="Past Maturity, Still Open"/>
-<BigValue data={securit_overview} value=n_sem_vencimento label="No Maturity Date Filed"/>
+<BigValue data={securit_overview} value=n_past_maturity label="Past Maturity, Still Open" fmt=num0/>
+<BigValue data={securit_overview} value=n_sem_vencimento label="No Maturity Date Filed" fmt=num0/>
 
 ---
 
@@ -165,16 +183,16 @@ data={securit_waterfall}
 x=period
 y={['pgt_despesas_mm','pgt_senior_mm','pgt_mezanino_mm','pgt_junior_mm']}
 type=stacked
-yAxisTitle="R$ mm"
-title="Payments Out by Priority (R$mm)"
+yAxisTitle="R$mm"
+  title="Payments Out by Priority (R$mm)"
 />
 
 <LineChart
 data={securit_waterfall}
 x=period
 y={['recebimentos_mm','pgt_total_mm']}
-yAxisTitle="R$ mm"
-title="Receivables Collected vs Total Paid Out (R$mm)"
+yAxisTitle="R$mm"
+  title="Receivables Collected vs Total Paid Out (R$mm)"
 />
 
 <DataTable data={securit_waterfall} rows=6>
@@ -184,11 +202,11 @@ title="Receivables Collected vs Total Paid Out (R$mm)"
   <Column id=pgt_mezanino_mm title="Mezzanine (R$mm)" fmt=num1/>
   <Column id=pgt_junior_mm title="Junior (R$mm)" fmt=num1/>
   <Column id=pgt_despesas_mm title="Expenses (R$mm)" fmt=num1/>
-  <Column id=cobertura_pct title="Paid / Collected %" fmt=num1/>
+  <Column id=cobertura_pct title="Paid / Collected (%)" fmt=num1/>
   <Column id=n_securitizadoras title="Filers" fmt=num0/>
 </DataTable>
 
-> `Paid / Collected %` above 100 means the structure paid out more than it
+> `Paid / Collected` above 100% means the structure paid out more than it
 > collected that month — normal for an amortisation date drawing on reserves,
 > and worth a second look when it persists. A month with filings but no payment
 > figures at all reports blank, never zero.
@@ -207,7 +225,7 @@ title="Receivables Collected vs Total Paid Out (R$mm)"
   x=rating
   y=value_bn
   swapXY=true
-  yAxisTitle="R$ bn"
+  yAxisTitle="R$bn"
   title="Outstanding Value by Rating (R$bn)"
 />
 
@@ -216,7 +234,7 @@ title="Receivables Collected vs Total Paid Out (R$mm)"
   <Column id=n_series title="Series" fmt=num0/>
   <Column id=value_bn title="Outstanding (R$bn)" fmt=num2/>
   <Column id=n_inadimplente title="Inadimplente" fmt=num0/>
-  <Column id=inadimplente_pct title="Inadimplente %" fmt=num1/>
+  <Column id=inadimplente_pct title="Series Inadimplente (%)" fmt=num1/>
 </DataTable>
 
 ---
@@ -227,6 +245,12 @@ title="Receivables Collected vs Total Paid Out (R$mm)"
 > reported alongside. **`Índice Subord. Mínimo` is shown unscaled**: CVM does not
 > document whether the field is a fraction or a percentage, and both conventions
 > appear across filings, so it is not converted into a "%" here.
+>
+> `Series w/ Nível` will read **0** until the parser is extended.
+> `cvm_securit_serie.nivel_subordinacao` exists in `schema.sql` but no
+> `FIELD_MAP` entry populates it, so the column is structurally always NULL
+> today. It is counted here rather than omitted so the gap stays visible — the
+> tranche ordering below comes from `classe`, which is populated.
 
 <DataTable data={securit_subordination} rows=12>
   <Column id=classe title="Tranche Class (as filed)"/>
@@ -236,14 +260,8 @@ title="Receivables Collected vs Total Paid Out (R$mm)"
   <Column id=idx_subord_min_avg title="Índice Subord. Mínimo (mean, unscaled)" fmt=num2/>
   <Column id=n_with_idx title="Series w/ Index" fmt=num0/>
   <Column id=n_with_nivel title="Series w/ Nível" fmt=num0/>
-  <Column id=inadimplente_pct title="Inadimplente %" fmt=num1/>
+  <Column id=inadimplente_pct title="Series Inadimplente (%)" fmt=num1/>
 </DataTable>
-
-> `Series w/ Nível` will read **0** until the parser is extended.
-> `cvm_securit_serie.nivel_subordinacao` exists in `schema.sql` but no
-> `FIELD_MAP` entry populates it, so the column is structurally always NULL
-> today. It is counted here rather than omitted so the gap stays visible — the
-> tranche ordering above comes from `classe`, which is populated.
 
 ---
 
@@ -257,7 +275,7 @@ title="Receivables Collected vs Total Paid Out (R$mm)"
 <DataTable data={securit_distressed} rows=15 search=true>
   <Column id=instrument title="Type"/>
   <Column id=codigo_identificacao title="Series Code"/>
-  <Column id=numero_serie title="Série" fmt=num0/>
+  <Column id=numero_serie title="Série"/>
   <Column id=cnpj_securit title="Securitizadora CNPJ"/>
   <Column id=situacao_mes title="Status"/>
   <Column id=data_vencimento title="Maturity"/>
@@ -297,4 +315,5 @@ title="DFIN Filings Ingested per Year"
 
 > Blank years are years not yet fetched. `dfin_cri` starts at 2018 and
 > `dfin_cra` at 2019 upstream (`src/fetchers/cvm_config.py`), so a blank before
-> those dates is expected rather than a gap.
+> those dates is expected rather than a gap. Whether the fetch has run at all is
+> on [Pipeline Ops](/ops).

@@ -14,7 +14,12 @@ CREATE OR REPLACE VIEW dim_security AS
     codigo_identificacao,
     codigo_isin,
     codigo_cetip,
-    instrument_type,       -- 'cra_classe' | 'cri_classe' | 'ots_classe' from source doc_type
+    -- Stored values are 'cra_mensal' | 'cri_mensal' | 'ots_mensal', NOT the
+    -- CVM doc_type names: src/pipeline/ingest_securit.py::_DOC_TO_INSTRUMENT
+    -- maps cra_classe/cri_classe/ots_classe (and the _fluxo doc_types) onto the
+    -- instrument they describe before upsert, so one instrument_type covers a
+    -- security's serie and fluxo rows alike.
+    instrument_type,
     numero_serie,
     MIN(data_referencia)   AS first_seen,
     MAX(data_referencia)   AS last_seen,

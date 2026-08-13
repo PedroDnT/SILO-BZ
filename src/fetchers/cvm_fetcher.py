@@ -320,6 +320,44 @@ class CVMFetcher:
         raise RuntimeError(f"Download failed for {url}")
 
     # ---------------------------------------------------------------- parse
+    def _select_zip_member(self, files: List[str], expected: str) -> str:
+        """Pick the archive member `expected` names, or raise.
+
+        There is deliberately NO fallback to "the first CSV in the archive". That
+        fallback silently mislabelled data for years: FII `trimestral` configured
+        `inf_trimestral_fii_{year}.csv`, a member that has never existed in the
+        archive, so every ingest fell through to the alphabetically-first member
+        (inf_trimestral_fii_alienacao_imovel_{year}.csv) and wrote property-SALE
+        records into rows labelled doc_type='trimestral'. FII `anual`, FI
+        `hist_inf_diario` and FI `hist_cda` were broken the same way. A row must
+        be what its provenance says it is, so a pattern that matches nothing is
+        now fatal and names the members it could have chosen from.
+        """
+        csvs = [f for f in files if f.lower().endswith(".csv")]
+        if not csvs:
+            raise ValueError(f"No CSV file found in ZIP. Files: {sorted(files)}")
+
+        matches = [f for f in csvs if expected.lower() in f.lower()]
+        if not matches:
+            raise ValueError(
+                f"ZIP member {expected!r} not found in archive — refusing to fall "
+                f"back to another member, which would silently ingest the wrong "
+                f"dataset. Archive contains {len(csvs)} CSV member(s): "
+                f"{sorted(csvs)}. Fix csv_name_pattern in src/fetchers/cvm_config.py."
+            )
+        if len(matches) > 1:
+            # Prefer an exact basename hit before giving up: a substring pattern
+            # can legitimately be a prefix of a longer sibling member.
+            exact = [f for f in matches if f.rsplit("/", 1)[-1].lower() == expected.lower()]
+            if len(exact) == 1:
+                return exact[0]
+            raise ValueError(
+                f"ZIP member pattern {expected!r} is ambiguous — it matches "
+                f"{sorted(matches)}. Make csv_name_pattern in "
+                f"src/fetchers/cvm_config.py name exactly one member."
+            )
+        return matches[0]
+
     def _extract_csv_from_zip(
         self,
         zip_content: bytes,
@@ -329,15 +367,7 @@ class CVMFetcher:
     ) -> str:
         expected = csv_name_pattern.format(year=year or "", month=month or "")
         with zipfile.ZipFile(io.BytesIO(zip_content)) as zf:
-            files = zf.namelist()
-            csv_file = next(
-                (f for f in files if f.lower().endswith(".csv") and expected.lower() in f.lower()),
-                None,
-            )
-            if not csv_file:
-                csv_file = next((f for f in files if f.lower().endswith(".csv")), None)
-            if not csv_file:
-                raise ValueError(f"No CSV file found in ZIP. Files: {files}")
+            csv_file = self._select_zip_member(zf.namelist(), expected)
             return zf.read(csv_file).decode(self.encoding)
 
     def _parse_csv(self, csv_content: str) -> List[Dict[str, Any]]:

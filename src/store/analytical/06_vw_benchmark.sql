@@ -12,7 +12,7 @@
 --     -- 0.84 = monthly CDI % fetched from BCB API by the caller
 --
 --   SELECT * FROM yield_universe(
---     ARRAY['fii','fiagro'], ARRAY['cra_classe'],
+--     ARRAY['fii','fiagro'], ARRAY['cra_mensal'],
 --     '2024-01-01', '2024-12-31',
 --     0.84   -- monthly CDI
 --   );

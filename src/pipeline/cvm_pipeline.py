@@ -54,6 +54,7 @@ from src.pipeline.ingest_fidc import (
 from src.pipeline.ingest_fii import (
     ingest_fii_mensal,
     ingest_fii_periodic,
+    ingest_fii_imovel,
 )
 from src.pipeline.ingest_securit import (
     ingest_securit_mensal,
@@ -131,7 +132,13 @@ FIP_PERIODIC_CONFIGS: List[Tuple[str, str]] = [
 
 # FII doc types
 FII_MENSAL_DOC_TYPES: List[str] = ["mensal_geral", "mensal_ativo_passivo", "mensal_complemento"]
-FII_PERIODIC_DOC_TYPES: List[str] = ["trimestral", "anual", "dfin"]
+# 'trimestral' is retired: it named a ZIP member that does not exist, so it was
+# silently ingesting the alienacao-imovel member (see migration 15). The archive
+# is multi-table, so each useful member is its own doc_type. trimestral_imovel is
+# NOT here — it has a different grain and its own ingest method/table.
+FII_PERIODIC_DOC_TYPES: List[str] = [
+    "trimestral_geral", "trimestral_complemento", "anual", "dfin",
+]
 
 # SECURIT doc types split by target table
 SECURIT_MENSAL_TYPES: List[str] = ["cra_mensal", "cri_mensal", "ots_mensal"]
@@ -144,7 +151,7 @@ _ALL_TABLES: List[str] = [
     "cvm_fi_diario", "cvm_fi_cda", "cvm_fi_perfil", "cvm_fi_balancete",
     "cvm_fidc_mensal", "cvm_fidc_tranche", "cvm_fidc_tranche_flows", "cvm_fidc_aging",
     "cvm_fiagro_mensal",
-    "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic",
+    "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic", "cvm_fii_imovel",
     "cvm_securit_mensal", "cvm_securit_serie", "cvm_securit_fluxo", "cvm_securit_dfin",
     "cia_company", "cia_event", "cia_filing", "cia_account",
     "cvm_fund_registry", "cvm_etf_registry",
@@ -515,14 +522,34 @@ class CVMIngestor:
     async def ingest_fi_hist_diario(self, year: int) -> int:
         """Ingest one full year of historical FI daily data from HIST/.
 
-        Flushes every _PAGE_SIZE records to keep peak memory manageable.
+        The HIST archive holds TWELVE monthly members (inf_diario_fi_{year}{MM}.csv),
+        not one yearly CSV, so this loops the months and extracts one member per
+        pass. The yearly ZIP is downloaded once and served from the fetcher's
+        on-disk cache for the remaining eleven.
+
+        Before this loop existed the config asked for a member that does not
+        exist and the fetcher fell back to the first CSV in the archive — every
+        HIST year ingested January twelve times over and lost eleven months.
+
+        Flushes every _PAGE_SIZE records to keep peak memory manageable (a full
+        year of FI daily rows does not fit comfortably in memory at once).
         """
         run_id = str(uuid4())
         self._log_start(run_id, "fi", "inf_diario", year, None)
         rows_inserted = 0
-        try:
-            raw_rows = await self._fetch_all_pages("fi", "hist_inf_diario", year, None)
-            # Flush in chunks to bound peak memory
+        fetched = 0
+        errors: List[str] = []
+        for month in range(1, 13):
+            try:
+                raw_rows = await self._fetch_all_pages("fi", "hist_inf_diario", year, month)
+            except Exception as exc:
+                # A month missing from an old archive is normal (the series starts
+                # mid-year in 2000). Record it and keep going — the other months
+                # are still real data.
+                logger.warning("ingest_fi_hist_diario %d-%02d failed: %s", year, month, exc)
+                errors.append(f"{month:02d}: {exc}")
+                continue
+            fetched += len(raw_rows)
             chunk: List[Dict[str, Any]] = []
             for row in raw_rows:
                 chunk.append(row)
@@ -531,12 +558,15 @@ class CVMIngestor:
                     chunk = []
             if chunk:
                 rows_inserted += ingest_fi_diario(self._supabase, chunk)
-        except Exception as exc:
-            logger.warning("ingest_fi_hist_diario %d failed: %s", year, exc)
-            self._log_finish(run_id, 0, str(exc))
+
+        if errors and rows_inserted == 0:
+            self._log_finish(run_id, 0, "; ".join(errors))
             return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fi/hist_inf_diario %d: %d rows", year, rows_inserted)
+        self._log_finish(run_id, rows_inserted, fetched=fetched)
+        logger.info(
+            "fi/hist_inf_diario %d: %d rows from %d month(s)",
+            year, rows_inserted, 12 - len(errors),
+        )
         return rows_inserted
 
     # ------------------------------------------------------------------
@@ -856,6 +886,29 @@ class CVMIngestor:
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fii/%s %d: %d rows", doc_type, year, rows_inserted)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
+    # FII — property register (INF_TRIMESTRAL _imovel_ member -> cvm_fii_imovel)
+    #
+    # Kept separate from ingest_fii_periodic because the grain differs: many
+    # properties per fund per quarter, so it cannot share cvm_fii_periodic's
+    # one-row-per-fund-per-period key.
+    # ------------------------------------------------------------------
+
+    async def ingest_fii_imovel(self, year: int) -> int:
+        run_id = str(uuid4())
+        self._log_start(run_id, "fii", "trimestral_imovel", year, None)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages("fii", "trimestral_imovel", year, None)
+            rows_inserted = ingest_fii_imovel(self._supabase, raw_rows, year)
+        except Exception as exc:
+            logger.warning("ingest_fii_imovel %d failed: %s", year, exc)
+            self._log_finish(run_id, 0, str(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
+        logger.info("fii/trimestral_imovel %d: %d rows", year, rows_inserted)
         return rows_inserted
 
     # ------------------------------------------------------------------
@@ -1266,6 +1319,12 @@ class CVMIngestor:
                         f"fii/{doc_type} {year}",
                         self.ingest_fii_periodic(doc_type, year),
                     ))
+            for year in years:
+                tasks.append(IngestTask(
+                    "cvm_fii_imovel",
+                    f"fii/trimestral_imovel {year}",
+                    self.ingest_fii_imovel(year),
+                ))
             await self._run_task_batches(tasks, _get_concurrency("fii", 4), totals, "FII backfill")
 
         # -- SECURIT ------------------------------------------------------
@@ -1451,6 +1510,11 @@ class CVMIngestor:
                     f"fii/{doc_type} {year}",
                     self.ingest_fii_periodic(doc_type, year),
                 ))
+            tasks.append(IngestTask(
+                "cvm_fii_imovel",
+                f"fii/trimestral_imovel {year}",
+                self.ingest_fii_imovel(year),
+            ))
 
         # CIA_ABERTA — refresh registry (once), current year IPE feed, and the
         # current-year ITR + DFP financial statements.

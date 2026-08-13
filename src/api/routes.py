@@ -83,6 +83,17 @@ def healthz():
     })
 
 
+# Tables reported by GET /api/status. Module-level so tests and operators can
+# read the list without re-deriving it.
+STATUS_TABLES = [
+    "cvm_fi_diario", "cvm_fi_cda", "cvm_fi_perfil",
+    "cvm_fidc_mensal", "cvm_fidc_tranche", "cvm_fidc_tranche_flows", "cvm_fidc_aging",
+    "cvm_fiagro_mensal",
+    "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic", "cvm_fii_imovel",
+    "cvm_securit_mensal", "cvm_securit_serie", "cvm_securit_fluxo", "cvm_securit_dfin",
+]
+
+
 @bp.get("/api/status")
 def status():
     """Per-table row counts + latest entry in `cvm_ingest_log`."""
@@ -91,15 +102,8 @@ def status():
     except Exception as exc:
         return jsonify({"error": "db_init", "detail": str(exc)}), 503
 
-    tables = [
-        "cvm_fi_diario", "cvm_fi_cda", "cvm_fi_perfil",
-        "cvm_fidc_mensal", "cvm_fidc_tranche", "cvm_fidc_tranche_flows", "cvm_fidc_aging",
-        "cvm_fiagro_mensal",
-        "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic",
-        "cvm_securit_mensal", "cvm_securit_serie", "cvm_securit_fluxo", "cvm_securit_dfin",
-    ]
     counts: Dict[str, Any] = {}
-    for t in tables:
+    for t in STATUS_TABLES:
         try:
             with conn.cursor() as cur:
                 cur.execute(f"SELECT COUNT(*) FROM {t}")

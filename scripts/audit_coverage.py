@@ -47,6 +47,7 @@ TABLES: List[Tuple[str, Optional[str]]] = [
     ("cvm_fip_periodic",         None),
     ("cvm_fii_mensal",           "period"),
     ("cvm_fii_periodic",         "data_referencia"),
+    ("cvm_fii_imovel",           "data_referencia"),
     ("cvm_securit_mensal",       None),
     ("cvm_securit_serie",        "data_referencia"),
     ("cvm_securit_fluxo",        "data_referencia"),

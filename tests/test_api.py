@@ -157,13 +157,19 @@ def test_dispatch_endpoint_lists_entities(client):
 
 
 def test_status_endpoint_returns_row_counts(client, stub):
-    for _ in range(15):
+    # One count query per table listed in src/api/routes.py::status; the count is
+    # read from the route so adding a table there does not break this test.
+    from src.api import routes as _routes
+
+    n_tables = len(_routes.STATUS_TABLES)
+    for _ in range(n_tables):
         stub._supabase.queue(count=100)
     stub._supabase.queue(data=[])  # recent_runs
     resp = client.get("/api/status")
     body = resp.get_json()
     assert resp.status_code == 200
-    assert "row_counts" in body and len(body["row_counts"]) == 15
+    assert "row_counts" in body and len(body["row_counts"]) == n_tables
+    assert "cvm_fii_imovel" in body["row_counts"]
 
 
 # ---------------------------------------------------------------------------
