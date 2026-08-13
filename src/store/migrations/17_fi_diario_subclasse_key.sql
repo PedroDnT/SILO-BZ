@@ -21,5 +21,25 @@
 -- now picks between them deterministically.
 ALTER TABLE cvm_fi_diario ADD COLUMN IF NOT EXISTS id_subclasse TEXT NOT NULL DEFAULT '';
 
-ALTER TABLE cvm_fi_diario DROP CONSTRAINT IF EXISTS uq_fi_diario;
-ALTER TABLE cvm_fi_diario ADD CONSTRAINT uq_fi_diario UNIQUE (cnpj, dt_comptc, id_subclasse);
+-- Guarded, same pattern as 03_precision.sql's retypes and for the same
+-- reason: this file is re-applied on every ingest run (schema.sql +
+-- migrations run every time, not once), and an unguarded ADD CONSTRAINT on a
+-- partitioned table with years of cvm_fi_diario history forces Postgres to
+-- re-validate uniqueness across the ENTIRE table on every single run, not
+-- just the first — the DROP+ADD ran unconditionally, so every apply after
+-- the first paid a full-table scan for no reason. Skips entirely once the
+-- constraint already covers id_subclasse.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.key_column_usage
+        WHERE table_schema = 'public'
+          AND table_name = 'cvm_fi_diario'
+          AND constraint_name = 'uq_fi_diario'
+          AND column_name = 'id_subclasse'
+    ) THEN
+        ALTER TABLE cvm_fi_diario DROP CONSTRAINT IF EXISTS uq_fi_diario;
+        ALTER TABLE cvm_fi_diario ADD CONSTRAINT uq_fi_diario UNIQUE (cnpj, dt_comptc, id_subclasse);
+    END IF;
+END $$;
