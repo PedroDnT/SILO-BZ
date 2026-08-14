@@ -24,6 +24,8 @@ CREATE OR REPLACE VIEW vw_b3_quote_vista AS
 SELECT
     codneg,
     trade_date,
+    codbdi,
+    prazot,
     nome_resumido,
     especi,
     moeda,
@@ -45,4 +47,4 @@ FROM b3_cotahist
 WHERE tpmerc = '010';
 
 COMMENT ON VIEW vw_b3_quote_vista IS
-    'Cash-market (tpmerc=010) COTAHIST quotes for serving. Unadjusted. Key (codneg, trade_date).';
+    'Cash-market (tpmerc=010) COTAHIST quotes. Unadjusted. Grain is still (codneg, trade_date, codbdi, prazot); board 02 is the standard lot.';

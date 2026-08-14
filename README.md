@@ -13,7 +13,8 @@ Data sources:
   Landed in `b3_cotahist`; not yet joined to `cia_*` / fund tables.
 
 Data is downloaded, parsed, validated, and upserted into a Supabase Postgres database via psycopg2.
-There is no public API — downstream consumers query Supabase directly.
+Dashboards query Supabase directly. Apps should use schema `api` and `serve/`
+([docs/API.md](docs/API.md)) — not landing tables or the ingest control plane.
 
 A small **local Flask control plane** (`app.py` + `src/api/`) wraps the pipeline so
 operators can trigger partial fills one (entity, doc_type, year, month) slice at a
@@ -425,8 +426,8 @@ with Performance and ETF pages.
 
 ## What's intentionally not here
 
-- **No public REST/GraphQL API.** The pipeline only writes to Supabase Postgres. Build consumers against Supabase directly.
-- **No live B3 market-data API, and no fabricated quotes.** The old `b3_calc_api` (non-B3 domain + hard-coded sample dicts) stays deleted. Historical quotations come from B3's public COTAHIST zips (`src/fetchers/b3_fetcher.py` → `b3_cotahist`). Do not invent a last-price fallback.
+- **No ingest REST API, and no PostgREST dump of landing tables.** The pipeline writes to Supabase. Apps read schema `api` via `serve/` ([docs/API.md](docs/API.md)). The localhost Flask app is an operator control plane, not a product API.
+- **No fabricated quotes.** The old `b3_calc_api` (non-B3 domain + hard-coded sample dicts) stays deleted. Historical quotations come from B3's public COTAHIST zips (`src/fetchers/b3_fetcher.py` → `b3_cotahist` → `api.quotes`). Missing tickers are 404, never a guessed last close.
 - **No local Postgres / Docker / Alembic.** Supabase Postgres is the single source of truth. Use `scripts/seed_local_db.py`
   with a local Postgres for offline testing.
 - **No Solana oracle.** The Delos Oracle experiment is out of scope.

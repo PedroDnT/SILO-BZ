@@ -317,7 +317,18 @@ class TestServeSchema:
         assert "idx_b3_cotahist_vista" in schema
         assert "WHERE tpmerc = '010'" in schema
         assert "CREATE OR REPLACE VIEW vw_b3_quote_vista" in schema
+        assert "codbdi" in schema
         assert "idx_b3_cotahist_codneg" not in schema
+
+    def test_api_contract_defines_quotes(self):
+        from pathlib import Path
+
+        sql = Path("src/store/analytical/19_api_contract.sql").read_text(
+            encoding="utf-8"
+        )
+        assert "CREATE OR REPLACE VIEW api.quotes" in sql
+        assert "api.quote_latest" in sql
+        assert "REVOKE ALL ON FUNCTION api.quote_latest" in sql
 
     def test_migration_19_drops_redundant_codneg_index(self):
         from pathlib import Path

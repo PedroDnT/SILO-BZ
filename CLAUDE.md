@@ -11,18 +11,21 @@ FI, FIDC, FII, FIP, FIAGRO, SECURIT, plus listed-company CIA filings), **BACEN**
 time series, PTAX, Focus expectativas), and **B3** (public COTAHIST quotation zips →
 `b3_cotahist`) into a **Supabase Postgres** database via psycopg2.
 
-There is **no public API**. Downstream consumers (the `dashboard/` and `webapp/`) query
-Supabase directly. A localhost-only Flask control plane (`app.py` + `src/api/`) wraps the
+There is **no public ingest API**. Downstream dashboards (`dashboard/`, `webapp/`)
+query Supabase directly. The **read contract** for apps is schema `api` plus
+`serve/` (`docs/API.md`). A localhost-only Flask control plane (`app.py` + `src/api/`)
+wraps the pipeline so operators can trigger partial-fill ingests one slice at a time.
 pipeline so operators can trigger partial-fill ingests one slice at a time.
 
 > Read `README.md` for the full operator guide, `docs/DATABASE_MAINTENANCE.md` for the
 > ongoing DB upkeep runbook (checks, cadence, audit-log triage, partition rollover,
 > troubleshooting), and `docs/planning/CHANGELOG.md` for the
 > workstream history. A previous version had multiple FastAPI
-> services + a Solana "Delos Oracle" + a `b3_calc_api`; all were removed. Do not reintroduce
-> a public API surface, Docker/Alembic, local Postgres-as-source-of-truth, or a fake B3
-> quote API — see "What's intentionally not here" in `README.md`. Public COTAHIST zips are
-> in scope (`b3_cotahist`).
+> services + a Solana "Delos Oracle" + a `b3_calc_api`; all were removed. Do not
+> reintroduce Docker/Alembic, local Postgres-as-source-of-truth, or a **fake** B3
+> quote API — see "What's intentionally not here" in `README.md`. Public COTAHIST
+> zips are in scope (`b3_cotahist`). The user-facing read API is schema `api` +
+> `serve/` (`docs/API.md`); do not expose landing tables or the ingest control plane.
 
 ## Data integrity rules (NON-NEGOTIABLE)
 
