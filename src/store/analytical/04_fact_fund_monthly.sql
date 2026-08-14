@@ -14,8 +14,13 @@
 --   captc_mes      NUMERIC — gross inflows over the month (FI only)
 --   resg_mes       NUMERIC — gross redemptions over the month (FI only)
 --   vl_ativo       NUMERIC — total assets (FII complemento only)
+--   quota_subclass_id TEXT — stable FI subclass supplying vl_quota (FI only)
 --
--- FI source is daily (cvm_fi_diario) — must be aggregated to monthly.
+-- FI source is daily (cvm_fi_diario) — must be aggregated to monthly. A fund
+-- can now have several subclasses under one CNPJ. PL / cotistas are additive,
+-- but quota values are not. quota_subclass_id records the one stable subclass
+-- whose quota is followed through time; choosing the largest subclass anew in
+-- every month can switch units and manufacture million-percent "returns".
 -- FIP source is yearly (cvm_fip_periodic) — period mapped to Dec-31 of the year.
 -- FII: only doc_subtype = 'complemento' carries yield / cotistas / vl_ativo.
 --
@@ -39,11 +44,66 @@ DROP MATERIALIZED VIEW IF EXISTS fact_fund_monthly CASCADE;
 
 CREATE MATERIALIZED VIEW fact_fund_monthly AS
 
+WITH fi_per_subclass AS MATERIALIZED (
+  SELECT DISTINCT ON (cnpj, id_subclasse, date_trunc('month', dt_comptc))
+    cnpj,
+    id_subclasse,
+    date_trunc('month', dt_comptc)::date AS period,
+    dt_comptc,
+    vl_patrim_liq,
+    vl_quota,
+    nr_cotst
+  FROM cvm_fi_diario d
+  WHERE vl_patrim_liq IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM cvm_etf_registry e WHERE e.cnpj = d.cnpj)
+  ORDER BY
+    cnpj,
+    id_subclasse,
+    date_trunc('month', dt_comptc),
+    dt_comptc DESC
+),
+fi_quota_subclass AS (
+  -- Follow one comparable unit through the full history: the largest positive-
+  -- quota subclass in the fund's latest available month. A newly introduced
+  -- subclass therefore has no invented pre-history; earlier months stay NULL.
+  SELECT DISTINCT ON (cnpj)
+    cnpj,
+    id_subclasse
+  FROM fi_per_subclass
+  WHERE vl_quota > 0
+  ORDER BY
+    cnpj,
+    period DESC,
+    vl_patrim_liq DESC NULLS LAST,
+    id_subclasse
+),
+fi_monthly AS (
+  SELECT
+    p.cnpj,
+    p.period,
+    SUM(p.vl_patrim_liq)                                               AS vl_patrim_liq,
+    MAX(p.vl_quota) FILTER (WHERE p.id_subclasse = q.id_subclasse)      AS vl_quota,
+    SUM(p.nr_cotst)                                                     AS nr_cotst,
+    MAX(q.id_subclasse)                                                 AS quota_subclass_id
+  FROM fi_per_subclass p
+  LEFT JOIN fi_quota_subclass q USING (cnpj)
+  GROUP BY p.cnpj, p.period
+),
+fi_flows AS (
+  SELECT
+    cnpj,
+    date_trunc('month', dt_comptc)::date AS period,
+    SUM(captc_dia)                       AS captc_mes,
+    SUM(resg_dia)                        AS resg_mes
+  FROM cvm_fi_diario d
+  WHERE NOT EXISTS (SELECT 1 FROM cvm_etf_registry e WHERE e.cnpj = d.cnpj)
+  GROUP BY cnpj, date_trunc('month', dt_comptc)::date
+)
+
   -- -------------------------------------------------------------------------
   -- FI: daily → monthly aggregation
-  -- Last-day-of-month values via DISTINCT ON per subclasse, summed to a
-  -- per-fund total; flows via GROUP BY. The two sub-queries are joined on
-  -- (cnpj, period).
+  -- Last-day-of-month PL / cotistas summed to a per-fund total. Quota follows
+  -- the stable subclass selected above. Flows are summed across subclasses.
   -- -------------------------------------------------------------------------
   SELECT
     last_day.cnpj,
@@ -56,54 +116,10 @@ CREATE MATERIALIZED VIEW fact_fund_monthly AS
     NULL::numeric                                    AS pct_yield_mes,
     flows.captc_mes,
     flows.resg_mes,
-    NULL::numeric                                    AS vl_ativo
-  FROM (
-    -- Last reported row per (fund, subclasse, month), summed to a per-fund
-    -- total. CVM-175 lets several subclasses (distinct pools of money) share
-    -- one CNPJ_FUNDO_CLASSE (migrations/17_fi_diario_subclasse_key.sql) — PL
-    -- and cotista count are additive across them, so they are summed rather
-    -- than picking one arbitrarily. vl_quota is a per-unit price, not
-    -- additive; the largest subclass's is used as the fund's representative
-    -- quota, a real filed value rather than a fabricated blend.
-    -- ETFs are excluded (their CNPJ is an ordinary cvm_fi_diario row) so they are
-    -- not double-counted here and in etf_daily; they are evaluated separately via
-    -- the etf_* objects. dim_fund applies the same carve-out.
-    SELECT
-      cnpj,
-      date_trunc('month', dt_comptc)::date                                      AS period,
-      SUM(vl_patrim_liq)                                                        AS vl_patrim_liq,
-      (ARRAY_AGG(vl_quota ORDER BY vl_patrim_liq DESC NULLS LAST))[1]            AS vl_quota,
-      SUM(nr_cotst)                                                             AS nr_cotst
-    FROM (
-      SELECT DISTINCT ON (cnpj, id_subclasse, date_trunc('month', dt_comptc))
-        cnpj,
-        id_subclasse,
-        dt_comptc,
-        vl_patrim_liq,
-        vl_quota,
-        nr_cotst
-      FROM cvm_fi_diario d
-      WHERE vl_patrim_liq IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM cvm_etf_registry e WHERE e.cnpj = d.cnpj)
-      ORDER BY
-        cnpj,
-        id_subclasse,
-        date_trunc('month', dt_comptc),
-        dt_comptc DESC
-    ) per_subclasse
-    GROUP BY cnpj, date_trunc('month', dt_comptc)
-  ) last_day
-  JOIN (
-    -- Monthly flow totals (ETFs excluded, same as above).
-    SELECT
-      cnpj,
-      date_trunc('month', dt_comptc)::date AS period,
-      SUM(captc_dia)                       AS captc_mes,
-      SUM(resg_dia)                        AS resg_mes
-    FROM cvm_fi_diario d
-    WHERE NOT EXISTS (SELECT 1 FROM cvm_etf_registry e WHERE e.cnpj = d.cnpj)
-    GROUP BY cnpj, date_trunc('month', dt_comptc)::date
-  ) flows
+    NULL::numeric                                    AS vl_ativo,
+    last_day.quota_subclass_id
+  FROM fi_monthly last_day
+  JOIN fi_flows flows
     ON  flows.cnpj   = last_day.cnpj
     AND flows.period = last_day.period
 
@@ -123,7 +139,8 @@ CREATE MATERIALIZED VIEW fact_fund_monthly AS
     NULL::numeric   AS pct_yield_mes,
     NULL::numeric   AS captc_mes,
     NULL::numeric   AS resg_mes,
-    NULL::numeric   AS vl_ativo
+    NULL::numeric   AS vl_ativo,
+    NULL::text      AS quota_subclass_id
   FROM cvm_fidc_mensal
 
   UNION ALL
@@ -142,7 +159,8 @@ CREATE MATERIALIZED VIEW fact_fund_monthly AS
     NULL::numeric   AS pct_yield_mes,
     NULL::numeric   AS captc_mes,
     NULL::numeric   AS resg_mes,
-    NULL::numeric   AS vl_ativo
+    NULL::numeric   AS vl_ativo,
+    NULL::text      AS quota_subclass_id
   FROM cvm_fiagro_mensal
   WHERE cnpj IS NOT NULL
 
@@ -164,7 +182,8 @@ CREATE MATERIALIZED VIEW fact_fund_monthly AS
     pct_dividend_yield_mes      AS pct_yield_mes,
     NULL::numeric               AS captc_mes,
     NULL::numeric               AS resg_mes,
-    vl_ativo
+    vl_ativo,
+    NULL::text                  AS quota_subclass_id
   FROM cvm_fii_mensal
   WHERE doc_subtype = 'complemento'
     AND cnpj IS NOT NULL
@@ -185,7 +204,8 @@ CREATE MATERIALIZED VIEW fact_fund_monthly AS
     NULL::numeric                   AS pct_yield_mes,
     NULL::numeric                   AS captc_mes,
     NULL::numeric                   AS resg_mes,
-    NULL::numeric                   AS vl_ativo
+    NULL::numeric                   AS vl_ativo,
+    NULL::text                      AS quota_subclass_id
   FROM cvm_fip_periodic
   WHERE cnpj IS NOT NULL
 ;

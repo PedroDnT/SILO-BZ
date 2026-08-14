@@ -8,4 +8,5 @@ select
   n_obs,
   round(aum_end / 1e6, 1)              as aum_mm
 from fund_performance_ranking(null, null, null, null, 10, 2)
+where return_basis in ('quota_return', 'dividend_yield')
 order by asset_class, rank_in_class

@@ -32,7 +32,9 @@ latest_per_class as (
 )
 select
   c.asset_class,
-  t.period,
+  -- Evidence renders a NULL date from Parquet as Unix epoch (1970-01-01).
+  -- This is a table label, not a chart axis; text preserves an honest blank.
+  to_char(t.period, 'YYYY-MM-DD') as period,
   t.n_funds,
   t.total_aum      / 1e9 as aum_bn,
   t.net_flow       / 1e9 as net_flow_bn,
