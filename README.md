@@ -1,4 +1,4 @@
-# Brazilian Financial Data — industry accountability pipeline
+# Brazilian Financial Data Scrapper and handler
 
 Headless ingestion pipeline for Brazilian public financial data. The goal is to maintain
 continuous, verifiable accountability of the fund industry — tracking NAV, delinquency,
