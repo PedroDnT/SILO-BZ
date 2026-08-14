@@ -32,3 +32,8 @@ flask>=3.0,<4.0
 pytest==9.0.3
 pytest-asyncio==1.4.0
 hypothesis==6.98.3
+
+# Local dev / offline verification — used by scripts/seed_local_db.py and
+# scripts/run_analysis_local.py to seed and query a local DuckDB file (no
+# Supabase credentials required). Not used by the production pipeline.
+duckdb>=1.0
