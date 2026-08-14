@@ -5,6 +5,7 @@ Fetches:
   - CVM: current month + previous month for all entities
   - BACEN: last ~30 days
   - ANBIMA: latest monthly boletim, all classes (idempotent — upserts full history)
+  - B3 COTAHIST: last 7 calendar days of daily quotation zips (404 → skipped)
 
 Required env vars: POSTGRES_URL
 """
@@ -20,6 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from src.pipeline.cvm_pipeline import CVMIngestor
 from src.pipeline.bacen_pipeline import BacenIngestor
 from src.pipeline.anbima_pipeline import AnbimaIngestor
+from src.pipeline.b3_pipeline import B3Ingestor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,6 +65,16 @@ async def main() -> None:
     except Exception as exc:
         logger.error("ANBIMA daily refresh failed: %s", exc, exc_info=True)
         failures.append(("anbima", exc))
+
+    # B3 COTAHIST: public daily quotation zips. Weekends/holidays 404 and are
+    # logged skipped; a real fetch/parse failure fails the daily run.
+    try:
+        b3_ingestor = B3Ingestor()
+        b3_totals = await b3_ingestor.daily_update()
+        totals.update(b3_totals)
+    except Exception as exc:
+        logger.error("B3 COTAHIST daily refresh failed: %s", exc, exc_info=True)
+        failures.append(("b3", exc))
 
     # ETF market snapshot: scrape etfsbrasil.com.br via Apify (NAV/price/cotistas
     # the post-CVM-175 daily file no longer exposes). The scrape is paid + rate-

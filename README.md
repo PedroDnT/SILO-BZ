@@ -9,6 +9,8 @@ Data sources:
 - **CVM** (Comissão de Valores Mobiliários) — fund disclosures: FI, FIDC, FIP, FIAGRO, FII, SECURIT.
 - **BACEN** (Banco Central do Brasil) — SGS time series (SELIC, CDI, IPCA, IGP-M), PTAX exchange rates,
   Expectativas (Focus bulletin).
+- **B3** — public COTAHIST daily/yearly quotation zips (unadjusted OHLC, volume, ticker, ISIN).
+  Landed in `b3_cotahist`; not yet joined to `cia_*` / fund tables.
 
 Data is downloaded, parsed, validated, and upserted into a Supabase Postgres database via psycopg2.
 There is no public API — downstream consumers query Supabase directly.
@@ -172,8 +174,9 @@ Each CVM entity gets one or more tables per data release frequency:
 | --------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------- |
 | `cvm_ingest_log`      | Ingest run audit trail (entity, doc_type, period, rows_upserted, error_msg) | `(run_id)`, index: `(entity, doc_type, period_year DESC)` |
 | `etf_market_snapshot` | ETF scraped snapshots (nav, price, yields, volatility, drawdown)            | `(ticker, snapshot_date)`                                 |
+| `b3_cotahist`         | B3 COTAHIST quotes (unadjusted OHLC, volume, ticker, ISIN)                  | `(codneg, trade_date, tpmerc, codbdi, prazot)`            |
 
-**Total: 19 tables across 10 logical domains (FI, FIDC, FII, FIP, FIAGRO, SECURIT, Registry, BACEN, Audit, ETF).**
+**Total: 20 tables across 11 logical domains (FI, FIDC, FII, FIP, FIAGRO, SECURIT, Registry, BACEN, Audit, ETF, B3).**
 
 ### Design Principles
 
@@ -284,6 +287,10 @@ python -m src.pipeline.run_daily
 
 # 3. Run a one-shot historical backfill (e.g. 2019 onward)
 python -m src.pipeline.run_backfill --start-year 2019
+
+# 3c. Optional: B3 COTAHIST yearly quotation zips (large; daily run already
+#     picks up the last 7 calendar days)
+python -m src.pipeline.run_backfill --b3-only --b3-start-year 2019
 
 # 3b. Build the analytical layer (views/functions) — AFTER data is ingested
 bash scripts/apply_analytical.sh
@@ -419,9 +426,7 @@ with Performance and ETF pages.
 ## What's intentionally not here
 
 - **No public REST/GraphQL API.** The pipeline only writes to Supabase Postgres. Build consumers against Supabase directly.
-- **No B3.** The previous `b3_calc_api` pointed at a non-B3 domain and fell back to four hard-coded sample dicts;
-  it has been removed. Add a `src/fetchers/b3_fetcher.py` + `src/store/schema.sql` extension when real B3 endpoints
-  are validated.
+- **No live B3 market-data API, and no fabricated quotes.** The old `b3_calc_api` (non-B3 domain + hard-coded sample dicts) stays deleted. Historical quotations come from B3's public COTAHIST zips (`src/fetchers/b3_fetcher.py` → `b3_cotahist`). Do not invent a last-price fallback.
 - **No local Postgres / Docker / Alembic.** Supabase Postgres is the single source of truth. Use `scripts/seed_local_db.py`
   with a local Postgres for offline testing.
 - **No Solana oracle.** The Delos Oracle experiment is out of scope.

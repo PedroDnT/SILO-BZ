@@ -7,8 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Headless ingestion pipeline for Brazilian public financial data, built for **financial
 accountability** of the fund industry (NAV, delinquency, tranche performance, structural
 health). It downloads, parses, validates, and upserts data from **CVM** (fund disclosures:
-FI, FIDC, FII, FIP, FIAGRO, SECURIT, plus listed-company CIA filings) and **BACEN** (SGS
-time series, PTAX, Focus expectativas) into a **Supabase Postgres** database via psycopg2.
+FI, FIDC, FII, FIP, FIAGRO, SECURIT, plus listed-company CIA filings), **BACEN** (SGS
+time series, PTAX, Focus expectativas), and **B3** (public COTAHIST quotation zips →
+`b3_cotahist`) into a **Supabase Postgres** database via psycopg2.
 
 There is **no public API**. Downstream consumers (the `dashboard/` and `webapp/`) query
 Supabase directly. A localhost-only Flask control plane (`app.py` + `src/api/`) wraps the
@@ -19,8 +20,9 @@ pipeline so operators can trigger partial-fill ingests one slice at a time.
 > troubleshooting), and `docs/planning/CHANGELOG.md` for the
 > workstream history. A previous version had multiple FastAPI
 > services + a Solana "Delos Oracle" + a `b3_calc_api`; all were removed. Do not reintroduce
-> a public API surface, Docker/Alembic, local Postgres-as-source-of-truth, or B3 — see
-> "What's intentionally not here" in `README.md`.
+> a public API surface, Docker/Alembic, local Postgres-as-source-of-truth, or a fake B3
+> quote API — see "What's intentionally not here" in `README.md`. Public COTAHIST zips are
+> in scope (`b3_cotahist`).
 
 ## Data integrity rules (NON-NEGOTIABLE)
 
@@ -55,7 +57,8 @@ FETCH (src/fetchers/) → PARSE (src/parsers/) → STORE (src/store/)
 - **`src/fetchers/`** — HTTP/SDK calls only. `cvm_fetcher.CVMFetcher.fetch(entity, doc_type,
 year, month)` is the single entry point; downloads ZIP/CSV from `dados.cvm.gov.br` with
   retry, DNS rotation, and on-disk cache (`CVM_CACHE_DIR`). `bacen_fetcher.BacenClient` wraps
-  `python-bcb`. `cia_fetcher` handles listed-company filings. `cvm_config.py` holds the
+  `python-bcb`. `cia_fetcher` handles listed-company filings. `b3_fetcher.B3CotahistFetcher`
+  downloads public COTAHIST zips from `bvmf.bmfbovespa.com.br`. `cvm_config.py` holds the
   `DatasetConfig` matrix (URL template, csv_name_pattern, periodicity, encoding).
 - **`src/parsers/`** — `validation.DataValidator` (shared CNPJ/date/numeric validators) and
   `field_maps/<entity>_<doctype>.py` (each exposes one `FIELD_MAP: dict[str,str]`, CSV header
@@ -65,10 +68,11 @@ year, month)` is the single entry point; downloads ZIP/CSV from `dados.cvm.gov.b
   `pg_client.upsert_rows(table, rows, conflict_cols)` (chunked at 1000, `ON CONFLICT DO
 UPDATE`). **Never open a raw DB connection elsewhere — always go through `pg_client`.**
   `schema.sql` is the canonical schema; `migrations/NNN_*.sql` are append-only.
-- **`src/pipeline/`** — `cvm_pipeline.CVMIngestor` and `bacen_pipeline.BacenIngestor` wire
-  the stages and write audit-log rows. `ingest_<entity>.py` modules hold the per-entity
-  `ingest_*` methods. CLI entry points: `run_daily.py` (cron: current month + 7-day window)
-  and `run_backfill.py` (one-shot, all years).
+- **`src/pipeline/`** — `cvm_pipeline.CVMIngestor`, `bacen_pipeline.BacenIngestor`, and
+  `b3_pipeline.B3Ingestor` wire the stages and write audit-log rows. `ingest_<entity>.py`
+  modules hold the per-entity `ingest_*` methods. CLI entry points: `run_daily.py` (cron:
+  current month + 7-day window, including B3 COTAHIST daily zips) and `run_backfill.py`
+  (one-shot, all years; B3 yearly zips are `--include-b3` / `--b3-only`).
 - **`src/api/`** — Flask control plane (local-only, no auth, bind `127.0.0.1`). `routes.py`
   exposes ingest/status/jobs/verify; `jobs.py` is an in-process job registry (UUID → state);
   `dispatch.py` maps `(entity, doc_type)` → ingestor method; `hooks.py` is a post-job error
@@ -82,9 +86,10 @@ Storage layout: ~30 tables named `cvm_<entity>_<doctype>` or `bacen_<series>` (p
   Wired ingest datasets include `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`,
   `cvm_securit_fluxo`, `cvm_fi_balancete`, `cvm_cia_*`, `cvm_etf_registry`,
   `anbima_class_monthly` (every ANBIMA class/type; `anbima_etf_class_monthly`
-  survives as an ETF-only compat view), and `etf_market_snapshot` (scraped ETF NAV/cotistas — wired
+  survives as an ETF-only compat view), `etf_market_snapshot` (scraped ETF NAV/cotistas — wired
   into the daily run but **gated on the `APIFY_TOKEN` secret**; it self-skips when the
-  token is unset. See `docs/ETF_AND_PERFORMANCE.md`).
+  token is unset. See `docs/ETF_AND_PERFORMANCE.md`), and `b3_cotahist` (B3 COTAHIST
+  quotes; daily run fetches the last 7 calendar days, yearly backfill is opt-in).
 
 The **analytical layer** (`src/store/analytical/`, applied by `scripts/apply_analytical.sh`
 after ingest) is the read side the dashboards query: `dim_fund` (a **materialized view**,

@@ -60,6 +60,7 @@ GRANT SELECT ON cvm_securit_serie          TO anon, authenticated;
 GRANT SELECT ON cvm_securit_fluxo          TO anon, authenticated;
 GRANT SELECT ON cvm_securit_dfin           TO anon, authenticated;
 GRANT SELECT ON cvm_ingest_log             TO anon, authenticated;
+GRANT SELECT ON b3_cotahist                TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- All analytical functions (callable via supabase.rpc())
