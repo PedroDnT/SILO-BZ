@@ -11,19 +11,19 @@
 --   432 SELIC meta = % a.a.   ·   11/12 SELIC diária & CDI = % a.d.
 --   433/189/188 IPCA/IGP-M/INPC = % change in the month   ·   1 USDBRL = BRL per USD
 select
-  (select value from bacen_sgs where series_code = 432 order by reference_date desc limit 1) as selic_meta_pct_aa,
-  (select value from bacen_sgs where series_code = 12  order by reference_date desc limit 1) as cdi_pct_ad,
-  (select value from bacen_sgs where series_code = 433 order by reference_date desc limit 1) as ipca_mes_pct,
-  (select value from bacen_sgs where series_code = 189 order by reference_date desc limit 1) as igpm_mes_pct,
-  (select value from bacen_sgs where series_code = 188 order by reference_date desc limit 1) as inpc_mes_pct,
+  (select value from bacen_sgs where series_code = 432 order by reference_date desc limit 1) as selic_meta_num2,
+  (select value from bacen_sgs where series_code = 12  order by reference_date desc limit 1) as cdi_num2,
+  (select value from bacen_sgs where series_code = 433 order by reference_date desc limit 1) as ipca_mes_num2,
+  (select value from bacen_sgs where series_code = 189 order by reference_date desc limit 1) as igpm_mes_num2,
+  (select value from bacen_sgs where series_code = 188 order by reference_date desc limit 1) as inpc_mes_num2,
   (select sell_rate from bacen_ptax where currency = 'USD' order by reference_date desc limit 1) as usd_brl,
   (select sell_rate from bacen_ptax where currency = 'EUR' order by reference_date desc limit 1) as eur_brl,
   (select median from bacen_expectativas
     where endpoint_name = 'ExpectativasMercadoAnuais' and indicador = 'IPCA'
-    order by reference_date desc limit 1) as focus_ipca_median_pct,
+    order by reference_date desc limit 1) as focus_ipca_median_num2,
   (select median from bacen_expectativas
     where endpoint_name = 'ExpectativasMercadoAnuais' and indicador = 'Selic'
-    order by reference_date desc limit 1) as focus_selic_median_pct,
+    order by reference_date desc limit 1) as focus_selic_median_num2,
   (select max(reference_date) from bacen_sgs)           as sgs_through,
   (select max(reference_date) from bacen_ptax)          as ptax_through,
   (select max(reference_date) from bacen_expectativas)  as focus_through,

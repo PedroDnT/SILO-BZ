@@ -11,7 +11,7 @@
 -- COVERAGE: the CVM FIAGRO monthly file only starts in 2025-05, so months
 -- before that are legitimately empty, not a pipeline failure.
 --
--- inadimpl_pct = delinquent value / net assets, in percent, computed here.
+-- inadimpl_num1 = delinquent value / net assets, in percent, computed here.
 with spine as (
   select generate_series(
            date_trunc('month', current_date) - interval '23 months',
@@ -24,7 +24,7 @@ select
   f.n_funds,
   f.pl_bn,
   f.inadimpl_mm,
-  f.inadimpl_pct,
+  f.inadimpl_num1,
   f.cotistas
 from spine sp
 left join lateral (
@@ -32,7 +32,7 @@ left join lateral (
     count(distinct g.cnpj)                                                        as n_funds,
     sum(g.vl_patrim_liq) / 1e9                                                    as pl_bn,
     sum(g.vl_inadimpl)   / 1e6                                                    as inadimpl_mm,
-    round(100.0 * sum(g.vl_inadimpl) / nullif(sum(g.vl_patrim_liq), 0), 2)        as inadimpl_pct,
+    round(100.0 * sum(g.vl_inadimpl) / nullif(sum(g.vl_patrim_liq), 0), 2)        as inadimpl_num1,
     sum(g.nr_cotst)                                                               as cotistas
   from cvm_fiagro_mensal g
   where g.period = sp.period

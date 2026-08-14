@@ -93,10 +93,10 @@ select * from supabase.macro_series_inventory
 > annualised, chained or rebased, because each of those is an assumption rather
 > than data. The unit travels with every row in the inventory table at the bottom.
 
-<BigValue data={macro_latest} value=selic_meta_pct_aa label="SELIC Target (% a.a.)" fmt=num2/>
-<BigValue data={macro_latest} value=ipca_mes_pct label="IPCA (% in Month)" fmt=num2/>
+<BigValue data={macro_latest} value=selic_meta_num2 label="SELIC Target (% a.a.)" fmt=num2/>
+<BigValue data={macro_latest} value=ipca_mes_num2 label="IPCA (% in Month)" fmt=num2/>
 <BigValue data={macro_latest} value=usd_brl label="USD/BRL (PTAX Sell)" fmt=num2/>
-<BigValue data={macro_latest} value=focus_ipca_median_pct label="Focus IPCA Median (%)" fmt=num2/>
+<BigValue data={macro_latest} value=focus_ipca_median_num2 label="Focus IPCA Median (%)" fmt=num2/>
 <BigValue data={macro_latest} value=sgs_through label="SGS Data Through"/>
 
 ---
@@ -111,7 +111,7 @@ select * from supabase.macro_series_inventory
 <LineChart
   data={macro_rate_series}
   x=period
-  y=selic_meta_pct_aa
+  y=selic_meta_num2
   yAxisTitle="% a.a."
   title="SELIC Target — Last 60 Months"
 />
@@ -119,7 +119,7 @@ select * from supabase.macro_series_inventory
 <LineChart
 data={macro_rate_series}
 x=period
-y={['selic_diaria_pct_ad','cdi_pct_ad']}
+y={['selic_diaria_num2','cdi_num2']}
 yAxisTitle="% a.d."
 title="SELIC Diária vs CDI (% per Day)"
 />
@@ -135,7 +135,7 @@ title="SELIC Diária vs CDI (% per Day)"
 <LineChart
 data={macro_rate_series}
 x=period
-y={['ipca_mes_pct','igpm_mes_pct','inpc_mes_pct','poupanca_mes_pct']}
+y={['ipca_mes_num2','igpm_mes_num2','inpc_mes_num2','poupanca_mes_num2']}
 yAxisTitle="% Change in Month"
 title="IPCA · IGP-M · INPC · Poupança"
 />
@@ -157,7 +157,7 @@ yAxisTitle="BRL per Unit"
 title="PTAX Month-End — USD, EUR, GBP"
 />
 
-> Bid-ask spread below: `spread_pct` = (sell − buy) / sell, in percentage points.
+> Bid-ask spread below: `spread_num2` = (sell − buy) / sell, in percentage points.
 > All five configured currencies are listed whether or not they have data, so a
 > currency that failed to ingest is visible as a blank line rather than silently
 > absent.
@@ -167,7 +167,7 @@ title="PTAX Month-End — USD, EUR, GBP"
   <Column id=reference_date title="Latest Quote"/>
   <Column id=buy_rate title="Buy (BRL)" fmt='#,##0.00'/>
   <Column id=sell_rate title="Sell (BRL)" fmt='#,##0.00'/>
-  <Column id=spread_pct title="Spread (%)" fmt=num2/>
+  <Column id=spread_num2 title="Spread (%)" fmt=num2/>
   <Column id=days_stale title="Days Stale" fmt=num0/>
   <Column id=n_obs title="Observations" fmt=num0/>
 </DataTable>

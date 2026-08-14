@@ -218,7 +218,7 @@ select * from supabase.fund_flow_series
 <LineChart
   data={fund_perf_series}
   x=period
-  y=cum_return_pct
+  y=cum_return_num2
   series=fund
   yAxisTitle="Cumulative Return (%)"
   title="Cumulative Return, Rebased to Window Start"
@@ -229,8 +229,8 @@ select * from supabase.fund_flow_series
   <Column id=fund title="Fund"/>
   <Column id=asset_class title="Asset Class"/>
   <Column id=return_basis title="Basis"/>
-  <Column id=period_return_pct title="Month Return (%)" fmt=num2/>
-  <Column id=cum_return_pct title="Cumulative Return (%)" fmt=num2/>
+  <Column id=period_return_num2 title="Month Return (%)" fmt=num2/>
+  <Column id=cum_return_num2 title="Cumulative Return (%)" fmt=num2/>
 </DataTable>
 
 ---
@@ -259,7 +259,7 @@ select * from supabase.fund_flow_series
 <LineChart
   data={fund_flow_series}
   x=period
-  y=redemption_pressure_pct
+  y=redemption_pressure_num2
   series=fund
   yAxisTitle="Redemptions / Net Assets (%)"
   title="Monthly Redemption Pressure"
@@ -272,5 +272,5 @@ select * from supabase.fund_flow_series
   <Column id=outflow_mm title="Redemptions (R$mm)" fmt=num1/>
   <Column id=net_flow_mm title="Net Flow (R$mm)" fmt=num1/>
   <Column id=cum_net_flow_bn title="Cumulative Net Flow (R$bn)" fmt=num2/>
-  <Column id=redemption_pressure_pct title="Redemption Pressure (%)" fmt=num2/>
+  <Column id=redemption_pressure_num2 title="Redemption Pressure (%)" fmt=num2/>
 </DataTable>

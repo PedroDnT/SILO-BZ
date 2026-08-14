@@ -11,9 +11,9 @@
 -- publish the SAME field — never across different fields.
 --
 -- "Coverage" here is the payout against the fund's own book:
---   payout_pct_of_pl  = rendimentos_distribuir / net assets
+--   payout_of_pl_num2  = rendimentos_distribuir / net assets
 --   payout_per_cota   = rendimentos_distribuir / quotas outstanding
---   payout_yield_pct  = payout_per_cota / book value per quota
+--   payout_yield_num2  = payout_per_cota / book value per quota
 -- A fund distributing well above what its book yields is paying out of capital
 -- or of realised gains — the figures are shown, the interpretation is not
 -- asserted.
@@ -26,12 +26,12 @@ select
   x.pl_mm             as pl_mm,
   x.vl_ativo_mm       as vl_ativo_mm,
   x.payout_mm         as payout_mm,
-  x.payout_pct_of_pl  as payout_pct_of_pl,
+  x.payout_of_pl_num2  as payout_of_pl_num2,
   x.cotas_emitidas    as cotas_emitidas,
   x.vpc               as vpc,
   x.payout_per_cota   as payout_per_cota,
-  x.payout_yield_pct  as payout_yield_pct,
-  x.reported_dy_pct   as reported_dy_pct
+  x.payout_yield_num2  as payout_yield_num2,
+  x.reported_dy_num2   as reported_dy_num2
 from (values (1)) as g(one)
 left join lateral (
   with anchor as (
@@ -71,13 +71,13 @@ left join lateral (
     b.pl / 1e6                                                       as pl_mm,
     b.vl_ativo / 1e6                                                 as vl_ativo_mm,
     b.rendimentos / 1e6                                              as payout_mm,
-    round(100.0 * b.rendimentos / nullif(b.pl, 0), 2)                as payout_pct_of_pl,
+    round(100.0 * b.rendimentos / nullif(b.pl, 0), 2)                as payout_of_pl_num2,
     b.cotas_emitidas                                                 as cotas_emitidas,
     b.vpc                                                            as vpc,
     b.rendimentos / nullif(b.cotas_emitidas, 0)                      as payout_per_cota,
     round(100.0 * (b.rendimentos / nullif(b.cotas_emitidas, 0))
-                / nullif(b.vpc, 0), 2)                               as payout_yield_pct,
-    round(b.dy * 100, 2)                                             as reported_dy_pct
+                / nullif(b.vpc, 0), 2)                               as payout_yield_num2,
+    round(b.dy * 100, 2)                                             as reported_dy_num2
   from base b
   left join dim_fund d
     on d.cnpj = b.cnpj and d.entity_type = 'fii'

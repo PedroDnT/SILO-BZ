@@ -126,7 +126,7 @@ Three questions the data can answer, and where each is answered:
 <LineChart
   data={fidc_delinquency}
   x=period
-  y=delinquency_rate_pct
+  y=delinquency_rate_num1
   yAxisTitle="Delinquency (%)"
   title="FIDC Sector Delinquency Rate"
 />

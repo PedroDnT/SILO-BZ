@@ -44,7 +44,7 @@ select
   r.total_aum      / 1e9 as aum_bn,
   r.net_flow       / 1e9 as net_flow_bn,
   r.total_inadimpl / 1e6 as inadimpl_mm,
-  round(r.avg_yield, 2)  as avg_yield_pct
+  round(r.avg_yield, 2)  as avg_yield_num2
 from slots s
 left join ranked r on r.slot = s.slot
 order by s.slot

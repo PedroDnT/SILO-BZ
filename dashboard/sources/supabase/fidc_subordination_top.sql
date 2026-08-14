@@ -67,8 +67,8 @@ select
   case
     when s.subordination_ratio between 0 and 1
       then round(100.0 * s.subordination_ratio, 1)
-  end                                                        as subordination_pct,
-  round(100.0 * s.vl_inadimpl / nullif(s.vl_patrim_liq, 0), 1) as inadimpl_pct
+  end                                                        as subordination_num1,
+  round(100.0 * s.vl_inadimpl / nullif(s.vl_patrim_liq, 0), 1) as inadimpl_num1
 from row_guard g
 left join structure s on true
 left join cvm_fund_registry r

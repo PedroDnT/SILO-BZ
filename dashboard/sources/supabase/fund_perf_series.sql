@@ -59,8 +59,8 @@ select
   x.entity_type                         as entity_type,
   x.asset_class                         as asset_class,
   x.return_basis                        as return_basis,
-  round(x.period_return * 100, 2)       as period_return_pct,
-  round(x.cumulative_return * 100, 2)   as cum_return_pct
+  round(x.period_return * 100, 2)       as period_return_num2,
+  round(x.cumulative_return * 100, 2)   as cum_return_num2
 from months m
 left join series x on x.period = m.period
 order by m.period, x.fund

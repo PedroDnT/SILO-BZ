@@ -12,7 +12,7 @@
 -- modelled subset. Migration 14 added it (and the other nine missing buckets),
 -- so this source now covers all 16 investor types CVM publishes.
 --
--- HEADCOUNT vs MONEY: retail_pct counts investors; retail_pl_pct is their share
+-- HEADCOUNT vs MONEY: retail_num1 counts investors; retail_pl_num1 is their share
 -- of PL (PR_PL_COTST_*, weighted by each fund's own PL). They diverge by design —
 -- retail is most of the headcount and a minority of the money — and reading only
 -- the first is how a fund that is 99% one institution looks "retail".
@@ -151,8 +151,8 @@ select
   m.period                                                          as period,
   a.retail / 1e3                                                    as retail_k,
   a.instit / 1e3                                                    as institutional_k,
-  round(100.0 * a.retail / nullif(a.retail + a.instit, 0), 1)       as retail_pct,
-  round(a.w_retail / nullif(a.pl_base, 0), 1)                       as retail_pl_pct,
+  round(100.0 * a.retail / nullif(a.retail + a.instit, 0), 1)       as retail_num1,
+  round(a.w_retail / nullif(a.pl_base, 0), 1)                       as retail_pl_num1,
   a.n_funds                                                         as n_funds,
   a.n_funds_with_split                                              as n_funds_with_split
 from months m

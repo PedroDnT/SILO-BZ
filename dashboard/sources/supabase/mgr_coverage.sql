@@ -18,9 +18,9 @@ select
   count(*) filter (where admin_name is not null)                                  as rows_with_admin,
   count(*) filter (where gestor_name is not null)                                 as rows_with_gestor,
   round(100.0 * count(*) filter (where admin_name is not null)
-        / nullif(count(*), 0), 1)                                                 as admin_coverage_pct,
+        / nullif(count(*), 0), 1)                                                 as admin_coverage_num1,
   round(100.0 * count(*) filter (where gestor_name is not null)
-        / nullif(count(*), 0), 1)                                                 as gestor_coverage_pct,
+        / nullif(count(*), 0), 1)                                                 as gestor_coverage_num1,
   count(distinct admin_name)                                                      as n_administrators,
   count(distinct gestor_name)                                                     as n_gestores,
   (select count(*) from dim_fund)                                                 as funds_in_universe,

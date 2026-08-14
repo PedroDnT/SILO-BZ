@@ -42,7 +42,7 @@ select
   a.n_series,
   a.value_bn,
   a.n_inadimplente,
-  round(100.0 * a.n_inadimplente / nullif(a.n_series, 0), 1) as inadimplente_pct
+  round(100.0 * a.n_inadimplente / nullif(a.n_series, 0), 1) as inadimplente_num1
 from row_guard g
 left join agg a on true
 order by a.n_series desc nulls last

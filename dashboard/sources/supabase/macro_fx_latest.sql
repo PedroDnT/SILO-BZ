@@ -5,7 +5,7 @@
 -- currency that failed to ingest appears as an explicit blank line instead of
 -- shrinking the result to zero rows and breaking the build.
 --
--- spread_pct = (sell − buy) / sell, in percentage points of the sell rate.
+-- spread_num2 = (sell − buy) / sell, in percentage points of the sell rate.
 -- buy_rate / sell_rate are BACEN's own PTAX compra/venda, unadjusted.
 with currencies (currency) as (
   values ('USD'), ('EUR'), ('GBP'), ('JPY'), ('ARS')
@@ -15,7 +15,7 @@ select
   p.reference_date,
   p.buy_rate,
   p.sell_rate,
-  round(100.0 * (p.sell_rate - p.buy_rate) / nullif(p.sell_rate, 0), 2) as spread_pct,
+  round(100.0 * (p.sell_rate - p.buy_rate) / nullif(p.sell_rate, 0), 2) as spread_num2,
   (current_date - p.reference_date) as days_stale,
   n.n_obs
 from currencies c

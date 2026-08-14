@@ -18,7 +18,12 @@
 -- with "fi_aum_bn_pct is not a column" when y is a *list* of columns (wide
 -- format) rather than one y + series= (long format) — verified on the live
 -- /industry page after PR #81. Share-of-total is therefore computed here so
--- a regular stacked area of *_share_pct is a 100% chart by construction.
+-- a regular stacked area of *_share_num1 is a 100% chart by construction.
+--
+-- Column names end in `_num1`, not `_pct`. Evidence treats the token after the
+-- last underscore as a format tag: `_pct` means "this value is a 0–1 fraction"
+-- and multiplies by 100 on every chart. These shares are already percentage
+-- points (80 = 80%). `_num1` is the format this dashboard actually uses.
 with spine as (
   select generate_series(
            date_trunc('month', current_date) - interval '35 months',
@@ -59,10 +64,10 @@ select
   total_aum_bn,
   n_funds,
   fi_net_flow_bn,
-  round(100.0 * fi_aum_bn     / nullif(total_aum_bn, 0), 2) as fi_share_pct,
-  round(100.0 * fidc_aum_bn   / nullif(total_aum_bn, 0), 2) as fidc_share_pct,
-  round(100.0 * fii_aum_bn    / nullif(total_aum_bn, 0), 2) as fii_share_pct,
-  round(100.0 * fiagro_aum_bn / nullif(total_aum_bn, 0), 2) as fiagro_share_pct,
-  round(100.0 * fip_aum_bn    / nullif(total_aum_bn, 0), 2) as fip_share_pct
+  round(100.0 * fi_aum_bn     / nullif(total_aum_bn, 0), 2) as fi_share_num1,
+  round(100.0 * fidc_aum_bn   / nullif(total_aum_bn, 0), 2) as fidc_share_num1,
+  round(100.0 * fii_aum_bn    / nullif(total_aum_bn, 0), 2) as fii_share_num1,
+  round(100.0 * fiagro_aum_bn / nullif(total_aum_bn, 0), 2) as fiagro_share_num1,
+  round(100.0 * fip_aum_bn    / nullif(total_aum_bn, 0), 2) as fip_share_num1
 from base
 order by period

@@ -164,8 +164,8 @@ select * from supabase.etf_market
   <Column id=price title="Price (R$)" fmt='#,##0.00'/>
   <Column id=nav title="NAV / Net Assets (R$)" fmt=num0/>
   <Column id=cotistas title="Quotaholders" fmt=num0/>
-  <Column id=taxa_adm_pct title="Adm Fee (%)" fmt=num2/>
-  <Column id=ret_12m_pct title="12m Return (%)" fmt=num2/>
+  <Column id=taxa_adm_num2 title="Adm Fee (%)" fmt=num2/>
+  <Column id=ret_12m_num2 title="12m Return (%)" fmt=num2/>
   <Column id=snapshot_date title="As Of"/>
 </DataTable>
 

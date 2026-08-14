@@ -22,7 +22,7 @@ select
   s.n_runs,
   s.n_ok,
   s.n_error,
-  round(100.0 * s.n_ok / nullif(s.n_runs, 0), 1) as ok_pct,
+  round(100.0 * s.n_ok / nullif(s.n_runs, 0), 1) as ok_num1,
   (select count(*)
      from cvm_ingest_log g
     where g.entity = e.entity

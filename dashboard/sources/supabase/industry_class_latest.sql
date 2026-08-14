@@ -37,7 +37,7 @@ select
   t.total_aum      / 1e9 as aum_bn,
   t.net_flow       / 1e9 as net_flow_bn,
   t.total_cotistas / 1e6 as cotistas_mm,
-  round(t.median_yield, 2) as median_yield_pct
+  round(t.median_yield, 2) as median_yield_num2
 from classes c
 left join latest_per_class t on t.asset_class = c.asset_class
 order by aum_bn desc nulls last
