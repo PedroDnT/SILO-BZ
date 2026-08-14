@@ -3,7 +3,7 @@
 --
 -- Two measures per class, because they answer different questions:
 --   holders_k    — how MANY investors of that type hold the fund (NR_COTST_*)
---   pl_share_pct — how much of the industry's PL they hold  (PR_PL_COTST_*,
+--   pl_share_num2 — how much of the industry's PL they hold  (PR_PL_COTST_*,
 --                  weighted by each fund's own PL share, not a naive average)
 -- A single private-banking cotista can hold more PL than ten thousand retail
 -- ones, so headcount alone reads the industry backwards.
@@ -244,7 +244,7 @@ select
       when 11 then x.w_invnr
       when 12 then x.w_outro
     end / nullif(x.pl_base, 0)
-  , 2)              as pl_share_pct
+  , 2)              as pl_share_num2
 from months m
 cross join classes c
 left join mix x on x.period = m.period

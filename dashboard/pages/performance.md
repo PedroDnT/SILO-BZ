@@ -5,8 +5,10 @@ title: Fund Performance
 <!--
   Per-asset-class performance on two axes, powered by the RPC functions in
   src/store/analytical/17_performance_analysis.sql (ETFs excluded — they are on
-  /etf). Return basis is per class and is shown as a column, never conflated:
-    FI = quota return · FII = compounded dividend yield · FIDC/FIAGRO/FIP = PL growth.
+  /etf). Only return-like measures are displayed:
+    FI = quota return · FII = compounded dividend yield.
+  FIDC/FIAGRO/FIP net-asset growth is excluded because subscriptions,
+  redemptions and capital calls make it a size change, not performance.
 
   COVERAGE: fund history is currently 2026 only (FI daily + FII Q1 + FIP),
   FIDC/FIAGRO are empty, and cvm_fund_registry is empty so FI funds fall into the
@@ -35,12 +37,12 @@ select * from supabase.ranking_by_class
 > measured on the same basis.
 >
 > What this page does **not** support: a claim that one asset class out-performed
-> another. FI is measured on quota return, FII on compounded dividend yield, and
-> FIDC / FIAGRO / FIP on net-asset growth — which conflates subscriptions and
-> redemptions with performance and is not a return at all. The basis travels with
-> every row so the mix is always visible. A single fund's trajectory through time
-> is on [Fund Explorer](/fund); the rates these returns should be judged against
-> are on [Macro Context](/macro).
+> another. FI is measured on quota return while FII is measured on compounded
+> dividend yield. FIDC, FIAGRO and FIP are absent: their filings expose net
+> assets but no return series, and net-asset growth is dominated by flows and
+> capital calls. A single fund's trajectory through time is on
+> [Fund Explorer](/fund); the rates these returns should be judged against are
+> on [Macro Context](/macro).
 
 ---
 
@@ -54,14 +56,15 @@ select * from supabase.ranking_by_class
 > a market fact.
 >
 > `Avg` and `Best` are per class and on that class's own basis, so the columns
-> must not be compared down the page.
+> must not be compared down the page. Classes with no defensible return measure
+> are omitted rather than displaying economically meaningless PL growth.
 
 <DataTable data={class_summary}>
   <Column id=asset_class title="Asset Class"/>
   <Column id=return_basis title="Basis"/>
   <Column id=funds_ranked title="Funds Ranked" fmt=num0/>
-  <Column id=avg_perf_pct title="Avg Performance (%)" fmt=num2/>
-  <Column id=best_pct title="Best Performance (%)" fmt=num2/>
+  <Column id=avg_perf_num2 title="Avg Performance (%)" fmt=num2/>
+  <Column id=best_num2 title="Best Performance (%)" fmt=num2/>
 </DataTable>
 
 ---
@@ -77,7 +80,7 @@ select * from supabase.ranking_by_class
   <Column id=rank_in_class title="#" fmt=num0/>
   <Column id=fund title="Fund"/>
   <Column id=entity_type title="Entity"/>
-  <Column id=performance_pct title="Performance (%)" fmt=num2/>
+  <Column id=performance_num2 title="Performance (%)" fmt=num2/>
   <Column id=return_basis title="Basis"/>
   <Column id=n_obs title="Obs" fmt=num0/>
   <Column id=aum_mm title="Net Assets (R$mm)" fmt=num1/>
@@ -95,7 +98,11 @@ classes:
 | ---------------------------------------- | ---------------- | ------------------------------------------------------------------------------- |
 | FI (Fixed Income / Equity / Multimarket) | `quota_return`   | last/first `vl_quota` − 1 (a true NAV return)                                   |
 | FII (Real Estate)                        | `dividend_yield` | compounded monthly dividend yield                                               |
-| FIDC / FIAGRO / FIP                      | `pl_growth`      | last/first net assets − 1 — **growth, not a clean return** (it conflates flows) |
+
+FIDC, FIAGRO and FIP are deliberately absent. Their available `vl_patrim_liq`
+series measures the size of the vehicle after subscriptions, redemptions and
+capital calls; using `last / first − 1` produced million-percent figures that
+were mathematically valid size changes but economically invalid returns.
 
 Default window is the trailing 12 months; pass a calendar year to
 `fund_performance_ranking(asset_class, start, end, …)` for "who beat their peers in

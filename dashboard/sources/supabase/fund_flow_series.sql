@@ -56,7 +56,7 @@ select
   x.resg_mes / 1e6                                as outflow_mm,
   x.net_flow / 1e6                                as net_flow_mm,
   x.cumulative_net_flow / 1e9                     as cum_net_flow_bn,
-  round(100.0 * x.redemption_pressure, 2)         as redemption_pressure_pct
+  round(100.0 * x.redemption_pressure, 2)         as redemption_pressure_num2
 from months m
 left join series x on x.period = m.period
 order by m.period, x.fund

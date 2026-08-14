@@ -21,8 +21,8 @@ select
   m.price,
   m.nav,
   m.cotistas,
-  m.taxa_adm_pct,
-  m.ret_12m_pct,
+  m.taxa_adm_pct as taxa_adm_num2,
+  m.ret_12m_pct as ret_12m_num2,
   m.snapshot_date
 from cvm_etf_registry r
 left join etf_market_latest m on m.ticker = r.ticker

@@ -62,7 +62,7 @@ select
   case
     when s.subordination_ratio between 0 and 1
       then round(100.0 * s.subordination_ratio, 1)
-  end                                     as subordination_pct
+  end                                     as subordination_num1
 from months m
 left join series s on s.period = m.period
 left join cvm_fund_registry r

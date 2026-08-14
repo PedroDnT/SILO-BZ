@@ -63,7 +63,7 @@ select
   a.payout / 1e6                                          as payout_mm,
   a.assets / 1e9                                          as assets_bn,
   a.pl / 1e9                                              as pl_bn,
-  round(100.0 * a.payout / nullif(a.pl, 0), 2)            as payout_pct_of_pl,
+  round(100.0 * a.payout / nullif(a.pl, 0), 2)            as payout_of_pl_num2,
   a.n_funds                                               as n_funds,
   a.n_funds_payout                                        as n_funds_payout,
   a.n_funds_assets                                        as n_funds_assets,

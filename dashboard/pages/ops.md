@@ -177,7 +177,7 @@ title="Run Status per Day"
   <Column id=n_ok title="OK" fmt=num0/>
   <Column id=n_error title="Errors" fmt=num0/>
   <Column id=n_skipped title="Skipped" fmt=num0/>
-  <Column id=ok_pct title="OK (%)" fmt=num1/>
+  <Column id=ok_num1 title="OK (%)" fmt=num1/>
   <Column id=total_rows title="Rows (30d)" fmt=num0/>
   <Column id=last_run title="Last Run"/>
   <Column id=last_error_msg title="Last Error"/>

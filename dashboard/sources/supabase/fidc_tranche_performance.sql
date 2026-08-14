@@ -81,7 +81,7 @@ select
   round(a.desemp_real_median - a.desemp_esperado_median, 2)              as gap_median,
   a.rentab_mes_median,
   a.n_comparable,
-  round(100.0 * a.n_underperforming / nullif(a.n_comparable, 0), 1)      as underperforming_pct
+  round(100.0 * a.n_underperforming / nullif(a.n_comparable, 0), 1)      as underperforming_num1
 from row_guard g
 left join agg a on true
 order by a.n_tranches desc nulls last

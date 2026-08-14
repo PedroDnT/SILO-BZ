@@ -91,7 +91,7 @@ select * from supabase.securit_dfin_coverage
 <BigValue data={securit_overview} value=n_series label="Live Series" fmt=num0/>
 <BigValue data={securit_overview} value=n_securitizadoras label="Securitizadoras" fmt=num0/>
 <BigValue data={securit_overview} value=outstanding_bn label="Outstanding (R$bn)" fmt=num0/>
-<BigValue data={securit_overview} value=inadimplente_pct label="Series Inadimplente (%)" fmt=num1/>
+<BigValue data={securit_overview} value=inadimplente_num1 label="Series Inadimplente (%)" fmt=num1/>
 <BigValue data={securit_overview} value=last_reference label="Latest Reference"/>
 
 > `Series Inadimplente` is a share of the **series count**, not of value: it says
@@ -119,7 +119,7 @@ yAxisTitle="R$bn"
 <LineChart
   data={securit_issuance_trend}
   x=period
-  y=inadimplente_pct
+  y=inadimplente_num1
   yAxisTitle="% of Series"
   title="Share of Series Marked Inadimplente"
 />
@@ -131,7 +131,7 @@ yAxisTitle="R$bn"
   <Column id=cra_bn title="CRA (R$bn)" fmt=num2/>
   <Column id=ots_bn title="OTS (R$bn)" fmt=num2/>
   <Column id=n_inadimplente title="Inadimplente" fmt=num0/>
-  <Column id=inadimplente_pct title="Series Inadimplente (%)" fmt=num1/>
+  <Column id=inadimplente_num1 title="Series Inadimplente (%)" fmt=num1/>
 </DataTable>
 
 ---
@@ -202,7 +202,7 @@ yAxisTitle="R$mm"
   <Column id=pgt_mezanino_mm title="Mezzanine (R$mm)" fmt=num1/>
   <Column id=pgt_junior_mm title="Junior (R$mm)" fmt=num1/>
   <Column id=pgt_despesas_mm title="Expenses (R$mm)" fmt=num1/>
-  <Column id=cobertura_pct title="Paid / Collected (%)" fmt=num1/>
+  <Column id=cobertura_num1 title="Paid / Collected (%)" fmt=num1/>
   <Column id=n_securitizadoras title="Filers" fmt=num0/>
 </DataTable>
 
@@ -234,7 +234,7 @@ yAxisTitle="R$mm"
   <Column id=n_series title="Series" fmt=num0/>
   <Column id=value_bn title="Outstanding (R$bn)" fmt=num2/>
   <Column id=n_inadimplente title="Inadimplente" fmt=num0/>
-  <Column id=inadimplente_pct title="Series Inadimplente (%)" fmt=num1/>
+  <Column id=inadimplente_num1 title="Series Inadimplente (%)" fmt=num1/>
 </DataTable>
 
 ---
@@ -260,7 +260,7 @@ yAxisTitle="R$mm"
   <Column id=idx_subord_min_avg title="Índice Subord. Mínimo (mean, unscaled)" fmt=num2/>
   <Column id=n_with_idx title="Series w/ Index" fmt=num0/>
   <Column id=n_with_nivel title="Series w/ Nível" fmt=num0/>
-  <Column id=inadimplente_pct title="Series Inadimplente (%)" fmt=num1/>
+  <Column id=inadimplente_num1 title="Series Inadimplente (%)" fmt=num1/>
 </DataTable>
 
 ---

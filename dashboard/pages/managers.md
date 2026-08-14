@@ -80,8 +80,8 @@ select * from supabase.mgr_gestor_universe
 > gap. Industry-wide concentration measured without needing names is on
 > [Industry Structure](/industry).
 
-<BigValue data={mgr_coverage} value=admin_coverage_pct label="Registry Rows w/ Administrator (%)" fmt=num1/>
-<BigValue data={mgr_coverage} value=gestor_coverage_pct label="Registry Rows w/ Gestor (%)" fmt=num1/>
+<BigValue data={mgr_coverage} value=admin_coverage_num1 label="Registry Rows w/ Administrator (%)" fmt=num1/>
+<BigValue data={mgr_coverage} value=gestor_coverage_num1 label="Registry Rows w/ Gestor (%)" fmt=num1/>
 <BigValue data={mgr_coverage} value=n_administrators label="Administrators Named" fmt=num0/>
 <BigValue data={mgr_coverage} value=n_gestores label="Gestores Named" fmt=num0/>
 <BigValue data={mgr_coverage} value=ranking_period label="Ranking Period"/>
@@ -107,8 +107,8 @@ select * from supabase.mgr_gestor_universe
   <Column id=registry_rows title="Registry Rows" fmt=num0/>
   <Column id=rows_with_admin title="With Administrator" fmt=num0/>
   <Column id=rows_with_gestor title="With Gestor" fmt=num0/>
-  <Column id=admin_coverage_pct title="Admin Coverage (%)" fmt=num1/>
-  <Column id=gestor_coverage_pct title="Gestor Coverage (%)" fmt=num1/>
+  <Column id=admin_coverage_num1 title="Admin Coverage (%)" fmt=num1/>
+  <Column id=gestor_coverage_num1 title="Gestor Coverage (%)" fmt=num1/>
   <Column id=funds_in_universe title="Funds in Universe" fmt=num0/>
   <Column id=ranking_period title="Ranking Period"/>
 </DataTable>
@@ -138,7 +138,7 @@ select * from supabase.mgr_gestor_universe
   <Column id=aum_bn title="Net Assets (R$bn)" fmt=num2/>
   <Column id=net_flow_bn title="Net Flow (R$bn)" fmt=num2/>
   <Column id=inadimpl_mm title="Delinquent (R$mm)" fmt=num1/>
-  <Column id=avg_yield_pct title="Avg Yield (%)" fmt=num2/>
+  <Column id=avg_yield_num2 title="Avg Yield (%)" fmt=num2/>
   <Column id=period title="Period"/>
 </DataTable>
 
@@ -166,7 +166,7 @@ select * from supabase.mgr_gestor_universe
   <Column id=aum_bn title="Net Assets (R$bn)" fmt=num2/>
   <Column id=net_flow_bn title="Net Flow (R$bn)" fmt=num2/>
   <Column id=inadimpl_mm title="Delinquent (R$mm)" fmt=num1/>
-  <Column id=avg_yield_pct title="Avg Yield (%)" fmt=num2/>
+  <Column id=avg_yield_num2 title="Avg Yield (%)" fmt=num2/>
   <Column id=period title="Period"/>
 </DataTable>
 
@@ -187,7 +187,7 @@ select * from supabase.mgr_gestor_universe
   <Column id=n_funds title="Funds" fmt=num0/>
   <Column id=net_flow_bn title="Net Flow (R$bn)" fmt=num2/>
   <Column id=aum_bn title="Net Assets (R$bn)" fmt=num2/>
-  <Column id=flow_over_aum_pct title="Flow / Net Assets (%)" fmt=num2/>
+  <Column id=flow_over_aum_num2 title="Flow / Net Assets (%)" fmt=num2/>
   <Column id=period title="Period"/>
 </DataTable>
 

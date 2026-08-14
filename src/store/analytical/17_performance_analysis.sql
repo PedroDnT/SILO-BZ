@@ -67,6 +67,10 @@ AS $$
         WHERE m.cnpj = p_cnpj
           AND m.period BETWEEN start_date AND end_date
           AND (p_entity_type IS NULL OR m.entity_type = p_entity_type)
+          -- A missing/non-positive FI quota cannot define a return. In
+          -- particular, months before the stable CVM-175 subclass selected by
+          -- fact_fund_monthly must stay blank rather than falling back to PL.
+          AND (m.entity_type <> 'fi' OR m.vl_quota > 0)
     ),
     r AS (
         SELECT
@@ -84,13 +88,17 @@ AS $$
         CASE entity_type WHEN 'fi' THEN 'quota_return'
                          WHEN 'fii' THEN 'dividend_yield'
                          ELSE 'pl_growth' END                       AS return_basis,
-        COALESCE(vl_quota, vl_patrim_liq)                           AS level_value,
+        CASE entity_type WHEN 'fi' THEN vl_quota
+                         ELSE vl_patrim_liq END                     AS level_value,
         vl_patrim_liq,
         period_return,
         CASE WHEN entity_type = 'fii'
              THEN exp(sum(ln(1 + GREATEST(COALESCE(period_return, 0), -0.99))) OVER (PARTITION BY entity_type ORDER BY period)) - 1
-             ELSE COALESCE(vl_quota, vl_patrim_liq)
-                  / NULLIF(first_value(COALESCE(vl_quota, vl_patrim_liq)) OVER (PARTITION BY entity_type ORDER BY period), 0) - 1
+             WHEN entity_type = 'fi'
+             THEN vl_quota
+                  / NULLIF(first_value(vl_quota) OVER (PARTITION BY entity_type ORDER BY period), 0) - 1
+             ELSE vl_patrim_liq
+                  / NULLIF(first_value(vl_patrim_liq) OVER (PARTITION BY entity_type ORDER BY period), 0) - 1
         END                                                         AS cumulative_return
     FROM r
     ORDER BY period
@@ -149,16 +157,25 @@ AS $$
     first_row AS (
         SELECT DISTINCT ON (cnpj, entity_type)
                cnpj, entity_type, vl_quota AS q_first, vl_patrim_liq AS pl_first
-        FROM scoped ORDER BY cnpj, entity_type, period
+        FROM scoped
+        WHERE entity_type <> 'fi' OR vl_quota > 0
+        ORDER BY cnpj, entity_type, period
     ),
     last_row AS (
         SELECT DISTINCT ON (cnpj, entity_type)
                cnpj, entity_type, asset_class, period AS as_of,
                vl_quota AS q_last, vl_patrim_liq AS pl_last
-        FROM scoped ORDER BY cnpj, entity_type, period DESC
+        FROM scoped
+        WHERE entity_type <> 'fi' OR vl_quota > 0
+        ORDER BY cnpj, entity_type, period DESC
     ),
     agg AS (
-        SELECT cnpj, entity_type, COUNT(*) AS n_obs,
+        SELECT cnpj, entity_type,
+               CASE entity_type
+                   WHEN 'fi'  THEN COUNT(*) FILTER (WHERE vl_quota > 0)
+                   WHEN 'fii' THEN COUNT(pct_yield_mes)
+                   ELSE            COUNT(vl_patrim_liq)
+               END AS n_obs,
                -- Only compound when real yield data exists; all-NULL → NULL (not a
                -- false 0% that would rank a data-less fund as flat).
                CASE WHEN COUNT(pct_yield_mes) > 0

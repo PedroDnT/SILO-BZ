@@ -42,7 +42,7 @@ title: Industry Structure
 
   SHARE-OF-TOTAL CHART: Evidence AreaChart type=stacked100 does not work with a
   wide list of y columns (it rewrites each to `{name}_pct` and then fails to
-  find that column). industry_aum_trend.sql therefore emits *_share_pct and the
+  find that column). industry_aum_trend.sql therefore emits *_share_num1 and the
   page uses a regular stacked area of those.
 
   SECTION ORDER is size → concentration → composition → flows and formation →
@@ -117,7 +117,7 @@ select * from supabase.industry_fiagro
 data={industry_aum_trend}
 x=period
 type=stacked
-y={['fi_share_pct','fidc_share_pct','fii_share_pct','fiagro_share_pct','fip_share_pct']}
+y={['fi_share_num1','fidc_share_num1','fii_share_num1','fiagro_share_num1','fip_share_num1']}
 yAxisTitle="Share of Total Net Assets (%)"
 title="Net Assets by Family — Last 36 Months (share of total)"
 />
@@ -148,9 +148,9 @@ title="Net Assets by Family — Last 36 Months (ex-FI, absolute)"
   <Column id=period title="Period"/>
   <Column id=n_funds title="Funds" fmt=num0/>
   <Column id=hhi title="HHI (0–10,000)" fmt=num0/>
-  <Column id=top5_pct title="Top 5 Share (%)" fmt=num1/>
-  <Column id=top10_pct title="Top 10 Share (%)" fmt=num1/>
-  <Column id=top20_pct title="Top 20 Share (%)" fmt=num1/>
+  <Column id=top5_num1 title="Top 5 Share (%)" fmt=num1/>
+  <Column id=top10_num1 title="Top 10 Share (%)" fmt=num1/>
+  <Column id=top20_num1 title="Top 20 Share (%)" fmt=num1/>
 </DataTable>
 
 ---
@@ -186,7 +186,7 @@ title="Net Assets by Family — Last 36 Months (ex-FI, absolute)"
   <Column id=aum_bn title="Net Assets (R$bn)" fmt=num2/>
   <Column id=net_flow_bn title="Net Flow (R$bn)" fmt=num2/>
   <Column id=cotistas_mm title="Quotaholders (mm)" fmt=num2/>
-  <Column id=median_yield_pct title="Median Yield (%)" fmt=num2/>
+  <Column id=median_yield_num2 title="Median Yield (%)" fmt=num2/>
 </DataTable>
 
 ---
@@ -310,6 +310,6 @@ title="Quotaholders by Family — Last 36 Months"
   <Column id=n_funds title="Funds" fmt=num0/>
   <Column id=pl_bn title="Net Assets (R$bn)" fmt=num2/>
   <Column id=inadimpl_mm title="Delinquent (R$mm)" fmt=num1/>
-  <Column id=inadimpl_pct title="Delinquency (%)" fmt=num1/>
+  <Column id=inadimpl_num1 title="Delinquency (%)" fmt=num1/>
   <Column id=cotistas title="Quotaholders" fmt=num0/>
 </DataTable>

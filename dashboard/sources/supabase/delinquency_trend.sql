@@ -8,7 +8,7 @@
 with agg as (
   select
     a.period,
-    round(100.0 * sum(a.vl_total_inad) / nullif(sum(m.vl_patrim_liq), 0), 2) as delinquency_rate_pct,
+    round(100.0 * sum(a.vl_total_inad) / nullif(sum(m.vl_patrim_liq), 0), 2) as delinquency_rate_num1,
     sum(a.vl_total_inad) / 1e6                                              as total_inad_mm,
     count(distinct a.cnpj)                                                  as n_funds
   from cvm_fidc_aging a
@@ -16,7 +16,7 @@ with agg as (
   where a.period >= current_date - interval '24 months'
   group by a.period
 )
-select period, delinquency_rate_pct, total_inad_mm, n_funds
+select period, delinquency_rate_num1, total_inad_mm, n_funds
 from agg
 union all
 select null::date, null::numeric, null::numeric, null::bigint

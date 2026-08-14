@@ -10,7 +10,7 @@
 -- (src/store/analytical/13_dim_classification.sql). A class with no funds shows
 -- as blank, never as zero.
 --
--- median_yield_pct: fact_fund_monthly.pct_yield_mes is populated for FII only
+-- median_yield_num2: fact_fund_monthly.pct_yield_mes is populated for FII only
 -- (monthly dividend yield), so this column is blank for every other class by
 -- construction. It is NOT a cross-class return comparison.
 with spine as (
@@ -41,7 +41,7 @@ select
   t.total_aum      / 1e9 as aum_bn,
   t.net_flow       / 1e9 as net_flow_bn,
   t.total_cotistas / 1e6 as cotistas_mm,
-  round(t.median_yield, 2) as median_yield_pct
+  round(t.median_yield, 2) as median_yield_num2
 from spine sp
 cross join classes c
 left join t

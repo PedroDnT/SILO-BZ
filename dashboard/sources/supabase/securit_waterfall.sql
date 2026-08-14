@@ -9,7 +9,7 @@
 -- of removing the row.
 --
 -- The outflow columns are NOT negated: they are reported as positive amounts
--- paid, matching the source. cobertura_pct is the share of the month's
+-- paid, matching the source. cobertura_num1 is the share of the month's
 -- receivables consumed by all payments — above 100 means the structure paid out
 -- more than it collected that month.
 with months as (
@@ -71,7 +71,7 @@ select
   a.variacao_caixa_mm,
   a.n_securitizadoras,
   a.n_filings,
-  round(100.0 * a.pgt_total_raw / nullif(a.recebimentos_raw, 0), 1) as cobertura_pct
+  round(100.0 * a.pgt_total_raw / nullif(a.recebimentos_raw, 0), 1) as cobertura_num1
 from months m
 left join agg a on a.period = m.period
 order by m.period

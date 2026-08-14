@@ -39,7 +39,7 @@ select
   round(
     100.0 * count(*) filter (where situacao = 'Inadimplente')
     / nullif(count(*), 0), 1
-  )                                                              as inadimplente_pct,
+  )                                                              as inadimplente_num1,
   -- Series already past their maturity date but not yet marked closed: these
   -- fall outside the forward maturity ladder, so surface them separately
   -- instead of silently dropping them.
