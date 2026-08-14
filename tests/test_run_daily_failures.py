@@ -16,18 +16,10 @@ import pytest
 import src.pipeline.run_daily as rd
 
 
-def _patches(cvm_totals=None, bacen=None, anbima=None):
-    """Patch the three ingestors; each arg is either a return value or an Exception."""
+def _patches(cvm_totals=None, bacen=None, anbima=None, b3=None):
+    """Patch the daily ingestors; each arg is either a return value or an Exception."""
     cvm = MagicMock()
     cvm.daily_update = AsyncMock(return_value=cvm_totals or {"cvm_fi_diario": 1})
-
-    def _mk(spec, default):
-        m = MagicMock()
-        if isinstance(spec, Exception):
-            m.side_effect = spec
-        else:
-            m.return_value = spec if spec is not None else default
-        return m
 
     bacen_ing = MagicMock()
     bacen_ing.backfill = AsyncMock()
@@ -43,27 +35,35 @@ def _patches(cvm_totals=None, bacen=None, anbima=None):
     else:
         anbima_ing.daily_update.return_value = anbima or {"anbima_etf": 3}
 
+    b3_ing = MagicMock()
+    b3_ing.daily_update = AsyncMock()
+    if isinstance(b3, Exception):
+        b3_ing.daily_update.side_effect = b3
+    else:
+        b3_ing.daily_update.return_value = b3 or {"b3_cotahist": 4}
+
     return (
         patch.object(rd, "CVMIngestor", return_value=cvm),
         patch.object(rd, "BacenIngestor", return_value=bacen_ing),
         patch.object(rd, "AnbimaIngestor", return_value=anbima_ing),
-        cvm, bacen_ing, anbima_ing,
+        patch.object(rd, "B3Ingestor", return_value=b3_ing),
+        cvm, bacen_ing, anbima_ing, b3_ing,
     )
 
 
 @pytest.mark.asyncio
 async def test_all_healthy_exits_normally(monkeypatch):
     monkeypatch.delenv("APIFY_TOKEN", raising=False)
-    p1, p2, p3, *_ = _patches()
-    with p1, p2, p3:
+    p1, p2, p3, p4, *_ = _patches()
+    with p1, p2, p3, p4:
         await rd.main()  # no SystemExit
 
 
 @pytest.mark.asyncio
 async def test_one_failure_exits_nonzero(monkeypatch):
     monkeypatch.delenv("APIFY_TOKEN", raising=False)
-    p1, p2, p3, *_ = _patches(anbima=RuntimeError("column does not exist"))
-    with p1, p2, p3:
+    p1, p2, p3, p4, *_ = _patches(anbima=RuntimeError("column does not exist"))
+    with p1, p2, p3, p4:
         with pytest.raises(SystemExit) as exc:
             await rd.main()
     assert exc.value.code == 1
@@ -71,24 +71,25 @@ async def test_one_failure_exits_nonzero(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_earlier_failure_does_not_skip_later_sources(monkeypatch):
-    """BACEN blowing up must not prevent ANBIMA from running."""
+    """BACEN blowing up must not prevent ANBIMA or B3 from running."""
     monkeypatch.delenv("APIFY_TOKEN", raising=False)
-    p1, p2, p3, _cvm, _bacen, anbima_ing = _patches(
+    p1, p2, p3, p4, _cvm, _bacen, anbima_ing, b3_ing = _patches(
         bacen=RuntimeError("bacen down"))
-    with p1, p2, p3:
+    with p1, p2, p3, p4:
         with pytest.raises(SystemExit):
             await rd.main()
     anbima_ing.daily_update.assert_awaited()  # ran despite the earlier failure
+    b3_ing.daily_update.assert_awaited()
 
 
 @pytest.mark.asyncio
 async def test_multiple_failures_all_reported(monkeypatch, caplog):
     monkeypatch.delenv("APIFY_TOKEN", raising=False)
-    p1, p2, p3, *_ = _patches(
+    p1, p2, p3, p4, *_ = _patches(
         bacen=RuntimeError("bacen down"),
         anbima=RuntimeError("anbima down"),
     )
-    with p1, p2, p3:
+    with p1, p2, p3, p4:
         with caplog.at_level("ERROR"):
             with pytest.raises(SystemExit):
                 await rd.main()
@@ -100,19 +101,29 @@ async def test_multiple_failures_all_reported(monkeypatch, caplog):
 async def test_absent_apify_token_is_not_a_failure(monkeypatch):
     """A missing optional token skips the scrape; it must not fail the run."""
     monkeypatch.delenv("APIFY_TOKEN", raising=False)
-    p1, p2, p3, *_ = _patches()
-    with p1, p2, p3:
+    p1, p2, p3, p4, *_ = _patches()
+    with p1, p2, p3, p4:
         await rd.main()
 
 
 @pytest.mark.asyncio
 async def test_etf_scrape_failure_exits_nonzero(monkeypatch):
     monkeypatch.setenv("APIFY_TOKEN", "tok")
-    p1, p2, p3, *_ = _patches()
-    with p1, p2, p3, \
+    p1, p2, p3, p4, *_ = _patches()
+    with p1, p2, p3, p4, \
          patch("src.pipeline.ingest_etf_market.ingest_etf_market",
                side_effect=RuntimeError("scrape blocked")), \
          patch("src.store.pg_client.get_pg_client", return_value=MagicMock()):
+        with pytest.raises(SystemExit) as exc:
+            await rd.main()
+    assert exc.value.code == 1
+
+
+@pytest.mark.asyncio
+async def test_b3_failure_exits_nonzero(monkeypatch):
+    monkeypatch.delenv("APIFY_TOKEN", raising=False)
+    p1, p2, p3, p4, *_ = _patches(b3=RuntimeError("cotahist 500"))
+    with p1, p2, p3, p4:
         with pytest.raises(SystemExit) as exc:
             await rd.main()
     assert exc.value.code == 1
