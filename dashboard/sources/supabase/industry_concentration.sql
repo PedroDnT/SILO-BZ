@@ -27,9 +27,9 @@ select
   e.entity_type,
   mc.period,
   round(mc.hhi, 1)                  as hhi,
-  round(100.0 * mc.top5_share, 1)   as top5_pct,
-  round(100.0 * mc.top10_share, 1)  as top10_pct,
-  round(100.0 * mc.top20_share, 1)  as top20_pct,
+  round(100.0 * mc.top5_share, 1)   as top5_num1,
+  round(100.0 * mc.top10_share, 1)  as top10_num1,
+  round(100.0 * mc.top20_share, 1)  as top20_num1,
   mc.n_funds
 from entities e
 left join lateral market_concentration(e.entity_type, null) mc on true

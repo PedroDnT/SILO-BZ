@@ -51,7 +51,11 @@ title: FIDC Credit Monitor
       real, not a parsing bug.
     * Delinquency figures above 100% (a fund's overdue book exceeding its own
       net assets) are real and expected for severely distressed funds, not
-      capped — that is the signal this page exists to surface.
+      capped — that is the signal this page exists to surface. The *chart*
+      showing ~210% for a table that reads 1.1% was not that: Evidence treats
+      a column named `*_pct` as a 0–1 fraction and multiplies by 100. SQL
+      already stores percentage points. Columns are named `*_num1` so the
+      chart and the table share a scale.
     * FIDC ingestion has historically lagged (CVM publication delay); months with
       no filing render blank rather than zero.
 
@@ -142,7 +146,7 @@ select * from supabase.fidc_flows_by_oper
 <LineChart
   data={delinquency_trend}
   x=period
-  y=delinquency_rate_pct
+  y=delinquency_rate_num1
   yAxisTitle="Delinquency (%)"
   title="FIDC Sector Delinquency Rate"
 />
@@ -151,7 +155,7 @@ select * from supabase.fidc_flows_by_oper
   <Column id=period title="Period"/>
   <Column id=n_funds title="Funds" fmt=num0/>
   <Column id=total_inad_mm title="Total Delinquent (R$mm)" fmt=num1/>
-  <Column id=delinquency_rate_pct title="Delinquency (%)" fmt=num1/>
+  <Column id=delinquency_rate_num1 title="Delinquency (%)" fmt=num1/>
 </DataTable>
 
 ---
@@ -169,7 +173,7 @@ select * from supabase.fidc_flows_by_oper
   <Column id=period title="Period"/>
   <Column id=pl_mm title="Net Assets (R$mm)" fmt=num1/>
   <Column id=inad_mm title="Delinquent (R$mm)" fmt=num1/>
-  <Column id=delinquency_pct title="Delinquency (%)" fmt=num1/>
+  <Column id=delinquency_num1 title="Delinquency (%)" fmt=num1/>
 </DataTable>
 
 ---
@@ -213,7 +217,7 @@ yAxisTitle="R$mm"
   <Column id=bucket title="Bucket"/>
   <Column id=performing_mm title="Performing (R$mm)" fmt=num1/>
   <Column id=delinquent_mm title="Delinquent (R$mm)" fmt=num1/>
-  <Column id=delinquent_pct title="Delinquent Share of Bucket (%)" fmt=num1/>
+  <Column id=delinquent_num1 title="Delinquent Share of Bucket (%)" fmt=num1/>
   <Column id=n_funds title="Funds" fmt=num0/>
 </DataTable>
 
@@ -274,7 +278,7 @@ title="Promised vs Realised Performance by Tranche Class"
   <Column id=desemp_real_median title="Realised (%, median)" fmt=num2/>
   <Column id=gap_median title="Gap (pp, median)" fmt=num2/>
   <Column id=n_comparable title="Comparable" fmt=num0/>
-  <Column id=underperforming_pct title="Underperforming (%)" fmt=num1/>
+  <Column id=underperforming_num1 title="Underperforming (%)" fmt=num1/>
 </DataTable>
 
 > The same two medians over 24 months, and the share of comparable tranches
@@ -292,7 +296,7 @@ title="Universe Median: Promised vs Realised Tranche Performance"
 <LineChart
   data={fidc_tranche_trend}
   x=period
-  y=underperforming_pct
+  y=underperforming_num1
   yAxisTitle="% of Comparable Tranches"
   title="Share of Tranches Below Their Promised Performance"
 />
@@ -316,7 +320,7 @@ title="Universe Median: Promised vs Realised Tranche Performance"
   <Column id=desemp_real title="Realised (%)" fmt=num2/>
   <Column id=gap title="Gap (pp)" fmt=num2/>
   <Column id=rentab_mes title="Return in Month (%)" fmt=num2/>
-  <Column id=inadimpl_pct title="Fund Delinquency (%)" fmt=num1/>
+  <Column id=inadimpl_num1 title="Fund Delinquency (%)" fmt=num1/>
   <Column id=n_excluded_outliers title="Rows Excluded by Band" fmt=num0/>
 </DataTable>
 
@@ -337,8 +341,8 @@ title="Universe Median: Promised vs Realised Tranche Performance"
   <Column id=n_subordinada_series title="Subordinated Series" fmt=num0/>
   <Column id=qt_senior_mm title="Senior Quotas (mm)" fmt=num2/>
   <Column id=qt_subordinada_mm title="Subord. Quotas (mm)" fmt=num2/>
-  <Column id=subordination_pct title="Subordination, of Quotas (%)" fmt=num1/>
-  <Column id=inadimpl_pct title="Delinquency (%)" fmt=num1/>
+  <Column id=subordination_num1 title="Subordination, of Quotas (%)" fmt=num1/>
+  <Column id=inadimpl_num1 title="Delinquency (%)" fmt=num1/>
 </DataTable>
 
 > One fund tracked for 24 months below. A subordination ratio only means something
@@ -349,7 +353,7 @@ title="Universe Median: Promised vs Realised Tranche Performance"
 <LineChart
   data={fidc_subordination_trend}
   x=period
-  y=subordination_pct
+  y=subordination_num1
   yAxisTitle="% of Quotas"
   title="Subordinated Share of Quotas — Largest FIDC"
   fmt=num1
@@ -362,7 +366,7 @@ title="Universe Median: Promised vs Realised Tranche Performance"
   <Column id=n_subordinada_series title="Subordinated Series" fmt=num0/>
   <Column id=qt_senior_mm title="Senior Quotas (mm)" fmt=num2/>
   <Column id=qt_subordinada_mm title="Subord. Quotas (mm)" fmt=num2/>
-  <Column id=subordination_pct title="Subordination, of Quotas (%)" fmt=num1/>
+  <Column id=subordination_num1 title="Subordination, of Quotas (%)" fmt=num1/>
 </DataTable>
 
 ---

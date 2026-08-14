@@ -72,7 +72,7 @@ select
   u.pr_desemp_real                                             as desemp_real,
   round(u.pr_desemp_real - u.pr_desemp_esperado, 2)            as gap,
   u.vl_rentab_mes                                              as rentab_mes,
-  round(100.0 * u.fund_inadimpl / nullif(u.fund_pl, 0), 1)     as inadimpl_pct,
+  round(100.0 * u.fund_inadimpl / nullif(u.fund_pl, 0), 1)     as inadimpl_num1,
   e.n_excluded_outliers
 from row_guard g
 left join under u on true

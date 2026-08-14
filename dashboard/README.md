@@ -56,6 +56,14 @@ read any page:
   yields and small ratios `num2`. `BigValue` tiles round one step coarser.
   **Years, series codes and série numbers carry no `fmt`** — `num0` renders 2026
   as "2,026".
+- **Never suffix a percentage-point column with `_pct`.** Evidence treats the
+  token after the last underscore as a format tag: `growth_pct` means "this
+  value is a 0–1 fraction, display as percent" and multiplies by 100. This
+  dashboard stores percentage points in SQL (1.5 = 1.5%). Tables overrode the
+  tag with `fmt=num1` so they looked right; charts inherited `_pct` and showed
+  150% for a 1.5% rate (live `/fidc` delinquency, `/fund` returns, `/macro`
+  IPCA). Name the column `*_num1` or `*_num2` instead — those are the formats
+  we actually use.
 - **Chart type follows data shape.** Stock or level over time → `LineChart`, or
   `AreaChart` when it is a composition; per-period flows and counts → `BarChart`
   (high-frequency daily flows stay lines for legibility); categorical ranking →

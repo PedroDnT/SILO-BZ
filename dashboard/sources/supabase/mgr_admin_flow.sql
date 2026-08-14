@@ -40,7 +40,7 @@ select
   r.n_funds,
   r.net_flow  / 1e9 as net_flow_bn,
   r.total_aum / 1e9 as aum_bn,
-  round(100.0 * r.net_flow / nullif(r.total_aum, 0), 2) as flow_over_aum_pct
+  round(100.0 * r.net_flow / nullif(r.total_aum, 0), 2) as flow_over_aum_num2
 from slots s
 left join ranked r on r.slot = s.slot
 order by s.slot

@@ -60,8 +60,8 @@ select * from supabase.ranking_by_class
   <Column id=asset_class title="Asset Class"/>
   <Column id=return_basis title="Basis"/>
   <Column id=funds_ranked title="Funds Ranked" fmt=num0/>
-  <Column id=avg_perf_pct title="Avg Performance (%)" fmt=num2/>
-  <Column id=best_pct title="Best Performance (%)" fmt=num2/>
+  <Column id=avg_perf_num2 title="Avg Performance (%)" fmt=num2/>
+  <Column id=best_num2 title="Best Performance (%)" fmt=num2/>
 </DataTable>
 
 ---
@@ -77,7 +77,7 @@ select * from supabase.ranking_by_class
   <Column id=rank_in_class title="#" fmt=num0/>
   <Column id=fund title="Fund"/>
   <Column id=entity_type title="Entity"/>
-  <Column id=performance_pct title="Performance (%)" fmt=num2/>
+  <Column id=performance_num2 title="Performance (%)" fmt=num2/>
   <Column id=return_basis title="Basis"/>
   <Column id=n_obs title="Obs" fmt=num0/>
   <Column id=aum_mm title="Net Assets (R$mm)" fmt=num1/>

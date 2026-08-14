@@ -71,6 +71,6 @@ select
   round(
     100.0 * delinquent
     / nullif(coalesce(performing, 0) + coalesce(delinquent, 0), 0), 1
-  ) as delinquent_pct
+  ) as delinquent_num1
 from buckets
 order by bucket

@@ -213,7 +213,7 @@ title="Daily Subscriptions vs Redemptions"
 <LineChart
   data={fi_investor_split}
   x=period
-  y=retail_pct
+  y=retail_num1
   yAxisTitle="Retail Share of Modelled Base (%)"
   title="Retail Share of the FI Investor Base"
 />
@@ -222,7 +222,7 @@ title="Daily Subscriptions vs Redemptions"
   <Column id=period title="Month"/>
   <Column id=retail_k title="Retail (thousands)" fmt=num0/>
   <Column id=institutional_k title="Institutional (thousands)" fmt=num0/>
-  <Column id=retail_pct title="Retail Share (%)" fmt=num1/>
+  <Column id=retail_num1 title="Retail Share (%)" fmt=num1/>
   <Column id=n_funds title="Funds in File" fmt=num0/>
   <Column id=n_funds_with_split title="Funds with Split" fmt=num0/>
 </DataTable>
@@ -279,7 +279,7 @@ title="Daily Subscriptions vs Redemptions"
 <DataTable data={fi_top_aplic} rows=20>
   <Column id=tp_aplic title="Application Type"/>
   <Column id=value_bn title="Reported Position (R$bn)" fmt=num2/>
-  <Column id=share_pct title="Share of Observed CDA Total (%)" fmt=num1/>
+  <Column id=share_num1 title="Share of Observed CDA Total (%)" fmt=num1/>
   <Column id=n_funds title="Funds" fmt=num0/>
   <Column id=period title="Period"/>
 </DataTable>

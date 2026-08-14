@@ -129,8 +129,8 @@ title="FII Monthly Dividend Yield Distribution"
   <Column id=fund_name title="Fund"/>
   <Column id=pl_mm title="Net Assets (R$mm)" fmt=num1/>
   <Column id=investors title="Quotaholders" fmt=num0/>
-  <Column id=dy_pct title="Dividend Yield (%)" fmt=num2/>
-  <Column id=return_pct title="Return (%)" fmt=num2/>
+  <Column id=dy_num2 title="Dividend Yield (%)" fmt=num2/>
+  <Column id=return_num2 title="Return (%)" fmt=num2/>
 </DataTable>
 
 ---
@@ -178,7 +178,7 @@ title="FII Monthly Dividend Yield Distribution"
 <LineChart
   data={fii_payout_trend}
   x=period
-  y=payout_pct_of_pl
+  y=payout_of_pl_num2
   yAxisTitle="Payout / Net Assets (%)"
   title="Sector Payout as a Share of Net Assets"
 />
@@ -188,7 +188,7 @@ title="FII Monthly Dividend Yield Distribution"
   <Column id=payout_mm title="Income to Distribute (R$mm)" fmt=num1/>
   <Column id=pl_bn title="Net Assets (R$bn)" fmt=num2/>
   <Column id=assets_bn title="Total Assets (R$bn)" fmt=num2/>
-  <Column id=payout_pct_of_pl title="Payout / Net Assets (%)" fmt=num2/>
+  <Column id=payout_of_pl_num2 title="Payout / Net Assets (%)" fmt=num2/>
   <Column id=n_funds title="Funds in Month" fmt=num0/>
   <Column id=n_funds_payout title="…Reporting Payout" fmt=num0/>
   <Column id=n_funds_assets title="…Reporting Assets" fmt=num0/>
@@ -208,12 +208,12 @@ title="FII Monthly Dividend Yield Distribution"
   <Column id=payout_mm title="Income to Distribute (R$mm)" fmt=num1/>
   <Column id=pl_mm title="Net Assets (R$mm)" fmt=num1/>
   <Column id=vl_ativo_mm title="Total Assets (R$mm)" fmt=num1/>
-  <Column id=payout_pct_of_pl title="Payout / Net Assets (%)" fmt=num2/>
+  <Column id=payout_of_pl_num2 title="Payout / Net Assets (%)" fmt=num2/>
   <Column id=cotas_emitidas title="Quotas Issued" fmt=num0/>
   <Column id=vpc title="Book Value / Quota (R$)" fmt='#,##0.00'/>
   <Column id=payout_per_cota title="Payout / Quota (R$)" fmt='#,##0.00'/>
-  <Column id=payout_yield_pct title="Payout Yield on Book (%)" fmt=num2/>
-  <Column id=reported_dy_pct title="Reported DY (%)" fmt=num2/>
+  <Column id=payout_yield_num2 title="Payout Yield on Book (%)" fmt=num2/>
+  <Column id=reported_dy_num2 title="Reported DY (%)" fmt=num2/>
   <Column id=period title="Month"/>
 </DataTable>
 

@@ -58,7 +58,7 @@ select
   a.outros_bn,
   a.n_series,
   a.n_inadimplente,
-  round(100.0 * a.n_inadimplente / nullif(a.n_series, 0), 1) as inadimplente_pct
+  round(100.0 * a.n_inadimplente / nullif(a.n_series, 0), 1) as inadimplente_num1
 from months m
 left join agg a on a.period = m.period
 order by m.period

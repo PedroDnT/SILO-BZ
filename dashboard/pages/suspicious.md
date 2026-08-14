@@ -76,7 +76,7 @@ select * from supabase.captive_vehicles
   <Column id=fund_name title="Fund"/>
   <Column id=period title="Period"/>
   <Column id=pl_mm title="Net Assets (R$mm)" fmt=num1/>
-  <Column id=inad_pct title="Delinquency (%)" fmt=num1/>
+  <Column id=inad_num1 title="Delinquency (%)" fmt=num1/>
 </DataTable>
 
 ---
@@ -96,8 +96,8 @@ select * from supabase.captive_vehicles
 <DataTable data={evergreen_aging}>
   <Column id=fund_name title="Fund"/>
   <Column id=months_observed title="Months Observed" fmt=num0/>
-  <Column id=min_longtail_pct title="Long-Tail Share, Min (%)" fmt=num1/>
-  <Column id=max_longtail_pct title="Long-Tail Share, Max (%)" fmt=num1/>
+  <Column id=min_longtail_num1 title="Long-Tail Share, Min (%)" fmt=num1/>
+  <Column id=max_longtail_num1 title="Long-Tail Share, Max (%)" fmt=num1/>
 </DataTable>
 
 ---

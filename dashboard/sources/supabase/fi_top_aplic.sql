@@ -34,7 +34,7 @@ select
   t.period                                                        as period,
   coalesce(b.tp_aplic, 'no CDA rows for this period')             as tp_aplic,
   b.v / 1e9                                                       as value_bn,
-  round(100.0 * b.v / nullif(t.observed_total, 0), 1)             as share_pct,
+  round(100.0 * b.v / nullif(t.observed_total, 0), 1)             as share_num1,
   b.n_funds                                                       as n_funds
 from total t
 left join base b on true

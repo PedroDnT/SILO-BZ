@@ -30,13 +30,13 @@ monthly as (
 )
 select
   sp.period,
-  max(m.value) filter (where m.series_code = 432) as selic_meta_pct_aa,
-  max(m.value) filter (where m.series_code = 11)  as selic_diaria_pct_ad,
-  max(m.value) filter (where m.series_code = 12)  as cdi_pct_ad,
-  max(m.value) filter (where m.series_code = 433) as ipca_mes_pct,
-  max(m.value) filter (where m.series_code = 189) as igpm_mes_pct,
-  max(m.value) filter (where m.series_code = 188) as inpc_mes_pct,
-  max(m.value) filter (where m.series_code = 25)  as poupanca_mes_pct
+  max(m.value) filter (where m.series_code = 432) as selic_meta_num2,
+  max(m.value) filter (where m.series_code = 11)  as selic_diaria_num2,
+  max(m.value) filter (where m.series_code = 12)  as cdi_num2,
+  max(m.value) filter (where m.series_code = 433) as ipca_mes_num2,
+  max(m.value) filter (where m.series_code = 189) as igpm_mes_num2,
+  max(m.value) filter (where m.series_code = 188) as inpc_mes_num2,
+  max(m.value) filter (where m.series_code = 25)  as poupanca_mes_num2
 from spine sp
 left join monthly m on m.period = sp.period
 group by sp.period

@@ -43,7 +43,7 @@ select
   a.esperado_median,
   a.real_median,
   round(a.real_median - a.esperado_median, 2)                       as gap_median,
-  round(100.0 * a.n_underperforming / nullif(a.n_comparable, 0), 1) as underperforming_pct
+  round(100.0 * a.n_underperforming / nullif(a.n_comparable, 0), 1) as underperforming_num1
 from months m
 left join agg a on a.period = m.period
 order by m.period
