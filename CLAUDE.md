@@ -89,7 +89,8 @@ Storage layout: ~30 tables named `cvm_<entity>_<doctype>` or `bacen_<series>` (p
   survives as an ETF-only compat view), `etf_market_snapshot` (scraped ETF NAV/cotistas — wired
   into the daily run but **gated on the `APIFY_TOKEN` secret**; it self-skips when the
   token is unset. See `docs/ETF_AND_PERFORMANCE.md`), and `b3_cotahist` (B3 COTAHIST
-  quotes; daily run fetches the last 7 calendar days, yearly backfill is opt-in).
+  quotes; daily run fetches the last 7 calendar days, yearly backfill is opt-in.
+  Serve cash quotes from `vw_b3_quote_vista` (`tpmerc = '010'`), not the option-heavy parent).
 
 The **analytical layer** (`src/store/analytical/`, applied by `scripts/apply_analytical.sh`
 after ingest) is the read side the dashboards query: `dim_fund` (a **materialized view**,

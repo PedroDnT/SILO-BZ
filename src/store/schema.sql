@@ -868,9 +868,53 @@ CREATE TABLE IF NOT EXISTS b3_cotahist_future PARTITION OF b3_cotahist
 
 CREATE INDEX IF NOT EXISTS idx_b3_cotahist_dt
     ON b3_cotahist USING BRIN (trade_date);
-CREATE INDEX IF NOT EXISTS idx_b3_cotahist_codneg
-    ON b3_cotahist (codneg, trade_date DESC);
+-- UNIQUE (codneg, trade_date, …) already covers all-market ticker+date lookups.
+-- Serve path is cash (tpmerc='010'); a partial covering index keeps option rows
+-- (the bulk of COTAHIST) out of the quote-card plan.
+CREATE INDEX IF NOT EXISTS idx_b3_cotahist_vista
+    ON b3_cotahist (codneg, trade_date DESC)
+    INCLUDE (
+        preco_abertura, preco_maximo, preco_minimo, preco_fechamento,
+        volume, negocios, quantidade, isin
+    )
+    WHERE tpmerc = '010';
 CREATE INDEX IF NOT EXISTS idx_b3_cotahist_isin
     ON b3_cotahist (isin) WHERE isin IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_b3_cotahist_tpmerc_dt
     ON b3_cotahist (tpmerc, trade_date DESC);
+
+COMMENT ON TABLE b3_cotahist IS
+    'B3 COTAHIST register-01 quotes. Unadjusted. Natural key (codneg, trade_date, tpmerc, codbdi, prazot).';
+COMMENT ON COLUMN b3_cotahist.tpmerc IS
+    'Market type: 010 vista, 020 fracionario, 070/080 options, 030 termo.';
+COMMENT ON COLUMN b3_cotahist.prazot IS
+    'Forward-market term in days; empty string for cash market (part of UNIQUE).';
+
+-- Read-side cash tape. Dashboards / Data API should query this, not the parent
+-- (parent is ~options-heavy). Filter is the same predicate as idx_b3_cotahist_vista.
+CREATE OR REPLACE VIEW vw_b3_quote_vista AS
+SELECT
+    codneg,
+    trade_date,
+    nome_resumido,
+    especi,
+    moeda,
+    preco_abertura,
+    preco_maximo,
+    preco_minimo,
+    preco_medio,
+    preco_fechamento,
+    oferta_compra,
+    oferta_venda,
+    negocios,
+    quantidade,
+    volume,
+    isin,
+    fator_cotacao,
+    source,
+    fetched_at
+FROM b3_cotahist
+WHERE tpmerc = '010';
+
+COMMENT ON VIEW vw_b3_quote_vista IS
+    'Cash-market (tpmerc=010) COTAHIST quotes for serving. Unadjusted. Key (codneg, trade_date).';

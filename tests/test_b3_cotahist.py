@@ -305,3 +305,26 @@ class TestIngestor:
             ing._fetcher.fetch_daily = AsyncMock(return_value=make_zip(make_txt()))
             with pytest.raises(CotahistParseError):
                 await ing.ingest_daily(date(2026, 8, 13))
+
+
+class TestServeSchema:
+    """Landing DDL must keep the cash-market serve path (partial index + view)."""
+
+    def test_schema_has_vista_covering_index_and_view(self):
+        from pathlib import Path
+
+        schema = Path("src/store/schema.sql").read_text(encoding="utf-8")
+        assert "idx_b3_cotahist_vista" in schema
+        assert "WHERE tpmerc = '010'" in schema
+        assert "CREATE OR REPLACE VIEW vw_b3_quote_vista" in schema
+        assert "idx_b3_cotahist_codneg" not in schema
+
+    def test_migration_19_drops_redundant_codneg_index(self):
+        from pathlib import Path
+
+        mig = Path("src/store/migrations/19_b3_cotahist_serve.sql").read_text(
+            encoding="utf-8"
+        )
+        assert "DROP INDEX IF EXISTS idx_b3_cotahist_codneg" in mig
+        assert "idx_b3_cotahist_vista" in mig
+        assert "vw_b3_quote_vista" in mig

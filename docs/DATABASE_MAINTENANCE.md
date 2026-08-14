@@ -161,18 +161,19 @@ Adding a whole dataset is a different recipe — see "Adding a dataset" in `CLAU
 
 ## 6. Yearly partition rollover ⚠️
 
-`cvm_fi_diario` and `cia_account` are **range-partitioned by year**. Partitions are
-declared through **2026**, plus a `_future` catch-all.
+`cvm_fi_diario`, `cia_account`, and `b3_cotahist` are **range-partitioned by year**.
+Partitions are declared through **2026**, plus a `_future` catch-all.
 
 This will not fail loudly. Once 2027 data arrives it lands in `cvm_fi_diario_future` /
-`cia_account_future`, which silently forfeits partition pruning and grows without bound —
-the same quiet-degradation shape as the bugs above.
+`cia_account_future` / `b3_cotahist_future`, which silently forfeits partition pruning
+and grows without bound — the same quiet-degradation shape as the bugs above.
 
 Check (should be `0`):
 
 ```sql
 SELECT 'fi_diario_future' AS t, count(*) FROM cvm_fi_diario_future
-UNION ALL SELECT 'cia_account_future', count(*) FROM cia_account_future;
+UNION ALL SELECT 'cia_account_future', count(*) FROM cia_account_future
+UNION ALL SELECT 'b3_cotahist_future', count(*) FROM b3_cotahist_future;
 ```
 
 Each year, before January:
@@ -183,7 +184,8 @@ Each year, before January:
    CREATE TABLE IF NOT EXISTS cvm_fi_diario_2027 PARTITION OF cvm_fi_diario
        FOR VALUES FROM ('2027-01-01') TO ('2028-01-01');
    ```
-   (and the matching `cia_account_2027`, which partitions on `dt_refer`).
+   (and the matching `cia_account_2027`, which partitions on `dt_refer`, and
+   `b3_cotahist_2027`, which partitions on `trade_date`).
 2. Apply it, then move any rows already parked in `_future` into the real partition
    (`INSERT … SELECT` + `DELETE`, inside a transaction).
 
