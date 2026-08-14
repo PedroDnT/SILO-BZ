@@ -1,0 +1,16 @@
+# Mintlify only publishes index.mdx (see docs.json). Everything else in this
+# repo is pipeline / Evidence.dev markdown whose template syntax is not MDX
+# and must not be parsed by the Mintlify GitHub Deployment check.
+dashboard/
+webapp/
+src/
+tests/
+docs/
+scripts/
+migrations/
+.claude/
+.agents/
+.github/
+.codex/
+cache/
+temp/

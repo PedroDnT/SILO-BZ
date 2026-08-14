@@ -6,6 +6,9 @@ Target table: cvm_fidc_aging.
 """
 
 TABLE = "cvm_fidc_aging"
+# Unique-key audit (real inf_mensal_fidc_tab_VI_202606.csv): no ID_SUBCLASSE;
+# 4,321 rows, zero duplicates on (CNPJ_FUNDO_CLASSE, DT_COMPTC). Same Classe/
+# Fundo split as tab_IV, on distinct CNPJs.
 CONFLICT = ("cnpj", "period")
 
 FIELD_MAP = {

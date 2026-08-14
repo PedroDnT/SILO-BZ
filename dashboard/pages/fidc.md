@@ -352,6 +352,7 @@ title="Universe Median: Promised vs Realised Tranche Performance"
   y=subordination_pct
   yAxisTitle="% of Quotas"
   title="Subordinated Share of Quotas — Largest FIDC"
+  fmt=num1
 />
 
 <DataTable data={fidc_subordination_trend} rows=6>

@@ -22,6 +22,11 @@ they are NOT interchangeable, which is exactly why both families are lifted.
 """
 
 TABLE = "cvm_fi_perfil"
+# Unique-key audit (real perfil_mensal_fi_202606.csv): no ID_SUBCLASSE
+# column; 24,797 rows / 24,797 CNPJs; zero dual TP_FUNDO_CLASSE labels on
+# the same CNPJ. VERSAO is almost always 4 (one row at 3) and never
+# repeats per CNPJ, so it is not a missing key dimension. (cnpj, period)
+# matches the source grain.
 CONFLICT = ("cnpj", "period")
 
 FIELD_MAP = {

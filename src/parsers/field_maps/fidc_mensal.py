@@ -9,6 +9,9 @@ only.  The inadimplencia field has multiple historical candidates.
 """
 
 TABLE = "cvm_fidc_mensal"
+# Unique-key audit (real inf_mensal_fidc_tab_IV_202606.csv): no ID_SUBCLASSE;
+# 4,321 rows, zero duplicates on (CNPJ_FUNDO_CLASSE, DT_COMPTC). TP_FUNDO_CLASSE
+# is Classe (4,302) vs Fundo (19) on *different* CNPJs, not a collision.
 CONFLICT = ("cnpj", "period")
 
 FIELD_MAP = {

@@ -11,8 +11,16 @@ title: Macro Context
                         series (SGS_SERIES in bacen_pipeline.py)
     bacen_ptax          grain (currency, reference_date) — USD/EUR/GBP/JPY/ARS,
                         buy_rate + sell_rate
-    bacen_expectativas  grain (endpoint_name, indicador, reference_date) —
-                        Focus survey median / mean / std_dev
+    bacen_expectativas  grain (endpoint_name, indicador, reference_date,
+                        horizon) — Focus survey median / mean / std_dev.
+                        horizon is DataReferencia (year for Anuais, month/year
+                        for Mensais). Fetch filters to baseCalculo=0 (30-day
+                        window) and, on the Inflacao12/13-24 endpoints,
+                        Suavizada='N'. Those two dimensions are NOT in the
+                        unique key: a filter regression would silently collide
+                        again. Historical months older than the daily window
+                        stay sparse until a bacen_only backfill is dispatched
+                        (docs/DATABASE_MAINTENANCE.md §4).
 
   UNITS ARE BACEN'S AND ARE NOT CONVERTED. They differ per series and mixing
   them would be the fastest way to publish a wrong number:
@@ -26,11 +34,12 @@ title: Macro Context
   always check which one they are looking at.
 
   FOCUS CAVEAT, stated on the page as well: bacen_expectativas is keyed UNIQUE on
-  (endpoint_name, indicador, reference_date), while the Focus API returns one row
-  per forecast HORIZON per survey date. Only one horizon survives per survey
-  date. The horizon that landed is recoverable from raw->>'DataReferencia' and is
-  shown in the "latest" table; the time series should be read as "the consensus
-  vintage on that date", not as a fixed-horizon forecast track.
+  (endpoint_name, indicador, reference_date, horizon) since migration 16. The
+  series query pins horizon = the survey's calendar year so adjacent points are
+  the same forecast, not a mix of 1y and 5y. Rows ingested before that migration
+  (and not yet re-fetched) can still lack extra horizons — the 24-month chart
+  then renders blank for those months rather than a mixed track. baseCalculo and
+  Suavizada are fetch-time filters, not key columns.
 
   ZERO-ROW RULE: every source here is driven from a generate_series spine or a
   literal driver list with the data LEFT JOINed on, so no source can return zero
@@ -171,10 +180,12 @@ title="PTAX Month-End — USD, EUR, GBP"
 > reading per month — the **last survey published in that month**, not an average
 > of the month's surveys.
 >
-> Read this as a consensus vintage, not a fixed-horizon track: the table's UNIQUE
-> key keeps one horizon per survey date, so the horizon can shift between points.
-> The horizon that actually landed is shown per row in the latest-reading table
-> below.
+> Each point is the last survey in that month for the **current-calendar-year
+> horizon** (`horizon = YYYY` of the survey date), so adjacent months are the
+> same forecast, not a mix of 1-year and 5-year numbers. Months that were never
+> re-fetched after the horizon key landed render blank — a coverage gap, not a
+> blended vintage. The horizon that actually landed is shown per row in the
+> latest-reading table below.
 
 <LineChart
   data={macro_focus_series}
@@ -187,9 +198,9 @@ title="PTAX Month-End — USD, EUR, GBP"
 
 > Dispersion below is the standard deviation across forecasters for the same
 > readings. Rising dispersion means the market disagrees more, which is
-> information the median alone hides — and it is a cleaner signal here than the
-> level, because dispersion is much less sensitive to which horizon survived the
-> key collapse described above.
+> information the median alone hides. Blank months are the same coverage gap as
+> the median chart (pre-horizon-key rows not yet re-fetched), not a mixed
+> horizon.
 
 <LineChart
   data={macro_focus_series}

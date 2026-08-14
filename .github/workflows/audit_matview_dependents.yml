@@ -1,11 +1,12 @@
 name: Audit Matview Dependents
 
-# On-demand, read-only. apply_analytical.sh's DROP MATERIALIZED VIEW steps for
-# fact_fund_monthly / fact_security_monthly have no CASCADE, so they fail once
-# anything depends on them — including ad-hoc matviews created directly
-# against production, outside this repo (03_precision.sql documents one:
-# mv_savings_flow_monthly). Prints every dependent's full DDL so a real fix can
-# be written from evidence instead of guessing what a CASCADE would destroy.
+# On-demand, read-only. apply_analytical.sh CASCADE-drops dim_fund,
+# fact_fund_monthly, fact_security_monthly and mv_savings_flow_monthly
+# before recreating them. A CASCADE is only safe when every dependent is
+# also recreated in the same apply pass (or is disposable). This workflow
+# discovers every matview in public/api at runtime and prints each
+# dependent's full DDL so a new ad-hoc production object is visible
+# before anyone writes another CASCADE.
 #
 # Read-only by construction — the script opens the connection with
 # set_session(readonly=True) and only ever SELECTs.
