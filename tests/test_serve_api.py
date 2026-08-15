@@ -258,6 +258,9 @@ def test_query_is_not_a_route(client):
 
 def test_panel_metrics_come_from_catalog():
     assert _PANEL_METRICS == tuple(METRICS)
+    for spec in METRICS.values():
+        assert isinstance(spec["asset_class"], list)
+        assert spec["asset_class"]
 
 
 def test_notebook_reduce_keeps_nulls_and_is_unexported():
@@ -277,6 +280,9 @@ def test_notebook_reduce_keeps_nulls_and_is_unexported():
     spread = reduce_panel(wide, "spread")
     assert spread["series"][0]["spread"] is None
     assert spread["series"][1]["spread"] == pytest.approx(41.9 - 1e9)
+    ranked = reduce_panel(wide, "rank")
+    assert ranked["by"] == "close"
+    assert [row["column"] for row in ranked["rows"]] == ["PETR4.close"]
 
 
 def test_quote_series_columnar(client):

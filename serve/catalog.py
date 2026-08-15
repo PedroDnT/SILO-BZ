@@ -28,21 +28,21 @@ CATALOG_VERSION = 1
 METRICS: Dict[str, Dict[str, Any]] = {
     "close": {
         "id_type": "ticker",
-        "asset_class": "equity",
+        "asset_class": ["equity"],
         "grain": ["day", "month"],
         "source": "b3_cotahist",
         "meaning": "Unadjusted cash close (board 02). Month = last session in the month.",
     },
     "volume": {
         "id_type": "ticker",
-        "asset_class": "equity",
+        "asset_class": ["equity"],
         "grain": ["day", "month"],
         "source": "b3_cotahist",
         "meaning": "Session traded volume (BRL). Month = last session.",
     },
     "close_return": {
         "id_type": "ticker",
-        "asset_class": "equity",
+        "asset_class": ["equity"],
         "grain": ["day", "month"],
         "source": "b3_cotahist",
         "meaning": "p_t/p_{t-1}-1 from stored closes. Daily: previous session. Monthly: previous calendar month else null.",
@@ -340,13 +340,17 @@ def reduce_panel(wide: Dict[str, Any], kind: Optional[str]) -> Optional[Dict[str
         }
     if kind == "rank":
         if not columns:
-            return {"kind": "rank", "rows": []}
+            return {"kind": "rank", "by": None, "rows": []}
+        first_metric = columns[0].rsplit(".", 1)[-1]
         last = []
         for j, col in enumerate(columns):
+            metric = col.rsplit(".", 1)[-1]
+            if metric != first_metric:
+                continue
             val = next((row[j] for row in reversed(values) if row[j] is not None), None)
             last.append({"column": col, "value": val})
         last.sort(key=lambda x: (x["value"] is None, -(x["value"] or 0)))
-        return {"kind": "rank", "by": "latest_non_null", "rows": last}
+        return {"kind": "rank", "by": first_metric, "rows": last}
     if kind == "spread":
         if len(columns) < 2:
             raise ValueError("spread needs at least two wide columns")
