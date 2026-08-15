@@ -127,6 +127,7 @@ jobs:
             ANALYZE cvm_fund_registry;
             ANALYZE cvm_etf_registry;
             ANALYZE cvm_ingest_log;
+            ANALYZE b3_cotahist;
           "
 
       # Build/refresh the analytical layer (dims, fact matviews, rankings, fraud

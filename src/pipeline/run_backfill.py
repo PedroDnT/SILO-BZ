@@ -14,6 +14,9 @@ Usage:
     # BACEN only
     python -m src.pipeline.run_backfill --bacen-only --bacen-start 2020-01-01
 
+    # B3 COTAHIST yearly zips (opt-in — large)
+    python -m src.pipeline.run_backfill --b3-only --b3-start-year 2019
+
 Required env vars: POSTGRES_URL
 """
 
@@ -29,6 +32,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.pipeline.cvm_pipeline import CVMIngestor
 from src.pipeline.bacen_pipeline import BacenIngestor
+from src.pipeline.b3_pipeline import B3Ingestor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,7 +45,7 @@ async def main(args: argparse.Namespace) -> None:
     totals: dict = {}
     start_ts = time.monotonic()
 
-    if not args.bacen_only:
+    if not args.bacen_only and not args.b3_only:
         logger.info(
             "Starting CVM backfill: start_year=%d entity=%s",
             args.start_year,
@@ -55,11 +59,26 @@ async def main(args: argparse.Namespace) -> None:
         )
         totals.update(cvm_totals)
 
-    if not args.cvm_only:
+    if not args.cvm_only and not args.b3_only:
         logger.info("Starting BACEN backfill: start=%s", args.bacen_start)
         bacen_ingestor = BacenIngestor()
         bacen_totals = await bacen_ingestor.backfill(start=args.bacen_start)
         totals.update(bacen_totals)
+
+    # Yearly COTAHIST zips are large (options + cash). Opt-in only so a default
+    # CVM+BACEN backfill does not stall on millions of B3 rows.
+    if args.b3_only or args.include_b3:
+        logger.info(
+            "Starting B3 COTAHIST backfill: start_year=%d end_year=%s",
+            args.b3_start_year,
+            args.end_year,
+        )
+        b3_ingestor = B3Ingestor()
+        b3_totals = await b3_ingestor.backfill(
+            start_year=args.b3_start_year,
+            end_year=args.end_year,
+        )
+        totals.update(b3_totals)
 
     elapsed = time.monotonic() - start_ts
     total_rows = sum(totals.values())
@@ -115,6 +134,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--bacen-only", action="store_true",
         help="Skip CVM ingestion"
+    )
+    parser.add_argument(
+        "--include-b3", action="store_true",
+        help="Also backfill B3 COTAHIST yearly quotation zips (large)"
+    )
+    parser.add_argument(
+        "--b3-only", action="store_true",
+        help="Skip CVM and BACEN; backfill only B3 COTAHIST yearly zips"
+    )
+    parser.add_argument(
+        "--b3-start-year", type=int, default=2019,
+        help="First year of B3 COTAHIST yearly zips (default: 2019)"
     )
     return parser.parse_args()
 
