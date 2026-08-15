@@ -13,9 +13,10 @@ time series, PTAX, Focus expectativas), and **B3** (public COTAHIST quotation zi
 
 There is **no public ingest API**. Downstream dashboards (`dashboard/`, `webapp/`)
 query Supabase directly. The **read contract** for apps is schema `api` plus
-`serve/` (`docs/API.md`). A localhost-only Flask control plane (`app.py` + `src/api/`)
+`serve/` (`docs/API.md`). Serving roadmap (catalog → SQL smoke → pool →
+honest returns → lookup → privileges → HTTPS) is `docs/planning/SERVING.md`.
+A localhost-only Flask control plane (`app.py` + `src/api/`)
 wraps the pipeline so operators can trigger partial-fill ingests one slice at a time.
-pipeline so operators can trigger partial-fill ingests one slice at a time.
 
 > Read `README.md` for the full operator guide, `docs/DATABASE_MAINTENANCE.md` for the
 > ongoing DB upkeep runbook (checks, cadence, audit-log triage, partition rollover,

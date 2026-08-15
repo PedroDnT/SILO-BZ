@@ -2,6 +2,7 @@
 
 | Date       | Branch                    | Change                                                                                              |
 | ---------- | ------------------------- | --------------------------------------------------------------------------------------------------- |
+| 2026-08-15 | cursor/serve-catalog-3f68 | `GET /v1/catalog` + `/v1/tools`; no `/v1/query`. User-driven serving requirements in `docs/planning/SERVING.md` |
 | 2026-08-15 | cursor/serve-api-3f68     | Researcher panel: `/v1/panel` mixes ticker close with fund NAV/delinquency; wide matrix for correlation; no ffill |
 | 2026-08-15 | cursor/serve-api-3f68     | Quote/NAV window (`from`/`range`) returns a `kind: series` envelope (rows or columnar) |
 | 2026-08-14 | cursor/serve-api-3f68     | Public read contract: schema `api` + `serve/` HTTP (`docs/API.md`) — ticker/CNPJ, not landing tables |

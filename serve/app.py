@@ -20,23 +20,14 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from flask import Flask, jsonify, request
 
+from serve.catalog import METRICS, catalog_payload, tool_specs
+
 _CNPJ_DIGITS = re.compile(r"\D")
 _TICKER = re.compile(r"^[A-Z0-9]{4,12}$")
 _MAX_POINTS = 5000
 _MAX_PANEL = 100_000
 _MAX_IDS = 50
-_PANEL_METRICS = (
-    "close",
-    "volume",
-    "close_return",
-    "nav",
-    "quota",
-    "delinquency",
-    "yield",
-    "inflows",
-    "redemptions",
-    "quotaholders",
-)
+_PANEL_METRICS = tuple(METRICS)
 
 # Compact chart payload. Extra warehouse columns stay on the latest-point route.
 _QUOTE_SERIES_FIELDS = ("open", "high", "low", "close", "volume", "trades")
@@ -279,6 +270,14 @@ def create_app() -> Flask:
         headers = _cache(86400 if p_to < date.today().isoformat() else 300)
         headers["X-Silo-Adjusted"] = "false"
         return jsonify(body), 200, headers
+
+    @app.get("/v1/catalog")
+    def catalog():
+        return jsonify(catalog_payload()), 200, _cache(86400)
+
+    @app.get("/v1/tools")
+    def tools():
+        return jsonify({"kind": "tools", "tools": tool_specs()}), 200, _cache(86400)
 
     @app.get("/v1/health")
     def health():

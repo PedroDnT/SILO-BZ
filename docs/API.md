@@ -9,6 +9,7 @@ Ingest stays in this repo; the contract is schema `api` plus `serve/`.
 ## Researcher workflow
 
 ```
+0. GET /v1/catalog                             → metrics, grains, constraints (agents: cache this)
 1. GET /v1/universe?asset_class=fidc          → pick vehicles
 2. GET /v1/lookup?q=PETR4                     → ticker / ISIN (no invented CNPJ match)
 3. GET /v1/panel?ids=PETR4,VALE3,<cnpj>
@@ -16,6 +17,10 @@ Ingest stays in this repo; the contract is schema `api` plus `serve/`.
      &freq=month&from=2019-01-01&format=wide
 4. In the notebook: corrcoef on the matrix, pairwise complete (nulls stay null)
 ```
+
+There is no `POST /v1/query` and no server-side `corr`/`rank`. The catalog lists
+those as `notebook_reducers`. Agents load `GET /v1/tools` (OpenAI-style specs)
+and call the same HTTP routes. Roadmap: [docs/planning/SERVING.md](planning/SERVING.md).
 
 `format=wide` is the correlation input: `dates × columns` (`PETR4.close`,
 `{cnpj}.delinquency`). Missing cells are JSON `null`. We never ffill, interpolate,
@@ -112,6 +117,8 @@ aligned by index. Cap is 5000 points — over that is `400`, not a silent trim.
 
 | Method | Path | Postgres |
 |---|---|---|
+| GET | `/v1/catalog` | static metric map + constraints (no DB) |
+| GET | `/v1/tools` | OpenAI/AI-SDK tool specs pointing at these routes |
 | GET | `/v1/health` | `SELECT 1 FROM api.quotes LIMIT 0` |
 | GET | `/v1/coverage` | `api.coverage()` |
 | GET | `/v1/panel?ids&metrics&freq&from&to` | `api.panel(...)` long or wide |
