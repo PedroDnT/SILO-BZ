@@ -156,8 +156,7 @@ AGENT_INSTRUCTIONS = (
     "with lookup/universe, then GET /v1/panel. The primitive is a panel "
     "(id, date, metric, value). Correlation, ranking, spreads, regressions, "
     "and other relations are reductions of that panel — compute them in the "
-    "notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. There is "
-    "no POST /v1/query."
+    "notebook. Do not fabricate ids, fills, or ticker-CNPJ matches."
 )
 
 

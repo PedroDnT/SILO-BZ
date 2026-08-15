@@ -231,7 +231,7 @@ def test_catalog_is_static_and_names_panel(client):
     assert endpoints["catalog"] == "GET /v1/catalog"
     assert endpoints["panel"] == "GET /v1/panel"
     assert "query" not in endpoints
-    assert "POST /v1/query" not in body["agent"]
+    assert "/v1/query" not in body["agent"]
     assert "GET /v1/panel" in body["agent"]
 
 
