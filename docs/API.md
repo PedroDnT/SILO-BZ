@@ -9,7 +9,7 @@ adapter in `serve/`.
 
 | Person | Job | Call |
 |---|---|---|
-| App / quant (brapi-shaped) | Last price and history for a ticker | `GET /v1/quotes/PETR4` |
+| App / quant (brapi-shaped) | Last price **or** a dated series | `GET /v1/quotes/PETR4` · `?range=1y` |
 | Fund analyst | Find a vehicle, then its NAV / flows | `GET /v1/funds?q=alocação` then `/v1/funds/{cnpj}/nav` |
 | Agent / LLM | Stable English JSON, provenance, no fake zeros | same routes + `source`, `adjusted: false` |
 | Evidence dashboard | Already on `dim_*` / `fact_*` | unchanged — do not force a migration |
@@ -40,8 +40,48 @@ client  →  HTTPS /v1/*   (serve/, bind 127.0.0.1 or a gateway)
    (`max-age=86400`). Latest quote is short (`max-age=300`). Header
    `X-Silo-Adjusted: false` so nobody assumes brapi-style split adjustment.
 5. **404 vs empty.** Unknown ticker/CNPJ → 404. Known ticker, no sessions in
-   range (holiday window) → `200 { data: [] }`. Never a plausible last-close
-   fallback.
+   range (holiday window) → `200 { kind: "series", series: [] }`. Never a
+   plausible last-close fallback.
+
+## Point vs series
+
+The same URL is a **point** until the caller asks for a window. Then it is a
+**series** — dated observations at the grain we actually store (day for B3,
+month for fund NAV). We do not invent weekly/monthly bars.
+
+```
+GET /v1/quotes/PETR4                         → one object (latest session)
+GET /v1/quotes/PETR4?range=1y                → { kind: "series", series: [...] }
+GET /v1/quotes/PETR4?from=2024-01-01&to=...  → same envelope
+GET /v1/quotes/PETR4?range=1y&format=columnar
+GET /v1/quotes/PETR4?range=1y&fields=close,volume
+GET /v1/quotes/PETR4/history                 → alias (defaults to 1y)
+GET /v1/funds/{cnpj}/nav                     → monthly series, same envelope
+```
+
+`range`: `5d` `1mo` `3mo` `6mo` `1y` `2y` `5y` `ytd` `max`.
+
+Row envelope (default):
+
+```json
+{
+  "ticker": "PETR4",
+  "kind": "series",
+  "grain": "day",
+  "adjusted": false,
+  "source": "b3_cotahist",
+  "board": "02",
+  "from": "2025-08-15",
+  "to": "2026-08-14",
+  "count": 248,
+  "series": [
+    {"date": "2025-08-15", "open": 41.1, "high": 41.5, "low": 40.9, "close": 41.2, "volume": 1.2e9, "trades": 40000}
+  ]
+}
+```
+
+Columnar (`format=columnar`) is for charts: `dates` plus one array per field,
+aligned by index. Cap is 5000 points — over that is `400`, not a silent trim.
 
 ## Routes (v1)
 
@@ -49,11 +89,11 @@ client  →  HTTPS /v1/*   (serve/, bind 127.0.0.1 or a gateway)
 |---|---|---|
 | GET | `/v1/health` | `SELECT 1 FROM api.quotes LIMIT 0` |
 | GET | `/v1/coverage` | `api.coverage()` |
-| GET | `/v1/quotes/{ticker}` | `api.quote_latest(ticker, board)` |
-| GET | `/v1/quotes/{ticker}/history?from&to&board` | `api.quote_history(...)` |
+| GET | `/v1/quotes/{ticker}` | `api.quote_latest` or `api.quote_history` if windowed |
+| GET | `/v1/quotes/{ticker}/history?from&to&range` | `api.quote_history(...)` |
 | GET | `/v1/funds?q&type&limit` | `api.search_funds(...)` |
 | GET | `/v1/funds/{cnpj}` | `api.fund_profile(cnpj)` |
-| GET | `/v1/funds/{cnpj}/nav?from&to&type` | `api.fund_nav(...)` |
+| GET | `/v1/funds/{cnpj}/nav?from&to&range` | `api.fund_nav(...)` |
 
 CNPJ in the path may include punctuation (`12.345.678/0001-90`); it is stripped
 to 14 digits. Tickers are uppercased.

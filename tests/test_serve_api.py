@@ -6,7 +6,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from serve.app import create_app, normalize_cnpj, normalize_ticker
+from serve.app import (
+    create_app,
+    normalize_cnpj,
+    normalize_ticker,
+    parse_window,
+    series_envelope,
+    series_points,
+)
 
 
 def test_normalize_ticker():
@@ -85,3 +92,136 @@ def test_quote_latest_ok(client):
 def test_bad_ticker_400(client):
     rv = client.get("/v1/quotes/!!!")
     assert rv.status_code == 400
+
+
+def test_parse_window_none_without_params():
+    assert parse_window({}) is None
+
+
+def test_parse_window_range_1y():
+    window = parse_window({"range": "1y"})
+    assert window is not None
+    assert window[0] < window[1]
+
+
+def test_series_envelope_rows_and_columnar():
+    points = [{"date": "2026-08-12", "close": 41.2}, {"date": "2026-08-13", "close": 41.9}]
+    rows = series_envelope(
+        key="ticker",
+        value="PETR4",
+        grain="day",
+        source="b3_cotahist",
+        adjusted=False,
+        p_from="2026-08-01",
+        p_to="2026-08-13",
+        points=points,
+    )
+    assert rows["kind"] == "series"
+    assert rows["count"] == 2
+    assert rows["series"][1]["close"] == 41.9
+    cols = series_envelope(
+        key="ticker",
+        value="PETR4",
+        grain="day",
+        source="b3_cotahist",
+        adjusted=False,
+        p_from="2026-08-01",
+        p_to="2026-08-13",
+        points=points,
+        fmt="columnar",
+    )
+    assert cols["dates"] == ["2026-08-12", "2026-08-13"]
+    assert cols["close"] == [41.2, 41.9]
+
+
+def test_quote_series_on_same_url(client):
+    cur = _Cur(
+        rows=[
+            (
+                "PETR4",
+                "2026-08-12",
+                41.0,
+                41.5,
+                40.8,
+                41.2,
+                1_000.0,
+                100,
+                "b3_cotahist",
+                "R$",
+            ),
+            (
+                "PETR4",
+                "2026-08-13",
+                41.2,
+                42.0,
+                41.0,
+                41.9,
+                1_500.0,
+                200,
+                "b3_cotahist",
+                "R$",
+            ),
+        ],
+        description=[
+            ("ticker",),
+            ("trade_date",),
+            ("open",),
+            ("high",),
+            ("low",),
+            ("close",),
+            ("volume",),
+            ("trades",),
+            ("source",),
+            ("currency",),
+        ],
+    )
+    with patch("src.store.pg_client.get_pg_client", return_value=_Client(cur)):
+        rv = client.get("/v1/quotes/PETR4?from=2026-08-01&to=2026-08-13")
+    assert rv.status_code == 200
+    body = rv.get_json()
+    assert body["kind"] == "series"
+    assert body["grain"] == "day"
+    assert body["adjusted"] is False
+    assert body["count"] == 2
+    assert body["series"][0]["date"] == "2026-08-12"
+    assert body["series"][1]["close"] == 41.9
+
+
+def test_quote_series_columnar(client):
+    cur = _Cur(
+        rows=[
+            (
+                "PETR4",
+                "2026-08-13",
+                41.2,
+                42.0,
+                41.0,
+                41.9,
+                1_500.0,
+                200,
+                "b3_cotahist",
+                "R$",
+            ),
+        ],
+        description=[
+            ("ticker",),
+            ("trade_date",),
+            ("open",),
+            ("high",),
+            ("low",),
+            ("close",),
+            ("volume",),
+            ("trades",),
+            ("source",),
+            ("currency",),
+        ],
+    )
+    with patch("src.store.pg_client.get_pg_client", return_value=_Client(cur)):
+        rv = client.get("/v1/quotes/PETR4?range=1y&format=columnar&fields=close")
+    assert rv.status_code == 200
+    body = rv.get_json()
+    assert body["format"] == "columnar"
+    assert body["dates"] == ["2026-08-13"]
+    assert body["close"] == [41.9]
+    assert "open" not in body
+
