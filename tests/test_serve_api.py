@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from serve.app import (
+    _PANEL_METRICS,
     create_app,
     normalize_cnpj,
     normalize_ticker,
@@ -14,6 +15,7 @@ from serve.app import (
     series_envelope,
     series_points,
 )
+from serve.catalog import METRICS
 
 
 def test_normalize_ticker():
@@ -216,6 +218,65 @@ def test_panel_rejects_daily_mix_with_cnpj(client):
     )
     assert rv.status_code == 400
     assert "freq=day" in rv.get_json()["error"]
+
+
+def test_catalog_is_static_and_names_panel(client):
+    rv = client.get("/v1/catalog")
+    assert rv.status_code == 200
+    body = rv.get_json()
+    assert body["kind"] == "catalog"
+    assert body["primitive"] == "panel"
+    assert set(body["metrics"]) == set(METRICS)
+    endpoints = body["endpoints"]
+    assert endpoints["catalog"] == "GET /v1/catalog"
+    assert endpoints["panel"] == "GET /v1/panel"
+    assert "query" not in endpoints
+    assert "POST /v1/query" not in body["agent"]
+    assert "GET /v1/panel" in body["agent"]
+
+
+def test_tools_point_at_panel_not_query(client):
+    rv = client.get("/v1/tools")
+    assert rv.status_code == 200
+    names = [t["function"]["name"] for t in rv.get_json()["tools"]]
+    assert names == [
+        "silo_catalog",
+        "silo_lookup",
+        "silo_universe",
+        "silo_panel",
+        "silo_coverage",
+    ]
+    assert "silo_query" not in names
+    panel = next(t for t in rv.get_json()["tools"] if t["function"]["name"] == "silo_panel")
+    assert "reduce" not in panel["function"]["parameters"]["properties"]
+
+
+def test_query_is_not_a_route(client):
+    assert client.get("/v1/query").status_code == 404
+    assert client.post("/v1/query").status_code == 404
+
+
+def test_panel_metrics_come_from_catalog():
+    assert _PANEL_METRICS == tuple(METRICS)
+
+
+def test_notebook_reduce_keeps_nulls_and_is_unexported():
+    from serve import catalog as catalog_mod
+    from serve.catalog import reduce_panel
+
+    assert "reduce_panel" not in catalog_mod.__all__
+    wide = {
+        "columns": ["PETR4.close", "FUND.nav"],
+        "dates": ["2026-07-01", "2026-08-01"],
+        "values": [[40.0, None], [41.9, 1e9]],
+    }
+    desc = reduce_panel(wide, "describe")
+    nav = next(c for c in desc["columns"] if c["column"] == "FUND.nav")
+    assert nav["n"] == 1
+    assert nav["last"] == 1e9
+    spread = reduce_panel(wide, "spread")
+    assert spread["series"][0]["spread"] is None
+    assert spread["series"][1]["spread"] == pytest.approx(41.9 - 1e9)
 
 
 def test_quote_series_columnar(client):

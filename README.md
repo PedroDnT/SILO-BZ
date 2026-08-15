@@ -15,6 +15,8 @@ Data sources:
 Data is downloaded, parsed, validated, and upserted into a Supabase Postgres database via psycopg2.
 Dashboards query Supabase directly. Apps should use schema `api` and `serve/`
 ([docs/API.md](docs/API.md)) — not landing tables or the ingest control plane.
+How we get from “ingested” to “a researcher can pull a panel”:
+[docs/planning/SERVING.md](docs/planning/SERVING.md).
 
 A small **local Flask control plane** (`app.py` + `src/api/`) wraps the pipeline so
 operators can trigger partial fills one (entity, doc_type, year, month) slice at a

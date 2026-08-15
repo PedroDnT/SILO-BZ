@@ -1,0 +1,364 @@
+"""Machine-readable map of the Silo read API for agents.
+
+The primitive is a panel: (id, date, metric, value). An agent should:
+  1. GET /v1/catalog (once, cache it)
+  2. GET /v1/lookup or /v1/universe to resolve ids
+  3. GET /v1/panel with those ids and a subset of catalog metrics
+  4. reduce in the notebook (corr, rank, OLS, …) — not over HTTP
+
+reduce_panel / pearson stay in this module for tests and notebooks.
+They are not routes.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional, Sequence
+
+__all__ = [
+    "CATALOG_VERSION",
+    "CONSTRAINTS",
+    "METRICS",
+    "catalog_payload",
+    "tool_specs",
+]
+
+CATALOG_VERSION = 1
+
+# Grain + metric map. Agents must not invent metrics.
+METRICS: Dict[str, Dict[str, Any]] = {
+    "close": {
+        "id_type": "ticker",
+        "asset_class": "equity",
+        "grain": ["day", "month"],
+        "source": "b3_cotahist",
+        "meaning": "Unadjusted cash close (board 02). Month = last session in the month.",
+    },
+    "volume": {
+        "id_type": "ticker",
+        "asset_class": "equity",
+        "grain": ["day", "month"],
+        "source": "b3_cotahist",
+        "meaning": "Session traded volume (BRL). Month = last session.",
+    },
+    "close_return": {
+        "id_type": "ticker",
+        "asset_class": "equity",
+        "grain": ["day", "month"],
+        "source": "b3_cotahist",
+        "meaning": "p_t/p_{t-1}-1 from stored closes. Daily: previous session. Monthly: previous calendar month else null.",
+        "derived": True,
+    },
+    "nav": {
+        "id_type": "cnpj",
+        "asset_class": ["fi", "fidc", "fii", "fip", "fiagro"],
+        "grain": ["month"],
+        "source": "cvm",
+        "meaning": "Fund net assets (vl_patrim_liq).",
+    },
+    "quota": {
+        "id_type": "cnpj",
+        "asset_class": ["fi"],
+        "grain": ["month"],
+        "source": "cvm",
+        "meaning": "FI unit quota. Comparable subclass only.",
+    },
+    "delinquency": {
+        "id_type": "cnpj",
+        "asset_class": ["fidc", "fiagro"],
+        "grain": ["month"],
+        "source": "cvm",
+        "meaning": "Delinquent portfolio value (not a rate unless you divide by nav).",
+    },
+    "yield": {
+        "id_type": "cnpj",
+        "asset_class": ["fii"],
+        "grain": ["month"],
+        "source": "cvm",
+        "meaning": "Monthly yield % as published (FII complemento).",
+    },
+    "inflows": {
+        "id_type": "cnpj",
+        "asset_class": ["fi"],
+        "grain": ["month"],
+        "source": "cvm",
+        "meaning": "Gross monthly subscriptions.",
+    },
+    "redemptions": {
+        "id_type": "cnpj",
+        "asset_class": ["fi"],
+        "grain": ["month"],
+        "source": "cvm",
+        "meaning": "Gross monthly redemptions.",
+    },
+    "quotaholders": {
+        "id_type": "cnpj",
+        "asset_class": ["fi", "fidc", "fii", "fip", "fiagro"],
+        "grain": ["month"],
+        "source": "cvm",
+        "meaning": "Number of unit-holders.",
+    },
+}
+
+# Suggested notebook reductions. Not HTTP.
+NOTEBOOK_REDUCERS: Dict[str, str] = {
+    "describe": "Per-column n, null_rate, min, max, last. No model.",
+    "corr": "Pairwise Pearson on complete pairs of the wide matrix. One relation among many.",
+    "rank": "Latest non-null value per id for the first metric, descending.",
+    "spread": "First column minus second column of the wide matrix, dates aligned.",
+}
+
+CONSTRAINTS = [
+    "Never invent a price, NAV, or identifier match.",
+    "Missing observations stay null; do not ffill or interpolate.",
+    "freq=day is quotes only. Mix equity with fund fundamentals on freq=month.",
+    "close_return across a missing month is null, not a multi-month return.",
+    "Ticker↔cia_company is not joined here; lookup returns them separately.",
+    "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
+]
+
+EXAMPLES = [
+    {
+        "ask": "How does PETR4 relate to delinquency in this FIDC?",
+        "call": (
+            "GET /v1/panel?ids=PETR4,<cnpj>"
+            "&metrics=close_return,delinquency&freq=month&format=wide"
+        ),
+        "then": "Pairwise-complete correlation in the notebook. Do not ffill.",
+    },
+    {
+        "ask": "Rank these funds by latest NAV",
+        "call": "GET /v1/panel?ids=<cnpj>,<cnpj>&metrics=nav&freq=month&format=wide",
+        "then": "Take the last non-null NAV per id from the wide matrix.",
+    },
+    {
+        "ask": "Did inflows and quota move together for this FI?",
+        "call": "GET /v1/panel?ids=<cnpj>&metrics=inflows,quota&freq=month&format=wide",
+        "then": "Correlate the two columns; nulls stay null.",
+    },
+    {
+        "ask": "Spread of two equity closes at month end",
+        "call": "GET /v1/panel?ids=PETR4,VALE3&metrics=close&freq=month&format=wide",
+        "then": "Subtract aligned columns; a missing month is null, not interpolated.",
+    },
+    {
+        "ask": "Just give me the panel; I will run a factor model",
+        "call": (
+            "GET /v1/panel?ids=PETR4,VALE3,<cnpj>"
+            "&metrics=close_return,nav&freq=month&format=wide"
+        ),
+        "then": "Model in the notebook from the matrix.",
+    },
+]
+
+AGENT_INSTRUCTIONS = (
+    "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, "
+    "B3 COTAHIST cash quotes). Call catalog once and cache it. Resolve names "
+    "with lookup/universe, then GET /v1/panel. The primitive is a panel "
+    "(id, date, metric, value). Correlation, ranking, spreads, regressions, "
+    "and other relations are reductions of that panel — compute them in the "
+    "notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. There is "
+    "no POST /v1/query."
+)
+
+
+def catalog_payload() -> Dict[str, Any]:
+    return {
+        "kind": "catalog",
+        "version": CATALOG_VERSION,
+        "primitive": "panel",
+        "agent": AGENT_INSTRUCTIONS,
+        "metrics": METRICS,
+        "notebook_reducers": NOTEBOOK_REDUCERS,
+        "constraints": CONSTRAINTS,
+        "examples": EXAMPLES,
+        "id_types": ["ticker", "cnpj", "cd_cvm"],
+        "asset_classes": ["equity", "fi", "fidc", "fii", "fip", "fiagro", "cia"],
+        "freq": ["day", "month"],
+        "endpoints": {
+            "catalog": "GET /v1/catalog",
+            "tools": "GET /v1/tools",
+            "panel": "GET /v1/panel",
+            "lookup": "GET /v1/lookup?q=",
+            "universe": "GET /v1/universe?asset_class=",
+            "quotes": "GET /v1/quotes/{ticker}",
+            "funds": "GET /v1/funds/{cnpj}/nav",
+            "coverage": "GET /v1/coverage",
+        },
+    }
+
+
+def tool_specs() -> List[Dict[str, Any]]:
+    """OpenAI/AI-SDK style tools. An agent loads these and calls the HTTP API."""
+    metric_ids = list(METRICS.keys())
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "silo_catalog",
+                "description": "Map of metrics, grains, constraints, and example questions. Call first.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": False,
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "silo_lookup",
+                "description": "Resolve a ticker, ISIN, CNPJ, fund name, or company name to ids. Does not invent matches.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"q": {"type": "string"}},
+                    "required": ["q"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "silo_universe",
+                "description": "List identifiers by asset_class: equity, fi, fidc, fii, fip, fiagro.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "asset_class": {"type": "string"},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 500},
+                    },
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "silo_panel",
+                "description": (
+                    "Fetch a panel of mixed market and fundamental series via "
+                    "GET /v1/panel. Omit reduce — compute corr/rank/OLS in the notebook."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "ids": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Tickers and/or 14-digit CNPJs",
+                        },
+                        "metrics": {
+                            "type": "array",
+                            "items": {"type": "string", "enum": metric_ids},
+                            "description": "Subset of catalog metrics",
+                        },
+                        "freq": {"type": "string", "enum": ["day", "month"]},
+                        "from": {"type": "string", "description": "ISO date"},
+                        "to": {"type": "string", "description": "ISO date"},
+                        "format": {"type": "string", "enum": ["long", "wide"]},
+                    },
+                    "required": ["ids", "metrics"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "silo_coverage",
+                "description": "Latest date per dataset. Use before claiming freshness.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": False,
+                },
+            },
+        },
+    ]
+
+
+def _pairs(xs: Sequence[Optional[float]], ys: Sequence[Optional[float]]) -> List[tuple]:
+    out = []
+    for a, b in zip(xs, ys):
+        if a is None or b is None:
+            continue
+        try:
+            fa, fb = float(a), float(b)
+        except (TypeError, ValueError):
+            continue
+        out.append((fa, fb))
+    return out
+
+
+def pearson(xs: Sequence[Optional[float]], ys: Sequence[Optional[float]]) -> Optional[float]:
+    pts = _pairs(xs, ys)
+    n = len(pts)
+    if n < 3:
+        return None
+    mx = sum(p[0] for p in pts) / n
+    my = sum(p[1] for p in pts) / n
+    num = sum((p[0] - mx) * (p[1] - my) for p in pts)
+    dx = sum((p[0] - mx) ** 2 for p in pts) ** 0.5
+    dy = sum((p[1] - my) ** 2 for p in pts) ** 0.5
+    if dx == 0 or dy == 0:
+        return None
+    return num / (dx * dy)
+
+
+def reduce_panel(wide: Dict[str, Any], kind: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Notebook helper on a wide panel. Never fills nulls. Not an HTTP route."""
+    if not kind:
+        return None
+    columns: List[str] = list(wide.get("columns") or [])
+    values: List[List[Any]] = list(wide.get("values") or [])
+    dates: List[str] = list(wide.get("dates") or [])
+    if kind == "describe":
+        stats = []
+        for j, col in enumerate(columns):
+            col_vals = [row[j] for row in values]
+            nums = [float(v) for v in col_vals if v is not None]
+            last = next((v for v in reversed(col_vals) if v is not None), None)
+            stats.append({
+                "column": col,
+                "n": len(nums),
+                "null_rate": 1 - (len(nums) / len(col_vals) if col_vals else 0),
+                "min": min(nums) if nums else None,
+                "max": max(nums) if nums else None,
+                "last": last,
+            })
+        return {"kind": "describe", "columns": stats}
+    if kind == "corr":
+        matrix = []
+        for i, ci in enumerate(columns):
+            row = []
+            for j, cj in enumerate(columns):
+                xs = [r[i] for r in values]
+                ys = [r[j] for r in values]
+                row.append({"a": ci, "b": cj, "r": pearson(xs, ys), "n": len(_pairs(xs, ys))})
+            matrix.append(row)
+        return {
+            "kind": "corr",
+            "method": "pearson_pairwise_complete",
+            "pairs": matrix,
+            "note": "One relation. For OLS, copulas, or lags, take the panel.",
+        }
+    if kind == "rank":
+        if not columns:
+            return {"kind": "rank", "rows": []}
+        last = []
+        for j, col in enumerate(columns):
+            val = next((row[j] for row in reversed(values) if row[j] is not None), None)
+            last.append({"column": col, "value": val})
+        last.sort(key=lambda x: (x["value"] is None, -(x["value"] or 0)))
+        return {"kind": "rank", "by": "latest_non_null", "rows": last}
+    if kind == "spread":
+        if len(columns) < 2:
+            raise ValueError("spread needs at least two wide columns")
+        series = []
+        for d, row in zip(dates, values):
+            a, b = row[0], row[1]
+            series.append({
+                "date": d,
+                "a": columns[0],
+                "b": columns[1],
+                "spread": None if a is None or b is None else float(a) - float(b),
+            })
+        return {"kind": "spread", "series": series}
+    raise ValueError(f"unknown reduce {kind}; catalog.notebook_reducers lists the built-ins")
