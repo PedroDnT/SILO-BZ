@@ -23,6 +23,20 @@ from flask import Flask, jsonify, request
 _CNPJ_DIGITS = re.compile(r"\D")
 _TICKER = re.compile(r"^[A-Z0-9]{4,12}$")
 _MAX_POINTS = 5000
+_MAX_PANEL = 100_000
+_MAX_IDS = 50
+_PANEL_METRICS = (
+    "close",
+    "volume",
+    "close_return",
+    "nav",
+    "quota",
+    "delinquency",
+    "yield",
+    "inflows",
+    "redemptions",
+    "quotaholders",
+)
 
 # Compact chart payload. Extra warehouse columns stay on the latest-point route.
 _QUOTE_SERIES_FIELDS = ("open", "high", "low", "close", "volume", "trades")
@@ -157,6 +171,43 @@ def series_envelope(
     else:
         body["series"] = points
     return body
+
+
+def parse_ids(raw: Optional[str]) -> List[str]:
+    if not raw or not raw.strip():
+        raise ValueError("ids is required (comma-separated tickers and/or CNPJs)")
+    out: List[str] = []
+    for part in raw.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        digits = _CNPJ_DIGITS.sub("", token)
+        if len(digits) == 14:
+            out.append(digits)
+        else:
+            out.append(normalize_ticker(token))
+    if not out:
+        raise ValueError("ids is required")
+    if len(out) > _MAX_IDS:
+        raise ValueError(f"at most {_MAX_IDS} ids")
+    return out
+
+
+def panel_wide(observations: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Pivot long observations to a dated matrix. Missing cells stay null."""
+    columns = sorted({f"{o['id']}.{o['metric']}" for o in observations})
+    dates = sorted({str(o["date"]) for o in observations})
+    index = {(str(o["date"]), f"{o['id']}.{o['metric']}"): o.get("value") for o in observations}
+    values = [[index.get((d, c)) for c in columns] for d in dates]
+    return {
+        "kind": "panel",
+        "format": "wide",
+        "dates": dates,
+        "columns": columns,
+        "values": values,
+        "count": len(observations),
+        "note": "null is missing; not filled. Ready for a correlation on complete pairs.",
+    }
 
 
 def _pick_fields(raw: Optional[str], allowed: Sequence[str]) -> Tuple[str, ...]:
@@ -372,6 +423,108 @@ def create_app() -> Flask:
             fmt=fmt,
         )
         return jsonify(body), 200, _cache(3600)
+
+    @app.get("/v1/panel")
+    def panel():
+        try:
+            ids = parse_ids(request.args.get("ids"))
+            metrics = list(
+                _pick_fields(
+                    request.args.get("metrics") or "close,nav",
+                    _PANEL_METRICS,
+                )
+            )
+            window = parse_window(
+                request.args,
+                default_from=(date.today() - timedelta(days=365)).isoformat(),
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        assert window is not None
+        p_from, p_to = window
+        freq = (request.args.get("freq") or "month").strip().lower()
+        if freq in ("d", "daily"):
+            freq = "day"
+        if freq not in ("day", "month"):
+            return jsonify({"error": "freq must be day or month"}), 400
+        has_cnpj = any(len(i) == 14 and i.isdigit() for i in ids)
+        if freq == "day" and has_cnpj:
+            return jsonify({
+                "error": "freq=day is quotes only",
+                "hint": "mix equity close with fund NAV/delinquency on freq=month; daily ffill is your notebook's choice",
+            }), 400
+        fmt = (request.args.get("format") or "long").strip().lower()
+        if fmt not in ("long", "wide"):
+            return jsonify({"error": "format must be long or wide"}), 400
+        client = db()
+        with client.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM api.panel(%s::text[], %s::text[], %s::date, %s::date, %s)",
+                (ids, metrics, p_from, p_to, freq),
+            )
+            cols = [d[0] for d in cur.description]
+            rows = [_row(r, cols) for r in cur.fetchall()]
+        if len(rows) > _MAX_PANEL:
+            return jsonify({
+                "error": "panel too large",
+                "count": len(rows),
+                "max": _MAX_PANEL,
+            }), 400
+        if fmt == "wide":
+            body = panel_wide(rows)
+            body.update({
+                "freq": freq,
+                "from": p_from,
+                "to": p_to,
+                "ids": ids,
+                "metrics": metrics,
+                "adjusted": False,
+            })
+            return jsonify(body), 200, _cache(3600)
+        return jsonify({
+            "kind": "panel",
+            "format": "long",
+            "freq": freq,
+            "from": p_from,
+            "to": p_to,
+            "ids": ids,
+            "metrics": metrics,
+            "adjusted": False,
+            "count": len(rows),
+            "observations": rows,
+            "note": "one row per (id, date, metric). nulls omitted. no ffill.",
+        }), 200, _cache(3600)
+
+    @app.get("/v1/universe")
+    def universe():
+        asset_class = request.args.get("asset_class")
+        try:
+            limit = min(max(int(request.args.get("limit", 50)), 1), 500)
+        except ValueError:
+            return jsonify({"error": "limit must be an integer"}), 400
+        client = db()
+        with client.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM api.universe(%s, %s)",
+                (asset_class, limit),
+            )
+            cols = [d[0] for d in cur.description]
+            rows = [_row(r, cols) for r in cur.fetchall()]
+        return jsonify({"data": rows}), 200, _cache(300)
+
+    @app.get("/v1/lookup")
+    def lookup():
+        q = request.args.get("q") or ""
+        if not q.strip():
+            return jsonify({"error": "q is required"}), 400
+        client = db()
+        with client.cursor() as cur:
+            cur.execute("SELECT * FROM api.lookup(%s)", (q,))
+            cols = [d[0] for d in cur.description]
+            rows = [_row(r, cols) for r in cur.fetchall()]
+        if not rows:
+            return jsonify({"error": "not found", "q": q}), 404
+        return jsonify({"data": rows}), 200, _cache(300)
 
     return app
 

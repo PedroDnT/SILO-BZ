@@ -1,18 +1,43 @@
 # Silo API — how we serve the data
 
-Users do not want `cvm_fi_diario` or PostgREST filters. They want **PETR4’s
-close**, **this fund’s NAV**, and **whether the numbers are fresh**. Ingest
-stays in this repo; the public contract is schema `api` plus a thin HTTP
-adapter in `serve/`.
+The main user is a **researcher**: correlation tests, factor models, and
+relationships across asset classes, mixing market prints with CVM fundamentals.
+They need a **panel** — `(id, date, metric, value)` — not a quote widget.
 
-## Who it is for
+Ingest stays in this repo; the contract is schema `api` plus `serve/`.
+
+## Researcher workflow
+
+```
+1. GET /v1/universe?asset_class=fidc          → pick vehicles
+2. GET /v1/lookup?q=PETR4                     → ticker / ISIN (no invented CNPJ match)
+3. GET /v1/panel?ids=PETR4,VALE3,<cnpj>
+     &metrics=close,close_return,nav,delinquency
+     &freq=month&from=2019-01-01&format=wide
+4. In the notebook: corrcoef on the matrix, pairwise complete (nulls stay null)
+```
+
+`format=wide` is the correlation input: `dates × columns` (`PETR4.close`,
+`{cnpj}.delinquency`). Missing cells are JSON `null`. We never ffill, interpolate,
+or carry last-observation. Mixing daily equity with monthly NAV on a **daily**
+calendar would require filling — that is your notebook. Mix them on `freq=month`
+(equity close = last session in the month, a real print).
+
+`close_return` is `p_t / p_{t-1} - 1` from stored closes. Daily: previous
+session. Monthly: previous calendar month, else null (a missing month does not
+become a two-month return).
+
+Ticker↔listed-company (`cia_*`) join is **not** invented here. Lookup returns
+CIA by CNPJ/`cd_cvm`/name separately until that match exists.
+
+## Who else
 
 | Person | Job | Call |
 |---|---|---|
-| App / quant (brapi-shaped) | Last price **or** a dated series | `GET /v1/quotes/PETR4` · `?range=1y` |
-| Fund analyst | Find a vehicle, then its NAV / flows | `GET /v1/funds?q=alocação` then `/v1/funds/{cnpj}/nav` |
-| Agent / LLM | Stable English JSON, provenance, no fake zeros | same routes + `source`, `adjusted: false` |
-| Evidence dashboard | Already on `dim_*` / `fact_*` | unchanged — do not force a migration |
+| Researcher | Panel across equity + funds + credit | `/v1/panel` |
+| Chart / app | One ticker series | `/v1/quotes/PETR4?range=1y` |
+| Fund analyst | One vehicle NAV | `/v1/funds/{cnpj}/nav` |
+| Evidence dashboard | Already on `dim_*` / `fact_*` | unchanged |
 
 The localhost Flask control plane (`app.py`) stays **operator-only** (trigger
 ingest). It is not this API.
@@ -89,6 +114,9 @@ aligned by index. Cap is 5000 points — over that is `400`, not a silent trim.
 |---|---|---|
 | GET | `/v1/health` | `SELECT 1 FROM api.quotes LIMIT 0` |
 | GET | `/v1/coverage` | `api.coverage()` |
+| GET | `/v1/panel?ids&metrics&freq&from&to` | `api.panel(...)` long or wide |
+| GET | `/v1/universe?asset_class&limit` | `api.universe(...)` |
+| GET | `/v1/lookup?q=` | `api.lookup(...)` |
 | GET | `/v1/quotes/{ticker}` | `api.quote_latest` or `api.quote_history` if windowed |
 | GET | `/v1/quotes/{ticker}/history?from&to&range` | `api.quote_history(...)` |
 | GET | `/v1/funds?q&type&limit` | `api.search_funds(...)` |
@@ -98,8 +126,8 @@ aligned by index. Cap is 5000 points — over that is `400`, not a silent trim.
 CNPJ in the path may include punctuation (`12.345.678/0001-90`); it is stripped
 to 14 digits. Tickers are uppercased.
 
-Later (same contract, more routes): FIDC delinquency, CIA financials, BACEN
-macro — each as `api.*` first, HTTP second.
+Later: CIA line items and BACEN macro as extra `api.panel` metrics once identifiers
+are matched — same long grain, not a new API style.
 
 ## Why not the alternatives
 

@@ -328,6 +328,7 @@ class TestServeSchema:
         )
         assert "CREATE OR REPLACE VIEW api.quotes" in sql
         assert "api.quote_latest" in sql
+        assert "api.panel" in sql
         assert "REVOKE ALL ON FUNCTION api.quote_latest" in sql
 
     def test_migration_19_drops_redundant_codneg_index(self):

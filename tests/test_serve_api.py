@@ -187,6 +187,37 @@ def test_quote_series_on_same_url(client):
     assert body["series"][1]["close"] == 41.9
 
 
+def test_parse_ids_mixes_ticker_and_cnpj():
+    from serve.app import parse_ids
+
+    assert parse_ids("PETR4, 00.000.000/0001-91") == ["PETR4", "00000000000191"]
+
+
+def test_panel_wide_keeps_nulls():
+    from serve.app import panel_wide
+
+    wide = panel_wide([
+        {"id": "PETR4", "date": "2026-07-01", "metric": "close", "value": 40.0},
+        {"id": "PETR4", "date": "2026-08-01", "metric": "close", "value": 41.9},
+        {"id": "FUND", "date": "2026-08-01", "metric": "nav", "value": 1e9},
+    ])
+    assert wide["kind"] == "panel"
+    assert "PETR4.close" in wide["columns"]
+    assert "FUND.nav" in wide["columns"]
+    # July has equity close but no fund NAV — null, not filled.
+    july = wide["values"][wide["dates"].index("2026-07-01")]
+    fund_col = wide["columns"].index("FUND.nav")
+    assert july[fund_col] is None
+
+
+def test_panel_rejects_daily_mix_with_cnpj(client):
+    rv = client.get(
+        "/v1/panel?ids=PETR4,00000000000191&freq=day&metrics=close,nav"
+    )
+    assert rv.status_code == 400
+    assert "freq=day" in rv.get_json()["error"]
+
+
 def test_quote_series_columnar(client):
     cur = _Cur(
         rows=[
