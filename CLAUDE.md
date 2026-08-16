@@ -167,8 +167,10 @@ pytest tests/test_api.py::test_name  # one test
 
 `pytest.ini` sets `pythonpath = .` and `asyncio_mode = auto`. The pre-push hook runs the full
 offline suite and blocks the push on failure; the pre-commit hook blocks committing Postgres
-URLs with credentials and Python that fails `py_compile`. The `.claude/settings.json`
-PostToolUse hook auto-runs `py_compile` after every Edit/Write to a `.py` file.
+URLs with credentials and Python that fails `py_compile`. The `.claude/settings.json` PostToolUse hook runs `py_compile` on every edited
+`.py` file and the offline pytest suite when the file is under `src/`, `serve/`,
+`tests/`, or `scripts/` (`.claude/hooks/post-edit.sh`). Failures surface; they
+are not swallowed.
 
 ## Consumers (read-only, query Supabase directly)
 
