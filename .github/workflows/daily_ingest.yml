@@ -15,12 +15,13 @@ on:
           - daily
           - backfill
           - analytics-only
+          - b3-backfill
       entity:
         description: "CVM entity to backfill: fi | fidc | fii | fip | fiagro | securit | cia_aberta | etf (leave blank for all)"
         required: false
         default: ""
       start_year:
-        description: "Backfill start year (mode=backfill only)"
+        description: "Backfill start year (mode=backfill or b3-backfill). For B3, try 2025 first — yearly zips are large."
         required: false
         default: "2019"
       end_year:
@@ -32,7 +33,7 @@ jobs:
   ingest:
     name: Ingest CVM data
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     env:
       POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
       # Optional: enables the etfsbrasil ETF NAV/price/cotistas scrape in run_daily.
@@ -104,8 +105,15 @@ jobs:
             $ENTITY_FLAG \
             --cvm-only
 
+      - name: Run B3 COTAHIST yearly backfill
+        if: ${{ github.event.inputs && github.event.inputs.mode == 'b3-backfill' }}
+        run: |
+          python -m src.pipeline.run_backfill \
+            --b3-only \
+            --b3-start-year ${{ inputs.start_year }}
+
       - name: Analyze tables post-ingest
-        if: ${{ github.event_name == 'schedule' || (github.event.inputs && (github.event.inputs.mode == 'backfill' || github.event.inputs.mode == 'analytics-only')) }}
+        if: ${{ github.event_name == 'schedule' || (github.event.inputs && (github.event.inputs.mode == 'backfill' || github.event.inputs.mode == 'analytics-only' || github.event.inputs.mode == 'b3-backfill')) }}
         run: |
           psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -c "
             ANALYZE cvm_fi_diario;
