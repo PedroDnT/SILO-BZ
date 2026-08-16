@@ -192,7 +192,7 @@ Ingestion target: **GitHub Actions cron → Supabase Postgres**. Required GitHub
 separately to **Vercel** (project `iliquid-nightly`; any static host also works).
 
 - `.github/workflows/daily_ingest.yml` — 06:00 UTC daily (`run_daily`) + `workflow_dispatch`
-  (`mode=daily|backfill`, optional `entity`/`start_year`/`end_year`). It bootstraps the schema
+  (`mode=daily|analytics-only|b3-backfill`). It bootstraps the schema
   via `psql` on every run, then `ANALYZE`s the tables.
 - `.github/workflows/backfill.yml` — on-demand full backfill; FI runs one parallel job per year,
   other entities/BACEN/ETF in parallel, gated on a one-time `apply-schema` job.

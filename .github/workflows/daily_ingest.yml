@@ -13,21 +13,12 @@ on:
         type: choice
         options:
           - daily
-          - backfill
           - analytics-only
           - b3-backfill
-      entity:
-        description: "CVM entity to backfill: fi | fidc | fii | fip | fiagro | securit | cia_aberta | etf (leave blank for all)"
-        required: false
-        default: ""
       start_year:
-        description: "Backfill start year (mode=backfill or b3-backfill). For B3, try 2025 first — yearly zips are large."
+        description: "First year of B3 COTAHIST yearly zips (mode=b3-backfill). Try 2025 first — yearly zips are large."
         required: false
-        default: "2019"
-      end_year:
-        description: "Backfill end year inclusive (mode=backfill only, leave blank for current year)"
-        required: false
-        default: ""
+        default: "2025"
 
 jobs:
   ingest:
@@ -88,23 +79,6 @@ jobs:
         if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily') }}
         run: python -m src.pipeline.run_daily
 
-      - name: Run historical backfill
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs && github.event.inputs.mode == 'backfill' }}
-        run: |
-          ENTITY_FLAG=""
-          if [ -n "${{ inputs.entity }}" ]; then
-            ENTITY_FLAG="--entity ${{ inputs.entity }}"
-          fi
-          END_YEAR_FLAG=""
-          if [ -n "${{ inputs.end_year }}" ]; then
-            END_YEAR_FLAG="--end-year ${{ inputs.end_year }}"
-          fi
-          python -m src.pipeline.run_backfill \
-            --start-year ${{ inputs.start_year }} \
-            $END_YEAR_FLAG \
-            $ENTITY_FLAG \
-            --cvm-only
-
       - name: Run B3 COTAHIST yearly backfill
         if: ${{ github.event.inputs && github.event.inputs.mode == 'b3-backfill' }}
         run: |
@@ -113,7 +87,7 @@ jobs:
             --b3-start-year ${{ inputs.start_year }}
 
       - name: Analyze tables post-ingest
-        if: ${{ github.event_name == 'schedule' || (github.event.inputs && (github.event.inputs.mode == 'backfill' || github.event.inputs.mode == 'analytics-only' || github.event.inputs.mode == 'b3-backfill')) }}
+        if: ${{ github.event_name == 'schedule' || (github.event.inputs && (github.event.inputs.mode == 'analytics-only' || github.event.inputs.mode == 'b3-backfill')) }}
         run: |
           psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -c "
             ANALYZE cvm_fi_diario;
@@ -146,13 +120,11 @@ jobs:
       # fails the ingest critical path — psql/POSTGRES_URL come from the steps above.
       #
       # mode=analytics-only exists because this step (unlike schema+migrations)
-      # only runs on the scheduled cron or a full backfill — a PR that changes
-      # only RPC/matview SQL (no new table/column) has no fast, targeted way to
-      # push it to production otherwise, short of waiting for the next 06:00 UTC
-      # cron or running the entire multi-hour CVM backfill matrix just to reach
-      # this step.
+      # only runs on the scheduled cron — a PR that changes only RPC/matview SQL
+      # has no fast way to push it otherwise, short of waiting for 06:00 UTC.
+      # CVM history is backfill.yml, not a mode on this workflow.
       - name: Build / refresh analytical layer
-        if: ${{ github.event_name == 'schedule' || (github.event.inputs && (github.event.inputs.mode == 'backfill' || github.event.inputs.mode == 'analytics-only')) }}
+        if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'analytics-only') }}
         continue-on-error: true
         run: bash scripts/apply_analytical.sh
 
