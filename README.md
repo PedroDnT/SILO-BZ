@@ -401,7 +401,8 @@ rows do not.
 
 - `.github/workflows/test.yml` — pytest on PR/push; dispatch also smokes `api.*` read-only.
 - `.github/workflows/daily_ingest.yml` — runs `run_daily` at 06:00 UTC and exposes a `workflow_dispatch`
-  for ad-hoc runs (`mode=daily|backfill|analytics-only|b3-backfill`). `b3-backfill` loads yearly
+  for ad-hoc runs (`mode=daily|analytics-only|b3-backfill`). CVM history is
+  **CVM Historical Backfill** (`backfill.yml`), not a mode here. `b3-backfill` loads yearly
   COTAHIST zips (`--b3-only`); set `start_year` (try `2025` first).
 - Required GitHub secret: `POSTGRES_URL` (Supabase connection string with `sslmode=require`).
 

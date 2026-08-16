@@ -10,7 +10,7 @@ Workflows in this folder are **not** registered by GitHub (only
 
 Live Actions (keep these):
 
-- `daily_ingest.yml` — cron + `daily` / `backfill` / `analytics-only` / `b3-backfill`
+- `daily_ingest.yml` — cron + `daily` / `analytics-only` / `b3-backfill`
 - `backfill.yml` — full CVM historical (parallel FI years)
 - `watchdog.yml` — 08:00 UTC staleness re-run
 
