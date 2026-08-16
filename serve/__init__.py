@@ -1,1 +1,1 @@
-"""Silo public read API — not the ingest control plane."""
+"""Silo public read API over schema `api`."""

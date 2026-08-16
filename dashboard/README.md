@@ -107,9 +107,9 @@ Vercel's dashboard, deliberately:
 It lives at the repo root (not in `dashboard/`) because the Vercel project's root
 directory is the repository root — a `dashboard/vercel.json` is silently ignored there.
 `"framework": null` (the "Other" preset) is the important part. With the root directory
-unset, Vercel auto-detects the repo as a **Python** project (Flask `app.py` +
-`requirements.txt`) and deploys the localhost-only control plane as a serverless
-function, which crashes every request with `500 FUNCTION_INVOCATION_FAILED`. Pinning
+unset, Vercel auto-detects the repo as a **Python** project (`serve/app.py` +
+`requirements.txt` Flask) and tries to deploy that read API as a serverless
+function, which is not how this dashboard is meant to ship. Pinning
 framework to null and the build to the Evidence static output removes the functions
 entirely.
 

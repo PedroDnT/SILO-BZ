@@ -44,8 +44,8 @@ CIA by CNPJ/`cd_cvm`/name separately until that match exists.
 | Fund analyst | One vehicle NAV | `/v1/funds/{cnpj}/nav` |
 | Evidence dashboard | Already on `dim_*` / `fact_*` | unchanged |
 
-The localhost Flask control plane (`app.py`) stays **operator-only** (trigger
-ingest). It is not this API.
+Ingest is GitHub Actions cron and the pipeline CLI (`run_daily` /
+`run_backfill`). There is no ingest HTTP server. `serve/` is read-only.
 
 ## Layers
 
@@ -142,7 +142,7 @@ are matched — same long grain, not a new API style.
 |---|---|
 | Raw PostgREST on `public` | Leaks `cvm_ingest_log`, options tape, Portuguese columns; users must learn the warehouse |
 | supabase.rpc only | Fine as a power-user escape hatch; terrible onboarding vs `/v1/quotes/PETR4` |
-| Extend the Flask control plane | No auth, ingest triggers, localhost-only — mixing operators and readers |
+| Revive the old ingest Flask (`app.py` / `src/api/`) | No auth, ingest triggers, localhost-only — mixing operators and readers |
 | Rebuilding FastAPI microservices | Already deleted; duplicates the warehouse |
 
 ## Run

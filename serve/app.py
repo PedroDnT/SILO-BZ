@@ -1,6 +1,6 @@
 """Read-only HTTP API over the `api` Postgres schema.
 
-This is not the ingest control plane (`app.py` / `src.api`). It only SELECTs
+This is not an ingest trigger. It only SELECTs
 and calls `api.*` functions. Bind 127.0.0.1 unless you put a gateway in front.
 
     python -m serve.app

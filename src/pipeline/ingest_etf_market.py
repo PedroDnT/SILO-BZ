@@ -4,7 +4,7 @@ FETCH (src/fetchers/apify_etf_fetcher.ApifyETFFetcher)
   → PARSE (here: Brazilian number/date formats → etf_market_snapshot columns)
   → STORE (pg_client.upsert_rows, idempotent on (ticker, snapshot_date)).
 
-Intentionally NOT wired into the daily run (no caller in run_daily.py / dispatch.py):
+Intentionally NOT wired into the daily run (no caller in run_daily.py):
 the JS-rendered NAV/cotistas selectors should be verified against one real Apify run
 before scheduling — see the checklist in docs/ETF_AND_PERFORMANCE.md.
 Run manually:  APIFY_TOKEN=… python -m src.pipeline.ingest_etf_market

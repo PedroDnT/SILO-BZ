@@ -77,7 +77,7 @@ python -m src.pipeline.ingest_etf_market
 ```
 
 > **Verify before scheduling.** It is intentionally **not** wired into the daily
-> run yet (no caller in `run_daily.py` / `dispatch.py`). The label-based parsers in
+> run yet (no caller in `run_daily.py`). The label-based parsers in
 > `ingest_etf_market.py` are best-effort against the current layout and need confirming on
 > one real run — the full rendered page text **and** the page's `__NEXT_DATA__` JSON are
 > kept in each row's `raw`, so nothing is lost if a label moves. Once a run is confirmed,

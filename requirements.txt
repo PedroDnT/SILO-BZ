@@ -25,7 +25,7 @@ psycopg2-binary>=2.9
 # Config / runtime
 python-dotenv==1.2.2
 
-# Control plane (Flask) — local-only API for partial-fill ingestion + status
+# Read API (Flask) — `python -m serve.app` over schema api; not an ingest trigger
 flask>=3.0,<4.0
 
 # Testing

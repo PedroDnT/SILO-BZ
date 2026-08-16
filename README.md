@@ -14,26 +14,23 @@ Data sources:
 
 Data is downloaded, parsed, validated, and upserted into a Supabase Postgres database via psycopg2.
 Dashboards query Supabase directly. Apps should use schema `api` and `serve/`
-([docs/API.md](docs/API.md)) — not landing tables or the ingest control plane.
+([docs/API.md](docs/API.md)) — not landing tables. Ingest is GitHub Actions plus
+the pipeline CLI (`run_daily` / `run_backfill`); there is no ingest HTTP server.
 How we get from “ingested” to “a researcher can pull a panel”:
 [docs/planning/SERVING.md](docs/planning/SERVING.md).
 
-A small **local Flask control plane** (`app.py` + `src/api/`) wraps the pipeline so
-operators can trigger partial fills one (entity, doc_type, year, month) slice at a
-time and watch jobs progress via a polling endpoint. See
-[Flask control plane](#flask-control-plane-local).
-
-> A previous version exposed three FastAPI services + a gateway and a Solana "Delos Oracle"
-> experiment; those layers were removed in the consolidation, and only fetch/parse/store
-> remains. The Flask app here is **localhost-only** — it does not reintroduce a public API
-> surface.
+> A previous version exposed three FastAPI services + a gateway, a Solana "Delos Oracle"
+> experiment, and a localhost ingest Flask control plane (`app.py` / `src/api/`); those
+> layers were removed. Only fetch/parse/store remains for ingest. The remaining Flask
+> app is `serve/` — a read-only adapter over schema `api`, not an ingest trigger.
 
 ## CVM ZIP structure (important)
 
 Each CVM entity distributes data as ZIP files containing multiple CSVs. The pipeline
 reads the specific CSVs listed below from each ZIP; the "Pending" column tracks CSVs
 that exist in the source but are not yet ingested. (Source of truth for what is
-actually wired is `src/store/schema.sql` + `src/api/dispatch.py`, not this table.)
+actually wired is `src/store/schema.sql` + `src/pipeline/` (`CVMIngestor.daily_update` /
+`backfill`), not this table.)
 
 | Entity                | CSVs per ZIP                | Pipeline reads                                                       | Pending (in plan) |
 | --------------------- | --------------------------- | -------------------------------------------------------------------- | ----------------- |
@@ -96,12 +93,7 @@ wired (see `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`, `cvm_secur
 │   │   ├── bacen_pipeline.py   # BacenIngestor — orchestrates fetch+store for BACEN
 │   │   ├── run_backfill.py     # CLI: full historical backfill
 │   │   └── run_daily.py        # CLI: incremental daily update
-│   └── api/                    # Flask control plane (local-only)
-│       ├── __init__.py         # create_app() factory
-│       ├── routes.py           # HTTP endpoints (ingest, status, jobs, verify)
-│       ├── jobs.py             # in-process job registry (UUID → state)
-│       ├── dispatch.py         # (entity, doc_type) → ingestor method
-│       └── hooks.py            # post-job error classifier + inefficiency detector
+├── serve/                      # read-only HTTP over schema api (`python -m serve.app`)
 ├── dashboard/                  # Evidence.dev analytics dashboard
 │   ├── pages/                  # Markdown-based pages + embedded SQL queries
 │   ├── sources/
@@ -110,7 +102,6 @@ wired (see `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`, `cvm_secur
 ├── webapp/                     # Evidence.dev CIA Aberta (listed-company) analytics
 │   ├── pages/                  # Listed-company financials & events
 │   └── README.md               # Webapp-specific setup
-├── app.py                      # Flask entry point — `flask --app app run`
 ├── tests/                      # offline pytest suite
 ├── scripts/
 │   ├── seed_local_db.py        # Fetch real CVM data → local Postgres for offline testing
@@ -307,74 +298,31 @@ python scripts/run_analysis_local.py
 python scripts/verify_pipeline.py
 ```
 
-## Flask control plane (local)
+## Partial fills (CLI)
 
-The Flask app exposes each `CVMIngestor.ingest_*` method as a background job, so
-backfill work can proceed one slice at a time instead of a single all-or-nothing
-run. Bind it to `127.0.0.1`; there is no auth.
-
-```bash
-flask --app app run                # or: python app.py
-```
-
-It needs `POSTGRES_URL` set to the Supabase connection string. The pipeline writes to
-the CVM/BACEN tables via psycopg2 direct connection — no PostgREST or RLS involved.
-
-### Endpoint reference
-
-| Method | Path                | Body / Query                                        | Purpose                                                           |
-| ------ | ------------------- | --------------------------------------------------- | ----------------------------------------------------------------- |
-| GET    | `/healthz`          | —                                                   | Liveness + Supabase DB reachability                               |
-| GET    | `/api/status`       | —                                                   | Row counts per table + last 5 entries in `cvm_ingest_log`         |
-| GET    | `/api/dispatch`     | —                                                   | List every valid `(entity, doc_type)` pair                        |
-| POST   | `/api/ingest`       | `{entity, doc_type, year, month?}`                  | Fire one slice. Returns `{job_id}`                                |
-| POST   | `/api/ingest/range` | `{entity, doc_type, year_start, year_end, months?}` | Spawn N sequential child jobs                                     |
-| POST   | `/api/daily`        | —                                                   | Run `CVMIngestor.daily_update()` as one background job            |
-| GET    | `/api/jobs`         | `?limit=50`                                         | List recent jobs, newest first                                    |
-| GET    | `/api/jobs/<id>`    | —                                                   | Full job state: status, rows, error, warnings, children           |
-| POST   | `/api/verify`       | —                                                   | Run the quality-gate subset of `verify_pipeline.py` synchronously |
-
-`month` is required for monthly conventions (`fi`, `fidc`, `fiagro mensal`).
-Yearly conventions (`fii`, `fip`, `securit *_classe / *_fluxo / dfin_*`) take only `year`.
-
-### Example: drive the remaining FIDC backfill
+Ingest is GitHub Actions plus the pipeline CLI. There is no localhost HTTP
+control plane. One entity or year:
 
 ```bash
-# 1. start the server
-flask --app app run
-
-# 2. fill one month at a time and watch it
-curl -XPOST localhost:5000/api/ingest \
-    -H 'content-type: application/json' \
-    -d '{"entity":"fidc","doc_type":"tranche","year":2024,"month":5}'
-# → {"job_id":"abcd-...","status":"queued","table":"cvm_fidc_tranche"}
-
-curl localhost:5000/api/jobs/abcd-...
-# → {... "status":"done","rows_inserted":12345,"warnings":[]}
-
-# 3. when you're confident, batch a year range
-curl -XPOST localhost:5000/api/ingest/range \
-    -H 'content-type: application/json' \
-    -d '{"entity":"fidc","doc_type":"tranche","year_start":2019,"year_end":2023}'
+python -m src.pipeline.run_backfill --cvm-only --entity fidc --start-year 2024 --end-year 2024
+python -m src.pipeline.run_backfill --cvm-only --entity fidc --start-year 2019
+python -m src.pipeline.run_daily
 ```
 
-### Error hooks
+One month of one dataset — call the ingestor method (needs `POSTGRES_URL`):
 
-Failed jobs include a `error.type` classified as one of:
+```python
+import asyncio
+from src.pipeline.cvm_pipeline import CVMIngestor
 
-- `network` — `aiohttp` / DNS / timeout / socket failures
-- `csv_parse` — CSV parsing, encoding, or missing CVM column
-- `db_write` — psycopg2 error, constraint violation, duplicate key
-- `schema_mismatch` — column missing on the target table (apply `schema.sql`)
-- `unknown` — fallback with full traceback in `error.traceback`
+asyncio.run(CVMIngestor().ingest_fidc_tranche(2024, 5))
+```
 
-Successful jobs may still emit `warnings`:
+Failed fetches raise and write `cvm_ingest_log`; they are not auto-retried.
+Re-run the same command. Quality gate: `python scripts/verify_pipeline.py`.
 
-- `no_data_published` — 0 rows + no exception (CVM hasn't published that period yet)
-- `slow_ingest` — >300s for <1000 rows (likely DNS rotation / upstream slowness)
-- `audit_log_error` — surfaced from `cvm_ingest_log.error_msg` for the same slice
-
-Hooks classify only — they do **not** auto-retry. Re-POST the same payload to retry.
+The read-only HTTP adapter is separate: `python -m serve.app` (see
+[docs/API.md](docs/API.md)).
 
 ## Tests
 
@@ -382,8 +330,8 @@ Hooks classify only — they do **not** auto-retry. Re-POST the same payload to 
 PYTHONPATH=. pytest tests/ -v
 ```
 
-All tests are offline (Supabase DB and HTTP are mocked). The Flask layer is covered by
-`tests/test_api.py` (21 tests) — also fully offline; `CVMIngestor` is stubbed.
+All tests are offline (Supabase DB and HTTP are mocked). The read API is covered by
+`tests/test_serve_api.py` — also fully offline; Postgres is stubbed.
 
 CI: `.github/workflows/test.yml` runs this suite on every PR and push to `main`
 (pip cache + `.pytest_cache`). **Actions → Tests → Run workflow** also runs a
@@ -437,7 +385,7 @@ with Performance and ETF pages.
 
 ## What's intentionally not here
 
-- **No ingest REST API, and no PostgREST dump of landing tables.** The pipeline writes to Supabase. Apps read schema `api` via `serve/` ([docs/API.md](docs/API.md)). The localhost Flask app is an operator control plane, not a product API.
+- **No ingest REST API, and no PostgREST dump of landing tables.** The pipeline writes to Supabase via GitHub Actions and the CLI. Apps read schema `api` via `serve/` ([docs/API.md](docs/API.md)). The old localhost ingest Flask (`app.py` / `src/api/`) is deleted.
 - **No fabricated quotes.** The old `b3_calc_api` (non-B3 domain + hard-coded sample dicts) stays deleted. Historical quotations come from B3's public COTAHIST zips (`src/fetchers/b3_fetcher.py` → `b3_cotahist` → `api.quotes`). Missing tickers are 404, never a guessed last close.
 - **No local Postgres / Docker / Alembic.** Supabase Postgres is the single source of truth. Use `scripts/seed_local_db.py`
   with a local Postgres for offline testing.
