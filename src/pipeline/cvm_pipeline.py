@@ -1472,10 +1472,10 @@ class CVMIngestor:
                 ("cvm_fi_diario", "fi", "inf_diario", "inf_diario", self.ingest_fi_diario),
                 ("cvm_fi_cda", "fi", "cda", "cda", self.ingest_fi_cda),
                 ("cvm_fi_perfil", "fi", "perfil_mensal", "perfil_mensal", self.ingest_fi_perfil),
-                # balancete was wired to dispatch.py (API-only) but to neither the
-                # daily specs nor the backfill, so cvm_fi_balancete sat empty in
-                # production. CVM publishes it monthly from 2019 (verified by
-                # ranged GET against the BALANCETE endpoint).
+                # balancete used to live only on the deleted ingest Flask and
+                # sat empty in production. It is now on the daily/backfill specs.
+                # CVM publishes it monthly from 2019 (verified by ranged GET
+                # against the BALANCETE endpoint).
                 ("cvm_fi_balancete", "fi", "balancete", "balancete", self.ingest_fi_balancete),
             ]
         if "fidc" in daily_entities:

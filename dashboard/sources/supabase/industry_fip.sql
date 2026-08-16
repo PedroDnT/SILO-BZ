@@ -2,7 +2,7 @@
 -- cvm_fip_periodic.
 --
 -- FIP is the one family with a YEARLY grain: inf_trimestral up to 2023 and
--- inf_quadrimestral from 2024 (see the dispatch matrix in src/api/dispatch.py),
+-- inf_quadrimestral from 2024 (see CVMIngestor FIP ingest in src/pipeline/),
 -- keyed UNIQUE on (cnpj, doc_type, period_year). It is read here directly rather
 -- than through fact_fund_monthly, where it is mapped onto 31-Dec and disappears
 -- into a monthly aggregate.

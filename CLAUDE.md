@@ -11,12 +11,12 @@ FI, FIDC, FII, FIP, FIAGRO, SECURIT, plus listed-company CIA filings), **BACEN**
 time series, PTAX, Focus expectativas), and **B3** (public COTAHIST quotation zips →
 `b3_cotahist`) into a **Supabase Postgres** database via psycopg2.
 
-There is **no public ingest API**. Downstream dashboards (`dashboard/`, `webapp/`)
-query Supabase directly. The **read contract** for apps is schema `api` plus
-`serve/` (`docs/API.md`). Serving roadmap (catalog → SQL smoke → pool →
-honest returns → lookup → privileges → HTTPS) is `docs/planning/SERVING.md`.
-A localhost-only Flask control plane (`app.py` + `src/api/`)
-wraps the pipeline so operators can trigger partial-fill ingests one slice at a time.
+There is **no public ingest API** and no localhost ingest HTTP server. Downstream
+dashboards (`dashboard/`, `webapp/`) query Supabase directly. The **read contract**
+for apps is schema `api` plus `serve/` (`docs/API.md`). Serving roadmap (catalog →
+SQL smoke → pool → honest returns → lookup → privileges → HTTPS) is
+`docs/planning/SERVING.md`. Operators trigger ingest with GitHub Actions or
+`python -m src.pipeline.run_daily` / `run_backfill` (optional `--entity`).
 
 > Read `README.md` for the full operator guide, `docs/DATABASE_MAINTENANCE.md` for the
 > ongoing DB upkeep runbook (checks, cadence, audit-log triage, partition rollover,
@@ -26,7 +26,7 @@ wraps the pipeline so operators can trigger partial-fill ingests one slice at a 
 > reintroduce Docker/Alembic, local Postgres-as-source-of-truth, or a **fake** B3
 > quote API — see "What's intentionally not here" in `README.md`. Public COTAHIST
 > zips are in scope (`b3_cotahist`). The user-facing read API is schema `api` +
-> `serve/` (`docs/API.md`); do not expose landing tables or the ingest control plane.
+> `serve/` (`docs/API.md`); do not expose landing tables or reintroduce an ingest HTTP API.
 
 ## Data integrity rules (NON-NEGOTIABLE)
 
@@ -35,7 +35,8 @@ downstream metric. This list is authoritative:
 
 1. **Never fabricate data.** A failed fetch must `raise` — never return a plausible-looking
    fallback dict (this is exactly why `b3_calc_api` was deleted). Mocks live in `tests/` only.
-2. **No silent `except: pass`** around network/DB calls. Classify and surface (`src/api/hooks.py`).
+2. **No silent `except: pass`** around network/DB calls. Failures must `raise` or
+   be written to `cvm_ingest_log` — never swallowed.
 3. **Preserve provenance.** Every row carries its natural keys (e.g. `cnpj` / `cnpj_securit`
    and `dt_comptc` / `period` / `data_referencia` / `reference_date`, depending on the table)
    directly from source — never synthesize them. Every ingest writes exactly one
@@ -46,8 +47,8 @@ downstream metric. This list is authoritative:
 5. **Idempotent by construction.** Every table has a named UNIQUE constraint on its natural
    key; upserts use `ON CONFLICT ... DO UPDATE`. Never plain `INSERT`.
 
-If a change makes `scripts/verify_pipeline.py` / `/api/verify` fail, the change is wrong —
-not the verifier.
+If a change makes `scripts/verify_pipeline.py` fail, the change is wrong — not the
+verifier.
 
 ## Architecture
 
@@ -77,16 +78,14 @@ UPDATE`). **Never open a raw DB connection elsewhere — always go through `pg_c
   modules hold the per-entity `ingest_*` methods. CLI entry points: `run_daily.py` (cron:
   current month + 7-day window, including B3 COTAHIST daily zips) and `run_backfill.py`
   (one-shot, all years; B3 yearly zips are `--include-b3` / `--b3-only`).
-- **`src/api/`** — Flask control plane (local-only, no auth, bind `127.0.0.1`). `routes.py`
-  exposes ingest/status/jobs/verify; `jobs.py` is an in-process job registry (UUID → state);
-  `dispatch.py` maps `(entity, doc_type)` → ingestor method; `hooks.py` is a post-job error
-  classifier (`network` / `csv_parse` / `db_write` / `schema_mismatch` / `unknown`) and
-  inefficiency detector. Hooks classify only — they never auto-retry.
+- **`serve/`** — read-only Flask adapter over schema `api` (`python -m serve.app`).
+  Not an ingest trigger. See `docs/API.md`.
 
 Storage layout: ~30 tables named `cvm_<entity>_<doctype>` or `bacen_<series>` (plus the
 `cia_*` and ETF tables and the `cvm_ingest_log` audit table). Trust `src/store/schema.sql`
 
-- `migrations/` + `src/api/dispatch.py` as the source of truth, not the README's CSV table.
+- `migrations/` + `src/pipeline/` (`CVMIngestor.daily_update` / `backfill`) as the source
+  of truth, not the README's CSV table.
   Wired ingest datasets include `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`,
   `cvm_securit_fluxo`, `cvm_fi_balancete`, `cvm_cia_*`, `cvm_etf_registry`,
   `anbima_class_monthly` (every ANBIMA class/type; `anbima_etf_class_monthly`
@@ -115,9 +114,9 @@ Touch these in order:
 3. `src/store/schema.sql` **and** a new `src/store/migrations/NNN_*.sql` — add the table
    (never edit historical migrations; keep `schema.sql` in sync).
 4. `src/pipeline/ingest_<entity>.py` — add the `ingest_*` method.
-5. `src/api/dispatch.py` — register `(entity, doc_type) → method` (skip this and the Flask
-   control plane can't see the dataset).
-6. `tests/` — add an offline test with a CSV fixture (skip this and pre-push won't protect it).
+5. Wire the method into `CVMIngestor.daily_update` / `backfill` (and `run_daily` /
+   `run_backfill` if it is a new source). Skip this and GitHub Actions never fetches it.
+6. `tests/` — add an offline test with a CSV fixture (skip this and CI won't protect it).
 
 Periodicity: **monthly** datasets (`fi`, `fidc *`, `fiagro mensal`) take `(year, month)` and
 key on `competencia` = first day of the month; **yearly** datasets (`fii *`, `fip`,
@@ -152,17 +151,17 @@ bash scripts/apply_analytical.sh     # build analytical views/functions — run 
 python -m src.pipeline.run_daily                      # incremental
 python -m src.pipeline.run_backfill --start-year 2019 # full historical (optional --entity)
 
-# Flask control plane (local only)
-flask --app app run                  # 127.0.0.1:5000; needs POSTGRES_URL
+# Read API (local only; not an ingest trigger)
+python -m serve.app                  # 127.0.0.1:8080; needs POSTGRES_URL or SILO_API_DATABASE_URL
 
 # Verify
 python scripts/seed_local_db.py --skip-fi && python scripts/run_analysis_local.py  # offline, ~2min
 python scripts/verify_pipeline.py    # against live Supabase (quality gate; keep green)
 
 # Tests (pytest.ini sets pythonpath = ., so no PYTHONPATH prefix needed)
-pytest tests/ -v        # all offline (DB + HTTP mocked)
-pytest tests/test_api.py -v          # one file
-pytest tests/test_api.py::test_name  # one test
+pytest tests/ -v                     # all offline (DB + HTTP mocked)
+pytest tests/test_serve_api.py -v    # one file
+pytest tests/test_serve_api.py::test_name  # one test
 ```
 
 `pytest.ini` sets `pythonpath = .` and `asyncio_mode = auto`. The pre-push hook runs the full
@@ -192,8 +191,8 @@ Ingestion target: **GitHub Actions cron → Supabase Postgres**. Required GitHub
 separately to **Vercel** (project `iliquid-nightly`; any static host also works).
 
 - `.github/workflows/daily_ingest.yml` — 06:00 UTC daily (`run_daily`) + `workflow_dispatch`
-  (`mode=daily|backfill`, optional `entity`/`start_year`/`end_year`). It bootstraps the schema
-  via `psql` on every run, then `ANALYZE`s the tables.
+  (`mode=daily|backfill|analytics-only|b3-backfill`, optional `entity`/`start_year`/`end_year`).
+  It bootstraps the schema via `psql` on every run, then `ANALYZE`s the tables.
 - `.github/workflows/backfill.yml` — on-demand full backfill; FI runs one parallel job per year,
   other entities/BACEN/ETF in parallel, gated on a one-time `apply-schema` job.
 

@@ -215,8 +215,9 @@ already on the handlers.
 - [ ] Historical series (`to` in the past) cache `max-age=86400`; latest
       quote `max-age=300`; catalog `max-age=86400` (bump `version` on change).
 
-Ingest remains GitHub Actions cron → Supabase. Serving does not share the
-ingest Flask control plane (`app.py` / `src/api/`).
+Ingest remains GitHub Actions cron → Supabase (and the pipeline CLI). Serving
+does not share an ingest HTTP server — that Flask app (`app.py` / `src/api/`)
+was removed.
 
 ---
 
@@ -244,7 +245,7 @@ exists as data.
 - Serve Pearson / rank / spread over HTTP so agents stop at those four answers.
 - Expose `cvm_ingest_log`, `b3_cotahist` (options tape), or Portuguese landing
   columns as the user API.
-- Mix the ingest control plane with the read API.
+- Mix ingest triggers with the read API (the old ingest Flask is deleted).
 - Reintroduce a public FastAPI mesh, Docker-as-source-of-truth, or `b3_calc_api`.
 
 ## How to tell where we are

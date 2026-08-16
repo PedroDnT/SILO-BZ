@@ -38,7 +38,7 @@ title: Pipeline Ops
   ENTITY LABELS are the ones the pipeline actually writes to the log
   (fi / fidc / fiagro / fii / fip / securit / etf / cia_aberta / anbima_etf), NOT
   the API dispatch keys — the two differ (the log says doc_type 'inf_diario'
-  where src/api/dispatch.py calls it 'diario').
+  where the old Flask dispatch called it 'diario'; ingest is CLI/Actions now).
 
   ZERO-ROW RULE: day spines, month spines, slot spines and literal entity lists
   drive every source, with the log LEFT JOINed on. An empty log yields blank rows
@@ -167,8 +167,8 @@ title="Run Status per Day"
 > on the page.
 >
 > Entity and doc-type labels here are the ones the pipeline writes to the log,
-> not the API dispatch keys: the log says `inf_diario` where `src/api/dispatch.py`
-> calls the same dataset `diario`.
+> not the old Flask dispatch keys: the log says `inf_diario` where that matrix
+> called the same dataset `diario`.
 
 <DataTable data={ops_status_by_dataset} rows=20 search=true>
   <Column id=entity title="Entity"/>

@@ -115,18 +115,23 @@ integrity audit). Do not confuse it with a full CVM matrix run.
 **One entity** — Actions → **Daily CVM Ingest** → _Run workflow_ with
 `mode=backfill` and `entity=<fi|fidc|fii|fip|fiagro|securit|etf>`.
 
-**Locally / one slice at a time** — the Flask control plane:
+**Locally / one slice at a time** — pipeline CLI (needs `POSTGRES_URL`):
 
 ```bash
-flask --app app run          # 127.0.0.1:5000, needs POSTGRES_URL
+# one entity, one year
+python -m src.pipeline.run_backfill --cvm-only --entity fidc --start-year 2024 --end-year 2024
+
+# one entity, full history
+python -m src.pipeline.run_backfill --cvm-only --entity fidc --start-year 2019
 ```
 
-then `POST /api/ingest` per `(entity, doc_type, year, month)` and watch `/api/jobs`.
-Useful when you want to fill a single month and inspect the result.
+One month of one dataset — call the ingestor method:
 
-```bash
-# or directly
-python -m src.pipeline.run_backfill --start-year 2019 --cvm-only [--entity fidc]
+```python
+import asyncio
+from src.pipeline.cvm_pipeline import CVMIngestor
+
+asyncio.run(CVMIngestor().ingest_fidc_tranche(2024, 5))
 ```
 
 ### If CVM refuses connections
