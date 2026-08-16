@@ -1,90 +1,71 @@
-```markdown
-# iliquid_nightly Development Patterns
+---
+name: silo
+description: >
+  SILO-BZ integrity and serving contract. Load when changing ingest, CVM/BACEN/B3
+  fetchers, schema.sql, migrations, analytical SQL, schema api, serve/, catalog,
+  panel metrics, GitHub ingest workflows, or reviewing PRs that touch those.
+  Also load before adding a dataset or a new panel metric.
+---
 
-> Auto-generated skill from repository analysis
+# SILO
 
-## Overview
-This skill teaches the core development patterns and conventions used in the `iliquid_nightly` Python codebase. You'll learn how to structure files, write imports and exports, and follow commit and testing conventions. This guide is especially useful for contributors who want to maintain consistency and quality in their code contributions.
+Headless CVM/BACEN/B3 ingest into Supabase. The product is a researcher panel
+`(id, date, metric, value)` via schema `api` + `serve/`. Full rules: `CLAUDE.md`,
+`docs/planning/SERVING.md`, `docs/API.md`.
 
-## Coding Conventions
+## Integrity (non-negotiable)
 
-### File Naming
-- Use **snake_case** for all filenames.
-  - Example: `data_processor.py`, `user_profile_manager.py`
+1. Never fabricate a price, fill, fallback dict, or ticker↔CNPJ join. A failed
+   fetch `raise`s. Null stays null. No ffill.
+2. No silent `except: pass` around network/DB. Failures go to `cvm_ingest_log`.
+3. Provenance from source keys. One ingest log row per slice.
+4. Validate before upsert (`DataValidator`). Drop invalid rows; never coerce.
+5. Upsert only: `ON CONFLICT ... DO UPDATE`. Never plain `INSERT`.
 
-### Import Style
-- Use **relative imports** within the package.
-  - Example:
-    ```python
-    from .utils import calculate_score
-    from .models.user import User
-    ```
+HTTP is an adapter: one `SELECT` / `api.*()` per handler. Unknown ticker → 404.
+Known ticker, empty window → 200 empty series. Never a guessed last close.
 
-### Export Style
-- Use **named exports** (explicitly define what is exported).
-  - Example:
-    ```python
-    __all__ = ['User', 'calculate_score']
-    ```
+## Do not
 
-### Commit Patterns
-- Commit messages are **freeform** (no strict prefixes), but are clear and concise.
-- Average commit message length: ~77 characters.
-  - Example:
-    ```
-    Fix bug in data aggregation when input contains null values
-    ```
+- Add or grow ingest HTTP (`app.py`, `src/api/`, `POST /api/ingest`). Ingest is
+  GitHub Actions + `python -m src.pipeline.run_daily` / `run_backfill`.
+- Add `POST /v1/query` or Pearson/rank/spread over HTTP. Reducers stay in the
+  notebook (`serve/catalog.py`).
+- `GRANT anon` on `public` landing tables (`cvm_*`, `b3_cotahist`,
+  `cvm_ingest_log`). The generic Supabase skill is wrong here. For DDL, use
+  `supabase-postgres-best-practices`.
+- Reintroduce Docker/Alembic, local Postgres-as-source-of-truth, or `b3_calc_api`.
 
-## Workflows
+## Add a dataset
 
-### Code Contribution
-**Trigger:** When adding new features or fixing bugs  
-**Command:** `/contribute`
+1. `src/fetchers/cvm_config.py`
+2. `src/parsers/field_maps/<entity>_<doctype>.py`
+3. `schema.sql` + new `migrations/NNN_*.sql` (never edit historical migrations)
+4. `ingest_*` on `CVMIngestor`; wire `daily_update` / `backfill`
+5. Offline CSV fixture in `tests/test_*.py`
 
-1. Create a new branch using snake_case for the branch name.
-2. Make code changes following the coding conventions.
-3. Write or update tests in files matching `*.test.*`.
-4. Commit your changes with a clear, concise message.
-5. Open a pull request for review.
+## Add a panel metric
 
-### Importing Modules
-**Trigger:** When you need to use code from another module in the package  
-**Command:** `/import-module`
+1. `serve/catalog.py` `METRICS` (`id_type`, `grain`, `source`, `meaning`)
+2. `api.panel` union arm in `19_api_contract.sql`
+3. Bump `CATALOG_VERSION`
+4. Offline test; keep `_PANEL_METRICS == tuple(METRICS)`
 
-1. Use relative imports to reference modules.
-2. Only import what you need (prefer named imports).
-3. Define `__all__` in your modules to control exports.
+Serving open: limits before `fetchall` (step 3), honest returns (4), lookup (5),
+`silo_api` role (6), HTTPS (7). Do not ship public HTTP until 3 and 6.
 
-   Example:
-   ```python
-   from .helpers import process_data
-   ```
+## Reviewing `serve/` or `19_*.sql`
 
-### Writing Tests
-**Trigger:** When adding or updating functionality  
-**Command:** `/write-test`
-
-1. Create a test file named using the pattern `*.test.*` (e.g., `user.test.py`).
-2. Write test functions for each feature or bug fix.
-3. Use the project's preferred (unknown) testing framework.
-
-   Example:
-   ```python
-   def test_calculate_score():
-       assert calculate_score([1, 2, 3]) == 6
-   ```
-
-## Testing Patterns
-
-- Test files follow the pattern `*.test.*` (e.g., `module.test.py`).
-- The specific testing framework is not detected; check existing tests for patterns.
-- Place tests alongside the code they verify or in a dedicated `tests/` directory.
-- Write clear, descriptive test function names.
+Check “What we will not do” in `docs/planning/SERVING.md`. Caps belong in SQL
+before Python `fetchall`. Catalog `meaning` must match the SQL.
 
 ## Commands
-| Command         | Purpose                                      |
-|-----------------|----------------------------------------------|
-| /contribute     | Start the code contribution workflow         |
-| /import-module  | Guidance on importing modules correctly      |
-| /write-test     | Steps for writing and structuring tests      |
+
+```bash
+.venv/bin/python -m pytest tests/ -q
+.venv/bin/python -m src.pipeline.run_backfill --cvm-only --entity fidc --start-year 2024 --end-year 2024
+python -m serve.app   # read-only, 127.0.0.1:8080
 ```
+
+Python: snake_case files and functions, `from src...` across packages, tests in
+`tests/test_*.py` (pytest — not `*.test.py` or camelCase).

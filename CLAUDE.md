@@ -166,8 +166,10 @@ pytest tests/test_serve_api.py::test_name  # one test
 
 `pytest.ini` sets `pythonpath = .` and `asyncio_mode = auto`. The pre-push hook runs the full
 offline suite and blocks the push on failure; the pre-commit hook blocks committing Postgres
-URLs with credentials and Python that fails `py_compile`. The `.claude/settings.json`
-PostToolUse hook auto-runs `py_compile` after every Edit/Write to a `.py` file.
+URLs with credentials and Python that fails `py_compile`. The `.claude/settings.json` PostToolUse hook runs `py_compile` on every edited
+`.py` file and the offline pytest suite when the file is under `src/`, `serve/`,
+`tests/`, or `scripts/` (`.claude/hooks/post-edit.sh`). Failures surface; they
+are not swallowed.
 
 ## Consumers (read-only, query Supabase directly)
 
@@ -191,8 +193,8 @@ Ingestion target: **GitHub Actions cron → Supabase Postgres**. Required GitHub
 separately to **Vercel** (project `iliquid-nightly`; any static host also works).
 
 - `.github/workflows/daily_ingest.yml` — 06:00 UTC daily (`run_daily`) + `workflow_dispatch`
-  (`mode=daily|backfill|analytics-only|b3-backfill`, optional `entity`/`start_year`/`end_year`).
-  It bootstraps the schema via `psql` on every run, then `ANALYZE`s the tables.
+  (`mode=daily|analytics-only|b3-backfill`). It bootstraps the schema
+  via `psql` on every run, then `ANALYZE`s the tables.
 - `.github/workflows/backfill.yml` — on-demand full backfill; FI runs one parallel job per year,
   other entities/BACEN/ETF in parallel, gated on a one-time `apply-schema` job.
 

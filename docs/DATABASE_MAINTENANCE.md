@@ -112,8 +112,13 @@ that were never re-fetched.
 This input has never been dispatched against production (as of the dashboard
 integrity audit). Do not confuse it with a full CVM matrix run.
 
-**One entity** — Actions → **Daily CVM Ingest** → _Run workflow_ with
-`mode=backfill` and `entity=<fi|fidc|fii|fip|fiagro|securit|etf>`.
+**One entity** — locally, not Daily Ingest:
+
+```bash
+python -m src.pipeline.run_backfill --start-year 2019 --cvm-only --entity fidc
+```
+
+Full CVM history is Actions → **CVM Historical Backfill**.
 
 **Locally / one slice at a time** — pipeline CLI (needs `POSTGRES_URL`):
 
