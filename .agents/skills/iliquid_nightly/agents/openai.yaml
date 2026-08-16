@@ -1,6 +1,6 @@
 interface:
-  display_name: "Iliquid Nightly"
-  short_description: "Repo-specific patterns and workflows for iliquid_nightly"
-  default_prompt: "Use the iliquid_nightly repo skill to follow existing architecture, testing, and workflow conventions."
+  display_name: "SILO"
+  short_description: "Integrity and serving contract for SILO-BZ"
+  default_prompt: "Follow the SILO skill: never fabricate data; schema api is the contract; ingest is Actions plus the pipeline CLI."
 policy:
   allow_implicit_invocation: true

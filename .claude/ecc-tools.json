@@ -173,8 +173,7 @@
     ".codex/AGENTS.md",
     ".codex/agents/explorer.toml",
     ".codex/agents/reviewer.toml",
-    ".codex/agents/docs-researcher.toml",
-    ".claude/homunculus/instincts/inherited/iliquid_nightly-instincts.yaml"
+    ".codex/agents/docs-researcher.toml"
   ],
   "packageFiles": {
     "runtime-core": [
@@ -186,8 +185,7 @@
       ".codex/AGENTS.md",
       ".codex/agents/explorer.toml",
       ".codex/agents/reviewer.toml",
-      ".codex/agents/docs-researcher.toml",
-      ".claude/homunculus/instincts/inherited/iliquid_nightly-instincts.yaml"
+      ".codex/agents/docs-researcher.toml"
     ]
   },
   "moduleFiles": {
@@ -200,25 +198,24 @@
       ".codex/AGENTS.md",
       ".codex/agents/explorer.toml",
       ".codex/agents/reviewer.toml",
-      ".codex/agents/docs-researcher.toml",
-      ".claude/homunculus/instincts/inherited/iliquid_nightly-instincts.yaml"
+      ".codex/agents/docs-researcher.toml"
     ]
   },
   "files": [
     {
       "moduleId": "runtime-core",
       "path": ".claude/skills/iliquid_nightly/SKILL.md",
-      "description": "Repository-specific Claude Code skill generated from git history."
+      "description": "SILO integrity and serving contract (Claude)."
     },
     {
       "moduleId": "runtime-core",
       "path": ".agents/skills/iliquid_nightly/SKILL.md",
-      "description": "Codex-facing copy of the generated repository skill."
+      "description": "SILO integrity and serving contract (Codex)."
     },
     {
       "moduleId": "runtime-core",
       "path": ".agents/skills/iliquid_nightly/agents/openai.yaml",
-      "description": "Codex skill metadata so the repo skill appears cleanly in the skill interface."
+      "description": "Codex skill metadata for implicit SILO skill invocation."
     },
     {
       "moduleId": "runtime-core",
@@ -233,7 +230,7 @@
     {
       "moduleId": "runtime-core",
       "path": ".codex/AGENTS.md",
-      "description": "Codex usage guide that points at the generated repo skill and workflow bundle."
+      "description": "Codex usage guide pointing at the SILO skill."
     },
     {
       "moduleId": "runtime-core",
@@ -249,11 +246,6 @@
       "moduleId": "runtime-core",
       "path": ".codex/agents/docs-researcher.toml",
       "description": "Read-only docs researcher role config for API verification."
-    },
-    {
-      "moduleId": "runtime-core",
-      "path": ".claude/homunculus/instincts/inherited/iliquid_nightly-instincts.yaml",
-      "description": "Continuous-learning instincts derived from repository patterns."
     }
   ],
   "workflows": [],
