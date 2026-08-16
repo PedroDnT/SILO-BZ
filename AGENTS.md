@@ -21,7 +21,7 @@ Cursor Cloud agent VM.
 No `POSTGRES_URL` / Supabase credentials are needed for the core loop:
 - Lint/syntax gate: `.venv/bin/python -m py_compile <changed .py files>` (what the
   pre-commit hook runs). There is no ruff/flake8/black configured.
-- Tests: `.venv/bin/python -m pytest tests/ -q` — 360 tests, fully offline (DB + HTTP mocked).
+- Tests: `.venv/bin/python -m pytest tests/ -q` — 383 tests, fully offline (DB + HTTP mocked).
 - End-to-end pipeline (fetch→parse→store) against **real CVM data over the network** into a
   local DuckDB file: `.venv/bin/python scripts/seed_local_db.py --skip-fi` then
   `.venv/bin/python scripts/run_analysis_local.py`. This is the self-contained way to prove
