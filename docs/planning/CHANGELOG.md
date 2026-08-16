@@ -2,6 +2,7 @@
 
 | Date       | Branch                    | Change                                                                                              |
 | ---------- | ------------------------- | --------------------------------------------------------------------------------------------------- |
+| 2026-08-16 | cursor/ci-tests-3f68      | CI Tests workflow: pytest on PR/push (pip + .pytest_cache); dispatch-only read-only `api.*` smoke |
 | 2026-08-16 | cursor/b3-backfill-dispatch-3f68 | Archive unused Actions: coverage + matview-dependent audits (scripts remain; run locally) |
 | 2026-08-15 | cursor/serve-catalog-3f68 | `GET /v1/catalog` + `/v1/tools`; no `/v1/query`. User-driven serving requirements in `docs/planning/SERVING.md` |
 | 2026-08-15 | cursor/serve-api-3f68     | Researcher panel: `/v1/panel` mixes ticker close with fund NAV/delinquency; wide matrix for correlation; no ffill |

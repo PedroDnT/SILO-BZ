@@ -1,0 +1,92 @@
+name: Tests
+
+# Offline pytest on every PR and push to main (pip + .pytest_cache).
+# Read-only api.* smoke against Silo is dispatch-only — not on PRs.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    name: pytest (offline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Cache pytest
+        uses: actions/cache@v5
+        with:
+          path: .pytest_cache
+          key: pytest-${{ runner.os }}-${{ hashFiles('requirements.txt', 'tests/**', 'serve/**', 'src/**') }}
+          restore-keys: |
+            pytest-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m pytest tests/ -q --tb=short
+
+  api-smoke:
+    name: api.* smoke (read-only)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+    steps:
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Smoke api.coverage / quote_latest / panel
+        run: |
+          set -euo pipefail
+          if [ -z "${POSTGRES_URL:-}" ]; then
+            echo "POSTGRES_URL secret is missing" >&2
+            exit 1
+          fi
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          SET default_transaction_read_only = on;
+
+          \echo === api.coverage ===
+          SELECT * FROM api.coverage();
+
+          \echo === api.quote_latest(PETR4) ===
+          SELECT ticker, trade_date, close, source
+          FROM api.quote_latest('PETR4');
+
+          \echo === api.panel PETR4 close month ===
+          SELECT id, date, metric, value, source
+          FROM api.panel(
+            ARRAY['PETR4']::text[],
+            ARRAY['close']::text[],
+            CURRENT_DATE - 365,
+            CURRENT_DATE,
+            'month'
+          )
+          LIMIT 5;
+          SQL
+
+          n=$(psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt \
+            -c "SET default_transaction_read_only = on" \
+            -c "SELECT COUNT(*) FROM api.quote_latest('PETR4')")
+          n=$(echo "$n" | tr -d '[:space:]')
+          if [ "$n" = "0" ]; then
+            echo "notice: quote_latest(PETR4) returned 0 rows (daily-only COTAHIST until b3-backfill). SQL succeeded."
+          fi

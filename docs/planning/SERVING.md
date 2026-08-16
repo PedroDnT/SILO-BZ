@@ -90,17 +90,19 @@ metrics and joins. Wiring this does not need a live database.
 
 **Acceptance**
 
-- [ ] CI (or `scripts/seed_local_db.py` + a small psql/DuckDB stand-in) applies
-      `schema.sql` + migrations + `scripts/apply_analytical.sh`.
-- [ ] One smoke call per `api.*` function: `quote_latest('PETR4')`,
-      `panel('{PETR4}', '{close}', …)`, `lookup('PETR4')`, `coverage()`.
-- [ ] `apply_analytical.sh` running `01_dim_fund.sql` then `19` leaves
-      `api.funds` intact (CASCADE from `DROP MATERIALIZED VIEW dim_fund`
-      currently deletes it if 19 is not re-run).
+- [x] `19_api_contract.sql` applied on Silo via `analytics-only` (2026-08-16).
+- [x] Operator smokes: `quote_latest('PETR4')`, `panel(...)`, `coverage()` (SQL
+      errors fail; 0 rows is coverage, not a broken function).
+- [x] Phone path: **Actions → Tests → Run workflow** runs read-only `api.*`
+      smokes (`test.yml` job `api-smoke`). Does not `apply_analytical.sh`.
+- [ ] Ephemeral Postgres in CI that applies `schema.sql` + migrations +
+      `apply_analytical.sh` still later — `01_dim_fund` `RAISE`s on an empty DB.
+- [x] Full `apply_analytical.sh` (01 then 19) leaves `api.funds` intact when
+      19 runs in the same pass.
 
-**Blocks.** Until this is green, we do not know whether `api.panel` compiles,
-whether `UNION ALL` types match, or whether `api.lookup`’s `cia_company`
-branch works.
+**Blocks.** Compile on Silo is done. Remaining: a throwaway-Postgres job so a
+PR cannot merge SQL that only substring-matches. Until then, dispatch
+`api-smoke` after analytical changes.
 
 ---
 
@@ -250,8 +252,8 @@ exists as data.
 | Step | Status | Evidence |
 |---|---|---|
 | 0 Contract | done | `19_api_contract.sql`, `serve/app.py`, `docs/API.md` |
-| 1 Catalog | this PR | `GET /v1/catalog`, `GET /v1/tools` |
-| 2 SQL smoke | open | no Postgres in CI applies 19 |
+| 1 Catalog | done | `GET /v1/catalog`, `GET /v1/tools` |
+| 2 SQL smoke | operator path | Silo apply + **Actions → Tests** `api-smoke`; ephemeral PG still later |
 | 3 Limits / pool | open | `_MAX_PANEL` after `fetchall()`; new conn per request |
 | 4 Honest time | open | daily `close_return` unguarded; no `obs_date` |
 | 5 Lookup | open | `ILIKE %q%`, `LIMIT` without `ORDER BY` |

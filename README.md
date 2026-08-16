@@ -123,6 +123,7 @@ wired (see `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`, `cvm_secur
 │   └── planning/
 │       └── CHANGELOG.md        # Workstream history (W0-W2)
 ├── .github/workflows/
+│   ├── test.yml                # pytest on PR/push (pip + .pytest_cache); api-smoke on dispatch
 │   ├── daily_ingest.yml        # cron @ 06:00 UTC + workflow_dispatch
 │   ├── watchdog.yml            # cron @ 08:00 UTC — self-healing staleness re-run
 │   └── backfill.yml            # on-demand full historical backfill
@@ -384,6 +385,11 @@ PYTHONPATH=. pytest tests/ -v
 All tests are offline (Supabase DB and HTTP are mocked). The Flask layer is covered by
 `tests/test_api.py` (21 tests) — also fully offline; `CVMIngestor` is stubbed.
 
+CI: `.github/workflows/test.yml` runs this suite on every PR and push to `main`
+(pip cache + `.pytest_cache`). **Actions → Tests → Run workflow** also runs a
+read-only `api.*` smoke against Silo (`POSTGRES_URL`); SQL errors fail, zero
+rows do not.
+
 ## Deploy
 
 > Day-to-day database upkeep — what to check and how often, reading `cvm_ingest_log`,
@@ -393,6 +399,7 @@ All tests are offline (Supabase DB and HTTP are mocked). The Flask layer is cove
 **Ingestion** deploys to a single target: **GitHub Actions cron writing to Supabase Postgres**
 (no container registry, no Docker stack).
 
+- `.github/workflows/test.yml` — pytest on PR/push; dispatch also smokes `api.*` read-only.
 - `.github/workflows/daily_ingest.yml` — runs `run_daily` at 06:00 UTC and exposes a `workflow_dispatch`
   for ad-hoc runs (`mode=daily|backfill|analytics-only|b3-backfill`). `b3-backfill` loads yearly
   COTAHIST zips (`--b3-only`); set `start_year` (try `2025` first).
