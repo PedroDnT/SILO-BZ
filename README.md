@@ -394,7 +394,8 @@ All tests are offline (Supabase DB and HTTP are mocked). The Flask layer is cove
 (no container registry, no Docker stack).
 
 - `.github/workflows/daily_ingest.yml` — runs `run_daily` at 06:00 UTC and exposes a `workflow_dispatch`
-  for ad-hoc backfills (`mode=backfill`, `start_year=YYYY`, `entity=fidc`).
+  for ad-hoc runs (`mode=daily|backfill|analytics-only|b3-backfill`). `b3-backfill` loads yearly
+  COTAHIST zips (`--b3-only`); set `start_year` (try `2025` first).
 - Required GitHub secret: `POSTGRES_URL` (Supabase connection string with `sslmode=require`).
 
 The read-only **Evidence.dev dashboard** (`dashboard/`) deploys separately to **Vercel**
