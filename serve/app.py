@@ -12,6 +12,7 @@ close, never resampled into bars we did not store.
 
 from __future__ import annotations
 
+import atexit
 import os
 import re
 from datetime import date, datetime, timedelta
@@ -21,6 +22,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from flask import Flask, jsonify, request
 
 from serve.catalog import METRICS, catalog_payload, tool_specs
+from serve.pool import ServePool
 
 _CNPJ_DIGITS = re.compile(r"\D")
 _TICKER = re.compile(r"^[A-Z0-9]{4,12}$")
@@ -213,38 +215,36 @@ def _pick_fields(raw: Optional[str], allowed: Sequence[str]) -> Tuple[str, ...]:
     return tuple(wanted)
 
 
-def create_app() -> Flask:
+def create_app(pool: Optional[ServePool] = None) -> Flask:
     app = Flask(__name__)
     app.config["JSON_SORT_KEYS"] = False
 
-    def db():
-        from src.store.pg_client import get_pg_client
-
-        url = os.environ.get("SILO_API_DATABASE_URL") or os.environ.get("POSTGRES_URL")
-        if not url:
-            raise RuntimeError("POSTGRES_URL or SILO_API_DATABASE_URL must be set")
-        if os.environ.get("SILO_API_DATABASE_URL"):
-            os.environ["POSTGRES_URL"] = url
-        return get_pg_client()
+    # One pooled client for the whole app (SERVING.md step 3). Configuration
+    # is read once here at startup — handlers never read or mutate os.environ.
+    # Tests inject a fake pool; production closes the real one at teardown.
+    if pool is None:
+        pool = ServePool.from_env()
+        atexit.register(pool.close)
+    app.extensions["silo_pool"] = pool
 
     def _quote_series(code: str, p_from: str, p_to: str, board: str, fmt: str, fields: Sequence[str]):
-        client = db()
-        with client.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM api.quote_history(%s, %s::date, %s::date, %s)",
-                (code, p_from, p_to, board),
-            )
-            cols = [d[0] for d in cur.description]
-            rows = [_row(r, cols) for r in cur.fetchall()]
-        if not rows:
-            with client.cursor() as cur:
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT 1 FROM api.quotes WHERE ticker = %s LIMIT 1",
-                    (code,),
+                    "SELECT * FROM api.quote_history(%s, %s::date, %s::date, %s)",
+                    (code, p_from, p_to, board),
                 )
-                exists = cur.fetchone() is not None
-            if not exists:
-                return jsonify({"error": "not found", "ticker": code}), 404
+                cols = [d[0] for d in cur.description]
+                rows = [_row(r, cols) for r in cur.fetchall()]
+            if not rows:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT 1 FROM api.quotes WHERE ticker = %s LIMIT 1",
+                        (code,),
+                    )
+                    exists = cur.fetchone() is not None
+                if not exists:
+                    return jsonify({"error": "not found", "ticker": code}), 404
         if len(rows) > _MAX_POINTS:
             return jsonify({
                 "error": "series too long",
@@ -282,8 +282,7 @@ def create_app() -> Flask:
     @app.get("/v1/health")
     def health():
         try:
-            client = db()
-            with client.cursor() as cur:
+            with pool.connection() as conn, conn.cursor() as cur:
                 cur.execute("SELECT 1 FROM api.quotes LIMIT 0")
             return jsonify({"ok": True, "surface": "api"})
         except Exception as exc:
@@ -291,8 +290,7 @@ def create_app() -> Flask:
 
     @app.get("/v1/coverage")
     def coverage():
-        client = db()
-        with client.cursor() as cur:
+        with pool.connection() as conn, conn.cursor() as cur:
             cur.execute("SELECT dataset, as_of, source FROM api.coverage()")
             cols = [d[0] for d in cur.description]
             rows = [_row(r, cols) for r in cur.fetchall()]
@@ -312,8 +310,7 @@ def create_app() -> Flask:
         board = request.args.get("board", "02")
         if window:
             return _quote_series(code, window[0], window[1], board, fmt, fields)
-        client = db()
-        with client.cursor() as cur:
+        with pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT * FROM api.quote_latest(%s, %s)",
                 (code, board),
@@ -353,8 +350,7 @@ def create_app() -> Flask:
             limit = min(max(int(request.args.get("limit", 20)), 1), 200)
         except ValueError:
             return jsonify({"error": "limit must be an integer"}), 400
-        client = db()
-        with client.cursor() as cur:
+        with pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT * FROM api.search_funds(%s, %s, %s)",
                 (q, entity, limit),
@@ -369,8 +365,7 @@ def create_app() -> Flask:
             ident = normalize_cnpj(cnpj)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
-        client = db()
-        with client.cursor() as cur:
+        with pool.connection() as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM api.fund_profile(%s)", (ident,))
             cols = [d[0] for d in cur.description]
             row = cur.fetchone()
@@ -392,8 +387,7 @@ def create_app() -> Flask:
         if fmt not in ("rows", "columnar"):
             return jsonify({"error": "format must be rows or columnar"}), 400
         entity = request.args.get("type")
-        client = db()
-        with client.cursor() as cur:
+        with pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT * FROM api.fund_nav(%s, %s::date, %s::date, %s)",
                 (ident, p_from, p_to, entity),
@@ -455,8 +449,7 @@ def create_app() -> Flask:
         fmt = (request.args.get("format") or "long").strip().lower()
         if fmt not in ("long", "wide"):
             return jsonify({"error": "format must be long or wide"}), 400
-        client = db()
-        with client.cursor() as cur:
+        with pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT * FROM api.panel(%s::text[], %s::text[], %s::date, %s::date, %s)",
                 (ids, metrics, p_from, p_to, freq),
@@ -501,8 +494,7 @@ def create_app() -> Flask:
             limit = min(max(int(request.args.get("limit", 50)), 1), 500)
         except ValueError:
             return jsonify({"error": "limit must be an integer"}), 400
-        client = db()
-        with client.cursor() as cur:
+        with pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT * FROM api.universe(%s, %s)",
                 (asset_class, limit),
@@ -516,8 +508,7 @@ def create_app() -> Flask:
         q = request.args.get("q") or ""
         if not q.strip():
             return jsonify({"error": "q is required"}), 400
-        client = db()
-        with client.cursor() as cur:
+        with pool.connection() as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM api.lookup(%s)", (q,))
             cols = [d[0] for d in cur.description]
             rows = [_row(r, cols) for r in cur.fetchall()]
