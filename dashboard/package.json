@@ -1,23 +1,40 @@
 {
-  "name": "iliquid-dashboard",
-  "version": "0.0.1",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "dev": "evidence dev",
-    "build": "evidence build",
-    "preflight": "node scripts/preflight.js",
-    "sources": "evidence sources",
-    "preview": "evidence preview"
-  },
-  "dependencies": {
-    "@evidence-dev/core-components": "^5.4.2",
-    "@evidence-dev/evidence": "^40.1.8",
-    "@evidence-dev/postgres": "^1.0.10"
-  },
-  "devDependencies": {
-    "@evidence-dev/plugin-connector": "^2.1.15",
-    "pg": "^8.23.0",
-    "typescript": "5.4.2"
-  }
+	"name": "iliquid-dashboard",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "evidence dev",
+		"build": "evidence build",
+		"preflight": "node scripts/preflight.js",
+		"sources": "evidence sources",
+		"preview": "evidence preview"
+	},
+	"dependencies": {
+		"@evidence-dev/core-components": "^5.4.2",
+		"@evidence-dev/evidence": "^40.1.8",
+		"@evidence-dev/postgres": "^1.0.10"
+	},
+	"devDependencies": {
+		"@evidence-dev/plugin-connector": "^2.1.15",
+		"pg": "^8.23.0",
+		"typescript": "5.4.2"
+	},
+	"overrides": {
+		"minimatch@9.0.3": "9.0.9",
+		"nanoid@3.3.8": "3.3.18",
+		"trim@0.0.1": "0.0.3",
+		"prismjs@1.29.0": "1.30.0",
+		"cookie@0.6.0": "0.7.2",
+		"vitest": "3.2.6",
+		"@melt-ui/svelte": {
+			"nanoid": "5.1.16"
+		},
+		"vite": "5.4.21",
+		"cmdk-sv": {
+			"@melt-ui/svelte": {
+				"nanoid": "5.1.16"
+			}
+		}
+	}
 }
