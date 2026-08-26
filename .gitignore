@@ -60,3 +60,10 @@ dashboard/.evidence/
 
 # stray Evidence scaffold (degit template) — not part of the pipeline
 evi/
+
+# Per-tool agent/editor config — kept locally, not published to the repo.
+# .claude/ stays tracked: it carries the shared settings.json, the post-edit
+# hook and the SILO skill that CI and every contributor rely on.
+.agents/
+.codex/
+.vscode/

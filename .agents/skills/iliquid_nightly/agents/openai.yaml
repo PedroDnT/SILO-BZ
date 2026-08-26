@@ -1,6 +1,0 @@
-interface:
-  display_name: "SILO"
-  short_description: "Integrity and serving contract for SILO-BZ"
-  default_prompt: "Follow the SILO skill: never fabricate data; schema api is the contract; ingest is Actions plus the pipeline CLI."
-policy:
-  allow_implicit_invocation: true
