@@ -2,14 +2,14 @@
 
 See `CLAUDE.md` and `README.md` for architecture, data-integrity rules, and the
 command reference. Load the SILO skill before changing ingest, schema `api`,
-`serve/`, or panel/catalog: `.claude/skills/iliquid_nightly/SKILL.md`
-(Codex copy: `.agents/skills/iliquid_nightly/SKILL.md`).
+`serve/`, or panel/catalog: `.claude/skills/iliquid_nightly/SKILL.md`.
 
 This file only adds context for Cursor Cloud agent VMs.
 
 ## Cursor Cloud specific instructions
 
 ### Environment layout
+
 - Python **3.12** in a virtualenv at `.venv/` (gitignored, persisted in the VM snapshot).
   The startup update script (`python3 -m venv .venv` + `pip install -r requirements.txt` +
   `pip install duckdb`) keeps it fresh. Run Python via `.venv/bin/python` (or
@@ -34,7 +34,9 @@ There is **no ingest Flask**. Do not run `flask --app app` or revive `app.py` /
 ```
 
 ### What runs without credentials (default dev/testing loop)
+
 No `POSTGRES_URL` / Supabase credentials are needed for the core loop:
+
 - Lint/syntax gate: `.venv/bin/python -m py_compile <changed .py files>` (what the
   pre-commit hook runs). There is no ruff/flake8/black configured.
 - Tests: `.venv/bin/python -m pytest tests/ -q` — 383 tests, fully offline (DB + HTTP mocked).
@@ -46,11 +48,12 @@ No `POSTGRES_URL` / Supabase credentials are needed for the core loop:
   It writes `.local_db/iliquid_local.duckdb` (~100 MB) — do not commit that file.
 
 ### What needs secrets (not runnable in a fresh VM by default)
+
 - The live pipeline (`python -m src.pipeline.run_daily` / `run_backfill`), `scripts/apply_schema.py`,
   and `scripts/verify_pipeline.py` require `POSTGRES_URL` (Supabase Postgres, `sslmode=require`)
   via `.env` (copy from `.env.example`).
 - Read API: `.venv/bin/python -m serve.app` (binds `127.0.0.1:8080`). Needs `POSTGRES_URL`
   or `SILO_API_DATABASE_URL`. This is not an ingest trigger.
 - The `dashboard/` and `webapp/` Evidence.dev apps (`npm install && npm run sources &&
-  npm run dev`) are read-only consumers that need a populated Supabase to render data.
+npm run dev`) are read-only consumers that need a populated Supabase to render data.
 - `etf_market_snapshot` ingestion self-skips unless `APIFY_TOKEN` is set.
