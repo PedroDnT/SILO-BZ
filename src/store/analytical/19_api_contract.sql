@@ -6,16 +6,43 @@
 -- schema is the only surface a client should query. Landing tables stay in
 -- `public` for ingest; Evidence dashboards may keep reading dim_/fact_*.
 --
--- Views are owner-privileged (default security_invoker=false) so GRANT SELECT
--- on api.* does not require GRANT on b3_cotahist / cvm_*. Functions that wrap
--- existing RPCs are SECURITY DEFINER with a pinned search_path; EXECUTE is
--- revoked from PUBLIC then granted to anon/authenticated.
+-- Privilege model (SERVING.md Step 6):
+--   * Views are owner-privileged (security_invoker = false, set explicitly
+--     below) so GRANT SELECT on api.* never requires a grant on
+--     b3_cotahist / vw_b3_quote_vista / cvm_* / dim_fund. The view's own grant
+--     list IS the boundary; the blast radius of a leak is exactly the columns
+--     each view selects, nothing else.
+--   * Every function is SECURITY DEFINER with an empty pinned search_path
+--     (all relations schema-qualified), because DEFINER is the mechanism that
+--     lets callers read without landing-table grants. INVOKER would force
+--     granting anon / silo_api SELECT on the landing tables — exactly the door
+--     Step 6 closes — so no api function is INVOKER. EXECUTE is revoked from
+--     PUBLIC then granted to anon/authenticated and silo_api (end of file).
+--   * silo_api (created in 12_grants_and_rls.sql, which applies first) is the
+--     read bundle serve/ connects through. It gets schema api only.
+--
+-- Row caps (SERVING.md Step 3, SQL half). serve/app.py rejects oversized
+-- results with HTTP 400 when a series exceeds _MAX_POINTS (5000) or a panel
+-- exceeds _MAX_PANEL (100000). Each set-returning series/panel function below
+-- therefore LIMITs at cap + 1 (5001 / 100001):
+--   * Postgres stops materializing just past the boundary instead of building
+--     and shipping an unbounded body for Python to fetchall() and discard;
+--   * the adapter can still tell "too large" (cap+1 rows -> 400) apart from
+--     "complete" (<= cap rows). A LIMIT at exactly the cap would make the
+--     oversized case indistinguishable and silently hand back a truncated —
+--     i.e. fabricated — panel, which integrity rule 1 forbids.
+-- Keep 5001/100001 in lockstep with serve/app.py _MAX_POINTS/_MAX_PANEL.
+-- Discovery functions are already bounded: universe <= 500, lookup <= 20,
+-- search_funds <= 200, quote_latest = 1, coverage = 3 rows.
 --
 -- Never fabricate: a ticker with no rows returns zero rows (HTTP 404 at serve/).
 -- Prices are unadjusted. Default cash quote is board (codbdi) '02' (standard lot).
 -- =============================================================================
 
 BEGIN;
+-- Apply-time guard only: protects this DDL transaction. The *runtime* timeout
+-- for API callers is a property of the role (ALTER ROLE silo_api SET
+-- statement_timeout = '15s' in 12_grants_and_rls.sql), not of this session.
 SET statement_timeout = '30s';
 
 CREATE SCHEMA IF NOT EXISTS api;
@@ -54,6 +81,12 @@ FROM public.vw_b3_quote_vista v;
 COMMENT ON VIEW api.quotes IS
     'Unadjusted B3 cash quotes (tpmerc=010). Grain (ticker, trade_date, board, term_days). Prefer board=02.';
 
+-- Deliberately owner-privileged (Step 6 decision): with security_invoker=false
+-- a SELECT here runs with the view owner's rights, so no client role needs (or
+-- gets) a grant on public.vw_b3_quote_vista / b3_cotahist. Set explicitly so a
+-- future CREATE OR REPLACE cannot silently flip the boundary.
+ALTER VIEW api.quotes SET (security_invoker = false);
+
 GRANT SELECT ON api.quotes TO anon, authenticated;
 
 CREATE OR REPLACE FUNCTION api.quote_history(
@@ -87,7 +120,7 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = api, public, pg_temp
+SET search_path = ''
 AS $$
     SELECT
         q.ticker,
@@ -114,8 +147,15 @@ AS $$
     WHERE q.ticker = upper(btrim(p_ticker))
       AND q.trade_date BETWEEN p_from AND p_to
       AND (p_board IS NULL OR q.board = p_board)
-    ORDER BY q.trade_date;
+    ORDER BY q.trade_date
+    -- Cap = serve _MAX_POINTS (5000) + 1. 5000 daily prints ~ 20 years of one
+    -- ticker's sessions; the +1 row lets serve/ return 400 instead of a
+    -- silently truncated series (see header). Deterministic: oldest kept.
+    LIMIT 5001;
 $$;
+
+COMMENT ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT) IS
+    'Daily unadjusted quote series for one ticker. Hard-capped at 5001 rows (= serve _MAX_POINTS + 1): above 5000 the adapter answers 400, never a truncated series.';
 
 CREATE OR REPLACE FUNCTION api.quote_latest(
     p_ticker TEXT,
@@ -146,7 +186,7 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = api, public, pg_temp
+SET search_path = ''
 AS $$
     SELECT
         q.ticker,
@@ -200,6 +240,10 @@ FROM public.dim_fund d;
 COMMENT ON VIEW api.funds IS
     'Fund registry (FI/FIDC/FII/FIP/FIAGRO). ETFs are excluded — use etf_* RPCs.';
 
+-- Same Step 6 decision as api.quotes: owner-privileged on purpose, so reading
+-- the registry never requires a client grant on public.dim_fund.
+ALTER VIEW api.funds SET (security_invoker = false);
+
 GRANT SELECT ON api.funds TO anon, authenticated;
 
 CREATE OR REPLACE FUNCTION api.fund_profile(p_cnpj TEXT)
@@ -218,7 +262,7 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = ''
 AS $$
     SELECT *
     FROM public.fund_profile(regexp_replace(p_cnpj, '[^0-9]', '', 'g'));
@@ -246,7 +290,7 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = ''
 AS $$
     SELECT
         cnpj,
@@ -265,8 +309,18 @@ AS $$
         p_from,
         p_to,
         p_entity_type
-    );
+    )
+    -- Cap = serve _MAX_POINTS (5000) + 1. Monthly grain: one CNPJ has ~12
+    -- rows/year/entity_type, so 5000 is far beyond any honest series — this is
+    -- a backstop, and the +1 row lets serve/ 400 instead of truncating.
+    -- ORDER BY (period, entity_type) positionally so truncation is
+    -- deterministic and dodges OUT-parameter name ambiguity.
+    ORDER BY 2, 3
+    LIMIT 5001;
 $$;
+
+COMMENT ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT) IS
+    'Monthly NAV/flows series for one CNPJ. Hard-capped at 5001 rows (= serve _MAX_POINTS + 1): above 5000 the adapter answers 400, never a truncated series.';
 
 CREATE OR REPLACE FUNCTION api.search_funds(
     p_query       TEXT DEFAULT '',
@@ -284,7 +338,7 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = ''
 AS $$
     SELECT *
     FROM public.search_funds(
@@ -314,7 +368,7 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = ''
 AS $$
     SELECT 'quotes'::text, MAX(trade_date), 'b3_cotahist'::text
     FROM public.vw_b3_quote_vista
@@ -356,7 +410,7 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = api, public, pg_temp
+SET search_path = ''
 AS $$
 WITH
 params AS (
@@ -486,11 +540,18 @@ UNION ALL
 SELECT f.cnpj, 'cnpj', f.entity_type, f.period, 'quotaholders', f.quotaholders::numeric, 'cvm'
 FROM fund_rows f JOIN params p ON TRUE
 WHERE 'quotaholders' = ANY (p.metrics) AND f.quotaholders IS NOT NULL
-ORDER BY 4, 1, 5;
+ORDER BY 4, 1, 5
+-- Cap = serve _MAX_PANEL (100000) + 1. Generosity: the Step 3 envelope
+-- (50 ids x ~7 applicable metrics x 20 years monthly ~ 84k rows) fits; an
+-- unbounded ask (e.g. freq=day over decades) stops materializing here instead
+-- of being built, shipped, fetchall()'d and then rejected. The +1 row lets
+-- serve/ answer 400 "panel too large" — never a silently truncated (i.e.
+-- fabricated) panel. ORDER BY (date, id, metric) makes the cut deterministic.
+LIMIT 100001;
 $$;
 
 COMMENT ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) IS
-    'Long panel for correlation/factor work. Mix tickers + CNPJs. No ffill. close_return is null across calendar gaps.';
+    'Long panel for correlation/factor work. Mix tickers + CNPJs. No ffill. close_return is null across calendar gaps. Hard-capped at 100001 rows (= serve _MAX_PANEL + 1): above 100000 the adapter answers 400, never a truncated panel.';
 
 REVOKE ALL ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) TO anon, authenticated;
@@ -509,7 +570,7 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = api, public, pg_temp
+SET search_path = ''
 AS $$
     SELECT * FROM (
         SELECT q.ticker, 'ticker'::text, 'equity'::text, max(q.short_name), max(q.isin)
@@ -543,7 +604,7 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = api, public, pg_temp
+SET search_path = ''
 AS $$
     SELECT q.ticker, 'ticker'::text, 'equity'::text, max(q.short_name), max(q.isin), NULL::text
     FROM api.quotes q
@@ -572,6 +633,42 @@ COMMENT ON FUNCTION api.lookup(TEXT) IS
 
 REVOKE ALL ON FUNCTION api.lookup(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.lookup(TEXT) TO anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- silo_api — the read-only privilege bundle serve/ connects through
+-- ---------------------------------------------------------------------------
+-- The role is created (NOLOGIN, statement_timeout='15s',
+-- default_transaction_read_only=on) in 12_grants_and_rls.sql, which applies
+-- before this file. If the role is missing, these grants fail loudly under
+-- ON_ERROR_STOP=1 — intentional; never wrap them in a silent conditional.
+--
+-- The bundle is schema api and nothing else: USAGE on the schema, SELECT on
+-- the two views, EXECUTE on the nine functions. It deliberately receives no
+-- grant in schema public — the DEFINER functions and owner-privileged views
+-- above are the only path from silo_api to the data. serve/-only works with
+-- exactly this; exposing schema api on the Supabase Data API would be a
+-- separate, owner-made decision (documented in docs/API.md when taken).
+
+GRANT USAGE ON SCHEMA api TO silo_api;
+
+GRANT SELECT ON api.quotes, api.funds TO silo_api;
+
+GRANT EXECUTE ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT)   TO silo_api;
+GRANT EXECUTE ON FUNCTION api.quote_latest(TEXT, TEXT)                TO silo_api;
+GRANT EXECUTE ON FUNCTION api.fund_profile(TEXT)                      TO silo_api;
+GRANT EXECUTE ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT)        TO silo_api;
+GRANT EXECUTE ON FUNCTION api.search_funds(TEXT, TEXT, INT)           TO silo_api;
+GRANT EXECUTE ON FUNCTION api.coverage()                              TO silo_api;
+GRANT EXECUTE ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) TO silo_api;
+GRANT EXECUTE ON FUNCTION api.universe(TEXT, INT)                     TO silo_api;
+GRANT EXECUTE ON FUNCTION api.lookup(TEXT)                            TO silo_api;
+
+-- Defensive, idempotent no-ops today (silo_api is never directly granted
+-- anything in public): strip any direct grant a future change might add by
+-- accident, so an apply restores the boundary on every run.
+REVOKE ALL ON ALL TABLES    IN SCHEMA public FROM silo_api;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM silo_api;
+REVOKE CREATE ON SCHEMA public FROM silo_api;
 
 COMMIT;
 
