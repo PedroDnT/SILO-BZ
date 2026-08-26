@@ -2,6 +2,7 @@
 
 | Date       | Branch                    | Change                                                                                              |
 | ---------- | ------------------------- | --------------------------------------------------------------------------------------------------- |
+| 2026-08-17 | cursor/agents-md-3f68     | AGENTS.md: SILO skill, CLI ingest, post-edit hook; move `serve/` to secrets                          |
 | 2026-08-16 | cursor/kill-ingest-flask-3f68 | Remove ingest Flask (`app.py`, `src/api/`, `tests/test_api.py`); ingest is Actions + pipeline CLI |
 | 2026-08-16 | cursor/silo-skill-3f68    | Replace auto-generated iliquid_nightly skill with SILO integrity/serving contract; gate PostToolUse pytest |
 | 2026-08-16 | cursor/prune-daily-backfill-3f68 | Daily Ingest: drop duplicate `backfill` mode; CVM history stays on `backfill.yml` |
