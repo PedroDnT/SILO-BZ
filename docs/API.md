@@ -37,12 +37,12 @@ CIA by CNPJ/`cd_cvm`/name separately until that match exists.
 
 ## Who else
 
-| Person | Job | Call |
-|---|---|---|
-| Researcher | Panel across equity + funds + credit | `/v1/panel` |
-| Chart / app | One ticker series | `/v1/quotes/PETR4?range=1y` |
-| Fund analyst | One vehicle NAV | `/v1/funds/{cnpj}/nav` |
-| Evidence dashboard | Already on `dim_*` / `fact_*` | unchanged |
+| Person             | Job                                  | Call                        |
+| ------------------ | ------------------------------------ | --------------------------- |
+| Researcher         | Panel across equity + funds + credit | `/v1/panel`                 |
+| Chart / app        | One ticker series                    | `/v1/quotes/PETR4?range=1y` |
+| Fund analyst       | One vehicle NAV                      | `/v1/funds/{cnpj}/nav`      |
+| Evidence dashboard | Already on `dim_*` / `fact_*`        | unchanged                   |
 
 Ingest is GitHub Actions cron and the pipeline CLI (`run_daily` /
 `run_backfill`). There is no ingest HTTP server. `serve/` is read-only.
@@ -105,7 +105,15 @@ Row envelope (default):
   "to": "2026-08-14",
   "count": 248,
   "series": [
-    {"date": "2025-08-15", "open": 41.1, "high": 41.5, "low": 40.9, "close": 41.2, "volume": 1.2e9, "trades": 40000}
+    {
+      "date": "2025-08-15",
+      "open": 41.1,
+      "high": 41.5,
+      "low": 40.9,
+      "close": 41.2,
+      "volume": 1.2e9,
+      "trades": 40000
+    }
   ]
 }
 ```
@@ -115,20 +123,20 @@ aligned by index. Cap is 5000 points — over that is `400`, not a silent trim.
 
 ## Routes (v1)
 
-| Method | Path | Postgres |
-|---|---|---|
-| GET | `/v1/catalog` | static metric map + constraints (no DB) |
-| GET | `/v1/tools` | OpenAI/AI-SDK tool specs pointing at these routes |
-| GET | `/v1/health` | `SELECT 1 FROM api.quotes LIMIT 0` |
-| GET | `/v1/coverage` | `api.coverage()` |
-| GET | `/v1/panel?ids&metrics&freq&from&to` | `api.panel(...)` long or wide |
-| GET | `/v1/universe?asset_class&limit` | `api.universe(...)` |
-| GET | `/v1/lookup?q=` | `api.lookup(...)` |
-| GET | `/v1/quotes/{ticker}` | `api.quote_latest` or `api.quote_history` if windowed |
-| GET | `/v1/quotes/{ticker}/history?from&to&range` | `api.quote_history(...)` |
-| GET | `/v1/funds?q&type&limit` | `api.search_funds(...)` |
-| GET | `/v1/funds/{cnpj}` | `api.fund_profile(cnpj)` |
-| GET | `/v1/funds/{cnpj}/nav?from&to&range` | `api.fund_nav(...)` |
+| Method | Path                                        | Postgres                                              |
+| ------ | ------------------------------------------- | ----------------------------------------------------- |
+| GET    | `/v1/catalog`                               | static metric map + constraints (no DB)               |
+| GET    | `/v1/tools`                                 | OpenAI/AI-SDK tool specs pointing at these routes     |
+| GET    | `/v1/health`                                | `SELECT 1 FROM api.quotes LIMIT 0`                    |
+| GET    | `/v1/coverage`                              | `api.coverage()`                                      |
+| GET    | `/v1/panel?ids&metrics&freq&from&to`        | `api.panel(...)` long or wide                         |
+| GET    | `/v1/universe?asset_class&limit`            | `api.universe(...)`                                   |
+| GET    | `/v1/lookup?q=`                             | `api.lookup(...)`                                     |
+| GET    | `/v1/quotes/{ticker}`                       | `api.quote_latest` or `api.quote_history` if windowed |
+| GET    | `/v1/quotes/{ticker}/history?from&to&range` | `api.quote_history(...)`                              |
+| GET    | `/v1/funds?q&type&limit`                    | `api.search_funds(...)`                               |
+| GET    | `/v1/funds/{cnpj}`                          | `api.fund_profile(cnpj)`                              |
+| GET    | `/v1/funds/{cnpj}/nav?from&to&range`        | `api.fund_nav(...)`                                   |
 
 CNPJ in the path may include punctuation (`12.345.678/0001-90`); it is stripped
 to 14 digits. Tickers are uppercased.
@@ -138,12 +146,12 @@ are matched — same long grain, not a new API style.
 
 ## Why not the alternatives
 
-| Approach | Why not as the user API |
-|---|---|
-| Raw PostgREST on `public` | Leaks `cvm_ingest_log`, options tape, Portuguese columns; users must learn the warehouse |
-| supabase.rpc only | Fine as a power-user escape hatch; terrible onboarding vs `/v1/quotes/PETR4` |
-| Revive the old ingest Flask (`app.py` / `src/api/`) | No auth, ingest triggers, localhost-only — mixing operators and readers |
-| Rebuilding FastAPI microservices | Already deleted; duplicates the warehouse |
+| Approach                                            | Why not as the user API                                                                  |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Raw PostgREST on `public`                           | Leaks `cvm_ingest_log`, options tape, Portuguese columns; users must learn the warehouse |
+| supabase.rpc only                                   | Fine as a power-user escape hatch; terrible onboarding vs `/v1/quotes/PETR4`             |
+| Revive the old ingest Flask (`app.py` / `src/api/`) | No auth, ingest triggers, localhost-only — mixing operators and readers                  |
+| Rebuilding FastAPI microservices                    | Already deleted; duplicates the warehouse                                                |
 
 ## Run
 
@@ -153,7 +161,21 @@ python -m serve.app                 # 127.0.0.1:8080
 curl -s localhost:8080/v1/quotes/PETR4
 ```
 
-Production: put a Vercel / any HTTPS proxy in front, point
-`SILO_API_DATABASE_URL` at a **read-only** role (`GRANT USAGE ON SCHEMA api`,
-`SELECT` on api views, `EXECUTE` on api functions, nothing else). Transaction
-pooler is correct here; ingest keeps the session pooler / direct URL.
+Production: the public path is **Supabase-native** (decided 2026-08-26) —
+schema `api` is exposed through the Supabase Data API (PostgREST), so there is
+no gateway, no TLS to terminate, and no serve/ host to run. To enable it:
+Supabase Dashboard → Settings → API → add `api` to **Exposed schemas**. The
+base URL is `https://<project-ref>.supabase.co/rest/v1/` with the anon key;
+views are read as `/rest/v1/quotes?select=...`, functions are called as
+`POST /rest/v1/rpc/<name>` with named arguments in the JSON body. The grants
+in `19_api_contract.sql` (anon/authenticated: `USAGE` on schema `api`,
+`SELECT` on the api views, `EXECUTE` on the api functions — and nothing on
+the `public` landing tables) are exactly the surface this exposes; the
+in-function row caps and Supabase's platform `statement_timeout` on the API
+roles bound each call.
+
+`serve/` remains the local adapter for notebooks and development. If it is
+ever hosted, point `SILO_API_DATABASE_URL` at a login member of the
+**read-only** `silo_api` role (created by `12_grants_and_rls.sql`; see the
+operator comment there). Transaction pooler is correct here; ingest keeps
+the session pooler / direct URL.

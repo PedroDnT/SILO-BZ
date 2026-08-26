@@ -22,7 +22,7 @@ __all__ = [
     "tool_specs",
 ]
 
-CATALOG_VERSION = 1
+CATALOG_VERSION = 2
 
 # Grain + metric map. Agents must not invent metrics.
 METRICS: Dict[str, Dict[str, Any]] = {
@@ -114,6 +114,8 @@ CONSTRAINTS = [
     "close_return across a missing month is null, not a multi-month return.",
     "Ticker↔cia_company is not joined here; lookup returns them separately.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
+    "Panel responses are hard-capped at 100000 rows (series endpoints at 5000); "
+    "above that the API answers 400 — narrow ids, metrics, or the date window.",
 ]
 
 EXAMPLES = [

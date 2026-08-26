@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+import os
+from contextlib import contextmanager
+from unittest.mock import patch
 
 import pytest
 
@@ -52,7 +54,7 @@ class _Cur:
         return False
 
 
-class _Client:
+class _Conn:
     def __init__(self, cur):
         self._cur = cur
 
@@ -60,30 +62,49 @@ class _Client:
         return self._cur
 
 
+class _FakePool:
+    """Stands in for serve.pool.ServePool: same connection() contract.
+
+    Counts checkouts/putbacks so tests can prove the connection goes back
+    to the pool even when the handler raises.
+    """
+
+    def __init__(self):
+        self.cur = _Cur()
+        self.checkouts = 0
+        self.putbacks = 0
+
+    @contextmanager
+    def connection(self):
+        self.checkouts += 1
+        try:
+            yield _Conn(self.cur)
+        finally:
+            self.putbacks += 1
+
+
 @pytest.fixture
 def client():
-    with patch.dict("os.environ", {"POSTGRES_URL": "postgresql://x"}):
-        app = create_app()
-        app.config["TESTING"] = True
-        with app.test_client() as c:
-            yield c
+    app = create_app(pool=_FakePool())
+    app.config["TESTING"] = True
+    with app.test_client() as c:
+        c.pool = app.extensions["silo_pool"]
+        yield c
 
 
 def test_quote_latest_404(client):
-    cur = _Cur(rows=[], description=[("ticker",)])
-    with patch("src.store.pg_client.get_pg_client", return_value=_Client(cur)):
-        rv = client.get("/v1/quotes/PETR4")
+    client.pool.cur = _Cur(rows=[], description=[("ticker",)])
+    rv = client.get("/v1/quotes/PETR4")
     assert rv.status_code == 404
     assert rv.get_json()["ticker"] == "PETR4"
 
 
 def test_quote_latest_ok(client):
-    cur = _Cur(
+    client.pool.cur = _Cur(
         rows=[("PETR4", "2026-08-13", 41.9)],
         description=[("ticker",), ("trade_date",), ("close",)],
     )
-    with patch("src.store.pg_client.get_pg_client", return_value=_Client(cur)):
-        rv = client.get("/v1/quotes/PETR4")
+    rv = client.get("/v1/quotes/PETR4")
     assert rv.status_code == 200
     body = rv.get_json()
     assert body["ticker"] == "PETR4"
@@ -137,7 +158,7 @@ def test_series_envelope_rows_and_columnar():
 
 
 def test_quote_series_on_same_url(client):
-    cur = _Cur(
+    client.pool.cur = _Cur(
         rows=[
             (
                 "PETR4",
@@ -177,8 +198,7 @@ def test_quote_series_on_same_url(client):
             ("currency",),
         ],
     )
-    with patch("src.store.pg_client.get_pg_client", return_value=_Client(cur)):
-        rv = client.get("/v1/quotes/PETR4?from=2026-08-01&to=2026-08-13")
+    rv = client.get("/v1/quotes/PETR4?from=2026-08-01&to=2026-08-13")
     assert rv.status_code == 200
     body = rv.get_json()
     assert body["kind"] == "series"
@@ -285,8 +305,35 @@ def test_notebook_reduce_keeps_nulls_and_is_unexported():
     assert [row["column"] for row in ranked["rows"]] == ["PETR4.close"]
 
 
+def test_connection_returned_when_handler_raises(client):
+    class _Boom(_Cur):
+        def execute(self, sql, params=None):
+            raise RuntimeError("db exploded")
+
+    client.pool.cur = _Boom()
+    with pytest.raises(RuntimeError):
+        client.get("/v1/coverage")
+    assert client.pool.checkouts == 1
+    assert client.pool.putbacks == 1
+
+
+def test_handlers_do_not_mutate_environ(client):
+    # The old per-request db() copied SILO_API_DATABASE_URL into POSTGRES_URL.
+    # Step 3: configuration is read once at startup; handlers leave env alone.
+    client.pool.cur = _Cur(
+        rows=[("PETR4", "2026-08-13", 41.9)],
+        description=[("ticker",), ("trade_date",), ("close",)],
+    )
+    with patch.dict(os.environ, {"SILO_API_DATABASE_URL": "postgresql://api-role"}, clear=True):
+        before = dict(os.environ)
+        assert client.get("/v1/quotes/PETR4").status_code == 200
+        assert client.get("/v1/coverage").status_code == 200
+        assert "POSTGRES_URL" not in os.environ
+        assert dict(os.environ) == before
+
+
 def test_quote_series_columnar(client):
-    cur = _Cur(
+    client.pool.cur = _Cur(
         rows=[
             (
                 "PETR4",
@@ -314,8 +361,7 @@ def test_quote_series_columnar(client):
             ("currency",),
         ],
     )
-    with patch("src.store.pg_client.get_pg_client", return_value=_Client(cur)):
-        rv = client.get("/v1/quotes/PETR4?range=1y&format=columnar&fields=close")
+    rv = client.get("/v1/quotes/PETR4?range=1y&format=columnar&fields=close")
     assert rv.status_code == 200
     body = rv.get_json()
     assert body["format"] == "columnar"
