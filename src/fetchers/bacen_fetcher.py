@@ -12,6 +12,7 @@ Usage:
 import asyncio
 import json
 import logging
+import os
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import quote, urlencode
@@ -58,6 +59,10 @@ logger = logging.getLogger(__name__)
 _OLINDA = "https://olinda.bcb.gov.br/olinda/servico"
 _OLINDA_PAGE = 10_000
 _OLINDA_MAX_PAGES = 50
+# Same transient set as B3 COTAHIST. Olinda returned HTML 503 on the
+# 2026-08-19 daily run and, with no retry, took the whole job red after
+# CVM/ANBIMA/B3 had already succeeded (Actions run 32221952063).
+_OLINDA_RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 
 # Expectativas endpoints that carry a Suavizada (smoothed Y/N) dimension —
 # see the comment in BacenClient.get_expectativas().
@@ -75,6 +80,19 @@ class BacenFetchError(RuntimeError):
     fetch look exactly like a quiet week. That confusion is what kept the Focus
     tables empty while every run reported success.
     """
+
+
+def _olinda_retry_config() -> Tuple[int, float]:
+    """Attempts and delay (seconds) for Olinda GETs.
+
+    Read from the environment on every call so tests can pin retries to 1–2
+    without reimporting the module. Defaults match B3: a few tries, linear
+    backoff. Exhausted retries still raise — a persistent 503 is an error,
+    not an empty week.
+    """
+    attempts = max(1, int(os.getenv("BACEN_OLINDA_MAX_RETRIES", "4")))
+    delay = float(os.getenv("BACEN_OLINDA_RETRY_DELAY", "2"))
+    return attempts, delay
 
 
 def _olinda_parse(body: str, url: str) -> Dict[str, Any]:
@@ -99,6 +117,61 @@ def _olinda_parse(body: str, url: str) -> Dict[str, Any]:
         raise BacenFetchError(f"{url}: response is not JSON: {body[:200]}") from exc
 
 
+async def _olinda_request(
+    client: httpx.AsyncClient,
+    url: str,
+    full: str,
+    *,
+    attempts: int,
+    delay: float,
+) -> Dict[str, Any]:
+    """GET one Olinda URL, retrying transient HTTP/network failures.
+
+    Status is inspected before JSON parsing: a 503 HTML body used to surface
+    as "response is not JSON" and abort without a second try. Persistent
+    failures still raise ``BacenFetchError`` — never an empty list.
+    """
+    last_exc: Optional[BaseException] = None
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = await client.get(full)
+        except httpx.HTTPError as exc:
+            last_exc = exc
+            logger.warning(
+                "Olinda request error %s attempt=%d/%d: %s",
+                url, attempt, attempts, exc,
+            )
+            if attempt < attempts:
+                await asyncio.sleep(delay * attempt)
+            continue
+
+        if resp.status_code in _OLINDA_RETRY_STATUSES:
+            last_exc = BacenFetchError(f"{url}: HTTP {resp.status_code}")
+            logger.warning(
+                "Olinda HTTP %s attempt=%d/%d: %s",
+                resp.status_code, attempt, attempts, url,
+            )
+            if attempt < attempts:
+                await asyncio.sleep(delay * attempt)
+            continue
+
+        if resp.status_code != 200:
+            # 4xx (and other non-retryable statuses) are not blips. Parse so
+            # Olinda's /*{codigo,mensagem}*/ envelope survives; otherwise
+            # raise with the status.
+            try:
+                _olinda_parse(resp.text, url)
+            except BacenFetchError:
+                raise
+            raise BacenFetchError(f"{url}: HTTP {resp.status_code}")
+
+        return _olinda_parse(resp.text, url)
+
+    raise BacenFetchError(
+        f"{url}: failed after {attempts} attempts: {last_exc}"
+    )
+
+
 async def _olinda_get(
     service: str,
     resource: str,
@@ -109,6 +182,7 @@ async def _olinda_get(
     """GET an Olinda OData resource, following $skip pages, raising on failure."""
     collected: List[Dict[str, Any]] = []
     skip = 0
+    attempts, delay = _olinda_retry_config()
     async with httpx.AsyncClient(timeout=120.0) as client:
         for page in range(_OLINDA_MAX_PAGES):
             query = dict(params)
@@ -120,13 +194,9 @@ async def _olinda_get(
             url = f"{_OLINDA}/{service}/versao/v1/odata/{resource}"
             # quote_via=quote keeps spaces as %20; '+' is rejected by Olinda.
             full = f"{url}?{urlencode(query, quote_via=quote)}"
-            try:
-                resp = await client.get(full)
-            except httpx.HTTPError as exc:
-                raise BacenFetchError(f"{url}: request failed: {exc}") from exc
-            payload = _olinda_parse(resp.text, url)
-            if resp.status_code != 200:
-                raise BacenFetchError(f"{url}: HTTP {resp.status_code}")
+            payload = await _olinda_request(
+                client, url, full, attempts=attempts, delay=delay,
+            )
             batch = payload.get("value", [])
             collected.extend(batch)
             if not paginate or len(batch) < _OLINDA_PAGE:
