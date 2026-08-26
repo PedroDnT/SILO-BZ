@@ -262,7 +262,13 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = ''
+-- search_path is pinned to public (not '') ON PURPOSE: this wrapper
+-- delegates to a public.* analytical function whose body resolves relation
+-- names unqualified, and search_path propagates down the call stack. An
+-- empty pin here broke the call at runtime ("relation does not exist").
+-- A per-function pinned GUC still closes the DEFINER hole — the attack is
+-- a caller-controlled search_path, and this one is immutable per call.
+SET search_path = public, pg_temp
 AS $$
     SELECT *
     FROM public.fund_profile(regexp_replace(p_cnpj, '[^0-9]', '', 'g'));
@@ -290,7 +296,13 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = ''
+-- search_path is pinned to public (not '') ON PURPOSE: this wrapper
+-- delegates to a public.* analytical function whose body resolves relation
+-- names unqualified, and search_path propagates down the call stack. An
+-- empty pin here broke the call at runtime ("relation does not exist").
+-- A per-function pinned GUC still closes the DEFINER hole — the attack is
+-- a caller-controlled search_path, and this one is immutable per call.
+SET search_path = public, pg_temp
 AS $$
     SELECT
         cnpj,
@@ -338,7 +350,13 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = ''
+-- search_path is pinned to public (not '') ON PURPOSE: this wrapper
+-- delegates to a public.* analytical function whose body resolves relation
+-- names unqualified, and search_path propagates down the call stack. An
+-- empty pin here broke the call at runtime ("relation does not exist").
+-- A per-function pinned GUC still closes the DEFINER hole — the attack is
+-- a caller-controlled search_path, and this one is immutable per call.
+SET search_path = public, pg_temp
 AS $$
     SELECT *
     FROM public.search_funds(

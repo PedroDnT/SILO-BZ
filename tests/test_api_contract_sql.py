@@ -78,23 +78,54 @@ def test_all_expected_api_functions_present():
 # Step 6 — SECURITY DEFINER hygiene
 # ---------------------------------------------------------------------------
 
-def test_every_definer_function_pins_empty_search_path():
+# Wrappers that delegate to a public.* analytical function. search_path
+# propagates down the call stack and those inner functions resolve relation
+# names unqualified, so an empty pin breaks them at runtime ("relation does
+# not exist" — found by review on PR #102). They pin "public, pg_temp"
+# instead: still an immutable per-function GUC, so the DEFINER hole (a
+# caller-controlled search_path) stays closed.
+DELEGATING_FUNCTIONS = {"api.fund_profile", "api.fund_nav", "api.search_funds"}
+
+
+def test_every_definer_function_pins_an_immutable_search_path():
     for name, chunk in FUNCS.items():
         header = re.split(r"\$\$", chunk, maxsplit=1)[0]
-        if re.search(r"\bSECURITY\s+DEFINER\b", header, re.I):
+        if not re.search(r"\bSECURITY\s+DEFINER\b", header, re.I):
+            continue
+        if name in DELEGATING_FUNCTIONS:
+            assert re.search(
+                r"SET\s+search_path\s*=\s*public,\s*pg_temp", header, re.I
+            ), f"{name} delegates to public.* and must pin 'public, pg_temp'"
+        else:
             assert re.search(r"SET\s+search_path\s*=\s*''", header, re.I), (
                 f"{name} is SECURITY DEFINER without SET search_path = ''"
             )
 
 
+def test_delegating_set_matches_functions_that_call_public():
+    # The two properties must move together: a function that calls a
+    # public.* function needs the public pin; a self-contained one must keep
+    # the empty pin. Derived from the bodies so the sets cannot drift.
+    for name, chunk in FUNCS.items():
+        body = re.split(r"\$\$", chunk, maxsplit=1)[-1]
+        calls_public = bool(re.search(r"\bpublic\.\w+\s*\(", body))
+        assert calls_public == (name in DELEGATING_FUNCTIONS), (
+            f"{name}: calls_public={calls_public} but "
+            f"DELEGATING_FUNCTIONS says {name in DELEGATING_FUNCTIONS}"
+        )
+
+
 def test_no_definer_function_keeps_a_mutable_search_path():
-    # A pinned-but-nonempty search_path (e.g. "= api, public") is the exact
-    # hole Step 6 closes: nothing but '' (pg_catalog + explicit qualification).
+    # A search_path a caller can influence is the exact hole Step 6 closes.
+    # Allowed pins: '' (pg_catalog + explicit qualification) or the
+    # delegating wrappers' immutable "public, pg_temp" — nothing else.
     body = _strip_comments(SQL19)
     values = re.findall(r"SET\s+search_path\s*=\s*([^\n;]*)", body, re.I)
     assert values, "expected SET search_path clauses in 19_api_contract.sql"
     for value in values:
-        assert value.strip() == "''", f"non-empty search_path pin: {value.strip()!r}"
+        assert value.strip() in ("''", "public, pg_temp"), (
+            f"unexpected search_path pin: {value.strip()!r}"
+        )
 
 
 def test_api_functions_are_definer_not_invoker():
