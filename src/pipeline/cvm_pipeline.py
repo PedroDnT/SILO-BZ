@@ -77,6 +77,18 @@ from src.fetchers.cia_fetcher import CIAFetcher
 
 logger = logging.getLogger(__name__)
 
+
+def _describe(exc: BaseException) -> str:
+    """Render an exception for a log line and the cvm_ingest_log error column.
+
+    `str(exc)` is the empty string for any exception raised without args, so a
+    real failure logged as "ingest_fi_diario 2026-07 failed: %s" printed
+    nothing after the colon and wrote an empty `error` to the audit table —
+    a failure that is recorded but not diagnosable. Always carry the type.
+    """
+    text = str(exc).strip()
+    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
 # ---------------------------------------------------------------------------
 # Backward-compatibility shims for existing tests / callers
 # These helpers were removed from this module in the W1 refactor; they live
@@ -365,7 +377,7 @@ class CVMIngestor:
                 "started_at":   datetime.now(timezone.utc).isoformat(),
             }])
         except Exception as e:
-            logger.warning("ingest_log start failed: %s", e)
+            logger.warning("ingest_log start failed: %s", _describe(e))
 
     def _log_finish(
         self,
@@ -491,7 +503,7 @@ class CVMIngestor:
                 cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY etf_latest")
             logger.info("etf metrics: refreshed etf_daily + etf_latest")
         except Exception as e:
-            logger.warning("refresh etf materialized views failed: %s", e)
+            logger.warning("refresh etf materialized views failed: %s", _describe(e))
 
     # ------------------------------------------------------------------
     # Generic paginated fetch helper
@@ -521,8 +533,8 @@ class CVMIngestor:
             raw_rows = await self._fetch_all_pages("fi", "inf_diario", year, month)
             rows_inserted = ingest_fi_diario(self._supabase, raw_rows)
         except Exception as exc:
-            logger.warning("ingest_fi_diario %d-%02d failed: %s", year, month, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_fi_diario %d-%02d failed: %s", year, month, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fi/inf_diario %d-%02d: %d rows", year, month, rows_inserted)
@@ -559,7 +571,7 @@ class CVMIngestor:
                 # A month missing from an old archive is normal (the series starts
                 # mid-year in 2000). Record it and keep going — the other months
                 # are still real data.
-                logger.warning("ingest_fi_hist_diario %d-%02d failed: %s", year, month, exc)
+                logger.warning("ingest_fi_hist_diario %d-%02d failed: %s", year, month, _describe(exc))
                 errors.append(f"{month:02d}: {exc}")
                 continue
             fetched += len(raw_rows)
@@ -607,8 +619,8 @@ class CVMIngestor:
             if chunk:
                 rows_inserted += ingest_fi_cda(self._supabase, chunk, year, 1)
         except Exception as exc:
-            logger.warning("ingest_fi_hist_cda %d failed: %s", year, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_fi_hist_cda %d failed: %s", year, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fi/hist_cda %d: %d rows", year, rows_inserted)
@@ -626,8 +638,8 @@ class CVMIngestor:
             raw_rows = await self._fetch_all_pages("fi", "cda", year, month)
             rows_inserted = ingest_fi_cda(self._supabase, raw_rows, year, month)
         except Exception as exc:
-            logger.warning("ingest_fi_cda %d-%02d failed: %s", year, month, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_fi_cda %d-%02d failed: %s", year, month, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fi/cda %d-%02d: %d rows", year, month, rows_inserted)
@@ -645,8 +657,8 @@ class CVMIngestor:
             raw_rows = await self._fetch_all_pages("fi", "perfil_mensal", year, month)
             rows_inserted = ingest_fi_perfil(self._supabase, raw_rows, year, month)
         except Exception as exc:
-            logger.warning("ingest_fi_perfil %d-%02d failed: %s", year, month, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_fi_perfil %d-%02d failed: %s", year, month, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fi/perfil_mensal %d-%02d: %d rows", year, month, rows_inserted)
@@ -664,8 +676,8 @@ class CVMIngestor:
             raw_rows = await self._fetch_all_pages("fi", "balancete", year, month)
             rows_inserted = ingest_fi_balancete(self._supabase, raw_rows)
         except Exception as exc:
-            logger.warning("ingest_fi_balancete %d-%02d failed: %s", year, month, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_fi_balancete %d-%02d failed: %s", year, month, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fi/balancete %d-%02d: %d rows", year, month, rows_inserted)
@@ -681,10 +693,21 @@ class CVMIngestor:
         rows_inserted = 0
         try:
             raw_rows = await self._fetch_all_pages("fidc", "mensal", year, month)
-            rows_inserted = ingest_fidc_mensal(self._supabase, raw_rows)
+            # tab_IV has no delinquency column; the figure downstream screens
+            # read lives in tab_VI of the same ZIP. A tab_VI failure must not
+            # cost us the PL snapshot, so it degrades to NULL inadimplencia.
+            try:
+                rows_vi = await self._fetch_all_pages("fidc", "mensal_tab_VI", year, month)
+            except Exception as vi_exc:
+                logger.warning(
+                    "ingest_fidc_mensal %d-%02d: tab_VI unavailable, "
+                    "vl_inadimpl stays NULL: %s", year, month, _describe(vi_exc),
+                )
+                rows_vi = []
+            rows_inserted = ingest_fidc_mensal(self._supabase, raw_rows, rows_vi)
         except Exception as exc:
-            logger.warning("ingest_fidc_mensal %d-%02d failed: %s", year, month, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_fidc_mensal %d-%02d failed: %r", year, month, exc)
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fidc/mensal %d-%02d: %d rows", year, month, rows_inserted)
@@ -758,8 +781,8 @@ class CVMIngestor:
                     conflict_columns="cnpj,period",
                 )
             except Exception as exc:
-                logger.warning("ingest_fidc_hist_mensal %d-%02d failed: %s", year, month, exc)
-                self._log_finish(run_id, 0, str(exc))
+                logger.warning("ingest_fidc_hist_mensal %d-%02d failed: %s", year, month, _describe(exc))
+                self._log_finish(run_id, 0, _describe(exc))
                 continue
             self._log_finish(run_id, rows_inserted)
             logger.info("fidc/hist_mensal %d-%02d: %d rows", year, month, rows_inserted)
@@ -784,8 +807,8 @@ class CVMIngestor:
                 self._supabase, rows_x2, rows_x3, rows_x6, year, month
             )
         except Exception as exc:
-            logger.warning("ingest_fidc_tranche %d-%02d failed: %s", year, month, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_fidc_tranche %d-%02d failed: %s", year, month, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(
             run_id, rows_inserted,
@@ -802,8 +825,8 @@ class CVMIngestor:
             raw_rows = await self._fetch_all_pages("fidc", "mensal_tab_X4", year, month)
             rows_inserted = ingest_fidc_tranche_flows(self._supabase, raw_rows)
         except Exception as exc:
-            logger.warning("ingest_fidc_tranche_flows %d-%02d failed: %s", year, month, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_fidc_tranche_flows %d-%02d failed: %s", year, month, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fidc/tranche_flows %d-%02d: %d rows", year, month, rows_inserted)
@@ -817,8 +840,8 @@ class CVMIngestor:
             raw_rows = await self._fetch_all_pages("fidc", "mensal_tab_VI", year, month)
             rows_inserted = ingest_fidc_aging(self._supabase, raw_rows)
         except Exception as exc:
-            logger.warning("ingest_fidc_aging %d-%02d failed: %s", year, month, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_fidc_aging %d-%02d failed: %s", year, month, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fidc/aging %d-%02d: %d rows", year, month, rows_inserted)
@@ -836,8 +859,8 @@ class CVMIngestor:
             raw_rows = await self._fetch_all_pages("fiagro", "mensal", year, month)
             rows_inserted = ingest_fiagro_mensal(self._supabase, raw_rows)
         except Exception as exc:
-            logger.warning("ingest_fiagro_mensal %d-%02d failed: %s", year, month, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_fiagro_mensal %d-%02d failed: %s", year, month, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fiagro/mensal %d-%02d: %d rows", year, month, rows_inserted)
@@ -855,8 +878,8 @@ class CVMIngestor:
             raw_rows = await self._fetch_all_pages("fip", doc_type, year, None)
             rows_inserted = ingest_fip_periodic(self._supabase, raw_rows, doc_type, year)
         except Exception as exc:
-            logger.warning("ingest_fip_periodic %s %d failed: %s", doc_type, year, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_fip_periodic %s %d failed: %s", doc_type, year, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fip/%s %d: %d rows", doc_type, year, rows_inserted)
@@ -875,8 +898,8 @@ class CVMIngestor:
             raw_rows = await self._fetch_all_pages("fii", doc_type, year, None)
             rows_inserted = ingest_fii_mensal(self._supabase, raw_rows, doc_type)
         except Exception as exc:
-            logger.warning("ingest_fii_mensal %s %d failed: %s", doc_type, year, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_fii_mensal %s %d failed: %s", doc_type, year, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fii/%s %d: %d rows", doc_type, year, rows_inserted)
@@ -894,8 +917,8 @@ class CVMIngestor:
             raw_rows = await self._fetch_all_pages("fii", doc_type, year, None)
             rows_inserted = ingest_fii_periodic(self._supabase, raw_rows, doc_type, year)
         except Exception as exc:
-            logger.warning("ingest_fii_periodic %s %d failed: %s", doc_type, year, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_fii_periodic %s %d failed: %s", doc_type, year, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fii/%s %d: %d rows", doc_type, year, rows_inserted)
@@ -917,8 +940,8 @@ class CVMIngestor:
             raw_rows = await self._fetch_all_pages("fii", "trimestral_imovel", year, None)
             rows_inserted = ingest_fii_imovel(self._supabase, raw_rows, year)
         except Exception as exc:
-            logger.warning("ingest_fii_imovel %d failed: %s", year, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_fii_imovel %d failed: %s", year, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fii/trimestral_imovel %d: %d rows", year, rows_inserted)
@@ -942,8 +965,8 @@ class CVMIngestor:
             else:
                 rows_inserted = ingest_fund_registry(self._supabase, raw_rows, entity)
         except Exception as exc:
-            logger.warning("ingest_fund_registry %s failed: %s", entity, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_fund_registry %s failed: %s", entity, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("%s/cad: %d rows", entity, rows_inserted)
@@ -967,8 +990,8 @@ class CVMIngestor:
                 raw_rows = await self._fetch_all_pages("fi", doc_type, None, None)
                 rows = ingest_fund_registry_cvm175(self._supabase, raw_rows)
             except Exception as exc:
-                logger.warning("ingest_fund_registry_cvm175 %s failed: %s", doc_type, exc)
-                self._log_finish(run_id, 0, str(exc))
+                logger.warning("ingest_fund_registry_cvm175 %s failed: %s", doc_type, _describe(exc))
+                self._log_finish(run_id, 0, _describe(exc))
                 continue
             self._log_finish(run_id, rows)
             logger.info("fi/%s: %d rows", doc_type, rows)
@@ -991,8 +1014,8 @@ class CVMIngestor:
             cad_rows = await self._fetch_all_pages("fi", "cad", None, None)
             rows_inserted = ingest_etf_registry(self._supabase, seed, cad_rows)
         except Exception as exc:
-            logger.warning("ingest_etf_registry failed: %s", exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_etf_registry failed: %s", _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted)
         logger.info("etf/registry: %d rows", rows_inserted)
@@ -1010,8 +1033,8 @@ class CVMIngestor:
             raw_rows = await self._fetch_all_pages("securit", doc_type, year, None)
             rows_inserted = ingest_securit_serie(self._supabase, raw_rows, doc_type, year)
         except Exception as exc:
-            logger.warning("ingest_securit_serie %s %d failed: %s", doc_type, year, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_securit_serie %s %d failed: %s", doc_type, year, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("securit/%s %d: %d rows", doc_type, year, rows_inserted)
@@ -1025,8 +1048,8 @@ class CVMIngestor:
             raw_rows = await self._fetch_all_pages("securit", doc_type, year, None)
             rows_inserted = ingest_securit_fluxo(self._supabase, raw_rows, doc_type, year)
         except Exception as exc:
-            logger.warning("ingest_securit_fluxo %s %d failed: %s", doc_type, year, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_securit_fluxo %s %d failed: %s", doc_type, year, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("securit/%s %d: %d rows", doc_type, year, rows_inserted)
@@ -1044,8 +1067,8 @@ class CVMIngestor:
             raw_rows = await self._fetch_all_pages("securit", instrument_type, year, None)
             rows_inserted = ingest_securit_mensal(self._supabase, raw_rows, instrument_type, year)
         except Exception as exc:
-            logger.warning("ingest_securit_mensal %s %d failed: %s", instrument_type, year, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_securit_mensal %s %d failed: %s", instrument_type, year, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("securit/%s %d: %d rows", instrument_type, year, rows_inserted)
@@ -1063,8 +1086,8 @@ class CVMIngestor:
             raw_rows = await self._fetch_all_pages("securit", instrument_type, year, None)
             rows_inserted = ingest_securit_dfin(self._supabase, raw_rows, instrument_type, year)
         except Exception as exc:
-            logger.warning("ingest_securit_dfin %s %d failed: %s", instrument_type, year, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_securit_dfin %s %d failed: %s", instrument_type, year, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("securit/%s %d: %d rows", instrument_type, year, rows_inserted)
@@ -1088,8 +1111,8 @@ class CVMIngestor:
             raw_rows = await self._fetch_all_pages("cia_aberta", "cad", None, None)
             rows_inserted = ingest_cia_company(self._supabase, raw_rows)
         except Exception as exc:
-            logger.warning("ingest_cia_cad failed: %s", exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_cia_cad failed: %s", _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("cia_aberta/cad: %d rows", rows_inserted)
@@ -1108,8 +1131,8 @@ class CVMIngestor:
             raw_rows = await self._fetch_all_pages("cia_aberta", "ipe", year, None)
             rows_inserted = ingest_cia_event(self._supabase, raw_rows)
         except Exception as exc:
-            logger.warning("ingest_cia_ipe %d failed: %s", year, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_cia_ipe %d failed: %s", year, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("cia_aberta/ipe %d: %d rows", year, rows_inserted)
@@ -1152,8 +1175,8 @@ class CVMIngestor:
                     doc_type, year, len(members), account_members,
                 )
         except Exception as exc:
-            logger.warning("ingest_cia_itr_dfp %s %d failed: %s", doc_type, year, exc)
-            self._log_finish(run_id, 0, str(exc))
+            logger.warning("ingest_cia_itr_dfp %s %d failed: %s", doc_type, year, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
             return 0
         # account_members counts the source rows seen; the contract in _log_finish
         # turns "saw source rows, wrote none" into an error rather than the
@@ -1185,10 +1208,13 @@ class CVMIngestor:
         def _want(entity: str) -> bool:
             return entity_filter is None or entity_filter == entity
 
-        # -- Fund registry (static cadastral files — run once per backfill) --
-        for entity in ("fi", "fii"):
-            if _want(entity):
-                totals["cvm_fund_registry"] += await self.ingest_fund_registry(entity)
+        # -- Fund registry (static cadastral file — run once per backfill) --
+        # FII is deliberately absent: CVM retired the whole FII/CAD/ tree (the
+        # directory itself 404s), and registro_fundo already carries every FII
+        # with its Denominacao_Social, so the legacy fetch only logged a daily
+        # error while adding nothing.
+        if _want("fi"):
+            totals["cvm_fund_registry"] += await self.ingest_fund_registry("fi")
 
         # -- CVM-175 unified registry (active universe, all fund families) --
         if _want("fi"):
@@ -1447,10 +1473,9 @@ class CVMIngestor:
         daily_entities = _resolve_daily_entities()
 
         # Fund registry refresh
+        # FII omitted on purpose — CVM retired FII/CAD/; registro_fundo covers it.
         if "fi" in daily_entities:
             totals["cvm_fund_registry"] += await self.ingest_fund_registry("fi")
-        if "fii" in daily_entities:
-            totals["cvm_fund_registry"] += await self.ingest_fund_registry("fii")
 
         # CVM-175 unified registry refresh (active universe, all fund families)
         if "fi" in daily_entities:

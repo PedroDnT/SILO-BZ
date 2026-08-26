@@ -23,13 +23,35 @@ from src.store.pg_client import upsert_rows
 logger = logging.getLogger(__name__)
 
 
-def ingest_fidc_mensal(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
+def ingest_fidc_mensal(
+    conn: Any,
+    raw_rows: List[Dict[str, Any]],
+    rows_vi: List[Dict[str, Any]] | None = None,
+) -> int:
     """Parse and upsert FIDC monthly snapshot (2025+ tab_IV format).
 
+    tab_IV carries only the PL figures. The delinquency total that every
+    downstream screen reads as `vl_inadimpl` lives in tab_VI of the same
+    monthly ZIP, so `rows_vi` (tab_VI) is merged in on (cnpj, period). When
+    tab_VI is unavailable `vl_inadimpl` stays NULL — never a guess.
+
+    Args:
+        raw_rows -- tab_IV rows
+        rows_vi  -- tab_VI rows, or None to leave vl_inadimpl NULL
     Returns:
         number of rows upserted
     """
     records: List[Dict[str, Any]] = []
+
+    inadimpl_by_key: Dict[tuple, Any] = {}
+    for row in rows_vi or []:
+        typed_vi, _ = apply_map(row, _aging.FIELD_MAP)
+        cnpj, period = typed_vi.get("cnpj"), typed_vi.get("period")
+        if not cnpj or not period:
+            continue
+        total = typed_vi.get("vl_total_inad")
+        if total is not None:
+            inadimpl_by_key[(cnpj, period)] = total
 
     assert_map_matches(
         raw_rows, _mensal.FIELD_MAP, dataset="fidc/mensal",
@@ -41,6 +63,11 @@ def ingest_fidc_mensal(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
 
         if not typed.get("cnpj") or not typed.get("period"):
             continue
+
+        if typed.get("vl_inadimpl") is None:
+            typed["vl_inadimpl"] = inadimpl_by_key.get(
+                (typed["cnpj"], typed["period"])
+            )
 
         records.append(typed)
 

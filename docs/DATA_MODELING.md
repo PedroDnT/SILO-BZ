@@ -1,11 +1,11 @@
-# Data modeling principles (for *adding* data)
+# Data modeling principles (for _adding_ data)
 
 The existing schema is sound. This note exists so future additions — most likely
 **market/price data for securities** — extend it the same way instead of growing a
 parallel, wide, source-shaped table that downstream queries then have to special-case.
 Read it before adding a new `(entity, doc_type)` or a new class of data; it sits on top
-of the non-negotiable data-integrity rules in `.agents/rules/data-integrity.md`, it does
-not replace them.
+of the non-negotiable data-integrity rules in `CLAUDE.md` ("Data integrity rules"), it
+does not replace them.
 
 ## The shape we already have
 

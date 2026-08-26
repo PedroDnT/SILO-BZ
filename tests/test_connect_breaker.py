@@ -84,7 +84,9 @@ class TestWiring:
 
     def test_download_handles_connector_error_before_generic_client_error(self):
         import inspect
-        src = inspect.getsource(CVMFetcher._download)
+        # _download is the cache/single-flight front door; the retry loop that
+        # owns the exception handlers lives in _download_uncached.
+        src = inspect.getsource(CVMFetcher._download_uncached)
         i_specific = src.index("except aiohttp.ClientConnectorError")
         i_generic = src.index("except aiohttp.ClientError")
         assert i_specific < i_generic, (

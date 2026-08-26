@@ -111,11 +111,10 @@ class DatasetConfig:
     }
 
     FII_DATASETS: Dict[str, Dict] = {
-        "cad": {
-            "url_pattern": "{base_url}/FII/CAD/DADOS/cad_fii.csv",
-            "is_zip": False,
-            "description": "FII fund registry — DENOM_SOCIAL, SIT, DT_REG, DT_CANCEL (static file, no year/month)",
-        },
+        # NOTE: "cad" (FII/CAD/DADOS/cad_fii.csv) was removed — CVM retired the
+        # entire FII/CAD/ tree and the path now 404s. FII registry rows come from
+        # the CVM-175 registro_fundo dataset, which carries all 2,250 FIIs with
+        # Denominacao_Social; see ingest_fund_registry_cvm175.
         "mensal_geral": {
             "url_pattern": "{base_url}/FII/DOC/INF_MENSAL/DADOS/inf_mensal_fii_{year}.zip",
             "is_zip": True,

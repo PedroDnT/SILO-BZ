@@ -12,6 +12,7 @@ import asyncio
 import csv
 import hashlib
 import io
+import itertools
 import json
 import logging
 import os
@@ -136,6 +137,13 @@ class CVMFetcher:
         ]
         os.makedirs(self.temp_dir, exist_ok=True)
         os.makedirs(self.cache_dir, exist_ok=True)
+        # One lock per URL, so the several datasets that share a single ZIP
+        # (the FIDC monthly ZIP alone backs mensal, tranche, tranche_flows and
+        # aging) download it once instead of stampeding and overwriting each
+        # other's cache file mid-read. See _download.
+        self._url_locks: Dict[str, asyncio.Lock] = {}
+        # Monotonic suffix source for atomic cache writes (see _save_cache).
+        self._cache_seq = itertools.count()
 
     # ---------------------------------------------------------------- helpers
     def _normalize(self, value: str, label: str) -> str:
@@ -229,18 +237,42 @@ class CVMFetcher:
             return None
 
     async def _save_cache(self, cache_path: str, meta_path: str, content: bytes, url: str) -> None:
+        """Write the cache entry atomically.
+
+        Writing straight to cache_path let a concurrent reader observe a
+        half-flushed ZIP ("File is not a zip file") and let two writers of the
+        same URL interleave. Both are silent data loss: the slice just fails
+        and the month goes missing until someone reads the logs. Write to a
+        unique temp file in the same directory, then os.replace — which is
+        atomic on POSIX — so a reader sees either the old entry or the new one.
+        The payload lands before the metadata that advertises it as valid.
+        """
+        # A per-instance counter, not a name derived from the payload: id() is
+        # recycled after GC, so two concurrent writers could otherwise pick the
+        # same temp path and one would rename it out from under the other.
+        suffix = f".{os.getpid()}.{next(self._cache_seq)}.tmp"
+        tmp_cache = cache_path + suffix
+        tmp_meta = meta_path + suffix
         try:
-            async with aiofiles.open(cache_path, "wb") as f:
+            async with aiofiles.open(tmp_cache, "wb") as f:
                 await f.write(content)
+            os.replace(tmp_cache, cache_path)
+
             metadata = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "url": url,
                 "size": len(content),
             }
-            async with aiofiles.open(meta_path, "w") as f:
+            async with aiofiles.open(tmp_meta, "w") as f:
                 await f.write(json.dumps(metadata, indent=2))
+            os.replace(tmp_meta, meta_path)
         except Exception as exc:
-            logger.warning(f"Cache write failed: {exc}")
+            logger.warning(f"Cache write failed: {exc!r}")
+            for stale in (tmp_cache, tmp_meta):
+                try:
+                    os.unlink(stale)
+                except OSError:
+                    pass
 
     # ---------------------------------------------------------------- validate params
     def _validate_params(self, entity: str, doc_type: str, year: Optional[int], month: Optional[int]) -> None:
@@ -280,6 +312,17 @@ class CVMFetcher:
         if cached is not None:
             return cached
 
+        # Single-flight: hold the per-URL lock across the download so the other
+        # datasets sharing this ZIP wait for the first fetch instead of racing
+        # it, then re-check the cache — by now the winner has populated it.
+        lock = self._url_locks.setdefault(url, asyncio.Lock())
+        async with lock:
+            cached = await self._load_cache(cache_path, meta_path)
+            if cached is not None:
+                return cached
+            return await self._download_uncached(url, cache_path, meta_path)
+
+    async def _download_uncached(self, url: str, cache_path: str, meta_path: str) -> bytes:
         for attempt in range(self.max_retries):
             try:
                 timeout = aiohttp.ClientTimeout(total=self.timeout)
