@@ -3,7 +3,9 @@
 > **Read API:** [https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/)
 > — schema `api`, anon key, open read. Caller docs: [https://octo-98895abd.mintlify.site](https://octo-98895abd.mintlify.site)
 > (source: [`api-docs/`](api-docs/quickstart.mdx)).
-> Ingest is in production and runs nightly. See [What's next](#whats-next) for remaining ops.
+> **Dashboard:** [https://iliquid-nightly.vercel.app/](https://iliquid-nightly.vercel.app/)
+> — Evidence static snapshot. **SILO** is this repo: GitHub Actions ingest into Supabase,
+> plus schema `api`. See [What's next](#whats-next) for remaining ops.
 
 Headless ingestion pipeline for Brazilian public financial data. The goal is to maintain
 continuous, verifiable accountability of the fund industry — tracking NAV, delinquency,
@@ -21,13 +23,14 @@ Data is downloaded, parsed, validated, and upserted into a Supabase Postgres dat
 Ingest is GitHub Actions plus the pipeline CLI (`run_daily` / `run_backfill`); there is no
 ingest HTTP server.
 
-**Reading the data.** Three surfaces, one contract — schema `api`, never the landing tables:
+**Reading the data.** Three surfaces, one warehouse — schema `api` / landing tables in
+Supabase. SILO (this repo) writes and serves; the dashboard only reads at build time:
 
 | Surface                     | What it is                                                        | Status                                                          |
 | --------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------- |
 | **Supabase Data API**       | PostgREST over schema `api` at [https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/), anon key, public read | live public path |
 | **`serve/`**                | local read-only Flask adapter (`python -m serve.app`)             | for notebooks and development                                   |
-| **`dashboard/`, `webapp/`** | Evidence.dev sites                                                | read Supabase at **build** time into parquet                    |
+| **Dashboard**               | Evidence.dev at [https://iliquid-nightly.vercel.app/](https://iliquid-nightly.vercel.app/) (`dashboard/` in this repo) | static snapshot; `webapp/` is CIA Aberta |
 
 Docs: [https://octo-98895abd.mintlify.site](https://octo-98895abd.mintlify.site)
 (Mintlify, source in [`api-docs/`](api-docs/quickstart.mdx); agents: [`api-docs/agents.mdx`](api-docs/agents.mdx)) for callers,
@@ -396,9 +399,14 @@ rows do not.
   COTAHIST zips (`--b3-only`); set `start_year` (try `2025` first).
 - Required GitHub secret: `POSTGRES_URL` (Supabase connection string with `sslmode=require`).
 
-The read-only **Evidence.dev dashboard** (`dashboard/`) deploys separately to **Vercel**
-(project `silo`, team `deloslabs`); it can also be served as a static build on any static
-host. It only reads from Supabase.
+The read-only **Evidence.dev dashboard** lives at
+[https://iliquid-nightly.vercel.app/](https://iliquid-nightly.vercel.app/).
+Source is `dashboard/` in this repo; it only reads from Supabase. **SILO** is the
+ingest + store + schema `api` serve: GitHub Actions (`daily_ingest.yml` /
+`backfill.yml`) write Postgres. The Vercel *project* in the Deloslabs team is
+named `silo` (that is the GitHub integration and the deploy-hook target) — the
+URL people open is `iliquid-nightly.vercel.app`. It can also be served as a
+static build on any static host.
 
 The dashboard is a **static snapshot, not a live view**. `npm run sources` extracts
 Supabase into parquet at build time, and the browser then queries that parquet through
