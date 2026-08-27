@@ -40,16 +40,26 @@ through schema `api`.
 
 ### 1. Cash equities — stocks, units, BDRs, FII quotas, ETFs
 
-`tpmerc 010/020/021` in COTAHIST. Landed and served (`api.quotes`,
-`quote_history`, `quote_latest`, panel `close`/`volume`/`close_return`).
+`tpmerc 010` in COTAHIST: landed and served (`api.quotes`, `quote_history`,
+`quote_latest`, panel `close`/`volume`/`close_return`).
+
+**Odd lot (`020`, `021`) is landed but NOT served** — `vw_b3_quote_vista` and
+`api.quotes` both filter `tpmerc = '010'`. (An earlier revision of this document
+claimed all three were served; they are not.) Odd lot is not a separate
+instrument: it is the same `codneg` at a different lot size (622 codnegs,
+163k rows, ~262 rows/codneg — a genuine daily series). So it must **not** become
+a second endpoint or a panel arm — either would double-count `PETR4`. The honest
+exposure is an explicit lot/market selector on the existing cash surface,
+defaulting to `010` so `api.quotes`'s current meaning and grain are unchanged.
 The DB-only `vw_b3_instrument_typed` separates equity, unit, BDR and fund-quota
 rows using B3's published `tpmerc`/`especi`; `CI` remains `fund_quota` because
 COTAHIST alone cannot prove ETF versus FII. The fact table stays unified at its
 published natural key. API exposure remains future work.
 
-### 2. Equity options (calls `070`, puts `080`, exercises `012/013`)
+### 2. Equity options (calls `070`, puts `080`)
 
-**Landed, unserved** — and ~89 % of every COTAHIST session (2026-08-25:
+**Served** as of PR #119 — `api.option_chain`, `api.option_history`, panel arms,
+partial index, docs page. ~89 % of every COTAHIST session (2026-08-25:
 14,900 option rows vs 1,405 cash rows). `preco_exercicio` and
 `data_vencimento` are already typed columns; no new ingest.
 
@@ -74,9 +84,22 @@ CURRENT_DATE, p_trade_date DATE DEFAULT NULL, p_limit INT)` — one row per
   `(codneg, trade_date) WHERE tpmerc IN ('070','080')`, mirroring the
   existing `vista` partial index.
 
+### 2b. Option exercises (`012`, `013`) and `017`
+
+**Landed, unserved.** Named in this section's heading before PR #119 but never
+designed and never shipped — Phase A filters `tpmerc IN ('070','080')` in every
+function, panel arm and index. Measured 2026-08-27: `013` 59,164 rows over
+56,884 codnegs, `012` 57,205 over 52,381, `017` 210 over 192 — i.e. **~1.05 rows
+per codneg**. These are *events*, not series: a `*_history` endpoint is the wrong
+shape and a panel arm is meaningless under the two-layer rule. They want a
+lookup, `api.option_exercises(p_prefix, p_from, p_to)`. `017` needs identifying
+against the COTAHIST layout doc before it is exposed at all (`especi` samples
+read `CPA MB`).
+
 ### 3. Forwards / termo (`030`)
 
-Landed, unserved, small (135 rows/session). Same treatment as options minus
+**Served** as of PR #119 (`api.termo_history`, panel arm, docs page). Small
+(~135 rows/session). Same treatment as options minus
 the chain: `api.termo_history(p_codneg, …)`, panel ids with
 `id_type='termo'`. `prazot` (term days) is already a key column.
 
@@ -160,7 +183,8 @@ offline fixture test → analytical SQL → catalog bump → api-docs page.
 | Phase | What                                                                                                                  | New ingest? | Effort                                   |
 | ----- | --------------------------------------------------------------------------------------------------------------------- | ----------- | ---------------------------------------- |
 | **Adj** | Label `close_return` as unadjusted (catalog v3 + docs — done); jump screen (`abs(close_return) > 40%` × `cia_event`) still open | none | small — SQL against data we already have |
-| **A** | Options + termo endpoints, partial index, panel arms, `api.catalog()`, universe/lookup/coverage extension, docs pages | none        | small — SQL + docs only                  |
+| **A** | Options + termo endpoints, partial index, panel arms, `api.catalog()`, universe/lookup/coverage extension, docs pages | none        | small — SQL + docs only (PR #119)        |
+| **A.2** | Odd-lot (`020`/`021`) lot selector on the cash surface; `api.option_exercises` for `012`/`013`; identify `017` | none | small — SQL + docs only |
 | **B** | Futures settlement: fetcher, table, `future_series`/`future_curve`, panel arm                                         | yes         | medium — first non-COTAHIST B3 file      |
 | **C** | Reference-rate curves: fetcher, table, `curve`/`curve_history`                                                        | yes         | medium — piggybacks B's fetcher plumbing |
 | **D** | Index composition + history                                                                                           | yes         | small, lowest value today                |

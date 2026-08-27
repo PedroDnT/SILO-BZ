@@ -7,7 +7,9 @@ Requires:
 
 import logging
 import os
+import threading
 import time
+from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
 
 import psycopg2
@@ -81,11 +83,32 @@ def _get_upsert_chunk_size() -> int:
 
 
 class _PgClient:
-    """Thin wrapper around a psycopg2 connection that auto-reconnects."""
+    """Thin wrapper around a psycopg2 connection that auto-reconnects.
+
+    One connection is shared by the whole run. Since the ingest pipeline now
+    runs its blocking upserts through ``asyncio.to_thread`` (see
+    ``CVMIngestor._store``), that connection is reachable from several threads
+    at once, and psycopg2's threadsafety=2 means a *connection* may be shared
+    but a *cursor* may not — nothing in libpq serialises two concurrent
+    ``execute_values`` calls on one connection. ``_lock`` provides that
+    serialisation. The point is not write parallelism (there is none, by
+    design); it is that a thread waiting on the lock is not blocking the event
+    loop, so concurrent downloads keep reading their sockets.
+
+    Load-bearing detail: upsert_rows() opens its cursor *inside* the per-chunk
+    loop, so this lock is held for one ~5000-row execute_values, not for a whole
+    2M-row upsert. That matters because the audit writes (_log_start /
+    _log_finish) still run on the event loop and take the same lock — they wait
+    at most one chunk. Hoisting the `with client.cursor()` out of that loop
+    would make an audit write block the loop for minutes and undo the fix.
+    """
 
     def __init__(self, url: str) -> None:
         self._url = url
         self._conn: Any = None
+        # Reentrant: reconnect() may be called from inside a cursor() block on
+        # the same thread by the upsert retry path.
+        self._lock = threading.RLock()
         self._connect()
 
     def _connect(self) -> None:
@@ -97,12 +120,24 @@ class _PgClient:
         self._conn = psycopg2.connect(self._url)
         self._conn.autocommit = True
 
+    @contextmanager
     def cursor(self):
-        return self._conn.cursor()
+        """Yield a cursor while holding the connection lock.
+
+        Every caller already uses ``with client.cursor() as cur:``, so the lock
+        is scoped exactly to the statement(s) it guards.
+        """
+        with self._lock:
+            cur = self._conn.cursor()
+            try:
+                yield cur
+            finally:
+                cur.close()
 
     def reconnect(self) -> None:
-        logger.warning("Reconnecting to Postgres...")
-        self._connect()
+        with self._lock:
+            logger.warning("Reconnecting to Postgres...")
+            self._connect()
 
     @property
     def url(self) -> str:
