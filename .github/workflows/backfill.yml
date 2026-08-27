@@ -13,11 +13,25 @@ on:
         description: "Skip CVM entities (FI/FIDC/FII/.../ETF), backfill only BACEN — fast, for re-fetching a full-history SGS/PTAX/Expectativas window"
         type: boolean
         default: false
+      entity:
+        description: "Which CVM entity to fill. Default fi (do not pick all while Postgres is recovering). Years in the form are now used."
+        type: choice
+        default: fi
+        options:
+          - fi
+          - fidc
+          - fii
+          - fiagro
+          - fip
+          - securit
+          - cia_aberta
+          - etf
+          - all
 
 # Shares the writer group with daily_ingest.yml so a backfill and the daily
-# cron never write to the same tables at once (see the comment there). The
-# per-year FI matrix INSIDE this workflow still runs in parallel — the group
-# serializes workflows against each other, not jobs within one run.
+# cron never write to the same tables at once. Jobs inside this workflow also
+# run one at a time (max-parallel: 1) so a slice fill cannot 8-way lock the
+# pooler. This workflow never POSTs the Vercel dashboard hook.
 concurrency:
   group: supabase-ingest
   cancel-in-progress: false
@@ -41,35 +55,100 @@ jobs:
         with:
           postgres-url: ${{ secrets.POSTGRES_URL }}
 
-  # FI is the largest entity — one job per year so they run in parallel
+  inspect-coverage:
+    name: "What's already on Supabase (skip-if-complete uses this)"
+    needs: apply-schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install coverage-query dependency
+        run: pip install psycopg2-binary
+      - name: Print ingest_log + coverage snapshot
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          import psycopg2
+          url = os.environ.get("POSTGRES_URL", "")
+          if not url:
+              print("POSTGRES_URL missing — cannot inspect coverage")
+              sys.exit(0)
+          conn = psycopg2.connect(url, connect_timeout=20)
+          cur = conn.cursor()
+          print("=== cvm_ingest_log by entity / year / status ===")
+          cur.execute("""
+            SELECT entity, COALESCE(doc_type, ''), period_year,
+                   status, COUNT(*), COALESCE(SUM(rows_upserted), 0)
+            FROM cvm_ingest_log
+            GROUP BY 1, 2, 3, 4
+            ORDER BY 1, 2, 3, 4
+          """)
+          print("entity\tdoc_type\tyear\tstatus\tn_runs\trows")
+          for row in cur.fetchall():
+              print("\t".join(str(x) for x in row))
+          print("=== data_coverage last 90 days (api) ===")
+          try:
+              cur.execute("SELECT * FROM data_coverage(NULL, CURRENT_DATE - 90, CURRENT_DATE)")
+              cols = [d[0] for d in cur.description]
+              print("\t".join(cols))
+              for row in cur.fetchall():
+                  print("\t".join(str(x) for x in row))
+          except Exception as e:
+              print("data_coverage unavailable:", e)
+              conn.rollback()
+          conn.close()
+          PY
+
+  # FI — one job per year, serialized, and skipped when that year is already complete.
   backfill-fi:
     name: "FI ${{ matrix.year }}"
-    needs: apply-schema
-    if: ${{ inputs.bacen_only != true }}
+    needs: [apply-schema, inspect-coverage]
+    if: ${{ inputs.bacen_only != true && (inputs.entity == 'all' || inputs.entity == 'fi') }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         year: [2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026]
     steps:
       - uses: actions/checkout@v5
 
+      - name: Skip years outside start_year..end_year
+        if: ${{ matrix.year < fromJSON(inputs.start_year) || matrix.year > fromJSON(inputs.end_year) }}
+        run: |
+          echo "Skipping FI ${{ matrix.year }} (requested ${{ inputs.start_year }}..${{ inputs.end_year }})"
+          exit 0
+
       - uses: actions/setup-python@v6
+        if: ${{ matrix.year >= fromJSON(inputs.start_year) && matrix.year <= fromJSON(inputs.end_year) }}
         with:
           python-version: "3.12"
           cache: pip
 
       - name: Install dependencies
+        if: ${{ matrix.year >= fromJSON(inputs.start_year) && matrix.year <= fromJSON(inputs.end_year) }}
         run: pip install -r requirements.txt
 
       - name: Skip if year already complete
         id: check
+        if: ${{ matrix.year >= fromJSON(inputs.start_year) && matrix.year <= fromJSON(inputs.end_year) }}
         env:
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
         run: |
           python - <<'EOF'
-          import os, sys, psycopg2
+          import os, sys, traceback
+          try:
+              import psycopg2
+          except ImportError:
+              print("psycopg2 missing; running the year")
+              sys.exit(0)
 
           def ok_months(cur, doc_type, year):
               cur.execute("""
@@ -80,47 +159,51 @@ jobs:
               """, (doc_type, year))
               return cur.fetchone()[0]
 
-          url = "".join(os.environ["POSTGRES_URL"].split())
+          url = os.environ.get("POSTGRES_URL", "").replace("\n", "").replace(" ", "")
           year = int("${{ matrix.year }}")
+          if not url:
+              print("POSTGRES_URL missing; running the year")
+              sys.exit(0)
 
-          conn = psycopg2.connect(url)
-          with conn.cursor() as cur:
-              # The FI job runs inf_diario AND perfil_mensal (and refreshes the FI
-              # registry).  Gate the skip on BOTH so that a year is only skipped when
-              # diario AND perfil are complete — otherwise an up-to-date diario would
-              # wrongly skip the run that populates cvm_fi_perfil / cvm_fund_registry.
-              diario_months = ok_months(cur, "inf_diario", year)
-              perfil_months = ok_months(cur, "perfil_mensal", year)
-              if year in (2019, 2020):
-                  # Hist ZIPs: diario is a single yearly file, so check partition rows.
-                  cur.execute(f"SELECT COUNT(*) FROM cvm_fi_diario_{year}")
-                  diario_rows = cur.fetchone()[0]
-              else:
+          try:
+              conn = psycopg2.connect(url, connect_timeout=20)
+              with conn.cursor() as cur:
+                  # Gate skip on BOTH inf_diario AND perfil_mensal so a complete
+                  # diario cannot skip the run that fills cvm_fi_perfil.
+                  diario_months = ok_months(cur, "inf_diario", year)
+                  perfil_months = ok_months(cur, "perfil_mensal", year)
                   diario_rows = None
-          conn.close()
+                  if year in (2019, 2020):
+                      cur.execute(f"SELECT COUNT(*) FROM cvm_fi_diario_{year}")
+                      diario_rows = cur.fetchone()[0]
+              conn.close()
+          except Exception:
+              traceback.print_exc()
+              print("Coverage query failed; running the year (fail-open)")
+              sys.exit(0)
 
+          skip = False
           if year in (2019, 2020):
-              # ~250k rows/month × 12 months = ~3M expected; treat diario as complete
-              # at > 2M rows.  Still require perfil months before skipping.
-              diario_done = diario_rows > 2_000_000
+              diario_done = (diario_rows or 0) > 2_000_000
               perfil_done = perfil_months >= 11
               if diario_done and perfil_done:
                   print(f"SKIP: {year} hist complete ({diario_rows} diario rows, {perfil_months} perfil months)")
-                  with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-                      f.write("skip=true\n")
+                  skip = True
               else:
                   print(f"RUN: {year} hist incomplete (diario rows={diario_rows}, perfil months={perfil_months})")
           else:
               if diario_months >= 11 and perfil_months >= 11:
                   print(f"SKIP: {year} complete ({diario_months} diario months, {perfil_months} perfil months)")
-                  with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-                      f.write("skip=true\n")
+                  skip = True
               else:
                   print(f"RUN: {year} incomplete (diario months={diario_months}, perfil months={perfil_months})")
+          if skip:
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write("skip=true\n")
           EOF
 
       - name: Run FI backfill for ${{ matrix.year }}
-        if: steps.check.outputs.skip != 'true'
+        if: ${{ matrix.year >= fromJSON(inputs.start_year) && matrix.year <= fromJSON(inputs.end_year) && steps.check.outputs.skip != 'true' }}
         env:
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
           LOG_LEVEL: INFO
@@ -137,29 +220,34 @@ jobs:
             --end-year ${{ matrix.year }} \
             --cvm-only
 
-  # Other entities — each runs full year range in its own job
+  # Other entities — one selected entity at a time by default.
   backfill-other:
-    name: "${{ matrix.entity }} 2019-2026"
-    needs: apply-schema
-    if: ${{ inputs.bacen_only != true }}
+    name: "${{ matrix.entity }} ${{ inputs.start_year }}-${{ inputs.end_year }}"
+    needs: [apply-schema, inspect-coverage]
+    if: ${{ inputs.bacen_only != true && (inputs.entity == 'all' || contains(fromJSON('["fidc","fii","fiagro","fip","securit","cia_aberta"]'), inputs.entity)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         entity: [fidc, fii, fiagro, fip, securit, cia_aberta]
     steps:
       - uses: actions/checkout@v5
+        if: ${{ inputs.entity == 'all' || inputs.entity == matrix.entity }}
 
       - uses: actions/setup-python@v6
+        if: ${{ inputs.entity == 'all' || inputs.entity == matrix.entity }}
         with:
           python-version: "3.12"
           cache: pip
 
       - name: Install dependencies
+        if: ${{ inputs.entity == 'all' || inputs.entity == matrix.entity }}
         run: pip install -r requirements.txt
 
       - name: Run ${{ matrix.entity }} backfill
+        if: ${{ inputs.entity == 'all' || inputs.entity == matrix.entity }}
         env:
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
           LOG_LEVEL: INFO
@@ -170,8 +258,8 @@ jobs:
         run: |
           python -m src.pipeline.run_backfill \
             --entity ${{ matrix.entity }} \
-            --start-year 2019 \
-            --end-year 2026 \
+            --start-year ${{ inputs.start_year }} \
+            --end-year ${{ inputs.end_year }} \
             --cvm-only
 
   # ETF registry — distinct entity (curated ticker->CNPJ seed enriched from
@@ -179,8 +267,8 @@ jobs:
   # once in its own job rather than riding along with the FI year-matrix.
   backfill-etf:
     name: "ETF registry"
-    needs: apply-schema
-    if: ${{ inputs.bacen_only != true }}
+    needs: [apply-schema, inspect-coverage]
+    if: ${{ inputs.bacen_only != true && (inputs.entity == 'all' || inputs.entity == 'etf') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -214,7 +302,7 @@ jobs:
   refresh-etf:
     name: "Refresh ETF metrics"
     needs: [backfill-fi, backfill-other, backfill-etf]
-    if: ${{ always() && inputs.bacen_only != true }}
+    if: ${{ always() && inputs.bacen_only != true && (inputs.entity == 'all' || inputs.entity == 'fi' || inputs.entity == 'etf') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -238,6 +326,7 @@ jobs:
   backfill-bacen:
     name: "BACEN"
     needs: apply-schema
+    if: ${{ inputs.bacen_only == true || inputs.entity == 'all' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -270,7 +359,7 @@ jobs:
   apply-analytical:
     name: "Apply analytical layer"
     needs: [backfill-fi, backfill-other, backfill-etf, backfill-bacen]
-    if: ${{ always() }}
+    if: ${{ always() && (inputs.bacen_only == true || inputs.entity == 'all') }}
     continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 60

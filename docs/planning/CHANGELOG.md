@@ -2,6 +2,8 @@
 
 | Date       | Branch                    | Change                                                                                              |
 | ---------- | ------------------------- | --------------------------------------------------------------------------------------------------- |
+| 2026-08-27 | cursor/quiet-vercel-fills-1119 | DB-only B3 instrument typing from published TPMERC/ESPECI; ambiguous CI remains `fund_quota` |
+| 2026-08-27 | cursor/quiet-vercel-fills-1119 | Sliceable serialized backfills inspect coverage; dashboard rebuild is manual opt-in |
 | 2026-08-27 | cursor/dashboard-url-1119 | Dashboard is https://iliquid-nightly.vercel.app/; SILO is this repo (Actions → Supabase ingest + schema api) |
 | 2026-08-27 | cursor/mintlify-live-site-3f68 | Agent README (`api-docs/agents`) + root `skill.md`; agents cannot mint keys |
 | 2026-08-27 | cursor/mintlify-live-site-3f68 | Public Mintlify site `https://octo-98895abd.mintlify.site`; admin + index MCP in `.cursor/mcp.json` |

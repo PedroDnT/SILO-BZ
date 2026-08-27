@@ -19,6 +19,10 @@ on:
         description: "First year of B3 COTAHIST yearly zips (mode=b3-backfill). Try 2025 first — yearly zips are large."
         required: false
         default: "2025"
+      rebuild_dashboard:
+        description: "Rebuild https://iliquid-nightly.vercel.app/ after this run. Leave off while filling data — a dashboard build is 25–45 min of SELECTs on the same Postgres."
+        type: boolean
+        default: false
 
 # One writer at a time against the shared Supabase Postgres. This group is
 # shared with backfill.yml on purpose: overlapping ingest runs contend for the
@@ -154,12 +158,16 @@ jobs:
       # database. Concurrent builds are what turned 2026-08-26 into four
       # overlapping 45-minute timeouts and a killed schema apply.
       #
-      # Gated on the secret, self-skipping when unset — same posture as
-      # APIFY_TOKEN, so a fork or a fresh clone is never broken by its absence.
-      # continue-on-error: a failed redeploy must not fail an ingest that
-      # already landed its data.
+      # Dashboard rebuild is OPT-IN. A scheduled daily used to POST
+      # VERCEL_DEPLOY_HOOK_URL whenever the secret was set; that is a 25–45 min
+      # Evidence build (~90 queries, including 4+ min scans of cvm_fi_perfil)
+      # on the same Postgres the ingest just wrote. That overlap is what killed
+      # schema apply on 2026-08-26 and tripped quota. Cron now leaves
+      # https://iliquid-nightly.vercel.app/ frozen. To publish a new snapshot:
+      # Actions → Daily CVM Ingest → rebuild_dashboard = true (and have the
+      # secret set). continue-on-error: a failed hook must not fail ingest.
       - name: Trigger dashboard rebuild (Vercel deploy hook)
-        if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'analytics-only') }}
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.rebuild_dashboard == 'true' }}
         continue-on-error: true
         env:
           VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}

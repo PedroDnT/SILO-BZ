@@ -95,10 +95,11 @@ returned rows. That combination was what let `cvm_fiagro_mensal` sit empty behin
 
 ## 4. Healing gaps (backfill)
 
-**Full / per-year backfill** — GitHub → Actions → **CVM Historical Backfill** → _Run
-workflow_ (inputs: `start_year`, `end_year`). FI runs one job per year in parallel; other
-entities, BACEN and the ETF registry run alongside. A _skip-if-complete_ guard makes
-already-loaded years cheap, so re-dispatching the whole range is the normal move.
+**Entity / per-year backfill** — GitHub → Actions → **CVM Historical Backfill** → _Run
+workflow_ (inputs: `entity`, `start_year`, `end_year`). The default is `fi`; choose one
+entity and a narrow year range. Matrix jobs use `max-parallel: 1`, print
+`cvm_ingest_log`/coverage first, and FI skips a year only when both diario and perfil are
+already complete. Choose `all` only when the database can absorb a full historical run.
 
 **BACEN only (Focus / SGS / PTAX)** — Actions → **CVM Historical Backfill** →
 _Run workflow_ with `bacen_only=true`. Skips every CVM entity and the ETF jobs;
@@ -112,7 +113,7 @@ that were never re-fetched.
 This input has never been dispatched against production (as of the dashboard
 integrity audit). Do not confuse it with a full CVM matrix run.
 
-**One entity** — locally, not Daily Ingest:
+**One entity** — use the Historical Backfill `entity` input, or locally:
 
 ```bash
 python -m src.pipeline.run_backfill --start-year 2019 --cvm-only --entity fidc

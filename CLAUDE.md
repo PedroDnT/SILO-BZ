@@ -199,8 +199,9 @@ project `silo` in team `deloslabs`; any static host also works).
 - `.github/workflows/daily_ingest.yml` — 06:00 UTC daily (`run_daily`) + `workflow_dispatch`
   (`mode=daily|analytics-only|b3-backfill`). It bootstraps the schema
   via `psql` on every run, then `ANALYZE`s the tables.
-- `.github/workflows/backfill.yml` — on-demand full backfill; FI runs one parallel job per year,
-  other entities/BACEN/ETF in parallel, gated on a one-time `apply-schema` job.
+- `.github/workflows/backfill.yml` — on-demand, entity/year-selectable backfill. FI years and
+  other entity jobs use `max-parallel: 1`, inspect coverage first, and are gated on a
+  one-time `apply-schema` job. Default to one entity; `all` is deliberately expensive.
 
 Schema rollout = commit `schema.sql` + a new `migrations/NNN_*.sql`, then either let CI apply it
 or run `scripts/apply_schema.py` against Supabase. Idempotent via `CREATE TABLE IF NOT EXISTS` +
