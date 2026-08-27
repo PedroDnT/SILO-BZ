@@ -103,6 +103,8 @@ entity and a narrow year range. Matrix jobs use `max-parallel: 1`, print
 already complete. Choose `all` only when the database can absorb a full historical run.
 For the known FI balance-sheet gap, set `entity=fi` and `fi_doc_type=balancete`; the
 workflow then checks and fetches only balancete months.
+Before inspecting coverage, the workflow preserves any audit row stuck in `running` for
+more than 24 hours and closes it as `error` with `finished_at` and an explanatory message.
 
 **BACEN only (Focus / SGS / PTAX)** — Actions → **CVM Historical Backfill** →
 _Run workflow_ with `bacen_only=true`. Skips every CVM entity and the ETF jobs;

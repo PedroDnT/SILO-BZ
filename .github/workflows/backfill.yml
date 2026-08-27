@@ -91,6 +91,22 @@ jobs:
               sys.exit(0)
           conn = psycopg2.connect(url, connect_timeout=20)
           cur = conn.cursor()
+          cur.execute("""
+            UPDATE cvm_ingest_log
+            SET status = 'error',
+                finished_at = COALESCE(finished_at, NOW()),
+                error_msg = CONCAT_WS(
+                  '; ',
+                  NULLIF(error_msg, ''),
+                  'Marked stale by backfill coverage inspection after 24 hours'
+                )
+            WHERE status = 'running'
+              AND started_at < NOW() - INTERVAL '24 hours'
+            RETURNING run_id
+          """)
+          stale = cur.fetchall()
+          conn.commit()
+          print(f"Marked {len(stale)} stale running audit row(s) as error")
           print("=== cvm_ingest_log by entity / year / status ===")
           cur.execute("""
             SELECT entity, COALESCE(doc_type, ''), period_year,

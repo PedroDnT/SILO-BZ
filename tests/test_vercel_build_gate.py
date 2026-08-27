@@ -175,3 +175,13 @@ def test_backfill_is_sliceable_serial_and_never_rebuilds_dashboard():
     assert "fi_doc_type:" in text
     assert '--doc-type "${{ inputs.fi_doc_type }}"' in text
     assert "Print ingest_log + coverage snapshot" in text
+    assert "started_at < NOW() - INTERVAL '24 hours'" in text
+    assert "Marked stale by backfill coverage inspection after 24 hours" in text
+
+
+def test_b3_backfill_accepts_an_exact_year_range():
+    text = (ROOT / ".github/workflows/daily_ingest.yml").read_text()
+
+    assert "end_year:" in text
+    assert "--b3-start-year ${{ inputs.start_year }}" in text
+    assert "--end-year ${{ inputs.end_year }}" in text
