@@ -169,10 +169,15 @@ Three questions the data can answer, and where each is answered:
 > Row counts for the four largest ingested tables — a crude but honest measure of
 > depth. Per-table freshness, per-entity ingest status and the full audit log are
 > on [Pipeline Ops](/ops).
+>
+> **≈** — these are Postgres planner estimates (`pg_class.reltuples`), not exact
+> counts. The daily ingest runs `ANALYZE` after every upsert, so they track the
+> true count within ~1%; an exact `count(*)` here means a full scan of tens of
+> millions of rows on every site build.
 
 <DataTable data={row_counts}>
   <Column id=dataset title="Dataset"/>
-  <Column id=rows title="Rows" fmt=num0/>
+  <Column id=rows_est title="Rows (≈)" fmt=num0/>
 </DataTable>
 
 ---
