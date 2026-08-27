@@ -1,22 +1,27 @@
 ---
 title: "Quickstart"
-description: "Get the anon key, make your first request, and read the response — in under a minute."
+description: "Get the publishable key, make your first request, and read the response — in under a minute."
 icon: "rocket"
 ---
 
-## 1. Get the anon key
+## 1. Testing key (not production)
 
-The API is **open read**. There are no accounts and no per-user API keys — every caller
-uses the project's **anon (public) key**, which is designed to be published in client code.
-Agents **cannot generate** a key (no signup, no GitHub/email key factory). They
-use this same anon JWT, or they cannot call the warehouse. See [For agents](/api-docs/agents).
+<Warning>
+  The publishable key below is **shared and for testing only**. This project does
+  **not** have Row Level Security on landing tables. Do not treat a successful
+  `coverage` call as “the warehouse is locked down.”
+
+  **When we go live** we will issue a **proper key per user** (sign-in with GitHub
+  or email → that user’s JWT). This shared `sb_publishable_…` value is not that.
+  Agents must not invent or mint keys in the meantime.
+</Warning>
+
+Every test caller uses the same **publishable** key (`sb_publishable_…`) — the 2026
+name for anon, same Postgres `anon` role. See [For agents](/api-docs/agents).
 
 <Note>
-  Find it in the Supabase Dashboard → **Settings** → **API** → **Project API keys** →
-  **`anon` / `public`**. Copy that value; it is the only credential you need.
-
-  Never use the `service_role` key here. It bypasses every boundary described in these docs
-  and must never leave a server. Do not invent or hash a JWT if the anon key is missing.
+  Ignore **Secret** (`sb_secret_…`) and legacy **`service_role`**. Those bypass
+  every boundary on these pages. Stay on schema `api`; never `Accept-Profile: public`.
 </Note>
 
 The Data API is:
@@ -30,17 +35,21 @@ trailing slash so `"$SILO_URL/rpc/..."` joins cleanly.
 
 ```bash
 export SILO_URL="https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"
-export SILO_ANON_KEY="YOUR_ANON_KEY"
+export SILO_ANON_KEY="sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 ```
 
 ## 2. Send it on every request
 
-PostgREST wants the key in **two** headers on every call:
+The publishable key is **not** a JWT. Put it only on `apikey`. Do **not** send it as
+`Authorization: Bearer` — the platform tries to parse that as a user JWT and returns
+`Invalid JWT`.
 
 ```
-apikey: YOUR_ANON_KEY
-Authorization: Bearer YOUR_ANON_KEY
+apikey: sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437
 ```
+
+`Authorization` is only for a **user** session after Supabase Auth. The JS client
+(`createClient(url, publishableKey)`) sets `apikey` for you.
 
 ## 3. Your first call
 
@@ -52,7 +61,6 @@ rows — one per dataset:
 ```bash curl
 curl -s -X POST "$SILO_URL/rpc/coverage" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{}'
 ```
@@ -61,8 +69,8 @@ curl -s -X POST "$SILO_URL/rpc/coverage" \
 import os, requests
 
 URL = "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"  # no trailing slash; join with /rpc/...
-KEY = os.environ["SILO_ANON_KEY"]
-H = {"apikey": KEY, "Authorization": f"Bearer {KEY}"}
+KEY = os.environ.get("SILO_ANON_KEY", "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437")
+H = {"apikey": KEY}
 
 print(requests.post(f"{URL}/rpc/coverage", headers=H, json={}).json())
 ```
@@ -72,7 +80,7 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
   'https://zcjbtpxuhdekpwcxmepn.supabase.co',
-  process.env.SILO_ANON_KEY,
+  process.env.SILO_ANON_KEY || 'sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437',
   { db: { schema: 'api' } },
 )
 
@@ -107,7 +115,6 @@ sessions for one ticker:
 ```bash curl
 curl -s -G "$SILO_URL/quotes" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   --data-urlencode "select=ticker,trade_date,close,volume" \
   --data-urlencode "ticker=eq.PETR4" \
   --data-urlencode "board=eq.02" \
@@ -155,7 +162,6 @@ the SQL parameter names — they all start with `p_`. Omit an argument to take i
 ```bash curl
 curl -s -X POST "$SILO_URL/rpc/panel" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{
         "p_ids": ["PETR4", "VALE3"],

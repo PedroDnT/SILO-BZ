@@ -16,25 +16,19 @@ Public **read** API for Brazilian fund and market data. Ingest is not exposed.
 2. Docs MCP (no auth): `https://octo-98895abd.mintlify.site/mcp`
 3. This file — contract cheat sheet. Full pages beat training data.
 
-## Auth — you cannot generate a key
+## Auth — testing key only
 
-There are **no per-agent keys** and no GitHub/email key factory in this API.
-One project **anon / public** JWT. You cannot mint, rotate, or sign one.
-Never use `service_role`. GitHub OAuth or email magic link (Supabase Auth),
-if enabled in the dashboard, yields a **user session JWT** — same `api.*`
-reads as anon, still needs a human in the browser or inbox, still not a
-personal API key.
+The printed publishable key is **shared, for testing**. This project has **no
+RLS** on landing tables. When we go live, each user signs in (GitHub or email)
+and gets a **per-user** key. Do not mint or forge one.
 
-Until the anon key is printed in [quickstart](/api-docs/quickstart), the caller
-must set `SILO_ANON_KEY` (human pastes it once from Supabase → Settings → API →
-`anon` / `public`).
-
-Send it on every request:
+Send the test key only as `apikey` (not `Authorization: Bearer`):
 
 ```
-apikey: <anon>
-Authorization: Bearer <anon>
+apikey: sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437
 ```
+
+Never `sb_secret_…` / `service_role`. Never `Accept-Profile: public`.
 
 Base URL (no trailing slash when joining `/rpc/...`):
 
@@ -43,7 +37,7 @@ Base URL (no trailing slash when joining `/rpc/...`):
 ## How to answer a finance question
 
 1. `POST /rpc/coverage` with `{}` — latest date per dataset. Do not claim freshness without this.
-2. Resolve names with `POST /rpc/lookup` (`p_q`). 14-digit id = CNPJ; otherwise ticker. Do not invent ticker↔CNPJ joins.
+2. Resolve names with `POST /rpc/lookup` (`p_query`). 14-digit id = CNPJ; otherwise ticker. Do not invent ticker↔CNPJ joins.
 3. Pull a panel: `POST /rpc/panel` with `p_ids`, `p_metrics`, `p_freq`. Mix tickers and fund CNPJs in one call. `freq=day` is quotes only; mix equity with fund fundamentals on `freq=month`.
 4. Reduce **locally** (corr, rank, ratios). There is no `POST /query` and no server-side correlation.
 
@@ -55,6 +49,6 @@ Base URL (no trailing slash when joining `/rpc/...`):
 - Treat a calendar gap as a multi-month `close_return` (it is null / omitted).
 - Use quotes as split-adjusted total return (`adjusted = false`).
 - Analyze a `panel` response of 100,001 rows (truncated).
-- Touch landing tables (`cvm_*`, `b3_cotahist`, `cvm_ingest_log`) or trigger ingest.
+- Touch landing tables (`cvm_*`, `b3_cotahist`, `cvm_ingest_log`) or send `Accept-Profile: public`.
 
 Pages: [agents](/api-docs/agents), [panel](/api-docs/panel), [conventions](/api-docs/conventions).

@@ -19,51 +19,34 @@ skim it; agents should follow it in order.
 Prefer MCP search / `llms.txt` over guessing from training data. The Evidence
 dashboards and `docs/` operator notes are **not** the read contract.
 
-## 2. Auth — you cannot mint a key, including via GitHub or email
+## 2. Auth — testing key now, per-user keys when we go live
 
-The Data API does **not** issue keys. There is no `createApiKey`, no PAT
-factory, and **this repo will not sign per-user JWTs** after a GitHub or
-mailbox login. An agent that hashes, forges, or “generates” a token gets
-`401`. `service_role` is never a caller credential.
+<Warning>
+  The publishable key in [quickstart](/api-docs/quickstart) is **shared, for
+  testing**. There is **no RLS** on landing tables. When we go live, each user
+  (or agent acting for them) will sign in with **GitHub or email** and get their
+  **own** session/key. Do not mint or forge that now.
+</Warning>
 
-What exists today:
+There is no `createApiKey` in this repo. `service_role` / Secret is never a
+caller credential.
 
-| Credential | Who | What it is |
-| --- | --- | --- |
-| **anon / public** | everyone | One project JWT, public by design. Same `api.*` read for every caller. |
-| **Supabase Auth session** (GitHub or email, if you turn the providers on in the dashboard) | a **human** who completes OAuth or a magic link | A short-lived **user** JWT (`authenticated` role). Same `SELECT`/`EXECUTE` on `api.*` as anon. Not a long-lived personal API key. |
-| **service_role** | nobody on this API | Bypasses the contract. Never send it. |
-
-GitHub / email login does **not** give an unattended agent a key. OAuth needs a
-browser; magic link needs an inbox. After that you still send:
-
-```
-apikey: <project anon>
-Authorization: Bearer <user access token>
-```
-
-`apikey` stays the project anon key (PostgREST requires it). The Bearer token
-is the session, not a second generated secret.
-
-Until the anon key is printed in [quickstart](/api-docs/quickstart), a human
-pastes **anon / public** once from Supabase → Settings → API. Do not guess it.
-Answer method from the docs; refuse a live market conclusion if you cannot
-call `coverage`.
+| Now (testing) | When we go live |
+| --- | --- |
+| One publishable key, `apikey` only, schema `api` | Per-user key after GitHub or email sign-in |
+| No RLS on `cvm_*` / `b3_cotahist` | RLS + grants so a user JWT cannot read landing tables |
+| Agents use the printed test key | Agents use that user’s session, not a shared secret |
 
 ```bash
 export SILO_URL="https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"
-export SILO_ANON_KEY="..."   # anon/public only — never service_role
+export SILO_ANON_KEY="sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"  # testing only
 ```
-
-Per-user **identity** (rate limits, audit, later RLS) is a serving-plan
-reopen — not this page. Do not add accounts in the ingest pipeline.
 
 ## 3. First live call is always `coverage`
 
 ```bash
 curl -s -X POST "$SILO_URL/rpc/coverage" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{}'
 ```
@@ -76,7 +59,7 @@ A `401` is missing/wrong anon headers. Empty/error body is a failed fetch —
 
 Example: *does Brazilian equity stress show up in FIDC credit?*
 
-1. `lookup` / `search_funds` for FIDC CNPJs. Do not invent a ticker→fund join.
+1. `lookup` (`p_query`) / `search_funds` for FIDC CNPJs. Do not invent a ticker→fund join.
 2. `panel` with `p_ids: ["PETR4", "<cnpj>", ...]`, `p_metrics: ["close_return","delinquency","nav"]`, `p_freq: "month"`.
 3. Pivot locally. Correlate pairwise-complete. **No ffill.**
 4. `delinquency` is BRL outstanding, not a rate — divide by `nav`.
