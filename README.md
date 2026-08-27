@@ -1,5 +1,8 @@
 # Brazilian Financial Data Scrapper and handler
 
+> **Status: work in progress.** Ingest is in production and runs nightly; the read API is
+> built but **not yet live**. See [What's next](#whats-next).
+
 Headless ingestion pipeline for Brazilian public financial data. The goal is to maintain
 continuous, verifiable accountability of the fund industry — tracking NAV, delinquency,
 tranche performance, and structural health of every entity type CVM publishes.
@@ -13,11 +16,21 @@ Data sources:
   Landed in `b3_cotahist`; not yet joined to `cia_*` / fund tables.
 
 Data is downloaded, parsed, validated, and upserted into a Supabase Postgres database via psycopg2.
-Dashboards query Supabase directly. Apps should use schema `api` and `serve/`
-([docs/API.md](docs/API.md)) — not landing tables. Ingest is GitHub Actions plus
-the pipeline CLI (`run_daily` / `run_backfill`); there is no ingest HTTP server.
-How we get from “ingested” to “a researcher can pull a panel”:
-[docs/planning/SERVING.md](docs/planning/SERVING.md).
+Ingest is GitHub Actions plus the pipeline CLI (`run_daily` / `run_backfill`); there is no
+ingest HTTP server.
+
+**Reading the data.** Three surfaces, one contract — schema `api`, never the landing tables:
+
+| Surface                     | What it is                                                        | Status                                                          |
+| --------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------- |
+| **Supabase Data API**       | PostgREST over schema `api` at `/rest/v1/`, anon key, public read | the intended public path — needs `api` added to Exposed Schemas |
+| **`serve/`**                | local read-only Flask adapter (`python -m serve.app`)             | for notebooks and development                                   |
+| **`dashboard/`, `webapp/`** | Evidence.dev sites                                                | read Supabase at **build** time into parquet                    |
+
+Docs: [api-docs/quickstart.mdx](api-docs/quickstart.mdx) for callers,
+[docs/API.md](docs/API.md) for the contract and its edge cases,
+[docs/planning/SERVING.md](docs/planning/SERVING.md) for how "ingested" becomes
+"a researcher pulls a panel" (steps 0–7; 3 and 6 gate public HTTP).
 
 > A previous version exposed three FastAPI services + a gateway, a Solana "Delos Oracle"
 > experiment, and a localhost ingest Flask control plane (`app.py` / `src/api/`); those
@@ -78,22 +91,34 @@ wired (see `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`, `cvm_secur
 ```text
 .
 ├── src/
-│   ├── fetchers/
+│   ├── fetchers/               # HTTP/SDK calls only — no parsing, no storage
 │   │   ├── cvm_fetcher.py      # CVMFetcher.fetch(entity, doc_type, year, month)
 │   │   ├── cvm_config.py       # URL templates + dataset configs (entity × doc_type matrix)
-│   │   └── bacen_fetcher.py    # BacenClient (SGS/PTAX/Expectativas/TaxaJuros)
+│   │   ├── bacen_fetcher.py    # BacenClient (SGS/PTAX/Expectativas/TaxaJuros)
+│   │   ├── b3_fetcher.py       # public COTAHIST daily/yearly quotation zips
+│   │   ├── cia_fetcher.py      # listed-company (CIA Aberta) filings
+│   │   └── apify_etf_fetcher.py# ETF market scrape (gated on APIFY_TOKEN)
 │   ├── parsers/
+│   │   ├── mapping.py          # the declarative FIELD_MAP engine + coercions
 │   │   ├── validation.py       # CNPJ / date / numeric / record validators
-│   │   └── field_maps/         # Per-dataset typed column → CSV header mappings
+│   │   └── field_maps/         # per-dataset CSV header → typed DB column
 │   ├── store/
-│   │   ├── pg_client.py        # get_pg_client(), upsert_rows() — psycopg2/Supabase
-│   │   └── schema.sql          # canonical CVM + BACEN schema (tables + audit log)
-│   ├── pipeline/
-│   │   ├── cvm_pipeline.py     # CVMIngestor — orchestrates fetch+store for CVM
-│   │   ├── bacen_pipeline.py   # BacenIngestor — orchestrates fetch+store for BACEN
-│   │   ├── run_backfill.py     # CLI: full historical backfill
-│   │   └── run_daily.py        # CLI: incremental daily update
-├── serve/                      # read-only HTTP over schema api (`python -m serve.app`)
+│   │   ├── pg_client.py        # get_pg_client(), upsert_rows() — the ONLY DB door
+│   │   ├── schema.sql          # canonical schema (tables + audit log)
+│   │   ├── migrations/         # NNN_*.sql, append-only — never edit a historical one
+│   │   └── analytical/         # 01–19: dims, fact matviews, screens, rankings, schema api
+│   ├── pipeline/               # wires fetch→parse→store, writes cvm_ingest_log
+│   │   ├── cvm_pipeline.py     # CVMIngestor — the (entity, doc_type) orchestrator
+│   │   ├── bacen_pipeline.py   # BacenIngestor
+│   │   ├── b3_pipeline.py      # B3Ingestor (COTAHIST)
+│   │   ├── anbima_pipeline.py  # ANBIMA boletim
+│   │   ├── ingest_<entity>.py  # per-entity ingest_* methods (fi, fidc, fii, securit, cia…)
+│   │   ├── run_daily.py        # CLI: incremental daily update
+│   │   └── run_backfill.py     # CLI: full historical backfill
+├── serve/                      # read-only local adapter over schema api
+│   ├── app.py                  # `python -m serve.app` — 127.0.0.1:8080, NOT an ingest trigger
+│   ├── pool.py                 # one pooled client per process
+│   └── catalog.py              # machine-readable metric catalog (CATALOG_VERSION)
 ├── dashboard/                  # Evidence.dev analytics dashboard
 │   ├── pages/                  # Markdown-based pages + embedded SQL queries
 │   ├── sources/
@@ -102,22 +127,36 @@ wired (see `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`, `cvm_secur
 ├── webapp/                     # Evidence.dev CIA Aberta (listed-company) analytics
 │   ├── pages/                  # Listed-company financials & events
 │   └── README.md               # Webapp-specific setup
-├── tests/                      # offline pytest suite
-├── scripts/
-│   ├── seed_local_db.py        # Fetch real CVM data → local Postgres for offline testing
-│   ├── run_analysis_local.py   # Run 11 verification queries against local DB
-│   ├── verify_pipeline.py      # Run verification queries against live Supabase DB
-│   ├── analysis_queries.sql    # 11 SQL queries: data presence, null rates, business metrics
-│   └── explore_cvm_output.py   # Utility for inspecting raw CVM ZIP/CSV structure
-├── docs/
-│   ├── supabase_operations.md  # Supabase project / connection / ops notes
+├── tests/                      # offline pytest suite (DB + HTTP mocked)
+├── scripts/                    # operator + dev tooling — see scripts/README.md
+│   ├── apply_analytical.sh     # build the analytical layer (01–19) after ingest
+│   ├── verify_pipeline.py      # quality gate against live Supabase
+│   ├── seed_local_db.py        # offline: real CVM data → local DuckDB
+│   ├── vercel_should_build.sh  # Vercel ignoreCommand (0 SKIPS, 1 BUILDS)
+│   └── queries/                # 13 numbered read-only SQL files
+├── docs/                       # prose docs (NOT published; see .mintignore)
+│   ├── API.md                  # the read contract, and the Supabase-native decision
+│   ├── DATABASE_MAINTENANCE.md # upkeep runbook: checks, cadence, partition rollover
+│   ├── DATA_MODELING.md        # read before adding a new CLASS of data
+│   ├── ETF_AND_PERFORMANCE.md  # why etf_daily is empty post-CVM-175
+│   ├── supabase_operations.md  # connection / pooler / ops notes
 │   └── planning/
-│       └── CHANGELOG.md        # Workstream history (W0-W2)
-├── .github/workflows/
-│   ├── test.yml                # pytest on PR/push (pip + .pytest_cache); api-smoke on dispatch
-│   ├── daily_ingest.yml        # cron @ 06:00 UTC + workflow_dispatch
-│   ├── watchdog.yml            # cron @ 08:00 UTC — self-healing staleness re-run
-│   └── backfill.yml            # on-demand full historical backfill
+│       ├── CHANGELOG.md        # workstream history
+│       └── SERVING.md          # ingested → researcher pulls a panel (steps 0–7)
+├── api-docs/                   # PUBLISHED Mintlify pages (quickstart + reference)
+├── index.mdx                   # published docs landing page
+├── docs.json                   # Mintlify config: theme + navigation
+├── .mintignore                 # keeps Evidence template markdown out of the MDX parser
+├── vercel.json                 # dashboard build config + ignoreCommand
+├── .githooks/                  # pre-commit: blocks credentialed URLs, bad syntax
+├── apify/                      # ETF market scrape actor (gated on APIFY_TOKEN)
+├── .github/
+│   ├── actions/apply-schema/   # composite action: schema + migrations, lock-guarded
+│   └── workflows/
+│       ├── test.yml            # pytest on PR/push; api-smoke on dispatch
+│       ├── daily_ingest.yml    # cron @ 06:00 UTC + workflow_dispatch
+│       ├── watchdog.yml        # cron @ 08:00 UTC — self-healing staleness re-run
+│       └── backfill.yml        # on-demand full historical backfill
 ├── requirements.txt
 └── .env.example
 ```
@@ -165,10 +204,10 @@ Each CVM entity gets one or more tables per data release frequency:
 
 ### Audit & Market Data
 
-| Table                 | Purpose                                                                     | Key                                                       |
-| --------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `cvm_ingest_log`      | Ingest run audit trail (entity, doc_type, period, rows_upserted, error_msg) | `(run_id)`, index: `(entity, doc_type, period_year DESC)` |
-| `etf_market_snapshot` | ETF scraped snapshots (nav, price, yields, volatility, drawdown)            | `(ticker, snapshot_date)`                                 |
+| Table                 | Purpose                                                                                                            | Key                                                       |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| `cvm_ingest_log`      | Ingest run audit trail (entity, doc_type, period, rows_upserted, error_msg)                                        | `(run_id)`, index: `(entity, doc_type, period_year DESC)` |
+| `etf_market_snapshot` | ETF scraped snapshots (nav, price, yields, volatility, drawdown)                                                   | `(ticker, snapshot_date)`                                 |
 | `b3_cotahist`         | B3 COTAHIST quotes (unadjusted OHLC, volume, ticker, ISIN). Serve cash via `vw_b3_quote_vista` (`tpmerc = '010'`). | `(codneg, trade_date, tpmerc, codbdi, prazot)`            |
 
 **Total: 20 tables across 11 logical domains (FI, FIDC, FII, FIP, FIAGRO, SECURIT, Registry, BACEN, Audit, ETF, B3).**
@@ -355,13 +394,76 @@ rows do not.
 - Required GitHub secret: `POSTGRES_URL` (Supabase connection string with `sslmode=require`).
 
 The read-only **Evidence.dev dashboard** (`dashboard/`) deploys separately to **Vercel**
-(project `iliquid-nightly`, primary live target); it can also be served as a static build on
-any static host. It only reads from Supabase.
+(project `silo`, team `deloslabs`); it can also be served as a static build on any static
+host. It only reads from Supabase.
+
+The dashboard is a **static snapshot, not a live view**. `npm run sources` extracts
+Supabase into parquet at build time, and the browser then queries that parquet through
+DuckDB-WASM. So fresh rows reach the site only when a build runs — which has two
+consequences worth knowing:
+
+- **Not every commit builds.** `vercel.json`'s `ignoreCommand` runs
+  `scripts/vercel_should_build.sh`, which builds only when `dashboard/`, `vercel.json`,
+  or that script changed. A build fires ~90 queries at production Supabase and takes
+  25–45 minutes, so rebuilding for a tests-only commit burned that for a byte-identical
+  site — and concurrent builds were slow enough to block the schema apply's `ALTER TABLE`
+  until Postgres killed it.
+- **Data refreshes come from a deploy hook, not from pushes.** After the analytical layer,
+  `daily_ingest.yml` POSTs `VERCEL_DEPLOY_HOOK_URL` (optional secret; the step self-skips
+  when unset). Without that secret the published numbers are only as fresh as the last
+  `dashboard/` commit.
+
+Schema applies run with `lock_timeout` and retries (`.github/actions/apply-schema`): a
+blocked `ALTER TABLE` gives up in seconds instead of queueing and blocking every reader
+behind it. `statement_timeout` stays unbounded so a genuinely slow migration is never
+killed mid-flight.
 
 To roll out schema changes, commit `src/store/schema.sql` and any new
 `src/store/migrations/*.sql`, then run `python scripts/apply_schema.py` against
 the Supabase project (it applies the base schema and every migration in order).
 The DDL uses `CREATE TABLE IF NOT EXISTS` and named UNIQUE constraints, so re-applying is idempotent.
+
+## What's next
+
+The pipeline is production-grade and runs unattended; **serving is the open front**.
+Everything below is either an operator action or a known defect — none of it is
+speculative roadmap.
+
+### Blocking the API going live
+
+1. **Apply the serving SQL.** Actions → Daily Ingest → `workflow_dispatch`,
+   `mode=analytics-only`. This applies the row caps, the `silo_api` role,
+   `SET search_path = ''`, and the landing-table REVOKEs. Until it succeeds,
+   production's `api` schema is the **pre-caps** version.
+   Run it when no Vercel build is in flight — concurrent dashboard builds hold locks on
+   `cvm_fi_perfil` and have blocked this apply before (now bounded by `lock_timeout`).
+2. **Expose the schema.** Supabase Dashboard → Settings → API → add `api` to
+   **Exposed schemas**. That is the whole deployment; there is no gateway and no host.
+   Do this only after step 1 — exposing the uncapped version puts an unbounded
+   `api.panel` on the public internet.
+3. **Verify** with the `curl` in [api-docs/quickstart.mdx](api-docs/quickstart.mdx).
+
+### Known defects
+
+- **`etf_daily` matview refresh fails on every daily run**
+  (`"etf_daily" is not a table or materialized view`). The ETF page depends on it.
+  Diagnosing needs the production `relkind` for that relation.
+- **`mv_savings_flow_monthly` is granted to `anon`** in both `public` and `api`
+  (`18_savings_flow.sql`), so exposing `api` publishes an endpoint the contract in
+  `19_api_contract.sql` says should not exist. Either document it or revoke it.
+- **Dashboard builds are slow** (~25 min). The remaining cost is `fi_investor_mix`
+  (4m19) and `fi_investor_split` (3m13), which scan `cvm_fi_perfil` across 24 months.
+  Optimizing them needs `EXPLAIN ANALYZE` against real data.
+
+### Deferred by design
+
+- **Historical backfills** for `securit` and `fidc` — the daily window only heals the
+  trailing months, so deep history for the recently-fixed field maps needs `backfill.yml`.
+- **`VERCEL_DEPLOY_HOOK_URL`** — until set, the dashboard refreshes only on `dashboard/`
+  commits, not on new data.
+- **`APIFY_TOKEN`** — the ETF market scrape self-skips without it.
+- **B3 ↔ fund/company join.** `b3_cotahist` is landed but not joined to `cia_*`; a
+  ticker↔CNPJ mapping has to come from a real source, never a guess.
 
 ## Execution roadmap
 
@@ -383,10 +485,20 @@ administrator-gestor classification (13), fraud screens (15), and per-asset-clas
 ETF performance ranking functions (16–17) — plus the Evidence `dashboard/` (on Vercel)
 with Performance and ETF pages.
 
+Current work is **serving**, tracked in `docs/planning/SERVING.md`. Steps 0–2 (the `api`
+contract, the agent catalog, the SQL applied) and steps 3 + 6 (row caps inside the `api`
+functions, the `silo_api` role, `SET search_path = ''` on every SECURITY DEFINER function,
+and REVOKEs on the landing tables) are done in the repo. **Step 7 no longer applies**:
+serving is Supabase-native, so there is no gateway to stand up.
+
+What remains is operational, not code: run `analytics-only` to apply the serving SQL to
+production, then add `api` to Supabase's Exposed Schemas. Until that apply succeeds,
+production's `api` schema is the pre-caps version — see `docs/planning/SERVING.md`.
+
 ## What's intentionally not here
 
 - **No ingest REST API, and no PostgREST dump of landing tables.** The pipeline writes to Supabase via GitHub Actions and the CLI. Apps read schema `api` via `serve/` ([docs/API.md](docs/API.md)). The old localhost ingest Flask (`app.py` / `src/api/`) is deleted.
-- **No fabricated quotes.** The old `b3_calc_api` (non-B3 domain + hard-coded sample dicts) stays deleted. Historical quotations come from B3's public COTAHIST zips (`src/fetchers/b3_fetcher.py` → `b3_cotahist` → `api.quotes`). Missing tickers are 404, never a guessed last close.
+- **No fabricated quotes.** The old `b3_calc_api` (non-B3 domain + hard-coded sample dicts) stays deleted. Historical quotations come from B3's public COTAHIST zips (`src/fetchers/b3_fetcher.py` → `b3_cotahist` → `api.quotes`). An unknown ticker returns an empty result, never a guessed last close — `404` from `serve/`, `200 []` from PostgREST, which has no adapter to shape the error. Same contract, different status code.
 - **No local Postgres / Docker / Alembic.** Supabase Postgres is the single source of truth. Use `scripts/seed_local_db.py`
   with a local Postgres for offline testing.
 - **No Solana oracle.** The Delos Oracle experiment is out of scope.
