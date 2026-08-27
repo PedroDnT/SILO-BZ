@@ -600,16 +600,25 @@ STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
+    WITH latest_quote_session AS (
+        -- Universe is discovery, not historical coverage. Restrict B3 to one
+        -- real session so a sparse type such as BDR does not classify and sort
+        -- the entire multi-year COTAHIST tape under the 15s API timeout.
+        SELECT max(q.trade_date) AS trade_date
+        FROM api.quotes q
+    ),
+    quote_rows AS (
+        SELECT DISTINCT ON (q.ticker)
+            q.ticker, q.asset_class, q.short_name, q.isin
+        FROM api.quotes q
+        JOIN latest_quote_session s ON s.trade_date = q.trade_date
+        WHERE q.board = '02'
+          AND (p_asset_class IS NULL OR q.asset_class = lower(p_asset_class))
+        ORDER BY q.ticker
+    )
     SELECT * FROM (
         SELECT q.ticker, 'ticker'::text, q.asset_class, q.short_name, q.isin
-        FROM (
-            SELECT DISTINCT ON (ticker)
-                ticker, asset_class, short_name, isin
-            FROM api.quotes
-            WHERE board = '02'
-            ORDER BY ticker, trade_date DESC
-        ) q
-        WHERE p_asset_class IS NULL OR q.asset_class = lower(p_asset_class)
+        FROM quote_rows q
         UNION ALL
         SELECT d.cnpj, 'cnpj', d.entity_type, d.fund_name, NULL
         FROM public.dim_fund d

@@ -7,6 +7,8 @@ icon: "list"
 `universe` lists identifiers by asset class, in the same `(id, id_type, asset_class, name,
 isin)` shape for tickers and funds alike. Use it to discover what exists; use
 [`lookup`](/api-docs/lookup) when you already have a name or code in hand.
+The B3 arm is deliberately a snapshot of the latest loaded trading session, not a scan of
+every historical ticker.
 
 ```sql
 api.universe(p_asset_class TEXT DEFAULT NULL,
@@ -101,8 +103,8 @@ properly:
 
 - Funds — `GET /funds?entity_type=eq.fidc&order=cnpj.asc&limit=1000&offset=0`
   (see [Funds](/api-docs/funds))
-- Tickers — `GET /quotes?select=ticker&board=eq.02&trade_date=eq.<session>` for a session's
-  full board
+- Tickers — `GET /quotes?select=ticker,asset_class&board=eq.02&trade_date=eq.<session>` for
+  a session's full board
 
 [`search_funds`](/api-docs/funds) is the better tool when you want the *largest* funds of a
 type: it orders by latest AUM, where `universe` orders alphabetically.

@@ -222,6 +222,13 @@ def test_b3_asset_type_reaches_every_discovery_and_panel_surface():
     assert "q.asset_class" in FUNCS["api.lookup"]
 
 
+def test_universe_classifies_only_the_latest_b3_session():
+    chunk = FUNCS["api.universe"]
+    assert "latest_quote_session AS" in chunk
+    assert "SELECT max(q.trade_date)" in chunk
+    assert "s.trade_date = q.trade_date" in chunk
+
+
 def test_ingest_log_summary_not_executable_by_clients():
     body = _strip_comments(SQL12)
     assert not re.search(
