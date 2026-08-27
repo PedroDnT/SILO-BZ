@@ -195,11 +195,16 @@ title="Run Status per Day"
 > Expect a structural lag: CVM publishes monthly datasets 1–2 months in arrears,
 > so a `Days Stale` of 30–90 on a monthly table is normal. An **empty** table
 > sorts to the top with a blank date.
+>
+> `Newest Row` and `Days Stale` are exact. **`Rows (≈)` is a planner estimate**
+> (`pg_class.reltuples`, refreshed by the `ANALYZE` the daily ingest runs after
+> each upsert — within ~1% of truth); a `0` means the table has never been
+> analyzed. Exact counts here cost a full scan of every table on every build.
 
 <DataTable data={ops_table_freshness} rows=10>
   <Column id=table_name title="Table"/>
   <Column id=date_column title="Date Column"/>
-  <Column id=n_rows title="Rows" fmt=num0/>
+  <Column id=n_rows_est title="Rows (≈)" fmt=num0/>
   <Column id=latest title="Newest Row"/>
   <Column id=days_stale title="Days Stale" fmt=num0/>
 </DataTable>

@@ -1,0 +1,178 @@
+---
+title: "Conventions & limits"
+description: "Base URL, auth headers, filter syntax, row caps, null semantics, and error behavior shared by every endpoint."
+icon: "ruler"
+---
+
+## Base URL
+
+```
+https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/
+```
+
+Everything below is relative to that. Views are `GET /<view>`; functions are
+`POST /rpc/<function>`.
+
+## Authentication
+
+Open read with the project's public **anon key** on every request, in both headers:
+
+```
+apikey: YOUR_ANON_KEY
+Authorization: Bearer YOUR_ANON_KEY
+```
+
+Get the key from the Supabase Dashboard → **Settings** → **API** → **Project API keys** →
+**`anon` / `public`**. There are no user accounts and no per-caller keys; the anon key is
+public by design and safe to ship in a browser bundle.
+
+What the anon role can reach is exactly what these pages document: `USAGE` on schema `api`,
+`SELECT` on the two `api` views, and `EXECUTE` on the `api` functions. It has **no** grant
+on the landing tables — `cvm_*`, `b3_cotahist`, `cvm_ingest_log`, `dim_fund`,
+`vw_b3_quote_vista` are unreachable, by design. The views are owner-privileged and the
+functions are `SECURITY DEFINER`, so the grant list on those nine objects *is* the boundary.
+
+<Note>
+  If the project exposes more than one schema and `api` is not the default, add
+  `Accept-Profile: api` to `GET` requests and `Content-Profile: api` to `POST` requests.
+</Note>
+
+## Two shapes of endpoint
+
+<CardGroup cols={2}>
+  <Card title="Views — GET" icon="table-cells">
+    `api.quotes` and `api.funds`. Read with PostgREST query syntax: `select=`, column
+    filters, `order=`, `limit=`, `offset=`.
+  </Card>
+  <Card title="Functions — POST /rpc" icon="function">
+    Nine functions. Named arguments in a JSON body, all prefixed `p_`. The result set can be
+    further shaped with the same query-string operators.
+  </Card>
+</CardGroup>
+
+### Filter syntax (views, and function results)
+
+| Form | Meaning |
+| --- | --- |
+| `select=a,b,c` | Project columns. Omit for all columns. |
+| `col=eq.VALUE` | Equal |
+| `col=gte.2024-01-01` | Greater than or equal (also `gt`, `lte`, `lt`, `neq`) |
+| `col=in.(A,B)` | One of |
+| `col=is.null` | Is null (`not.is.null` for the negation) |
+| `order=col.desc` | Sort (`.asc`, plus `.nullslast`) |
+| `limit=100&offset=100` | Page |
+| `Prefer: count=exact` header | Add a total row count to the `Content-Range` header |
+
+Because functions return table types, the same operators work on an RPC call's result — for
+example `POST /rpc/fund_nav?select=period,nav&order=period.desc`. They are applied **after**
+the function's own cap, so they narrow what you receive, not what the database computes.
+
+### Function arguments
+
+Argument names are the SQL parameter names, e.g. `p_ticker`, `p_from`, `p_metrics`. Sending
+an unknown name fails with `PGRST202` ("Could not find the function ... in the schema
+cache") — the function is matched by its argument set, so a typo looks like a missing
+function.
+
+<Warning>
+  **Omitting an argument is not the same as sending `null`.** A default applies only when the
+  argument is absent from the JSON body. Sending `"p_from": null` makes the SQL comparison
+  `trade_date BETWEEN null AND ...`, which matches nothing and returns an empty array.
+
+  The one deliberate exception is `p_board`: an explicit `null` there means "all boards".
+</Warning>
+
+## Dates, ids, and case
+
+- Dates are ISO `YYYY-MM-DD`. Ranges use `BETWEEN` — **both ends inclusive**.
+- Tickers are upper-cased and trimmed server-side, so `petr4` works.
+- CNPJs are stripped to their 14 digits, so `12.345.678/0001-90` and `12345678000190` are
+  the same input.
+- In `panel`, an id is read as a **CNPJ if it has exactly 14 digits** after non-digits are
+  stripped, and as a **ticker otherwise**. There is no separate parameter for the two.
+- Monthly grains are keyed on the **first day of the month** (`2026-06-01` means June 2026).
+
+## Row caps
+
+Every set-returning function stops at a hard `LIMIT`. The caps are `cap + 1` on purpose: a
+response of exactly `cap + 1` rows is the signal that your request was **too large**, and
+lets a client tell "too large" apart from "complete" instead of silently handing back a
+truncated — that is, fabricated — result.
+
+| Endpoint | Cap | You received the cap when |
+| --- | --- | --- |
+| [`panel`](/api-docs/panel) | 100,001 rows | `len(rows) == 100001` |
+| [`quote_history`](/api-docs/quotes) | 5,001 rows | `len(rows) == 5001` |
+| [`fund_nav`](/api-docs/funds) | 5,001 rows | `len(rows) == 5001` |
+| [`universe`](/api-docs/universe) | 500 rows | `p_limit` is clamped into `1..500` |
+| [`search_funds`](/api-docs/funds) | 200 rows | `p_limit` is clamped into `1..200` |
+| [`lookup`](/api-docs/lookup) | 20 rows | — |
+| [`quote_latest`](/api-docs/quotes) | 1 row | — |
+| [`coverage`](/api-docs/coverage) | 3 rows | — |
+
+<Warning>
+  **A capped response is not a valid dataset.** The cut is deterministic (`panel` orders by
+  `date, id, metric`; the series functions keep the oldest rows), but it is still an
+  arbitrary slice of what you asked for. Do not correlate it, rank it, or chart it — narrow
+  the ids, metrics, or date window and call again.
+</Warning>
+
+Requests are also bounded by the Supabase platform `statement_timeout` on the API roles. A
+query that exceeds it fails with an error, and never returns a partial result.
+
+## Nulls, gaps, and what "missing" looks like
+
+<Warning>
+  Missing observations are **never** filled. No forward-fill, no interpolation, no
+  last-observation-carried-forward, no synthesized month-end bar. If you need a dense
+  matrix, densify it in your notebook where the choice is visible.
+</Warning>
+
+Missing data shows up in two distinct ways, and the difference matters:
+
+- **An absent row.** In `panel`, a metric with no observation for that `(id, date)` produces
+  no row at all — the derived and fund-side arms filter `value IS NOT NULL` before emitting.
+  Pivot to a wide matrix locally and the gap becomes a null cell.
+- **A null column value.** In the quote view and the series functions, a column the source
+  did not publish for that session or month comes back as JSON `null`. `panel`'s `close` and
+  `volume` arms can likewise carry a null `value`.
+
+Specific guarantees worth repeating:
+
+- **`close_return` across a gap is null**, and therefore absent from `panel`. A monthly
+  return is computed only when the previous row is the immediately preceding calendar month.
+  A missing month never becomes a two-month return.
+- **`freq=day` is quotes only.** No fund fundamental is daily; asking for `freq=day` with
+  fund metrics returns the quote rows and nothing else. Mix asset classes on `freq=month`,
+  where the equity value is the **last real session of the month**, not an invented month-end.
+- **Prices are unadjusted.** Every quote row carries `adjusted: false`. There is no split or
+  dividend adjustment anywhere in this API — do not compare a long price history across a
+  corporate action without handling it yourself.
+- **Identifier matches are never invented.** `lookup` will not join a ticker to a listed
+  company's CNPJ; it returns each match separately, by the key that actually matched.
+
+## Errors and empty results
+
+PostgREST returns a JSON array on success. There is no envelope, no `count`, no `kind`.
+
+| Status | Body | Meaning |
+| --- | --- | --- |
+| `200` | `[...]` | Rows. |
+| `200` | `[]` | **Known query, no matching data.** An unknown ticker, an unknown CNPJ, or a real ticker with no sessions in the window all land here. This is the "never fabricate" rule in action — an empty array, never a guessed last close. |
+| `400` | `{"code":"42883",...}` / `PGRST` codes | Malformed filter, bad argument type, or an out-of-range date. |
+| `401` | `{"message":"Invalid API key"}` | Missing or wrong `apikey` / `Authorization` header. |
+| `404` | `PGRST202` | No function with that name **and argument set**. Check the `p_` names. |
+| `406` | — | You asked for a single object (`Accept: application/vnd.pgrst.object+json`) and the result had zero or more than one row. |
+
+<Note>
+  An empty array carries no information about *why* it is empty. Use
+  [`lookup`](/api-docs/lookup) to confirm the identifier exists and
+  [`coverage`](/api-docs/coverage) to confirm the date range is loaded, rather than
+  inferring either from an empty result.
+</Note>
+
+## Caching
+
+History whose end date is in the past is immutable and safe to cache aggressively
+(a day is reasonable). The latest session changes daily after the ingest cron runs — keep
+that short (minutes). `coverage` tells you when each dataset was last extended.

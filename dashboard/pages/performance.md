@@ -94,10 +94,10 @@ Performance is ranked **within** each asset class on a basis appropriate to that
 class, and the basis travels with every row so numbers are never mixed across
 classes:
 
-| Asset class                              | Basis            | Meaning                                                                         |
-| ---------------------------------------- | ---------------- | ------------------------------------------------------------------------------- |
-| FI (Fixed Income / Equity / Multimarket) | `quota_return`   | last/first `vl_quota` − 1 (a true NAV return)                                   |
-| FII (Real Estate)                        | `dividend_yield` | compounded monthly dividend yield                                               |
+| Asset class                              | Basis            | Meaning                                       |
+| ---------------------------------------- | ---------------- | --------------------------------------------- |
+| FI (Fixed Income / Equity / Multimarket) | `quota_return`   | last/first `vl_quota` − 1 (a true NAV return) |
+| FII (Real Estate)                        | `dividend_yield` | compounded monthly dividend yield             |
 
 FIDC, FIAGRO and FIP are deliberately absent. Their available `vl_patrim_liq`
 series measures the size of the vehicle after subscriptions, redemptions and
@@ -120,9 +120,7 @@ largely missing.
 For a single fund's trajectory over time — per-period return and cumulative
 return on its class basis — call:
 
-```text
-select * from fund_performance_series('<cnpj>', '2019-01-01', current_date);
-```
+    select * from fund_performance_series('<cnpj>', '2019-01-01', current_date);
 
 It returns `period, return_basis, level_value, period_return, cumulative_return`
 for that fund: the time-series companion to the cross-sectional ranking above.

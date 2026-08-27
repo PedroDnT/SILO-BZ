@@ -1,0 +1,120 @@
+---
+title: "Lookup"
+description: "Resolve a ticker, ISIN, CNPJ, fund name, or company name to the identifiers this API accepts."
+icon: "magnifying-glass"
+---
+
+`lookup` turns something a human typed into something [`panel`](/api-docs/panel),
+[`quotes`](/api-docs/quotes), or [`funds`](/api-docs/funds) will accept. It searches three
+populations at once — B3 tickers, CVM funds, and listed companies — and returns whatever
+matched, tagged with the key that matched it.
+
+```sql
+api.lookup(p_query TEXT)
+```
+
+<Warning>
+  **It does not invent identifier matches.** There is no ticker ↔ CNPJ join here. If a query
+  matches both a ticker and a listed company, you get two rows and it is your call whether
+  they are the same entity. A confident-looking cross-reference we cannot prove is exactly
+  the kind of fabrication this API refuses to make.
+</Warning>
+
+## Parameters
+
+<ParamField body="p_query" type="string" required>
+  What to resolve. Matching differs by population:
+
+  - **Ticker** — exact match, upper-cased and trimmed. No substring search.
+  - **ISIN** — exact match, upper-cased and trimmed.
+  - **CNPJ** — non-digits are stripped, then matched exactly. Works for both funds and
+    listed companies.
+  - **`cd_cvm`** — exact match against the CVM company code.
+  - **Fund name / company name** — case-insensitive **substring**.
+</ParamField>
+
+<Note>
+  Because names are matched as substrings, an empty string or a single common letter matches
+  nearly every fund and company and you get an arbitrary 20 of them. Send something specific.
+</Note>
+
+## Returns
+
+<ResponseField name="id" type="text">
+  The identifier to use in other calls: a ticker, a 14-digit CNPJ, or a `cd_cvm`.
+</ResponseField>
+<ResponseField name="id_type" type="text">
+  `ticker`, `cnpj`, or `cd_cvm` — tells you which endpoint accepts this `id`.
+</ResponseField>
+<ResponseField name="asset_class" type="text">
+  `equity` for tickers, the fund's `entity_type` (`fi`, `fidc`, `fii`, `fip`, `fiagro`) for
+  funds, and `cia` for listed companies.
+</ResponseField>
+<ResponseField name="name" type="text">
+  Short name for a ticker, registered fund name, or company name. Nullable for funds whose
+  registry name we do not hold.
+</ResponseField>
+<ResponseField name="isin" type="text">
+  ISIN — populated for tickers only; null for funds and companies.
+</ResponseField>
+<ResponseField name="cnpj" type="text">
+  The entity's CNPJ, for funds and companies. **Always null on ticker rows** — again, no
+  invented ticker-to-issuer match.
+</ResponseField>
+
+## Example
+
+<CodeGroup>
+
+```bash curl
+curl -s -X POST "$SILO_URL/rpc/lookup" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Authorization: Bearer $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_query":"PETR4"}'
+```
+
+```python Python
+rows = requests.post(
+    f"{URL}/rpc/lookup", headers=H, json={"p_query": "PETR4"}
+).json()
+```
+
+```javascript JavaScript
+const { data } = await supabase.rpc('lookup', { p_query: 'PETR4' })
+```
+
+</CodeGroup>
+
+```json
+[
+  { "id": "PETR4", "id_type": "ticker", "asset_class": "equity",
+    "name": "PETROBRAS", "isin": "BRPETRACNPR6", "cnpj": null }
+]
+```
+
+A name query spans populations:
+
+```json
+[
+  { "id": "12345678000190", "id_type": "cnpj", "asset_class": "fidc",
+    "name": "EXAMPLE FIDC MULTISETORIAL", "isin": null, "cnpj": "12345678000190" },
+  { "id": "01234", "id_type": "cd_cvm", "asset_class": "cia",
+    "name": "EXAMPLE PARTICIPACOES S.A.", "isin": null, "cnpj": "98765432000110" }
+]
+```
+
+## Limits and ordering
+
+- **At most 20 rows**, across all three populations combined.
+- **No defined ordering.** If more than 20 rows match, which 20 you receive is arbitrary and
+  may change between calls. Narrow the query rather than paging — there is no offset that
+  would help.
+- Ticker rows are drawn from board `02` only, so a paper that never printed on the standard
+  lot will not resolve here.
+
+## Empty results
+
+No match returns `200 []`. That means the string did not match any ticker, ISIN, CNPJ,
+`cd_cvm`, fund name, or company name we hold — not that the entity does not exist. Check
+spelling, then [`coverage`](/api-docs/coverage) to confirm the dataset is loaded.

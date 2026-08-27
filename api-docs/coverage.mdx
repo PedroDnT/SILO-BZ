@@ -1,0 +1,92 @@
+---
+title: "Coverage"
+description: "Latest loaded date per dataset — check it before you claim anything is current."
+icon: "calendar-check"
+---
+
+`coverage` answers one question: **how far does the data actually go?** Three rows, no
+arguments, no filters.
+
+```sql
+api.coverage()
+```
+
+Call it before reporting a "latest" figure, before deciding an empty result means a fund
+stopped filing, and before treating a series as up to date. It is the only endpoint that
+tells you where the warehouse ends — the others just return fewer rows.
+
+## Parameters
+
+None. Send an empty JSON body.
+
+## Returns
+
+Exactly three rows, one per dataset:
+
+<ResponseField name="dataset" type="text">
+  `quotes`, `funds`, or `fund_nav`.
+
+  - **`quotes`** — the most recent B3 cash session stored, across all tickers and boards.
+  - **`funds`** — the most recent filing period in the fund registry, across all vehicles.
+  - **`fund_nav`** — the most recent period in the monthly fundamentals fact.
+</ResponseField>
+<ResponseField name="as_of" type="date">
+  The maximum date for that dataset. **Nullable** — a null means the dataset is empty, which
+  is a real answer, not an error.
+</ResponseField>
+<ResponseField name="source" type="text">
+  `b3_cotahist` for quotes, `cvm` for the two fund datasets.
+</ResponseField>
+
+## Example
+
+<CodeGroup>
+
+```bash curl
+curl -s -X POST "$SILO_URL/rpc/coverage" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Authorization: Bearer $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+```python Python
+rows = requests.post(f"{URL}/rpc/coverage", headers=H, json={}).json()
+as_of = {r["dataset"]: r["as_of"] for r in rows}
+```
+
+```javascript JavaScript
+const { data } = await supabase.rpc('coverage')
+```
+
+</CodeGroup>
+
+```json
+[
+  { "dataset": "quotes",   "as_of": "2026-08-26", "source": "b3_cotahist" },
+  { "dataset": "funds",    "as_of": "2026-06-30", "source": "cvm" },
+  { "dataset": "fund_nav", "as_of": "2026-06-01", "source": "cvm" }
+]
+```
+
+## Reading it
+
+<Note>
+  **The three dates are supposed to differ.** B3 quotes arrive daily; CVM publishes fund
+  filings on a one-to-two month lag. A `fund_nav` date two months behind `quotes` is the
+  normal state of the world, not a broken pipeline.
+</Note>
+
+- `fund_nav.as_of` is a **month key** — `2026-06-01` means the June 2026 filing period, not
+  the first of June.
+- A `panel` request whose window extends past a dataset's `as_of` is not an error; it simply
+  returns nothing for the months that do not exist yet. That is the intended behavior — the
+  API will not extend a series with a repeated last value to reach the date you asked for.
+- These are **maxima across the whole dataset**, not per-instrument. An individual fund can
+  be months behind the aggregate `as_of` while still filing normally. Use
+  [`fund_profile`](/api-docs/funds)'s `last_period` for a single vehicle.
+
+## Errors
+
+There are no arguments to get wrong. A `401` means the anon key headers are missing; a
+`404` (`PGRST202`) means you sent arguments to a function that takes none.

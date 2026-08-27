@@ -1,0 +1,113 @@
+---
+title: "Universe"
+description: "Enumerate the identifiers available in an asset class — tickers and fund CNPJs in one shape."
+icon: "list"
+---
+
+`universe` lists identifiers by asset class, in the same `(id, id_type, asset_class, name,
+isin)` shape for tickers and funds alike. Use it to discover what exists; use
+[`lookup`](/api-docs/lookup) when you already have a name or code in hand.
+
+```sql
+api.universe(p_asset_class TEXT DEFAULT NULL,
+             p_limit       INT  DEFAULT 50)
+```
+
+## Parameters
+
+<ParamField body="p_asset_class" type="string" default="null">
+  Which population to list:
+
+  - `equity` — B3 tickers that print on board `02`
+  - `fi`, `fidc`, `fii`, `fip`, `fiagro` — CVM fund vehicle types
+  - `null` or omitted — **all** populations, interleaved
+
+  Any other value returns an empty array rather than an error: the equity arm only fires for
+  `equity`, and the fund arm matches against `entity_type` exactly.
+</ParamField>
+
+<ParamField body="p_limit" type="integer" default="50">
+  Clamped into `1..500`. A null is treated as 50; anything above 500 becomes 500.
+</ParamField>
+
+## Returns
+
+<ResponseField name="id" type="text">
+  Ticker or 14-digit CNPJ — pass it straight to `panel`, `quote_history`, or `fund_nav`.
+</ResponseField>
+<ResponseField name="id_type" type="text">
+  `ticker` or `cnpj`.
+</ResponseField>
+<ResponseField name="asset_class" type="text">
+  `equity`, or the fund's `entity_type`.
+</ResponseField>
+<ResponseField name="name" type="text">
+  Issuer short name for tickers, registered fund name for funds. **Nullable** for funds whose
+  registry name we do not hold.
+</ResponseField>
+<ResponseField name="isin" type="text">
+  ISIN for tickers. Always null on fund rows.
+</ResponseField>
+
+Rows are ordered by `asset_class`, then `name` with nulls last.
+
+## Example
+
+<CodeGroup>
+
+```bash curl
+curl -s -X POST "$SILO_URL/rpc/universe" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Authorization: Bearer $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_asset_class":"fidc","p_limit":100}'
+```
+
+```python Python
+body = {"p_asset_class": "fidc", "p_limit": 100}
+rows = requests.post(f"{URL}/rpc/universe", headers=H, json=body).json()
+ids = [r["id"] for r in rows]
+```
+
+```javascript JavaScript
+const { data } = await supabase.rpc('universe', {
+  p_asset_class: 'fidc',
+  p_limit: 100,
+})
+```
+
+</CodeGroup>
+
+```json
+[
+  { "id": "12345678000190", "id_type": "cnpj", "asset_class": "fidc",
+    "name": "EXAMPLE FIDC MULTISETORIAL", "isin": null },
+  { "id": "98765432000110", "id_type": "cnpj", "asset_class": "fidc",
+    "name": "EXAMPLE FIDC NP", "isin": null }
+]
+```
+
+## Limits
+
+<Warning>
+  **`universe` is a sample, not a census.** The hard ceiling is 500 rows and there is no
+  pagination — because rows are ordered by `asset_class` then `name`, calling it with
+  `p_asset_class` omitted returns the alphabetically-first slice of the *first* asset class
+  and little else. Never treat the result as the complete population of anything.
+</Warning>
+
+To actually enumerate a population, use the views, which support `limit` and `offset`
+properly:
+
+- Funds — `GET /funds?entity_type=eq.fidc&order=cnpj.asc&limit=1000&offset=0`
+  (see [Funds](/api-docs/funds))
+- Tickers — `GET /quotes?select=ticker&board=eq.02&trade_date=eq.<session>` for a session's
+  full board
+
+[`search_funds`](/api-docs/funds) is the better tool when you want the *largest* funds of a
+type: it orders by latest AUM, where `universe` orders alphabetically.
+
+## Empty results
+
+An unknown `p_asset_class` returns `200 []`. So does a valid one with nothing loaded yet —
+check [`coverage`](/api-docs/coverage).

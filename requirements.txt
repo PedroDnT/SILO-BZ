@@ -32,6 +32,10 @@ flask>=3.0,<4.0
 pytest==9.0.3
 pytest-asyncio==1.4.0
 hypothesis==6.98.3
+# Test-only: tests/test_apply_schema_action.py parses the composite GitHub
+# Action YAML. Without it here the test importorskips and the guard it pins
+# would never actually run in CI.
+PyYAML>=6.0
 
 # Local dev / offline verification — used by scripts/seed_local_db.py and
 # scripts/run_analysis_local.py to seed and query a local DuckDB file (no

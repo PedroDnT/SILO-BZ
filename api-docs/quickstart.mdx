@@ -1,0 +1,222 @@
+---
+title: "Quickstart"
+description: "Get the anon key, make your first request, and read the response — in under a minute."
+icon: "rocket"
+---
+
+## 1. Get the anon key
+
+The API is **open read**. There are no accounts and no per-user API keys — every caller
+uses the project's **anon (public) key**, which is designed to be published in client code.
+
+<Note>
+  Find it in the Supabase Dashboard → **Settings** → **API** → **Project API keys** →
+  **`anon` / `public`**. Copy that value; it is the only credential you need.
+
+  Never use the `service_role` key here. It bypasses every boundary described in these docs
+  and must never leave a server.
+</Note>
+
+Export it once so the examples below work as written:
+
+```bash
+export SILO_URL="https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"
+export SILO_ANON_KEY="YOUR_ANON_KEY"
+```
+
+## 2. Send it on every request
+
+PostgREST wants the key in **two** headers on every call:
+
+```
+apikey: YOUR_ANON_KEY
+Authorization: Bearer YOUR_ANON_KEY
+```
+
+## 3. Your first call
+
+Ask what the warehouse currently holds. `coverage` takes no arguments and returns three
+rows — one per dataset:
+
+<CodeGroup>
+
+```bash curl
+curl -s -X POST "$SILO_URL/rpc/coverage" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Authorization: Bearer $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+```python Python
+import os, requests
+
+URL = "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"
+KEY = os.environ["SILO_ANON_KEY"]
+H = {"apikey": KEY, "Authorization": f"Bearer {KEY}"}
+
+print(requests.post(f"{URL}/rpc/coverage", headers=H, json={}).json())
+```
+
+```javascript JavaScript
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  'https://zcjbtpxuhdekpwcxmepn.supabase.co',
+  process.env.SILO_ANON_KEY,
+  { db: { schema: 'api' } },
+)
+
+const { data, error } = await supabase.rpc('coverage')
+console.log(data)
+```
+
+</CodeGroup>
+
+The response is a plain JSON array — PostgREST has no envelope:
+
+```json
+[
+  { "dataset": "quotes",   "as_of": "2026-08-26", "source": "b3_cotahist" },
+  { "dataset": "funds",    "as_of": "2026-06-30", "source": "cvm" },
+  { "dataset": "fund_nav", "as_of": "2026-06-01", "source": "cvm" }
+]
+```
+
+<Note>
+  Sample values throughout this documentation are **illustrative shapes**, not live prints.
+  Call `coverage` to see what is actually loaded.
+</Note>
+
+## 4. Read a view
+
+Views are read with `GET` and PostgREST filter syntax. Five most recent standard-lot
+sessions for one ticker:
+
+<CodeGroup>
+
+```bash curl
+curl -s -G "$SILO_URL/quotes" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Authorization: Bearer $SILO_ANON_KEY" \
+  --data-urlencode "select=ticker,trade_date,close,volume" \
+  --data-urlencode "ticker=eq.PETR4" \
+  --data-urlencode "board=eq.02" \
+  --data-urlencode "order=trade_date.desc" \
+  --data-urlencode "limit=5"
+```
+
+```python Python
+params = {
+    "select": "ticker,trade_date,close,volume",
+    "ticker": "eq.PETR4",
+    "board": "eq.02",
+    "order": "trade_date.desc",
+    "limit": 5,
+}
+rows = requests.get(f"{URL}/quotes", headers=H, params=params).json()
+```
+
+```javascript JavaScript
+const { data } = await supabase
+  .from('quotes')
+  .select('ticker, trade_date, close, volume')
+  .eq('ticker', 'PETR4')
+  .eq('board', '02')
+  .order('trade_date', { ascending: false })
+  .limit(5)
+```
+
+</CodeGroup>
+
+```json
+[
+  { "ticker": "PETR4", "trade_date": "2026-08-26", "close": 41.2, "volume": 1204533210.0 },
+  { "ticker": "PETR4", "trade_date": "2026-08-25", "close": 40.87, "volume": 986221410.5 }
+]
+```
+
+## 5. Call a function
+
+Functions take **named arguments** in a JSON body, `POST /rpc/<name>`. Argument names are
+the SQL parameter names — they all start with `p_`. Omit an argument to take its default.
+
+<CodeGroup>
+
+```bash curl
+curl -s -X POST "$SILO_URL/rpc/panel" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Authorization: Bearer $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "p_ids": ["PETR4", "VALE3"],
+        "p_metrics": ["close_return"],
+        "p_from": "2025-01-01",
+        "p_to": "2026-06-30",
+        "p_freq": "month"
+      }'
+```
+
+```python Python
+body = {
+    "p_ids": ["PETR4", "VALE3"],
+    "p_metrics": ["close_return"],
+    "p_from": "2025-01-01",
+    "p_to": "2026-06-30",
+    "p_freq": "month",
+}
+rows = requests.post(f"{URL}/rpc/panel", headers=H, json=body).json()
+```
+
+```javascript JavaScript
+const { data } = await supabase.rpc('panel', {
+  p_ids: ['PETR4', 'VALE3'],
+  p_metrics: ['close_return'],
+  p_from: '2025-01-01',
+  p_to: '2026-06-30',
+  p_freq: 'month',
+})
+```
+
+</CodeGroup>
+
+```json
+[
+  { "id": "PETR4", "id_type": "ticker", "asset_class": "equity",
+    "date": "2025-02-01", "metric": "close_return", "value": 0.0341, "source": "b3_cotahist" },
+  { "id": "VALE3", "id_type": "ticker", "asset_class": "equity",
+    "date": "2025-02-01", "metric": "close_return", "value": -0.0118, "source": "b3_cotahist" }
+]
+```
+
+That is the whole shape of the API: two views you `GET`, nine functions you `POST`.
+
+## 6. Know when a schema header is needed
+
+Everything above assumes `api` is the **default** exposed schema on the project. If the
+project exposes more than one schema and `api` is not first in the list, name it explicitly:
+
+- `Accept-Profile: api` on `GET` requests
+- `Content-Profile: api` on `POST` (including `/rpc/`) requests
+
+In `supabase-js` this is `createClient(url, key, { db: { schema: 'api' } })` — as used in
+the examples — or `supabase.schema('api')` per call. A `PGRST106` error ("schema must be one
+of the following") means the schema is not exposed at all; that is fixed in the Supabase
+Dashboard → Settings → API → **Exposed schemas**.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Conventions & limits" icon="ruler" href="/api-docs/conventions">
+    Filter syntax, row caps, nulls, and error codes.
+  </Card>
+  <Card title="Panel" icon="table" href="/api-docs/panel">
+    The researcher endpoint — mixed ids, mixed metrics, one grain.
+  </Card>
+  <Card title="Quotes" icon="chart-line" href="/api-docs/quotes">
+    B3 cash prices, unadjusted, by ticker and session.
+  </Card>
+  <Card title="Funds" icon="building-columns" href="/api-docs/funds">
+    Registry, profile, and monthly NAV by CNPJ.
+  </Card>
+</CardGroup>

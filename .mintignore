@@ -1,6 +1,9 @@
-# Mintlify only publishes index.mdx (see docs.json). Everything else in this
-# repo is pipeline / Evidence.dev markdown whose template syntax is not MDX
-# and must not be parsed by the Mintlify GitHub Deployment check.
+# Mintlify publishes index.mdx plus api-docs/ (see docs.json). Everything else
+# in this repo is pipeline / Evidence.dev markdown whose template syntax is not
+# MDX and must not be parsed by the Mintlify GitHub Deployment check.
+# Keep every entry below ignored: dashboard/ and webapp/ in particular contain
+# Evidence template syntax that the MDX parser cannot read. New documentation
+# pages go in api-docs/, never in docs/.
 dashboard/
 webapp/
 src/
