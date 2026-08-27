@@ -168,6 +168,7 @@ jobs:
           if [ -z "${VERCEL_DEPLOY_HOOK_URL:-}" ]; then
             echo "VERCEL_DEPLOY_HOOK_URL unset — skipping dashboard rebuild."
             echo "Create one at Vercel → Project silo → Settings → Git → Deploy Hooks"
+            echo "(public dashboard: https://iliquid-nightly.vercel.app/)"
             echo "and store it as the repository secret VERCEL_DEPLOY_HOOK_URL."
             exit 0
           fi
