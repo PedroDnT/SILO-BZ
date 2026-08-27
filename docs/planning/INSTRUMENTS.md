@@ -212,3 +212,37 @@ What GHA is **not** enough for, so nobody discovers it mid-build: intraday or
 guaranteed-time ingestion (cron has no SLA), and anything needing a static
 egress IP for allowlisting. Neither is on this roadmap — everything here is
 end-of-day public files.
+
+## Source appendix: the `cotacao.b3.com.br` quote feed
+
+Surveyed via [PedroDnT/lse-terminal-brazil](https://github.com/PedroDnT/lse-terminal-brazil),
+which reads it directly. `https://cotacao.b3.com.br/mds/api/v1` is the JSON
+feed behind B3's own quote pages: `instrumentQuotation/{SYMBOL}` returns a
+last price (~15-minute delay) for **any** listed symbol — including the BM&F
+contracts (`WIN`, `IND`, `WDO`, `DOL`) and `IBOV`, which COTAHIST never
+carries — plus the current session's minute prints. No key; B3's edge
+challenges a bare client, so requests need a browser `User-Agent`.
+
+**What it is fit for here — and what it is not.** The feed is a delayed
+*snapshot* of the current session: no history, no official close, no
+settlement. Ingesting "last price whenever the cron happened to run" would be
+weaker provenance than everything else in this warehouse, so it does **not**
+replace phase B's settlement files, which are B3's official, archived,
+auditable record. Its legitimate uses:
+
+- **Phase D shortcut:** `IBOV` (and the other indices) answer on this feed,
+  so index *levels* may be obtainable here if the historical index files
+  prove awkward — but only as a dated last-print with `source` saying exactly
+  that, never presented as an official close.
+- **Reference implementation:** the repo encodes B3's own published roll
+  rules (`front_month`: index contracts on even months expiring the
+  Wednesday nearest the 15th; FX contracts monthly) and the month-code
+  table. If a convenience endpoint ever needs "the front month", implement
+  it as B3's documented rule with a citation — though the cleaner posture
+  stays: serve every contract, let the caller pick.
+- **Operational detail worth stealing:** the `User-Agent` requirement, and
+  its `BizSts.cd != "OK"` error envelope.
+
+Phase B's primary source is unchanged: daily settlement prices (ajustes do
+pregão), because settlement is the number that is official, historical, and
+verifiable — the three properties this warehouse exists to preserve.
