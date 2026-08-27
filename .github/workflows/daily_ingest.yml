@@ -128,6 +128,44 @@ jobs:
         continue-on-error: true
         run: bash scripts/apply_analytical.sh
 
+      # The dashboard is a STATIC SNAPSHOT: `evidence sources` extracts Supabase
+      # into parquet at build time, and the site then serves that parquet through
+      # DuckDB in the browser. Fresh rows in Supabase therefore reach the site
+      # only when a build runs — and until now the only trigger was a git push,
+      # so the published numbers were as old as the last unrelated commit.
+      #
+      # Firing the hook HERE is also the cheapest possible timing: ingest and the
+      # analytical layer are done, ANALYZE has just refreshed the statistics the
+      # source queries plan against, and no other build is competing for the
+      # database. Concurrent builds are what turned 2026-08-26 into four
+      # overlapping 45-minute timeouts and a killed schema apply.
+      #
+      # Gated on the secret, self-skipping when unset — same posture as
+      # APIFY_TOKEN, so a fork or a fresh clone is never broken by its absence.
+      # continue-on-error: a failed redeploy must not fail an ingest that
+      # already landed its data.
+      - name: Trigger dashboard rebuild (Vercel deploy hook)
+        if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'analytics-only') }}
+        continue-on-error: true
+        env:
+          VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          set -uo pipefail
+          if [ -z "${VERCEL_DEPLOY_HOOK_URL:-}" ]; then
+            echo "VERCEL_DEPLOY_HOOK_URL unset — skipping dashboard rebuild."
+            echo "Create one at Vercel → Project silo → Settings → Git → Deploy Hooks"
+            echo "and store it as the repository secret VERCEL_DEPLOY_HOOK_URL."
+            exit 0
+          fi
+          code=$(curl -sS -X POST -o /tmp/hook.out -w '%{http_code}' "$VERCEL_DEPLOY_HOOK_URL")
+          echo "deploy hook responded $code"
+          cat /tmp/hook.out || true
+          case "$code" in
+            2*) echo "Dashboard rebuild queued." ;;
+            *)  echo "::warning::deploy hook returned $code; the dashboard will" \
+                     "keep serving the previous build until the next trigger." ;;
+          esac
+
   # Alerting: a scheduled-run failure files (or bumps) a single tracking issue,
   # so a broken credential or CVM outage emails the repo owner instead of
   # failing silently for weeks (the 2026-07/08 PAM-auth outage went a month

@@ -3,5 +3,6 @@
   "framework": null,
   "installCommand": "cd dashboard && npm install",
   "buildCommand": "cd dashboard && npm run preflight && npm run sources && npm run build",
-  "outputDirectory": "dashboard/build"
+  "outputDirectory": "dashboard/build",
+  "ignoreCommand": "bash scripts/vercel_should_build.sh"
 }
