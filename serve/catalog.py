@@ -39,14 +39,14 @@ METRICS: Dict[str, Dict[str, Any]] = {
         "asset_class": B3_CASH_ASSET_CLASSES,
         "grain": ["day", "month"],
         "source": "b3_cotahist",
-        "meaning": "Unadjusted B3 cash close (board 02), classified from published TPMERC/ESPECI. Month = last session.",
+        "meaning": "Unadjusted B3 cash close, using the ticker's latest BDI board by default and classified from published TPMERC/ESPECI. Month = last session.",
     },
     "volume": {
         "id_type": "ticker",
         "asset_class": B3_CASH_ASSET_CLASSES,
         "grain": ["day", "month"],
         "source": "b3_cotahist",
-        "meaning": "Session traded volume (BRL). Month = last session.",
+        "meaning": "Session traded volume (BRL), using the ticker's latest BDI board by default. Month = last session.",
     },
     "close_return": {
         "id_type": "ticker",

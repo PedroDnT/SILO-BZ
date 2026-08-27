@@ -229,6 +229,14 @@ def test_universe_classifies_only_the_latest_b3_session():
     assert "s.trade_date = q.trade_date" in chunk
 
 
+def test_typed_b3_surfaces_do_not_assume_equity_board_02():
+    for name in ("api.panel", "api.universe", "api.lookup"):
+        assert "board = '02'" not in FUNCS[name]
+    assert re.search(r"p_board\s+TEXT\s+DEFAULT\s+NULL", FUNCS["api.quote_history"])
+    assert re.search(r"p_board\s+TEXT\s+DEFAULT\s+NULL", FUNCS["api.quote_latest"])
+    assert "latest.board" in FUNCS["api.quote_history"]
+
+
 def test_ingest_log_summary_not_executable_by_clients():
     body = _strip_comments(SQL12)
     assert not re.search(

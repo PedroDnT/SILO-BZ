@@ -110,6 +110,7 @@ def test_quote_latest_ok(client):
     assert body["ticker"] == "PETR4"
     assert body["close"] == 41.9
     assert rv.headers["X-Silo-Adjusted"] == "false"
+    assert client.pool.cur.params == ("PETR4", None)
 
 
 def test_bad_ticker_400(client):

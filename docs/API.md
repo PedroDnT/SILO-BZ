@@ -60,7 +60,8 @@ client  →  HTTPS /v1/*   (serve/, bind 127.0.0.1 or a gateway)
 ```
 
 1. **`api` schema is the product.** English names, ticker/CNPJ keys, unadjusted
-   flag, default cash board `02`. Clients should not query `b3_cotahist`.
+   flag, and automatic selection of each ticker's published BDI board. Clients
+   should not query `b3_cotahist`.
 2. **HTTP is an adapter**, not a second database. Every handler is a single
    `SELECT` / `api.*()` call. No business logic that can invent a price.
 3. **Do not turn on PostgREST on `public`.** Today some landing tables are
