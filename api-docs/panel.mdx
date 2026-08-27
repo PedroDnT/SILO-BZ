@@ -112,7 +112,6 @@ Monthly equity returns against a FIDC's delinquency, over five years:
 ```bash curl
 curl -s -X POST "$SILO_URL/rpc/panel" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{
         "p_ids": ["PETR4", "12345678000190"],

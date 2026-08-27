@@ -122,7 +122,6 @@ series.
 ```bash curl
 curl -s -G "$SILO_URL/quotes" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   --data-urlencode "select=ticker,trade_date,board,close,volume,adjusted" \
   --data-urlencode "ticker=in.(PETR4,VALE3)" \
   --data-urlencode "board=eq.02" \
@@ -198,7 +197,6 @@ Returns the view's columns minus `term_days` and `fetched_at`: `ticker`, `trade_
 ```bash curl
 curl -s -X POST "$SILO_URL/rpc/quote_history" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{"p_ticker":"PETR4","p_from":"2026-01-02","p_to":"2026-08-26"}'
 ```
@@ -278,7 +276,6 @@ Same twenty columns as `quote_history`.
 ```bash curl
 curl -s -X POST "$SILO_URL/rpc/quote_latest" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{"p_ticker":"PETR4"}'
 ```
