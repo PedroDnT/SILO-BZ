@@ -2,6 +2,7 @@
 
 | Date       | Branch                    | Change                                                                                              |
 | ---------- | ------------------------- | --------------------------------------------------------------------------------------------------- |
+| 2026-08-27 | cursor/publishable-key-3f68 | Print publishable key in quickstart; `apikey` only; never Secret / Bearer |
 | 2026-08-27 | cursor/dashboard-url-1119 | Dashboard is https://iliquid-nightly.vercel.app/; SILO is this repo (Actions → Supabase ingest + schema api) |
 | 2026-08-27 | cursor/mintlify-live-site-3f68 | Agent README (`api-docs/agents`) + root `skill.md`; agents cannot mint keys |
 | 2026-08-27 | cursor/mintlify-live-site-3f68 | Public Mintlify site `https://octo-98895abd.mintlify.site`; admin + index MCP in `.cursor/mcp.json` |

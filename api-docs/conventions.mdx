@@ -21,20 +21,16 @@ replacement for the legacy **anon** JWT. Same Postgres role (`anon`). Send it on
 on `apikey`. Do not put it in `Authorization: Bearer` (it is not a JWT).
 
 ```
-apikey: sb_publishable_...
+apikey: sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437
 ```
 
-Copy it from Supabase Dashboard → **Settings** → **API Keys** → **Publishable**.
+Copy it from [quickstart](/api-docs/quickstart) (it is public by design).
 Never **Secret** / `service_role`. There are no per-caller keys.
 
-The dashboard's RLS banner is generic. Safety here is the grant list below, not
-RLS on landing tables. Do not query `public` with this key.
-
-What the anon role can reach is exactly what these pages document: `USAGE` on schema `api`,
-`SELECT` on the two `api` views, and `EXECUTE` on the `api` functions. It has **no** grant
-on the landing tables — `cvm_*`, `b3_cotahist`, `cvm_ingest_log`, `dim_fund`,
-`vw_b3_quote_vista` are unreachable, by design. The views are owner-privileged and the
-functions are `SECURITY DEFINER`, so the grant list on those nine objects *is* the boundary.
+The dashboard's RLS banner is generic. Callers must stay on schema `api` — never
+`Accept-Profile: public`, never `cvm_*` / `b3_cotahist`. The documented surface is
+`USAGE` on `api`, `SELECT` on the two `api` views, and `EXECUTE` on the `api`
+functions. Views are owner-privileged and functions are `SECURITY DEFINER`.
 
 <Note>
   If the project exposes more than one schema and `api` is not the default, add

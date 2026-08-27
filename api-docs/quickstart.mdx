@@ -32,7 +32,7 @@ trailing slash so `"$SILO_URL/rpc/..."` joins cleanly.
 
 ```bash
 export SILO_URL="https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"
-export SILO_ANON_KEY="sb_publishable_..."   # publishable key; never sb_secret_ or service_role
+export SILO_ANON_KEY="sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 ```
 
 ## 2. Send it on every request
@@ -42,7 +42,7 @@ The publishable key is **not** a JWT. Put it only on `apikey`. Do **not** send i
 `Invalid JWT`.
 
 ```
-apikey: sb_publishable_...
+apikey: sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437
 ```
 
 `Authorization` is only for a **user** session after Supabase Auth. The JS client
@@ -66,7 +66,7 @@ curl -s -X POST "$SILO_URL/rpc/coverage" \
 import os, requests
 
 URL = "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"  # no trailing slash; join with /rpc/...
-KEY = os.environ["SILO_ANON_KEY"]
+KEY = os.environ.get("SILO_ANON_KEY", "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437")
 H = {"apikey": KEY}
 
 print(requests.post(f"{URL}/rpc/coverage", headers=H, json={}).json())
@@ -77,7 +77,7 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
   'https://zcjbtpxuhdekpwcxmepn.supabase.co',
-  process.env.SILO_ANON_KEY,
+  process.env.SILO_ANON_KEY || 'sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437',
   { db: { schema: 'api' } },
 )
 
