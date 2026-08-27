@@ -22,6 +22,10 @@ __all__ = [
     "tool_specs",
 ]
 
+# 9: lookup company rows carry `tickers` — CVM's published FCA
+# valores-mobiliários CNPJ↔ticker map (cia_ticker / vw_company_ticker),
+# replacing the old "not joined here" stance: the join is published, not
+# inferred.
 # 8: honest default windows — with no explicit `to`, fund metrics clamp to
 # each family's latest COMPLETE period (mv_period_completeness) instead of
 # serving a partially-filed trailing month; coverage() adds complete_through
@@ -34,7 +38,7 @@ __all__ = [
 # 6: one endpoint per cash instrument type, each carrying both lot sizes.
 # 5: main's typed cash asset classes (4) merged with the option/termo id_types
 # and list-valued id_type this branch introduced (3).
-CATALOG_VERSION = 8
+CATALOG_VERSION = 9
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -158,7 +162,7 @@ CONSTRAINTS = [
     "each family's latest COMPLETE period (coverage() reports it as "
     "complete_through) — a partially-filed trailing month is not served. An "
     "explicit `to` serves the window verbatim, partial months included.",
-    "Ticker↔cia_company is not joined here; lookup returns them separately.",
+    "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
     "Panel responses are hard-capped at 100000 rows (series endpoints at 5000); "
     "above that the API answers 400 — narrow ids, metrics, or the date window.",

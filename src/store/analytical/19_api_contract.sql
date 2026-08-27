@@ -1507,6 +1507,9 @@ COMMENT ON FUNCTION api.universe(TEXT, INT) IS
 REVOKE ALL ON FUNCTION api.universe(TEXT, INT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.universe(TEXT, INT) TO anon, authenticated;
 
+-- Signature change (trailing tickers column): drop the old shape first.
+DROP FUNCTION IF EXISTS api.lookup(TEXT);
+
 CREATE OR REPLACE FUNCTION api.lookup(
     p_query TEXT
 )
@@ -1516,7 +1519,12 @@ RETURNS TABLE (
     asset_class TEXT,
     name        TEXT,
     isin        TEXT,
-    cnpj        TEXT
+    cnpj        TEXT,
+    -- The company's B3 tickers from vw_company_ticker (CVM's published FCA
+    -- valores-mobiliários map, migration 25) — the CNPJ and the ticker come
+    -- from the same published row, so nothing is name-matched or inferred.
+    -- NULL for non-company rows and for companies with no active listing.
+    tickers     TEXT[]
 )
 LANGUAGE sql
 STABLE
@@ -1540,6 +1548,7 @@ AS $$
     hits AS (
         SELECT t.ticker AS id, 'ticker'::text AS id_type, t.asset_class,
                t.short_name AS name, t.isin, NULL::text AS cnpj,
+               NULL::text[] AS tickers,
                0 AS rank
         FROM (
             SELECT DISTINCT ON (ticker)
@@ -1550,6 +1559,7 @@ AS $$
         ) t
         UNION ALL
         SELECT d.cnpj, 'cnpj', d.entity_type, d.fund_name, NULL, d.cnpj,
+               NULL::text[],
                CASE
                    WHEN d.cnpj = regexp_replace(q.raw, '[^0-9]', '', 'g') THEN 0
                    WHEN d.fund_name ILIKE q.like_safe || '%' ESCAPE '\' THEN 1
@@ -1560,6 +1570,12 @@ AS $$
            OR d.fund_name ILIKE '%' || q.like_safe || '%' ESCAPE '\'
         UNION ALL
         SELECT c.cd_cvm, 'cd_cvm', 'cia', c.denom_cia, NULL, c.cnpj_cia,
+               -- Published mapping only (FCA): active listings, deterministic
+               -- order. NULL (not an empty array) when the company has no
+               -- active listed ticker.
+               (SELECT NULLIF(array_agg(vt.codneg ORDER BY vt.codneg), '{}')
+                FROM public.vw_company_ticker vt
+                WHERE vt.cnpj_cia = c.cnpj_cia AND vt.is_active),
                CASE
                    WHEN c.cnpj_cia = regexp_replace(q.raw, '[^0-9]', '', 'g') THEN 0
                    WHEN c.cd_cvm = q.raw THEN 0
@@ -1571,7 +1587,7 @@ AS $$
            OR c.cd_cvm = q.raw
            OR c.denom_cia ILIKE '%' || q.like_safe || '%' ESCAPE '\'
     )
-    SELECT h.id, h.id_type, h.asset_class, h.name, h.isin, h.cnpj
+    SELECT h.id, h.id_type, h.asset_class, h.name, h.isin, h.cnpj, h.tickers
     FROM hits h
     ORDER BY h.rank, h.name, h.id
     LIMIT 20;
@@ -1584,7 +1600,7 @@ $$;
 -- power. Discover derivative ids via api.universe('option'|'termo') or
 -- api.option_chain(prefix).
 COMMENT ON FUNCTION api.lookup(TEXT) IS
-    'Resolve ticker / ISIN / CNPJ / company name. Does not invent ticker↔CNPJ matches. Does not resolve option/termo codnegs (no names to resolve — use universe or option_chain).';
+    'Resolve ticker / ISIN / CNPJ / company name. Company rows carry their B3 tickers from CVM''s published FCA valores-mobiliários map (vw_company_ticker) — never a name match, never inferred. Does not resolve option/termo codnegs (no names to resolve — use universe or option_chain).';
 
 REVOKE ALL ON FUNCTION api.lookup(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.lookup(TEXT) TO anon, authenticated;
@@ -1615,7 +1631,7 @@ AS $fn$
 SELECT $json$
 {
   "kind": "catalog",
-  "version": 8,
+  "version": 9,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup/universe, then GET /v1/panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions, and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches.",
   "metrics": {
@@ -1795,7 +1811,7 @@ SELECT $json$
     "close_return is unadjusted: a 2:1 split reports roughly -50%. It is not a total return.",
     "Daily close_return is null when the previous session is more than 7 calendar days back (halts, listing gaps), and null across a quotation-factor change — a fatcot flip rescales the quote with no market move behind it.",
     "Default windows are honest: with no explicit `to`, fund metrics end at each family's latest COMPLETE period (coverage() reports it as complete_through) — a partially-filed trailing month is not served. An explicit `to` serves the window verbatim, partial months included.",
-    "Ticker↔cia_company is not joined here; lookup returns them separately.",
+    "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
     "Panel responses are hard-capped at 100000 rows (series endpoints at 5000); above that the API answers 400 — narrow ids, metrics, or the date window.",
     "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
