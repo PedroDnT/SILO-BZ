@@ -22,6 +22,7 @@
         "icon": "code",
         "pages": [
           "api-docs/quotes",
+          "api-docs/instruments",
           "api-docs/options",
           "api-docs/termo",
           "api-docs/funds",

@@ -1,0 +1,113 @@
+---
+title: "Cash instruments"
+description: "One endpoint per B3 cash instrument type — equities, BDRs, units, fund quotas and other cash paper, each with both lot sizes."
+icon: "layer-group"
+---
+
+[`quotes`](/api-docs/quotes) is the whole cash tape. These five endpoints are the same rows
+split by instrument type, so you can ask for one class without filtering client-side:
+
+| Endpoint | Instrument type | What it holds |
+|---|---|---|
+| `GET /equities` | `equity` | Ordinary and preferred shares (`especi` `ON*` / `PN*`) |
+| `GET /bdrs` | `bdr` | Brazilian Depositary Receipts (`especi` `DR*`) |
+| `GET /units` | `unit` | Units — bundled share packages (`especi` `UNT*`) |
+| `GET /fund_quotas` | `fund_quota` | Listed fund quotas: ETFs, FIIs and other `CI*` paper |
+| `GET /cash_securities` | `cash_security` | Everything else on the cash board — subscription rights, receipts, non-share paper |
+
+The type comes from `vw_b3_instrument_typed`, which classifies **only** from B3's published
+`TPMERC` and `ESPECI`. Nothing is inferred from a ticker's shape.
+
+<Warning>
+  **`fund_quota` does not distinguish ETF from FII.** COTAHIST alone cannot prove which a
+  `CI` paper is, so the API declines to guess rather than mislabel half of them. If you need
+  that split, join to the CVM side yourself via [`lookup`](/api-docs/lookup).
+</Warning>
+
+## Lot size is part of the grain
+
+These endpoints carry **both lot sizes**, with `lot` derived from `tpmerc`:
+
+- `standard` — `tpmerc` `010`, the round lot
+- `odd` — `tpmerc` `020` / `021`, the fractional market
+
+That makes the grain **`(ticker, trade_date, board, term_days, lot)`** — one column wider
+than `quotes`. A query that ignores `lot` sees what look like duplicate dates.
+
+<Warning>
+  **Odd lot is not a rounding error.** Measured 2026-08-27, equities carry *more* odd-lot
+  rows than standard-lot — 153,072 against 140,227, across 496 codnegs versus 476. Summing
+  `volume` without pinning `lot` double-counts. For round lots only:
+
+  ```
+  ?lot=eq.standard
+  ```
+</Warning>
+
+`api.quotes` is unchanged — still `tpmerc = 010` only. Nothing already published moved;
+these endpoints are additive.
+
+## Columns
+
+Identical to [`quotes`](/api-docs/quotes) plus `lot`, minus `asset_class` (redundant — the
+endpoint *is* the type): `ticker`, `trade_date`, `board`, `lot`, `term_days`, `short_name`,
+`spec`, `currency`, `open`, `high`, `low`, `average`, `close`, `bid`, `ask`, `trades`,
+`quantity`, `volume`, `isin`, `quotation_factor`, `adjusted`, `source`, `fetched_at`.
+
+Everything is unadjusted; `adjusted` is a constant `false`.
+
+## Example
+
+<CodeGroup>
+
+```bash curl
+curl -s -G "$SILO_URL/equities" \
+  -H "apikey: $SILO_ANON_KEY" \
+  --data-urlencode "select=ticker,trade_date,lot,close,volume" \
+  --data-urlencode "lot=eq.standard" \
+  --data-urlencode "trade_date=eq.2026-08-25" \
+  --data-urlencode "order=volume.desc" \
+  --data-urlencode "limit=5"
+```
+
+```python Python
+params = {
+    "select": "ticker,trade_date,lot,close,volume",
+    "lot": "eq.standard",
+    "trade_date": "eq.2026-08-25",
+    "order": "volume.desc",
+    "limit": 5,
+}
+rows = requests.get(f"{URL}/equities", headers=H, params=params).json()
+```
+
+```javascript JavaScript
+const { data } = await supabase
+  .from('equities')
+  .select('ticker, trade_date, lot, close, volume')
+  .eq('lot', 'standard')
+  .eq('trade_date', '2026-08-25')
+  .order('volume', { ascending: false })
+  .limit(5)
+```
+
+</CodeGroup>
+
+## Price series stay unified
+
+There is deliberately **no** `equity_history` or `bdr_history`. A codneg belongs to exactly
+one instrument type, so [`quote_history('PETR4')`](/api-docs/quotes) is already unambiguous
+— and a typed history would force you to determine the type *before* you could ask for a
+price. Split the cross-section; keep whatever is keyed by id.
+
+The same rule is why [options](/api-docs/options) and [termo](/api-docs/termo) *do* get their
+own history endpoints: those carry columns (strike, expiry, term) the cash shape has no room
+for.
+
+## Empty and error behavior
+
+- **No rows matching your filter → `200 []`.** Never a fabricated price.
+- **A ticker on the wrong endpoint → `200 []`.** `BOVA11` is a `fund_quota`, not an
+  `equity`; asking `/equities?ticker=eq.BOVA11` returns empty rather than an error. Use
+  `/quotes` or [`universe`](/api-docs/universe) when you do not know the type.
+- **These views have no built-in cap** — same as `quotes`. Always send a `limit`.

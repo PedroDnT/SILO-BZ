@@ -22,9 +22,10 @@ __all__ = [
     "tool_specs",
 ]
 
+# 6: one endpoint per cash instrument type, each carrying both lot sizes.
 # 5: main's typed cash asset classes (4) merged with the option/termo id_types
 # and list-valued id_type this branch introduced (3).
-CATALOG_VERSION = 5
+CATALOG_VERSION = 6
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -151,6 +152,13 @@ CONSTRAINTS = [
     "own inference.",
     "Option/termo codnegs resolve via universe(asset_class=option|termo) or "
     "option_chain, not lookup — option series have no names to resolve.",
+    "Each cash instrument type has its own endpoint (equities, bdrs, units, "
+    "fund_quotas, cash_securities) — the same rows as quotes, split by the type "
+    "derived from published TPMERC/ESPECI. Their grain adds `lot` "
+    "(standard = tpmerc 010, odd = 020/021); filter lot=eq.standard for round "
+    "lots. quotes itself stays standard-lot only.",
+    "Price series stay unified: a codneg has exactly one instrument type, so "
+    "quote_history works for any cash ticker without knowing its type first.",
     "universe(asset_class=option|termo) lists the codnegs that printed on that "
     "segment's most recent session — currently-listed series, not every series "
     "ever listed. Expired series stay queryable by codneg in option_history.",
@@ -224,6 +232,11 @@ def catalog_payload() -> Dict[str, Any]:
             "lookup": "GET /v1/lookup?q=",
             "universe": "GET /v1/universe?asset_class=",
             "quotes": "GET /v1/quotes/{ticker}",
+            "equities": "GET /rest/v1/equities",
+            "bdrs": "GET /rest/v1/bdrs",
+            "units": "GET /rest/v1/units",
+            "fund_quotas": "GET /rest/v1/fund_quotas",
+            "cash_securities": "GET /rest/v1/cash_securities",
             "funds": "GET /v1/funds/{cnpj}/nav",
             "coverage": "GET /v1/coverage",
         },
