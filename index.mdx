@@ -74,6 +74,7 @@ flag so nobody mistakes these for split-adjusted prices.
   - **Missing observations stay missing.** No forward-fill, no interpolation, no
     carry-last-observation.
   - **`close_return` across a calendar gap is null**, not a two-month return.
+    The ratio is of unadjusted closes: a 2:1 split reports roughly −50 %.
   - **`freq=day` is quotes only.** Mix equity with fund fundamentals on `freq=month`.
   - **Responses are hard-capped** (100,001 rows for `panel`, 5,001 for the series
     functions) so a too-large ask is visible, never silently truncated.

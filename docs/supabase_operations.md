@@ -111,3 +111,8 @@ Confirm row counts are in the expected ballpark and `cvm_ingest_log` shows
 - **`ANALYZE`**: `daily_ingest.yml` runs `ANALYZE` post-ingest; `db_parity.py`
   estimates rely on it. After a manual local backfill, run `ANALYZE;` so the
   estimates (and the planner) are fresh.
+- **Performance Advisor stays red after a compute upgrade**: those lints are
+  partition children without their own PK, unused Auth's 10-connection cap, and
+  (if present) a leftover `public.messages` table this repo does not create. Do
+  not add primary keys or drop indexes to clear the badge — see
+  [`DATABASE_MAINTENANCE.md` §10](DATABASE_MAINTENANCE.md).

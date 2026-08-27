@@ -57,7 +57,7 @@ api.panel(p_ids     TEXT[],
 | --- | --- | --- | --- | --- | --- |
 | `close` | ticker | equity | day, month | `b3_cotahist` | Unadjusted cash close, board `02`. Monthly = last session of the month. |
 | `volume` | ticker | equity | day, month | `b3_cotahist` | Session financial volume in BRL. Monthly = the last session's volume, not a monthly sum. |
-| `close_return` | ticker | equity | day, month | `b3_cotahist` | `p_t / p_(t-1) - 1` from stored closes. Derived. |
+| `close_return` | ticker | equity | day, month | `b3_cotahist` | `p_t / p_(t-1) - 1` from stored **unadjusted** closes. Derived. A 2:1 split reports roughly −50%. |
 | `nav` | cnpj | fi, fidc, fii, fip, fiagro | month | `cvm` | Fund net assets (`vl_patrim_liq`). |
 | `quota` | cnpj | fi | month | `cvm` | Unit quota value. Comparable within a subclass only. |
 | `delinquency` | cnpj | fidc, fiagro | month | `cvm` | Delinquent portfolio **value**, not a rate — divide by `nav` yourself. |
@@ -184,6 +184,15 @@ Either way, when you pivot to a wide matrix the gap becomes an empty cell. Keep 
 correlate on pairwise-complete observations rather than filling.
 
 ### `close_return` specifically
+
+<Warning>
+  **Unadjusted.** `close_return` is the ratio of two stored closes, and those closes are
+  B3's raw prints (`adjusted: false`). A 2:1 split therefore reports roughly **−50 %** and
+  calls it a return. The arithmetic is faithful to the prices B3 published — nothing in the
+  pipeline is wrong — but an event study, a correlation, or a drawdown will silently eat a
+  fabricated shock. There is no split-adjusted metric yet. Treat jumps larger than ~40 % as
+  suspect until you have checked for a corporate action.
+</Warning>
 
 - **Monthly:** computed only when the preceding row is the **immediately preceding calendar
   month**. Across a gap the return is null — and therefore absent. A missing month never

@@ -256,7 +256,34 @@ Verify afterwards with the query in the file's footer.
 
 ---
 
-## 10. Known gaps register
+## 10. Supabase performance advisor (do not "fix" these blindly)
+
+The dashboard **Performance Advisor** stays red after a compute upgrade. That is
+expected. The lints are schema-shape checks, not CPU/RAM. The generic remediations
+(add a primary key, drop unused indexes, switch Auth to Percentage) are **wrong on
+this warehouse** and some of them take `ACCESS EXCLUSIVE` on the tables that already
+blocked schema apply when a Vercel build was running.
+
+Classify with:
+
+```bash
+psql "$POSTGRES_URL" -f scripts/queries/14_advisor_triage.sql
+```
+
+| Advisor lint | What it is here | Do |
+| ------------ | --------------- | -- |
+| **Auth DB Connection Strategy is not Percentage** | GoTrue is capped at 10 connections. This project does **not** use Supabase Auth for ingest or the read API. | **Leave it.** Percentage would let unused Auth compete with ingest writers for the pool we just paid to enlarge. Dashboard-only; there is no repo setting. |
+| **Unindexed FK `public.messages(messages_sender_id_fkey)`** | `messages` is **not in this repo**. Not in `schema.sql`, not in any migration. Leftover on the project (chat demo / old app). | If the triage query shows it and it is empty (or junk), `DROP TABLE public.messages CASCADE` from the SQL editor — **not** from a pipeline migration. Do not add an index to keep a table we do not own. |
+| **`no_primary_key` (many tables)** | Almost entirely **partition children** of `cvm_fi_diario`, `b3_cotahist`, and `cia_account`. Postgres stores the UNIQUE/PK on the parent; the linter counts each yearly slice as a table without its own PK. Parents use a named `UNIQUE` on the natural key (required for `ON CONFLICT`) rather than `PRIMARY KEY`. | **Do not** `ALTER TABLE … ADD PRIMARY KEY` to silence the lint. That locks the largest relations in the database. Upserts already have a named UNIQUE that includes the partition key. |
+| **`unused_index`** | `idx_scan = 0` after a stats reset, a compute move, or because the planner prefers the UNIQUE. The vista covering index, BRINs, and CNPJ/date indexes exist for ingest, `api.quotes`, and the dashboard. | **Do not drop.** A previous dashboard bug was a sequential scan of millions of rows to print four numbers. Dropping "unused" indexes recreates that. Revisit only if `pg_stat_user_indexes.idx_scan` is still 0 **and** `pg_stat_all_tables.n_tup_ins` on that table is also 0 after weeks of daily ingest. |
+
+A leftover `messages` table is the only advisor hit that might deserve a DROP. Everything
+else is either a false positive from partitioning or an index we would miss the next
+time a query planner needs it.
+
+---
+
+## 11. Known gaps register
 
 Live as of 2026-07-30. Keep this current — it exists so the next person doesn't have to
 rediscover these by querying the warehouse from scratch.
@@ -274,7 +301,7 @@ rediscover these by querying the warehouse from scratch.
 
 ---
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 | Symptom                                                                  | Likely cause                                                         | Fix                                                                                                                                                |
 | ------------------------------------------------------------------------ | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -287,12 +314,14 @@ rediscover these by querying the warehouse from scratch.
 | `apply_analytical.sh` fails a smoke check                                | Ran against an empty/partial DB                                      | Ingest first, then re-run                                                                                                                          |
 | Dashboard suddenly empty after a security change                         | RLS enabled without a SELECT policy                                  | Ensure the `anon_read` policy exists (§8)                                                                                                          |
 | Rows appearing in `*_future` partitions                                  | Missing year partition                                               | §6 rollover                                                                                                                                        |
+| Performance Advisor still red after a compute upgrade                    | Lint of partition children / unused Auth / leftover `messages`       | §10 — do **not** add PKs or drop indexes to clear the badge                                                                                        |
 
 ---
 
 ## Related
 
 - [`supabase_operations.md`](supabase_operations.md) — one-time setup / project cutover
+- `scripts/queries/14_advisor_triage.sql` — classify Performance Advisor lints (§10)
 - [`DATA_MODELING.md`](DATA_MODELING.md) — star schema conventions for new data classes
 - [`ETF_AND_PERFORMANCE.md`](ETF_AND_PERFORMANCE.md) — ETF carve-out and the CVM-175 CNPJ split
 - `CLAUDE.md` — architecture, the "Adding a dataset" recipe, and the non-negotiable

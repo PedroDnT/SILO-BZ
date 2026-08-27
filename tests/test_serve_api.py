@@ -283,6 +283,19 @@ def test_panel_metrics_come_from_catalog():
         assert spec["asset_class"]
 
 
+def test_close_return_catalog_says_unadjusted():
+    """Splits must not look like total returns. Catalog v3 names the trap."""
+    from serve.catalog import CONSTRAINTS, CATALOG_VERSION, METRICS
+
+    assert CATALOG_VERSION >= 3
+    meaning = METRICS["close_return"]["meaning"].lower()
+    assert "unadjusted" in meaning
+    assert "split" in meaning
+    joined = " ".join(CONSTRAINTS).lower()
+    assert "unadjusted" in joined
+    assert "split" in joined
+
+
 def test_notebook_reduce_keeps_nulls_and_is_unexported():
     from serve import catalog as catalog_mod
     from serve.catalog import reduce_panel
