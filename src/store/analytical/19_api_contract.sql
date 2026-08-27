@@ -12,12 +12,14 @@
 --     b3_cotahist / vw_b3_quote_vista / cvm_* / dim_fund. The view's own grant
 --     list IS the boundary; the blast radius of a leak is exactly the columns
 --     each view selects, nothing else.
---   * Every function is SECURITY DEFINER with an empty pinned search_path
---     (all relations schema-qualified), because DEFINER is the mechanism that
---     lets callers read without landing-table grants. INVOKER would force
---     granting anon / silo_api SELECT on the landing tables — exactly the door
---     Step 6 closes — so no api function is INVOKER. EXECUTE is revoked from
---     PUBLIC then granted to anon/authenticated and silo_api (end of file).
+--   * Every data-reading function is SECURITY DEFINER with an empty pinned
+--     search_path (all relations schema-qualified), because DEFINER is the
+--     mechanism that lets callers read without landing-table grants. INVOKER
+--     would force granting anon / silo_api SELECT on the landing tables —
+--     exactly the door Step 6 closes — so no function that touches a relation
+--     is INVOKER. Sole exception: api.catalog(), which reads nothing (it
+--     returns a constant), so it stays INVOKER — minimal privilege. EXECUTE
+--     is revoked from PUBLIC then granted to anon/authenticated and silo_api.
 --   * silo_api (created in 12_grants_and_rls.sql, which applies first) is the
 --     read bundle serve/ connects through. It gets schema api only.
 --
@@ -32,8 +34,10 @@
 --     oversized case indistinguishable and silently hand back a truncated —
 --     i.e. fabricated — panel, which integrity rule 1 forbids.
 -- Keep 5001/100001 in lockstep with serve/app.py _MAX_POINTS/_MAX_PANEL.
--- Discovery functions are already bounded: universe <= 500, lookup <= 20,
--- search_funds <= 200, quote_latest = 1, coverage = 3 rows.
+-- option_chain is page-shaped, not series-shaped: its own clamp (1..2000) is
+-- documented at the function. Discovery functions are already bounded:
+-- universe <= 500, lookup <= 20, search_funds <= 200, quote_latest = 1,
+-- coverage = 4 rows.
 --
 -- Never fabricate: a ticker with no rows returns zero rows (HTTP 404 at serve/).
 -- Prices are unadjusted. Default cash quote is board (codbdi) '02' (standard lot).
@@ -222,6 +226,255 @@ GRANT EXECUTE ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT) TO anon, aut
 GRANT EXECUTE ON FUNCTION api.quote_latest(TEXT, TEXT) TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
+-- Options & termo (B3 COTAHIST derivative segments; INSTRUMENTS.md Phase A)
+-- ---------------------------------------------------------------------------
+-- Same landing rows as the cash tape, different tpmerc: calls '070', puts
+-- '080', termo '030'. side is derived ONLY from tpmerc — a published B3 code,
+-- not a guess. Deliberately absent: an `underlying` column. The codneg root
+-- usually names the underlying, but that is a naming convention, not a
+-- published mapping; deriving it would synthesize an identity join (integrity
+-- rule 3, same reason ticker↔CNPJ stays unjoined). Callers filter by prefix
+-- and own that inference.
+-- ---------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION api.option_chain(
+    p_prefix      TEXT,
+    p_expiry_from DATE DEFAULT CURRENT_DATE,
+    p_trade_date  DATE DEFAULT NULL,
+    p_limit       INT  DEFAULT 500
+)
+RETURNS TABLE (
+    codneg     TEXT,
+    side       TEXT,
+    strike     NUMERIC,
+    expiry     DATE,
+    trade_date DATE,
+    close      NUMERIC,
+    open       NUMERIC,
+    high       NUMERIC,
+    low        NUMERIC,
+    trades     INT,
+    quantity   NUMERIC,
+    volume     NUMERIC,
+    isin       TEXT,
+    spec       TEXT
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_prefix     TEXT := upper(btrim(COALESCE(p_prefix, '')));
+    v_trade_date DATE;
+BEGIN
+    -- The prefix is REQUIRED (INSTRUMENTS.md): a whole-market chain is tens of
+    -- thousands of rows — exactly the query the caps exist to stop. RAISE is
+    -- the honest analogue of serve/'s 400: PostgREST surfaces it as an error
+    -- response instead of a silently narrowed chain.
+    IF length(v_prefix) < 3 THEN
+        RAISE EXCEPTION
+            'option_chain requires p_prefix: a codneg prefix of at least 3 characters (e.g. PETR). An unfiltered whole-market chain is refused.'
+            USING ERRCODE = '22023';
+    END IF;
+    -- NULL p_trade_date = the latest trade_date present among option rows
+    -- (the option segment's own latest session — NOT the cash tape's, so a
+    -- day where only cash landed never silently serves a stale chain as
+    -- "today").
+    --
+    -- GREATEST of two single-tpmerc maxes, NOT max(...) WHERE tpmerc IN (...).
+    -- Postgres rewrites MIN/MAX into an index scan only under a plain equality
+    -- qual, so the IN form plans as a seq scan over the option segment — ~89%
+    -- of the table, on the DEFAULT code path. Each equality max here becomes
+    -- Limit 1 over idx_b3_cotahist_tpmerc_dt (measured: 34k buffers -> 8).
+    -- GREATEST ignores NULLs, so a segment with no rows yet is skipped rather
+    -- than nulling the whole expression.
+    v_trade_date := COALESCE(
+        p_trade_date,
+        GREATEST(
+            (SELECT max(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '070'),
+            (SELECT max(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '080')
+        )
+    );
+    RETURN QUERY
+    SELECT
+        b.codneg,
+        CASE b.tpmerc WHEN '070' THEN 'call' WHEN '080' THEN 'put' END,
+        b.preco_exercicio,
+        b.data_vencimento,
+        b.trade_date,
+        b.preco_fechamento,
+        b.preco_abertura,
+        b.preco_maximo,
+        b.preco_minimo,
+        b.negocios,
+        b.quantidade,
+        b.volume,
+        b.isin,
+        b.especi
+    FROM public.b3_cotahist b
+    WHERE b.tpmerc IN ('070', '080')
+      AND b.trade_date = v_trade_date
+      AND b.codneg LIKE v_prefix || '%'
+      AND (p_expiry_from IS NULL OR b.data_vencimento >= p_expiry_from)
+    ORDER BY b.data_vencimento, b.preco_exercicio, b.tpmerc, b.codneg
+    -- Clamp 1..2000. This is a chain-page cap, not the 5001 series cap: one
+    -- underlying's chain on one session is hundreds of series (strike ×
+    -- expiry × side), so 2000 comfortably holds any honest single-prefix
+    -- chain while an over-broad prefix is cut deterministically (ORDER BY
+    -- expiry, strike, side, codneg) at a bounded page.
+    LIMIT LEAST(GREATEST(COALESCE(p_limit, 500), 1), 2000);
+END;
+$$;
+
+COMMENT ON FUNCTION api.option_chain(TEXT, DATE, DATE, INT) IS
+    'One session''s option chain for a REQUIRED codneg prefix (>= 3 chars; else it raises). side = call/put from tpmerc 070/080. p_trade_date NULL = latest option-segment session. No underlying column: the codneg root is a naming convention, not a published mapping. Rows clamped to 1..2000.';
+
+CREATE OR REPLACE FUNCTION api.option_history(
+    p_codneg TEXT,
+    p_from   DATE DEFAULT (CURRENT_DATE - 365),
+    p_to     DATE DEFAULT CURRENT_DATE
+)
+RETURNS TABLE (
+    codneg            TEXT,
+    trade_date        DATE,
+    side              TEXT,
+    strike            NUMERIC,
+    expiry            DATE,
+    spec              TEXT,
+    currency          TEXT,
+    open              NUMERIC,
+    high              NUMERIC,
+    low               NUMERIC,
+    average           NUMERIC,
+    close             NUMERIC,
+    bid               NUMERIC,
+    ask               NUMERIC,
+    trades            INT,
+    quantity          NUMERIC,
+    volume            NUMERIC,
+    isin              TEXT,
+    quotation_factor  INT,
+    adjusted          BOOLEAN,
+    source            TEXT
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+    SELECT
+        b.codneg,
+        b.trade_date,
+        CASE b.tpmerc WHEN '070' THEN 'call' WHEN '080' THEN 'put' END,
+        b.preco_exercicio,
+        b.data_vencimento,
+        b.especi,
+        COALESCE(b.moeda, 'R$'),
+        b.preco_abertura,
+        b.preco_maximo,
+        b.preco_minimo,
+        b.preco_medio,
+        b.preco_fechamento,
+        b.oferta_compra,
+        b.oferta_venda,
+        b.negocios,
+        b.quantidade,
+        b.volume,
+        b.isin,
+        b.fator_cotacao,
+        FALSE,
+        b.source
+    FROM public.b3_cotahist b
+    WHERE b.tpmerc IN ('070', '080')
+      AND b.codneg = upper(btrim(p_codneg))
+      AND b.trade_date BETWEEN p_from AND p_to
+    ORDER BY b.trade_date
+    -- Cap = serve _MAX_POINTS (5000) + 1, in lockstep with quote_history: the
+    -- +1 row lets an adapter tell "too large" from "complete" instead of
+    -- silently truncating. An option series is short-lived (months), so 5000
+    -- is a pure backstop. Deterministic: oldest kept.
+    LIMIT 5001;
+$$;
+
+COMMENT ON FUNCTION api.option_history(TEXT, DATE, DATE) IS
+    'Daily unadjusted series for one option codneg (tpmerc 070/080), quote_history''s shape plus side/strike/expiry. Hard-capped at 5001 rows (= serve _MAX_POINTS + 1).';
+
+CREATE OR REPLACE FUNCTION api.termo_history(
+    p_codneg TEXT,
+    p_from   DATE DEFAULT (CURRENT_DATE - 365),
+    p_to     DATE DEFAULT CURRENT_DATE
+)
+RETURNS TABLE (
+    codneg            TEXT,
+    trade_date        DATE,
+    term_days         TEXT,
+    spec              TEXT,
+    currency          TEXT,
+    open              NUMERIC,
+    high              NUMERIC,
+    low               NUMERIC,
+    average           NUMERIC,
+    close             NUMERIC,
+    bid               NUMERIC,
+    ask               NUMERIC,
+    trades            INT,
+    quantity          NUMERIC,
+    volume            NUMERIC,
+    isin              TEXT,
+    quotation_factor  INT,
+    adjusted          BOOLEAN,
+    source            TEXT
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+    SELECT
+        b.codneg,
+        b.trade_date,
+        b.prazot,           -- term in days; TEXT as stored (api.quotes precedent)
+        b.especi,
+        COALESCE(b.moeda, 'R$'),
+        b.preco_abertura,
+        b.preco_maximo,
+        b.preco_minimo,
+        b.preco_medio,
+        b.preco_fechamento,
+        b.oferta_compra,
+        b.oferta_venda,
+        b.negocios,
+        b.quantidade,
+        b.volume,
+        b.isin,
+        b.fator_cotacao,
+        FALSE,
+        b.source
+    FROM public.b3_cotahist b
+    WHERE b.tpmerc = '030'
+      AND b.codneg = upper(btrim(p_codneg))
+      AND b.trade_date BETWEEN p_from AND p_to
+    -- Termo grain includes prazot (several terms of one codneg can print on
+    -- one session), so order by it too for a deterministic cut. length-then-
+    -- text sorts digit strings numerically without a cast that could blow up
+    -- on source garbage.
+    ORDER BY b.trade_date, length(b.prazot), b.prazot
+    -- Cap = serve _MAX_POINTS (5000) + 1, same lockstep as quote_history.
+    LIMIT 5001;
+$$;
+
+COMMENT ON FUNCTION api.termo_history(TEXT, DATE, DATE) IS
+    'Daily unadjusted series for one termo codneg (tpmerc 030), including term_days (prazot). Grain is (codneg, trade_date, term_days). Hard-capped at 5001 rows (= serve _MAX_POINTS + 1).';
+
+REVOKE ALL ON FUNCTION api.option_chain(TEXT, DATE, DATE, INT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION api.option_history(TEXT, DATE, DATE) FROM PUBLIC;
+REVOKE ALL ON FUNCTION api.termo_history(TEXT, DATE, DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.option_chain(TEXT, DATE, DATE, INT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION api.option_history(TEXT, DATE, DATE) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION api.termo_history(TEXT, DATE, DATE) TO anon, authenticated;
+
+-- ---------------------------------------------------------------------------
 -- Funds (dim_fund + existing RPCs)
 -- ---------------------------------------------------------------------------
 
@@ -395,7 +648,20 @@ AS $$
     FROM public.dim_fund
     UNION ALL
     SELECT 'fund_nav'::text, MAX(period), 'cvm'::text
-    FROM public.fact_fund_monthly;
+    FROM public.fact_fund_monthly
+    UNION ALL
+    -- Options + termo land in the same COTAHIST file as cash quotes, but the
+    -- segments can lag independently, so freshness is reported per segment.
+    -- GREATEST of three equality maxes rather than one IN-list max: coverage()
+    -- is the bootstrap call every agent makes first, and only the equality
+    -- form gets the MIN/MAX index rewrite (see api.option_chain).
+    SELECT 'derivatives'::text,
+           GREATEST(
+               (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '070'),
+               (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '080'),
+               (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '030')
+           ),
+           'b3_cotahist'::text;
 $$;
 
 REVOKE ALL ON FUNCTION api.coverage() FROM PUBLIC;
@@ -500,6 +766,83 @@ quote_ret AS (
     FROM quote_px
     WINDOW w AS (PARTITION BY ticker ORDER BY period)
 ),
+-- Derivative segments (options tpmerc 070/080, termo 030). Disjoint from the
+-- vista arms by tpmerc, so existing arm output is untouched — before these
+-- arms an option codneg simply resolved to nothing. Month = last session in
+-- the month, the same real-print convention as quote_month. COTAHIST's grain
+-- for these rows includes codbdi (and prazot for termo): the panel is 1-D per
+-- (id, date, metric), so a within-session tie is cut deterministically
+-- (DISTINCT ON + full ORDER BY — for termo the shortest term wins, ordered
+-- length-then-text so digit strings sort numerically without a cast) rather
+-- than aggregated into a synthetic number. option_history / termo_history
+-- expose the full grain.
+option_month AS (
+    SELECT DISTINCT ON (b.codneg, date_trunc('month', b.trade_date))
+        b.codneg,
+        date_trunc('month', b.trade_date)::date AS period,
+        b.preco_fechamento AS close,
+        b.volume
+    FROM public.b3_cotahist b
+    JOIN params p ON TRUE
+    WHERE p.freq = 'month'
+      AND b.tpmerc IN ('070', '080')
+      AND b.trade_date BETWEEN p.d0 AND p.d1
+      AND b.codneg IN (SELECT ticker FROM tickers)
+    ORDER BY b.codneg, date_trunc('month', b.trade_date), b.trade_date DESC, b.codbdi
+),
+option_day AS (
+    SELECT DISTINCT ON (b.codneg, b.trade_date)
+        b.codneg,
+        b.trade_date AS period,
+        b.preco_fechamento AS close,
+        b.volume
+    FROM public.b3_cotahist b
+    JOIN params p ON TRUE
+    WHERE p.freq = 'day'
+      AND b.tpmerc IN ('070', '080')
+      AND b.trade_date BETWEEN p.d0 AND p.d1
+      AND b.codneg IN (SELECT ticker FROM tickers)
+    ORDER BY b.codneg, b.trade_date, b.codbdi
+),
+option_px AS (
+    SELECT * FROM option_month
+    UNION ALL
+    SELECT * FROM option_day
+),
+termo_month AS (
+    SELECT DISTINCT ON (b.codneg, date_trunc('month', b.trade_date))
+        b.codneg,
+        date_trunc('month', b.trade_date)::date AS period,
+        b.preco_fechamento AS close,
+        b.volume
+    FROM public.b3_cotahist b
+    JOIN params p ON TRUE
+    WHERE p.freq = 'month'
+      AND b.tpmerc = '030'
+      AND b.trade_date BETWEEN p.d0 AND p.d1
+      AND b.codneg IN (SELECT ticker FROM tickers)
+    ORDER BY b.codneg, date_trunc('month', b.trade_date), b.trade_date DESC,
+             length(b.prazot), b.prazot, b.codbdi
+),
+termo_day AS (
+    SELECT DISTINCT ON (b.codneg, b.trade_date)
+        b.codneg,
+        b.trade_date AS period,
+        b.preco_fechamento AS close,
+        b.volume
+    FROM public.b3_cotahist b
+    JOIN params p ON TRUE
+    WHERE p.freq = 'day'
+      AND b.tpmerc = '030'
+      AND b.trade_date BETWEEN p.d0 AND p.d1
+      AND b.codneg IN (SELECT ticker FROM tickers)
+    ORDER BY b.codneg, b.trade_date, length(b.prazot), b.prazot, b.codbdi
+),
+termo_px AS (
+    SELECT * FROM termo_month
+    UNION ALL
+    SELECT * FROM termo_day
+),
 fund_rows AS (
     SELECT
         f.cnpj,
@@ -530,6 +873,22 @@ SELECT r.ticker, 'ticker', 'equity', r.period, 'close_return', r.close_return, '
 FROM quote_ret r JOIN params p ON TRUE
 WHERE 'close_return' = ANY (p.metrics)
   AND r.close_return IS NOT NULL
+UNION ALL
+SELECT o.codneg, 'option', 'derivative', o.period, 'close', o.close, 'b3_cotahist'
+FROM option_px o JOIN params p ON TRUE
+WHERE 'close' = ANY (p.metrics)
+UNION ALL
+SELECT o.codneg, 'option', 'derivative', o.period, 'volume', o.volume, 'b3_cotahist'
+FROM option_px o JOIN params p ON TRUE
+WHERE 'volume' = ANY (p.metrics)
+UNION ALL
+SELECT t.codneg, 'termo', 'derivative', t.period, 'close', t.close, 'b3_cotahist'
+FROM termo_px t JOIN params p ON TRUE
+WHERE 'close' = ANY (p.metrics)
+UNION ALL
+SELECT t.codneg, 'termo', 'derivative', t.period, 'volume', t.volume, 'b3_cotahist'
+FROM termo_px t JOIN params p ON TRUE
+WHERE 'volume' = ANY (p.metrics)
 UNION ALL
 SELECT f.cnpj, 'cnpj', f.entity_type, f.period, 'nav', f.nav, 'cvm'
 FROM fund_rows f JOIN params p ON TRUE
@@ -569,7 +928,7 @@ LIMIT 100001;
 $$;
 
 COMMENT ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) IS
-    'Long panel for correlation/factor work. Mix tickers + CNPJs. No ffill. close_return is null across calendar gaps. Hard-capped at 100001 rows (= serve _MAX_PANEL + 1): above 100000 the adapter answers 400, never a truncated panel.';
+    'Long panel for correlation/factor work. Mix tickers, option/termo codnegs, + CNPJs. No ffill. close_return is null across calendar gaps. Hard-capped at 100001 rows (= serve _MAX_PANEL + 1): above 100000 the adapter answers 400, never a truncated panel.';
 
 REVOKE ALL ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) TO anon, authenticated;
@@ -600,10 +959,45 @@ AS $$
         SELECT d.cnpj, 'cnpj', d.entity_type, d.fund_name, NULL
         FROM public.dim_fund d
         WHERE p_asset_class IS NULL OR d.entity_type = p_asset_class
+        UNION ALL
+        -- Derivatives list ONLY on explicit request (p_asset_class 'option' /
+        -- 'termo'), never in the NULL default: the option namespace is ~10x
+        -- the cash tape per session and would drown the default universe.
+        --
+        -- Scoped to the segment's LATEST session, which is both the honest
+        -- answer ("which series are listed now" — option series expire, so a
+        -- whole-history list is mostly dead contracts) and the only affordable
+        -- one: aggregating every option row ever landed is a seq scan over
+        -- ~89% of b3_cotahist, and a full-table GROUP BY on this table already
+        -- times out in production. Measured on a 2M-row stand-in: 34k buffers
+        -- -> 5k, and it stays flat as history grows. GREATEST-of-equality-maxes
+        -- rather than an IN-list max for the same reason as api.option_chain.
+        SELECT b.codneg, 'option', 'derivative', max(b.nome_resumido), max(b.isin)
+        FROM public.b3_cotahist b
+        WHERE p_asset_class = 'option'
+          AND b.tpmerc IN ('070', '080')
+          AND b.trade_date = GREATEST(
+              (SELECT max(x.trade_date) FROM public.b3_cotahist x WHERE x.tpmerc = '070'),
+              (SELECT max(x.trade_date) FROM public.b3_cotahist x WHERE x.tpmerc = '080')
+          )
+        GROUP BY b.codneg
+        UNION ALL
+        SELECT b.codneg, 'termo', 'derivative', max(b.nome_resumido), max(b.isin)
+        FROM public.b3_cotahist b
+        WHERE p_asset_class = 'termo'
+          AND b.tpmerc = '030'
+          AND b.trade_date = (SELECT max(x.trade_date)
+                              FROM public.b3_cotahist x WHERE x.tpmerc = '030')
+        GROUP BY b.codneg
     ) u
-    ORDER BY 3, 4 NULLS LAST
+    -- id (col 1) tiebreak: option/termo names repeat across a whole root, so
+    -- without it the 500-row cut would be nondeterministic.
+    ORDER BY 3, 4 NULLS LAST, 1
     LIMIT LEAST(GREATEST(COALESCE(p_limit, 50), 1), 500);
 $$;
+
+COMMENT ON FUNCTION api.universe(TEXT, INT) IS
+    'List identifiers by asset_class (NULL = equities + funds). asset_class option/termo lists the derivative codnegs that printed on that segment''s most recent session — currently-listed series, not every series ever listed. Rows clamped to 1..500.';
 
 REVOKE ALL ON FUNCTION api.universe(TEXT, INT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.universe(TEXT, INT) TO anon, authenticated;
@@ -646,11 +1040,285 @@ AS $$
     LIMIT 20;
 $$;
 
+-- Option/termo codnegs are deliberately NOT resolved here: lookup is a
+-- name-resolution surface and option series have no names — only the codneg
+-- itself, which the caller already holds. Adding a ~100k-id derivative
+-- namespace to a name resolver would bloat every query for zero resolution
+-- power. Discover derivative ids via api.universe('option'|'termo') or
+-- api.option_chain(prefix).
 COMMENT ON FUNCTION api.lookup(TEXT) IS
-    'Resolve ticker / ISIN / CNPJ / company name. Does not invent ticker↔CNPJ matches.';
+    'Resolve ticker / ISIN / CNPJ / company name. Does not invent ticker↔CNPJ matches. Does not resolve option/termo codnegs (no names to resolve — use universe or option_chain).';
 
 REVOKE ALL ON FUNCTION api.lookup(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.lookup(TEXT) TO anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Catalog — the metric map, public (INSTRUMENTS.md: discovery is contract)
+-- ---------------------------------------------------------------------------
+-- The same JSON serve/catalog.py's catalog_payload() serves at /v1/catalog,
+-- as one jsonb constant, so an agent on the Data API can self-describe
+-- without the local adapter. An offline test
+-- (tests/test_api_contract_sql.py) pins this literal to catalog_payload()
+-- by deep equality — editing serve/catalog.py without regenerating this
+-- block fails CI, and vice versa. Regenerate with:
+--   .venv/bin/python -c "import json; from serve.catalog import catalog_payload; print(json.dumps(catalog_payload(), indent=2, ensure_ascii=False))"
+-- Catalog changes bump CATALOG_VERSION in serve/catalog.py (mirrored in the
+-- "version" key below).
+--
+-- SECURITY INVOKER (the file-wide DEFINER rule does not apply): the body
+-- reads no relation at all — it returns a constant — so DEFINER would grant
+-- owner rights for nothing. INVOKER is the minimal privilege, and with no
+-- object references there is no search_path surface to pin.
+
+CREATE OR REPLACE FUNCTION api.catalog()
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+AS $fn$
+SELECT $json$
+{
+  "kind": "catalog",
+  "version": 3,
+  "primitive": "panel",
+  "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup/universe, then GET /v1/panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions, and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches.",
+  "metrics": {
+    "close": {
+      "id_type": [
+        "ticker",
+        "option",
+        "termo"
+      ],
+      "asset_class": [
+        "equity",
+        "derivative"
+      ],
+      "grain": [
+        "day",
+        "month"
+      ],
+      "source": "b3_cotahist",
+      "meaning": "Unadjusted close. Equity tickers: cash board 02. Option/termo codnegs: the derivative segment's session close. Month = last session in the month."
+    },
+    "volume": {
+      "id_type": [
+        "ticker",
+        "option",
+        "termo"
+      ],
+      "asset_class": [
+        "equity",
+        "derivative"
+      ],
+      "grain": [
+        "day",
+        "month"
+      ],
+      "source": "b3_cotahist",
+      "meaning": "Session traded volume (BRL). Equity: cash board 02; option/termo: the derivative segment. Month = last session."
+    },
+    "close_return": {
+      "id_type": [
+        "ticker"
+      ],
+      "asset_class": [
+        "equity"
+      ],
+      "grain": [
+        "day",
+        "month"
+      ],
+      "source": "b3_cotahist",
+      "meaning": "p_t/p_{t-1}-1 from stored closes. Daily: previous session. Monthly: previous calendar month else null.",
+      "derived": true
+    },
+    "nav": {
+      "id_type": [
+        "cnpj"
+      ],
+      "asset_class": [
+        "fi",
+        "fidc",
+        "fii",
+        "fip",
+        "fiagro"
+      ],
+      "grain": [
+        "month"
+      ],
+      "source": "cvm",
+      "meaning": "Fund net assets (vl_patrim_liq)."
+    },
+    "quota": {
+      "id_type": [
+        "cnpj"
+      ],
+      "asset_class": [
+        "fi"
+      ],
+      "grain": [
+        "month"
+      ],
+      "source": "cvm",
+      "meaning": "FI unit quota. Comparable subclass only."
+    },
+    "delinquency": {
+      "id_type": [
+        "cnpj"
+      ],
+      "asset_class": [
+        "fidc",
+        "fiagro"
+      ],
+      "grain": [
+        "month"
+      ],
+      "source": "cvm",
+      "meaning": "Delinquent portfolio value (not a rate unless you divide by nav)."
+    },
+    "yield": {
+      "id_type": [
+        "cnpj"
+      ],
+      "asset_class": [
+        "fii"
+      ],
+      "grain": [
+        "month"
+      ],
+      "source": "cvm",
+      "meaning": "Monthly yield % as published (FII complemento)."
+    },
+    "inflows": {
+      "id_type": [
+        "cnpj"
+      ],
+      "asset_class": [
+        "fi"
+      ],
+      "grain": [
+        "month"
+      ],
+      "source": "cvm",
+      "meaning": "Gross monthly subscriptions."
+    },
+    "redemptions": {
+      "id_type": [
+        "cnpj"
+      ],
+      "asset_class": [
+        "fi"
+      ],
+      "grain": [
+        "month"
+      ],
+      "source": "cvm",
+      "meaning": "Gross monthly redemptions."
+    },
+    "quotaholders": {
+      "id_type": [
+        "cnpj"
+      ],
+      "asset_class": [
+        "fi",
+        "fidc",
+        "fii",
+        "fip",
+        "fiagro"
+      ],
+      "grain": [
+        "month"
+      ],
+      "source": "cvm",
+      "meaning": "Number of unit-holders."
+    }
+  },
+  "notebook_reducers": {
+    "describe": "Per-column n, null_rate, min, max, last. No model.",
+    "corr": "Pairwise Pearson on complete pairs of the wide matrix. One relation among many.",
+    "rank": "Latest non-null value per id for the first metric, descending.",
+    "spread": "First column minus second column of the wide matrix, dates aligned."
+  },
+  "constraints": [
+    "Never invent a price, NAV, or identifier match.",
+    "Missing observations stay null; do not ffill or interpolate.",
+    "freq=day is quotes only. Mix equity with fund fundamentals on freq=month.",
+    "close_return across a missing month is null, not a multi-month return.",
+    "Ticker↔cia_company is not joined here; lookup returns them separately.",
+    "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
+    "Panel responses are hard-capped at 100000 rows (series endpoints at 5000); above that the API answers 400 — narrow ids, metrics, or the date window.",
+    "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
+    "Options and termo carry no underlying column: the codneg root is a naming convention, not a published B3 mapping. Prefix filtering is the caller's own inference.",
+    "Option/termo codnegs resolve via universe(asset_class=option|termo) or option_chain, not lookup — option series have no names to resolve.",
+    "universe(asset_class=option|termo) lists the codnegs that printed on that segment's most recent session — currently-listed series, not every series ever listed. Expired series stay queryable by codneg in option_history."
+  ],
+  "examples": [
+    {
+      "ask": "How does PETR4 relate to delinquency in this FIDC?",
+      "call": "GET /v1/panel?ids=PETR4,<cnpj>&metrics=close_return,delinquency&freq=month&format=wide",
+      "then": "Pairwise-complete correlation in the notebook. Do not ffill."
+    },
+    {
+      "ask": "Rank these funds by latest NAV",
+      "call": "GET /v1/panel?ids=<cnpj>,<cnpj>&metrics=nav&freq=month&format=wide",
+      "then": "Take the last non-null NAV per id from the wide matrix."
+    },
+    {
+      "ask": "Did inflows and quota move together for this FI?",
+      "call": "GET /v1/panel?ids=<cnpj>&metrics=inflows,quota&freq=month&format=wide",
+      "then": "Correlate the two columns; nulls stay null."
+    },
+    {
+      "ask": "Spread of two equity closes at month end",
+      "call": "GET /v1/panel?ids=PETR4,VALE3&metrics=close&freq=month&format=wide",
+      "then": "Subtract aligned columns; a missing month is null, not interpolated."
+    },
+    {
+      "ask": "Just give me the panel; I will run a factor model",
+      "call": "GET /v1/panel?ids=PETR4,VALE3,<cnpj>&metrics=close_return,nav&freq=month&format=wide",
+      "then": "Model in the notebook from the matrix."
+    }
+  ],
+  "id_types": [
+    "ticker",
+    "cnpj",
+    "cd_cvm",
+    "option",
+    "termo"
+  ],
+  "asset_classes": [
+    "equity",
+    "fi",
+    "fidc",
+    "fii",
+    "fip",
+    "fiagro",
+    "cia",
+    "derivative"
+  ],
+  "freq": [
+    "day",
+    "month"
+  ],
+  "endpoints": {
+    "catalog": "GET /v1/catalog",
+    "tools": "GET /v1/tools",
+    "panel": "GET /v1/panel",
+    "lookup": "GET /v1/lookup?q=",
+    "universe": "GET /v1/universe?asset_class=",
+    "quotes": "GET /v1/quotes/{ticker}",
+    "funds": "GET /v1/funds/{cnpj}/nav",
+    "coverage": "GET /v1/coverage"
+  }
+}
+$json$::jsonb;
+$fn$;
+
+COMMENT ON FUNCTION api.catalog() IS
+    'Machine-readable metric/constraint catalog, identical to serve/ /v1/catalog (pinned by an offline test). Constant jsonb; SECURITY INVOKER because it reads nothing.';
+
+REVOKE ALL ON FUNCTION api.catalog() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.catalog() TO anon, authenticated;
+
 
 -- ---------------------------------------------------------------------------
 -- silo_api — the read-only privilege bundle serve/ connects through
@@ -661,7 +1329,7 @@ GRANT EXECUTE ON FUNCTION api.lookup(TEXT) TO anon, authenticated;
 -- ON_ERROR_STOP=1 — intentional; never wrap them in a silent conditional.
 --
 -- The bundle is schema api and nothing else: USAGE on the schema, SELECT on
--- the two views, EXECUTE on the nine functions. It deliberately receives no
+-- the two views, EXECUTE on the thirteen functions. It deliberately receives no
 -- grant in schema public — the DEFINER functions and owner-privileged views
 -- above are the only path from silo_api to the data. serve/-only works with
 -- exactly this; exposing schema api on the Supabase Data API would be a
@@ -673,6 +1341,9 @@ GRANT SELECT ON api.quotes, api.funds TO silo_api;
 
 GRANT EXECUTE ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT)   TO silo_api;
 GRANT EXECUTE ON FUNCTION api.quote_latest(TEXT, TEXT)                TO silo_api;
+GRANT EXECUTE ON FUNCTION api.option_chain(TEXT, DATE, DATE, INT)     TO silo_api;
+GRANT EXECUTE ON FUNCTION api.option_history(TEXT, DATE, DATE)        TO silo_api;
+GRANT EXECUTE ON FUNCTION api.termo_history(TEXT, DATE, DATE)         TO silo_api;
 GRANT EXECUTE ON FUNCTION api.fund_profile(TEXT)                      TO silo_api;
 GRANT EXECUTE ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT)        TO silo_api;
 GRANT EXECUTE ON FUNCTION api.search_funds(TEXT, TEXT, INT)           TO silo_api;
@@ -680,6 +1351,7 @@ GRANT EXECUTE ON FUNCTION api.coverage()                              TO silo_ap
 GRANT EXECUTE ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.universe(TEXT, INT)                     TO silo_api;
 GRANT EXECUTE ON FUNCTION api.lookup(TEXT)                            TO silo_api;
+GRANT EXECUTE ON FUNCTION api.catalog()                               TO silo_api;
 
 -- Defensive, idempotent no-ops today (silo_api is never directly granted
 -- anything in public): strip any direct grant a future change might add by

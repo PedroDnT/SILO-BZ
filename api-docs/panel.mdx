@@ -26,9 +26,11 @@ api.panel(p_ids     TEXT[],
 ## Parameters
 
 <ParamField body="p_ids" type="string[]" required>
-  Tickers and/or CNPJs, mixed freely. Each id is classified by shape: strip the non-digits,
-  and **exactly 14 digits means CNPJ** — anything else is treated as a ticker and
-  upper-cased. Blank entries are dropped. An empty array yields no rows.
+  Tickers, derivative codnegs, and/or CNPJs, mixed freely. Each id is classified by shape:
+  strip the non-digits, and **exactly 14 digits means CNPJ** — anything else is treated as a
+  B3 code and upper-cased. Whether that code resolves as a cash ticker, an option series, or
+  a termo contract is decided by which market segment it prints in, not by the string.
+  Blank entries are dropped. An empty array yields no rows.
 </ParamField>
 
 <ParamField body="p_metrics" type="string[]" default='["close","nav"]'>
@@ -55,9 +57,9 @@ api.panel(p_ids     TEXT[],
 
 | Metric | Id type | Asset class | Grains | Source | Meaning |
 | --- | --- | --- | --- | --- | --- |
-| `close` | ticker | equity | day, month | `b3_cotahist` | Unadjusted cash close, board `02`. Monthly = last session of the month. |
-| `volume` | ticker | equity | day, month | `b3_cotahist` | Session financial volume in BRL. Monthly = the last session's volume, not a monthly sum. |
-| `close_return` | ticker | equity | day, month | `b3_cotahist` | `p_t / p_(t-1) - 1` from stored closes. Derived. |
+| `close` | ticker, option, termo | equity, derivative | day, month | `b3_cotahist` | Unadjusted close. Tickers: cash board `02`. Option/termo codnegs: that segment's session close. Monthly = last session of the month. |
+| `volume` | ticker, option, termo | equity, derivative | day, month | `b3_cotahist` | Session financial volume in BRL. Monthly = the last session's volume, not a monthly sum. |
+| `close_return` | ticker | equity | day, month | `b3_cotahist` | `p_t / p_(t-1) - 1` from stored closes. Derived. **Tickers only** — not offered for derivatives. |
 | `nav` | cnpj | fi, fidc, fii, fip, fiagro | month | `cvm` | Fund net assets (`vl_patrim_liq`). |
 | `quota` | cnpj | fi | month | `cvm` | Unit quota value. Comparable within a subclass only. |
 | `delinquency` | cnpj | fidc, fiagro | month | `cvm` | Delinquent portfolio **value**, not a rate — divide by `nav` yourself. |
@@ -77,14 +79,15 @@ api.panel(p_ids     TEXT[],
 ## Returns
 
 <ResponseField name="id" type="text">
-  The identifier as classified: an upper-cased ticker, or a 14-digit CNPJ.
+  The identifier as classified: an upper-cased B3 code (cash ticker, option series, or termo
+  contract), or a 14-digit CNPJ.
 </ResponseField>
 <ResponseField name="id_type" type="text">
-  `ticker` or `cnpj`.
+  `ticker`, `option`, `termo`, or `cnpj`.
 </ResponseField>
 <ResponseField name="asset_class" type="text">
-  `equity` for tickers; for funds, the vehicle's `entity_type` (`fi`, `fidc`, `fii`, `fip`,
-  `fiagro`).
+  `equity` for cash tickers; `derivative` for option and termo codnegs; for funds, the
+  vehicle's `entity_type` (`fi`, `fidc`, `fii`, `fip`, `fiagro`).
 </ResponseField>
 <ResponseField name="date" type="date">
   Observation date. At `freq=month` this is the first day of the month, for both the equity
@@ -163,6 +166,23 @@ const { data } = await supabase.rpc('panel', {
     "date": "2021-02-01", "metric": "close_return", "value": -0.0827, "source": "b3_cotahist" }
 ]
 ```
+
+## Derivatives in the panel
+
+Option (`tpmerc` `070`/`080`) and termo (`030`) codnegs are accepted for `close` and
+`volume`, alongside cash tickers, in the same call. Two things to know:
+
+- **Their real grain is wider than the panel's.** COTAHIST keys these rows on board — and
+  termo also on term — so more than one row can exist for one code on one session. A panel
+  observation is one value per `(id, date, metric)`, so a within-session tie is **cut
+  deterministically** (for termo, the shortest term wins) rather than averaged into a price
+  nobody quoted. For the full grain use [`option_history`](/api-docs/options) or
+  [`termo_history`](/api-docs/termo).
+- **No `close_return`.** It is a ticker-only metric. Options and termo carry strike, expiry
+  and term effects that make a naive close-to-close ratio misleading in a way the cash
+  series is not; difference `close` yourself if you want it.
+
+There is no `underlying` column anywhere — see [Options](/api-docs/options) for why.
 
 ## How gaps behave
 
