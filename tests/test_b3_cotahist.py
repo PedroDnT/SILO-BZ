@@ -340,3 +340,23 @@ class TestServeSchema:
         assert "DROP INDEX IF EXISTS idx_b3_cotahist_codneg" in mig
         assert "idx_b3_cotahist_vista" in mig
         assert "vw_b3_quote_vista" in mig
+
+    def test_b3_instrument_types_are_db_side_and_conservative(self):
+        from pathlib import Path
+
+        schema = Path("src/store/schema.sql").read_text(encoding="utf-8")
+        mig = Path("src/store/migrations/20_b3_instrument_types.sql").read_text(
+            encoding="utf-8"
+        )
+        for sql in (schema, mig):
+            assert "CREATE OR REPLACE VIEW vw_b3_instrument_typed" in sql
+            assert "'option_call'" in sql
+            assert "'option_put'" in sql
+            assert "'forward'" in sql
+            assert "'equity'" in sql
+            assert "'fund_quota'" in sql
+            assert "q.tpmerc" in sql
+            assert "q.especi" in sql
+            # CI identifies a fund quota in COTAHIST, but cannot prove ETF vs FII.
+            assert "THEN 'etf'" not in sql
+            assert "THEN 'fii'" not in sql
