@@ -314,9 +314,24 @@ class TestResolveDailyEntities:
 
 
 class TestRefreshEtfMetrics:
-    """ETF metrics are materialized; the pipeline refreshes them after ingest."""
+    """etf_daily / etf_latest are PLAIN VIEWS — there is nothing to refresh.
 
-    def test_refreshes_both_matviews_daily_before_latest(self):
+    This class used to assert the opposite, and the assertion was wrong in a way
+    that hid a daily error. Migration 06 creates the pair as materialized views,
+    but 10_fix_etf_view_kind.sql runs after it (10 > 06 lexically) and converts
+    them back to plain views on purpose — its stated job is to stop 06 winning.
+    So every schema apply ends with plain views, and the pipeline's
+    `REFRESH MATERIALIZED VIEW CONCURRENTLY` could never succeed:
+
+        refresh etf materialized views failed:
+        "etf_daily" is not a table or materialized view
+
+    Nothing was ever stale because of it — a plain view is computed at query
+    time — but the warning fired on every single daily run.
+    """
+
+    def test_does_not_issue_any_refresh(self):
+        """A REFRESH here is an error against a plain view, not a no-op."""
         from src.pipeline.cvm_pipeline import CVMIngestor
 
         executed: List[str] = []
@@ -339,13 +354,18 @@ class TestRefreshEtfMetrics:
         ing._supabase = _Client()
         ing._refresh_etf_metrics()
 
-        # etf_latest is derived from etf_daily, so etf_daily must refresh first;
-        # CONCURRENTLY relies on the unique indexes added in migration 06.
-        assert executed == [
-            "REFRESH MATERIALIZED VIEW CONCURRENTLY etf_daily",
-            "REFRESH MATERIALIZED VIEW CONCURRENTLY etf_latest",
-        ]
+        assert executed == [], (
+            "etf_daily/etf_latest are plain views after migration 10; any SQL "
+            f"issued here fails on every daily run. Got: {executed}"
+        )
 
+    def test_survives_without_a_database(self):
+        """Being a no-op, it must not even reach for a connection."""
+        from src.pipeline.cvm_pipeline import CVMIngestor
+
+        ing = CVMIngestor.__new__(CVMIngestor)
+        ing._supabase = None  # would raise if the method touched the DB
+        ing._refresh_etf_metrics()
 
 class TestMonthlyTargets:
     """Gap-aware trailing window for monthly datasets (self-heals CVM's lag)."""

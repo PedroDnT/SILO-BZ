@@ -155,8 +155,31 @@ FROM mv_savings_flow_monthly;
 -- every apply would recreate them with default privileges and anon/
 -- authenticated would silently lose PostgREST access — caught by Cursor
 -- Bugbot on PR #83 before it ever reached production.
+-- REVOKED, deliberately (owner decision, 2026-08-27).
+--
+-- The two GRANTs that used to live here made mv_savings_flow_monthly readable
+-- by anon in BOTH public and api. That was invisible while schema api was not
+-- exposed on the Data API — but exposing api (the Supabase-native serving
+-- decision) would have turned this into a live public endpoint at
+-- GET /rest/v1/mv_savings_flow_monthly that nobody chose to publish and no
+-- documentation describes.
+--
+-- It also contradicted the contract two files away: 19_api_contract.sql states
+-- the public bundle is schema api and nothing else, enumerating exactly the
+-- views and functions it grants. CLAUDE.md describes this matview as
+-- reproduced-as-found so a CASCADE recreate of fact_fund_monthly cannot destroy
+-- it, and notes nothing in this repo reads it.
+--
+-- The public surface should be exactly what was decided, so the grants are
+-- revoked rather than merely omitted: a plain omission would leave the existing
+-- production grants in place forever, since a GRANT persists until revoked.
+-- USAGE ON SCHEMA api stays granted — 19_api_contract.sql needs it for the real
+-- API surface, and USAGE alone exposes nothing without object privileges.
+--
+-- If this matview should be public, add it to 19_api_contract.sql with the rest
+-- of the contract and document it in api-docs/ — not here.
 GRANT USAGE ON SCHEMA api TO anon, authenticated;
-GRANT SELECT ON mv_savings_flow_monthly     TO anon, authenticated;
-GRANT SELECT ON api.mv_savings_flow_monthly TO anon, authenticated;
+REVOKE ALL ON mv_savings_flow_monthly     FROM anon, authenticated;
+REVOKE ALL ON api.mv_savings_flow_monthly FROM anon, authenticated;
 
 COMMIT;
