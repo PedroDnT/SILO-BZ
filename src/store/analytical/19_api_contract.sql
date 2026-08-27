@@ -95,6 +95,214 @@ ALTER VIEW api.quotes SET (security_invoker = false);
 
 GRANT SELECT ON api.quotes TO anon, authenticated;
 
+-- ---------------------------------------------------------------------------
+-- One endpoint per cash instrument type
+-- ---------------------------------------------------------------------------
+-- api.quotes is the whole cash tape. These five views are the same rows split
+-- by the instrument_type vw_b3_instrument_typed derives from published
+-- TPMERC/ESPECI, so PostgREST exposes each as its own resource:
+--
+--     GET /rest/v1/equities?ticker=eq.PETR4
+--     GET /rest/v1/bdrs?order=volume.desc&limit=20
+--
+-- Views, not functions, and no logic of their own: one WHERE clause each. The
+-- caps, grain and column set stay defined in exactly one place, so these cannot
+-- drift from api.quotes.
+--
+-- Why the SERIES stays unified: a codneg belongs to exactly one instrument_type,
+-- so quote_history('PETR4') is already unambiguous. A typed history would make
+-- the caller determine the type *before* they could ask for a price — worse for
+-- a human and worse for an agent. Split the cross-section, keep what is keyed
+-- by id. (Same two-layer rule as INSTRUMENTS.md.)
+--
+-- LOT: unlike api.quotes these carry both lot sizes, with `lot` derived from
+-- the published tpmerc. Odd lot is not a rounding error — measured 2026-08-27,
+-- equities have MORE odd-lot rows than standard-lot (153,072 vs 140,227; 496
+-- vs 476 codnegs). Hiding it would misrepresent the tape. api.quotes is left
+-- exactly as it was (tpmerc 010 only), so nothing already published moves;
+-- these are additive, and a caller who wants only round lots adds
+-- ?lot=eq.standard.
+--
+-- GRAIN is therefore (ticker, trade_date, board, term_days, lot) — one column
+-- wider than api.quotes. Say so in every COMMENT: a query that ignores `lot`
+-- sees what look like duplicate dates.
+
+CREATE OR REPLACE VIEW api.equities AS
+SELECT
+    v.codneg            AS ticker,
+    v.trade_date,
+    v.codbdi            AS board,
+    CASE v.tpmerc WHEN '010' THEN 'standard' ELSE 'odd' END AS lot,
+    v.prazot            AS term_days,
+    v.nome_resumido     AS short_name,
+    v.especi            AS spec,
+    COALESCE(v.moeda, 'R$') AS currency,
+    v.preco_abertura    AS open,
+    v.preco_maximo      AS high,
+    v.preco_minimo      AS low,
+    v.preco_medio       AS average,
+    v.preco_fechamento  AS close,
+    v.oferta_compra     AS bid,
+    v.oferta_venda      AS ask,
+    v.negocios          AS trades,
+    v.quantidade        AS quantity,
+    v.volume,
+    v.isin,
+    v.fator_cotacao     AS quotation_factor,
+    FALSE               AS adjusted,
+    v.source,
+    v.fetched_at
+FROM public.vw_b3_instrument_typed v
+WHERE v.instrument_type = 'equity'
+  AND v.tpmerc IN ('010', '020', '021');
+
+COMMENT ON VIEW api.equities IS
+    'Unadjusted B3 cash quotes for equity: ordinary and preferred shares (ESPECI ON*/PN*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.';
+
+ALTER VIEW api.equities SET (security_invoker = false);
+GRANT SELECT ON api.equities TO anon, authenticated;
+
+CREATE OR REPLACE VIEW api.bdrs AS
+SELECT
+    v.codneg            AS ticker,
+    v.trade_date,
+    v.codbdi            AS board,
+    CASE v.tpmerc WHEN '010' THEN 'standard' ELSE 'odd' END AS lot,
+    v.prazot            AS term_days,
+    v.nome_resumido     AS short_name,
+    v.especi            AS spec,
+    COALESCE(v.moeda, 'R$') AS currency,
+    v.preco_abertura    AS open,
+    v.preco_maximo      AS high,
+    v.preco_minimo      AS low,
+    v.preco_medio       AS average,
+    v.preco_fechamento  AS close,
+    v.oferta_compra     AS bid,
+    v.oferta_venda      AS ask,
+    v.negocios          AS trades,
+    v.quantidade        AS quantity,
+    v.volume,
+    v.isin,
+    v.fator_cotacao     AS quotation_factor,
+    FALSE               AS adjusted,
+    v.source,
+    v.fetched_at
+FROM public.vw_b3_instrument_typed v
+WHERE v.instrument_type = 'bdr'
+  AND v.tpmerc IN ('010', '020', '021');
+
+COMMENT ON VIEW api.bdrs IS
+    'Unadjusted B3 cash quotes for bdr: Brazilian Depositary Receipts (ESPECI DR*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.';
+
+ALTER VIEW api.bdrs SET (security_invoker = false);
+GRANT SELECT ON api.bdrs TO anon, authenticated;
+
+CREATE OR REPLACE VIEW api.units AS
+SELECT
+    v.codneg            AS ticker,
+    v.trade_date,
+    v.codbdi            AS board,
+    CASE v.tpmerc WHEN '010' THEN 'standard' ELSE 'odd' END AS lot,
+    v.prazot            AS term_days,
+    v.nome_resumido     AS short_name,
+    v.especi            AS spec,
+    COALESCE(v.moeda, 'R$') AS currency,
+    v.preco_abertura    AS open,
+    v.preco_maximo      AS high,
+    v.preco_minimo      AS low,
+    v.preco_medio       AS average,
+    v.preco_fechamento  AS close,
+    v.oferta_compra     AS bid,
+    v.oferta_venda      AS ask,
+    v.negocios          AS trades,
+    v.quantidade        AS quantity,
+    v.volume,
+    v.isin,
+    v.fator_cotacao     AS quotation_factor,
+    FALSE               AS adjusted,
+    v.source,
+    v.fetched_at
+FROM public.vw_b3_instrument_typed v
+WHERE v.instrument_type = 'unit'
+  AND v.tpmerc IN ('010', '020', '021');
+
+COMMENT ON VIEW api.units IS
+    'Unadjusted B3 cash quotes for unit: units — bundled share packages (ESPECI UNT*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.';
+
+ALTER VIEW api.units SET (security_invoker = false);
+GRANT SELECT ON api.units TO anon, authenticated;
+
+CREATE OR REPLACE VIEW api.fund_quotas AS
+SELECT
+    v.codneg            AS ticker,
+    v.trade_date,
+    v.codbdi            AS board,
+    CASE v.tpmerc WHEN '010' THEN 'standard' ELSE 'odd' END AS lot,
+    v.prazot            AS term_days,
+    v.nome_resumido     AS short_name,
+    v.especi            AS spec,
+    COALESCE(v.moeda, 'R$') AS currency,
+    v.preco_abertura    AS open,
+    v.preco_maximo      AS high,
+    v.preco_minimo      AS low,
+    v.preco_medio       AS average,
+    v.preco_fechamento  AS close,
+    v.oferta_compra     AS bid,
+    v.oferta_venda      AS ask,
+    v.negocios          AS trades,
+    v.quantidade        AS quantity,
+    v.volume,
+    v.isin,
+    v.fator_cotacao     AS quotation_factor,
+    FALSE               AS adjusted,
+    v.source,
+    v.fetched_at
+FROM public.vw_b3_instrument_typed v
+WHERE v.instrument_type = 'fund_quota'
+  AND v.tpmerc IN ('010', '020', '021');
+
+COMMENT ON VIEW api.fund_quotas IS
+    'Unadjusted B3 cash quotes for fund_quota: listed fund quotas: ETFs, FIIs and other CI* papers, undifferentiated. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.';
+
+ALTER VIEW api.fund_quotas SET (security_invoker = false);
+GRANT SELECT ON api.fund_quotas TO anon, authenticated;
+
+CREATE OR REPLACE VIEW api.cash_securities AS
+SELECT
+    v.codneg            AS ticker,
+    v.trade_date,
+    v.codbdi            AS board,
+    CASE v.tpmerc WHEN '010' THEN 'standard' ELSE 'odd' END AS lot,
+    v.prazot            AS term_days,
+    v.nome_resumido     AS short_name,
+    v.especi            AS spec,
+    COALESCE(v.moeda, 'R$') AS currency,
+    v.preco_abertura    AS open,
+    v.preco_maximo      AS high,
+    v.preco_minimo      AS low,
+    v.preco_medio       AS average,
+    v.preco_fechamento  AS close,
+    v.oferta_compra     AS bid,
+    v.oferta_venda      AS ask,
+    v.negocios          AS trades,
+    v.quantidade        AS quantity,
+    v.volume,
+    v.isin,
+    v.fator_cotacao     AS quotation_factor,
+    FALSE               AS adjusted,
+    v.source,
+    v.fetched_at
+FROM public.vw_b3_instrument_typed v
+WHERE v.instrument_type = 'cash_security'
+  AND v.tpmerc IN ('010', '020', '021');
+
+COMMENT ON VIEW api.cash_securities IS
+    'Unadjusted B3 cash quotes for cash_security: everything else on the cash board — subscription rights, receipts, and other non-share paper. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.';
+
+ALTER VIEW api.cash_securities SET (security_invoker = false);
+GRANT SELECT ON api.cash_securities TO anon, authenticated;
+
+
 DROP FUNCTION IF EXISTS api.quote_history(TEXT, DATE, DATE, TEXT);
 CREATE OR REPLACE FUNCTION api.quote_history(
     p_ticker TEXT,
@@ -865,11 +1073,32 @@ termo_px AS (
     UNION ALL
     SELECT * FROM termo_day
 ),
+-- fact_fund_monthly does NOT use one period convention. Measured 2026-08-27:
+--   fi / fii / fiagro  first-of-month   2026-07-01
+--   fidc               month-END        2026-07-31   (178,237 rows)
+--   fip                year-END, annual 2026-12-31   ( 13,293 rows)
+-- The equity arms above stamp date_trunc('month', trade_date), i.e. first of
+-- month. Passing f.period through raw therefore put a FIDC on 2026-07-31 and an
+-- FI or a ticker on 2026-07-01 — different rows of the same panel, for the same
+-- month. Pivoted wide, those columns never co-occur, so the catalog's own
+-- headline example ("how does PETR4 relate to delinquency in this FIDC?")
+-- returned a matrix with zero overlapping observations. No error, no null — the
+-- dates simply never met.
+--
+-- Normalising to first-of-month is a presentation choice, not a data edit: the
+-- landing tables and fact_fund_monthly keep the period CVM published, and
+-- api.funds / fund_nav still serve it verbatim. Only the panel, whose whole
+-- purpose is aligning ids onto shared dates, snaps them together.
+--
+-- The window filter reads the normalised value too. On the raw column,
+-- p_to = '2026-07-01' excluded FIDC's 2026-07-31 row even though July was
+-- squarely inside the requested range — the same bug, cutting the newest month
+-- off every FIDC panel.
 fund_rows AS (
     SELECT
         f.cnpj,
         f.entity_type,
-        f.period,
+        date_trunc('month', f.period)::date AS period,
         f.vl_patrim_liq AS nav,
         f.vl_quota AS quota,
         f.vl_inadimpl AS delinquency,
@@ -880,7 +1109,9 @@ fund_rows AS (
     FROM public.fact_fund_monthly f
     JOIN params p ON TRUE
     WHERE p.freq = 'month'
-      AND f.period BETWEEN date_trunc('month', p.d0)::date AND p.d1
+      AND date_trunc('month', f.period)::date
+          BETWEEN date_trunc('month', p.d0)::date
+              AND date_trunc('month', p.d1)::date
       AND f.cnpj IN (SELECT cnpj FROM cnpjs)
 )
 SELECT q.ticker, 'ticker'::text, q.asset_class, q.period, 'close'::text, q.close, 'b3_cotahist'::text
@@ -1115,7 +1346,7 @@ AS $fn$
 SELECT $json$
 {
   "kind": "catalog",
-  "version": 5,
+  "version": 6,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup/universe, then GET /v1/panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions, and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches.",
   "metrics": {
@@ -1299,6 +1530,8 @@ SELECT $json$
     "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
     "Options and termo carry no underlying column: the codneg root is a naming convention, not a published B3 mapping. Prefix filtering is the caller's own inference.",
     "Option/termo codnegs resolve via universe(asset_class=option|termo) or option_chain, not lookup — option series have no names to resolve.",
+    "Each cash instrument type has its own endpoint (equities, bdrs, units, fund_quotas, cash_securities) — the same rows as quotes, split by the type derived from published TPMERC/ESPECI. Their grain adds `lot` (standard = tpmerc 010, odd = 020/021); filter lot=eq.standard for round lots. quotes itself stays standard-lot only.",
+    "Price series stay unified: a codneg has exactly one instrument type, so quote_history works for any cash ticker without knowing its type first.",
     "universe(asset_class=option|termo) lists the codnegs that printed on that segment's most recent session — currently-listed series, not every series ever listed. Expired series stay queryable by codneg in option_history."
   ],
   "examples": [
@@ -1360,6 +1593,11 @@ SELECT $json$
     "lookup": "GET /v1/lookup?q=",
     "universe": "GET /v1/universe?asset_class=",
     "quotes": "GET /v1/quotes/{ticker}",
+    "equities": "GET /rest/v1/equities",
+    "bdrs": "GET /rest/v1/bdrs",
+    "units": "GET /rest/v1/units",
+    "fund_quotas": "GET /rest/v1/fund_quotas",
+    "cash_securities": "GET /rest/v1/cash_securities",
     "funds": "GET /v1/funds/{cnpj}/nav",
     "coverage": "GET /v1/coverage"
   }
@@ -1383,7 +1621,7 @@ GRANT EXECUTE ON FUNCTION api.catalog() TO anon, authenticated;
 -- ON_ERROR_STOP=1 — intentional; never wrap them in a silent conditional.
 --
 -- The bundle is schema api and nothing else: USAGE on the schema, SELECT on
--- the two views, EXECUTE on the thirteen functions. It deliberately receives no
+-- the seven views, EXECUTE on the thirteen functions. It deliberately receives no
 -- grant in schema public — the DEFINER functions and owner-privileged views
 -- above are the only path from silo_api to the data. serve/-only works with
 -- exactly this; exposing schema api on the Supabase Data API would be a
@@ -1392,6 +1630,8 @@ GRANT EXECUTE ON FUNCTION api.catalog() TO anon, authenticated;
 GRANT USAGE ON SCHEMA api TO silo_api;
 
 GRANT SELECT ON api.quotes, api.funds TO silo_api;
+GRANT SELECT ON api.equities, api.bdrs, api.units,
+                api.fund_quotas, api.cash_securities TO silo_api;
 
 GRANT EXECUTE ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT)   TO silo_api;
 GRANT EXECUTE ON FUNCTION api.quote_latest(TEXT, TEXT)                TO silo_api;

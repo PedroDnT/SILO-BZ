@@ -92,8 +92,14 @@ api.panel(p_ids     TEXT[],
   `fii`, `fip`, `fiagro`).
 </ResponseField>
 <ResponseField name="date" type="date">
-  Observation date. At `freq=month` this is the first day of the month, for both the equity
-  and the fund side, so the two align. At `freq=day` it is the session date.
+  Observation date. At `freq=month` this is **always the first day of the month**, for every
+  id, so ids from different sources land on the same row. At `freq=day` it is the session
+  date.
+
+  This is normalisation, not the stored value: CVM publishes FI/FII/FIAGRO at first-of-month,
+  FIDC at month-**end**, and FIP at year-**end**. The panel snaps all three to first-of-month
+  so they can be compared. [`funds`](/api-docs/funds) and `fund_nav` still serve the period
+  exactly as filed.
 </ResponseField>
 <ResponseField name="metric" type="text">
   One of the metric names above.
@@ -228,9 +234,20 @@ correlate on pairwise-complete observations rather than filling.
 ### Other things the window does
 
 - Quote metrics honor `p_from` exactly; fund metrics start from `date_trunc('month', p_from)`,
-  so a `p_from` mid-month still includes that whole month on the fund side.
+  so a `p_from` mid-month still includes that whole month on the fund side. `p_to` is
+  month-truncated on the fund side too, so a `p_to` of `2026-07-01` still returns the whole
+  of July for a FIDC whose filed period is `2026-07-31`.
 - The panel accepts every cash-market BDI board and deterministically keeps one row if a
   ticker has multiple boards on the same session.
+
+<Note>
+  **Fixed 2026-08-27.** Fund periods used to pass through as filed, so a FIDC landed on
+  `2026-07-31` while an FI and a ticker landed on `2026-07-01` — different rows of the same
+  panel, for the same month. Pivoted wide, those columns never co-occurred and a correlation
+  found zero overlapping observations: no error, no null, just an unusable matrix. The same
+  raw comparison also dropped a month-end FIDC row whenever `p_to` was the first of that
+  month. If you cached a mixed FI/FIDC panel before this date, refetch it.
+</Note>
 
 ## Limits
 

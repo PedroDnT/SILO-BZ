@@ -171,8 +171,60 @@ def test_api_functions_are_definer_not_invoker():
         assert not re.search(r"\bSECURITY\s+INVOKER\b", header, re.I)
 
 
+TYPED_CASH_VIEWS = {
+    "api.equities": "equity",
+    "api.bdrs": "bdr",
+    "api.units": "unit",
+    "api.fund_quotas": "fund_quota",
+    "api.cash_securities": "cash_security",
+}
+
+
+@pytest.mark.parametrize("view,itype", sorted(TYPED_CASH_VIEWS.items()))
+def test_typed_cash_view_filters_on_its_own_instrument_type(view, itype):
+    # A view pointed at the wrong type would silently serve another instrument
+    # class under this endpoint's name.
+    body = _strip_comments(SQL19)
+    chunk = body[body.index(f"CREATE OR REPLACE VIEW {view} AS"):]
+    chunk = chunk[: chunk.index(";")]
+    assert re.search(rf"instrument_type\s*=\s*'{itype}'", chunk), (
+        f"{view} does not filter instrument_type = '{itype}'"
+    )
+    # Cash boards only: an option or termo row must never reach a cash endpoint.
+    assert re.search(r"tpmerc\s+IN\s*\(\s*'010',\s*'020',\s*'021'\s*\)", chunk)
+
+
+@pytest.mark.parametrize("view", sorted(TYPED_CASH_VIEWS))
+def test_typed_cash_view_exposes_lot(view):
+    # Odd lot outnumbers standard lot on equities, so a view that hides `lot`
+    # invites silent double-counting of volume.
+    body = _strip_comments(SQL19)
+    chunk = body[body.index(f"CREATE OR REPLACE VIEW {view} AS"):]
+    chunk = chunk[: chunk.index(";")]
+    assert re.search(
+        r"CASE\s+v\.tpmerc\s+WHEN\s+'010'\s+THEN\s+'standard'\s+ELSE\s+'odd'\s+END\s+AS\s+lot",
+        chunk,
+    ), f"{view} does not derive a lot column from tpmerc"
+
+
+def test_api_quotes_stays_standard_lot_only():
+    # The typed views are additive; api.quotes' published grain must not move.
+    body = _strip_comments(SQL19)
+    chunk = body[body.index("CREATE OR REPLACE VIEW api.quotes AS"):]
+    chunk = chunk[: chunk.index(";")]
+    assert re.search(r"WHERE\s+v\.tpmerc\s*=\s*'010'", chunk)
+    assert "lot" not in chunk.split("FROM")[0]
+
+
+def test_no_typed_history_functions_exist():
+    # A codneg has exactly one instrument type, so a typed history would force
+    # the caller to know the type before asking for a price. Deliberate.
+    for stem in ("equity", "bdr", "unit", "fund_quota", "cash_security"):
+        assert f"api.{stem}_history" not in FUNCS
+
+
 def test_views_are_explicitly_owner_privileged():
-    for view in ("api.quotes", "api.funds"):
+    for view in ("api.quotes", "api.funds", *TYPED_CASH_VIEWS):
         assert re.search(
             rf"ALTER\s+VIEW\s+{re.escape(view)}\s+SET\s*\(\s*security_invoker\s*=\s*false\s*\)",
             SQL19,
@@ -449,6 +501,39 @@ def test_panel_has_option_and_termo_arms_with_derivative_class():
     # The derivative CTEs must stay disjoint from the vista arms by tpmerc.
     assert re.search(r"tpmerc\s+IN\s+\('070',\s*'080'\)", body)
     assert re.search(r"tpmerc\s*=\s*'030'", body)
+
+
+def test_panel_normalises_fund_periods_to_first_of_month():
+    """fact_fund_monthly mixes three period conventions; the panel must not.
+
+    fi/fii/fiagro are first-of-month, fidc is month-END and fip is year-END.
+    The equity arms stamp date_trunc('month', trade_date), so a raw f.period put
+    a FIDC and an FI on different rows of the same month and their columns never
+    co-occurred in a wide pivot.
+    """
+    body = _strip_comments(FUNCS["api.panel"])
+    fund_arm = body[body.index("fund_rows AS ("):]
+    fund_arm = fund_arm[: fund_arm.index(")\n")]
+    assert re.search(
+        r"date_trunc\(\s*'month'\s*,\s*f\.period\s*\)::date\s+AS\s+period",
+        fund_arm,
+    ), "api.panel emits a raw f.period; fidc/fip will not align with equity"
+
+
+def test_panel_window_filter_uses_the_normalised_period():
+    # Filtering the RAW period drops a month-end fidc row when p_to is the
+    # first of that month — the newest month of every fidc panel.
+    body = _strip_comments(FUNCS["api.panel"])
+    fund_arm = body[body.index("fund_rows AS ("):]
+    fund_arm = fund_arm[: fund_arm.index(")\n")]
+    where = fund_arm[fund_arm.index("WHERE"):]
+    assert not re.search(r"\bAND\s+f\.period\s+BETWEEN", where), (
+        "the window filter still compares the raw f.period"
+    )
+    assert re.search(
+        r"date_trunc\(\s*'month'\s*,\s*f\.period\s*\)::date\s*\n?\s*BETWEEN",
+        where,
+    )
 
 
 def test_panel_cap_applies_after_deterministic_order():
