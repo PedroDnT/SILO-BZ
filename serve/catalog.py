@@ -22,10 +22,14 @@ __all__ = [
     "tool_specs",
 ]
 
+# 7: option rows resolve underlying_ticker via the published ISIN mapping;
+# fund_quotas carry fund_type (etf/fii/fidc/fiagro from CODBDI); equities carry
+# share_class/governance_segment from ESPECI; exercise (tpmerc 012/013) and
+# auction (017) events get their own endpoints.
 # 6: one endpoint per cash instrument type, each carrying both lot sizes.
 # 5: main's typed cash asset classes (4) merged with the option/termo id_types
 # and list-valued id_type this branch introduced (3).
-CATALOG_VERSION = 6
+CATALOG_VERSION = 7
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -147,9 +151,18 @@ CONSTRAINTS = [
     "above that the API answers 400 — narrow ids, metrics, or the date window.",
     "Option chains require a codneg prefix of at least 3 characters "
     "(api.option_chain); an unfiltered whole-market chain is refused.",
-    "Options and termo carry no underlying column: the codneg root is a naming "
-    "convention, not a published B3 mapping. Prefix filtering is the caller's "
-    "own inference.",
+    "Option rows carry underlying_ticker resolved from the PUBLISHED ISIN "
+    "mapping (an option row's ISIN is its underlying's ISIN), never from the "
+    "codneg root; it is null when the underlying had no cash print that "
+    "session. Termo rows still carry no underlying column.",
+    "tpmerc 012/013 are option exercise EVENTS served by option_exercises, "
+    "and 017 auction prints by auctions — neither is a quote series; do not "
+    "compute returns over them.",
+    "fund_quotas rows carry fund_type (etf | fii | fidc | fiagro) from B3's "
+    "published CODBDI board code, null when the board has no family signal "
+    "(odd lot). equities rows carry share_class (ON/PN/PNA/PNB/PNC/PND) and "
+    "governance_segment (NM/N1/N2/MA/M2/MB) parsed from published ESPECI, "
+    "never from the ticker suffix.",
     "Option/termo codnegs resolve via universe(asset_class=option|termo) or "
     "option_chain, not lookup — option series have no names to resolve.",
     "Each cash instrument type has its own endpoint (equities, bdrs, units, "
@@ -237,6 +250,11 @@ def catalog_payload() -> Dict[str, Any]:
             "units": "GET /rest/v1/units",
             "fund_quotas": "GET /rest/v1/fund_quotas",
             "cash_securities": "GET /rest/v1/cash_securities",
+            "auctions": "GET /rest/v1/auctions",
+            "option_chain": "POST /rest/v1/rpc/option_chain",
+            "option_history": "POST /rest/v1/rpc/option_history",
+            "option_exercises": "POST /rest/v1/rpc/option_exercises",
+            "termo_history": "POST /rest/v1/rpc/termo_history",
             "funds": "GET /v1/funds/{cnpj}/nav",
             "coverage": "GET /v1/coverage",
         },

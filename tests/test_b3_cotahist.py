@@ -341,22 +341,57 @@ class TestServeSchema:
         assert "idx_b3_cotahist_vista" in mig
         assert "vw_b3_quote_vista" in mig
 
-    def test_b3_instrument_types_are_db_side_and_conservative(self):
+    def test_b3_instrument_types_are_db_side_and_published_fields_only(self):
         from pathlib import Path
 
         schema = Path("src/store/schema.sql").read_text(encoding="utf-8")
-        mig = Path("src/store/migrations/20_b3_instrument_types.sql").read_text(
-            encoding="utf-8"
-        )
-        for sql in (schema, mig):
+        mig23 = Path(
+            "src/store/migrations/23_b3_instrument_typed_fix.sql"
+        ).read_text(encoding="utf-8")
+        for sql in (schema, mig23):
             assert "CREATE OR REPLACE VIEW vw_b3_instrument_typed" in sql
             assert "'option_call'" in sql
             assert "'option_put'" in sql
+            # 012/013 are exercise EVENTS, not option quotes (migration 23);
+            # 017 is an auction print. Regression guard: the old migration-20
+            # labels must not come back.
+            assert "'option_exercise_call'" in sql
+            assert "'option_exercise_put'" in sql
+            assert "'auction'" in sql
+            assert "IN ('012', '070')" not in sql
+            assert "IN ('013', '080')" not in sql
             assert "'forward'" in sql
             assert "'equity'" in sql
             assert "'fund_quota'" in sql
             assert "q.tpmerc" in sql
             assert "q.especi" in sql
-            # CI identifies a fund quota in COTAHIST, but cannot prove ETF vs FII.
-            assert "THEN 'etf'" not in sql
-            assert "THEN 'fii'" not in sql
+            # The ETF/FII/FIAGRO split lives ONLY in instrument_subtype and
+            # comes ONLY from the published CODBDI board code — never from
+            # instrument_type (api.fund_quotas filters on 'fund_quota') and
+            # never from ticker shape.
+            assert "instrument_subtype" in sql
+            assert "q.codbdi IN ('05', '12') THEN 'fii'" in sql
+            assert "q.codbdi = '13' THEN 'fiagro'" in sql
+            assert "share_class" in sql
+            assert "governance_segment" in sql
+            assert "codneg LIKE" not in sql.split(
+                "CREATE OR REPLACE VIEW vw_b3_instrument_typed"
+            )[1].split("COMMENT ON VIEW")[0]
+
+    def test_migration_20_original_ddl_survives_behind_replay_guard(self):
+        # Migration 23 widened the view; 20 keeps its original DDL verbatim but
+        # behind a guard, because migrations replay nightly and CREATE OR
+        # REPLACE VIEW cannot drop columns — an unguarded 20 would fail every
+        # apply after 23. The guard must skip when the view already exists.
+        from pathlib import Path
+
+        mig20 = Path(
+            "src/store/migrations/20_b3_instrument_types.sql"
+        ).read_text(encoding="utf-8")
+        assert "IN ('012', '070') THEN 'option_call'" in mig20
+        assert "IF EXISTS (" in mig20 and "RETURN;" in mig20
+        ddl = mig20[mig20.index("DO $mig20$"):]
+        assert "instrument_subtype" not in ddl, (
+            "migration 20's executable DDL must stay the original shape; "
+            "the widened view belongs to migration 23"
+        )

@@ -151,13 +151,18 @@ SELECT
     v.fator_cotacao     AS quotation_factor,
     FALSE               AS adjusted,
     v.source,
-    v.fetched_at
+    v.fetched_at,
+    -- Trailing additions (migration 23): the class token and listing segment
+    -- parsed from published ESPECI (class cross-checked against the ISIN class
+    -- code with zero disagreements). ON=ordinary, PN/PNA/PNB/PNC/PND=preferred.
+    v.share_class,
+    v.governance_segment
 FROM public.vw_b3_instrument_typed v
 WHERE v.instrument_type = 'equity'
   AND v.tpmerc IN ('010', '020', '021');
 
 COMMENT ON VIEW api.equities IS
-    'Unadjusted B3 cash quotes for equity: ordinary and preferred shares (ESPECI ON*/PN*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.';
+    'Unadjusted B3 cash quotes for equity: ordinary and preferred shares (ESPECI ON*/PN*). Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. share_class (ON|PN|PNA|PNB|PNC|PND) and governance_segment (NM|N1|N2|MA|M2|MB) are parsed from published ESPECI, never from the ticker suffix. Classified from published TPMERC/ESPECI; never inferred.';
 
 ALTER VIEW api.equities SET (security_invoker = false);
 GRANT SELECT ON api.equities TO anon, authenticated;
@@ -256,13 +261,18 @@ SELECT
     v.fator_cotacao     AS quotation_factor,
     FALSE               AS adjusted,
     v.source,
-    v.fetched_at
+    v.fetched_at,
+    -- Trailing addition (migration 23): the fund family from B3's published
+    -- CODBDI board code (14 etf / 05,12 fii / 13 fiagro; validated against
+    -- cvm_etf_registry). NULL on boards with no family signal (odd lot) —
+    -- never guessed from the ticker.
+    v.instrument_subtype AS fund_type
 FROM public.vw_b3_instrument_typed v
 WHERE v.instrument_type = 'fund_quota'
   AND v.tpmerc IN ('010', '020', '021');
 
 COMMENT ON VIEW api.fund_quotas IS
-    'Unadjusted B3 cash quotes for fund_quota: listed fund quotas: ETFs, FIIs and other CI* papers, undifferentiated. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/ESPECI; never inferred.';
+    'Unadjusted B3 cash quotes for fund_quota: listed fund quotas (CI*/FIDC* paper). fund_type splits the family from B3''s published CODBDI board code: etf | fii | fidc | fiagro, NULL when the board carries no signal (odd lot) — filter fund_type=eq.etf for ETFs only. Grain (ticker, trade_date, board, term_days, lot) — lot is standard (tpmerc 010) or odd (020/021), so filter lot=eq.standard for round lots only. Classified from published TPMERC/CODBDI/ESPECI; never inferred.';
 
 ALTER VIEW api.fund_quotas SET (security_invoker = false);
 GRANT SELECT ON api.fund_quotas TO anon, authenticated;
@@ -458,12 +468,23 @@ GRANT EXECUTE ON FUNCTION api.quote_latest(TEXT, TEXT) TO anon, authenticated;
 -- ---------------------------------------------------------------------------
 -- Same landing rows as the cash tape, different tpmerc: calls '070', puts
 -- '080', termo '030'. side is derived ONLY from tpmerc — a published B3 code,
--- not a guess. Deliberately absent: an `underlying` column. The codneg root
--- usually names the underlying, but that is a naming convention, not a
--- published mapping; deriving it would synthesize an identity join (integrity
--- rule 3, same reason ticker↔CNPJ stays unjoined). Callers filter by prefix
--- and own that inference.
+-- not a guess.
+--
+-- underlying_ticker IS a published mapping, not the codneg-root convention:
+-- COTAHIST's CODISI on an option row carries the UNDERLYING's ISIN (the rb3
+-- reference joins on it). We resolve it to the cash codneg printed on the
+-- same session. Measured 2026-08-27 on the full 2026-08-25 session: 14,895 of
+-- 14,900 option rows matched, and within tpmerc='010' each ISIN maps to
+-- exactly one codneg (the fractional market is a different tpmerc), so the
+-- join is 1:1; the tie-break below is a determinism backstop, not a guess.
+-- NULL when the underlying had no cash print that session — never fabricated.
+-- The codneg-root inference remains the caller's own (integrity rule 3).
 -- ---------------------------------------------------------------------------
+
+-- Signature changes below (new OUT columns): CREATE OR REPLACE cannot change
+-- a RETURNS TABLE shape, so the old signatures are dropped first.
+DROP FUNCTION IF EXISTS api.option_chain(TEXT, DATE, DATE, INT);
+DROP FUNCTION IF EXISTS api.option_history(TEXT, DATE, DATE);
 
 CREATE OR REPLACE FUNCTION api.option_chain(
     p_prefix      TEXT,
@@ -485,7 +506,11 @@ RETURNS TABLE (
     quantity   NUMERIC,
     volume     NUMERIC,
     isin       TEXT,
-    spec       TEXT
+    spec       TEXT,
+    underlying_ticker   TEXT,
+    strike_points       NUMERIC,
+    strike_correction   TEXT,
+    distribution_number TEXT
 )
 LANGUAGE plpgsql
 STABLE
@@ -539,8 +564,27 @@ BEGIN
         b.quantidade,
         b.volume,
         b.isin,
-        b.especi
+        b.especi,
+        u.codneg,
+        -- PTOEXE: strike in points (USD-referenced options), 6 implied
+        -- decimals per the published layout; 0 is B3's filler for
+        -- "not points-referenced", decoded to NULL rather than a fake 0-point
+        -- strike. INDOPC / DISMES pass through as published codes.
+        NULLIF((b.raw ->> 'ptoexe')::NUMERIC, 0) / 1e6,
+        b.raw ->> 'indopc',
+        b.raw ->> 'dismes'
     FROM public.b3_cotahist b
+    LEFT JOIN LATERAL (
+        SELECT c.codneg
+        FROM public.b3_cotahist c
+        WHERE c.tpmerc = '010'
+          AND c.isin = b.isin
+          AND c.trade_date = b.trade_date
+        -- Determinism backstop only (measured 1:1 within tpmerc='010'):
+        -- prefer the standard-lot board, then the shortest codneg.
+        ORDER BY (c.codbdi = '02') DESC, length(c.codneg), c.codneg
+        LIMIT 1
+    ) u ON TRUE
     WHERE b.tpmerc IN ('070', '080')
       AND b.trade_date = v_trade_date
       AND b.codneg LIKE v_prefix || '%'
@@ -556,7 +600,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION api.option_chain(TEXT, DATE, DATE, INT) IS
-    'One session''s option chain for a REQUIRED codneg prefix (>= 3 chars; else it raises). side = call/put from tpmerc 070/080. p_trade_date NULL = latest option-segment session. No underlying column: the codneg root is a naming convention, not a published mapping. Rows clamped to 1..2000.';
+    'One session''s option chain for a REQUIRED codneg prefix (>= 3 chars; else it raises). side = call/put from tpmerc 070/080. p_trade_date NULL = latest option-segment session. underlying_ticker resolves the option row''s ISIN (published: CODISI carries the underlying''s ISIN) to the same session''s cash codneg; NULL when the underlying had no cash print that day. Rows clamped to 1..2000.';
 
 CREATE OR REPLACE FUNCTION api.option_history(
     p_codneg TEXT,
@@ -584,7 +628,11 @@ RETURNS TABLE (
     isin              TEXT,
     quotation_factor  INT,
     adjusted          BOOLEAN,
-    source            TEXT
+    source            TEXT,
+    underlying_ticker   TEXT,
+    strike_points       NUMERIC,
+    strike_correction   TEXT,
+    distribution_number TEXT
 )
 LANGUAGE sql
 STABLE
@@ -612,8 +660,21 @@ AS $$
         b.isin,
         b.fator_cotacao,
         FALSE,
-        b.source
+        b.source,
+        u.codneg,
+        NULLIF((b.raw ->> 'ptoexe')::NUMERIC, 0) / 1e6,
+        b.raw ->> 'indopc',
+        b.raw ->> 'dismes'
     FROM public.b3_cotahist b
+    LEFT JOIN LATERAL (
+        SELECT c.codneg
+        FROM public.b3_cotahist c
+        WHERE c.tpmerc = '010'
+          AND c.isin = b.isin
+          AND c.trade_date = b.trade_date
+        ORDER BY (c.codbdi = '02') DESC, length(c.codneg), c.codneg
+        LIMIT 1
+    ) u ON TRUE
     WHERE b.tpmerc IN ('070', '080')
       AND b.codneg = upper(btrim(p_codneg))
       AND b.trade_date BETWEEN p_from AND p_to
@@ -626,7 +687,115 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION api.option_history(TEXT, DATE, DATE) IS
-    'Daily unadjusted series for one option codneg (tpmerc 070/080), quote_history''s shape plus side/strike/expiry. Hard-capped at 5001 rows (= serve _MAX_POINTS + 1).';
+    'Daily unadjusted series for one option codneg (tpmerc 070/080), quote_history''s shape plus side/strike/expiry and underlying_ticker (resolved per session from the published ISIN mapping; NULL when the underlying had no cash print that day). Hard-capped at 5001 rows (= serve _MAX_POINTS + 1).';
+
+-- ---------------------------------------------------------------------------
+-- Option exercise events (tpmerc 012/013) and auction prints (tpmerc 017)
+-- ---------------------------------------------------------------------------
+-- These are EVENTS, not quote series: measured ~1.05 rows per codneg. Serving
+-- them as history would invite return math over non-quotes, so they get their
+-- own endpoints. side/kind derive only from tpmerc.
+
+CREATE OR REPLACE FUNCTION api.option_exercises(
+    p_prefix TEXT,
+    p_from   DATE DEFAULT (CURRENT_DATE - 365),
+    p_to     DATE DEFAULT CURRENT_DATE
+)
+RETURNS TABLE (
+    codneg              TEXT,
+    trade_date          DATE,
+    side                TEXT,
+    strike              NUMERIC,
+    expiry              DATE,
+    exercise_price      NUMERIC,
+    trades              INT,
+    quantity            NUMERIC,
+    volume              NUMERIC,
+    isin                TEXT,
+    underlying_ticker   TEXT,
+    spec                TEXT,
+    source              TEXT
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_prefix TEXT := upper(btrim(COALESCE(p_prefix, '')));
+BEGIN
+    -- Same required-prefix contract as option_chain, same reason.
+    IF length(v_prefix) < 3 THEN
+        RAISE EXCEPTION
+            'option_exercises requires p_prefix: a codneg prefix of at least 3 characters (e.g. PETR).'
+            USING ERRCODE = '22023';
+    END IF;
+    RETURN QUERY
+    SELECT
+        b.codneg,
+        b.trade_date,
+        CASE b.tpmerc WHEN '012' THEN 'call' WHEN '013' THEN 'put' END,
+        b.preco_exercicio,
+        b.data_vencimento,
+        b.preco_fechamento,
+        b.negocios,
+        b.quantidade,
+        b.volume,
+        b.isin,
+        u.codneg,
+        b.especi,
+        b.source
+    FROM public.b3_cotahist b
+    LEFT JOIN LATERAL (
+        SELECT c.codneg
+        FROM public.b3_cotahist c
+        WHERE c.tpmerc = '010'
+          AND c.isin = b.isin
+          AND c.trade_date = b.trade_date
+        ORDER BY (c.codbdi = '02') DESC, length(c.codneg), c.codneg
+        LIMIT 1
+    ) u ON TRUE
+    WHERE b.tpmerc IN ('012', '013')
+      AND b.codneg LIKE v_prefix || '%'
+      AND b.trade_date BETWEEN p_from AND p_to
+    ORDER BY b.trade_date, b.codneg
+    LIMIT 5001;
+END;
+$$;
+
+COMMENT ON FUNCTION api.option_exercises(TEXT, DATE, DATE) IS
+    'Option exercise EVENTS (tpmerc 012 call / 013 put) for a REQUIRED codneg prefix (>= 3 chars). One row per exercise print — these are not quotes and carry no return semantics. underlying_ticker per the published ISIN mapping. Capped at 5001 rows.';
+
+REVOKE ALL ON FUNCTION api.option_exercises(TEXT, DATE, DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.option_exercises(TEXT, DATE, DATE) TO anon, authenticated, silo_api;
+
+-- Auction prints: tpmerc 017 (leilão). 210 rows over the whole 2019-2026 tape,
+-- so a plain filterable view is proportionate; no cap needed at this size.
+CREATE OR REPLACE VIEW api.auctions AS
+SELECT
+    v.codneg            AS ticker,
+    v.trade_date,
+    v.codbdi            AS board,
+    v.nome_resumido     AS short_name,
+    v.especi            AS spec,
+    v.preco_abertura    AS open,
+    v.preco_maximo      AS high,
+    v.preco_minimo      AS low,
+    v.preco_fechamento  AS close,
+    v.negocios          AS trades,
+    v.quantidade        AS quantity,
+    v.volume,
+    v.isin,
+    v.source,
+    v.fetched_at
+FROM public.vw_b3_instrument_typed v
+WHERE v.instrument_type = 'auction';
+
+COMMENT ON VIEW api.auctions IS
+    'Auction prints (tpmerc 017, leilão) — one-off event rows, not a quote series. ~210 rows on the whole 2019-2026 tape. Unadjusted, straight from COTAHIST.';
+
+ALTER VIEW api.auctions SET (security_invoker = false);
+GRANT SELECT ON api.auctions TO anon, authenticated;
 
 CREATE OR REPLACE FUNCTION api.termo_history(
     p_codneg TEXT,
@@ -1346,7 +1515,7 @@ AS $fn$
 SELECT $json$
 {
   "kind": "catalog",
-  "version": 6,
+  "version": 7,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup/universe, then GET /v1/panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions, and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches.",
   "metrics": {
@@ -1528,7 +1697,9 @@ SELECT $json$
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
     "Panel responses are hard-capped at 100000 rows (series endpoints at 5000); above that the API answers 400 — narrow ids, metrics, or the date window.",
     "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
-    "Options and termo carry no underlying column: the codneg root is a naming convention, not a published B3 mapping. Prefix filtering is the caller's own inference.",
+    "Option rows carry underlying_ticker resolved from the PUBLISHED ISIN mapping (an option row's ISIN is its underlying's ISIN), never from the codneg root; it is null when the underlying had no cash print that session. Termo rows still carry no underlying column.",
+    "tpmerc 012/013 are option exercise EVENTS served by option_exercises, and 017 auction prints by auctions — neither is a quote series; do not compute returns over them.",
+    "fund_quotas rows carry fund_type (etf | fii | fidc | fiagro) from B3's published CODBDI board code, null when the board has no family signal (odd lot). equities rows carry share_class (ON/PN/PNA/PNB/PNC/PND) and governance_segment (NM/N1/N2/MA/M2/MB) parsed from published ESPECI, never from the ticker suffix.",
     "Option/termo codnegs resolve via universe(asset_class=option|termo) or option_chain, not lookup — option series have no names to resolve.",
     "Each cash instrument type has its own endpoint (equities, bdrs, units, fund_quotas, cash_securities) — the same rows as quotes, split by the type derived from published TPMERC/ESPECI. Their grain adds `lot` (standard = tpmerc 010, odd = 020/021); filter lot=eq.standard for round lots. quotes itself stays standard-lot only.",
     "Price series stay unified: a codneg has exactly one instrument type, so quote_history works for any cash ticker without knowing its type first.",
@@ -1598,6 +1769,11 @@ SELECT $json$
     "units": "GET /rest/v1/units",
     "fund_quotas": "GET /rest/v1/fund_quotas",
     "cash_securities": "GET /rest/v1/cash_securities",
+    "auctions": "GET /rest/v1/auctions",
+    "option_chain": "POST /rest/v1/rpc/option_chain",
+    "option_history": "POST /rest/v1/rpc/option_history",
+    "option_exercises": "POST /rest/v1/rpc/option_exercises",
+    "termo_history": "POST /rest/v1/rpc/termo_history",
     "funds": "GET /v1/funds/{cnpj}/nav",
     "coverage": "GET /v1/coverage"
   }
@@ -1632,6 +1808,7 @@ GRANT USAGE ON SCHEMA api TO silo_api;
 GRANT SELECT ON api.quotes, api.funds TO silo_api;
 GRANT SELECT ON api.equities, api.bdrs, api.units,
                 api.fund_quotas, api.cash_securities TO silo_api;
+GRANT SELECT ON api.auctions TO silo_api;
 
 GRANT EXECUTE ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT)   TO silo_api;
 GRANT EXECUTE ON FUNCTION api.quote_latest(TEXT, TEXT)                TO silo_api;

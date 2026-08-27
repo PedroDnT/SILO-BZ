@@ -52,9 +52,14 @@ a second endpoint or a panel arm — either would double-count `PETR4`. The hone
 exposure is an explicit lot/market selector on the existing cash surface,
 defaulting to `010` so `api.quotes`'s current meaning and grain are unchanged.
 The DB-only `vw_b3_instrument_typed` separates equity, unit, BDR and fund-quota
-rows using B3's published `tpmerc`/`especi`; `CI` remains `fund_quota` because
-COTAHIST alone cannot prove ETF versus FII. The fact table stays unified at its
-published natural key. API exposure remains future work.
+rows using B3's published `tpmerc`/`especi`. Shipped since: the five typed cash
+endpoints (`api.equities`/`bdrs`/`units`/`fund_quotas`/`cash_securities`, PR
+#122) with the `lot` selector, and — superseding the earlier "cannot prove ETF
+versus FII" claim — migration 23 splits `fund_quota` into `etf`/`fii`/`fidc`/
+`fiagro` via `instrument_subtype`, using B3's published `CODBDI` board code
+(the rb3 rule, validated 2026-08-27: 127 of 247 codbdi-14 codnegs matched
+`cvm_etf_registry`, zero codbdi-12/13 did). The fact table stays unified at its
+published natural key.
 
 ### 2. Equity options (calls `070`, puts `080`)
 
@@ -90,7 +95,7 @@ CURRENT_DATE, p_trade_date DATE DEFAULT NULL, p_limit INT)` — one row per
 designed and never shipped — Phase A filters `tpmerc IN ('070','080')` in every
 function, panel arm and index. Measured 2026-08-27: `013` 59,164 rows over
 56,884 codnegs, `012` 57,205 over 52,381, `017` 210 over 192 — i.e. **~1.05 rows
-per codneg**. These are *events*, not series: a `*_history` endpoint is the wrong
+per codneg**. These are _events_, not series: a `*_history` endpoint is the wrong
 shape and a panel arm is meaningless under the two-layer rule. They want a
 lookup, `api.option_exercises(p_prefix, p_from, p_to)`. `017` needs identifying
 against the COTAHIST layout doc before it is exposed at all (`especi` samples
@@ -180,14 +185,14 @@ Ordered by value ÷ effort; each phase is releasable alone, in the usual
 shape: config → field map → schema+migration → ingest method → wiring →
 offline fixture test → analytical SQL → catalog bump → api-docs page.
 
-| Phase | What                                                                                                                  | New ingest? | Effort                                   |
-| ----- | --------------------------------------------------------------------------------------------------------------------- | ----------- | ---------------------------------------- |
-| **Adj** | Label `close_return` as unadjusted (catalog v3 + docs — done); jump screen (`abs(close_return) > 40%` × `cia_event`) still open | none | small — SQL against data we already have |
-| **A** | Options + termo endpoints, partial index, panel arms, `api.catalog()`, universe/lookup/coverage extension, docs pages | none        | small — SQL + docs only (PR #119)        |
-| **A.2** | Odd-lot (`020`/`021`) lot selector on the cash surface; `api.option_exercises` for `012`/`013`; identify `017` | none | small — SQL + docs only |
-| **B** | Futures settlement: fetcher, table, `future_series`/`future_curve`, panel arm                                         | yes         | medium — first non-COTAHIST B3 file      |
-| **C** | Reference-rate curves: fetcher, table, `curve`/`curve_history`                                                        | yes         | medium — piggybacks B's fetcher plumbing |
-| **D** | Index composition + history                                                                                           | yes         | small, lowest value today                |
+| Phase   | What                                                                                                                            | New ingest? | Effort                                   |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------- | ---------------------------------------- |
+| **Adj** | Label `close_return` as unadjusted (catalog v3 + docs — done); jump screen (`abs(close_return) > 40%` × `cia_event`) still open | none        | small — SQL against data we already have |
+| **A**   | Options + termo endpoints, partial index, panel arms, `api.catalog()`, universe/lookup/coverage extension, docs pages           | none        | small — SQL + docs only (PR #119)        |
+| **A.2** | Odd-lot (`020`/`021`) lot selector on the cash surface; `api.option_exercises` for `012`/`013`; identify `017`                  | none        | small — SQL + docs only                  |
+| **B**   | Futures settlement: fetcher, table, `future_series`/`future_curve`, panel arm                                                   | yes         | medium — first non-COTAHIST B3 file      |
+| **C**   | Reference-rate curves: fetcher, table, `curve`/`curve_history`                                                                  | yes         | medium — piggybacks B's fetcher plumbing |
+| **D**   | Index composition + history                                                                                                     | yes         | small, lowest value today                |
 
 DI1 (phase B) and the PRE curve (phase C) are the highest-value additions for
 the accountability mission: they are the discount curves behind FIDC and
@@ -251,14 +256,14 @@ carries — plus the current session's minute prints. No key; B3's edge
 challenges a bare client, so requests need a browser `User-Agent`.
 
 **What it is fit for here — and what it is not.** The feed is a delayed
-*snapshot* of the current session: no history, no official close, no
+_snapshot_ of the current session: no history, no official close, no
 settlement. Ingesting "last price whenever the cron happened to run" would be
 weaker provenance than everything else in this warehouse, so it does **not**
 replace phase B's settlement files, which are B3's official, archived,
 auditable record. Its legitimate uses:
 
 - **Phase D shortcut:** `IBOV` (and the other indices) answer on this feed,
-  so index *levels* may be obtainable here if the historical index files
+  so index _levels_ may be obtainable here if the historical index files
   prove awkward — but only as a dated last-print with `source` saying exactly
   that, never presented as an official close.
 - **Reference implementation:** the repo encodes B3's own published roll
@@ -296,7 +301,7 @@ Until adjustment lands, the trap is labelled, not fixed. Catalog `meaning`
 for `close_return` (version 3) and the api-docs panel page both say
 "unadjusted; corporate actions appear as spurious jumps". A caption is not
 a fix, but an unlabelled trap is worse than a labelled one. The jump
-screen below remains the first *code* deliverable.
+screen below remains the first _code_ deliverable.
 
 ### Where the adjustment information actually lives
 
@@ -309,15 +314,15 @@ plausible, wrong series, which is the worst kind.
 The real sources, in the order worth trying:
 
 1. **B3 corporate events** — "Proventos em Dinheiro" (cash dividends, JCP)
-   and the events that change share count: *desdobramento* (split),
-   *grupamento* (reverse split), *bonificação* (stock dividend),
-   *subscrição* (rights). B3 publishes these per ticker on its listed-company
+   and the events that change share count: _desdobramento_ (split),
+   _grupamento_ (reverse split), _bonificação_ (stock dividend),
+   _subscrição_ (rights). B3 publishes these per ticker on its listed-company
    pages, and the `rb3` R package parses some of them — check its templates
    before writing a fetcher, the same way `rb3` settled the futures question.
    This is the primary source: it is the exchange's own record, with the
    ratio stated.
-2. **CVM IPE — already ingested.** `cia_event` carries the *Aviso aos
-   Acionistas* / *Comunicado ao Mercado* filings in which a company announces
+2. **CVM IPE — already ingested.** `cia_event` carries the _Aviso aos
+   Acionistas_ / _Comunicado ao Mercado_ filings in which a company announces
    a split or bonus, with `categoria` / `tipo` / `especie` / `assunto`
    columns to filter on. These are **documents, not structured ratios** — a
    discovery and cross-check aid ("did anything happen to this ticker on this
@@ -325,14 +330,14 @@ The real sources, in the order worth trying:
 3. **ISIN continuity** in `b3_cotahist` — a ticker whose ISIN changes is
    telling you the instrument changed. Free signal, already in the table.
 
-### How to *verify* a series, whatever the source
+### How to _verify_ a series, whatever the source
 
 The honest test is not "did we apply a factor" but "does the series still
 contain unexplained discontinuities":
 
 - **Jump screen.** Flag every `|close_return| > 40 %` on a day with no
   extreme volume. Cross-reference each hit against `cia_event` for that
-  issuer and date. A hit with a matching *Aviso aos Acionistas* is a
+  issuer and date. A hit with a matching _Aviso aos Acionistas_ is a
   corporate action; a hit with nothing is either real news or a data bug, and
   both deserve a look. This is runnable **today** against data we already
   have, and it is the recommended first deliverable — it measures the size of
@@ -352,7 +357,7 @@ When it is built, it follows the rules already in force:
 
 - Ingest the **published event and its stated ratio** into its own table
   (`b3_corporate_event (ticker, ex_date, event_type, ratio, cash_value,
-  source, raw)`), keyed on `(ticker, ex_date, event_type)`. Deriving a
+source, raw)`), keyed on `(ticker, ex_date, event_type)`. Deriving a
   cumulative factor by multiplying published ratios is arithmetic on
   published data, which is allowed; **inferring** a ratio from a price gap is
   fabrication, which is not.
