@@ -354,11 +354,28 @@ class CVMFetcher:
                     f"Download failed after {self.max_retries} attempts "
                     f"(cannot connect to host): {exc}"
                 ) from exc
-            except aiohttp.ClientError as exc:
+            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+                # asyncio.TimeoutError is listed EXPLICITLY: it is not an
+                # aiohttp.ClientError. aiohttp enforces ClientTimeout(total=)
+                # with its own timer and raises a bare asyncio.TimeoutError
+                # (== builtins.TimeoutError on 3.11+), so before this clause
+                # named it, a total-timeout escaped the loop on attempt 0 and
+                # max_retries never applied. That is the whole story behind the
+                # 2026-08-27 balancete backfill: 32 monthly slices died with a
+                # message-less "TimeoutError" after a single try. (Connect and
+                # sock-read timeouts were always retried — aiohttp raises
+                # ServerTimeoutError for those, which IS a ClientError.)
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(self.retry_delay * (attempt + 1))
                     continue
-                raise RuntimeError(f"Download failed after {self.max_retries} attempts: {exc}") from exc
+                # A bare TimeoutError stringifies to "", so name the type and
+                # the budget or the audit row says nothing diagnosable.
+                detail = f"{type(exc).__name__}: {exc}" if str(exc) else (
+                    f"{type(exc).__name__} after {self.timeout}s"
+                )
+                raise RuntimeError(
+                    f"Download failed after {self.max_retries} attempts: {detail}"
+                ) from exc
 
         raise RuntimeError(f"Download failed for {url}")
 

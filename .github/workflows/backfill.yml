@@ -37,6 +37,14 @@ on:
           - inf_diario
           - cda
           - perfil_mensal
+      fi_repair_gaps:
+        description: "FI only: fetch ONLY the months missing from the fi_doc_type table (reads the table, not the audit log). Requires a specific fi_doc_type."
+        type: boolean
+        default: false
+      fi_months:
+        description: "FI only: fetch ONLY these competency months, comma-separated YYYY-MM (e.g. 2019-04,2023-01). Requires a specific fi_doc_type. Each year job takes the months belonging to its own year."
+        type: string
+        default: ""
 
 # Shares the writer group with daily_ingest.yml so a backfill and the daily
 # cron never write to the same tables at once. Jobs inside this workflow also
@@ -212,7 +220,14 @@ jobs:
 
           skip = False
           requested_doc = "${{ inputs.fi_doc_type }}"
-          if requested_doc != "all":
+          # A repair run must never be gated on cvm_ingest_log: counting 'ok'
+          # audit months is precisely the signal that was wrong. fi/balancete
+          # 2026-06 carries a fresh 'error' row over 2,178,163 real rows, and
+          # 32 other months carry no 'ok' row at all. --repair-gaps / --months
+          # decide what to fetch by reading the table itself.
+          if "${{ inputs.fi_repair_gaps }}" == "true" or "${{ inputs.fi_months }}".strip():
+              print(f"RUN: {year} (repair mode — coverage is decided from the table, not the audit log)")
+          elif requested_doc != "all":
               counts = {
                   "inf_diario": diario_months,
                   "perfil_mensal": perfil_months,
@@ -264,6 +279,26 @@ jobs:
           )
           if [[ "${{ inputs.fi_doc_type }}" != "all" ]]; then
             args+=(--doc-type "${{ inputs.fi_doc_type }}")
+          fi
+          if [[ "${{ inputs.fi_repair_gaps }}" == "true" ]]; then
+            args+=(--repair-gaps)
+          fi
+          if [[ -n "${{ inputs.fi_months }}" ]]; then
+            # This job owns one matrix year, so hand it only the requested
+            # months that fall inside that year. A year with none exits 0
+            # rather than running an unscoped backfill.
+            # tr -d ' ' (not '[:space:]') — the latter would eat the newlines
+            # the split just created. grep exits 1 on no match, which would
+            # abort the step under bash -e, so tolerate it and let the -z
+            # check below decide.
+            months=$(printf '%s' "${{ inputs.fi_months }}" | tr ',' '\n' \
+              | tr -d ' \t' | grep "^${{ matrix.year }}-" | paste -sd, - || true)
+            if [[ -z "$months" ]]; then
+              echo "No requested months fall in ${{ matrix.year }} — nothing to do."
+              exit 0
+            fi
+            echo "Repairing ${{ matrix.year }}: $months"
+            args+=(--months "$months")
           fi
           python -m src.pipeline.run_backfill "${args[@]}"
 

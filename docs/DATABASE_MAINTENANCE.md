@@ -106,6 +106,40 @@ workflow then checks and fetches only balancete months.
 Before inspecting coverage, the workflow preserves any audit row stuck in `running` for
 more than 24 hours and closes it as `error` with `finished_at` and an explanatory message.
 
+### Repairing only the missing months
+
+`fi_repair_gaps=true` (with a specific `fi_doc_type`) fetches **only** the months absent
+from that document's table — nothing else. `fi_months=2019-04,2023-01` names them
+explicitly instead. Each year job takes the months belonging to its own year; a year with
+none exits immediately.
+
+Both bypass the "year already complete" check, on purpose. That check counts `ok` rows in
+`cvm_ingest_log`, and the audit log records *attempts*, not coverage — the exact signal
+that produced this gap. Coverage in repair mode is decided by probing the table.
+
+> **Never diagnose coverage from `cvm_ingest_log` alone.** On 2026-08-27 `fi/balancete`
+> 2026-06 had a fresh `error` / `TimeoutError` row sitting on top of 2,178,163 real rows
+> from an earlier `ok` attempt. The newest audit row for a slice is the newest *attempt*.
+> Ask the table:
+>
+> ```sql
+> -- cheap: one indexed EXISTS probe per month
+> SELECT to_char(m, 'YYYY-MM') AS ym,
+>        EXISTS (SELECT 1 FROM cvm_fi_balancete b
+>                WHERE b.dt_comptc >= m::date
+>                  AND b.dt_comptc < (m + INTERVAL '1 month')::date) AS has_rows
+> FROM generate_series(date '2019-01-01', date_trunc('month', CURRENT_DATE),
+>                      INTERVAL '1 month') m
+> ORDER BY m;
+> ```
+>
+> The full `GROUP BY date_trunc('month', dt_comptc)` gives exact counts but scans 111M
+> rows / 24 GB — fine once, not on a schedule.
+
+A month CVM has not published yet is `skipped`, not a gap: `--repair-gaps` excludes months
+whose only audit outcome is `skipped`, and stops two months short of today for publication
+lag. It will not chase a file that does not exist.
+
 **BACEN only (Focus / SGS / PTAX)** — Actions → **CVM Historical Backfill** →
 _Run workflow_ with `bacen_only=true`. Skips every CVM entity and the ETF jobs;
 applies schema, then `python -m src.pipeline.run_backfill --bacen-only --bacen-start 2019-01-01`.
@@ -134,6 +168,13 @@ python -m src.pipeline.run_backfill --cvm-only --entity fidc --start-year 2024 -
 
 # one FI document type, selected years
 python -m src.pipeline.run_backfill --cvm-only --entity fi --doc-type balancete --start-year 2021 --end-year 2025
+
+# only the months that are missing from cvm_fi_balancete (reads the table)
+python -m src.pipeline.run_backfill --cvm-only --entity fi --doc-type balancete --repair-gaps
+
+# or name them yourself — nothing outside this list is fetched
+python -m src.pipeline.run_backfill --cvm-only --entity fi --doc-type balancete \
+    --months 2019-04,2019-07,2023-01
 
 # one entity, full history
 python -m src.pipeline.run_backfill --cvm-only --entity fidc --start-year 2019
@@ -294,11 +335,13 @@ time a query planner needs it.
 
 ## 11. Known gaps register
 
-Live as of 2026-07-30. Keep this current — it exists so the next person doesn't have to
+Live as of 2026-08-27. Keep this current — it exists so the next person doesn't have to
 rediscover these by querying the warehouse from scratch.
 
 | Gap                                                                  | Closes by                                                                        |
 | -------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `cvm_fi_balancete`: 32 published months missing (2019-04/07/10/11/12, 2020-02/05/06/09/12, 2021-04/07/08, 2022-07/09/10/12, 2023-01/03/04/06/07/09/10/12, 2024-02/04, 2025-04/05/10, 2026-01/04). Verified from the table 2026-08-27: 59 of 91 published months present. | Backfill with `fi_doc_type=balancete` + `fi_repair_gaps=true` (§4) |
+| `b3_cotahist` starts 2025-01-02 — every B3 endpoint serves ~20 months | `daily_ingest.yml` → `mode=b3-backfill`, one year at a time from 2019           |
 | `cvm_fi_diario` 2024 + 2025 empty; 2026 starts Mar 2; 2019/2020 thin | Re-dispatch the backfill (§4)                                                    |
 | `cvm_fiagro_mensal` empty                                            | Field map fixed in PR #72 — needs a backfill run                                 |
 | `anbima_class_monthly` empty                                         | Audit-log bug fixed in PR #72 — next daily run fills it                          |

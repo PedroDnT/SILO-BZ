@@ -11,6 +11,8 @@ backfill shares the host) and resets on any HTTP response — including a 404,
 which proves the host answered and is routine on the daily trailing window.
 """
 
+import asyncio
+
 import aiohttp
 import pytest
 
@@ -88,13 +90,26 @@ class TestWiring:
         # owns the exception handlers lives in _download_uncached.
         src = inspect.getsource(CVMFetcher._download_uncached)
         i_specific = src.index("except aiohttp.ClientConnectorError")
-        i_generic = src.index("except aiohttp.ClientError")
+        i_generic = src.index("except (aiohttp.ClientError")
         assert i_specific < i_generic, (
             "ClientConnectorError must be caught BEFORE the generic ClientError, "
             "or it is swallowed by the generic branch and never counted"
         )
         assert "_note_connect_failure" in src
         assert "_note_success" in src
+
+    def test_generic_branch_also_catches_asyncio_timeout(self):
+        # aiohttp enforces ClientTimeout(total=) itself and raises a bare
+        # asyncio.TimeoutError, which is NOT an aiohttp.ClientError — so it has
+        # to be named explicitly or it escapes the retry loop on attempt 0.
+        # That is exactly what happened to 32 fi/balancete months on
+        # 2026-08-27. See test_timeout_retry.py for the behavioural proof.
+        import inspect
+        src = inspect.getsource(CVMFetcher._download_uncached)
+        assert "asyncio.TimeoutError" in src, (
+            "the retry loop must name asyncio.TimeoutError explicitly"
+        )
+        assert not issubclass(asyncio.TimeoutError, aiohttp.ClientError)
 
     def test_connector_error_is_a_client_error(self):
         # Documents why ordering matters: the specific type is a subclass, so a

@@ -206,6 +206,36 @@ class IngestTask:
     operation: Awaitable[int]
 
 
+@dataclass(frozen=True)
+class SliceFailure:
+    """One (entity, doc_type, period) that this run recorded as 'error'.
+
+    Exists because every ingest_* method catches its own exception, writes the
+    audit row and returns 0 — so a run could finish with a third of history
+    missing and still exit 0 (the 2026-08-27 balancete backfill did exactly
+    that). The ledger carries that fact back to the CLI without changing the
+    `-> int` contract of ~50 ingest methods or the one-audit-row-per-attempt
+    rule.
+    """
+    entity: str
+    doc_type: str
+    year: Optional[int]
+    month: Optional[int]
+    error: str
+    rows: int = 0
+    # Set when the slice identity is already a rendered string (the
+    # _run_task_batches path, which has a task description but no run_id).
+    label: Optional[str] = None
+
+    def __str__(self) -> str:
+        if self.label:
+            return f"{self.label}: {self.error}"
+        period = ""
+        if self.year:
+            period = f" {self.year}" + (f"-{self.month:02d}" if self.month else "")
+        return f"{self.entity}/{self.doc_type}{period}: {self.error}"
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -328,6 +358,65 @@ class CVMIngestor:
         self._cia_fetcher = CIAFetcher()
         self._supabase = get_pg_client()
 
+    # Lazily created rather than set in __init__: tests build the ingestor with
+    # CVMIngestor.__new__(CVMIngestor) to skip the DB connection, and the audit
+    # path has to work there too. Per-instance (never class-level mutable
+    # state), so two ingestors cannot share a ledger.
+    @property
+    def failures(self) -> List["SliceFailure"]:
+        """Slices this run recorded as 'error'. run_backfill exits non-zero if any."""
+        if not hasattr(self, "_failures"):
+            self._failures: List[SliceFailure] = []
+        return self._failures
+
+    @property
+    def _slice_of_run(self) -> Dict[str, Tuple[str, str, Optional[int], Optional[int]]]:
+        """run_id -> slice identity from _log_start, so _log_finish can name it."""
+        if not hasattr(self, "_slice_of_run_map"):
+            self._slice_of_run_map: Dict[
+                str, Tuple[str, str, Optional[int], Optional[int]]
+            ] = {}
+        return self._slice_of_run_map
+
+    async def _store(self, fn, *args):
+        """Run a synchronous parse+upsert off the event loop.
+
+        upsert_rows() is psycopg2 (plus time.sleep on its own retry path), so
+        calling it straight from a coroutine blocks the loop for as long as the
+        write takes — minutes, for the ~2M-row FI monthly slices. Meanwhile
+        aiohttp's ClientTimeout(total=) is a wall-clock timer, so co-scheduled
+        downloads that cannot read their sockets simply expire. That is what
+        produced the 2026-08-27 balancete failures: co-scheduled slices sharing
+        an elapsed time, one 'ok' and its siblings 'TimeoutError'.
+
+        Writes still serialise (one connection, one lock in _PgClient.cursor),
+        which is intended; the gain is that a thread waiting on that lock is not
+        holding the loop hostage.
+
+        Applied to the four FI monthly ingests — the ones that run many-at-once
+        over millions of rows. The remaining ingest_* methods still call their
+        store function inline: they are either sequential or small enough that
+        the loop pause is not observable. Convert them if that stops being true.
+        """
+        return await asyncio.to_thread(fn, *args)
+
+    def _record_failure(
+        self, run_id: str, error: str, rows: int = 0,
+    ) -> None:
+        """Append a slice to the run's failure ledger.
+
+        Called only from _log_finish, and only when it resolved the status to
+        'error' — so 'skipped' (a 404 for a month CVM has not published) never
+        counts as a failure, and the ledger cannot drift from the audit table.
+        """
+        entity, doc_type, year, month = self._slice_of_run.get(
+            run_id, ("unknown", "unknown", None, None)
+        )
+        self.failures.append(
+            SliceFailure(entity=entity, doc_type=doc_type, year=year,
+                         month=month, error=error, rows=rows)
+        )
+
     async def _run_task_batches(
         self,
         tasks: List[IngestTask],
@@ -359,6 +448,17 @@ class CVMIngestor:
                 totals[task.table] += result
             else:
                 logger.error("%s failed [%s]: %s", label, task.description, result)
+                # An exception that escaped the ingest method itself never
+                # reached _log_finish, so the ledger would miss it. Record it
+                # here instead — with the task description as the identity,
+                # since there is no run_id to look up.
+                self.failures.append(SliceFailure(
+                    entity=task.table, doc_type=task.description,
+                    year=None, month=None,
+                    error=_describe(result) if isinstance(result, BaseException)
+                    else str(result),
+                    label=task.description,
+                ))
 
     # ------------------------------------------------------------------
     # Ingest log helpers
@@ -366,6 +466,10 @@ class CVMIngestor:
 
     def _log_start(self, run_id: str, entity: str, doc_type: str,
                    year: Optional[int], month: Optional[int]) -> None:
+        # Remember the slice identity so _log_finish can name it in the failure
+        # ledger. Recorded before the (best-effort) audit write, so a slice that
+        # fails while the audit table is unreachable is still nameable.
+        self._slice_of_run[run_id] = (entity, doc_type, year, month)
         try:
             upsert_rows(self._supabase, "cvm_ingest_log", [{
                 "run_id":       run_id,
@@ -412,6 +516,13 @@ class CVMIngestor:
             )
         else:
             status = "ok"
+        # Single point where a slice becomes a run-level failure: exactly the
+        # branches above that resolve to 'error', so the ledger and the audit
+        # table can never disagree, and 'skipped' (unpublished month) is never
+        # counted. Every ingest_* method routes through here, so this covers all
+        # of them without touching ~50 except blocks.
+        if status == "error":
+            self._record_failure(run_id, error or "unknown error", rows)
         # The shared connection may have idled out during a long fetch (CVM
         # hangs of 15+ min killed it in the 2026-06-10 backfill, leaving every
         # slice stuck 'running'). Reconnect once and retry so the audit log
@@ -541,7 +652,7 @@ class CVMIngestor:
         rows_inserted = 0
         try:
             raw_rows = await self._fetch_all_pages("fi", "inf_diario", year, month)
-            rows_inserted = ingest_fi_diario(self._supabase, raw_rows)
+            rows_inserted = await self._store(ingest_fi_diario, self._supabase, raw_rows)
         except Exception as exc:
             logger.warning("ingest_fi_diario %d-%02d failed: %s", year, month, _describe(exc))
             self._log_finish(run_id, 0, _describe(exc))
@@ -646,7 +757,7 @@ class CVMIngestor:
         rows_inserted = 0
         try:
             raw_rows = await self._fetch_all_pages("fi", "cda", year, month)
-            rows_inserted = ingest_fi_cda(self._supabase, raw_rows, year, month)
+            rows_inserted = await self._store(ingest_fi_cda, self._supabase, raw_rows, year, month)
         except Exception as exc:
             logger.warning("ingest_fi_cda %d-%02d failed: %s", year, month, _describe(exc))
             self._log_finish(run_id, 0, _describe(exc))
@@ -665,7 +776,7 @@ class CVMIngestor:
         rows_inserted = 0
         try:
             raw_rows = await self._fetch_all_pages("fi", "perfil_mensal", year, month)
-            rows_inserted = ingest_fi_perfil(self._supabase, raw_rows, year, month)
+            rows_inserted = await self._store(ingest_fi_perfil, self._supabase, raw_rows, year, month)
         except Exception as exc:
             logger.warning("ingest_fi_perfil %d-%02d failed: %s", year, month, _describe(exc))
             self._log_finish(run_id, 0, _describe(exc))
@@ -684,7 +795,7 @@ class CVMIngestor:
         rows_inserted = 0
         try:
             raw_rows = await self._fetch_all_pages("fi", "balancete", year, month)
-            rows_inserted = ingest_fi_balancete(self._supabase, raw_rows)
+            rows_inserted = await self._store(ingest_fi_balancete, self._supabase, raw_rows)
         except Exception as exc:
             logger.warning("ingest_fi_balancete %d-%02d failed: %s", year, month, _describe(exc))
             self._log_finish(run_id, 0, _describe(exc))
@@ -1205,15 +1316,27 @@ class CVMIngestor:
         end_year: Optional[int] = None,
         entity_filter: Optional[str] = None,
         doc_type_filter: Optional[str] = None,
+        months: Optional[List[Tuple[int, int]]] = None,
     ) -> Dict[str, int]:
         """Full historical backfill for all entities from start_year to today.
 
         Pass entity_filter to restrict to one entity. doc_type_filter is an
         FI-only repair control: inf_diario | cda | perfil_mensal | balancete.
+
+        months is an explicit [(year, month), ...] whitelist for the FI monthly
+        loop — the gap-repair path. It replaces the generated year x month grid
+        rather than intersecting with it, so a repair fetches exactly the named
+        slices and nothing else: re-downloading the 59 good balancete months to
+        reach the 32 bad ones would be ~120 GB of source data for no reason.
+        It requires doc_type_filter, because "these months, all four FI
+        documents" is not a repair anyone has asked for and quietly triples the
+        work.
         """
         fi_doc_types = {"inf_diario", "cda", "perfil_mensal", "balancete"}
         if doc_type_filter not in fi_doc_types | {None}:
             raise ValueError(f"unsupported FI doc_type_filter: {doc_type_filter}")
+        if months is not None and doc_type_filter is None:
+            raise ValueError("months requires doc_type_filter")
         if doc_type_filter is not None and entity_filter != "fi":
             raise ValueError("doc_type_filter requires entity_filter='fi'")
 
@@ -1251,18 +1374,31 @@ class CVMIngestor:
             hist_cda_years    = [y for y in years if y <= 2022]
             monthly_years     = years
 
-            if _want_fi_doc("inf_diario"):
+            # The yearly HIST archives are whole-year downloads; a targeted
+            # month repair must not drag them in.
+            if _want_fi_doc("inf_diario") and months is None:
                 for year in hist_diario_years:
                     n = await self.ingest_fi_hist_diario(year)
                     totals["cvm_fi_diario"] += n
 
-            if _want_fi_doc("cda"):
+            if _want_fi_doc("cda") and months is None:
                 for year in hist_cda_years:
                     n = await self.ingest_fi_hist_cda(year)
                     totals["cvm_fi_cda"] += n
 
+            month_pairs = (
+                sorted(set(months)) if months is not None
+                else _iter_month_pairs(monthly_years, today)
+            )
+            if months is not None:
+                logger.info(
+                    "FI targeted repair: %s %s",
+                    doc_type_filter,
+                    ", ".join(f"{y}-{m:02d}" for y, m in month_pairs),
+                )
+
             fi_tasks: List[IngestTask] = []
-            for year, month in _iter_month_pairs(monthly_years, today):
+            for year, month in month_pairs:
                 if year >= 2021 and _want_fi_doc("inf_diario"):
                     fi_tasks.append(IngestTask(
                         "cvm_fi_diario",
@@ -1287,6 +1423,23 @@ class CVMIngestor:
                         f"fi/balancete {year}-{month:02d}",
                         self.ingest_fi_balancete(year, month),
                     ))
+            # inf_diario before 2021 and cda before 2023 come from the yearly
+            # HIST archives, so a named month there schedules nothing. Say so
+            # rather than reporting a silent success over fewer slices than the
+            # operator asked for.
+            if months is not None and len(fi_tasks) < len(month_pairs):
+                scheduled = {
+                    tuple(int(p) for p in t.description.split()[-1].split("-"))
+                    for t in fi_tasks
+                }
+                dropped = [f"{y}-{m:02d}" for y, m in month_pairs
+                           if (y, m) not in scheduled]
+                logger.warning(
+                    "FI targeted repair: %d of %d requested month(s) not "
+                    "available as monthly %s files (pre-HIST-cutoff): %s",
+                    len(dropped), len(month_pairs), doc_type_filter,
+                    ", ".join(dropped),
+                )
             await self._run_task_batches(fi_tasks, _get_concurrency("fi", 2), totals, "FI monthly backfill")
 
         # -- FIDC ---------------------------------------------------------

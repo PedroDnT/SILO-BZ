@@ -351,6 +351,9 @@ control plane. One entity or year:
 ```bash
 python -m src.pipeline.run_backfill --cvm-only --entity fidc --start-year 2024 --end-year 2024
 python -m src.pipeline.run_backfill --cvm-only --entity fidc --start-year 2019
+
+# Repair only the months missing from one FI document's table (not the audit log)
+python -m src.pipeline.run_backfill --cvm-only --entity fi --doc-type balancete --repair-gaps
 python -m src.pipeline.run_daily
 ```
 
