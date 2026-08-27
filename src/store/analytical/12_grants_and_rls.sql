@@ -111,6 +111,9 @@ REVOKE ALL ON TABLE vw_b3_instrument_typed FROM anon, authenticated;
 -- ---------------------------------------------------------------------------
 GRANT SELECT ON fact_fund_monthly      TO anon, authenticated;
 GRANT SELECT ON fact_security_monthly  TO anon, authenticated;
+-- Serving-readiness classification (04): tiny, aggregated, no fund identities
+-- beyond a count — the dashboards' spines clamp on it.
+GRANT SELECT ON mv_period_completeness TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Dimension views

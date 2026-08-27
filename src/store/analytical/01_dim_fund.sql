@@ -82,6 +82,12 @@ CREATE MATERIALIZED VIEW dim_fund AS
 -- enables REFRESH MATERIALIZED VIEW CONCURRENTLY (08_cron_schedules).
 CREATE UNIQUE INDEX ix_dim_fund_pk ON dim_fund (cnpj, entity_type);
 
+-- api.lookup's fund-name ILIKE '%…%' (SERVING.md step 5). Lives here — not in
+-- a migration — because this matview is dropped and recreated on every apply,
+-- which would silently discard a migration-created index. pg_trgm itself is
+-- installed by migration 24 (and ships enabled on Supabase).
+CREATE INDEX ix_dim_fund_name_trgm ON dim_fund USING gin (fund_name gin_trgm_ops);
+
 -- Smoke check: must have at least one fund per entity type once any data is loaded.
 -- CI compile runs (sql-compile job) apply this layer against an EMPTY throwaway
 -- Postgres purely to prove the DDL builds; they set silo.ci_smoke_bypass=on via

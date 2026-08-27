@@ -250,4 +250,99 @@ BEGIN
     v_count, v_entities;
 END $$;
 
+-- ---------------------------------------------------------------------------
+-- Period completeness — the single source of the "don't serve incomplete
+-- months" rule (dashboard spines, api.panel/api.fund_nav default windows,
+-- api.coverage all read this; nothing filters fact_fund_monthly itself, so
+-- ops freshness, api.funds.last_period and mv_savings_flow keep seeing the
+-- newest partial month).
+--
+-- A period is COMPLETE when both hold:
+--   1. its calendar month has ended (an in-progress month is never complete:
+--      FI aggregates daily filings, so mid-month coverage looks full while
+--      captc_mes/resg_mes are mechanically month-to-date fractions);
+--   2. the number of funds reporting reaches COMPLETENESS_THRESHOLD (0.80)
+--      of the median across that entity's prior six periods — CVM's 1-2
+--      month publication lag means a month can be over but only fractionally
+--      filed, and summing 30% of funds reports 30% of the AUM as if it were
+--      the industry.
+-- Periods keep each family's raw convention (FI/FII/FIAGRO first-of-month,
+-- FIDC month-end, FIP year-end) — consumers date_trunc as needed. The first
+-- periods of a family (no trailing window yet) count as complete: they are
+-- deep history, and refusing to serve them would hide real published data.
+-- This classifies serving readiness only; it never modifies data.
+-- ---------------------------------------------------------------------------
+
+DROP MATERIALIZED VIEW IF EXISTS mv_period_completeness;
+CREATE MATERIALIZED VIEW mv_period_completeness AS
+WITH counts AS (
+    SELECT entity_type, period, COUNT(DISTINCT cnpj) AS n_funds
+    FROM fact_fund_monthly
+    GROUP BY entity_type, period
+)
+SELECT
+    c.entity_type,
+    c.period,
+    c.n_funds,
+    m.trailing_median,
+    ROUND(c.n_funds::numeric / NULLIF(m.trailing_median, 0), 4) AS coverage_ratio,
+    (
+        date_trunc('month', c.period) < date_trunc('month', CURRENT_DATE)
+        AND COALESCE(
+              c.n_funds::numeric >= 0.80 * m.trailing_median,
+              TRUE   -- no trailing window yet: deep history, serve it
+            )
+    ) AS is_complete
+FROM counts c
+LEFT JOIN LATERAL (
+    SELECT (percentile_cont(0.5) WITHIN GROUP (ORDER BY w.n_funds))::numeric
+        AS trailing_median
+    FROM (
+        SELECT p.n_funds
+        FROM counts p
+        WHERE p.entity_type = c.entity_type AND p.period < c.period
+        ORDER BY p.period DESC
+        LIMIT 6
+    ) w
+) m ON TRUE;
+
+CREATE UNIQUE INDEX ix_period_completeness_pk
+    ON mv_period_completeness (entity_type, period);
+
+COMMENT ON MATERIALIZED VIEW mv_period_completeness IS
+    'Serving-readiness per (entity_type, period): a period is complete when its calendar month ended AND >= 80% of the trailing-6-period median fund count has reported. Drives latest_complete_period(); refreshed daily at 06:35 UTC and on every analytical apply. Classification only — no data is modified or dropped.';
+
+-- The one-call form every consumer uses. NULL entity = the max over families
+-- (a spine upper bound for mixed charts; per-family rows still filter by
+-- their own family's bound). COALESCE floor: on an empty/cold database the
+-- previous calendar month is returned so Evidence spines and CI runs never
+-- see NULL (a NULL upper bound would empty a generate_series spine, and a
+-- zero-row Evidence source writes a zero-byte parquet that kills the build).
+CREATE OR REPLACE FUNCTION latest_complete_period(p_entity_type TEXT DEFAULT NULL)
+RETURNS DATE
+LANGUAGE sql
+STABLE
+-- Pins its own search_path: api.* callers run with search_path = '' and that
+-- propagates down the call stack, so without this per-function (immutable)
+-- pin the unqualified mv_period_completeness reference below would fail at
+-- runtime from inside api.panel.
+SET search_path = public, pg_temp
+AS $$
+    SELECT COALESCE(
+        (
+            SELECT max(pc.period)
+            FROM mv_period_completeness pc
+            WHERE pc.is_complete
+              AND (p_entity_type IS NULL OR pc.entity_type = p_entity_type)
+        ),
+        (date_trunc('month', CURRENT_DATE) - interval '1 month')::date
+    );
+$$;
+
+COMMENT ON FUNCTION latest_complete_period(TEXT) IS
+    'Latest period classified complete by mv_period_completeness for one entity family (fi|fidc|fii|fip|fiagro), or the max across families when NULL. Falls back to the previous calendar month on a cold database. The dashboard spines and the api.panel/api.fund_nav default windows clamp here.';
+
+GRANT SELECT ON mv_period_completeness TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION latest_complete_period(TEXT) TO anon, authenticated;
+
 COMMIT;
