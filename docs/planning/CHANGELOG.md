@@ -2,6 +2,7 @@
 
 | Date       | Branch                    | Change                                                                                              |
 | ---------- | ------------------------- | --------------------------------------------------------------------------------------------------- |
+| 2026-08-27 | cursor/instruments-adjustment-1119 | Catalog v3: `close_return` meaning says unadjusted (splits look like crashes); instruments plan: cotacao.b3.com.br appendix + adjustment verification |
 | 2026-08-27 | cursor/advisor-warnings-1119 | Performance Advisor lints after compute upgrade: do not add PKs / drop indexes; leftover `messages` |
 | 2026-08-27 | cursor/mintlify-docs-3f68 | Document live Data API `https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/`; Mintlify navbar + GitHub |
 | 2026-08-17 | cursor/agents-md-3f68     | AGENTS.md: SILO skill, CLI ingest, post-edit hook; move `serve/` to secrets                          |

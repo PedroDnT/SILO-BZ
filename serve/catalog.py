@@ -22,7 +22,7 @@ __all__ = [
     "tool_specs",
 ]
 
-CATALOG_VERSION = 2
+CATALOG_VERSION = 3
 
 # Grain + metric map. Agents must not invent metrics.
 METRICS: Dict[str, Dict[str, Any]] = {
@@ -45,7 +45,11 @@ METRICS: Dict[str, Dict[str, Any]] = {
         "asset_class": ["equity"],
         "grain": ["day", "month"],
         "source": "b3_cotahist",
-        "meaning": "p_t/p_{t-1}-1 from stored closes. Daily: previous session. Monthly: previous calendar month else null.",
+        "meaning": (
+            "p_t/p_{t-1}-1 from stored unadjusted closes. Corporate actions "
+            "appear as spurious jumps (a 2:1 split reports roughly -50%). "
+            "Daily: previous session. Monthly: previous calendar month else null."
+        ),
         "derived": True,
     },
     "nav": {
@@ -112,6 +116,7 @@ CONSTRAINTS = [
     "Missing observations stay null; do not ffill or interpolate.",
     "freq=day is quotes only. Mix equity with fund fundamentals on freq=month.",
     "close_return across a missing month is null, not a multi-month return.",
+    "close_return is unadjusted: a 2:1 split reports roughly -50%. It is not a total return.",
     "Ticker↔cia_company is not joined here; lookup returns them separately.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
     "Panel responses are hard-capped at 100000 rows (series endpoints at 5000); "

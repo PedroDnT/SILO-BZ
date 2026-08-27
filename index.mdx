@@ -69,6 +69,7 @@ flag so nobody mistakes these for split-adjusted prices.
   - **Missing observations stay missing.** No forward-fill, no interpolation, no
     carry-last-observation.
   - **`close_return` across a calendar gap is null**, not a two-month return.
+    The ratio is of unadjusted closes: a 2:1 split reports roughly −50 %.
   - **`freq=day` is quotes only.** Mix equity with fund fundamentals on `freq=month`.
   - **Responses are hard-capped** (100,001 rows for `panel`, 5,001 for the series
     functions) so a too-large ask is visible, never silently truncated.
@@ -80,6 +81,6 @@ Ingestion runs on a GitHub Actions cron (`run_daily`) plus on-demand backfills
 (`run_backfill`). There is **no ingest HTTP API** — this documentation covers the read side
 only. The full operator guide lives in the repository:
 
-- [README](https://github.com/PedroDnT/iliquid_nightly/blob/main/README.md) — operator guide
-- [docs/](https://github.com/PedroDnT/iliquid_nightly/tree/main/docs) — architecture, data
+- [README](https://github.com/PedroDnT/SILO-BZ/blob/main/README.md) — operator guide
+- [docs/](https://github.com/PedroDnT/SILO-BZ/tree/main/docs) — architecture, data
   modeling, and the serving roadmap

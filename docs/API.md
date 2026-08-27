@@ -28,9 +28,11 @@ or carry last-observation. Mixing daily equity with monthly NAV on a **daily**
 calendar would require filling — that is your notebook. Mix them on `freq=month`
 (equity close = last session in the month, a real print).
 
-`close_return` is `p_t / p_{t-1} - 1` from stored closes. Daily: previous
-session. Monthly: previous calendar month, else null (a missing month does not
-become a two-month return).
+`close_return` is `p_t / p_{t-1} - 1` from stored **unadjusted** closes. A
+2:1 split reports roughly −50% — the arithmetic is faithful to B3's published
+prices, not a total return. Daily: previous session. Monthly: previous
+calendar month, else null (a missing month does not become a two-month
+return).
 
 Ticker↔listed-company (`cia_*`) join is **not** invented here. Lookup returns
 CIA by CNPJ/`cd_cvm`/name separately until that match exists.
@@ -69,9 +71,12 @@ client  →  HTTPS /v1/*   (serve/, bind 127.0.0.1 or a gateway)
 4. **Cache at the edge.** History whose `to` is in the past is immutable
    (`max-age=86400`). Latest quote is short (`max-age=300`). Header
    `X-Silo-Adjusted: false` so nobody assumes brapi-style split adjustment.
-5. **404 vs empty.** Unknown ticker/CNPJ → 404. Known ticker, no sessions in
-   range (holiday window) → `200 { kind: "series", series: [] }`. Never a
-   plausible last-close fallback.
+5. **404 vs empty.** On `serve/`, unknown ticker/CNPJ → 404. Known ticker,
+   no sessions in range (holiday window) → `200 { kind: "series", series: [] }`.
+   On PostgREST (`api.*`) there is no adapter to shape the error: unknown
+   ticker and empty window both return `200 []`. A caller that treats empty
+   as 404 will silently mis-read a miss. Never a plausible last-close
+   fallback.
 
 ## Point vs series
 
