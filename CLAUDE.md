@@ -177,10 +177,13 @@ Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources 
 → localhost:3000; `npm run build` → `build/`). They connect to the same Supabase Postgres via
 `@evidence-dev/postgres` and only read — never write.
 
-- **`dashboard/`** — fund-health analytics: Overview (`/`), FIDC Credit Monitor (`/fidc`),
-  FII Market (`/fii`), Suspicious Screens (`/suspicious`), Performance (`/performance`), and
-  ETF (`/etf`). Deployed to **Vercel** (project `silo`, team `deloslabs`); also buildable as
-  a static site for any static host.
+- **`dashboard/`** — fund-health analytics at
+  [https://iliquid-nightly.vercel.app/](https://iliquid-nightly.vercel.app/):
+  Overview (`/`), FIDC Credit Monitor (`/fidc`), FII Market (`/fii`), Suspicious
+  Screens (`/suspicious`), Performance (`/performance`), and ETF (`/etf`).
+  Evidence static snapshot (parquet at build). The Vercel project in team
+  `deloslabs` is named `silo`; that is the GitHub/deploy-hook name, not the
+  public URL. Also buildable as a static site for any static host.
 - **`webapp/`** — Evidence.dev instance for CIA Aberta (listed-company) analytics over the
   `cia_*` tables: Overview (`/`), Financials (`/financials`, consolidated ITR/DFP with
   margins/ROE), Events (`/events`, IPE + Fato Relevante feed). Mind the data conventions
@@ -188,15 +191,19 @@ Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources 
 
 ## Deploy
 
-Ingestion target: **GitHub Actions cron → Supabase Postgres**. Required GitHub secret:
-`POSTGRES_URL`. No container registry or Docker. The read-only `dashboard/` deploys
-separately to **Vercel** (project `silo`; any static host also works).
+Ingestion target: **GitHub Actions cron → Supabase Postgres** (SILO). Required GitHub
+secret: `POSTGRES_URL`. No container registry or Docker. The read-only dashboard is
+[https://iliquid-nightly.vercel.app/](https://iliquid-nightly.vercel.app/) (Vercel
+project `silo` in team `deloslabs`; any static host also works).
 
 - `.github/workflows/daily_ingest.yml` — 06:00 UTC daily (`run_daily`) + `workflow_dispatch`
   (`mode=daily|analytics-only|b3-backfill`). It bootstraps the schema
   via `psql` on every run, then `ANALYZE`s the tables.
-- `.github/workflows/backfill.yml` — on-demand full backfill; FI runs one parallel job per year,
-  other entities/BACEN/ETF in parallel, gated on a one-time `apply-schema` job.
+- `.github/workflows/backfill.yml` — on-demand, entity/year-selectable backfill. FI years and
+  other entity jobs use `max-parallel: 1`, inspect coverage first, and are gated on a
+  one-time `apply-schema` job. `fi_doc_type` can repair one FI source (for example
+  `balancete`) without re-fetching the others. Default to one entity; `all` is deliberately
+  expensive.
 
 Schema rollout = commit `schema.sql` + a new `migrations/NNN_*.sql`, then either let CI apply it
 or run `scripts/apply_schema.py` against Supabase. Idempotent via `CREATE TABLE IF NOT EXISTS` +

@@ -2,6 +2,7 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
   "name": "iliquid nightly",
+  "description": "Public read API for Brazilian public financial data. Schema api over PostgREST.",
   "colors": {
     "primary": "#16A34A"
   },
@@ -14,7 +15,7 @@
       {
         "group": "Get started",
         "icon": "rocket",
-        "pages": ["api-docs/quickstart", "api-docs/conventions"]
+        "pages": ["api-docs/quickstart", "api-docs/agents", "api-docs/conventions"]
       },
       {
         "group": "API reference",
@@ -31,5 +32,22 @@
         ]
       }
     ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Data API",
+        "href": "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/"
+      },
+      {
+        "label": "GitHub",
+        "href": "https://github.com/PedroDnT/SILO-BZ"
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/PedroDnT/SILO-BZ"
+    }
   }
 }

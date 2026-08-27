@@ -11,13 +11,31 @@ database — CVM fund disclosures (FI, FIDC, FII, FIP, FIAGRO, SECURIT, plus lis
 filings), BACEN time series, and B3 COTAHIST cash quotes. It exists for **financial
 accountability** of the fund industry: NAV, delinquency, flows, and structural health.
 
-The warehouse is readable. Schema `api` is the public read contract, exposed through the
-Supabase Data API (PostgREST) with the project's **anon key** — open read, no accounts, no
-per-user API keys.
+The warehouse is readable **for testing** through schema `api` (PostgREST) with a
+**shared publishable key**. There is **no RLS** on landing tables. When we go live,
+callers will get a **key per user** (GitHub or email sign-in). This site documents
+the read API. The human dashboard is
+[https://iliquid-nightly.vercel.app/](https://iliquid-nightly.vercel.app/). **SILO**
+is the GitHub repo: Actions ingest into Supabase, plus schema `api`.
 
-<Card title="Quickstart" icon="rocket" href="/api-docs/quickstart" horizontal>
-  Get the anon key and make your first call in under a minute.
-</Card>
+## Base URL
+
+```
+https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/
+```
+
+That is the only public HTTP surface. Views are `GET /<view>`; functions are
+`POST /rpc/<function>`. Send the publishable key on `apikey` only — not as
+`Authorization: Bearer`.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/api-docs/quickstart">
+    Get the publishable key and make your first call in under a minute.
+  </Card>
+  <Card title="For agents" icon="robot" href="/api-docs/agents">
+    How an agent reads this site. You cannot generate an API key.
+  </Card>
+</CardGroup>
 
 ## The primitive is a panel
 
@@ -29,7 +47,6 @@ locally.
 ```bash
 curl -s -X POST "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/rpc/panel" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{"p_ids":["PETR4","VALE3"],"p_metrics":["close_return"],"p_freq":"month"}'
 ```
@@ -59,6 +76,7 @@ flag so nobody mistakes these for split-adjusted prices.
   - **Missing observations stay missing.** No forward-fill, no interpolation, no
     carry-last-observation.
   - **`close_return` across a calendar gap is null**, not a two-month return.
+    The ratio is of unadjusted closes: a 2:1 split reports roughly −50 %.
   - **`freq=day` is quotes only.** Mix equity with fund fundamentals on `freq=month`.
   - **Responses are hard-capped** (100,001 rows for `panel`, 5,001 for the series
     functions) so a too-large ask is visible, never silently truncated.
@@ -70,6 +88,6 @@ Ingestion runs on a GitHub Actions cron (`run_daily`) plus on-demand backfills
 (`run_backfill`). There is **no ingest HTTP API** — this documentation covers the read side
 only. The full operator guide lives in the repository:
 
-- [README](https://github.com/PedroDnT/iliquid_nightly/blob/main/README.md) — operator guide
-- [docs/](https://github.com/PedroDnT/iliquid_nightly/tree/main/docs) — architecture, data
+- [README](https://github.com/PedroDnT/SILO-BZ/blob/main/README.md) — operator guide
+- [docs/](https://github.com/PedroDnT/SILO-BZ/tree/main/docs) — architecture, data
   modeling, and the serving roadmap

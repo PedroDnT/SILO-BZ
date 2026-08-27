@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SQL19_PATH = ROOT / "src" / "store" / "analytical" / "19_api_contract.sql"
 SQL12_PATH = ROOT / "src" / "store" / "analytical" / "12_grants_and_rls.sql"
 SCHEMA_PATH = ROOT / "src" / "store" / "schema.sql"
-MIG20_PATH = ROOT / "src" / "store" / "migrations" / "20_b3_cotahist_option_serve.sql"
+MIG_OPTION_PATH = ROOT / "src" / "store" / "migrations" / "21_b3_cotahist_option_serve.sql"
 
 SQL19 = SQL19_PATH.read_text(encoding="utf-8")
 SQL12 = SQL12_PATH.read_text(encoding="utf-8")
@@ -31,7 +31,10 @@ SQL12 = SQL12_PATH.read_text(encoding="utf-8")
 SERIES_CAP = 5001
 PANEL_CAP = 100001
 
-LANDING_PATTERN = re.compile(r"\b(?:public\.)?(?:cvm_\w+|b3_cotahist\w*|vw_b3_quote_vista)\b", re.I)
+LANDING_PATTERN = re.compile(
+    r"\b(?:public\.)?(?:cvm_\w+|b3_cotahist\w*|vw_b3_(?:quote_vista|instrument_typed))\b",
+    re.I,
+)
 
 
 def _strip_comments(sql: str) -> str:
@@ -228,10 +231,39 @@ def test_defensive_public_schema_revokes_for_silo_api():
 
 def test_landing_table_revokes_for_anon_are_present():
     body = _strip_comments(SQL12)
-    for table in ("cvm_ingest_log", "b3_cotahist", "vw_b3_quote_vista", "cvm_fidc_mensal"):
+    for table in (
+        "cvm_ingest_log",
+        "b3_cotahist",
+        "vw_b3_quote_vista",
+        "vw_b3_instrument_typed",
+        "cvm_fidc_mensal",
+    ):
         assert re.search(
             rf"REVOKE\s+ALL\s+ON\s+TABLE\s+{table}\s+FROM\s+anon\s*,\s*authenticated", body, re.I
         ), f"missing landing-table revoke for {table}"
+
+
+def test_b3_asset_type_reaches_every_discovery_and_panel_surface():
+    assert "v.instrument_type   AS asset_class" in SQL19
+    assert "FROM public.vw_b3_instrument_typed v" in SQL19
+    assert "q.asset_class" in FUNCS["api.panel"]
+    assert "q.asset_class" in FUNCS["api.universe"]
+    assert "q.asset_class" in FUNCS["api.lookup"]
+
+
+def test_universe_classifies_only_the_latest_b3_session():
+    chunk = FUNCS["api.universe"]
+    assert "latest_quote_session AS" in chunk
+    assert "SELECT max(q.trade_date)" in chunk
+    assert "s.trade_date = q.trade_date" in chunk
+
+
+def test_typed_b3_surfaces_do_not_assume_equity_board_02():
+    for name in ("api.panel", "api.universe", "api.lookup"):
+        assert "board = '02'" not in FUNCS[name]
+    assert re.search(r"p_board\s+TEXT\s+DEFAULT\s+NULL", FUNCS["api.quote_history"])
+    assert re.search(r"p_board\s+TEXT\s+DEFAULT\s+NULL", FUNCS["api.quote_latest"])
+    assert "latest.board" in FUNCS["api.quote_history"]
 
 
 def test_ingest_log_summary_not_executable_by_clients():
@@ -392,8 +424,14 @@ def test_universe_derivative_branches_are_scoped_to_the_latest_session():
 @pytest.mark.parametrize("fn", ["api.option_chain", "api.coverage", "api.universe"])
 def test_latest_session_probes_avoid_an_in_list_max(fn):
     body = _strip_comments(FUNCS[fn])
+    # Match the bad shape tightly — a max() whose OWN FROM/WHERE is the
+    # b3_cotahist IN-list. A looser pattern spans unrelated arms of the same
+    # statement (api.universe's equity arm does its own max(trade_date), and
+    # its derivative arm separately filters tpmerc IN (...)) and cries wolf.
     assert not re.search(
-        r"(?:max|MAX)\s*\(\s*\w*\.?trade_date\s*\)[^;]*?tpmerc\s+IN\s*\(",
+        r"(?:max|MAX)\s*\(\s*(?:\w+\.)?trade_date\s*\)[^()]*?"
+        r"FROM\s+public\.b3_cotahist(?:\s+\w+)?\s+"
+        r"WHERE\s+(?:\w+\.)?tpmerc\s+IN\s*\(",
         body,
         re.I | re.S,
     ), (
@@ -484,7 +522,7 @@ def test_catalog_version_bumped_for_the_derivative_metrics():
 
 
 # ---------------------------------------------------------------------------
-# Migration 20 / schema.sql stay in sync on the option partial index
+# Migration 21 / schema.sql stay in sync on the option partial index
 # ---------------------------------------------------------------------------
 
 OPTION_INDEX_STMT = (
@@ -495,7 +533,7 @@ OPTION_INDEX_STMT = (
 
 
 def test_option_partial_index_in_both_migration_and_schema():
-    for path in (MIG20_PATH, SCHEMA_PATH):
+    for path in (MIG_OPTION_PATH, SCHEMA_PATH):
         text = re.sub(
             r"\s+", " ", _strip_comments(path.read_text(encoding="utf-8"))
         )

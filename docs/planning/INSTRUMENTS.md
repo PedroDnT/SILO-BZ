@@ -42,7 +42,10 @@ through schema `api`.
 
 `tpmerc 010/020/021` in COTAHIST. Landed and served (`api.quotes`,
 `quote_history`, `quote_latest`, panel `close`/`volume`/`close_return`).
-Nothing to do. The reference implementation for every class below.
+The DB-only `vw_b3_instrument_typed` separates equity, unit, BDR and fund-quota
+rows using B3's published `tpmerc`/`especi`; `CI` remains `fund_quota` because
+COTAHIST alone cannot prove ETF versus FII. The fact table stays unified at its
+published natural key. API exposure remains future work.
 
 ### 2. Equity options (calls `070`, puts `080`, exercises `012/013`)
 
@@ -156,6 +159,7 @@ offline fixture test → analytical SQL → catalog bump → api-docs page.
 
 | Phase | What                                                                                                                  | New ingest? | Effort                                   |
 | ----- | --------------------------------------------------------------------------------------------------------------------- | ----------- | ---------------------------------------- |
+| **Adj** | Label `close_return` as unadjusted (catalog v3 + docs — done); jump screen (`abs(close_return) > 40%` × `cia_event`) still open | none | small — SQL against data we already have |
 | **A** | Options + termo endpoints, partial index, panel arms, `api.catalog()`, universe/lookup/coverage extension, docs pages | none        | small — SQL + docs only                  |
 | **B** | Futures settlement: fetcher, table, `future_series`/`future_curve`, panel arm                                         | yes         | medium — first non-COTAHIST B3 file      |
 | **C** | Reference-rate curves: fetcher, table, `curve`/`curve_history`                                                        | yes         | medium — piggybacks B's fetcher plumbing |
@@ -182,8 +186,8 @@ Assessed against observed numbers, not runner marketing:
   self-heal is `watchdog.yml`, not tighter scheduling.
 - **Backfill fits because it shards.** The 6-hour job cap is the only hard
   GHA limit that could bind, and `backfill.yml` already answers it: FI runs
-  one job per year (300-min timeouts, public repo = free minutes, 20
-  concurrent jobs). New deep backfills MUST follow the same year-shard
+  one job per year (300-min timeouts), with matrix jobs serialized to protect
+  Postgres. New deep backfills MUST follow the same year-shard
   pattern — futures/curves history is ~250 small files per year, bound by
   HTTP round-trips, so one year per job with a polite per-request delay is
   comfortably inside the cap. Never one unsharded multi-year loop.
@@ -191,12 +195,11 @@ Assessed against observed numbers, not runner marketing:
   incident chain (overlapping readers → blocked `ALTER TABLE` → dead apply →
   Supabase quota warnings) was contention on the shared Postgres, and GHA
   compute was never the bottleneck. Hence rule three: all three writing
-  workflows (`daily_ingest`, `backfill`, `watchdog`) now share a
+  workflows (`daily_ingest`, `backfill`, `watchdog`) share a
   `concurrency: supabase-ingest` group with `cancel-in-progress: false` —
   one writer at a time; a run arriving mid-backfill queues instead of
-  writing on top of it. The per-year matrix inside one backfill run still
-  parallelizes; the group serializes workflows against each other, not jobs
-  within a run.
+  writing on top of it. Backfill matrices additionally use `max-parallel: 1`;
+  the database, not Actions compute, is the limiting resource.
 
 Known GHA-specific risks and their standing answers:
 
@@ -265,10 +268,11 @@ drawdown will silently eat a fabricated shock. That is the single most
 dangerous number in the warehouse right now, precisely because everything
 around it is correct.
 
-Until adjustment lands, the catalog `meaning` for `close_return` must say
-"unadjusted; corporate actions appear as spurious jumps", and the api-docs
-page must repeat it. A caption is not a fix, but an unlabelled trap is worse
-than a labelled one.
+Until adjustment lands, the trap is labelled, not fixed. Catalog `meaning`
+for `close_return` (version 3) and the api-docs panel page both say
+"unadjusted; corporate actions appear as spurious jumps". A caption is not
+a fix, but an unlabelled trap is worse than a labelled one. The jump
+screen below remains the first *code* deliverable.
 
 ### Where the adjustment information actually lives
 

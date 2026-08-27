@@ -137,17 +137,19 @@ def test_vercel_json_wires_the_gate():
     assert "npm run sources" in cfg["buildCommand"]
 
 
-def test_daily_ingest_triggers_a_dashboard_rebuild():
-    """Skipping code-irrelevant builds is only safe if data still redeploys.
-
-    The site is a static parquet snapshot, so without this hook fresh ingest
-    would never reach it once unrelated commits stop building.
-    """
-    wf = yaml.safe_load((ROOT / ".github/workflows/daily_ingest.yml").read_text())
+def test_daily_ingest_dashboard_rebuild_is_dispatch_only_opt_in():
+    """A fill or scheduled ingest must not start a competing dashboard build."""
+    text = (ROOT / ".github/workflows/daily_ingest.yml").read_text()
+    wf = yaml.safe_load(text)
     steps = wf["jobs"]["ingest"]["steps"]
     hook = [s for s in steps if "deploy hook" in s.get("name", "").lower()]
     assert hook, f"no deploy-hook step in: {[s.get('name') for s in steps]}"
     step = hook[0]
+    condition = step.get("if", "")
+    assert "github.event_name == 'workflow_dispatch'" in condition
+    assert "rebuild_dashboard == 'true'" in condition
+    assert "rebuild_dashboard:" in text
+    assert "default: false" in text
     assert step.get("continue-on-error") is True, (
         "a failed redeploy must not fail an ingest whose data already landed"
     )
@@ -157,3 +159,29 @@ def test_daily_ingest_triggers_a_dashboard_rebuild():
     # It has to run after the analytical layer, or it publishes stale aggregates.
     names = [s.get("name", "") for s in steps]
     assert names.index(step["name"]) > names.index("Build / refresh analytical layer")
+
+
+def test_backfill_is_sliceable_serial_and_never_rebuilds_dashboard():
+    text = (ROOT / ".github/workflows/backfill.yml").read_text()
+    wf = yaml.safe_load(text)
+    jobs = wf["jobs"]
+
+    assert "VERCEL_DEPLOY_HOOK_URL" not in text
+    assert jobs["backfill-fi"]["strategy"]["max-parallel"] == 1
+    assert jobs["backfill-other"]["strategy"]["max-parallel"] == 1
+    assert "--start-year ${{ inputs.start_year }}" in text
+    assert "--end-year ${{ inputs.end_year }}" in text
+    assert "inputs.entity" in jobs["backfill-fi"]["if"]
+    assert "fi_doc_type:" in text
+    assert '--doc-type "${{ inputs.fi_doc_type }}"' in text
+    assert "Print ingest_log + coverage snapshot" in text
+    assert "started_at < NOW() - INTERVAL '24 hours'" in text
+    assert "Marked stale by backfill coverage inspection after 24 hours" in text
+
+
+def test_b3_backfill_accepts_an_exact_year_range():
+    text = (ROOT / ".github/workflows/daily_ingest.yml").read_text()
+
+    assert "end_year:" in text
+    assert "--b3-start-year ${{ inputs.start_year }}" in text
+    assert "--end-year ${{ inputs.end_year }}" in text

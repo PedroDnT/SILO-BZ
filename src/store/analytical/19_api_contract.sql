@@ -79,25 +79,28 @@ SELECT
     v.fator_cotacao     AS quotation_factor,
     FALSE               AS adjusted,
     v.source,
-    v.fetched_at
-FROM public.vw_b3_quote_vista v;
+    v.fetched_at,
+    v.instrument_type   AS asset_class
+FROM public.vw_b3_instrument_typed v
+WHERE v.tpmerc = '010';
 
 COMMENT ON VIEW api.quotes IS
-    'Unadjusted B3 cash quotes (tpmerc=010). Grain (ticker, trade_date, board, term_days). Prefer board=02.';
+    'Unadjusted B3 cash quotes (tpmerc=010), classified from published TPMERC/ESPECI. fund_quota does not guess ETF versus FII. Grain (ticker, trade_date, board, term_days). BDI board varies by instrument type.';
 
 -- Deliberately owner-privileged (Step 6 decision): with security_invoker=false
 -- a SELECT here runs with the view owner's rights, so no client role needs (or
--- gets) a grant on public.vw_b3_quote_vista / b3_cotahist. Set explicitly so a
+-- gets) a grant on public.vw_b3_instrument_typed / b3_cotahist. Set explicitly so a
 -- future CREATE OR REPLACE cannot silently flip the boundary.
 ALTER VIEW api.quotes SET (security_invoker = false);
 
 GRANT SELECT ON api.quotes TO anon, authenticated;
 
+DROP FUNCTION IF EXISTS api.quote_history(TEXT, DATE, DATE, TEXT);
 CREATE OR REPLACE FUNCTION api.quote_history(
     p_ticker TEXT,
     p_from   DATE DEFAULT (CURRENT_DATE - 365),
     p_to     DATE DEFAULT CURRENT_DATE,
-    p_board  TEXT DEFAULT '02'
+    p_board  TEXT DEFAULT NULL
 )
 RETURNS TABLE (
     ticker            TEXT,
@@ -119,13 +122,26 @@ RETURNS TABLE (
     isin              TEXT,
     quotation_factor  INT,
     adjusted          BOOLEAN,
-    source            TEXT
+    source            TEXT,
+    asset_class       TEXT
 )
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
+    WITH selected_board AS (
+        SELECT COALESCE(
+            p_board,
+            (
+                SELECT latest.board
+                FROM api.quotes latest
+                WHERE latest.ticker = upper(btrim(p_ticker))
+                ORDER BY latest.trade_date DESC, latest.board
+                LIMIT 1
+            )
+        ) AS board
+    )
     SELECT
         q.ticker,
         q.trade_date,
@@ -146,11 +162,12 @@ AS $$
         q.isin,
         q.quotation_factor,
         q.adjusted,
-        q.source
+        q.source,
+        q.asset_class
     FROM api.quotes q
     WHERE q.ticker = upper(btrim(p_ticker))
       AND q.trade_date BETWEEN p_from AND p_to
-      AND (p_board IS NULL OR q.board = p_board)
+      AND q.board = (SELECT board FROM selected_board)
     ORDER BY q.trade_date
     -- Cap = serve _MAX_POINTS (5000) + 1. 5000 daily prints ~ 20 years of one
     -- ticker's sessions; the +1 row lets serve/ return 400 instead of a
@@ -161,9 +178,10 @@ $$;
 COMMENT ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT) IS
     'Daily unadjusted quote series for one ticker. Hard-capped at 5001 rows (= serve _MAX_POINTS + 1): above 5000 the adapter answers 400, never a truncated series.';
 
+DROP FUNCTION IF EXISTS api.quote_latest(TEXT, TEXT);
 CREATE OR REPLACE FUNCTION api.quote_latest(
     p_ticker TEXT,
-    p_board  TEXT DEFAULT '02'
+    p_board  TEXT DEFAULT NULL
 )
 RETURNS TABLE (
     ticker            TEXT,
@@ -185,7 +203,8 @@ RETURNS TABLE (
     isin              TEXT,
     quotation_factor  INT,
     adjusted          BOOLEAN,
-    source            TEXT
+    source            TEXT,
+    asset_class       TEXT
 )
 LANGUAGE sql
 STABLE
@@ -212,11 +231,12 @@ AS $$
         q.isin,
         q.quotation_factor,
         q.adjusted,
-        q.source
+        q.source,
+        q.asset_class
     FROM api.quotes q
     WHERE q.ticker = upper(btrim(p_ticker))
       AND (p_board IS NULL OR q.board = p_board)
-    ORDER BY q.trade_date DESC
+    ORDER BY q.trade_date DESC, q.board
     LIMIT 1;
 $$;
 
@@ -729,23 +749,24 @@ quote_month AS (
         q.ticker,
         date_trunc('month', q.trade_date)::date AS period,
         q.close,
-        q.volume
+        q.volume,
+        q.asset_class
     FROM api.quotes q
     JOIN params p ON TRUE
     WHERE p.freq = 'month'
-      AND q.board = '02'
       AND q.trade_date BETWEEN p.d0 AND p.d1
       AND q.ticker IN (SELECT ticker FROM tickers)
-    ORDER BY q.ticker, date_trunc('month', q.trade_date), q.trade_date DESC
+    ORDER BY q.ticker, date_trunc('month', q.trade_date), q.trade_date DESC, q.board
 ),
 quote_day AS (
-    SELECT q.ticker, q.trade_date AS period, q.close, q.volume
+    SELECT DISTINCT ON (q.ticker, q.trade_date)
+        q.ticker, q.trade_date AS period, q.close, q.volume, q.asset_class
     FROM api.quotes q
     JOIN params p ON TRUE
     WHERE p.freq = 'day'
-      AND q.board = '02'
       AND q.trade_date BETWEEN p.d0 AND p.d1
       AND q.ticker IN (SELECT ticker FROM tickers)
+    ORDER BY q.ticker, q.trade_date, q.board
 ),
 quote_px AS (
     SELECT * FROM quote_month
@@ -756,6 +777,7 @@ quote_ret AS (
     SELECT
         ticker,
         period,
+        asset_class,
         CASE
             WHEN (SELECT freq FROM params) = 'day'
             THEN close / NULLIF(lag(close) OVER w, 0) - 1
@@ -861,15 +883,15 @@ fund_rows AS (
       AND f.period BETWEEN date_trunc('month', p.d0)::date AND p.d1
       AND f.cnpj IN (SELECT cnpj FROM cnpjs)
 )
-SELECT q.ticker, 'ticker'::text, 'equity'::text, q.period, 'close'::text, q.close, 'b3_cotahist'::text
+SELECT q.ticker, 'ticker'::text, q.asset_class, q.period, 'close'::text, q.close, 'b3_cotahist'::text
 FROM quote_px q JOIN params p ON TRUE
 WHERE 'close' = ANY (p.metrics)
 UNION ALL
-SELECT q.ticker, 'ticker', 'equity', q.period, 'volume', q.volume, 'b3_cotahist'
+SELECT q.ticker, 'ticker', q.asset_class, q.period, 'volume', q.volume, 'b3_cotahist'
 FROM quote_px q JOIN params p ON TRUE
 WHERE 'volume' = ANY (p.metrics)
 UNION ALL
-SELECT r.ticker, 'ticker', 'equity', r.period, 'close_return', r.close_return, 'b3_cotahist'
+SELECT r.ticker, 'ticker', r.asset_class, r.period, 'close_return', r.close_return, 'b3_cotahist'
 FROM quote_ret r JOIN params p ON TRUE
 WHERE 'close_return' = ANY (p.metrics)
   AND r.close_return IS NOT NULL
@@ -928,7 +950,7 @@ LIMIT 100001;
 $$;
 
 COMMENT ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) IS
-    'Long panel for correlation/factor work. Mix tickers, option/termo codnegs, + CNPJs. No ffill. close_return is null across calendar gaps. Hard-capped at 100001 rows (= serve _MAX_PANEL + 1): above 100000 the adapter answers 400, never a truncated panel.';
+    'Long panel for correlation/factor work. Mix tickers, option/termo codnegs, + CNPJs. No ffill. close_return is p_t/p_{t-1}-1 from unadjusted closes (a split appears as a jump), cash tickers only, and is null across calendar gaps. Hard-capped at 100001 rows (= serve _MAX_PANEL + 1): above 100000 the adapter answers 400, never a truncated panel.';
 
 REVOKE ALL ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) TO anon, authenticated;
@@ -949,12 +971,24 @@ STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-    SELECT * FROM (
-        SELECT q.ticker, 'ticker'::text, 'equity'::text, max(q.short_name), max(q.isin)
+    WITH latest_quote_session AS (
+        -- Universe is discovery, not historical coverage. Restrict B3 to one
+        -- real session so a sparse type such as BDR does not classify and sort
+        -- the entire multi-year COTAHIST tape under the 15s API timeout.
+        SELECT max(q.trade_date) AS trade_date
         FROM api.quotes q
-        WHERE q.board = '02'
-          AND (p_asset_class IS NULL OR p_asset_class = 'equity')
-        GROUP BY q.ticker
+    ),
+    quote_rows AS (
+        SELECT DISTINCT ON (q.ticker)
+            q.ticker, q.asset_class, q.short_name, q.isin
+        FROM api.quotes q
+        JOIN latest_quote_session s ON s.trade_date = q.trade_date
+        WHERE p_asset_class IS NULL OR q.asset_class = lower(p_asset_class)
+        ORDER BY q.ticker
+    )
+    SELECT * FROM (
+        SELECT q.ticker, 'ticker'::text, q.asset_class, q.short_name, q.isin
+        FROM quote_rows q
         UNION ALL
         SELECT d.cnpj, 'cnpj', d.entity_type, d.fund_name, NULL
         FROM public.dim_fund d
@@ -1018,14 +1052,17 @@ STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-    SELECT q.ticker, 'ticker'::text, 'equity'::text, max(q.short_name), max(q.isin), NULL::text
-    FROM api.quotes q
-    WHERE q.board = '02'
-      AND (
-        q.ticker = upper(btrim(p_query))
-        OR q.isin = upper(btrim(p_query))
-      )
-    GROUP BY q.ticker
+    SELECT q.ticker, 'ticker'::text, q.asset_class, q.short_name, q.isin, NULL::text
+    FROM (
+        SELECT DISTINCT ON (ticker)
+            ticker, asset_class, short_name, isin
+        FROM api.quotes
+        WHERE (
+            ticker = upper(btrim(p_query))
+            OR isin = upper(btrim(p_query))
+          )
+        ORDER BY ticker, trade_date DESC
+    ) q
     UNION ALL
     SELECT d.cnpj, 'cnpj', d.entity_type, d.fund_name, NULL, d.cnpj
     FROM public.dim_fund d
@@ -1078,7 +1115,7 @@ AS $fn$
 SELECT $json$
 {
   "kind": "catalog",
-  "version": 3,
+  "version": 5,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup/universe, then GET /v1/panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions, and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches.",
   "metrics": {
@@ -1090,6 +1127,10 @@ SELECT $json$
       ],
       "asset_class": [
         "equity",
+        "unit",
+        "bdr",
+        "fund_quota",
+        "cash_security",
         "derivative"
       ],
       "grain": [
@@ -1097,7 +1138,7 @@ SELECT $json$
         "month"
       ],
       "source": "b3_cotahist",
-      "meaning": "Unadjusted close. Equity tickers: cash board 02. Option/termo codnegs: the derivative segment's session close. Month = last session in the month."
+      "meaning": "Unadjusted close. Cash tickers: the ticker's latest BDI board by default, classified from published TPMERC/ESPECI. Option/termo codnegs: that derivative segment's session close. Month = last session."
     },
     "volume": {
       "id_type": [
@@ -1107,6 +1148,10 @@ SELECT $json$
       ],
       "asset_class": [
         "equity",
+        "unit",
+        "bdr",
+        "fund_quota",
+        "cash_security",
         "derivative"
       ],
       "grain": [
@@ -1114,21 +1159,25 @@ SELECT $json$
         "month"
       ],
       "source": "b3_cotahist",
-      "meaning": "Session traded volume (BRL). Equity: cash board 02; option/termo: the derivative segment. Month = last session."
+      "meaning": "Session traded volume (BRL). Cash: the ticker's latest BDI board by default; option/termo: that derivative segment. Month = last session."
     },
     "close_return": {
       "id_type": [
         "ticker"
       ],
       "asset_class": [
-        "equity"
+        "equity",
+        "unit",
+        "bdr",
+        "fund_quota",
+        "cash_security"
       ],
       "grain": [
         "day",
         "month"
       ],
       "source": "b3_cotahist",
-      "meaning": "p_t/p_{t-1}-1 from stored closes. Daily: previous session. Monthly: previous calendar month else null.",
+      "meaning": "p_t/p_{t-1}-1 from stored unadjusted closes. Corporate actions appear as spurious jumps (a 2:1 split reports roughly -50%). Daily: previous session. Monthly: previous calendar month else null.",
       "derived": true
     },
     "nav": {
@@ -1243,6 +1292,7 @@ SELECT $json$
     "Missing observations stay null; do not ffill or interpolate.",
     "freq=day is quotes only. Mix equity with fund fundamentals on freq=month.",
     "close_return across a missing month is null, not a multi-month return.",
+    "close_return is unadjusted: a 2:1 split reports roughly -50%. It is not a total return.",
     "Ticker↔cia_company is not joined here; lookup returns them separately.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
     "Panel responses are hard-capped at 100000 rows (series endpoints at 5000); above that the API answers 400 — narrow ids, metrics, or the date window.",
@@ -1287,6 +1337,10 @@ SELECT $json$
   ],
   "asset_classes": [
     "equity",
+    "unit",
+    "bdr",
+    "fund_quota",
+    "cash_security",
     "fi",
     "fidc",
     "fii",

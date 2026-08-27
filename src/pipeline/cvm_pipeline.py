@@ -1204,11 +1204,19 @@ class CVMIngestor:
         start_year: int = 2019,
         end_year: Optional[int] = None,
         entity_filter: Optional[str] = None,
+        doc_type_filter: Optional[str] = None,
     ) -> Dict[str, int]:
         """Full historical backfill for all entities from start_year to today.
 
-        Pass entity_filter to restrict to one entity: fi | fidc | fip | fiagro | fii | securit | etf
+        Pass entity_filter to restrict to one entity. doc_type_filter is an
+        FI-only repair control: inf_diario | cda | perfil_mensal | balancete.
         """
+        fi_doc_types = {"inf_diario", "cda", "perfil_mensal", "balancete"}
+        if doc_type_filter not in fi_doc_types | {None}:
+            raise ValueError(f"unsupported FI doc_type_filter: {doc_type_filter}")
+        if doc_type_filter is not None and entity_filter != "fi":
+            raise ValueError("doc_type_filter requires entity_filter='fi'")
+
         today = date.today()
         end_year = end_year or today.year
         years = list(range(start_year, end_year + 1))
@@ -1218,16 +1226,19 @@ class CVMIngestor:
         def _want(entity: str) -> bool:
             return entity_filter is None or entity_filter == entity
 
+        def _want_fi_doc(doc_type: str) -> bool:
+            return doc_type_filter is None or doc_type_filter == doc_type
+
         # -- Fund registry (static cadastral file — run once per backfill) --
         # FII is deliberately absent: CVM retired the whole FII/CAD/ tree (the
         # directory itself 404s), and registro_fundo already carries every FII
         # with its Denominacao_Social, so the legacy fetch only logged a daily
         # error while adding nothing.
-        if _want("fi"):
+        if _want("fi") and doc_type_filter is None:
             totals["cvm_fund_registry"] += await self.ingest_fund_registry("fi")
 
         # -- CVM-175 unified registry (active universe, all fund families) --
-        if _want("fi"):
+        if _want("fi") and doc_type_filter is None:
             totals["cvm_fund_registry"] += await self.ingest_fund_registry_cvm175()
 
         # -- ETF registry (distinct entity: curated seed, self-fetches cad_fi) --
@@ -1240,38 +1251,42 @@ class CVMIngestor:
             hist_cda_years    = [y for y in years if y <= 2022]
             monthly_years     = years
 
-            for year in hist_diario_years:
-                n = await self.ingest_fi_hist_diario(year)
-                totals["cvm_fi_diario"] += n
+            if _want_fi_doc("inf_diario"):
+                for year in hist_diario_years:
+                    n = await self.ingest_fi_hist_diario(year)
+                    totals["cvm_fi_diario"] += n
 
-            for year in hist_cda_years:
-                n = await self.ingest_fi_hist_cda(year)
-                totals["cvm_fi_cda"] += n
+            if _want_fi_doc("cda"):
+                for year in hist_cda_years:
+                    n = await self.ingest_fi_hist_cda(year)
+                    totals["cvm_fi_cda"] += n
 
             fi_tasks: List[IngestTask] = []
             for year, month in _iter_month_pairs(monthly_years, today):
-                if year >= 2021:
+                if year >= 2021 and _want_fi_doc("inf_diario"):
                     fi_tasks.append(IngestTask(
                         "cvm_fi_diario",
                         f"fi/inf_diario {year}-{month:02d}",
                         self.ingest_fi_diario(year, month),
                     ))
-                if year >= 2023:
+                if year >= 2023 and _want_fi_doc("cda"):
                     fi_tasks.append(IngestTask(
                         "cvm_fi_cda",
                         f"fi/cda {year}-{month:02d}",
                         self.ingest_fi_cda(year, month),
                     ))
-                fi_tasks.append(IngestTask(
-                    "cvm_fi_perfil",
-                    f"fi/perfil_mensal {year}-{month:02d}",
-                    self.ingest_fi_perfil(year, month),
-                ))
-                fi_tasks.append(IngestTask(
-                    "cvm_fi_balancete",
-                    f"fi/balancete {year}-{month:02d}",
-                    self.ingest_fi_balancete(year, month),
-                ))
+                if _want_fi_doc("perfil_mensal"):
+                    fi_tasks.append(IngestTask(
+                        "cvm_fi_perfil",
+                        f"fi/perfil_mensal {year}-{month:02d}",
+                        self.ingest_fi_perfil(year, month),
+                    ))
+                if _want_fi_doc("balancete"):
+                    fi_tasks.append(IngestTask(
+                        "cvm_fi_balancete",
+                        f"fi/balancete {year}-{month:02d}",
+                        self.ingest_fi_balancete(year, month),
+                    ))
             await self._run_task_batches(fi_tasks, _get_concurrency("fi", 2), totals, "FI monthly backfill")
 
         # -- FIDC ---------------------------------------------------------
@@ -1468,7 +1483,9 @@ class CVMIngestor:
         # etf_daily is a matview over cvm_fi_diario, so an FI-only backfill makes
         # it stale too — refresh when either entity ran. CI's parallel matrix
         # defers this to a single final job (CVM_SKIP_ETF_REFRESH).
-        if any(_want(e) for e in _ETF_REFRESH_ENTITIES) and not _etf_refresh_disabled():
+        fi_prices_changed = _want("fi") and _want_fi_doc("inf_diario")
+        etf_registry_changed = _want("etf")
+        if (fi_prices_changed or etf_registry_changed) and not _etf_refresh_disabled():
             self._refresh_etf_metrics()
 
         logger.info("Backfill complete: %s", totals)

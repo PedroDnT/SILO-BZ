@@ -10,7 +10,7 @@ icon: "table"
 (id, date, metric, value)
 ```
 
-That shape lets you pull equity prints and fund fundamentals for the same window in a single
+That shape lets you pull B3 cash-market prints and fund fundamentals for the same window in a single
 request, pivot to a `dates × columns` matrix locally, and run correlations, factor models,
 or event studies in your notebook. There is no server-side `corr`, `rank`, or regression —
 reductions belong where you can see and change their assumptions.
@@ -57,9 +57,9 @@ api.panel(p_ids     TEXT[],
 
 | Metric | Id type | Asset class | Grains | Source | Meaning |
 | --- | --- | --- | --- | --- | --- |
-| `close` | ticker, option, termo | equity, derivative | day, month | `b3_cotahist` | Unadjusted close. Tickers: cash board `02`. Option/termo codnegs: that segment's session close. Monthly = last session of the month. |
-| `volume` | ticker, option, termo | equity, derivative | day, month | `b3_cotahist` | Session financial volume in BRL. Monthly = the last session's volume, not a monthly sum. |
-| `close_return` | ticker | equity | day, month | `b3_cotahist` | `p_t / p_(t-1) - 1` from stored closes. Derived. **Tickers only** — not offered for derivatives. |
+| `close` | ticker, option, termo | equity, unit, bdr, fund_quota, cash_security, derivative | day, month | `b3_cotahist` | Unadjusted close. Cash tickers: the instrument's published BDI board. Option/termo codnegs: that segment's session close. Monthly = last session of the month. |
+| `volume` | ticker, option, termo | equity, unit, bdr, fund_quota, cash_security, derivative | day, month | `b3_cotahist` | Session financial volume in BRL. Monthly = the last session's volume, not a monthly sum. |
+| `close_return` | ticker | equity, unit, bdr, fund_quota, cash_security | day, month | `b3_cotahist` | `p_t / p_(t-1) - 1` from stored **unadjusted** closes. Derived. A 2:1 split reports roughly −50%. **Cash tickers only** — not offered for derivatives. |
 | `nav` | cnpj | fi, fidc, fii, fip, fiagro | month | `cvm` | Fund net assets (`vl_patrim_liq`). |
 | `quota` | cnpj | fi | month | `cvm` | Unit quota value. Comparable within a subclass only. |
 | `delinquency` | cnpj | fidc, fiagro | month | `cvm` | Delinquent portfolio **value**, not a rate — divide by `nav` yourself. |
@@ -71,7 +71,7 @@ api.panel(p_ids     TEXT[],
 <Warning>
   **`freq=day` is quotes only.** No CVM fundamental is published daily, so the fund arms are
   simply not evaluated at a daily grain — asking for `nav` with `p_freq: "day"` returns the
-  quote rows and nothing else. To mix asset classes, use `freq=month`, where the equity value
+  quote rows and nothing else. To mix asset classes, use `freq=month`, where the B3 value
   is the **last real session in the month**. Aligning a monthly NAV onto a daily calendar
   would require filling, and this API does not fill.
 </Warning>
@@ -86,8 +86,10 @@ api.panel(p_ids     TEXT[],
   `ticker`, `option`, `termo`, or `cnpj`.
 </ResponseField>
 <ResponseField name="asset_class" type="text">
-  `equity` for cash tickers; `derivative` for option and termo codnegs; for funds, the
-  vehicle's `entity_type` (`fi`, `fidc`, `fii`, `fip`, `fiagro`).
+  For cash tickers, the conservative B3 type (`equity`, `unit`, `bdr`, `fund_quota`, or
+  `cash_security`) — `fund_quota` deliberately does not guess ETF versus FII. `derivative`
+  for option and termo codnegs. For funds, the vehicle's `entity_type` (`fi`, `fidc`,
+  `fii`, `fip`, `fiagro`).
 </ResponseField>
 <ResponseField name="date" type="date">
   Observation date. At `freq=month` this is the first day of the month, for both the equity
@@ -115,7 +117,6 @@ Monthly equity returns against a FIDC's delinquency, over five years:
 ```bash curl
 curl -s -X POST "$SILO_URL/rpc/panel" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{
         "p_ids": ["PETR4", "12345678000190"],
@@ -205,6 +206,15 @@ correlate on pairwise-complete observations rather than filling.
 
 ### `close_return` specifically
 
+<Warning>
+  **Unadjusted.** `close_return` is the ratio of two stored closes, and those closes are
+  B3's raw prints (`adjusted: false`). A 2:1 split therefore reports roughly **−50 %** and
+  calls it a return. The arithmetic is faithful to the prices B3 published — nothing in the
+  pipeline is wrong — but an event study, a correlation, or a drawdown will silently eat a
+  fabricated shock. There is no split-adjusted metric yet. Treat jumps larger than ~40 % as
+  suspect until you have checked for a corporate action.
+</Warning>
+
 - **Monthly:** computed only when the preceding row is the **immediately preceding calendar
   month**. Across a gap the return is null — and therefore absent. A missing month never
   becomes a silent two-month return.
@@ -219,9 +229,8 @@ correlate on pairwise-complete observations rather than filling.
 
 - Quote metrics honor `p_from` exactly; fund metrics start from `date_trunc('month', p_from)`,
   so a `p_from` mid-month still includes that whole month on the fund side.
-- Only board `02` (standard lot) feeds the panel, at both grains. A paper that does not print
-  on `02` contributes nothing here — use [`quote_history`](/api-docs/quotes) with
-  `"p_board": null` to see it.
+- The panel accepts every cash-market BDI board and deterministically keeps one row if a
+  ticker has multiple boards on the same session.
 
 ## Limits
 

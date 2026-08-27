@@ -5,12 +5,16 @@ icon: "chart-line"
 ---
 
 B3 COTAHIST cash-market prints (`tpmerc = 010`), exactly as published. Nothing here is
-split- or dividend-adjusted, and every row says so with `adjusted: false`.
+split- or dividend-adjusted, and every row says so with `adjusted: false`. `asset_class`
+is derived conservatively from B3's published `tpmerc` and `especi`: `equity`, `unit`,
+`bdr`, `fund_quota`, or `cash_security`. A `CI` paper remains `fund_quota` because
+COTAHIST alone cannot prove ETF versus FII.
 
 The grain is **`(ticker, trade_date, board, term_days)`**. A single ticker can print on more
 than one board on the same day, so a query that does not pin `board` can return several rows
-per session. **Board `02` is the standard lot** and is what you almost always want; both
-functions default to it.
+per session. COTAHIST `codbdi` varies by instrument type (for example `02` for common
+equities, `12` for FIIs, `14` for ETFs, and `34` for BDRs). The functions automatically
+select the ticker's latest board unless you pass one explicitly.
 
 ---
 
@@ -30,7 +34,7 @@ series.
 </ParamField>
 
 <ParamField query="board" type="string">
-  COTAHIST `codbdi`. Pin `board=eq.02` for the standard lot.
+  COTAHIST `codbdi`. Do not assume `02` outside ordinary equities.
 </ParamField>
 
 <ParamField query="select" type="string">
@@ -54,7 +58,7 @@ series.
   Session date. Part of the grain.
 </ResponseField>
 <ResponseField name="board" type="text">
-  Board / `codbdi`. `02` is the standard lot. Part of the grain.
+  BDI code / `codbdi`; its meaning varies by instrument type. Part of the grain.
 </ResponseField>
 <ResponseField name="term_days" type="text">
   COTAHIST `prazot`. A **text** field despite the name, usually empty for cash. Part of the
@@ -114,6 +118,9 @@ series.
 <ResponseField name="fetched_at" type="timestamptz">
   When the pipeline ingested this row. Only on the view.
 </ResponseField>
+<ResponseField name="asset_class" type="text">
+  Conservative B3 type: `equity`, `unit`, `bdr`, `fund_quota`, or `cash_security`.
+</ResponseField>
 
 ### Example
 
@@ -122,8 +129,7 @@ series.
 ```bash curl
 curl -s -G "$SILO_URL/quotes" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
-  --data-urlencode "select=ticker,trade_date,board,close,volume,adjusted" \
+  --data-urlencode "select=ticker,trade_date,board,close,volume,adjusted,asset_class" \
   --data-urlencode "ticker=in.(PETR4,VALE3)" \
   --data-urlencode "board=eq.02" \
   --data-urlencode "trade_date=eq.2026-08-26"
@@ -131,7 +137,7 @@ curl -s -G "$SILO_URL/quotes" \
 
 ```python Python
 params = {
-    "select": "ticker,trade_date,board,close,volume,adjusted",
+    "select": "ticker,trade_date,board,close,volume,adjusted,asset_class",
     "ticker": "in.(PETR4,VALE3)",
     "board": "eq.02",
     "trade_date": "eq.2026-08-26",
@@ -142,7 +148,7 @@ rows = requests.get(f"{URL}/quotes", headers=H, params=params).json()
 ```javascript JavaScript
 const { data } = await supabase
   .from('quotes')
-  .select('ticker, trade_date, board, close, volume, adjusted')
+  .select('ticker, trade_date, board, close, volume, adjusted, asset_class')
   .in('ticker', ['PETR4', 'VALE3'])
   .eq('board', '02')
   .eq('trade_date', '2026-08-26')
@@ -153,9 +159,9 @@ const { data } = await supabase
 ```json
 [
   { "ticker": "PETR4", "trade_date": "2026-08-26", "board": "02",
-    "close": 41.2, "volume": 1204533210.0, "adjusted": false },
+    "close": 41.2, "volume": 1204533210.0, "adjusted": false, "asset_class": "equity" },
   { "ticker": "VALE3", "trade_date": "2026-08-26", "board": "02",
-    "close": 58.94, "volume": 987441002.5, "adjusted": false }
+    "close": 58.94, "volume": 987441002.5, "adjusted": false, "asset_class": "equity" }
 ]
 ```
 
@@ -169,7 +175,7 @@ One ticker's daily series over a window. Ordered by `trade_date` ascending.
 api.quote_history(p_ticker TEXT,
                   p_from   DATE DEFAULT CURRENT_DATE - 365,
                   p_to     DATE DEFAULT CURRENT_DATE,
-                  p_board  TEXT DEFAULT '02')
+                  p_board  TEXT DEFAULT NULL)
 ```
 
 <ParamField body="p_ticker" type="string" required>
@@ -184,21 +190,21 @@ api.quote_history(p_ticker TEXT,
   Window end, inclusive.
 </ParamField>
 
-<ParamField body="p_board" type="string" default="02">
-  Board filter. Pass `null` explicitly to return **all** boards for the ticker — the only
-  argument where an explicit `null` is meaningful rather than empty-producing.
+<ParamField body="p_board" type="string" default="null">
+  Board filter. Null or omitted automatically selects the board on the ticker's latest
+  stored row. Pass a code explicitly only when you need that exact BDI category.
 </ParamField>
 
 Returns the view's columns minus `term_days` and `fetched_at`: `ticker`, `trade_date`,
 `board`, `short_name`, `spec`, `currency`, `open`, `high`, `low`, `average`, `close`, `bid`,
-`ask`, `trades`, `quantity`, `volume`, `isin`, `quotation_factor`, `adjusted`, `source`.
+`ask`, `trades`, `quantity`, `volume`, `isin`, `quotation_factor`, `adjusted`, `source`,
+`asset_class`.
 
 <CodeGroup>
 
 ```bash curl
 curl -s -X POST "$SILO_URL/rpc/quote_history" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{"p_ticker":"PETR4","p_from":"2026-01-02","p_to":"2026-08-26"}'
 ```
@@ -260,25 +266,24 @@ The most recent stored session for one ticker. At most one row.
 
 ```sql
 api.quote_latest(p_ticker TEXT,
-                 p_board  TEXT DEFAULT '02')
+                 p_board  TEXT DEFAULT NULL)
 ```
 
 <ParamField body="p_ticker" type="string" required>
   Ticker. Upper-cased and trimmed server-side.
 </ParamField>
 
-<ParamField body="p_board" type="string" default="02">
+<ParamField body="p_board" type="string" default="null">
   Board filter; `null` means "latest across all boards".
 </ParamField>
 
-Same twenty columns as `quote_history`.
+Same columns as `quote_history`.
 
 <CodeGroup>
 
 ```bash curl
 curl -s -X POST "$SILO_URL/rpc/quote_latest" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{"p_ticker":"PETR4"}'
 ```

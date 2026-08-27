@@ -47,8 +47,9 @@ api.lookup(p_query TEXT)
   `ticker`, `cnpj`, or `cd_cvm` — tells you which endpoint accepts this `id`.
 </ResponseField>
 <ResponseField name="asset_class" type="text">
-  `equity` for tickers, the fund's `entity_type` (`fi`, `fidc`, `fii`, `fip`, `fiagro`) for
-  funds, and `cia` for listed companies.
+  For tickers, the conservative B3 cash type (`equity`, `unit`, `bdr`, `fund_quota`, or
+  `cash_security`); the fund's `entity_type` (`fi`, `fidc`, `fii`, `fip`, `fiagro`) for
+  funds; and `cia` for listed companies.
 </ResponseField>
 <ResponseField name="name" type="text">
   Short name for a ticker, registered fund name, or company name. Nullable for funds whose
@@ -69,7 +70,6 @@ api.lookup(p_query TEXT)
 ```bash curl
 curl -s -X POST "$SILO_URL/rpc/lookup" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{"p_query":"PETR4"}'
 ```
@@ -110,8 +110,7 @@ A name query spans populations:
 - **No defined ordering.** If more than 20 rows match, which 20 you receive is arbitrary and
   may change between calls. Narrow the query rather than paging — there is no offset that
   would help.
-- Ticker rows are drawn from board `02` only, so a paper that never printed on the standard
-  lot will not resolve here.
+- Ticker rows span every cash-market BDI board, including BDR and fund-quota boards.
 
 ## Empty results
 

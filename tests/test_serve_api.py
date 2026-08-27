@@ -110,6 +110,7 @@ def test_quote_latest_ok(client):
     assert body["ticker"] == "PETR4"
     assert body["close"] == 41.9
     assert rv.headers["X-Silo-Adjusted"] == "false"
+    assert client.pool.cur.params == ("PETR4", None)
 
 
 def test_bad_ticker_400(client):
@@ -281,6 +282,42 @@ def test_panel_metrics_come_from_catalog():
     for spec in METRICS.values():
         assert isinstance(spec["asset_class"], list)
         assert spec["asset_class"]
+
+
+def test_close_return_catalog_says_unadjusted():
+    """Splits must not look like total returns. Catalog v3 names the trap."""
+    from serve.catalog import CONSTRAINTS, CATALOG_VERSION, METRICS
+
+    assert CATALOG_VERSION >= 3
+    meaning = METRICS["close_return"]["meaning"].lower()
+    assert "unadjusted" in meaning
+    assert "split" in meaning
+    joined = " ".join(CONSTRAINTS).lower()
+    assert "unadjusted" in joined
+    assert "split" in joined
+
+
+def test_b3_catalog_divides_cash_instruments_by_published_type():
+    from serve.catalog import B3_CASH_ASSET_CLASSES, CATALOG_VERSION, METRICS
+
+    assert CATALOG_VERSION >= 5
+    assert B3_CASH_ASSET_CLASSES == [
+        "equity", "unit", "bdr", "fund_quota", "cash_security",
+    ]
+    # Every cash class stays available on all three B3 metrics.
+    for metric in ("close", "volume", "close_return"):
+        assert set(B3_CASH_ASSET_CLASSES) <= set(METRICS[metric]["asset_class"])
+    # close/volume additionally serve option and termo codnegs (catalog v5);
+    # close_return does not — strike/expiry/term make a naive close-to-close
+    # ratio misleading in a way the cash series is not.
+    for metric in ("close", "volume"):
+        assert METRICS[metric]["asset_class"] == [*B3_CASH_ASSET_CLASSES, "derivative"]
+        assert METRICS[metric]["id_type"] == ["ticker", "option", "termo"]
+    assert METRICS["close_return"]["asset_class"] == B3_CASH_ASSET_CLASSES
+    assert METRICS["close_return"]["id_type"] == ["ticker"]
+    # COTAHIST CI cannot prove ETF versus FII; the broad type is intentional.
+    assert "etf" not in B3_CASH_ASSET_CLASSES
+    assert "fii" not in B3_CASH_ASSET_CLASSES
 
 
 def test_notebook_reduce_keeps_nulls_and_is_unexported():

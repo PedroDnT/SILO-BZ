@@ -28,9 +28,11 @@ or carry last-observation. Mixing daily equity with monthly NAV on a **daily**
 calendar would require filling — that is your notebook. Mix them on `freq=month`
 (equity close = last session in the month, a real print).
 
-`close_return` is `p_t / p_{t-1} - 1` from stored closes. Daily: previous
-session. Monthly: previous calendar month, else null (a missing month does not
-become a two-month return).
+`close_return` is `p_t / p_{t-1} - 1` from stored **unadjusted** closes. A
+2:1 split reports roughly −50% — the arithmetic is faithful to B3's published
+prices, not a total return. Daily: previous session. Monthly: previous
+calendar month, else null (a missing month does not become a two-month
+return).
 
 Ticker↔listed-company (`cia_*`) join is **not** invented here. Lookup returns
 CIA by CNPJ/`cd_cvm`/name separately until that match exists.
@@ -58,7 +60,8 @@ client  →  HTTPS /v1/*   (serve/, bind 127.0.0.1 or a gateway)
 ```
 
 1. **`api` schema is the product.** English names, ticker/CNPJ keys, unadjusted
-   flag, default cash board `02`. Clients should not query `b3_cotahist`.
+   flag, and automatic selection of each ticker's published BDI board. Clients
+   should not query `b3_cotahist`.
 2. **HTTP is an adapter**, not a second database. Every handler is a single
    `SELECT` / `api.*()` call. No business logic that can invent a price.
 3. **Do not turn on PostgREST on `public`.** Today some landing tables are
@@ -69,9 +72,12 @@ client  →  HTTPS /v1/*   (serve/, bind 127.0.0.1 or a gateway)
 4. **Cache at the edge.** History whose `to` is in the past is immutable
    (`max-age=86400`). Latest quote is short (`max-age=300`). Header
    `X-Silo-Adjusted: false` so nobody assumes brapi-style split adjustment.
-5. **404 vs empty.** Unknown ticker/CNPJ → 404. Known ticker, no sessions in
-   range (holiday window) → `200 { kind: "series", series: [] }`. Never a
-   plausible last-close fallback.
+5. **404 vs empty.** On `serve/`, unknown ticker/CNPJ → 404. Known ticker,
+   no sessions in range (holiday window) → `200 { kind: "series", series: [] }`.
+   On PostgREST (`api.*`) there is no adapter to shape the error: unknown
+   ticker and empty window both return `200 []`. A caller that treats empty
+   as 404 will silently mis-read a miss. Never a plausible last-close
+   fallback.
 
 ## Point vs series
 
@@ -163,9 +169,10 @@ curl -s localhost:8080/v1/quotes/PETR4
 
 Production: the public path is **Supabase-native** (decided 2026-08-26) —
 schema `api` is exposed through the Supabase Data API (PostgREST), so there is
-no gateway, no TLS to terminate, and no serve/ host to run. To enable it:
-Supabase Dashboard → Settings → API → add `api` to **Exposed schemas**. The
-base URL is `https://<project-ref>.supabase.co/rest/v1/` with the anon key;
+no gateway, no TLS to terminate, and no serve/ host to run. The live base URL is
+`https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/` with the anon key. To enable
+it on a fresh project: Supabase Dashboard → Settings → API → add `api` to
+**Exposed schemas**. The generic form is `https://<project-ref>.supabase.co/rest/v1/`;
 views are read as `/rest/v1/quotes?select=...`, functions are called as
 `POST /rest/v1/rpc/<name>` with named arguments in the JSON body. The grants
 in `19_api_contract.sql` (anon/authenticated: `USAGE` on schema `api`,

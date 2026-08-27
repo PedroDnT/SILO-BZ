@@ -227,7 +227,7 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
         atexit.register(pool.close)
     app.extensions["silo_pool"] = pool
 
-    def _quote_series(code: str, p_from: str, p_to: str, board: str, fmt: str, fields: Sequence[str]):
+    def _quote_series(code: str, p_from: str, p_to: str, board: Optional[str], fmt: str, fields: Sequence[str]):
         with pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -255,6 +255,7 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
         points = series_points(rows, date_field="trade_date", fields=fields)
         source = rows[0]["source"] if rows else "b3_cotahist"
         currency = rows[0].get("currency") if rows else None
+        selected_board = rows[0].get("board") if rows else board
         body = series_envelope(
             key="ticker",
             value=code,
@@ -264,7 +265,7 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
             p_from=p_from,
             p_to=p_to,
             points=points,
-            extra={"board": board, "currency": currency},
+            extra={"board": selected_board, "currency": currency},
             fmt=fmt,
         )
         headers = _cache(86400 if p_to < date.today().isoformat() else 300)
@@ -307,7 +308,7 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
         fmt = (request.args.get("format") or "rows").strip().lower()
         if fmt not in ("rows", "columnar"):
             return jsonify({"error": "format must be rows or columnar"}), 400
-        board = request.args.get("board", "02")
+        board = request.args.get("board")
         if window:
             return _quote_series(code, window[0], window[1], board, fmt, fields)
         with pool.connection() as conn, conn.cursor() as cur:
@@ -339,7 +340,7 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
         fmt = (request.args.get("format") or "rows").strip().lower()
         if fmt not in ("rows", "columnar"):
             return jsonify({"error": "format must be rows or columnar"}), 400
-        board = request.args.get("board", "02")
+        board = request.args.get("board")
         return _quote_series(code, window[0], window[1], board, fmt, fields)
 
     @app.get("/v1/funds")

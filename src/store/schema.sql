@@ -882,7 +882,7 @@ CREATE INDEX IF NOT EXISTS idx_b3_cotahist_isin
     ON b3_cotahist (isin) WHERE isin IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_b3_cotahist_tpmerc_dt
     ON b3_cotahist (tpmerc, trade_date DESC);
--- Option serve path (api.option_chain / api.option_history, migration 20):
+-- Option serve path (api.option_chain / api.option_history, migration 21):
 -- options (tpmerc 070/080) are ~89% of each session, so per-codneg lookups get
 -- the same partial-index treatment as vista. Termo ('030') deliberately has no
 -- index: ~135 rows/session; idx_b3_cotahist_tpmerc_dt already narrows it.
@@ -927,3 +927,32 @@ WHERE tpmerc = '010';
 
 COMMENT ON VIEW vw_b3_quote_vista IS
     'Cash-market (tpmerc=010) COTAHIST quotes. Unadjusted. Grain is still (codneg, trade_date, codbdi, prazot); board 02 is the standard lot.';
+
+-- DB-side instrument taxonomy. Keep the landing fact at B3's register-01 grain:
+-- this view derives a conservative type from published TPMERC/ESPECI while
+-- preserving both source fields. ESPECI='CI' cannot honestly distinguish an
+-- ETF quota from an FII quota, so it remains the broader `fund_quota`.
+CREATE OR REPLACE VIEW vw_b3_instrument_typed AS
+SELECT
+    q.*,
+    CASE
+        WHEN q.tpmerc IN ('012', '070') THEN 'option_call'
+        WHEN q.tpmerc IN ('013', '080') THEN 'option_put'
+        WHEN q.tpmerc = '030' THEN 'forward'
+        WHEN q.tpmerc IN ('010', '020', '021') THEN
+            CASE
+                WHEN UPPER(COALESCE(q.especi, '')) LIKE 'DR%'  THEN 'bdr'
+                WHEN UPPER(COALESCE(q.especi, '')) LIKE 'UNT%' THEN 'unit'
+                WHEN UPPER(COALESCE(q.especi, '')) LIKE 'CI%'  THEN 'fund_quota'
+                WHEN UPPER(COALESCE(q.especi, '')) LIKE 'ON%'
+                  OR UPPER(COALESCE(q.especi, '')) LIKE 'PN%'  THEN 'equity'
+                ELSE 'cash_security'
+            END
+        ELSE 'other'
+    END AS instrument_type
+FROM b3_cotahist q;
+
+COMMENT ON VIEW vw_b3_instrument_typed IS
+    'COTAHIST rows classified from published TPMERC/ESPECI only. fund_quota intentionally does not guess ETF versus FII. Grain and natural key are unchanged.';
+COMMENT ON COLUMN vw_b3_instrument_typed.instrument_type IS
+    'option_call | option_put | forward | bdr | unit | fund_quota | equity | cash_security | other';

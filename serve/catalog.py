@@ -22,7 +22,17 @@ __all__ = [
     "tool_specs",
 ]
 
-CATALOG_VERSION = 3
+# 5: main's typed cash asset classes (4) merged with the option/termo id_types
+# and list-valued id_type this branch introduced (3).
+CATALOG_VERSION = 5
+
+B3_CASH_ASSET_CLASSES = [
+    "equity",
+    "unit",
+    "bdr",
+    "fund_quota",
+    "cash_security",
+]
 
 # Grain + metric map. Agents must not invent metrics.
 # id_type is a list (since version 3): one metric name can apply to several
@@ -30,31 +40,39 @@ CATALOG_VERSION = 3
 METRICS: Dict[str, Dict[str, Any]] = {
     "close": {
         "id_type": ["ticker", "option", "termo"],
-        "asset_class": ["equity", "derivative"],
+        "asset_class": [*B3_CASH_ASSET_CLASSES, "derivative"],
         "grain": ["day", "month"],
         "source": "b3_cotahist",
         "meaning": (
-            "Unadjusted close. Equity tickers: cash board 02. Option/termo "
-            "codnegs: the derivative segment's session close. "
-            "Month = last session in the month."
+            "Unadjusted close. Cash tickers: the ticker's latest BDI board by "
+            "default, classified from published TPMERC/ESPECI. Option/termo "
+            "codnegs: that derivative segment's session close. "
+            "Month = last session."
         ),
     },
     "volume": {
         "id_type": ["ticker", "option", "termo"],
-        "asset_class": ["equity", "derivative"],
+        "asset_class": [*B3_CASH_ASSET_CLASSES, "derivative"],
         "grain": ["day", "month"],
         "source": "b3_cotahist",
         "meaning": (
-            "Session traded volume (BRL). Equity: cash board 02; "
-            "option/termo: the derivative segment. Month = last session."
+            "Session traded volume (BRL). Cash: the ticker's latest BDI board "
+            "by default; option/termo: that derivative segment. "
+            "Month = last session."
         ),
     },
     "close_return": {
+        # Cash only. Derivatives carry strike/expiry/term effects that make a
+        # naive close-to-close ratio misleading in a way the cash series is not.
         "id_type": ["ticker"],
-        "asset_class": ["equity"],
+        "asset_class": B3_CASH_ASSET_CLASSES,
         "grain": ["day", "month"],
         "source": "b3_cotahist",
-        "meaning": "p_t/p_{t-1}-1 from stored closes. Daily: previous session. Monthly: previous calendar month else null.",
+        "meaning": (
+            "p_t/p_{t-1}-1 from stored unadjusted closes. Corporate actions "
+            "appear as spurious jumps (a 2:1 split reports roughly -50%). "
+            "Daily: previous session. Monthly: previous calendar month else null."
+        ),
         "derived": True,
     },
     "nav": {
@@ -121,6 +139,7 @@ CONSTRAINTS = [
     "Missing observations stay null; do not ffill or interpolate.",
     "freq=day is quotes only. Mix equity with fund fundamentals on freq=month.",
     "close_return across a missing month is null, not a multi-month return.",
+    "close_return is unadjusted: a 2:1 split reports roughly -50%. It is not a total return.",
     "Ticker↔cia_company is not joined here; lookup returns them separately.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
     "Panel responses are hard-capped at 100000 rows (series endpoints at 5000); "
@@ -194,7 +213,8 @@ def catalog_payload() -> Dict[str, Any]:
         "examples": EXAMPLES,
         "id_types": ["ticker", "cnpj", "cd_cvm", "option", "termo"],
         "asset_classes": [
-            "equity", "fi", "fidc", "fii", "fip", "fiagro", "cia", "derivative",
+            *B3_CASH_ASSET_CLASSES,
+            "fi", "fidc", "fii", "fip", "fiagro", "cia", "derivative",
         ],
         "freq": ["day", "month"],
         "endpoints": {
@@ -242,7 +262,11 @@ def tool_specs() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "silo_universe",
-                "description": "List identifiers by asset_class: equity, fi, fidc, fii, fip, fiagro, option, termo.",
+                "description": (
+                    "List identifiers by asset_class: equity, unit, bdr, "
+                    "fund_quota, cash_security, fi, fidc, fii, fip, fiagro, "
+                    "option, termo."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {

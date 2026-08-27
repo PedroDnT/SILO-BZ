@@ -8,8 +8,8 @@
 --   * Client reads go through schema `api` (19_api_contract.sql): owner-
 --     privileged views + SECURITY DEFINER functions. Reading api.* therefore
 --     requires NO grant on any landing table.
---   * Landing tables (cvm_*, b3_cotahist, cvm_ingest_log) and the raw cash
---     tape view vw_b3_quote_vista get no grants to anon / authenticated.
+--   * Landing tables (cvm_*, b3_cotahist, cvm_ingest_log) and the raw B3
+--     tape views get no grants to anon / authenticated.
 --     Earlier revisions of this file granted them; because a GRANT persists on
 --     the live database until revoked, the revokes below are applied on every
 --     run (REVOKE is idempotent).
@@ -104,6 +104,7 @@ REVOKE ALL ON TABLE cvm_ingest_log         FROM anon, authenticated;
 -- (analytical/19_api_contract.sql) — one door, not two.
 REVOKE ALL ON TABLE b3_cotahist            FROM anon, authenticated;
 REVOKE ALL ON TABLE vw_b3_quote_vista      FROM anon, authenticated;
+REVOKE ALL ON TABLE vw_b3_instrument_typed FROM anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Materialized views (analytical facts) — aggregated, public

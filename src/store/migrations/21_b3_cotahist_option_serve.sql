@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 20 — B3 COTAHIST option serve path (partial index)
+-- Migration 21 — B3 COTAHIST option serve path (partial index)
 --
 -- INSTRUMENTS.md Phase A: serve the option rows (tpmerc '070' calls / '080'
 -- puts) already landed in b3_cotahist through api.option_chain /
