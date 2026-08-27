@@ -30,7 +30,7 @@ ingest HTTP server.
 | **`dashboard/`, `webapp/`** | Evidence.dev sites                                                | read Supabase at **build** time into parquet                    |
 
 Docs: [https://octo-98895abd.mintlify.site](https://octo-98895abd.mintlify.site)
-(Mintlify, source in [`api-docs/`](api-docs/quickstart.mdx)) for callers,
+(Mintlify, source in [`api-docs/`](api-docs/quickstart.mdx); agents: [`api-docs/agents.mdx`](api-docs/agents.mdx)) for callers,
 [docs/API.md](docs/API.md) for the contract and its edge cases,
 [docs/planning/SERVING.md](docs/planning/SERVING.md) for how "ingested" becomes
 "a researcher pulls a panel" (steps 0–7; 3 and 6 gate public HTTP).

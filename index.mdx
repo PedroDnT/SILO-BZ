@@ -25,9 +25,14 @@ That is the only public HTTP surface. Views are `GET /<view>`; functions are
 `POST /rpc/<function>`. Send the anon key as both `apikey` and
 `Authorization: Bearer`.
 
-<Card title="Quickstart" icon="rocket" href="/api-docs/quickstart" horizontal>
-  Get the anon key and make your first call in under a minute.
-</Card>
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/api-docs/quickstart">
+    Get the anon key and make your first call in under a minute.
+  </Card>
+  <Card title="For agents" icon="robot" href="/api-docs/agents">
+    How an agent reads this site. You cannot generate an API key.
+  </Card>
+</CardGroup>
 
 ## The primitive is a panel
 
@@ -80,6 +85,6 @@ Ingestion runs on a GitHub Actions cron (`run_daily`) plus on-demand backfills
 (`run_backfill`). There is **no ingest HTTP API** — this documentation covers the read side
 only. The full operator guide lives in the repository:
 
-- [README](https://github.com/PedroDnT/iliquid_nightly/blob/main/README.md) — operator guide
-- [docs/](https://github.com/PedroDnT/iliquid_nightly/tree/main/docs) — architecture, data
+- [README](https://github.com/PedroDnT/SILO-BZ/blob/main/README.md) — operator guide
+- [docs/](https://github.com/PedroDnT/SILO-BZ/tree/main/docs) — architecture, data
   modeling, and the serving roadmap
