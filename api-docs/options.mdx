@@ -1,0 +1,278 @@
+---
+title: "Options"
+description: "B3 equity options as published — one session's chain for a codneg prefix, or one series' daily history."
+icon: "chart-candlestick"
+---
+
+Options are the same COTAHIST tape as [`quotes`](/api-docs/quotes), on a different market
+type: **`tpmerc` `070` = call, `080` = put**. They are roughly nine in ten rows of every
+session, which is why both endpoints here are narrower than their cash-market equivalents —
+neither will scan the whole segment for you.
+
+Everything is unadjusted and every row says so with `adjusted: false`.
+
+<Warning>
+  **There is no `underlying` column, on purpose.** A codneg's root usually names the
+  underlying — `PETRH400` is a PETR call — but that is a market naming *convention*, not a
+  mapping B3 publishes. Deriving it here would mean inventing an identity join, which this
+  warehouse does not do (the same reason ticker↔CNPJ stays unjoined). Filter by prefix and
+  own that inference yourself.
+</Warning>
+
+---
+
+## `POST /rpc/option_chain`
+
+One session's chain for a codneg prefix: every strike, expiry and side that printed.
+
+```sql
+api.option_chain(p_prefix      TEXT,
+                 p_expiry_from DATE DEFAULT CURRENT_DATE,
+                 p_trade_date  DATE DEFAULT NULL,
+                 p_limit       INT  DEFAULT 500)
+```
+
+<ParamField body="p_prefix" type="string" required>
+  Codneg prefix, **at least 3 characters**. Upper-cased and trimmed server-side, so `petr`
+  works. Matched as `codneg LIKE '<prefix>%'`.
+</ParamField>
+
+<ParamField body="p_expiry_from" type="date" default="CURRENT_DATE">
+  Keep only series expiring on or after this date — by default, live contracts. Pass `null`
+  explicitly to include expired series in the session's chain.
+</ParamField>
+
+<ParamField body="p_trade_date" type="date" default="null">
+  Which session. Null means **the latest session present in the option segment** — not the
+  cash tape's latest, so a day where only cash quotes landed never gets served back as
+  today's chain.
+</ParamField>
+
+<ParamField body="p_limit" type="integer" default="500">
+  Clamped into `1..2000`. Null is treated as 500.
+</ParamField>
+
+<Warning>
+  **A prefix is required, and a bad one is an error, not an empty array.** Fewer than 3
+  characters — including `null` or `""` — raises `22023`, surfacing as a `400` with the
+  message *"option_chain requires p_prefix…"*. This is the only endpoint in the API that
+  refuses to run rather than returning `[]`: an unfiltered whole-market chain is tens of
+  thousands of rows, exactly the query the row caps exist to prevent.
+</Warning>
+
+### Returns
+
+<ResponseField name="codneg" type="text">
+  The B3 negotiation code — the series' identifier. Pass it to `option_history` or to
+  [`panel`](/api-docs/panel).
+</ResponseField>
+<ResponseField name="side" type="text">
+  `call` or `put`, derived **only** from `tpmerc` (`070` / `080`). Never inferred from the
+  codneg's letter.
+</ResponseField>
+<ResponseField name="strike" type="numeric">
+  Exercise price (`preco_exercicio`) as published.
+</ResponseField>
+<ResponseField name="expiry" type="date">
+  Expiration date (`data_vencimento`).
+</ResponseField>
+<ResponseField name="trade_date" type="date">
+  The session these prints are from. Constant across the response.
+</ResponseField>
+<ResponseField name="close" type="numeric">
+  Closing premium. Unadjusted.
+</ResponseField>
+<ResponseField name="open" type="numeric">
+  Opening premium.
+</ResponseField>
+<ResponseField name="high" type="numeric">
+  Session high.
+</ResponseField>
+<ResponseField name="low" type="numeric">
+  Session low.
+</ResponseField>
+<ResponseField name="trades" type="integer">
+  Number of trades (`negocios`).
+</ResponseField>
+<ResponseField name="quantity" type="numeric">
+  Quantity traded (`quantidade`), exactly as COTAHIST publishes it.
+</ResponseField>
+<ResponseField name="volume" type="numeric">
+  Financial volume in BRL.
+</ResponseField>
+<ResponseField name="isin" type="text">
+  ISIN as published.
+</ResponseField>
+<ResponseField name="spec" type="text">
+  Paper specification (`especi`).
+</ResponseField>
+
+Rows are ordered by `expiry`, then `strike`, then side, then `codneg` — so if an over-broad
+prefix hits the 2,000-row clamp, the cut is deterministic and you get whole near expiries
+rather than a random slice.
+
+### Example
+
+<CodeGroup>
+
+```bash curl
+curl -s -X POST "$SILO_URL/rpc/option_chain" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Authorization: Bearer $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_prefix":"PETR","p_expiry_from":"2026-09-01"}'
+```
+
+```python Python
+body = {"p_prefix": "PETR", "p_expiry_from": "2026-09-01"}
+chain = requests.post(f"{URL}/rpc/option_chain", headers=H, json=body).json()
+
+calls = [r for r in chain if r["side"] == "call"]
+```
+
+```javascript JavaScript
+const { data } = await supabase.rpc('option_chain', {
+  p_prefix: 'PETR',
+  p_expiry_from: '2026-09-01',
+})
+```
+
+</CodeGroup>
+
+```json
+[
+  { "codneg": "PETRT380", "side": "put", "strike": 38.0, "expiry": "2026-09-18",
+    "trade_date": "2026-08-26", "close": 0.95, "open": 0.9, "high": 1.0, "low": 0.8,
+    "trades": 300, "quantity": 50000, "volume": 47500.0,
+    "isin": "BRPETRACNPR6", "spec": "PN" },
+  { "codneg": "PETRH400", "side": "call", "strike": 40.0, "expiry": "2026-09-18",
+    "trade_date": "2026-08-26", "close": 1.25, "open": 1.1, "high": 1.3, "low": 1.0,
+    "trades": 500, "quantity": 100000, "volume": 125000.0,
+    "isin": "BRPETRACNPR6", "spec": "PN" }
+]
+```
+
+<Warning>
+  **Capped at 2,000 rows.** This is a chain-*page* cap, distinct from the 5,001 series cap
+  elsewhere: one underlying's chain on one session is hundreds of series (strike × expiry ×
+  side), so 2,000 comfortably holds any honest single-prefix chain. Exactly 2,000 rows back
+  means your prefix was broad enough to be cut — narrow it, or pin `p_expiry_from`.
+</Warning>
+
+---
+
+## `POST /rpc/option_history`
+
+One series' daily prints over a window, ascending by `trade_date`.
+
+```sql
+api.option_history(p_codneg TEXT,
+                   p_from   DATE DEFAULT CURRENT_DATE - 365,
+                   p_to     DATE DEFAULT CURRENT_DATE)
+```
+
+<ParamField body="p_codneg" type="string" required>
+  The exact series code, e.g. `PETRH400`. Upper-cased and trimmed server-side. Get one from
+  `option_chain` or from [`universe`](/api-docs/universe) — [`lookup`](/api-docs/lookup)
+  does **not** resolve option codes.
+</ParamField>
+
+<ParamField body="p_from" type="date" default="CURRENT_DATE - 365">
+  Window start, inclusive.
+</ParamField>
+
+<ParamField body="p_to" type="date" default="CURRENT_DATE">
+  Window end, inclusive.
+</ParamField>
+
+Returns [`quote_history`](/api-docs/quotes)'s column set with `side`, `strike` and `expiry`
+in place of `board` / `short_name`: `codneg`, `trade_date`, `side`, `strike`, `expiry`,
+`spec`, `currency`, `open`, `high`, `low`, `average`, `close`, `bid`, `ask`, `trades`,
+`quantity`, `volume`, `isin`, `quotation_factor`, `adjusted`, `source`.
+
+<CodeGroup>
+
+```bash curl
+curl -s -X POST "$SILO_URL/rpc/option_history" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Authorization: Bearer $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_codneg":"PETRH400","p_from":"2026-06-01","p_to":"2026-08-26"}'
+```
+
+```python Python
+body = {"p_codneg": "PETRH400", "p_from": "2026-06-01", "p_to": "2026-08-26"}
+rows = requests.post(f"{URL}/rpc/option_history", headers=H, json=body).json()
+```
+
+```javascript JavaScript
+const { data } = await supabase.rpc('option_history', {
+  p_codneg: 'PETRH400',
+  p_from: '2026-06-01',
+  p_to: '2026-08-26',
+})
+```
+
+</CodeGroup>
+
+```json
+[
+  {
+    "codneg": "PETRH400",
+    "trade_date": "2026-08-26",
+    "side": "call",
+    "strike": 40.0,
+    "expiry": "2026-09-18",
+    "spec": "PN",
+    "currency": "R$",
+    "open": 1.1,
+    "high": 1.3,
+    "low": 1.0,
+    "average": 1.2,
+    "close": 1.25,
+    "bid": 1.2,
+    "ask": 1.3,
+    "trades": 500,
+    "quantity": 100000,
+    "volume": 125000.0,
+    "isin": "BRPETRACNPR6",
+    "quotation_factor": 1,
+    "adjusted": false,
+    "source": "b3_cotahist"
+  }
+]
+```
+
+<Warning>
+  **Capped at 5,001 rows**, the same backstop as `quote_history`. An option series lives for
+  months, so you will not reach it in practice. Exactly 5,001 rows means the oldest sessions
+  were kept and the newest were cut — narrow the window rather than using the truncated
+  series.
+</Warning>
+
+---
+
+## Prices are raw
+
+Premiums are COTAHIST as published: no split, dividend, or corporate-action adjustment
+anywhere in this warehouse. `adjusted` is a constant `false` so nothing here can be mistaken
+for an adjusted series.
+
+`close_return` is deliberately **not offered for options**. In [`panel`](/api-docs/panel) it
+accepts `ticker` ids only — and even there it is computed from unadjusted closes, so a
+corporate action prints as a large fake return (a 2:1 split reads as roughly −50%). Options
+are the same tape and would inherit the same flaw, with strike and quantity adjustments on
+top. If you need option returns, take `close` from `option_history` and difference it
+yourself, where you can see what you are assuming.
+
+## Empty and error behavior
+
+- **Unknown codneg → `200 []`.** Never a fabricated premium.
+- **Known codneg, no sessions in the window** (before it listed, after it expired) → also
+  `200 []`. The two cases are indistinguishable from the response; confirm the series exists
+  with `option_chain` on a session you know it traded.
+- **A prefix under 3 characters → `400`**, with the message quoted above. This is the one
+  case where the API errors instead of returning an empty array.
+- **`p_expiry_from` defaults to today**, so an `option_chain` call against a historical
+  `p_trade_date` will often come back empty — the series that printed that day have since
+  expired. Pass `"p_expiry_from": null` to see them.

@@ -23,7 +23,11 @@ api.universe(p_asset_class TEXT DEFAULT NULL,
   - `equity`, `unit`, `bdr`, `fund_quota`, `cash_security` — conservative B3 cash types
     derived from published `tpmerc` / `especi`; `fund_quota` does not guess ETF versus FII
   - `fi`, `fidc`, `fii`, `fip`, `fiagro` — CVM fund vehicle types
-  - `null` or omitted — **all** populations, interleaved
+  - `option` — B3 option series (`tpmerc` `070`/`080`); see the note below
+  - `termo` — B3 forward codes (`tpmerc` `030`); see the note below
+  - `null` or omitted — equities and funds, interleaved. **Derivatives are not included**:
+    the option namespace is an order of magnitude larger than the cash tape and would drown
+    everything else. Ask for them by name.
 
   Any other value returns an empty array rather than an error: the B3 arm matches the
   classified type, and the fund arm matches against `entity_type` exactly.
@@ -36,23 +40,37 @@ api.universe(p_asset_class TEXT DEFAULT NULL,
 ## Returns
 
 <ResponseField name="id" type="text">
-  Ticker or 14-digit CNPJ — pass it straight to `panel`, `quote_history`, or `fund_nav`.
+  Ticker, 14-digit CNPJ, or derivative codneg — pass it straight to `panel`, `quote_history`,
+  `fund_nav`, `option_history`, or `termo_history`.
 </ResponseField>
 <ResponseField name="id_type" type="text">
-  `ticker` or `cnpj`.
+  `ticker`, `cnpj`, `option`, or `termo`.
 </ResponseField>
 <ResponseField name="asset_class" type="text">
-  A conservative B3 cash type, or the fund's `entity_type`.
+  A conservative B3 cash type (`equity`, `unit`, `bdr`, `fund_quota`, `cash_security`),
+  the fund's `entity_type`, or `derivative` for options and termo.
 </ResponseField>
 <ResponseField name="name" type="text">
-  Issuer short name for tickers, registered fund name for funds. **Nullable** for funds whose
-  registry name we do not hold.
+  Issuer short name for tickers and derivatives, registered fund name for funds. **Nullable**
+  for funds whose registry name we do not hold. On derivatives it is the issuer, not the
+  series — every series of one root shares it.
 </ResponseField>
 <ResponseField name="isin" type="text">
-  ISIN for tickers. Always null on fund rows.
+  ISIN for tickers and derivatives. Always null on fund rows.
 </ResponseField>
 
-Rows are ordered by `asset_class`, then `name` with nulls last.
+Rows are ordered by `asset_class`, then `name` with nulls last, then `id`. The `id` tiebreak
+matters for derivatives: a whole option root shares one issuer name, so without it the
+500-row cut would be arbitrary.
+
+<Warning>
+  **`option` and `termo` list the most recent session only** — the series that printed on
+  that segment's newest stored day. That is the live universe: option series expire, so a
+  whole-history list would be mostly dead contracts. Expired series stay perfectly
+  queryable by codneg through [`option_history`](/api-docs/options) — they are just not
+  *listed* here. For a specific session's set of series, use
+  [`option_chain`](/api-docs/options) with a `p_trade_date`.
+</Warning>
 
 ## Example
 

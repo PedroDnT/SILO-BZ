@@ -882,6 +882,13 @@ CREATE INDEX IF NOT EXISTS idx_b3_cotahist_isin
     ON b3_cotahist (isin) WHERE isin IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_b3_cotahist_tpmerc_dt
     ON b3_cotahist (tpmerc, trade_date DESC);
+-- Option serve path (api.option_chain / api.option_history, migration 21):
+-- options (tpmerc 070/080) are ~89% of each session, so per-codneg lookups get
+-- the same partial-index treatment as vista. Termo ('030') deliberately has no
+-- index: ~135 rows/session; idx_b3_cotahist_tpmerc_dt already narrows it.
+CREATE INDEX IF NOT EXISTS idx_b3_cotahist_option
+    ON b3_cotahist (codneg, trade_date DESC)
+    WHERE tpmerc IN ('070', '080');
 
 COMMENT ON TABLE b3_cotahist IS
     'B3 COTAHIST register-01 quotes. Unadjusted. Natural key (codneg, trade_date, tpmerc, codbdi, prazot).';

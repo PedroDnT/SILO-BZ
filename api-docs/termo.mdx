@@ -1,0 +1,200 @@
+---
+title: "Termo"
+description: "B3 forward (termo) contracts as published — one code's daily history, term included in the grain."
+icon: "calendar-clock"
+---
+
+*Termo* is B3's forward market: a trade agreed today for settlement a fixed number of days
+out. It rides the same COTAHIST tape as [`quotes`](/api-docs/quotes) under **`tpmerc` =
+`030`**, and it is a small segment — on the order of a hundred prints per session, against
+tens of thousands of options.
+
+Everything is unadjusted and every row says so with `adjusted: false`.
+
+<Warning>
+  **The grain is `(codneg, trade_date, term_days)`, not `(codneg, trade_date)`.** One code
+  can print several terms in the same session — a 30-day and a 60-day forward on the same
+  paper are different contracts at different prices. `term_days` is part of the key, not a
+  detail column: a query that ignores it will see what looks like duplicate dates.
+</Warning>
+
+<Warning>
+  **There is no `underlying` column**, for the same reason as
+  [options](/api-docs/options): the codneg root usually names the underlying paper, but B3
+  publishes no mapping, and deriving one would be inventing an identity join. Filter by
+  prefix and own that inference yourself.
+</Warning>
+
+---
+
+## `POST /rpc/termo_history`
+
+One code's daily prints over a window.
+
+```sql
+api.termo_history(p_codneg TEXT,
+                  p_from   DATE DEFAULT CURRENT_DATE - 365,
+                  p_to     DATE DEFAULT CURRENT_DATE)
+```
+
+<ParamField body="p_codneg" type="string" required>
+  The termo negotiation code, e.g. `PETR4T`. Upper-cased and trimmed server-side. Discover
+  codes with [`universe`](/api-docs/universe) at `p_asset_class: "termo"` —
+  [`lookup`](/api-docs/lookup) does **not** resolve them.
+</ParamField>
+
+<ParamField body="p_from" type="date" default="CURRENT_DATE - 365">
+  Window start, inclusive.
+</ParamField>
+
+<ParamField body="p_to" type="date" default="CURRENT_DATE">
+  Window end, inclusive.
+</ParamField>
+
+### Returns
+
+<ResponseField name="codneg" type="text">
+  Negotiation code. Part of the grain.
+</ResponseField>
+<ResponseField name="trade_date" type="date">
+  Session date. Part of the grain.
+</ResponseField>
+<ResponseField name="term_days" type="text">
+  COTAHIST `prazot` — the contract's term in days. **Text**, as stored, same as
+  `quotes.term_days`. Part of the grain.
+</ResponseField>
+<ResponseField name="spec" type="text">
+  Paper specification (`especi`).
+</ResponseField>
+<ResponseField name="currency" type="text">
+  Currency, defaulting to `R$` when the source leaves it blank.
+</ResponseField>
+<ResponseField name="open" type="numeric">
+  Opening price.
+</ResponseField>
+<ResponseField name="high" type="numeric">
+  Session high.
+</ResponseField>
+<ResponseField name="low" type="numeric">
+  Session low.
+</ResponseField>
+<ResponseField name="average" type="numeric">
+  Session average price.
+</ResponseField>
+<ResponseField name="close" type="numeric">
+  Closing price. Unadjusted.
+</ResponseField>
+<ResponseField name="bid" type="numeric">
+  Best bid at close (`oferta_compra`).
+</ResponseField>
+<ResponseField name="ask" type="numeric">
+  Best ask at close (`oferta_venda`).
+</ResponseField>
+<ResponseField name="trades" type="integer">
+  Number of trades (`negocios`).
+</ResponseField>
+<ResponseField name="quantity" type="numeric">
+  Quantity traded (`quantidade`), exactly as COTAHIST publishes it.
+</ResponseField>
+<ResponseField name="volume" type="numeric">
+  Financial volume in BRL.
+</ResponseField>
+<ResponseField name="isin" type="text">
+  ISIN as published.
+</ResponseField>
+<ResponseField name="quotation_factor" type="integer">
+  COTAHIST `fator_cotacao`.
+</ResponseField>
+<ResponseField name="adjusted" type="boolean">
+  Always `false`.
+</ResponseField>
+<ResponseField name="source" type="text">
+  Provenance, `b3_cotahist`.
+</ResponseField>
+
+Rows are ordered by `trade_date`, then `term_days` shortest-first — sorted by length and then
+as text, so `30` precedes `60` precedes `120` without a numeric cast that could fail on
+malformed source data.
+
+### Example
+
+<CodeGroup>
+
+```bash curl
+curl -s -X POST "$SILO_URL/rpc/termo_history" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Authorization: Bearer $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_codneg":"PETR4T","p_from":"2026-08-01","p_to":"2026-08-26"}'
+```
+
+```python Python
+import pandas as pd
+
+body = {"p_codneg": "PETR4T", "p_from": "2026-08-01", "p_to": "2026-08-26"}
+rows = requests.post(f"{URL}/rpc/termo_history", headers=H, json=body).json()
+
+# term_days is part of the key — index on it, don't collapse it away.
+df = pd.DataFrame(rows).set_index(["trade_date", "term_days"])
+```
+
+```javascript JavaScript
+const { data } = await supabase.rpc('termo_history', {
+  p_codneg: 'PETR4T',
+  p_from: '2026-08-01',
+  p_to: '2026-08-26',
+})
+```
+
+</CodeGroup>
+
+```json
+[
+  { "codneg": "PETR4T", "trade_date": "2026-08-26", "term_days": "30",
+    "spec": "PN", "currency": "R$", "open": 41.0, "high": 41.5, "low": 40.8,
+    "average": 41.2, "close": 41.3, "bid": 41.2, "ask": 41.4,
+    "trades": 12, "quantity": 5000, "volume": 206500.0,
+    "isin": "BRPETRACNPR6", "quotation_factor": 1,
+    "adjusted": false, "source": "b3_cotahist" },
+  { "codneg": "PETR4T", "trade_date": "2026-08-26", "term_days": "60",
+    "spec": "PN", "currency": "R$", "open": 41.5, "high": 42.0, "low": 41.3,
+    "average": 41.7, "close": 41.8, "bid": 41.7, "ask": 41.9,
+    "trades": 8, "quantity": 3000, "volume": 125400.0,
+    "isin": "BRPETRACNPR6", "quotation_factor": 1,
+    "adjusted": false, "source": "b3_cotahist" }
+]
+```
+
+<Warning>
+  **Capped at 5,001 rows**, the same backstop as `quote_history`. Because several terms can
+  print per session, a busy code burns through the cap faster than a cash ticker — roughly
+  5,000 ÷ (terms per session) sessions. Exactly 5,001 rows means the oldest were kept and
+  the newest cut; narrow the window.
+</Warning>
+
+---
+
+## Termo in `panel`
+
+[`panel`](/api-docs/panel) accepts termo codnegs for `close` and `volume`, as `id_type`
+`termo` / `asset_class` `derivative`. But a panel row is one value per `(id, date, metric)`,
+and termo's real grain has `term_days` in it — so when several terms print in one session the
+panel keeps the **shortest term** and drops the rest, rather than averaging them into a
+number nobody quoted. That is a deliberate narrowing, and it is why the full grain lives
+here: for anything term-aware, use `termo_history`, not `panel`.
+
+`close_return` is not offered for termo (or for options) — it accepts `ticker` ids only.
+
+## Prices are raw
+
+No split, dividend, or corporate-action adjustment anywhere in this warehouse; `adjusted` is
+a constant `false`. If you need returns, difference `close` yourself, and be aware that a
+corporate action in the window will show up as a large move that is not a return.
+
+## Empty and error behavior
+
+- **Unknown code → `200 []`.** Never a fabricated price.
+- **Known code, no prints in the window** → also `200 []`. Termo is thin; a code can go days
+  without a print, and a quiet window is indistinguishable from a wrong code. Check
+  [`coverage`](/api-docs/coverage)'s `derivatives` row for what the warehouse actually holds.
+- A malformed date returns `400`.

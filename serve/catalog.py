@@ -22,7 +22,9 @@ __all__ = [
     "tool_specs",
 ]
 
-CATALOG_VERSION = 4
+# 5: main's typed cash asset classes (4) merged with the option/termo id_types
+# and list-valued id_type this branch introduced (3).
+CATALOG_VERSION = 5
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -33,23 +35,36 @@ B3_CASH_ASSET_CLASSES = [
 ]
 
 # Grain + metric map. Agents must not invent metrics.
+# id_type is a list (since version 3): one metric name can apply to several
+# id namespaces — e.g. close serves equity tickers and option/termo codnegs.
 METRICS: Dict[str, Dict[str, Any]] = {
     "close": {
-        "id_type": "ticker",
-        "asset_class": B3_CASH_ASSET_CLASSES,
+        "id_type": ["ticker", "option", "termo"],
+        "asset_class": [*B3_CASH_ASSET_CLASSES, "derivative"],
         "grain": ["day", "month"],
         "source": "b3_cotahist",
-        "meaning": "Unadjusted B3 cash close, using the ticker's latest BDI board by default and classified from published TPMERC/ESPECI. Month = last session.",
+        "meaning": (
+            "Unadjusted close. Cash tickers: the ticker's latest BDI board by "
+            "default, classified from published TPMERC/ESPECI. Option/termo "
+            "codnegs: that derivative segment's session close. "
+            "Month = last session."
+        ),
     },
     "volume": {
-        "id_type": "ticker",
-        "asset_class": B3_CASH_ASSET_CLASSES,
+        "id_type": ["ticker", "option", "termo"],
+        "asset_class": [*B3_CASH_ASSET_CLASSES, "derivative"],
         "grain": ["day", "month"],
         "source": "b3_cotahist",
-        "meaning": "Session traded volume (BRL), using the ticker's latest BDI board by default. Month = last session.",
+        "meaning": (
+            "Session traded volume (BRL). Cash: the ticker's latest BDI board "
+            "by default; option/termo: that derivative segment. "
+            "Month = last session."
+        ),
     },
     "close_return": {
-        "id_type": "ticker",
+        # Cash only. Derivatives carry strike/expiry/term effects that make a
+        # naive close-to-close ratio misleading in a way the cash series is not.
+        "id_type": ["ticker"],
         "asset_class": B3_CASH_ASSET_CLASSES,
         "grain": ["day", "month"],
         "source": "b3_cotahist",
@@ -61,49 +76,49 @@ METRICS: Dict[str, Dict[str, Any]] = {
         "derived": True,
     },
     "nav": {
-        "id_type": "cnpj",
+        "id_type": ["cnpj"],
         "asset_class": ["fi", "fidc", "fii", "fip", "fiagro"],
         "grain": ["month"],
         "source": "cvm",
         "meaning": "Fund net assets (vl_patrim_liq).",
     },
     "quota": {
-        "id_type": "cnpj",
+        "id_type": ["cnpj"],
         "asset_class": ["fi"],
         "grain": ["month"],
         "source": "cvm",
         "meaning": "FI unit quota. Comparable subclass only.",
     },
     "delinquency": {
-        "id_type": "cnpj",
+        "id_type": ["cnpj"],
         "asset_class": ["fidc", "fiagro"],
         "grain": ["month"],
         "source": "cvm",
         "meaning": "Delinquent portfolio value (not a rate unless you divide by nav).",
     },
     "yield": {
-        "id_type": "cnpj",
+        "id_type": ["cnpj"],
         "asset_class": ["fii"],
         "grain": ["month"],
         "source": "cvm",
         "meaning": "Monthly yield % as published (FII complemento).",
     },
     "inflows": {
-        "id_type": "cnpj",
+        "id_type": ["cnpj"],
         "asset_class": ["fi"],
         "grain": ["month"],
         "source": "cvm",
         "meaning": "Gross monthly subscriptions.",
     },
     "redemptions": {
-        "id_type": "cnpj",
+        "id_type": ["cnpj"],
         "asset_class": ["fi"],
         "grain": ["month"],
         "source": "cvm",
         "meaning": "Gross monthly redemptions.",
     },
     "quotaholders": {
-        "id_type": "cnpj",
+        "id_type": ["cnpj"],
         "asset_class": ["fi", "fidc", "fii", "fip", "fiagro"],
         "grain": ["month"],
         "source": "cvm",
@@ -129,6 +144,16 @@ CONSTRAINTS = [
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
     "Panel responses are hard-capped at 100000 rows (series endpoints at 5000); "
     "above that the API answers 400 — narrow ids, metrics, or the date window.",
+    "Option chains require a codneg prefix of at least 3 characters "
+    "(api.option_chain); an unfiltered whole-market chain is refused.",
+    "Options and termo carry no underlying column: the codneg root is a naming "
+    "convention, not a published B3 mapping. Prefix filtering is the caller's "
+    "own inference.",
+    "Option/termo codnegs resolve via universe(asset_class=option|termo) or "
+    "option_chain, not lookup — option series have no names to resolve.",
+    "universe(asset_class=option|termo) lists the codnegs that printed on that "
+    "segment's most recent session — currently-listed series, not every series "
+    "ever listed. Expired series stay queryable by codneg in option_history.",
 ]
 
 EXAMPLES = [
@@ -167,7 +192,8 @@ EXAMPLES = [
 
 AGENT_INSTRUCTIONS = (
     "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, "
-    "B3 COTAHIST cash quotes). Call catalog once and cache it. Resolve names "
+    "B3 COTAHIST cash quotes, options and termo). Call catalog once and cache "
+    "it. Resolve names "
     "with lookup/universe, then GET /v1/panel. The primitive is a panel "
     "(id, date, metric, value). Correlation, ranking, spreads, regressions, "
     "and other relations are reductions of that panel — compute them in the "
@@ -185,10 +211,10 @@ def catalog_payload() -> Dict[str, Any]:
         "notebook_reducers": NOTEBOOK_REDUCERS,
         "constraints": CONSTRAINTS,
         "examples": EXAMPLES,
-        "id_types": ["ticker", "cnpj", "cd_cvm"],
+        "id_types": ["ticker", "cnpj", "cd_cvm", "option", "termo"],
         "asset_classes": [
             *B3_CASH_ASSET_CLASSES,
-            "fi", "fidc", "fii", "fip", "fiagro", "cia",
+            "fi", "fidc", "fii", "fip", "fiagro", "cia", "derivative",
         ],
         "freq": ["day", "month"],
         "endpoints": {
@@ -236,7 +262,11 @@ def tool_specs() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "silo_universe",
-                "description": "List identifiers by asset_class: equity, unit, bdr, fund_quota, cash_security, fi, fidc, fii, fip, fiagro.",
+                "description": (
+                    "List identifiers by asset_class: equity, unit, bdr, "
+                    "fund_quota, cash_security, fi, fidc, fii, fip, fiagro, "
+                    "option, termo."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {

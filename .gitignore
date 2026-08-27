@@ -50,7 +50,9 @@ htmlcov/
 # Logs
 *.log
 .gstack/
-.local_db/*.duckdb
+# seed_local_db.py's offline DuckDB, plus the write-ahead log it leaves behind
+# when a run is interrupted (the .duckdb pattern alone did not cover the .wal).
+.local_db/
 
 node_modules
 
