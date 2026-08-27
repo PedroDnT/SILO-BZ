@@ -12,8 +12,9 @@ COTAHIST alone cannot prove ETF versus FII.
 
 The grain is **`(ticker, trade_date, board, term_days)`**. A single ticker can print on more
 than one board on the same day, so a query that does not pin `board` can return several rows
-per session. **Board `02` is the standard lot** and is what you almost always want; both
-functions default to it.
+per session. COTAHIST `codbdi` varies by instrument type (for example `02` for common
+equities, `12` for FIIs, `14` for ETFs, and `34` for BDRs). The functions automatically
+select the ticker's latest board unless you pass one explicitly.
 
 ---
 
@@ -33,7 +34,7 @@ series.
 </ParamField>
 
 <ParamField query="board" type="string">
-  COTAHIST `codbdi`. Pin `board=eq.02` for the standard lot.
+  COTAHIST `codbdi`. Do not assume `02` outside ordinary equities.
 </ParamField>
 
 <ParamField query="select" type="string">
@@ -57,7 +58,7 @@ series.
   Session date. Part of the grain.
 </ResponseField>
 <ResponseField name="board" type="text">
-  Board / `codbdi`. `02` is the standard lot. Part of the grain.
+  BDI code / `codbdi`; its meaning varies by instrument type. Part of the grain.
 </ResponseField>
 <ResponseField name="term_days" type="text">
   COTAHIST `prazot`. A **text** field despite the name, usually empty for cash. Part of the
@@ -174,7 +175,7 @@ One ticker's daily series over a window. Ordered by `trade_date` ascending.
 api.quote_history(p_ticker TEXT,
                   p_from   DATE DEFAULT CURRENT_DATE - 365,
                   p_to     DATE DEFAULT CURRENT_DATE,
-                  p_board  TEXT DEFAULT '02')
+                  p_board  TEXT DEFAULT NULL)
 ```
 
 <ParamField body="p_ticker" type="string" required>
@@ -189,9 +190,9 @@ api.quote_history(p_ticker TEXT,
   Window end, inclusive.
 </ParamField>
 
-<ParamField body="p_board" type="string" default="02">
-  Board filter. Pass `null` explicitly to return **all** boards for the ticker — the only
-  argument where an explicit `null` is meaningful rather than empty-producing.
+<ParamField body="p_board" type="string" default="null">
+  Board filter. Null or omitted automatically selects the board on the ticker's latest
+  stored row. Pass a code explicitly only when you need that exact BDI category.
 </ParamField>
 
 Returns the view's columns minus `term_days` and `fetched_at`: `ticker`, `trade_date`,
@@ -265,18 +266,18 @@ The most recent stored session for one ticker. At most one row.
 
 ```sql
 api.quote_latest(p_ticker TEXT,
-                 p_board  TEXT DEFAULT '02')
+                 p_board  TEXT DEFAULT NULL)
 ```
 
 <ParamField body="p_ticker" type="string" required>
   Ticker. Upper-cased and trimmed server-side.
 </ParamField>
 
-<ParamField body="p_board" type="string" default="02">
+<ParamField body="p_board" type="string" default="null">
   Board filter; `null` means "latest across all boards".
 </ParamField>
 
-Same twenty columns as `quote_history`.
+Same columns as `quote_history`.
 
 <CodeGroup>
 

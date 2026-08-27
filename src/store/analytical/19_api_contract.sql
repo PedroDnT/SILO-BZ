@@ -81,7 +81,7 @@ FROM public.vw_b3_instrument_typed v
 WHERE v.tpmerc = '010';
 
 COMMENT ON VIEW api.quotes IS
-    'Unadjusted B3 cash quotes (tpmerc=010), classified from published TPMERC/ESPECI. fund_quota does not guess ETF versus FII. Grain (ticker, trade_date, board, term_days). Prefer board=02.';
+    'Unadjusted B3 cash quotes (tpmerc=010), classified from published TPMERC/ESPECI. fund_quota does not guess ETF versus FII. Grain (ticker, trade_date, board, term_days). BDI board varies by instrument type.';
 
 -- Deliberately owner-privileged (Step 6 decision): with security_invoker=false
 -- a SELECT here runs with the view owner's rights, so no client role needs (or
@@ -96,7 +96,7 @@ CREATE OR REPLACE FUNCTION api.quote_history(
     p_ticker TEXT,
     p_from   DATE DEFAULT (CURRENT_DATE - 365),
     p_to     DATE DEFAULT CURRENT_DATE,
-    p_board  TEXT DEFAULT '02'
+    p_board  TEXT DEFAULT NULL
 )
 RETURNS TABLE (
     ticker            TEXT,
@@ -126,6 +126,18 @@ STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
+    WITH selected_board AS (
+        SELECT COALESCE(
+            p_board,
+            (
+                SELECT latest.board
+                FROM api.quotes latest
+                WHERE latest.ticker = upper(btrim(p_ticker))
+                ORDER BY latest.trade_date DESC, latest.board
+                LIMIT 1
+            )
+        ) AS board
+    )
     SELECT
         q.ticker,
         q.trade_date,
@@ -151,7 +163,7 @@ AS $$
     FROM api.quotes q
     WHERE q.ticker = upper(btrim(p_ticker))
       AND q.trade_date BETWEEN p_from AND p_to
-      AND (p_board IS NULL OR q.board = p_board)
+      AND q.board = (SELECT board FROM selected_board)
     ORDER BY q.trade_date
     -- Cap = serve _MAX_POINTS (5000) + 1. 5000 daily prints ~ 20 years of one
     -- ticker's sessions; the +1 row lets serve/ return 400 instead of a
@@ -165,7 +177,7 @@ COMMENT ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT) IS
 DROP FUNCTION IF EXISTS api.quote_latest(TEXT, TEXT);
 CREATE OR REPLACE FUNCTION api.quote_latest(
     p_ticker TEXT,
-    p_board  TEXT DEFAULT '02'
+    p_board  TEXT DEFAULT NULL
 )
 RETURNS TABLE (
     ticker            TEXT,
@@ -220,7 +232,7 @@ AS $$
     FROM api.quotes q
     WHERE q.ticker = upper(btrim(p_ticker))
       AND (p_board IS NULL OR q.board = p_board)
-    ORDER BY q.trade_date DESC
+    ORDER BY q.trade_date DESC, q.board
     LIMIT 1;
 $$;
 
@@ -476,19 +488,19 @@ quote_month AS (
     FROM api.quotes q
     JOIN params p ON TRUE
     WHERE p.freq = 'month'
-      AND q.board = '02'
       AND q.trade_date BETWEEN p.d0 AND p.d1
       AND q.ticker IN (SELECT ticker FROM tickers)
-    ORDER BY q.ticker, date_trunc('month', q.trade_date), q.trade_date DESC
+    ORDER BY q.ticker, date_trunc('month', q.trade_date), q.trade_date DESC, q.board
 ),
 quote_day AS (
-    SELECT q.ticker, q.trade_date AS period, q.close, q.volume, q.asset_class
+    SELECT DISTINCT ON (q.ticker, q.trade_date)
+        q.ticker, q.trade_date AS period, q.close, q.volume, q.asset_class
     FROM api.quotes q
     JOIN params p ON TRUE
     WHERE p.freq = 'day'
-      AND q.board = '02'
       AND q.trade_date BETWEEN p.d0 AND p.d1
       AND q.ticker IN (SELECT ticker FROM tickers)
+    ORDER BY q.ticker, q.trade_date, q.board
 ),
 quote_px AS (
     SELECT * FROM quote_month
@@ -612,8 +624,7 @@ AS $$
             q.ticker, q.asset_class, q.short_name, q.isin
         FROM api.quotes q
         JOIN latest_quote_session s ON s.trade_date = q.trade_date
-        WHERE q.board = '02'
-          AND (p_asset_class IS NULL OR q.asset_class = lower(p_asset_class))
+        WHERE p_asset_class IS NULL OR q.asset_class = lower(p_asset_class)
         ORDER BY q.ticker
     )
     SELECT * FROM (
@@ -652,8 +663,7 @@ AS $$
         SELECT DISTINCT ON (ticker)
             ticker, asset_class, short_name, isin
         FROM api.quotes
-        WHERE board = '02'
-          AND (
+        WHERE (
             ticker = upper(btrim(p_query))
             OR isin = upper(btrim(p_query))
           )
