@@ -296,6 +296,20 @@ def test_close_return_catalog_says_unadjusted():
     assert "split" in joined
 
 
+def test_b3_catalog_divides_cash_instruments_by_published_type():
+    from serve.catalog import B3_CASH_ASSET_CLASSES, CATALOG_VERSION, METRICS
+
+    assert CATALOG_VERSION >= 4
+    assert B3_CASH_ASSET_CLASSES == [
+        "equity", "unit", "bdr", "fund_quota", "cash_security",
+    ]
+    for metric in ("close", "volume", "close_return"):
+        assert METRICS[metric]["asset_class"] == B3_CASH_ASSET_CLASSES
+    # COTAHIST CI cannot prove ETF versus FII; the broad type is intentional.
+    assert "etf" not in B3_CASH_ASSET_CLASSES
+    assert "fii" not in B3_CASH_ASSET_CLASSES
+
+
 def test_notebook_reduce_keeps_nulls_and_is_unexported():
     from serve import catalog as catalog_mod
     from serve.catalog import reduce_panel

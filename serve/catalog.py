@@ -22,27 +22,35 @@ __all__ = [
     "tool_specs",
 ]
 
-CATALOG_VERSION = 3
+CATALOG_VERSION = 4
+
+B3_CASH_ASSET_CLASSES = [
+    "equity",
+    "unit",
+    "bdr",
+    "fund_quota",
+    "cash_security",
+]
 
 # Grain + metric map. Agents must not invent metrics.
 METRICS: Dict[str, Dict[str, Any]] = {
     "close": {
         "id_type": "ticker",
-        "asset_class": ["equity"],
+        "asset_class": B3_CASH_ASSET_CLASSES,
         "grain": ["day", "month"],
         "source": "b3_cotahist",
-        "meaning": "Unadjusted cash close (board 02). Month = last session in the month.",
+        "meaning": "Unadjusted B3 cash close (board 02), classified from published TPMERC/ESPECI. Month = last session.",
     },
     "volume": {
         "id_type": "ticker",
-        "asset_class": ["equity"],
+        "asset_class": B3_CASH_ASSET_CLASSES,
         "grain": ["day", "month"],
         "source": "b3_cotahist",
         "meaning": "Session traded volume (BRL). Month = last session.",
     },
     "close_return": {
         "id_type": "ticker",
-        "asset_class": ["equity"],
+        "asset_class": B3_CASH_ASSET_CLASSES,
         "grain": ["day", "month"],
         "source": "b3_cotahist",
         "meaning": (
@@ -178,7 +186,10 @@ def catalog_payload() -> Dict[str, Any]:
         "constraints": CONSTRAINTS,
         "examples": EXAMPLES,
         "id_types": ["ticker", "cnpj", "cd_cvm"],
-        "asset_classes": ["equity", "fi", "fidc", "fii", "fip", "fiagro", "cia"],
+        "asset_classes": [
+            *B3_CASH_ASSET_CLASSES,
+            "fi", "fidc", "fii", "fip", "fiagro", "cia",
+        ],
         "freq": ["day", "month"],
         "endpoints": {
             "catalog": "GET /v1/catalog",
@@ -225,7 +236,7 @@ def tool_specs() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "silo_universe",
-                "description": "List identifiers by asset_class: equity, fi, fidc, fii, fip, fiagro.",
+                "description": "List identifiers by asset_class: equity, unit, bdr, fund_quota, cash_security, fi, fidc, fii, fip, fiagro.",
                 "parameters": {
                     "type": "object",
                     "properties": {
