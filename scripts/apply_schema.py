@@ -20,8 +20,11 @@ import sys
 import glob
 import shutil
 import subprocess
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
+from guard_noop_ddl import guard_add_column_sql  # noqa: E402
 
 try:
     from dotenv import load_dotenv
@@ -73,13 +76,27 @@ def _resolve_psql():
 def apply_via_psql(psql: str, db_url: str, items):
     """Apply each file with `psql -v ON_ERROR_STOP=1 -f`. This is the canonical
     path (same as the GitHub workflows): psql parses dollar-quoted DO $$ ... $$
-    blocks correctly and returns a real exit code per file."""
+    blocks correctly and returns a real exit code per file.
+
+    SQL is passed through guard_add_column_sql first so a no-op
+    ADD COLUMN IF NOT EXISTS does not take AccessExclusiveLock (see
+    scripts/guard_noop_ddl.py).
+    """
     ok = err = 0
     for name, path in items:
-        rc = subprocess.call(
-            [psql, db_url, "-v", "ON_ERROR_STOP=1", "-q", "-f", path],
-            stdout=subprocess.DEVNULL,
-        )
+        sql = _sql_for_apply(path)
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".sql", delete=False, encoding="utf-8"
+        ) as tmp:
+            tmp.write(sql)
+            tmp_path = tmp.name
+        try:
+            rc = subprocess.call(
+                [psql, db_url, "-v", "ON_ERROR_STOP=1", "-q", "-f", tmp_path],
+                stdout=subprocess.DEVNULL,
+            )
+        finally:
+            os.unlink(tmp_path)
         if rc == 0:
             print(f"  ok {name}")
             ok += 1
@@ -89,13 +106,18 @@ def apply_via_psql(psql: str, db_url: str, items):
     return ok, err
 
 
+def _sql_for_apply(path: str) -> str:
+    """File contents with no-op ADD COLUMN IF NOT EXISTS catalog-guarded."""
+    return guard_add_column_sql(_read(path))
+
+
 def _apply_whole_files(execute, items):
     """Execute each file's FULL contents in a single call — never split on ';',
     so dollar-quoted DO $$ ... $$ blocks stay intact."""
     ok = err = 0
     for name, path in items:
         try:
-            execute(_read(path))
+            execute(_sql_for_apply(path))
             print(f"  ok {name}")
             ok += 1
         except Exception as e:  # noqa: BLE001 — report and continue
@@ -126,7 +148,7 @@ def apply_via_asyncpg(db_url: str, items):
         ok = err = 0
         for name, path in items:
             try:
-                await conn.execute(_read(path))
+                await conn.execute(_sql_for_apply(path))
                 print(f"  ok {name}")
                 ok += 1
             except Exception as e:  # noqa: BLE001

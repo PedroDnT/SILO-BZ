@@ -73,6 +73,19 @@ def test_apply_still_stops_on_error_and_covers_schema_and_migrations():
     assert "src/store/migrations/*.sql" in body
 
 
+def test_apply_catalog_guards_noop_add_column():
+    # ADD COLUMN IF NOT EXISTS still takes AccessExclusiveLock before checking
+    # the catalog (Daily CVM Ingest #167 / schema.sql:268). The rewrite must
+    # happen on every file, including historical migrations we do not edit.
+    body = _apply_step()["run"]
+    assert "scripts/guard_noop_ddl.py" in body
+    assert "python3 scripts/guard_noop_ddl.py" in body
+    assert "-f \"$guarded\"" in body or '-f "$guarded"' in body
+    assert "-f \"$file\"" not in body, (
+        "psql must apply the catalog-guarded rewrite, not the raw file"
+    )
+
+
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
 def test_apply_body_is_valid_bash():
     body = _apply_step()["run"]
