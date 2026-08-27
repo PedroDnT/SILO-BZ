@@ -201,7 +201,9 @@ project `silo` in team `deloslabs`; any static host also works).
   via `psql` on every run, then `ANALYZE`s the tables.
 - `.github/workflows/backfill.yml` — on-demand, entity/year-selectable backfill. FI years and
   other entity jobs use `max-parallel: 1`, inspect coverage first, and are gated on a
-  one-time `apply-schema` job. Default to one entity; `all` is deliberately expensive.
+  one-time `apply-schema` job. `fi_doc_type` can repair one FI source (for example
+  `balancete`) without re-fetching the others. Default to one entity; `all` is deliberately
+  expensive.
 
 Schema rollout = commit `schema.sql` + a new `migrations/NNN_*.sql`, then either let CI apply it
 or run `scripts/apply_schema.py` against Supabase. Idempotent via `CREATE TABLE IF NOT EXISTS` +

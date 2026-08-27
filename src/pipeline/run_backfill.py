@@ -11,6 +11,9 @@ Usage:
     # Single entity
     python -m src.pipeline.run_backfill --entity fidc --start-year 2023
 
+    # One FI document type only (safe gap repair)
+    python -m src.pipeline.run_backfill --entity fi --doc-type balancete --start-year 2021
+
     # BACEN only
     python -m src.pipeline.run_backfill --bacen-only --bacen-start 2020-01-01
 
@@ -44,18 +47,23 @@ logger = logging.getLogger("run_backfill")
 async def main(args: argparse.Namespace) -> None:
     totals: dict = {}
     start_ts = time.monotonic()
+    doc_type = getattr(args, "doc_type", None)
+    if doc_type and args.entity != "fi":
+        raise SystemExit("--doc-type requires --entity fi")
 
     if not args.bacen_only and not args.b3_only:
         logger.info(
-            "Starting CVM backfill: start_year=%d entity=%s",
+            "Starting CVM backfill: start_year=%d entity=%s doc_type=%s",
             args.start_year,
             args.entity or "all",
+            doc_type or "all",
         )
         ingestor = CVMIngestor()
         cvm_totals = await ingestor.backfill(
             start_year=args.start_year,
             end_year=args.end_year,
             entity_filter=args.entity,
+            doc_type_filter=doc_type,
         )
         totals.update(cvm_totals)
 
@@ -122,6 +130,12 @@ def parse_args() -> argparse.Namespace:
         "--entity", type=str, default=None,
         choices=["fi", "fidc", "fip", "fiagro", "fii", "securit", "cia_aberta", "etf"],
         help="Limit CVM download to one entity (fi | fidc | fip | fiagro | fii | securit | cia_aberta | etf)"
+    )
+    parser.add_argument(
+        "--doc-type",
+        choices=["inf_diario", "cda", "perfil_mensal", "balancete"],
+        default=None,
+        help="Limit an --entity fi backfill to one document type",
     )
     parser.add_argument(
         "--bacen-start", type=str, default="2019-01-01",

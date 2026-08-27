@@ -28,7 +28,10 @@ SQL12 = SQL12_PATH.read_text(encoding="utf-8")
 SERIES_CAP = 5001
 PANEL_CAP = 100001
 
-LANDING_PATTERN = re.compile(r"\b(?:public\.)?(?:cvm_\w+|b3_cotahist\w*|vw_b3_quote_vista)\b", re.I)
+LANDING_PATTERN = re.compile(
+    r"\b(?:public\.)?(?:cvm_\w+|b3_cotahist\w*|vw_b3_(?:quote_vista|instrument_typed))\b",
+    re.I,
+)
 
 
 def _strip_comments(sql: str) -> str:
@@ -199,10 +202,24 @@ def test_defensive_public_schema_revokes_for_silo_api():
 
 def test_landing_table_revokes_for_anon_are_present():
     body = _strip_comments(SQL12)
-    for table in ("cvm_ingest_log", "b3_cotahist", "vw_b3_quote_vista", "cvm_fidc_mensal"):
+    for table in (
+        "cvm_ingest_log",
+        "b3_cotahist",
+        "vw_b3_quote_vista",
+        "vw_b3_instrument_typed",
+        "cvm_fidc_mensal",
+    ):
         assert re.search(
             rf"REVOKE\s+ALL\s+ON\s+TABLE\s+{table}\s+FROM\s+anon\s*,\s*authenticated", body, re.I
         ), f"missing landing-table revoke for {table}"
+
+
+def test_b3_asset_type_reaches_every_discovery_and_panel_surface():
+    assert "v.instrument_type   AS asset_class" in SQL19
+    assert "FROM public.vw_b3_instrument_typed v" in SQL19
+    assert "q.asset_class" in FUNCS["api.panel"]
+    assert "q.asset_class" in FUNCS["api.universe"]
+    assert "q.asset_class" in FUNCS["api.lookup"]
 
 
 def test_ingest_log_summary_not_executable_by_clients():

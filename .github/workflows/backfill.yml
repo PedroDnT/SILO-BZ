@@ -27,6 +27,16 @@ on:
           - cia_aberta
           - etf
           - all
+      fi_doc_type:
+        description: "FI only: fill one document type, or all. Use balancete to repair the known balance-sheet gap without re-fetching diario/CDA/perfil."
+        type: choice
+        default: all
+        options:
+          - all
+          - balancete
+          - inf_diario
+          - cda
+          - perfil_mensal
 
 # Shares the writer group with daily_ingest.yml so a backfill and the daily
 # cron never write to the same tables at once. Jobs inside this workflow also
@@ -81,6 +91,22 @@ jobs:
               sys.exit(0)
           conn = psycopg2.connect(url, connect_timeout=20)
           cur = conn.cursor()
+          cur.execute("""
+            UPDATE cvm_ingest_log
+            SET status = 'error',
+                finished_at = COALESCE(finished_at, NOW()),
+                error_msg = CONCAT_WS(
+                  '; ',
+                  NULLIF(error_msg, ''),
+                  'Marked stale by backfill coverage inspection after 24 hours'
+                )
+            WHERE status = 'running'
+              AND started_at < NOW() - INTERVAL '24 hours'
+            RETURNING run_id
+          """)
+          stale = cur.fetchall()
+          conn.commit()
+          print(f"Marked {len(stale)} stale running audit row(s) as error")
           print("=== cvm_ingest_log by entity / year / status ===")
           cur.execute("""
             SELECT entity, COALESCE(doc_type, ''), period_year,
@@ -172,6 +198,8 @@ jobs:
                   # diario cannot skip the run that fills cvm_fi_perfil.
                   diario_months = ok_months(cur, "inf_diario", year)
                   perfil_months = ok_months(cur, "perfil_mensal", year)
+                  balancete_months = ok_months(cur, "balancete", year)
+                  cda_months = ok_months(cur, "cda", year)
                   diario_rows = None
                   if year in (2019, 2020):
                       cur.execute(f"SELECT COUNT(*) FROM cvm_fi_diario_{year}")
@@ -183,7 +211,21 @@ jobs:
               sys.exit(0)
 
           skip = False
-          if year in (2019, 2020):
+          requested_doc = "${{ inputs.fi_doc_type }}"
+          if requested_doc != "all":
+              counts = {
+                  "inf_diario": diario_months,
+                  "perfil_mensal": perfil_months,
+                  "balancete": balancete_months,
+                  "cda": cda_months,
+              }
+              months = counts[requested_doc]
+              if months >= 11:
+                  print(f"SKIP: {year} {requested_doc} complete ({months} ok months)")
+                  skip = True
+              else:
+                  print(f"RUN: {year} {requested_doc} incomplete ({months} ok months)")
+          elif year in (2019, 2020):
               diario_done = (diario_rows or 0) > 2_000_000
               perfil_done = perfil_months >= 11
               if diario_done and perfil_done:
@@ -214,11 +256,16 @@ jobs:
           # job below does it once after the whole matrix completes.
           CVM_SKIP_ETF_REFRESH: "1"
         run: |
-          python -m src.pipeline.run_backfill \
-            --entity fi \
-            --start-year ${{ matrix.year }} \
-            --end-year ${{ matrix.year }} \
+          args=(
+            --entity fi
+            --start-year ${{ matrix.year }}
+            --end-year ${{ matrix.year }}
             --cvm-only
+          )
+          if [[ "${{ inputs.fi_doc_type }}" != "all" ]]; then
+            args+=(--doc-type "${{ inputs.fi_doc_type }}")
+          fi
+          python -m src.pipeline.run_backfill "${args[@]}"
 
   # Other entities — one selected entity at a time by default.
   backfill-other:

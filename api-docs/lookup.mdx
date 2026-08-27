@@ -47,8 +47,9 @@ api.lookup(p_query TEXT)
   `ticker`, `cnpj`, or `cd_cvm` — tells you which endpoint accepts this `id`.
 </ResponseField>
 <ResponseField name="asset_class" type="text">
-  `equity` for tickers, the fund's `entity_type` (`fi`, `fidc`, `fii`, `fip`, `fiagro`) for
-  funds, and `cia` for listed companies.
+  For tickers, the conservative B3 cash type (`equity`, `unit`, `bdr`, `fund_quota`, or
+  `cash_security`); the fund's `entity_type` (`fi`, `fidc`, `fii`, `fip`, `fiagro`) for
+  funds; and `cia` for listed companies.
 </ResponseField>
 <ResponseField name="name" type="text">
   Short name for a ticker, registered fund name, or company name. Nullable for funds whose

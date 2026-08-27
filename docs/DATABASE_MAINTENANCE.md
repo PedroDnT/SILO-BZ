@@ -96,10 +96,15 @@ returned rows. That combination was what let `cvm_fiagro_mensal` sit empty behin
 ## 4. Healing gaps (backfill)
 
 **Entity / per-year backfill** — GitHub → Actions → **CVM Historical Backfill** → _Run
-workflow_ (inputs: `entity`, `start_year`, `end_year`). The default is `fi`; choose one
+workflow_ (inputs: `entity`, `start_year`, `end_year`, `fi_doc_type`). The default is `fi`;
+choose one
 entity and a narrow year range. Matrix jobs use `max-parallel: 1`, print
 `cvm_ingest_log`/coverage first, and FI skips a year only when both diario and perfil are
 already complete. Choose `all` only when the database can absorb a full historical run.
+For the known FI balance-sheet gap, set `entity=fi` and `fi_doc_type=balancete`; the
+workflow then checks and fetches only balancete months.
+Before inspecting coverage, the workflow preserves any audit row stuck in `running` for
+more than 24 hours and closes it as `error` with `finished_at` and an explanatory message.
 
 **BACEN only (Focus / SGS / PTAX)** — Actions → **CVM Historical Backfill** →
 _Run workflow_ with `bacen_only=true`. Skips every CVM entity and the ETF jobs;
@@ -126,6 +131,9 @@ Full CVM history is Actions → **CVM Historical Backfill**.
 ```bash
 # one entity, one year
 python -m src.pipeline.run_backfill --cvm-only --entity fidc --start-year 2024 --end-year 2024
+
+# one FI document type, selected years
+python -m src.pipeline.run_backfill --cvm-only --entity fi --doc-type balancete --start-year 2021 --end-year 2025
 
 # one entity, full history
 python -m src.pipeline.run_backfill --cvm-only --entity fidc --start-year 2019

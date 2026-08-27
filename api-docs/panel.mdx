@@ -10,7 +10,7 @@ icon: "table"
 (id, date, metric, value)
 ```
 
-That shape lets you pull equity prints and fund fundamentals for the same window in a single
+That shape lets you pull B3 cash-market prints and fund fundamentals for the same window in a single
 request, pivot to a `dates × columns` matrix locally, and run correlations, factor models,
 or event studies in your notebook. There is no server-side `corr`, `rank`, or regression —
 reductions belong where you can see and change their assumptions.
@@ -55,9 +55,9 @@ api.panel(p_ids     TEXT[],
 
 | Metric | Id type | Asset class | Grains | Source | Meaning |
 | --- | --- | --- | --- | --- | --- |
-| `close` | ticker | equity | day, month | `b3_cotahist` | Unadjusted cash close, board `02`. Monthly = last session of the month. |
-| `volume` | ticker | equity | day, month | `b3_cotahist` | Session financial volume in BRL. Monthly = the last session's volume, not a monthly sum. |
-| `close_return` | ticker | equity | day, month | `b3_cotahist` | `p_t / p_(t-1) - 1` from stored **unadjusted** closes. Derived. A 2:1 split reports roughly −50%. |
+| `close` | ticker | equity, unit, bdr, fund_quota, cash_security | day, month | `b3_cotahist` | Unadjusted cash close, board `02`. Monthly = last session of the month. |
+| `volume` | ticker | equity, unit, bdr, fund_quota, cash_security | day, month | `b3_cotahist` | Session financial volume in BRL. Monthly = the last session's volume, not a monthly sum. |
+| `close_return` | ticker | equity, unit, bdr, fund_quota, cash_security | day, month | `b3_cotahist` | `p_t / p_(t-1) - 1` from stored **unadjusted** closes. Derived. A 2:1 split reports roughly −50%. |
 | `nav` | cnpj | fi, fidc, fii, fip, fiagro | month | `cvm` | Fund net assets (`vl_patrim_liq`). |
 | `quota` | cnpj | fi | month | `cvm` | Unit quota value. Comparable within a subclass only. |
 | `delinquency` | cnpj | fidc, fiagro | month | `cvm` | Delinquent portfolio **value**, not a rate — divide by `nav` yourself. |
@@ -83,8 +83,9 @@ api.panel(p_ids     TEXT[],
   `ticker` or `cnpj`.
 </ResponseField>
 <ResponseField name="asset_class" type="text">
-  `equity` for tickers; for funds, the vehicle's `entity_type` (`fi`, `fidc`, `fii`, `fip`,
-  `fiagro`).
+  For tickers, the conservative B3 type (`equity`, `unit`, `bdr`, `fund_quota`, or
+  `cash_security`); for funds, the vehicle's `entity_type` (`fi`, `fidc`, `fii`, `fip`,
+  `fiagro`). `fund_quota` deliberately does not guess ETF versus FII.
 </ResponseField>
 <ResponseField name="date" type="date">
   Observation date. At `freq=month` this is the first day of the month, for both the equity

@@ -18,12 +18,13 @@ api.universe(p_asset_class TEXT DEFAULT NULL,
 <ParamField body="p_asset_class" type="string" default="null">
   Which population to list:
 
-  - `equity` — B3 tickers that print on board `02`
+  - `equity`, `unit`, `bdr`, `fund_quota`, `cash_security` — conservative B3 cash types
+    derived from published `tpmerc` / `especi`; `fund_quota` does not guess ETF versus FII
   - `fi`, `fidc`, `fii`, `fip`, `fiagro` — CVM fund vehicle types
   - `null` or omitted — **all** populations, interleaved
 
-  Any other value returns an empty array rather than an error: the equity arm only fires for
-  `equity`, and the fund arm matches against `entity_type` exactly.
+  Any other value returns an empty array rather than an error: the B3 arm matches the
+  classified type, and the fund arm matches against `entity_type` exactly.
 </ParamField>
 
 <ParamField body="p_limit" type="integer" default="50">
@@ -39,7 +40,7 @@ api.universe(p_asset_class TEXT DEFAULT NULL,
   `ticker` or `cnpj`.
 </ResponseField>
 <ResponseField name="asset_class" type="text">
-  `equity`, or the fund's `entity_type`.
+  A conservative B3 cash type, or the fund's `entity_type`.
 </ResponseField>
 <ResponseField name="name" type="text">
   Issuer short name for tickers, registered fund name for funds. **Nullable** for funds whose
