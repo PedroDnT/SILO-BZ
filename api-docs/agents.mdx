@@ -19,29 +19,44 @@ skim it; agents should follow it in order.
 Prefer MCP search / `llms.txt` over guessing from training data. The Evidence
 dashboards and `docs/` operator notes are **not** the read contract.
 
-## 2. You cannot generate an API key
+## 2. Auth — you cannot mint a key, including via GitHub or email
 
-The Data API does **not** issue keys. There is no signup, no OAuth, no
-`createApiKey`. Every caller uses the same project **anon / public** JWT from
-Supabase. That key is public by design (safe in a browser). `service_role` is
-not.
+The Data API does **not** issue keys. There is no `createApiKey`, no PAT
+factory, and **this repo will not sign per-user JWTs** after a GitHub or
+mailbox login. An agent that hashes, forges, or “generates” a token gets
+`401`. `service_role` is never a caller credential.
 
-An agent that tries to mint, hash, or invent a JWT will get `401`. A human
-(project owner) copies **anon / public** once from the Supabase dashboard
-(Settings → API) and either:
+What exists today:
 
-- exports `SILO_ANON_KEY`, or
-- publishes it in [quickstart](/api-docs/quickstart) so agents can call with no human in the loop.
+| Credential | Who | What it is |
+| --- | --- | --- |
+| **anon / public** | everyone | One project JWT, public by design. Same `api.*` read for every caller. |
+| **Supabase Auth session** (GitHub or email, if you turn the providers on in the dashboard) | a **human** who completes OAuth or a magic link | A short-lived **user** JWT (`authenticated` role). Same `SELECT`/`EXECUTE` on `api.*` as anon. Not a long-lived personal API key. |
+| **service_role** | nobody on this API | Bypasses the contract. Never send it. |
 
-Until that value is on the page, **do not guess it**. Answer method from the
-docs; refuse a live market conclusion if you cannot call `coverage`.
+GitHub / email login does **not** give an unattended agent a key. OAuth needs a
+browser; magic link needs an inbox. After that you still send:
+
+```
+apikey: <project anon>
+Authorization: Bearer <user access token>
+```
+
+`apikey` stays the project anon key (PostgREST requires it). The Bearer token
+is the session, not a second generated secret.
+
+Until the anon key is printed in [quickstart](/api-docs/quickstart), a human
+pastes **anon / public** once from Supabase → Settings → API. Do not guess it.
+Answer method from the docs; refuse a live market conclusion if you cannot
+call `coverage`.
 
 ```bash
 export SILO_URL="https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"
 export SILO_ANON_KEY="..."   # anon/public only — never service_role
 ```
 
-Every request needs both headers: `apikey` and `Authorization: Bearer`.
+Per-user **identity** (rate limits, audit, later RLS) is a serving-plan
+reopen — not this page. Do not add accounts in the ingest pipeline.
 
 ## 3. First live call is always `coverage`
 

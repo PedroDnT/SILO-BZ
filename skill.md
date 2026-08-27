@@ -18,9 +18,12 @@ Public **read** API for Brazilian fund and market data. Ingest is not exposed.
 
 ## Auth — you cannot generate a key
 
-There are **no per-agent keys**. One project **anon / public** JWT, designed to
-be published. You cannot mint, rotate, or sign one. Never ask for or use
-`service_role`.
+There are **no per-agent keys** and no GitHub/email key factory in this API.
+One project **anon / public** JWT. You cannot mint, rotate, or sign one.
+Never use `service_role`. GitHub OAuth or email magic link (Supabase Auth),
+if enabled in the dashboard, yields a **user session JWT** — same `api.*`
+reads as anon, still needs a human in the browser or inbox, still not a
+personal API key.
 
 Until the anon key is printed in [quickstart](/api-docs/quickstart), the caller
 must set `SILO_ANON_KEY` (human pastes it once from Supabase → Settings → API →
