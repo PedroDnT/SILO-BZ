@@ -8,13 +8,15 @@ icon: "rocket"
 
 The API is **open read**. There are no accounts and no per-user API keys — every caller
 uses the project's **anon (public) key**, which is designed to be published in client code.
+Agents **cannot generate** a key (no signup, no GitHub/email key factory). They
+use this same anon JWT, or they cannot call the warehouse. See [For agents](/api-docs/agents).
 
 <Note>
   Find it in the Supabase Dashboard → **Settings** → **API** → **Project API keys** →
   **`anon` / `public`**. Copy that value; it is the only credential you need.
 
   Never use the `service_role` key here. It bypasses every boundary described in these docs
-  and must never leave a server.
+  and must never leave a server. Do not invent or hash a JWT if the anon key is missing.
 </Note>
 
 The Data API is:

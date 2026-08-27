@@ -3,6 +3,14 @@
     "supabase": {
       "type": "http",
       "url": "https://mcp.supabase.com/mcp?project_ref=zcjbtpxuhdekpwcxmepn&features=docs%2Caccount%2Cdatabase%2Cdevelopment%2Cdebugging%2Cfunctions%2Cbranching%2Cstorage"
+    },
+    "mintlify": {
+      "type": "http",
+      "url": "https://mcp.mintlify.com"
+    },
+    "mintlify-index": {
+      "type": "http",
+      "url": "https://index.mintlify.com/mcp"
     }
   }
 }

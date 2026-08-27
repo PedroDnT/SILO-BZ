@@ -1,7 +1,8 @@
 # Brazilian Financial Data Scrapper and handler
 
 > **Read API:** [https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/)
-> — schema `api`, anon key, open read. Caller docs: [`api-docs/`](api-docs/quickstart.mdx).
+> — schema `api`, anon key, open read. Caller docs: [https://octo-98895abd.mintlify.site](https://octo-98895abd.mintlify.site)
+> (source: [`api-docs/`](api-docs/quickstart.mdx)).
 > Ingest is in production and runs nightly. See [What's next](#whats-next) for remaining ops.
 
 Headless ingestion pipeline for Brazilian public financial data. The goal is to maintain
@@ -28,7 +29,8 @@ ingest HTTP server.
 | **`serve/`**                | local read-only Flask adapter (`python -m serve.app`)             | for notebooks and development                                   |
 | **`dashboard/`, `webapp/`** | Evidence.dev sites                                                | read Supabase at **build** time into parquet                    |
 
-Docs: [api-docs/quickstart.mdx](api-docs/quickstart.mdx) for callers,
+Docs: [https://octo-98895abd.mintlify.site](https://octo-98895abd.mintlify.site)
+(Mintlify, source in [`api-docs/`](api-docs/quickstart.mdx); agents: [`api-docs/agents.mdx`](api-docs/agents.mdx)) for callers,
 [docs/API.md](docs/API.md) for the contract and its edge cases,
 [docs/planning/SERVING.md](docs/planning/SERVING.md) for how "ingested" becomes
 "a researcher pulls a panel" (steps 0–7; 3 and 6 gate public HTTP).

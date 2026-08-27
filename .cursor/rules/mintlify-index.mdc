@@ -1,0 +1,6 @@
+---
+description: Mintlify documentation index — use when writing or changing docs.json, api-docs/, or index.mdx
+alwaysApply: false
+---
+
+Use the Mintlify index `context` tool when the question is about Mintlify (docs.json, MDX components, navigation, CLI, MCP) or when writing pages under `api-docs/` / `index.mdx`. Prefer it over web search for Mintlify product docs. Do not use it for pipeline, schema, or dashboard work.

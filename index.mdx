@@ -25,9 +25,14 @@ That is the only public HTTP surface. Views are `GET /<view>`; functions are
 `POST /rpc/<function>`. Send the anon key as both `apikey` and
 `Authorization: Bearer`.
 
-<Card title="Quickstart" icon="rocket" href="/api-docs/quickstart" horizontal>
-  Get the anon key and make your first call in under a minute.
-</Card>
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/api-docs/quickstart">
+    Get the anon key and make your first call in under a minute.
+  </Card>
+  <Card title="For agents" icon="robot" href="/api-docs/agents">
+    How an agent reads this site. You cannot generate an API key.
+  </Card>
+</CardGroup>
 
 ## The primitive is a panel
 

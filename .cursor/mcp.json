@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "mintlify": {
+      "url": "https://mcp.mintlify.com"
+    },
+    "mintlify-index": {
+      "url": "https://index.mintlify.com/mcp"
+    }
+  }
+}
