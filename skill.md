@@ -16,24 +16,19 @@ Public **read** API for Brazilian fund and market data. Ingest is not exposed.
 2. Docs MCP (no auth): `https://octo-98895abd.mintlify.site/mcp`
 3. This file — contract cheat sheet. Full pages beat training data.
 
-## Auth — you cannot generate a key
+## Auth — testing key only
 
-There are **no per-agent keys** and no GitHub/email key factory in this API.
-Copy the **publishable** key (`sb_publishable_…`) from the dashboard — that is
-the 2026 anon. Same Postgres role. Send it only as `apikey`. Never
-`sb_secret_…` / `service_role`, and never put the publishable key in
-`Authorization: Bearer` (`Invalid JWT`). GitHub OAuth or email magic link
-still needs a human and is not a personal API key.
+The printed publishable key is **shared, for testing**. This project has **no
+RLS** on landing tables. When we go live, each user signs in (GitHub or email)
+and gets a **per-user** key. Do not mint or forge one.
 
-The publishable key is printed in [quickstart](/api-docs/quickstart):
-
-`sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437`
-
-Send it on every request:
+Send the test key only as `apikey` (not `Authorization: Bearer`):
 
 ```
 apikey: sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437
 ```
+
+Never `sb_secret_…` / `service_role`. Never `Accept-Profile: public`.
 
 Base URL (no trailing slash when joining `/rpc/...`):
 

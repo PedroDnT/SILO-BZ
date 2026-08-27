@@ -4,21 +4,24 @@ description: "Get the publishable key, make your first request, and read the res
 icon: "rocket"
 ---
 
-## 1. Get the publishable key
+## 1. Testing key (not production)
 
-The API is **open read**. There are no accounts and no per-user API keys — every caller
-uses the project's **publishable** key (`sb_publishable_…`). That is the 2026 name for
-what the dashboard still labels **anon**: same Postgres role, safe to ship in a browser
-or this documentation. Agents **cannot generate** a key. See [For agents](/api-docs/agents).
+<Warning>
+  The publishable key below is **shared and for testing only**. This project does
+  **not** have Row Level Security on landing tables. Do not treat a successful
+  `coverage` call as “the warehouse is locked down.”
+
+  **When we go live** we will issue a **proper key per user** (sign-in with GitHub
+  or email → that user’s JWT). This shared `sb_publishable_…` value is not that.
+  Agents must not invent or mint keys in the meantime.
+</Warning>
+
+Every test caller uses the same **publishable** key (`sb_publishable_…`) — the 2026
+name for anon, same Postgres `anon` role. See [For agents](/api-docs/agents).
 
 <Note>
-  Supabase Dashboard → **Settings** → **API Keys** → copy **Publishable**.
   Ignore **Secret** (`sb_secret_…`) and legacy **`service_role`**. Those bypass
-  every boundary on these pages.
-
-  The dashboard warning about Row Level Security is generic. This API's boundary
-  is **grants on schema `api`**, not RLS on landing tables. Do not query `cvm_*`
-  or `b3_cotahist` with this key. Do not invent a JWT if the key is missing.
+  every boundary on these pages. Stay on schema `api`; never `Accept-Profile: public`.
 </Note>
 
 The Data API is:

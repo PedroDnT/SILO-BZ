@@ -16,7 +16,14 @@ below is relative to that. Views are `GET /<view>`; functions are
 
 ## Authentication
 
-Open read with the project's **publishable** key (`sb_publishable_…`) — the 2026
+<Warning>
+  **Testing only.** The printed publishable key is a shared `anon` credential.
+  Landing tables do **not** have RLS. When we go live, callers will sign in
+  (GitHub or email) and use a **per-user** key / session JWT. Do not ship this
+  shared key as production identity.
+</Warning>
+
+For tests, send the project's **publishable** key (`sb_publishable_…`) — the 2026
 replacement for the legacy **anon** JWT. Same Postgres role (`anon`). Send it only
 on `apikey`. Do not put it in `Authorization: Bearer` (it is not a JWT).
 
@@ -24,13 +31,10 @@ on `apikey`. Do not put it in `Authorization: Bearer` (it is not a JWT).
 apikey: sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437
 ```
 
-Copy it from [quickstart](/api-docs/quickstart) (it is public by design).
-Never **Secret** / `service_role`. There are no per-caller keys.
-
-The dashboard's RLS banner is generic. Callers must stay on schema `api` — never
+Never **Secret** / `service_role`. Stay on schema `api` — never
 `Accept-Profile: public`, never `cvm_*` / `b3_cotahist`. The documented surface is
 `USAGE` on `api`, `SELECT` on the two `api` views, and `EXECUTE` on the `api`
-functions. Views are owner-privileged and functions are `SECURITY DEFINER`.
+functions.
 
 <Note>
   If the project exposes more than one schema and `api` is not the default, add
