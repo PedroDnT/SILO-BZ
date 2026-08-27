@@ -41,6 +41,69 @@ jobs:
       - name: Run tests
         run: python -m pytest tests/ -q --tb=short
 
+  # Prove every piece of SQL in the repo actually compiles — schema.sql, all
+  # migrations, the whole analytical layer, and every Evidence source query —
+  # against a throwaway Postgres, on every PR. Before this job existed the only
+  # thing that executed the SQL was a human dispatching api-smoke or the nightly
+  # ingest itself, so a typo in 19_api_contract.sql could merge green and only
+  # fail in production. Empty tables are fine: 0-row matviews still validate
+  # every view, function, index and grant. The data-emptiness smoke guards in
+  # 01_dim_fund / 04_fact_fund_monthly are downgraded to warnings via the
+  # silo.ci_smoke_bypass GUC (production applies never set it).
+  sql-compile:
+    name: SQL compile (ephemeral Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: silo_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_URL: postgresql://postgres:ci@localhost:5432/silo_ci
+    steps:
+      - uses: actions/checkout@v5
+
+      # Supabase provides anon/authenticated; a vanilla postgres:15 does not.
+      # silo_api is created by 12_grants_and_rls.sql itself (guarded).
+      - name: Create Supabase client roles
+        run: |
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE anon NOLOGIN;" \
+            -c "CREATE ROLE authenticated NOLOGIN;"
+
+      # Same composite action as daily/backfill/watchdog, so the CI bootstrap
+      # can never drift from the production one.
+      - name: Apply schema + migrations
+        uses: ./.github/actions/apply-schema
+        with:
+          postgres-url: ${{ env.POSTGRES_URL }}
+
+      - name: Apply analytical layer (empty-DB bypass)
+        run: PGOPTIONS="-c silo.ci_smoke_bypass=on" bash scripts/apply_analytical.sh
+
+      - name: Compile every dashboard source query
+        run: |
+          set -uo pipefail
+          failed=()
+          for f in dashboard/sources/supabase/*.sql; do
+            if ! out=$(psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -q -f "$f" 2>&1 >/dev/null); then
+              failed+=("$f")
+              echo "FAIL $f"
+              sed 's/^/       /' <<<"$out" | tail -4
+            fi
+          done
+          echo "checked $(ls dashboard/sources/supabase/*.sql | wc -l) sources, ${#failed[@]} failed"
+          [ ${#failed[@]} -eq 0 ]
+
   api-smoke:
     name: api.* smoke (read-only)
     if: github.event_name == 'workflow_dispatch'

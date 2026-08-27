@@ -82,11 +82,19 @@ CREATE MATERIALIZED VIEW dim_fund AS
 -- enables REFRESH MATERIALIZED VIEW CONCURRENTLY (08_cron_schedules).
 CREATE UNIQUE INDEX ix_dim_fund_pk ON dim_fund (cnpj, entity_type);
 
--- Smoke check: must have at least one fund per entity type once any data is loaded
+-- Smoke check: must have at least one fund per entity type once any data is loaded.
+-- CI compile runs (sql-compile job) apply this layer against an EMPTY throwaway
+-- Postgres purely to prove the DDL builds; they set silo.ci_smoke_bypass=on via
+-- PGOPTIONS, which downgrades the empty-data failure to a warning. Production
+-- applies never set the GUC, so the guard still hard-fails there.
 DO $$
 BEGIN
   IF (SELECT COUNT(DISTINCT entity_type) FROM dim_fund) = 0 THEN
-    RAISE EXCEPTION 'dim_fund smoke check failed: no rows';
+    IF current_setting('silo.ci_smoke_bypass', true) = 'on' THEN
+      RAISE WARNING 'dim_fund smoke check skipped: no rows (silo.ci_smoke_bypass=on)';
+    ELSE
+      RAISE EXCEPTION 'dim_fund smoke check failed: no rows';
+    END IF;
   END IF;
 END $$;
 

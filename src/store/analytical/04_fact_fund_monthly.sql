@@ -236,6 +236,12 @@ BEGIN
   FROM fact_fund_monthly;
 
   IF v_count = 0 THEN
+    -- silo.ci_smoke_bypass=on marks a CI compile run against an empty throwaway
+    -- Postgres (see 01_dim_fund); production applies never set it.
+    IF current_setting('silo.ci_smoke_bypass', true) = 'on' THEN
+      RAISE WARNING 'fact_fund_monthly smoke check skipped: 0 rows (silo.ci_smoke_bypass=on)';
+      RETURN;
+    END IF;
     RAISE EXCEPTION
       'fact_fund_monthly smoke check FAILED: 0 rows — ingest at least one fund type first';
   END IF;
