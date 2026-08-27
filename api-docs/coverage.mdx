@@ -45,7 +45,6 @@ Exactly three rows, one per dataset:
 ```bash curl
 curl -s -X POST "$SILO_URL/rpc/coverage" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{}'
 ```

@@ -19,21 +19,19 @@ Public **read** API for Brazilian fund and market data. Ingest is not exposed.
 ## Auth — you cannot generate a key
 
 There are **no per-agent keys** and no GitHub/email key factory in this API.
-One project **anon / public** JWT. You cannot mint, rotate, or sign one.
-Never use `service_role`. GitHub OAuth or email magic link (Supabase Auth),
-if enabled in the dashboard, yields a **user session JWT** — same `api.*`
-reads as anon, still needs a human in the browser or inbox, still not a
-personal API key.
+Copy the **publishable** key (`sb_publishable_…`) from the dashboard — that is
+the 2026 anon. Same Postgres role. Send it only as `apikey`. Never
+`sb_secret_…` / `service_role`, and never put the publishable key in
+`Authorization: Bearer` (`Invalid JWT`). GitHub OAuth or email magic link
+still needs a human and is not a personal API key.
 
-Until the anon key is printed in [quickstart](/api-docs/quickstart), the caller
-must set `SILO_ANON_KEY` (human pastes it once from Supabase → Settings → API →
-`anon` / `public`).
+Until the publishable key is printed in [quickstart](/api-docs/quickstart), the caller
+must set `SILO_ANON_KEY` (human pastes **Publishable** from Settings → API Keys).
 
 Send it on every request:
 
 ```
-apikey: <anon>
-Authorization: Bearer <anon>
+apikey: <sb_publishable_...>
 ```
 
 Base URL (no trailing slash when joining `/rpc/...`):

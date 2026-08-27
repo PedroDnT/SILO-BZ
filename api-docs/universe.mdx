@@ -58,7 +58,6 @@ Rows are ordered by `asset_class`, then `name` with nulls last.
 ```bash curl
 curl -s -X POST "$SILO_URL/rpc/universe" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{"p_asset_class":"fidc","p_limit":100}'
 ```

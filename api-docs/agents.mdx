@@ -30,29 +30,22 @@ What exists today:
 
 | Credential | Who | What it is |
 | --- | --- | --- |
-| **anon / public** | everyone | One project JWT, public by design. Same `api.*` read for every caller. |
-| **Supabase Auth session** (GitHub or email, if you turn the providers on in the dashboard) | a **human** who completes OAuth or a magic link | A short-lived **user** JWT (`authenticated` role). Same `SELECT`/`EXECUTE` on `api.*` as anon. Not a long-lived personal API key. |
-| **service_role** | nobody on this API | Bypasses the contract. Never send it. |
+| **Publishable** (`sb_publishable_…`) | everyone | 2026 name for anon. Same `api.*` read. Send only as `apikey`. |
+| **Legacy anon JWT** | still works until disabled | Same role. Do not mix with publishable in `Authorization`. |
+| **Supabase Auth session** (GitHub or email, if enabled in the dashboard) | a **human** who completes OAuth or a magic link | User JWT on `Authorization: Bearer`. `apikey` stays the publishable key. |
+| **Secret** (`sb_secret_…`) / **service_role** | nobody on this API | Bypasses the contract. Never send it. |
 
 GitHub / email login does **not** give an unattended agent a key. OAuth needs a
-browser; magic link needs an inbox. After that you still send:
+browser; magic link needs an inbox.
 
-```
-apikey: <project anon>
-Authorization: Bearer <user access token>
-```
-
-`apikey` stays the project anon key (PostgREST requires it). The Bearer token
-is the session, not a second generated secret.
-
-Until the anon key is printed in [quickstart](/api-docs/quickstart), a human
-pastes **anon / public** once from Supabase → Settings → API. Do not guess it.
+Until the publishable key is printed in [quickstart](/api-docs/quickstart), a human
+pastes **Publishable** once from Supabase → Settings → **API Keys**. Do not guess it.
 Answer method from the docs; refuse a live market conclusion if you cannot
 call `coverage`.
 
 ```bash
 export SILO_URL="https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"
-export SILO_ANON_KEY="..."   # anon/public only — never service_role
+export SILO_ANON_KEY="sb_publishable_..."   # never sb_secret_ or service_role
 ```
 
 Per-user **identity** (rate limits, audit, later RLS) is a serving-plan
@@ -63,7 +56,6 @@ reopen — not this page. Do not add accounts in the ingest pipeline.
 ```bash
 curl -s -X POST "$SILO_URL/rpc/coverage" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{}'
 ```

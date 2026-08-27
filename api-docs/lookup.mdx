@@ -69,7 +69,6 @@ api.lookup(p_query TEXT)
 ```bash curl
 curl -s -X POST "$SILO_URL/rpc/lookup" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{"p_query":"PETR4"}'
 ```

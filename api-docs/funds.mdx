@@ -82,7 +82,6 @@ what the fund is worth.
 ```bash curl
 curl -s -G "$SILO_URL/funds" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   --data-urlencode "select=cnpj,fund_name,entity_type,first_period,last_period,n_reports" \
   --data-urlencode "entity_type=eq.fidc" \
   --data-urlencode "order=n_reports.desc" \
@@ -159,7 +158,6 @@ api.search_funds(p_query       TEXT DEFAULT '',
 ```bash curl
 curl -s -X POST "$SILO_URL/rpc/search_funds" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{"p_query":"multisetorial","p_entity_type":"fidc","p_limit":10}'
 ```
@@ -230,7 +228,6 @@ api.fund_profile(p_cnpj TEXT)
 ```bash curl
 curl -s -X POST "$SILO_URL/rpc/fund_profile" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{"p_cnpj":"12.345.678/0001-90"}'
 ```
@@ -341,7 +338,6 @@ Rows are ordered by `period`, then `entity_type`.
 ```bash curl
 curl -s -X POST "$SILO_URL/rpc/fund_nav" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{"p_cnpj":"12345678000190","p_from":"2024-01-01","p_to":"2026-06-30"}'
 ```

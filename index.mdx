@@ -12,8 +12,8 @@ filings), BACEN time series, and B3 COTAHIST cash quotes. It exists for **financ
 accountability** of the fund industry: NAV, delinquency, flows, and structural health.
 
 The warehouse is readable. Schema `api` is the public read contract, exposed through the
-Supabase Data API (PostgREST) with the project's **anon key** — open read, no accounts, no
-per-user API keys.
+Supabase Data API (PostgREST) with the project's **publishable** key (`sb_publishable_…`,
+the 2026 name for anon) — open read, no accounts, no per-user API keys.
 
 This site documents that **read API**. The human dashboard is
 [https://iliquid-nightly.vercel.app/](https://iliquid-nightly.vercel.app/) — an Evidence
@@ -26,12 +26,12 @@ https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/
 ```
 
 That is the only public HTTP surface. Views are `GET /<view>`; functions are
-`POST /rpc/<function>`. Send the anon key as both `apikey` and
+`POST /rpc/<function>`. Send the publishable key on `apikey` only — not as
 `Authorization: Bearer`.
 
 <CardGroup cols={2}>
   <Card title="Quickstart" icon="rocket" href="/api-docs/quickstart">
-    Get the anon key and make your first call in under a minute.
+    Get the publishable key and make your first call in under a minute.
   </Card>
   <Card title="For agents" icon="robot" href="/api-docs/agents">
     How an agent reads this site. You cannot generate an API key.
@@ -48,7 +48,6 @@ locally.
 ```bash
 curl -s -X POST "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/rpc/panel" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{"p_ids":["PETR4","VALE3"],"p_metrics":["close_return"],"p_freq":"month"}'
 ```

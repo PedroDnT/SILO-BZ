@@ -16,16 +16,19 @@ below is relative to that. Views are `GET /<view>`; functions are
 
 ## Authentication
 
-Open read with the project's public **anon key** on every request, in both headers:
+Open read with the project's **publishable** key (`sb_publishable_…`) — the 2026
+replacement for the legacy **anon** JWT. Same Postgres role (`anon`). Send it only
+on `apikey`. Do not put it in `Authorization: Bearer` (it is not a JWT).
 
 ```
-apikey: YOUR_ANON_KEY
-Authorization: Bearer YOUR_ANON_KEY
+apikey: sb_publishable_...
 ```
 
-Get the key from the Supabase Dashboard → **Settings** → **API** → **Project API keys** →
-**`anon` / `public`**. There are no user accounts and no per-caller keys; the anon key is
-public by design and safe to ship in a browser bundle.
+Copy it from Supabase Dashboard → **Settings** → **API Keys** → **Publishable**.
+Never **Secret** / `service_role`. There are no per-caller keys.
+
+The dashboard's RLS banner is generic. Safety here is the grant list below, not
+RLS on landing tables. Do not query `public` with this key.
 
 What the anon role can reach is exactly what these pages document: `USAGE` on schema `api`,
 `SELECT` on the two `api` views, and `EXECUTE` on the `api` functions. It has **no** grant
@@ -162,7 +165,7 @@ PostgREST returns a JSON array on success. There is no envelope, no `count`, no 
 | `200` | `[...]` | Rows. |
 | `200` | `[]` | **Known query, no matching data.** An unknown ticker, an unknown CNPJ, or a real ticker with no sessions in the window all land here. This is the "never fabricate" rule in action — an empty array, never a guessed last close. |
 | `400` | `{"code":"42883",...}` / `PGRST` codes | Malformed filter, bad argument type, or an out-of-range date. |
-| `401` | `{"message":"Invalid API key"}` | Missing or wrong `apikey` / `Authorization` header. |
+| `401` | `{"message":"Invalid API key"}` or `Invalid JWT` | Missing/wrong `apikey`, or a publishable/secret key sent as `Authorization: Bearer`. |
 | `404` | `PGRST202` | No function with that name **and argument set**. Check the `p_` names. |
 | `406` | — | You asked for a single object (`Accept: application/vnd.pgrst.object+json`) and the result had zero or more than one row. |
 
