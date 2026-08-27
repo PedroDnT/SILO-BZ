@@ -172,4 +172,6 @@ def test_backfill_is_sliceable_serial_and_never_rebuilds_dashboard():
     assert "--start-year ${{ inputs.start_year }}" in text
     assert "--end-year ${{ inputs.end_year }}" in text
     assert "inputs.entity" in jobs["backfill-fi"]["if"]
+    assert "fi_doc_type:" in text
+    assert '--doc-type "${{ inputs.fi_doc_type }}"' in text
     assert "Print ingest_log + coverage snapshot" in text

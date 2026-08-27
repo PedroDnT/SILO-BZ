@@ -214,7 +214,7 @@ Each CVM entity gets one or more tables per data release frequency:
 | --------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
 | `cvm_ingest_log`      | Ingest run audit trail (entity, doc_type, period, rows_upserted, error_msg)                                        | `(run_id)`, index: `(entity, doc_type, period_year DESC)` |
 | `etf_market_snapshot` | ETF scraped snapshots (nav, price, yields, volatility, drawdown)                                                   | `(ticker, snapshot_date)`                                 |
-| `b3_cotahist`         | B3 COTAHIST quotes (unadjusted OHLC, volume, ticker, ISIN). Serve cash via `vw_b3_quote_vista` (`tpmerc = '010'`). | `(codneg, trade_date, tpmerc, codbdi, prazot)`            |
+| `b3_cotahist`         | B3 COTAHIST quotes (unadjusted OHLC, volume, ticker, ISIN). `vw_b3_instrument_typed` classifies published instrument types; `api.quotes` serves typed cash rows. | `(codneg, trade_date, tpmerc, codbdi, prazot)`            |
 
 **Total: 20 tables across 11 logical domains (FI, FIDC, FII, FIP, FIAGRO, SECURIT, Registry, BACEN, Audit, ETF, B3).**
 
@@ -399,7 +399,9 @@ rows do not.
   COTAHIST zips (`--b3-only`); set `start_year` (try `2025` first).
 - `.github/workflows/backfill.yml` — choose one entity plus `start_year`/`end_year`.
   Matrix jobs are serialized, FI skips years already complete in `cvm_ingest_log`,
-  and the run prints current coverage before writing. Choose `all` only deliberately.
+  and the run prints current coverage before writing. For an FI-only repair, choose
+  `fi_doc_type` (for example `balancete`) so unrelated sources are not re-fetched.
+  Choose `all` only deliberately.
 - Required GitHub secret: `POSTGRES_URL` (Supabase connection string with `sslmode=require`).
 
 The read-only **Evidence.dev dashboard** lives at

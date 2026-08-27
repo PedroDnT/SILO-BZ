@@ -2,6 +2,8 @@
 
 | Date       | Branch                    | Change                                                                                              |
 | ---------- | ------------------------- | --------------------------------------------------------------------------------------------------- |
+| 2026-08-27 | cursor/b3-asset-types-1119 | B3 asset class reaches `api.quotes`, quote RPCs, panel, universe, lookup, and catalog v4 |
+| 2026-08-27 | cursor/b3-asset-types-1119 | FI backfill can target one source (`--doc-type` / `fi_doc_type`), including balancete-only gap repair |
 | 2026-08-27 | cursor/quiet-vercel-fills-1119 | DB-only B3 instrument typing from published TPMERC/ESPECI; ambiguous CI remains `fund_quota` |
 | 2026-08-27 | cursor/quiet-vercel-fills-1119 | Sliceable serialized backfills inspect coverage; dashboard rebuild is manual opt-in |
 | 2026-08-27 | cursor/publishable-key-3f68 | Shared publishable key is **testing only**; go-live needs per-user keys + RLS |
