@@ -246,3 +246,98 @@ auditable record. Its legitimate uses:
 Phase B's primary source is unchanged: daily settlement prices (ajustes do
 pregão), because settlement is the number that is official, historical, and
 verifiable — the three properties this warehouse exists to preserve.
+
+## Adjustment: how do you know a series is correctly adjusted?
+
+Short answer, today: **it isn't adjusted at all, and the API says so.**
+COTAHIST is B3's raw record — `src/parsers/cotahist.py` states it in the
+header ("unadjusted for splits or proventos"), and `api.quotes` carries a
+hardcoded `adjusted = FALSE`. That flag is honest, and it must stay honest.
+
+### The trap that is already live
+
+`close` is unadjusted, which is fine and clearly labelled. But
+**`close_return` is derived from those unadjusted closes**, so on the day a
+ticker splits 2:1 the panel reports roughly **−50 %** and calls it a return.
+Nothing in the pipeline is wrong — the arithmetic faithfully describes the
+prices B3 published — but a reader doing an event study, a correlation, or a
+drawdown will silently eat a fabricated shock. That is the single most
+dangerous number in the warehouse right now, precisely because everything
+around it is correct.
+
+Until adjustment lands, the catalog `meaning` for `close_return` must say
+"unadjusted; corporate actions appear as spurious jumps", and the api-docs
+page must repeat it. A caption is not a fix, but an unlabelled trap is worse
+than a labelled one.
+
+### Where the adjustment information actually lives
+
+There is no adjustment factor hiding in the file we already parse.
+`fator_cotacao` (FATCOT, positions 211–217) is the **quotation factor** — how
+many units a quoted price refers to (1, or 1000 for some instruments). It is
+not a split ratio and must never be used as one; that mistake produces a
+plausible, wrong series, which is the worst kind.
+
+The real sources, in the order worth trying:
+
+1. **B3 corporate events** — "Proventos em Dinheiro" (cash dividends, JCP)
+   and the events that change share count: *desdobramento* (split),
+   *grupamento* (reverse split), *bonificação* (stock dividend),
+   *subscrição* (rights). B3 publishes these per ticker on its listed-company
+   pages, and the `rb3` R package parses some of them — check its templates
+   before writing a fetcher, the same way `rb3` settled the futures question.
+   This is the primary source: it is the exchange's own record, with the
+   ratio stated.
+2. **CVM IPE — already ingested.** `cia_event` carries the *Aviso aos
+   Acionistas* / *Comunicado ao Mercado* filings in which a company announces
+   a split or bonus, with `categoria` / `tipo` / `especie` / `assunto`
+   columns to filter on. These are **documents, not structured ratios** — a
+   discovery and cross-check aid ("did anything happen to this ticker on this
+   date?"), not something to parse a factor out of.
+3. **ISIN continuity** in `b3_cotahist` — a ticker whose ISIN changes is
+   telling you the instrument changed. Free signal, already in the table.
+
+### How to *verify* a series, whatever the source
+
+The honest test is not "did we apply a factor" but "does the series still
+contain unexplained discontinuities":
+
+- **Jump screen.** Flag every `|close_return| > 40 %` on a day with no
+  extreme volume. Cross-reference each hit against `cia_event` for that
+  issuer and date. A hit with a matching *Aviso aos Acionistas* is a
+  corporate action; a hit with nothing is either real news or a data bug, and
+  both deserve a look. This is runnable **today** against data we already
+  have, and it is the recommended first deliverable — it measures the size of
+  the problem before anyone builds a fetcher.
+- **Share-count sanity.** After adjustment, price × shares should be
+  continuous across the event even though price is not.
+- **Independent comparison.** Spot-check a handful of adjusted series against
+  any second source. Note that
+  [lse-terminal-brazil](https://github.com/PedroDnT/lse-terminal-brazil)
+  reads the same COTAHIST files and is **also unadjusted**, so it is a
+  parser cross-check (its `_PRICE_SCALE = 100.0` agrees with our `_implied`
+  two-decimal convention) — not an adjustment cross-check.
+
+### The shape adjustment should take here
+
+When it is built, it follows the rules already in force:
+
+- Ingest the **published event and its stated ratio** into its own table
+  (`b3_corporate_event (ticker, ex_date, event_type, ratio, cash_value,
+  source, raw)`), keyed on `(ticker, ex_date, event_type)`. Deriving a
+  cumulative factor by multiplying published ratios is arithmetic on
+  published data, which is allowed; **inferring** a ratio from a price gap is
+  fabrication, which is not.
+- Serve adjustment as a **separate metric** — `close_adj`, with
+  `adjusted = TRUE` and the event table as its `source` — never by mutating
+  `close`. Both must remain fetchable, because "what did it actually trade
+  at" and "what is the comparable series" are different questions and the
+  warehouse should answer both.
+- A ticker with **no** event coverage returns `close_adj` as **null**, not as
+  a copy of `close`. Silently passing an unadjusted price through an
+  "adjusted" column is exactly the fabrication the integrity rules exist to
+  prevent.
+
+Sequencing: this is worth doing **before** phase D and arguably before
+phase C — an unadjusted `close_return` is a wrong number being served today,
+whereas the missing curves are merely absent ones.
