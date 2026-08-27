@@ -46,11 +46,53 @@ runs:
         POSTGRES_URL: ${{ inputs.postgres-url }}
       run: |
         set -euo pipefail
-        psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f src/store/schema.sql
+
+        # lock_timeout is the difference between a blocked DDL that gives up and
+        # one that takes the whole database down with it.
+        #
+        # 2026-08-26 22:41 UTC: migration 14's `ALTER TABLE cvm_fi_perfil ADD
+        # COLUMN` — a metadata-only change that normally returns instantly — hung
+        # for 4m20s and the server killed the connection, failing the run and
+        # blocking every later migration and the whole analytical layer. Nothing
+        # was wrong with the DDL. Four Vercel dashboard builds had started between
+        # 22:26 and 22:37, and two of their source queries (fi_investor_mix,
+        # fi_investor_split) scan cvm_fi_perfil for 4+ minutes each. They hold
+        # AccessShareLock; ADD COLUMN needs AccessExclusiveLock, so it queued.
+        #
+        # Worse than waiting: a QUEUED AccessExclusiveLock blocks every reader
+        # that arrives behind it, so the stuck DDL also stalls the very builds it
+        # is waiting on. Failing fast is strictly better than holding that queue.
+        #
+        # lock_timeout only bounds the wait to ACQUIRE a lock — it never
+        # interrupts DDL that is genuinely running — so a legitimately slow
+        # migration is unaffected. statement_timeout=0 keeps it that way.
+        # Retries give a concurrent build time to finish; three failures means a
+        # real long-lived lock holder, which should fail the run loudly.
+        export PGOPTIONS="-c lock_timeout=15s -c statement_timeout=0"
+
+        apply() {
+          local file="$1" attempt
+          for attempt in 1 2 3; do
+            if psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f "$file"; then
+              return 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "== $file failed (attempt $attempt/3) — likely lock contention;" \
+                   "retrying in $((attempt * 30))s =="
+              sleep $((attempt * 30))
+            fi
+          done
+          echo "::error::$file failed after 3 attempts. If the log shows" \
+               "'canceling statement due to lock timeout', a long-running query" \
+               "(a Vercel dashboard build?) is holding a lock on the table."
+          return 1
+        }
+
+        apply src/store/schema.sql
         for f in src/store/migrations/*.sql; do
           [ -e "$f" ] || continue   # glob stays literal when nothing matches
           echo "== applying $f =="
-          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f "$f"
+          apply "$f"
         done
         psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 \
           -c "SELECT 'cvm_ingest_log'::regclass, 'cvm_etf_registry'::regclass, 'cia_account'::regclass;"
