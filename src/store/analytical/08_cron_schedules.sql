@@ -49,6 +49,15 @@ BEGIN
       'REFRESH MATERIALIZED VIEW CONCURRENTLY fact_security_monthly'
     );
 
+    -- mv_period_completeness — 06:35 UTC daily, AFTER the fact refreshes it
+    -- reads from; the serving clamp (latest_complete_period) must see the
+    -- night's newly ingested months before the day's dashboard traffic.
+    PERFORM cron.schedule(
+      'refresh-period-completeness',
+      '35 6 * * *',
+      'REFRESH MATERIALIZED VIEW CONCURRENTLY mv_period_completeness'
+    );
+
     RAISE NOTICE 'pg_cron schedules registered: refresh-fact-fund-monthly (06:20), refresh-fact-security-monthly (06:25)';
 
   ELSE

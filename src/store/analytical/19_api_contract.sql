@@ -927,7 +927,11 @@ $$;
 CREATE OR REPLACE FUNCTION api.fund_nav(
     p_cnpj        TEXT,
     p_from        DATE DEFAULT '2019-01-01',
-    p_to          DATE DEFAULT CURRENT_DATE,
+    -- NULL (the default) clamps to the fund family's latest COMPLETE period
+    -- (mv_period_completeness): a partially-filed trailing month is not
+    -- served unless the caller pins p_to explicitly (the escape hatch, which
+    -- serves the window verbatim, partial months included).
+    p_to          DATE DEFAULT NULL,
     p_entity_type TEXT DEFAULT NULL
 )
 RETURNS TABLE (
@@ -955,23 +959,27 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
     SELECT
-        cnpj,
-        period,
-        entity_type,
-        vl_patrim_liq,
-        vl_quota,
-        nr_cotst,
-        vl_inadimpl,
-        pct_yield_mes,
-        captc_mes,
-        resg_mes,
-        vl_ativo
+        s.cnpj,
+        s.period,
+        s.entity_type,
+        s.vl_patrim_liq,
+        s.vl_quota,
+        s.nr_cotst,
+        s.vl_inadimpl,
+        s.pct_yield_mes,
+        s.captc_mes,
+        s.resg_mes,
+        s.vl_ativo
     FROM public.fund_nav_series(
         regexp_replace(p_cnpj, '[^0-9]', '', 'g'),
         p_from,
-        p_to,
+        COALESCE(p_to, CURRENT_DATE),
         p_entity_type
-    )
+    ) s
+    -- NULL p_to = clamp each row to its own family's latest complete period
+    -- (raw-convention comparison; see api.panel). Explicit p_to = verbatim.
+    WHERE p_to IS NOT NULL
+       OR s.period <= public.latest_complete_period(s.entity_type)
     -- Cap = serve _MAX_POINTS (5000) + 1. Monthly grain: one CNPJ has ~12
     -- rows/year/entity_type, so 5000 is far beyond any honest series — this is
     -- a backstop, and the +1 row lets serve/ 400 instead of truncating.
@@ -982,7 +990,7 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT) IS
-    'Monthly NAV/flows series for one CNPJ. Hard-capped at 5001 rows (= serve _MAX_POINTS + 1): above 5000 the adapter answers 400, never a truncated series.';
+    'Monthly NAV/flows series for one CNPJ. Default window (p_to NULL) ends at the family''s latest COMPLETE period per mv_period_completeness; an explicit p_to serves the window verbatim, partial months included. Hard-capped at 5001 rows (= serve _MAX_POINTS + 1): above 5000 the adapter answers 400, never a truncated series.';
 
 CREATE OR REPLACE FUNCTION api.search_funds(
     p_query       TEXT DEFAULT '',
@@ -1027,25 +1035,46 @@ GRANT EXECUTE ON FUNCTION api.search_funds(TEXT, TEXT, INT) TO anon, authenticat
 -- Coverage — freshness without exposing cvm_ingest_log
 -- ---------------------------------------------------------------------------
 
+-- Signature change (complete_through column + per-family rows): drop first.
+DROP FUNCTION IF EXISTS api.coverage();
+
 CREATE OR REPLACE FUNCTION api.coverage()
 RETURNS TABLE (
-    dataset     TEXT,
-    as_of       DATE,
-    source      TEXT
+    dataset          TEXT,
+    as_of            DATE,
+    complete_through DATE,
+    source           TEXT
 )
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-    SELECT 'quotes'::text, MAX(trade_date), 'b3_cotahist'::text
+    -- as_of = the newest period that has LANDED (freshness — what ingest has
+    -- seen). complete_through = the newest period classified COMPLETE by
+    -- mv_period_completeness (honesty — what the default windows serve).
+    -- They diverge exactly where CVM's publication cadence makes the newest
+    -- period partial: an in-progress month, a lagging family, or FIP's
+    -- year-end row filed months before the year closes. Session data
+    -- (quotes/derivatives) is complete by construction: both dates equal.
+    SELECT 'quotes'::text, MAX(trade_date), MAX(trade_date), 'b3_cotahist'::text
     FROM public.vw_b3_quote_vista
     UNION ALL
-    SELECT 'funds'::text, MAX(last_period), 'cvm'::text
+    SELECT 'funds'::text, MAX(last_period),
+           public.latest_complete_period(NULL), 'cvm'::text
     FROM public.dim_fund
     UNION ALL
-    SELECT 'fund_nav'::text, MAX(period), 'cvm'::text
+    SELECT 'fund_nav'::text, MAX(period),
+           public.latest_complete_period(NULL), 'cvm'::text
     FROM public.fact_fund_monthly
+    UNION ALL
+    -- Per-family rows: the families file on different cadences (FI daily,
+    -- FIDC/FII with a 1-2 month lag, FIP annually), so one blended date
+    -- misreads all of them.
+    SELECT 'funds_' || f.entity_type, MAX(f.period),
+           public.latest_complete_period(f.entity_type), 'cvm'::text
+    FROM public.fact_fund_monthly f
+    GROUP BY f.entity_type
     UNION ALL
     -- Options + termo land in the same COTAHIST file as cash quotes, but the
     -- segments can lag independently, so freshness is reported per segment.
@@ -1058,8 +1087,16 @@ AS $$
                (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '080'),
                (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '030')
            ),
+           GREATEST(
+               (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '070'),
+               (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '080'),
+               (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '030')
+           ),
            'b3_cotahist'::text;
 $$;
+
+COMMENT ON FUNCTION api.coverage() IS
+    'Freshness AND honesty per dataset: as_of = newest landed period; complete_through = newest COMPLETE period (what default windows serve). funds_<family> rows report each filing cadence separately — FIP files annually, so its as_of is a year-end date even when current.';
 
 REVOKE ALL ON FUNCTION api.coverage() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.coverage() TO anon, authenticated;
@@ -1076,7 +1113,13 @@ CREATE OR REPLACE FUNCTION api.panel(
     p_ids     TEXT[],
     p_metrics TEXT[] DEFAULT ARRAY['close', 'nav']::TEXT[],
     p_from    DATE   DEFAULT (CURRENT_DATE - 365),
-    p_to      DATE   DEFAULT CURRENT_DATE,
+    -- NULL (the default) = honest window: quote/option/termo arms run to
+    -- CURRENT_DATE (a session print is complete by construction), while fund
+    -- arms clamp per entity family to latest_complete_period() so a
+    -- partially-filed trailing month is not served as if it were the
+    -- industry. An EXPLICIT p_to is the researcher escape hatch: it serves
+    -- whatever exists in the window, partial months included.
+    p_to      DATE   DEFAULT NULL,
     p_freq    TEXT   DEFAULT 'month'
 )
 RETURNS TABLE (
@@ -1108,7 +1151,8 @@ params AS (
         ) AS metrics,
         CASE WHEN lower(COALESCE(p_freq, 'month')) IN ('day', 'd', 'daily') THEN 'day' ELSE 'month' END AS freq,
         p_from AS d0,
-        p_to   AS d1
+        COALESCE(p_to, CURRENT_DATE) AS d1,  -- quote/option/termo upper bound
+        p_to AS d1_explicit                  -- NULL = clamp fund arms (below)
 ),
 tickers AS (
     SELECT x AS ticker
@@ -1125,9 +1169,11 @@ quote_month AS (
     SELECT DISTINCT ON (q.ticker, date_trunc('month', q.trade_date))
         q.ticker,
         date_trunc('month', q.trade_date)::date AS period,
+        q.trade_date AS obs_date,
         q.close,
         q.volume,
-        q.asset_class
+        q.asset_class,
+        q.quotation_factor
     FROM api.quotes q
     JOIN params p ON TRUE
     WHERE p.freq = 'month'
@@ -1137,7 +1183,8 @@ quote_month AS (
 ),
 quote_day AS (
     SELECT DISTINCT ON (q.ticker, q.trade_date)
-        q.ticker, q.trade_date AS period, q.close, q.volume, q.asset_class
+        q.ticker, q.trade_date AS period, q.trade_date AS obs_date,
+        q.close, q.volume, q.asset_class, q.quotation_factor
     FROM api.quotes q
     JOIN params p ON TRUE
     WHERE p.freq = 'day'
@@ -1150,15 +1197,29 @@ quote_px AS (
     UNION ALL
     SELECT * FROM quote_day
 ),
+-- close_return honesty guards (SERVING.md step 4):
+--   * daily: the previous SESSION must be within 7 calendar days. Carnaval
+--     and year-end close the exchange for up to ~5 days; anything longer is
+--     a listing gap (halt, delisting window, illiquid re-print) and a
+--     "daily" return across it is a multi-week move wearing a daily label.
+--     NULL, not a fabricated smooth number.
+--   * both grains: the quotation factor must not have changed between the
+--     two prints. A fatcot flip (measured live: GOLL2 1000->1, IBOV11
+--     100->1) rescales the quote by that factor and reports a ~±99.9%
+--     "return" with no market move behind it.
 quote_ret AS (
     SELECT
         ticker,
         period,
         asset_class,
         CASE
+            WHEN lag(quotation_factor) OVER w IS DISTINCT FROM quotation_factor
+            THEN NULL
             WHEN (SELECT freq FROM params) = 'day'
+             AND lag(obs_date) OVER w >= period - 7
             THEN close / NULLIF(lag(close) OVER w, 0) - 1
-            WHEN lag(period) OVER w = (period - INTERVAL '1 month')::date
+            WHEN (SELECT freq FROM params) = 'month'
+             AND lag(period) OVER w = (period - INTERVAL '1 month')::date
             THEN close / NULLIF(lag(close) OVER w, 0) - 1
             ELSE NULL
         END AS close_return
@@ -1278,9 +1339,19 @@ fund_rows AS (
     FROM public.fact_fund_monthly f
     JOIN params p ON TRUE
     WHERE p.freq = 'month'
-      AND date_trunc('month', f.period)::date
-          BETWEEN date_trunc('month', p.d0)::date
-              AND date_trunc('month', p.d1)::date
+      AND date_trunc('month', f.period)::date >= date_trunc('month', p.d0)::date
+      -- Upper bound, two regimes (see p_to's comment): an explicit p_to is
+      -- served verbatim; the NULL default clamps each row to its own entity
+      -- family's latest COMPLETE period (raw-convention comparison — the
+      -- completeness matview keeps FIDC month-end / FIP year-end periods, so
+      -- f.period compares against a bound in the same convention).
+      AND (
+            (p.d1_explicit IS NOT NULL
+             AND date_trunc('month', f.period)::date
+                 <= date_trunc('month', p.d1_explicit)::date)
+         OR (p.d1_explicit IS NULL
+             AND f.period <= public.latest_complete_period(f.entity_type))
+      )
       AND f.cnpj IN (SELECT cnpj FROM cnpjs)
 )
 SELECT q.ticker, 'ticker'::text, q.asset_class, q.period, 'close'::text, q.close, 'b3_cotahist'::text
@@ -1452,28 +1523,57 @@ STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-    SELECT q.ticker, 'ticker'::text, q.asset_class, q.short_name, q.isin, NULL::text
-    FROM (
-        SELECT DISTINCT ON (ticker)
-            ticker, asset_class, short_name, isin
-        FROM api.quotes
-        WHERE (
-            ticker = upper(btrim(p_query))
-            OR isin = upper(btrim(p_query))
-          )
-        ORDER BY ticker, trade_date DESC
-    ) q
-    UNION ALL
-    SELECT d.cnpj, 'cnpj', d.entity_type, d.fund_name, NULL, d.cnpj
-    FROM public.dim_fund d
-    WHERE d.cnpj = regexp_replace(p_query, '[^0-9]', '', 'g')
-       OR d.fund_name ILIKE '%' || p_query || '%'
-    UNION ALL
-    SELECT c.cd_cvm, 'cd_cvm', 'cia', c.denom_cia, NULL, c.cnpj_cia
-    FROM public.cia_company c
-    WHERE c.cnpj_cia = regexp_replace(p_query, '[^0-9]', '', 'g')
-       OR c.cd_cvm = btrim(p_query)
-       OR c.denom_cia ILIKE '%' || p_query || '%'
+    -- Hardening (SERVING.md step 5):
+    --   * LIKE metacharacters in the query are escaped, so a stray '%'/'_' in
+    --     a pasted name narrows nothing and cannot scan-explode the ILIKE;
+    --   * results are RANKED (exact id match, then name-prefix, then
+    --     name-contains) before the LIMIT — the previous bare LIMIT 20 cut an
+    --     arbitrary 20 rows, so an exact ticker hit could lose its seat to
+    --     twenty fuzzy name matches;
+    --   * name ILIKE is backed by pg_trgm (migration 24: cia_company;
+    --     11_indexes.sql: dim_fund).
+    WITH q AS (
+        SELECT btrim(COALESCE(p_query, '')) AS raw,
+               replace(replace(replace(btrim(COALESCE(p_query, '')),
+                   '\', '\\'), '%', '\%'), '_', '\_') AS like_safe
+    ),
+    hits AS (
+        SELECT t.ticker AS id, 'ticker'::text AS id_type, t.asset_class,
+               t.short_name AS name, t.isin, NULL::text AS cnpj,
+               0 AS rank
+        FROM (
+            SELECT DISTINCT ON (ticker)
+                ticker, asset_class, short_name, isin
+            FROM api.quotes, q
+            WHERE ticker = upper(q.raw) OR isin = upper(q.raw)
+            ORDER BY ticker, trade_date DESC
+        ) t
+        UNION ALL
+        SELECT d.cnpj, 'cnpj', d.entity_type, d.fund_name, NULL, d.cnpj,
+               CASE
+                   WHEN d.cnpj = regexp_replace(q.raw, '[^0-9]', '', 'g') THEN 0
+                   WHEN d.fund_name ILIKE q.like_safe || '%' ESCAPE '\' THEN 1
+                   ELSE 2
+               END
+        FROM public.dim_fund d, q
+        WHERE d.cnpj = regexp_replace(q.raw, '[^0-9]', '', 'g')
+           OR d.fund_name ILIKE '%' || q.like_safe || '%' ESCAPE '\'
+        UNION ALL
+        SELECT c.cd_cvm, 'cd_cvm', 'cia', c.denom_cia, NULL, c.cnpj_cia,
+               CASE
+                   WHEN c.cnpj_cia = regexp_replace(q.raw, '[^0-9]', '', 'g') THEN 0
+                   WHEN c.cd_cvm = q.raw THEN 0
+                   WHEN c.denom_cia ILIKE q.like_safe || '%' ESCAPE '\' THEN 1
+                   ELSE 2
+               END
+        FROM public.cia_company c, q
+        WHERE c.cnpj_cia = regexp_replace(q.raw, '[^0-9]', '', 'g')
+           OR c.cd_cvm = q.raw
+           OR c.denom_cia ILIKE '%' || q.like_safe || '%' ESCAPE '\'
+    )
+    SELECT h.id, h.id_type, h.asset_class, h.name, h.isin, h.cnpj
+    FROM hits h
+    ORDER BY h.rank, h.name, h.id
     LIMIT 20;
 $$;
 
@@ -1515,7 +1615,7 @@ AS $fn$
 SELECT $json$
 {
   "kind": "catalog",
-  "version": 7,
+  "version": 8,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup/universe, then GET /v1/panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions, and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches.",
   "metrics": {
@@ -1693,6 +1793,8 @@ SELECT $json$
     "freq=day is quotes only. Mix equity with fund fundamentals on freq=month.",
     "close_return across a missing month is null, not a multi-month return.",
     "close_return is unadjusted: a 2:1 split reports roughly -50%. It is not a total return.",
+    "Daily close_return is null when the previous session is more than 7 calendar days back (halts, listing gaps), and null across a quotation-factor change — a fatcot flip rescales the quote with no market move behind it.",
+    "Default windows are honest: with no explicit `to`, fund metrics end at each family's latest COMPLETE period (coverage() reports it as complete_through) — a partially-filed trailing month is not served. An explicit `to` serves the window verbatim, partial months included.",
     "Ticker↔cia_company is not joined here; lookup returns them separately.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
     "Panel responses are hard-capped at 100000 rows (series endpoints at 5000); above that the API answers 400 — narrow ids, metrics, or the date window.",
@@ -1764,6 +1866,10 @@ SELECT $json$
     "lookup": "GET /v1/lookup?q=",
     "universe": "GET /v1/universe?asset_class=",
     "quotes": "GET /v1/quotes/{ticker}",
+    "funds": "GET /v1/funds/{cnpj}/nav",
+    "coverage": "GET /v1/coverage"
+  },
+  "postgrest": {
     "equities": "GET /rest/v1/equities",
     "bdrs": "GET /rest/v1/bdrs",
     "units": "GET /rest/v1/units",
@@ -1773,9 +1879,7 @@ SELECT $json$
     "option_chain": "POST /rest/v1/rpc/option_chain",
     "option_history": "POST /rest/v1/rpc/option_history",
     "option_exercises": "POST /rest/v1/rpc/option_exercises",
-    "termo_history": "POST /rest/v1/rpc/termo_history",
-    "funds": "GET /v1/funds/{cnpj}/nav",
-    "coverage": "GET /v1/coverage"
+    "termo_history": "POST /rest/v1/rpc/termo_history"
   }
 }
 $json$::jsonb;

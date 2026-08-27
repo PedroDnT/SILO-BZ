@@ -406,3 +406,61 @@ def test_quote_series_columnar(client):
     assert body["close"] == [41.9]
     assert "open" not in body
 
+
+
+# ---------------------------------------------------------------------------
+# Honest default windows: an omitted `to` reaches the SQL as NULL so
+# api.panel / api.fund_nav clamp fund rows to the latest COMPLETE period.
+# An explicit `to` is the escape hatch and must pass through verbatim.
+# ---------------------------------------------------------------------------
+
+
+def test_panel_omitted_to_reaches_sql_as_null(client):
+    client.pool.cur = _Cur(rows=[], description=[("id",), ("date",), ("metric",), ("value",)])
+    rv = client.get("/v1/panel?ids=PETR4&metrics=close")
+    assert rv.status_code == 200
+    p_to = client.pool.cur.params[3]
+    assert p_to is None, (
+        "omitted `to` must reach api.panel as NULL — that is what triggers "
+        f"the completeness clamp; got {p_to!r}"
+    )
+    body = rv.get_json()
+    assert body["to"] is None
+
+
+def test_panel_explicit_to_passes_through_verbatim(client):
+    client.pool.cur = _Cur(rows=[], description=[("id",), ("date",), ("metric",), ("value",)])
+    rv = client.get("/v1/panel?ids=PETR4&metrics=close&to=2026-08-15")
+    assert rv.status_code == 200
+    assert client.pool.cur.params[3] == "2026-08-15"
+    assert rv.get_json()["to"] == "2026-08-15"
+
+
+def test_fund_nav_omitted_to_reaches_sql_as_null(client):
+    client.pool.cur = _Cur(
+        rows=[("11222333000144", "2026-07-01", "fi", 1, 1, 1, None, None, None, None, None)],
+        description=[
+            ("cnpj",), ("period",), ("entity_type",), ("nav",), ("quota",),
+            ("quotaholders",), ("delinquency",), ("monthly_yield",),
+            ("inflows",), ("redemptions",), ("assets",),
+        ],
+    )
+    rv = client.get("/v1/funds/11222333000144/nav")
+    assert rv.status_code == 200
+    assert client.pool.cur.params[2] is None
+
+
+def test_quote_endpoints_keep_the_today_default(client):
+    # Session prints are complete by construction — quotes must NOT switch to
+    # the NULL/clamp contract, or the SQL default (which for quote_history is
+    # also non-NULL) would silently change meaning.
+    from datetime import date as _date
+
+    client.pool.cur = _Cur(
+        rows=[("PETR4", "2026-08-25", 41.35, "b3_cotahist")],
+        description=[("ticker",), ("trade_date",), ("close",), ("source",)],
+    )
+    rv = client.get("/v1/quotes/PETR4/history")
+    assert rv.status_code == 200
+    assert "api.quote_history" in client.pool.cur.sql
+    assert client.pool.cur.params[2] == _date.today().isoformat()

@@ -83,10 +83,17 @@ def parse_window(
     args: Any,
     *,
     default_from: Optional[str] = None,
-) -> Optional[Tuple[str, str]]:
+    open_to: bool = False,
+) -> Optional[Tuple[str, Optional[str]]]:
     """Return (from, to) ISO dates when the caller asked for a series.
 
     No window params → None (latest point). `range` is a shortcut for `from`.
+
+    open_to=True (fund endpoints): an omitted `to` stays None and reaches the
+    SQL as NULL, where api.panel / api.fund_nav clamp fund rows to the latest
+    COMPLETE period per entity family — a partially-filed trailing month is
+    not served unless the caller pins `to` explicitly. Quote endpoints keep
+    the today default: a session print is complete by construction.
     """
     raw_range = (args.get("range") or "").strip().lower()
     raw_from = args.get("from")
@@ -94,7 +101,7 @@ def parse_window(
     if not raw_range and not raw_from and not raw_to and default_from is None:
         return None
     today = date.today()
-    p_to = raw_to or today.isoformat()
+    p_to = raw_to if (raw_to or open_to) else today.isoformat()
     if raw_from:
         p_from = raw_from
     elif raw_range == "ytd":
@@ -381,7 +388,7 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
             fields = _pick_fields(request.args.get("fields"), _NAV_SERIES_FIELDS)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
-        window = parse_window(request.args, default_from="2019-01-01")
+        window = parse_window(request.args, default_from="2019-01-01", open_to=True)
         assert window is not None
         p_from, p_to = window
         fmt = (request.args.get("format") or "rows").strip().lower()
@@ -431,6 +438,7 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
             window = parse_window(
                 request.args,
                 default_from=(date.today() - timedelta(days=365)).isoformat(),
+                open_to=True,
             )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400

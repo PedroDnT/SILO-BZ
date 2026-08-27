@@ -22,6 +22,11 @@ __all__ = [
     "tool_specs",
 ]
 
+# 8: honest default windows — with no explicit `to`, fund metrics clamp to
+# each family's latest COMPLETE period (mv_period_completeness) instead of
+# serving a partially-filed trailing month; coverage() adds complete_through
+# and per-family rows; close_return gains session-adjacency and
+# quotation-factor guards; postgrest endpoints split into their own section.
 # 7: option rows resolve underlying_ticker via the published ISIN mapping;
 # fund_quotas carry fund_type (etf/fii/fidc/fiagro from CODBDI); equities carry
 # share_class/governance_segment from ESPECI; exercise (tpmerc 012/013) and
@@ -29,7 +34,7 @@ __all__ = [
 # 6: one endpoint per cash instrument type, each carrying both lot sizes.
 # 5: main's typed cash asset classes (4) merged with the option/termo id_types
 # and list-valued id_type this branch introduced (3).
-CATALOG_VERSION = 7
+CATALOG_VERSION = 8
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -145,6 +150,14 @@ CONSTRAINTS = [
     "freq=day is quotes only. Mix equity with fund fundamentals on freq=month.",
     "close_return across a missing month is null, not a multi-month return.",
     "close_return is unadjusted: a 2:1 split reports roughly -50%. It is not a total return.",
+    "Daily close_return is null when the previous session is more than 7 "
+    "calendar days back (halts, listing gaps), and null across a quotation-"
+    "factor change — a fatcot flip rescales the quote with no market move "
+    "behind it.",
+    "Default windows are honest: with no explicit `to`, fund metrics end at "
+    "each family's latest COMPLETE period (coverage() reports it as "
+    "complete_through) — a partially-filed trailing month is not served. An "
+    "explicit `to` serves the window verbatim, partial months included.",
     "Ticker↔cia_company is not joined here; lookup returns them separately.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
     "Panel responses are hard-capped at 100000 rows (series endpoints at 5000); "
@@ -238,6 +251,12 @@ def catalog_payload() -> Dict[str, Any]:
             "fi", "fidc", "fii", "fip", "fiagro", "cia", "derivative",
         ],
         "freq": ["day", "month"],
+        # Two surfaces, split so an agent holding only the local serve/
+        # adapter never dials a route that host cannot answer:
+        #   endpoints  — the /v1/* routes serve/app.py itself serves;
+        #   postgrest  — resources that exist ONLY on the Supabase Data API
+        #                (views under /rest/v1/, functions under /rest/v1/rpc/),
+        #                relative to that deployment's base URL.
         "endpoints": {
             "catalog": "GET /v1/catalog",
             "tools": "GET /v1/tools",
@@ -245,6 +264,10 @@ def catalog_payload() -> Dict[str, Any]:
             "lookup": "GET /v1/lookup?q=",
             "universe": "GET /v1/universe?asset_class=",
             "quotes": "GET /v1/quotes/{ticker}",
+            "funds": "GET /v1/funds/{cnpj}/nav",
+            "coverage": "GET /v1/coverage",
+        },
+        "postgrest": {
             "equities": "GET /rest/v1/equities",
             "bdrs": "GET /rest/v1/bdrs",
             "units": "GET /rest/v1/units",
@@ -255,8 +278,6 @@ def catalog_payload() -> Dict[str, Any]:
             "option_history": "POST /rest/v1/rpc/option_history",
             "option_exercises": "POST /rest/v1/rpc/option_exercises",
             "termo_history": "POST /rest/v1/rpc/termo_history",
-            "funds": "GET /v1/funds/{cnpj}/nav",
-            "coverage": "GET /v1/coverage",
         },
     }
 

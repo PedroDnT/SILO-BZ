@@ -119,12 +119,40 @@ def test_every_definer_function_pins_an_immutable_search_path():
             )
 
 
+# Helpers that pin their OWN immutable search_path (verified below), so a
+# caller with search_path = '' can invoke them safely without needing the
+# 'public, pg_temp' pin itself. Everything else called under public.* still
+# forces the caller into DELEGATING_FUNCTIONS.
+SELF_PINNED_HELPERS = {"latest_complete_period"}
+
+
+def test_self_pinned_helpers_actually_pin_their_search_path():
+    sql04 = (ROOT / "src" / "store" / "analytical" / "04_fact_fund_monthly.sql").read_text(
+        encoding="utf-8"
+    )
+    for helper in SELF_PINNED_HELPERS:
+        m = re.search(
+            rf"CREATE OR REPLACE FUNCTION {helper}\b.*?\$\$", sql04, re.S
+        )
+        assert m, f"{helper} not found in 04_fact_fund_monthly.sql"
+        assert re.search(r"SET\s+search_path\s*=\s*public,\s*pg_temp", m.group(0)), (
+            f"{helper} is on the SELF_PINNED_HELPERS allowlist but does not "
+            "pin its own search_path — calling it from an api.* function "
+            "with search_path = '' would fail at runtime"
+        )
+
+
 def test_delegating_set_matches_functions_that_call_public():
     # The two properties must move together: a function that calls a
     # public.* function needs the public pin; a self-contained one must keep
     # the empty pin. Derived from the bodies so the sets cannot drift.
+    # Calls to SELF_PINNED_HELPERS don't count: those pin their own path.
+    helper_call = re.compile(
+        r"\bpublic\.(?:" + "|".join(sorted(SELF_PINNED_HELPERS)) + r")\s*\("
+    )
     for name, chunk in FUNCS.items():
         body = re.split(r"\$\$", chunk, maxsplit=1)[-1]
+        body = helper_call.sub("", body)
         calls_public = bool(re.search(r"\bpublic\.\w+\s*\(", body))
         assert calls_public == (name in DELEGATING_FUNCTIONS), (
             f"{name}: calls_public={calls_public} but "
@@ -301,7 +329,10 @@ def test_b3_asset_type_reaches_every_discovery_and_panel_surface():
     assert "FROM public.vw_b3_instrument_typed v" in SQL19
     assert "q.asset_class" in FUNCS["api.panel"]
     assert "q.asset_class" in FUNCS["api.universe"]
-    assert "q.asset_class" in FUNCS["api.lookup"]
+    # lookup's quotes arm aliases the typed subquery as t (q is the
+    # escaped-query CTE since the step-5 hardening).
+    assert "t.asset_class" in FUNCS["api.lookup"]
+    assert "FROM api.quotes" in FUNCS["api.lookup"]
 
 
 def test_universe_classifies_only_the_latest_b3_session():
@@ -523,7 +554,10 @@ def test_panel_normalises_fund_periods_to_first_of_month():
 
 def test_panel_window_filter_uses_the_normalised_period():
     # Filtering the RAW period drops a month-end fidc row when p_to is the
-    # first of that month — the newest month of every fidc panel.
+    # first of that month — the newest month of every fidc panel. Since the
+    # completeness clamp the upper bound has two regimes; both must stay
+    # month-normalised where they compare against a caller date, and the
+    # clamp branch compares raw-to-raw (same family convention) on purpose.
     body = _strip_comments(FUNCS["api.panel"])
     fund_arm = body[body.index("fund_rows AS ("):]
     fund_arm = fund_arm[: fund_arm.index(")\n")]
@@ -532,9 +566,63 @@ def test_panel_window_filter_uses_the_normalised_period():
         "the window filter still compares the raw f.period"
     )
     assert re.search(
-        r"date_trunc\(\s*'month'\s*,\s*f\.period\s*\)::date\s*\n?\s*BETWEEN",
+        r"date_trunc\(\s*'month'\s*,\s*f\.period\s*\)::date\s*>=\s*"
+        r"date_trunc\(\s*'month'\s*,\s*p\.d0\s*\)::date",
         where,
     )
+    assert re.search(
+        r"date_trunc\(\s*'month'\s*,\s*f\.period\s*\)::date\s*\n?\s*"
+        r"<=\s*date_trunc\(\s*'month'\s*,\s*p\.d1_explicit\s*\)::date",
+        where,
+    )
+
+
+def test_panel_and_fund_nav_default_windows_clamp_to_complete_periods():
+    # Directive: never serve an incomplete month by default. NULL p_to (the
+    # default) must clamp fund rows per entity family; an explicit p_to is
+    # the escape hatch and serves verbatim.
+    panel = _strip_comments(FUNCS["api.panel"])
+    assert re.search(r"p_to\s+DATE\s+DEFAULT\s+NULL", panel)
+    assert "p.d1_explicit IS NULL" in panel
+    assert (
+        "f.period <= public.latest_complete_period(f.entity_type)" in panel
+    )
+    # Quote/option/termo arms keep CURRENT_DATE: session prints are complete.
+    assert "COALESCE(p_to, CURRENT_DATE) AS d1" in panel
+
+    nav = _strip_comments(FUNCS["api.fund_nav"])
+    assert re.search(r"p_to\s+DATE\s+DEFAULT\s+NULL", nav)
+    assert "s.period <= public.latest_complete_period(s.entity_type)" in nav
+    assert "WHERE p_to IS NOT NULL" in nav
+
+
+def test_close_return_guards_adjacency_and_quotation_factor():
+    panel = _strip_comments(FUNCS["api.panel"])
+    ret = panel[panel.index("quote_ret AS ("):]
+    ret = ret[: ret.index("option_month AS (")]
+    assert (
+        "lag(quotation_factor) OVER w IS DISTINCT FROM quotation_factor" in ret
+    ), "a fatcot flip must NULL the return"
+    assert "lag(obs_date) OVER w >= period - 7" in ret, (
+        "a daily return needs the previous session within 7 calendar days"
+    )
+
+
+def test_coverage_reports_completeness_and_per_family_rows():
+    cov = _strip_comments(FUNCS["api.coverage"])
+    assert "complete_through" in FUNCS["api.coverage"]
+    assert "public.latest_complete_period(NULL)" in cov
+    assert "'funds_' || f.entity_type" in cov
+    assert "public.latest_complete_period(f.entity_type)" in cov
+
+
+def test_lookup_escapes_like_and_ranks_before_the_limit():
+    body = FUNCS["api.lookup"]
+    stripped = _strip_comments(body)
+    assert r"'\%'" in body and r"'\_'" in body, "LIKE metacharacters unescaped"
+    assert "ESCAPE" in stripped
+    # The rank must be computed and ordered on before LIMIT cuts to 20.
+    assert stripped.index("ORDER BY h.rank") < stripped.index("LIMIT 20")
 
 
 def test_panel_cap_applies_after_deterministic_order():
