@@ -168,3 +168,47 @@ fixed-income fund NAV, currently proxied by BACEN SGS policy rates.
 Prerequisite for all phases: the serving SQL currently on `main` must be
 applied to production first (`analytics-only`), since every new endpoint
 lands in the same `19_api_contract.sql` + grants pattern.
+
+## Runtime: is GitHub Actions enough?
+
+**Yes — for daily and for backfill, including phases B–D — with three rules.**
+Assessed against observed numbers, not runner marketing:
+
+- **Daily headroom is ~5×.** The full daily run (28 datasets, ~5M rows
+  upserted) takes 22–34 minutes against a 180-minute timeout. Phase B adds
+  one small settlement file per day and phase C one reference-rate file —
+  seconds of fetch, thousands of rows. Cron drift observed on this repo is
+  06:03–06:25 for a 06:00 schedule; irrelevant at daily cadence, and the
+  self-heal is `watchdog.yml`, not tighter scheduling.
+- **Backfill fits because it shards.** The 6-hour job cap is the only hard
+  GHA limit that could bind, and `backfill.yml` already answers it: FI runs
+  one job per year (300-min timeouts, public repo = free minutes, 20
+  concurrent jobs). New deep backfills MUST follow the same year-shard
+  pattern — futures/curves history is ~250 small files per year, bound by
+  HTTP round-trips, so one year per job with a polite per-request delay is
+  comfortably inside the cap. Never one unsharded multi-year loop.
+- **The binding constraint is the database, not the runner.** The 2026-08-26
+  incident chain (overlapping readers → blocked `ALTER TABLE` → dead apply →
+  Supabase quota warnings) was contention on the shared Postgres, and GHA
+  compute was never the bottleneck. Hence rule three: all three writing
+  workflows (`daily_ingest`, `backfill`, `watchdog`) now share a
+  `concurrency: supabase-ingest` group with `cancel-in-progress: false` —
+  one writer at a time; a run arriving mid-backfill queues instead of
+  writing on top of it. The per-year matrix inside one backfill run still
+  parallelizes; the group serializes workflows against each other, not jobs
+  within a run.
+
+Known GHA-specific risks and their standing answers:
+
+| Risk                      | Answer                                                                                                                                                                                                                      |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CVM blocks a runner IP    | Already handled: the connect-failure breaker aborts fast; re-dispatch usually lands an unblocked IP. If it ever becomes chronic, the escape hatch is a self-hosted runner or egress proxy — a runtime swap, no code change. |
+| 6-hour job cap            | Year-sharding (existing FI pattern; mandatory for new backfills).                                                                                                                                                           |
+| Cron delay / skipped runs | Daily cadence tolerates it; `watchdog.yml` re-runs on staleness.                                                                                                                                                            |
+| Runner disk (~14 GB)      | Largest artifact is a yearly COTAHIST zip (hundreds of MB). Non-issue.                                                                                                                                                      |
+| Minutes budget            | Public repo: standard runners are free.                                                                                                                                                                                     |
+
+What GHA is **not** enough for, so nobody discovers it mid-build: intraday or
+guaranteed-time ingestion (cron has no SLA), and anything needing a static
+egress IP for allowlisting. Neither is on this roadmap — everything here is
+end-of-day public files.

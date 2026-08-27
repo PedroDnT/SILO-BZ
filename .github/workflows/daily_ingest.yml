@@ -20,6 +20,20 @@ on:
         required: false
         default: "2025"
 
+# One writer at a time against the shared Supabase Postgres. This group is
+# shared with backfill.yml on purpose: overlapping ingest runs contend for the
+# same tables, and long AccessShareLock readers are exactly what blocked the
+# 2026-08-26 schema apply's ALTER TABLE until the server killed it. A run that
+# arrives while another holds the group QUEUES (cancel-in-progress stays
+# false — never kill an ingest mid-upsert; idempotent or not, half the audit
+# rows would say 'ok' for slices that then re-run for no reason). GitHub keeps
+# one queued run per group, which is the right semantics here: a daily that
+# fires during a multi-hour backfill runs right after it instead of on top
+# of it.
+concurrency:
+  group: supabase-ingest
+  cancel-in-progress: false
+
 jobs:
   ingest:
     name: Ingest CVM data
