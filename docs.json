@@ -10,6 +10,23 @@
       {
         "group": "Overview",
         "pages": ["index"]
+      },
+      {
+        "group": "Get started",
+        "icon": "rocket",
+        "pages": ["api-docs/quickstart", "api-docs/conventions"]
+      },
+      {
+        "group": "API reference",
+        "icon": "code",
+        "pages": [
+          "api-docs/quotes",
+          "api-docs/funds",
+          "api-docs/panel",
+          "api-docs/lookup",
+          "api-docs/universe",
+          "api-docs/coverage"
+        ]
       }
     ]
   }

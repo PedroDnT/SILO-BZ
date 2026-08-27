@@ -1,0 +1,226 @@
+---
+title: "Panel"
+description: "The researcher endpoint — long (id, date, metric, value) observations mixing B3 tickers and CVM fund CNPJs in one call."
+icon: "table"
+---
+
+`panel` is the primitive this API is built around. One row is an **observation**:
+
+```
+(id, date, metric, value)
+```
+
+That shape lets you pull equity prints and fund fundamentals for the same window in a single
+request, pivot to a `dates × columns` matrix locally, and run correlations, factor models,
+or event studies in your notebook. There is no server-side `corr`, `rank`, or regression —
+reductions belong where you can see and change their assumptions.
+
+```sql
+api.panel(p_ids     TEXT[],
+          p_metrics TEXT[] DEFAULT ARRAY['close','nav'],
+          p_from    DATE   DEFAULT CURRENT_DATE - 365,
+          p_to      DATE   DEFAULT CURRENT_DATE,
+          p_freq    TEXT   DEFAULT 'month')
+```
+
+## Parameters
+
+<ParamField body="p_ids" type="string[]" required>
+  Tickers and/or CNPJs, mixed freely. Each id is classified by shape: strip the non-digits,
+  and **exactly 14 digits means CNPJ** — anything else is treated as a ticker and
+  upper-cased. Blank entries are dropped. An empty array yields no rows.
+</ParamField>
+
+<ParamField body="p_metrics" type="string[]" default='["close","nav"]'>
+  Which metrics to emit. Lower-cased and trimmed server-side. See the table below —
+  **a name that is not on it is silently ignored**, not an error, so a typo shows up as
+  missing rows rather than a `400`.
+</ParamField>
+
+<ParamField body="p_from" type="date" default="CURRENT_DATE - 365">
+  Window start, inclusive. For fund metrics it is snapped **down** to the first of that
+  month; for quote metrics it is used as-is.
+</ParamField>
+
+<ParamField body="p_to" type="date" default="CURRENT_DATE">
+  Window end, inclusive.
+</ParamField>
+
+<ParamField body="p_freq" type="string" default="month">
+  `month` or `day`. `day`, `d`, and `daily` all mean daily; **every other value — including
+  a typo like `week` — falls back to `month`** rather than erroring.
+</ParamField>
+
+## Metrics
+
+| Metric | Id type | Asset class | Grains | Source | Meaning |
+| --- | --- | --- | --- | --- | --- |
+| `close` | ticker | equity | day, month | `b3_cotahist` | Unadjusted cash close, board `02`. Monthly = last session of the month. |
+| `volume` | ticker | equity | day, month | `b3_cotahist` | Session financial volume in BRL. Monthly = the last session's volume, not a monthly sum. |
+| `close_return` | ticker | equity | day, month | `b3_cotahist` | `p_t / p_(t-1) - 1` from stored closes. Derived. |
+| `nav` | cnpj | fi, fidc, fii, fip, fiagro | month | `cvm` | Fund net assets (`vl_patrim_liq`). |
+| `quota` | cnpj | fi | month | `cvm` | Unit quota value. Comparable within a subclass only. |
+| `delinquency` | cnpj | fidc, fiagro | month | `cvm` | Delinquent portfolio **value**, not a rate — divide by `nav` yourself. |
+| `yield` | cnpj | fii | month | `cvm` | Monthly yield percentage as published. |
+| `inflows` | cnpj | fi | month | `cvm` | Gross monthly subscriptions. |
+| `redemptions` | cnpj | fi | month | `cvm` | Gross monthly redemptions. |
+| `quotaholders` | cnpj | fi, fidc, fii, fip, fiagro | month | `cvm` | Number of unit-holders, cast to numeric. |
+
+<Warning>
+  **`freq=day` is quotes only.** No CVM fundamental is published daily, so the fund arms are
+  simply not evaluated at a daily grain — asking for `nav` with `p_freq: "day"` returns the
+  quote rows and nothing else. To mix asset classes, use `freq=month`, where the equity value
+  is the **last real session in the month**. Aligning a monthly NAV onto a daily calendar
+  would require filling, and this API does not fill.
+</Warning>
+
+## Returns
+
+<ResponseField name="id" type="text">
+  The identifier as classified: an upper-cased ticker, or a 14-digit CNPJ.
+</ResponseField>
+<ResponseField name="id_type" type="text">
+  `ticker` or `cnpj`.
+</ResponseField>
+<ResponseField name="asset_class" type="text">
+  `equity` for tickers; for funds, the vehicle's `entity_type` (`fi`, `fidc`, `fii`, `fip`,
+  `fiagro`).
+</ResponseField>
+<ResponseField name="date" type="date">
+  Observation date. At `freq=month` this is the first day of the month, for both the equity
+  and the fund side, so the two align. At `freq=day` it is the session date.
+</ResponseField>
+<ResponseField name="metric" type="text">
+  One of the metric names above.
+</ResponseField>
+<ResponseField name="value" type="numeric">
+  The observation. Nullable for `close` and `volume`; for every other metric a null is
+  emitted as **no row at all** (see below).
+</ResponseField>
+<ResponseField name="source" type="text">
+  `b3_cotahist` or `cvm` — provenance travels with the row.
+</ResponseField>
+
+Rows are ordered by `date`, then `id`, then `metric`.
+
+## Example
+
+Monthly equity returns against a FIDC's delinquency, over five years:
+
+<CodeGroup>
+
+```bash curl
+curl -s -X POST "$SILO_URL/rpc/panel" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Authorization: Bearer $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "p_ids": ["PETR4", "12345678000190"],
+        "p_metrics": ["close_return", "delinquency", "nav"],
+        "p_from": "2021-01-01",
+        "p_to": "2026-06-30",
+        "p_freq": "month"
+      }'
+```
+
+```python Python
+import pandas as pd
+
+body = {
+    "p_ids": ["PETR4", "12345678000190"],
+    "p_metrics": ["close_return", "delinquency", "nav"],
+    "p_from": "2021-01-01",
+    "p_to": "2026-06-30",
+    "p_freq": "month",
+}
+rows = requests.post(f"{URL}/rpc/panel", headers=H, json=body).json()
+
+long = pd.DataFrame(rows)
+wide = long.pivot_table(index="date", columns=["id", "metric"], values="value")
+# Pairwise-complete correlation. Do NOT ffill first.
+wide.corr(min_periods=12)
+```
+
+```javascript JavaScript
+const { data } = await supabase.rpc('panel', {
+  p_ids: ['PETR4', '12345678000190'],
+  p_metrics: ['close_return', 'delinquency', 'nav'],
+  p_from: '2021-01-01',
+  p_to: '2026-06-30',
+  p_freq: 'month',
+})
+```
+
+</CodeGroup>
+
+```json
+[
+  { "id": "12345678000190", "id_type": "cnpj", "asset_class": "fidc",
+    "date": "2021-02-01", "metric": "delinquency", "value": 7412008.3, "source": "cvm" },
+  { "id": "12345678000190", "id_type": "cnpj", "asset_class": "fidc",
+    "date": "2021-02-01", "metric": "nav", "value": 301844120.0, "source": "cvm" },
+  { "id": "PETR4", "id_type": "ticker", "asset_class": "equity",
+    "date": "2021-02-01", "metric": "close_return", "value": -0.0827, "source": "b3_cotahist" }
+]
+```
+
+## How gaps behave
+
+<Warning>
+  Nothing is forward-filled, interpolated, or carried forward. A month a fund did not file is
+  **absent**, and stays absent.
+</Warning>
+
+Two distinct representations of "no data", and the difference is load-bearing:
+
+- **Absent row.** Every derived and fund-side metric is emitted only when its value is
+  non-null. So `nav`, `quota`, `delinquency`, `yield`, `inflows`, `redemptions`,
+  `quotaholders`, and `close_return` never appear with a null `value` — the observation is
+  simply not in the array.
+- **Null `value`.** `close` and `volume` are emitted for every session in range, so they can
+  carry a JSON `null` when the source left the field blank.
+
+Either way, when you pivot to a wide matrix the gap becomes an empty cell. Keep it that way:
+correlate on pairwise-complete observations rather than filling.
+
+### `close_return` specifically
+
+- **Monthly:** computed only when the preceding row is the **immediately preceding calendar
+  month**. Across a gap the return is null — and therefore absent. A missing month never
+  becomes a silent two-month return.
+- **Daily:** computed against the previous **stored session in the requested window**. If a
+  session is missing from the warehouse, the daily return spans that gap — check
+  [`coverage`](/api-docs/coverage) and the density of `close` before treating a daily return
+  series as complete.
+- The **first observation in the window** has no predecessor, so its return is null and the
+  row is absent. Request a little more history than you intend to analyze.
+
+### Other things the window does
+
+- Quote metrics honor `p_from` exactly; fund metrics start from `date_trunc('month', p_from)`,
+  so a `p_from` mid-month still includes that whole month on the fund side.
+- Only board `02` (standard lot) feeds the panel, at both grains. A paper that does not print
+  on `02` contributes nothing here — use [`quote_history`](/api-docs/quotes) with
+  `"p_board": null` to see it.
+
+## Limits
+
+<Warning>
+  **Capped at 100,001 rows.** A response of exactly 100,001 rows means your request was too
+  large and was cut at the earliest 100,000 observations by `(date, id, metric)`. That slice
+  is not a dataset — do not analyze it. Narrow `p_ids`, drop metrics, or shorten the window
+  and call again.
+
+  For scale: 50 ids × ~7 applicable metrics × 20 years of monthly observations is about
+  84,000 rows and fits comfortably. `freq=day` over decades does not.
+</Warning>
+
+Requests are also bounded by the platform statement timeout. A call that runs too long fails
+outright rather than returning part of a panel.
+
+## Empty results
+
+An empty array means no observation matched — unknown ids, a window with no filings, a
+metric that does not apply to the ids you passed, or a metric name that was silently ignored.
+Confirm ids with [`lookup`](/api-docs/lookup) and dates with
+[`coverage`](/api-docs/coverage) before concluding the data does not exist.

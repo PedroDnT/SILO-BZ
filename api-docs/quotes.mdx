@@ -1,0 +1,318 @@
+---
+title: "Quotes"
+description: "Unadjusted B3 cash-market quotes — the api.quotes view plus the quote_history and quote_latest functions."
+icon: "chart-line"
+---
+
+B3 COTAHIST cash-market prints (`tpmerc = 010`), exactly as published. Nothing here is
+split- or dividend-adjusted, and every row says so with `adjusted: false`.
+
+The grain is **`(ticker, trade_date, board, term_days)`**. A single ticker can print on more
+than one board on the same day, so a query that does not pin `board` can return several rows
+per session. **Board `02` is the standard lot** and is what you almost always want; both
+functions default to it.
+
+---
+
+## `GET /quotes`
+
+The view. Full column set, arbitrary filters, arbitrary sort — use it when you want
+cross-sectional slices (a whole session, a set of tickers) rather than one instrument's
+series.
+
+<ParamField query="ticker" type="string">
+  Filter by ticker, e.g. `ticker=eq.PETR4`. Stored upper-case; the view does **not**
+  normalize your input, so send it upper-case (unlike the functions, which upper-case for you).
+</ParamField>
+
+<ParamField query="trade_date" type="date">
+  Session date, e.g. `trade_date=gte.2026-01-01`.
+</ParamField>
+
+<ParamField query="board" type="string">
+  COTAHIST `codbdi`. Pin `board=eq.02` for the standard lot.
+</ParamField>
+
+<ParamField query="select" type="string">
+  Columns to project. Omit for all of them.
+</ParamField>
+
+<ParamField query="order" type="string">
+  e.g. `order=trade_date.desc`.
+</ParamField>
+
+<ParamField query="limit" type="integer">
+  Page size. The view itself has no built-in cap — always set one.
+</ParamField>
+
+### Columns
+
+<ResponseField name="ticker" type="text">
+  B3 negotiation code (`codneg`). Part of the grain.
+</ResponseField>
+<ResponseField name="trade_date" type="date">
+  Session date. Part of the grain.
+</ResponseField>
+<ResponseField name="board" type="text">
+  Board / `codbdi`. `02` is the standard lot. Part of the grain.
+</ResponseField>
+<ResponseField name="term_days" type="text">
+  COTAHIST `prazot`. A **text** field despite the name, usually empty for cash. Part of the
+  grain. Only on the view — the functions do not return it.
+</ResponseField>
+<ResponseField name="short_name" type="text">
+  Issuer short name (`nome_resumido`).
+</ResponseField>
+<ResponseField name="spec" type="text">
+  Paper specification (`especi`), e.g. the share class.
+</ResponseField>
+<ResponseField name="currency" type="text">
+  Currency, defaulting to `R$` when the source leaves it blank.
+</ResponseField>
+<ResponseField name="open" type="numeric">
+  Opening price.
+</ResponseField>
+<ResponseField name="high" type="numeric">
+  Session high.
+</ResponseField>
+<ResponseField name="low" type="numeric">
+  Session low.
+</ResponseField>
+<ResponseField name="average" type="numeric">
+  Session average price.
+</ResponseField>
+<ResponseField name="close" type="numeric">
+  Closing price. Unadjusted.
+</ResponseField>
+<ResponseField name="bid" type="numeric">
+  Best bid at close (`oferta_compra`).
+</ResponseField>
+<ResponseField name="ask" type="numeric">
+  Best ask at close (`oferta_venda`).
+</ResponseField>
+<ResponseField name="trades" type="integer">
+  Number of trades (`negocios`).
+</ResponseField>
+<ResponseField name="quantity" type="numeric">
+  Shares traded (`quantidade`).
+</ResponseField>
+<ResponseField name="volume" type="numeric">
+  Financial volume in BRL.
+</ResponseField>
+<ResponseField name="isin" type="text">
+  ISIN as published.
+</ResponseField>
+<ResponseField name="quotation_factor" type="integer">
+  COTAHIST `fator_cotacao` — the quotation unit for this paper.
+</ResponseField>
+<ResponseField name="adjusted" type="boolean">
+  Always `false`. Constant, so nobody mistakes these for adjusted prices.
+</ResponseField>
+<ResponseField name="source" type="text">
+  Provenance, `b3_cotahist`.
+</ResponseField>
+<ResponseField name="fetched_at" type="timestamptz">
+  When the pipeline ingested this row. Only on the view.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash curl
+curl -s -G "$SILO_URL/quotes" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Authorization: Bearer $SILO_ANON_KEY" \
+  --data-urlencode "select=ticker,trade_date,board,close,volume,adjusted" \
+  --data-urlencode "ticker=in.(PETR4,VALE3)" \
+  --data-urlencode "board=eq.02" \
+  --data-urlencode "trade_date=eq.2026-08-26"
+```
+
+```python Python
+params = {
+    "select": "ticker,trade_date,board,close,volume,adjusted",
+    "ticker": "in.(PETR4,VALE3)",
+    "board": "eq.02",
+    "trade_date": "eq.2026-08-26",
+}
+rows = requests.get(f"{URL}/quotes", headers=H, params=params).json()
+```
+
+```javascript JavaScript
+const { data } = await supabase
+  .from('quotes')
+  .select('ticker, trade_date, board, close, volume, adjusted')
+  .in('ticker', ['PETR4', 'VALE3'])
+  .eq('board', '02')
+  .eq('trade_date', '2026-08-26')
+```
+
+</CodeGroup>
+
+```json
+[
+  { "ticker": "PETR4", "trade_date": "2026-08-26", "board": "02",
+    "close": 41.2, "volume": 1204533210.0, "adjusted": false },
+  { "ticker": "VALE3", "trade_date": "2026-08-26", "board": "02",
+    "close": 58.94, "volume": 987441002.5, "adjusted": false }
+]
+```
+
+---
+
+## `POST /rpc/quote_history`
+
+One ticker's daily series over a window. Ordered by `trade_date` ascending.
+
+```sql
+api.quote_history(p_ticker TEXT,
+                  p_from   DATE DEFAULT CURRENT_DATE - 365,
+                  p_to     DATE DEFAULT CURRENT_DATE,
+                  p_board  TEXT DEFAULT '02')
+```
+
+<ParamField body="p_ticker" type="string" required>
+  Ticker. Upper-cased and trimmed server-side, so `petr4` is fine.
+</ParamField>
+
+<ParamField body="p_from" type="date" default="CURRENT_DATE - 365">
+  Window start, inclusive.
+</ParamField>
+
+<ParamField body="p_to" type="date" default="CURRENT_DATE">
+  Window end, inclusive.
+</ParamField>
+
+<ParamField body="p_board" type="string" default="02">
+  Board filter. Pass `null` explicitly to return **all** boards for the ticker — the only
+  argument where an explicit `null` is meaningful rather than empty-producing.
+</ParamField>
+
+Returns the view's columns minus `term_days` and `fetched_at`: `ticker`, `trade_date`,
+`board`, `short_name`, `spec`, `currency`, `open`, `high`, `low`, `average`, `close`, `bid`,
+`ask`, `trades`, `quantity`, `volume`, `isin`, `quotation_factor`, `adjusted`, `source`.
+
+<CodeGroup>
+
+```bash curl
+curl -s -X POST "$SILO_URL/rpc/quote_history" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Authorization: Bearer $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_ticker":"PETR4","p_from":"2026-01-02","p_to":"2026-08-26"}'
+```
+
+```python Python
+body = {"p_ticker": "PETR4", "p_from": "2026-01-02", "p_to": "2026-08-26"}
+rows = requests.post(f"{URL}/rpc/quote_history", headers=H, json=body).json()
+```
+
+```javascript JavaScript
+const { data } = await supabase.rpc('quote_history', {
+  p_ticker: 'PETR4',
+  p_from: '2026-01-02',
+  p_to: '2026-08-26',
+})
+```
+
+</CodeGroup>
+
+```json
+[
+  {
+    "ticker": "PETR4",
+    "trade_date": "2026-01-02",
+    "board": "02",
+    "short_name": "PETROBRAS",
+    "spec": "PN      N2",
+    "currency": "R$",
+    "open": 38.4,
+    "high": 38.95,
+    "low": 38.11,
+    "average": 38.62,
+    "close": 38.77,
+    "bid": 38.76,
+    "ask": 38.78,
+    "trades": 41233,
+    "quantity": 22450100,
+    "volume": 866913862.0,
+    "isin": "BRPETRACNPR6",
+    "quotation_factor": 1,
+    "adjusted": false,
+    "source": "b3_cotahist"
+  }
+]
+```
+
+<Warning>
+  **Capped at 5,001 rows.** 5,000 daily prints is roughly twenty years of one ticker's
+  sessions, so this is a backstop rather than a normal limit. If you get exactly 5,001 rows,
+  the oldest sessions were kept and the newest were cut — narrow `p_from` / `p_to` and call
+  again rather than using the truncated series.
+</Warning>
+
+---
+
+## `POST /rpc/quote_latest`
+
+The most recent stored session for one ticker. At most one row.
+
+```sql
+api.quote_latest(p_ticker TEXT,
+                 p_board  TEXT DEFAULT '02')
+```
+
+<ParamField body="p_ticker" type="string" required>
+  Ticker. Upper-cased and trimmed server-side.
+</ParamField>
+
+<ParamField body="p_board" type="string" default="02">
+  Board filter; `null` means "latest across all boards".
+</ParamField>
+
+Same twenty columns as `quote_history`.
+
+<CodeGroup>
+
+```bash curl
+curl -s -X POST "$SILO_URL/rpc/quote_latest" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Authorization: Bearer $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_ticker":"PETR4"}'
+```
+
+```python Python
+rows = requests.post(
+    f"{URL}/rpc/quote_latest", headers=H, json={"p_ticker": "PETR4"}
+).json()
+latest = rows[0] if rows else None      # empty list = we have no print
+```
+
+```javascript JavaScript
+const { data } = await supabase.rpc('quote_latest', { p_ticker: 'PETR4' })
+const latest = data?.[0] ?? null
+```
+
+</CodeGroup>
+
+<Warning>
+  **"Latest" means the latest session we have stored, not today.** It is whatever the last
+  successful COTAHIST ingest loaded — check `trade_date` on the row, and
+  [`coverage`](/api-docs/coverage) for the dataset as a whole. The API will never advance a
+  stale close to today's date to make it look current.
+</Warning>
+
+---
+
+## Empty and error behavior
+
+- **Unknown ticker → `200 []`.** Not a 404, and never a fabricated last close. An empty
+  array means "no row matches", full stop.
+- **Known ticker, no sessions in the window** (a holiday range, or a window before the
+  paper listed) → also `200 []`. The two cases are indistinguishable from the response
+  alone; use [`lookup`](/api-docs/lookup) to confirm the ticker exists.
+- **Wrong board** is a common cause of a surprising empty result. Some papers do not print
+  on `02`; retry with `"p_board": null`.
+- A malformed date or filter returns `400`.
