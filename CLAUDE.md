@@ -179,7 +179,7 @@ Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources 
 
 - **`dashboard/`** — fund-health analytics: Overview (`/`), FIDC Credit Monitor (`/fidc`),
   FII Market (`/fii`), Suspicious Screens (`/suspicious`), Performance (`/performance`), and
-  ETF (`/etf`). Deployed to **Vercel** (project `iliquid-nightly`, primary); also buildable as
+  ETF (`/etf`). Deployed to **Vercel** (project `silo`, team `deloslabs`); also buildable as
   a static site for any static host.
 - **`webapp/`** — Evidence.dev instance for CIA Aberta (listed-company) analytics over the
   `cia_*` tables: Overview (`/`), Financials (`/financials`, consolidated ITR/DFP with
@@ -190,7 +190,7 @@ Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources 
 
 Ingestion target: **GitHub Actions cron → Supabase Postgres**. Required GitHub secret:
 `POSTGRES_URL`. No container registry or Docker. The read-only `dashboard/` deploys
-separately to **Vercel** (project `iliquid-nightly`; any static host also works).
+separately to **Vercel** (project `silo`; any static host also works).
 
 - `.github/workflows/daily_ingest.yml` — 06:00 UTC daily (`run_daily`) + `workflow_dispatch`
   (`mode=daily|analytics-only|b3-backfill`). It bootstraps the schema

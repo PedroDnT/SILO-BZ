@@ -192,7 +192,7 @@ def report_fi(client):
     for m in sorted(by_month, reverse=True):
         d = by_month[m]
         print(f"  {m:<10} {d['n']:>12} {d['pl']/1e6:>14.1f} {d['in']/1e6:>11.1f} {d['out']/1e6:>15.1f}")
-    print("  (sampled — for full totals run analysis_queries.sql query 4)")
+    print("  (sampled — for full totals see scripts/queries/01_market_overview.sql)")
 
 
 def report_fidc(client):
@@ -399,7 +399,7 @@ def main():
     report_ingest_log(client)
 
     print(f"\n{SEP}")
-    print("  Done. For deeper analysis run: scripts/analysis_queries.sql")
+    print("  Done. For deeper analysis see: scripts/queries/ (13 numbered SQL files)")
     print(SEP)
 
 
