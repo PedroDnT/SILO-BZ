@@ -93,6 +93,35 @@ returned rows. That combination was what let `cvm_fiagro_mensal` sit empty behin
 
 ---
 
+## 3b. Ingest write throughput
+
+`CVM_DB_POOL_SIZE` (default **4**) sets how many Postgres connections the ingest
+holds. It is not the connection ceiling — the instance reports
+`max_connections = 120`; the *10* people remember is the GoTrue/Auth pool, which
+ingest never touches. The real limit is compute: `max_parallel_workers = 2` and
+`max_worker_processes = 6` (a ~2 vCPU box), plus every concurrent writer
+maintaining the same indexes on one unpartitioned table.
+
+Measured on an ephemeral PG16 (4 workers x 60k rows, `ON CONFLICT DO UPDATE`,
+5000-row chunks):
+
+| pool | elapsed | rows/s | vs pool=1 |
+| ---- | ------- | ------ | --------- |
+| 1    | 9.18 s  | 26,157 | 1.00x     |
+| 2    | 5.84 s  | 41,077 | 1.57x     |
+| 4    | 4.20 s  | 57,106 | **2.18x** |
+| 8    | 4.03 s  | 59,547 | 2.28x     |
+
+Past 4 the curve is flat — 8 buys 4% for double the connections. Raise it only
+against a fresh measurement on the box you are actually running against; that
+table came from a machine with more cores than the Supabase instance, so treat
+the shape (diminishing past 4) as the transferable part, not the absolute
+numbers.
+
+Pool size and task concurrency are different knobs: `CVM_FI_CONCURRENCY`
+controls how many slices are in flight, `CVM_DB_POOL_SIZE` how many can write at
+once. Raising one without the other does nothing.
+
 ## 4. Healing gaps (backfill)
 
 **Entity / per-year backfill** — GitHub → Actions → **CVM Historical Backfill** → _Run
@@ -325,7 +354,19 @@ psql "$POSTGRES_URL" -f scripts/queries/14_advisor_triage.sql
 | **Auth DB Connection Strategy is not Percentage** | GoTrue is capped at 10 connections. This project does **not** use Supabase Auth for ingest or the read API. | **Leave it.** Percentage would let unused Auth compete with ingest writers for the pool we just paid to enlarge. Dashboard-only; there is no repo setting. |
 | **Unindexed FK `public.messages(messages_sender_id_fkey)`** | `messages` is **not in this repo**. Not in `schema.sql`, not in any migration. Leftover on the project (chat demo / old app). | If the triage query shows it and it is empty (or junk), `DROP TABLE public.messages CASCADE` from the SQL editor — **not** from a pipeline migration. Do not add an index to keep a table we do not own. |
 | **`no_primary_key` (many tables)** | Almost entirely **partition children** of `cvm_fi_diario`, `b3_cotahist`, and `cia_account`. Postgres stores the UNIQUE/PK on the parent; the linter counts each yearly slice as a table without its own PK. Parents use a named `UNIQUE` on the natural key (required for `ON CONFLICT`) rather than `PRIMARY KEY`. | **Do not** `ALTER TABLE … ADD PRIMARY KEY` to silence the lint. That locks the largest relations in the database. Upserts already have a named UNIQUE that includes the partition key. |
-| **`unused_index`** | `idx_scan = 0` after a stats reset, a compute move, or because the planner prefers the UNIQUE. The vista covering index, BRINs, and CNPJ/date indexes exist for ingest, `api.quotes`, and the dashboard. | **Do not drop.** A previous dashboard bug was a sequential scan of millions of rows to print four numbers. Dropping "unused" indexes recreates that. Revisit only if `pg_stat_user_indexes.idx_scan` is still 0 **and** `pg_stat_all_tables.n_tup_ins` on that table is also 0 after weeks of daily ingest. |
+| **`unused_index`** | `idx_scan = 0` after a stats reset, a compute move, or because the planner prefers the UNIQUE. The vista covering index, BRINs, and CNPJ/date indexes exist for ingest, `api.quotes`, and the dashboard. | **Do not drop — with one narrow exception (below).** A previous dashboard bug was a sequential scan of millions of rows to print four numbers. Dropping "unused" indexes recreates that. |
+
+### The one case where dropping is right
+
+A zero is only evidence when the window is real. Before dropping any index, prove **all three**, and record the numbers in the migration:
+
+1. `pg_stat_database.stats_reset` is `NULL` (or old enough to cover heavy use) — otherwise `idx_scan = 0` just means the counters were cleared;
+2. `pg_stat_user_tables.n_tup_ins` on the table is large in that same window — a cold table trivially has unused indexes;
+3. the index is not the only support for a constraint, a foreign key, or a `ON CONFLICT` target.
+
+`cvm_fi_balancete` met all three on 2026-08-27: `stats_reset` NULL, 112,110,933 inserts, and three indexes at `idx_scan = 0` — `cvm_fi_balancete_pkey` (2,513 MB, surrogate `id` read nowhere in the repo), `idx_fi_balancete_cnpj` (930 MB, redundant because `uq_fi_balancete` already leads with `cnpj`), and `idx_fi_balancete_conta` (756 MB). Migration 22 drops them: 4.2 GB back, and **+20% insert throughput measured** (25.4k → 30.6k rows/s single-writer). Rollback DDL is in the migration header.
+
+What stayed: `uq_fi_balancete` (the `ON CONFLICT` target, 143M scans) and `idx_fi_balancete_date` (gap scans, dashboards).
 
 A leftover `messages` table is the only advisor hit that might deserve a DROP. Everything
 else is either a false positive from partitioning or an index we would miss the next

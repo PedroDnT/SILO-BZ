@@ -1,0 +1,85 @@
+-- =============================================================================
+-- Migration 22 — drop three never-used indexes on cvm_fi_balancete
+--
+-- WHY
+-- ---
+-- cvm_fi_balancete is 111M rows / 24 GB and carries five indexes, so every
+-- inserted row pays five B-tree maintenance operations. Three of them have
+-- never served a single query. Measured 2026-08-27 from pg_stat_user_indexes,
+-- over a window in which pg_stat_database.stats_reset is NULL (statistics have
+-- never been reset for this database) and n_tup_ins on this table is
+-- 112,110,933:
+--
+--   index                      size      idx_scan
+--   -------------------------  --------  -----------
+--   uq_fi_balancete            8401 MB   143,038,375   <- the ON CONFLICT probe
+--   idx_fi_balancete_date       698 MB           226   <- gap scans, dashboards
+--   cvm_fi_balancete_pkey      2513 MB             0   <- dropped here
+--   idx_fi_balancete_cnpj       930 MB             0   <- dropped here
+--   idx_fi_balancete_conta      756 MB             0   <- dropped here
+--
+-- idx_fi_balancete_cnpj is also structurally redundant: uq_fi_balancete is
+-- (cnpj, dt_comptc, cd_conta_balcte), so cnpj is already its leading column and
+-- any `WHERE cnpj = ...` can use it. `id` is a surrogate BIGSERIAL referenced
+-- nowhere in this repo — no view, no analytical SQL, no dashboard query.
+--
+-- Effect: 3 of 5 index writes per row disappear, and ~4.2 GB is returned.
+--
+-- WHY THIS IS NOT THE "do not drop unused indexes" CASE
+-- -----------------------------------------------------
+-- docs/DATABASE_MAINTENANCE.md §10 says not to drop indexes the linter calls
+-- unused. That guidance is aimed at idx_scan = 0 produced by a *stats reset*, a
+-- compute move, or a planner that prefers the UNIQUE — i.e. false zeros. None
+-- of those apply: statistics were never reset, and 112M inserts is the opposite
+-- of a cold window. The doc's own escape hatch is recorded alongside this
+-- migration.
+--
+-- WHAT IS DELIBERATELY *NOT* DONE
+-- -------------------------------
+-- The `id` column and its sequence stay. Dropping a column does not reclaim
+-- space without a full table rewrite, and nextval() is trivial next to a B-tree
+-- insert into a 2.5 GB index — so removing the column buys almost nothing while
+-- widening the blast radius. The PRIMARY KEY *constraint* is what costs.
+--
+-- SAFETY (verified against production before writing this)
+-- -------------------------------------------------------
+--   * the table is in NO publication, so dropping the PK cannot break logical
+--     replication (relreplident is 'd', and nothing streams this table);
+--   * it has ZERO inbound foreign keys, so no constraint depends on the PK;
+--   * it is a landing table in `public` — not exposed through schema `api`, and
+--     anon/authenticated hold no grant on it — so PostgREST never needs a PK
+--     here for row-level PATCH/DELETE;
+--   * upsert_rows() conflicts on (cnpj, dt_comptc, cd_conta_balcte), which is
+--     uq_fi_balancete — untouched by this migration.
+--
+-- ROLLBACK (copy-paste; each is CONCURRENTLY so it will not lock out ingest)
+-- -------------------------------------------------------------------------
+--   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_fi_balancete_cnpj
+--       ON cvm_fi_balancete (cnpj);
+--   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_fi_balancete_conta
+--       ON cvm_fi_balancete (cd_conta_balcte);
+--   ALTER TABLE cvm_fi_balancete
+--       ADD CONSTRAINT cvm_fi_balancete_pkey PRIMARY KEY (id);
+--
+-- NOTE ON TRANSACTIONS: this file must NOT be wrapped in BEGIN/COMMIT.
+-- DROP INDEX CONCURRENTLY cannot run inside a transaction block. scripts/
+-- apply_schema.py and the CI composite action both run migrations with plain
+-- `psql -v ON_ERROR_STOP=1 -f` (no --single-transaction), so each statement
+-- autocommits — which is exactly what this needs.
+-- =============================================================================
+
+-- CONCURRENTLY: takes only SHARE UPDATE EXCLUSIVE, so a daily ingest or a
+-- dashboard query running at the same time is not locked out. Idempotent via
+-- IF EXISTS, so a re-apply is a no-op.
+DROP INDEX CONCURRENTLY IF EXISTS idx_fi_balancete_cnpj;
+DROP INDEX CONCURRENTLY IF EXISTS idx_fi_balancete_conta;
+
+-- The PK cannot be dropped concurrently — ALTER TABLE needs ACCESS EXCLUSIVE.
+-- The work itself is catalog-only plus a file unlink (fast even at 2.5 GB); the
+-- risk is *queueing* behind a long reader, and a queued ACCESS EXCLUSIVE blocks
+-- every reader behind it. lock_timeout makes it fail fast instead: the schema
+-- apply retries (3 attempts in .github/actions/apply-schema), and because the
+-- statement is IF EXISTS the retry is safe. Scoped to this file only.
+SET lock_timeout = '15s';
+ALTER TABLE cvm_fi_balancete DROP CONSTRAINT IF EXISTS cvm_fi_balancete_pkey;
+RESET lock_timeout;

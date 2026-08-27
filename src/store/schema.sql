@@ -469,8 +469,14 @@ CREATE INDEX IF NOT EXISTS idx_fund_registry_gestor ON cvm_fund_registry (gestor
 -- Natural key: (cnpj, dt_comptc, cd_conta_balcte)
 -- One row per fund × reference date × account code.
 -- ---------------------------------------------------------------------------
+-- `id` is a plain BIGSERIAL, deliberately NOT a PRIMARY KEY: migration 22
+-- dropped that constraint after pg_stat_user_indexes showed its 2.5 GB index
+-- had served 0 queries across 112M inserts (statistics never reset). The
+-- natural key lives in uq_fi_balancete, which is what ON CONFLICT uses; `id`
+-- is a surrogate nothing in this repo reads. Keep it unconstrained on a fresh
+-- database so schema.sql and a migrated one agree.
 CREATE TABLE IF NOT EXISTS cvm_fi_balancete (
-    id                 BIGSERIAL    PRIMARY KEY,
+    id                 BIGSERIAL,
     cnpj               TEXT         NOT NULL CHECK (char_length(cnpj) = 14),
     dt_comptc          DATE         NOT NULL,
     plano_conta_balcte TEXT,                    -- chart-of-accounts plan code (e.g. COFI)
@@ -481,9 +487,13 @@ CREATE TABLE IF NOT EXISTS cvm_fi_balancete (
     fetched_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_fi_balancete UNIQUE (cnpj, dt_comptc, cd_conta_balcte)
 );
-CREATE INDEX IF NOT EXISTS idx_fi_balancete_cnpj   ON cvm_fi_balancete (cnpj);
+-- Only the date index. idx_fi_balancete_cnpj (redundant — uq_fi_balancete
+-- already leads with cnpj) and idx_fi_balancete_conta were dropped in
+-- migration 22; both had 0 scans over the life of the database. Do not
+-- re-add them without evidence from pg_stat_user_indexes that a real query
+-- needs them: every index here is paid for on all ~2M rows of every monthly
+-- slice.
 CREATE INDEX IF NOT EXISTS idx_fi_balancete_date   ON cvm_fi_balancete (dt_comptc DESC);
-CREATE INDEX IF NOT EXISTS idx_fi_balancete_conta  ON cvm_fi_balancete (cd_conta_balcte);
 
 -- ---------------------------------------------------------------------------
 -- Additive column migrations for typed-field lifts (idempotent).

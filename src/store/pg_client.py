@@ -14,11 +14,14 @@ from typing import Any, Dict, List, Optional
 
 import psycopg2
 import psycopg2.extras
+import psycopg2.pool
 from psycopg2.extras import Json
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_CHUNK_SIZE = 500
+# See _get_pool_size() for why this is 4 and not max_connections.
+_DEFAULT_POOL_SIZE = 4
 _RETRY_DELAYS = (5, 10, 20, 40)
 
 
@@ -82,62 +85,129 @@ def _get_upsert_chunk_size() -> int:
     return chunk_size
 
 
+def _get_pool_size() -> int:
+    """How many Postgres connections the ingest may hold at once.
+
+    Default 4, NOT the ~120 max_connections the server allows. The binding
+    constraint is compute, not connection slots: the Supabase instance reports
+    max_parallel_workers = 2 and max_worker_processes = 6 (a ~2 vCPU box), and
+    the big writes go into single unpartitioned tables whose indexes every
+    concurrent writer has to maintain. Past ~4 the writers mostly contend —
+    on CPU, on the same B-tree pages, and on WAL — instead of adding
+    throughput. Raise it only against a measured curve.
+    """
+    raw = os.getenv("CVM_DB_POOL_SIZE", str(_DEFAULT_POOL_SIZE)).strip()
+    try:
+        size = int(raw)
+    except ValueError:
+        logger.warning(
+            "Invalid CVM_DB_POOL_SIZE=%r; using default %d", raw, _DEFAULT_POOL_SIZE
+        )
+        return _DEFAULT_POOL_SIZE
+    if size < 1:
+        logger.warning(
+            "Non-positive CVM_DB_POOL_SIZE=%r; using default %d", raw, _DEFAULT_POOL_SIZE
+        )
+        return _DEFAULT_POOL_SIZE
+    return size
+
+
 class _PgClient:
-    """Thin wrapper around a psycopg2 connection that auto-reconnects.
+    """Pooled Postgres client for the ingest pipeline.
 
-    One connection is shared by the whole run. Since the ingest pipeline now
-    runs its blocking upserts through ``asyncio.to_thread`` (see
-    ``CVMIngestor._store``), that connection is reachable from several threads
-    at once, and psycopg2's threadsafety=2 means a *connection* may be shared
-    but a *cursor* may not — nothing in libpq serialises two concurrent
-    ``execute_values`` calls on one connection. ``_lock`` provides that
-    serialisation. The point is not write parallelism (there is none, by
-    design); it is that a thread waiting on the lock is not blocking the event
-    loop, so concurrent downloads keep reading their sockets.
+    Was a single connection guarded by an RLock. That made every write in the
+    run serial: correct, and enough to stop the blocking upserts starving the
+    asyncio event loop (the 2026-08-27 balancete failures), but it capped
+    throughput at one writer no matter how many slices were in flight.
 
-    Load-bearing detail: upsert_rows() opens its cursor *inside* the per-chunk
-    loop, so this lock is held for one ~5000-row execute_values, not for a whole
-    2M-row upsert. That matters because the audit writes (_log_start /
-    _log_finish) still run on the event loop and take the same lock — they wait
-    at most one chunk. Hoisting the `with client.cursor()` out of that loop
-    would make an audit write block the loop for minutes and undo the fix.
+    Now a ``ThreadedConnectionPool``. Combined with ``CVMIngestor._store``
+    running each parse+upsert through ``asyncio.to_thread``, N slices write
+    genuinely in parallel while the loop stays free.
+
+    Two details worth keeping:
+
+    * **A semaphore fronts the pool.** ``ThreadedConnectionPool.getconn()``
+      *raises* ``PoolError`` when every connection is checked out rather than
+      waiting. Callers here would rather wait — an ingest slice that dies
+      because the pool was momentarily busy is a fabricated failure. The
+      semaphore makes "pool full" mean "block", which is what the single-lock
+      version did.
+    * **A connection that errored is discarded, not returned.** psycopg2 hands
+      back a connection in a failed state after an exception; putting it
+      straight back would deal the same broken connection to the next caller.
+      ``cursor()`` closes it instead and the pool opens a fresh one — which is
+      what makes ``reconnect()`` unnecessary as a separate step (see below).
     """
 
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, pool_size: Optional[int] = None) -> None:
         self._url = url
-        self._conn: Any = None
-        # Reentrant: reconnect() may be called from inside a cursor() block on
-        # the same thread by the upsert retry path.
-        self._lock = threading.RLock()
-        self._connect()
-
-    def _connect(self) -> None:
-        try:
-            if self._conn is not None:
-                self._conn.close()
-        except Exception:
-            pass
-        self._conn = psycopg2.connect(self._url)
-        self._conn.autocommit = True
+        self._size = pool_size or _get_pool_size()
+        # minconn=1: open one eagerly so a bad POSTGRES_URL fails at startup
+        # rather than on the first slice, an hour into a backfill.
+        self._pool = psycopg2.pool.ThreadedConnectionPool(1, self._size, dsn=url)
+        self._slots = threading.Semaphore(self._size)
+        logger.info("Postgres pool: %d connection(s)", self._size)
 
     @contextmanager
     def cursor(self):
-        """Yield a cursor while holding the connection lock.
+        """Check a connection out of the pool and yield a cursor on it.
 
-        Every caller already uses ``with client.cursor() as cur:``, so the lock
-        is scoped exactly to the statement(s) it guards.
+        Every caller uses ``with client.cursor() as cur:``, so the checkout is
+        scoped exactly to the statements it serves. Holding it no longer than
+        that is what keeps the pool from deadlocking under concurrency.
         """
-        with self._lock:
-            cur = self._conn.cursor()
+        self._slots.acquire()
+        conn = None
+        broken = False
+        try:
+            conn = self._pool.getconn()
+            # Idempotent and local — psycopg2 only touches the wire here if a
+            # transaction is open, and the pool never hands one back mid-txn.
+            conn.autocommit = True
+            cur = conn.cursor()
             try:
                 yield cur
             finally:
-                cur.close()
+                try:
+                    cur.close()
+                except Exception:
+                    # A cursor on an already-dead connection can raise on
+                    # close. The connection is discarded below either way;
+                    # masking the caller's real exception would be worse.
+                    broken = True
+        except Exception:
+            broken = True
+            raise
+        finally:
+            if conn is not None:
+                try:
+                    self._pool.putconn(conn, close=broken)
+                except Exception:
+                    logger.warning("failed returning a connection to the pool",
+                                   exc_info=True)
+            self._slots.release()
 
     def reconnect(self) -> None:
-        with self._lock:
-            logger.warning("Reconnecting to Postgres...")
-            self._connect()
+        """Retained for the upsert retry path; now close to a no-op.
+
+        With one shared connection this had to physically reconnect. With a
+        pool, ``cursor()`` has already discarded whatever connection failed, so
+        the next checkout is a fresh one and there is nothing to reset here.
+        Kept (and kept logging) because upsert_rows() calls it between retry
+        attempts and the log line is a useful marker in a slow backfill.
+        """
+        logger.warning("Postgres retry: next checkout takes a fresh connection")
+
+    def closeall(self) -> None:
+        """Close every pooled connection. For tests and short-lived scripts."""
+        try:
+            self._pool.closeall()
+        except Exception:
+            logger.warning("failed closing the Postgres pool", exc_info=True)
+
+    @property
+    def pool_size(self) -> int:
+        return self._size
 
     @property
     def url(self) -> str:
@@ -145,7 +215,7 @@ class _PgClient:
 
 
 def get_pg_client() -> Any:
-    """Return an initialised Postgres client (psycopg2-backed)."""
+    """Return an initialised Postgres client (psycopg2-backed, pooled)."""
     url = os.environ.get("POSTGRES_URL")
     if not url:
         raise EnvironmentError("POSTGRES_URL must be set")
