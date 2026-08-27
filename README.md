@@ -397,6 +397,9 @@ rows do not.
   for ad-hoc runs (`mode=daily|analytics-only|b3-backfill`). CVM history is
   **CVM Historical Backfill** (`backfill.yml`), not a mode here. `b3-backfill` loads yearly
   COTAHIST zips (`--b3-only`); set `start_year` (try `2025` first).
+- `.github/workflows/backfill.yml` — choose one entity plus `start_year`/`end_year`.
+  Matrix jobs are serialized, FI skips years already complete in `cvm_ingest_log`,
+  and the run prints current coverage before writing. Choose `all` only deliberately.
 - Required GitHub secret: `POSTGRES_URL` (Supabase connection string with `sslmode=require`).
 
 The read-only **Evidence.dev dashboard** lives at
@@ -419,10 +422,10 @@ consequences worth knowing:
   25–45 minutes, so rebuilding for a tests-only commit burned that for a byte-identical
   site — and concurrent builds were slow enough to block the schema apply's `ALTER TABLE`
   until Postgres killed it.
-- **Data refreshes come from a deploy hook, not from pushes.** After the analytical layer,
-  `daily_ingest.yml` POSTs `VERCEL_DEPLOY_HOOK_URL` (optional secret; the step self-skips
-  when unset). Without that secret the published numbers are only as fresh as the last
-  `dashboard/` commit.
+- **Data refreshes are explicit.** Scheduled ingest and historical fills never POST the
+  Vercel hook. Dispatch **Daily CVM Ingest** with `rebuild_dashboard=true` after the
+  database is ready for a 25–45 minute Evidence extraction; otherwise the published
+  snapshot remains unchanged.
 
 Schema applies run with `lock_timeout` and retries (`.github/actions/apply-schema`): a
 blocked `ALTER TABLE` gives up in seconds instead of queueing and blocking every reader
@@ -430,8 +433,9 @@ behind it. `statement_timeout` stays unbounded so a genuinely slow migration is 
 killed mid-flight.
 
 To roll out schema changes, commit `src/store/schema.sql` and any new
-`src/store/migrations/*.sql`, then run `python scripts/apply_schema.py` against
-the Supabase project (it applies the base schema and every migration in order).
+`src/store/migrations/*.sql`. Every daily/backfill/watchdog ingest applies them
+automatically; use `python scripts/apply_schema.py` only for an intentional standalone
+rollout.
 The DDL uses `CREATE TABLE IF NOT EXISTS` and named UNIQUE constraints, so re-applying is idempotent.
 
 ## What's next
@@ -475,8 +479,8 @@ Remaining operator work (do not skip):
 
 - **Historical backfills** for `securit` and `fidc` — the daily window only heals the
   trailing months, so deep history for the recently-fixed field maps needs `backfill.yml`.
-- **`VERCEL_DEPLOY_HOOK_URL`** — until set, the dashboard refreshes only on `dashboard/`
-  commits, not on new data.
+- **`VERCEL_DEPLOY_HOOK_URL`** — optional; it is used only when a manual Daily Ingest
+  dispatch sets `rebuild_dashboard=true`. Scheduled ingest and fills leave Vercel alone.
 - **`APIFY_TOKEN`** — the ETF market scrape self-skips without it.
 - **B3 ↔ fund/company join.** `b3_cotahist` is landed but not joined to `cia_*`; a
   ticker↔CNPJ mapping has to come from a real source, never a guess.
