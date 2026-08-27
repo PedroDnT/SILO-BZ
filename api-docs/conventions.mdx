@@ -141,7 +141,8 @@ Specific guarantees worth repeating:
 
 - **`close_return` across a gap is null**, and therefore absent from `panel`. A monthly
   return is computed only when the previous row is the immediately preceding calendar month.
-  A missing month never becomes a two-month return.
+  A missing month never becomes a two-month return. The ratio itself is of **unadjusted**
+  closes: a 2:1 split reports roughly −50 %. See [`panel`](/api-docs/panel).
 - **`freq=day` is quotes only.** No fund fundamental is daily; asking for `freq=day` with
   fund metrics returns the quote rows and nothing else. Mix asset classes on `freq=month`,
   where the equity value is the **last real session of the month**, not an invented month-end.

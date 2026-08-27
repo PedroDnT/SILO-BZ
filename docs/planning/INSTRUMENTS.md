@@ -156,6 +156,7 @@ offline fixture test → analytical SQL → catalog bump → api-docs page.
 
 | Phase | What                                                                                                                  | New ingest? | Effort                                   |
 | ----- | --------------------------------------------------------------------------------------------------------------------- | ----------- | ---------------------------------------- |
+| **Adj** | Label `close_return` as unadjusted (catalog v3 + docs — done); jump screen (`abs(close_return) > 40%` × `cia_event`) still open | none | small — SQL against data we already have |
 | **A** | Options + termo endpoints, partial index, panel arms, `api.catalog()`, universe/lookup/coverage extension, docs pages | none        | small — SQL + docs only                  |
 | **B** | Futures settlement: fetcher, table, `future_series`/`future_curve`, panel arm                                         | yes         | medium — first non-COTAHIST B3 file      |
 | **C** | Reference-rate curves: fetcher, table, `curve`/`curve_history`                                                        | yes         | medium — piggybacks B's fetcher plumbing |
@@ -265,10 +266,11 @@ drawdown will silently eat a fabricated shock. That is the single most
 dangerous number in the warehouse right now, precisely because everything
 around it is correct.
 
-Until adjustment lands, the catalog `meaning` for `close_return` must say
-"unadjusted; corporate actions appear as spurious jumps", and the api-docs
-page must repeat it. A caption is not a fix, but an unlabelled trap is worse
-than a labelled one.
+Until adjustment lands, the trap is labelled, not fixed. Catalog `meaning`
+for `close_return` (version 3) and the api-docs panel page both say
+"unadjusted; corporate actions appear as spurious jumps". A caption is not
+a fix, but an unlabelled trap is worse than a labelled one. The jump
+screen below remains the first *code* deliverable.
 
 ### Where the adjustment information actually lives
 

@@ -2,6 +2,7 @@
 
 | Date       | Branch                    | Change                                                                                              |
 | ---------- | ------------------------- | --------------------------------------------------------------------------------------------------- |
+| 2026-08-27 | cursor/instruments-adjustment-1119 | Catalog v3: `close_return` meaning says unadjusted (splits look like crashes); instruments plan: cotacao.b3.com.br appendix + adjustment verification |
 | 2026-08-17 | cursor/agents-md-3f68     | AGENTS.md: SILO skill, CLI ingest, post-edit hook; move `serve/` to secrets                          |
 | 2026-08-16 | cursor/kill-ingest-flask-3f68 | Remove ingest Flask (`app.py`, `src/api/`, `tests/test_api.py`); ingest is Actions + pipeline CLI |
 | 2026-08-16 | cursor/silo-skill-3f68    | Replace auto-generated iliquid_nightly skill with SILO integrity/serving contract; gate PostToolUse pytest |
