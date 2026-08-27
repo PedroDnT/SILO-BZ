@@ -68,6 +68,7 @@ EXPECTED_FUNCTIONS = {
     "api.quote_latest",
     "api.option_chain",
     "api.option_history",
+    "api.option_exercises",
     "api.termo_history",
     "api.fund_profile",
     "api.fund_nav",
@@ -639,3 +640,80 @@ def test_files_are_transactional_and_psql_clean():
         # No psql backslash meta-commands (they would not be plain SQL).
         for line in sql.splitlines():
             assert not line.lstrip().startswith("\\"), f"{path.name}: psql meta-command {line!r}"
+
+
+# ---------------------------------------------------------------------------
+# Migration 23 serve surface: underlying mapping, exercises, auctions, classes
+# ---------------------------------------------------------------------------
+
+
+class TestOptionUnderlyingMapping:
+    def test_underlying_join_is_published_isin_same_session(self):
+        # The mapping is COTAHIST's own CODISI (an option row's ISIN is the
+        # underlying's ISIN) joined to the SAME session's cash print. A join
+        # without the trade_date equality would happily pair an option with a
+        # cash row from another day — a fabricated as-of.
+        for fn in ("api.option_chain", "api.option_history", "api.option_exercises"):
+            body = FUNCS[fn]
+            assert "c.isin = b.isin" in body, fn
+            assert "c.trade_date = b.trade_date" in body, fn
+            assert "c.tpmerc = '010'" in body, fn
+
+    def test_underlying_join_is_deterministic_and_never_guesses(self):
+        # LEFT JOIN LATERAL ... LIMIT 1 with a total ORDER BY: NULL when no
+        # cash print exists (never a codneg-root guess), one deterministic
+        # winner when (impossibly, today) several codnegs share an ISIN.
+        for fn in ("api.option_chain", "api.option_history", "api.option_exercises"):
+            body = FUNCS[fn]
+            assert "LEFT JOIN LATERAL" in body, fn
+            assert "ORDER BY (c.codbdi = '02') DESC, length(c.codneg), c.codneg" in body, fn
+
+    def test_strike_points_decode_treats_zero_as_absent(self):
+        # PTOEXE=0 is B3's filler for "not points-referenced"; serving it as a
+        # 0-point strike would be a fabricated value.
+        for fn in ("api.option_chain", "api.option_history"):
+            assert "NULLIF((b.raw ->> 'ptoexe')::NUMERIC, 0) / 1e6" in FUNCS[fn], fn
+
+
+class TestExerciseAndAuctionEvents:
+    def test_option_exercises_requires_prefix_and_is_capped(self):
+        body = FUNCS["api.option_exercises"]
+        assert "length(v_prefix) < 3" in body
+        assert "RAISE EXCEPTION" in body
+        assert "LIMIT 5001" in body
+        assert "IN ('012', '013')" in body
+
+    def test_exercises_and_auctions_never_reach_the_quote_labels(self):
+        # tpmerc 012/013/017 must not leak into the option quote endpoints.
+        for fn in ("api.option_chain", "api.option_history"):
+            body = FUNCS[fn]
+            assert "'012'" not in body.replace("('012', '013')", "")
+            assert "b.tpmerc IN ('070', '080')" in body
+
+    def test_auctions_view_is_definer_granted_and_typed(self):
+        assert "CREATE OR REPLACE VIEW api.auctions" in SQL19
+        assert "v.instrument_type = 'auction'" in SQL19
+        assert "ALTER VIEW api.auctions SET (security_invoker = false)" in SQL19
+        assert "GRANT SELECT ON api.auctions TO anon, authenticated" in SQL19
+        assert "GRANT SELECT ON api.auctions TO silo_api" in SQL19
+
+
+class TestTypedCashTrailingColumns:
+    def test_equities_share_class_columns_are_trailing(self):
+        # CREATE OR REPLACE VIEW can only append columns; share_class and
+        # governance_segment must come after fetched_at, in this order.
+        view = SQL19.split("CREATE OR REPLACE VIEW api.equities AS")[1].split(
+            "COMMENT ON VIEW"
+        )[0]
+        assert view.index("v.fetched_at") < view.index("v.share_class")
+        assert view.index("v.share_class") < view.index("v.governance_segment")
+
+    def test_fund_quotas_fund_type_is_trailing_and_from_subtype(self):
+        view = SQL19.split("CREATE OR REPLACE VIEW api.fund_quotas AS")[1].split(
+            "COMMENT ON VIEW"
+        )[0]
+        assert view.index("v.fetched_at") < view.index(
+            "v.instrument_subtype AS fund_type"
+        )
+        # The view still filters on the unchanged parent label.
+        assert "v.instrument_type = 'fund_quota'" in view

@@ -938,31 +938,68 @@ WHERE tpmerc = '010';
 COMMENT ON VIEW vw_b3_quote_vista IS
     'Cash-market (tpmerc=010) COTAHIST quotes. Unadjusted. Grain is still (codneg, trade_date, codbdi, prazot); board 02 is the standard lot.';
 
--- DB-side instrument taxonomy. Keep the landing fact at B3's register-01 grain:
--- this view derives a conservative type from published TPMERC/ESPECI while
--- preserving both source fields. ESPECI='CI' cannot honestly distinguish an
--- ETF quota from an FII quota, so it remains the broader `fund_quota`.
+-- DB-side instrument taxonomy (migration 23 keeps this text in sync). Keep the
+-- landing fact at B3's register-01 grain: the view derives type, fund-quota
+-- subtype, share class and listing segment from published TPMERC/CODBDI/ESPECI
+-- while preserving every source field. See migration 23 for the validation
+-- evidence (CODBDI split vs cvm_etf_registry; ESPECI class vs ISIN class code).
 CREATE OR REPLACE VIEW vw_b3_instrument_typed AS
 SELECT
     q.*,
     CASE
-        WHEN q.tpmerc IN ('012', '070') THEN 'option_call'
-        WHEN q.tpmerc IN ('013', '080') THEN 'option_put'
+        WHEN q.tpmerc = '070' THEN 'option_call'
+        WHEN q.tpmerc = '080' THEN 'option_put'
+        WHEN q.tpmerc = '012' THEN 'option_exercise_call'
+        WHEN q.tpmerc = '013' THEN 'option_exercise_put'
+        WHEN q.tpmerc = '017' THEN 'auction'
         WHEN q.tpmerc = '030' THEN 'forward'
         WHEN q.tpmerc IN ('010', '020', '021') THEN
             CASE
                 WHEN UPPER(COALESCE(q.especi, '')) LIKE 'DR%'  THEN 'bdr'
                 WHEN UPPER(COALESCE(q.especi, '')) LIKE 'UNT%' THEN 'unit'
-                WHEN UPPER(COALESCE(q.especi, '')) LIKE 'CI%'  THEN 'fund_quota'
+                WHEN UPPER(COALESCE(q.especi, '')) LIKE 'CI%'
+                  OR UPPER(COALESCE(q.especi, '')) LIKE 'FIDC%' THEN 'fund_quota'
                 WHEN UPPER(COALESCE(q.especi, '')) LIKE 'ON%'
                   OR UPPER(COALESCE(q.especi, '')) LIKE 'PN%'  THEN 'equity'
                 ELSE 'cash_security'
             END
         ELSE 'other'
-    END AS instrument_type
+    END AS instrument_type,
+    CASE
+        WHEN q.tpmerc IN ('010', '020', '021')
+         AND (UPPER(COALESCE(q.especi, '')) LIKE 'CI%'
+           OR UPPER(COALESCE(q.especi, '')) LIKE 'FIDC%') THEN
+            CASE
+                WHEN q.codbdi IN ('05', '12') THEN 'fii'
+                WHEN q.codbdi = '13' THEN 'fiagro'
+                WHEN q.codbdi = '14' THEN
+                    CASE WHEN UPPER(COALESCE(q.especi, '')) LIKE 'FIDC%'
+                         THEN 'fidc' ELSE 'etf' END
+                ELSE NULL
+            END
+        ELSE NULL
+    END AS instrument_subtype,
+    CASE
+        WHEN split_part(btrim(COALESCE(q.especi, '')), ' ', 1)
+             IN ('ON', 'PN', 'PNA', 'PNB', 'PNC', 'PND', 'UNT')
+        THEN split_part(btrim(q.especi), ' ', 1)
+        ELSE NULL
+    END AS share_class,
+    CASE
+        WHEN btrim(substr(COALESCE(q.especi, ''), 9, 2))
+             IN ('NM', 'N1', 'N2', 'MA', 'M2', 'MB')
+        THEN btrim(substr(q.especi, 9, 2))
+        ELSE NULL
+    END AS governance_segment
 FROM b3_cotahist q;
 
 COMMENT ON VIEW vw_b3_instrument_typed IS
-    'COTAHIST rows classified from published TPMERC/ESPECI only. fund_quota intentionally does not guess ETF versus FII. Grain and natural key are unchanged.';
+    'COTAHIST rows classified from published TPMERC/CODBDI/ESPECI only. tpmerc 012/013 are option exercise EVENTS (not quotes); 017 is an auction print. fund_quota is split into etf/fii/fidc/fiagro via instrument_subtype using CODBDI board codes (validated vs cvm_etf_registry); NULL when the board carries no family signal. Grain and natural key unchanged.';
 COMMENT ON COLUMN vw_b3_instrument_typed.instrument_type IS
-    'option_call | option_put | forward | bdr | unit | fund_quota | equity | cash_security | other';
+    'option_call | option_put | option_exercise_call | option_exercise_put | auction | forward | bdr | unit | fund_quota | equity | cash_security | other';
+COMMENT ON COLUMN vw_b3_instrument_typed.instrument_subtype IS
+    'fund_quota family from CODBDI: etf (14) | fii (05/12) | fiagro (13) | fidc (14 + ESPECI FIDC*). NULL for non-fund rows and for boards with no family signal (odd lot 93/96). Never guessed from ticker shape.';
+COMMENT ON COLUMN vw_b3_instrument_typed.share_class IS
+    'Share class token from ESPECI: ON | PN | PNA | PNB | PNC | PND | UNT. Cross-checked against the ISIN class code (chars 10-11: OR/PR/PA/PB/PC) with zero disagreements on the 2026-08 cash tape. NULL when ESPECI carries no recognized class.';
+COMMENT ON COLUMN vw_b3_instrument_typed.governance_segment IS
+    'B3 listing segment from ESPECI cols 9-10: NM (Novo Mercado) | N1 | N2 | MA | M2 | MB. NULL when absent.';
