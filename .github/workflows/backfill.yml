@@ -14,6 +14,14 @@ on:
         type: boolean
         default: false
 
+# Shares the writer group with daily_ingest.yml so a backfill and the daily
+# cron never write to the same tables at once (see the comment there). The
+# per-year FI matrix INSIDE this workflow still runs in parallel — the group
+# serializes workflows against each other, not jobs within one run.
+concurrency:
+  group: supabase-ingest
+  cancel-in-progress: false
+
 jobs:
   # Apply the (idempotent) schema + migrations before any ingest so a fresh DB
   # is bootstrapped. Every ingest job gates on this via `needs:` so the CREATE

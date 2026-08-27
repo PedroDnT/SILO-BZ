@@ -489,21 +489,31 @@ class CVMIngestor:
         return sorted(base | gaps)
 
     def _refresh_etf_metrics(self) -> None:
-        """Refresh the materialized ETF views after an ETF ingest.
+        """No-op: etf_daily / etf_latest are PLAIN VIEWS and are always current.
 
-        etf_daily / etf_latest are materialized views (migration 06); refreshing
-        here keeps their precomputed metrics current. The pg client runs in
-        autocommit, so REFRESH ... CONCURRENTLY — which must not run inside a
-        transaction block — is valid and avoids blocking readers. etf_latest is
-        derived from etf_daily, so refresh etf_daily first.
+        This used to run `REFRESH MATERIALIZED VIEW CONCURRENTLY` on both, and
+        logged a warning on every single daily run:
+
+            refresh etf materialized views failed:
+            "etf_daily" is not a table or materialized view
+
+        The call could never succeed. Migration 06 creates the pair as
+        materialized views, but migration 10_fix_etf_view_kind.sql runs after it
+        (10 > 06 lexically) and deliberately converts them back to PLAIN VIEWS —
+        that is the intended end state, and its whole purpose is to keep 06 from
+        winning. So by the end of every schema apply they are views, and a view
+        cannot be refreshed. Nothing was ever stale as a result: a plain view is
+        computed at query time, so it is always current by construction.
+
+        Kept as a no-op rather than deleted because the ETF ingest calls it and
+        the honest thing to record is why there is nothing to do. If the pair is
+        ever converted back to materialized views, the REFRESH belongs here —
+        and migration 10 has to go first.
         """
-        try:
-            with self._supabase.cursor() as cur:
-                cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY etf_daily")
-                cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY etf_latest")
-            logger.info("etf metrics: refreshed etf_daily + etf_latest")
-        except Exception as e:
-            logger.warning("refresh etf materialized views failed: %s", _describe(e))
+        logger.debug(
+            "etf metrics: etf_daily / etf_latest are plain views (migration 10) "
+            "— nothing to refresh"
+        )
 
     # ------------------------------------------------------------------
     # Generic paginated fetch helper
