@@ -1,7 +1,8 @@
 # Brazilian Financial Data Scrapper and handler
 
-> **Status: work in progress.** Ingest is in production and runs nightly; the read API is
-> built but **not yet live**. See [What's next](#whats-next).
+> **Read API:** [https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/)
+> — schema `api`, anon key, open read. Caller docs: [`api-docs/`](api-docs/quickstart.mdx).
+> Ingest is in production and runs nightly. See [What's next](#whats-next) for remaining ops.
 
 Headless ingestion pipeline for Brazilian public financial data. The goal is to maintain
 continuous, verifiable accountability of the fund industry — tracking NAV, delinquency,
@@ -23,7 +24,7 @@ ingest HTTP server.
 
 | Surface                     | What it is                                                        | Status                                                          |
 | --------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------- |
-| **Supabase Data API**       | PostgREST over schema `api` at `/rest/v1/`, anon key, public read | the intended public path — needs `api` added to Exposed Schemas |
+| **Supabase Data API**       | PostgREST over schema `api` at [https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/), anon key, public read | live public path |
 | **`serve/`**                | local read-only Flask adapter (`python -m serve.app`)             | for notebooks and development                                   |
 | **`dashboard/`, `webapp/`** | Evidence.dev sites                                                | read Supabase at **build** time into parquet                    |
 
@@ -431,16 +432,21 @@ speculative roadmap.
 
 ### Blocking the API going live
 
-1. **Apply the serving SQL.** Actions → Daily Ingest → `workflow_dispatch`,
-   `mode=analytics-only`. This applies the row caps, the `silo_api` role,
-   `SET search_path = ''`, and the landing-table REVOKEs. Until it succeeds,
-   production's `api` schema is the **pre-caps** version.
-   Run it when no Vercel build is in flight — concurrent dashboard builds hold locks on
-   `cvm_fi_perfil` and have blocked this apply before (now bounded by `lock_timeout`).
-2. **Expose the schema.** Supabase Dashboard → Settings → API → add `api` to
-   **Exposed schemas**. That is the whole deployment; there is no gateway and no host.
-   Do this only after step 1 — exposing the uncapped version puts an unbounded
-   `api.panel` on the public internet.
+The public Data API is:
+
+```
+https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/
+```
+
+Remaining operator work (do not skip):
+
+1. **Apply the serving SQL** if production is still on the pre-caps `api` schema.
+   Actions → Daily Ingest → `workflow_dispatch`, `mode=analytics-only`. This applies
+   the row caps, the `silo_api` role, `SET search_path = ''`, and the landing-table
+   REVOKEs. Run it when no Vercel build is in flight — concurrent dashboard builds
+   hold locks on `cvm_fi_perfil` and have blocked this apply before (now bounded by
+   `lock_timeout`).
+2. **Confirm `api` is in Exposed schemas** (Supabase Dashboard → Settings → API).
 3. **Verify** with the `curl` in [api-docs/quickstart.mdx](api-docs/quickstart.mdx).
 
 ### Known defects
@@ -497,7 +503,7 @@ production's `api` schema is the pre-caps version — see `docs/planning/SERVING
 
 ## What's intentionally not here
 
-- **No ingest REST API, and no PostgREST dump of landing tables.** The pipeline writes to Supabase via GitHub Actions and the CLI. Apps read schema `api` via `serve/` ([docs/API.md](docs/API.md)). The old localhost ingest Flask (`app.py` / `src/api/`) is deleted.
+- **No ingest REST API, and no PostgREST dump of landing tables.** The pipeline writes to Supabase via GitHub Actions and the CLI. Callers read schema `api` at `https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/` ([api-docs/quickstart.mdx](api-docs/quickstart.mdx), [docs/API.md](docs/API.md)). `serve/` is the local adapter. The old localhost ingest Flask (`app.py` / `src/api/`) is deleted.
 - **No fabricated quotes.** The old `b3_calc_api` (non-B3 domain + hard-coded sample dicts) stays deleted. Historical quotations come from B3's public COTAHIST zips (`src/fetchers/b3_fetcher.py` → `b3_cotahist` → `api.quotes`). An unknown ticker returns an empty result, never a guessed last close — `404` from `serve/`, `200 []` from PostgREST, which has no adapter to shape the error. Same contract, different status code.
 - **No local Postgres / Docker / Alembic.** Supabase Postgres is the single source of truth. Use `scripts/seed_local_db.py`
   with a local Postgres for offline testing.

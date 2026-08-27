@@ -15,6 +15,16 @@ The warehouse is readable. Schema `api` is the public read contract, exposed thr
 Supabase Data API (PostgREST) with the project's **anon key** — open read, no accounts, no
 per-user API keys.
 
+## Base URL
+
+```
+https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/
+```
+
+That is the only public HTTP surface. Views are `GET /<view>`; functions are
+`POST /rpc/<function>`. Send the anon key as both `apikey` and
+`Authorization: Bearer`.
+
 <Card title="Quickstart" icon="rocket" href="/api-docs/quickstart" horizontal>
   Get the anon key and make your first call in under a minute.
 </Card>

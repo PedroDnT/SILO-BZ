@@ -17,7 +17,14 @@ uses the project's **anon (public) key**, which is designed to be published in c
   and must never leave a server.
 </Note>
 
-Export it once so the examples below work as written:
+The Data API is:
+
+```
+https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/
+```
+
+Export it once so the examples below work as written. The env var **omits** the
+trailing slash so `"$SILO_URL/rpc/..."` joins cleanly.
 
 ```bash
 export SILO_URL="https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"
@@ -51,7 +58,7 @@ curl -s -X POST "$SILO_URL/rpc/coverage" \
 ```python Python
 import os, requests
 
-URL = "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"
+URL = "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"  # no trailing slash; join with /rpc/...
 KEY = os.environ["SILO_ANON_KEY"]
 H = {"apikey": KEY, "Authorization": f"Bearer {KEY}"}
 

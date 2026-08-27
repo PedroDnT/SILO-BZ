@@ -168,9 +168,10 @@ curl -s localhost:8080/v1/quotes/PETR4
 
 Production: the public path is **Supabase-native** (decided 2026-08-26) —
 schema `api` is exposed through the Supabase Data API (PostgREST), so there is
-no gateway, no TLS to terminate, and no serve/ host to run. To enable it:
-Supabase Dashboard → Settings → API → add `api` to **Exposed schemas**. The
-base URL is `https://<project-ref>.supabase.co/rest/v1/` with the anon key;
+no gateway, no TLS to terminate, and no serve/ host to run. The live base URL is
+`https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/` with the anon key. To enable
+it on a fresh project: Supabase Dashboard → Settings → API → add `api` to
+**Exposed schemas**. The generic form is `https://<project-ref>.supabase.co/rest/v1/`;
 views are read as `/rest/v1/quotes?select=...`, functions are called as
 `POST /rest/v1/rpc/<name>` with named arguments in the JSON body. The grants
 in `19_api_contract.sql` (anon/authenticated: `USAGE` on schema `api`,
