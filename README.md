@@ -1,5 +1,8 @@
 # Brazilian Financial Data Scrapper and handler
 
+> **Status: work in progress.** Ingest is in production and runs nightly; the read API is
+> built but **not yet live**. See [What's next](#whats-next).
+
 Headless ingestion pipeline for Brazilian public financial data. The goal is to maintain
 continuous, verifiable accountability of the fund industry — tracking NAV, delinquency,
 tranche performance, and structural health of every entity type CVM publishes.
@@ -419,6 +422,48 @@ To roll out schema changes, commit `src/store/schema.sql` and any new
 `src/store/migrations/*.sql`, then run `python scripts/apply_schema.py` against
 the Supabase project (it applies the base schema and every migration in order).
 The DDL uses `CREATE TABLE IF NOT EXISTS` and named UNIQUE constraints, so re-applying is idempotent.
+
+## What's next
+
+The pipeline is production-grade and runs unattended; **serving is the open front**.
+Everything below is either an operator action or a known defect — none of it is
+speculative roadmap.
+
+### Blocking the API going live
+
+1. **Apply the serving SQL.** Actions → Daily Ingest → `workflow_dispatch`,
+   `mode=analytics-only`. This applies the row caps, the `silo_api` role,
+   `SET search_path = ''`, and the landing-table REVOKEs. Until it succeeds,
+   production's `api` schema is the **pre-caps** version.
+   Run it when no Vercel build is in flight — concurrent dashboard builds hold locks on
+   `cvm_fi_perfil` and have blocked this apply before (now bounded by `lock_timeout`).
+2. **Expose the schema.** Supabase Dashboard → Settings → API → add `api` to
+   **Exposed schemas**. That is the whole deployment; there is no gateway and no host.
+   Do this only after step 1 — exposing the uncapped version puts an unbounded
+   `api.panel` on the public internet.
+3. **Verify** with the `curl` in [api-docs/quickstart.mdx](api-docs/quickstart.mdx).
+
+### Known defects
+
+- **`etf_daily` matview refresh fails on every daily run**
+  (`"etf_daily" is not a table or materialized view`). The ETF page depends on it.
+  Diagnosing needs the production `relkind` for that relation.
+- **`mv_savings_flow_monthly` is granted to `anon`** in both `public` and `api`
+  (`18_savings_flow.sql`), so exposing `api` publishes an endpoint the contract in
+  `19_api_contract.sql` says should not exist. Either document it or revoke it.
+- **Dashboard builds are slow** (~25 min). The remaining cost is `fi_investor_mix`
+  (4m19) and `fi_investor_split` (3m13), which scan `cvm_fi_perfil` across 24 months.
+  Optimizing them needs `EXPLAIN ANALYZE` against real data.
+
+### Deferred by design
+
+- **Historical backfills** for `securit` and `fidc` — the daily window only heals the
+  trailing months, so deep history for the recently-fixed field maps needs `backfill.yml`.
+- **`VERCEL_DEPLOY_HOOK_URL`** — until set, the dashboard refreshes only on `dashboard/`
+  commits, not on new data.
+- **`APIFY_TOKEN`** — the ETF market scrape self-skips without it.
+- **B3 ↔ fund/company join.** `b3_cotahist` is landed but not joined to `cia_*`; a
+  ticker↔CNPJ mapping has to come from a real source, never a guess.
 
 ## Execution roadmap
 
