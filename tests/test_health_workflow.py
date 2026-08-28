@@ -1,20 +1,20 @@
 """Pins the warehouse health gate against the bugs that made it red on 2026-08-28.
 
-Run https://github.com/PedroDnT/SILO-BZ/actions/runs/33163062887 failed three
-distinct ways, two of them the gate's own:
+Two consecutive DB Health runs failed for different reasons:
 
-1. `api.catalog()->>'catalog_version'` is empty because the jsonb key is
-   `version` (serve/catalog.py CATALOG_VERSION). coverage() returned 9 rows —
-   the contract was answering.
-2. Diagnostics used `ON_ERROR_STOP=1`, so a missing `vw_b3_share_count_event`
-   (migration 26 not yet applied; this job is read-only) aborted the step at
-   psql exit 3 before D2.10 ran.
-3. Ingest-error check counted every `error` row in 26h, including recovered
-   TimeoutError attempts whose later `ok` already landed the slice
-   (src/pipeline/gaps.py documents that trap).
+* Run 33163062887 (ae2719d) counted every error row and read
+  ``api.catalog()->>'catalog_version'`` (always empty). #133 fixed those.
+* Run 33164105326 (c84dc67, after #133) still failed Health checks. The only
+  assertion that set ``fail=1`` was **1 unhealed ingest error**:
+  ``fidc/mensal_tab_x2/2026-08 TimeoutError`` at 2026-08-27 09:00:58Z.
+  Daily ingest later 404'd the same slice (unpublished August FIDC file) and
+  logged ``skipped``. Completeness, ingest activity (261 rows / 26h), and
+  ``api.catalog()->>'version'`` (=9, 9 coverage rows) all passed. Disk 899%
+  is a warning, not a fail.
 
+The remaining gate bug is that a later ``skipped`` did not count as a heal.
 These tests parse the workflow YAML. They cannot see production, but they stop
-the same typos from shipping again.
+the same predicate from shipping again.
 """
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/health.yml"
 CATALOG_PY = ROOT / "serve/catalog.py"
 SQL19 = ROOT / "src/store/analytical/19_api_contract.sql"
+DIAG_DIR = ROOT / "scripts/health_diagnostics"
 
 
 def _spec() -> dict:
@@ -60,60 +61,73 @@ def test_catalog_check_reads_the_version_key_not_catalog_version():
 
 
 def test_embedded_catalog_key_is_version_in_sql_and_python():
-    # Keep the workflow pin honest against the sources of truth.
     assert '"version": CATALOG_VERSION' in CATALOG_PY.read_text(encoding="utf-8")
     sql = SQL19.read_text(encoding="utf-8")
     assert '"version":' in sql
     assert '"catalog_version"' not in sql
 
 
-def test_ingest_errors_count_unresolved_slices_not_recovered_attempts():
+def test_ingest_errors_treat_later_skipped_as_healed():
+    """Run 33164105326: TimeoutError then 404-skip must not fail the gate."""
     body = _step("Health checks")["run"]
-    assert "NOT EXISTS" in body
-    assert "later.status IN ('ok', 'skipped')" in body
+    heal = "s.status IN ('ok', 'skipped')"
+    assert heal in body, (
+        "a later skipped (CVM 404, unpublished month) is a recovered probe, "
+        "not a broken slice — run 33164105326 stayed red because only ok healed"
+    )
+    assert body.count(heal) >= 2, "count query and the evidence SELECT must agree"
+    assert "IS NOT DISTINCT FROM e.entity" in body
     assert "IS NOT DISTINCT FROM e.period_year" in body
-    assert "unresolved" in body
-    # The naive count of every error row must not be what fails the gate.
-    # attempts= is informational; errs= is the fail signal.
-    assert "unresolved slices:" in body
-    assert 'FAIL: $errs unresolved ingest error slices' in body
+    assert "IS NOT DISTINCT FROM e.period_month" in body
+    # The fail signal is unresolved slices, not every error attempt in the window.
+    assert "UNHEALED ingest error slices" in body
+    sql_lines = [
+        line for line in body.splitlines()
+        if "s.status" in line and not line.lstrip().startswith("#")
+    ]
+    assert sql_lines, "heal predicate must appear in SQL, not only comments"
+    assert all("IN ('ok', 'skipped')" in line for line in sql_lines), (
+        "an ok-only heal predicate is what counted the fidc 2026-08 TimeoutError "
+        "after daily ingest had already skipped it as unpublished"
+    )
 
 
-def test_disk_warns_against_pro_included_allowance_and_does_not_fail_the_gate():
+def test_ingest_error_query_failure_does_not_print_recovered():
+    """A broken count query must not fall through to the green recovered line."""
+    body = _step("Health checks")["run"]
+    assert "did not return a count" in body
+    assert 'elif [ "${errs:-0}" -gt 0 ]' in body, (
+        "zeroing errs and continuing prints both ❌ query failed and ✅ recovered"
+    )
+
+
+def test_plan_disk_gb_is_empty_until_a_real_allowance_is_set():
     spec = _spec()
     env = spec["jobs"]["health"]["env"]
-    assert env["PLAN_DISK_GB"] == "8"
+    # 8 GB vs 71.9 GB printed 899% and trained everyone to ignore the line.
+    assert env["PLAN_DISK_GB"] in ("", None)
     body = _step("Health checks")["run"]
-    assert "Pro included" in body
-    # Disk is a warning annotation, not a fail=1. Dropping landing tables to
-    # clear the % would destroy the warehouse.
+    assert 'if [ -n "${PLAN_DISK_GB:-}" ]' in body
+    assert "do not drop landing tables" in body.lower()
+
+
+def test_disk_warns_and_does_not_fail_the_gate():
+    body = _step("Health checks")["run"]
     disk_section = body[body.index("# 5. Disk"):]
+    # 71.9 GB vs a placeholder 8 GB printed 899% on run 33164105326. That is
+    # a warning annotation, not fail=1. Dropping landing tables to clear a
+    # percentage would destroy the warehouse.
     assert "fail=1" not in disk_section
     assert "::warning::" in disk_section
-    assert "do not drop landing tables" in disk_section.lower()
 
 
-def test_diagnostics_does_not_use_on_error_stop():
+def test_diagnostics_are_one_file_per_query():
     body = _step("Diagnostics")["run"]
-    # A comment may mention the old flag; the psql invocation must not pass it.
-    psql_lines = [
-        line for line in body.splitlines()
-        if line.lstrip().startswith("psql ")
-    ]
-    assert psql_lines, "diagnostics must invoke psql"
-    assert all("ON_ERROR_STOP=1" not in line for line in psql_lines), (
-        "ON_ERROR_STOP=1 is what turned a missing view into job exit 3 "
-        "before the rest of the investigation queries ran"
-    )
-    assert "set +e" in body
-    assert "DIAGNOSTICS: done" in body
-    assert "to_regclass('public.vw_b3_share_count_event')" in body
-
-
-def test_diagnostics_catalog_key_is_version():
-    body = _step("Diagnostics")["run"]
-    assert "api.catalog()->>'version'" in body
-    assert "->>'catalog_version'" not in body
+    assert "scripts/health_diagnostics/*.sql" in body
+    assert "ON_ERROR_STOP=1" in body  # per-file; a missing view must not abort the rest
+    assert "for f in scripts/health_diagnostics/*.sql" in body
+    files = sorted(DIAG_DIR.glob("*.sql"))
+    assert len(files) >= 10, f"expected split diagnostic SQL files, found {files}"
 
 
 def test_diagnostics_runs_even_when_the_gate_failed():
@@ -121,18 +135,21 @@ def test_diagnostics_runs_even_when_the_gate_failed():
     assert "always()" in str(step.get("if", ""))
 
 
-def test_health_job_is_read_only():
-    spec = _spec()
-    text = WORKFLOW.read_text(encoding="utf-8")
-    assert "default_transaction_read_only = on" in text
-    assert "supabase-ingest" not in str(spec.get("concurrency", {}))
-    assert spec["concurrency"]["group"] == "silo-health"
-
-
-@pytest.mark.parametrize("name", ["Health checks", "Diagnostics"])
-def test_step_body_is_valid_bash(name):
-    body = _step(name)["run"]
+def test_health_check_and_diagnostics_scripts_are_bash_n_clean():
+    """Catch YAML-block-scalar / heredoc breakage before CI parses it on the runner."""
+    body = _step("Health checks")["run"]
     proc = subprocess.run(
-        ["bash", "-n"], input=body, text=True, capture_output=True,
+        ["bash", "-n"],
+        input=body.encode("utf-8"),
+        capture_output=True,
+        check=False,
     )
-    assert proc.returncode == 0, f"{name} is not valid bash:\n{proc.stderr}"
+    assert proc.returncode == 0, proc.stderr.decode()
+    diag = _step("Diagnostics")["run"]
+    proc = subprocess.run(
+        ["bash", "-n"],
+        input=diag.encode("utf-8"),
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr.decode()

@@ -26,6 +26,21 @@ your environment or `.env`.
 
 `.github/workflows/backfill.yml` is on-demand only (see §4).
 
+> **⚠️ All three share one concurrency group (`supabase-ingest`, `cancel-in-progress:
+> false`), and GitHub keeps only ONE pending run per group.** A queued run is therefore
+> not safe: when a newer run enters the group, the older *pending* one is **cancelled**,
+> silently, with no failure anywhere.
+>
+> Observed 2026-08-28: a `cia_aberta` backfill ran for hours; an `analytics-only`
+> deploy dispatched behind it sat pending for 70 minutes and was then evicted by the
+> scheduled Ingest Watchdog entering the group. The deploy reported `cancelled` — easy
+> to read as "someone cancelled it" rather than "it never ran".
+>
+> **So: do not queue a deploy behind a long backfill.** Wait until the group is free
+> (no in-progress or pending run on daily_ingest / backfill / watchdog), then dispatch.
+> If a deploy shows `cancelled` with no logs, this is almost certainly why — re-dispatch
+> it, nothing is broken.
+
 > **A green run used to mean nothing.** In June 2026 a backfill spent 4h22m failing every
 > download, printed `0 total rows`, exited 0, and left `cvm_fi_diario` 2024 **and** 2025
 > completely empty behind a green check. `run_daily` now exits non-zero when any source
@@ -39,7 +54,7 @@ your environment or `.env`.
 
 | When                 | Command                                      | Looking for                                                                    |
 | -------------------- | -------------------------------------------- | ------------------------------------------------------------------------------ |
-| Daily 07:30 UTC      | Actions → **DB Health** (`health.yml`)       | unresolved ingest errors, stalled monthly families, `api.catalog()`/`coverage()`, disk vs Pro included 8 GB (warn-only) |
+| Daily 07:30 UTC      | Actions → **DB Health** (`health.yml`)       | unhealed ingest errors, stalled monthly families, `api.catalog()`/`coverage()`, disk size (warn-only; `PLAN_DISK_GB` empty until a real allowance is set) |
 | After any run        | `python scripts/check_staleness.py`          | exit `0` fresh · `10` daily slice stale · `11` monthly (ANBIMA) stale          |
 | Weekly               | `python scripts/verify_pipeline.py`          | presence, field-population rates, sample business metrics per entity           |
 | Weekly               | the audit-log triage query (§3)              | `error` slices, slices stuck `running`, entities missing entirely              |
@@ -91,6 +106,13 @@ Two signals worth knowing, both learned from real outages:
 Also note: **`ok` with `rows_upserted = 0` is no longer possible** when the source
 returned rows. That combination was what let `cvm_fiagro_mensal` sit empty behind 34
 `ok` slices; it is now an `error` naming the likely cause.
+
+The DB Health workflow (`.github/workflows/health.yml`) fails on **unhealed**
+error slices: an `error` whose slice has no later `ok` **or** `skipped`. A
+`TimeoutError` on the current unpublished month, followed by the daily window's
+404 `skipped`, is a recovered probe — not a broken warehouse. Run 33164105326
+went red on exactly that (`fidc/mensal_tab_x2` 2026-08). Disk size is a warning
+only; do not DROP landing tables to clear it.
 
 ---
 
@@ -346,20 +368,21 @@ Verify afterwards with the query in the file's footer.
 
   Whole database **~72 GB**. `db_parity.py` prints live sizes.
 
-### Disk vs the Pro 8 GB included allowance
+### Disk vs the plan allowance
 
-The DB Health workflow (`health.yml`) compares `pg_database_size` to
-`PLAN_DISK_GB=8` — that is the **Supabase Pro included disk**, not a hard cap and
-not a wrong constant. 72 GB is ~899% of included and **bills overage**. The gate
-**warns, it does not fail**, and it must not be "fixed" by dropping landing
-tables: those relations *are* the warehouse.
+The DB Health workflow (`health.yml`) reports `pg_database_size` as an absolute
+GB figure. `PLAN_DISK_GB` is **empty by default**: a placeholder of 8 GB against
+a ~72 GB warehouse printed "899%" and trained everyone to ignore the line. Set
+it only to a real purchased allowance (included + addon). The gate **warns, it
+does not fail**, and it must not be "fixed" by dropping landing tables: those
+relations *are* the warehouse.
 
 What to do (operator, not a migration):
 
 1. **Add disk / raise the spend cap** in the Supabase dashboard for project
    `zcjbtpxuhdekpwcxmepn`. If extra disk is purchased, set `PLAN_DISK_GB` in
-   `.github/workflows/health.yml` to the new included+addon total so the
-   percentage is meaningful.
+   `.github/workflows/health.yml` to the included+addon total so the percentage
+   is meaningful.
 2. **Do not `DROP` yearly `cia_account_*` / `b3_cotahist_*` partitions or
    `cvm_fi_balancete` to reclaim space.** There is no retention policy on
    landing data; historical ITR/DFP and FI balance sheets are the product.
@@ -371,10 +394,9 @@ What to do (operator, not a migration):
    lifecycle change, not a cleanup. Do it as its own migration with a
    measured cutover, never as a panic drop.
 
-The health job is read-only and does not apply schema. A diagnostics query that
-mentions `vw_b3_share_count_event` needs migration 26 on the database — dispatch
-**Daily CVM Ingest** on current `main` (or wait for the 06:00 UTC cron) before
-expecting that view to exist.
+The health job is read-only and does not apply schema. Diagnostics live in
+`scripts/health_diagnostics/*.sql` (one session each); a missing view skips that
+file and the rest still run.
 
 ---
 

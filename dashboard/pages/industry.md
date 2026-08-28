@@ -113,6 +113,14 @@ select * from supabase.industry_fiagro
 > list of y columns, live-verified) and absolute net assets with FI excluded
 > (where the other four are back on a comparable scale).
 
+> **The step at 2025-05 is FIAGRO entering the data, not the industry growing.**
+> CVM's FIAGRO monthly file begins in May 2025 with **3 funds**, reaches 125 by
+> September and 202 by December. Every aggregate that includes FIAGRO — the
+> total line most of all — therefore steps up as that family is onboarded into
+> the dataset. The per-family lines are unaffected and are the honest read; the
+> total is a sum over whatever families the data covers in that month, which is
+> not the same thing as the market's size changing.
+
 <AreaChart
 data={industry_aum_trend}
 x=period
@@ -217,12 +225,12 @@ title="Net Assets by Family — Last 36 Months (ex-FI, absolute)"
 > the left edge of the series with care.
 
 <BarChart
-  data={industry_new_funds}
-  x=period
-  y={['fi_new', 'fidc_new', 'fii_new', 'fiagro_new']}
-  type=stacked
-  yAxisTitle="New Funds"
-  title="First-Reported Funds per Month — Monthly Filers"
+data={industry_new_funds}
+x=period
+y={['fi_new', 'fidc_new', 'fii_new', 'fiagro_new']}
+type=stacked
+yAxisTitle="New Funds"
+title="First-Reported Funds per Month — Monthly Filers"
 />
 
 > **FIP is not on this chart.** It files once a year, so every FIP's first period
@@ -248,8 +256,11 @@ title="Quotaholders by Family — Last 36 Months"
 />
 
 > Average quotaholders per fund below — retail reach per vehicle rather than raw
-> headcount. Structured Credit and Private Equity are blank throughout because
-> their source files carry no quotaholder count.
+> headcount. Structured Credit, Private Equity **and Agribusiness** are blank
+> throughout because their source files carry no quotaholder count: measured
+> 2026-08-28, `nr_cotst` is present on 100% of FI rows and 99.9% of FII rows and
+> on **zero** FIDC, FIP or FIAGRO rows. A blank here is CVM not publishing the
+> number, never a failed load.
 
 <LineChart
   data={industry_quotaholder_by_class}

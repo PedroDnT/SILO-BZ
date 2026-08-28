@@ -1,25 +1,50 @@
-"""Rewrite no-op ADD COLUMN IF NOT EXISTS so daily schema apply does not lock.
+"""Rewrite no-op / long-held DDL so daily schema apply does not lock.
 
-PostgreSQL takes AccessExclusiveLock for `ALTER TABLE ... ADD COLUMN IF NOT
-EXISTS` *before* it checks whether the column exists. Daily ingest re-applies
-schema.sql + every migration, so that lock is acquired on tables whose columns
-have been present for months. A concurrent SELECT (AccessShareLock) — a
-Vercel Evidence build scanning cvm_fii_mensal / cvm_fi_perfil — then blocks
-the DDL, and the queued exclusive lock blocks every reader behind it.
+Two PostgreSQL traps show up when daily ingest re-applies schema.sql + every
+migration against a live warehouse:
 
-Confirmed on SILO-BZ:
+1. `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` takes AccessExclusiveLock
+   *before* it checks whether the column exists. A concurrent SELECT
+   (AccessShareLock) — a Vercel Evidence build scanning cvm_fii_mensal /
+   cvm_fi_perfil — then blocks the DDL, and the queued exclusive lock
+   blocks every reader behind it.
 
-- 2026-08-26 22:41 UTC (run 33019539699): migration 14's ADD COLUMN on
-  cvm_fi_perfil hung 4m20s; the server killed the connection.
-- 2026-08-27 02:45 UTC (run 33034222521): schema.sql:268 ADD COLUMN on
-  cvm_fii_mensal hit lock_timeout=15s three times. The same statement in the
-  22:23 run logged `column "nr_cotst" ... already exists, skipping` — it was
-  a no-op. Ingest never started.
+   Confirmed on SILO-BZ:
 
-This rewriter wraps *top-level* ADD COLUMN IF NOT EXISTS in a pg_attribute
-probe (AccessShareLock, compatible with SELECT). The original ALTER runs only
-when at least one named column is missing. Statements inside DO $$ blocks are
-left alone — those are already catalog-guarded (see migrations/03_precision.sql).
+   - 2026-08-26 22:41 UTC (run 33019539699): migration 14's ADD COLUMN on
+     cvm_fi_perfil hung 4m20s; the server killed the connection.
+   - 2026-08-27 02:45 UTC (run 33034222521): schema.sql:268 ADD COLUMN on
+     cvm_fii_mensal hit lock_timeout=15s three times. The same statement in
+     the 22:23 run logged `column "nr_cotst" ... already exists, skipping`
+     — it was a no-op. Ingest never started.
+
+   Top-level ADD COLUMN IF NOT EXISTS is wrapped in a pg_attribute probe
+   (AccessShareLock, compatible with SELECT). The original ALTER runs only
+   when at least one named column is missing.
+
+2. `CREATE MATERIALIZED VIEW IF NOT EXISTS ... AS SELECT` (implicit WITH
+   DATA) inserts the composite type into pg_type and holds that insert
+   uncommitted for the whole population scan. A concurrent schema apply
+   does not see the uncommitted relation, tries to CREATE the same name,
+   and waits on pg_type_typname_nsp_index until lock_timeout.
+
+   Confirmed on SILO-BZ:
+
+   - 2026-08-28 14:36 UTC (Daily CVM Ingest #184 / run 33180429771):
+     CREATE MATERIALIZED VIEW mv_b3_isin_subtype failed three times with
+     `canceling statement due to lock timeout` / `while inserting index
+     tuple ... in relation "pg_type_typname_nsp_index"`. PR #105's ADD
+     COLUMN guard had already rewritten the earlier ALTERs (the log is
+     DO / CREATE INDEX up to that line). Ingest never started.
+
+   Top-level CREATE MATERIALIZED VIEW IF NOT EXISTS that does not already
+   say WITH NO DATA / WITH DATA is rewritten to WITH NO DATA so the type
+   commit is instantaneous. Population is a later REFRESH (schema.sql
+   refresh-if-empty, or pg_cron CONCURRENTLY), a separate statement that
+   does not insert into pg_type.
+
+Statements inside DO $$ blocks are left alone — those are already
+catalog-guarded (see migrations/03_precision.sql, 06_etf.sql).
 
 Stdlib only: the GitHub composite action must run this on runners that have
 not always run setup-python (backfill's apply-schema job).
@@ -51,6 +76,13 @@ _LEADING_NOISE = re.compile(
     r"^(?:\s|--[^\n]*\n|/\*.*?\*/)*",
     re.DOTALL,
 )
+_CREATE_MV = re.compile(
+    r"^CREATE\s+MATERIALIZED\s+VIEW\s+IF\s+NOT\s+EXISTS\s+"
+    r"(?P<name>[\w.]+)\s+AS\s+(?P<query>.+)$",
+    re.IGNORECASE | re.DOTALL,
+)
+_WITH_NO_DATA_TAIL = re.compile(r"\bWITH\s+NO\s+DATA\s*$", re.IGNORECASE)
+_WITH_DATA_TAIL = re.compile(r"\bWITH\s+DATA\s*$", re.IGNORECASE)
 
 
 def _sql_literal(value: str) -> str:
@@ -194,6 +226,14 @@ def wrap_add_column_statement(stmt: str) -> str | None:
     )
 
 
+def _keep_lead(chunk: str, rewritten: str) -> str:
+    """Preserve leading whitespace/comments that preceded the statement body."""
+    body = _statement_body(chunk)
+    lead_len = chunk.find(body) if body else 0
+    lead = chunk[:lead_len] if lead_len > 0 else ""
+    return lead + rewritten
+
+
 def guard_add_column_sql(sql: str) -> str:
     """Wrap top-level ADD COLUMN IF NOT EXISTS; leave everything else intact."""
     parts: list[str] = []
@@ -202,12 +242,42 @@ def guard_add_column_sql(sql: str) -> str:
         if wrapped is None:
             parts.append(chunk)
             continue
-        # Keep any leading whitespace/comments that preceded the ALTER.
-        body = _statement_body(chunk)
-        lead_len = chunk.find(body) if body else 0
-        lead = chunk[:lead_len] if lead_len > 0 else ""
-        parts.append(lead + wrapped)
+        parts.append(_keep_lead(chunk, wrapped))
     return "".join(parts)
+
+
+def wrap_matview_statement(stmt: str) -> str | None:
+    """Return CREATE ... WITH NO DATA, or None if stmt is not a top-level MV."""
+    body = _statement_body(stmt)
+    ended_with_semi = body.endswith(";")
+    core = body[:-1].strip() if ended_with_semi else body
+    match = _CREATE_MV.match(core)
+    if not match:
+        return None
+    query = match.group("query").rstrip()
+    if _WITH_NO_DATA_TAIL.search(query):
+        return None
+    if _WITH_DATA_TAIL.search(query):
+        new_core = _WITH_DATA_TAIL.sub("WITH NO DATA", core)
+        return new_core + ";\n"
+    return core + "\nWITH NO DATA;\n"
+
+
+def guard_matview_sql(sql: str) -> str:
+    """Force top-level CREATE MATERIALIZED VIEW IF NOT EXISTS to WITH NO DATA."""
+    parts: list[str] = []
+    for chunk in split_sql_statements(sql):
+        wrapped = wrap_matview_statement(chunk)
+        if wrapped is None:
+            parts.append(chunk)
+            continue
+        parts.append(_keep_lead(chunk, wrapped))
+    return "".join(parts)
+
+
+def guard_noop_ddl(sql: str) -> str:
+    """Apply every apply-time DDL rewrite (ADD COLUMN probe + matview WITH NO DATA)."""
+    return guard_matview_sql(guard_add_column_sql(sql))
 
 
 def iter_wrappable(sql: str) -> Iterable[str]:
@@ -216,14 +286,23 @@ def iter_wrappable(sql: str) -> Iterable[str]:
             yield _statement_body(chunk)
 
 
+def iter_wrappable_matview(sql: str) -> Iterable[str]:
+    for chunk in split_sql_statements(sql):
+        if wrap_matview_statement(chunk) is not None:
+            yield _statement_body(chunk)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Wrap no-op ADD COLUMN IF NOT EXISTS in a catalog probe.",
+        description=(
+            "Rewrite no-op ADD COLUMN IF NOT EXISTS and CREATE MATERIALIZED "
+            "VIEW IF NOT EXISTS (WITH NO DATA) so daily schema apply does not lock."
+        ),
     )
     parser.add_argument("path", help="SQL file to rewrite (stdout)")
     args = parser.parse_args(argv)
     with open(args.path, encoding="utf-8") as fh:
-        sys.stdout.write(guard_add_column_sql(fh.read()))
+        sys.stdout.write(guard_noop_ddl(fh.read()))
     return 0
 
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
-from src.parsers.mapping import apply_map, assert_map_matches, derive_is_active
+from src.parsers.mapping import _norm, apply_map, assert_map_matches, derive_is_active
 from src.parsers.field_maps import fiagro_mensal as _fiagro
 from src.parsers.field_maps import fip_periodic as _fip
 from src.parsers.field_maps import fund_registry as _reg
@@ -107,21 +107,54 @@ def _entity_from_tipo(tipo: Any) -> str:
     return "fi"             # FI, FIF, FACFIF, FAPI, FITVM, "... Fundos FIF"
 
 
+def _columns_published_by(rows: List[Dict[str, Any]], field_map: Dict[str, Any]) -> set:
+    """Which FIELD_MAP columns this source file actually publishes.
+
+    A column whose candidate headers are absent from the file is not "empty", it
+    is *not reported by this file* — and the two must not be written the same
+    way. apply_map cannot tell them apart: it emits None either way.
+
+    Judged on the union of keys across the rows, not the first row: a parser that
+    omits absent keys per row would otherwise make the whole batch inherit
+    whatever the first record happened to carry.
+    """
+    present = {_norm(k) for row in rows for k in row.keys()}
+    return {
+        col
+        for col, (candidates, _type) in field_map.items()
+        if any(_norm(c) in present for c in candidates)
+    }
+
+
 def ingest_fund_registry_cvm175(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     """Parse and upsert CVM-175 registry rows (registro_fundo / registro_classe).
 
     entity_type and is_active are derived per row (the file mixes all fund
     families and both active and cancelled records).
 
+    Both files land in cvm_fund_registry keyed on (cnpj, entity_type), and CVM
+    reuses the fund's CNPJ for its classes: measured 2026-08-28, 36,492 of 36,606
+    CNPJ_Classe values are also a CNPJ_Fundo. registro_classe.csv publishes no
+    Administrador and no Gestor at all, so mapping it produced gestor_name=None
+    and the upsert wrote that NULL over the fund row loaded moments earlier —
+    erasing the manager for 36,343 funds, ETFs among them. That is why the ETF
+    page showed an index publisher where a manager belongs.
+
+    Columns this file does not publish are therefore dropped from the record
+    entirely, so they appear in neither the INSERT list nor the ON CONFLICT SET
+    and the fund's published value survives. Silence is not a value.
+
     Returns:
         number of rows upserted
     """
     records: List[Dict[str, Any]] = []
+    published = _columns_published_by(raw_rows, _reg.FIELD_MAP)
 
     for row in raw_rows:
         typed, residual = apply_map(row, _reg.FIELD_MAP)
         if not typed.get("cnpj"):
             continue
+        typed = {k: v for k, v in typed.items() if k in published}
         typed["entity_type"] = _entity_from_tipo(typed.get("tp_fundo"))
         typed["is_active"] = derive_is_active(typed.get("status"))
         typed["raw"] = residual
@@ -129,6 +162,13 @@ def ingest_fund_registry_cvm175(conn: Any, raw_rows: List[Dict[str, Any]]) -> in
 
     if not records:
         return 0
+
+    missing = sorted(set(_reg.FIELD_MAP) - published)
+    if missing:
+        logger.info(
+            "cvm175 registry: source does not publish %s — leaving those columns untouched",
+            ", ".join(missing),
+        )
 
     return upsert_rows(
         conn,
@@ -147,9 +187,14 @@ def ingest_fund_registry(conn: Any, raw_rows: List[Dict[str, Any]], entity_type:
         number of rows upserted
     """
     records: List[Dict[str, Any]] = []
+    published = _columns_published_by(raw_rows, _reg.FIELD_MAP)
 
     for row in raw_rows:
         typed, residual = apply_map(row, _reg.FIELD_MAP)
+        # Same rule as the CVM-175 path: this table is written by several source
+        # files with different column sets, so a file may only assert the columns
+        # it publishes. Otherwise whichever file loads last wins with NULLs.
+        typed = {k: v for k, v in typed.items() if k in published}
         typed["entity_type"] = entity_type
         typed["is_active"] = derive_is_active(typed.get("status"))
         typed["raw"] = residual

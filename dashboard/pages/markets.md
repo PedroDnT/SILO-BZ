@@ -107,9 +107,15 @@ yAxisTitle="Volume (R$bn)"
 ## Volume by Instrument Type
 
 > The cash tape split by what the paper is — classified from B3's own
-> CODBDI/ESPECI codes, never from ticker shape. `cash_security` is
-> exchange-traded debt (debentures, CRI/CRA and similar); `fund_quota` is
-> listed fund quotas, split into ETF and FII below.
+> CODBDI/ESPECI/ISIN codes, never from ticker shape. `fund_quota` is listed
+> fund quotas, split into ETF and FII below.
+>
+> **`right`** is a subscription right (ESPECI `DIR`) and **`bonus`** a bonus
+> right (`BNS`) — claims on a security, not the security. **`index`** is an
+> index line such as IBOV11, which despite its ticker is neither an ETF nor a
+> tradable fund. All three used to sit inside `cash_security`, which is now the
+> genuine residual: whatever ESPECI B3 prints that none of the named types
+> covers.
 
 <AreaChart
   data={b3_asset_class_volume}

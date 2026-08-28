@@ -42,6 +42,18 @@ BEGIN
       'REFRESH MATERIALIZED VIEW CONCURRENTLY fact_fund_monthly'
     );
 
+    -- mv_b3_isin_subtype — 06:12 UTC daily, BEFORE the fund matviews and right
+    -- after the B3 ingest lands. It maps an ISIN to the fund subtype its own
+    -- decisive sessions show, and vw_b3_instrument_typed falls back to it when
+    -- a row's CODBDI is silent — which is what keeps an ETF classified as an
+    -- ETF across the board-code change B3 made in late 2019. A stale copy just
+    -- means a newly listed fund waits a day for its subtype.
+    PERFORM cron.schedule(
+      'refresh-b3-isin-subtype',
+      '12 6 * * *',
+      'REFRESH MATERIALIZED VIEW CONCURRENTLY mv_b3_isin_subtype'
+    );
+
     -- fact_security_monthly — 06:25 UTC daily
     PERFORM cron.schedule(
       'refresh-fact-security-monthly',

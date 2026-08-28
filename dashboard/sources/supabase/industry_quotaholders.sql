@@ -5,10 +5,16 @@
 -- empty fact_fund_monthly gives NULL columns rather than a 0-row source — which
 -- would write a zero-byte parquet and break the build.
 --
--- COVERAGE: nr_cotst is only carried for FI (from cvm_fi_diario), FII
--- (complemento) and FIAGRO. FIDC and FIP report no quotaholder count at all, so
--- they are absent by construction and the total is a total of what exists — not
--- an industry-wide investor count.
+-- COVERAGE: nr_cotst is carried by FI (from cvm_fi_diario, 100.0% of 2,052,406
+-- rows) and FII (complemento, 99.9% of 72,478) and by NOTHING ELSE. Measured on
+-- production 2026-08-28: fidc 0 of 178,237, fip 0 of 13,293, fiagro 0 of 2,494.
+--
+-- FIAGRO was listed here as a source of quotaholder counts and is not one — its
+-- column below has been NULL for every month it has existed. It is kept, named
+-- and empty rather than dropped, because "FIAGRO publishes no quotaholder
+-- count" is itself worth showing; silently removing the series would leave a
+-- reader to guess whether the family has no investors or no data. The total is
+-- therefore a total of FI + FII, not an industry-wide investor count.
 --
 -- Counts are divided by 1e6 here; the unit lives in the column title.
 with spine as (
