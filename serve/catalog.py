@@ -22,6 +22,8 @@ __all__ = [
     "tool_specs",
 ]
 
+# 10: close_unit — close divided by the published quotation factor, so price
+# levels are comparable across papers quoted per lot; raw close untouched.
 # 9: lookup company rows carry `tickers` — CVM's published FCA
 # valores-mobiliários CNPJ↔ticker map (cia_ticker / vw_company_ticker),
 # replacing the old "not joined here" stance: the join is published, not
@@ -38,7 +40,7 @@ __all__ = [
 # 6: one endpoint per cash instrument type, each carrying both lot sizes.
 # 5: main's typed cash asset classes (4) merged with the option/termo id_types
 # and list-valued id_type this branch introduced (3).
-CATALOG_VERSION = 9
+CATALOG_VERSION = 10
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -74,6 +76,24 @@ METRICS: Dict[str, Dict[str, Any]] = {
             "by default; option/termo: that derivative segment. "
             "Month = last session."
         ),
+    },
+    "close_unit": {
+        # Not an adjustment: division by a published COTAHIST field. FATCOT is
+        # the number of shares the quoted price refers to (1, or 1000 for papers
+        # quoted per lot), so close alone is not comparable across papers or
+        # across a factor change. close and quotation_factor are still served
+        # raw beside it. Splits/groupings/bonuses are NOT handled here.
+        "id_type": ["ticker"],
+        "asset_class": B3_CASH_ASSET_CLASSES,
+        "grain": ["day", "month"],
+        "source": "b3_cotahist",
+        "meaning": (
+            "Close per single quoted unit: close / quotation_factor, both "
+            "published. Use this to compare price levels across papers; "
+            "a paper quoted per lot (factor 1000) otherwise reads 1000x its "
+            "unit price. Still unadjusted for corporate actions."
+        ),
+        "derived": True,
     },
     "close_return": {
         # Cash only. Derivatives carry strike/expiry/term effects that make a
@@ -154,6 +174,10 @@ CONSTRAINTS = [
     "freq=day is quotes only. Mix equity with fund fundamentals on freq=month.",
     "close_return across a missing month is null, not a multi-month return.",
     "close_return is unadjusted: a 2:1 split reports roughly -50%. It is not a total return.",
+    "close is the price as published, which for a paper quoted per lot refers "
+    "to 1000 shares; close_unit divides it by the published quotation_factor so "
+    "levels are comparable. Neither is corporate-action adjusted — no split, "
+    "grouping or bonus adjustment exists yet, and `adjusted` is FALSE on every row.",
     "Daily close_return is null when the previous session is more than 7 "
     "calendar days back (halts, listing gaps), and null across a quotation-"
     "factor change — a fatcot flip rescales the quote with no market move "

@@ -64,6 +64,7 @@ api.panel(p_ids     TEXT[],
 | --- | --- | --- | --- | --- | --- |
 | `close` | ticker, option, termo | equity, unit, bdr, fund_quota, cash_security, derivative | day, month | `b3_cotahist` | Unadjusted close. Cash tickers: the instrument's published BDI board. Option/termo codnegs: that segment's session close. Monthly = last session of the month. |
 | `volume` | ticker, option, termo | equity, unit, bdr, fund_quota, cash_security, derivative | day, month | `b3_cotahist` | Session financial volume in BRL. Monthly = the last session's volume, not a monthly sum. |
+| `close_unit` | ticker | equity, unit, bdr, fund_quota, cash_security | day, month | `b3_cotahist` | `close / quotation_factor`, both published — the close per **single** quoted unit. Derived. Use it to compare price levels across papers: one quoted per lot reads 1000× its unit price in `close`. Still not corporate-action adjusted. |
 | `close_return` | ticker | equity, unit, bdr, fund_quota, cash_security | day, month | `b3_cotahist` | `p_t / p_(t-1) - 1` from stored **unadjusted** closes. Derived. A 2:1 split reports roughly −50%. **Cash tickers only** — not offered for derivatives. |
 | `nav` | cnpj | fi, fidc, fii, fip, fiagro | month | `cvm` | Fund net assets (`vl_patrim_liq`). |
 | `quota` | cnpj | fi | month | `cvm` | Unit quota value. Comparable within a subclass only. |

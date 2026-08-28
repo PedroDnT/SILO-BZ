@@ -80,7 +80,15 @@ SELECT
     FALSE               AS adjusted,
     v.source,
     v.fetched_at,
-    v.instrument_type   AS asset_class
+    v.instrument_type   AS asset_class,
+    -- Price per SINGLE quoted unit: COTAHIST quotes some papers per lot (the
+    -- published FATCOT is the number of shares the price refers to, 1 or 1000),
+    -- so `close` alone is not comparable across papers or across a factor
+    -- change. This is division by a published field, not an adjustment: raw
+    -- `close` and `quotation_factor` stay untouched beside it. It does NOT
+    -- account for splits, groupings or bonuses - that needs the corporate-event
+    -- table, and until that exists `adjusted` stays FALSE.
+    v.preco_fechamento / NULLIF(v.fator_cotacao, 0) AS close_unit
 FROM public.vw_b3_instrument_typed v
 WHERE v.tpmerc = '010';
 
@@ -156,7 +164,15 @@ SELECT
     -- parsed from published ESPECI (class cross-checked against the ISIN class
     -- code with zero disagreements). ON=ordinary, PN/PNA/PNB/PNC/PND=preferred.
     v.share_class,
-    v.governance_segment
+    v.governance_segment,
+    -- Price per SINGLE quoted unit: COTAHIST quotes some papers per lot (the
+    -- published FATCOT is the number of shares the price refers to, 1 or 1000),
+    -- so `close` alone is not comparable across papers or across a factor
+    -- change. This is division by a published field, not an adjustment: raw
+    -- `close` and `quotation_factor` stay untouched beside it. It does NOT
+    -- account for splits, groupings or bonuses - that needs the corporate-event
+    -- table, and until that exists `adjusted` stays FALSE.
+    v.preco_fechamento / NULLIF(v.fator_cotacao, 0) AS close_unit
 FROM public.vw_b3_instrument_typed v
 WHERE v.instrument_type = 'equity'
   AND v.tpmerc IN ('010', '020', '021');
@@ -191,7 +207,15 @@ SELECT
     v.fator_cotacao     AS quotation_factor,
     FALSE               AS adjusted,
     v.source,
-    v.fetched_at
+    v.fetched_at,
+    -- Price per SINGLE quoted unit: COTAHIST quotes some papers per lot (the
+    -- published FATCOT is the number of shares the price refers to, 1 or 1000),
+    -- so `close` alone is not comparable across papers or across a factor
+    -- change. This is division by a published field, not an adjustment: raw
+    -- `close` and `quotation_factor` stay untouched beside it. It does NOT
+    -- account for splits, groupings or bonuses - that needs the corporate-event
+    -- table, and until that exists `adjusted` stays FALSE.
+    v.preco_fechamento / NULLIF(v.fator_cotacao, 0) AS close_unit
 FROM public.vw_b3_instrument_typed v
 WHERE v.instrument_type = 'bdr'
   AND v.tpmerc IN ('010', '020', '021');
@@ -226,7 +250,15 @@ SELECT
     v.fator_cotacao     AS quotation_factor,
     FALSE               AS adjusted,
     v.source,
-    v.fetched_at
+    v.fetched_at,
+    -- Price per SINGLE quoted unit: COTAHIST quotes some papers per lot (the
+    -- published FATCOT is the number of shares the price refers to, 1 or 1000),
+    -- so `close` alone is not comparable across papers or across a factor
+    -- change. This is division by a published field, not an adjustment: raw
+    -- `close` and `quotation_factor` stay untouched beside it. It does NOT
+    -- account for splits, groupings or bonuses - that needs the corporate-event
+    -- table, and until that exists `adjusted` stays FALSE.
+    v.preco_fechamento / NULLIF(v.fator_cotacao, 0) AS close_unit
 FROM public.vw_b3_instrument_typed v
 WHERE v.instrument_type = 'unit'
   AND v.tpmerc IN ('010', '020', '021');
@@ -266,7 +298,15 @@ SELECT
     -- CODBDI board code (14 etf / 05,12 fii / 13 fiagro; validated against
     -- cvm_etf_registry). NULL on boards with no family signal (odd lot) —
     -- never guessed from the ticker.
-    v.instrument_subtype AS fund_type
+    v.instrument_subtype AS fund_type,
+    -- Price per SINGLE quoted unit: COTAHIST quotes some papers per lot (the
+    -- published FATCOT is the number of shares the price refers to, 1 or 1000),
+    -- so `close` alone is not comparable across papers or across a factor
+    -- change. This is division by a published field, not an adjustment: raw
+    -- `close` and `quotation_factor` stay untouched beside it. It does NOT
+    -- account for splits, groupings or bonuses - that needs the corporate-event
+    -- table, and until that exists `adjusted` stays FALSE.
+    v.preco_fechamento / NULLIF(v.fator_cotacao, 0) AS close_unit
 FROM public.vw_b3_instrument_typed v
 WHERE v.instrument_type = 'fund_quota'
   AND v.tpmerc IN ('010', '020', '021');
@@ -301,7 +341,15 @@ SELECT
     v.fator_cotacao     AS quotation_factor,
     FALSE               AS adjusted,
     v.source,
-    v.fetched_at
+    v.fetched_at,
+    -- Price per SINGLE quoted unit: COTAHIST quotes some papers per lot (the
+    -- published FATCOT is the number of shares the price refers to, 1 or 1000),
+    -- so `close` alone is not comparable across papers or across a factor
+    -- change. This is division by a published field, not an adjustment: raw
+    -- `close` and `quotation_factor` stay untouched beside it. It does NOT
+    -- account for splits, groupings or bonuses - that needs the corporate-event
+    -- table, and until that exists `adjusted` stays FALSE.
+    v.preco_fechamento / NULLIF(v.fator_cotacao, 0) AS close_unit
 FROM public.vw_b3_instrument_typed v
 WHERE v.instrument_type = 'cash_security'
   AND v.tpmerc IN ('010', '020', '021');
@@ -1171,6 +1219,7 @@ quote_month AS (
         date_trunc('month', q.trade_date)::date AS period,
         q.trade_date AS obs_date,
         q.close,
+        q.close_unit,
         q.volume,
         q.asset_class,
         q.quotation_factor
@@ -1184,7 +1233,7 @@ quote_month AS (
 quote_day AS (
     SELECT DISTINCT ON (q.ticker, q.trade_date)
         q.ticker, q.trade_date AS period, q.trade_date AS obs_date,
-        q.close, q.volume, q.asset_class, q.quotation_factor
+        q.close, q.close_unit, q.volume, q.asset_class, q.quotation_factor
     FROM api.quotes q
     JOIN params p ON TRUE
     WHERE p.freq = 'day'
@@ -1357,6 +1406,11 @@ fund_rows AS (
 SELECT q.ticker, 'ticker'::text, q.asset_class, q.period, 'close'::text, q.close, 'b3_cotahist'::text
 FROM quote_px q JOIN params p ON TRUE
 WHERE 'close' = ANY (p.metrics)
+UNION ALL
+SELECT q.ticker, 'ticker', q.asset_class, q.period, 'close_unit', q.close_unit, 'b3_cotahist'
+FROM quote_px q JOIN params p ON TRUE
+WHERE 'close_unit' = ANY (p.metrics)
+  AND q.close_unit IS NOT NULL
 UNION ALL
 SELECT q.ticker, 'ticker', q.asset_class, q.period, 'volume', q.volume, 'b3_cotahist'
 FROM quote_px q JOIN params p ON TRUE
@@ -1630,185 +1684,28 @@ STABLE
 AS $fn$
 SELECT $json$
 {
-  "kind": "catalog",
-  "version": 9,
-  "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup/universe, then GET /v1/panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions, and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches.",
-  "metrics": {
-    "close": {
-      "id_type": [
-        "ticker",
-        "option",
-        "termo"
-      ],
-      "asset_class": [
-        "equity",
-        "unit",
-        "bdr",
-        "fund_quota",
-        "cash_security",
-        "derivative"
-      ],
-      "grain": [
-        "day",
-        "month"
-      ],
-      "source": "b3_cotahist",
-      "meaning": "Unadjusted close. Cash tickers: the ticker's latest BDI board by default, classified from published TPMERC/ESPECI. Option/termo codnegs: that derivative segment's session close. Month = last session."
-    },
-    "volume": {
-      "id_type": [
-        "ticker",
-        "option",
-        "termo"
-      ],
-      "asset_class": [
-        "equity",
-        "unit",
-        "bdr",
-        "fund_quota",
-        "cash_security",
-        "derivative"
-      ],
-      "grain": [
-        "day",
-        "month"
-      ],
-      "source": "b3_cotahist",
-      "meaning": "Session traded volume (BRL). Cash: the ticker's latest BDI board by default; option/termo: that derivative segment. Month = last session."
-    },
-    "close_return": {
-      "id_type": [
-        "ticker"
-      ],
-      "asset_class": [
-        "equity",
-        "unit",
-        "bdr",
-        "fund_quota",
-        "cash_security"
-      ],
-      "grain": [
-        "day",
-        "month"
-      ],
-      "source": "b3_cotahist",
-      "meaning": "p_t/p_{t-1}-1 from stored unadjusted closes. Corporate actions appear as spurious jumps (a 2:1 split reports roughly -50%). Daily: previous session. Monthly: previous calendar month else null.",
-      "derived": true
-    },
-    "nav": {
-      "id_type": [
-        "cnpj"
-      ],
-      "asset_class": [
-        "fi",
-        "fidc",
-        "fii",
-        "fip",
-        "fiagro"
-      ],
-      "grain": [
-        "month"
-      ],
-      "source": "cvm",
-      "meaning": "Fund net assets (vl_patrim_liq)."
-    },
-    "quota": {
-      "id_type": [
-        "cnpj"
-      ],
-      "asset_class": [
-        "fi"
-      ],
-      "grain": [
-        "month"
-      ],
-      "source": "cvm",
-      "meaning": "FI unit quota. Comparable subclass only."
-    },
-    "delinquency": {
-      "id_type": [
-        "cnpj"
-      ],
-      "asset_class": [
-        "fidc",
-        "fiagro"
-      ],
-      "grain": [
-        "month"
-      ],
-      "source": "cvm",
-      "meaning": "Delinquent portfolio value (not a rate unless you divide by nav)."
-    },
-    "yield": {
-      "id_type": [
-        "cnpj"
-      ],
-      "asset_class": [
-        "fii"
-      ],
-      "grain": [
-        "month"
-      ],
-      "source": "cvm",
-      "meaning": "Monthly yield % as published (FII complemento)."
-    },
-    "inflows": {
-      "id_type": [
-        "cnpj"
-      ],
-      "asset_class": [
-        "fi"
-      ],
-      "grain": [
-        "month"
-      ],
-      "source": "cvm",
-      "meaning": "Gross monthly subscriptions."
-    },
-    "redemptions": {
-      "id_type": [
-        "cnpj"
-      ],
-      "asset_class": [
-        "fi"
-      ],
-      "grain": [
-        "month"
-      ],
-      "source": "cvm",
-      "meaning": "Gross monthly redemptions."
-    },
-    "quotaholders": {
-      "id_type": [
-        "cnpj"
-      ],
-      "asset_class": [
-        "fi",
-        "fidc",
-        "fii",
-        "fip",
-        "fiagro"
-      ],
-      "grain": [
-        "month"
-      ],
-      "source": "cvm",
-      "meaning": "Number of unit-holders."
-    }
-  },
-  "notebook_reducers": {
-    "describe": "Per-column n, null_rate, min, max, last. No model.",
-    "corr": "Pairwise Pearson on complete pairs of the wide matrix. One relation among many.",
-    "rank": "Latest non-null value per id for the first metric, descending.",
-    "spread": "First column minus second column of the wide matrix, dates aligned."
-  },
+  "asset_classes": [
+    "equity",
+    "unit",
+    "bdr",
+    "fund_quota",
+    "cash_security",
+    "fi",
+    "fidc",
+    "fii",
+    "fip",
+    "fiagro",
+    "cia",
+    "derivative"
+  ],
   "constraints": [
     "Never invent a price, NAV, or identifier match.",
     "Missing observations stay null; do not ffill or interpolate.",
     "freq=day is quotes only. Mix equity with fund fundamentals on freq=month.",
     "close_return across a missing month is null, not a multi-month return.",
     "close_return is unadjusted: a 2:1 split reports roughly -50%. It is not a total return.",
+    "close is the price as published, which for a paper quoted per lot refers to 1000 shares; close_unit divides it by the published quotation_factor so levels are comparable. Neither is corporate-action adjusted — no split, grouping or bonus adjustment exists yet, and `adjusted` is FALSE on every row.",
     "Daily close_return is null when the previous session is more than 7 calendar days back (halts, listing gaps), and null across a quotation-factor change — a fatcot flip rescales the quote with no market move behind it.",
     "Default windows are honest: with no explicit `to`, fund metrics end at each family's latest COMPLETE period (coverage() reports it as complete_through) — a partially-filed trailing month is not served. An explicit `to` serves the window verbatim, partial months included.",
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
@@ -1823,6 +1720,16 @@ SELECT $json$
     "Price series stay unified: a codneg has exactly one instrument type, so quote_history works for any cash ticker without knowing its type first.",
     "universe(asset_class=option|termo) lists the codnegs that printed on that segment's most recent session — currently-listed series, not every series ever listed. Expired series stay queryable by codneg in option_history."
   ],
+  "endpoints": {
+    "catalog": "GET /v1/catalog",
+    "coverage": "GET /v1/coverage",
+    "funds": "GET /v1/funds/{cnpj}/nav",
+    "lookup": "GET /v1/lookup?q=",
+    "panel": "GET /v1/panel",
+    "quotes": "GET /v1/quotes/{ticker}",
+    "tools": "GET /v1/tools",
+    "universe": "GET /v1/universe?asset_class="
+  },
   "examples": [
     {
       "ask": "How does PETR4 relate to delinquency in this FIDC?",
@@ -1850,6 +1757,10 @@ SELECT $json$
       "then": "Model in the notebook from the matrix."
     }
   ],
+  "freq": [
+    "day",
+    "month"
+  ],
   "id_types": [
     "ticker",
     "cnpj",
@@ -1857,46 +1768,209 @@ SELECT $json$
     "option",
     "termo"
   ],
-  "asset_classes": [
-    "equity",
-    "unit",
-    "bdr",
-    "fund_quota",
-    "cash_security",
-    "fi",
-    "fidc",
-    "fii",
-    "fip",
-    "fiagro",
-    "cia",
-    "derivative"
-  ],
-  "freq": [
-    "day",
-    "month"
-  ],
-  "endpoints": {
-    "catalog": "GET /v1/catalog",
-    "tools": "GET /v1/tools",
-    "panel": "GET /v1/panel",
-    "lookup": "GET /v1/lookup?q=",
-    "universe": "GET /v1/universe?asset_class=",
-    "quotes": "GET /v1/quotes/{ticker}",
-    "funds": "GET /v1/funds/{cnpj}/nav",
-    "coverage": "GET /v1/coverage"
+  "kind": "catalog",
+  "metrics": {
+    "close": {
+      "asset_class": [
+        "equity",
+        "unit",
+        "bdr",
+        "fund_quota",
+        "cash_security",
+        "derivative"
+      ],
+      "grain": [
+        "day",
+        "month"
+      ],
+      "id_type": [
+        "ticker",
+        "option",
+        "termo"
+      ],
+      "meaning": "Unadjusted close. Cash tickers: the ticker's latest BDI board by default, classified from published TPMERC/ESPECI. Option/termo codnegs: that derivative segment's session close. Month = last session.",
+      "source": "b3_cotahist"
+    },
+    "close_return": {
+      "asset_class": [
+        "equity",
+        "unit",
+        "bdr",
+        "fund_quota",
+        "cash_security"
+      ],
+      "derived": true,
+      "grain": [
+        "day",
+        "month"
+      ],
+      "id_type": [
+        "ticker"
+      ],
+      "meaning": "p_t/p_{t-1}-1 from stored unadjusted closes. Corporate actions appear as spurious jumps (a 2:1 split reports roughly -50%). Daily: previous session. Monthly: previous calendar month else null.",
+      "source": "b3_cotahist"
+    },
+    "close_unit": {
+      "asset_class": [
+        "equity",
+        "unit",
+        "bdr",
+        "fund_quota",
+        "cash_security"
+      ],
+      "derived": true,
+      "grain": [
+        "day",
+        "month"
+      ],
+      "id_type": [
+        "ticker"
+      ],
+      "meaning": "Close per single quoted unit: close / quotation_factor, both published. Use this to compare price levels across papers; a paper quoted per lot (factor 1000) otherwise reads 1000x its unit price. Still unadjusted for corporate actions.",
+      "source": "b3_cotahist"
+    },
+    "delinquency": {
+      "asset_class": [
+        "fidc",
+        "fiagro"
+      ],
+      "grain": [
+        "month"
+      ],
+      "id_type": [
+        "cnpj"
+      ],
+      "meaning": "Delinquent portfolio value (not a rate unless you divide by nav).",
+      "source": "cvm"
+    },
+    "inflows": {
+      "asset_class": [
+        "fi"
+      ],
+      "grain": [
+        "month"
+      ],
+      "id_type": [
+        "cnpj"
+      ],
+      "meaning": "Gross monthly subscriptions.",
+      "source": "cvm"
+    },
+    "nav": {
+      "asset_class": [
+        "fi",
+        "fidc",
+        "fii",
+        "fip",
+        "fiagro"
+      ],
+      "grain": [
+        "month"
+      ],
+      "id_type": [
+        "cnpj"
+      ],
+      "meaning": "Fund net assets (vl_patrim_liq).",
+      "source": "cvm"
+    },
+    "quota": {
+      "asset_class": [
+        "fi"
+      ],
+      "grain": [
+        "month"
+      ],
+      "id_type": [
+        "cnpj"
+      ],
+      "meaning": "FI unit quota. Comparable subclass only.",
+      "source": "cvm"
+    },
+    "quotaholders": {
+      "asset_class": [
+        "fi",
+        "fidc",
+        "fii",
+        "fip",
+        "fiagro"
+      ],
+      "grain": [
+        "month"
+      ],
+      "id_type": [
+        "cnpj"
+      ],
+      "meaning": "Number of unit-holders.",
+      "source": "cvm"
+    },
+    "redemptions": {
+      "asset_class": [
+        "fi"
+      ],
+      "grain": [
+        "month"
+      ],
+      "id_type": [
+        "cnpj"
+      ],
+      "meaning": "Gross monthly redemptions.",
+      "source": "cvm"
+    },
+    "volume": {
+      "asset_class": [
+        "equity",
+        "unit",
+        "bdr",
+        "fund_quota",
+        "cash_security",
+        "derivative"
+      ],
+      "grain": [
+        "day",
+        "month"
+      ],
+      "id_type": [
+        "ticker",
+        "option",
+        "termo"
+      ],
+      "meaning": "Session traded volume (BRL). Cash: the ticker's latest BDI board by default; option/termo: that derivative segment. Month = last session.",
+      "source": "b3_cotahist"
+    },
+    "yield": {
+      "asset_class": [
+        "fii"
+      ],
+      "grain": [
+        "month"
+      ],
+      "id_type": [
+        "cnpj"
+      ],
+      "meaning": "Monthly yield % as published (FII complemento).",
+      "source": "cvm"
+    }
+  },
+  "notebook_reducers": {
+    "corr": "Pairwise Pearson on complete pairs of the wide matrix. One relation among many.",
+    "describe": "Per-column n, null_rate, min, max, last. No model.",
+    "rank": "Latest non-null value per id for the first metric, descending.",
+    "spread": "First column minus second column of the wide matrix, dates aligned."
   },
   "postgrest": {
-    "equities": "GET /rest/v1/equities",
-    "bdrs": "GET /rest/v1/bdrs",
-    "units": "GET /rest/v1/units",
-    "fund_quotas": "GET /rest/v1/fund_quotas",
-    "cash_securities": "GET /rest/v1/cash_securities",
     "auctions": "GET /rest/v1/auctions",
+    "bdrs": "GET /rest/v1/bdrs",
+    "cash_securities": "GET /rest/v1/cash_securities",
+    "equities": "GET /rest/v1/equities",
+    "fund_quotas": "GET /rest/v1/fund_quotas",
     "option_chain": "POST /rest/v1/rpc/option_chain",
-    "option_history": "POST /rest/v1/rpc/option_history",
     "option_exercises": "POST /rest/v1/rpc/option_exercises",
-    "termo_history": "POST /rest/v1/rpc/termo_history"
-  }
+    "option_history": "POST /rest/v1/rpc/option_history",
+    "termo_history": "POST /rest/v1/rpc/termo_history",
+    "units": "GET /rest/v1/units"
+  },
+  "primitive": "panel",
+  "version": 10
 }
 $json$::jsonb;
 $fn$;
