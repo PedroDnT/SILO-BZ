@@ -18,6 +18,7 @@ from src.parsers.field_maps import cia_company as _company
 from src.parsers.field_maps import cia_event as _event
 from src.parsers.field_maps import cia_account as _account
 from src.parsers.field_maps import cia_filing as _filing
+from src.parsers.field_maps import cia_fca_valor_mobiliario as _ticker
 from src.store.pg_client import upsert_rows
 
 logger = logging.getLogger(__name__)
@@ -116,6 +117,48 @@ def ingest_cia_event(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
         _event.TABLE,
         records,
         conflict_columns=",".join(_event.CONFLICT),
+    )
+
+
+def ingest_cia_ticker(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
+    """Parse and upsert FCA valores-mobiliários rows into cia_ticker.
+
+    This is the published CNPJ↔ticker map. Natural key
+    (cnpj_cia, data_refer, versao, valor_mobiliario, codneg, mercado) with
+    NULLS NOT DISTINCT — codneg CAN be NULL (unlisted securities) and those
+    rows are kept; the vw_company_ticker bridge skips them. Rows without a
+    CNPJ or reference date cannot be keyed and are dropped (never coerced).
+
+    Args:
+        conn      -- _PgClient instance
+        raw_rows  -- rows from CVMFetcher.fetch('cia_aberta',
+                     'fca_valor_mobiliario', year=Y)
+
+    Returns:
+        number of rows upserted
+    """
+    records: List[Dict[str, Any]] = []
+    for row in raw_rows:
+        typed, residual = apply_map(row, _ticker.FIELD_MAP)
+        if not typed.get("cnpj_cia") or typed.get("data_refer") is None:
+            continue
+        if typed.get("versao") is None:
+            typed["versao"] = 1
+        # Tickers are upper-case on the B3 tape; normalise the published code
+        # the same way so vw_company_ticker joins b3_cotahist.codneg cleanly.
+        if typed.get("codneg"):
+            typed["codneg"] = typed["codneg"].strip().upper() or None
+        typed["raw"] = residual
+        records.append(typed)
+
+    if not records:
+        return 0
+
+    return upsert_rows(
+        conn,
+        _ticker.TABLE,
+        records,
+        conflict_columns=",".join(_ticker.CONFLICT),
     )
 
 

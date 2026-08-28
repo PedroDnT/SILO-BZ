@@ -304,6 +304,20 @@ class DatasetConfig:
             "csv_name_pattern": "ipe_cia_aberta_{year}.csv",
             "description": "Eventual press events (IPE) — single CSV per yearly ZIP",
         },
+        # FCA (Formulário Cadastral) yearly ZIP holds ~10 member CSVs; only the
+        # valores-mobiliários member is ingested: it is CVM's PUBLISHED
+        # company↔ticker mapping (CNPJ_Companhia ↔ Codigo_Negociacao, with the
+        # security type, market, listing segment and listing dates). This is
+        # what lets api.lookup return tickers for a company without any name
+        # matching. Header verified live 2026-08-27 against
+        # fca_cia_aberta_2026.zip.
+        "fca_valor_mobiliario": {
+            "url_pattern": "{base_url}/CIA_ABERTA/DOC/FCA/DADOS/fca_cia_aberta_{year}.zip",
+            "is_zip": True,
+            "multi_csv": False,
+            "csv_name_pattern": "fca_cia_aberta_valor_mobiliario_{year}.csv",
+            "description": "FCA valores mobiliários — the published CNPJ↔ticker map, one CSV member of the yearly FCA ZIP",
+        },
         "itr": {
             "url_pattern": "{base_url}/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_{year}.zip",
             "is_zip": True,

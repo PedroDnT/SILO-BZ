@@ -72,6 +72,7 @@ from src.pipeline.ingest_cia import (
     ingest_cia_event,
     ingest_cia_account,
     ingest_cia_filing,
+    ingest_cia_ticker,
 )
 from src.fetchers.cia_fetcher import CIAFetcher
 
@@ -178,7 +179,7 @@ _ALL_TABLES: List[str] = [
     "cvm_fiagro_mensal",
     "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic", "cvm_fii_imovel",
     "cvm_securit_mensal", "cvm_securit_serie", "cvm_securit_fluxo", "cvm_securit_dfin",
-    "cia_company", "cia_event", "cia_filing", "cia_account",
+    "cia_company", "cia_event", "cia_filing", "cia_account", "cia_ticker",
     "cvm_fund_registry", "cvm_etf_registry",
 ]
 _ALL_ENTITIES: Set[str] = {"fi", "fidc", "fip", "fiagro", "fii", "securit", "cia_aberta", "etf"}
@@ -1260,6 +1261,33 @@ class CVMIngestor:
         return rows_inserted
 
     # ------------------------------------------------------------------
+    # CIA_ABERTA — FCA valores mobiliários (the published CNPJ↔ticker map)
+    # ------------------------------------------------------------------
+
+    async def ingest_cia_fca(self, year: int) -> int:
+        """Ingest one year of FCA valores-mobiliários rows into cia_ticker.
+
+        Same yearly-ZIP shape as IPE, but the ZIP holds ~10 member CSVs and
+        csv_name_pattern selects only the valor_mobiliario one. ~1k rows per
+        year — CVM's published company↔ticker mapping.
+        """
+        run_id = str(uuid4())
+        self._log_start(run_id, "cia_aberta", "fca_valor_mobiliario", year, None)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages(
+                "cia_aberta", "fca_valor_mobiliario", year, None
+            )
+            rows_inserted = ingest_cia_ticker(self._supabase, raw_rows)
+        except Exception as exc:
+            logger.warning("ingest_cia_fca %d failed: %s", year, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
+        logger.info("cia_aberta/fca_valor_mobiliario %d: %d rows", year, rows_inserted)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
     # CIA_ABERTA — ITR / DFP financial statements (yearly ZIP, ~19 CSVs)
     # ------------------------------------------------------------------
 
@@ -1598,6 +1626,16 @@ class CVMIngestor:
                 )
                 for year in cia_years
             ]
+            # FCA valores mobiliários — the published CNPJ↔ticker map, ~1k
+            # rows per yearly ZIP; cheap enough to fill alongside IPE.
+            cia_tasks += [
+                IngestTask(
+                    "cia_ticker",
+                    f"cia_aberta/fca_valor_mobiliario {year}",
+                    self.ingest_cia_fca(year),
+                )
+                for year in cia_years
+            ]
             await self._run_task_batches(
                 cia_tasks,
                 _get_concurrency("cia_aberta", 3),
@@ -1742,6 +1780,14 @@ class CVMIngestor:
                 "cia_event",
                 f"cia_aberta/ipe {year}",
                 self.ingest_cia_ipe(year),
+            ))
+            # FCA valores mobiliários: the published CNPJ↔ticker map. The
+            # current-year ZIP carries the full current registry, so the
+            # daily refresh alone keeps vw_company_ticker fresh.
+            tasks.append(IngestTask(
+                "cia_ticker",
+                f"cia_aberta/fca_valor_mobiliario {year}",
+                self.ingest_cia_fca(year),
             ))
             for doc_type in ("itr", "dfp"):
                 tasks.append(IngestTask(
