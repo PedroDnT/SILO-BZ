@@ -163,6 +163,23 @@ Migration 27 did land in attempt 3 (schema apply succeeded), and the 2019 ETF
 gap is closed in production: BOVA11 / BOVV11 / IVVB11 type as `etf` on their
 codbdi-02 sessions, from 897 ISINs learned by `mv_b3_isin_subtype`.
 
+**Attempt 4 failed too, and this one I caused.** `19_b3_cotahist_serve.sql`
+timed out on its lock three times running. The lock holders were two Vercel
+**preview** builds — started by my own pushes to the PR branch, each running the
+full Evidence source scan against production Postgres and holding
+AccessShareLock on `b3_cotahist` for tens of minutes. The schema apply crawled
+for ten minutes and then gave up.
+
+Which is the structural point worth keeping: **every push to a PR branch runs a
+25–45 minute production-database scan**, and a schema apply cannot take its
+locks while one is in flight. The deploy has retries and a `lock_timeout`, but
+three attempts inside ten minutes cannot outlast a build that runs for forty.
+Until preview builds stop reading production (their own snapshot, or an ignore
+step that skips `dashboard/`-less commits), the operational rule is: **do not
+dispatch a schema apply while any Vercel deployment is BUILDING.** Check
+`list_deployments` first — it is one call and it is the difference between a
+ten-minute failure and a five-minute success.
+
 ## 6. Verified sound (checked, not assumed)
 
 - The FCA ticker field map holds across all history: the CSV header is
