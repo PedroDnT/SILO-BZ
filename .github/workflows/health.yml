@@ -11,7 +11,10 @@ name: DB Health
 #
 # Modes (workflow_dispatch):
 #   checks       — the gate (default; also what the schedule runs)
-#   diagnostics  — prints one-off investigation queries; never fails on data
+#   diagnostics  — prints one-off investigation queries from
+#                  scripts/health_diagnostics/*.sql; a missing relation
+#                  skips that file and the rest still run. Never fails the
+#                  step on a single bad SELECT.
 #   both
 #
 # Concurrency group is deliberately NOT the ingest group: this is read-only and
@@ -125,7 +128,14 @@ jobs:
                                   AND s.started_at   > e.started_at)
                     ) unhealed")
           echo "unhealed ingest errors (${MAX_INGEST_ERROR_HOURS}h): $errs (of ${attempts:-0} error rows)"
-          if [ "${errs:-0}" -gt 0 ]; then
+          # A non-numeric $errs (psql error text after tr -d space) must not
+          # fall through to the success branch. Zeroing it and continuing used
+          # to print both ❌ query failed and ✅ recovered on the same run.
+          if ! [ "${errs:-}" -ge 0 ] 2>/dev/null; then
+            echo "FAIL: ingest-error query did not return a count ('$errs')" >&2
+            echo "- ❌ ingest-error query failed" >> "$GITHUB_STEP_SUMMARY"
+            fail=1
+          elif [ "${errs:-0}" -gt 0 ]; then
             echo "FAIL: $errs UNHEALED ingest error slices (${attempts:-0} error rows in window)" >&2
             psql "$POSTGRES_URL" -c "SET default_transaction_read_only = on" -c \
               "SELECT e.started_at, e.entity, e.doc_type, e.period_year, e.period_month,
@@ -209,8 +219,8 @@ jobs:
                FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
               WHERE n.nspname = 'public' AND c.relkind IN ('r','m','p')
               ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 12"
-          if [ "${pct:-0}" -ge "$DISK_WARN_PCT" ]; then
-            echo "::warning::database at ${pct}% of the ${PLAN_DISK_GB}GB plan allowance"
+          if [ -n "${PLAN_DISK_GB:-}" ] && [ "${pct:-0}" -ge "$DISK_WARN_PCT" ]; then
+            echo "::warning::database at ${pct}% of the ${PLAN_DISK_GB}GB plan allowance (${gb}GB used). Do not drop landing tables to clear this. See docs/DATABASE_MAINTENANCE.md §9."
           fi
 
           echo

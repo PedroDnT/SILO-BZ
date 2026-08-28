@@ -54,6 +54,7 @@ your environment or `.env`.
 
 | When                 | Command                                      | Looking for                                                                    |
 | -------------------- | -------------------------------------------- | ------------------------------------------------------------------------------ |
+| Daily 07:30 UTC      | Actions → **DB Health** (`health.yml`)       | unhealed ingest errors, stalled monthly families, `api.catalog()`/`coverage()`, disk size (warn-only; `PLAN_DISK_GB` empty until a real allowance is set) |
 | After any run        | `python scripts/check_staleness.py`          | exit `0` fresh · `10` daily slice stale · `11` monthly (ANBIMA) stale          |
 | Weekly               | `python scripts/verify_pipeline.py`          | presence, field-population rates, sample business metrics per entity           |
 | Weekly               | the audit-log triage query (§3)              | `error` slices, slices stuck `running`, entities missing entirely              |
@@ -352,8 +353,50 @@ Verify afterwards with the query in the file's footer.
 - CI `ANALYZE`s the core tables after every ingest. Row estimates from `db_parity.py`
   come from `pg_class.reltuples` and are only as fresh as the last `ANALYZE` — use
   `--exact` when a number needs to be authoritative.
-- Largest objects to watch (July 2026): `cvm_fi_perfil` ≈ 2 GB, the `cvm_fi_diario`
-  partitions ≈ 3.7 GB combined, `cia_account_2026` ≈ 0.7 GB. `db_parity.py` prints sizes.
+- Largest objects (2026-08-28 health gate, `pg_total_relation_size`):
+
+  | relation            | size   |
+  | ------------------- | ------ |
+  | `cvm_fi_balancete`  | 30 GB  |
+  | `cia_account_2021`  | 3.7 GB |
+  | `cvm_fi_perfil`     | 3.6 GB |
+  | `cia_account_2020`  | 3.3 GB |
+  | `cia_account_2019`  | 2.6 GB |
+  | `cia_account_2022`… | ~2 GB each |
+  | `b3_cotahist_2025`  | 1.5 GB |
+  | `cvm_fi_diario_2026`| 1.4 GB |
+
+  Whole database **~72 GB**. `db_parity.py` prints live sizes.
+
+### Disk vs the plan allowance
+
+The DB Health workflow (`health.yml`) reports `pg_database_size` as an absolute
+GB figure. `PLAN_DISK_GB` is **empty by default**: a placeholder of 8 GB against
+a ~72 GB warehouse printed "899%" and trained everyone to ignore the line. Set
+it only to a real purchased allowance (included + addon). The gate **warns, it
+does not fail**, and it must not be "fixed" by dropping landing tables: those
+relations *are* the warehouse.
+
+What to do (operator, not a migration):
+
+1. **Add disk / raise the spend cap** in the Supabase dashboard for project
+   `zcjbtpxuhdekpwcxmepn`. If extra disk is purchased, set `PLAN_DISK_GB` in
+   `.github/workflows/health.yml` to the included+addon total so the percentage
+   is meaningful.
+2. **Do not `DROP` yearly `cia_account_*` / `b3_cotahist_*` partitions or
+   `cvm_fi_balancete` to reclaim space.** There is no retention policy on
+   landing data; historical ITR/DFP and FI balance sheets are the product.
+3. **Do not `VACUUM FULL` the 30 GB balancete table** from CI — it takes
+   `ACCESS EXCLUSIVE` for a long time and is exactly the lock that previously
+   killed schema apply. Autovacuum handles bloat; `DROP INDEX` (migration 22)
+   unlinks files immediately, no extra vacuum required for those indexes.
+4. Partitioning `cvm_fi_balancete` (still unpartitioned at 30 GB) is a future
+   lifecycle change, not a cleanup. Do it as its own migration with a
+   measured cutover, never as a panic drop.
+
+The health job is read-only and does not apply schema. Diagnostics live in
+`scripts/health_diagnostics/*.sql` (one session each); a missing view skips that
+file and the rest still run.
 
 ---
 

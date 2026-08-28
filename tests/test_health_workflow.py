@@ -92,6 +92,25 @@ def test_ingest_errors_treat_later_skipped_as_healed():
     )
 
 
+def test_ingest_error_query_failure_does_not_print_recovered():
+    """A broken count query must not fall through to the green recovered line."""
+    body = _step("Health checks")["run"]
+    assert "did not return a count" in body
+    assert 'elif [ "${errs:-0}" -gt 0 ]' in body, (
+        "zeroing errs and continuing prints both ❌ query failed and ✅ recovered"
+    )
+
+
+def test_plan_disk_gb_is_empty_until_a_real_allowance_is_set():
+    spec = _spec()
+    env = spec["jobs"]["health"]["env"]
+    # 8 GB vs 71.9 GB printed 899% and trained everyone to ignore the line.
+    assert env["PLAN_DISK_GB"] in ("", None)
+    body = _step("Health checks")["run"]
+    assert 'if [ -n "${PLAN_DISK_GB:-}" ]' in body
+    assert "do not drop landing tables" in body.lower()
+
+
 def test_disk_warns_and_does_not_fail_the_gate():
     body = _step("Health checks")["run"]
     disk_section = body[body.index("# 5. Disk"):]
