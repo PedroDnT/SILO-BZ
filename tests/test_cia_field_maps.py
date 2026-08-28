@@ -216,3 +216,55 @@ class TestIngestCiaEvent:
 def test_field_map_yields_primary_key(field_map_module, row, expected_pk_col, expected_pk_val):
     typed, _raw = apply_map(row, field_map_module.FIELD_MAP)
     assert typed[expected_pk_col] == expected_pk_val
+
+
+# ---------------------------------------------------------------------------
+# DT_INI_EXERC is part of the natural key (migration 29).
+#
+# An ITR income statement reports the same cd_conta twice under one filing —
+# once for the quarter, once year-to-date — and only DT_INI_EXERC separates
+# them. Without it in the key, last-wins upsert kept whichever row the CSV
+# listed last: 62,788 of 157,164 DRE_con rows in itr_cia_aberta_2025.zip (40%),
+# which is every cumulative period in every quarterly income statement.
+# Re-ingesting the same real file with the widened key retains 99.9%.
+#
+# Same failure mode as coluna_df / DMPL (migration 05). Both stay in the key.
+# ---------------------------------------------------------------------------
+
+
+def test_dt_ini_exerc_is_in_the_natural_key():
+    from src.parsers.field_maps import cia_account
+
+    assert "dt_ini_exerc" in cia_account.CONFLICT, (
+        "dropping dt_ini_exerc from the key silently discards every year-to-date "
+        "figure in every quarterly income statement"
+    )
+    assert "coluna_df" in cia_account.CONFLICT, "migration 05's DMPL fix must not regress"
+
+
+def test_natural_key_matches_the_migration_that_declares_it():
+    """The upsert key and uq_cia_account cannot drift apart."""
+    import re
+    from pathlib import Path
+    from src.parsers.field_maps import cia_account
+
+    sql = (
+        Path(__file__).resolve().parents[1]
+        / "src" / "store" / "migrations" / "29_cia_account_dt_ini_exerc.sql"
+    ).read_text(encoding="utf-8")
+    m = re.search(r"ADD CONSTRAINT uq_cia_account UNIQUE NULLS NOT DISTINCT\s*\((.*?)\)", sql, re.S)
+    assert m, "migration 29 must declare uq_cia_account"
+    cols = [c.strip() for c in m.group(1).replace("\n", " ").split(",")]
+    assert cols == list(cia_account.CONFLICT), (
+        f"migration 29 key {cols} != FIELD_MAP CONFLICT {list(cia_account.CONFLICT)}"
+    )
+
+
+def test_period_columns_are_mapped_not_dropped():
+    from src.parsers.field_maps import cia_account
+
+    for col, header in (("dt_ini_exerc", "DT_INI_EXERC"), ("dt_fim_exerc", "DT_FIM_EXERC")):
+        assert col in cia_account.FIELD_MAP
+        candidates, type_ = cia_account.FIELD_MAP[col]
+        assert header in candidates
+        assert type_ == "date"

@@ -32,8 +32,15 @@ Notes
   upsert dedup. It is NULL for every other statement type; with the constraint's
   NULLS NOT DISTINCT, those NULLs collapse so non-DMPL uniqueness is unchanged.
   Added to cia_account + uq_cia_account by migration 05_cia_account_coluna_df.sql.
+* ``DT_INI_EXERC`` is likewise part of the key, for the same reason one step
+  further on: an ITR income statement reports each cd_conta for BOTH the quarter
+  and the year-to-date period under one DT_REFER, and only DT_INI_EXERC tells
+  them apart. It is NULL for the point-in-time balance sheet (BPA/BPP), which is
+  why those members were never affected. Added to uq_cia_account by migration
+  29_cia_account_dt_ini_exerc.sql.
 * The natural key is
-  (cd_cvm, doc_type, grupo, escopo, dt_refer, ordem_exerc, coluna_df, cd_conta, versao);
+  (cd_cvm, doc_type, grupo, escopo, dt_refer, ordem_exerc, coluna_df,
+   dt_ini_exerc, cd_conta, versao);
   the PK on cia_account is a surrogate BIGSERIAL and the UNIQUE constraint enforces
   idempotency.
 """
@@ -47,6 +54,14 @@ CONFLICT = (
     "dt_refer",
     "ordem_exerc",
     "coluna_df",
+    # An ITR income statement reports the SAME cd_conta twice under one filing —
+    # once for the quarter, once year-to-date — and DT_INI_EXERC is the only
+    # thing that separates them. Without it here, last-wins kept whichever row
+    # the CSV listed last and threw the other away: 40% of DRE_con rows in
+    # itr_cia_aberta_2025.zip (62,788 of 157,164), which is every cumulative
+    # period in every quarterly income statement. Same failure as coluna_df /
+    # DMPL (migration 05); key widened by migration 29.
+    "dt_ini_exerc",
     "cd_conta",
     "versao",
 )
