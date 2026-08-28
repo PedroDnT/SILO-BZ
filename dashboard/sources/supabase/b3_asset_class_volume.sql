@@ -1,26 +1,22 @@
--- Monthly standard-lot cash volume by instrument type, long format, plus an
--- ETF-vs-FII split of the fund_quota bucket.
+-- Monthly standard-lot cash volume split by instrument type, with the ETF and
+-- FII share of the fund-quota bucket called out.
 --
--- instrument_type comes from vw_b3_instrument_typed, which classifies from
--- CODBDI/ESPECI/tpmerc — never from ticker shape. Only the cash types are
--- listed here; options and forwards live on their own chart
--- (b3_options_activity). The tpmerc = '010' filter keeps this standard lot so
--- it reconciles with the std-lot column of b3_monthly_volume.
+-- READS THE MATVIEW, NOT THE TAPE (migration 30) — see b3_monthly_volume.sql.
+-- This source alone took 8 minutes on the production build that failed on
+-- 2026-08-28.
 --
--- etf_volume_bn / fii_volume_bn are populated only on the fund_quota rows
--- (instrument_subtype is NULL for every other type by construction); a
--- fund_quota row whose board carries no family signal counts in volume_bn but
--- in neither subtype column — the gap is real, not zero.
+-- Two grains, deliberately, because COUNT(DISTINCT ...) does not re-aggregate:
+--   grain='type'    — volume and n_tickers per instrument_type, counted at that
+--                     grain rather than summed from subtypes (summing would
+--                     double-count any ticker that appeared under more than one
+--                     subtype across the month)
+--   grain='subtype' — the etf/fii volume split inside fund_quota
 --
--- ZERO-ROW SAFETY (copy of the industry_asset_class.sql pattern): the month
--- spine CROSS JOINed to the literal type list drives the row count, aggregates
--- are LEFT JOINed on top — no state of the table can produce the 0-row source
--- that writes a zero-byte parquet and kills the Evidence build. No
--- latest_complete_period() clamp: COTAHIST sessions are complete by
--- construction; the bound is the tape's own max(trade_date).
+-- The literal type list drives the row count with the aggregate LEFT JOINed, so
+-- a type absent from a month reads NULL rather than dropping out of the chart.
 with bounds as (
   select coalesce(
-           (select date_trunc('month', max(trade_date)) from b3_cotahist),
+           (select max(period) from mv_b3_monthly_activity),
            date '2019-01-01'
          ) as month_end
 ),
@@ -35,29 +31,34 @@ spine as (
 types (instrument_type) as (
   values ('equity'), ('bdr'), ('unit'), ('fund_quota'), ('cash_security')
 ),
-agg as (
+by_type as (
+  select period, instrument_type, volume / 1e9 as volume_bn, n_tickers
+  from mv_b3_monthly_activity
+  where grain = 'type'
+    and tpmerc = '010'
+),
+by_subtype as (
   select
-    date_trunc('month', trade_date)::date                                 as period,
+    period,
     instrument_type,
-    sum(volume) / 1e9                                                     as volume_bn,
-    count(distinct codneg)                                                as n_tickers,
-    sum(volume) filter (where instrument_subtype = 'etf') / 1e9           as etf_volume_bn,
-    sum(volume) filter (where instrument_subtype = 'fii') / 1e9           as fii_volume_bn
-  from vw_b3_instrument_typed
-  where tpmerc = '010'
-    and instrument_type in ('equity', 'bdr', 'unit', 'fund_quota', 'cash_security')
-  group by date_trunc('month', trade_date), instrument_type
+    sum(volume) filter (where instrument_subtype = 'etf') / 1e9 as etf_volume_bn,
+    sum(volume) filter (where instrument_subtype = 'fii') / 1e9 as fii_volume_bn
+  from mv_b3_monthly_activity
+  where grain = 'subtype'
+    and tpmerc = '010'
+  group by period, instrument_type
 )
 select
   sp.period,
   t.instrument_type,
   a.volume_bn,
   a.n_tickers,
-  a.etf_volume_bn,
-  a.fii_volume_bn
+  s.etf_volume_bn,
+  s.fii_volume_bn
 from spine sp
 cross join types t
-left join agg a
-  on a.period = sp.period
- and a.instrument_type = t.instrument_type
+left join by_type a
+  on a.period = sp.period and a.instrument_type = t.instrument_type
+left join by_subtype s
+  on s.period = sp.period and s.instrument_type = t.instrument_type
 order by sp.period, t.instrument_type
