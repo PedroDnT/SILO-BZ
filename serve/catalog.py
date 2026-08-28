@@ -22,6 +22,17 @@ __all__ = [
     "tool_specs",
 ]
 
+# 14: the documented row cap was unreachable and the real one was silent.
+# PostgREST caps EVERY response at 1000 rows (db-max-rows) and keeps the OLDEST,
+# so a panel for PETR4 from 2019 returned 1000 rows ending 2023-01-09 with a 200
+# — a truncated series that reads as a complete one. The cap+1 sentinel this
+# catalog told agents to check (100001/5001) can never fire behind that ceiling.
+# Content-Range is the only real signal, and Range paging does NOT work on RPC
+# (page 2 returns page 1); both are now stated. Found by an independent audit of
+# the live deployment, reproduced 2026-08-28.
+# 13: price is the default and the catalog now says so, machine-readably —
+# panel already defaulted to close+nav, but an agent that cannot see a default
+# asks for every metric instead.
 # 12: instrument typing v3 — index / right / bonus split out of the residual
 # cash_security bucket (measured: its top members by volume were subscription
 # rights and bonus rights, not debt), and an ETF keeps its subtype across the
@@ -50,7 +61,7 @@ __all__ = [
 # 6: one endpoint per cash instrument type, each carrying both lot sizes.
 # 5: main's typed cash asset classes (4) merged with the option/termo id_types
 # and list-valued id_type this branch introduced (3).
-CATALOG_VERSION = 13
+CATALOG_VERSION = 14
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -207,14 +218,25 @@ CONSTRAINTS = [
     "explicit `to` serves the window verbatim, partial months included.",
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
-    "Row caps, and how each surface tells you it hit one — getting this wrong "
-    "means silently analysing a TRUNCATED panel, the exact fabrication this "
-    "API is built to prevent. The SQL functions LIMIT at cap+1 (panel 100001, "
-    "series 5001). On PostgREST (the deployed surface) that comes back as a "
-    "200 with exactly cap+1 rows: a count of exactly 100001 (or 5001) means "
-    "TRUNCATED — discard it and narrow ids, metrics or the window; it never "
-    "answers 400 for size. The local /v1 Flask adapter converts that same "
-    "sentinel into a 400. Check the row count, not just the status code.",
+    "Row caps — getting this wrong means silently analysing a TRUNCATED panel, "
+    "the exact fabrication this API exists to prevent. THE BINDING CAP IS 1000 "
+    "ROWS, imposed by PostgREST (db-max-rows) on every response. It is NOT the "
+    "SQL cap+1 sentinel (panel 100001, series 5001): that sentinel is "
+    "unreachable on the deployed surface and must not be used to detect "
+    "truncation. Measured 2026-08-28 against production: panel for one ticker "
+    "from 2019 returns exactly 1000 rows spanning 2019-01-02..2023-01-09 with a "
+    "200, and the OLDEST rows are the ones kept — so a truncated series looks "
+    "like a complete series that simply ends three years ago. "
+    "DETECT IT WITH THE Content-Range RESPONSE HEADER, which is the only signal "
+    "there is: `0-999/*` means truncated, and sending `Prefer: count=exact` "
+    "turns it into `0-999/1906` so you also learn the true total. A range whose "
+    "end is below 999 is complete. "
+    "RANGE PAGING DOES NOT WORK ON RPC: sending `Range: 1000-1999` to "
+    "/rest/v1/rpc/panel returns the SAME first page again (verified), so a "
+    "panel cannot be paged — narrow p_from/p_to, ids or metrics until "
+    "Content-Range comes back under 1000. GET views do page with Range "
+    "normally. The local /v1 Flask adapter is a different surface with its own "
+    "cap+1 400 behaviour; do not carry its rules over.",
     "An unrecognised metric name is IGNORED, not rejected: the panel comes "
     "back smaller and perfectly plausible. Take metric names from this "
     "catalog's `metrics` map, never from memory.",
@@ -299,8 +321,11 @@ AGENT_INSTRUCTIONS = (
     "adapter (serve/app.py) that is not necessarily deployed; its query-string "
     "form and its `format=wide` envelope exist ONLY there. Prefer the "
     "postgrest section unless you know the /v1 adapter is running. Read the "
-    "row-cap constraint carefully: the two surfaces signal truncation "
-    "differently and getting that wrong silently analyses a truncated panel. "
+    "row-cap constraint carefully, and READ THE Content-Range RESPONSE HEADER "
+    "ON EVERY CALL: PostgREST truncates every response at 1000 rows and keeps "
+    "the OLDEST ones, so a cut-short series is indistinguishable from a "
+    "complete one by its contents alone — `0-999/*` is the only thing that "
+    "tells you. "
     "PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics "
     "returns `close` for tickers and `nav` for CNPJs, and that is the call to "
     "make unless you actually need another measure — name metrics explicitly "
