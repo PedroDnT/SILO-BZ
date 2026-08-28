@@ -91,6 +91,13 @@ Also note: **`ok` with `rows_upserted = 0` is no longer possible** when the sour
 returned rows. That combination was what let `cvm_fiagro_mensal` sit empty behind 34
 `ok` slices; it is now an `error` naming the likely cause.
 
+The DB Health workflow (`.github/workflows/health.yml`) fails on **unhealed**
+error slices: an `error` whose slice has no later `ok` **or** `skipped`. A
+`TimeoutError` on the current unpublished month, followed by the daily window's
+404 `skipped`, is a recovered probe — not a broken warehouse. Run 33164105326
+went red on exactly that (`fidc/mensal_tab_x2` 2026-08). Disk size is a warning
+only; do not DROP landing tables to clear it.
+
 ---
 
 ## 3b. Ingest write throughput
