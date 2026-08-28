@@ -13,7 +13,7 @@ split by instrument type, so you can ask for one class without filtering client-
 | `GET /bdrs` | `bdr` | Brazilian Depositary Receipts (`especi` `DR*`) |
 | `GET /units` | `unit` | Units — bundled share packages (`especi` `UNT*`) |
 | `GET /fund_quotas` | `fund_quota` | Listed fund quotas: ETFs, FIIs and other `CI*` paper |
-| `GET /cash_securities` | `cash_security` | Everything else on the cash board — subscription rights, receipts, non-share paper |
+| `GET /cash_securities` | `cash_security` | The residual: ESPECI codes none of the named types cover. Subscription rights (`right`), bonus rights (`bonus`) and index lines (`index`) were split out of this bucket in catalog v12 and are no longer here |
 
 The type comes from `vw_b3_instrument_typed`, which classifies **only** from B3's published
 `TPMERC` and `ESPECI`. Nothing is inferred from a ticker's shape.

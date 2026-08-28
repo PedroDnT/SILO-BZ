@@ -314,9 +314,19 @@ def test_b3_catalog_divides_cash_instruments_by_published_type():
     from serve.catalog import B3_CASH_ASSET_CLASSES, CATALOG_VERSION, METRICS
 
     assert CATALOG_VERSION >= 5
+    # v12 split three types out of the residual bucket after measuring what was
+    # in it: subscription rights (ESPECI DIR) and bonus rights (BNS) by volume,
+    # plus IBOV11, an index line that a "ticker ends in 11" rule would have
+    # called an ETF. cash_security keeps its place as the true residual, last.
     assert B3_CASH_ASSET_CLASSES == [
-        "equity", "unit", "bdr", "fund_quota", "cash_security",
+        "equity", "unit", "bdr", "fund_quota",
+        "index", "right", "bonus",
+        "cash_security",
     ]
+    assert B3_CASH_ASSET_CLASSES[-1] == "cash_security", (
+        "the residual bucket must stay last so a reader sees it as the "
+        "leftover, not as a peer category"
+    )
     # Every cash class stays available on all three B3 metrics.
     for metric in ("close", "volume", "close_return"):
         assert set(B3_CASH_ASSET_CLASSES) <= set(METRICS[metric]["asset_class"])
