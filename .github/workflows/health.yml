@@ -11,7 +11,9 @@ name: DB Health
 #
 # Modes (workflow_dispatch):
 #   checks       — the gate (default; also what the schedule runs)
-#   diagnostics  — prints one-off investigation queries; never fails on data
+#   diagnostics  — prints one-off investigation queries; never fails on a
+#                  missing relation or a single bad SELECT (no ON_ERROR_STOP).
+#                  Connection/fatal psql errors still fail the step.
 #   both
 #
 # Concurrency group is deliberately NOT the ingest group: this is read-only and
@@ -44,9 +46,12 @@ jobs:
       # Thresholds. Deliberately loose: this must fire on real breakage, not on
       # CVM's normal 1-2 month publication lag.
       MAX_COMPLETE_AGE_DAYS: "75" # a monthly family with no complete period in this window is stalled
-      MAX_INGEST_ERROR_HOURS: "26" # errors logged inside this window fail the run
-      DISK_WARN_PCT: "85" # database size vs plan quota
-      PLAN_DISK_GB: "8" # Supabase plan allowance; update if the plan changes
+      MAX_INGEST_ERROR_HOURS: "26" # unresolved error slices (latest attempt still error) in this window fail the run
+      DISK_WARN_PCT: "85" # database size vs Pro *included* disk (not a hard cap)
+      # Supabase Pro includes 8 GB; this warehouse is tens of GB and bills
+      # overage. Update only if extra disk was purchased, so the percentage
+      # reflects the paid allowance rather than the included floor.
+      PLAN_DISK_GB: "8"
 
     steps:
       - uses: actions/checkout@v5
@@ -82,20 +87,58 @@ jobs:
 
           echo "## Warehouse health $(date -u +%FT%TZ)" >> "$GITHUB_STEP_SUMMARY"
 
-          # 1. Ingest errors in the last MAX_INGEST_ERROR_HOURS.
-          errs=$(q "SELECT count(*) FROM cvm_ingest_log
+          # 1. Unresolved ingest errors in the last MAX_INGEST_ERROR_HOURS.
+          #    cvm_ingest_log records ATTEMPTS. A TimeoutError followed by a later
+          #    ok for the same slice is a recovered backfill, not a live failure
+          #    (src/pipeline/gaps.py documents this trap; the 2026-08-27
+          #    fi/balancete run left 29 TimeoutError rows on months that later
+          #    landed). Fail only on slices whose latest attempt is still error.
+          attempts=$(q "SELECT count(*) FROM cvm_ingest_log
                     WHERE status = 'error'
                       AND started_at > now() - interval '${MAX_INGEST_ERROR_HOURS} hours'")
-          echo "ingest errors (${MAX_INGEST_ERROR_HOURS}h): $errs"
-          if [ "${errs:-0}" -gt 0 ]; then
-            echo "FAIL: $errs ingest error rows" >&2
-            psql "$POSTGRES_URL" -c "SET default_transaction_read_only = on" -c \
-              "SELECT started_at, entity, doc_type, left(coalesce(error_msg,''),200) AS error
-                 FROM cvm_ingest_log
-                WHERE status='error' AND started_at > now() - interval '${MAX_INGEST_ERROR_HOURS} hours'
-                ORDER BY started_at DESC LIMIT 20"
-            echo "- ❌ ingest errors: $errs" >> "$GITHUB_STEP_SUMMARY"
+          errs=$(q "SELECT count(*) FROM (
+                      SELECT DISTINCT entity, doc_type, period_year, period_month
+                        FROM cvm_ingest_log e
+                       WHERE e.status = 'error'
+                         AND e.started_at > now() - interval '${MAX_INGEST_ERROR_HOURS} hours'
+                         AND NOT EXISTS (
+                           SELECT 1 FROM cvm_ingest_log later
+                            WHERE later.entity = e.entity
+                              AND later.doc_type = e.doc_type
+                              AND later.period_year IS NOT DISTINCT FROM e.period_year
+                              AND later.period_month IS NOT DISTINCT FROM e.period_month
+                              AND later.started_at > e.started_at
+                              AND later.status IN ('ok', 'skipped')
+                         )
+                    ) unresolved")
+          echo "ingest error attempts (${MAX_INGEST_ERROR_HOURS}h): ${attempts:-0}; unresolved slices: ${errs:-0}"
+          if ! [ "${errs:-}" -ge 0 ] 2>/dev/null; then
+            echo "FAIL: ingest-error query did not return a count ('$errs')" >&2
+            echo "- ❌ ingest-error query failed" >> "$GITHUB_STEP_SUMMARY"
             fail=1
+            errs=0
+          fi
+          if [ "${errs:-0}" -gt 0 ]; then
+            echo "FAIL: $errs unresolved ingest error slices (${attempts:-0} attempts in window)" >&2
+            psql "$POSTGRES_URL" -c "SET default_transaction_read_only = on" -c \
+              "SELECT started_at, entity, doc_type, period_year, period_month,
+                      left(coalesce(error_msg,''),200) AS error
+                 FROM cvm_ingest_log e
+                WHERE status='error' AND started_at > now() - interval '${MAX_INGEST_ERROR_HOURS} hours'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM cvm_ingest_log later
+                     WHERE later.entity = e.entity
+                       AND later.doc_type = e.doc_type
+                       AND later.period_year IS NOT DISTINCT FROM e.period_year
+                       AND later.period_month IS NOT DISTINCT FROM e.period_month
+                       AND later.started_at > e.started_at
+                       AND later.status IN ('ok', 'skipped')
+                  )
+                ORDER BY started_at DESC LIMIT 20"
+            echo "- ❌ unresolved ingest errors: $errs slices (${attempts:-0} attempts)" >> "$GITHUB_STEP_SUMMARY"
+            fail=1
+          elif [ "${attempts:-0}" -gt 0 ]; then
+            echo "- ✅ no unresolved ingest errors (${attempts} recovered attempts in ${MAX_INGEST_ERROR_HOURS}h)" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "- ✅ no ingest errors in ${MAX_INGEST_ERROR_HOURS}h" >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -131,9 +174,12 @@ jobs:
           fi
 
           # 4. api.* contract still answers (catches a broken analytical apply).
-          cat=$(q "SELECT api.catalog()->>'catalog_version'")
+          #    The catalog jsonb key is `version` (serve/catalog.py CATALOG_VERSION),
+          #    not `catalog_version` — that typo made a working contract look dead
+          #    (coverage() returned 9 rows while this check printed catalog='').
+          cat=$(q "SELECT api.catalog()->>'version'")
           cov=$(q "SELECT count(*) FROM api.coverage()")
-          echo "catalog_version=$cat coverage_rows=$cov"
+          echo "catalog version=$cat coverage_rows=$cov"
           if [ -z "$cat" ] || [ "${cov:-0}" -eq 0 ]; then
             echo "FAIL: api contract not answering (catalog='$cat', coverage rows=$cov)" >&2
             echo "- ❌ api contract broken" >> "$GITHUB_STEP_SUMMARY"
@@ -142,13 +188,15 @@ jobs:
             echo "- ✅ api contract OK (catalog v$cat, $cov coverage rows)" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          # 5. Disk. Supabase bills on database size; the plan allowance is a
-          #    workflow input because Postgres cannot see it.
+          # 5. Disk. Postgres cannot see the billed quota; PLAN_DISK_GB is the
+          #    Pro *included* disk (8 GB), not a hard stop. A warehouse at
+          #    ~72 GB is 899% of included and bills overage — warn, don't fail
+          #    the gate (dropping landing data to "fix" the % would be worse).
           bytes=$(q "SELECT pg_database_size(current_database())")
           gb=$(awk -v b="$bytes" 'BEGIN{printf "%.2f", b/1024/1024/1024}')
           pct=$(awk -v g="$gb" -v p="$PLAN_DISK_GB" 'BEGIN{printf "%.0f", 100*g/p}')
-          echo "database size: ${gb}GB of ${PLAN_DISK_GB}GB (${pct}%)"
-          echo "- 💾 database ${gb}GB / ${PLAN_DISK_GB}GB (${pct}%)" >> "$GITHUB_STEP_SUMMARY"
+          echo "database size: ${gb}GB of ${PLAN_DISK_GB}GB Pro included (${pct}%)"
+          echo "- 💾 database ${gb}GB / ${PLAN_DISK_GB}GB Pro included (${pct}%)" >> "$GITHUB_STEP_SUMMARY"
           echo "--- 12 largest relations ---"
           psql "$POSTGRES_URL" -c "SET default_transaction_read_only = on" -c \
             "SELECT relname, pg_size_pretty(pg_total_relation_size(c.oid)) AS total
@@ -156,7 +204,7 @@ jobs:
               WHERE n.nspname = 'public' AND c.relkind IN ('r','m','p')
               ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 12"
           if [ "${pct:-0}" -ge "$DISK_WARN_PCT" ]; then
-            echo "::warning::database at ${pct}% of the ${PLAN_DISK_GB}GB plan allowance"
+            echo "::warning::database at ${pct}% of the ${PLAN_DISK_GB}GB Pro included allowance (${gb}GB used). This is billed overage, not a wrong constant. Add disk in the Supabase dashboard; do not drop landing tables. See docs/DATABASE_MAINTENANCE.md §9."
           fi
 
           echo
@@ -174,13 +222,28 @@ jobs:
         # because of the failure.
         if: always() && (env.MODE == 'diagnostics' || env.MODE == 'both')
         run: |
-          set -euo pipefail
-          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          # GitHub runs steps as `bash -e {0}`. A missing relation used to abort
+          # this step at psql exit 3 (ON_ERROR_STOP=1) before later queries ran
+          # — 2026-08-28 died on vw_b3_share_count_event because migration 26
+          # had not been applied yet (this job is read-only and does not apply
+          # schema). Prove the connection, then keep going after SQL errors.
+          set -uo pipefail
+          psql "$POSTGRES_URL" -c "SET default_transaction_read_only = on" -c "SELECT 1" >/dev/null
+          set +e
+          psql "$POSTGRES_URL" <<'SQL'
           SET default_transaction_read_only = on;
           SET statement_timeout = '120s';
 
+          \echo === objects later queries need (NULL = schema not applied yet) ===
+          SELECT to_regclass('public.vw_b3_share_count_event') AS vw_b3_share_count_event,
+                 to_regclass('public.b3_corporate_event')      AS b3_corporate_event,
+                 to_regclass('public.vw_b3_instrument_typed')  AS vw_b3_instrument_typed,
+                 to_regclass('public.mv_period_completeness')  AS mv_period_completeness,
+                 to_regclass('public.fact_fund_monthly')      AS fact_fund_monthly,
+                 to_regprocedure('api.catalog()')              AS api_catalog;
+
           \echo === D0 contract: catalog, ticker bridge, lookup ===
-          SELECT api.catalog()->>'catalog_version' AS catalog_version,
+          SELECT api.catalog()->>'version' AS catalog_version,
                  (SELECT count(*) FROM cia_ticker)          AS cia_ticker_rows,
                  (SELECT count(*) FROM vw_company_ticker)   AS bridge_rows,
                  (SELECT count(*) FROM etf_market_snapshot) AS etf_snapshot_rows;
@@ -245,6 +308,9 @@ jobs:
           -- tape actually did across the entitlement date; whichever candidate
           -- reproduces it per label IS the convention. Until this returns
           -- consistent numbers, quotes stay unadjusted.
+          -- If vw_b3_share_count_event is missing, this prints ERROR and the
+          -- script continues (no ON_ERROR_STOP). Apply migration 26 via Daily
+          -- CVM Ingest on current main, then re-run diagnostics.
           SELECT label,
                  count(*)                                              AS events,
                  round(avg(factor), 4)                                 AS avg_factor,
@@ -271,3 +337,12 @@ jobs:
                  max(period) AS last_period
             FROM fact_fund_monthly GROUP BY 1 ORDER BY 1;
           SQL
+          code=$?
+          if [ "$code" -eq 1 ] || [ "$code" -eq 2 ]; then
+            echo "psql failed with exit $code (fatal/connection)" >&2
+            exit $code
+          fi
+          if [ "$code" -ne 0 ]; then
+            echo "::warning::one or more diagnostic queries failed (exit $code); remaining output is above. A missing relation is schema-apply lag, not a data finding."
+          fi
+          echo "DIAGNOSTICS: done"
