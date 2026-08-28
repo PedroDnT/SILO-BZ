@@ -1684,7 +1684,7 @@ STABLE
 AS $fn$
 SELECT $json$
 {
-  "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup/universe, then GET /v1/panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions, and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches.",
+  "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup/universe, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint carefully: the two surfaces signal truncation differently and getting that wrong silently analyses a truncated panel.",
   "asset_classes": [
     "equity",
     "unit",
@@ -1710,7 +1710,9 @@ SELECT $json$
     "Default windows are honest: with no explicit `to`, fund metrics end at each family's latest COMPLETE period (coverage() reports it as complete_through) — a partially-filed trailing month is not served. An explicit `to` serves the window verbatim, partial months included.",
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
-    "Panel responses are hard-capped at 100000 rows (series endpoints at 5000); above that the API answers 400 — narrow ids, metrics, or the date window.",
+    "Row caps, and how each surface tells you it hit one — getting this wrong means silently analysing a TRUNCATED panel, the exact fabrication this API is built to prevent. The SQL functions LIMIT at cap+1 (panel 100001, series 5001). On PostgREST (the deployed surface) that comes back as a 200 with exactly cap+1 rows: a count of exactly 100001 (or 5001) means TRUNCATED — discard it and narrow ids, metrics or the window; it never answers 400 for size. The local /v1 Flask adapter converts that same sentinel into a 400. Check the row count, not just the status code.",
+    "An unrecognised metric name is IGNORED, not rejected: the panel comes back smaller and perfectly plausible. Take metric names from this catalog's `metrics` map, never from memory.",
+    "universe is capped at 500 rows, alphabetical, and does not paginate — it is a sampler, not a census. To enumerate a family, page the funds view (GET /rest/v1/funds?entity_type=eq.fidc with Prefer: count=exact) and batch the resulting ids into panel calls.",
     "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
     "Option rows carry underlying_ticker resolved from the PUBLISHED ISIN mapping (an option row's ISIN is its underlying's ISIN), never from the codneg root; it is null when the underlying had no cash print that session. Termo rows still carry no underlying column.",
     "tpmerc 012/013 are option exercise EVENTS served by option_exercises, and 017 auction prints by auctions — neither is a quote series; do not compute returns over them.",
@@ -1961,16 +1963,27 @@ SELECT $json$
     "auctions": "GET /rest/v1/auctions",
     "bdrs": "GET /rest/v1/bdrs",
     "cash_securities": "GET /rest/v1/cash_securities",
+    "coverage": "POST /rest/v1/rpc/coverage",
     "equities": "GET /rest/v1/equities",
+    "fund_nav": "POST /rest/v1/rpc/fund_nav",
+    "fund_profile": "POST /rest/v1/rpc/fund_profile",
     "fund_quotas": "GET /rest/v1/fund_quotas",
+    "funds_view": "GET /rest/v1/funds",
+    "lookup": "POST /rest/v1/rpc/lookup",
     "option_chain": "POST /rest/v1/rpc/option_chain",
     "option_exercises": "POST /rest/v1/rpc/option_exercises",
     "option_history": "POST /rest/v1/rpc/option_history",
+    "panel": "POST /rest/v1/rpc/panel",
+    "quote_history": "POST /rest/v1/rpc/quote_history",
+    "quote_latest": "POST /rest/v1/rpc/quote_latest",
+    "quotes_view": "GET /rest/v1/quotes",
+    "search_funds": "POST /rest/v1/rpc/search_funds",
     "termo_history": "POST /rest/v1/rpc/termo_history",
-    "units": "GET /rest/v1/units"
+    "units": "GET /rest/v1/units",
+    "universe": "POST /rest/v1/rpc/universe"
   },
   "primitive": "panel",
-  "version": 10
+  "version": 11
 }
 $json$::jsonb;
 $fn$;

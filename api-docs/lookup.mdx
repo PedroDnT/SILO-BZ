@@ -68,6 +68,17 @@ api.lookup(p_query TEXT)
   The entity's CNPJ, for funds and companies. **Always null on ticker rows** — again, no
   invented ticker-to-issuer match.
 </ResponseField>
+<ResponseField name="tickers" type="text[]">
+  A listed company's active B3 trading codes, from CVM's **published** FCA
+  valores-mobiliários filing (`cia_ticker`) — never matched by name. Populated on
+  `cia` rows only; null on fund and ticker rows, and null for a company with no
+  active published listing.
+
+  ```json
+  { "id_type": "cd_cvm", "id": "9512", "name": "PETROLEO BRASILEIRO SA PETROBRAS",
+    "cnpj": "33000167000101", "tickers": ["PETR3", "PETR4"], "isin": null }
+  ```
+</ResponseField>
 
 ## Example
 
