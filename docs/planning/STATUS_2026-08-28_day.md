@@ -46,9 +46,20 @@ reproduces what the tape did is the convention** — and only then does
 | Jump at 2025-05 across FI metrics                 | Hypothesis: CVM Res. 175 subclass phase-in                                                                                        | **Open** — needs fund counts by period                            |
 | Quotaholders missing for some classes             | Not all families publish `nr_cotst`                                                                                               | **Open** — needs per-family coverage                              |
 
-The four open items are all waiting on the same diagnostics output. None of them
-will be "fixed" by guessing: a classification change without the crosstab would
-relabel real instruments on a hunch.
+Three of the four resolved once production data arrived, and each had the same
+shape: a rule that was almost right. The remaining two are open **because** the
+first hypothesis was wrong — the 2025-05 jump is not in fund counts — and a
+second guess would be worth no more than the first.
+
+One more finding, unprompted: **the ETF registry enrichment is broken.** 187
+ETFs carry 8 managers, 8 NAV figures and zero administration fees, so the ETF
+page falls back to B3 prices for nearly every row. Suspected cause is the
+CVM-175 fund-vs-class CNPJ split; a diagnostic now measures it rather than
+assuming it.
+
+Also measured: only 12 tickers have a `fator_cotacao` other than 1 — but four
+of them carry **1,000,000**, so before `close_unit` those four served prices a
+million times too large.
 
 ## 3. API field test
 
