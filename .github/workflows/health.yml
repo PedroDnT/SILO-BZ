@@ -44,7 +44,7 @@ jobs:
       # Thresholds. Deliberately loose: this must fire on real breakage, not on
       # CVM's normal 1-2 month publication lag.
       MAX_COMPLETE_AGE_DAYS: "75" # a monthly family with no complete period in this window is stalled
-      MAX_INGEST_ERROR_HOURS: "26" # errors logged inside this window fail the run
+      MAX_INGEST_ERROR_HOURS: "26" # unhealed error slices in this window fail the run
       DISK_WARN_PCT: "85" # warn past this share of PLAN_DISK_GB, when that is set
       # The plan allowance, which Postgres cannot see. Measured 2026-08-28: the
       # database is 71.9 GB, so the old placeholder of 8 printed "899%" — a
@@ -97,23 +97,36 @@ jobs:
           # alarm that goes off after every backfill is an alarm people learn
           # to ignore.
           #
-          # So: an error only counts when NO later run of the same slice
-          # (entity, doc_type, period) succeeded. That is "still broken", which
-          # is the thing worth waking someone for.
-          errs=$(q "SELECT count(*) FROM cvm_ingest_log e
-                     WHERE e.status = 'error'
-                       AND e.started_at > now() - interval '${MAX_INGEST_ERROR_HOURS} hours'
-                       AND NOT EXISTS (
-                             SELECT 1 FROM cvm_ingest_log s
-                              WHERE s.status = 'ok'
-                                AND s.entity       IS NOT DISTINCT FROM e.entity
-                                AND s.doc_type     IS NOT DISTINCT FROM e.doc_type
-                                AND s.period_year  IS NOT DISTINCT FROM e.period_year
-                                AND s.period_month IS NOT DISTINCT FROM e.period_month
-                                AND s.started_at   > e.started_at)")
-          echo "unhealed ingest errors (${MAX_INGEST_ERROR_HOURS}h): $errs"
+          # `skipped` is also a heal. `_log_finish` records a 404 as skipped
+          # (unpublished month on the trailing daily window). Run 33164105326
+          # stayed red after the ok-only fix because the one remaining error was
+          # fidc/mensal_tab_x2 2026-08 TimeoutError at 2026-08-27 09:00Z — the
+          # same slice 404'd as skipped on every later daily (CVM has not
+          # published August yet; completeness is through 2026-07-31). A
+          # timeout on a month that does not exist yet is not a broken warehouse.
+          #
+          # IS NOT DISTINCT FROM is required: NULL entity/period keys must match.
+          # Fail only on slices whose latest attempt is still error.
+          attempts=$(q "SELECT count(*) FROM cvm_ingest_log
+                         WHERE status = 'error'
+                           AND started_at > now() - interval '${MAX_INGEST_ERROR_HOURS} hours'")
+          errs=$(q "SELECT count(*) FROM (
+                      SELECT DISTINCT entity, doc_type, period_year, period_month
+                        FROM cvm_ingest_log e
+                       WHERE e.status = 'error'
+                         AND e.started_at > now() - interval '${MAX_INGEST_ERROR_HOURS} hours'
+                         AND NOT EXISTS (
+                               SELECT 1 FROM cvm_ingest_log s
+                                WHERE s.status IN ('ok', 'skipped')
+                                  AND s.entity       IS NOT DISTINCT FROM e.entity
+                                  AND s.doc_type     IS NOT DISTINCT FROM e.doc_type
+                                  AND s.period_year  IS NOT DISTINCT FROM e.period_year
+                                  AND s.period_month IS NOT DISTINCT FROM e.period_month
+                                  AND s.started_at   > e.started_at)
+                    ) unhealed")
+          echo "unhealed ingest errors (${MAX_INGEST_ERROR_HOURS}h): $errs (of ${attempts:-0} error rows)"
           if [ "${errs:-0}" -gt 0 ]; then
-            echo "FAIL: $errs UNHEALED ingest error slices" >&2
+            echo "FAIL: $errs UNHEALED ingest error slices (${attempts:-0} error rows in window)" >&2
             psql "$POSTGRES_URL" -c "SET default_transaction_read_only = on" -c \
               "SELECT e.started_at, e.entity, e.doc_type, e.period_year, e.period_month,
                       left(coalesce(e.error_msg,''),200) AS error
@@ -122,7 +135,7 @@ jobs:
                   AND e.started_at > now() - interval '${MAX_INGEST_ERROR_HOURS} hours'
                   AND NOT EXISTS (
                         SELECT 1 FROM cvm_ingest_log s
-                         WHERE s.status='ok'
+                         WHERE s.status IN ('ok', 'skipped')
                            AND s.entity       IS NOT DISTINCT FROM e.entity
                            AND s.doc_type     IS NOT DISTINCT FROM e.doc_type
                            AND s.period_year  IS NOT DISTINCT FROM e.period_year
@@ -132,7 +145,7 @@ jobs:
             echo "- ❌ unhealed ingest errors: $errs" >> "$GITHUB_STEP_SUMMARY"
             fail=1
           else
-            echo "- ✅ no unhealed ingest errors in ${MAX_INGEST_ERROR_HOURS}h" >> "$GITHUB_STEP_SUMMARY"
+            echo "- ✅ no unhealed ingest errors in ${MAX_INGEST_ERROR_HOURS}h (${attempts:-0} recovered error rows)" >> "$GITHUB_STEP_SUMMARY"
           fi
 
           # 2. Ingest ran at all yesterday (a workflow that never fires is invisible otherwise).
