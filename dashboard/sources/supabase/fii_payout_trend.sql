@@ -9,11 +9,8 @@
 -- ZERO-ROW SAFETY: 24-month generate_series spine drives the result; the monthly
 -- aggregate is LEFT JOINed on, so the source always returns 24 rows.
 with anchor as (
-  select coalesce(
-           max(period),
-           date_trunc('month', current_date)::date
-         ) as p_end
-  from cvm_fii_mensal
+  -- anchor on FII's completeness bound: never a partially-filed month
+  select latest_complete_period('fii') as p_end
 ),
 months as (
   select generate_series(

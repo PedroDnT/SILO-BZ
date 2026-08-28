@@ -29,7 +29,8 @@
           "api-docs/panel",
           "api-docs/lookup",
           "api-docs/universe",
-          "api-docs/coverage"
+          "api-docs/coverage",
+          "api-docs/cotahist-dictionary"
         ]
       }
     ]

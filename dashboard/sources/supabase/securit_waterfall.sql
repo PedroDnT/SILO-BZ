@@ -14,8 +14,10 @@
 -- more than it collected that month.
 with months as (
   select generate_series(
+           -- last ENDED month: securit is outside fund completeness; the
+           -- in-progress month of a monthly filing is partial by construction
            date_trunc('month', current_date - interval '23 months'),
-           date_trunc('month', current_date),
+           date_trunc('month', current_date) - interval '1 month',
            interval '1 month'
          )::date as period
 ),

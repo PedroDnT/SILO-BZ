@@ -10,13 +10,6 @@ title: Fund Performance
   FIDC/FIAGRO/FIP net-asset growth is excluded because subscriptions,
   redemptions and capital calls make it a size change, not performance.
 
-  COVERAGE: fund history is currently 2026 only (FI daily + FII Q1 + FIP),
-  FIDC/FIAGRO are empty, and cvm_fund_registry is empty so FI funds fall into the
-  coarse 'Other FI' class until the registry/backfill runs. The functions are
-  correct regardless; the tables simply deepen as more data lands. That caveat is
-  now stated ON the page as well as here — a reader looking at a two-class summary
-  needs to know it is a coverage artefact, not a two-class industry.
-
   SECTION ORDER leads with the finding (the class summary and the rankings) and
   puts the methodology after them, because the basis note is what a reader
   consults once they have a number in front of them.
@@ -28,6 +21,10 @@ select * from supabase.class_summary
 
 ```sql ranking_by_class
 select * from supabase.ranking_by_class
+```
+
+```sql fund_perf_series
+select * from supabase.fund_perf_series
 ```
 
 # Fund Performance
@@ -48,12 +45,10 @@ select * from supabase.ranking_by_class
 
 ## Asset-Class Summary
 
-> One row per class that has enough history to rank. **Coverage caveat:** fund
-> history is currently 2026-only (FI daily, FII Q1, FIP), FIDC and FIAGRO are
-> empty, and where `cvm_fund_registry` has not landed, FI funds fall into the
-> coarse `Other FI` class. A short class list here is a measure of ingested
-> history, not of the industry — check [Pipeline Ops](/ops) before reading it as
-> a market fact.
+> One row per class that has enough history to rank. Monthly fund history covers
+> 2019–present, and returns are per-class bases: FI quota return, FII compounded
+> dividend yield, FIDC/FIAGRO/FIP PL growth (the last is a size change, not a
+> return, and is kept off these tables).
 >
 > `Avg` and `Best` are per class and on that class's own basis, so the columns
 > must not be compared down the page. Classes with no defensible return measure
@@ -88,6 +83,28 @@ select * from supabase.ranking_by_class
 
 ---
 
+## Cumulative Return Through Time — Largest Funds
+
+> The time-series companion to the cross-sectional ranking above: rebased
+> cumulative return for the six largest FI/FII funds, from
+> `fund_performance_series()` (the same `fund_perf_series` source that powers
+> [Fund Explorer](/fund)). No per-**class** return series function exists —
+> aggregating returns across funds would require a weighting choice the data
+> does not justify — so this chart is per fund, on each fund's own class basis:
+> FI quota return, FII compounded dividend yield. Lines are comparable in shape,
+> not strictly in basis.
+
+<LineChart
+  data={fund_perf_series}
+  x=period
+  y=cum_return_num2
+  series=fund
+  yAxisTitle="Cumulative Return (%)"
+  title="Rebased Cumulative Return — Six Largest FI/FII Funds"
+/>
+
+---
+
 ## How Performance Is Measured
 
 Performance is ranked **within** each asset class on a basis appropriate to that
@@ -117,12 +134,7 @@ largely missing.
 
 ## Horizontal Drill-Down
 
-For a single fund's trajectory over time — per-period return and cumulative
-return on its class basis — call:
-
-    select * from fund_performance_series('<cnpj>', '2019-01-01', current_date);
-
-It returns `period, return_basis, level_value, period_return, cumulative_return`
-for that fund: the time-series companion to the cross-sectional ranking above.
-The same function already powers the rebased-return chart for the largest funds
-on [Fund Explorer](/fund).
+For a single fund's trajectory over time — net assets, quota, flows, and
+per-period and cumulative return on its class basis — use the charts on
+[Fund Explorer](/fund), which draw the same `fund_performance_series()` data
+fund by fund.

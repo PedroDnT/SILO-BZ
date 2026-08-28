@@ -9,11 +9,16 @@
 -- series is LEFT JOINed on, so the source returns at least 36 rows even if
 -- search_funds finds nothing.
 with anchor as (
-  select coalesce(
-           max(period),
-           date_trunc('month', current_date)::date
-         ) as p_end
-  from fact_fund_monthly
+  -- latest_complete_period(null) fixes two bugs the old
+  -- coalesce(max(period), ...) anchor had at once:
+  --   1. it took max(period) with NO entity filter, and FIP files on Dec-31
+  --      of the CURRENT year — so the 36-month window ended in the future
+  --      and the right ~5 months of every /fund chart were empty by
+  --      construction;
+  --   2. it happily anchored on a partially-filed trailing month.
+  -- The function never returns NULL (previous-month floor on a cold DB), so
+  -- the zero-row spine guarantee is preserved.
+  select latest_complete_period(null) as p_end
 ),
 months as (
   select generate_series(
@@ -49,9 +54,13 @@ series as (
   cross join lateral fund_nav_series(
     t.cnpj,
     (date_trunc('month', a.p_end) - interval '35 months')::date,
-    a.p_end,
+    current_date,
     t.entity_type
   ) n
+  -- Per-family completeness clamp (raw-convention comparison: the bound for a
+  -- month-end family is itself a month-end date). The lateral fetches to
+  -- current_date and this filter, not the fetch window, decides what renders.
+  where n.period <= latest_complete_period(t.entity_type)
 )
 select
   m.period                  as period,
@@ -62,5 +71,8 @@ select
   x.vl_quota                as quota,
   x.nr_cotst                as investors
 from months m
-left join series x on x.period = m.period
+-- date_trunc on the join key: FIDC/FIP periods are month-end / year-end and
+-- never matched the first-of-month spine raw — a FIDC fund in the top 6
+-- silently rendered no line at all.
+left join series x on date_trunc('month', x.period)::date = m.period
 order by m.period, x.fund

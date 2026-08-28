@@ -12,6 +12,8 @@ with agg as (
     sum(vl_inad_maior_1080) / 1e6 as inad_over1080d
   from cvm_fidc_aging
   where period >= current_date - interval '12 months'
+    -- completeness clamp (mv_period_completeness)
+    and period <= latest_complete_period('fidc')
   group by period
 )
 select period, inad_30d, inad_60d, inad_90d, inad_180d, inad_360d, inad_over1080d

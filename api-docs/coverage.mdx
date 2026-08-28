@@ -21,7 +21,9 @@ None. Send an empty JSON body.
 
 ## Returns
 
-Exactly four rows, one per dataset:
+One row per dataset — the four originals plus one `funds_<family>` row per fund
+family (`funds_fi`, `funds_fidc`, `funds_fii`, `funds_fip`, `funds_fiagro`), because
+the families file on different cadences and one blended date misreads all of them:
 
 <ResponseField name="dataset" type="text">
   `quotes`, `funds`, `fund_nav`, or `derivatives`.
@@ -33,8 +35,16 @@ Exactly four rows, one per dataset:
     (`tpmerc` `070`, `080`, `030`).
 </ResponseField>
 <ResponseField name="as_of" type="date">
-  The maximum date for that dataset. **Nullable** — a null means the dataset is empty, which
-  is a real answer, not an error.
+  The newest period that has **landed** (freshness — what ingest has seen). **Nullable**
+  — a null means the dataset is empty, which is a real answer, not an error.
+</ResponseField>
+<ResponseField name="complete_through" type="date">
+  The newest period classified **complete** — what the default windows actually serve.
+  It diverges from `as_of` exactly where the filing cadence makes the newest period
+  partial: an in-progress month, a family under CVM's 1–2 month publication lag, or
+  FIP's annual year-end row (its `as_of` is a Dec-31 date even when perfectly
+  current — read `complete_through`, not staleness, for FIP). Equal to `as_of` for
+  session data (quotes/derivatives).
 </ResponseField>
 <ResponseField name="source" type="text">
   `b3_cotahist` for quotes and derivatives, `cvm` for the two fund datasets.

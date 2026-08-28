@@ -15,8 +15,9 @@
 -- construction. It is NOT a cross-class return comparison.
 with spine as (
   select generate_series(
-           date_trunc('month', current_date) - interval '23 months',
-           date_trunc('month', current_date),
+           -- global completeness bound: classes span families
+           date_trunc('month', latest_complete_period(null)) - interval '23 months',
+           date_trunc('month', latest_complete_period(null)),
            interval '1 month'
          )::date as period
 ),
@@ -29,8 +30,8 @@ classes (asset_class) as (
 t as (
   select *
   from asset_class_performance(
-    (date_trunc('month', current_date) - interval '23 months')::date,
-    current_date,
+    (date_trunc('month', latest_complete_period(null)) - interval '23 months')::date,
+    latest_complete_period(null),
     null
   )
 )

@@ -7,8 +7,17 @@ icon: "chart-line"
 B3 COTAHIST cash-market prints (`tpmerc = 010`), exactly as published. Nothing here is
 split- or dividend-adjusted, and every row says so with `adjusted: false`. `asset_class`
 is derived conservatively from B3's published `tpmerc` and `especi`: `equity`, `unit`,
-`bdr`, `fund_quota`, or `cash_security`. A `CI` paper remains `fund_quota` because
-COTAHIST alone cannot prove ETF versus FII.
+`bdr`, `fund_quota`, or `cash_security`. To split `fund_quota` into ETF vs FII vs
+FIAGRO, use [`fund_quotas`](/api-docs/instruments)' `fund_type` column — it comes from
+B3's published CODBDI board code (see the [COTAHIST
+dictionary](/api-docs/cotahist-dictionary)).
+
+<Warning>
+  **`close` is the price of `quotation_factor` units, not always one.** Unit price =
+  `close / quotation_factor`. The factor is 1 for almost everything (13 tickers on the
+  whole 2019–2026 tape carry another value), but summing or comparing prices without
+  checking it silently mixes scales. `close_return` is null across a factor change.
+</Warning>
 
 The grain is **`(ticker, trade_date, board, term_days)`**. A single ticker can print on more
 than one board on the same day, so a query that does not pin `board` can return several rows

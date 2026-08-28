@@ -15,8 +15,9 @@
 -- the aggregate is LEFT JOINed.
 with months as (
   select generate_series(
-           date_trunc('month', current_date - interval '23 months'),
-           date_trunc('month', current_date),
+           -- clamp: fidc's completeness bound (mv_period_completeness)
+           date_trunc('month', latest_complete_period('fidc') - interval '23 months'),
+           date_trunc('month', latest_complete_period('fidc')),
            interval '1 month'
          )::date as period
 ),
@@ -32,7 +33,7 @@ agg as (
     count(distinct f.cnpj)                                             as n_funds,
     count(*)                                                           as n_rows
   from cvm_fidc_tranche_flows f
-  where f.period >= (date_trunc('month', current_date) - interval '23 months')::date
+  where f.period >= (date_trunc('month', latest_complete_period('fidc')) - interval '23 months')::date
   group by date_trunc('month', f.period)::date
 )
 select

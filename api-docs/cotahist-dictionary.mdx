@@ -1,0 +1,117 @@
+---
+title: "COTAHIST Dictionary"
+description: "Every field of B3's COTAHIST register-01 record, the TPMERC and CODBDI code tables, and how Silo maps them — verified against the rb3 reference layout."
+icon: "book"
+---
+
+Everything B3-priced in Silo comes from one file format: the **COTAHIST** fixed-width
+tape (245-byte register-01 records, latin-1). This page is the decoder ring — what each
+published field means, which Silo column it becomes, and the code tables the API's
+classifications are built from. Layout cross-checked against the
+[rb3](https://github.com/ropensci/rb3) reference implementation's template.
+
+## Register-01 fields
+
+| Pos | B3 name | Meaning | Silo column |
+|---|---|---|---|
+| 1–2 | TIPREG | Record type (00 header / 01 quote / 99 trailer) | filter only |
+| 3–10 | DATA | Session date | `trade_date` |
+| 11–12 | CODBDI | BDI board/category code (table below) | `board` |
+| 13–24 | CODNEG | Trading ticker | `ticker` |
+| 25–27 | TPMERC | Market type (table below) | drives endpoint routing |
+| 28–39 | NOMRES | Issuer short name | `short_name` |
+| 40–49 | ESPECI | Paper specification + listing segment (below) | `spec`, `share_class`, `governance_segment` |
+| 50–52 | PRAZOT | Termo term in days | `term_days` |
+| 53–56 | MODREF | Reference currency | `currency` |
+| 57–69 | PREABE | Open | `open` |
+| 70–82 | PREMAX | High | `high` |
+| 83–95 | PREMIN | Low | `low` |
+| 96–108 | PREMED | Session VWAP | `average` |
+| 109–121 | PREULT | Last trade | `close` |
+| 122–134 | PREOFC | Best bid at close | `bid` |
+| 135–147 | PREOFV | Best ask at close | `ask` |
+| 148–152 | TOTNEG | Number of trades | `trades` |
+| 153–170 | QUATOT | Units/contracts traded | `quantity` |
+| 171–188 | VOLTOT | Financial volume, BRL | `volume` |
+| 189–201 | PREEXE | Option strike / termo contract value | `strike` |
+| 202 | INDOPC | Strike correction indicator | `strike_correction` (options) |
+| 203–210 | DATVEN | Expiry (options/termo) | `expiry` |
+| 211–217 | FATCOT | **Quotation factor** (see below) | `quotation_factor` |
+| 218–230 | PTOEXE | Strike in points, 6 implied decimals (USD-referenced options) | `strike_points` (0 → null) |
+| 231–242 | CODISI | ISIN — **on option rows, the UNDERLYING's ISIN** | `isin`, drives `underlying_ticker` |
+| 243–245 | DISMES | Distribution number (changes on corporate events) | `distribution_number` (options) |
+
+<Warning>
+  **FATCOT is the quotation factor, not a lot size and not a split ratio.** The quoted
+  price refers to `quotation_factor` units of the paper: unit price = `close /
+  quotation_factor`, and `volume ≈ close × quantity / quotation_factor`. It is 1 for
+  almost everything — measured on the full 2019–2026 cash tape, only 13 tickers ever
+  carried another factor, and only two (GOLL2 1000→1, IBOV11 100→1) ever *changed*
+  factor mid-series. Prices are served as published; the factor is on every row so you
+  can normalize. `close_return` is automatically null across a factor change.
+</Warning>
+
+## TPMERC — market type
+
+| Code | Meaning | Where it serves |
+|---|---|---|
+| 010 | Vista (cash) | [`quotes`](/api-docs/quotes), the five [typed cash endpoints](/api-docs/instruments) |
+| 012 | Call **exercise** (event) | `option_exercises` |
+| 013 | Put **exercise** (event) | `option_exercises` |
+| 017 | Leilão (auction print) | `auctions` |
+| 020 | Fracionário (odd lot) | typed cash endpoints, `lot=odd` |
+| 021 | Undocumented in B3's table; measured rows carry codbdi 93 and `Q`-suffixed tickers | treated as odd lot (documented assumption) |
+| 030 | Termo (forward) | [`termo`](/api-docs/termo) |
+| 070 | Call quotes | [`options`](/api-docs/options) |
+| 080 | Put quotes | [`options`](/api-docs/options) |
+
+Exercises (012/013, ~1 print per series) and auctions (017, ~210 rows on the whole
+tape) are **events, not series** — computing returns over them is meaningless, which
+is why they live on their own endpoints instead of the quote surface.
+
+## CODBDI — board/category
+
+The load-bearing values, validated live against `cvm_etf_registry` (127 of 247
+codbdi-14 tickers matched; zero codbdi-12/13 did):
+
+| Code | Meaning |
+|---|---|
+| 02 | Lote padrão (standard equity board) |
+| 05, 12 | FII quotas |
+| 13 | FIAGRO quotas |
+| 14 | ETF quotas (a `FIDC` ESPECI here would be a listed FIDC) |
+| 10 | Direitos e recibos (rights/receipts) |
+| 96, 93 | Fractional / odd-lot boards |
+| 46–54 | Auction boards |
+| 62 | Termo |
+| 78 / 82 | Call / put option boards |
+
+This is what powers `fund_type` on [`fund_quotas`](/api-docs/instruments): the
+ETF/FII/FIDC/FIAGRO split comes from the published board code, never from the ticker's
+shape.
+
+## ESPECI — specification
+
+A fixed-position 10-character field packing three things:
+
+- **cols 1–4 — share class**: `ON`, `PN`, `PNA`, `PNB`, `PNC`, `PND`, `UNT`, `CI`,
+  `DR*`… Served as `share_class` on [`equities`](/api-docs/instruments), cross-checked
+  against the ISIN class code (chars 10–11: `OR`/`PR`/`PA`/`PB`/`PC`) with zero
+  disagreements on the 2026-08 tape.
+- **cols 5–8 — rights/status flags**: `ED` (ex-dividend), `EJ` (ex-juros), `EDJ`,
+  `ATZ`… Left inside `spec` as published.
+- **cols 9–10 — listing segment**: `NM` (Novo Mercado), `N1`, `N2`, `MA`, `M2`, `MB`.
+  Served as `governance_segment`.
+
+## The ISIN carries structure too
+
+A Brazilian ISIN is `BR` + 4-char issuer + 3-char **security category** (chars 7–9:
+`ACN` shares, `UNT` units, `BDR`, `CTF` fund quotas, `IND` indices) + 2-char class +
+check digit. Two consequences the API uses:
+
+- **An option row's ISIN is its underlying's ISIN** — B3's published option→underlying
+  mapping. `underlying_ticker` on the option endpoints joins it to the same session's
+  cash print (measured: 14,895 of 14,900 rows matched, 1:1). PETR-prefix options split
+  correctly between PETR3 and PETR4 — something the ticker root can never do.
+- **Index prints exist in COTAHIST** (`IND` category, ~monthly on option expiry
+  days) — sparse, so not served as a series.

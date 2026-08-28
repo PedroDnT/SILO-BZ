@@ -5,12 +5,8 @@
 -- always emits 36 rows. Months the industry has not reported yet come back NULL
 -- rather than shrinking the result to nothing.
 with anchor as (
-  select coalesce(
-           max(period),
-           date_trunc('month', current_date)::date
-         ) as p_end
-  from fact_fund_monthly
-  where entity_type = 'fi'
+  -- anchor on FI's completeness bound: never a partially-filed month
+  select latest_complete_period('fi') as p_end
 ),
 months as (
   select generate_series(

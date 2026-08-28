@@ -14,8 +14,9 @@
 -- inadimpl_num1 = delinquent value / net assets, in percent, computed here.
 with spine as (
   select generate_series(
-           date_trunc('month', current_date) - interval '23 months',
-           date_trunc('month', current_date),
+           -- clamp: fiagro's completeness bound (mv_period_completeness)
+           date_trunc('month', latest_complete_period('fiagro')) - interval '23 months',
+           date_trunc('month', latest_complete_period('fiagro')),
            interval '1 month'
          )::date as period
 )

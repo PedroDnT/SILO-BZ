@@ -144,17 +144,29 @@ Missing data shows up in two distinct ways, and the difference matters:
 Specific guarantees worth repeating:
 
 - **`close_return` across a gap is null**, and therefore absent from `panel`. A monthly
-  return is computed only when the previous row is the immediately preceding calendar month.
-  A missing month never becomes a two-month return. The ratio itself is of **unadjusted**
-  closes: a 2:1 split reports roughly −50 %. See [`panel`](/api-docs/panel).
+  return is computed only when the previous row is the immediately preceding calendar month;
+  a **daily** return only when the previous session is within 7 calendar days (Carnaval
+  fits; a listing halt does not). A missing month never becomes a two-month return, and a
+  **quotation-factor change also nulls the return** — a fatcot flip rescales the quote
+  ±99.9% with no market move behind it (see the
+  [COTAHIST dictionary](/api-docs/cotahist-dictionary)). The ratio itself is of
+  **unadjusted** closes: a 2:1 split reports roughly −50 %. See [`panel`](/api-docs/panel).
+- **Default windows serve only complete periods.** With no explicit `to`, fund metrics
+  end at each family's latest COMPLETE period — a month CVM has only fractionally
+  published (its 1–2 month lag) is not served as if it were the industry, and FIP's
+  early-filed year-end row waits for its year to close. An explicit `to` serves the
+  window verbatim, partial months included. [`coverage`](/api-docs/coverage) reports
+  both dates (`as_of` = landed, `complete_through` = served).
 - **`freq=day` is quotes only.** No fund fundamental is daily; asking for `freq=day` with
   fund metrics returns the quote rows and nothing else. Mix asset classes on `freq=month`,
   where the equity value is the **last real session of the month**, not an invented month-end.
 - **Prices are unadjusted.** Every quote row carries `adjusted: false`. There is no split or
   dividend adjustment anywhere in this API — do not compare a long price history across a
   corporate action without handling it yourself.
-- **Identifier matches are never invented.** `lookup` will not join a ticker to a listed
-  company's CNPJ; it returns each match separately, by the key that actually matched.
+- **Identifier matches are never invented.** Company rows in `lookup` carry a `tickers`
+  array from CVM's *published* FCA registry (CNPJ and ticker on the same source row) —
+  a published mapping, not a name match. Everything else still returns separately, by
+  the key that actually matched.
 
 ## Errors and empty results
 

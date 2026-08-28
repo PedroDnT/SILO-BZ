@@ -11,12 +11,23 @@ neither will scan the whole segment for you.
 
 Everything is unadjusted and every row says so with `adjusted: false`.
 
+Option rows carry **`underlying_ticker`** — and it is *published*, not the
+codneg-root convention: COTAHIST's ISIN on an option row is the **underlying's** ISIN,
+joined here to the same session's cash print. Measured on a full session: 14,895 of
+14,900 rows matched, 1:1 — PETR-prefix options split correctly between `PETR3` and
+`PETR4`, which the ticker root can never do. It is `null` when the underlying had no
+cash print that day, never guessed.
+
+Also on every row: `strike_points` (PTOEXE, USD-referenced options; `null` when not
+points-referenced), `strike_correction` (INDOPC) and `distribution_number` (DISMES —
+it changes on corporate events, a useful split signal). See the
+[COTAHIST dictionary](/api-docs/cotahist-dictionary).
+
 <Warning>
-  **There is no `underlying` column, on purpose.** A codneg's root usually names the
-  underlying — `PETRH400` is a PETR call — but that is a market naming *convention*, not a
-  mapping B3 publishes. Deriving it here would mean inventing an identity join, which this
-  warehouse does not do (the same reason ticker↔CNPJ stays unjoined). Filter by prefix and
-  own that inference yourself.
+  **Exercises are not quotes.** `tpmerc` 012/013 rows are exercise *events* (~one print
+  per series) and live on `POST /rpc/option_exercises` (same required prefix, capped
+  5001), not on the chain or history endpoints. Auction prints (`tpmerc` 017) live on
+  `GET /auctions`. Computing returns over either is meaningless.
 </Warning>
 
 ---
