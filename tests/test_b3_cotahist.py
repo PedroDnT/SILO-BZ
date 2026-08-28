@@ -459,6 +459,8 @@ def test_schema_creates_isin_subtype_matview_without_holding_pg_type():
     assert "REFRESH MATERIALIZED VIEW" not in create
     assert "REFRESH MATERIALIZED VIEW public.mv_b3_isin_subtype" in rest
     assert "$silo_refresh_mv_b3_isin_subtype$" in rest
+    assert "relispopulated" in rest
+    assert "SELECT 1 FROM public.mv_b3_isin_subtype" not in rest
 
 
 def test_the_isin_map_learns_only_from_decisive_board_codes():

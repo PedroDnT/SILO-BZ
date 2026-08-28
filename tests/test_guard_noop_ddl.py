@@ -226,6 +226,9 @@ def test_schema_sql_matview_create_is_with_no_data():
     rest = rest.split(";", 1)[1]
     assert "REFRESH MATERIALIZED VIEW public.mv_b3_isin_subtype" in rest
     assert "$silo_refresh_mv_b3_isin_subtype$" in rest
+    assert "relispopulated" in rest
+    # Unpopulated MVs cannot be SELECTed (SQL compile CI on this PR).
+    assert "SELECT 1 FROM public.mv_b3_isin_subtype" not in rest
     # Rewriter is a no-op on the already-safe CREATE.
     assert list(iter_wrappable_matview(sql)) == []
 

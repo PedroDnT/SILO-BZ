@@ -1147,13 +1147,24 @@ WITH NO DATA;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_b3_isin_subtype ON mv_b3_isin_subtype (isin);
 
 -- First populate is a SEPARATE statement from CREATE so the composite type
--- is already committed before we scan b3_cotahist. Skip when the matview
--- already has rows (daily replay). Non-concurrent: this block may run
--- inside a migration transaction; CONCURRENTLY cannot. Subsequent refreshes
--- are pg_cron CONCURRENTLY (08_cron_schedules.sql).
+-- is already committed before we scan b3_cotahist. Skip when already
+-- populated (daily replay). Do not SELECT from the matview to decide —
+-- an unpopulated MV (WITH NO DATA, not yet REFRESH-ed) raises
+-- "has not been populated" (SQL compile on this PR). relispopulated is
+-- the catalog flag. Non-concurrent: CONCURRENTLY cannot run inside a
+-- DO block. Subsequent refreshes are pg_cron CONCURRENTLY
+-- (08_cron_schedules.sql).
 DO $silo_refresh_mv_b3_isin_subtype$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM public.mv_b3_isin_subtype LIMIT 1) THEN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname = 'mv_b3_isin_subtype'
+      AND c.relkind = 'm'
+      AND NOT c.relispopulated
+  ) THEN
     REFRESH MATERIALIZED VIEW public.mv_b3_isin_subtype;
   END IF;
 END
