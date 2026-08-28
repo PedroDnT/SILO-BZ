@@ -1690,6 +1690,9 @@ SELECT $json$
     "unit",
     "bdr",
     "fund_quota",
+    "index",
+    "right",
+    "bonus",
     "cash_security",
     "fi",
     "fidc",
@@ -1778,6 +1781,9 @@ SELECT $json$
         "unit",
         "bdr",
         "fund_quota",
+        "index",
+        "right",
+        "bonus",
         "cash_security",
         "derivative"
       ],
@@ -1799,6 +1805,9 @@ SELECT $json$
         "unit",
         "bdr",
         "fund_quota",
+        "index",
+        "right",
+        "bonus",
         "cash_security"
       ],
       "derived": true,
@@ -1818,6 +1827,9 @@ SELECT $json$
         "unit",
         "bdr",
         "fund_quota",
+        "index",
+        "right",
+        "bonus",
         "cash_security"
       ],
       "derived": true,
@@ -1924,6 +1936,9 @@ SELECT $json$
         "unit",
         "bdr",
         "fund_quota",
+        "index",
+        "right",
+        "bonus",
         "cash_security",
         "derivative"
       ],
@@ -1983,7 +1998,7 @@ SELECT $json$
     "universe": "POST /rest/v1/rpc/universe"
   },
   "primitive": "panel",
-  "version": 11
+  "version": 12
 }
 $json$::jsonb;
 $fn$;

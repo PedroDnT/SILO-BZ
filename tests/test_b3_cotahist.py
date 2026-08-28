@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import zipfile
 from datetime import date
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -395,3 +396,71 @@ class TestServeSchema:
             "migration 20's executable DDL must stay the original shape; "
             "the widened view belongs to migration 23"
         )
+
+
+# ---------------------------------------------------------------------------
+# Migration 27: typing v3 — measured against production on 2026-08-28
+# ---------------------------------------------------------------------------
+
+_MIG27 = (
+    Path(__file__).resolve().parents[1]
+    / "src/store/migrations/27_b3_instrument_typed_v3.sql"
+).read_text(encoding="utf-8")
+
+
+def test_index_requires_both_especi_and_the_isin_segment():
+    """IBOV11 is the Ibovespa index line, not an ETF and not a cash security.
+
+    Measured: codbdi 02, ESPECI 'IBO'/'IBO/', ISIN BRIBOVINDM18 whose
+    instrument segment is IND. Requiring BOTH signals stops a ticker that
+    merely starts with IBO from being relabelled an index — and stops the
+    tempting "ends in 11 so it's an ETF" rule from mislabelling an index.
+    """
+    assert "LIKE 'IBO%'" in _MIG27
+    assert "LIKE 'BR____IND%'" in _MIG27, (
+        "the ISIN instrument segment must corroborate ESPECI before a row "
+        "becomes an index"
+    )
+
+
+def test_rights_and_bonuses_leave_the_residual_bucket():
+    # The top of cash_security by volume was DIR% (subscription rights) and
+    # BNS% (bonus rights) — claims, not 'exchange-traded debt'.
+    assert "LIKE 'DIR%'" in _MIG27 and "'right'" in _MIG27
+    assert "LIKE 'BNS%'" in _MIG27 and "'bonus'" in _MIG27
+    # cash_security survives as the genuine ELSE.
+    assert "ELSE 'cash_security'" in _MIG27
+
+
+def test_subtype_falls_back_to_the_isins_own_classified_sessions():
+    """An ETF must stay an ETF when B3 changes its board code.
+
+    Measured: BOVA11 / BOVV11 / IVVB11 printed under codbdi 02 (not 14) for
+    92 sessions from 2019-08-19 to 2019-12-30, which made instrument_subtype
+    NULL and showed ZERO ETF volume for 2019-09..2019-12 on the dashboard,
+    while the prints were in the table the whole time.
+    """
+    assert "mv_b3_isin_subtype" in _MIG27
+    assert "COALESCE(" in _MIG27
+    assert "LEFT JOIN mv_b3_isin_subtype m ON m.isin = q.isin" in _MIG27
+    # UNIQUE, or the LEFT JOIN would multiply rows of the tape.
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_b3_isin_subtype" in _MIG27
+
+
+def test_the_isin_map_learns_only_from_decisive_board_codes():
+    # It must not learn from rows it would itself have to guess about, or the
+    # fallback would launder a guess into an authoritative-looking mapping.
+    body = _MIG27.split("CREATE MATERIALIZED VIEW", 1)[1].split("CREATE OR REPLACE VIEW", 1)[0]
+    assert "q.codbdi IN ('05', '12', '13', '14')" in body
+    assert "WHERE t.subtype IS NOT NULL" in body
+
+
+def test_isin_subtype_matview_is_refreshed_on_a_schedule():
+    cron = (
+        Path(__file__).resolve().parents[1]
+        / "src/store/analytical/08_cron_schedules.sql"
+    ).read_text(encoding="utf-8")
+    assert "refresh-b3-isin-subtype" in cron, (
+        "a matview nobody refreshes silently freezes the classification"
+    )
+    assert "REFRESH MATERIALIZED VIEW CONCURRENTLY mv_b3_isin_subtype" in cron

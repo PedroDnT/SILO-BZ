@@ -22,6 +22,10 @@ __all__ = [
     "tool_specs",
 ]
 
+# 12: instrument typing v3 — index / right / bonus split out of the residual
+# cash_security bucket (measured: its top members by volume were subscription
+# rights and bonus rights, not debt), and an ETF keeps its subtype across the
+# board-code change B3 made in late 2019.
 # 11: the catalog described only the local /v1 adapter while the deployed
 # surface is PostgREST — an agent following it issued the wrong verb and, worse,
 # believed an over-cap panel answers 400 when PostgREST returns cap+1 rows with
@@ -46,13 +50,22 @@ __all__ = [
 # 6: one endpoint per cash instrument type, each carrying both lot sizes.
 # 5: main's typed cash asset classes (4) merged with the option/termo id_types
 # and list-valued id_type this branch introduced (3).
-CATALOG_VERSION = 11
+CATALOG_VERSION = 12
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
     "unit",
     "bdr",
     "fund_quota",
+    # v12: measured in the tape, these three were being swallowed by the
+    # residual bucket. `index` is an index line (IBOV11, ESPECI IBO + an IND
+    # ISIN segment) — emphatically NOT an ETF, whatever its ticker looks like.
+    # `right` is a subscription right (ESPECI DIR) and `bonus` a bonus right
+    # (BNS); both are claims, not the security itself.
+    "index",
+    "right",
+    "bonus",
+    # Now a genuine residual: an ESPECI none of the above names.
     "cash_security",
 ]
 

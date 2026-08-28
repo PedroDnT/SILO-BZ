@@ -82,22 +82,51 @@ jobs:
 
           echo "## Warehouse health $(date -u +%FT%TZ)" >> "$GITHUB_STEP_SUMMARY"
 
-          # 1. Ingest errors in the last MAX_INGEST_ERROR_HOURS.
-          errs=$(q "SELECT count(*) FROM cvm_ingest_log
-                    WHERE status = 'error'
-                      AND started_at > now() - interval '${MAX_INGEST_ERROR_HOURS} hours'")
-          echo "ingest errors (${MAX_INGEST_ERROR_HOURS}h): $errs"
+          # 1. UNHEALED ingest errors in the last MAX_INGEST_ERROR_HOURS.
+          #
+          # Counting every error row fired on its first run: 29 rows, all
+          # `fi/balancete TimeoutError` from a backfill whose slices then
+          # succeeded on retry (that backfill finished 91/91 months). A slice
+          # that failed and was later re-fetched is not a broken slice, and an
+          # alarm that goes off after every backfill is an alarm people learn
+          # to ignore.
+          #
+          # So: an error only counts when NO later run of the same slice
+          # (entity, doc_type, period) succeeded. That is "still broken", which
+          # is the thing worth waking someone for.
+          errs=$(q "SELECT count(*) FROM cvm_ingest_log e
+                     WHERE e.status = 'error'
+                       AND e.started_at > now() - interval '${MAX_INGEST_ERROR_HOURS} hours'
+                       AND NOT EXISTS (
+                             SELECT 1 FROM cvm_ingest_log s
+                              WHERE s.status = 'ok'
+                                AND s.entity       IS NOT DISTINCT FROM e.entity
+                                AND s.doc_type     IS NOT DISTINCT FROM e.doc_type
+                                AND s.period_year  IS NOT DISTINCT FROM e.period_year
+                                AND s.period_month IS NOT DISTINCT FROM e.period_month
+                                AND s.started_at   > e.started_at)")
+          echo "unhealed ingest errors (${MAX_INGEST_ERROR_HOURS}h): $errs"
           if [ "${errs:-0}" -gt 0 ]; then
-            echo "FAIL: $errs ingest error rows" >&2
+            echo "FAIL: $errs UNHEALED ingest error slices" >&2
             psql "$POSTGRES_URL" -c "SET default_transaction_read_only = on" -c \
-              "SELECT started_at, entity, doc_type, left(coalesce(error_msg,''),200) AS error
-                 FROM cvm_ingest_log
-                WHERE status='error' AND started_at > now() - interval '${MAX_INGEST_ERROR_HOURS} hours'
-                ORDER BY started_at DESC LIMIT 20"
-            echo "- ❌ ingest errors: $errs" >> "$GITHUB_STEP_SUMMARY"
+              "SELECT e.started_at, e.entity, e.doc_type, e.period_year, e.period_month,
+                      left(coalesce(e.error_msg,''),200) AS error
+                 FROM cvm_ingest_log e
+                WHERE e.status='error'
+                  AND e.started_at > now() - interval '${MAX_INGEST_ERROR_HOURS} hours'
+                  AND NOT EXISTS (
+                        SELECT 1 FROM cvm_ingest_log s
+                         WHERE s.status='ok'
+                           AND s.entity       IS NOT DISTINCT FROM e.entity
+                           AND s.doc_type     IS NOT DISTINCT FROM e.doc_type
+                           AND s.period_year  IS NOT DISTINCT FROM e.period_year
+                           AND s.period_month IS NOT DISTINCT FROM e.period_month
+                           AND s.started_at   > e.started_at)
+                ORDER BY e.started_at DESC LIMIT 20"
+            echo "- ❌ unhealed ingest errors: $errs" >> "$GITHUB_STEP_SUMMARY"
             fail=1
           else
-            echo "- ✅ no ingest errors in ${MAX_INGEST_ERROR_HOURS}h" >> "$GITHUB_STEP_SUMMARY"
+            echo "- ✅ no unhealed ingest errors in ${MAX_INGEST_ERROR_HOURS}h" >> "$GITHUB_STEP_SUMMARY"
           fi
 
           # 2. Ingest ran at all yesterday (a workflow that never fires is invisible otherwise).
@@ -131,7 +160,7 @@ jobs:
           fi
 
           # 4. api.* contract still answers (catches a broken analytical apply).
-          cat=$(q "SELECT api.catalog()->>'catalog_version'")
+          cat=$(q "SELECT api.catalog()->>'version'")
           cov=$(q "SELECT count(*) FROM api.coverage()")
           echo "catalog_version=$cat coverage_rows=$cov"
           if [ -z "$cat" ] || [ "${cov:-0}" -eq 0 ]; then
@@ -174,100 +203,26 @@ jobs:
         # because of the failure.
         if: always() && (env.MODE == 'diagnostics' || env.MODE == 'both')
         run: |
-          set -euo pipefail
-          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
-          SET default_transaction_read_only = on;
-          SET statement_timeout = '120s';
-
-          \echo === D0 contract: catalog, ticker bridge, lookup ===
-          SELECT api.catalog()->>'catalog_version' AS catalog_version,
-                 (SELECT count(*) FROM cia_ticker)          AS cia_ticker_rows,
-                 (SELECT count(*) FROM vw_company_ticker)   AS bridge_rows,
-                 (SELECT count(*) FROM etf_market_snapshot) AS etf_snapshot_rows;
-          SELECT id, name, tickers FROM api.lookup('petrobras') LIMIT 5;
-
-          \echo === D2.5 FI/FIDC fund counts around 2025-05 (Res.175 subclass phase-in?) ===
-          SELECT entity_type, period, n_funds
-            FROM mv_period_completeness
-           WHERE entity_type IN ('fi','fidc','fii')
-             AND period BETWEEN DATE '2024-11-01' AND DATE '2025-10-31'
-           ORDER BY entity_type, period;
-
-          \echo === D2.8 classification: how BOVA11 / IBOV11 / IVVB11 actually print ===
-          SELECT codneg, tpmerc, codbdi, especi, isin, instrument_type, instrument_subtype,
-                 count(*) AS sessions, min(trade_date) AS first_seen, max(trade_date) AS last_seen
-            FROM vw_b3_instrument_typed
-           WHERE codneg IN ('BOVA11','IBOV11','IVVB11','SMAL11','BOVV11','KNRI11','BPAC11')
-           GROUP BY 1,2,3,4,5,6,7 ORDER BY codneg, last_seen DESC;
-
-          \echo === D2.8 what is inside cash_security (top by volume, last 90 sessions) ===
-          SELECT codneg, especi, codbdi, sum(volume)/1e6 AS vol_mm, count(*) AS sessions
-            FROM vw_b3_instrument_typed
-           WHERE instrument_type = 'cash_security' AND tpmerc = '010'
-             AND trade_date > (SELECT max(trade_date) FROM b3_cotahist) - 130
-           GROUP BY 1,2,3 ORDER BY vol_mm DESC NULLS LAST LIMIT 25;
-
-          \echo === D2.8 especi x codbdi crosstab for quota-ish prints (audit before relabel) ===
-          SELECT codbdi, left(especi, 6) AS especi6, count(DISTINCT codneg) AS tickers,
-                 count(*) AS rows_
-            FROM vw_b3_instrument_typed
-           WHERE tpmerc = '010' AND (codneg LIKE '%11' OR especi ILIKE 'CI%' OR codbdi IN ('05','12','13','14'))
-             AND trade_date > (SELECT max(trade_date) FROM b3_cotahist) - 400
-           GROUP BY 1,2 ORDER BY rows_ DESC LIMIT 40;
-
-          \echo === D2.4 ETF monthly volume by subtype rule (where the 2019 gap is) ===
-          SELECT date_trunc('month', trade_date)::date AS month,
-                 count(DISTINCT codneg) FILTER (WHERE instrument_subtype = 'etf') AS etf_tickers,
-                 count(DISTINCT codneg) FILTER (WHERE codbdi = '14')              AS codbdi14_tickers,
-                 round(sum(volume) FILTER (WHERE instrument_subtype = 'etf')/1e9, 3) AS etf_vol_bn
-            FROM vw_b3_instrument_typed
-           WHERE tpmerc = '010' AND trade_date BETWEEN DATE '2019-01-01' AND DATE '2020-06-30'
-           GROUP BY 1 ORDER BY 1;
-
-          \echo === D1a fator_cotacao distribution (unit-price normalization) ===
-          SELECT fator_cotacao, count(DISTINCT codneg) AS tickers, count(*) AS rows_
-            FROM b3_cotahist
-           WHERE tpmerc = '010' AND trade_date > (SELECT max(trade_date) FROM b3_cotahist) - 400
-           GROUP BY 1 ORDER BY rows_ DESC LIMIT 10;
-
-          \echo === D2.2 ETF fundamentals available WITHOUT the scrape ===
-          SELECT count(*) AS etfs,
-                 count(taxa_adm)      AS with_taxa_adm,
-                 count(vl_patrim_liq) AS with_nav,
-                 count(gestor)        AS with_gestor,
-                 count(dt_patrim_liq) AS with_nav_date
-            FROM cvm_etf_registry;
-
-          \echo === D1b VERIFY B3 factor convention against the tape ===
-          -- The whole reason no adjusted price series ships yet. B3 publishes a
-          -- `factor` per event but its meaning is NOT uniform across labels
-          -- (DESDOBRAMENTO 100.0 vs GRUPAMENTO 0.1). price_ratio is what the
-          -- tape actually did across the entitlement date; whichever candidate
-          -- reproduces it per label IS the convention. Until this returns
-          -- consistent numbers, quotes stay unadjusted.
-          SELECT label,
-                 count(*)                                              AS events,
-                 round(avg(factor), 4)                                 AS avg_factor,
-                 round(avg(close_unit_before / NULLIF(close_unit_after, 0)), 4)
-                                                                       AS avg_price_ratio,
-                 round(avg((close_unit_before / NULLIF(close_unit_after, 0))
-                           / NULLIF(factor, 0)), 6)                    AS ratio_over_factor,
-                 round(avg((close_unit_before / NULLIF(close_unit_after, 0))
-                           / NULLIF(1 + factor / 100.0, 0)), 6)        AS ratio_over_pct_convention
-            FROM vw_b3_share_count_event
-           WHERE close_unit_before IS NOT NULL AND close_unit_after IS NOT NULL
-           GROUP BY label ORDER BY events DESC;
-
-          \echo === D1b sample events with both sides of the tape ===
-          SELECT issuing_company, label, last_date_prior, factor,
-                 round(close_unit_before, 4) AS before_, round(close_unit_after, 4) AS after_,
-                 round(close_unit_before / NULLIF(close_unit_after, 0), 4) AS price_ratio
-            FROM vw_b3_share_count_event
-           WHERE close_unit_before IS NOT NULL AND close_unit_after IS NOT NULL
-           ORDER BY last_date_prior DESC LIMIT 20;
-
-          \echo === D2.10 quotaholders coverage by family (nr_cotst) ===
-          SELECT entity_type, count(*) AS rows_, count(nr_cotst) AS with_cotistas,
-                 max(period) AS last_period
-            FROM fact_fund_monthly GROUP BY 1 ORDER BY 1;
-          SQL
+          # One psql session per query file, each with its own timeout, and a
+          # failure prints and moves on.
+          #
+          # The first version ran all eleven in a single heredoc under
+          # ON_ERROR_STOP. Two things went wrong: a missing view aborted every
+          # query after it (so the cheap answers were hostage to the newest
+          # one), and the heredoc terminators broke the YAML block scalar. The
+          # queries now live in scripts/health_diagnostics/*.sql, which also
+          # makes them runnable by hand and reviewable as SQL rather than as
+          # strings inside YAML.
+          set -uo pipefail
+          shopt -s nullglob
+          for f in scripts/health_diagnostics/*.sql; do
+            label=$(head -1 "$f" | sed 's/^-- *//')
+            echo
+            echo "=== $label ==="
+            if ! psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 \
+                   -c "SET default_transaction_read_only = on" \
+                   -c "SET statement_timeout = '${DIAG_TIMEOUT:-90s}'" \
+                   -f "$f"; then
+              echo "(skipped: failed or exceeded ${DIAG_TIMEOUT:-90s} — see $f)"
+            fi
+          done

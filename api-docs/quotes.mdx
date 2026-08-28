@@ -7,7 +7,7 @@ icon: "chart-line"
 B3 COTAHIST cash-market prints (`tpmerc = 010`), exactly as published. Nothing here is
 split- or dividend-adjusted, and every row says so with `adjusted: false`. `asset_class`
 is derived conservatively from B3's published `tpmerc` and `especi`: `equity`, `unit`,
-`bdr`, `fund_quota`, or `cash_security`. To split `fund_quota` into ETF vs FII vs
+`bdr`, `fund_quota`, `index`, `right`, `bonus`, or `cash_security`. To split `fund_quota` into ETF vs FII vs
 FIAGRO, use [`fund_quotas`](/api-docs/instruments)' `fund_type` column — it comes from
 B3's published CODBDI board code (see the [COTAHIST
 dictionary](/api-docs/cotahist-dictionary)).
@@ -140,7 +140,10 @@ series.
   When the pipeline ingested this row. Only on the view.
 </ResponseField>
 <ResponseField name="asset_class" type="text">
-  Conservative B3 type: `equity`, `unit`, `bdr`, `fund_quota`, or `cash_security`.
+  Conservative B3 type: `equity`, `unit`, `bdr`, `fund_quota`, `index`, `right`,
+  `bonus`, or `cash_security`. `index` is an index line (IBOV11 — not an ETF,
+  whatever the ticker suggests); `right` and `bonus` are claims, not the
+  security itself; `cash_security` is the residual.
 </ResponseField>
 
 ### Example
