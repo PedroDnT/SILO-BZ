@@ -81,6 +81,18 @@ runs:
         # Genuine missing-column DDL still ALTERs, still has lock_timeout, still
         # retries. python3 is stdlib-only — backfill's apply-schema job has no
         # setup-python, only the runner's python3.
+        #
+        # 2026-08-28 14:36 UTC (Daily CVM Ingest #184 / run 33180429771): the
+        # ADD COLUMN guard held (logs are DO / CREATE INDEX through the FII
+        # columns). schema.sql then failed three times at CREATE MATERIALIZED
+        # VIEW mv_b3_isin_subtype with lock_timeout while inserting into
+        # pg_type_typname_nsp_index. CREATE ... AS SELECT (implicit WITH DATA)
+        # inserts the composite type and holds that insert uncommitted for the
+        # whole b3_cotahist scan; a concurrent apply does not see the relation,
+        # tries the same CREATE, and waits on the unique type name. The same
+        # rewriter now appends WITH NO DATA so the type commits instantly.
+        # Population is a later REFRESH (schema.sql refresh-if-empty, or
+        # pg_cron CONCURRENTLY), which does not insert into pg_type.
         export PGOPTIONS="-c lock_timeout=15s -c statement_timeout=0"
 
         apply() {

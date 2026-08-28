@@ -447,6 +447,20 @@ def test_subtype_falls_back_to_the_isins_own_classified_sessions():
     assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_b3_isin_subtype" in _MIG27
 
 
+def test_schema_creates_isin_subtype_matview_without_holding_pg_type():
+    """CREATE WITH DATA held pg_type for the scan (Daily CVM Ingest #184)."""
+    schema = (
+        Path(__file__).resolve().parents[1] / "src/store/schema.sql"
+    ).read_text(encoding="utf-8")
+    create, rest = schema.split(
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS mv_b3_isin_subtype", 1
+    )[1].split(";", 1)
+    assert "WITH NO DATA" in create
+    assert "REFRESH MATERIALIZED VIEW" not in create
+    assert "REFRESH MATERIALIZED VIEW public.mv_b3_isin_subtype" in rest
+    assert "$silo_refresh_mv_b3_isin_subtype$" in rest
+
+
 def test_the_isin_map_learns_only_from_decisive_board_codes():
     # It must not learn from rows it would itself have to guess about, or the
     # fallback would launder a guess into an authoritative-looking mapping.

@@ -84,6 +84,10 @@ def test_apply_catalog_guards_noop_add_column():
     assert "-f \"$file\"" not in body, (
         "psql must apply the catalog-guarded rewrite, not the raw file"
     )
+    # CREATE MATERIALIZED VIEW ... AS SELECT holds pg_type for the scan
+    # (Daily CVM Ingest #184). The rewriter must run on every file so
+    # historical migration 27 (WITH DATA) is rewritten at apply time.
+    assert "WITH NO DATA" in body or "guard_noop_ddl.py" in body
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")

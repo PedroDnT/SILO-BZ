@@ -1098,6 +1098,19 @@ COMMENT ON VIEW vw_b3_share_count_event IS
 -- sessions so an ETF survives a board-code change.
 -- ---------------------------------------------------------------------------
 -- Per-ISIN subtype, learned from the sessions where CODBDI is decisive.
+--
+-- WITH NO DATA is load-bearing. CREATE MATERIALIZED VIEW ... AS SELECT
+-- (implicit WITH DATA) inserts the composite type into pg_type and holds
+-- that insert uncommitted for the whole b3_cotahist scan. A concurrent
+-- schema apply does not see the uncommitted relation, tries to CREATE the
+-- same name, and waits on pg_type_typname_nsp_index until lock_timeout —
+-- Daily CVM Ingest #184 (run 33180429771) failed three times at this
+-- statement with exactly that error. CREATE WITH NO DATA commits the type
+-- in milliseconds; population is the REFRESH below (empty only) or the
+-- 06:12 UTC pg_cron CONCURRENTLY job. Do not fold the SELECT back into
+-- CREATE. Migration 27 keeps the original WITH DATA text (historical
+-- migrations are not edited); apply-time rewrite in guard_noop_ddl.py
+-- adds WITH NO DATA there too.
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_b3_isin_subtype AS
 SELECT
     t.isin,
@@ -1126,11 +1139,25 @@ FROM (
     GROUP BY 1, 2
 ) t
 WHERE t.subtype IS NOT NULL
-GROUP BY t.isin;
+GROUP BY t.isin
+WITH NO DATA;
 
 -- UNIQUE so the LEFT JOIN below cannot multiply rows of the tape, and so the
 -- refresh can run CONCURRENTLY without blocking readers.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_b3_isin_subtype ON mv_b3_isin_subtype (isin);
+
+-- First populate is a SEPARATE statement from CREATE so the composite type
+-- is already committed before we scan b3_cotahist. Skip when the matview
+-- already has rows (daily replay). Non-concurrent: this block may run
+-- inside a migration transaction; CONCURRENTLY cannot. Subsequent refreshes
+-- are pg_cron CONCURRENTLY (08_cron_schedules.sql).
+DO $silo_refresh_mv_b3_isin_subtype$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.mv_b3_isin_subtype LIMIT 1) THEN
+    REFRESH MATERIALIZED VIEW public.mv_b3_isin_subtype;
+  END IF;
+END
+$silo_refresh_mv_b3_isin_subtype$;
 
 COMMENT ON MATERIALIZED VIEW mv_b3_isin_subtype IS
     'ISIN -> fund subtype (etf/fii/fiagro/fidc), learned only from sessions whose CODBDI is decisive. Lets an instrument keep its identity across sessions where B3 printed it under a different board code (measured: BOVA11/BOVV11/IVVB11 under codbdi 02 from 2019-08-19 to 2019-12-30).';

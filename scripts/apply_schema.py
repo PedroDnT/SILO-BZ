@@ -24,7 +24,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
-from guard_noop_ddl import guard_add_column_sql  # noqa: E402
+from guard_noop_ddl import guard_noop_ddl  # noqa: E402
 
 try:
     from dotenv import load_dotenv
@@ -78,9 +78,10 @@ def apply_via_psql(psql: str, db_url: str, items):
     path (same as the GitHub workflows): psql parses dollar-quoted DO $$ ... $$
     blocks correctly and returns a real exit code per file.
 
-    SQL is passed through guard_add_column_sql first so a no-op
-    ADD COLUMN IF NOT EXISTS does not take AccessExclusiveLock (see
-    scripts/guard_noop_ddl.py).
+    SQL is passed through guard_noop_ddl first so a no-op ADD COLUMN
+    IF NOT EXISTS does not take AccessExclusiveLock and a CREATE
+    MATERIALIZED VIEW IF NOT EXISTS does not hold pg_type for a
+    population scan (see scripts/guard_noop_ddl.py).
     """
     ok = err = 0
     for name, path in items:
@@ -107,8 +108,8 @@ def apply_via_psql(psql: str, db_url: str, items):
 
 
 def _sql_for_apply(path: str) -> str:
-    """File contents with no-op ADD COLUMN IF NOT EXISTS catalog-guarded."""
-    return guard_add_column_sql(_read(path))
+    """File contents with no-op ADD COLUMN / matview CREATE rewritten."""
+    return guard_noop_ddl(_read(path))
 
 
 def _apply_whole_files(execute, items):
