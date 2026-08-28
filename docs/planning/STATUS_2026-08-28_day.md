@@ -189,15 +189,75 @@ ten-minute failure and a five-minute success.
 - The `cia_aberta` backfill landed: ~31M rows / ~26.5 GB across 2019–2026
   (`docs/CIA_DATA_MAP.md` §8). Still served by nothing.
 
+## 7. Landed — what production actually carries now
+
+Verified against the live deployment after run 189 (2026-08-28 21:14Z), not
+inferred from the merge:
+
+| | Morning | Now |
+| --- | --- | --- |
+| `api.catalog()` version | 9 | **14** |
+| `anon` objects readable in `public` | 77 | **16** |
+| `cvm_fi_balancete` via `Accept-Profile: public` | real rows | **401** |
+| `uq_cia_account` | no `dt_ini_exerc` | **includes it** |
+| `mv_b3_monthly_activity` | did not exist | **populated** |
+| `api.universe('equity')` | 500 / 57014, every call | **200, warm 0.70s** |
+| Row cap | undocumented, sentinel unreachable | **documented + `Content-Range`** |
+
+`universe` is worth singling out: the partition-floor fix could NOT be shown to
+work on a seeded test database — the pruning improvement that `b3_market_overview`
+demonstrated (27 skipped scans against 18) did not reproduce at that scale. It
+shipped labelled unverified, and production is what settled it.
+
+## 8. The dashboard did not rebuild, and the reason is a missing secret
+
+Run 189's rebuild step logged:
+
+```
+VERCEL_DEPLOY_HOOK_URL unset — skipping dashboard rebuild.
+```
+
+So `rebuild_dashboard=true` is a **no-op** on this repository, and has been all
+along. The dashboard only ever rebuilds when something pushes to `main`, because
+the Vercel project is git-connected.
+
+That is why the site is still stale. The last production build ran on the #139
+merge push at 20:18Z and errored — migration 30 landed at 21:05Z, 47 minutes
+later, so that build could not have found the matview. Nothing has pushed since.
+
+Two consequences worth stating plainly:
+
+1. **A data-only rebuild is currently impossible.** After an ingest that changes
+   numbers but no files, there is no way to refresh the published site — the
+   mechanism built for exactly that case is disabled.
+2. **The daily cron cannot refresh the dashboard either.** `daily_ingest` runs at
+   06:00 UTC and hits the same unset secret, so the published snapshot only moves
+   when code moves.
+
+Fix (one time, operator): Vercel → project `silo` → Settings → Git → Deploy
+Hooks, create one for `main`, store it as the repository secret
+`VERCEL_DEPLOY_HOOK_URL`. Until then, merging any commit is what rebuilds.
+
 ## Operator queue
 
-1. **Supabase MCP now works** in the assistant session after the reconnect — the
-   read-only prod checks in this document were run through it directly.
+1. **Set `VERCEL_DEPLOY_HOOK_URL`** — the highest-value one-time fix left. Without
+   it the dashboard can only be rebuilt by pushing code, so an ingest that changes
+   numbers can never refresh the published site (see §8).
 2. **`APIFY_TOKEN`** — set it if the scraped ETF snapshot is wanted; the CVM/B3
    fallbacks now cover NAV, fee, manager and price without it.
-3. **Rotate the committed publishable key** before go-live (per-user keys + RLS
+3. **Re-run the ITR backfill** (`backfill.yml`, entity `cia_aberta`). Migration 29
+   stops the income-statement loss but cannot restore the ~40% of DRE rows already
+   overwritten; only a re-ingest brings them back. DFP is unaffected. Needs a quiet
+   window — migration 29's constraint rebuild validates every `cia_account`
+   partition under ACCESS EXCLUSIVE.
+4. **Rotate the committed publishable key** before go-live (per-user keys + RLS
    remain the real gate — `SERVING.md`).
-4. **Disk: 78 GB after the CIA backfill**, up from 71.9 GB. `PLAN_DISK_GB=8` is
+5. **Two Supabase platform limits bound the public API** and neither is code
+   (`docs/API.md`): PostgREST `db-max-rows` truncates every response at 1000 rows
+   oldest-first, and the `anon` role's `statement_timeout` is 3s — not the 15s set
+   on `silo_api`, which serves only the local adapter. Raising either is a
+   judgement call about how large and how slow a public read API should be.
+6. **Disk: 78 GB after the CIA backfill**, up from 71.9 GB. `PLAN_DISK_GB=8` is
    the Supabase Pro **included** allowance, not the invented denominator I called
    it — PR #134 is right and I was wrong. So the percentage is a real spend
    signal: either add disk / raise the cap, or make a retention decision on
