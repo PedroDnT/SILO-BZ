@@ -28,4 +28,11 @@ FIELD_MAP = {
     "admin_name":  (["ADMIN", "Administrador"],             "text"),
     "gestor_id":   (["CPF_CNPJ_GESTOR", "CPF_CNPJ_Gestor"], "text"),
     "gestor_name": (["GESTOR", "Gestor"],                   "text"),
+    # Net assets, published by BOTH registro_fundo and registro_classe with
+    # their own as-of date. CVM states these per record, so a class carries its
+    # own PL and a fund carries the whole fund's — they are different facts and
+    # the natural key already keeps them apart. Kept next to dt_patrim_liq so a
+    # reader never has to assume the figure is current.
+    "vl_patrim_liq": (["Patrimonio_Liquido", "VL_PATRIM_LIQ"],           "numeric"),
+    "dt_patrim_liq": (["Data_Patrimonio_Liquido", "DT_PATRIM_LIQ"],      "date"),
 }

@@ -109,31 +109,39 @@ jobs:
             --b3-start-year ${{ inputs.start_year }} \
             --end-year ${{ inputs.end_year }}
 
+      # Statistics only — it makes later queries plan better, it never changes a
+      # row. continue-on-error because on 2026-08-28 it was the ONE step that
+      # could abort this job: 20 ANALYZEs in a single psql string is a single
+      # backend held open for minutes, and on a loaded instance the server
+      # terminated it ("server closed the connection unexpectedly"). That failure
+      # then skipped "Build / refresh analytical layer" — which has
+      # continue-on-error precisely so it can't block the run — and prod stayed on
+      # the previous catalog version. A stats refresh must never outrank the
+      # thing it exists to speed up.
+      #
+      # One psql per table for the same reason: a terminated backend loses only
+      # its own table instead of the other 19, and no single statement runs long
+      # enough to look like a hung connection.
       - name: Analyze tables post-ingest
         if: ${{ github.event_name == 'schedule' || (github.event.inputs && (github.event.inputs.mode == 'analytics-only' || github.event.inputs.mode == 'b3-backfill')) }}
+        continue-on-error: true
         run: |
-          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -c "
-            ANALYZE cvm_fi_diario;
-            ANALYZE cvm_fi_cda;
-            ANALYZE cvm_fi_perfil;
-            ANALYZE cvm_fi_balancete;
-            ANALYZE cvm_fidc_mensal;
-            ANALYZE cvm_fidc_tranche;
-            ANALYZE cvm_fidc_tranche_flows;
-            ANALYZE cvm_fidc_aging;
-            ANALYZE cvm_fiagro_mensal;
-            ANALYZE cvm_fip_periodic;
-            ANALYZE cvm_fii_mensal;
-            ANALYZE cvm_fii_periodic;
-            ANALYZE cvm_securit_mensal;
-            ANALYZE cvm_securit_serie;
-            ANALYZE cvm_securit_fluxo;
-            ANALYZE cvm_securit_dfin;
-            ANALYZE cvm_fund_registry;
-            ANALYZE cvm_etf_registry;
-            ANALYZE cvm_ingest_log;
-            ANALYZE b3_cotahist;
-          "
+          set +e
+          failed=0
+          for t in cvm_fi_diario cvm_fi_cda cvm_fi_perfil cvm_fi_balancete \
+                   cvm_fidc_mensal cvm_fidc_tranche cvm_fidc_tranche_flows \
+                   cvm_fidc_aging cvm_fiagro_mensal cvm_fip_periodic \
+                   cvm_fii_mensal cvm_fii_periodic cvm_securit_mensal \
+                   cvm_securit_serie cvm_securit_fluxo cvm_securit_dfin \
+                   cvm_fund_registry cvm_etf_registry cvm_ingest_log b3_cotahist; do
+            if psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -q -c "ANALYZE $t;"; then
+              echo "analyzed $t"
+            else
+              echo "::warning::ANALYZE $t failed (statistics only, continuing)"
+              failed=$((failed + 1))
+            fi
+          done
+          echo "ANALYZE: $failed of 20 tables failed"
 
       # Build/refresh the analytical layer (dims, fact matviews, rankings, fraud
       # screens) after the data lands. Its matview re-create doubles as the daily

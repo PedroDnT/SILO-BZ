@@ -82,3 +82,71 @@ class TestIngestCvm175:
     def test_empty_returns_zero(self):
         with patch("src.pipeline.ingest_misc.upsert_rows", side_effect=AssertionError("no upsert")):
             assert ingest_fund_registry_cvm175(object(), []) == 0
+
+
+class TestClassRowsDoNotErasePublishedFundFields:
+    """registro_classe must not overwrite the manager registro_fundo published.
+
+    CVM reuses the fund's CNPJ for its classes (36,492 of 36,606 CNPJ_Classe
+    values are also a CNPJ_Fundo, measured 2026-08-28), and both files upsert
+    into cvm_fund_registry on (cnpj, entity_type). registro_classe.csv has no
+    Administrador and no Gestor column at all, so it used to map them to None
+    and blank the manager for 36,343 funds on every run.
+    """
+
+    # Real registro_classe.csv header (2026-08-28), trimmed to what matters.
+    CLASSE_ROW = {
+        "ID_Registro_Fundo": "7779",
+        "ID_Registro_Classe": "36019",
+        "CNPJ_Classe": "38.542.889/0001-01",
+        "Tipo_Classe": "Classes de Cotas de Fundos FIIM",
+        "Denominacao_Social": "TREND ETF BLOOMBERG ALL COUNTRIES CLASSE DE ÍNDICE",
+        "Situacao": "Em Funcionamento Normal",
+        "Patrimonio_Liquido": "356592737,05",
+        "Data_Patrimonio_Liquido": "2026-08-25",
+        "Custodiante": "BANCO BNP PARIBAS BRASIL S/A",
+    }
+
+    def _capture(self, rows):
+        captured = {}
+
+        def _fake_upsert(conn, table, recs, **kw):
+            captured["recs"] = recs
+            return len(recs)
+
+        with patch("src.pipeline.ingest_misc.upsert_rows", side_effect=_fake_upsert):
+            ingest_fund_registry_cvm175(object(), rows)
+        return captured["recs"]
+
+    def test_manager_columns_absent_from_the_upsert(self):
+        rec = self._capture([dict(self.CLASSE_ROW)])[0]
+        # Absent, not None: a column that is not in the record is in neither the
+        # INSERT list nor the ON CONFLICT SET, so the fund's value survives.
+        for col in ("gestor_name", "gestor_id", "admin_name", "admin_cnpj"):
+            assert col not in rec, f"{col} must not be written by registro_classe"
+
+    def test_columns_the_class_file_does_publish_are_still_written(self):
+        rec = self._capture([dict(self.CLASSE_ROW)])[0]
+        assert rec["cnpj"] == "38542889000101"
+        assert rec["entity_type"] == "fii"
+        assert rec["fund_name"].startswith("TREND ETF BLOOMBERG")
+        assert rec["vl_patrim_liq"] == 356592737.05
+        assert str(rec["dt_patrim_liq"]) == "2026-08-25"
+
+    def test_fundo_file_still_writes_the_manager(self):
+        fundo_row = {
+            "ID_Registro_Fundo": "7779",
+            "CNPJ_Fundo": "38.542.889/0001-01",
+            "Tipo_Fundo": "FII",
+            "Denominacao_Social": "TREND ETF BLOOMBERG ALL COUNTRIES FUNDO DE ÍNDICE",
+            "Situacao": "Em Funcionamento Normal",
+            "Administrador": "XP INVESTIMENTOS CCTVM S.A.",
+            "Gestor": "XP ALLOCATION ASSET MANAGEMENT LTDA.",
+            "CPF_CNPJ_Gestor": "37.918.829/0001-79",
+            "Patrimonio_Liquido": "356592737,05",
+            "Data_Patrimonio_Liquido": "2026-08-25",
+        }
+        rec = self._capture([fundo_row])[0]
+        assert rec["gestor_name"] == "XP ALLOCATION ASSET MANAGEMENT LTDA."
+        assert rec["admin_name"] == "XP INVESTIMENTOS CCTVM S.A."
+        assert rec["vl_patrim_liq"] == 356592737.05
