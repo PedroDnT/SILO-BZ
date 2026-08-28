@@ -51,8 +51,17 @@ psql "$URL" -Atc "SELECT 1 FROM pg_roles WHERE rolname='anon'" | grep -q 1 || \
   psql "$URL" -v ON_ERROR_STOP=1 -q \
     -c "CREATE ROLE anon NOLOGIN;" -c "CREATE ROLE authenticated NOLOGIN;"
 
-if ! psql "$URL" -Atc "SELECT 1 FROM information_schema.tables WHERE table_name='cvm_ingest_log'" | grep -q 1; then
-  say "applying schema.sql + migrations"
+# The skip sentinel must be the LAST thing a full bootstrap creates, not the
+# first. Gating on cvm_ingest_log (created at the top of schema.sql) meant a
+# bootstrap that died in a later migration or in the analytical layer left a
+# data dir that every re-run then skipped, so /v1/coverage kept failing until
+# the directory was deleted by hand. api.catalog() is created by the last
+# analytical file, so its absence means "not fully applied" and the whole
+# idempotent bootstrap runs again.
+bootstrapped=$(psql "$URL" -Atc \
+  "SELECT to_regprocedure('api.catalog()') IS NOT NULL" 2>/dev/null | tr -d '[:space:]')
+if [ "$bootstrapped" != "t" ]; then
+  say "applying schema.sql + migrations (idempotent; re-runs after a partial apply)"
   psql "$URL" -v ON_ERROR_STOP=1 -q -f "$REPO/src/store/schema.sql"
   for f in "$REPO"/src/store/migrations/*.sql; do
     psql "$URL" -v ON_ERROR_STOP=1 -q -f "$f" || { echo "FAIL $f"; exit 1; }
@@ -60,6 +69,10 @@ if ! psql "$URL" -Atc "SELECT 1 FROM information_schema.tables WHERE table_name=
   say "applying analytical layer (empty-DB bypass)"
   ( cd "$REPO" && POSTGRES_URL="$URL" PGOPTIONS="-c silo.ci_smoke_bypass=on" \
       bash scripts/apply_analytical.sh ) >/dev/null
+  # Prove it: if the sentinel is still missing the bootstrap did not finish,
+  # and failing here is far better than a green smoke over a half-built DB.
+  psql "$URL" -Atc "SELECT to_regprocedure('api.catalog()') IS NOT NULL" \
+    | grep -q t || { echo "bootstrap incomplete: api.catalog() missing" >&2; exit 1; }
 fi
 
 # --- 3. Launch serve/ and wait for readiness --------------------------------
