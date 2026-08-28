@@ -41,10 +41,11 @@ reproduces what the tape did is the convention** — and only then does
 | FIDC aging axis unreadable                        | 10 long category labels on a vertical bar chart                                                                                   | Fixed — horizontal, plus the missing completeness clamp           |
 | Year-boundary jumps in industry structure         | FIP files yearly; `dim_fund` stamps its first period on 1 January, so it spiked every January on a monthly chart                  | Fixed — monthly filers only                                       |
 | FIAGRO empty left edge                            | Fixed 24-month window vs a file that starts 2025-05                                                                               | Fixed — spine start clamped to first published period             |
-| IBOV11 as `cash_security`, BOVA11 as `fund_quota` | ESPECI-first typing; ETFs printing under another CODBDI escape                                                                    | **Open** — needs the prod crosstab before relabelling             |
-| ETF volume gap from 2019-08                       | Same root cause as above (`instrument_subtype='etf'` requires CODBDI 14)                                                          | **Open** — same evidence                                          |
-| Jump at 2025-05 across FI metrics                 | Hypothesis: CVM Res. 175 subclass phase-in                                                                                        | **Open** — needs fund counts by period                            |
-| Quotaholders missing for some classes             | Not all families publish `nr_cotst`                                                                                               | **Open** — needs per-family coverage                              |
+| IBOV11 as `cash_security` | It is the **Ibovespa index line** — codbdi 02, ESPECI `IBO/`, ISIN `BRIBOVINDM18` (IND segment). Not an ETF; an "ends in 11" rule would have mislabelled it | Fixed — new `index` type, requires ESPECI **and** ISIN segment |
+| ETF volume gap from 2019-08 | Not missing data: BOVA11/BOVV11/IVVB11 printed under **codbdi 02 instead of 14** for 92 sessions (2019-08-19 → 2019-12-30), and subtype came from codbdi alone | Fixed — `mv_b3_isin_subtype`: an ISIN keeps the subtype its decisive sessions show |
+| What is in `cash_security` | Subscription rights (`DIR`) and bonus rights (`BNS`) by volume — **not** the "exchange-traded debt" the docs claimed | Fixed — `right` / `bonus` split out; docs corrected |
+| Jump at 2025-05 across FI metrics | **Not** a fund-count effect — FI declines smoothly (25,866 → 25,448) and FIDC's step is January 2025 | **Open** — diagnostic added to attribute it to a metric column |
+| Quotaholders missing for some classes | Not all families publish `nr_cotst` | **Open** — per-family coverage query queued |
 
 Three of the four resolved once production data arrived, and each had the same
 shape: a rule that was almost right. The remaining two are open **because** the
@@ -86,11 +87,13 @@ failing check, defeating the "collect every failure, report once" design.
 Diagnostics were also gated on the checks passing, so the step that explains a
 failure was skipped exactly when it was needed. All three fixed.
 
-The 29 errors are **not yet root-caused**. The lifetime ingest log shows
-`securit / ots_mensal` carrying error rows for every year 2019–2026, but that
-exact ingest was reproduced locally against live CVM data and works today (453
-rows for 2023) — so those are historical scars, not the current failures. The
-real messages come from the fixed diagnostics run.
+The 29 errors were `fi / balancete` **TimeoutError** rows from the previous
+day's backfill — slices that timed out against CVM and succeeded on retry (that
+backfill finished 91/91 months). So the data was fine and the ALARM was wrong:
+counting every error row in a window means it fires after every backfill, and an
+alarm that always fires is one people learn to ignore. It now counts only slices
+with no later success — "still broken", which is the thing worth waking someone
+for.
 
 ## 5. Verified sound (checked, not assumed)
 
