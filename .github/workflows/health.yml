@@ -1,0 +1,237 @@
+name: DB Health
+
+# Read-only health and quality gate over the Supabase warehouse, plus an
+# on-demand diagnostics mode.
+#
+# WHY IT EXISTS: the daily ingest tells you a run finished, not whether the
+# warehouse is still healthy — a family can silently stop filing, an ingest can
+# log errors nobody reads, and disk can fill until writes fail. This job asserts
+# those out loud: a red run is the alarm. Everything here runs with
+# default_transaction_read_only = on, so a health check can never mutate data.
+#
+# Modes (workflow_dispatch):
+#   checks       — the gate (default; also what the schedule runs)
+#   diagnostics  — prints one-off investigation queries; never fails on data
+#   both
+#
+# Concurrency group is deliberately NOT the ingest group: this is read-only and
+# may safely overlap an ingest run.
+
+on:
+  schedule:
+    - cron: "30 7 * * *" # 07:30 UTC — after the 06:00 daily ingest settles
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "checks | diagnostics | both"
+        required: false
+        default: "checks"
+        type: choice
+        options: [checks, diagnostics, both]
+
+concurrency:
+  group: silo-health
+  cancel-in-progress: false
+
+jobs:
+  health:
+    name: Warehouse health
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+      MODE: ${{ github.event.inputs.mode || 'checks' }}
+      # Thresholds. Deliberately loose: this must fire on real breakage, not on
+      # CVM's normal 1-2 month publication lag.
+      MAX_COMPLETE_AGE_DAYS: "75" # a monthly family with no complete period in this window is stalled
+      MAX_INGEST_ERROR_HOURS: "26" # errors logged inside this window fail the run
+      DISK_WARN_PCT: "85" # database size vs plan quota
+      PLAN_DISK_GB: "8" # Supabase plan allowance; update if the plan changes
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Guard — secret present
+        run: |
+          if [ -z "${POSTGRES_URL:-}" ]; then
+            echo "POSTGRES_URL secret is missing" >&2
+            exit 1
+          fi
+
+      # ---------------------------------------------------------------- checks
+      # Each check prints its evidence and appends a line to $GITHUB_STEP_SUMMARY.
+      # A failing check writes to $failures and the final step exits non-zero, so
+      # ALL checks run even when the first one fails (one red run, full picture).
+      - name: Health checks
+        if: env.MODE == 'checks' || env.MODE == 'both'
+        run: |
+          set -uo pipefail
+          fail=0
+          q() { psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt \
+                  -c "SET default_transaction_read_only = on" -c "$1" | tr -d '[:space:]'; }
+
+          echo "## Warehouse health $(date -u +%FT%TZ)" >> "$GITHUB_STEP_SUMMARY"
+
+          # 1. Ingest errors in the last MAX_INGEST_ERROR_HOURS.
+          errs=$(q "SELECT count(*) FROM cvm_ingest_log
+                    WHERE status = 'error'
+                      AND started_at > now() - interval '${MAX_INGEST_ERROR_HOURS} hours'")
+          echo "ingest errors (${MAX_INGEST_ERROR_HOURS}h): $errs"
+          if [ "${errs:-0}" -gt 0 ]; then
+            echo "FAIL: $errs ingest error rows" >&2
+            psql "$POSTGRES_URL" -c "SET default_transaction_read_only = on" -c \
+              "SELECT started_at, entity, doc_type, left(coalesce(error_message,''),200) AS error
+                 FROM cvm_ingest_log
+                WHERE status='error' AND started_at > now() - interval '${MAX_INGEST_ERROR_HOURS} hours'
+                ORDER BY started_at DESC LIMIT 20"
+            echo "- ❌ ingest errors: $errs" >> "$GITHUB_STEP_SUMMARY"
+            fail=1
+          else
+            echo "- ✅ no ingest errors in ${MAX_INGEST_ERROR_HOURS}h" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # 2. Ingest ran at all yesterday (a workflow that never fires is invisible otherwise).
+          recent=$(q "SELECT count(*) FROM cvm_ingest_log WHERE started_at > now() - interval '26 hours'")
+          echo "ingest log rows (26h): $recent"
+          if [ "${recent:-0}" -eq 0 ]; then
+            echo "FAIL: no ingest activity in 26h — did the daily cron fire?" >&2
+            echo "- ❌ no ingest activity in 26h" >> "$GITHUB_STEP_SUMMARY"
+            fail=1
+          else
+            echo "- ✅ ingest active ($recent log rows / 26h)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # 3. Completeness drift: every MONTHLY family must have a complete period
+          #    inside MAX_COMPLETE_AGE_DAYS. fip files yearly and is excluded by design.
+          echo "--- completeness by family ---"
+          psql "$POSTGRES_URL" -c "SET default_transaction_read_only = on" -c \
+            "SELECT entity_type, public.latest_complete_period(entity_type) AS complete_through,
+                    (CURRENT_DATE - public.latest_complete_period(entity_type)) AS days_behind
+               FROM (SELECT DISTINCT entity_type FROM mv_period_completeness) f
+              ORDER BY entity_type"
+          stalled=$(q "SELECT count(*) FROM (SELECT DISTINCT entity_type FROM mv_period_completeness) f
+                        WHERE entity_type <> 'fip'
+                          AND (CURRENT_DATE - public.latest_complete_period(entity_type)) > ${MAX_COMPLETE_AGE_DAYS}")
+          if [ "${stalled:-0}" -gt 0 ]; then
+            echo "FAIL: $stalled monthly families stalled beyond ${MAX_COMPLETE_AGE_DAYS}d" >&2
+            echo "- ❌ $stalled stalled families" >> "$GITHUB_STEP_SUMMARY"
+            fail=1
+          else
+            echo "- ✅ completeness current for all monthly families" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # 4. api.* contract still answers (catches a broken analytical apply).
+          cat=$(q "SELECT api.catalog()->>'catalog_version'")
+          cov=$(q "SELECT count(*) FROM api.coverage()")
+          echo "catalog_version=$cat coverage_rows=$cov"
+          if [ -z "$cat" ] || [ "${cov:-0}" -eq 0 ]; then
+            echo "FAIL: api contract not answering (catalog='$cat', coverage rows=$cov)" >&2
+            echo "- ❌ api contract broken" >> "$GITHUB_STEP_SUMMARY"
+            fail=1
+          else
+            echo "- ✅ api contract OK (catalog v$cat, $cov coverage rows)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # 5. Disk. Supabase bills on database size; the plan allowance is a
+          #    workflow input because Postgres cannot see it.
+          bytes=$(q "SELECT pg_database_size(current_database())")
+          gb=$(awk -v b="$bytes" 'BEGIN{printf "%.2f", b/1024/1024/1024}')
+          pct=$(awk -v g="$gb" -v p="$PLAN_DISK_GB" 'BEGIN{printf "%.0f", 100*g/p}')
+          echo "database size: ${gb}GB of ${PLAN_DISK_GB}GB (${pct}%)"
+          echo "- 💾 database ${gb}GB / ${PLAN_DISK_GB}GB (${pct}%)" >> "$GITHUB_STEP_SUMMARY"
+          echo "--- 12 largest relations ---"
+          psql "$POSTGRES_URL" -c "SET default_transaction_read_only = on" -c \
+            "SELECT relname, pg_size_pretty(pg_total_relation_size(c.oid)) AS total
+               FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname = 'public' AND c.relkind IN ('r','m','p')
+              ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 12"
+          if [ "${pct:-0}" -ge "$DISK_WARN_PCT" ]; then
+            echo "::warning::database at ${pct}% of the ${PLAN_DISK_GB}GB plan allowance"
+          fi
+
+          echo
+          if [ "$fail" -ne 0 ]; then
+            echo "HEALTH: FAIL"; exit 1
+          fi
+          echo "HEALTH: PASS"
+
+      # ----------------------------------------------------------- diagnostics
+      # Investigation queries. Never fails on data: it exists to SHOW numbers.
+      # Everything is bounded (LIMIT / narrow windows) so it cannot hammer prod.
+      - name: Diagnostics
+        if: env.MODE == 'diagnostics' || env.MODE == 'both'
+        run: |
+          set -euo pipefail
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          SET default_transaction_read_only = on;
+          SET statement_timeout = '120s';
+
+          \echo === D0 contract: catalog, ticker bridge, lookup ===
+          SELECT api.catalog()->>'catalog_version' AS catalog_version,
+                 (SELECT count(*) FROM cia_ticker)          AS cia_ticker_rows,
+                 (SELECT count(*) FROM vw_company_ticker)   AS bridge_rows,
+                 (SELECT count(*) FROM etf_market_snapshot) AS etf_snapshot_rows;
+          SELECT id, name, tickers FROM api.lookup('petrobras') LIMIT 5;
+
+          \echo === D2.5 FI/FIDC fund counts around 2025-05 (Res.175 subclass phase-in?) ===
+          SELECT entity_type, period, n_funds
+            FROM mv_period_completeness
+           WHERE entity_type IN ('fi','fidc','fii')
+             AND period BETWEEN DATE '2024-11-01' AND DATE '2025-10-31'
+           ORDER BY entity_type, period;
+
+          \echo === D2.8 classification: how BOVA11 / IBOV11 / IVVB11 actually print ===
+          SELECT codneg, tpmerc, codbdi, especi, isin, instrument_type, instrument_subtype,
+                 count(*) AS sessions, min(trade_date) AS first_seen, max(trade_date) AS last_seen
+            FROM vw_b3_instrument_typed
+           WHERE codneg IN ('BOVA11','IBOV11','IVVB11','SMAL11','BOVV11','KNRI11','BPAC11')
+           GROUP BY 1,2,3,4,5,6,7 ORDER BY codneg, last_seen DESC;
+
+          \echo === D2.8 what is inside cash_security (top by volume, last 90 sessions) ===
+          SELECT codneg, especi, codbdi, sum(volume)/1e6 AS vol_mm, count(*) AS sessions
+            FROM vw_b3_instrument_typed
+           WHERE instrument_type = 'cash_security' AND tpmerc = '010'
+             AND trade_date > (SELECT max(trade_date) FROM b3_cotahist) - 130
+           GROUP BY 1,2,3 ORDER BY vol_mm DESC NULLS LAST LIMIT 25;
+
+          \echo === D2.8 especi x codbdi crosstab for quota-ish prints (audit before relabel) ===
+          SELECT codbdi, left(especi, 6) AS especi6, count(DISTINCT codneg) AS tickers,
+                 count(*) AS rows_
+            FROM vw_b3_instrument_typed
+           WHERE tpmerc = '010' AND (codneg LIKE '%11' OR especi ILIKE 'CI%' OR codbdi IN ('05','12','13','14'))
+             AND trade_date > (SELECT max(trade_date) FROM b3_cotahist) - 400
+           GROUP BY 1,2 ORDER BY rows_ DESC LIMIT 40;
+
+          \echo === D2.4 ETF monthly volume by subtype rule (where the 2019 gap is) ===
+          SELECT date_trunc('month', trade_date)::date AS month,
+                 count(DISTINCT codneg) FILTER (WHERE instrument_subtype = 'etf') AS etf_tickers,
+                 count(DISTINCT codneg) FILTER (WHERE codbdi = '14')              AS codbdi14_tickers,
+                 round(sum(volume) FILTER (WHERE instrument_subtype = 'etf')/1e9, 3) AS etf_vol_bn
+            FROM vw_b3_instrument_typed
+           WHERE tpmerc = '010' AND trade_date BETWEEN DATE '2019-01-01' AND DATE '2020-06-30'
+           GROUP BY 1 ORDER BY 1;
+
+          \echo === D1a fator_cotacao distribution (unit-price normalization) ===
+          SELECT fator_cotacao, count(DISTINCT codneg) AS tickers, count(*) AS rows_
+            FROM b3_cotahist
+           WHERE tpmerc = '010' AND trade_date > (SELECT max(trade_date) FROM b3_cotahist) - 400
+           GROUP BY 1 ORDER BY rows_ DESC LIMIT 10;
+
+          \echo === D2.2 ETF fundamentals available WITHOUT the scrape ===
+          SELECT count(*) AS etfs,
+                 count(taxa_adm)      AS with_taxa_adm,
+                 count(vl_patrim_liq) AS with_nav,
+                 count(gestor)        AS with_gestor,
+                 count(dt_patrim_liq) AS with_nav_date
+            FROM cvm_etf_registry;
+
+          \echo === D2.10 quotaholders coverage by family (nr_cotst) ===
+          SELECT entity_type, count(*) AS rows_, count(nr_cotst) AS with_cotistas,
+                 max(period) AS last_period
+            FROM fact_fund_monthly GROUP BY 1 ORDER BY 1;
+          SQL
