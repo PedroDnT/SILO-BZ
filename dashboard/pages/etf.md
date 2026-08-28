@@ -217,6 +217,7 @@ select * from supabase.etf_market_series
   <Column id=ticker title="Ticker"/>
   <Column id=fund_name title="Fund"/>
   <Column id=manager title="Manager (CVM)"/>
+  <Column id=administrator title="Administrator"/>
   <Column id=index_name title="Index Tracked"/>
   <Column id=price title="Close, B3 (R$)" fmt='#,##0.00'/>
   <Column id=price_date title="Close Date"/>

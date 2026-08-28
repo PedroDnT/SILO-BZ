@@ -45,8 +45,14 @@ jobs:
       # CVM's normal 1-2 month publication lag.
       MAX_COMPLETE_AGE_DAYS: "75" # a monthly family with no complete period in this window is stalled
       MAX_INGEST_ERROR_HOURS: "26" # errors logged inside this window fail the run
-      DISK_WARN_PCT: "85" # database size vs plan quota
-      PLAN_DISK_GB: "8" # Supabase plan allowance; update if the plan changes
+      DISK_WARN_PCT: "85" # warn past this share of PLAN_DISK_GB, when that is set
+      # The plan allowance, which Postgres cannot see. Measured 2026-08-28: the
+      # database is 71.9 GB, so the old placeholder of 8 printed "899%" — a
+      # number that was pure noise and would have trained everyone to ignore
+      # the line. Leave EMPTY and the job reports absolute size and growth and
+      # skips the percentage entirely; set it to the real allowance to get a
+      # threshold warning. A made-up denominator is worse than none.
+      PLAN_DISK_GB: ""
 
     steps:
       - uses: actions/checkout@v5
@@ -175,9 +181,15 @@ jobs:
           #    workflow input because Postgres cannot see it.
           bytes=$(q "SELECT pg_database_size(current_database())")
           gb=$(awk -v b="$bytes" 'BEGIN{printf "%.2f", b/1024/1024/1024}')
-          pct=$(awk -v g="$gb" -v p="$PLAN_DISK_GB" 'BEGIN{printf "%.0f", 100*g/p}')
-          echo "database size: ${gb}GB of ${PLAN_DISK_GB}GB (${pct}%)"
-          echo "- 💾 database ${gb}GB / ${PLAN_DISK_GB}GB (${pct}%)" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "${PLAN_DISK_GB:-}" ]; then
+            pct=$(awk -v g="$gb" -v p="$PLAN_DISK_GB" 'BEGIN{printf "%.0f", 100*g/p}')
+            echo "database size: ${gb}GB of ${PLAN_DISK_GB}GB (${pct}%)"
+            echo "- 💾 database ${gb}GB / ${PLAN_DISK_GB}GB (${pct}%)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            pct=0
+            echo "database size: ${gb}GB (plan allowance not configured — set PLAN_DISK_GB for a threshold)"
+            echo "- 💾 database ${gb}GB (no plan allowance configured)" >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "--- 12 largest relations ---"
           psql "$POSTGRES_URL" -c "SET default_transaction_read_only = on" -c \
             "SELECT relname, pg_size_pretty(pg_total_relation_size(c.oid)) AS total
