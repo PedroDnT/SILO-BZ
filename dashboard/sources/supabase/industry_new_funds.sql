@@ -9,6 +9,15 @@
 -- "New" here means first appearance in CVM's data, which is a proxy for launch:
 -- a fund that existed before the ingested history starts will look new in the
 -- first month of coverage. Read the earliest months with that in mind.
+--
+-- FIP IS DELIBERATELY EXCLUDED from this monthly chart. FIP files ONCE A YEAR,
+-- and dim_fund maps its first_period to make_date(MIN(period_year), 1, 1) — so
+-- every FIP that ever filed lands on a January, and the stacked monthly chart
+-- grew a spike each January that looked like a formation wave and was really
+-- just a yearly filer being plotted on a monthly axis. A yearly series does not
+-- belong on a monthly spine; fip_new is still SELECTed below so the column
+-- exists for anyone reading the source, but the page charts the monthly filers
+-- and states the exclusion.
 with spine as (
   select generate_series(
            date_trunc('month', latest_complete_period(null)) - interval '35 months',

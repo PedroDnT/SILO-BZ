@@ -253,7 +253,20 @@ def test_catalog_is_static_and_names_panel(client):
     assert endpoints["panel"] == "GET /v1/panel"
     assert "query" not in endpoints
     assert "/v1/query" not in body["agent"]
-    assert "GET /v1/panel" in body["agent"]
+    # The agent preamble must name the DEPLOYED surface first. An earlier
+    # version told agents to "GET /v1/panel", which only the local Flask
+    # adapter answers; against the deployed PostgREST they got 404s, and its
+    # cap sentinel (cap+1 rows with a 200) was described as a 400.
+    assert "/rest/v1/rpc/" in body["agent"]
+    assert "panel" in body["agent"]
+    postgrest = body["postgrest"]
+    assert postgrest["panel"] == "POST /rest/v1/rpc/panel"
+    for core in ("lookup", "universe", "coverage"):
+        assert core in postgrest, f"{core} missing from the postgrest contract"
+    cap_text = " ".join(body["constraints"])
+    assert "100001" in cap_text and "200" in cap_text, (
+        "the cap constraint must explain the cap+1 sentinel, not just say 400"
+    )
 
 
 def test_tools_point_at_panel_not_query(client):

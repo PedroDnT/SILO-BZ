@@ -51,3 +51,57 @@ def test_null_latest_period_stays_blank_instead_of_unix_epoch():
     latest = _read("dashboard/sources/supabase/industry_class_latest.sql")
     assert "to_char(t.period, 'YYYY-MM-DD') as period" in latest
 
+
+
+# ---------------------------------------------------------------------------
+# Identity columns: manager, brand and index are three different things
+# ---------------------------------------------------------------------------
+
+def _source(name: str) -> str:
+    return (DASHBOARD / "sources" / "supabase" / f"{name}.sql").read_text(encoding="utf-8")
+
+
+def test_etf_sources_serve_the_published_manager_not_the_curated_brand():
+    # cvm_etf_registry.gestor is CVM's published manager (cad_fi). `provider` is
+    # a hand-curated seed label, and the fund NAME often carries the index
+    # publisher ("TREND ETF BLOOMBERG ..."), which is neither. Serving only the
+    # curated column made Bloomberg look like the manager of an XP fund.
+    for name in ("etf_list", "etf_market"):
+        sql = _source(name)
+        assert "gestor" in sql and "as manager" in sql, (
+            f"{name}.sql must expose cvm_etf_registry.gestor as manager"
+        )
+        assert "as brand" in sql, (
+            f"{name}.sql must label the curated provider column as brand, so it "
+            "is not mistaken for the manager"
+        )
+
+
+def test_etf_market_keeps_exchange_price_and_fund_nav_separate():
+    sql = _source("etf_market")
+    # An ETF's quota value and its exchange price are different published facts
+    # (premium/discount lives between them); they must never be one column.
+    assert "as price_date" in sql and "as nav_date" in sql, (
+        "price and NAV come from different sources on different days — each "
+        "needs its own as-of column"
+    )
+    assert "fator_cotacao" in sql, "exchange price must be the unit price"
+
+
+def test_fiagro_source_clamps_the_start_as_well_as_the_end():
+    sql = _source("industry_fiagro")
+    assert "greatest(" in sql.lower(), (
+        "FIAGRO's file starts 2025-05; a fixed-length window renders leading "
+        "months that read as a collapse to zero. The spine start must be "
+        "clamped to the family's first published period."
+    )
+    assert "min(period)" in sql.lower()
+
+
+def test_monthly_formation_chart_excludes_the_yearly_filer():
+    page = (DASHBOARD / "pages" / "industry.md").read_text(encoding="utf-8")
+    chart = page[page.index("data={industry_new_funds}") : page.index("data={industry_new_funds}") + 400]
+    assert "fip_new" not in chart, (
+        "FIP files yearly and dim_fund stamps its first_period on 1 January, so "
+        "plotting it on a monthly spine invents a January formation spike"
+    )

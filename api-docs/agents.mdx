@@ -51,7 +51,7 @@ curl -s -X POST "$SILO_URL/rpc/coverage" \
   -d '{}'
 ```
 
-Three rows: quotes, funds, and the other published datasets with a latest date.
+One row per dataset (quotes, funds, fund_nav, derivatives) plus a `funds_<family>` row per fund family, each with its latest date and — for fund rows — `complete_through`.
 A `401` is missing/wrong anon headers. Empty/error body is a failed fetch —
 **raise**, do not invent a last date.
 
@@ -68,7 +68,61 @@ Example: *does Brazilian equity stress show up in FIDC credit?*
 There is no server-side `corr`. If `panel` returns 100,001 rows, the cap fired —
 do not analyze it. Details: [panel](/api-docs/panel), [conventions](/api-docs/conventions).
 
-## 5. Integrity (same rules as humans)
+## 5. Screening a whole family (enumerate → batch → check the cap)
+
+The most common quant question — *rank every FIDC by how much its delinquency
+worsened* — needs a pattern no single endpoint provides, because `panel` requires
+explicit ids and `universe` is a 500-row alphabetical **sampler, not a census**.
+
+<Steps>
+  <Step title="Check the family is complete through your window">
+    ```bash
+    curl -s -X POST "$SILO_URL/rpc/coverage" -H "apikey: $SILO_KEY" \
+      -H "Content-Type: application/json" -H "Content-Profile: api" -d '{}'
+    ```
+    Require `complete_through >= ` your end month on the `funds_fidc` row before
+    claiming anything about that window.
+  </Step>
+  <Step title="Enumerate the family from the funds view, paging">
+    ```bash
+    curl -s "$SILO_URL/funds?select=cnpj,fund_name,first_period,last_period\
+&entity_type=eq.fidc&order=cnpj.asc&limit=1000&offset=0" \
+      -H "apikey: $SILO_KEY" -H "Accept-Profile: api" -H "Prefer: count=exact"
+    ```
+    `Content-Range` carries the total. Keep only funds whose `first_period` /
+    `last_period` actually span your window — a fund that filed for two of your
+    twelve months cannot be ranked against one that filed for all twelve.
+  </Step>
+  <Step title="Batch the ids into panel calls">
+    A few hundred ids per call keeps each response well inside the cap. Ask for
+    the rate's two ingredients together, since `delinquency` is a BRL amount:
+    ```json
+    {"p_ids": ["<cnpj>", "..."], "p_metrics": ["delinquency", "nav"],
+     "p_from": "2024-12-01", "p_to": "2025-12-31", "p_freq": "month"}
+    ```
+  </Step>
+  <Step title="Check the cap on EVERY batch">
+    Count the rows. Exactly **100001** means the cap fired and the batch is
+    truncated — discard it and split the batch. On PostgREST that arrives as a
+    normal `200`; only the local `/v1` adapter turns it into a `400`. Checking
+    the status code alone will silently analyse a truncated panel.
+  </Step>
+  <Step title="Reduce locally">
+    Pivot to wide, compute `delinquency / nav` per fund-month (guard `nav` of
+    zero), then rank on the change across the window. Require a minimum number
+    of non-null months so a fund with two observations cannot top the ranking.
+    No ffill.
+  </Step>
+</Steps>
+
+<Warning>
+  A fund's **portfolio composition is not in this API** — there is no sector,
+  obligor or industry breakdown for a FIDC, and the fund name is not a
+  taxonomy. If you need "FIDCs exposed to sector X", that link does not exist
+  here; say so rather than inferring it from names.
+</Warning>
+
+## 6. Integrity (same rules as humans)
 
 <Warning>
   Never fabricate a price, NAV, fill, ranking, or ticker↔CNPJ match. Null stays

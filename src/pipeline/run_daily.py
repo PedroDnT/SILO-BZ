@@ -76,6 +76,18 @@ async def main() -> None:
         logger.error("B3 COTAHIST daily refresh failed: %s", exc, exc_info=True)
         failures.append(("b3", exc))
 
+    # B3 corporate events: published splits, groupings, bonuses, dividends and
+    # subscriptions per ISIN. One request per traded issuer (derived from our
+    # own tape, not B3's 3,500-company list), so it is a few hundred small
+    # calls. Events are near-static history — a failure here must not fail the
+    # whole daily run, but it is recorded as a failure, never swallowed.
+    try:
+        b3_events = await B3Ingestor().ingest_corporate_events()
+        totals["b3_corporate_event"] = b3_events
+    except Exception as exc:
+        logger.error("B3 corporate events refresh failed: %s", exc, exc_info=True)
+        failures.append(("b3_corporate_events", exc))
+
     # ETF market snapshot: scrape etfsbrasil.com.br via Apify (NAV/price/cotistas
     # the post-CVM-175 daily file no longer exposes). The scrape is paid + rate-
     # limited, so it ONLY runs when APIFY_TOKEN is configured — an absent token

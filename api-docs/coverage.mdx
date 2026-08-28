@@ -4,7 +4,10 @@ description: "Latest loaded date per dataset — check it before you claim anyth
 icon: "calendar-check"
 ---
 
-`coverage` answers one question: **how far does the data actually go?** Three rows, no
+`coverage` answers one question: **how far does the data actually go?** One row per
+dataset (`quotes`, `funds`, `fund_nav`, `derivatives`) plus one `funds_<family>` row for
+each fund family that has data — so the row count grows with coverage rather than being
+fixed. No
 arguments, no filters.
 
 ```sql
@@ -74,12 +77,21 @@ const { data } = await supabase.rpc('coverage')
 
 ```json
 [
-  { "dataset": "quotes",      "as_of": "2026-08-26", "source": "b3_cotahist" },
-  { "dataset": "funds",       "as_of": "2026-06-30", "source": "cvm" },
-  { "dataset": "fund_nav",    "as_of": "2026-06-01", "source": "cvm" },
-  { "dataset": "derivatives", "as_of": "2026-08-26", "source": "b3_cotahist" }
+  { "dataset": "quotes",      "as_of": "2026-08-26", "complete_through": null,         "source": "b3_cotahist" },
+  { "dataset": "funds",       "as_of": "2026-06-30", "complete_through": null,         "source": "cvm" },
+  { "dataset": "fund_nav",    "as_of": "2026-06-01", "complete_through": null,         "source": "cvm" },
+  { "dataset": "derivatives", "as_of": "2026-08-26", "complete_through": null,         "source": "b3_cotahist" },
+  { "dataset": "funds_fi",    "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "cvm" },
+  { "dataset": "funds_fidc",  "as_of": "2026-07-31", "complete_through": "2026-07-31", "source": "cvm" },
+  { "dataset": "funds_fii",   "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "cvm" },
+  { "dataset": "funds_fiagro","as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "cvm" },
+  { "dataset": "funds_fip",   "as_of": "2025-12-31", "complete_through": "2025-12-31", "source": "cvm" }
 ]
 ```
+
+The `funds_<family>` rows are the ones to read before a window claim:
+`complete_through` is the latest period that family has **fully** filed, which is
+what an omitted `p_to` clamps to. The four dataset rows carry `as_of` only.
 
 ## Reading it
 

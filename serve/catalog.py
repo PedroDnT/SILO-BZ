@@ -22,6 +22,14 @@ __all__ = [
     "tool_specs",
 ]
 
+# 11: the catalog described only the local /v1 adapter while the deployed
+# surface is PostgREST — an agent following it issued the wrong verb and, worse,
+# believed an over-cap panel answers 400 when PostgREST returns cap+1 rows with
+# a 200. Both surfaces are now named, the cap constraint explains the sentinel,
+# and the postgrest section carries the core contract (panel/lookup/universe/
+# coverage/funds/quotes), not just the typed-cash extras.
+# 10: close_unit — close divided by the published quotation factor, so price
+# levels are comparable across papers quoted per lot; raw close untouched.
 # 9: lookup company rows carry `tickers` — CVM's published FCA
 # valores-mobiliários CNPJ↔ticker map (cia_ticker / vw_company_ticker),
 # replacing the old "not joined here" stance: the join is published, not
@@ -38,7 +46,7 @@ __all__ = [
 # 6: one endpoint per cash instrument type, each carrying both lot sizes.
 # 5: main's typed cash asset classes (4) merged with the option/termo id_types
 # and list-valued id_type this branch introduced (3).
-CATALOG_VERSION = 9
+CATALOG_VERSION = 11
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -74,6 +82,24 @@ METRICS: Dict[str, Dict[str, Any]] = {
             "by default; option/termo: that derivative segment. "
             "Month = last session."
         ),
+    },
+    "close_unit": {
+        # Not an adjustment: division by a published COTAHIST field. FATCOT is
+        # the number of shares the quoted price refers to (1, or 1000 for papers
+        # quoted per lot), so close alone is not comparable across papers or
+        # across a factor change. close and quotation_factor are still served
+        # raw beside it. Splits/groupings/bonuses are NOT handled here.
+        "id_type": ["ticker"],
+        "asset_class": B3_CASH_ASSET_CLASSES,
+        "grain": ["day", "month"],
+        "source": "b3_cotahist",
+        "meaning": (
+            "Close per single quoted unit: close / quotation_factor, both "
+            "published. Use this to compare price levels across papers; "
+            "a paper quoted per lot (factor 1000) otherwise reads 1000x its "
+            "unit price. Still unadjusted for corporate actions."
+        ),
+        "derived": True,
     },
     "close_return": {
         # Cash only. Derivatives carry strike/expiry/term effects that make a
@@ -154,6 +180,10 @@ CONSTRAINTS = [
     "freq=day is quotes only. Mix equity with fund fundamentals on freq=month.",
     "close_return across a missing month is null, not a multi-month return.",
     "close_return is unadjusted: a 2:1 split reports roughly -50%. It is not a total return.",
+    "close is the price as published, which for a paper quoted per lot refers "
+    "to 1000 shares; close_unit divides it by the published quotation_factor so "
+    "levels are comparable. Neither is corporate-action adjusted — no split, "
+    "grouping or bonus adjustment exists yet, and `adjusted` is FALSE on every row.",
     "Daily close_return is null when the previous session is more than 7 "
     "calendar days back (halts, listing gaps), and null across a quotation-"
     "factor change — a fatcot flip rescales the quote with no market move "
@@ -164,8 +194,21 @@ CONSTRAINTS = [
     "explicit `to` serves the window verbatim, partial months included.",
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
-    "Panel responses are hard-capped at 100000 rows (series endpoints at 5000); "
-    "above that the API answers 400 — narrow ids, metrics, or the date window.",
+    "Row caps, and how each surface tells you it hit one — getting this wrong "
+    "means silently analysing a TRUNCATED panel, the exact fabrication this "
+    "API is built to prevent. The SQL functions LIMIT at cap+1 (panel 100001, "
+    "series 5001). On PostgREST (the deployed surface) that comes back as a "
+    "200 with exactly cap+1 rows: a count of exactly 100001 (or 5001) means "
+    "TRUNCATED — discard it and narrow ids, metrics or the window; it never "
+    "answers 400 for size. The local /v1 Flask adapter converts that same "
+    "sentinel into a 400. Check the row count, not just the status code.",
+    "An unrecognised metric name is IGNORED, not rejected: the panel comes "
+    "back smaller and perfectly plausible. Take metric names from this "
+    "catalog's `metrics` map, never from memory.",
+    "universe is capped at 500 rows, alphabetical, and does not paginate — it "
+    "is a sampler, not a census. To enumerate a family, page the funds view "
+    "(GET /rest/v1/funds?entity_type=eq.fidc with Prefer: count=exact) and "
+    "batch the resulting ids into panel calls.",
     "Option chains require a codneg prefix of at least 3 characters "
     "(api.option_chain); an unfiltered whole-market chain is refused.",
     "Option rows carry underlying_ticker resolved from the PUBLISHED ISIN "
@@ -231,11 +274,20 @@ EXAMPLES = [
 AGENT_INSTRUCTIONS = (
     "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, "
     "B3 COTAHIST cash quotes, options and termo). Call catalog once and cache "
-    "it. Resolve names "
-    "with lookup/universe, then GET /v1/panel. The primitive is a panel "
-    "(id, date, metric, value). Correlation, ranking, spreads, regressions, "
-    "and other relations are reductions of that panel — compute them in the "
-    "notebook. Do not fabricate ids, fills, or ticker-CNPJ matches."
+    "it. Resolve names with lookup/universe, then fetch a panel. The primitive "
+    "is a panel (id, date, metric, value). Correlation, ranking, spreads, "
+    "regressions and other relations are reductions of that panel — compute "
+    "them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ "
+    "matches. "
+    "TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — "
+    "POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named "
+    "arguments (arrays stay arrays), views at GET /rest/v1/<view>, header "
+    "`apikey`. The /v1/* routes in `endpoints` are an optional local Flask "
+    "adapter (serve/app.py) that is not necessarily deployed; its query-string "
+    "form and its `format=wide` envelope exist ONLY there. Prefer the "
+    "postgrest section unless you know the /v1 adapter is running. Read the "
+    "row-cap constraint carefully: the two surfaces signal truncation "
+    "differently and getting that wrong silently analyses a truncated panel."
 )
 
 
@@ -272,6 +324,20 @@ def catalog_payload() -> Dict[str, Any]:
             "coverage": "GET /v1/coverage",
         },
         "postgrest": {
+            # The core contract. These were absent from this section, so an
+            # agent reading the catalog could not tell that the primitive
+            # itself is reachable on the deployed surface.
+            "panel": "POST /rest/v1/rpc/panel",
+            "lookup": "POST /rest/v1/rpc/lookup",
+            "universe": "POST /rest/v1/rpc/universe",
+            "coverage": "POST /rest/v1/rpc/coverage",
+            "search_funds": "POST /rest/v1/rpc/search_funds",
+            "fund_profile": "POST /rest/v1/rpc/fund_profile",
+            "fund_nav": "POST /rest/v1/rpc/fund_nav",
+            "quote_history": "POST /rest/v1/rpc/quote_history",
+            "quote_latest": "POST /rest/v1/rpc/quote_latest",
+            "quotes_view": "GET /rest/v1/quotes",
+            "funds_view": "GET /rest/v1/funds",
             "equities": "GET /rest/v1/equities",
             "bdrs": "GET /rest/v1/bdrs",
             "units": "GET /rest/v1/units",

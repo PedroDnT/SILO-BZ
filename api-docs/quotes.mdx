@@ -13,10 +13,18 @@ B3's published CODBDI board code (see the [COTAHIST
 dictionary](/api-docs/cotahist-dictionary)).
 
 <Warning>
-  **`close` is the price of `quotation_factor` units, not always one.** Unit price =
-  `close / quotation_factor`. The factor is 1 for almost everything (13 tickers on the
-  whole 2019–2026 tape carry another value), but summing or comparing prices without
-  checking it silently mixes scales. `close_return` is null across a factor change.
+  **`close` is the price of `quotation_factor` units, not always one.** The API now
+  serves that division for you as **`close_unit`** = `close / quotation_factor`, so
+  price levels are comparable across papers without any arithmetic on your side. The
+  factor is 1 for almost everything (13 tickers on the whole 2019–2026 tape carry
+  another value), but a paper quoted per lot reads 1000× its unit price in `close`.
+  `close_return` is still computed on raw `close` and is null across a factor change.
+</Warning>
+
+<Warning>
+  **Nothing here is corporate-action adjusted.** `close_unit` divides by a published
+  field; it does not account for splits, groupings or bonuses, and `adjusted` is
+  `false` on every row. A split still appears as a jump in the price series.
 </Warning>
 
 The grain is **`(ticker, trade_date, board, term_days)`**. A single ticker can print on more
@@ -116,7 +124,11 @@ series.
   ISIN as published.
 </ResponseField>
 <ResponseField name="quotation_factor" type="integer">
-  COTAHIST `fator_cotacao` — the quotation unit for this paper.
+  COTAHIST `fator_cotacao` — the number of shares the quoted price refers to.
+</ResponseField>
+<ResponseField name="close_unit" type="number">
+  Close per single quoted unit: `close / quotation_factor`, both published. Division by
+  a published field, not an adjustment — see the warning above.
 </ResponseField>
 <ResponseField name="adjusted" type="boolean">
   Always `false`. Constant, so nobody mistakes these for adjusted prices.
@@ -207,7 +219,7 @@ api.quote_history(p_ticker TEXT,
 Returns the view's columns minus `term_days` and `fetched_at`: `ticker`, `trade_date`,
 `board`, `short_name`, `spec`, `currency`, `open`, `high`, `low`, `average`, `close`, `bid`,
 `ask`, `trades`, `quantity`, `volume`, `isin`, `quotation_factor`, `adjusted`, `source`,
-`asset_class`.
+`asset_class`, `close_unit`.
 
 <CodeGroup>
 

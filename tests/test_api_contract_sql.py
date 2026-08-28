@@ -805,3 +805,65 @@ class TestTypedCashTrailingColumns:
         )
         # The view still filters on the unchanged parent label.
         assert "v.instrument_type = 'fund_quota'" in view
+
+
+# ---------------------------------------------------------------------------
+# close_unit: division by a PUBLISHED field, never an adjustment
+# ---------------------------------------------------------------------------
+
+_TYPED_CASH_VIEWS = [
+    "api.quotes",
+    "api.equities",
+    "api.bdrs",
+    "api.units",
+    "api.fund_quotas",
+    "api.cash_securities",
+]
+
+
+def test_every_cash_view_exposes_close_unit_as_a_trailing_column():
+    # Trailing, because CREATE OR REPLACE VIEW can only APPEND columns: a
+    # close_unit inserted mid-list would fail to deploy over the live view.
+    for view in _TYPED_CASH_VIEWS:
+        i = SQL19.index(f"CREATE OR REPLACE VIEW {view} AS")
+        body = SQL19[i : SQL19.index("FROM public.vw_b3_instrument_typed v", i)]
+        assert "AS close_unit" in body, f"{view} is missing close_unit"
+        last_col = [
+            ln.strip() for ln in body.splitlines() if ln.strip() and not ln.strip().startswith("--")
+        ][-1]
+        assert last_col.endswith("AS close_unit"), (
+            f"{view}: close_unit must be the LAST column (CREATE OR REPLACE VIEW "
+            f"can only append), found trailing {last_col!r}"
+        )
+
+
+def test_close_unit_divides_the_published_factor_and_guards_zero():
+    for view in _TYPED_CASH_VIEWS:
+        i = SQL19.index(f"CREATE OR REPLACE VIEW {view} AS")
+        body = SQL19[i : SQL19.index("FROM public.vw_b3_instrument_typed v", i)]
+        assert "v.preco_fechamento / NULLIF(v.fator_cotacao, 0) AS close_unit" in body, (
+            f"{view}: close_unit must be close / NULLIF(factor,0) — both columns "
+            "published by COTAHIST. Anything else would be an inferred adjustment."
+        )
+
+
+def test_close_unit_never_claims_to_be_corporate_action_adjusted():
+    # `adjusted` stays FALSE everywhere until an event-sourced adjustment lands.
+    assert "TRUE                AS adjusted" not in SQL19
+    assert SQL19.count("FALSE               AS adjusted") >= len(_TYPED_CASH_VIEWS)
+
+
+def test_panel_serves_close_unit_as_its_own_metric():
+    panel = FUNCS["api.panel"]
+    assert "'close_unit' = ANY (p.metrics)" in panel
+    assert "'close_unit', q.close_unit" in panel
+    # close stays raw: the new metric must not have rewritten the old one.
+    assert "'close'::text, q.close," in panel
+
+
+def test_close_unit_is_in_the_catalog_metric_map():
+    from serve.catalog import METRICS
+
+    assert "close_unit" in METRICS
+    assert METRICS["close_unit"]["source"] == "b3_cotahist"
+    assert METRICS["close_unit"].get("derived") is True
