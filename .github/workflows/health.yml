@@ -70,6 +70,11 @@ jobs:
       - name: Health checks
         if: env.MODE == 'checks' || env.MODE == 'both'
         run: |
+          # GitHub runs steps as `bash -e {0}`, so WITHOUT this +e the first
+          # failing check aborts the step and the remaining checks never run —
+          # defeating the whole point of collecting every failure into one red
+          # run. Turn it off explicitly and gate on $fail at the end.
+          set +e
           set -uo pipefail
           fail=0
           q() { psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -qAt \
@@ -85,7 +90,7 @@ jobs:
           if [ "${errs:-0}" -gt 0 ]; then
             echo "FAIL: $errs ingest error rows" >&2
             psql "$POSTGRES_URL" -c "SET default_transaction_read_only = on" -c \
-              "SELECT started_at, entity, doc_type, left(coalesce(error_message,''),200) AS error
+              "SELECT started_at, entity, doc_type, left(coalesce(error_msg,''),200) AS error
                  FROM cvm_ingest_log
                 WHERE status='error' AND started_at > now() - interval '${MAX_INGEST_ERROR_HOURS} hours'
                 ORDER BY started_at DESC LIMIT 20"
@@ -164,7 +169,10 @@ jobs:
       # Investigation queries. Never fails on data: it exists to SHOW numbers.
       # Everything is bounded (LIMIT / narrow windows) so it cannot hammer prod.
       - name: Diagnostics
-        if: env.MODE == 'diagnostics' || env.MODE == 'both'
+        # always(): a failing gate is precisely when the diagnostics output is
+        # needed. Without it, the step that explains the failure is skipped
+        # because of the failure.
+        if: always() && (env.MODE == 'diagnostics' || env.MODE == 'both')
         run: |
           set -euo pipefail
           psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
