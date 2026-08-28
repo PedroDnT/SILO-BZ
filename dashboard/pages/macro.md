@@ -186,6 +186,12 @@ title="PTAX Month-End — USD, EUR, GBP"
 > re-fetched after the horizon key landed render blank — a coverage gap, not a
 > blended vintage. The horizon that actually landed is shown per row in the
 > latest-reading table below.
+>
+> **Every January the line steps** — that is the forecast _target_ rolling
+> over (December plots the forecast for the year just ending, January the
+> forecast for the new year), not a revision and not a data error. Selic is
+> the clearest case: the December point is effectively the realized year-end
+> rate, the January point a fresh year-ahead forecast.
 
 <LineChart
   data={macro_focus_series}

@@ -11,8 +11,8 @@
 -- first month of coverage. Read the earliest months with that in mind.
 with spine as (
   select generate_series(
-           date_trunc('month', current_date) - interval '35 months',
-           date_trunc('month', current_date),
+           date_trunc('month', latest_complete_period(null)) - interval '35 months',
+           date_trunc('month', latest_complete_period(null)),
            interval '1 month'
          )::date as period
 ),
@@ -20,9 +20,11 @@ t as (
   select *
   from new_funds_per_period(
     null,
-    (date_trunc('month', current_date) - interval '35 months')::date,
+    (date_trunc('month', latest_complete_period(null)) - interval '35 months')::date,
     current_date
   )
+  -- per-family completeness clamp (see mv_period_completeness)
+  where period <= latest_complete_period(entity_type)
 )
 select
   sp.period,

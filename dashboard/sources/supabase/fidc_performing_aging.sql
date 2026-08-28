@@ -16,8 +16,9 @@
 -- aggregate is LEFT JOINed, so an unpublished month is NULL rather than absent.
 with months as (
   select generate_series(
-           date_trunc('month', current_date - interval '11 months'),
-           date_trunc('month', current_date),
+           -- clamp: fidc's completeness bound (mv_period_completeness)
+           date_trunc('month', latest_complete_period('fidc') - interval '11 months'),
+           date_trunc('month', latest_complete_period('fidc')),
            interval '1 month'
          )::date as period
 ),
@@ -37,7 +38,8 @@ agg as (
     sum(a.vl_total_inad)       / 1e6         as inad_total_mm,
     count(distinct a.cnpj)                   as n_funds
   from cvm_fidc_aging a
-  where a.period >= (date_trunc('month', current_date) - interval '11 months')::date
+  where a.period >= (date_trunc('month', latest_complete_period('fidc')) - interval '11 months')::date
+    and a.period <= latest_complete_period('fidc')
   group by date_trunc('month', a.period)::date
 )
 select

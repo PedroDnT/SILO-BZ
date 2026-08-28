@@ -15,13 +15,16 @@
 -- empty cvm_fidc_tranche) come back NULL instead of no-row.
 with months as (
   select generate_series(
-           date_trunc('month', current_date - interval '23 months'),
-           date_trunc('month', current_date),
+           -- clamp: fidc's completeness bound (mv_period_completeness)
+           date_trunc('month', latest_complete_period('fidc') - interval '23 months'),
+           date_trunc('month', latest_complete_period('fidc')),
            interval '1 month'
          )::date as period
 ),
 latest as (
+  -- clamp: never anchor "latest" on a partially-filed month
   select max(period) as period from cvm_fidc_tranche
+  where period <= latest_complete_period('fidc')
 ),
 biggest as (
   select m.cnpj

@@ -144,6 +144,15 @@ aligned by index. Cap is 5000 points — over that is `400`, not a silent trim.
 | GET    | `/v1/funds/{cnpj}`                          | `api.fund_profile(cnpj)`                              |
 | GET    | `/v1/funds/{cnpj}/nav?from&to&range`        | `api.fund_nav(...)`                                   |
 
+PostgREST-only resources (Supabase Data API, no `/v1` twin — `serve/`'s catalog lists
+them under a separate `postgrest` section):
+
+| Method | Resource | Backing |
+|---|---|---|
+| GET  | `/rest/v1/equities` (+ `bdrs`, `units`, `fund_quotas`, `cash_securities`) | typed cash views, `lot` grain; `equities` adds `share_class`/`governance_segment`, `fund_quotas` adds `fund_type` |
+| GET  | `/rest/v1/auctions` | tpmerc 017 auction prints |
+| POST | `/rest/v1/rpc/option_chain` / `option_history` / `option_exercises` / `termo_history` | option/termo functions; option rows carry `underlying_ticker` |
+
 CNPJ in the path may include punctuation (`12.345.678/0001-90`); it is stripped
 to 14 digits. Tickers are uppercased.
 

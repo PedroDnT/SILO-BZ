@@ -19,7 +19,7 @@ reductions belong where you can see and change their assumptions.
 api.panel(p_ids     TEXT[],
           p_metrics TEXT[] DEFAULT ARRAY['close','nav'],
           p_from    DATE   DEFAULT CURRENT_DATE - 365,
-          p_to      DATE   DEFAULT CURRENT_DATE,
+          p_to      DATE   DEFAULT NULL,  -- null = clamp fund rows to complete periods
           p_freq    TEXT   DEFAULT 'month')
 ```
 
@@ -44,8 +44,13 @@ api.panel(p_ids     TEXT[],
   month; for quote metrics it is used as-is.
 </ParamField>
 
-<ParamField body="p_to" type="date" default="CURRENT_DATE">
-  Window end, inclusive.
+<ParamField body="p_to" type="date" default="null (honest window)">
+  Window end, inclusive. **Omitted (null), fund metrics end at each family's latest
+  COMPLETE period** — a month CVM has only fractionally published is not served, so a
+  default panel never shows a fake trailing collapse. Quote/option/termo metrics still
+  run to today (a session print is complete by construction). Passing an explicit
+  `p_to` is the escape hatch: the window is served verbatim, partial months included.
+  [`coverage`](/api-docs/coverage) reports each family's bound as `complete_through`.
 </ParamField>
 
 <ParamField body="p_freq" type="string" default="month">

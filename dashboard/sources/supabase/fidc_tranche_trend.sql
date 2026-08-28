@@ -9,8 +9,9 @@
 -- back NULL rather than shortening the result to nothing.
 with months as (
   select generate_series(
-           date_trunc('month', current_date - interval '23 months'),
-           date_trunc('month', current_date),
+           -- clamp: fidc's completeness bound (mv_period_completeness)
+           date_trunc('month', latest_complete_period('fidc') - interval '23 months'),
+           date_trunc('month', latest_complete_period('fidc')),
            interval '1 month'
          )::date as period
 ),
@@ -33,7 +34,7 @@ agg as (
       where t.pr_desemp_real is not null and t.pr_desemp_esperado is not null
     )                                                                 as n_comparable
   from cvm_fidc_tranche t
-  where t.period >= (date_trunc('month', current_date) - interval '23 months')::date
+  where t.period >= (date_trunc('month', latest_complete_period('fidc')) - interval '23 months')::date
   group by date_trunc('month', t.period)::date
 )
 select

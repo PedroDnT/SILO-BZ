@@ -10,11 +10,10 @@
 -- ZERO-ROW SAFETY: 36-month generate_series spine drives the output; the series
 -- is LEFT JOINed on.
 with anchor as (
-  select coalesce(
-           max(period),
-           date_trunc('month', current_date)::date
-         ) as p_end
-  from fact_fund_monthly
+  -- latest_complete_period(null): the old unfiltered max(period) anchored on
+  -- FIP's current-year Dec-31 row, blanking the right ~5 months of the
+  -- rebased-return chart; it also anchored on partially-filed months.
+  select latest_complete_period(null) as p_end
 ),
 months as (
   select generate_series(
@@ -55,9 +54,11 @@ series as (
   cross join lateral fund_performance_series(
     t.cnpj,
     (date_trunc('month', a.p_end) - interval '35 months')::date,
-    a.p_end,
+    current_date,
     t.entity_type
   ) p
+  -- per-family completeness clamp (raw-convention comparison)
+  where p.period <= latest_complete_period(t.entity_type)
 )
 select
   m.period                              as period,
@@ -68,5 +69,7 @@ select
   round(x.period_return * 100, 2)       as period_return_num2,
   round(x.cumulative_return * 100, 2)   as cum_return_num2
 from months m
-left join series x on x.period = m.period
+-- date_trunc on the join key: month-end/year-end family periods never
+-- matched the first-of-month spine raw (see fund_nav_series.sql)
+left join series x on date_trunc('month', x.period)::date = m.period
 order by m.period, x.fund

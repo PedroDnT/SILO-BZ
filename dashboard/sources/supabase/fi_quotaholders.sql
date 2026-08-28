@@ -6,12 +6,8 @@
 -- ZERO-ROW SAFETY: generate_series month spine drives the result; the function
 -- output is LEFT JOINed on, so 36 rows always.
 with anchor as (
-  select coalesce(
-           max(period),
-           date_trunc('month', current_date)::date
-         ) as p_end
-  from fact_fund_monthly
-  where entity_type = 'fi'
+  -- anchor on FI's completeness bound: never a partially-filed month
+  select latest_complete_period('fi') as p_end
 ),
 months as (
   select generate_series(

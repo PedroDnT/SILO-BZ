@@ -300,8 +300,29 @@ around it is correct.
 Until adjustment lands, the trap is labelled, not fixed. Catalog `meaning`
 for `close_return` (version 3) and the api-docs panel page both say
 "unadjusted; corporate actions appear as spurious jumps". A caption is not
-a fix, but an unlabelled trap is worse than a labelled one. The jump
-screen below remains the first _code_ deliverable.
+a fix, but an unlabelled trap is worse than a labelled one.
+
+**Jump screen: RUN (2026-08-27, read-only, cash tape 2025+).** 315 session
+jumps with `|close/prev - 1| > 40%` across 151 codnegs. Attribution: 0 from
+`fator_cotacao` flips (the only two flips ever, GOLL2 and IBOV11, fall
+outside the window), 2 coincide with a per-codneg ISIN change, 28 sit after
+a trading gap of 30+ days (illiquid re-prints — the ≥7-day adjacency guard
+now NULLs the daily return over these), leaving ~285 candidates that are
+splits/grupamentos/subscriptions or genuine moves. That is the size of the
+corporate-actions problem: real, bounded, and concentrated in a minority of
+tickers. Guards shipped meanwhile (catalog v8): daily `close_return` NULL
+across >7-day session gaps and across any quotation-factor change.
+
+**Source check (2026-08-27):** B3's corporate-events proxy
+(`sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/...`) answers a bare
+client HTTP 200 with an EMPTY body — it wants a browser session, is
+per-company, paginated, and undocumented; there is no bulk historical file,
+and rb3 carries no corporate-events template either. Under integrity rule 1
+that is not a foundation for ingest, so `b3_corporate_event` stays a spec.
+In-house signals already available for the eventual screen: per-codneg ISIN
+changes, DISMES (distribution number) changes — now exposed on the option
+endpoints — and `fator_cotacao` changes, which the pipeline corrects on its
+own.
 
 ### Where the adjustment information actually lives
 

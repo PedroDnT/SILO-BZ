@@ -14,8 +14,12 @@
 -- classifies either spelling correctly.
 with months as (
   select generate_series(
+           -- Securitizadoras are outside fact_fund_monthly, so no coverage-based
+           -- completeness exists for them; the honest cheap rule is to stop at
+           -- the last ENDED month (the in-progress month is partial by
+           -- construction for a monthly filing).
            date_trunc('month', current_date - interval '35 months'),
-           date_trunc('month', current_date),
+           date_trunc('month', current_date) - interval '1 month',
            interval '1 month'
          )::date as period
 ),
@@ -35,7 +39,7 @@ trend as (
   from security_issuance_trend(
          null::text,
          (date_trunc('month', current_date) - interval '35 months')::date,
-         current_date
+         (date_trunc('month', current_date) - interval '1 day')::date
        ) t
 ),
 agg as (

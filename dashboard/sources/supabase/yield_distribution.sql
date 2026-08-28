@@ -9,5 +9,7 @@ from cvm_fii_mensal
 where doc_subtype = 'complemento'
   and pct_dividend_yield_mes > 0
   and period >= current_date - interval '12 months'
+  -- completeness clamp (mv_period_completeness)
+  and period <= latest_complete_period('fii')
 group by period
 order by period

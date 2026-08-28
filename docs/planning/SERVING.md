@@ -253,11 +253,11 @@ exists as data.
 | Step | Status | Evidence |
 |---|---|---|
 | 0 Contract | done | `19_api_contract.sql`, `serve/app.py`, `docs/API.md` |
-| 1 Catalog | done | `GET /v1/catalog`, `GET /v1/tools` |
-| 2 SQL smoke | operator path | Silo apply + **Actions → Tests** `api-smoke`; ephemeral PG still later |
-| 3 Limits / pool | open | `_MAX_PANEL` after `fetchall()`; new conn per request |
-| 4 Honest time | open | daily `close_return` unguarded; no `obs_date` |
-| 5 Lookup | open | `ILIKE %q%`, `LIMIT` without `ORDER BY` |
-| 6 Privileges | open | `anon` grants vs Data API exposure undecided |
-| 7 HTTPS | open | `serve/` binds 127.0.0.1 only |
+| 1 Catalog | done | `GET /v1/catalog`, `GET /v1/tools`, `api.catalog()` |
+| 2 SQL smoke | **done** (2026-08-27) | `sql-compile` job in **Actions → Tests** builds schema + migrations + the whole analytical layer + all dashboard sources on a throwaway Postgres on EVERY PR (`silo.ci_smoke_bypass` downgrades the empty-DB guards); `api-smoke` dispatch still smokes live |
+| 3 Limits / pool | **done** | SQL caps 5001/100001 in `19`; `serve/pool.py` (`SILO_API_DATABASE_URL`, 15s statement_timeout); `ALTER ROLE silo_api SET statement_timeout` in `12` |
+| 4 Honest time | **done** (2026-08-27) | daily `close_return` needs prev session ≤ 7 days AND an unchanged quotation factor; default windows clamp fund rows to `latest_complete_period(entity)` (`mv_period_completeness`); `coverage()` reports `complete_through` |
+| 5 Lookup | **done** (2026-08-27) | ILIKE metacharacters escaped; exact-match rank before `LIMIT 20`; pg_trgm (migration 24 on `cia_company`, matview-side index on `dim_fund`); company rows carry `tickers` from the published FCA map (migration 25) |
+| 6 Privileges | done (2026-08-26) | landing tables revoked from `anon/authenticated` (`12`); every api fn SECURITY DEFINER with pinned search_path; `silo_api` NOLOGIN + api-only grants; exposure decision recorded in `docs/API.md` ("Run"). Go-live gap: per-user keys + RLS, and rotate the committed publishable key |
+| 7 HTTPS | **obsoleted** (2026-08-26) | production path is Supabase-native PostgREST (`docs/API.md`); no gateway to terminate TLS. `serve/` stays the local notebook adapter |
 | 8 More metrics | later | CIA / BACEN not in `METRICS` |

@@ -16,8 +16,13 @@ with tracked (endpoint_name, indicador) as (
     ('ExpectativasMercadoAnuais',          'IGP-M'),
     ('ExpectativasMercadoAnuais',          'PIB Total'),
     ('ExpectativasMercadoAnuais',          'Selic'),
-    ('ExpectativasMercadoMensais',         'IPCA'),
-    ('ExpectativasMercadoMensais',         'IGP-M'),
+    -- NOTE the singular "Expectativa": BACEN's actual odata resource name is
+    -- ExpectativaMercadoMensais and that is the endpoint_name the pipeline
+    -- stores (src/pipeline/bacen_pipeline.py:43-47). The plural form used
+    -- here previously matched ZERO of the 78,941 monthly Focus rows, so the
+    -- Mensais lines of this table rendered permanently blank.
+    ('ExpectativaMercadoMensais',          'IPCA'),
+    ('ExpectativaMercadoMensais',          'IGP-M'),
     ('ExpectativasMercadoSelic',           null::text),
     ('ExpectativasMercadoInflacao12Meses', 'IPCA')
 )

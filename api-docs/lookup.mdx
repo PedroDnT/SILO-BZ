@@ -4,6 +4,12 @@ description: "Resolve a ticker, ISIN, CNPJ, fund name, or company name to the id
 icon: "magnifying-glass"
 ---
 
+> **Company rows now carry `tickers`** — an array of the company's active B3 tickers
+> from CVM's *published* FCA valores-mobiliários registry (the CNPJ and the ticker
+> arrive on the same CVM row, so nothing is name-matched). `null` when the company has
+> no active published listing. `lookup('petrobras')` returns the company with
+> `["PETR3","PETR4"]` attached.
+
 `lookup` turns something a human typed into something [`panel`](/api-docs/panel),
 [`quotes`](/api-docs/quotes), or [`funds`](/api-docs/funds) will accept. It searches three
 populations at once — B3 tickers, CVM funds, and listed companies — and returns whatever

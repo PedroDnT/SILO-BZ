@@ -7,14 +7,21 @@
 -- instead of taking the site down.
 with agg as (
   select
-    a.period,
+    -- date_trunc: cvm_fidc_aging periods are month-END (measured 2026-08-27:
+    -- day-of-month is 28/30/31), while every sibling /fidc chart plots
+    -- first-of-month. Grouping on the raw period drew this chart's x-axis one
+    -- month-width off its neighbours.
+    date_trunc('month', a.period)::date as period,
     round(100.0 * sum(a.vl_total_inad) / nullif(sum(m.vl_patrim_liq), 0), 2) as delinquency_rate_num1,
     sum(a.vl_total_inad) / 1e6                                              as total_inad_mm,
     count(distinct a.cnpj)                                                  as n_funds
   from cvm_fidc_aging a
   join cvm_fidc_mensal m using (cnpj, period)
   where a.period >= current_date - interval '24 months'
-  group by a.period
+    -- Completeness clamp: a partially-filed trailing month summed only the
+    -- funds that had reported, rendering as a fake collapse in delinquency.
+    and a.period <= latest_complete_period('fidc')
+  group by date_trunc('month', a.period)
 )
 select period, delinquency_rate_num1, total_inad_mm, n_funds
 from agg

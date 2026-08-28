@@ -21,6 +21,12 @@ title: ETF Market
   market snapshot, because identity is the part that is fully populated and the
   snapshot is the part that is gated on a secret. The lede states the gap up
   front so nobody reads the structure sections as a complete ETF dataset.
+
+  The "Exchange Price and Volume" section (etf_market_series) is B3 COTAHIST
+  tape data — exchange volume/close of instrument_subtype='etf' rows via
+  vw_b3_instrument_typed — and sits between identity and the snapshot because
+  it is fully populated (2019+) while NAV-side series are not. Unadjusted
+  prices; the median close is cross-sectional, not an index.
 -->
 
 ```sql etf_counts
@@ -49,6 +55,10 @@ select * from supabase.etf_market_coverage
 
 ```sql etf_market
 select * from supabase.etf_market
+```
+
+```sql etf_market_series
+select * from supabase.etf_market_series
 ```
 
 # ETF Market
@@ -137,6 +147,45 @@ select * from supabase.etf_market
   <Column id=underlying_index title="Index"/>
   <Column id=status title="Status"/>
 </DataTable>
+
+---
+
+## Exchange Price and Volume — B3 Tape
+
+> Monthly ETF activity from the B3 COTAHIST tape: total exchange volume and the
+> number of distinct ETF tickers that printed, plus the median close across all
+> ETF prints. This is **exchange price/volume, unadjusted, straight from
+> COTAHIST** — it fills the time axis that NAV-based ETF metrics cannot, since
+> those remain sparse post-CVM-175 (see below). The median close is a
+> cross-sectional "typical print", not an index: ETFs quote at very different
+> price points, and the mix shifts as ETFs list, so it says nothing about
+> returns. ETF rows are identified from B3's own board codes
+> (`vw_b3_instrument_typed`, CODBDI 14), never from ticker shape; the full
+> exchange tape is on [B3 Markets](/markets).
+
+<LineChart
+  data={etf_market_series}
+  x=period
+  y=volume_bn
+  yAxisTitle="Volume (R$bn)"
+  title="ETF Exchange Volume per Month (R$bn)"
+/>
+
+<LineChart
+  data={etf_market_series}
+  x=period
+  y=n_etf_tickers
+  yAxisTitle="Tickers"
+  title="Distinct ETF Tickers Traded per Month"
+/>
+
+<LineChart
+  data={etf_market_series}
+  x=period
+  y=median_close
+  yAxisTitle="R$"
+  title="Median ETF Close Across Prints (R$, unadjusted)"
+/>
 
 ---
 

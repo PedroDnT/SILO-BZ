@@ -18,11 +18,24 @@ split by instrument type, so you can ask for one class without filtering client-
 The type comes from `vw_b3_instrument_typed`, which classifies **only** from B3's published
 `TPMERC` and `ESPECI`. Nothing is inferred from a ticker's shape.
 
-<Warning>
-  **`fund_quota` does not distinguish ETF from FII.** COTAHIST alone cannot prove which a
-  `CI` paper is, so the API declines to guess rather than mislabel half of them. If you need
-  that split, join to the CVM side yourself via [`lookup`](/api-docs/lookup).
-</Warning>
+`fund_quotas` rows carry **`fund_type`** — `etf` | `fii` | `fidc` | `fiagro` — derived
+from B3's published CODBDI board code (codbdi 14 → etf, 05/12 → fii, 13 → fiagro;
+validated against the CVM ETF registry — see the
+[COTAHIST dictionary](/api-docs/cotahist-dictionary)). It is `NULL` on boards that
+carry no family signal (the odd-lot boards), never guessed from the ticker:
+
+```
+/fund_quotas?fund_type=eq.etf&lot=eq.standard
+```
+
+`equities` rows carry **`share_class`** (`ON` | `PN` | `PNA` | `PNB` | `PNC` | `PND`)
+and **`governance_segment`** (`NM` | `N1` | `N2` | `MA` | `M2` | `MB`), parsed from
+the published ESPECI field and cross-checked against the ISIN class code — never
+inferred from the ticker's `3`/`4` suffix. So "all Novo Mercado ordinary shares" is:
+
+```
+/equities?share_class=eq.ON&governance_segment=eq.NM&lot=eq.standard
+```
 
 ## Lot size is part of the grain
 
@@ -49,7 +62,8 @@ these endpoints are additive.
 
 ## Columns
 
-Identical to [`quotes`](/api-docs/quotes) plus `lot`, minus `asset_class` (redundant — the
+Identical to [`quotes`](/api-docs/quotes) plus `lot` (and `share_class` +
+`governance_segment` on `equities`, `fund_type` on `fund_quotas`), minus `asset_class` (redundant — the
 endpoint *is* the type): `ticker`, `trade_date`, `board`, `lot`, `term_days`, `short_name`,
 `spec`, `currency`, `open`, `high`, `low`, `average`, `close`, `bid`, `ask`, `trades`,
 `quantity`, `volume`, `isin`, `quotation_factor`, `adjusted`, `source`, `fetched_at`.

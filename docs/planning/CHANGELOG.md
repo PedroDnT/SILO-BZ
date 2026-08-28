@@ -2,6 +2,8 @@
 
 | Date       | Branch                    | Change                                                                                              |
 | ---------- | ------------------------- | --------------------------------------------------------------------------------------------------- |
+| 2026-08-28 | claude/code-review-k7hw45 | Overnight run: sql-compile CI gate (ephemeral PG on every PR); migration 23 B3 typing v2 (exercises/auctions labeled, fund_type/share_class/governance from published fields, option underlying via ISIN, catalog v7); completeness layer (`mv_period_completeness`, honest default windows, return guards, lookup hardening, catalog v8); migration 25 FCA CNPJ↔ticker bridge + lookup `tickers` (catalog v9); ~20 dashboard sources clamped, /fund FIP-anchor + FIDC delinquency alignment + Focus endpoint-name fixes |
+| 2026-08-27 | claude/code-review-k7hw45 | Balancete gap repair ran: 59→91/91 months (+60.1M rows, zero errors); B3 COTAHIST backfilled 2019–2026 (1,905 sessions); catalog v5/v6 shipped earlier same day (typed cash endpoints per instrument, panel period normalisation) |
 | 2026-08-27 | cursor/b3-asset-types-1119 | B3 asset class reaches `api.quotes`, quote RPCs, panel, universe, lookup, and catalog v4 |
 | 2026-08-27 | cursor/b3-asset-types-1119 | FI backfill can target one source (`--doc-type` / `fi_doc_type`), including balancete-only gap repair |
 | 2026-08-27 | cursor/quiet-vercel-fills-1119 | DB-only B3 instrument typing from published TPMERC/ESPECI; ambiguous CI remains `fund_quota` |

@@ -25,9 +25,12 @@
 -- and multiplies by 100 on every chart. These shares are already percentage
 -- points (80 = 80%). `_num1` is the format this dashboard actually uses.
 with spine as (
+  -- Clamp to complete periods (mv_period_completeness): the trailing month is
+  -- served only once its calendar month ended AND enough funds reported, so
+  -- charts stop dipping toward zero on partially-filed data.
   select generate_series(
-           date_trunc('month', current_date) - interval '35 months',
-           date_trunc('month', current_date),
+           date_trunc('month', latest_complete_period(null)) - interval '35 months',
+           date_trunc('month', latest_complete_period(null)),
            interval '1 month'
          )::date as period
 ),
@@ -35,9 +38,11 @@ t as (
   select *
   from industry_aum_trend(
     null,
-    (date_trunc('month', current_date) - interval '35 months')::date,
+    (date_trunc('month', latest_complete_period(null)) - interval '35 months')::date,
     current_date
   )
+  -- per-family clamp: each family truncates at its own completeness bound
+  where period <= latest_complete_period(entity_type)
 ),
 base as (
   select
