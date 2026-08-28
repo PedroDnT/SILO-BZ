@@ -113,6 +113,14 @@ select * from supabase.industry_fiagro
 > list of y columns, live-verified) and absolute net assets with FI excluded
 > (where the other four are back on a comparable scale).
 
+> **The step at 2025-05 is FIAGRO entering the data, not the industry growing.**
+> CVM's FIAGRO monthly file begins in May 2025 with **3 funds**, reaches 125 by
+> September and 202 by December. Every aggregate that includes FIAGRO — the
+> total line most of all — therefore steps up as that family is onboarded into
+> the dataset. The per-family lines are unaffected and are the honest read; the
+> total is a sum over whatever families the data covers in that month, which is
+> not the same thing as the market's size changing.
+
 <AreaChart
 data={industry_aum_trend}
 x=period

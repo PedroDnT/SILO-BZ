@@ -19,7 +19,19 @@
 -- CVM and B3 publish most of it. Now each column falls back to published data
 -- and the scrape is only an override:
 --
---   manager   cvm_etf_registry.gestor      CVM cad_fi. THE FUND MANAGER.
+--   manager   registry gestor, else            CVM. THE FUND MANAGER. Measured
+--             cvm_fund_registry.gestor_name    2026-08-28: all 197 ETF CNPJs
+--                                              are present in
+--                                              cvm_fund_registry, but the
+--                                              cad_fi enrichment behind
+--                                              cvm_etf_registry.gestor filled
+--                                              only 16 of them. The registry
+--                                              is the same published CVM
+--                                              identity, already ingested, so
+--                                              the manager comes from there
+--                                              when the enrichment is empty
+--                                              rather than the column reading
+--                                              blank for 181 funds.
 --                                          `provider` next to it is a curated
 --                                          brand label from the seed CSV
 --                                          ("XP Asset (Trend)") and the index
@@ -62,7 +74,8 @@ with last_px as (
 select
   r.ticker,
   coalesce(m.fund_name, r.fund_name)      as fund_name,
-  r.gestor                                as manager,
+  coalesce(r.gestor, fr.gestor_name)      as manager,
+  coalesce(r.admin, fr.admin_name)        as administrator,
   r.provider                              as brand,
   r.underlying_index                      as index_name,
   r.segment,
@@ -76,6 +89,9 @@ select
   p.close_date                            as price_date,
   coalesce(m.snapshot_date, r.dt_patrim_liq) as nav_date
 from cvm_etf_registry r
+-- Published CVM fund registry: carries gestor_name/admin_name for every ETF
+-- CNPJ (197/197 measured), which the cad_fi enrichment does not.
+left join cvm_fund_registry fr on fr.cnpj = r.cnpj
 left join etf_market_latest m on m.ticker = r.ticker
 left join last_px p on p.ticker = r.ticker
 order by coalesce(m.nav, r.vl_patrim_liq) desc nulls last, r.ticker
