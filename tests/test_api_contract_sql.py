@@ -919,3 +919,46 @@ def test_partitioned_and_view_relkinds_are_in_scope():
     # partitions, which a parent-only REVOKE never reaches.
     body = _strip_comments(SQL12)
     assert "relkind IN ('r', 'p', 'v', 'm', 'f')" in body
+
+
+# ---------------------------------------------------------------------------
+# Price is the default; everything else is opt-in.
+#
+# panel already defaulted to close+nav, but nothing in the contract SAID so, and
+# an agent that cannot see a default asks for every metric it can enumerate — a
+# price lookup becomes seven columns of fund accounting it never reads. The
+# wide endpoints are the honest exception: a SQL function's RETURNS TABLE is
+# fixed, so they are narrowed with PostgREST ?select= instead.
+# ---------------------------------------------------------------------------
+
+
+def test_panel_still_defaults_to_price():
+    panel = FUNCS["api.panel"]
+    assert "p_metrics TEXT[] DEFAULT ARRAY['close', 'nav']::TEXT[]" in panel
+    # and the COALESCE fallback inside params must agree with the signature,
+    # or an explicit NULL would widen what the signature narrows.
+    assert "COALESCE(p_metrics, ARRAY['close','nav']::TEXT[])" in panel
+
+
+def test_catalog_declares_the_default_machine_readably():
+    from serve.catalog import catalog_payload
+
+    d = catalog_payload()["defaults"]
+    assert d["panel"]["metrics"] == ["close", "nav"]
+    assert "opt-in" in d["principle"]
+    # The escape hatch must be named, not implied: an agent told only "these are
+    # the defaults" has no documented way to get the other columns back.
+    assert "p_metrics" in d["panel"]["to_widen"]
+    assert "select=" in d["wide_endpoints"]["to_narrow"]
+
+
+def test_catalog_default_matches_the_sql_signature():
+    """The declared default and the actual SQL default cannot drift apart."""
+    from serve.catalog import catalog_payload
+
+    declared = catalog_payload()["defaults"]["panel"]["metrics"]
+    panel = FUNCS["api.panel"]
+    m = re.search(r"p_metrics TEXT\[\] DEFAULT ARRAY\[(.*?)\]::TEXT\[\]", panel)
+    assert m, "could not read p_metrics default out of api.panel"
+    actual = [x.strip().strip("'") for x in m.group(1).split(",")]
+    assert actual == declared, f"catalog says {declared}, SQL says {actual}"

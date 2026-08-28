@@ -50,7 +50,7 @@ __all__ = [
 # 6: one endpoint per cash instrument type, each carrying both lot sizes.
 # 5: main's typed cash asset classes (4) merged with the option/termo id_types
 # and list-valued id_type this branch introduced (3).
-CATALOG_VERSION = 12
+CATALOG_VERSION = 13
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -300,8 +300,34 @@ AGENT_INSTRUCTIONS = (
     "form and its `format=wide` envelope exist ONLY there. Prefer the "
     "postgrest section unless you know the /v1 adapter is running. Read the "
     "row-cap constraint carefully: the two surfaces signal truncation "
-    "differently and getting that wrong silently analyses a truncated panel."
+    "differently and getting that wrong silently analyses a truncated panel. "
+    "PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics "
+    "returns `close` for tickers and `nav` for CNPJs, and that is the call to "
+    "make unless you actually need another measure — name metrics explicitly "
+    "only when you will use them. The wide endpoints are the exception and "
+    "behave the other way round: quote_latest, quote_history and the views "
+    "return their full OHLCV/identity row every time, so trim them with "
+    "PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than "
+    "pulling 22 columns to read one. See `defaults`."
 )
+
+# What a caller gets when it asks for nothing. Machine-readable because an
+# agent that has to infer the default from prose will instead request every
+# metric it can see — which is how a price lookup turns into seven columns of
+# fund accounting it never reads.
+DEFAULTS = {
+    "principle": "price by default; every other measure is opt-in",
+    "panel": {
+        "metrics": ["close", "nav"],
+        "means": "close for ticker ids, nav for cnpj ids; a metric absent for an id type simply yields no rows",
+        "to_widen": "pass p_metrics explicitly, e.g. p_metrics=['close','volume']",
+    },
+    "wide_endpoints": {
+        "which": ["quote_latest", "quote_history", "fund_nav", "api.quotes and the typed views"],
+        "behaviour": "fixed full row (OHLCV + identity); the column list cannot vary by argument",
+        "to_narrow": "PostgREST ?select=, e.g. /rest/v1/rpc/quote_latest?select=ticker,trade_date,close",
+    },
+}
 
 
 def catalog_payload() -> Dict[str, Any]:
@@ -310,6 +336,7 @@ def catalog_payload() -> Dict[str, Any]:
         "version": CATALOG_VERSION,
         "primitive": "panel",
         "agent": AGENT_INSTRUCTIONS,
+        "defaults": DEFAULTS,
         "metrics": METRICS,
         "notebook_reducers": NOTEBOOK_REDUCERS,
         "constraints": CONSTRAINTS,
