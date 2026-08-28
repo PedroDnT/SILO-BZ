@@ -230,6 +230,34 @@ jobs:
                  count(dt_patrim_liq) AS with_nav_date
             FROM cvm_etf_registry;
 
+          \echo === D1b VERIFY B3 factor convention against the tape ===
+          -- The whole reason no adjusted price series ships yet. B3 publishes a
+          -- `factor` per event but its meaning is NOT uniform across labels
+          -- (DESDOBRAMENTO 100.0 vs GRUPAMENTO 0.1). price_ratio is what the
+          -- tape actually did across the entitlement date; whichever candidate
+          -- reproduces it per label IS the convention. Until this returns
+          -- consistent numbers, quotes stay unadjusted.
+          SELECT label,
+                 count(*)                                              AS events,
+                 round(avg(factor), 4)                                 AS avg_factor,
+                 round(avg(close_unit_before / NULLIF(close_unit_after, 0)), 4)
+                                                                       AS avg_price_ratio,
+                 round(avg((close_unit_before / NULLIF(close_unit_after, 0))
+                           / NULLIF(factor, 0)), 6)                    AS ratio_over_factor,
+                 round(avg((close_unit_before / NULLIF(close_unit_after, 0))
+                           / NULLIF(1 + factor / 100.0, 0)), 6)        AS ratio_over_pct_convention
+            FROM vw_b3_share_count_event
+           WHERE close_unit_before IS NOT NULL AND close_unit_after IS NOT NULL
+           GROUP BY label ORDER BY events DESC;
+
+          \echo === D1b sample events with both sides of the tape ===
+          SELECT issuing_company, label, last_date_prior, factor,
+                 round(close_unit_before, 4) AS before_, round(close_unit_after, 4) AS after_,
+                 round(close_unit_before / NULLIF(close_unit_after, 0), 4) AS price_ratio
+            FROM vw_b3_share_count_event
+           WHERE close_unit_before IS NOT NULL AND close_unit_after IS NOT NULL
+           ORDER BY last_date_prior DESC LIMIT 20;
+
           \echo === D2.10 quotaholders coverage by family (nr_cotst) ===
           SELECT entity_type, count(*) AS rows_, count(nr_cotst) AS with_cotistas,
                  max(period) AS last_period

@@ -36,6 +36,10 @@ def _patches(cvm_totals=None, bacen=None, anbima=None, b3=None):
         anbima_ing.daily_update.return_value = anbima or {"anbima_etf": 3}
 
     b3_ing = MagicMock()
+    # Corporate events run in their own guarded block after daily_update, so
+    # the mock needs it too — otherwise every daily-run test reports a
+    # b3_corporate_events failure that the code under test did not have.
+    b3_ing.ingest_corporate_events = AsyncMock(return_value=0)
     b3_ing.daily_update = AsyncMock()
     if isinstance(b3, Exception):
         b3_ing.daily_update.side_effect = b3

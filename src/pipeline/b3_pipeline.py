@@ -145,6 +145,86 @@ class B3Ingestor:
         logger.info("B3 COTAHIST year %s upserted %d rows", year, n)
         return n
 
+    def _traded_issuers(self, lookback_days: int = 400) -> List[str]:
+        """B3 issuing-company codes for tickers that actually printed recently.
+
+        The corporate-events endpoint is one request per issuer and B3 lists
+        ~3,500 companies, most of which never trade. Deriving the list from our
+        own tape keeps the daily sweep to the universe we actually serve
+        (a few hundred issuers) instead of hammering B3 for shells.
+
+        The issuing code is the ticker's first four characters — that is how
+        B3 itself keys the endpoint (PETR4 -> PETR). Tickers shorter than four
+        characters cannot yield one and are skipped rather than padded.
+        """
+        sql = """
+            SELECT DISTINCT left(codneg, 4) AS issuer
+              FROM b3_cotahist
+             WHERE tpmerc = '010'
+               AND length(codneg) >= 4
+               AND trade_date > (SELECT max(trade_date) FROM b3_cotahist) - %s
+             ORDER BY issuer
+        """
+        with self._supabase.cursor() as cur:
+            cur.execute(sql, (lookback_days,))
+            return [r[0] for r in cur.fetchall() if r and r[0]]
+
+    async def ingest_corporate_events(
+        self,
+        issuers: Optional[List[str]] = None,
+        lookback_days: int = 400,
+    ) -> int:
+        """Fetch published corporate events for the traded universe.
+
+        One request per issuer, so a failure on ONE issuer must not abandon
+        the sweep — but it must not vanish either: failures are counted and
+        the run is logged as an error when any occurred, with the count and a
+        sample in the message. Nothing is fabricated for a failed issuer; it
+        simply has no rows this run and is retried on the next.
+        """
+        from src.fetchers.b3_corporate_events_fetcher import B3CorporateEventsFetcher
+        from src.pipeline.ingest_b3_events import ingest_b3_corporate_events
+
+        run_id = str(uuid4())
+        self._log_start(run_id, "corporate_events", None, None)
+        try:
+            codes = issuers if issuers is not None else self._traded_issuers(lookback_days)
+            if not codes:
+                self._log_finish(run_id, 0, skipped=True)
+                logger.info("B3 corporate events: no traded issuers found, skipped")
+                return 0
+
+            fetcher = B3CorporateEventsFetcher()
+            rows: List[Dict[str, Any]] = []
+            failures: List[str] = []
+            for code in codes:
+                try:
+                    rows.extend(fetcher.fetch_events(code))
+                except Exception as exc:  # noqa: BLE001 - counted, then reported
+                    failures.append(f"{code}: {exc}")
+
+            total = ingest_b3_corporate_events(self._supabase, rows) if rows else 0
+
+            if failures:
+                # Partial success is still a failure to report: silence here
+                # would let an issuer rot out of the event table unnoticed.
+                msg = (
+                    f"{len(failures)}/{len(codes)} issuers failed; "
+                    f"first: {failures[0][:200]}"
+                )
+                self._log_finish(run_id, total, error=msg)
+                logger.warning("B3 corporate events partial: %s", msg)
+            else:
+                self._log_finish(run_id, total)
+            logger.info(
+                "B3 corporate events: %d rows from %d issuers (%d failed)",
+                total, len(codes), len(failures),
+            )
+            return total
+        except Exception as exc:
+            self._log_finish(run_id, 0, error=str(exc))
+            raise
+
     async def daily_update(self) -> Dict[str, int]:
         """Re-fetch the trailing calendar window of daily zips.
 
