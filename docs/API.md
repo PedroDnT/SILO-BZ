@@ -147,11 +147,11 @@ aligned by index. Cap is 5000 points — over that is `400`, not a silent trim.
 PostgREST-only resources (Supabase Data API, no `/v1` twin — `serve/`'s catalog lists
 them under a separate `postgrest` section):
 
-| Method | Resource | Backing |
-|---|---|---|
-| GET  | `/rest/v1/equities` (+ `bdrs`, `units`, `fund_quotas`, `cash_securities`) | typed cash views, `lot` grain; `equities` adds `share_class`/`governance_segment`, `fund_quotas` adds `fund_type` |
-| GET  | `/rest/v1/auctions` | tpmerc 017 auction prints |
-| POST | `/rest/v1/rpc/option_chain` / `option_history` / `option_exercises` / `termo_history` | option/termo functions; option rows carry `underlying_ticker` |
+| Method | Resource                                                                              | Backing                                                                                                           |
+| ------ | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| GET    | `/rest/v1/equities` (+ `bdrs`, `units`, `fund_quotas`, `cash_securities`)             | typed cash views, `lot` grain; `equities` adds `share_class`/`governance_segment`, `fund_quotas` adds `fund_type` |
+| GET    | `/rest/v1/auctions`                                                                   | tpmerc 017 auction prints                                                                                         |
+| POST   | `/rest/v1/rpc/option_chain` / `option_history` / `option_exercises` / `termo_history` | option/termo functions; option rows carry `underlying_ticker`                                                     |
 
 CNPJ in the path may include punctuation (`12.345.678/0001-90`); it is stripped
 to 14 digits. Tickers are uppercased.
@@ -186,9 +186,53 @@ views are read as `/rest/v1/quotes?select=...`, functions are called as
 `POST /rest/v1/rpc/<name>` with named arguments in the JSON body. The grants
 in `19_api_contract.sql` (anon/authenticated: `USAGE` on schema `api`,
 `SELECT` on the api views, `EXECUTE` on the api functions — and nothing on
-the `public` landing tables) are exactly the surface this exposes; the
-in-function row caps and Supabase's platform `statement_timeout` on the API
-roles bound each call.
+the `public` landing tables) are exactly the surface this exposes.
+
+### Two platform limits bound every call, and neither is in the SQL
+
+Both were found by an independent audit of the live deployment (2026-08-27) and
+reproduced against production on 2026-08-28. Both surprise callers, so read them
+before writing a client.
+
+**1. PostgREST truncates every response at 1000 rows, oldest first, silently.**
+This is `db-max-rows` on the Supabase project — not the in-function caps, which
+LIMIT at cap+1 (panel 100001, series 5001). Behind a 1000-row ceiling those
+sentinels can never fire, so the old advice to "check for exactly 100001 rows"
+detected nothing. Measured:
+
+```
+POST /rest/v1/rpc/panel  p_ids=[PETR4] p_metrics=[close] p_freq=day p_to=2026-08-26
+  p_from=2019-01-01  -> 1000 rows, 2019-01-02 .. 2023-01-09   TRUNCATED, HTTP 200
+  p_from=2022-01-01  -> 1000 rows, 2022-01-03 .. 2026-01-02   TRUNCATED, HTTP 200
+  p_from=2024-01-01  ->  664 rows, 2024-01-02 .. 2026-08-26   complete
+```
+
+A caller charting "PETR4 since 2019" gets a plausible line that simply stops in
+January 2023. **The only signal is the `Content-Range` response header**:
+`0-999/*` means truncated, and adding `Prefer: count=exact` turns it into
+`0-999/1906` so you also learn the true total. A range ending below 999 is
+complete.
+
+**`Range` paging does not work on RPC.** Sending `Range: 1000-1999` to
+`/rest/v1/rpc/panel` returns the _same first page_ again — verified, same
+`Content-Range: 0-999/1906`. So a panel cannot be paged: narrow `p_from`/`p_to`,
+ids, or metrics until the header comes back under 1000. `GET` views on the
+`api` schema do page with `Range` normally.
+
+Raising `db-max-rows` (Dashboard → Settings → API → Max rows) is an operator
+decision, not a code change.
+
+**2. The `statement_timeout` that applies is `anon`'s 3s, not `silo_api`'s 15s.**
+`12_grants_and_rls.sql` sets 15s on `silo_api` — but that role serves only the
+local `serve/` adapter. The deployed PostgREST surface runs as `anon`, which
+carries Supabase's default 3s (`authenticated` gets 8s). Anything over ~3s
+returns `57014 canceling statement due to statement timeout`.
+
+Cold calls are the practical consequence: on a warehouse this size the first
+call after idle can take 16–43s and is cancelled at the ceiling, so a
+first-time caller meets an API that looks comprehensively down. Warm, the same
+calls return in 0.3–1.9s. Warming the endpoints, or raising the `anon` timeout,
+is an operator decision.
 
 `serve/` remains the local adapter for notebooks and development. If it is
 ever hosted, point `SILO_API_DATABASE_URL` at a login member of the

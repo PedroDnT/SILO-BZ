@@ -83,6 +83,39 @@ None of the `cia_*` tables are in `schema.sql`; they live in migrations
 last-wins upsert dedup (239k → 29k on one 2023 slice) — the column exists
 purely to keep the key faithful (`05_cia_account_coluna_df.sql:12`).
 
+`dt_ini_exerc` was added by migration 29 for the same reason, one statement
+further on. **An ITR income statement reports each `cd_conta` twice under one
+filing** — once for the quarter and once for the year-to-date period — and only
+`DT_INI_EXERC` separates them. It was mapped to a column but left out of the
+key, so last-wins kept whichever row the CSV listed last. Measured against the
+published `itr_cia_aberta_2025.zip`:
+
+| Member       | Published | Kept under the old key | Lost               |
+| ------------ | --------- | ---------------------- | ------------------ |
+| `DRE_con`    | 157,164   | 94,376                 | **62,788 (40.0%)** |
+| `BPA_con`    | 181,930   | 181,674                | 256 (0.1%)         |
+| `DFC_MI_con` | 139,552   | 139,430                | 122 (0.1%)         |
+| `DVA_con`    | 117,018   | 116,818                | 200 (0.2%)         |
+
+The 40% is a shape, not noise: `DRE_con` carries 94,506 three-month rows and
+62,658 cumulative rows (31,632 six-month + 31,026 nine-month), and the
+cumulative count is the loss almost exactly. **Every year-to-date figure in
+every quarterly income statement was being discarded.** Re-ingesting the same
+file with the widened key retains 99.9%.
+
+The balance sheet was never affected — `BPA`/`BPP` are point-in-time and omit
+`DT_INI_EXERC`, so their 0.1% is ordinary restatement duplication. `DFC`/`DVA`
+publish one cumulative period per filing, so their periods differ by `dt_refer`
+and never collided.
+
+Not recoverable by arithmetic after the fact: a reader cannot rebuild the
+cumulative by summing quarters when the company has a non-calendar fiscal year
+(São Martinho, `cd_cvm` 20516, files April–March — its nine-month period starts
+1 April) or when an earlier quarter is restated.
+
+**Widening the key stops future loss; it does not restore what was overwritten.
+The ITR backfill must be re-run.** DFP is unaffected and does not need it.
+
 ## 4. Transformed — nothing
 
 `src/store/analytical/` contains **no company modelling at all**. A grep of all

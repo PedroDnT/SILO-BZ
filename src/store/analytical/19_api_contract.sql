@@ -1496,19 +1496,45 @@ STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-    WITH latest_quote_session AS (
-        -- Universe is discovery, not historical coverage. Restrict B3 to one
-        -- real session so a sparse type such as BDR does not classify and sort
-        -- the entire multi-year COTAHIST tape under the 15s API timeout.
+    WITH -- Lower bound on the partition key, so the max() below can prune.
+    --
+    -- Restricting to one session was never enough: `trade_date = (SELECT
+    -- max(...))` gives the planner no constant, so it reached across every
+    -- yearly partition of the tape. Measured against production 2026-08-28,
+    -- api.universe('equity') took 6.83s and EVERY anon call to it failed.
+    -- PostgREST runs as `anon`, whose statement_timeout is 3s -- not the 15s
+    -- the old comment here assumed; that 15s is on silo_api, which serves only
+    -- the local adapter. universe was the one endpoint returning nothing at all
+    -- to a public caller.
+    --
+    -- mv_b3_monthly_activity's newest period is the first day of the newest
+    -- month on the tape, so the true max session is inside that bound by
+    -- construction -- the same fix as b3_market_overview.sql. An empty matview
+    -- falls back to the old unbounded behaviour: correct, just slow.
+    tape_floor AS (
+        SELECT coalesce(
+                   (SELECT max(m.period) FROM public.mv_b3_monthly_activity m),
+                   DATE '1900-01-01'
+               ) AS from_date
+    ),
+    latest_quote_session AS (
+        -- Universe is discovery, not historical coverage: one real session, so
+        -- a sparse type such as BDR does not classify and sort the whole tape.
         SELECT max(q.trade_date) AS trade_date
-        FROM api.quotes q
+        FROM api.quotes q, tape_floor f
+        WHERE q.trade_date >= f.from_date
     ),
     quote_rows AS (
         SELECT DISTINCT ON (q.ticker)
             q.ticker, q.asset_class, q.short_name, q.isin
         FROM api.quotes q
         JOIN latest_quote_session s ON s.trade_date = q.trade_date
-        WHERE p_asset_class IS NULL OR q.asset_class = lower(p_asset_class)
+        CROSS JOIN tape_floor f
+        -- Carries the same partition-key floor as latest_quote_session: without
+        -- it this scan still spans every yearly partition even though only one
+        -- session can match.
+        WHERE q.trade_date >= f.from_date
+          AND (p_asset_class IS NULL OR q.asset_class = lower(p_asset_class))
         ORDER BY q.ticker
     )
     SELECT * FROM (
@@ -1684,24 +1710,231 @@ STABLE
 AS $fn$
 SELECT $json$
 {
-  "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup/universe, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint carefully: the two surfaces signal truncation differently and getting that wrong silently analyses a truncated panel.",
-  "asset_classes": [
-    "equity",
-    "unit",
-    "bdr",
-    "fund_quota",
-    "index",
-    "right",
-    "bonus",
-    "cash_security",
-    "fi",
-    "fidc",
-    "fii",
-    "fip",
-    "fiagro",
-    "cia",
-    "derivative"
-  ],
+  "kind": "catalog",
+  "version": 14,
+  "primitive": "panel",
+  "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup/universe, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint carefully, and READ THE Content-Range RESPONSE HEADER ON EVERY CALL: PostgREST truncates every response at 1000 rows and keeps the OLDEST ones, so a cut-short series is indistinguishable from a complete one by its contents alone — `0-999/*` is the only thing that tells you. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
+  "defaults": {
+    "principle": "price by default; every other measure is opt-in",
+    "panel": {
+      "metrics": [
+        "close",
+        "nav"
+      ],
+      "means": "close for ticker ids, nav for cnpj ids; a metric absent for an id type simply yields no rows",
+      "to_widen": "pass p_metrics explicitly, e.g. p_metrics=['close','volume']"
+    },
+    "wide_endpoints": {
+      "which": [
+        "quote_latest",
+        "quote_history",
+        "fund_nav",
+        "api.quotes and the typed views"
+      ],
+      "behaviour": "fixed full row (OHLCV + identity); the column list cannot vary by argument",
+      "to_narrow": "PostgREST ?select=, e.g. /rest/v1/rpc/quote_latest?select=ticker,trade_date,close"
+    }
+  },
+  "metrics": {
+    "close": {
+      "id_type": [
+        "ticker",
+        "option",
+        "termo"
+      ],
+      "asset_class": [
+        "equity",
+        "unit",
+        "bdr",
+        "fund_quota",
+        "index",
+        "right",
+        "bonus",
+        "cash_security",
+        "derivative"
+      ],
+      "grain": [
+        "day",
+        "month"
+      ],
+      "source": "b3_cotahist",
+      "meaning": "Unadjusted close. Cash tickers: the ticker's latest BDI board by default, classified from published TPMERC/ESPECI. Option/termo codnegs: that derivative segment's session close. Month = last session."
+    },
+    "volume": {
+      "id_type": [
+        "ticker",
+        "option",
+        "termo"
+      ],
+      "asset_class": [
+        "equity",
+        "unit",
+        "bdr",
+        "fund_quota",
+        "index",
+        "right",
+        "bonus",
+        "cash_security",
+        "derivative"
+      ],
+      "grain": [
+        "day",
+        "month"
+      ],
+      "source": "b3_cotahist",
+      "meaning": "Session traded volume (BRL). Cash: the ticker's latest BDI board by default; option/termo: that derivative segment. Month = last session."
+    },
+    "close_unit": {
+      "id_type": [
+        "ticker"
+      ],
+      "asset_class": [
+        "equity",
+        "unit",
+        "bdr",
+        "fund_quota",
+        "index",
+        "right",
+        "bonus",
+        "cash_security"
+      ],
+      "grain": [
+        "day",
+        "month"
+      ],
+      "source": "b3_cotahist",
+      "meaning": "Close per single quoted unit: close / quotation_factor, both published. Use this to compare price levels across papers; a paper quoted per lot (factor 1000) otherwise reads 1000x its unit price. Still unadjusted for corporate actions.",
+      "derived": true
+    },
+    "close_return": {
+      "id_type": [
+        "ticker"
+      ],
+      "asset_class": [
+        "equity",
+        "unit",
+        "bdr",
+        "fund_quota",
+        "index",
+        "right",
+        "bonus",
+        "cash_security"
+      ],
+      "grain": [
+        "day",
+        "month"
+      ],
+      "source": "b3_cotahist",
+      "meaning": "p_t/p_{t-1}-1 from stored unadjusted closes. Corporate actions appear as spurious jumps (a 2:1 split reports roughly -50%). Daily: previous session. Monthly: previous calendar month else null.",
+      "derived": true
+    },
+    "nav": {
+      "id_type": [
+        "cnpj"
+      ],
+      "asset_class": [
+        "fi",
+        "fidc",
+        "fii",
+        "fip",
+        "fiagro"
+      ],
+      "grain": [
+        "month"
+      ],
+      "source": "cvm",
+      "meaning": "Fund net assets (vl_patrim_liq)."
+    },
+    "quota": {
+      "id_type": [
+        "cnpj"
+      ],
+      "asset_class": [
+        "fi"
+      ],
+      "grain": [
+        "month"
+      ],
+      "source": "cvm",
+      "meaning": "FI unit quota. Comparable subclass only."
+    },
+    "delinquency": {
+      "id_type": [
+        "cnpj"
+      ],
+      "asset_class": [
+        "fidc",
+        "fiagro"
+      ],
+      "grain": [
+        "month"
+      ],
+      "source": "cvm",
+      "meaning": "Delinquent portfolio value (not a rate unless you divide by nav)."
+    },
+    "yield": {
+      "id_type": [
+        "cnpj"
+      ],
+      "asset_class": [
+        "fii"
+      ],
+      "grain": [
+        "month"
+      ],
+      "source": "cvm",
+      "meaning": "Monthly yield % as published (FII complemento)."
+    },
+    "inflows": {
+      "id_type": [
+        "cnpj"
+      ],
+      "asset_class": [
+        "fi"
+      ],
+      "grain": [
+        "month"
+      ],
+      "source": "cvm",
+      "meaning": "Gross monthly subscriptions."
+    },
+    "redemptions": {
+      "id_type": [
+        "cnpj"
+      ],
+      "asset_class": [
+        "fi"
+      ],
+      "grain": [
+        "month"
+      ],
+      "source": "cvm",
+      "meaning": "Gross monthly redemptions."
+    },
+    "quotaholders": {
+      "id_type": [
+        "cnpj"
+      ],
+      "asset_class": [
+        "fi",
+        "fidc",
+        "fii",
+        "fip",
+        "fiagro"
+      ],
+      "grain": [
+        "month"
+      ],
+      "source": "cvm",
+      "meaning": "Number of unit-holders."
+    }
+  },
+  "notebook_reducers": {
+    "describe": "Per-column n, null_rate, min, max, last. No model.",
+    "corr": "Pairwise Pearson on complete pairs of the wide matrix. One relation among many.",
+    "rank": "Latest non-null value per id for the first metric, descending.",
+    "spread": "First column minus second column of the wide matrix, dates aligned."
+  },
   "constraints": [
     "Never invent a price, NAV, or identifier match.",
     "Missing observations stay null; do not ffill or interpolate.",
@@ -1713,7 +1946,7 @@ SELECT $json$
     "Default windows are honest: with no explicit `to`, fund metrics end at each family's latest COMPLETE period (coverage() reports it as complete_through) — a partially-filed trailing month is not served. An explicit `to` serves the window verbatim, partial months included.",
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
-    "Row caps, and how each surface tells you it hit one — getting this wrong means silently analysing a TRUNCATED panel, the exact fabrication this API is built to prevent. The SQL functions LIMIT at cap+1 (panel 100001, series 5001). On PostgREST (the deployed surface) that comes back as a 200 with exactly cap+1 rows: a count of exactly 100001 (or 5001) means TRUNCATED — discard it and narrow ids, metrics or the window; it never answers 400 for size. The local /v1 Flask adapter converts that same sentinel into a 400. Check the row count, not just the status code.",
+    "Row caps — getting this wrong means silently analysing a TRUNCATED panel, the exact fabrication this API exists to prevent. THE BINDING CAP IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. It is NOT the SQL cap+1 sentinel (panel 100001, series 5001): that sentinel is unreachable on the deployed surface and must not be used to detect truncation. Measured 2026-08-28 against production: panel for one ticker from 2019 returns exactly 1000 rows spanning 2019-01-02..2023-01-09 with a 200, and the OLDEST rows are the ones kept — so a truncated series looks like a complete series that simply ends three years ago. DETECT IT WITH THE Content-Range RESPONSE HEADER, which is the only signal there is: `0-999/*` means truncated, and sending `Prefer: count=exact` turns it into `0-999/1906` so you also learn the true total. A range whose end is below 999 is complete. RANGE PAGING DOES NOT WORK ON RPC: sending `Range: 1000-1999` to /rest/v1/rpc/panel returns the SAME first page again (verified), so a panel cannot be paged — narrow p_from/p_to, ids or metrics until Content-Range comes back under 1000. GET views do page with Range normally. The local /v1 Flask adapter is a different surface with its own cap+1 400 behaviour; do not carry its rules over.",
     "An unrecognised metric name is IGNORED, not rejected: the panel comes back smaller and perfectly plausible. Take metric names from this catalog's `metrics` map, never from memory.",
     "universe is capped at 500 rows, alphabetical, and does not paginate — it is a sampler, not a census. To enumerate a family, page the funds view (GET /rest/v1/funds?entity_type=eq.fidc with Prefer: count=exact) and batch the resulting ids into panel calls.",
     "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
@@ -1725,16 +1958,6 @@ SELECT $json$
     "Price series stay unified: a codneg has exactly one instrument type, so quote_history works for any cash ticker without knowing its type first.",
     "universe(asset_class=option|termo) lists the codnegs that printed on that segment's most recent session — currently-listed series, not every series ever listed. Expired series stay queryable by codneg in option_history."
   ],
-  "endpoints": {
-    "catalog": "GET /v1/catalog",
-    "coverage": "GET /v1/coverage",
-    "funds": "GET /v1/funds/{cnpj}/nav",
-    "lookup": "GET /v1/lookup?q=",
-    "panel": "GET /v1/panel",
-    "quotes": "GET /v1/quotes/{ticker}",
-    "tools": "GET /v1/tools",
-    "universe": "GET /v1/universe?asset_class="
-  },
   "examples": [
     {
       "ask": "How does PETR4 relate to delinquency in this FIDC?",
@@ -1762,10 +1985,6 @@ SELECT $json$
       "then": "Model in the notebook from the matrix."
     }
   ],
-  "freq": [
-    "day",
-    "month"
-  ],
   "id_types": [
     "ticker",
     "cnpj",
@@ -1773,232 +1992,60 @@ SELECT $json$
     "option",
     "termo"
   ],
-  "kind": "catalog",
-  "metrics": {
-    "close": {
-      "asset_class": [
-        "equity",
-        "unit",
-        "bdr",
-        "fund_quota",
-        "index",
-        "right",
-        "bonus",
-        "cash_security",
-        "derivative"
-      ],
-      "grain": [
-        "day",
-        "month"
-      ],
-      "id_type": [
-        "ticker",
-        "option",
-        "termo"
-      ],
-      "meaning": "Unadjusted close. Cash tickers: the ticker's latest BDI board by default, classified from published TPMERC/ESPECI. Option/termo codnegs: that derivative segment's session close. Month = last session.",
-      "source": "b3_cotahist"
-    },
-    "close_return": {
-      "asset_class": [
-        "equity",
-        "unit",
-        "bdr",
-        "fund_quota",
-        "index",
-        "right",
-        "bonus",
-        "cash_security"
-      ],
-      "derived": true,
-      "grain": [
-        "day",
-        "month"
-      ],
-      "id_type": [
-        "ticker"
-      ],
-      "meaning": "p_t/p_{t-1}-1 from stored unadjusted closes. Corporate actions appear as spurious jumps (a 2:1 split reports roughly -50%). Daily: previous session. Monthly: previous calendar month else null.",
-      "source": "b3_cotahist"
-    },
-    "close_unit": {
-      "asset_class": [
-        "equity",
-        "unit",
-        "bdr",
-        "fund_quota",
-        "index",
-        "right",
-        "bonus",
-        "cash_security"
-      ],
-      "derived": true,
-      "grain": [
-        "day",
-        "month"
-      ],
-      "id_type": [
-        "ticker"
-      ],
-      "meaning": "Close per single quoted unit: close / quotation_factor, both published. Use this to compare price levels across papers; a paper quoted per lot (factor 1000) otherwise reads 1000x its unit price. Still unadjusted for corporate actions.",
-      "source": "b3_cotahist"
-    },
-    "delinquency": {
-      "asset_class": [
-        "fidc",
-        "fiagro"
-      ],
-      "grain": [
-        "month"
-      ],
-      "id_type": [
-        "cnpj"
-      ],
-      "meaning": "Delinquent portfolio value (not a rate unless you divide by nav).",
-      "source": "cvm"
-    },
-    "inflows": {
-      "asset_class": [
-        "fi"
-      ],
-      "grain": [
-        "month"
-      ],
-      "id_type": [
-        "cnpj"
-      ],
-      "meaning": "Gross monthly subscriptions.",
-      "source": "cvm"
-    },
-    "nav": {
-      "asset_class": [
-        "fi",
-        "fidc",
-        "fii",
-        "fip",
-        "fiagro"
-      ],
-      "grain": [
-        "month"
-      ],
-      "id_type": [
-        "cnpj"
-      ],
-      "meaning": "Fund net assets (vl_patrim_liq).",
-      "source": "cvm"
-    },
-    "quota": {
-      "asset_class": [
-        "fi"
-      ],
-      "grain": [
-        "month"
-      ],
-      "id_type": [
-        "cnpj"
-      ],
-      "meaning": "FI unit quota. Comparable subclass only.",
-      "source": "cvm"
-    },
-    "quotaholders": {
-      "asset_class": [
-        "fi",
-        "fidc",
-        "fii",
-        "fip",
-        "fiagro"
-      ],
-      "grain": [
-        "month"
-      ],
-      "id_type": [
-        "cnpj"
-      ],
-      "meaning": "Number of unit-holders.",
-      "source": "cvm"
-    },
-    "redemptions": {
-      "asset_class": [
-        "fi"
-      ],
-      "grain": [
-        "month"
-      ],
-      "id_type": [
-        "cnpj"
-      ],
-      "meaning": "Gross monthly redemptions.",
-      "source": "cvm"
-    },
-    "volume": {
-      "asset_class": [
-        "equity",
-        "unit",
-        "bdr",
-        "fund_quota",
-        "index",
-        "right",
-        "bonus",
-        "cash_security",
-        "derivative"
-      ],
-      "grain": [
-        "day",
-        "month"
-      ],
-      "id_type": [
-        "ticker",
-        "option",
-        "termo"
-      ],
-      "meaning": "Session traded volume (BRL). Cash: the ticker's latest BDI board by default; option/termo: that derivative segment. Month = last session.",
-      "source": "b3_cotahist"
-    },
-    "yield": {
-      "asset_class": [
-        "fii"
-      ],
-      "grain": [
-        "month"
-      ],
-      "id_type": [
-        "cnpj"
-      ],
-      "meaning": "Monthly yield % as published (FII complemento).",
-      "source": "cvm"
-    }
-  },
-  "notebook_reducers": {
-    "corr": "Pairwise Pearson on complete pairs of the wide matrix. One relation among many.",
-    "describe": "Per-column n, null_rate, min, max, last. No model.",
-    "rank": "Latest non-null value per id for the first metric, descending.",
-    "spread": "First column minus second column of the wide matrix, dates aligned."
+  "asset_classes": [
+    "equity",
+    "unit",
+    "bdr",
+    "fund_quota",
+    "index",
+    "right",
+    "bonus",
+    "cash_security",
+    "fi",
+    "fidc",
+    "fii",
+    "fip",
+    "fiagro",
+    "cia",
+    "derivative"
+  ],
+  "freq": [
+    "day",
+    "month"
+  ],
+  "endpoints": {
+    "catalog": "GET /v1/catalog",
+    "tools": "GET /v1/tools",
+    "panel": "GET /v1/panel",
+    "lookup": "GET /v1/lookup?q=",
+    "universe": "GET /v1/universe?asset_class=",
+    "quotes": "GET /v1/quotes/{ticker}",
+    "funds": "GET /v1/funds/{cnpj}/nav",
+    "coverage": "GET /v1/coverage"
   },
   "postgrest": {
-    "auctions": "GET /rest/v1/auctions",
-    "bdrs": "GET /rest/v1/bdrs",
-    "cash_securities": "GET /rest/v1/cash_securities",
-    "coverage": "POST /rest/v1/rpc/coverage",
-    "equities": "GET /rest/v1/equities",
-    "fund_nav": "POST /rest/v1/rpc/fund_nav",
-    "fund_profile": "POST /rest/v1/rpc/fund_profile",
-    "fund_quotas": "GET /rest/v1/fund_quotas",
-    "funds_view": "GET /rest/v1/funds",
-    "lookup": "POST /rest/v1/rpc/lookup",
-    "option_chain": "POST /rest/v1/rpc/option_chain",
-    "option_exercises": "POST /rest/v1/rpc/option_exercises",
-    "option_history": "POST /rest/v1/rpc/option_history",
     "panel": "POST /rest/v1/rpc/panel",
+    "lookup": "POST /rest/v1/rpc/lookup",
+    "universe": "POST /rest/v1/rpc/universe",
+    "coverage": "POST /rest/v1/rpc/coverage",
+    "search_funds": "POST /rest/v1/rpc/search_funds",
+    "fund_profile": "POST /rest/v1/rpc/fund_profile",
+    "fund_nav": "POST /rest/v1/rpc/fund_nav",
     "quote_history": "POST /rest/v1/rpc/quote_history",
     "quote_latest": "POST /rest/v1/rpc/quote_latest",
     "quotes_view": "GET /rest/v1/quotes",
-    "search_funds": "POST /rest/v1/rpc/search_funds",
-    "termo_history": "POST /rest/v1/rpc/termo_history",
+    "funds_view": "GET /rest/v1/funds",
+    "equities": "GET /rest/v1/equities",
+    "bdrs": "GET /rest/v1/bdrs",
     "units": "GET /rest/v1/units",
-    "universe": "POST /rest/v1/rpc/universe"
-  },
-  "primitive": "panel",
-  "version": 12
+    "fund_quotas": "GET /rest/v1/fund_quotas",
+    "cash_securities": "GET /rest/v1/cash_securities",
+    "auctions": "GET /rest/v1/auctions",
+    "option_chain": "POST /rest/v1/rpc/option_chain",
+    "option_history": "POST /rest/v1/rpc/option_history",
+    "option_exercises": "POST /rest/v1/rpc/option_exercises",
+    "termo_history": "POST /rest/v1/rpc/termo_history"
+  }
 }
 $json$::jsonb;
 $fn$;

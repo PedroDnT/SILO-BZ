@@ -1,25 +1,22 @@
--- Monthly ETF exchange activity from the B3 COTAHIST tape, for /etf.
+-- Monthly ETF activity on the standard-lot cash board: median close, traded
+-- volume, and how many distinct ETF tickers printed.
 --
--- This is the EXCHANGE side of the ETF market — traded price and volume of
--- fund_quota rows classified instrument_subtype = 'etf' (CODBDI 14, via
--- vw_b3_instrument_typed; never guessed from ticker shape) on the standard-lot
--- cash board (tpmerc '010'). It exists because the NAV side is sparse
--- post-CVM-175 (etf_daily's CNPJ join broke); the exchange tape has no such
--- gap. Prices are UNADJUSTED closes straight from COTAHIST.
+-- READS THE MATVIEW, NOT THE TAPE (migration 30) — see b3_monthly_volume.sql.
 --
--- median_close is a cross-sectional "typical ETF print" per month — ETFs quote
--- at wildly different price points, so a median, not a mean; it is NOT an
--- index and says nothing about returns. Volume is summed across all ETF rows.
+-- median_close is precomputed at this exact grain, because a median cannot be
+-- re-aggregated: there is no way to combine per-subtype medians into a correct
+-- one, so the matview computes percentile_cont at the grain that is served.
 --
--- No latest_complete_period() clamp: session prints are complete by
--- construction; the bound is the tape's own max(trade_date).
+-- The subtype grain is the ETF one: instrument_subtype = 'etf' under
+-- instrument_type = 'fund_quota'. That subtype now survives B3's late-2019
+-- board-code change because vw_b3_instrument_typed falls back to
+-- mv_b3_isin_subtype — which is what closed the 2019-08 volume gap.
 --
--- ZERO-ROW SAFETY: generate_series month spine drives the rows, the aggregate
--- is LEFT JOINed — an empty tape yields NULL months, never the 0-row source
--- whose 0-byte parquet kills the Evidence build.
+-- ZERO-ROW SAFETY: the month spine drives the row count; the aggregate is
+-- LEFT JOINed on, so an empty matview yields NULLs, never a 0-row source.
 with bounds as (
   select coalesce(
-           (select date_trunc('month', max(trade_date)) from b3_cotahist),
+           (select max(period) from mv_b3_monthly_activity),
            date '2019-01-01'
          ) as month_end
 ),
@@ -33,14 +30,14 @@ spine as (
 ),
 agg as (
   select
-    date_trunc('month', trade_date)::date                              as period,
-    percentile_cont(0.5) within group (order by preco_fechamento)      as median_close,
-    sum(volume) / 1e9                                                  as volume_bn,
-    count(distinct codneg)                                             as n_etf_tickers
-  from vw_b3_instrument_typed
-  where tpmerc = '010'
+    period,
+    median_close,
+    volume / 1e9 as volume_bn,
+    n_tickers    as n_etf_tickers
+  from mv_b3_monthly_activity
+  where grain = 'subtype'
+    and tpmerc = '010'
     and instrument_subtype = 'etf'
-  group by date_trunc('month', trade_date)
 )
 select
   sp.period,

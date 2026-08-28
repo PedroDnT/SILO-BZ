@@ -54,6 +54,22 @@ BEGIN
       'REFRESH MATERIALIZED VIEW CONCURRENTLY mv_b3_isin_subtype'
     );
 
+    -- mv_b3_monthly_activity — 06:18 UTC daily, AFTER mv_b3_isin_subtype (06:12)
+    -- because it reads vw_b3_instrument_typed, which falls back to that matview
+    -- for an instrument's subtype. Refreshing in the other order would bake a
+    -- day-old subtype into the monthly ETF/FII splits.
+    --
+    -- This is the one full pass over the tape per day. It exists so the
+    -- dashboard does not make five of them per build — which on 2026-08-28 ran
+    -- the production build past Vercel's 45-minute ceiling and held locks long
+    -- enough to fail two schema applies. Doing it here, once, at 06:18, is the
+    -- whole point: nothing interactive is waiting on it.
+    PERFORM cron.schedule(
+      'refresh-b3-monthly-activity',
+      '18 6 * * *',
+      'REFRESH MATERIALIZED VIEW CONCURRENTLY mv_b3_monthly_activity'
+    );
+
     -- fact_security_monthly — 06:25 UTC daily
     PERFORM cron.schedule(
       'refresh-fact-security-monthly',

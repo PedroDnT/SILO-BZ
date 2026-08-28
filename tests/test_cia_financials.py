@@ -109,11 +109,15 @@ class FakeMember:
 class TestCiaAccountFieldMap:
     def test_metadata(self):
         assert _account_map.TABLE == "cia_account"
-        # Conflict key must match uq_cia_account exactly (incl. coluna_df, added
-        # by migration 05 so DMPL equity-component rows are not collapsed).
+        # Conflict key must match uq_cia_account exactly. Two columns are in it
+        # only because leaving them out silently destroyed rows:
+        #   coluna_df    — migration 05, DMPL equity components (~85% collapse)
+        #   dt_ini_exerc — migration 29, ITR quarter vs year-to-date (40% of
+        #                  DRE_con rows in itr_cia_aberta_2025.zip)
         assert _account_map.CONFLICT == (
             "cd_cvm", "doc_type", "grupo", "escopo",
-            "dt_refer", "ordem_exerc", "coluna_df", "cd_conta", "versao",
+            "dt_refer", "ordem_exerc", "coluna_df", "dt_ini_exerc",
+            "cd_conta", "versao",
         )
 
     def test_dmpl_row_captures_coluna_df(self):

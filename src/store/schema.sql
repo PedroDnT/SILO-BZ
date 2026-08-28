@@ -1248,3 +1248,98 @@ LEFT JOIN mv_b3_isin_subtype m ON m.isin = q.isin;
 
 COMMENT ON VIEW vw_b3_instrument_typed IS
     'B3 COTAHIST rows classified from PUBLISHED fields only (TPMERC, ESPECI, CODBDI, ISIN). v3: index/right/bonus split out of the residual cash_security bucket, and fund subtype falls back to the ISIN''s own classified sessions so an ETF stays an ETF across a board-code change.';
+
+-- ---------------------------------------------------------------------------
+-- mv_b3_monthly_activity — monthly COTAHIST aggregates (migration 30)
+--
+-- Exists so the dashboard stops aggregating the full 2019-2026 tape on every
+-- build. Five sources did; on 2026-08-28 that ran the production build past
+-- Vercel's 45-minute ceiling and the site did not rebuild. The same scans held
+-- AccessShareLock long enough to kill two schema applies the same day.
+--
+-- GROUPING SETS because COUNT(DISTINCT ...) does not re-aggregate; `grain` is
+-- an explicit label because a NULL subtype means "rolled up" on one row and
+-- "this instrument has no subtype" on another. Declared AFTER
+-- vw_b3_instrument_typed's final definition below, so it is created here only
+-- once that view exists — see the ordering note in migration 30.
+-- ---------------------------------------------------------------------------
+CREATE MATERIALIZED VIEW IF NOT EXISTS mv_b3_monthly_activity AS
+WITH src AS (
+    SELECT
+        date_trunc('month', v.trade_date)::date AS period,
+        v.trade_date,
+        v.codneg,
+        v.tpmerc,
+        v.instrument_type,
+        v.instrument_subtype,
+        v.volume,
+        v.preco_fechamento,
+        CASE
+            WHEN v.tpmerc IN ('010', '020', '021') THEN 'cash'
+            WHEN v.tpmerc IN ('070', '080')        THEN 'option'
+            WHEN v.tpmerc IN ('012', '013')        THEN 'option_exercise'
+            WHEN v.tpmerc = '030'                  THEN 'forward'
+            WHEN v.tpmerc = '017'                  THEN 'auction'
+            ELSE 'other'
+        END AS market_segment
+    FROM vw_b3_instrument_typed v
+)
+SELECT
+    CASE
+        WHEN GROUPING(s.instrument_subtype) = 0 THEN 'subtype'
+        WHEN GROUPING(s.instrument_type)    = 0 THEN 'type'
+        WHEN GROUPING(s.tpmerc)             = 0 THEN 'tpmerc'
+        ELSE                                         'segment'
+    END                                                              AS grain,
+    s.period,
+    s.market_segment,
+    s.tpmerc,
+    s.instrument_type,
+    s.instrument_subtype,
+    SUM(s.volume)                                                    AS volume,
+    COUNT(DISTINCT s.codneg)                                         AS n_tickers,
+    COUNT(DISTINCT s.trade_date)                                     AS n_sessions,
+    percentile_cont(0.5) WITHIN GROUP (ORDER BY s.preco_fechamento)  AS median_close
+FROM src s
+GROUP BY GROUPING SETS (
+    -- monthly volume by board code, and the option call/put split
+    (s.period, s.market_segment, s.tpmerc),
+    -- distinct series across a whole segment: a call and a put are different
+    -- codneg, but that is a fact about B3's naming, not something to lean on
+    (s.period, s.market_segment),
+    -- volume and ticker counts per instrument type (cash boards)
+    (s.period, s.market_segment, s.tpmerc, s.instrument_type),
+    -- ETF/FII splits and the ETF median close
+    (s.period, s.market_segment, s.tpmerc, s.instrument_type, s.instrument_subtype)
+)
+WITH NO DATA;
+
+-- REFRESH ... CONCURRENTLY (pg_cron, 08_cron_schedules.sql) requires a unique
+-- index. NULLS NOT DISTINCT: the rolled-up grains carry NULLs in the columns
+-- they roll up, and without it those rows would not be unique to the index.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_b3_monthly_activity
+    ON mv_b3_monthly_activity (grain, period, market_segment, tpmerc,
+                               instrument_type, instrument_subtype)
+    NULLS NOT DISTINCT;
+
+CREATE INDEX IF NOT EXISTS idx_b3_monthly_activity_grain
+    ON mv_b3_monthly_activity (grain, period);
+
+DO $silo_refresh_mv_b3_monthly_activity$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname = 'mv_b3_monthly_activity'
+      AND c.relkind = 'm'
+      AND NOT c.relispopulated
+  ) THEN
+    REFRESH MATERIALIZED VIEW mv_b3_monthly_activity;
+  END IF;
+END
+$silo_refresh_mv_b3_monthly_activity$;
+
+COMMENT ON MATERIALIZED VIEW mv_b3_monthly_activity IS
+  'Monthly COTAHIST aggregates at four grains (see the grain column). Exists so the dashboard stops scanning the full tape on every build — that cost a production deploy on 2026-08-28. Refreshed daily by pg_cron; filter on grain, never on NULL.';

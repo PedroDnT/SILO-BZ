@@ -919,3 +919,110 @@ def test_partitioned_and_view_relkinds_are_in_scope():
     # partitions, which a parent-only REVOKE never reaches.
     body = _strip_comments(SQL12)
     assert "relkind IN ('r', 'p', 'v', 'm', 'f')" in body
+
+
+# ---------------------------------------------------------------------------
+# Price is the default; everything else is opt-in.
+#
+# panel already defaulted to close+nav, but nothing in the contract SAID so, and
+# an agent that cannot see a default asks for every metric it can enumerate — a
+# price lookup becomes seven columns of fund accounting it never reads. The
+# wide endpoints are the honest exception: a SQL function's RETURNS TABLE is
+# fixed, so they are narrowed with PostgREST ?select= instead.
+# ---------------------------------------------------------------------------
+
+
+def test_panel_still_defaults_to_price():
+    panel = FUNCS["api.panel"]
+    assert "p_metrics TEXT[] DEFAULT ARRAY['close', 'nav']::TEXT[]" in panel
+    # and the COALESCE fallback inside params must agree with the signature,
+    # or an explicit NULL would widen what the signature narrows.
+    assert "COALESCE(p_metrics, ARRAY['close','nav']::TEXT[])" in panel
+
+
+def test_catalog_declares_the_default_machine_readably():
+    from serve.catalog import catalog_payload
+
+    d = catalog_payload()["defaults"]
+    assert d["panel"]["metrics"] == ["close", "nav"]
+    assert "opt-in" in d["principle"]
+    # The escape hatch must be named, not implied: an agent told only "these are
+    # the defaults" has no documented way to get the other columns back.
+    assert "p_metrics" in d["panel"]["to_widen"]
+    assert "select=" in d["wide_endpoints"]["to_narrow"]
+
+
+def test_catalog_default_matches_the_sql_signature():
+    """The declared default and the actual SQL default cannot drift apart."""
+    from serve.catalog import catalog_payload
+
+    declared = catalog_payload()["defaults"]["panel"]["metrics"]
+    panel = FUNCS["api.panel"]
+    m = re.search(r"p_metrics TEXT\[\] DEFAULT ARRAY\[(.*?)\]::TEXT\[\]", panel)
+    assert m, "could not read p_metrics default out of api.panel"
+    actual = [x.strip().strip("'") for x in m.group(1).split(",")]
+    assert actual == declared, f"catalog says {declared}, SQL says {actual}"
+
+
+# ---------------------------------------------------------------------------
+# The row cap an agent must actually defend against.
+#
+# An independent audit of the live deployment (2026-08-27) found panel returning
+# exactly 1000 rows spanning 2019-01-02..2023-01-09 for a request covering
+# 2019..2026 — a 200, the OLDEST rows kept, and nothing in the body saying so.
+# Reproduced against production 2026-08-28. The cause is PostgREST db-max-rows,
+# not the SQL cap+1 sentinel this catalog used to tell agents to check: behind a
+# 1000-row ceiling a count of 100001 can never occur.
+#
+# Content-Range is the only signal, and Range paging does NOT work on RPC
+# (Range: 1000-1999 returns 0-999/1906 again — verified).
+# ---------------------------------------------------------------------------
+
+
+def _cap_constraint() -> str:
+    from serve.catalog import CONSTRAINTS
+
+    hits = [c for c in CONSTRAINTS if "Row caps" in c]
+    assert len(hits) == 1, "expected exactly one row-cap constraint"
+    return hits[0]
+
+
+def test_cap_constraint_names_the_binding_cap_and_the_only_signal():
+    c = _cap_constraint()
+    assert "1000" in c, "the binding cap is 1000 rows (PostgREST db-max-rows)"
+    assert "Content-Range" in c, "Content-Range is the only truncation signal"
+    assert "OLDEST" in c, "which end is kept is the reason truncation is invisible"
+
+
+def test_cap_constraint_no_longer_tells_agents_to_check_an_unreachable_sentinel():
+    c = _cap_constraint()
+    # The sentinel may still be MENTIONED (to say it is unreachable), but the
+    # constraint must not present it as the way to detect truncation.
+    assert "unreachable" in c.lower(), (
+        "100001/5001 cannot fire behind a 1000-row ceiling; saying so is the point"
+    )
+    assert "must not be used to detect truncation" in c
+
+
+def test_cap_constraint_warns_that_rpc_paging_does_not_work():
+    c = _cap_constraint()
+    assert "RANGE PAGING DOES NOT WORK ON RPC" in c, (
+        "telling an agent to page an RPC would hand it page 1 twice and call it page 2"
+    )
+
+
+def test_agent_instructions_point_at_the_header():
+    from serve.catalog import AGENT_INSTRUCTIONS
+
+    assert "Content-Range" in AGENT_INSTRUCTIONS
+
+
+def test_universe_bounds_the_tape_scan():
+    """api.universe('equity') took 6.83s and failed every anon call at 3s."""
+    body = _strip_comments(FUNCS["api.universe"])
+    assert "tape_floor" in body, "universe must bound the partition key"
+    assert "mv_b3_monthly_activity" in body
+    # Both scans need it: latest_quote_session AND quote_rows.
+    assert body.count("f.from_date") >= 2, (
+        "bounding only the max() leaves quote_rows scanning every partition"
+    )
