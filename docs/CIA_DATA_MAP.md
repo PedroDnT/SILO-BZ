@@ -154,11 +154,29 @@ dt_refer desc` — the latest filing only. No time series over `cia_account`
 - **Most of `cia_ticker`.** `vw_company_ticker` carries seven columns; its only
   consumer selects one (`codneg`).
 
-## 8. Coverage caveat
+## 8. Coverage
 
-`docs/DATABASE_MAINTENANCE.md` records `cia_account` as holding only the 2026
-partition — "pre-2026 ITR/DFP never backfilled" — despite the backfill being
-wired from 2019 and partitions declared from 2010. A `cia_aberta` 2019–2026
-backfill was dispatched 2026-08-28 09:55Z and is exactly this history load,
-which is why it runs for hours. Re-check the partition sizes after it lands
-before quoting any coverage figure from this document.
+The `cia_aberta` 2019–2026 backfill dispatched 2026-08-28 09:55Z finished at
+13:52Z (3h57m). It superseded the "only the 2026 partition exists" note in
+`docs/DATABASE_MAINTENANCE.md`. Measured immediately after:
+
+| Partition | Size       | Est. rows |
+| --------- | ---------- | --------- |
+| 2010–2018 | 88 kB each | empty     |
+| 2019      | 2.6 GB     | 3.9M      |
+| 2020      | 3.3 GB     | 4.1M      |
+| 2021      | 3.8 GB     | 2.8M      |
+| 2022      | 3.8 GB     | 4.8M      |
+| 2023      | 3.8 GB     | 4.8M      |
+| 2024      | 3.8 GB     | 4.8M      |
+| 2025      | 3.7 GB     | 4.6M      |
+| 2026      | 1.8 GB     | 1.7M      |
+
+**~31M rows, ~26.5 GB**, 2019 through the current year. The 2010–2018
+partitions are declared and empty because the backfill is wired from 2019, not
+because those years failed.
+
+This is the single largest thing in the warehouse after `cvm_fi_balancete`, and
+sections 4–7 above still apply to all of it: an eight-year, 31M-row financial
+history that the API exposes nothing of and the analytical layer does not model.
+The `webapp/` site reads the latest filing per company and nothing else.
