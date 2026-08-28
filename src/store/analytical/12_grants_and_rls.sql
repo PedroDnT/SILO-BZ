@@ -77,10 +77,68 @@ ALTER ROLE silo_api SET default_transaction_read_only = on;
 -- the grants stay on silo_api.
 
 -- ---------------------------------------------------------------------------
--- Landing tables: no client-role access. Revoked on every apply because
--- grants persist on the live DB until revoked (earlier revisions granted
--- these to anon/authenticated).
+-- Landing tables: no client-role access.
+--
+-- DENY BY DEFAULT. This used to be the hand-written list below and nothing
+-- else, and an allowlist of revokes cannot track an append-only schema.
+-- Measured on production 2026-08-28, `anon` still held SELECT on 77 objects in
+-- `public`, among them every b3_cotahist_* and cvm_fi_diario_* PARTITION (the
+-- list revokes only the parent, and partitions carry their own ACLs), all 31M
+-- rows of cia_account, cvm_fi_balancete, the cia_* company tables, bacen_*,
+-- and 21 views. Verified reachable: with `Accept-Profile: public` the
+-- publishable key reads public.cvm_fi_balancete and public.cia_account over
+-- PostgREST, straight past the api contract this file exists to enforce.
+--
+-- Nothing private leaked — it is all CVM/BACEN/B3 open data, and the leftover
+-- app tables (messages, profiles, threads*) have RLS on and returned []. But
+-- the whole 78 GB warehouse was anonymously scannable, which is an egress and
+-- load exposure on a database already short of disk, and it made SERVING.md's
+-- "landing tables revoked" claim false.
+--
+-- Every new dataset arrives granted, because Supabase's default privileges
+-- grant anon SELECT on new tables in public. So the sweep below runs FIRST and
+-- the explicit GRANTs that follow are the entire client surface. Adding a
+-- dataset can no longer quietly widen it; forgetting to grant something breaks
+-- loudly, which is the failure direction to prefer.
+--
+-- SCOPE: tables with RLS DISABLED, which is exactly the set that is actually
+-- reachable. Deliberately NOT `ALL TABLES IN SCHEMA public`: this database also
+-- holds another application's tables (messages, profiles, threads,
+-- thread_participants, thread_summaries — the Edge Functions' data). Those have
+-- RLS enabled, so RLS is their boundary and they are already closed to anon;
+-- stripping `authenticated` from them would break an app whose privilege needs
+-- this repo cannot see. A sweep that fixes our exposure by breaking someone
+-- else's app is not a fix.
+--
+-- No ALTER DEFAULT PRIVILEGES here for the same reason: it would apply to every
+-- future table in `public`, that other application's included. The sweep instead
+-- runs on every analytical apply, so a newly added table is client-visible for
+-- at most one deploy cycle — and only ever with published CVM/BACEN/B3 data.
 -- ---------------------------------------------------------------------------
+DO $revoke$
+DECLARE
+    t RECORD;
+    n INT := 0;
+BEGIN
+    FOR t IN
+        SELECT c.oid::regclass AS obj
+        FROM pg_class c
+        JOIN pg_namespace ns ON ns.oid = c.relnamespace
+        WHERE ns.nspname = 'public'
+          AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+          AND NOT c.relrowsecurity
+    LOOP
+        EXECUTE format('REVOKE ALL ON %s FROM anon, authenticated', t.obj);
+        n := n + 1;
+    END LOOP;
+    RAISE NOTICE 'revoked anon/authenticated on % RLS-disabled public objects', n;
+END
+$revoke$;
+
+-- The named revokes are kept below the sweep. They are now redundant for
+-- privileges and load-bearing as documentation: this is the list someone reads
+-- to see which tables are deliberately client-invisible, and each one still
+-- fails loudly here if the object is ever dropped.
 REVOKE ALL ON TABLE cvm_fund_registry      FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_fi_diario          FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_fi_cda             FROM anon, authenticated;

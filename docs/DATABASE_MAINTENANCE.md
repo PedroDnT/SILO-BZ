@@ -26,6 +26,21 @@ your environment or `.env`.
 
 `.github/workflows/backfill.yml` is on-demand only (see §4).
 
+> **⚠️ All three share one concurrency group (`supabase-ingest`, `cancel-in-progress:
+> false`), and GitHub keeps only ONE pending run per group.** A queued run is therefore
+> not safe: when a newer run enters the group, the older *pending* one is **cancelled**,
+> silently, with no failure anywhere.
+>
+> Observed 2026-08-28: a `cia_aberta` backfill ran for hours; an `analytics-only`
+> deploy dispatched behind it sat pending for 70 minutes and was then evicted by the
+> scheduled Ingest Watchdog entering the group. The deploy reported `cancelled` — easy
+> to read as "someone cancelled it" rather than "it never ran".
+>
+> **So: do not queue a deploy behind a long backfill.** Wait until the group is free
+> (no in-progress or pending run on daily_ingest / backfill / watchdog), then dispatch.
+> If a deploy shows `cancelled` with no logs, this is almost certainly why — re-dispatch
+> it, nothing is broken.
+
 > **A green run used to mean nothing.** In June 2026 a backfill spent 4h22m failing every
 > download, printed `0 total rows`, exited 0, and left `cvm_fi_diario` 2024 **and** 2025
 > completely empty behind a green check. `run_daily` now exits non-zero when any source

@@ -867,3 +867,55 @@ def test_close_unit_is_in_the_catalog_metric_map():
     assert "close_unit" in METRICS
     assert METRICS["close_unit"]["source"] == "b3_cotahist"
     assert METRICS["close_unit"].get("derived") is True
+
+
+# ---------------------------------------------------------------------------
+# The privilege sweep (SERVING.md Step 6).
+#
+# The revoke used to be a hand-written list of 19 tables, and an allowlist of
+# revokes cannot track an append-only schema. Production on 2026-08-28 still
+# had anon holding SELECT on 77 objects in `public` — every b3_cotahist_* and
+# cvm_fi_diario_* partition (the list revokes only the parent, and partitions
+# carry their own ACLs), all of cia_account, cvm_fi_balancete, the cia_*
+# tables — and `Accept-Profile: public` made them readable over PostgREST with
+# the publishable key.
+# ---------------------------------------------------------------------------
+
+
+def test_privilege_sweep_revokes_every_rls_disabled_public_object():
+    body = _strip_comments(SQL12)
+    assert "REVOKE ALL ON %s FROM anon, authenticated" in body, (
+        "12_grants_and_rls.sql must sweep, not enumerate: a per-table revoke list "
+        "silently misses every dataset and partition added after it was written"
+    )
+    assert "NOT c.relrowsecurity" in body
+    assert "nspname = 'public'" in body
+
+
+def test_sweep_precedes_the_grants_it_must_not_undo():
+    body = _strip_comments(SQL12)
+    sweep = body.index("REVOKE ALL ON %s FROM anon, authenticated")
+    first_grant = body.index("GRANT SELECT ON fact_fund_monthly")
+    assert sweep < first_grant, (
+        "the sweep must run before the explicit GRANTs, or it revokes the client "
+        "surface this file exists to define"
+    )
+
+
+def test_sweep_does_not_touch_the_other_application_tables():
+    """RLS-enabled tables belong to the Edge-Functions app, not this pipeline.
+
+    Their boundary is RLS; stripping `authenticated` from them would break an
+    app whose privilege needs this repo cannot see.
+    """
+    body = _strip_comments(SQL12)
+    assert "ON ALL TABLES IN SCHEMA public FROM anon" not in body
+    assert "ALTER DEFAULT PRIVILEGES" not in body
+
+
+def test_partitioned_and_view_relkinds_are_in_scope():
+    # 'p' partitioned parents, 'r' the partitions themselves, 'v'/'m' the views
+    # and matviews built over the tape — the 2026-08-28 exposure was mostly
+    # partitions, which a parent-only REVOKE never reaches.
+    body = _strip_comments(SQL12)
+    assert "relkind IN ('r', 'p', 'v', 'm', 'f')" in body

@@ -450,6 +450,11 @@ CREATE TABLE IF NOT EXISTS cvm_fund_registry (
     admin_name   TEXT,                       -- administrator legal name
     gestor_id    TEXT,                       -- gestor CPF (PF) or CNPJ (PJ)
     gestor_name  TEXT,                       -- gestor (portfolio manager) name
+    -- Net assets as published for THIS record, with its own as-of date: a class
+    -- row carries the class PL, a fund row the fund PL. Never read the value
+    -- without the date (migration 28).
+    vl_patrim_liq NUMERIC(20,2),
+    dt_patrim_liq DATE,
     raw          JSONB,
     fetched_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_fund_registry UNIQUE (cnpj, entity_type)
