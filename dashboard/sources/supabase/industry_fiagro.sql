@@ -12,13 +12,28 @@
 -- before that are legitimately empty, not a pipeline failure.
 --
 -- inadimpl_num1 = delinquent value / net assets, in percent, computed here.
-with spine as (
-  select generate_series(
-           -- clamp: fiagro's completeness bound (mv_period_completeness)
-           date_trunc('month', latest_complete_period('fiagro')) - interval '23 months',
-           date_trunc('month', latest_complete_period('fiagro')),
-           interval '1 month'
-         )::date as period
+with bounds as (
+  -- BOTH edges are clamped to reality. The end is fiagro's completeness bound
+  -- (mv_period_completeness) so a partially-filed month is not served. The
+  -- START is the first month CVM actually published for the family: the file
+  -- begins 2025-05, so a bare 24-month window rendered ~14 leading months of
+  -- structural emptiness that read as "FIAGRO collapsed to zero" rather than
+  -- "FIAGRO did not exist here yet". greatest() keeps the shorter of the two,
+  -- and the spine still drives the row count, so this cannot produce a 0-row
+  -- source (the zero-byte-parquet build killer).
+  select
+    date_trunc('month', latest_complete_period('fiagro'))::date as p_end,
+    greatest(
+      (date_trunc('month', latest_complete_period('fiagro')) - interval '23 months')::date,
+      coalesce(
+        (select date_trunc('month', min(period))::date from cvm_fiagro_mensal),
+        (date_trunc('month', latest_complete_period('fiagro')) - interval '23 months')::date
+      )
+    ) as p_start
+),
+spine as (
+  select generate_series(b.p_start, b.p_end, interval '1 month')::date as period
+  from bounds b
 )
 select
   sp.period,

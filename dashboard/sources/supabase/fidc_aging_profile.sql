@@ -16,7 +16,14 @@
 -- Bucket labels are zero-prefixed ("01 …" … "10 …") so that any downstream
 -- alphabetical sort still lands in chronological order.
 with latest as (
-  select max(period) as period from cvm_fidc_aging
+  -- Completeness clamp, matching every other /fidc source: bare max(period)
+  -- lands on a partially-filed trailing month, so the "latest period" profile
+  -- was summing only the funds that had already reported and reading as a
+  -- collapse in receivables. latest_complete_period keeps FIDC's month-end
+  -- convention, so this compares like with like.
+  select max(period) as period
+    from cvm_fidc_aging
+   where period <= latest_complete_period('fidc')
 ),
 totals as (
   select

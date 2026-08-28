@@ -78,16 +78,17 @@ select * from supabase.etf_market_series
 
 <BigValue data={etf_counts} value=total_etfs label="Total ETFs" fmt=num0/>
 <BigValue data={etf_counts} value=active_etfs label="Active" fmt=num0/>
-<BigValue data={etf_counts} value=providers label="Providers" fmt=num0/>
+<BigValue data={etf_counts} value=providers label="Brands" fmt=num0/>
 <BigValue data={etf_counts} value=indices_tracked label="Indices Tracked" fmt=num0/>
 
 ---
 
-## ETFs by Provider
+## ETFs by Brand
 
-> Count of listed ETFs per issuer. This is a count of vehicles, **not** of assets:
-> the registry carries no net-assets figure, so a provider with many small ETFs
-> outranks one with a single large fund.
+> Count of listed ETFs per product brand (the curated seed label — "It Now",
+> "Trend" — not the CVM manager and not the index publisher). This is a count of
+> vehicles, **not** of assets: a brand with many small ETFs outranks one with a
+> single large fund.
 
 <BarChart
   data={etf_by_provider}
@@ -95,11 +96,11 @@ select * from supabase.etf_market_series
   y=n_etfs
   swapXY=true
   yAxisTitle="ETFs"
-  title="ETF Count by Provider"
+  title="ETF Count by Brand"
 />
 
 <DataTable data={etf_by_provider} rows=12>
-  <Column id=provider title="Provider"/>
+  <Column id=provider title="Brand"/>
   <Column id=n_etfs title="ETFs" fmt=num0/>
   <Column id=active title="Active" fmt=num0/>
 </DataTable>
@@ -136,15 +137,22 @@ select * from supabase.etf_market_series
 
 ## ETF Universe
 
-> The full registry, searchable by ticker, fund name, provider or index. `Status`
+> The full registry, searchable by ticker, fund name, manager or index. `Status`
 > is CVM's own registry status, not a liquidity or delisting judgement.
+>
+> **Manager, brand and index are three different things.** `Manager (CVM)` is the
+> gestor as published in CVM's cad_fi registry — the firm that runs the fund.
+> `Brand` is the curated product family label. `Index Tracked` is the index, and
+> the index's publisher (Bloomberg, S&P, Teva, B3…) is usually named inside it —
+> that firm indexes the fund, it does not manage it.
 
 <DataTable data={etf_list} rows=20 search=true>
   <Column id=ticker title="Ticker"/>
   <Column id=fund_name title="Fund"/>
-  <Column id=provider title="Provider"/>
+  <Column id=manager title="Manager (CVM)"/>
+  <Column id=brand title="Brand"/>
+  <Column id=index_name title="Index Tracked"/>
   <Column id=segment title="Segment"/>
-  <Column id=underlying_index title="Index"/>
   <Column id=status title="Status"/>
 </DataTable>
 
@@ -208,14 +216,15 @@ select * from supabase.etf_market_series
 <DataTable data={etf_market} rows=20 search=true>
   <Column id=ticker title="Ticker"/>
   <Column id=fund_name title="Fund"/>
-  <Column id=provider title="Provider"/>
-  <Column id=segment title="Segment"/>
-  <Column id=price title="Price (R$)" fmt='#,##0.00'/>
-  <Column id=nav title="NAV / Net Assets (R$)" fmt=num0/>
+  <Column id=manager title="Manager (CVM)"/>
+  <Column id=index_name title="Index Tracked"/>
+  <Column id=price title="Close, B3 (R$)" fmt='#,##0.00'/>
+  <Column id=price_date title="Close Date"/>
+  <Column id=nav title="Net Assets, CVM (R$)" fmt=num0/>
+  <Column id=nav_date title="NAV Date"/>
   <Column id=cotistas title="Quotaholders" fmt=num0/>
   <Column id=taxa_adm_num2 title="Adm Fee (%)" fmt=num2/>
   <Column id=ret_12m_num2 title="12m Return (%)" fmt=num2/>
-  <Column id=snapshot_date title="As Of"/>
 </DataTable>
 
 > **Returns, volatility, Sharpe and drawdown** (`ret_*`, `vol_12m_pct`,

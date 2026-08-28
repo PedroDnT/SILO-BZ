@@ -205,11 +205,12 @@ yAxisTitle="R$mm"
 > present — an empty bar is a bucket with nothing in it, not a missing bucket.
 
 <BarChart
-data={fidc_aging_profile}
-x=bucket
-y={['performing_mm','delinquent_mm']}
-type=grouped
-yAxisTitle="R$mm"
+  data={fidc_aging_profile}
+  x=bucket
+  y={['performing_mm', 'delinquent_mm']}
+  type=grouped
+  swapXY=true
+  xAxisTitle="R$mm"
   title="Performing vs Delinquent Receivables by Bucket (R$mm)"
 />
 

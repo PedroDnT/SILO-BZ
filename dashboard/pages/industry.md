@@ -217,13 +217,18 @@ title="Net Assets by Family — Last 36 Months (ex-FI, absolute)"
 > the left edge of the series with care.
 
 <BarChart
-data={industry_new_funds}
-x=period
-y={['fi_new','fidc_new','fii_new','fiagro_new','fip_new']}
-type=stacked
-yAxisTitle="New Funds"
-title="First-Reported Funds per Month"
+  data={industry_new_funds}
+  x=period
+  y={['fi_new', 'fidc_new', 'fii_new', 'fiagro_new']}
+  type=stacked
+  yAxisTitle="New Funds"
+  title="First-Reported Funds per Month — Monthly Filers"
 />
+
+> **FIP is not on this chart.** It files once a year, so every FIP's first period
+> lands on a January and it stacked into a fake formation spike each January. A
+> yearly filer on a monthly axis is a plotting artefact, not a market event; the
+> FIP universe is charted on its own annual basis in the FIP section below.
 
 ---
 
