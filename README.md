@@ -16,8 +16,9 @@ Data sources:
 - **CVM** (Comissão de Valores Mobiliários) — fund disclosures: FI, FIDC, FIP, FIAGRO, FII, SECURIT.
 - **BACEN** (Banco Central do Brasil) — SGS time series (SELIC, CDI, IPCA, IGP-M), PTAX exchange rates,
   Expectativas (Focus bulletin).
-- **B3** — public COTAHIST daily/yearly quotation zips (unadjusted OHLC, volume, ticker, ISIN).
-  Landed in `b3_cotahist`; not yet joined to `cia_*` / fund tables.
+- **B3** — public COTAHIST daily/yearly quotation zips (unadjusted OHLC, volume, ticker, ISIN)
+  in `b3_cotahist`, plus published corporate actions (splits, groupings, bonuses,
+  dividends) per ISIN in `b3_corporate_event`.
 
 Data is downloaded, parsed, validated, and upserted into a Supabase Postgres database via psycopg2.
 Ingest is GitHub Actions plus the pipeline CLI (`run_daily` / `run_backfill`); there is no
@@ -487,8 +488,14 @@ Remaining operator work (do not skip):
 - **`VERCEL_DEPLOY_HOOK_URL`** — optional; it is used only when a manual Daily Ingest
   dispatch sets `rebuild_dashboard=true`. Scheduled ingest and fills leave Vercel alone.
 - **`APIFY_TOKEN`** — the ETF market scrape self-skips without it.
-- **B3 ↔ fund/company join.** `b3_cotahist` is landed but not joined to `cia_*`; a
-  ticker↔CNPJ mapping has to come from a real source, never a guess.
+- **Company ↔ ticker** comes from CVM's published FCA valores-mobiliários filing
+  (`cia_ticker` → `vw_company_ticker`), never from name matching. A fund ↔ listed-company
+  edge still does not exist and is not inferred.
+- **Prices are not corporate-action adjusted.** `close_unit` (= `close / quotation_factor`,
+  both published) makes levels comparable across papers quoted per lot, but a split still
+  reads as a jump and `adjusted` is `false` on every row. `b3_corporate_event` holds the
+  published events; the adjustment ships once B3's per-label factor convention is verified
+  against the tape (`vw_b3_share_count_event`), not before.
 
 ## Execution roadmap
 
