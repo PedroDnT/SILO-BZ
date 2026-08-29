@@ -14,6 +14,7 @@ Getting that backwards silently stops publishing the site, so it is pinned here.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -55,10 +56,13 @@ def repo(tmp_path: Path) -> Path:
     return r
 
 
-def _gate(repo: Path) -> subprocess.CompletedProcess:
+def _gate(repo: Path, **env: str) -> subprocess.CompletedProcess:
+    """Run the gate. Keyword args become environment variables, so a test can
+    supply the VERCEL_* values Vercel injects into the Ignored Build Step."""
     return subprocess.run(
         ["bash", "scripts/vercel_should_build.sh"],
         cwd=repo, capture_output=True, text=True,
+        env={**os.environ, **env} if env else None,
     )
 
 
@@ -127,6 +131,60 @@ def test_fails_open_without_a_parent_commit(tmp_path: Path):
         "with no parent to diff against the gate must fail OPEN; a wrong skip "
         "silently ships a stale site"
     )
+
+
+def test_builds_when_the_dashboard_changed_since_the_last_deployment(repo: Path):
+    """The bug this diff base exists to fix.
+
+    Land a dashboard change, then push an unrelated commit on top. Diffing
+    HEAD^..HEAD asks "did the LAST commit touch the dashboard", sees nothing,
+    and skips — so the dashboard change never reaches the site even though the
+    deployed build predates it. VERCEL_GIT_PREVIOUS_SHA asks the question we
+    actually mean: has anything changed since what is currently deployed.
+    """
+    deployed = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True,
+    ).stdout.strip()
+    _commit(repo, "dashboard/page.md", "a real dashboard change\n")
+    _commit(repo, "README.md", "an unrelated commit on top\n")
+
+    assert _gate(repo).returncode == SKIP, (
+        "precondition: with no previous SHA the HEAD^ fallback skips — this is "
+        "the shape of the bug, kept here so the regression is visible"
+    )
+    result = _gate(repo, VERCEL_GIT_PREVIOUS_SHA=deployed)
+    assert result.returncode == BUILD, (
+        "the dashboard changed since the deployed commit, so the site is stale "
+        f"and must rebuild.\n{result.stdout}"
+    )
+
+
+def test_falls_back_to_head_parent_when_the_previous_sha_is_absent(repo: Path):
+    """Vercel shallow-clones, so the previous SHA can be SET yet unreachable.
+
+    Resolving it blindly would make `git diff` fail and — depending on how that
+    error were handled — could skip. The gate must notice and fall back.
+    """
+    _commit(repo, "dashboard/page.md", "changed\n")
+    result = _gate(repo, VERCEL_GIT_PREVIOUS_SHA="0" * 40)
+    assert result.returncode == BUILD, result.stdout
+    assert "HEAD^" in result.stdout, (
+        f"expected the fallback to be named in the log:\n{result.stdout}"
+    )
+
+
+def test_the_decision_log_names_the_vercel_variables(repo: Path):
+    """A deploy hook fires on an unchanged commit, so every path-diff rule
+    skips it — measured on 2026-08-29, when the hook returned 201 and the
+    deployment went straight to CANCELED. Vercel documents no deploy-hook flag,
+    so the log is the evidence for writing that rule later. Losing it would
+    mean guessing.
+    """
+    _commit(repo, "README.md", "docs only\n")
+    out = _gate(repo).stdout
+    for var in ("VERCEL_GIT_COMMIT_SHA", "VERCEL_GIT_PREVIOUS_SHA",
+                "VERCEL_GIT_COMMIT_REF", "VERCEL_ENV"):
+        assert var in out, f"{var} missing from the decision log:\n{out}"
 
 
 def test_vercel_json_wires_the_gate():
