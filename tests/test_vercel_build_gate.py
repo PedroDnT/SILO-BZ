@@ -178,6 +178,45 @@ def test_the_decision_log_names_the_vercel_variables(repo: Path):
         assert var in out, f"{var} missing from the decision log:\n{out}"
 
 
+@pytest.mark.parametrize("path", ["README.md", "docs/API.md", "tests/test_x.py"])
+def test_production_always_builds_even_with_nothing_to_diff(repo: Path, path: str):
+    """The deploy hook could never refresh the site, and this is the fix.
+
+    A hook fires on a commit that did not change — that is the point of it — so
+    every path-diff rule skipped it. Measured 2026-08-29 01:40 UTC: the hook
+    returned 201, created deployment dpl_DosS5xPKtYoroMGREr6XyaV4yYPq on
+    main@9664535, the gate found no dashboard change, and the deployment went
+    straight to CANCELED. The site had never once been refreshed by it.
+
+    Keying on VERCEL_ENV rather than on what triggered the build is what lets
+    it through: a hook on the production branch produces a production
+    deployment. Publishing a stale site to save 20 minutes is the wrong trade.
+    """
+    _commit(repo, path, "a commit that touches nothing the site uses\n")
+    assert _gate(repo).returncode == SKIP, (
+        "precondition: without VERCEL_ENV this is exactly the skip that "
+        "cancelled the hook deployment"
+    )
+    result = _gate(repo, VERCEL_ENV="production")
+    assert result.returncode == BUILD, (
+        f"production is the published site and must never be skipped.\n{result.stdout}"
+    )
+
+
+def test_previews_stay_path_filtered(repo: Path):
+    """Previews are not the published site, so the old economics still hold.
+
+    This is also where the 2026-08-26 damage came from: four CONCURRENT preview
+    builds, three for commits that never touched dashboard/, whose scans of
+    cvm_fi_perfil blocked the schema apply until the server killed it.
+    """
+    _commit(repo, "README.md", "docs only\n")
+    assert _gate(repo, VERCEL_ENV="preview").returncode == SKIP
+
+    _commit(repo, "dashboard/page.md", "a real change\n")
+    assert _gate(repo, VERCEL_ENV="preview").returncode == BUILD
+
+
 def test_vercel_json_wires_the_gate():
     cfg = json.loads(VERCEL_JSON.read_text())
     assert "ignoreCommand" in cfg, "the gate does nothing unless vercel.json calls it"
