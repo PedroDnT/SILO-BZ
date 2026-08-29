@@ -24,16 +24,26 @@
 #   - vercel.json                 (build config)
 #   - this script                 (so a change to the rule is always exercised)
 #
-# WHAT WE DIFF AGAINST, AND WHY IT IS NOT HEAD^
-# Until 2026-08-29 this compared HEAD^..HEAD, which asks "did THIS COMMIT touch
-# the dashboard". That is the wrong question and it silently drops work: land a
-# dashboard change in commit A, push an unrelated commit B on top, and the gate
-# evaluates B^..B, sees nothing under dashboard/, and skips — so A's change
-# never reaches the site. Vercel exposes VERCEL_GIT_PREVIOUS_SHA (the SHA of
-# the last successful deployment, populated only when an Ignored Build Step is
-# configured), which answers the question we actually mean: "has the dashboard
-# changed since what is currently deployed". We use it when the shallow clone
-# actually contains that commit, and fall back to HEAD^ when it does not.
+# WHAT WE DIFF AGAINST: HEAD^, AND WHY THAT IS RIGHT HERE
+# main only ever advances by MERGE commits (git log --format=%p shows two
+# parents on each). For a merge commit, HEAD^ is the first parent — the tip of
+# main before the PR — so `git diff HEAD^ HEAD` is the ENTIRE pull request, not
+# one commit of it. That is exactly the question a production build should ask.
+#
+# An earlier version of this file tried VERCEL_GIT_PREVIOUS_SHA (the SHA of the
+# last successful deployment) on the theory that HEAD^ misses a dashboard change
+# buried under a later commit. That failure needs several NON-merge commits
+# pushed straight to main, which this repo's PR workflow does not produce, and
+# the variable turned out to be unusable anyway: Vercel clones shallow, so the
+# commit is absent, and fetching it is REFUSED on the build runner —
+#     fetched previous SHA = no (fetch refused; falling back)
+# on deployment 528UqNVSMVnfCcQqtL4LmkgtHHWB. Both attempts were dead code that
+# still looked like a fix. Removed rather than left in as decoration.
+#
+# The residual gap is real but small: on a multi-commit FEATURE BRANCH, a
+# preview build can skip when an earlier commit touched the dashboard and the
+# tip did not. Preview builds are not the published site, and the merge commit
+# rebuilds it correctly.
 #
 # DATA FRESHNESS IS A SEPARATE TRIGGER — AND THIS SCRIPT USED TO BLOCK IT
 # The dashboard is a static snapshot: new rows in Supabase only reach it when a
@@ -73,34 +83,15 @@ echo "  VERCEL_GIT_COMMIT_REF   = ${VERCEL_GIT_COMMIT_REF:-<unset>}"
 echo "  VERCEL_ENV              = ${VERCEL_ENV:-<unset>}"
 echo "  HEAD                    = $(git rev-parse --short HEAD 2>/dev/null || echo '<no HEAD>')"
 
-# Pick the diff base: the last successful deployment if we have it, else the
-# parent commit. `git cat-file -e` is the check that matters — Vercel does a
-# shallow clone, so the SHA can be set and still be absent from this checkout.
+# Diff base. On a merge commit HEAD^ is the first parent — main before the PR —
+# so this covers the whole pull request. See the header for why the last
+# successful deployment's SHA is not used instead.
 base=""
-# Vercel clones shallow, so the previous SHA is essentially NEVER in the
-# checkout — measured on deployment 5t9vBkhFVbezBGagY2KBE6ZciYov, where the
-# variable was set to 1dac794 and `git cat-file -e` still missed. Without this
-# fetch the branch below is dead code and the gate silently stays on HEAD^.
-# GitHub allows fetching an arbitrary reachable SHA, and --depth=1 keeps it to
-# the one commit whose tree the diff needs.
-if [ -n "${VERCEL_GIT_PREVIOUS_SHA:-}" ] \
-   && ! git cat-file -e "${VERCEL_GIT_PREVIOUS_SHA}^{commit}" 2>/dev/null; then
-    if git fetch --quiet --depth=1 origin "$VERCEL_GIT_PREVIOUS_SHA" 2>/dev/null; then
-        echo "  fetched previous SHA   = yes (--depth=1)"
-    else
-        echo "  fetched previous SHA   = no (fetch refused; falling back)"
-    fi
-fi
-
-if [ -n "${VERCEL_GIT_PREVIOUS_SHA:-}" ] \
-   && git cat-file -e "${VERCEL_GIT_PREVIOUS_SHA}^{commit}" 2>/dev/null; then
-    base="$VERCEL_GIT_PREVIOUS_SHA"
-    echo "  diff base               = VERCEL_GIT_PREVIOUS_SHA ($base)"
-elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
     base="HEAD^"
-    echo "  diff base               = HEAD^ (previous SHA unset, or unreachable even after fetch)"
+    echo "  diff base               = HEAD^ (previous main for a merge commit)"
 else
-    build "no diff base available (shallow clone, first commit, or unreachable previous SHA)"
+    build "no parent commit available (shallow clone or first commit)"
 fi
 
 changed=$(git diff --name-only "$base" HEAD -- "${WATCHED[@]}" 2>/dev/null)

@@ -133,61 +133,34 @@ def test_fails_open_without_a_parent_commit(tmp_path: Path):
     )
 
 
-def test_builds_when_the_dashboard_changed_since_the_last_deployment(repo: Path):
-    """The bug this diff base exists to fix.
+def test_a_merge_commit_diffs_the_whole_pull_request(repo: Path):
+    """Why HEAD^ is the right base here, pinned so nobody "fixes" it again.
 
-    Land a dashboard change, then push an unrelated commit on top. Diffing
-    HEAD^..HEAD asks "did the LAST commit touch the dashboard", sees nothing,
-    and skips — so the dashboard change never reaches the site even though the
-    deployed build predates it. VERCEL_GIT_PREVIOUS_SHA asks the question we
-    actually mean: has anything changed since what is currently deployed.
+    main advances only by merge commits. HEAD^ on a merge is the FIRST parent —
+    main before the PR — so the diff is the entire pull request, not its tip
+    commit. Two earlier attempts to replace this with VERCEL_GIT_PREVIOUS_SHA
+    were dead code: the SHA is absent from Vercel's shallow clone and fetching
+    it is refused on the build runner.
     """
-    deployed = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True,
+    trunk = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo,
+        capture_output=True, text=True,
     ).stdout.strip()
-    _commit(repo, "dashboard/page.md", "a real dashboard change\n")
-    _commit(repo, "README.md", "an unrelated commit on top\n")
+    _git(repo, "checkout", "-q", "-b", "feature")
+    _commit(repo, "dashboard/page.md", "a dashboard change\n")
+    _commit(repo, "README.md", "an unrelated commit on top of it\n")
+    _git(repo, "checkout", "-q", trunk)
+    _git(repo, "merge", "-q", "--no-ff", "-m", "Merge pull request #1", "feature")
 
-    assert _gate(repo).returncode == SKIP, (
-        "precondition: with no previous SHA the HEAD^ fallback skips — this is "
-        "the shape of the bug, kept here so the regression is visible"
-    )
-    result = _gate(repo, VERCEL_GIT_PREVIOUS_SHA=deployed)
+    head_parents = subprocess.run(
+        ["git", "log", "-1", "--format=%p"], cwd=repo, capture_output=True, text=True,
+    ).stdout.split()
+    assert len(head_parents) == 2, "precondition: this must be a merge commit"
+
+    result = _gate(repo)
     assert result.returncode == BUILD, (
-        "the dashboard changed since the deployed commit, so the site is stale "
-        f"and must rebuild.\n{result.stdout}"
-    )
-
-
-def test_tries_to_fetch_a_previous_sha_that_is_not_in_the_clone(repo: Path):
-    """Without this fetch the whole previous-SHA branch is DEAD CODE.
-
-    Vercel shallow-clones, and the previous SHA is essentially never in the
-    checkout: on deployment 5t9vBkhFVbezBGagY2KBE6ZciYov the variable was set
-    to 1dac794 and `git cat-file -e` still missed, so the gate quietly stayed
-    on HEAD^ — the exact bug it was meant to fix, shipped inert. The fetch is
-    what makes the fix real, so its attempt is pinned here.
-    """
-    _commit(repo, "dashboard/page.md", "changed\n")
-    result = _gate(repo, VERCEL_GIT_PREVIOUS_SHA="0" * 40)
-    assert "fetched previous SHA" in result.stdout, (
-        "the gate must TRY to fetch a previous SHA it does not have; without "
-        f"that it can never use one.\n{result.stdout}"
-    )
-
-
-def test_falls_back_to_head_parent_when_the_previous_sha_is_unfetchable(repo: Path):
-    """The fetch can still fail — no network, no origin, a garbage SHA.
-
-    Resolving it blindly would make `git diff` fail and — depending on how that
-    error were handled — could skip. The gate must notice and fall back. This
-    throwaway repo has no `origin`, so the fetch genuinely cannot succeed.
-    """
-    _commit(repo, "dashboard/page.md", "changed\n")
-    result = _gate(repo, VERCEL_GIT_PREVIOUS_SHA="0" * 40)
-    assert result.returncode == BUILD, result.stdout
-    assert "HEAD^" in result.stdout, (
-        f"expected the fallback to be named in the log:\n{result.stdout}"
+        "the PR touched dashboard/, so the merge must rebuild even though its "
+        f"tip commit only changed README.\n{result.stdout}"
     )
 
 
