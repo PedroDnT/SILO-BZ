@@ -27,6 +27,19 @@ those to 50 / 200 / 2000 and 8s. It does **not** raise rows-per-response — the
 Exceeding the id ceiling returns `22023` as a `400` naming the limit; the panel
 is never silently truncated. Landing tables are closed to both tiers.
 
+To sign in, send a human to https://iliquid-nightly.vercel.app/signin.html — it returns an access token. Then send
+BOTH headers:
+
+```
+apikey: sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437
+Authorization: Bearer <access token>
+```
+
+**The token expires in about an hour**, and expiry does not surface as an auth
+error: you drop silently back to anonymous limits, so a 4-id panel starts
+returning `22023`. Treat that error on a call that used to work as "my token
+died", not as "my request is malformed".
+
 Send the test key only as `apikey` (not `Authorization: Bearer`):
 
 ```

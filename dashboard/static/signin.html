@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sign in · iliquid nightly</title>
+<style>
+  :root {
+    --paper:#ffffff; --card:#f7f8f7; --ink:#14181a; --ink-soft:#5b6663; --ink-faint:#8d9794;
+    --rule:#e2e6e3; --accent:#16A34A; --accent-dim:#e7f6ec;
+    --amber:#9a6512; --amber-dim:#fbf2e0;
+    --mono:"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:#0f1211; --card:#171b19; --ink:#e7ecea; --ink-soft:#a2adaa; --ink-faint:#6e7976;
+      --rule:#272d2a; --accent:#4ade80; --accent-dim:#14291d;
+      --amber:#d6a44f; --amber-dim:#2d2410;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+       font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:660px;margin:0 auto;padding:48px 22px 80px;
+        display:flex;flex-direction:column;gap:26px}
+  h1{font-size:1.7rem;line-height:1.2;letter-spacing:-.02em;margin:0}
+  h2{font-size:1rem;margin:0 0 2px;letter-spacing:-.01em}
+  p{margin:0;color:var(--ink-soft)}
+  p.lede{color:var(--ink)}
+  a{color:var(--accent)}
+  code,kbd{font-family:var(--mono);font-size:.86em}
+  .card{border:1px solid var(--rule);border-radius:8px;background:var(--card);padding:20px}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  button{font:inherit;font-weight:550;cursor:pointer;border-radius:7px;padding:10px 16px;
+         border:1px solid var(--rule);background:var(--paper);color:var(--ink);
+         display:inline-flex;align-items:center;gap:9px}
+  button:hover{border-color:var(--accent)}
+  button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.primary:hover{filter:brightness(1.07)}
+  button.link{border:none;background:none;color:var(--ink-soft);padding:6px 0;text-decoration:underline}
+  svg{width:17px;height:17px;flex:0 0 auto}
+  pre{margin:0;background:var(--paper);border:1px solid var(--rule);border-radius:6px;
+      padding:12px 13px;overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.55}
+  .token{word-break:break-all;white-space:pre-wrap}
+  table{border-collapse:collapse;width:100%;font-size:.9rem;margin-top:4px}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule)}
+  th{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);font-weight:600}
+  td.n{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:none}
+  .note{border-left:3px solid var(--amber);background:var(--amber-dim);
+        border-radius:0 6px 6px 0;padding:12px 15px;font-size:.9rem}
+  .note strong{color:var(--ink)}
+  .pill{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+        padding:3px 8px;border-radius:20px;background:var(--accent-dim);color:var(--accent);font-weight:600}
+  .muted{color:var(--ink-faint);font-size:.86rem}
+  [hidden]{display:none !important}
+  footer{border-top:1px solid var(--rule);padding-top:16px;color:var(--ink-faint);font-size:.84rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Sign in</h1>
+    <p class="lede" style="margin-top:8px">
+      Anonymous access to the API is free and needs no account. Signing in raises the limits
+      to something you can actually work with — a handful of assets over real history.
+    </p>
+  </header>
+
+  <!-- ================= signed out ================= -->
+  <section id="out" hidden>
+    <div class="card">
+      <h2>Continue with</h2>
+      <p class="muted" style="margin-bottom:14px">
+        We only ever read your account's email address, to tell sessions apart.
+      </p>
+      <div class="row">
+        <button class="primary" id="gh">
+          <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          GitHub
+        </button>
+        <button class="primary" id="gg">
+          <svg viewBox="0 0 18 18" aria-hidden="true"><path fill="#fff" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62Z"/><path fill="#fff" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18Z" opacity=".85"/><path fill="#fff" d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33Z" opacity=".7"/><path fill="#fff" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58Z" opacity=".9"/></svg>
+          Google
+        </button>
+      </div>
+      <p id="err" class="muted" style="margin-top:12px;color:var(--amber)" hidden></p>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>What you get either way</h2>
+      <table>
+        <thead><tr><th>Limit</th><th>Anonymous</th><th>Signed in</th></tr></thead>
+        <tbody>
+          <tr><td>Ids per <code>panel</code> call</td><td class="n">3</td><td class="n">50</td></tr>
+          <tr><td><code>search_funds</code> rows</td><td class="n">25</td><td class="n">200</td></tr>
+          <tr><td><code>option_chain</code> page</td><td class="n">200</td><td class="n">2000</td></tr>
+          <tr><td>Query timeout</td><td class="n">3s</td><td class="n">8s</td></tr>
+          <tr><td>Rows per response</td><td class="n">1000</td><td class="n">1000</td></tr>
+        </tbody>
+      </table>
+      <p class="muted" style="margin-top:12px">
+        That last row is not a mistake. Rows per response are capped server-wide at 1000 for
+        everybody — no account changes it. Page through views, and narrow the date window on
+        function calls, whichever tier you are on.
+      </p>
+    </div>
+  </section>
+
+  <!-- ================= signed in ================= -->
+  <section id="in" hidden>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <div>
+          <h2>Signed in <span class="pill">50 ids</span></h2>
+          <p class="muted" id="who"></p>
+        </div>
+        <button class="link" id="signout">Sign out</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>Your access token</h2>
+      <p class="muted" style="margin-bottom:12px">
+        Send it as <code>Authorization: Bearer …</code>, alongside the usual
+        <code>apikey</code> header.
+      </p>
+      <pre class="token" id="tok"></pre>
+      <div class="row" style="margin-top:12px;align-items:center">
+        <button id="copy">Copy token</button>
+        <span class="muted" id="exp"></span>
+      </div>
+      <div class="note" style="margin-top:16px">
+        <strong>This token expires in about an hour.</strong> When it does, calls do not fail
+        with an auth error — you quietly drop back to anonymous limits, so a 4-id panel starts
+        returning <code>22023</code>. If that happens mid-script, come back here and sign in
+        again. Durable per-user keys are not built yet.
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>Try it</h2>
+      <p class="muted" style="margin-bottom:12px">
+        Four ids — one more than anonymous allows. This should return rows for you.
+      </p>
+      <pre id="curl"></pre>
+      <div class="row" style="margin-top:12px">
+        <button id="copycurl">Copy command</button>
+      </div>
+    </div>
+  </section>
+
+  <p id="loading" class="muted">Checking your session…</p>
+
+  <footer>
+    <a href="https://octo-98895abd.mintlify.site/">Docs</a> ·
+    <a href="https://iliquid-nightly.vercel.app/">Dashboard</a> ·
+    <a href="https://github.com/PedroDnT/SILO-BZ">Source</a>
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.4/dist/umd/supabase.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  // Both values are public by design: the project URL and the publishable key are
+  // already printed throughout the docs and in skill.md. A test pins this literal
+  // to skill.md so a key rotation cannot leave this page authenticating against a
+  // credential that no longer exists.
+  var SUPABASE_URL = "https://zcjbtpxuhdekpwcxmepn.supabase.co";
+  var PUBLISHABLE_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437";
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  if (!window.supabase || !window.supabase.createClient) {
+    $("loading").textContent =
+      "Could not load the auth library. Check your network or any content blocker, then reload.";
+    return;
+  }
+
+  var client = window.supabase.createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
+    auth: {
+      // The OAuth redirect comes back with the session in the URL; let the
+      // library consume it and then clean the address bar.
+      detectSessionInUrl: true,
+      persistSession: true,
+      autoRefreshToken: true,
+      flowType: "pkce"
+    }
+  });
+
+  var countdown = null;
+
+  function fail(msg) {
+    var e = $("err");
+    e.textContent = msg;
+    e.hidden = false;
+  }
+
+  function signIn(provider) {
+    return function () {
+      $("err").hidden = true;
+      // Strip any leftover query/hash so the redirect target is stable and
+      // matches what is allow-listed in Supabase.
+      var here = window.location.origin + window.location.pathname;
+      client.auth
+        .signInWithOAuth({ provider: provider, options: { redirectTo: here } })
+        .then(function (res) {
+          if (res && res.error) fail(res.error.message);
+        })
+        .catch(function (e) { fail(String(e && e.message ? e.message : e)); });
+    };
+  }
+
+  function curlFor(token) {
+    return [
+      'curl -s -X POST "' + SUPABASE_URL + '/rest/v1/rpc/panel" \\',
+      '  -H "apikey: ' + PUBLISHABLE_KEY + '" \\',
+      '  -H "Authorization: Bearer ' + token + '" \\',
+      '  -H "Content-Type: application/json" \\',
+      '  -d \'{"p_ids":["PETR4","VALE3","ITUB4","BOVA11"],' +
+        '"p_metrics":["close"],"p_freq":"month"}\''
+    ].join("\n");
+  }
+
+  function renderExpiry(expiresAt) {
+    if (countdown) clearInterval(countdown);
+    if (!expiresAt) { $("exp").textContent = ""; return; }
+    var tick = function () {
+      var left = expiresAt * 1000 - Date.now();
+      if (left <= 0) {
+        $("exp").textContent = "expired — sign in again";
+        clearInterval(countdown);
+        return;
+      }
+      var m = Math.floor(left / 60000);
+      var s = Math.floor((left % 60000) / 1000);
+      $("exp").textContent = "expires in " + m + "m " + (s < 10 ? "0" : "") + s + "s";
+    };
+    tick();
+    countdown = setInterval(tick, 1000);
+  }
+
+  function show(session) {
+    $("loading").hidden = true;
+    if (!session) {
+      $("in").hidden = true;
+      $("out").hidden = false;
+      if (countdown) clearInterval(countdown);
+      return;
+    }
+    $("out").hidden = true;
+    $("in").hidden = false;
+    $("tok").textContent = session.access_token;
+    $("curl").textContent = curlFor(session.access_token);
+    var email = session.user && session.user.email;
+    $("who").textContent = email ? email : "signed in";
+    renderExpiry(session.expires_at);
+  }
+
+  function copyBtn(btnId, getText) {
+    $(btnId).addEventListener("click", function () {
+      var btn = $(btnId);
+      var original = btn.textContent;
+      navigator.clipboard.writeText(getText()).then(
+        function () {
+          btn.textContent = "Copied";
+          setTimeout(function () { btn.textContent = original; }, 1400);
+        },
+        function () { btn.textContent = "Press Ctrl+C"; }
+      );
+    });
+  }
+
+  $("gh").addEventListener("click", signIn("github"));
+  $("gg").addEventListener("click", signIn("google"));
+  $("signout").addEventListener("click", function () {
+    client.auth.signOut().then(function () { show(null); });
+  });
+  copyBtn("copy", function () { return $("tok").textContent; });
+  copyBtn("copycurl", function () { return $("curl").textContent; });
+
+  // An OAuth error comes back as query params, not as a rejected promise.
+  var params = new URLSearchParams(window.location.search);
+  if (params.get("error_description") || params.get("error")) {
+    $("loading").hidden = true;
+    $("out").hidden = false;
+    fail(params.get("error_description") || params.get("error"));
+  }
+
+  client.auth.onAuthStateChange(function (_event, session) { show(session); });
+
+  client.auth
+    .getSession()
+    .then(function (res) { show(res && res.data ? res.data.session : null); })
+    .catch(function () { show(null); });
+})();
+</script>
+</body>
+</html>

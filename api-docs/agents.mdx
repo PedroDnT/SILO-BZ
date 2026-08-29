@@ -59,6 +59,28 @@ Two things are worth being exact about, because guessing wrong wastes a call:
 Landing tables (`cvm_*`, `b3_cotahist`, `cia_*`, `bacen_*`) are closed to both
 tiers and always will be — schema `api` is the whole public surface.
 
+### Getting a token
+
+Sign in at [https://iliquid-nightly.vercel.app/signin.html](https://iliquid-nightly.vercel.app/signin.html) with GitHub or Google. The page shows an access
+token, a live expiry countdown, and a ready-to-run `curl`. Send it alongside the
+publishable key — the `apikey` header identifies the project, the `Authorization`
+header identifies you:
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/panel" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Authorization: Bearer $SILO_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"p_ids":["PETR4","VALE3","ITUB4","BOVA11"],"p_metrics":["close"]}'
+```
+
+<Warning>
+  **The token lasts about an hour, and expiry is silent.** You do not get a 401 —
+  you drop back to the anonymous tier, so that four-id call starts raising
+  `22023`. If a request that worked an hour ago starts failing on the id ceiling,
+  your token expired. Durable per-user keys do not exist yet.
+</Warning>
+
 ```bash
 export SILO_URL="https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"
 export SILO_ANON_KEY="sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"  # testing only
