@@ -11,10 +11,12 @@ database — CVM fund disclosures (FI, FIDC, FII, FIP, FIAGRO, SECURIT, plus lis
 filings), BACEN time series, and B3 COTAHIST cash quotes. It exists for **financial
 accountability** of the fund industry: NAV, delinquency, flows, and structural health.
 
-The warehouse is readable **for testing** through schema `api` (PostgREST) with a
-**shared publishable key**. There is **no RLS** on landing tables. When we go live,
-callers will get a **key per user** (GitHub or email sign-in). This site documents
-the read API. The human dashboard is
+The warehouse is readable through schema `api` (PostgREST) with a **shared
+publishable key**. Anonymous access is free and deliberately small — 3 ids per
+panel call, enough to explore. Signing in with **GitHub or Google** raises that
+to 50 and the query timeout from 3s to 8s; it does not change the 1000-row
+response cap, which is server-wide. Landing tables are closed to both tiers.
+This site documents the read API. The human dashboard is
 [https://iliquid-nightly.vercel.app/](https://iliquid-nightly.vercel.app/). **SILO**
 is the GitHub repo: Actions ingest into Supabase, plus schema `api`.
 

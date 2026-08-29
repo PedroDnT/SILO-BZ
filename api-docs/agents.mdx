@@ -23,19 +23,41 @@ dashboards and `docs/` operator notes are **not** the read contract.
 
 <Warning>
   The publishable key in [quickstart](/api-docs/quickstart) is **shared, for
-  testing**. There is **no RLS** on landing tables. When we go live, each user
-  (or agent acting for them) will sign in with **GitHub or email** and get their
-  **own** session/key. Do not mint or forge that now.
+  testing**. Anonymous access works and is free — it is just deliberately
+  small. Signing in with **GitHub or Google** raises the limits. Do not mint or
+  forge a key.
 </Warning>
 
 There is no `createApiKey` in this repo. `service_role` / Secret is never a
 caller credential.
 
-| Now (testing) | When we go live |
-| --- | --- |
-| One publishable key, `apikey` only, schema `api` | Per-user key after GitHub or email sign-in |
-| No RLS on `cvm_*` / `b3_cotahist` | RLS + grants so a user JWT cannot read landing tables |
-| Agents use the printed test key | Agents use that user’s session, not a shared secret |
+### What each tier gets
+
+| | Anonymous | Signed in |
+| --- | --- | --- |
+| `panel` ids per call | **3** | **50** |
+| `search_funds` rows | 25 | 200 |
+| `option_chain` page | 200 | 2000 |
+| Query timeout | 3s | 8s |
+| Rows per response | 1000 | **1000 — same** |
+
+Anonymous is sized for discovery: read the catalog, check coverage, resolve a
+name, sample an instrument or two. Signing in is sized for actual work — a
+handful of assets over real history, which is what a backtest or a screen
+needs.
+
+Two things are worth being exact about, because guessing wrong wastes a call:
+
+- **Rows per response never change.** The 1000-row cap is a server-wide
+  PostgREST setting applied identically to everyone. No tier raises it. Page
+  views; narrow the window on functions.
+- **Exceeding the id ceiling is an error, not a trim.** You get `22023` (a
+  `400`) naming the limit. A panel is never silently shortened to fit, because
+  a short panel that looks complete is the one failure you cannot detect
+  downstream.
+
+Landing tables (`cvm_*`, `b3_cotahist`, `cia_*`, `bacen_*`) are closed to both
+tiers and always will be — schema `api` is the whole public surface.
 
 ```bash
 export SILO_URL="https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"

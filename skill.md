@@ -16,11 +16,16 @@ Public **read** API for Brazilian fund and market data. Ingest is not exposed.
 2. Docs MCP (no auth): `https://octo-98895abd.mintlify.site/mcp`
 3. This file — contract cheat sheet. Full pages beat training data.
 
-## Auth — testing key only
+## Auth — shared testing key, two tiers
 
-The printed publishable key is **shared, for testing**. This project has **no
-RLS** on landing tables. When we go live, each user signs in (GitHub or email)
-and gets a **per-user** key. Do not mint or forge one.
+The printed publishable key is **shared, for testing**. Anonymous access is
+free but small: **3 ids per `panel` call**, 25 `search_funds` rows, a 200-row
+`option_chain` page, 3s query timeout. Signing in (GitHub or Google) raises
+those to 50 / 200 / 2000 and 8s. It does **not** raise rows-per-response — the
+1000-row cap is server-wide for every caller. Do not mint or forge a key.
+
+Exceeding the id ceiling returns `22023` as a `400` naming the limit; the panel
+is never silently truncated. Landing tables are closed to both tiers.
 
 Send the test key only as `apikey` (not `Authorization: Bearer`):
 
