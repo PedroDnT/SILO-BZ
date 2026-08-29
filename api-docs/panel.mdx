@@ -31,6 +31,10 @@ api.panel(p_ids     TEXT[],
   B3 code and upper-cased. Whether that code resolves as a cash ticker, an option series, or
   a termo contract is decided by which market segment it prints in, not by the string.
   Blank entries are dropped. An empty array yields no rows.
+
+  **Capped by tier: 3 ids anonymously, 50 signed in.** Exceeding it raises `22023`
+  (surfacing as a `400`) naming the limit — the panel is never quietly truncated to fit,
+  because a short panel that looks complete is worse than an error.
 </ParamField>
 
 <ParamField body="p_metrics" type="string[]" default='["close","nav"]'>

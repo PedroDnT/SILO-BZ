@@ -68,7 +68,7 @@ __all__ = [
 # 6: one endpoint per cash instrument type, each carrying both lot sizes.
 # 5: main's typed cash asset classes (4) merged with the option/termo id_types
 # and list-valued id_type this branch introduced (3).
-CATALOG_VERSION = 15
+CATALOG_VERSION = 16
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -249,6 +249,15 @@ CONSTRAINTS = [
     "catalog's `metrics` map, never from memory.",
     "Option chains require a codneg prefix of at least 3 characters "
     "(api.option_chain); an unfiltered whole-market chain is refused.",
+    "CALLER TIERS. Anonymous access is free but deliberately small: panel "
+    "accepts at most 3 ids per call, search_funds returns at most 25 rows, "
+    "and option_chain pages at most 200. Signing in (GitHub or Google) raises "
+    "those to 50 ids, 200 rows and 2000 respectively, and the query timeout "
+    "from 3s to 8s. Exceeding the id ceiling raises SQLSTATE 22023 naming the "
+    "limit — the panel is never silently truncated to fit.",
+    "Signing in does NOT raise rows-per-response: the 1000-row cap is a "
+    "server-wide PostgREST setting applied identically to every caller. Page "
+    "views, and narrow the window on functions, whatever tier you are.",
     "Option rows carry underlying_ticker resolved from the PUBLISHED ISIN "
     "mapping (an option row's ISIN is its underlying's ISIN), never from the "
     "codneg root; it is null when the underlying had no cash print that "

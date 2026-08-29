@@ -53,6 +53,111 @@ CREATE SCHEMA IF NOT EXISTS api;
 GRANT USAGE ON SCHEMA api TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
+-- Caller tiers
+--
+-- Anonymous access stays free and is deliberately small: enough to discover
+-- what exists and sample it, not enough to pull the warehouse through the
+-- front door. Signing in (GitHub or Google, via Supabase Auth) raises the
+-- limits to something a person or an agent can actually work with — a handful
+-- of instruments over real history.
+--
+-- What a login can and cannot buy is set by the platform, and it is worth
+-- being exact about it rather than implying more:
+--
+--   * Rows per response CANNOT differ by tier. PostgREST's db-max-rows is a
+--     global server setting (1000), applied identically to every caller.
+--   * Query time DOES differ, for free: Supabase gives `anon` a 3s
+--     statement_timeout and `authenticated` 8s.
+--   * The caps written in THIS file are ours, so those are the ones we tier.
+--
+-- Detection reads the request's JWT claims, which PostgREST sets per request.
+-- That GUC is session-scoped and therefore survives the SECURITY DEFINER
+-- switch — `current_user` inside these functions is the owner, so it cannot be
+-- used to identify the caller.
+--
+-- Fail CLOSED: a missing, empty or unparseable claim yields 'anon'. The worst
+-- case is a signed-in caller getting anonymous limits, which is a support
+-- question. The reverse — anonymous callers silently getting signed-in limits
+-- — would be a hole, so it is unreachable by construction.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION api.caller_tier()
+RETURNS TEXT
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_claims TEXT;
+    v_role   TEXT;
+BEGIN
+    v_claims := current_setting('request.jwt.claims', true);
+    IF v_claims IS NULL OR btrim(v_claims) = '' THEN
+        RETURN 'anon';
+    END IF;
+    BEGIN
+        v_role := v_claims::jsonb ->> 'role';
+    EXCEPTION WHEN others THEN
+        -- Malformed claims are not a reason to fail the request; they are a
+        -- reason not to trust them.
+        RETURN 'anon';
+    END;
+    IF v_role = 'authenticated' THEN
+        RETURN 'authenticated';
+    END IF;
+    RETURN 'anon';
+END;
+$$;
+
+COMMENT ON FUNCTION api.caller_tier() IS
+    'Returns ''authenticated'' for a signed-in caller, ''anon'' otherwise. Fails closed: any missing or unparseable JWT claim yields ''anon''.';
+
+-- Per-tier ceiling on how many ids one panel call may mix.
+--
+-- This is the cap that actually bounds work: every id adds an arm to the
+-- panel union. Until now it existed ONLY in the local Flask adapter
+-- (serve/app.py _MAX_IDS), so the deployed PostgREST path had no limit at all
+-- and a single anonymous request could ask for thousands of instruments.
+--
+-- Called from api.panel in argument position, which always evaluates, so the
+-- raise is guaranteed without converting that function to plpgsql.
+CREATE OR REPLACE FUNCTION api.assert_panel_ids(p_ids TEXT[])
+RETURNS TEXT[]
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_tier  TEXT := api.caller_tier();
+    v_max   INT;
+    v_count INT := COALESCE(array_length(p_ids, 1), 0);
+BEGIN
+    v_max := CASE v_tier WHEN 'authenticated' THEN 50 ELSE 3 END;
+    IF v_count > v_max THEN
+        IF v_tier = 'authenticated' THEN
+            RAISE EXCEPTION
+                'panel accepts at most % ids per call; % were given. Split the request.',
+                v_max, v_count
+                USING ERRCODE = '22023';
+        ELSE
+            RAISE EXCEPTION
+                'panel accepts at most % ids per call for anonymous callers; % were given. Sign in to raise this to 50, or split the request.',
+                v_max, v_count
+                USING ERRCODE = '22023';
+        END IF;
+    END IF;
+    RETURN p_ids;
+END;
+$$;
+
+COMMENT ON FUNCTION api.assert_panel_ids(TEXT[]) IS
+    'Caps the number of ids one api.panel call may mix: 3 anonymous, 50 signed in. Raises 22023 naming the limit rather than truncating, so a caller never receives a silently shortened panel.';
+
+REVOKE ALL ON FUNCTION api.caller_tier() FROM PUBLIC;
+REVOKE ALL ON FUNCTION api.assert_panel_ids(TEXT[]) FROM PUBLIC;
+
+-- ---------------------------------------------------------------------------
 -- Quotes (B3 COTAHIST cash market)
 -- ---------------------------------------------------------------------------
 
@@ -654,7 +759,13 @@ BEGIN
     -- expiry × side), so 2000 comfortably holds any honest single-prefix
     -- chain while an over-broad prefix is cut deterministically (ORDER BY
     -- expiry, strike, side, codneg) at a bounded page.
-    LIMIT LEAST(GREATEST(COALESCE(p_limit, 100), 1), 2000);
+    -- Ceiling by tier. The default stays 100 for everyone (it is a timeout
+    -- budget question, not a permission one); signing in raises only how deep
+    -- a caller may deliberately ask.
+    LIMIT LEAST(
+        GREATEST(COALESCE(p_limit, 100), 1),
+        CASE api.caller_tier() WHEN 'authenticated' THEN 2000 ELSE 200 END
+    );
 END;
 $$;
 
@@ -1079,7 +1190,10 @@ AS $$
     FROM public.search_funds(
         p_query,
         p_entity_type,
-        LEAST(GREATEST(COALESCE(p_limit, 50), 1), 200)
+        LEAST(
+            GREATEST(COALESCE(p_limit, 50), 1),
+            CASE api.caller_tier() WHEN 'authenticated' THEN 200 ELSE 25 END
+        )
     );
 $$;
 
@@ -1198,11 +1312,16 @@ AS $$
 WITH
 params AS (
     SELECT
-        ARRAY(
+        -- assert_panel_ids raises 22023 when the tier's id ceiling is
+        -- exceeded (3 anonymous, 50 signed in). Wrapping the array in
+        -- argument position is what makes the check unavoidable: this
+        -- function is LANGUAGE sql and cannot RAISE on its own, but an
+        -- argument is always evaluated.
+        api.assert_panel_ids(ARRAY(
             SELECT upper(btrim(x))
             FROM unnest(COALESCE(p_ids, ARRAY[]::TEXT[])) AS x
             WHERE btrim(x) <> ''
-        ) AS ids,
+        )) AS ids,
         ARRAY(
             SELECT lower(btrim(x))
             FROM unnest(COALESCE(p_metrics, ARRAY['close','nav']::TEXT[])) AS x
@@ -1615,10 +1734,9 @@ RETURNS jsonb
 LANGUAGE sql
 STABLE
 AS $fn$
-SELECT $json$
-{
+SELECT $json${
   "kind": "catalog",
-  "version": 15,
+  "version": 16,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint carefully, and READ THE Content-Range RESPONSE HEADER ON EVERY CALL: PostgREST truncates every response at 1000 rows and keeps the OLDEST ones, so a cut-short series is indistinguishable from a complete one by its contents alone — `0-999/*` is the only thing that tells you. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -1856,6 +1974,8 @@ SELECT $json$
     "Row caps — getting this wrong means silently analysing a TRUNCATED panel, the exact fabrication this API exists to prevent. THE BINDING CAP IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. It is NOT the SQL cap+1 sentinel (panel 100001, series 5001): that sentinel is unreachable on the deployed surface and must not be used to detect truncation. Measured 2026-08-28 against production: panel for one ticker from 2019 returns exactly 1000 rows spanning 2019-01-02..2023-01-09 with a 200, and the OLDEST rows are the ones kept — so a truncated series looks like a complete series that simply ends three years ago. DETECT IT WITH THE Content-Range RESPONSE HEADER, which is the only signal there is: `0-999/*` means truncated, and sending `Prefer: count=exact` turns it into `0-999/1906` so you also learn the true total. A range whose end is below 999 is complete. RANGE PAGING DOES NOT WORK ON RPC: sending `Range: 1000-1999` to /rest/v1/rpc/panel returns the SAME first page again (verified), so a panel cannot be paged — narrow p_from/p_to, ids or metrics until Content-Range comes back under 1000. GET views do page with Range normally. The local /v1 Flask adapter is a different surface with its own cap+1 400 behaviour; do not carry its rules over.",
     "An unrecognised metric name is IGNORED, not rejected: the panel comes back smaller and perfectly plausible. Take metric names from this catalog's `metrics` map, never from memory.",
     "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
+    "CALLER TIERS. Anonymous access is free but deliberately small: panel accepts at most 3 ids per call, search_funds returns at most 25 rows, and option_chain pages at most 200. Signing in (GitHub or Google) raises those to 50 ids, 200 rows and 2000 respectively, and the query timeout from 3s to 8s. Exceeding the id ceiling raises SQLSTATE 22023 naming the limit — the panel is never silently truncated to fit.",
+    "Signing in does NOT raise rows-per-response: the 1000-row cap is a server-wide PostgREST setting applied identically to every caller. Page views, and narrow the window on functions, whatever tier you are.",
     "Option rows carry underlying_ticker resolved from the PUBLISHED ISIN mapping (an option row's ISIN is its underlying's ISIN), never from the codneg root; it is null when the underlying had no cash print that session. Termo rows still carry no underlying column.",
     "tpmerc 012/013 are option exercise EVENTS served by option_exercises, and 017 auction prints by auctions — neither is a quote series; do not compute returns over them.",
     "fund_quotas rows carry fund_type (etf | fii | fidc | fiagro) from B3's published CODBDI board code, null when the board has no family signal (odd lot). equities rows carry share_class (ON/PN/PNA/PNB/PNC/PND) and governance_segment (NM/N1/N2/MA/M2/MB) parsed from published ESPECI, never from the ticker suffix.",
@@ -1948,8 +2068,7 @@ SELECT $json$
     "option_exercises": "POST /rest/v1/rpc/option_exercises",
     "termo_history": "POST /rest/v1/rpc/termo_history"
   }
-}
-$json$::jsonb;
+}$json$::jsonb;
 $fn$;
 
 COMMENT ON FUNCTION api.catalog() IS

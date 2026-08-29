@@ -79,9 +79,43 @@ EXPECTED_FUNCTIONS = {
     "api.catalog",
 }
 
+# Internal helpers: called only from inside SECURITY DEFINER functions, which
+# execute as the owner, so they need no client grant. Keeping them out of
+# EXPECTED_FUNCTIONS is what makes "every public function is granted to anon"
+# and "no internal helper is" two separate, checkable claims.
+INTERNAL_FUNCTIONS = {
+    "api.caller_tier",
+    "api.assert_panel_ids",
+}
+
 
 def test_all_expected_api_functions_present():
-    assert set(FUNCS) == EXPECTED_FUNCTIONS
+    assert set(FUNCS) == EXPECTED_FUNCTIONS | INTERNAL_FUNCTIONS
+
+
+def test_internal_helpers_are_never_granted_to_client_roles():
+    """A client must not be able to call the tier helpers directly.
+
+    api.caller_tier is harmless to read, but api.assert_panel_ids is the
+    enforcement point for the anonymous id ceiling. Granting either to a
+    client role would be a step toward making the limit negotiable by the
+    caller it constrains.
+    """
+    grants = "\n".join(s for s in _statements(SQL19) if re.match(r"GRANT\b", s, re.I))
+    for fn in sorted(INTERNAL_FUNCTIONS):
+        assert not re.search(
+            rf"GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+{re.escape(fn)}", grants, re.I
+        ), f"{fn} is internal and must not be granted to anon/authenticated"
+
+
+def test_internal_helpers_are_revoked_from_public():
+    revokes = "\n".join(s for s in _statements(SQL19) if re.match(r"REVOKE\b", s, re.I))
+    for fn in sorted(INTERNAL_FUNCTIONS):
+        assert re.search(
+            rf"REVOKE\s+ALL\s+ON\s+FUNCTION\s+{re.escape(fn)}\s*\([^)]*\)\s+FROM\s+PUBLIC",
+            revokes,
+            re.I,
+        ), f"{fn} must be revoked from PUBLIC"
 
 
 # ---------------------------------------------------------------------------
@@ -423,9 +457,15 @@ def test_option_chain_clamps_its_page_limit():
     # 1..2000 — a chain-page cap, deliberately distinct from the 5001 series
     # cap (one prefix's chain on one session, not a time series).
     body = _strip_comments(FUNCS["api.option_chain"])
+    # The ceiling is now per tier: 2000 signed in, 200 anonymous. The default
+    # (100) is unchanged for both — that is a timeout budget, not a permission.
+    assert re.search(r"GREATEST\(COALESCE\(p_limit,\s*100\),\s*1\)", body), (
+        "api.option_chain lost its lower clamp / default of 100"
+    )
     assert re.search(
-        r"LIMIT\s+LEAST\(GREATEST\(COALESCE\(p_limit,\s*100\),\s*1\),\s*2000\)", body
-    ), "api.option_chain lost its 1..2000 clamp"
+        r"CASE\s+api\.caller_tier\(\)\s+WHEN\s+'authenticated'\s+THEN\s+2000\s+ELSE\s+200\s+END",
+        body,
+    ), "api.option_chain lost its per-tier page ceiling"
 
 
 def test_option_chain_refuses_a_missing_or_short_prefix():

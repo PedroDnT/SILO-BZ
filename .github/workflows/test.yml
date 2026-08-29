@@ -90,6 +90,60 @@ jobs:
       - name: Apply analytical layer (empty-DB bypass)
         run: PGOPTIONS="-c silo.ci_smoke_bypass=on" bash scripts/apply_analytical.sh
 
+      # The tier helpers decide how much an anonymous caller may pull. Regex
+      # tests over the SQL text prove the code says the right thing; only
+      # executing it proves it DOES the right thing — in particular that
+      # request.jwt.claims survives the SECURITY DEFINER switch, which is the
+      # single assumption the whole tier design rests on.
+      - name: Caller tiers behave (executed, not just compiled)
+        run: |
+          set -euo pipefail
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          DECLARE n INT;
+          BEGIN
+            -- Fail closed: anything short of a well-formed authenticated
+            -- claim must resolve to the anonymous tier.
+            PERFORM set_config('request.jwt.claims', '', true);
+            ASSERT api.caller_tier() = 'anon', 'empty claims must be anon';
+            PERFORM set_config('request.jwt.claims', 'not json', true);
+            ASSERT api.caller_tier() = 'anon', 'malformed claims must be anon';
+            PERFORM set_config('request.jwt.claims', '{"nope":1}', true);
+            ASSERT api.caller_tier() = 'anon', 'claims without a role must be anon';
+            PERFORM set_config('request.jwt.claims', '{"role":"service_role"}', true);
+            ASSERT api.caller_tier() = 'anon', 'only authenticated is the raised tier';
+            PERFORM set_config('request.jwt.claims', '{"role":"authenticated"}', true);
+            ASSERT api.caller_tier() = 'authenticated', 'a signed-in caller must be recognised';
+
+            -- Anonymous ceiling: 3 ids.
+            PERFORM set_config('request.jwt.claims', '{"role":"anon"}', true);
+            SELECT array_length(api.assert_panel_ids('{A,B,C}'::text[]), 1) INTO n;
+            ASSERT n = 3, 'anon must be allowed 3 ids';
+            BEGIN
+              PERFORM api.assert_panel_ids('{A,B,C,D}'::text[]);
+              RAISE EXCEPTION 'anon was allowed 4 ids';
+            EXCEPTION WHEN sqlstate '22023' THEN NULL;
+            END;
+
+            -- Signed-in ceiling: 50 ids.
+            PERFORM set_config('request.jwt.claims', '{"role":"authenticated"}', true);
+            SELECT array_length(
+              api.assert_panel_ids(ARRAY(SELECT 'T' || g FROM generate_series(1,50) g)), 1
+            ) INTO n;
+            ASSERT n = 50, 'authenticated must be allowed 50 ids';
+            BEGIN
+              PERFORM api.assert_panel_ids(ARRAY(SELECT 'T' || g FROM generate_series(1,51) g));
+              RAISE EXCEPTION 'authenticated was allowed 51 ids';
+            EXCEPTION WHEN sqlstate '22023' THEN NULL;
+            END;
+
+            -- An empty panel is a legitimate request, not a violation.
+            PERFORM api.assert_panel_ids('{}'::text[]);
+
+            RAISE NOTICE 'caller tiers OK';
+          END $$;
+          SQL
+
       - name: Compile every dashboard source query
         run: |
           set -uo pipefail
