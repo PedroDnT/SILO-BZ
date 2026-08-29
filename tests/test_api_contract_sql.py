@@ -424,7 +424,7 @@ def test_option_chain_clamps_its_page_limit():
     # cap (one prefix's chain on one session, not a time series).
     body = _strip_comments(FUNCS["api.option_chain"])
     assert re.search(
-        r"LIMIT\s+LEAST\(GREATEST\(COALESCE\(p_limit,\s*500\),\s*1\),\s*2000\)", body
+        r"LIMIT\s+LEAST\(GREATEST\(COALESCE\(p_limit,\s*100\),\s*1\),\s*2000\)", body
     ), "api.option_chain lost its 1..2000 clamp"
 
 

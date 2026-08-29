@@ -40,7 +40,7 @@ One session's chain for a codneg prefix: every strike, expiry and side that prin
 api.option_chain(p_prefix      TEXT,
                  p_expiry_from DATE DEFAULT CURRENT_DATE,
                  p_trade_date  DATE DEFAULT NULL,
-                 p_limit       INT  DEFAULT 500)
+                 p_limit       INT  DEFAULT 100)
 ```
 
 <ParamField body="p_prefix" type="string" required>
@@ -59,8 +59,12 @@ api.option_chain(p_prefix      TEXT,
   today's chain.
 </ParamField>
 
-<ParamField body="p_limit" type="integer" default="500">
-  Clamped into `1..2000`. Null is treated as 500.
+<ParamField body="p_limit" type="integer" default="100">
+  Clamped into `1..2000`; null is treated as 100. The default is deliberately
+  modest: the `anon` role has a 3-second statement timeout, and on the busiest
+  chains (PETR, BOVA) a 200-row page already exceeds it and comes back as
+  `57014`. Ask for a bigger page when you need one — just expect a timeout
+  rather than a truncation if the prefix is a heavily traded name.
 </ParamField>
 
 <Warning>

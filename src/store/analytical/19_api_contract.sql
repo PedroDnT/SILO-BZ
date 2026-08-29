@@ -538,7 +538,18 @@ CREATE OR REPLACE FUNCTION api.option_chain(
     p_prefix      TEXT,
     p_expiry_from DATE DEFAULT CURRENT_DATE,
     p_trade_date  DATE DEFAULT NULL,
-    p_limit       INT  DEFAULT 500
+    -- 100, not 500. Measured against production on 2026-08-29 for PETR, the
+    -- busiest chain on the tape: 100 rows in 899 ms, 200 rows exceeded the
+    -- anon role's 3 s statement_timeout and came back 57014. The old default
+    -- of 500 therefore returned a 500 for PETR and BOVA while VALE and ITUB
+    -- happened to squeak through — a documented default that fails on the
+    -- most-requested underlyings is not a default.
+    --
+    -- The 1..2000 clamp below is unchanged, so a caller who wants a deeper
+    -- page can still ask for one; overreaching on a busy prefix is then their
+    -- explicit choice rather than what the docs told them to do. Raising this
+    -- back to 500 wants an index or a narrower query shape first, measured.
+    p_limit       INT  DEFAULT 100
 )
 RETURNS TABLE (
     codneg     TEXT,
@@ -643,7 +654,7 @@ BEGIN
     -- expiry × side), so 2000 comfortably holds any honest single-prefix
     -- chain while an over-broad prefix is cut deterministically (ORDER BY
     -- expiry, strike, side, codneg) at a bounded page.
-    LIMIT LEAST(GREATEST(COALESCE(p_limit, 500), 1), 2000);
+    LIMIT LEAST(GREATEST(COALESCE(p_limit, 100), 1), 2000);
 END;
 $$;
 
