@@ -101,12 +101,21 @@ def test_ingest_error_query_failure_does_not_print_recovered():
     )
 
 
-def test_plan_disk_gb_is_empty_until_a_real_allowance_is_set():
+def test_plan_disk_gb_is_a_real_provisioned_allowance():
     spec = _spec()
     env = spec["jobs"]["health"]["env"]
-    # 8 GB vs 71.9 GB printed 899% and trained everyone to ignore the line.
-    assert env["PLAN_DISK_GB"] in ("", None)
+    # Empty was correct while no real number was known: 8 GB (the Pro *included*
+    # quota) against a 71.9 GB database printed 899% and trained everyone to
+    # ignore the line. 135 GB is the provisioned disk, so the percentage now
+    # means something. It must stay a positive number, never a placeholder.
+    raw = env["PLAN_DISK_GB"]
+    assert raw not in ("", None), "an allowance was set; do not silently revert to empty"
+    assert float(raw) > 0
+    # Guard the specific failure mode: the included quota is not the allowance.
+    assert float(raw) >= 100, "8 GB is the included quota, not the provisioned disk"
     body = _step("Health checks")["run"]
+    # The empty-allowance branch must survive, so unsetting it degrades to
+    # absolute-size reporting rather than dividing by nothing.
     assert 'if [ -n "${PLAN_DISK_GB:-}" ]' in body
     assert "do not drop landing tables" in body.lower()
 

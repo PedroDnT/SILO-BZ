@@ -49,13 +49,21 @@ jobs:
       MAX_COMPLETE_AGE_DAYS: "75" # a monthly family with no complete period in this window is stalled
       MAX_INGEST_ERROR_HOURS: "26" # unhealed error slices in this window fail the run
       DISK_WARN_PCT: "85" # warn past this share of PLAN_DISK_GB, when that is set
-      # The plan allowance, which Postgres cannot see. Measured 2026-08-28: the
-      # database is 71.9 GB, so the old placeholder of 8 printed "899%" — a
-      # number that was pure noise and would have trained everyone to ignore
-      # the line. Leave EMPTY and the job reports absolute size and growth and
-      # skips the percentage entirely; set it to the real allowance to get a
-      # threshold warning. A made-up denominator is worse than none.
-      PLAN_DISK_GB: ""
+      # The plan allowance, which Postgres cannot see. This is the PROVISIONED
+      # disk reported by the Supabase dashboard on 2026-08-29: 135 GB, of which
+      # 82.5 GB was in use (database 80, WAL 2, system 0.6). An earlier
+      # placeholder of 8 — the Pro plan's *included* quota, not what is
+      # provisioned — printed "899%" against a 71.9 GB database and trained
+      # everyone to ignore the line; a made-up denominator is worse than none,
+      # so only ever set this to a real purchased total, and re-check it when
+      # storage is resized.
+      #
+      # Note the units do not line up exactly and that is deliberate: the check
+      # measures pg_database_size (the 80 GB database) against 135 GB of disk,
+      # which also carries WAL and system files. Slightly understated on
+      # purpose — the 85% warning then fires near 115 GB of database, leaving
+      # real headroom for WAL instead of alarming at a number nobody can act on.
+      PLAN_DISK_GB: "135"
 
     steps:
       - uses: actions/checkout@v5
