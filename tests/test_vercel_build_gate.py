@@ -81,7 +81,8 @@ def _commit(repo: Path, rel: str, body: str) -> None:
 
 @pytest.mark.parametrize(
     "path",
-    ["dashboard/page.md", "dashboard/sources/supabase/x.sql", "vercel.json",
+    ["dashboard/page.md", "dashboard/sources/supabase/x.sql",
+     "dashboard/static/signin.html", "vercel.json",
      "scripts/vercel_should_build.sh"],
 )
 def test_builds_when_a_watched_path_changes(repo: Path, path: str):
