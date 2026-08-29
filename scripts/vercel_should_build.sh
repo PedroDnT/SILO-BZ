@@ -77,13 +77,28 @@ echo "  HEAD                    = $(git rev-parse --short HEAD 2>/dev/null || ec
 # parent commit. `git cat-file -e` is the check that matters — Vercel does a
 # shallow clone, so the SHA can be set and still be absent from this checkout.
 base=""
+# Vercel clones shallow, so the previous SHA is essentially NEVER in the
+# checkout — measured on deployment 5t9vBkhFVbezBGagY2KBE6ZciYov, where the
+# variable was set to 1dac794 and `git cat-file -e` still missed. Without this
+# fetch the branch below is dead code and the gate silently stays on HEAD^.
+# GitHub allows fetching an arbitrary reachable SHA, and --depth=1 keeps it to
+# the one commit whose tree the diff needs.
+if [ -n "${VERCEL_GIT_PREVIOUS_SHA:-}" ] \
+   && ! git cat-file -e "${VERCEL_GIT_PREVIOUS_SHA}^{commit}" 2>/dev/null; then
+    if git fetch --quiet --depth=1 origin "$VERCEL_GIT_PREVIOUS_SHA" 2>/dev/null; then
+        echo "  fetched previous SHA   = yes (--depth=1)"
+    else
+        echo "  fetched previous SHA   = no (fetch refused; falling back)"
+    fi
+fi
+
 if [ -n "${VERCEL_GIT_PREVIOUS_SHA:-}" ] \
    && git cat-file -e "${VERCEL_GIT_PREVIOUS_SHA}^{commit}" 2>/dev/null; then
     base="$VERCEL_GIT_PREVIOUS_SHA"
     echo "  diff base               = VERCEL_GIT_PREVIOUS_SHA ($base)"
 elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
     base="HEAD^"
-    echo "  diff base               = HEAD^ (previous-SHA unset or not in the shallow clone)"
+    echo "  diff base               = HEAD^ (previous SHA unset, or unreachable even after fetch)"
 else
     build "no diff base available (shallow clone, first commit, or unreachable previous SHA)"
 fi

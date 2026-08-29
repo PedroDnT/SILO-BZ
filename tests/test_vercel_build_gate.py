@@ -159,11 +159,29 @@ def test_builds_when_the_dashboard_changed_since_the_last_deployment(repo: Path)
     )
 
 
-def test_falls_back_to_head_parent_when_the_previous_sha_is_absent(repo: Path):
-    """Vercel shallow-clones, so the previous SHA can be SET yet unreachable.
+def test_tries_to_fetch_a_previous_sha_that_is_not_in_the_clone(repo: Path):
+    """Without this fetch the whole previous-SHA branch is DEAD CODE.
+
+    Vercel shallow-clones, and the previous SHA is essentially never in the
+    checkout: on deployment 5t9vBkhFVbezBGagY2KBE6ZciYov the variable was set
+    to 1dac794 and `git cat-file -e` still missed, so the gate quietly stayed
+    on HEAD^ — the exact bug it was meant to fix, shipped inert. The fetch is
+    what makes the fix real, so its attempt is pinned here.
+    """
+    _commit(repo, "dashboard/page.md", "changed\n")
+    result = _gate(repo, VERCEL_GIT_PREVIOUS_SHA="0" * 40)
+    assert "fetched previous SHA" in result.stdout, (
+        "the gate must TRY to fetch a previous SHA it does not have; without "
+        f"that it can never use one.\n{result.stdout}"
+    )
+
+
+def test_falls_back_to_head_parent_when_the_previous_sha_is_unfetchable(repo: Path):
+    """The fetch can still fail — no network, no origin, a garbage SHA.
 
     Resolving it blindly would make `git diff` fail and — depending on how that
-    error were handled — could skip. The gate must notice and fall back.
+    error were handled — could skip. The gate must notice and fall back. This
+    throwaway repo has no `origin`, so the fetch genuinely cannot succeed.
     """
     _commit(repo, "dashboard/page.md", "changed\n")
     result = _gate(repo, VERCEL_GIT_PREVIOUS_SHA="0" * 40)
