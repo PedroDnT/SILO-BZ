@@ -848,14 +848,61 @@ def test_close_unit_is_in_the_catalog_metric_map():
 # ---------------------------------------------------------------------------
 
 
-def test_privilege_sweep_revokes_every_rls_disabled_public_object():
+def test_privilege_sweep_revokes_every_public_object_this_repo_owns():
     body = _strip_comments(SQL12)
     assert "REVOKE ALL ON %s FROM anon, authenticated" in body, (
         "12_grants_and_rls.sql must sweep, not enumerate: a per-table revoke list "
         "silently misses every dataset and partition added after it was written"
     )
-    assert "NOT c.relrowsecurity" in body
     assert "nspname = 'public'" in body
+    # The RLS arm still exists so the other application's tables stay out of
+    # scope, but it can no longer be the ONLY thing that decides.
+    assert "NOT c.relrowsecurity" in body
+    assert "c.relname ~ " in body, (
+        "the sweep must also match this repo's own objects by name: RLS was "
+        "enabled on our landing tables on 2026-08-29 and a bare "
+        "`NOT relrowsecurity` then stopped revoking them entirely"
+    )
+
+
+def test_sweep_name_pattern_covers_every_object_this_repo_declares():
+    """The prefix list is load-bearing, so prove it against the real schema.
+
+    If someone adds a dataset under a new naming family and forgets the
+    pattern, the sweep silently stops covering it — exactly the failure this
+    whole predicate exists to prevent. Catch it here, offline.
+    """
+    import re
+
+    body = _strip_comments(SQL12)
+    m = re.search(r"c\.relname ~ '(\^\([^']+\))'", body)
+    assert m, "could not find the sweep's name pattern"
+    pattern = re.compile(m.group(1))
+    extra = set(re.findall(r"c\.relname = '([a-z0-9_]+)'", body))
+
+    declared = set()
+    roots = [ROOT / "src" / "store"]
+    for base in roots:
+        for path in list(base.glob("*.sql")) + list(base.glob("migrations/*.sql")) + list(
+            base.glob("analytical/*.sql")
+        ):
+            for name in re.findall(
+                r"^CREATE (?:TABLE|MATERIALIZED VIEW|OR REPLACE VIEW|VIEW)"
+                r"(?:\s+IF NOT EXISTS)?\s+([a-z0-9_.]+)",
+                path.read_text(),
+                re.MULTILINE,
+            ):
+                # Schema-qualified objects (api.quotes) are out of the sweep's
+                # scope by construction — it only walks nspname = 'public'.
+                if "." not in name:
+                    declared.add(name)
+
+    assert declared, "found no declared public objects — the parser broke, not the SQL"
+    missed = sorted(n for n in declared if not pattern.match(n) and n not in extra)
+    assert not missed, (
+        "these public objects are declared by this repo but the sweep's name "
+        f"pattern does not match them, so they would keep any anon GRANT: {missed}"
+    )
 
 
 def test_sweep_precedes_the_grants_it_must_not_undo():
@@ -869,10 +916,11 @@ def test_sweep_precedes_the_grants_it_must_not_undo():
 
 
 def test_sweep_does_not_touch_the_other_application_tables():
-    """RLS-enabled tables belong to the Edge-Functions app, not this pipeline.
+    """The Edge-Functions app's tables stay out of scope.
 
-    Their boundary is RLS; stripping `authenticated` from them would break an
-    app whose privilege needs this repo cannot see.
+    They are RLS-enabled and carry none of this repo's naming prefixes, so
+    neither arm of the sweep predicate selects them. Stripping `authenticated`
+    from them would break an app whose privilege needs this repo cannot see.
     """
     body = _strip_comments(SQL12)
     assert "ON ALL TABLES IN SCHEMA public FROM anon" not in body

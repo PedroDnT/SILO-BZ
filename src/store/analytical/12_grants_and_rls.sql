@@ -126,7 +126,24 @@ BEGIN
         JOIN pg_namespace ns ON ns.oid = c.relnamespace
         WHERE ns.nspname = 'public'
           AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
-          AND NOT c.relrowsecurity
+          -- Sweep an object when it is NOT RLS-protected (the original rule,
+          -- which keeps the other application's tables out of scope), OR when
+          -- it is demonstrably one of ours. The second arm is the fix: RLS was
+          -- enabled across this repo's own landing tables on 2026-08-29, and a
+          -- bare `NOT relrowsecurity` then silently stopped revoking them. RLS
+          -- is not a substitute for the revoke — a permissive `USING (true)`
+          -- policy plus any surviving GRANT would re-open landing data — so
+          -- ownership, not RLS status, has to decide.
+          --
+          -- Every object this repo creates matches one of these prefixes or is
+          -- named outright; verified against all 93 declared public objects in
+          -- schema.sql, migrations/ and analytical/. Add to this list when a
+          -- new naming family appears, or the sweep quietly stops covering it.
+          AND (
+                NOT c.relrowsecurity
+                OR c.relname ~ '^(cvm_|bacen_|b3_|anbima_|cia_|etf_|dim_|fact_|mv_|vw_)'
+                OR c.relname = 'instrument_activity'
+              )
     LOOP
         EXECUTE format('REVOKE ALL ON %s FROM anon, authenticated', t.obj);
         n := n + 1;
