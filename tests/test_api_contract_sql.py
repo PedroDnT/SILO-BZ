@@ -75,7 +75,6 @@ EXPECTED_FUNCTIONS = {
     "api.search_funds",
     "api.coverage",
     "api.panel",
-    "api.universe",
     "api.lookup",
     "api.catalog",
 }
@@ -328,22 +327,14 @@ def test_b3_asset_type_reaches_every_discovery_and_panel_surface():
     assert "v.instrument_type   AS asset_class" in SQL19
     assert "FROM public.vw_b3_instrument_typed v" in SQL19
     assert "q.asset_class" in FUNCS["api.panel"]
-    assert "q.asset_class" in FUNCS["api.universe"]
     # lookup's quotes arm aliases the typed subquery as t (q is the
     # escaped-query CTE since the step-5 hardening).
     assert "t.asset_class" in FUNCS["api.lookup"]
     assert "FROM api.quotes" in FUNCS["api.lookup"]
 
 
-def test_universe_classifies_only_the_latest_b3_session():
-    chunk = FUNCS["api.universe"]
-    assert "latest_quote_session AS" in chunk
-    assert "SELECT max(q.trade_date)" in chunk
-    assert "s.trade_date = q.trade_date" in chunk
-
-
 def test_typed_b3_surfaces_do_not_assume_equity_board_02():
-    for name in ("api.panel", "api.universe", "api.lookup"):
+    for name in ("api.panel", "api.lookup"):
         assert "board = '02'" not in FUNCS[name]
     assert re.search(r"p_board\s+TEXT\s+DEFAULT\s+NULL", FUNCS["api.quote_history"])
     assert re.search(r"p_board\s+TEXT\s+DEFAULT\s+NULL", FUNCS["api.quote_latest"])
@@ -424,7 +415,6 @@ def test_caps_are_serve_caps_plus_one():
 
 
 def test_discovery_functions_stay_bounded():
-    assert re.search(r"LIMIT\s+LEAST\(GREATEST\(COALESCE\(p_limit,\s*50\),\s*1\),\s*500\)", FUNCS["api.universe"])
     assert re.search(r"\bLIMIT\s+20\b", _strip_comments(FUNCS["api.lookup"]))
     assert re.search(r"\bLIMIT\s+1\b", _strip_comments(FUNCS["api.quote_latest"]))
 
@@ -481,36 +471,12 @@ def test_coverage_includes_the_derivatives_segment():
         )
 
 
-def test_universe_supports_option_and_termo_classes():
-    body = _strip_comments(FUNCS["api.universe"])
-    assert re.search(r"p_asset_class\s*=\s*'option'", body)
-    assert re.search(r"p_asset_class\s*=\s*'termo'", body)
-    assert re.search(r"'derivative'", body)
-
-
-def test_universe_derivative_branches_are_scoped_to_the_latest_session():
-    # Aggregating every option row ever landed is a seq scan over ~89% of
-    # b3_cotahist — a full-table GROUP BY there already times out in
-    # production. Both derivative branches must pin trade_date to their own
-    # segment's newest session (which is also the honest answer: expired
-    # series are not "the universe").
-    body = _strip_comments(FUNCS["api.universe"])
-    derivative_part = body[body.index("'option'"):]
-    assert derivative_part.count("b.trade_date = ") == 2, (
-        "a universe derivative branch lost its latest-session scope"
-    )
-
-
-# The MIN/MAX -> index-scan rewrite only fires under a plain equality qual, so
-# `max(trade_date) WHERE tpmerc IN (...)` plans as a seq scan over the option
-# segment. Every latest-session probe must therefore be per-tpmerc equality
-# (combined with GREATEST where more than one segment counts).
-@pytest.mark.parametrize("fn", ["api.option_chain", "api.coverage", "api.universe"])
+@pytest.mark.parametrize("fn", ["api.option_chain", "api.coverage"])
 def test_latest_session_probes_avoid_an_in_list_max(fn):
     body = _strip_comments(FUNCS[fn])
     # Match the bad shape tightly — a max() whose OWN FROM/WHERE is the
     # b3_cotahist IN-list. A looser pattern spans unrelated arms of the same
-    # statement (api.universe's equity arm does its own max(trade_date), and
+    # statement (each arm does its own max(trade_date), and
     # its derivative arm separately filters tpmerc IN (...)) and cries wolf.
     assert not re.search(
         r"(?:max|MAX)\s*\(\s*(?:\w+\.)?trade_date\s*\)[^()]*?"
@@ -1017,12 +983,3 @@ def test_agent_instructions_point_at_the_header():
     assert "Content-Range" in AGENT_INSTRUCTIONS
 
 
-def test_universe_bounds_the_tape_scan():
-    """api.universe('equity') took 6.83s and failed every anon call at 3s."""
-    body = _strip_comments(FUNCS["api.universe"])
-    assert "tape_floor" in body, "universe must bound the partition key"
-    assert "mv_b3_monthly_activity" in body
-    # Both scans need it: latest_quote_session AND quote_rows.
-    assert body.count("f.from_date") >= 2, (
-        "bounding only the max() leaves quote_rows scanning every partition"
-    )

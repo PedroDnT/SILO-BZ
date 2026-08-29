@@ -1,0 +1,31 @@
+-- 31 — drop api.universe
+--
+-- Removed at the owner's request. This migration exists because the analytical
+-- layer only ever CREATEs OR REPLACEs: deleting the function from
+-- 19_api_contract.sql stops it being recreated, but does nothing about the copy
+-- already living in production. Without an explicit DROP the endpoint would
+-- keep answering forever, absent from the contract that describes it — which is
+-- worse than either keeping it or removing it cleanly.
+--
+-- WHAT THIS COSTS, stated so nobody rediscovers it as a bug:
+--
+-- Cash tickers and fund CNPJs are still discoverable. api.lookup resolves a
+-- name, ticker, ISIN or CNPJ, and the api.funds / api.quotes views enumerate
+-- and paginate properly (universe never did — it was capped at 500 rows,
+-- alphabetical, no paging: a sampler, not a census).
+--
+-- Option and termo codnegs are NOT. They have no names for lookup to resolve,
+-- so universe was the only way to list them. api.option_chain is what remains
+-- and it requires a codneg prefix of at least three characters, which means
+-- there is no longer any way to browse the derivative namespace cold — you must
+-- already know roughly what you are looking for. That is a deliberate reduction
+-- in surface area, not an oversight.
+--
+-- Reversible: the function body is in this repository's history (it was removed
+-- from 19_api_contract.sql in the same commit as this migration).
+--
+-- IF NOT EXISTS so a replay, or a fresh database that never had the function,
+-- is a clean no-op. The signature is pinned because DROP FUNCTION without an
+-- argument list fails when overloads exist.
+
+DROP FUNCTION IF EXISTS api.universe(TEXT, INT);

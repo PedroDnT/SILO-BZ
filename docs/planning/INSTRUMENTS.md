@@ -24,8 +24,11 @@ grains die.
 
 Discovery is part of the contract, not an afterthought:
 
-- `api.universe(asset_class)` and `api.lookup(query)` grow one `asset_class`
-  value per new class, so both audiences find instruments the same way.
+- `api.lookup(query)` grows one `asset_class` value per new class, so both
+  audiences find instruments the same way. (`api.universe(asset_class)` was the
+  other half of this and has been dropped — see `31_drop_api_universe.sql`.
+  Nothing enumerates option or termo codnegs now; `api.option_chain` needs a
+  3-character prefix.)
 - `api.coverage()` grows one row per new dataset (what, as-of, source).
 - The metric catalog goes public as `api.catalog()` returning the same JSON
   `serve/catalog.py` serves locally, so an agent on the Data API can
@@ -172,7 +175,7 @@ above is _their_ pattern, generalized.
   class in `api-docs/`, and errors/empties per the conventions page
   (PostgREST `200 []`, caps at N+1).
 - **Agents** get exactly three things to learn, ever: `catalog()` (what
-  exists), `universe`/`lookup` (which ids), `panel` (the data, one shape).
+  exists), `lookup` (which ids), `panel` (the data, one shape).
   A new instrument class changes _none_ of those signatures — it adds rows
   to their outputs. That is the property worth defending, and it is why the
   2-D shapes stay out of the panel instead of bending it.

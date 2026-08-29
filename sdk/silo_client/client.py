@@ -102,9 +102,6 @@ class SiloClient:
         from CVM's published FCA map — never a name match."""
         return self._rpc("lookup", {"p_query": query})
 
-    def universe(self, asset_class: Optional[str] = None, limit: int = 500) -> List[Dict[str, Any]]:
-        return self._rpc("universe", {"p_asset_class": asset_class, "p_limit": limit})
-
     # -- series -------------------------------------------------------------
 
     def quote_history(

@@ -7,14 +7,14 @@ being handed a fabricated price, fill, or ticker↔CNPJ match.
 
 This file is the ordered requirements to get there. Do not skip a step: later
 ones assume earlier ones hold. The HTTP surface is documented in
-[docs/API.md](../API.md); this file is the *why / in what order / done when*.
+[docs/API.md](../API.md); this file is the _why / in what order / done when_.
 
 ## Outcome (definition of done)
 
 A caller who only knows “PETR4 vs this FIDC’s delinquency since 2019” can:
 
 1. Discover which metrics exist and at which grain (`GET /v1/catalog`).
-2. Resolve names to ids without invented joins (`GET /v1/lookup`, `/v1/universe`).
+2. Resolve names to ids without invented joins (`GET /v1/lookup`).
 3. Pull a `(id, date, metric, value)` panel, long or wide (`GET /v1/panel`).
 4. See JSON `null` where the warehouse has no observation.
 5. Trust `as_of` from `/v1/coverage` before claiming freshness.
@@ -25,12 +25,12 @@ Not done: a quote widget, a PostgREST dump of landing tables, or a
 
 ## Users (who drives each requirement)
 
-| User | Job | Success looks like |
-|---|---|---|
-| **Researcher** | Mix B3 prints with CVM NAV/delinquency/flows | One panel, two grains aligned on `freq=month`, nulls stay null |
-| **Agent** | Answer an analytical question from tools | Catalog once, then lookup, then panel — never invent a metric |
-| **Chart / app** | Draw one ticker or one fund | `/v1/quotes/{ticker}?range=1y`, `/v1/funds/{cnpj}/nav` |
-| **Operator** | Keep the warehouse true | Ingest + `cvm_ingest_log`; read API cannot write |
+| User            | Job                                          | Success looks like                                             |
+| --------------- | -------------------------------------------- | -------------------------------------------------------------- |
+| **Researcher**  | Mix B3 prints with CVM NAV/delinquency/flows | One panel, two grains aligned on `freq=month`, nulls stay null |
+| **Agent**       | Answer an analytical question from tools     | Catalog once, then lookup, then panel — never invent a metric  |
+| **Chart / app** | Draw one ticker or one fund                  | `/v1/quotes/{ticker}?range=1y`, `/v1/funds/{cnpj}/nav`         |
+| **Operator**    | Keep the warehouse true                      | Ingest + `cvm_ingest_log`; read API cannot write               |
 
 Integrity rules in `CLAUDE.md` apply to every step: never fabricate, preserve
 provenance, validate before upsert, idempotent `ON CONFLICT`.
@@ -48,9 +48,15 @@ handler. Prices are unadjusted. Default cash board is `02`.
 **Acceptance**
 
 - [x] `src/store/analytical/19_api_contract.sql` defines `api.quotes`,
-      `api.funds`, `api.panel`, `api.lookup`, `api.universe`, `api.coverage`.
+      `api.funds`, `api.panel`, `api.lookup`, `api.coverage`.
 - [x] `serve/app.py` exposes `/v1/quotes`, `/v1/funds`, `/v1/panel`,
-      `/v1/lookup`, `/v1/universe`.
+      `/v1/lookup`.
+
+> `api.universe` / `/v1/universe` were part of this step when it was accepted and
+> were **dropped at the owner's request** (migration `31_drop_api_universe.sql`).
+> Enumeration now belongs to the `api.funds` view, which pages properly; the
+> derivative namespace is no longer browsable cold. See the migration header.
+
 - [x] `docs/API.md` describes the researcher loop ending at the notebook.
 
 **Do not reopen.** Do not GRANT `anon` on `b3_cotahist`. Do not add a second
@@ -71,7 +77,8 @@ notebook reduction of a panel, not as an API answer.
 - [x] `GET /v1/catalog` returns `kind: catalog`, `primitive: panel`, the
       metric map, constraints, and examples that call `/v1/panel`.
 - [x] `GET /v1/tools` returns OpenAI-style tools: `silo_catalog`,
-      `silo_lookup`, `silo_universe`, `silo_panel`, `silo_coverage`.
+      `silo_lookup`, `silo_panel`, `silo_coverage` (`silo_universe` was removed
+      with the endpoint).
 - [x] No `/v1/query` route. Catalog text does not tell anyone to POST one.
 - [x] `serve.app._PANEL_METRICS` is `tuple(METRICS)` so the allow-list cannot
       drift from the catalog.
@@ -111,7 +118,7 @@ PR cannot merge SQL that only substring-matches. Until then, dispatch
 **User:** researcher asking for 50 ids × 10 metrics × 20 years.
 
 **Requirement.** Limits are enforced in SQL and connections are pooled. A 400
-must happen *before* Postgres materializes and Python `fetchall()`s the body.
+must happen _before_ Postgres materializes and Python `fetchall()`s the body.
 
 **Acceptance**
 
@@ -138,7 +145,7 @@ adjacent observations. Stale last-prints are labeled.
 **Acceptance**
 
 - [ ] Daily `close_return` is null when the previous session is not the
-      previous calendar day (or is documented as “previous *session*” in both
+      previous calendar day (or is documented as “previous _session_” in both
       catalog and SQL — pick one and test it). A three-month halt must not
       yield one print-to-print ratio labeled as a daily return.
 - [ ] Monthly panel rows carry `obs_date` (the actual session) next to
@@ -152,7 +159,7 @@ return and a mid-month last print as month-end.
 
 ---
 
-## Step 5 — Lookup and universe are usable
+## Step 5 — Lookup and enumeration are usable
 
 **User:** agent resolving “Petrobras” or listing FIDC names.
 
@@ -164,9 +171,10 @@ return and a mid-month last print as month-end.
 - [ ] `LIMIT 20` has `ORDER BY` (relevance or name) so the 20 rows are stable.
 - [ ] Trigram (or equivalent) index on `dim_fund.fund_name` and
       `cia_company.denom_cia` if lookup stays `ILIKE '%q%'`.
-- [ ] `api.universe` does not `GROUP BY ticker` over the full COTAHIST
-      history to satisfy `LIMIT 50` — use a distinct-ticker side table or
-      `DISTINCT ON` from a recent window.
+- [x] ~~`api.universe` does not `GROUP BY ticker` over the full COTAHIST
+      history to satisfy `LIMIT 50`~~ — moot: the function was bounded to the
+      latest stored sessions (which fixed its 57 s timeout) and then dropped
+      entirely at the owner's request.
 
 **Blocks.** Agents timeout or get a random 20 names; researchers cannot
 trust identifier search.
@@ -250,14 +258,14 @@ exists as data.
 
 ## How to tell where we are
 
-| Step | Status | Evidence |
-|---|---|---|
-| 0 Contract | done | `19_api_contract.sql`, `serve/app.py`, `docs/API.md` |
-| 1 Catalog | done | `GET /v1/catalog`, `GET /v1/tools`, `api.catalog()` |
-| 2 SQL smoke | **done** (2026-08-27) | `sql-compile` job in **Actions → Tests** builds schema + migrations + the whole analytical layer + all dashboard sources on a throwaway Postgres on EVERY PR (`silo.ci_smoke_bypass` downgrades the empty-DB guards); `api-smoke` dispatch still smokes live |
-| 3 Limits / pool | **done** | SQL caps 5001/100001 in `19`; `serve/pool.py` (`SILO_API_DATABASE_URL`, 15s statement_timeout); `ALTER ROLE silo_api SET statement_timeout` in `12` |
-| 4 Honest time | **done** (2026-08-27) | daily `close_return` needs prev session ≤ 7 days AND an unchanged quotation factor; default windows clamp fund rows to `latest_complete_period(entity)` (`mv_period_completeness`); `coverage()` reports `complete_through` |
-| 5 Lookup | **done** (2026-08-27) | ILIKE metacharacters escaped; exact-match rank before `LIMIT 20`; pg_trgm (migration 24 on `cia_company`, matview-side index on `dim_fund`); company rows carry `tickers` from the published FCA map (migration 25) |
-| 6 Privileges | **re-done** (2026-08-28) | The 2026-08-26 "done" was false in production: the revoke was a 19-table list, so every dataset and every *partition* added since stayed granted — `anon` held SELECT on 77 objects in `public`, readable over PostgREST via `Accept-Profile: public`. Now a sweep over all RLS-disabled `public` objects, run before the explicit grants (`12`), verified 78 → 10 on a real apply. Every api fn SECURITY DEFINER with pinned search_path; `silo_api` NOLOGIN + api-only grants. Go-live gap: per-user keys + RLS, and rotate the committed publishable key |
-| 7 HTTPS | **obsoleted** (2026-08-26) | production path is Supabase-native PostgREST (`docs/API.md`); no gateway to terminate TLS. `serve/` stays the local notebook adapter |
-| 8 More metrics | later | CIA / BACEN not in `METRICS` |
+| Step            | Status                     | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0 Contract      | done                       | `19_api_contract.sql`, `serve/app.py`, `docs/API.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 1 Catalog       | done                       | `GET /v1/catalog`, `GET /v1/tools`, `api.catalog()`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 2 SQL smoke     | **done** (2026-08-27)      | `sql-compile` job in **Actions → Tests** builds schema + migrations + the whole analytical layer + all dashboard sources on a throwaway Postgres on EVERY PR (`silo.ci_smoke_bypass` downgrades the empty-DB guards); `api-smoke` dispatch still smokes live                                                                                                                                                                                                                                                                                                |
+| 3 Limits / pool | **done**                   | SQL caps 5001/100001 in `19`; `serve/pool.py` (`SILO_API_DATABASE_URL`, 15s statement_timeout); `ALTER ROLE silo_api SET statement_timeout` in `12`                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 4 Honest time   | **done** (2026-08-27)      | daily `close_return` needs prev session ≤ 7 days AND an unchanged quotation factor; default windows clamp fund rows to `latest_complete_period(entity)` (`mv_period_completeness`); `coverage()` reports `complete_through`                                                                                                                                                                                                                                                                                                                                 |
+| 5 Lookup        | **done** (2026-08-27)      | ILIKE metacharacters escaped; exact-match rank before `LIMIT 20`; pg_trgm (migration 24 on `cia_company`, matview-side index on `dim_fund`); company rows carry `tickers` from the published FCA map (migration 25)                                                                                                                                                                                                                                                                                                                                         |
+| 6 Privileges    | **re-done** (2026-08-28)   | The 2026-08-26 "done" was false in production: the revoke was a 19-table list, so every dataset and every _partition_ added since stayed granted — `anon` held SELECT on 77 objects in `public`, readable over PostgREST via `Accept-Profile: public`. Now a sweep over all RLS-disabled `public` objects, run before the explicit grants (`12`), verified 78 → 10 on a real apply. Every api fn SECURITY DEFINER with pinned search_path; `silo_api` NOLOGIN + api-only grants. Go-live gap: per-user keys + RLS, and rotate the committed publishable key |
+| 7 HTTPS         | **obsoleted** (2026-08-26) | production path is Supabase-native PostgREST (`docs/API.md`); no gateway to terminate TLS. `serve/` stays the local notebook adapter                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 8 More metrics  | later                      | CIA / BACEN not in `METRICS`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |

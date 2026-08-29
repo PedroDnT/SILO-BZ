@@ -3,7 +3,7 @@ name: iliquid-nightly
 description: >
   Use when answering questions about Brazilian public financial data via the
   public read API — B3 cash quotes, CVM funds (NAV, flows, FIDC delinquency),
-  panels, lookup, universe, and coverage. Not for ingest, schema, or landing tables.
+  panels, lookup, and coverage. Not for ingest, schema, or landing tables.
 ---
 
 # iliquid nightly (agents)

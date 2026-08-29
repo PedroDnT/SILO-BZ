@@ -2,7 +2,7 @@
 
 The primitive is a panel: (id, date, metric, value). An agent should:
   1. GET /v1/catalog (once, cache it)
-  2. GET /v1/lookup or /v1/universe to resolve ids
+  2. GET /v1/lookup to resolve ids
   3. GET /v1/panel with those ids and a subset of catalog metrics
   4. reduce in the notebook (corr, rank, OLS, …) — not over HTTP
 
@@ -22,6 +22,12 @@ __all__ = [
     "tool_specs",
 ]
 
+# 15: api.universe dropped at the owner's request — removed from the contract,
+# the /v1 route, the SDK and the tool specs, and DROPped in production by
+# migration 31. Cash and fund ids are still discoverable through lookup and the
+# funds/quotes views. Option and termo codnegs are NOT: option_chain needs a
+# 3-character prefix, so there is no longer any way to browse that namespace
+# cold. That is a deliberate reduction in surface, not an oversight.
 # 14: the documented row cap was unreachable and the real one was silent.
 # PostgREST caps EVERY response at 1000 rows (db-max-rows) and keeps the OLDEST,
 # so a panel for PETR4 from 2019 returned 1000 rows ending 2023-01-09 with a 200
@@ -41,8 +47,9 @@ __all__ = [
 # surface is PostgREST — an agent following it issued the wrong verb and, worse,
 # believed an over-cap panel answers 400 when PostgREST returns cap+1 rows with
 # a 200. Both surfaces are now named, the cap constraint explains the sentinel,
-# and the postgrest section carries the core contract (panel/lookup/universe/
-# coverage/funds/quotes), not just the typed-cash extras.
+# and the postgrest section carries the core contract (panel/lookup/coverage/
+# funds/quotes), not just the typed-cash extras. (universe was part of that
+# set until v15 dropped it.)
 # 10: close_unit — close divided by the published quotation factor, so price
 # levels are comparable across papers quoted per lot; raw close untouched.
 # 9: lookup company rows carry `tickers` — CVM's published FCA
@@ -61,7 +68,7 @@ __all__ = [
 # 6: one endpoint per cash instrument type, each carrying both lot sizes.
 # 5: main's typed cash asset classes (4) merged with the option/termo id_types
 # and list-valued id_type this branch introduced (3).
-CATALOG_VERSION = 14
+CATALOG_VERSION = 15
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -240,10 +247,6 @@ CONSTRAINTS = [
     "An unrecognised metric name is IGNORED, not rejected: the panel comes "
     "back smaller and perfectly plausible. Take metric names from this "
     "catalog's `metrics` map, never from memory.",
-    "universe is capped at 500 rows, alphabetical, and does not paginate — it "
-    "is a sampler, not a census. To enumerate a family, page the funds view "
-    "(GET /rest/v1/funds?entity_type=eq.fidc with Prefer: count=exact) and "
-    "batch the resulting ids into panel calls.",
     "Option chains require a codneg prefix of at least 3 characters "
     "(api.option_chain); an unfiltered whole-market chain is refused.",
     "Option rows carry underlying_ticker resolved from the PUBLISHED ISIN "
@@ -258,8 +261,6 @@ CONSTRAINTS = [
     "(odd lot). equities rows carry share_class (ON/PN/PNA/PNB/PNC/PND) and "
     "governance_segment (NM/N1/N2/MA/M2/MB) parsed from published ESPECI, "
     "never from the ticker suffix.",
-    "Option/termo codnegs resolve via universe(asset_class=option|termo) or "
-    "option_chain, not lookup — option series have no names to resolve.",
     "Each cash instrument type has its own endpoint (equities, bdrs, units, "
     "fund_quotas, cash_securities) — the same rows as quotes, split by the type "
     "derived from published TPMERC/ESPECI. Their grain adds `lot` "
@@ -267,9 +268,6 @@ CONSTRAINTS = [
     "lots. quotes itself stays standard-lot only.",
     "Price series stay unified: a codneg has exactly one instrument type, so "
     "quote_history works for any cash ticker without knowing its type first.",
-    "universe(asset_class=option|termo) lists the codnegs that printed on that "
-    "segment's most recent session — currently-listed series, not every series "
-    "ever listed. Expired series stay queryable by codneg in option_history.",
 ]
 
 EXAMPLES = [
@@ -309,7 +307,7 @@ EXAMPLES = [
 AGENT_INSTRUCTIONS = (
     "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, "
     "B3 COTAHIST cash quotes, options and termo). Call catalog once and cache "
-    "it. Resolve names with lookup/universe, then fetch a panel. The primitive "
+    "it. Resolve names with lookup, then fetch a panel. The primitive "
     "is a panel (id, date, metric, value). Correlation, ranking, spreads, "
     "regressions and other relations are reductions of that panel — compute "
     "them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ "
@@ -383,7 +381,6 @@ def catalog_payload() -> Dict[str, Any]:
             "tools": "GET /v1/tools",
             "panel": "GET /v1/panel",
             "lookup": "GET /v1/lookup?q=",
-            "universe": "GET /v1/universe?asset_class=",
             "quotes": "GET /v1/quotes/{ticker}",
             "funds": "GET /v1/funds/{cnpj}/nav",
             "coverage": "GET /v1/coverage",
@@ -394,7 +391,6 @@ def catalog_payload() -> Dict[str, Any]:
             # itself is reachable on the deployed surface.
             "panel": "POST /rest/v1/rpc/panel",
             "lookup": "POST /rest/v1/rpc/lookup",
-            "universe": "POST /rest/v1/rpc/universe",
             "coverage": "POST /rest/v1/rpc/coverage",
             "search_funds": "POST /rest/v1/rpc/search_funds",
             "fund_profile": "POST /rest/v1/rpc/fund_profile",
@@ -442,24 +438,6 @@ def tool_specs() -> List[Dict[str, Any]]:
                     "type": "object",
                     "properties": {"q": {"type": "string"}},
                     "required": ["q"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "silo_universe",
-                "description": (
-                    "List identifiers by asset_class: equity, unit, bdr, "
-                    "fund_quota, cash_security, fi, fidc, fii, fip, fiagro, "
-                    "option, termo."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "asset_class": {"type": "string"},
-                        "limit": {"type": "integer", "minimum": 1, "maximum": 500},
-                    },
                 },
             },
         },

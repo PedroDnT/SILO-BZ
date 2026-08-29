@@ -184,8 +184,9 @@ api.option_history(p_codneg TEXT,
 
 <ParamField body="p_codneg" type="string" required>
   The exact series code, e.g. `PETRH400`. Upper-cased and trimmed server-side. Get one from
-  `option_chain` or from [`universe`](/api-docs/universe) — [`lookup`](/api-docs/lookup)
-  does **not** resolve option codes.
+  `option_chain` — [`lookup`](/api-docs/lookup) does **not** resolve option codes, and
+  there is no endpoint that enumerates them, so you need the underlying's root (the
+  `p_prefix` argument) to find a series.
 </ParamField>
 
 <ParamField body="p_from" type="date" default="CURRENT_DATE - 365">
