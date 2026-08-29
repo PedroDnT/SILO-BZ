@@ -162,3 +162,67 @@ def test_health_check_and_diagnostics_scripts_are_bash_n_clean():
         check=False,
     )
     assert proc.returncode == 0, proc.stderr.decode()
+
+
+# ---------------------------------------------------------------------------
+# The public surface is checked over HTTPS as anon, not over psql as the owner.
+#
+# On 2026-08-29 every api.* function and view returned 42501 to the publishable
+# key for hours, while the owner-path checks in this same workflow kept
+# passing — they connect as the table owner, which bypasses grants. A
+# privilege regression is invisible to owner-path SQL by construction.
+# ---------------------------------------------------------------------------
+
+
+def _anon_step():
+    return _step("Public API reachable as anon")
+
+
+def test_public_api_is_probed_as_anon_over_https():
+    step = _anon_step()
+    body = step["run"]
+    # The whole point: an HTTP request carrying the publishable key, not psql.
+    assert "apikey: $key" in body
+    assert "psql" not in body, (
+        "this check must not use psql — connecting as the owner bypasses the "
+        "grants whose loss it exists to detect"
+    )
+    for route in ("rpc/coverage", "rpc/catalog", "quotes?limit=1", "funds?limit=1"):
+        assert route in body, f"{route} is part of the documented surface"
+
+
+def test_public_api_check_runs_even_when_the_db_checks_fail():
+    # A DB-side failure must not mask the public surface, and this step needs
+    # no secret, so it must not inherit the implicit success() gate.
+    assert _anon_step()["if"] == "always()"
+
+
+def test_landing_tables_are_verified_closed_against_production():
+    """The standing rule, checked live rather than inferred from the SQL."""
+    body = _anon_step()["run"]
+    assert "Accept-Profile: public" in body, (
+        "landing tables are only reachable under the public profile; without "
+        "this header the check proves nothing about them"
+    )
+    for table in ("cvm_fi_diario", "b3_cotahist", "cia_account", "bacen_sgs"):
+        assert table in body
+    assert "is READABLE by anon" in body
+
+
+def test_public_api_check_fails_the_job_rather_than_warning():
+    body = _anon_step()["run"]
+    # Disk warns because it needs human judgement. An unreachable API, or
+    # exposed landing data, is unambiguous — it must go red.
+    assert 'echo "PUBLIC API: FAIL"; exit 1' in body
+
+
+def test_publishable_key_has_a_single_source():
+    """Read from skill.md, never pasted in.
+
+    The key is already published in skill.md and api-docs/. Duplicating it
+    here would add another copy to rotate, and a stale copy would leave this
+    check silently probing a dead credential instead of failing loudly.
+    """
+    body = _anon_step()["run"]
+    assert "grep -oE 'sb_publishable_[A-Za-z0-9_]+' skill.md" in body
+    assert "sb_publishable__" not in body, "do not paste the key into the workflow"

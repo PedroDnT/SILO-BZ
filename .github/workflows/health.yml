@@ -237,6 +237,91 @@ jobs:
           fi
           echo "HEALTH: PASS"
 
+      # ------------------------------------------------- the public surface
+      # Every other check in this file reaches the database as the OWNER over
+      # psql, which bypasses grants entirely. That is a real blind spot, and it
+      # cost us: on 2026-08-29 the entire anonymous surface returned
+      # 42501 permission denied for hours while `SELECT * FROM api.coverage()`
+      # kept passing from CI. Owner-path SQL cannot see a privilege
+      # regression — only an anonymous HTTPS request can.
+      #
+      # So this step calls the API the way a caller actually does, and checks
+      # both halves of the contract:
+      #   1. every documented object answers anonymously, and
+      #   2. no landing table does.
+      # The second half is the standing rule (never GRANT anon on landing
+      # tables) verified against production instead of assumed from the SQL.
+      #
+      # The key is read out of skill.md rather than copied here. It is already
+      # published there and throughout api-docs/, it is read-only by design,
+      # and keeping one source means a rotation cannot leave this check
+      # silently probing a dead credential.
+      #
+      # always(): a DB-side failure above must not mask the public surface, and
+      # this needs no secret, so it runs even when POSTGRES_URL is absent.
+      - name: Public API reachable as anon
+        if: always()
+        env:
+          SILO_REST: "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"
+        run: |
+          set -uo pipefail
+          key=$(grep -oE 'sb_publishable_[A-Za-z0-9_]+' skill.md | head -1)
+          if [ -z "$key" ]; then
+            echo "::error::no publishable key found in skill.md — this check cannot run"
+            exit 1
+          fi
+          echo "probing $SILO_REST as anon with the published key"
+          pfail=0
+
+          probe() {   # name method path expected-status
+            local name="$1" method="$2" path="$3" expect="$4" code
+            if [ "$method" = POST ]; then
+              code=$(curl -s -o /tmp/probe -w '%{http_code}' -X POST "$SILO_REST/$path" \
+                -H "apikey: $key" -H 'Content-Type: application/json' \
+                -d '{}' --max-time 25)
+            else
+              code=$(curl -s -o /tmp/probe -w '%{http_code}' "$SILO_REST/$path" \
+                -H "apikey: $key" --max-time 25)
+            fi
+            if [ "$code" = "$expect" ]; then
+              echo "  ok   $name ($code)"
+            else
+              echo "  FAIL $name — got $code, expected $expect: $(head -c 160 /tmp/probe)"
+              pfail=1
+            fi
+          }
+
+          echo "--- the documented surface must answer anonymously ---"
+          probe "rpc/coverage"    POST rpc/coverage      200
+          probe "rpc/catalog"     POST rpc/catalog       200
+          probe "api.quotes"      GET  "quotes?limit=1"  200
+          probe "api.funds"       GET  "funds?limit=1"   200
+
+          # A landing table reachable with the publishable key is the one
+          # failure here that is a data-exposure incident rather than an
+          # outage. Anything other than 200 is fine — the point is that the
+          # row does not come back.
+          echo "--- landing tables must stay closed to anon ---"
+          for t in cvm_fi_diario b3_cotahist cia_account bacen_sgs; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$SILO_REST/$t?limit=1" \
+              -H "apikey: $key" -H 'Accept-Profile: public' --max-time 25)
+            if [ "$code" = "200" ]; then
+              echo "  FAIL $t is READABLE by anon — landing data is exposed"
+              echo "::error::$t is readable with the publishable key. See docs/DATABASE_MAINTENANCE.md and the sweep in 12_grants_and_rls.sql."
+              pfail=1
+            else
+              echo "  ok   $t closed ($code)"
+            fi
+          done
+
+          echo
+          if [ "$pfail" -ne 0 ]; then
+            echo "- 🔴 public API check FAILED" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+            echo "PUBLIC API: FAIL"; exit 1
+          fi
+          echo "- 🟢 public API answers anonymously; landing tables closed" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+          echo "PUBLIC API: PASS"
+
       # ----------------------------------------------------------- diagnostics
       # Investigation queries. Never fails on data: it exists to SHOW numbers.
       # Everything is bounded (LIMIT / narrow windows) so it cannot hammer prod.
