@@ -24,6 +24,51 @@ _DEFAULT_CHUNK_SIZE = 500
 _DEFAULT_POOL_SIZE = 4
 _RETRY_DELAYS = (5, 10, 20, 40)
 
+# libpq TCP keepalives. The ingest holds pooled connections idle for minutes
+# (B3 corporate-events is one HTTP call per issuer — ~12 min of fetch before
+# the upsert). Supabase's session pooler drops idle sockets well before the
+# kernel default keepalive (2h), and the next write then hangs until
+# `SSL SYSCALL error: EOF detected`. Probe after 30s idle so the pooler sees
+# traffic and a dead peer is noticed in ~60s instead of ~15 min.
+_KEEPALIVES = dict(
+    keepalives=1,
+    keepalives_idle=30,
+    keepalives_interval=10,
+    keepalives_count=3,
+)
+
+# Markers on psycopg2 errors that are safe to retry with a fresh connection.
+# "connection" / "server closed" / statement_timeout were the original set;
+# SSL SYSCALL EOF (run 33237536770, 2026-08-29) is the same class of death
+# and was falling through to an immediate raise because none of those
+# substrings appear in `SSL SYSCALL error: EOF detected`.
+_TRANSIENT_DB_MARKERS = (
+    "connection",
+    "server closed",
+    "57014",
+    "statement timeout",
+    "canceling statement",
+    "ssl syscall",
+    "eof detected",
+    "ssl error",
+    "broken pipe",
+    "connection reset",
+    "could not receive data",
+    "could not send data",
+    "terminating connection",
+    "admin_shutdown",
+    "crash shutdown",
+    "57p01",
+    "08006",
+    "08003",
+)
+
+
+def _is_transient_db_error(exc: BaseException) -> bool:
+    """True when the error is a dropped connection / cancelled statement."""
+    msg = str(exc).lower()
+    return any(marker in msg for marker in _TRANSIENT_DB_MARKERS)
+
 
 def _norm_key(k: str) -> str:
     """Lowercase + strip underscores — collapses CSV header variants like
@@ -144,7 +189,9 @@ class _PgClient:
         self._size = pool_size or _get_pool_size()
         # minconn=1: open one eagerly so a bad POSTGRES_URL fails at startup
         # rather than on the first slice, an hour into a backfill.
-        self._pool = psycopg2.pool.ThreadedConnectionPool(1, self._size, dsn=url)
+        self._pool = psycopg2.pool.ThreadedConnectionPool(
+            1, self._size, dsn=url, **_KEEPALIVES
+        )
         self._slots = threading.Semaphore(self._size)
         logger.info("Postgres pool: %d connection(s)", self._size)
 
@@ -314,17 +361,7 @@ def upsert_rows(
                 last_exc = None
                 break
             except Exception as exc:
-                msg = str(exc).lower()
-                if any(
-                    k in msg
-                    for k in (
-                        "connection",
-                        "server closed",
-                        "57014",
-                        "statement timeout",
-                        "canceling statement",
-                    )
-                ):
+                if _is_transient_db_error(exc):
                     last_exc = exc
                 else:
                     logger.error(
