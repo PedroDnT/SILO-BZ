@@ -156,6 +156,70 @@ class TestUpsertRows:
         assert result == 600
         assert call_sizes == [250, 250, 100]
 
+    def test_ssl_syscall_eof_is_retried_then_succeeds(self, monkeypatch):
+        """A dropped SSL socket must reconnect, not fail the daily run.
+
+        Run 33237536770 raised `SSL SYSCALL error: EOF detected` on the first
+        b3_corporate_event chunk and exited 1 because that string was not in
+        the retry matcher. Retrying with a fresh connection is the recovery.
+        """
+        from src.store.pg_client import upsert_rows
+
+        monkeypatch.setattr("src.store.pg_client.time.sleep", lambda _s: None)
+        calls = {"n": 0}
+
+        with patch("psycopg2.extras.execute_values") as mock_ev:
+            def _flaky(cur, sql, vals, **kw):
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    raise Exception("SSL SYSCALL error: EOF detected")
+
+            mock_ev.side_effect = _flaky
+            client = self._make_client()
+            result = upsert_rows(client, "b3_corporate_event", [{"id": 1}])
+
+        assert result == 1
+        assert calls["n"] == 2
+        client.reconnect.assert_called_once()
+
+    def test_non_transient_error_is_not_retried(self):
+        from src.store.pg_client import upsert_rows
+
+        with patch("psycopg2.extras.execute_values") as mock_ev:
+            mock_ev.side_effect = Exception('column "nope" does not exist')
+            client = self._make_client()
+            with pytest.raises(Exception, match="column"):
+                upsert_rows(client, "t", [{"id": 1}])
+        client.reconnect.assert_not_called()
+        assert mock_ev.call_count == 1
+
+
+class TestTransientDbError:
+    """The retry classifier that decides whether an upsert is retried."""
+
+    def test_ssl_syscall_eof_is_retryable(self):
+        from src.store.pg_client import _is_transient_db_error
+
+        # Verbatim from run 33237536770 (2026-08-29 daily ingest).
+        assert _is_transient_db_error(
+            Exception("SSL SYSCALL error: EOF detected")
+        )
+
+    def test_original_connection_markers_still_match(self):
+        from src.store.pg_client import _is_transient_db_error
+
+        assert _is_transient_db_error(Exception("server closed the connection unexpectedly"))
+        assert _is_transient_db_error(Exception("canceling statement due to statement timeout"))
+        assert _is_transient_db_error(Exception("57014"))
+
+    def test_integrity_and_syntax_errors_are_not_retryable(self):
+        from src.store.pg_client import _is_transient_db_error
+
+        assert not _is_transient_db_error(
+            Exception('duplicate key value violates unique constraint "uq_b3_corporate_event"')
+        )
+        assert not _is_transient_db_error(Exception('column "nope" does not exist'))
+
 
 # ---------------------------------------------------------------------------
 # cvm_ingestor helpers

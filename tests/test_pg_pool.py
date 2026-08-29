@@ -55,9 +55,10 @@ class FakeCursor:
 class FakePool:
     """Mimics ThreadedConnectionPool, including its raise-when-exhausted."""
 
-    def __init__(self, minconn, maxconn, dsn=None):
+    def __init__(self, minconn, maxconn, dsn=None, **kwargs):
         self.maxconn = maxconn
         self.dsn = dsn
+        self.connect_kwargs = kwargs
         self._free = [FakeConn() for _ in range(minconn)]
         self._out = 0
         self._made = minconn
@@ -254,3 +255,18 @@ class TestReconnectContract:
         assert len(client._pool.returned_conns) == before
         with client.cursor() as cur:
             assert cur is not None
+
+
+class TestKeepalives:
+    def test_pool_enables_tcp_keepalives(self, client):
+        """Idle pooled sockets must not wait for the kernel's 2h default.
+
+        Run 33237536770 died on `SSL SYSCALL error: EOF detected` after the
+        B3 events fetch left the pool idle ~12 min and the session pooler
+        had already dropped the socket.
+        """
+        kw = client._pool.connect_kwargs
+        assert kw["keepalives"] == 1
+        assert kw["keepalives_idle"] == 30
+        assert kw["keepalives_interval"] == 10
+        assert kw["keepalives_count"] == 3
