@@ -20,6 +20,9 @@ def _patches(cvm_totals=None, bacen=None, anbima=None, b3=None):
     """Patch the daily ingestors; each arg is either a return value or an Exception."""
     cvm = MagicMock()
     cvm.daily_update = AsyncMock(return_value=cvm_totals or {"cvm_fi_diario": 1})
+    # A MagicMock for .failures is truthy and iterable — that would make every
+    # healthy-path test fail once run_daily checks the CVM slice ledger.
+    cvm.failures = []
 
     bacen_ing = MagicMock()
     bacen_ing.backfill = AsyncMock()
@@ -131,3 +134,27 @@ async def test_b3_failure_exits_nonzero(monkeypatch):
         with pytest.raises(SystemExit) as exc:
             await rd.main()
     assert exc.value.code == 1
+
+
+@pytest.mark.asyncio
+async def test_cvm_slice_failures_exit_nonzero_after_other_sources(monkeypatch):
+    """CVMHostUnreachable per slice must fail the daily run, not only B3/BACEN.
+
+    Run 33237536770 logged 44 CVM errors, upserted 0 CVM rows, then only
+    went red because b3_corporate_events hit SSL EOF. BACEN/B3 must still
+    run so a blocked CVM IP does not skip sources that work.
+    """
+    from src.pipeline.cvm_pipeline import SliceFailure
+
+    monkeypatch.delenv("APIFY_TOKEN", raising=False)
+    p1, p2, p3, p4, cvm, _bacen, anbima_ing, b3_ing = _patches()
+    cvm.failures = [
+        SliceFailure("fii", "mensal_geral", 2026, None, "CVMHostUnreachable"),
+        SliceFailure("securit", "cra_mensal", 2026, None, "CVMHostUnreachable"),
+    ]
+    with p1, p2, p3, p4:
+        with pytest.raises(SystemExit) as exc:
+            await rd.main()
+    assert exc.value.code == 1
+    anbima_ing.daily_update.assert_awaited()
+    b3_ing.daily_update.assert_awaited()

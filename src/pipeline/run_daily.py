@@ -44,6 +44,24 @@ async def main() -> None:
 
     cvm_ingestor = CVMIngestor()
     totals = await cvm_ingestor.daily_update()
+    # Every ingest_* method catches its own exception, writes the audit row
+    # and returns 0, so daily_update() itself does not raise when CVM is
+    # blocked. Run 33237536770 (2026-08-29 06:00) logged 44 CVMHostUnreachable
+    # slices, upserted 0 CVM rows, then continued to BACEN/B3/ANBIMA and only
+    # went red because b3_corporate_events hit an SSL EOF. DB Health then
+    # failed on those unhealed slices. Fail the process for them — but AFTER
+    # the other sources have run, so a CVM IP block does not skip BACEN/B3.
+    if cvm_ingestor.failures:
+        logger.error(
+            "Daily CVM update finished with %d failed slice(s):",
+            len(cvm_ingestor.failures),
+        )
+        for failure in cvm_ingestor.failures:
+            logger.error("  %s", failure)
+        failures.append((
+            "cvm",
+            RuntimeError(f"{len(cvm_ingestor.failures)} failed slice(s)"),
+        ))
 
     # BACEN: incremental refresh — re-fetches the last ~30 days; cheap.
     try:

@@ -3,13 +3,15 @@
 
 WHY THIS EXISTS
 A backfill dispatch is up to 300 minutes of work whose every download goes to
-one host. When CVM refuses this runner's IP, that whole dispatch is doomed
-before it starts, and finding out costs the full grind. Measured on 2026-08-29:
-the 06:00 ingest spent ~40 minutes proving the same refusal across twenty
-slices, and the 07:35 health check then reported the pipeline red for it.
+one host; the daily ingest is the same host on a shorter clock. When CVM
+refuses this runner's IP, that whole dispatch is doomed before it starts, and
+finding out costs the full grind. Measured on 2026-08-29: the 06:00 ingest
+spent ~40 minutes proving the same refusal across twenty slices, logged each
+as error, and DB Health (run 33272549567) failed on those 44 unhealed rows.
 
 This asks the question once, in about a second, so the answer arrives before
-the work does rather than after.
+the work does rather than after. Wired into daily_ingest.yml, watchdog
+recovery, and every CVM job in backfill.yml.
 
 WHAT IT CHECKS, AND WHAT IT DELIBERATELY DOES NOT
 It issues a ranged GET for the first bytes of a file that has existed for years

@@ -76,6 +76,18 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      # Ask once whether CVM will talk to this runner before installing deps
+      # or writing 44 error rows. Measured 2026-08-29: the 06:00 ingest spent
+      # ~40 minutes proving the same connect refusal, logged every slice as
+      # error, then DB Health failed on those unhealed rows. A later
+      # analytics-only dispatch went green without fetching, and the Saturday
+      # watchdog no-op'd because fi/inf_diario still had Friday's ok. ANY HTTP
+      # response (including 404) passes; only a connect-level failure fails.
+      # analytics-only / b3-backfill never touch CVM, so they skip this.
+      - name: Probe dados.cvm.gov.br
+        if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily') }}
+        run: python scripts/check_cvm_reachable.py
+
       - name: Cache apt packages
         uses: actions/cache@v5
         with:

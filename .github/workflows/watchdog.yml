@@ -2,7 +2,11 @@ name: Ingest Watchdog
 
 # Self-healing safety net for the daily ingest. Runs a couple of hours after the
 # 06:00 UTC cron in daily_ingest.yml; if the daily FI slice (or the monthly
-# ANBIMA/ETF slice) is stale in cvm_ingest_log, it re-runs the daily ingest.
+# ANBIMA/ETF slice) is stale in cvm_ingest_log, OR if unhealed ingest errors
+# remain in the 26h health-gate window, it re-runs the daily ingest. Unhealed
+# errors are not weekend-gated: a Saturday CVMHostUnreachable burst is a failed
+# cron, not a quiet market day. Recovery probes CVM first so a blocked runner
+# IP fails in a second instead of writing another round of error rows.
 #
 # This lives entirely in GitHub Actions and reuses the existing POSTGRES_URL
 # secret — no GitHub PAT in the database, no pg_net. See scripts/check_staleness.py.
@@ -75,11 +79,17 @@ jobs:
             exit $code
           fi
 
+      # Recovery path: ask CVM first (a blocked IP must not write another
+      # round of unhealed error rows), then schema, then run_daily. Gated on
+      # the same condition as recovery so a no-op day stays a true no-op.
+      - name: Probe dados.cvm.gov.br
+        if: ${{ steps.staleness.outputs.stale == 'true' || github.event.inputs.force == 'true' }}
+        run: python scripts/check_cvm_reachable.py
+
       # Bootstrap schema/migrations before the recovery run. The watchdog
       # previously ran run_daily directly, so a recovery against a DB missing a
       # migration (e.g. cvm_fund_registry without migration 11's admin/gestor
-      # columns) failed silently — the exact drift this guards against. Gated on
-      # the same condition as the recovery so a no-op day stays a true no-op.
+      # columns) failed silently — the exact drift this guards against.
       - name: Apply schema + migrations
         if: ${{ steps.staleness.outputs.stale == 'true' || github.event.inputs.force == 'true' }}
         uses: ./.github/actions/apply-schema

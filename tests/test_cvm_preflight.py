@@ -17,6 +17,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/check_cvm_reachable.py"
 BACKFILL = ROOT / ".github/workflows/backfill.yml"
+DAILY = ROOT / ".github/workflows/daily_ingest.yml"
+WATCHDOG = ROOT / ".github/workflows/watchdog.yml"
 
 yaml = pytest.importorskip("yaml")
 
@@ -71,3 +73,30 @@ class TestWiring:
         src = SCRIPT.read_text()
         for third_party in ("import requests", "import aiohttp", "import httpx"):
             assert third_party not in src
+
+    def test_daily_ingest_probes_before_run_daily(self):
+        """Run 33237536770 wrote 44 unhealed errors because daily never asked."""
+        text = DAILY.read_text()
+        spec = yaml.safe_load(text)
+        names = [s.get("name") for s in spec["jobs"]["ingest"]["steps"]]
+        assert "Probe dados.cvm.gov.br" in names
+        assert names.index("Probe dados.cvm.gov.br") < names.index("Run daily update")
+        assert "python scripts/check_cvm_reachable.py" in text
+        # analytics-only / b3-backfill must not be blocked on CVM.
+        probe = next(
+            s for s in spec["jobs"]["ingest"]["steps"]
+            if s.get("name") == "Probe dados.cvm.gov.br"
+        )
+        condition = str(probe.get("if", ""))
+        assert "mode == 'daily'" in condition
+        assert "schedule" in condition
+
+    def test_watchdog_probes_before_recovery_ingest(self):
+        text = WATCHDOG.read_text()
+        spec = yaml.safe_load(text)
+        names = [s.get("name") for s in spec["jobs"]["watchdog"]["steps"]]
+        assert "Probe dados.cvm.gov.br" in names
+        assert names.index("Probe dados.cvm.gov.br") < names.index(
+            "Run daily ingest (recovery)"
+        )
+        assert "python scripts/check_cvm_reachable.py" in text
