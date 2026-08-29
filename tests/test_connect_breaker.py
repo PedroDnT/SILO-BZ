@@ -12,6 +12,7 @@ which proves the host answered and is routine on the daily trailing window.
 """
 
 import asyncio
+from unittest.mock import patch
 
 import aiohttp
 import pytest
@@ -34,9 +35,9 @@ def _connect_error():
 
 @pytest.fixture(autouse=True)
 def _reset_breaker():
-    CVMFetcher._connect_failures = 0
+    CVMFetcher.reset_circuit()
     yield
-    CVMFetcher._connect_failures = 0
+    CVMFetcher.reset_circuit()
 
 
 class TestBreaker:
@@ -115,3 +116,57 @@ class TestWiring:
         # Documents why ordering matters: the specific type is a subclass, so a
         # generic-first ordering would shadow it.
         assert issubclass(aiohttp.ClientConnectorError, aiohttp.ClientError)
+
+
+class TestLatch:
+    """Tripping the breaker must actually STOP the run, not just one slice.
+
+    Before the latch, CVMHostUnreachable ended exactly one slice: it is a
+    RuntimeError, and every ingest method catches bare `except Exception`,
+    writes its audit row and moves on. Measured on the 06:00 run of 2026-08-29
+    — limit 8, and cvm_ingest_log recorded 39, 43, 51, 55, 56, 57 across twenty
+    slices, each paying its own max_retries of connect attempts with backoff
+    first. About forty minutes re-proving one refusal.
+    """
+
+    def _trip(self):
+        for _ in range(CVMFetcher._CONNECT_FAILURE_LIMIT):
+            try:
+                CVMFetcher._note_connect_failure("https://x/y.zip", _connect_error())
+            except CVMHostUnreachable:
+                pass
+
+    def test_latches_after_tripping(self):
+        assert CVMFetcher._host_unreachable is None
+        self._trip()
+        assert CVMFetcher._host_unreachable is not None
+
+    async def test_a_later_download_fails_without_touching_the_network(self):
+        """The point of the latch: no socket, no backoff sleep, for slice N+1.
+
+        Written as a native async test rather than driving the loop by hand —
+        asyncio.get_event_loop() picks up whatever loop an earlier test left
+        behind, which made this pass alone and fail in the full suite.
+        """
+        self._trip()
+        fetcher = CVMFetcher()
+
+        slept: list = []
+
+        async def _no_sleep(delay):
+            slept.append(delay)
+
+        with patch("src.fetchers.cvm_fetcher.asyncio.sleep", _no_sleep), \
+             patch("aiohttp.ClientSession") as session:
+            with pytest.raises(CVMHostUnreachable):
+                await fetcher._download_uncached("https://x/z.zip", "/tmp/c", "/tmp/m")
+
+        assert session.call_count == 0, "latched breaker must not open a connection"
+        assert slept == [], "latched breaker must not pay a backoff sleep"
+
+    def test_success_clears_the_latch(self):
+        """A working host must not stay poisoned for the rest of the process."""
+        self._trip()
+        CVMFetcher._note_success()
+        assert CVMFetcher._host_unreachable is None
+        CVMFetcher._raise_if_host_unreachable()  # must not raise

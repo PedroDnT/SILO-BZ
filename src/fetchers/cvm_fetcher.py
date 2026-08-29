@@ -105,21 +105,49 @@ class CVMFetcher:
     _connect_failures: int = 0
     _CONNECT_FAILURE_LIMIT: int = int(os.getenv("CVM_CONNECT_FAILURE_LIMIT", "8"))
 
+    # Latched once the breaker trips. Without it the breaker did not actually
+    # abort anything: CVMHostUnreachable is a RuntimeError, and every ingest
+    # method catches bare `except Exception`, writes the audit row and moves to
+    # the next slice — so the raise only ended ONE slice. Measured on the 06:00
+    # run of 2026-08-29: the limit is 8, and cvm_ingest_log recorded counts of
+    # 39, 43, 51, 55, 56, 57 across twenty slices, each having paid its own
+    # max_retries of connect attempts with backoff first. Roughly 40 minutes
+    # spent proving the same block over and over.
+    #
+    # Latching keeps that structure (every slice still records its own honest
+    # error row, non-CVM sources in the same run still land) while making the
+    # remaining slices cost nothing: no socket, no backoff sleep.
+    _host_unreachable: Optional["CVMHostUnreachable"] = None
+
+    @classmethod
+    def _raise_if_host_unreachable(cls) -> None:
+        """Fail instantly once the host is known bad, instead of re-proving it."""
+        if cls._host_unreachable is not None:
+            raise cls._host_unreachable
+
+    @classmethod
+    def reset_circuit(cls) -> None:
+        """Clear the breaker. For tests and long-lived processes."""
+        cls._connect_failures = 0
+        cls._host_unreachable = None
+
     @classmethod
     def _note_connect_failure(cls, url: str, exc: BaseException) -> None:
         cls._connect_failures += 1
         if cls._connect_failures >= cls._CONNECT_FAILURE_LIMIT:
-            raise CVMHostUnreachable(
+            cls._host_unreachable = CVMHostUnreachable(
                 f"{cls._connect_failures} consecutive connection failures to CVM "
                 f"(last: {url} — {exc}). The host is down or this IP is blocked; "
                 f"retrying cannot help. Aborting instead of grinding through every "
                 f"remaining slice. Re-dispatch the run (a fresh runner usually gets "
                 f"an unblocked IP), or raise CVM_CONNECT_FAILURE_LIMIT to override."
             )
+            raise cls._host_unreachable
 
     @classmethod
     def _note_success(cls) -> None:
         cls._connect_failures = 0
+        cls._host_unreachable = None
 
     def __init__(self) -> None:
         self.base_url = config.CVM_BASE_URL
@@ -323,6 +351,9 @@ class CVMFetcher:
             return await self._download_uncached(url, cache_path, meta_path)
 
     async def _download_uncached(self, url: str, cache_path: str, meta_path: str) -> bytes:
+        # Cheapest possible check, before any socket or backoff: if the breaker
+        # has already latched, this download cannot succeed either.
+        self._raise_if_host_unreachable()
         for attempt in range(self.max_retries):
             try:
                 timeout = aiohttp.ClientTimeout(total=self.timeout)

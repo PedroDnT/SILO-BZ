@@ -73,6 +73,27 @@ jobs:
         with:
           postgres-url: ${{ secrets.POSTGRES_URL }}
 
+  # Ask CVM once, in about a second, whether it will talk to this runner at all.
+  # Every CVM job below gates on this: a dispatch is up to 300 minutes and every
+  # download goes to that one host, so when the IP is refused the whole thing is
+  # doomed before it starts. On 2026-08-29 the 06:00 ingest spent ~40 minutes
+  # proving the same refusal across twenty slices. bacen_only runs skip it —
+  # they never touch CVM.
+  cvm-preflight:
+    name: "Can this runner reach CVM?"
+    if: ${{ inputs.bacen_only != true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      # Standard library only, so this cannot be the step that fails on a
+      # dependency while trying to tell you the network is fine.
+      - name: Probe dados.cvm.gov.br
+        run: python scripts/check_cvm_reachable.py
+
   inspect-coverage:
     name: "What's already on Supabase (skip-if-complete uses this)"
     needs: apply-schema
@@ -142,7 +163,7 @@ jobs:
   # FI — one job per year, serialized, and skipped when that year is already complete.
   backfill-fi:
     name: "FI ${{ matrix.year }}"
-    needs: [apply-schema, inspect-coverage]
+    needs: [apply-schema, inspect-coverage, cvm-preflight]
     if: ${{ inputs.bacen_only != true && (inputs.entity == 'all' || inputs.entity == 'fi') }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
@@ -305,7 +326,7 @@ jobs:
   # Other entities — one selected entity at a time by default.
   backfill-other:
     name: "${{ matrix.entity }} ${{ inputs.start_year }}-${{ inputs.end_year }}"
-    needs: [apply-schema, inspect-coverage]
+    needs: [apply-schema, inspect-coverage, cvm-preflight]
     if: ${{ inputs.bacen_only != true && (inputs.entity == 'all' || contains(fromJSON('["fidc","fii","fiagro","fip","securit","cia_aberta"]'), inputs.entity)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
@@ -349,7 +370,7 @@ jobs:
   # once in its own job rather than riding along with the FI year-matrix.
   backfill-etf:
     name: "ETF registry"
-    needs: [apply-schema, inspect-coverage]
+    needs: [apply-schema, inspect-coverage, cvm-preflight]
     if: ${{ inputs.bacen_only != true && (inputs.entity == 'all' || inputs.entity == 'etf') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
