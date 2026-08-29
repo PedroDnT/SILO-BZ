@@ -98,21 +98,39 @@ function.
 
 ## Row caps
 
-Every set-returning function stops at a hard `LIMIT`. The caps are `cap + 1` on purpose: a
-response of exactly `cap + 1` rows is the signal that your request was **too large**, and
-lets a client tell "too large" apart from "complete" instead of silently handing back a
-truncated — that is, fabricated — result.
+<Warning>
+  **The binding cap is 1,000 rows, and it is not in the SQL.** PostgREST is deployed with
+  `db-max-rows = 1000`, so *every* response over the hosted API is truncated to the first
+  1,000 rows — whatever the function's own `LIMIT` says. It keeps the **oldest** rows and
+  returns `200`, not an error.
+</Warning>
 
-| Endpoint | Cap | You received the cap when |
-| --- | --- | --- |
-| [`panel`](/api-docs/panel) | 100,001 rows | `len(rows) == 100001` |
-| [`quote_history`](/api-docs/quotes) | 5,001 rows | `len(rows) == 5001` |
-| [`fund_nav`](/api-docs/funds) | 5,001 rows | `len(rows) == 5001` |
-| [`universe`](/api-docs/universe) | 500 rows | `p_limit` is clamped into `1..500` |
-| [`search_funds`](/api-docs/funds) | 200 rows | `p_limit` is clamped into `1..200` |
-| [`lookup`](/api-docs/lookup) | 20 rows | — |
-| [`quote_latest`](/api-docs/quotes) | 1 row | — |
-| [`coverage`](/api-docs/coverage) | 3 rows | — |
+The only truthful signal is the `Content-Range` response header:
+
+- `0-999/*` means you hit the platform cap; there is more data you did not receive.
+- `0-41/*` means you got everything the function returned.
+- Send `Prefer: count=exact` and the header becomes `0-999/1906` — the total after the
+  slash is what your query actually matched.
+
+<Warning>
+  **`Range` paging does not work on RPC.** Asking for rows 1000–1999 of an `/rpc/` call
+  re-runs the function and hands you the first page again. To get past 1,000 rows, narrow
+  the request — fewer ids, fewer metrics, a shorter date window — and call again. Do not
+  stitch "pages" together; they are the same page.
+</Warning>
+
+Each function also carries its own `LIMIT`, which matters for the local adapter (`serve/`,
+no PostgREST in front) and tells you what the function would return unclipped:
+
+| Endpoint | Function's own cap |
+| --- | --- |
+| [`panel`](/api-docs/panel) | 100,001 rows |
+| [`quote_history`](/api-docs/quotes) | 5,001 rows |
+| [`fund_nav`](/api-docs/funds) | 5,001 rows |
+| [`search_funds`](/api-docs/funds) | 200 rows (`p_limit` clamped into `1..200`) |
+| [`lookup`](/api-docs/lookup) | 20 rows |
+| [`quote_latest`](/api-docs/quotes) | 1 row |
+| [`coverage`](/api-docs/coverage) | 3 rows |
 
 <Warning>
   **A capped response is not a valid dataset.** The cut is deterministic (`panel` orders by
@@ -121,8 +139,9 @@ truncated — that is, fabricated — result.
   the ids, metrics, or date window and call again.
 </Warning>
 
-Requests are also bounded by the Supabase platform `statement_timeout` on the API roles. A
-query that exceeds it fails with an error, and never returns a partial result.
+Requests are also bounded by the Supabase platform `statement_timeout` on the API roles —
+**3 seconds for `anon`**, the role the published key uses. A query that exceeds it fails
+with an error, and never returns a partial result.
 
 ## Nulls, gaps, and what "missing" looks like
 

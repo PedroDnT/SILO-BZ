@@ -10,7 +10,9 @@ Ingest stays in this repo; the contract is schema `api` plus `serve/`.
 
 ```
 0. GET /v1/catalog                             → metrics, grains, constraints (agents: cache this)
-1. GET /v1/universe?asset_class=fidc          → pick vehicles
+1. GET /v1/funds?type=fidc&limit=200           → pick vehicles (search_funds; to enumerate
+                                                 a whole family, page the api.funds VIEW on
+                                                 PostgREST — limit/offset work on views only)
 2. GET /v1/lookup?q=PETR4                     → ticker / ISIN (no invented CNPJ match)
 3. GET /v1/panel?ids=PETR4,VALE3,<cnpj>
      &metrics=close,close_return,nav,delinquency
@@ -136,7 +138,6 @@ aligned by index. Cap is 5000 points — over that is `400`, not a silent trim.
 | GET    | `/v1/health`                                | `SELECT 1 FROM api.quotes LIMIT 0`                    |
 | GET    | `/v1/coverage`                              | `api.coverage()`                                      |
 | GET    | `/v1/panel?ids&metrics&freq&from&to`        | `api.panel(...)` long or wide                         |
-| GET    | `/v1/universe?asset_class&limit`            | `api.universe(...)`                                   |
 | GET    | `/v1/lookup?q=`                             | `api.lookup(...)`                                     |
 | GET    | `/v1/quotes/{ticker}`                       | `api.quote_latest` or `api.quote_history` if windowed |
 | GET    | `/v1/quotes/{ticker}/history?from&to&range` | `api.quote_history(...)`                              |

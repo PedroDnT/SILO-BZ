@@ -59,7 +59,6 @@ curl -s -X POST "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/rpc/panel" \
 | [`funds`](/api-docs/funds) | view + 3 functions | Fund registry, profile, and monthly NAV/flows by CNPJ |
 | [`panel`](/api-docs/panel) | function | Long `(id, date, metric, value)` observations across both |
 | [`lookup`](/api-docs/lookup) | function | Resolve a ticker, ISIN, CNPJ, or name to an id |
-| [`universe`](/api-docs/universe) | function | Enumerate ids by asset class |
 | [`coverage`](/api-docs/coverage) | function | Latest date per dataset, before you claim freshness |
 
 Landing tables (`cvm_*`, `b3_cotahist`, `cvm_ingest_log`) are **not** exposed. Schema `api`

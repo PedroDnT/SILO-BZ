@@ -15,7 +15,11 @@
       {
         "group": "Get started",
         "icon": "rocket",
-        "pages": ["api-docs/quickstart", "api-docs/agents", "api-docs/conventions"]
+        "pages": [
+          "api-docs/quickstart",
+          "api-docs/agents",
+          "api-docs/conventions"
+        ]
       },
       {
         "group": "API reference",
@@ -28,7 +32,6 @@
           "api-docs/funds",
           "api-docs/panel",
           "api-docs/lookup",
-          "api-docs/universe",
           "api-docs/coverage",
           "api-docs/cotahist-dictionary"
         ]

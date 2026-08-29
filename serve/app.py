@@ -496,22 +496,6 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
             "note": "one row per (id, date, metric). nulls omitted. no ffill.",
         }), 200, _cache(3600)
 
-    @app.get("/v1/universe")
-    def universe():
-        asset_class = request.args.get("asset_class")
-        try:
-            limit = min(max(int(request.args.get("limit", 50)), 1), 500)
-        except ValueError:
-            return jsonify({"error": "limit must be an integer"}), 400
-        with pool.connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM api.universe(%s, %s)",
-                (asset_class, limit),
-            )
-            cols = [d[0] for d in cur.description]
-            rows = [_row(r, cols) for r in cur.fetchall()]
-        return jsonify({"data": rows}), 200, _cache(300)
-
     @app.get("/v1/lookup")
     def lookup():
         q = request.args.get("q") or ""

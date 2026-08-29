@@ -137,8 +137,8 @@ exposed.
 
 **And that is the end of the road.** `api.panel` has four arms — cash quotes,
 options, termo, and funds — and no company arm. All 11 catalog metrics take
-`ticker` or `cnpj` ids. `api.universe` has no cia arm. `api.coverage()` reports
-no cia dataset, so there is no served freshness signal for any of it.
+`ticker` or `cnpj` ids. `api.coverage()` reports no cia dataset, so there is no
+served freshness signal for any of it.
 
 The catalog advertises `cd_cvm` as an id type and `cia` as an asset class
 (`serve/catalog.py:317-321`) while defining **no metric for either** — so an

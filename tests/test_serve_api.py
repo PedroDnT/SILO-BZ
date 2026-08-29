@@ -261,11 +261,17 @@ def test_catalog_is_static_and_names_panel(client):
     assert "panel" in body["agent"]
     postgrest = body["postgrest"]
     assert postgrest["panel"] == "POST /rest/v1/rpc/panel"
-    for core in ("lookup", "universe", "coverage"):
+    for core in ("lookup", "coverage"):
         assert core in postgrest, f"{core} missing from the postgrest contract"
+    assert "universe" not in postgrest, "api.universe was dropped (migration 31)"
+    # The cap constraint must name the cap that actually binds. PostgREST
+    # truncates at 1000 and keeps the OLDEST rows; the SQL cap+1 sentinel
+    # (100001/5001) cannot fire behind that ceiling, so Content-Range is the
+    # only signal a caller has.
     cap_text = " ".join(body["constraints"])
-    assert "100001" in cap_text and "200" in cap_text, (
-        "the cap constraint must explain the cap+1 sentinel, not just say 400"
+    assert "1000" in cap_text and "Content-Range" in cap_text, (
+        "the cap constraint must name the 1000-row PostgREST cap and its "
+        "Content-Range signal, not an unreachable cap+1 sentinel"
     )
 
 
@@ -276,7 +282,6 @@ def test_tools_point_at_panel_not_query(client):
     assert names == [
         "silo_catalog",
         "silo_lookup",
-        "silo_universe",
         "silo_panel",
         "silo_coverage",
     ]

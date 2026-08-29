@@ -65,14 +65,17 @@ Example: *does Brazilian equity stress show up in FIDC credit?*
 4. `delinquency` is BRL outstanding, not a rate — divide by `nav`.
 5. Quotes are unadjusted. A missing month is not a two-month return.
 
-There is no server-side `corr`. If `panel` returns 100,001 rows, the cap fired —
-do not analyze it. Details: [panel](/api-docs/panel), [conventions](/api-docs/conventions).
+There is no server-side `corr`. If `panel` comes back with `Content-Range: 0-999/*`,
+the platform cap fired and the panel is truncated — do not analyze it. Details:
+[panel](/api-docs/panel), [conventions](/api-docs/conventions).
 
 ## 5. Screening a whole family (enumerate → batch → check the cap)
 
 The most common quant question — *rank every FIDC by how much its delinquency
 worsened* — needs a pattern no single endpoint provides, because `panel` requires
-explicit ids and `universe` is a 500-row alphabetical **sampler, not a census**.
+explicit ids and nothing hands you the whole list in one call. Enumerate from the
+`funds` **view**, which is the only surface that pages correctly: `limit`/`offset`
+work on views and are ignored on `/rpc/` calls.
 
 <Steps>
   <Step title="Check the family is complete through your window">
@@ -94,18 +97,23 @@ explicit ids and `universe` is a 500-row alphabetical **sampler, not a census**.
     twelve months cannot be ranked against one that filed for all twelve.
   </Step>
   <Step title="Batch the ids into panel calls">
-    A few hundred ids per call keeps each response well inside the cap. Ask for
-    the rate's two ingredients together, since `delinquency` is a BRL amount:
+    Size the batch by **rows, not ids**: one row per id × month × metric. The
+    1,000-row platform cap means 13 months × 2 metrics fits about **38 ids** per
+    call, not a few hundred. Ask for the rate's two ingredients together, since
+    `delinquency` is a BRL amount:
     ```json
     {"p_ids": ["<cnpj>", "..."], "p_metrics": ["delinquency", "nav"],
      "p_from": "2024-12-01", "p_to": "2025-12-31", "p_freq": "month"}
     ```
   </Step>
-  <Step title="Check the cap on EVERY batch">
-    Count the rows. Exactly **100001** means the cap fired and the batch is
-    truncated — discard it and split the batch. On PostgREST that arrives as a
-    normal `200`; only the local `/v1` adapter turns it into a `400`. Checking
-    the status code alone will silently analyse a truncated panel.
+  <Step title="Read Content-Range on EVERY batch">
+    On the hosted API the cap that fires is PostgREST's `db-max-rows = 1000`,
+    long before the function's own 100,001. It arrives as a normal `200` holding
+    the **oldest** 1,000 rows, so the payload looks like a complete series.
+    `Content-Range: 0-999/*` is the only thing that tells you otherwise — discard
+    that batch and split it. Do not retry with `Range`: paging does not work on
+    RPC and page 2 is page 1 again. Checking the status code alone will silently
+    analyse a truncated panel.
   </Step>
   <Step title="Reduce locally">
     Pivot to wide, compute `delinquency / nav` per fund-month (guard `nav` of

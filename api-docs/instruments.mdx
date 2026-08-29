@@ -123,5 +123,6 @@ for.
 - **No rows matching your filter → `200 []`.** Never a fabricated price.
 - **A ticker on the wrong endpoint → `200 []`.** `BOVA11` is a `fund_quota`, not an
   `equity`; asking `/equities?ticker=eq.BOVA11` returns empty rather than an error. Use
-  `/quotes` or [`universe`](/api-docs/universe) when you do not know the type.
+  `/quotes`, which is untyped, or [`lookup`](/api-docs/lookup), which reports the type it
+  resolved, when you do not know the type.
 - **These views have no built-in cap** — same as `quotes`. Always send a `limit`.

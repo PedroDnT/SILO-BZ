@@ -1480,112 +1480,6 @@ COMMENT ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) IS
 REVOKE ALL ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) TO anon, authenticated;
 
-CREATE OR REPLACE FUNCTION api.universe(
-    p_asset_class TEXT DEFAULT NULL,
-    p_limit       INT  DEFAULT 50
-)
-RETURNS TABLE (
-    id          TEXT,
-    id_type     TEXT,
-    asset_class TEXT,
-    name        TEXT,
-    isin        TEXT
-)
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = ''
-AS $$
-    WITH -- Lower bound on the partition key, so the max() below can prune.
-    --
-    -- Restricting to one session was never enough: `trade_date = (SELECT
-    -- max(...))` gives the planner no constant, so it reached across every
-    -- yearly partition of the tape. Measured against production 2026-08-28,
-    -- api.universe('equity') took 6.83s and EVERY anon call to it failed.
-    -- PostgREST runs as `anon`, whose statement_timeout is 3s -- not the 15s
-    -- the old comment here assumed; that 15s is on silo_api, which serves only
-    -- the local adapter. universe was the one endpoint returning nothing at all
-    -- to a public caller.
-    --
-    -- mv_b3_monthly_activity's newest period is the first day of the newest
-    -- month on the tape, so the true max session is inside that bound by
-    -- construction -- the same fix as b3_market_overview.sql. An empty matview
-    -- falls back to the old unbounded behaviour: correct, just slow.
-    tape_floor AS (
-        SELECT coalesce(
-                   (SELECT max(m.period) FROM public.mv_b3_monthly_activity m),
-                   DATE '1900-01-01'
-               ) AS from_date
-    ),
-    latest_quote_session AS (
-        -- Universe is discovery, not historical coverage: one real session, so
-        -- a sparse type such as BDR does not classify and sort the whole tape.
-        SELECT max(q.trade_date) AS trade_date
-        FROM api.quotes q, tape_floor f
-        WHERE q.trade_date >= f.from_date
-    ),
-    quote_rows AS (
-        SELECT DISTINCT ON (q.ticker)
-            q.ticker, q.asset_class, q.short_name, q.isin
-        FROM api.quotes q
-        JOIN latest_quote_session s ON s.trade_date = q.trade_date
-        CROSS JOIN tape_floor f
-        -- Carries the same partition-key floor as latest_quote_session: without
-        -- it this scan still spans every yearly partition even though only one
-        -- session can match.
-        WHERE q.trade_date >= f.from_date
-          AND (p_asset_class IS NULL OR q.asset_class = lower(p_asset_class))
-        ORDER BY q.ticker
-    )
-    SELECT * FROM (
-        SELECT q.ticker, 'ticker'::text, q.asset_class, q.short_name, q.isin
-        FROM quote_rows q
-        UNION ALL
-        SELECT d.cnpj, 'cnpj', d.entity_type, d.fund_name, NULL
-        FROM public.dim_fund d
-        WHERE p_asset_class IS NULL OR d.entity_type = p_asset_class
-        UNION ALL
-        -- Derivatives list ONLY on explicit request (p_asset_class 'option' /
-        -- 'termo'), never in the NULL default: the option namespace is ~10x
-        -- the cash tape per session and would drown the default universe.
-        --
-        -- Scoped to the segment's LATEST session, which is both the honest
-        -- answer ("which series are listed now" — option series expire, so a
-        -- whole-history list is mostly dead contracts) and the only affordable
-        -- one: aggregating every option row ever landed is a seq scan over
-        -- ~89% of b3_cotahist, and a full-table GROUP BY on this table already
-        -- times out in production. Measured on a 2M-row stand-in: 34k buffers
-        -- -> 5k, and it stays flat as history grows. GREATEST-of-equality-maxes
-        -- rather than an IN-list max for the same reason as api.option_chain.
-        SELECT b.codneg, 'option', 'derivative', max(b.nome_resumido), max(b.isin)
-        FROM public.b3_cotahist b
-        WHERE p_asset_class = 'option'
-          AND b.tpmerc IN ('070', '080')
-          AND b.trade_date = GREATEST(
-              (SELECT max(x.trade_date) FROM public.b3_cotahist x WHERE x.tpmerc = '070'),
-              (SELECT max(x.trade_date) FROM public.b3_cotahist x WHERE x.tpmerc = '080')
-          )
-        GROUP BY b.codneg
-        UNION ALL
-        SELECT b.codneg, 'termo', 'derivative', max(b.nome_resumido), max(b.isin)
-        FROM public.b3_cotahist b
-        WHERE p_asset_class = 'termo'
-          AND b.tpmerc = '030'
-          AND b.trade_date = (SELECT max(x.trade_date)
-                              FROM public.b3_cotahist x WHERE x.tpmerc = '030')
-        GROUP BY b.codneg
-    ) u
-    -- id (col 1) tiebreak: option/termo names repeat across a whole root, so
-    -- without it the 500-row cut would be nondeterministic.
-    ORDER BY 3, 4 NULLS LAST, 1
-    LIMIT LEAST(GREATEST(COALESCE(p_limit, 50), 1), 500);
-$$;
-
-COMMENT ON FUNCTION api.universe(TEXT, INT) IS
-    'List identifiers by asset_class (NULL = equities + funds). asset_class option/termo lists the derivative codnegs that printed on that segment''s most recent session — currently-listed series, not every series ever listed. Rows clamped to 1..500.';
-
-REVOKE ALL ON FUNCTION api.universe(TEXT, INT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION api.universe(TEXT, INT) TO anon, authenticated;
 
 -- Signature change (trailing tickers column): drop the old shape first.
 DROP FUNCTION IF EXISTS api.lookup(TEXT);
@@ -1677,10 +1571,12 @@ $$;
 -- name-resolution surface and option series have no names — only the codneg
 -- itself, which the caller already holds. Adding a ~100k-id derivative
 -- namespace to a name resolver would bloat every query for zero resolution
--- power. Discover derivative ids via api.universe('option'|'termo') or
--- api.option_chain(prefix).
+-- power. Discover derivative ids via api.option_chain(prefix) — api.universe
+-- was dropped (migration 31), so option_chain is now the only route, and it
+-- requires a codneg prefix of at least 3 characters: there is no cold browse
+-- of the derivative namespace.
 COMMENT ON FUNCTION api.lookup(TEXT) IS
-    'Resolve ticker / ISIN / CNPJ / company name. Company rows carry their B3 tickers from CVM''s published FCA valores-mobiliários map (vw_company_ticker) — never a name match, never inferred. Does not resolve option/termo codnegs (no names to resolve — use universe or option_chain).';
+    'Resolve ticker / ISIN / CNPJ / company name. Company rows carry their B3 tickers from CVM''s published FCA valores-mobiliários map (vw_company_ticker) — never a name match, never inferred. Does not resolve option/termo codnegs (no names to resolve — use option_chain, which needs a 3-character prefix).';
 
 REVOKE ALL ON FUNCTION api.lookup(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.lookup(TEXT) TO anon, authenticated;
@@ -1711,9 +1607,9 @@ AS $fn$
 SELECT $json$
 {
   "kind": "catalog",
-  "version": 14,
+  "version": 15,
   "primitive": "panel",
-  "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup/universe, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint carefully, and READ THE Content-Range RESPONSE HEADER ON EVERY CALL: PostgREST truncates every response at 1000 rows and keeps the OLDEST ones, so a cut-short series is indistinguishable from a complete one by its contents alone — `0-999/*` is the only thing that tells you. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
+  "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint carefully, and READ THE Content-Range RESPONSE HEADER ON EVERY CALL: PostgREST truncates every response at 1000 rows and keeps the OLDEST ones, so a cut-short series is indistinguishable from a complete one by its contents alone — `0-999/*` is the only thing that tells you. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
     "principle": "price by default; every other measure is opt-in",
     "panel": {
@@ -1948,15 +1844,12 @@ SELECT $json$
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
     "Row caps — getting this wrong means silently analysing a TRUNCATED panel, the exact fabrication this API exists to prevent. THE BINDING CAP IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. It is NOT the SQL cap+1 sentinel (panel 100001, series 5001): that sentinel is unreachable on the deployed surface and must not be used to detect truncation. Measured 2026-08-28 against production: panel for one ticker from 2019 returns exactly 1000 rows spanning 2019-01-02..2023-01-09 with a 200, and the OLDEST rows are the ones kept — so a truncated series looks like a complete series that simply ends three years ago. DETECT IT WITH THE Content-Range RESPONSE HEADER, which is the only signal there is: `0-999/*` means truncated, and sending `Prefer: count=exact` turns it into `0-999/1906` so you also learn the true total. A range whose end is below 999 is complete. RANGE PAGING DOES NOT WORK ON RPC: sending `Range: 1000-1999` to /rest/v1/rpc/panel returns the SAME first page again (verified), so a panel cannot be paged — narrow p_from/p_to, ids or metrics until Content-Range comes back under 1000. GET views do page with Range normally. The local /v1 Flask adapter is a different surface with its own cap+1 400 behaviour; do not carry its rules over.",
     "An unrecognised metric name is IGNORED, not rejected: the panel comes back smaller and perfectly plausible. Take metric names from this catalog's `metrics` map, never from memory.",
-    "universe is capped at 500 rows, alphabetical, and does not paginate — it is a sampler, not a census. To enumerate a family, page the funds view (GET /rest/v1/funds?entity_type=eq.fidc with Prefer: count=exact) and batch the resulting ids into panel calls.",
     "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
     "Option rows carry underlying_ticker resolved from the PUBLISHED ISIN mapping (an option row's ISIN is its underlying's ISIN), never from the codneg root; it is null when the underlying had no cash print that session. Termo rows still carry no underlying column.",
     "tpmerc 012/013 are option exercise EVENTS served by option_exercises, and 017 auction prints by auctions — neither is a quote series; do not compute returns over them.",
     "fund_quotas rows carry fund_type (etf | fii | fidc | fiagro) from B3's published CODBDI board code, null when the board has no family signal (odd lot). equities rows carry share_class (ON/PN/PNA/PNB/PNC/PND) and governance_segment (NM/N1/N2/MA/M2/MB) parsed from published ESPECI, never from the ticker suffix.",
-    "Option/termo codnegs resolve via universe(asset_class=option|termo) or option_chain, not lookup — option series have no names to resolve.",
     "Each cash instrument type has its own endpoint (equities, bdrs, units, fund_quotas, cash_securities) — the same rows as quotes, split by the type derived from published TPMERC/ESPECI. Their grain adds `lot` (standard = tpmerc 010, odd = 020/021); filter lot=eq.standard for round lots. quotes itself stays standard-lot only.",
-    "Price series stay unified: a codneg has exactly one instrument type, so quote_history works for any cash ticker without knowing its type first.",
-    "universe(asset_class=option|termo) lists the codnegs that printed on that segment's most recent session — currently-listed series, not every series ever listed. Expired series stay queryable by codneg in option_history."
+    "Price series stay unified: a codneg has exactly one instrument type, so quote_history works for any cash ticker without knowing its type first."
   ],
   "examples": [
     {
@@ -2018,7 +1911,6 @@ SELECT $json$
     "tools": "GET /v1/tools",
     "panel": "GET /v1/panel",
     "lookup": "GET /v1/lookup?q=",
-    "universe": "GET /v1/universe?asset_class=",
     "quotes": "GET /v1/quotes/{ticker}",
     "funds": "GET /v1/funds/{cnpj}/nav",
     "coverage": "GET /v1/coverage"
@@ -2026,7 +1918,6 @@ SELECT $json$
   "postgrest": {
     "panel": "POST /rest/v1/rpc/panel",
     "lookup": "POST /rest/v1/rpc/lookup",
-    "universe": "POST /rest/v1/rpc/universe",
     "coverage": "POST /rest/v1/rpc/coverage",
     "search_funds": "POST /rest/v1/rpc/search_funds",
     "fund_profile": "POST /rest/v1/rpc/fund_profile",
@@ -2089,7 +1980,6 @@ GRANT EXECUTE ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT)        TO silo_ap
 GRANT EXECUTE ON FUNCTION api.search_funds(TEXT, TEXT, INT)           TO silo_api;
 GRANT EXECUTE ON FUNCTION api.coverage()                              TO silo_api;
 GRANT EXECUTE ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) TO silo_api;
-GRANT EXECUTE ON FUNCTION api.universe(TEXT, INT)                     TO silo_api;
 GRANT EXECUTE ON FUNCTION api.lookup(TEXT)                            TO silo_api;
 GRANT EXECUTE ON FUNCTION api.catalog()                               TO silo_api;
 

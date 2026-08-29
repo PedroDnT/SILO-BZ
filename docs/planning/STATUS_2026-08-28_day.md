@@ -194,20 +194,30 @@ ten-minute failure and a five-minute success.
 Verified against the live deployment after run 189 (2026-08-28 21:14Z), not
 inferred from the merge:
 
-| | Morning | Now |
-| --- | --- | --- |
-| `api.catalog()` version | 9 | **14** |
-| `anon` objects readable in `public` | 77 | **16** |
-| `cvm_fi_balancete` via `Accept-Profile: public` | real rows | **401** |
-| `uq_cia_account` | no `dt_ini_exerc` | **includes it** |
-| `mv_b3_monthly_activity` | did not exist | **populated** |
-| `api.universe('equity')` | 500 / 57014, every call | **200, warm 0.70s** |
-| Row cap | undocumented, sentinel unreachable | **documented + `Content-Range`** |
+|                                                 | Morning                            | Now                              |
+| ----------------------------------------------- | ---------------------------------- | -------------------------------- |
+| `api.catalog()` version                         | 9                                  | **14**                           |
+| `anon` objects readable in `public`             | 77                                 | **16**                           |
+| `cvm_fi_balancete` via `Accept-Profile: public` | real rows                          | **401**                          |
+| `uq_cia_account`                                | no `dt_ini_exerc`                  | **includes it**                  |
+| `mv_b3_monthly_activity`                        | did not exist                      | **populated**                    |
+| `api.universe('equity')`                        | 500 / 57014, every call            | **fixed, then dropped**          |
+| Row cap                                         | undocumented, sentinel unreachable | **documented + `Content-Range`** |
 
-`universe` is worth singling out: the partition-floor fix could NOT be shown to
-work on a seeded test database — the pruning improvement that `b3_market_overview`
-demonstrated (27 skipped scans against 18) did not reproduce at that scale. It
-shipped labelled unverified, and production is what settled it.
+`universe` is worth singling out twice over. First, the partition-floor fix could
+NOT be shown to work on a seeded test database — the pruning improvement that
+`b3_market_overview` demonstrated (27 skipped scans against 18) did not reproduce
+at that scale. It shipped labelled unverified, and production is what settled it
+(500 / 57014 → 200, warm 0.70s).
+
+Then the owner dropped the endpoint anyway, which was the right call: a 500-row
+alphabetical slab with no paging is a sampler, and a sampler that looks like a
+census is the failure mode this whole codebase exists to avoid. `api.funds`
+enumerates and pages properly; `lookup` resolves names. What genuinely goes away
+is cold browsing of option and termo codnegs — `api.option_chain` needs a
+3-character prefix, so you must now know roughly what you are looking for. That
+cost is written into `migrations/31_drop_api_universe.sql` so nobody rediscovers
+it as a bug.
 
 ## 8. The dashboard did not rebuild, and the reason is a missing secret
 

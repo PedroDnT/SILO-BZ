@@ -38,9 +38,11 @@ api.termo_history(p_codneg TEXT,
 ```
 
 <ParamField body="p_codneg" type="string" required>
-  The termo negotiation code, e.g. `PETR4T`. Upper-cased and trimmed server-side. Discover
-  codes with [`universe`](/api-docs/universe) at `p_asset_class: "termo"` —
-  [`lookup`](/api-docs/lookup) does **not** resolve them.
+  The termo negotiation code, e.g. `PETR4T`. Upper-cased and trimmed server-side.
+  [`lookup`](/api-docs/lookup) does **not** resolve termo codes and no endpoint enumerates
+  them, so you must already know the code — it is the CODNEG exactly as B3 publishes it in
+  COTAHIST for TPMERC `030`. Probing is safe: a code with no prints returns `200 []`, never
+  a fabricated price.
 </ParamField>
 
 <ParamField body="p_from" type="date" default="CURRENT_DATE - 365">
