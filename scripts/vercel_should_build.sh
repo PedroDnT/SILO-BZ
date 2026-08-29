@@ -45,24 +45,40 @@
 # tip did not. Preview builds are not the published site, and the merge commit
 # rebuilds it correctly.
 #
-# DATA FRESHNESS IS A SEPARATE TRIGGER — AND THIS SCRIPT USED TO BLOCK IT
-# The dashboard is a static snapshot: new rows in Supabase only reach it when a
-# build runs. The daily ingest workflow therefore POSTs a Vercel deploy hook
-# after it finishes (.github/workflows/daily_ingest.yml), which is better timed
-# than a human push: it runs when no other build is competing for the database.
+# PRODUCTION ALWAYS BUILDS; PREVIEWS ARE PATH-FILTERED
+# The dashboard is a static snapshot: new rows in Supabase only reach it when
+# a build runs. The daily ingest workflow POSTs a Vercel deploy hook after it
+# finishes (.github/workflows/daily_ingest.yml, rebuild_dashboard=true), which
+# is better timed than a human push — it runs when no other build is competing
+# for the database.
 #
-# But a deploy hook fires on a COMMIT THAT DID NOT CHANGE — that is the entire
-# point of it — so every path-diff rule, this one included, skips it. Measured
-# on 2026-08-29 01:40 UTC: run 191 POSTed the hook, Vercel returned 201 and
-# created deployment dpl_DosS5xPKtYoroMGREr6XyaV4yYPq on main@9664535, this
-# script found no dashboard change, and the deployment went straight to
-# CANCELED. The hook has never been able to refresh data, and the comment here
-# previously claimed it could.
+# A deploy hook fires on a COMMIT THAT DID NOT CHANGE. That is the entire point
+# of it, and it is why a pure path-diff rule can never let one through:
+# measured 2026-08-29 01:40 UTC, the hook returned 201, created deployment
+# dpl_DosS5xPKtYoroMGREr6XyaV4yYPq on main@9664535, this script found no
+# dashboard change, and the deployment went straight to CANCELED. The hook had
+# never once refreshed the site.
 #
-# Vercel's documented system environment variables carry no deploy-hook flag we
-# can branch on, so the DECISION LOG below prints what is actually set on every
-# run. A hook-triggered deployment's log is the evidence needed to write that
-# rule — do not guess it.
+# Vercel publishes no deploy-hook flag to branch on (searched, not assumed), so
+# the rule keys on WHAT IS BEING DEPLOYED instead of what triggered it:
+#
+#   VERCEL_ENV = production  -> ALWAYS BUILD.
+#       This is the published site. It covers merges to main AND deploy hooks,
+#       because a hook on the production branch produces a production
+#       deployment (dpl_DosS5x... carried target=production). Publishing a
+#       stale site to save a build is the wrong trade: the cost of a needless
+#       production build is ~20 minutes, the cost of a skipped one is a site
+#       showing data that no longer matches the warehouse.
+#
+#   anything else (preview)  -> path-filtered, as before.
+#       Preview builds are not the published site, so the old economics still
+#       hold. This is also where the 2026-08-26 damage came from: four
+#       CONCURRENT preview builds, three of them for commits that never
+#       touched dashboard/.
+#
+# Both values are measured, not assumed: preview builds log VERCEL_ENV=preview
+# (deployment 74M4NwxieHVnm8JJBhomBV6dwcyY), and the hook deployment above was
+# created with target=production.
 #
 # FAIL-OPEN
 # Every uncertain case builds. A needless build costs 30 minutes; a wrongly
@@ -82,6 +98,13 @@ echo "  VERCEL_GIT_PREVIOUS_SHA = ${VERCEL_GIT_PREVIOUS_SHA:-<unset>}"
 echo "  VERCEL_GIT_COMMIT_REF   = ${VERCEL_GIT_COMMIT_REF:-<unset>}"
 echo "  VERCEL_ENV              = ${VERCEL_ENV:-<unset>}"
 echo "  HEAD                    = $(git rev-parse --short HEAD 2>/dev/null || echo '<no HEAD>')"
+
+# Production is the published site: never skip it. This is what lets the daily
+# deploy hook refresh the data — see the header.
+if [ "${VERCEL_ENV:-}" = "production" ]; then
+    build "VERCEL_ENV=production — the published site always rebuilds, so a
+     deploy-hook data refresh is never skipped for having an unchanged commit"
+fi
 
 # Diff base. On a merge commit HEAD^ is the first parent — main before the PR —
 # so this covers the whole pull request. See the header for why the last
