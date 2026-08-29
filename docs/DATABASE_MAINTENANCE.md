@@ -22,7 +22,11 @@ your environment or `.env`.
    the daily matview refresh
 
 `.github/workflows/watchdog.yml` runs a couple of hours later, calls
-`scripts/check_staleness.py`, and re-runs the daily ingest if a slice looks stale.
+`scripts/check_staleness.py`, and re-runs the daily ingest if a slice looks stale
+**or** if unhealed ingest errors remain in the same 26h window DB Health uses
+(including weekends — a Saturday `CVMHostUnreachable` burst is a failed cron,
+not a quiet market day). Recovery probes `dados.cvm.gov.br` first so a blocked
+runner IP fails in a second instead of writing another round of error rows.
 
 `.github/workflows/backfill.yml` is on-demand only (see §4).
 
@@ -44,7 +48,8 @@ your environment or `.env`.
 > **A green run used to mean nothing.** In June 2026 a backfill spent 4h22m failing every
 > download, printed `0 total rows`, exited 0, and left `cvm_fi_diario` 2024 **and** 2025
 > completely empty behind a green check. `run_daily` now exits non-zero when any source
-> fails, a backfill that lands zero rows exits 1, and a slice that fetched rows but wrote
+> fails — including CVM slices that logged `error` while the function returned 0 —
+> a backfill that lands zero rows exits 1, and a slice that fetched rows but wrote
 > none is logged `error`. Trust green _more_ than before — but §2 still exists for a
 > reason.
 
@@ -54,8 +59,8 @@ your environment or `.env`.
 
 | When                 | Command                                      | Looking for                                                                    |
 | -------------------- | -------------------------------------------- | ------------------------------------------------------------------------------ |
-| Daily 07:30 UTC      | Actions → **DB Health** (`health.yml`)       | unhealed ingest errors, stalled monthly families, `api.catalog()`/`coverage()`, disk size (warn-only; `PLAN_DISK_GB` empty until a real allowance is set) |
-| After any run        | `python scripts/check_staleness.py`          | exit `0` fresh · `10` daily slice stale · `11` monthly (ANBIMA) stale          |
+| Daily 07:30 UTC      | Actions → **DB Health** (`health.yml`)       | unhealed ingest errors, stalled monthly families, `api.catalog()`/`coverage()`, disk size (warn-only; `PLAN_DISK_GB=135`) |
+| After any run        | `python scripts/check_staleness.py`          | exit `0` fresh · `10` daily stale **or unhealed errors** · `11` monthly (ANBIMA) stale          |
 | Weekly               | `python scripts/verify_pipeline.py`          | presence, field-population rates, sample business metrics per entity           |
 | Weekly               | the audit-log triage query (§3)              | `error` slices, slices stuck `running`, entities missing entirely              |
 | Monthly              | `POSTGRES_URL=… python scripts/db_parity.py` | table/view inventory + row estimates and sizes (`--exact` for true `COUNT(*)`) |
@@ -246,7 +251,11 @@ asyncio.run(CVMIngestor().ingest_fidc_tranche(2024, 5))
 CVM blocks GitHub runner IPs from time to time. Retrying does not help: the TCP/TLS
 handshake never completes. After `CVM_CONNECT_FAILURE_LIMIT` consecutive connect
 failures (default **8**) the fetcher raises `CVMHostUnreachable` and aborts instead of
-grinding through every remaining slice.
+grinding through every remaining slice. Daily ingest and watchdog recovery also
+run `scripts/check_cvm_reachable.py` first so a blocked IP fails in about a
+second without writing a `cvm_ingest_log` error for every remaining slice (that
+is what turned DB Health red on 2026-08-29: 44 unhealed rows from the 06:00
+run, then a Saturday watchdog no-op).
 
 **Fix: re-dispatch the workflow** — a fresh runner usually gets an unblocked IP (in the
 June 2026 incident FI 2022 and 2026 succeeded while 2024/2025 were blocked, in the same

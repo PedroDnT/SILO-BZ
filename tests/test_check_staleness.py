@@ -25,14 +25,17 @@ def _fixed_now(weekday: int) -> datetime:
 
 
 class _Cursor:
-    def __init__(self, last_finished):
-        self._last = last_finished
+    def __init__(self, conn):
+        self._conn = conn
+        self._sql = ""
 
     def execute(self, sql, params=None):
-        pass
+        self._sql = sql
 
     def fetchone(self):
-        return [self._last]
+        if "unhealed" in self._sql:
+            return [self._conn._unhealed]
+        return [self._conn._last]
 
     def __enter__(self):
         return self
@@ -42,11 +45,12 @@ class _Cursor:
 
 
 class _Conn:
-    def __init__(self, last_finished):
+    def __init__(self, last_finished, unhealed=0):
         self._last = last_finished
+        self._unhealed = unhealed
 
     def cursor(self):
-        return _Cursor(self._last)
+        return _Cursor(self)
 
     def close(self):
         pass
@@ -120,3 +124,36 @@ def test_naive_timestamp_treated_as_utc():
         conn = _Conn(naive)
         age = cs.last_success_age_hours(conn, "fi", "inf_diario")
     assert age == pytest.approx(3.0, abs=1e-6)
+
+
+def test_unhealed_error_slices_reads_the_count():
+    conn = _Conn(last_finished=None, unhealed=44)
+    assert cs.unhealed_error_slices(conn) == 44
+
+
+def test_unhealed_error_sql_matches_the_health_gate():
+    """A later skipped/ok must heal; NULL period keys must match."""
+    import inspect
+    src = inspect.getsource(cs.unhealed_error_slices)
+    assert "s.status IN ('ok', 'skipped')" in src
+    assert "IS NOT DISTINCT FROM e.entity" in src
+    assert "IS NOT DISTINCT FROM e.period_month" in src
+
+
+def test_main_unhealed_errors_recover_on_weekend(monkeypatch, capsys):
+    """Run 33242821803 (Saturday 08:18) no-op'd; health stayed red on 44 errors."""
+    p, fixed = _patch_now(weekday=5)  # Saturday
+    conn = _Conn(last_finished=fixed - timedelta(hours=2), unhealed=44)
+    monkeypatch.setattr(cs, "get_pg_client", lambda: conn)
+    with p:
+        code = cs.main()
+    assert code == cs.EXIT_DAILY_STALE
+    assert "unhealed ingest errors" in capsys.readouterr().out
+
+
+def test_main_weekend_without_errors_is_still_a_noop(monkeypatch):
+    p, fixed = _patch_now(weekday=5)
+    conn = _Conn(last_finished=fixed - timedelta(hours=40), unhealed=0)
+    monkeypatch.setattr(cs, "get_pg_client", lambda: conn)
+    with p:
+        assert cs.main() == cs.EXIT_FRESH
