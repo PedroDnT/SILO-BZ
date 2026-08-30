@@ -22,7 +22,7 @@ sistemaswebb3-listados.b3.com.br company pages call:
     GET {BASE}/GetListedSupplementCompany/{base64 json}
     GET {BASE}/GetInitialCompanies/{base64 json}
 
-Two quirks, both load-bearing:
+Three quirks, all load-bearing:
 
 1. Parameters are a base64-encoded JSON object in the PATH, not a query string.
    A bare GET with no token returns 200 and an empty body, which is what made
@@ -30,6 +30,12 @@ Two quirks, both load-bearing:
 2. GetListedSupplementCompany double-encodes its response: the body is a JSON
    *string* that itself contains the JSON array. `_decode` unwraps until it
    stops being a string.
+3. GetListedSupplementCompany also returns 200 / empty for an issuing code
+   that is not in the listed-companies catalog. That is not a malformed
+   token: PETR returns a body with the same encoding, ADMF (the ticker
+   prefix of ADMF3 / B100 S.A., whose catalog key is B100) returns none.
+   `B3SupplementEmpty` is that case. A token that is actually malformed
+   empties *every* issuer; the ingestor treats that as a slice error.
 
 WHAT IT CARRIES (verified live 2026-08-28)
 ------------------------------------------
@@ -84,6 +90,16 @@ _HEADERS = {
 PRICE_AFFECTING_LABELS = {"DESDOBRAMENTO", "GRUPAMENTO", "BONIFICACAO"}
 
 
+class B3SupplementEmpty(LookupError):
+    """GetListedSupplementCompany returned HTTP 200 with an empty body.
+
+    B3 does this for issuing codes that are not in the listed-companies
+    catalog. ``left(codneg, 4)`` from the tape is usually the catalog key
+    (PETR4 → PETR) but not always (ADMF3 trades as B100 S.A.). Distinct from
+    a malformed path token, which empties every issuer in the sweep.
+    """
+
+
 class B3CorporateEventsFetcher:
     """Fetch published corporate events from B3's listed-companies proxy."""
 
@@ -136,12 +152,24 @@ class B3CorporateEventsFetcher:
                 response.raise_for_status()
                 text = response.text.strip()
                 if not text:
+                    if endpoint == "GetListedSupplementCompany":
+                        # HTTP 200 / empty is B3's "this issuing code is not
+                        # in the listed-companies catalog" (verified 2026-08-30:
+                        # ADMF vs PETR vs B100). Retrying does not fill it.
+                        # A malformed path token also empties the body — but
+                        # then every issuer is empty, which the ingestor
+                        # treats as a slice error.
+                        raise B3SupplementEmpty(
+                            f"{endpoint} returned an empty body for {payload!r}"
+                        )
                     raise ValueError(
                         f"{endpoint} returned an empty body for {payload!r} — "
                         "B3 answers 200 with no content when the path token is "
                         "malformed"
                     )
                 return self._decode(text)
+            except B3SupplementEmpty:
+                raise
             except Exception as exc:  # noqa: BLE001 - re-raised below
                 last_error = exc
                 if attempt < self.max_retries:

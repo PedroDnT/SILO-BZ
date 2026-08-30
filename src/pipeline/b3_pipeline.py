@@ -153,9 +153,11 @@ class B3Ingestor:
         own tape keeps the daily sweep to the universe we actually serve
         (a few hundred issuers) instead of hammering B3 for shells.
 
-        The issuing code is the ticker's first four characters — that is how
-        B3 itself keys the endpoint (PETR4 -> PETR). Tickers shorter than four
-        characters cannot yield one and are skipped rather than padded.
+        The issuing code is *usually* the ticker's first four characters
+        (PETR4 -> PETR). Tickers shorter than four characters cannot yield
+        one and are skipped rather than padded. That prefix is not always
+        B3's listed-company catalog key (ADMF3 trades as B100 S.A.); those
+        codes come back as ``B3SupplementEmpty`` and are not slice errors.
         """
         sql = """
             SELECT DISTINCT left(codneg, 4) AS issuer
@@ -177,12 +179,20 @@ class B3Ingestor:
         """Fetch published corporate events for the traded universe.
 
         One request per issuer, so a failure on ONE issuer must not abandon
-        the sweep — but it must not vanish either: failures are counted and
-        the run is logged as an error when any occurred, with the count and a
-        sample in the message. Nothing is fabricated for a failed issuer; it
-        simply has no rows this run and is retried on the next.
+        the sweep — but it must not vanish either. Transport/parse failures
+        are counted and the run is logged as an error when any occurred,
+        with the count and a sample in the message. An empty supplement
+        body is different: B3 is saying that issuing code is not in the
+        listed-companies catalog (DB Health #6: 35/2153 empty, first ADMF,
+        after 11,632 rows had already been upserted). Those are skipped,
+        not fabricated, and do not fail the slice when any sibling returned
+        a body. An all-empty sweep is still an error — that is the
+        malformed-token case.
         """
-        from src.fetchers.b3_corporate_events_fetcher import B3CorporateEventsFetcher
+        from src.fetchers.b3_corporate_events_fetcher import (
+            B3CorporateEventsFetcher,
+            B3SupplementEmpty,
+        )
         from src.pipeline.ingest_b3_events import ingest_b3_corporate_events
 
         run_id = str(uuid4())
@@ -197,13 +207,27 @@ class B3Ingestor:
             fetcher = B3CorporateEventsFetcher()
             rows: List[Dict[str, Any]] = []
             failures: List[str] = []
+            missing: List[str] = []
+            fetched = 0
             for code in codes:
                 try:
                     rows.extend(fetcher.fetch_events(code))
+                    fetched += 1
+                except B3SupplementEmpty:
+                    missing.append(code)
                 except Exception as exc:  # noqa: BLE001 - counted, then reported
                     failures.append(f"{code}: {exc}")
 
             total = ingest_b3_corporate_events(self._supabase, rows) if rows else 0
+
+            if missing:
+                logger.warning(
+                    "B3 corporate events: %d/%d issuers have no listed-company "
+                    "supplement (first: %s)",
+                    len(missing),
+                    len(codes),
+                    ", ".join(missing[:8]),
+                )
 
             if failures:
                 # Partial success is still a failure to report: silence here
@@ -214,11 +238,22 @@ class B3Ingestor:
                 )
                 self._log_finish(run_id, total, error=msg)
                 logger.warning("B3 corporate events partial: %s", msg)
+            elif fetched == 0:
+                # Every issuer returned empty — the path token is wrong or
+                # B3 is serving empty bodies wholesale. Same failure mode as
+                # a malformed GET, which used to look like a dead endpoint.
+                msg = (
+                    f"all {len(codes)} issuers returned an empty supplement "
+                    f"body; first: {missing[0] if missing else '?'}"
+                )
+                self._log_finish(run_id, total, error=msg)
+                logger.error("B3 corporate events: %s", msg)
             else:
                 self._log_finish(run_id, total)
             logger.info(
-                "B3 corporate events: %d rows from %d issuers (%d failed)",
-                total, len(codes), len(failures),
+                "B3 corporate events: %d rows from %d issuers "
+                "(%d failed, %d no supplement)",
+                total, len(codes), len(failures), len(missing),
             )
             return total
         except Exception as exc:
