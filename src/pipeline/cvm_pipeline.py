@@ -40,6 +40,8 @@ from src.store.pg_client import get_pg_client, upsert_rows
 from src.pipeline.ingest_fi import (
     ingest_fi_diario,
     ingest_fi_cda,
+    ingest_fi_cda_acoes,
+    ingest_fi_cda_cotas,
     ingest_fi_perfil,
     ingest_fi_balancete,
     ingest_fund_registry_fi,
@@ -174,7 +176,8 @@ SECURIT_FLUXO_TYPES: List[str] = ["cra_fluxo", "cri_fluxo", "ots_fluxo"]
 
 _PAGE_SIZE = 5000
 _ALL_TABLES: List[str] = [
-    "cvm_fi_diario", "cvm_fi_cda", "cvm_fi_perfil", "cvm_fi_balancete",
+    "cvm_fi_diario", "cvm_fi_cda", "cvm_fi_cda_acoes", "cvm_fi_cda_cotas",
+    "cvm_fi_perfil", "cvm_fi_balancete",
     "cvm_fidc_mensal", "cvm_fidc_tranche", "cvm_fidc_tranche_flows", "cvm_fidc_aging",
     "cvm_fiagro_mensal",
     "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic", "cvm_fii_imovel",
@@ -766,6 +769,38 @@ class CVMIngestor:
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fi/cda %d-%02d: %d rows", year, month, rows_inserted)
         return rows_inserted
+
+    async def _ingest_cda_block(
+        self, doc_type: str, fn: Any, year: int, month: int
+    ) -> int:
+        """One CDA holdings block. Same archive as `cda`, a different member.
+
+        Kept separate from ingest_fi_cda rather than folded into it so each
+        block writes its own cvm_ingest_log row: if block 4 parses and block 2
+        does not, the audit log has to say so per slice, not report one blended
+        outcome.
+        """
+        run_id = str(uuid4())
+        self._log_start(run_id, "fi", doc_type, year, month)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages("fi", doc_type, year, month)
+            rows_inserted = await self._store(fn, self._supabase, raw_rows, year, month)
+        except Exception as exc:
+            logger.warning("ingest fi/%s %d-%02d failed: %s", doc_type, year, month, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
+        logger.info("fi/%s %d-%02d: %d rows", doc_type, year, month, rows_inserted)
+        return rows_inserted
+
+    async def ingest_fi_cda_acoes(self, year: int, month: int) -> int:
+        """FI equity holdings — the fund-to-ticker edge."""
+        return await self._ingest_cda_block("cda_acoes", ingest_fi_cda_acoes, year, month)
+
+    async def ingest_fi_cda_cotas(self, year: int, month: int) -> int:
+        """FI fund-of-fund holdings — the fund-to-fund edge."""
+        return await self._ingest_cda_block("cda_cotas", ingest_fi_cda_cotas, year, month)
 
     # ------------------------------------------------------------------
     # FI — investor profile  (PERFIL_MENSAL)
@@ -1439,6 +1474,20 @@ class CVMIngestor:
                         f"fi/cda {year}-{month:02d}",
                         self.ingest_fi_cda(year, month),
                     ))
+                # Same 2023+ gate as `cda`: these are members of the same
+                # archive, so where that one has no monthly file neither do they.
+                if year >= 2023 and _want_fi_doc("cda_acoes"):
+                    fi_tasks.append(IngestTask(
+                        "cvm_fi_cda_acoes",
+                        f"fi/cda_acoes {year}-{month:02d}",
+                        self.ingest_fi_cda_acoes(year, month),
+                    ))
+                if year >= 2023 and _want_fi_doc("cda_cotas"):
+                    fi_tasks.append(IngestTask(
+                        "cvm_fi_cda_cotas",
+                        f"fi/cda_cotas {year}-{month:02d}",
+                        self.ingest_fi_cda_cotas(year, month),
+                    ))
                 if _want_fi_doc("perfil_mensal"):
                     fi_tasks.append(IngestTask(
                         "cvm_fi_perfil",
@@ -1714,6 +1763,12 @@ class CVMIngestor:
             monthly_specs += [
                 ("cvm_fi_diario", "fi", "inf_diario", "inf_diario", self.ingest_fi_diario),
                 ("cvm_fi_cda", "fi", "cda", "cda", self.ingest_fi_cda),
+                # Members of the same archive as `cda`; each gets its own
+                # spec so the gap-aware window tracks them independently —
+                # a month where block 4 landed and block 2 did not must be
+                # re-probed for block 2 alone.
+                ("cvm_fi_cda_acoes", "fi", "cda_acoes", "cda_acoes", self.ingest_fi_cda_acoes),
+                ("cvm_fi_cda_cotas", "fi", "cda_cotas", "cda_cotas", self.ingest_fi_cda_cotas),
                 ("cvm_fi_perfil", "fi", "perfil_mensal", "perfil_mensal", self.ingest_fi_perfil),
                 # balancete used to live only on the deleted ingest Flask and
                 # sat empty in production. It is now on the daily/backfill specs.

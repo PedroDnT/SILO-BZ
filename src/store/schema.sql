@@ -100,6 +100,73 @@ CREATE INDEX IF NOT EXISTS idx_fi_cda_period ON cvm_fi_cda (period DESC);
 -- ---------------------------------------------------------------------------
 -- FI — monthly investor profile  (PERFIL_MENSAL)
 -- ---------------------------------------------------------------------------
+-- CDA holdings (blocks 4 and 2). See migrations/32_cda_holdings.sql for the
+-- unique-key audit that produced these constraints.
+CREATE TABLE IF NOT EXISTS cvm_fi_cda_acoes (
+    id                  BIGSERIAL   PRIMARY KEY,
+    cnpj                TEXT        NOT NULL CHECK (char_length(cnpj) = 14),
+    period              DATE        NOT NULL,   -- first day of month
+    tp_aplic            TEXT        NOT NULL,   -- application type; part of the key
+    tp_ativo            TEXT,
+    tp_negoc            TEXT,                   -- "Para negociação" etc.
+    cd_ativo            TEXT,                   -- B3 ticker, e.g. ITUB3
+    cd_isin             TEXT,
+    ds_ativo            TEXT,
+    emissor_ligado      TEXT,                   -- 'S' / 'N' related-party flag
+    qt_pos_final        NUMERIC(28,6),
+    vl_merc_pos_final   NUMERIC(20,2),
+    vl_custo_pos_final  NUMERIC(20,2),
+    qt_aquis_negoc      NUMERIC(28,6),
+    vl_aquis_negoc      NUMERIC(20,2),
+    qt_venda_negoc      NUMERIC(28,6),
+    vl_venda_negoc      NUMERIC(20,2),
+    raw                 JSONB       NOT NULL,
+    fetched_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- NULLS NOT DISTINCT: cd_ativo and tp_negoc are empty on a minority of rows,
+-- and without it Postgres would treat every such row as distinct and let
+-- duplicates through the constraint the audit exists to enforce.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_fi_cda_acoes
+    ON cvm_fi_cda_acoes (cnpj, period, tp_aplic, cd_ativo, tp_negoc)
+    NULLS NOT DISTINCT;
+
+-- The join everyone will actually make: which funds held this ticker.
+CREATE INDEX IF NOT EXISTS idx_fi_cda_acoes_ativo
+    ON cvm_fi_cda_acoes (cd_ativo, period DESC);
+
+COMMENT ON TABLE cvm_fi_cda_acoes IS
+    'FI equity holdings, CDA block 4. One row per (fund, month, application type, ticker, trading intent). cd_ativo is the published B3 ticker, so this is the join between the fund universe and the quote tape. Values are as filed; no adjustment applied.';
+
+CREATE TABLE IF NOT EXISTS cvm_fi_cda_cotas (
+    id                  BIGSERIAL   PRIMARY KEY,
+    cnpj                TEXT        NOT NULL CHECK (char_length(cnpj) = 14),
+    period              DATE        NOT NULL,
+    cnpj_cota           TEXT        NOT NULL CHECK (char_length(cnpj_cota) = 14),
+    nm_fundo_cota       TEXT,
+    tp_aplic            TEXT,
+    tp_ativo            TEXT,
+    emissor_ligado      TEXT,                   -- 'S' = same economic group
+    qt_pos_final        NUMERIC(28,6),
+    vl_merc_pos_final   NUMERIC(20,2),
+    vl_custo_pos_final  NUMERIC(20,2),
+    qt_aquis_negoc      NUMERIC(28,6),
+    vl_aquis_negoc      NUMERIC(20,2),
+    qt_venda_negoc      NUMERIC(28,6),
+    vl_venda_negoc      NUMERIC(20,2),
+    raw                 JSONB       NOT NULL,
+    fetched_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fi_cda_cotas UNIQUE (cnpj, period, cnpj_cota)
+);
+
+-- The reverse edge: who holds this fund.
+CREATE INDEX IF NOT EXISTS idx_fi_cda_cotas_held
+    ON cvm_fi_cda_cotas (cnpj_cota, period DESC);
+
+COMMENT ON TABLE cvm_fi_cda_cotas IS
+    'FI fund-of-fund holdings, CDA block 2. One row per (holder fund, month, held fund). emissor_ligado is CVM''s published related-party flag, not an inference.';
+
+
 CREATE TABLE IF NOT EXISTS cvm_fi_perfil (
     id            BIGSERIAL    PRIMARY KEY,
     cnpj          TEXT         NOT NULL CHECK (char_length(cnpj) = 14),
