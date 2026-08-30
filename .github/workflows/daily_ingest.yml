@@ -24,7 +24,7 @@ on:
         required: false
         default: "2026"
       rebuild_dashboard:
-        description: "Rebuild https://iliquid-nightly.vercel.app/ after this run. Leave off while filling data — a dashboard build is 25–45 min of SELECTs on the same Postgres."
+        description: "Fire the Vercel deploy hook after this run. NOTE: this publishes a PRODUCTION deployment, which aliases to silo-deloslabs.vercel.app — verified 2026-08-29 that iliquid-nightly.vercel.app does NOT follow production, so this does not refresh the public URL until that domain is attached. Leave off while filling data either way: a dashboard build is 25–45 min of SELECTs on the same Postgres."
         type: boolean
         default: false
 
