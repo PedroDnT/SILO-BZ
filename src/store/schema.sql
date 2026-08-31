@@ -1102,6 +1102,15 @@ CREATE INDEX IF NOT EXISTS idx_b3_cotahist_isin
     ON b3_cotahist (isin) WHERE isin IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_b3_cotahist_tpmerc_dt
     ON b3_cotahist (tpmerc, trade_date DESC);
+-- ISIN-keyed lookup (migration 36). idx_b3_cotahist_isin is unordered and
+-- idx_b3_cotahist_vista is keyed on codneg with isin only as payload, so
+-- "last close on or before date D for this ISIN" had no index and scanned the
+-- instrument's whole history. That is the lookup vw_b3_share_count_event makes
+-- twice per corporate event, and the one any event-sourced adjustment needs.
+CREATE INDEX IF NOT EXISTS idx_b3_cotahist_isin_dt
+    ON b3_cotahist (isin, trade_date DESC)
+    INCLUDE (preco_fechamento, fator_cotacao)
+    WHERE tpmerc = '010' AND isin IS NOT NULL;
 -- Option serve path (api.option_chain / api.option_history, migration 21):
 -- options (tpmerc 070/080) are ~89% of each session, so per-codneg lookups get
 -- the same partial-index treatment as vista. Termo ('030') deliberately has no
