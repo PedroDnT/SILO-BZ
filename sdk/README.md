@@ -5,7 +5,8 @@ Thin Python client for the Silo read API — Brazilian public-markets data
 the Supabase Data API.
 
 ```bash
-pip install -e sdk/          # from the repo root, or copy sdk/silo_client/
+pip install -e sdk/              # from the repo root, or copy sdk/silo_client/
+pip install -e "sdk/[pandas]"    # adds the wide-DataFrame panel output
 ```
 
 ```python
@@ -24,6 +25,43 @@ df = silo.panel(
 )                                 # wide DataFrame, (date) x (id, metric)
 df.corr()                         # reductions happen HERE, not over HTTP
 ```
+
+## Two things that will bite you if nobody says them
+
+**A capped response raises.** PostgREST stops at **1,000 rows** and answers
+HTTP 200 with the first page, oldest first. Six years of daily quotes come back
+as three and a half, and the series simply looks like it ended — which is
+indistinguishable from a company that stopped trading. The client asks the
+server for a true count and raises `SiloTruncated` rather than handing you the
+short answer. Range paging does not work on RPC calls, so it cannot stitch the
+rest for you; narrow the window, ask for fewer ids, or take one metric at a
+time.
+
+```python
+from silo_client import SiloClient, SiloTruncated
+
+try:
+    rows = silo.quote_history("PETR4", start="2019-01-01")
+except SiloTruncated as e:
+    print(e.returned, "of", e.total)     # 1000 of 4382
+```
+
+**Signing in raises four ceilings, and not the fifth.** Pass a user JWT as
+`token=` (or set `SILO_TOKEN`) and the request moves from the anonymous role to
+`authenticated`:
+
+| | anonymous | signed in |
+| --- | ---: | ---: |
+| `panel` ids per call | 3 | 50 |
+| `search_funds` rows | 25 | 200 |
+| `option_chain` rows | 200 | 2,000 |
+| query budget | 3s | 8s |
+| **rows per response** | **1,000** | **1,000** |
+
+That last row is not a typo. `db-max-rows` is a server-wide setting applied
+identically to every caller; no tier changes it. Get a token from the sign-in
+page in the docs, and check `silo.tier` if you need to know which ceiling you
+are under.
 
 ## The contract, in client form
 

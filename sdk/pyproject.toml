@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "silo-client"
-version = "0.1.0"
+version = "0.2.0"
 description = "Thin, honest Python client for the Silo read API (Brazilian public-markets warehouse: CVM funds, B3 COTAHIST)."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -15,3 +15,6 @@ pandas = ["pandas>=2.0"]
 
 [tool.setuptools.packages.find]
 include = ["silo_client*"]
+
+[tool.setuptools.package-data]
+silo_client = ["py.typed"]
