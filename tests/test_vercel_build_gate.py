@@ -306,6 +306,46 @@ def test_every_fi_doc_type_is_dispatchable_and_repairable():
         "so --repair-gaps raises ValueError for a doc type the dropdown offers"
     )
 
+    # The CLI argparse choices. The workflow passes fi_doc_type straight to
+    # --doc-type, so a value the dropdown offers and argparse rejects kills the
+    # job before it fetches anything.
+    cli = (ROOT / "src/pipeline/run_backfill.py").read_text()
+    m = re.search(r'"--doc-type",\s*\n\s*choices=\[([^\]]*)\]', cli)
+    assert m, "could not find the --doc-type choices list in run_backfill.py"
+    choices = set(re.findall(r'"([a-z_]+)"', m.group(1)))
+    assert wired <= choices, (
+        f"{sorted(wired - choices)} are offered by backfill.yml but rejected by "
+        "run_backfill.py argparse — the dispatch dies with 'invalid choice'"
+    )
+
+    # And the validation set inside backfill() itself, which raises ValueError
+    # even when argparse lets the value through.
+    pipe = (ROOT / "src/pipeline/cvm_pipeline.py").read_text()
+    m = re.search(r"fi_doc_types = \{([^}]*)\}", pipe)
+    assert m, "could not find the fi_doc_types validation set in cvm_pipeline.py"
+    validated = set(re.findall(r'"([a-z_]+)"', m.group(1)))
+    assert wired <= validated, (
+        f"{sorted(wired - validated)} are wired into backfill() but rejected by its own "
+        "fi_doc_types guard"
+    )
+
+
+def test_the_fi_matrix_covers_every_year_a_dataset_can_reach():
+    """A year absent from the matrix cannot be backfilled at all.
+
+    The FI matrix is a hardcoded list, and out-of-range years exit 0 cheaply, so
+    the cost of listing every reachable year is one skipped job. The cost of NOT
+    listing it is that the data is simply unreachable: CDA history starts 2005
+    and inf_diario HIST starts 2000, but the matrix began at 2019.
+    """
+    wf = yaml.safe_load((ROOT / ".github/workflows/backfill.yml").read_text())
+    years = set(wf["jobs"]["backfill-fi"]["strategy"]["matrix"]["year"])
+    assert min(years) <= 2005, (
+        f"FI matrix starts at {min(years)}; CDA yearly archives go back to 2005 and "
+        "a year not in this list can never be dispatched"
+    )
+    assert years == set(range(min(years), max(years) + 1)), "matrix has a gap"
+
 
 def _gate_decision(doc_type: str, year: int, repair: bool = False, **coverage) -> str:
     """Run backfill.yml's coverage-gate decision block, without a database.

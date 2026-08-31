@@ -220,7 +220,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--doc-type",
-        choices=["inf_diario", "cda", "perfil_mensal", "balancete"],
+        choices=["inf_diario", "cda", "cda_acoes", "cda_cotas",
+                 "perfil_mensal", "balancete"],
         default=None,
         help="Limit an --entity fi backfill to one document type",
     )
