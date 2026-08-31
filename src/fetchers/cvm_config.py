@@ -64,6 +64,30 @@ class DatasetConfig:
                 "Targets BLC_1, the same block the monthly `cda` dataset ingests."
             ),
         },
+        # Blocks 4 and 2 of the SAME yearly archive hist_cda downloads. The
+        # fetcher caches the zip on disk, so naming a second and third member
+        # costs one download, not three. Verified against the real 2005, 2015
+        # and 2022 archives: BLC_2 and BLC_4 are present in all of them, with
+        # headers byte-identical across the twenty years.
+        "hist_cda_acoes": {
+            "url_pattern": "{base_url}/FI/DOC/CDA/DADOS/HIST/cda_fi_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "cda_fi_BLC_4_{year}.csv",
+            "description": (
+                "FI equity holdings historical (2005-2022) — yearly HIST/ ZIP, block 4. "
+                "One CSV for the whole year; each row carries its own DT_COMPTC."
+            ),
+        },
+        "hist_cda_cotas": {
+            "url_pattern": "{base_url}/FI/DOC/CDA/DADOS/HIST/cda_fi_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "cda_fi_BLC_2_{year}.csv",
+            "description": (
+                "FI fund-of-fund holdings historical (2005-2022) — yearly HIST/ ZIP, "
+                "block 2. Uses the older CNPJ_FUNDO_COTA column name; the field map "
+                "carries the fallback."
+            ),
+        },
         "cad": {
             "url_pattern": "{base_url}/FI/CAD/DADOS/cad_fi.csv",
             "is_zip": False,

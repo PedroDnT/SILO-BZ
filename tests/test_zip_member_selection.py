@@ -169,8 +169,88 @@ class TestConfiguredPatternsResolve:
         )
         assert "cda_fi_BLC_1_2022.csv" in text
 
+    @pytest.mark.parametrize("doc_type,member", [
+        ("hist_cda_acoes", "cda_fi_BLC_4_2022.csv"),
+        ("hist_cda_cotas", "cda_fi_BLC_2_2022.csv"),
+    ])
+    def test_fi_hist_holdings_target_their_own_blocks(self, doc_type, member):
+        """Blocks 4 and 2 of the archive hist_cda reads block 1 of.
+
+        Verified against the real 2005, 2015 and 2022 archives: both members are
+        present in all of them.
+        """
+        members = ["cda_fiim_2022.csv"] + [f"cda_fi_BLC_{i}_2022.csv" for i in range(1, 9)] + [
+            "cda_fi_PL_2022.csv"
+        ]
+        cfg = dataset_config.get_dataset_config("fi", doc_type)
+        text = CVMFetcher()._extract_csv_from_zip(
+            _zip_with(members), cfg["csv_name_pattern"], 2022, None
+        )
+        assert member in text
+
     def test_retired_fii_trimestral_doc_type_is_gone(self):
         """The broken doc_type must not be reachable, aliases included."""
         assert "trimestral" not in dataset_config.get_available_doc_types("fii")
         with pytest.raises(ValueError, match="Unknown document type"):
             dataset_config.get_dataset_config("fii", "trimestral")
+
+
+class TestYearlyArchivesKeepTheirMonths:
+    """The second variant of the bug this module is named for.
+
+    Selecting the right member is only half of it. `hist_cda` resolved to the
+    correct CSV and then threw away eleven twelfths of it a different way:
+    ingest_fi_hist_cda called ingest_fi_cda(rows, year, 1), and ingest_fi_cda
+    overwrote every row's period with January. Under the
+    (cnpj, period, tp_aplic, tp_ativo) key, December's portfolio overwrote
+    January's, so each pre-2023 year of cvm_fi_cda held one month.
+
+    Same outcome as the member-substitution bugs above — a table that looks
+    populated and is not — reached through the parse stage instead of the fetch
+    stage, which is why the earlier fix did not catch it.
+    """
+
+    ROWS = [
+        {"CNPJ_FUNDO": "00.102.322/0001-41", "DT_COMPTC": f"2022-{m:02d}-28",
+         "TP_APLIC": "Títulos Públicos", "TP_ATIVO": "Tesouro Selic",
+         "QT_POS_FINAL": f"{m}000.0", "VL_MERC_POS_FINAL": f"{m}0000.00"}
+        for m in range(1, 13)
+    ]
+
+    def _capture(self, monkeypatch):
+        seen = {}
+        monkeypatch.setattr(
+            "src.pipeline.ingest_fi.upsert_rows",
+            lambda conn, table, rows, **kw: seen.setdefault("rows", rows) and 0 or len(rows),
+        )
+        return seen
+
+    def test_month_none_keeps_all_twelve(self, monkeypatch):
+        from src.pipeline.ingest_fi import ingest_fi_cda
+
+        seen = self._capture(monkeypatch)
+        ingest_fi_cda(object(), self.ROWS, 2022, None)
+        periods = {r["period"] for r in seen["rows"]}
+        assert len(periods) == 12, f"a yearly archive collapsed to {len(periods)} month(s)"
+
+    def test_an_explicit_month_still_wins_for_monthly_files(self, monkeypatch):
+        """The monthly path is unchanged: one file is one competency month.
+
+        DT_COMPTC there can be any day of the month, and the caller knows which
+        month it asked for, so the argument stays authoritative.
+        """
+        from src.pipeline.ingest_fi import ingest_fi_cda
+
+        seen = self._capture(monkeypatch)
+        ingest_fi_cda(object(), self.ROWS[:1], 2026, 6)
+        assert {str(r["period"]) for r in seen["rows"]} == {"2026-06-01"}
+
+    def test_the_hist_caller_passes_none(self):
+        """The fix lives at the call site; a literal month there reintroduces it."""
+        from pathlib import Path
+
+        body = (Path(__file__).resolve().parents[1] / "src/pipeline/cvm_pipeline.py").read_text()
+        start = body.index("async def ingest_fi_hist_cda(")
+        hist = body[start : body.index("return rows_inserted", start)]
+        assert "ingest_fi_cda(self._supabase, chunk, year, None)" in hist
+        assert "chunk, year, 1)" not in hist, "a fixed month collapses the year again"

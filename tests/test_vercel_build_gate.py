@@ -350,27 +350,34 @@ def test_the_coverage_gate_decides_every_dispatchable_doc_type():
     assert _gate_decision("a_doc_type_added_later", 2024).startswith("RUN")
 
 
-def test_the_gate_skips_years_the_holdings_blocks_cannot_reach():
-    """cvm_pipeline schedules cda_acoes/cda_cotas only from 2023.
+def test_the_gate_runs_every_year_the_holdings_blocks_can_reach():
+    """Holdings history goes back to 2005, so no year may be gated out.
 
-    Before that, the FI CDA history comes from the yearly HIST archive, and
-    `hist_cda` reads BLC_1 only (src/fetchers/cvm_config.py). So an earlier year
-    would spin up a job, download nothing and report success — which reads as
-    "2019 holdings are empty upstream" rather than "we never wired it".
+    cda_acoes/cda_cotas read blocks 4 and 2 of the same yearly HIST archive
+    `cda` reads block 1 of, so every year from 2005 has a source. A gate that
+    skipped the earlier years would make "2019 holdings are empty" look like an
+    upstream fact rather than a dispatch we declined to run.
     """
-    for year in (2019, 2022):
-        assert _gate_decision("cda_acoes", year).startswith("SKIP")
-    assert _gate_decision("cda_acoes", 2023).startswith("RUN")
-    # `cda` itself does have a pre-2023 path, so it must not be caught by this.
-    assert _gate_decision("cda", 2019).startswith("RUN")
+    for year in (2005, 2019, 2022, 2023, 2026):
+        assert _gate_decision("cda_acoes", year).startswith("RUN")
+        assert _gate_decision("cda_cotas", year).startswith("RUN")
 
-    # Repair mode too: --repair-gaps on 2019 would report all twelve months as
-    # gaps (the table is empty) and then schedule none of them, because the
-    # backfill loop gates the block on year >= 2023. The check has to sit ahead
-    # of the repair branch, not inside the coverage one.
-    assert _gate_decision("cda_acoes", 2019, repair=True).startswith("SKIP")
-    assert _gate_decision("cda_acoes", 2024, repair=True).startswith("RUN")
-    assert _gate_decision("balancete", 2019, repair=True).startswith("RUN")
+
+def test_repair_mode_does_not_offer_to_repair_a_yearly_archive():
+    """A month repair cannot fetch a whole-year archive.
+
+    gaps.FI_MONTHLY_TABLES carries the cutoff year per doc type, so
+    --repair-gaps does not report months it would then silently schedule as
+    nothing. The workflow gate stays out of it — this is the module's job, and
+    two places encoding the same cutoff is how they drift apart.
+    """
+    from src.pipeline.gaps import FI_MONTHLY_TABLES
+
+    for doc in ("cda", "cda_acoes", "cda_cotas"):
+        assert FI_MONTHLY_TABLES[doc][2] == 2023, f"{doc} must carry the HIST cutoff"
+    assert FI_MONTHLY_TABLES["inf_diario"][2] == 2021
+    # balancete and perfil_mensal are monthly for every year we backfill.
+    assert FI_MONTHLY_TABLES["balancete"][2] is None
 
 
 def test_b3_backfill_accepts_an_exact_year_range():

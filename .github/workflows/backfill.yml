@@ -250,15 +250,11 @@ jobs:
           # 2026-06 carries a fresh 'error' row over 2,178,163 real rows, and
           # 32 other months carry no 'ok' row at all. --repair-gaps / --months
           # decide what to fetch by reading the table itself.
-          # Checked before the repair branch: a year with no wired source has
-          # nothing to repair either. cvm_pipeline schedules the holdings blocks
-          # only from 2023, and the pre-2023 yearly HIST archive reads BLC_1
-          # only, so an earlier year would report every month as a gap and then
-          # fetch none of them.
-          if requested_doc in ("cda_acoes", "cda_cotas") and year < 2023:
-              print(f"SKIP: {year} {requested_doc} has no pre-2023 source wired (HIST reads BLC_1 only)")
-              skip = True
-          elif "${{ inputs.fi_repair_gaps }}" == "true" or "${{ inputs.fi_months }}".strip():
+          # No pre-2023 exclusion for the holdings blocks: they come from blocks
+          # 4 and 2 of the same yearly HIST archive as `cda`, so every year from
+          # 2005 has a source. A month repair still cannot reach those years —
+          # gaps.FI_MONTHLY_TABLES carries that cutoff and says so.
+          if "${{ inputs.fi_repair_gaps }}" == "true" or "${{ inputs.fi_months }}".strip():
               print(f"RUN: {year} (repair mode — coverage is decided from the table, not the audit log)")
           elif requested_doc != "all":
               counts = {
