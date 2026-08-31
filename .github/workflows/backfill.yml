@@ -76,12 +76,15 @@ jobs:
         with:
           postgres-url: ${{ secrets.POSTGRES_URL }}
 
-  # Ask CVM once, in about a second, whether it will talk to this runner at all.
-  # Every CVM job below gates on this: a dispatch is up to 300 minutes and every
-  # download goes to that one host, so when the IP is refused the whole thing is
-  # doomed before it starts. On 2026-08-29 the 06:00 ingest spent ~40 minutes
-  # proving the same refusal across twenty slices. bacen_only runs skip it —
-  # they never touch CVM.
+  # Ask CVM once, in about a second, whether it is answering anyone at all.
+  # Every CVM job below `needs:` this so a globally-down host fails the matrix
+  # before 22 year-jobs spin up. That is not the same runner as the downloads:
+  # GitHub-hosted jobs are different VMs with different IPs. Backfill #22
+  # (run 33434522442) passed this probe at 20:10, FI 2024 landed 2.7M
+  # cda_acoes rows, then FI 2025 and FI 2026 each spent ~7 minutes proving
+  # `Connect call failed ('45.7.170.66', 443)` on new runners. Each ingest job
+  # therefore also probes locally (same pattern as daily_ingest.yml) before it
+  # fetches. bacen_only runs skip this job — they never touch CVM.
   cvm-preflight:
     name: "Can this runner reach CVM?"
     if: ${{ inputs.bacen_only != true }}
@@ -192,6 +195,13 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+
+      # Same runner as the fetch below. The workflow-level cvm-preflight job
+      # cannot see this VM's IP; without this step a blocked year grinds the
+      # connect-retry loop (~7 min) and writes CVMHostUnreachable audit rows.
+      - name: Probe dados.cvm.gov.br
+        if: ${{ matrix.year >= fromJSON(inputs.start_year) && matrix.year <= fromJSON(inputs.end_year) }}
+        run: python scripts/check_cvm_reachable.py
 
       - name: Install dependencies
         if: ${{ matrix.year >= fromJSON(inputs.start_year) && matrix.year <= fromJSON(inputs.end_year) }}
@@ -366,6 +376,10 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Probe dados.cvm.gov.br
+        if: ${{ inputs.entity == 'all' || inputs.entity == matrix.entity }}
+        run: python scripts/check_cvm_reachable.py
+
       - name: Install dependencies
         if: ${{ inputs.entity == 'all' || inputs.entity == matrix.entity }}
         run: pip install -r requirements.txt
@@ -402,6 +416,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+
+      - name: Probe dados.cvm.gov.br
+        run: python scripts/check_cvm_reachable.py
 
       - name: Install dependencies
         run: pip install -r requirements.txt
