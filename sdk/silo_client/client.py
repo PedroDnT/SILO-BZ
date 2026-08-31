@@ -225,7 +225,7 @@ class SiloClient:
         board: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         return self._rpc("quote_history", {
-            "p_codneg": ticker, "p_from": _iso(start), "p_to": _iso(end),
+            "p_ticker": ticker, "p_from": _iso(start), "p_to": _iso(end),
             "p_board": board,
         })
 
@@ -256,7 +256,7 @@ class SiloClient:
 
     def quote_latest(self, ticker: str, board: Optional[str] = None) -> List[Dict[str, Any]]:
         """The most recent session for one instrument."""
-        return self._rpc("quote_latest", {"p_codneg": ticker, "p_board": board})
+        return self._rpc("quote_latest", {"p_ticker": ticker, "p_board": board})
 
     def option_history(self, codneg: str, start: Datish = None,
                        end: Datish = None) -> List[Dict[str, Any]]:
@@ -265,11 +265,28 @@ class SiloClient:
             "p_codneg": codneg, "p_from": _iso(start), "p_to": _iso(end),
         })
 
-    def option_exercises(self, underlying: Optional[str] = None, start: Datish = None,
-                         end: Datish = None) -> List[Dict[str, Any]]:
-        """Recorded option exercises (B3 segment 070/080)."""
+    def option_exercises(self, prefix: str, start: Datish = None,
+                         end: Datish = None,
+                         limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Recorded option exercise events (tpmerc 012 call / 013 put).
+
+        `prefix` is a codneg prefix of at least three characters (e.g. "PETR")
+        and is REQUIRED — the server raises 22023 without one, since an
+        unprefixed scan of every exercise ever printed is the slowest query on
+        the API. Checked here so the round trip is not spent on a knowable
+        error.
+
+        These are events, not quotes: one print per series, with no return
+        semantics. Rows are clamped to 500 anonymous / 5000 signed in.
+        """
+        if len((prefix or "").strip()) < 3:
+            raise ValueError(
+                "option_exercises needs a codneg prefix of at least 3 "
+                f"characters (e.g. 'PETR'); got {prefix!r}"
+            )
         return self._rpc("option_exercises", {
-            "p_underlying": underlying, "p_from": _iso(start), "p_to": _iso(end),
+            "p_prefix": prefix.strip().upper(), "p_from": _iso(start),
+            "p_to": _iso(end), "p_limit": limit,
         })
 
     def termo_history(self, codneg: str, start: Datish = None,

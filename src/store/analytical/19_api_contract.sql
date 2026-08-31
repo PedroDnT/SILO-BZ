@@ -866,10 +866,16 @@ COMMENT ON FUNCTION api.option_history(TEXT, DATE, DATE) IS
 -- them as history would invite return math over non-quotes, so they get their
 -- own endpoints. side/kind derive only from tpmerc.
 
+-- The 3-argument form is dropped rather than left as an overload: PostgREST
+-- resolves an RPC by argument names, and two candidates differing only by an
+-- optional p_limit make every call ambiguous.
+DROP FUNCTION IF EXISTS api.option_exercises(TEXT, DATE, DATE);
+
 CREATE OR REPLACE FUNCTION api.option_exercises(
     p_prefix TEXT,
     p_from   DATE DEFAULT (CURRENT_DATE - 365),
-    p_to     DATE DEFAULT CURRENT_DATE
+    p_to     DATE DEFAULT CURRENT_DATE,
+    p_limit  INT  DEFAULT NULL
 )
 RETURNS TABLE (
     codneg              TEXT,
@@ -893,6 +899,8 @@ SET search_path = ''
 AS $$
 DECLARE
     v_prefix TEXT := upper(btrim(COALESCE(p_prefix, '')));
+    v_cap    INT  := CASE api.caller_tier()
+                          WHEN 'authenticated' THEN 5000 ELSE 500 END;
 BEGIN
     -- Same required-prefix contract as option_chain, same reason.
     IF length(v_prefix) < 3 THEN
@@ -929,15 +937,24 @@ BEGIN
       AND b.codneg LIKE v_prefix || '%'
       AND b.trade_date BETWEEN p_from AND p_to
     ORDER BY b.trade_date, b.codneg
-    LIMIT 5001;
+    -- Ceiling by tier, like every other row-capped function here. The old
+    -- hardcoded LIMIT 5001 was a truncation sentinel that no caller could ever
+    -- observe: PostgREST caps a response at 1000 rows regardless, so an
+    -- anonymous caller silently received 1000 and had no way to learn the
+    -- other 4001 existed. A tier ceiling makes the cut deterministic and the
+    -- documented number true.
+    LIMIT LEAST(
+        GREATEST(COALESCE(p_limit, v_cap), 1),
+        v_cap
+    );
 END;
 $$;
 
-COMMENT ON FUNCTION api.option_exercises(TEXT, DATE, DATE) IS
-    'Option exercise EVENTS (tpmerc 012 call / 013 put) for a REQUIRED codneg prefix (>= 3 chars). One row per exercise print — these are not quotes and carry no return semantics. underlying_ticker per the published ISIN mapping. Capped at 5001 rows.';
+COMMENT ON FUNCTION api.option_exercises(TEXT, DATE, DATE, INT) IS
+    'Option exercise EVENTS (tpmerc 012 call / 013 put) for a REQUIRED codneg prefix (>= 3 chars). One row per exercise print — these are not quotes and carry no return semantics. underlying_ticker per the published ISIN mapping. Rows clamped to 1..500 anonymous, 1..5000 signed in.';
 
-REVOKE ALL ON FUNCTION api.option_exercises(TEXT, DATE, DATE) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION api.option_exercises(TEXT, DATE, DATE) TO anon, authenticated, silo_api;
+REVOKE ALL ON FUNCTION api.option_exercises(TEXT, DATE, DATE, INT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.option_exercises(TEXT, DATE, DATE, INT) TO anon, authenticated, silo_api;
 
 -- Auction prints: tpmerc 017 (leilão). 210 rows over the whole 2019-2026 tape,
 -- so a plain filterable view is proportionate; no cap needed at this size.

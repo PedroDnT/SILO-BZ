@@ -26,7 +26,7 @@ it changes on corporate events, a useful split signal). See the
 <Warning>
   **Exercises are not quotes.** `tpmerc` 012/013 rows are exercise *events* (~one print
   per series) and live on `POST /rpc/option_exercises` (same required prefix, capped
-  5001), not on the chain or history endpoints. Auction prints (`tpmerc` 017) live on
+  at 500 rows anonymous / 5,000 signed in), not on the chain or history endpoints. Auction prints (`tpmerc` 017) live on
   `GET /auctions`. Computing returns over either is meaningless.
 </Warning>
 

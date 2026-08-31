@@ -154,7 +154,7 @@ no PostgREST in front) and tells you what the function would return unclipped:
 | [`coverage`](/api-docs/coverage) | one row per dataset, plus one `funds_<family>` row per family (~9) |
 | [`option_chain`](/api-docs/options) | **200** rows anonymous, 2,000 signed in (default 100) |
 | [`option_history`](/api-docs/options) | 5,001 rows |
-| [`option_exercises`](/api-docs/options) | 5,001 rows |
+| [`option_exercises`](/api-docs/options) | **500** rows anonymous, 5,000 signed in (`p_limit` is clamped, not refused) |
 | [`termo_history`](/api-docs/termo) | 5,001 rows |
 | [`panel`](/api-docs/panel) | 100,001 rows, and **3 ids** anonymous / 50 signed in |
 
