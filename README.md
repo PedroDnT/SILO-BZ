@@ -36,6 +36,9 @@ Supabase. SILO (this repo) writes and serves; the dashboard only reads at build 
 Docs: [https://octo-98895abd.mintlify.site](https://octo-98895abd.mintlify.site)
 (Mintlify, source in [`api-docs/`](api-docs/quickstart.mdx); agents: [`api-docs/agents.mdx`](api-docs/agents.mdx)) for callers,
 [docs/API.md](docs/API.md) for the contract and its edge cases,
+[docs/DATA_INVENTORY.md](docs/DATA_INVENTORY.md) for what we ingest, what we
+could ingest and don't, what we ingest and don't serve, and the serving grain
+per family, and
 [docs/planning/SERVING.md](docs/planning/SERVING.md) for how "ingested" becomes
 "a researcher pulls a panel" (steps 0–7; 3 and 6 gate public HTTP).
 
@@ -220,7 +223,7 @@ Each CVM entity gets one or more tables per data release frequency:
 | `etf_market_snapshot` | ETF scraped snapshots (nav, price, yields, volatility, drawdown)                                                   | `(ticker, snapshot_date)`                                 |
 | `b3_cotahist`         | B3 COTAHIST quotes (unadjusted OHLC, volume, ticker, ISIN). `vw_b3_instrument_typed` classifies published instrument types; `api.quotes` serves typed cash rows. | `(codneg, trade_date, tpmerc, codbdi, prazot)`            |
 
-**Total: 34 base tables across 12 logical domains (FI, FIDC, FII, FIP, FIAGRO, SECURIT, CIA Aberta, Registry, BACEN, Audit, ETF, B3).** The authoritative list is `src/store/schema.sql` plus `migrations/`; `docs/DATA_INVENTORY.md` maps every table to its source, grain and coverage, and says which are ingested but not served.
+**Total: 35 base tables across 12 logical domains (FI, FIDC, FII, FIP, FIAGRO, SECURIT, CIA Aberta, Registry, BACEN, Audit, ETF, B3)** — counted from a database with `schema.sql` plus every migration applied, excluding partition children. The authoritative list is `src/store/schema.sql` plus `migrations/`; `docs/DATA_INVENTORY.md` maps every table to its source, grain and coverage, and says which are ingested but not served.
 
 ### Design Principles
 
