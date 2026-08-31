@@ -125,9 +125,16 @@ CREATE TABLE IF NOT EXISTS cvm_fi_cda_acoes (
     fetched_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Columns added after this table first shipped (migration 33). On an existing
+-- database the CREATE TABLE above is a no-op, so the index below would
+-- reference a column that does not exist yet — schema.sql runs BEFORE the
+-- migrations. Every post-CREATE column needs its own guarded ALTER here.
+ALTER TABLE cvm_fi_cda_acoes ADD COLUMN IF NOT EXISTS tp_fundo TEXT;
+
 -- NULLS NOT DISTINCT: cd_ativo and tp_negoc are empty on a minority of rows,
 -- and without it Postgres would treat every such row as distinct and let
 -- duplicates through the constraint the audit exists to enforce.
+DROP INDEX IF EXISTS uq_fi_cda_acoes;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_fi_cda_acoes
     ON cvm_fi_cda_acoes (cnpj, period, tp_fundo, tp_aplic, tp_ativo, cd_ativo, tp_negoc)
     NULLS NOT DISTINCT;
@@ -161,6 +168,12 @@ CREATE TABLE IF NOT EXISTS cvm_fi_cda_cotas (
     fetched_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Same reason as cvm_fi_cda_acoes above: migration 33 added these.
+ALTER TABLE cvm_fi_cda_cotas ADD COLUMN IF NOT EXISTS tp_fundo TEXT;
+ALTER TABLE cvm_fi_cda_cotas ADD COLUMN IF NOT EXISTS tp_negoc TEXT;
+ALTER TABLE cvm_fi_cda_cotas DROP CONSTRAINT IF EXISTS uq_fi_cda_cotas;
+
+DROP INDEX IF EXISTS uq_fi_cda_cotas;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_fi_cda_cotas
     ON cvm_fi_cda_cotas (cnpj, period, tp_fundo, cnpj_cota, tp_aplic, tp_negoc)
     NULLS NOT DISTINCT;
@@ -321,9 +334,25 @@ CREATE TABLE IF NOT EXISTS cvm_fip_periodic (
     fetched_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
+-- Added by migration 34; guarded here because schema.sql runs before the
+-- migrations and the CREATE TABLE above is a no-op on an existing database.
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS period         DATE;
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS classe_cota    TEXT;
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS row_hash       TEXT;
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS tp_fundo       TEXT;
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS denom_social   TEXT;
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS qt_cota        NUMERIC(28,8);
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS vl_patrim_cota NUMERIC(28,8);
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS nr_cotst       NUMERIC(20,2);
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS vl_cap_comprom NUMERIC(20,2);
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS vl_cap_subscr  NUMERIC(20,2);
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS vl_cap_integr  NUMERIC(20,2);
+ALTER TABLE cvm_fip_periodic DROP CONSTRAINT IF EXISTS uq_fip_periodic;
+
 -- A FIP yearly CSV holds every filing of the year (4 quarters, or 3
 -- quadrimestral periods) and one row per share class inside each. Keying on
 -- period_year alone discarded 72-77% of every published file.
+DROP INDEX IF EXISTS uq_fip_periodic;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_fip_periodic
     ON cvm_fip_periodic (cnpj, doc_type, period, classe_cota, row_hash)
     NULLS NOT DISTINCT;
