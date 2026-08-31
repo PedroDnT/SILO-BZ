@@ -52,9 +52,10 @@ ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS vl_cap_comprom  NUMERIC(20
 ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS vl_cap_subscr   NUMERIC(20,2);
 ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS vl_cap_integr   NUMERIC(20,2);
 
--- Recover the key columns from the preserved source row. A row whose raw has no
--- usable DT_COMPTC keeps period NULL and is caught by the backstop below rather
--- than being dated by guess.
+-- Recover the key columns from the preserved source row before the index is
+-- built. Order matters: the new key DROPS period_year, so until these run every
+-- year of a fund has (period, classe_cota, row_hash) = (NULL, NULL, NULL) and
+-- NULLS NOT DISTINCT makes them all duplicates of each other.
 UPDATE cvm_fip_periodic
    SET period = NULLIF(raw ->> 'DT_COMPTC', '')::DATE
  WHERE period IS NULL
@@ -64,13 +65,14 @@ UPDATE cvm_fip_periodic
    SET classe_cota = NULLIF(raw ->> 'CLASSE_COTA', '')
  WHERE classe_cota IS NULL;
 
--- A stored row predating this migration has no row_hash. Its digest cannot be
--- recomputed here (the hash is over the FULL source row, and `raw` holds only
--- the columns the old field map did not consume), so it gets a stable marker
--- instead. The next ingest of that slice writes the real digest as a new row;
--- these markers are the pre-fix remnant and are distinguishable as such.
+-- The marker carries the row's own id. A constant would make every legacy row
+-- of a fund identical under the new key — which is precisely the collapse this
+-- change exists to end. `raw` holds only the columns the OLD field map did not
+-- consume, so the real digest cannot be recomputed here; the next ingest of
+-- that slice writes it as a new row and these remain distinguishable as the
+-- pre-fix remnant.
 UPDATE cvm_fip_periodic
-   SET row_hash = 'pre-migration-34'
+   SET row_hash = 'pre-migration-34:' || id::TEXT
  WHERE row_hash IS NULL;
 
 -- Backstop: a row that still has no period cannot take part in the new key.

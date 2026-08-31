@@ -87,6 +87,55 @@ jobs:
         with:
           postgres-url: ${{ env.POSTGRES_URL }}
 
+      # An empty database is the one state production is never in. Applying
+      # schema.sql to a fresh DB proved nothing about the upgrade, and twice in
+      # one evening that gap shipped a broken schema gate:
+      #   1. an index over a column only the migration adds (CREATE TABLE
+      #      IF NOT EXISTS is a no-op on an existing table), and
+      #   2. a widened key that DROPS a column, so legacy rows distinguished
+      #      only by the dropped column collided once the new ones were NULL
+      #      (NULLS NOT DISTINCT makes NULL equal to NULL).
+      # Neither is visible without pre-existing rows. This step builds a second
+      # database the way production was built, puts rows in it, and then runs
+      # the upgrade.
+      - name: Upgrade path — an EXISTING database with rows in it
+        run: |
+          set -euo pipefail
+          OLD_URL="postgresql://postgres:ci@localhost:5432/silo_upgrade"
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE silo_upgrade;"
+
+          # The schema as it was before tonight's key changes, plus the
+          # migrations that existed then: production's actual starting shape.
+          git show "$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)~8:src/store/schema.sql"             > /tmp/old_schema.sql 2>/dev/null             || git show HEAD~8:src/store/schema.sql > /tmp/old_schema.sql
+          psql "$OLD_URL" -q -f /tmp/old_schema.sql > /dev/null 2>&1 || true
+          for f in $(ls src/store/migrations/*.sql | sort | head -32); do
+            psql "$OLD_URL" -q -f "$f" > /dev/null 2>&1 || true
+          done
+
+          # Rows in the pre-change shape. FIP is the sharp case: several years
+          # of one fund, none of the new key columns, and a raw payload with no
+          # recoverable date — the exact rows that made the index build fail.
+          psql "$OLD_URL" -v ON_ERROR_STOP=1 <<'SEED'
+          INSERT INTO cvm_fip_periodic (cnpj, doc_type, period_year, vl_patrim_liq, raw)
+          SELECT '34964435000178', 'inf_trimestral', y, 1000 + y, '{"DENOM_SOCIAL":"LEGACY"}'::jsonb
+          FROM generate_series(2010, 2023) AS y;
+          SEED
+
+          echo "--- applying the CURRENT schema.sql to that database ---"
+          psql "$OLD_URL" -v ON_ERROR_STOP=1 -f src/store/schema.sql > /dev/null
+          echo "--- then every migration ---"
+          for f in $(ls src/store/migrations/*.sql | sort); do
+            psql "$OLD_URL" -v ON_ERROR_STOP=1 -f "$f" > /dev/null
+          done
+          echo "--- and again, to prove it is idempotent ---"
+          psql "$OLD_URL" -v ON_ERROR_STOP=1 -f src/store/schema.sql > /dev/null
+
+          kept=$(psql "$OLD_URL" -tAc "SELECT count(*) FROM cvm_fip_periodic;")
+          uniq=$(psql "$OLD_URL" -tAc "SELECT count(DISTINCT row_hash) FROM cvm_fip_periodic;")
+          echo "legacy rows kept: $kept, distinct row_hash: $uniq"
+          test "$kept" = "14" || { echo "legacy rows were lost by the upgrade"; exit 1; }
+          test "$uniq" = "14" || { echo "legacy rows are not distinguishable under the new key"; exit 1; }
+
       - name: Apply analytical layer (empty-DB bypass)
         run: PGOPTIONS="-c silo.ci_smoke_bypass=on" bash scripts/apply_analytical.sh
 

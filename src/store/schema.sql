@@ -349,6 +349,29 @@ ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS vl_cap_subscr  NUMERIC(20,
 ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS vl_cap_integr  NUMERIC(20,2);
 ALTER TABLE cvm_fip_periodic DROP CONSTRAINT IF EXISTS uq_fip_periodic;
 
+-- Recover the key columns from the preserved source row before the index is
+-- built. Order matters: the new key DROPS period_year, so until these run every
+-- year of a fund has (period, classe_cota, row_hash) = (NULL, NULL, NULL) and
+-- NULLS NOT DISTINCT makes them all duplicates of each other.
+UPDATE cvm_fip_periodic
+   SET period = NULLIF(raw ->> 'DT_COMPTC', '')::DATE
+ WHERE period IS NULL
+   AND NULLIF(raw ->> 'DT_COMPTC', '') IS NOT NULL;
+
+UPDATE cvm_fip_periodic
+   SET classe_cota = NULLIF(raw ->> 'CLASSE_COTA', '')
+ WHERE classe_cota IS NULL;
+
+-- The marker carries the row's own id. A constant would make every legacy row
+-- of a fund identical under the new key — which is precisely the collapse this
+-- change exists to end. `raw` holds only the columns the OLD field map did not
+-- consume, so the real digest cannot be recomputed here; the next ingest of
+-- that slice writes it as a new row and these remain distinguishable as the
+-- pre-fix remnant.
+UPDATE cvm_fip_periodic
+   SET row_hash = 'pre-migration-34:' || id::TEXT
+ WHERE row_hash IS NULL;
+
 -- A FIP yearly CSV holds every filing of the year (4 quarters, or 3
 -- quadrimestral periods) and one row per share class inside each. Keying on
 -- period_year alone discarded 72-77% of every published file.
