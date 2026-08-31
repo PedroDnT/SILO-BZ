@@ -28,7 +28,7 @@ on:
           - etf
           - all
       fi_doc_type:
-        description: "FI only: fill one document type, or all. Use balancete to repair the known balance-sheet gap without re-fetching diario/CDA/perfil."
+        description: "FI only: fill one document type, or all. Use balancete to repair the known balance-sheet gap without re-fetching diario/CDA/perfil; cda_acoes / cda_cotas fill the holdings tables (2023+) without touching the aggregate cda table."
         type: choice
         default: all
         options:
@@ -36,6 +36,8 @@ on:
           - balancete
           - inf_diario
           - cda
+          - cda_acoes
+          - cda_cotas
           - perfil_mensal
       fi_repair_gaps:
         description: "FI only: fetch ONLY the months missing from the fi_doc_type table (reads the table, not the audit log). Requires a specific fi_doc_type."
@@ -229,6 +231,8 @@ jobs:
                   perfil_months = ok_months(cur, "perfil_mensal", year)
                   balancete_months = ok_months(cur, "balancete", year)
                   cda_months = ok_months(cur, "cda", year)
+                  cda_acoes_months = ok_months(cur, "cda_acoes", year)
+                  cda_cotas_months = ok_months(cur, "cda_cotas", year)
                   diario_rows = None
                   if year in (2019, 2020):
                       cur.execute(f"SELECT COUNT(*) FROM cvm_fi_diario_{year}")
@@ -246,7 +250,15 @@ jobs:
           # 2026-06 carries a fresh 'error' row over 2,178,163 real rows, and
           # 32 other months carry no 'ok' row at all. --repair-gaps / --months
           # decide what to fetch by reading the table itself.
-          if "${{ inputs.fi_repair_gaps }}" == "true" or "${{ inputs.fi_months }}".strip():
+          # Checked before the repair branch: a year with no wired source has
+          # nothing to repair either. cvm_pipeline schedules the holdings blocks
+          # only from 2023, and the pre-2023 yearly HIST archive reads BLC_1
+          # only, so an earlier year would report every month as a gap and then
+          # fetch none of them.
+          if requested_doc in ("cda_acoes", "cda_cotas") and year < 2023:
+              print(f"SKIP: {year} {requested_doc} has no pre-2023 source wired (HIST reads BLC_1 only)")
+              skip = True
+          elif "${{ inputs.fi_repair_gaps }}" == "true" or "${{ inputs.fi_months }}".strip():
               print(f"RUN: {year} (repair mode — coverage is decided from the table, not the audit log)")
           elif requested_doc != "all":
               counts = {
@@ -254,9 +266,16 @@ jobs:
                   "perfil_mensal": perfil_months,
                   "balancete": balancete_months,
                   "cda": cda_months,
+                  "cda_acoes": cda_acoes_months,
+                  "cda_cotas": cda_cotas_months,
               }
-              months = counts[requested_doc]
-              if months >= 11:
+              # .get, not []: this runs outside the try/except above, so a doc
+              # type the gate has not learned yet would abort the dispatch
+              # instead of doing the work. Unknown means run the year.
+              months = counts.get(requested_doc)
+              if months is None:
+                  print(f"RUN: {year} {requested_doc} (no coverage rule — not skipping)")
+              elif months >= 11:
                   print(f"SKIP: {year} {requested_doc} complete ({months} ok months)")
                   skip = True
               else:
