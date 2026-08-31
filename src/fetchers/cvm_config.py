@@ -97,6 +97,21 @@ class DatasetConfig:
             "csv_name_pattern": "cda_fi_BLC_1_{year}{month:02d}.csv",
             "description": "Portfolio composition by asset class — monthly ZIP",
         },
+        # Same archive as `cda`, different member. BLC_1 is 5.1% of it by size;
+        # these two are the holdings themselves. Measured on cda_fi_202606.zip:
+        # BLC_4 22.9%, BLC_2 13.2% of 190 MB uncompressed.
+        "cda_acoes": {
+            "url_pattern": "{base_url}/FI/DOC/CDA/DADOS/cda_fi_{year}{month:02d}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "cda_fi_BLC_4_{year}{month:02d}.csv",
+            "description": "Equity holdings per fund (CDA block 4) — carries CD_ATIVO, the B3 ticker",
+        },
+        "cda_cotas": {
+            "url_pattern": "{base_url}/FI/DOC/CDA/DADOS/cda_fi_{year}{month:02d}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "cda_fi_BLC_2_{year}{month:02d}.csv",
+            "description": "Fund-of-fund holdings per fund (CDA block 2) — carries the held fund's CNPJ",
+        },
         "perfil_mensal": {
             "url_pattern": "{base_url}/FI/DOC/PERFIL_MENSAL/DADOS/perfil_mensal_fi_{year}{month:02d}.csv",
             "is_zip": False,

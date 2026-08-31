@@ -88,6 +88,11 @@ Storage layout: ~30 tables named `cvm_<entity>_<doctype>` or `bacen_<series>` (p
   of truth, not the README's CSV table.
   Wired ingest datasets include `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`,
   `cvm_securit_fluxo`, `cvm_fi_balancete`, `cvm_cia_*`, `cvm_etf_registry`,
+  `cvm_fi_cda_acoes` and `cvm_fi_cda_cotas` (fund holdings — CDA blocks 4 and 2,
+  members of the archive `cda` already downloads. Block 4 carries `cd_ativo`, the B3
+  ticker, so it is the join between the fund universe and the quote tape; block 2
+  carries the held fund's CNPJ and CVM's published `emissor_ligado` flag. Blocks 5, 7
+  and 8 are not ingested; block 6 needs a `row_hash` key and is not done yet),
   `anbima_class_monthly` (every ANBIMA class/type; `anbima_etf_class_monthly`
   survives as an ETF-only compat view), `etf_market_snapshot` (scraped ETF NAV/cotistas — wired
   into the daily run but **gated on the `APIFY_TOKEN` secret**; it self-skips when the

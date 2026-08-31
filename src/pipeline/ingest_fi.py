@@ -16,6 +16,8 @@ from typing import Any, Dict, List, Optional
 from src.parsers.mapping import apply_map, assert_map_matches, derive_is_active
 from src.parsers.field_maps import fi_diario as _diario
 from src.parsers.field_maps import fi_cda as _cda
+from src.parsers.field_maps import fi_cda_acoes as _cda_acoes
+from src.parsers.field_maps import fi_cda_cotas as _cda_cotas
 from src.parsers.field_maps import fi_perfil as _perfil
 from src.parsers.field_maps import fi_balancete as _balancete
 from src.parsers.field_maps import fund_registry as _reg
@@ -104,6 +106,78 @@ def ingest_fi_cda(conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: i
         records,
         conflict_columns=",".join(_cda.CONFLICT),
     )
+
+
+def _ingest_cda_holdings(
+    conn: Any,
+    raw_rows: List[Dict[str, Any]],
+    year: int,
+    month: int,
+    field_map_module: Any,
+    required: str,
+) -> int:
+    """Shared body for the CDA holdings blocks (4 and 2).
+
+    They differ only in their field map and in which column must be present for
+    a row to be worth keeping, so the parse/upsert shape is factored out rather
+    than duplicated.
+
+    `required` is the identifier that makes the row joinable — the ticker for
+    equities, the held fund's CNPJ for fund quotas. A row missing it is dropped
+    and counted, never written with a synthesised value: an equity holding with
+    no ticker cannot be joined to the tape, and inventing one would be exactly
+    the fabrication the ingest rules forbid.
+
+    period is normalised to first-of-month, matching every other monthly table.
+    """
+    first_of_month = _date(year, month, 1)
+    records: List[Dict[str, Any]] = []
+    dropped = 0
+
+    for row in raw_rows:
+        typed, residual = apply_map(row, field_map_module.FIELD_MAP)
+        typed["raw"] = residual
+        typed["period"] = first_of_month
+
+        if not typed.get("cnpj") or not typed.get(required):
+            dropped += 1
+            continue
+
+        records.append(typed)
+
+    if dropped:
+        logging.getLogger(__name__).info(
+            "%s: dropped %d of %d rows with no %s",
+            field_map_module.TABLE, dropped, len(raw_rows), required,
+        )
+
+    if not records:
+        return 0
+
+    return upsert_rows(
+        conn,
+        field_map_module.TABLE,
+        records,
+        conflict_columns=",".join(field_map_module.CONFLICT),
+    )
+
+
+def ingest_fi_cda_acoes(conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: int) -> int:
+    """Parse and upsert FI equity holdings (CDA block 4).
+
+    cd_ativo is the published B3 ticker; it is what joins these rows to
+    b3_cotahist, so a row without one is dropped rather than stored unjoinable.
+    """
+    return _ingest_cda_holdings(conn, raw_rows, year, month, _cda_acoes, "cd_ativo")
+
+
+def ingest_fi_cda_cotas(conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: int) -> int:
+    """Parse and upsert FI fund-of-fund holdings (CDA block 2).
+
+    cnpj_cota identifies the held fund and is NOT NULL in the target table, so a
+    row without it cannot be written at all.
+    """
+    return _ingest_cda_holdings(conn, raw_rows, year, month, _cda_cotas, "cnpj_cota")
 
 
 def ingest_fi_perfil(conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: int) -> int:
