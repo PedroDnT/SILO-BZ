@@ -202,6 +202,16 @@ _CIA_IPE_FIRST_YEAR = 2010
 # 2019→present.
 _CIA_ITR_DFP_FIRST_YEAR = 2019
 
+# cvm_fi_diario is RANGE-partitioned on dt_comptc and the earliest partition in
+# schema.sql starts 2019-01-01. CVM publishes HIST daily archives back to 2000,
+# and the fetcher will happily serve them, but the upsert then dies with "no
+# partition of relation cvm_fi_diario found for row" — a whole year downloaded
+# and thrown away. Declaring partitions back to 2000 would add roughly a decade
+# of daily fund rows to a table that is already the largest in the warehouse, so
+# the floor is the answer, not more partitions.
+# A test pins this to the earliest partition actually declared in schema.sql.
+_FI_DIARIO_FIRST_YEAR = 2019
+
 
 @dataclass(frozen=True)
 class IngestTask:
@@ -1444,7 +1454,14 @@ class CVMIngestor:
         documents" is not a repair anyone has asked for and quietly triples the
         work.
         """
-        fi_doc_types = {"inf_diario", "cda", "perfil_mensal", "balancete"}
+        # Every doc type the year loop below can schedule. Kept in step with
+        # backfill.yml's dropdown, run_backfill's argparse choices and
+        # gaps.FI_MONTHLY_TABLES by a parity test — a value in one list and not
+        # the others is a dispatch that dies before fetching anything.
+        fi_doc_types = {
+            "inf_diario", "cda", "cda_acoes", "cda_cotas",
+            "perfil_mensal", "balancete",
+        }
         if doc_type_filter not in fi_doc_types | {None}:
             raise ValueError(f"unsupported FI doc_type_filter: {doc_type_filter}")
         if months is not None and doc_type_filter is None:
@@ -1482,7 +1499,9 @@ class CVMIngestor:
 
         # -- FI ----------------------------------------------------------
         if _want("fi"):
-            hist_diario_years = [y for y in years if y <= 2020]
+            hist_diario_years = [
+                y for y in years if _FI_DIARIO_FIRST_YEAR <= y <= 2020
+            ]
             hist_cda_years    = [y for y in years if y <= 2022]
             monthly_years     = years
 

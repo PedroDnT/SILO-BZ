@@ -254,3 +254,33 @@ class TestYearlyArchivesKeepTheirMonths:
         hist = body[start : body.index("return rows_inserted", start)]
         assert "ingest_fi_cda(self._supabase, chunk, year, None)" in hist
         assert "chunk, year, 1)" not in hist, "a fixed month collapses the year again"
+
+
+def test_the_diario_floor_matches_the_earliest_partition():
+    """Fetching a year with no partition downloads it and throws it away.
+
+    cvm_fi_diario is RANGE-partitioned on dt_comptc. CVM serves HIST daily
+    archives back to 2000 and the FI backfill matrix now reaches 2005 (the CDA
+    archives start there), so without a floor an `entity=fi` dispatch of an
+    early year fetches a real archive and then fails every upsert with "no
+    partition of relation cvm_fi_diario found for row".
+
+    The floor and the schema must agree; this test is what keeps them together
+    when someone adds a partition for an earlier year.
+    """
+    import re
+    from pathlib import Path
+
+    from src.pipeline.cvm_pipeline import _FI_DIARIO_FIRST_YEAR
+
+    schema = (Path(__file__).resolve().parents[1] / "src/store/schema.sql").read_text()
+    years = {
+        int(y) for y in re.findall(
+            r"cvm_fi_diario_(\d{4}) PARTITION OF cvm_fi_diario", schema
+        )
+    }
+    assert years, "no cvm_fi_diario partitions found in schema.sql"
+    assert _FI_DIARIO_FIRST_YEAR == min(years), (
+        f"backfill floors inf_diario at {_FI_DIARIO_FIRST_YEAR} but the earliest "
+        f"partition starts {min(years)}"
+    )
