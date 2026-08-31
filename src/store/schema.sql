@@ -186,6 +186,68 @@ COMMENT ON TABLE cvm_fi_cda_cotas IS
     'FI fund-of-fund holdings, CDA block 2. One row per (holder fund, month, held fund). emissor_ligado is CVM''s published related-party flag, not an inference.';
 
 
+-- CDA block 6 — debenture holdings. See migrations/35_cda_debentures.sql for the
+-- unique-key audit measured on both file eras.
+CREATE TABLE IF NOT EXISTS cvm_fi_cda_debentures (
+    id                  BIGSERIAL   PRIMARY KEY,
+    cnpj                TEXT        NOT NULL CHECK (char_length(cnpj) = 14),
+    period              DATE        NOT NULL,   -- first day of month
+    tp_fundo            TEXT,                   -- FI / FIF as filed; part of the key
+    denom_social        TEXT,
+    tp_aplic            TEXT,                   -- "Debêntures" / "Debêntures conversíveis"
+    tp_ativo            TEXT,                   -- "Debênture simples" etc.
+    tp_negoc            TEXT,
+    emissor_ligado      TEXT,                   -- 'S' / 'N' related-party flag, as published
+    -- The issuer. PF_PJ_EMISSOR says which of CPF/CNPJ cpf_cnpj_emissor holds,
+    -- so it is stored as published text with no 14-digit CHECK: a CPF issuer is
+    -- a real filing and a CNPJ constraint would reject it.
+    pf_pj_emissor       TEXT,
+    cpf_cnpj_emissor    TEXT,
+    emissor             TEXT,
+    dt_venc             DATE,                   -- maturity; part of the key
+    titulo_posfx        TEXT,
+    cd_indexador_posfx  TEXT,                   -- 'DI1', 'IPCA', …
+    ds_indexador_posfx  TEXT,
+    pr_indexador_posfx  NUMERIC(20,6),          -- % of the indexer
+    pr_cupom_posfx      NUMERIC(20,6),          -- spread over it
+    pr_taxa_prefx       NUMERIC(20,6),          -- pre-fixed rate instead
+    titulo_cetip        TEXT,
+    titulo_garantia     TEXT,
+    cnpj_instituicao_financ_coobr TEXT,
+    qt_pos_final        NUMERIC(28,6),
+    vl_merc_pos_final   NUMERIC(20,2),
+    vl_custo_pos_final  NUMERIC(20,2),
+    qt_aquis_negoc      NUMERIC(28,6),
+    vl_aquis_negoc      NUMERIC(20,2),
+    qt_venda_negoc      NUMERIC(28,6),
+    vl_venda_negoc      NUMERIC(20,2),
+    -- Tiebreaker, LAST in the key. A debenture has no CD_ATIVO, and two series
+    -- of one issuer maturing the same day at different coupons are different
+    -- securities holding different money. See the field map for the audit.
+    row_hash            TEXT        NOT NULL,
+    raw                 JSONB       NOT NULL,
+    fetched_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- NULLS NOT DISTINCT: dt_venc, tp_negoc and tp_ativo are empty on a minority of
+-- rows; without it Postgres treats every such row as distinct and the constraint
+-- stops enforcing anything.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_fi_cda_debentures
+    ON cvm_fi_cda_debentures
+       (cnpj, period, tp_fundo, tp_aplic, tp_ativo, cpf_cnpj_emissor, dt_venc,
+        tp_negoc, row_hash)
+    NULLS NOT DISTINCT;
+
+-- The join this table exists for: which funds hold this issuer's paper.
+CREATE INDEX IF NOT EXISTS idx_fi_cda_deb_emissor
+    ON cvm_fi_cda_debentures (cpf_cnpj_emissor, period DESC);
+CREATE INDEX IF NOT EXISTS idx_fi_cda_deb_fund
+    ON cvm_fi_cda_debentures (cnpj, period DESC);
+
+COMMENT ON TABLE cvm_fi_cda_debentures IS
+    'FI debenture holdings, CDA block 6. One row per (fund, month, issuer, maturity, series). cpf_cnpj_emissor is the issuer''s own CPF/CNPJ, so this is the join between the fund universe and the corporate-credit issuer. Values are as filed; no adjustment applied.';
+
+
 CREATE TABLE IF NOT EXISTS cvm_fi_perfil (
     id            BIGSERIAL    PRIMARY KEY,
     cnpj          TEXT         NOT NULL CHECK (char_length(cnpj) = 14),

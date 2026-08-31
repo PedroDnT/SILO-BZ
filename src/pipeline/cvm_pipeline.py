@@ -41,6 +41,7 @@ from src.pipeline.ingest_fi import (
     ingest_fi_diario,
     ingest_fi_cda,
     ingest_fi_cda_acoes,
+    ingest_fi_cda_debentures,
     ingest_fi_cda_cotas,
     ingest_fi_perfil,
     ingest_fi_balancete,
@@ -177,6 +178,7 @@ SECURIT_FLUXO_TYPES: List[str] = ["cra_fluxo", "cri_fluxo", "ots_fluxo"]
 _PAGE_SIZE = 5000
 _ALL_TABLES: List[str] = [
     "cvm_fi_diario", "cvm_fi_cda", "cvm_fi_cda_acoes", "cvm_fi_cda_cotas",
+    "cvm_fi_cda_debentures",
     "cvm_fi_perfil", "cvm_fi_balancete",
     "cvm_fidc_mensal", "cvm_fidc_tranche", "cvm_fidc_tranche_flows", "cvm_fidc_aging",
     "cvm_fiagro_mensal",
@@ -810,6 +812,12 @@ class CVMIngestor:
             "cda_cotas", "hist_cda_cotas", ingest_fi_cda_cotas, year
         )
 
+    async def ingest_fi_hist_cda_debentures(self, year: int) -> int:
+        """One year of pre-2023 debenture holdings (CDA block 6) from HIST/."""
+        return await self._ingest_hist_cda_block(
+            "cda_debentures", "hist_cda_debentures", ingest_fi_cda_debentures, year
+        )
+
     # ------------------------------------------------------------------
     # FI — portfolio composition  (CDA)
     # ------------------------------------------------------------------
@@ -860,6 +868,12 @@ class CVMIngestor:
     async def ingest_fi_cda_cotas(self, year: int, month: int) -> int:
         """FI fund-of-fund holdings — the fund-to-fund edge."""
         return await self._ingest_cda_block("cda_cotas", ingest_fi_cda_cotas, year, month)
+
+    async def ingest_fi_cda_debentures(self, year: int, month: int) -> int:
+        """FI debenture holdings — the fund-to-corporate-credit edge."""
+        return await self._ingest_cda_block(
+            "cda_debentures", ingest_fi_cda_debentures, year, month
+        )
 
     # ------------------------------------------------------------------
     # FI — investor profile  (PERFIL_MENSAL)
@@ -1459,7 +1473,7 @@ class CVMIngestor:
         # gaps.FI_MONTHLY_TABLES by a parity test — a value in one list and not
         # the others is a dispatch that dies before fetching anything.
         fi_doc_types = {
-            "inf_diario", "cda", "cda_acoes", "cda_cotas",
+            "inf_diario", "cda", "cda_acoes", "cda_cotas", "cda_debentures",
             "perfil_mensal", "balancete",
         }
         if doc_type_filter not in fi_doc_types | {None}:
@@ -1528,6 +1542,12 @@ class CVMIngestor:
                 for year in hist_cda_years:
                     totals["cvm_fi_cda_cotas"] += await self.ingest_fi_hist_cda_cotas(year)
 
+            if _want_fi_doc("cda_debentures") and months is None:
+                for year in hist_cda_years:
+                    totals["cvm_fi_cda_debentures"] += (
+                        await self.ingest_fi_hist_cda_debentures(year)
+                    )
+
             month_pairs = (
                 sorted(set(months)) if months is not None
                 else _iter_month_pairs(monthly_years, today)
@@ -1566,6 +1586,12 @@ class CVMIngestor:
                         "cvm_fi_cda_cotas",
                         f"fi/cda_cotas {year}-{month:02d}",
                         self.ingest_fi_cda_cotas(year, month),
+                    ))
+                if year >= 2023 and _want_fi_doc("cda_debentures"):
+                    fi_tasks.append(IngestTask(
+                        "cvm_fi_cda_debentures",
+                        f"fi/cda_debentures {year}-{month:02d}",
+                        self.ingest_fi_cda_debentures(year, month),
                     ))
                 if _want_fi_doc("perfil_mensal"):
                     fi_tasks.append(IngestTask(
@@ -1847,6 +1873,7 @@ class CVMIngestor:
                 # a month where block 4 landed and block 2 did not must be
                 # re-probed for block 2 alone.
                 ("cvm_fi_cda_acoes", "fi", "cda_acoes", "cda_acoes", self.ingest_fi_cda_acoes),
+                ("cvm_fi_cda_debentures", "fi", "cda_debentures", "cda_debentures", self.ingest_fi_cda_debentures),
                 ("cvm_fi_cda_cotas", "fi", "cda_cotas", "cda_cotas", self.ingest_fi_cda_cotas),
                 ("cvm_fi_perfil", "fi", "perfil_mensal", "perfil_mensal", self.ingest_fi_perfil),
                 # balancete used to live only on the deleted ingest Flask and

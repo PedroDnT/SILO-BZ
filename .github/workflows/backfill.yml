@@ -28,7 +28,7 @@ on:
           - etf
           - all
       fi_doc_type:
-        description: "FI only: fill one document type, or all. Use balancete to repair the known balance-sheet gap without re-fetching diario/CDA/perfil; cda_acoes / cda_cotas fill the holdings tables (2023+) without touching the aggregate cda table."
+        description: "FI only: fill one document type, or all. Use balancete to repair the known balance-sheet gap without re-fetching diario/CDA/perfil; cda_acoes / cda_cotas / cda_debentures fill the holdings tables without touching the aggregate cda table."
         type: choice
         default: all
         options:
@@ -38,6 +38,7 @@ on:
           - cda
           - cda_acoes
           - cda_cotas
+          - cda_debentures
           - perfil_mensal
       fi_repair_gaps:
         description: "FI only: fetch ONLY the months missing from the fi_doc_type table (reads the table, not the audit log). Requires a specific fi_doc_type."
@@ -236,6 +237,7 @@ jobs:
                   cda_months = ok_months(cur, "cda", year)
                   cda_acoes_months = ok_months(cur, "cda_acoes", year)
                   cda_cotas_months = ok_months(cur, "cda_cotas", year)
+                  cda_deb_months = ok_months(cur, "cda_debentures", year)
                   diario_rows = None
                   if year in (2019, 2020):
                       cur.execute(f"SELECT COUNT(*) FROM cvm_fi_diario_{year}")
@@ -267,6 +269,7 @@ jobs:
                   "cda": cda_months,
                   "cda_acoes": cda_acoes_months,
                   "cda_cotas": cda_cotas_months,
+                  "cda_debentures": cda_deb_months,
               }
               # .get, not []: this runs outside the try/except above, so a doc
               # type the gate has not learned yet would abort the dispatch

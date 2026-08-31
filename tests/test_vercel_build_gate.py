@@ -363,10 +363,13 @@ def _gate_decision(doc_type: str, year: int, repair: bool = False, **coverage) -
         .replace("${{ inputs.fi_repair_gaps }}", "true" if repair else "false")
         .replace("${{ inputs.fi_months }}", "")
     )
-    ns = dict(
-        year=year, diario_months=12, perfil_months=12, balancete_months=3,
-        cda_months=0, cda_acoes_months=0, cda_cotas_months=0, diario_rows=0,
-    )
+    # Every *_months name the block reads is defaulted to 0 rather than listed
+    # here. Listing them meant that adding a doc type to the workflow broke this
+    # harness with a NameError from inside an exec — a failure that says nothing
+    # about the gate's behaviour, which is the only thing under test.
+    ns = {name: 0 for name in set(re.findall(r"\b(\w+_months)\b", block))}
+    ns.update(year=year, diario_months=12, perfil_months=12, balancete_months=3,
+              diario_rows=0)
     ns.update(coverage)
     out = io.StringIO()
     with contextlib.redirect_stdout(out):

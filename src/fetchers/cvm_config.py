@@ -88,6 +88,16 @@ class DatasetConfig:
                 "carries the fallback."
             ),
         },
+        "hist_cda_debentures": {
+            "url_pattern": "{base_url}/FI/DOC/CDA/DADOS/HIST/cda_fi_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "cda_fi_BLC_6_{year}.csv",
+            "description": (
+                "FI debenture holdings historical (2005-2022) — yearly HIST/ ZIP, "
+                "block 6. Carries CPF_CNPJ_EMISSOR, the issuer's own CNPJ, which is "
+                "the fund -> corporate-credit edge."
+            ),
+        },
         "cad": {
             "url_pattern": "{base_url}/FI/CAD/DADOS/cad_fi.csv",
             "is_zip": False,
@@ -135,6 +145,12 @@ class DatasetConfig:
             "is_zip": True,
             "csv_name_pattern": "cda_fi_BLC_2_{year}{month:02d}.csv",
             "description": "Fund-of-fund holdings per fund (CDA block 2) — carries the held fund's CNPJ",
+        },
+        "cda_debentures": {
+            "url_pattern": "{base_url}/FI/DOC/CDA/DADOS/cda_fi_{year}{month:02d}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "cda_fi_BLC_6_{year}{month:02d}.csv",
+            "description": "Debenture holdings per fund (CDA block 6) — carries the issuer CNPJ and the rate structure",
         },
         "perfil_mensal": {
             "url_pattern": "{base_url}/FI/DOC/PERFIL_MENSAL/DADOS/perfil_mensal_fi_{year}{month:02d}.csv",
