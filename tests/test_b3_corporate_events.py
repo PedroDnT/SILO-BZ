@@ -11,13 +11,16 @@ import json
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from src.fetchers.b3_corporate_events_fetcher import (
     PRICE_AFFECTING_LABELS,
     B3CorporateEventsFetcher,
+    B3SupplementEmpty,
 )
+from src.pipeline.b3_pipeline import B3Ingestor
 from src.pipeline.ingest_b3_events import CONFLICT_COLS, parse_events
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -102,13 +105,17 @@ def test_decode_unwraps_b3s_double_encoded_payload():
     assert B3CorporateEventsFetcher._decode('{"a": 1}') == {"a": 1}
 
 
-def test_an_empty_body_raises_rather_than_returning_no_events():
-    """"No events" and "the request was malformed" must never look the same.
+def test_an_empty_supplement_raises_rather_than_returning_no_events():
+    """"No events" and "this issuing code is not in the catalog" must differ.
 
     Returning [] on an empty body would publish "this company has never split",
-    which is a fabricated fact about every company whose fetch failed.
+    which is a fabricated fact about every company whose fetch failed. B3
+    answers 200 / empty for codes that are not listed-company keys (ADMF3's
+    catalog key is B100); that is ``B3SupplementEmpty``, not a list of zero
+    events, and it is not retried.
     """
-    fetcher = B3CorporateEventsFetcher(max_retries=1)
+    fetcher = B3CorporateEventsFetcher(max_retries=3)
+    calls = {"n": 0}
 
     class _Resp:
         text = "   "
@@ -117,9 +124,36 @@ def test_an_empty_body_raises_rather_than_returning_no_events():
         def raise_for_status():
             return None
 
-    fetcher.session.get = lambda url, timeout: _Resp()  # type: ignore[assignment]
+    def _get(url, timeout):
+        calls["n"] += 1
+        return _Resp()
+
+    fetcher.session.get = _get  # type: ignore[assignment]
+    with pytest.raises(B3SupplementEmpty, match="empty body"):
+        fetcher.fetch_events("ADMF")
+    assert calls["n"] == 1, "an empty 200 is definitive; retrying does not fill it"
+
+
+def test_empty_company_list_still_retries_and_raises():
+    """GetInitialCompanies empty is a dead/malformed token, not a missing issuer."""
+    fetcher = B3CorporateEventsFetcher(max_retries=2, sleep_between=0)
+    calls = {"n": 0}
+
+    class _Resp:
+        text = ""
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    def _get(url, timeout):
+        calls["n"] += 1
+        return _Resp()
+
+    fetcher.session.get = _get  # type: ignore[assignment]
     with pytest.raises(RuntimeError, match="failed after"):
-        fetcher.fetch_events("PETR")
+        list(fetcher.list_companies())
+    assert calls["n"] == 2
 
 
 # --------------------------------------------------------------------------
@@ -225,3 +259,109 @@ def test_daily_run_wires_corporate_events():
     )
     # It must not be able to fail the whole daily run.
     assert 'failures.append(("b3_corporate_events", exc))' in run_daily
+
+
+# --------------------------------------------------------------------------
+# Sweep status: empty supplement vs hard failure
+#
+# DB Health #6 (33299581405) failed on 1 unhealed slice: b3/corporate_events.
+# Daily ingest #199 on the same SHA had already upserted 11,632 rows and
+# exited 0 — but logged the slice as error because 35/2153 issuers (first
+# ADMF) returned HTTP 200 / empty. Every later daily hits the same codes,
+# so the slice never heals and the watchdog re-runs the same error.
+# --------------------------------------------------------------------------
+
+
+def _finish_recorder(ing):
+    recorded: list[dict] = []
+
+    def _finish(run_id, rows, error=None, *, skipped=False):
+        recorded.append(
+            {
+                "rows": rows,
+                "error": error,
+                "skipped": skipped,
+                "status": "skipped" if skipped else ("error" if error else "ok"),
+            }
+        )
+
+    ing._log_start = lambda *a, **k: None
+    ing._log_finish = _finish
+    return recorded
+
+
+def _event_row(code: str = "PETR"):
+    return {
+        "issuing_company": code,
+        "event_class": "stock",
+        "isin": "BRPETRACNOR9",
+        "label": "DESDOBRAMENTO",
+        "raw": {},
+    }
+
+
+@pytest.mark.asyncio
+async def test_empty_supplement_does_not_fail_the_slice_when_siblings_succeed():
+    """Health #6: 35 empty-body issuers must not keep the slice unhealed."""
+    with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
+         patch("src.pipeline.ingest_b3_events.ingest_b3_corporate_events",
+               return_value=11632) as ingest, \
+         patch("src.fetchers.b3_corporate_events_fetcher.B3CorporateEventsFetcher") as Fetcher:
+        fetcher = Fetcher.return_value
+
+        def _events(code):
+            if code == "ADMF":
+                raise B3SupplementEmpty("empty body for ADMF")
+            return [_event_row(code)]
+
+        fetcher.fetch_events.side_effect = _events
+        ing = B3Ingestor(fetcher=MagicMock())
+        finishes = _finish_recorder(ing)
+        n = await ing.ingest_corporate_events(issuers=["PETR", "ADMF", "VALE"])
+
+    assert n == 11632
+    assert ingest.called
+    assert finishes[-1]["status"] == "ok"
+    assert finishes[-1]["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_all_empty_supplements_still_fail_the_slice():
+    """A malformed token empties every issuer; that must not look like a clean sweep."""
+    with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
+         patch("src.pipeline.ingest_b3_events.ingest_b3_corporate_events") as ingest, \
+         patch("src.fetchers.b3_corporate_events_fetcher.B3CorporateEventsFetcher") as Fetcher:
+        Fetcher.return_value.fetch_events.side_effect = B3SupplementEmpty("empty")
+        ing = B3Ingestor(fetcher=MagicMock())
+        finishes = _finish_recorder(ing)
+        n = await ing.ingest_corporate_events(issuers=["ADMF", "XXXX"])
+
+    assert n == 0
+    ingest.assert_not_called()
+    assert finishes[-1]["status"] == "error"
+    assert "all 2 issuers returned an empty supplement" in finishes[-1]["error"]
+
+
+@pytest.mark.asyncio
+async def test_transport_failure_still_fails_the_slice_when_siblings_succeed():
+    """SSL/timeout on one issuer must still mark the slice error — that can heal."""
+    with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
+         patch("src.pipeline.ingest_b3_events.ingest_b3_corporate_events",
+               return_value=10), \
+         patch("src.fetchers.b3_corporate_events_fetcher.B3CorporateEventsFetcher") as Fetcher:
+        fetcher = Fetcher.return_value
+
+        def _events(code):
+            if code == "PETR":
+                raise RuntimeError("SSL SYSCALL error: EOF detected")
+            return [_event_row(code)]
+
+        fetcher.fetch_events.side_effect = _events
+        ing = B3Ingestor(fetcher=MagicMock())
+        finishes = _finish_recorder(ing)
+        n = await ing.ingest_corporate_events(issuers=["PETR", "VALE"])
+
+    assert n == 10
+    assert finishes[-1]["status"] == "error"
+    assert "1/2 issuers failed" in finishes[-1]["error"]
+    assert "SSL SYSCALL" in finishes[-1]["error"]

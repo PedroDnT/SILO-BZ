@@ -119,6 +119,14 @@ error slices: an `error` whose slice has no later `ok` **or** `skipped`. A
 went red on exactly that (`fidc/mensal_tab_x2` 2026-08). Disk size is a warning
 only; do not DROP landing tables to clear it.
 
+A later `ok` that still leaves the slice unhealed is a classification bug, not
+a missed cron. Run 33299581405 (DB Health #6) failed on `b3/corporate_events`
+after Daily CVM Ingest #199 had already upserted 11,632 event rows: 35 issuers
+(first ADMF) return HTTP 200 / empty from GetListedSupplementCompany because
+`left(codneg,4)` is not always B3's listed-company key (ADMF3's catalog code is
+B100). Those are skipped, not slice errors; a transport failure on one issuer
+still is. Re-run daily ingest after that fix so the later `ok` heals the row.
+
 ---
 
 ## 3b. Ingest write throughput
