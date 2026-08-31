@@ -73,6 +73,7 @@ EXPECTED_FUNCTIONS = {
     "api.fund_profile",
     "api.fund_nav",
     "api.search_funds",
+    "api.fund_holdings",
     "api.coverage",
     "api.panel",
     "api.lookup",
@@ -1071,3 +1072,63 @@ def test_agent_instructions_point_at_the_header():
     assert "Content-Range" in AGENT_INSTRUCTIONS
 
 
+
+
+# ---------------------------------------------------------------------------
+# api.fund_holdings — the fund → ticker edge. cvm_fi_cda_acoes has carried the
+# published B3 ticker since 2005 and nothing served it, so the one join between
+# the fund universe and the quote tape existed only as rows in a landing table
+# no caller can read.
+# ---------------------------------------------------------------------------
+
+def test_fund_holdings_is_published_and_granted():
+    sql = SQL19
+    assert "CREATE OR REPLACE FUNCTION api.fund_holdings" in sql
+    assert "GRANT EXECUTE ON FUNCTION api.fund_holdings" in sql
+    assert "REVOKE ALL ON FUNCTION api.fund_holdings" in sql, (
+        "every api function revokes from PUBLIC before granting to the two roles"
+    )
+
+
+def test_fund_holdings_demands_exactly_one_identifier():
+    """Neither is an unbounded scan of every fund; both is ambiguous.
+
+    Both must be errors, not silently narrowed queries — an unbounded holdings
+    scan would be the slowest query on the API and would time out rather than
+    say why.
+    """
+    sql = SQL19
+    body = sql[sql.index("FUNCTION api.fund_holdings"):]
+    body = body[: body.index("$fn$;")]
+    assert "(v_cnpj IS NULL) = (v_ticker IS NULL)" in body
+    assert "22023" in body, "argument errors use the house SQLSTATE"
+
+
+def test_fund_holdings_is_tier_aware():
+    """Same pattern as every other row-capped function."""
+    sql = SQL19
+    body = sql[sql.index("FUNCTION api.fund_holdings"):]
+    body = body[: body.index("$fn$;")]
+    assert "api.caller_tier()" in body
+    assert "5000" in body and "500" in body, "authenticated 5000 / anon 500"
+
+
+def test_fund_holdings_pins_search_path():
+    """SECURITY DEFINER without a pinned search_path is the classic hole."""
+    sql = SQL19
+    head = sql[sql.index("FUNCTION api.fund_holdings"):]
+    head = head[: head.index("AS $fn$")]
+    assert "SECURITY DEFINER" in head
+    assert "SET search_path = ''" in head
+
+
+def test_catalog_version_moved_with_the_surface():
+    """A new endpoint that does not bump the catalog is invisible to agents."""
+    import re
+    from pathlib import Path
+
+    sql_v = int(re.search(r'"version":\s*(\d+)', SQL19).group(1))
+    py = (Path(__file__).resolve().parents[1] / "serve/catalog.py").read_text()
+    py_v = int(re.search(r"CATALOG_VERSION = (\d+)", py).group(1))
+    assert sql_v == py_v, f"catalog version drift: SQL {sql_v} vs serve {py_v}"
+    assert sql_v >= 17, "fund_holdings shipped at v17"

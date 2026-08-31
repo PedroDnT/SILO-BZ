@@ -292,6 +292,34 @@ class SiloClient:
         """
         return self._rpc("search_funds", {"p_query": query, "p_limit": limit})
 
+    def fund_holdings(self, cnpj: Optional[str] = None, ticker: Optional[str] = None,
+                      start: Datish = None, end: Datish = None,
+                      kind: str = "equity",
+                      limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """What a fund holds, or which funds hold a ticker.
+
+        Exactly one of `cnpj` or `ticker`. This is the only edge in the
+        warehouse joining the fund universe to the quote tape: CDA block 4
+        publishes the B3 ticker a fund holds, block 2 the CNPJ of a held fund.
+
+            silo.fund_holdings(ticker="PETR4")          # who holds it
+            silo.fund_holdings(cnpj="05754060000113")   # what it holds
+            silo.fund_holdings(cnpj=..., kind="fund")   # held FUNDS, not shares
+
+        Rows are as filed — one per (application type, trading intent), never
+        summed across them.
+        """
+        if (cnpj is None) == (ticker is None):
+            raise ValueError(
+                "fund_holdings needs exactly one of cnpj (what this fund holds) "
+                "or ticker (which funds hold this ticker)"
+            )
+        return self._rpc("fund_holdings", {
+            "p_cnpj": cnpj, "p_ticker": ticker,
+            "p_from": _iso(start), "p_to": _iso(end),
+            "p_kind": kind, "p_limit": limit,
+        })
+
     # -- typed views (GET resources, not functions) --------------------------
 
     #: The eight published views. PostgREST serves these as filterable
