@@ -13,11 +13,12 @@ import logging
 from datetime import date as _date
 from typing import Any, Dict, List, Optional
 
-from src.parsers.mapping import apply_map, assert_map_matches, derive_is_active
+from src.parsers.mapping import apply_map, assert_map_matches, derive_is_active, row_hash
 from src.parsers.field_maps import fi_diario as _diario
 from src.parsers.field_maps import fi_cda as _cda
 from src.parsers.field_maps import fi_cda_acoes as _cda_acoes
 from src.parsers.field_maps import fi_cda_cotas as _cda_cotas
+from src.parsers.field_maps import fi_cda_debentures as _cda_deb
 from src.parsers.field_maps import fi_perfil as _perfil
 from src.parsers.field_maps import fi_balancete as _balancete
 from src.parsers.field_maps import fund_registry as _reg
@@ -235,6 +236,65 @@ def ingest_fi_cda_cotas(
     row without it cannot be written at all.
     """
     return _ingest_cda_holdings(conn, raw_rows, year, month, _cda_cotas, "cnpj_cota")
+
+
+def ingest_fi_cda_debentures(
+    conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: Optional[int]
+) -> int:
+    """Parse and upsert FI debenture holdings (CDA block 6).
+
+    Unlike blocks 4 and 2 this one has no single published column naming the
+    instrument — a debenture has no CD_ATIVO — so the key ends in row_hash and
+    the shared _ingest_cda_holdings body does not fit. See the field map for the
+    audit that produced the key.
+
+    cpf_cnpj_emissor is what makes the row joinable to the issuer universe, so a
+    row without one is dropped and counted rather than stored unjoinable. It is
+    NOT validated as a CNPJ: PF_PJ_EMISSOR says the same column may hold a CPF,
+    and rejecting those would discard real filings.
+    """
+    first_of_month = _date(year, month, 1) if month is not None else None
+    records: List[Dict[str, Any]] = []
+    dropped = 0
+    undated = 0
+
+    for row in raw_rows:
+        typed, residual = apply_map(row, _cda_deb.FIELD_MAP)
+        typed["raw"] = residual
+
+        period = _period_for(row, typed, first_of_month)
+        if period is None:
+            undated += 1
+            continue
+        typed["period"] = period
+
+        if not typed.get("cnpj") or not typed.get("cpf_cnpj_emissor"):
+            dropped += 1
+            continue
+
+        # Over the SOURCE row, not the typed one: the digest must be a function
+        # of what CVM published, so re-reading an unchanged file is an exact
+        # no-op regardless of how the field map later evolves.
+        typed["row_hash"] = row_hash(row)
+
+        records.append(typed)
+
+    if dropped or undated:
+        logger.info(
+            "%s: dropped %d of %d rows with no issuer CPF/CNPJ, %d with no "
+            "parseable DT_COMPTC",
+            _cda_deb.TABLE, dropped, len(raw_rows), undated,
+        )
+
+    if not records:
+        return 0
+
+    return upsert_rows(
+        conn,
+        _cda_deb.TABLE,
+        records,
+        conflict_columns=",".join(_cda_deb.CONFLICT),
+    )
 
 
 def ingest_fi_perfil(conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: int) -> int:

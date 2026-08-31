@@ -32,6 +32,7 @@ from behind a login, or purchased — except the one ETF market feed noted below
 | FI      | `cvm_fi_cda`             | fund × month × asset **class**       | monthly 2023+, yearly HIST ≤2022     | 2005                   |
 | FI      | `cvm_fi_cda_acoes`       | fund × month × class × **ticker**    | CDA block 4                          | 2005                   |
 | FI      | `cvm_fi_cda_cotas`       | fund × month × **held fund**         | CDA block 2                          | 2005                   |
+| FI      | `cvm_fi_cda_debentures`  | fund × month × **issuer** × maturity | CDA block 6                          | 2005                   |
 | FI      | `cvm_fund_registry`      | fund (static)                        | CVM-175 registry ZIP                 | current                |
 | FIDC    | `cvm_fidc_mensal`        | fund × month                         | monthly 2025+, yearly HIST ≤2024     | 2019                   |
 | FIDC    | `cvm_fidc_tranche`       | fund × month × tranche               | monthly (tab X2/X3/X6)               | **2025**               |
@@ -94,7 +95,7 @@ oversight, and each says what it would cost.
 
 ### CVM CDA — the unread blocks
 
-The monthly CDA archive holds eight blocks. We read three.
+The monthly CDA archive holds eight blocks. We read four.
 
 | Block | Content                  | Status                                                                                                                                                                    |
 | ----- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -103,7 +104,7 @@ The monthly CDA archive holds eight blocks. We read three.
 | BLC_4 | Ações / BDR              | **ingested** (`cvm_fi_cda_acoes`)                                                                                                                                         |
 | BLC_3 | Swaps                    | not ingested — no consumer asked                                                                                                                                          |
 | BLC_5 | Títulos privados         | not ingested                                                                                                                                                              |
-| BLC_6 | Debêntures               | **deferred, not skipped** — no security identifier; collides 244× on a ten-column key, so it needs the `row_hash` key `cvm_fii_imovel` and `cvm_fip_periodic` already use |
+| BLC_6 | Debêntures               | **ingested** (`cvm_fi_cda_debentures`) — a debenture has no `CD_ATIVO`, so the key ends in `row_hash` after (fund, month, issuer, maturity); see migration 35 for the audit |
 | BLC_7 | Investimento no exterior | not ingested                                                                                                                                                              |
 | BLC_8 | Disponibilidades         | not ingested — 28.9% of the archive by size for cash balances and a description of "Outros"                                                                               |
 
@@ -176,9 +177,11 @@ which is why it is not proposed here.
 
 ### Not ingested by decision
 
-- **Company ↔ fund ownership beyond CDA.** The fund→ticker edge now exists via
-  `cvm_fi_cda_acoes.cd_ativo`; a _fund → company_ edge is that joined to
-  `cia_ticker`. No name matching, ever.
+- **Company ↔ fund ownership beyond CDA.** Two published edges now exist, and
+  neither is inferred: `cvm_fi_cda_acoes.cd_ativo` (the B3 ticker, joined to
+  `cia_ticker` for the equity side) and `cvm_fi_cda_debentures.cpf_cnpj_emissor`
+  (the issuer's own CNPJ, which needs no bridge at all — it joins to `cia_*`
+  directly). No name matching, ever.
 - **Anything requiring a licence or a login.** `etf_market_snapshot` is the one
   scrape, and it self-skips without its token.
 
@@ -193,7 +196,8 @@ The warehouse is wider than the API. This is the honest gap.
 | `cia_*` (5 tables, ~31M rows) | listed-company financials and events        | **No.** `webapp/` queries them directly. No `api.*` object exposes a single company.                                     |
 | `cvm_securit_*` (4 tables)    | CRI/CRA vehicles, series, flows, statements | **No.** Deliberate: CRI/CRA are notes, not funds, and would not fit the fund shape.                                      |
 | `cvm_fi_balancete`            | ~111M rows, fund accounting                 | **No.** Largest table in the warehouse; nothing reads it.                                                                |
-| `cvm_fi_cda_acoes` / `_cotas` | fund holdings                               | **Not yet.** The ticker edge is the point of ingesting them; an `api.fund_holdings` is the obvious next endpoint.        |
+| `cvm_fi_cda_acoes` / `_cotas` | fund holdings                               | **Yes**, via `api.fund_holdings` (catalog v17) — both directions: what a fund holds, and which funds hold a ticker.      |
+| `cvm_fi_cda_debentures`       | fund → corporate-credit holdings            | **Not yet.** `api.fund_holdings` covers equities and quotas; the debenture leg needs its own `p_kind` and issuer lookup. |
 | `b3_corporate_event`          | splits, bonuses                             | **No.** Held as published; the adjustment ships only once B3's per-label factor convention is verified against the tape. |
 | `cvm_fii_imovel`              | FII property register                       | **No.**                                                                                                                  |
 | `bacen_expectativas`          | Focus survey                                | **No.** `bacen_sgs` reaches `panel`; the survey does not.                                                                |

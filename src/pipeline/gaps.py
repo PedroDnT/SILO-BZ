@@ -47,6 +47,7 @@ FI_MONTHLY_TABLES: Dict[str, Tuple[str, str, Optional[int]]] = {
     # nothing about the others and each is repaired on its own.
     "cda_acoes":     ("cvm_fi_cda_acoes", "period",    2023),
     "cda_cotas":     ("cvm_fi_cda_cotas", "period",    2023),
+    "cda_debentures": ("cvm_fi_cda_debentures", "period", 2023),
 }
 
 # CVM publishes a competency month one to two months late. Probing months that
