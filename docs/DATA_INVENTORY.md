@@ -65,7 +65,7 @@ from behind a login, or purchased — except the one ETF market feed noted below
 | --------------------- | ------------------------ | ---------------------------------------------------------------------------------- |
 | `b3_cotahist`         | instrument × **session** | every COTAHIST print: equities, BDRs, units, fund quotas, options, termo, auctions |
 | `b3_cotahist_pre2019` | instrument × session     | pre-2019 archive, kept separate                                                    |
-| `b3_corporate_event`  | instrument × event       | splits/bonuses as published; **no adjustment factor derived**                      |
+| `b3_corporate_event`  | instrument × event       | splits/bonuses as published; **no adjustment factor derived** (convention measured, not yet met the bar) |
 
 ### BACEN — macro
 
@@ -198,7 +198,7 @@ The warehouse is wider than the API. This is the honest gap.
 | `cvm_fi_balancete`            | ~111M rows, fund accounting                 | **No.** Largest table in the warehouse; nothing reads it.                                                                |
 | `cvm_fi_cda_acoes` / `_cotas` | fund holdings                               | **Yes**, via `api.fund_holdings` (catalog v17) — both directions: what a fund holds, and which funds hold a ticker.      |
 | `cvm_fi_cda_debentures`       | fund → corporate-credit holdings            | **Not yet.** `api.fund_holdings` covers equities and quotas; the debenture leg needs its own `p_kind` and issuer lookup. |
-| `b3_corporate_event`          | splits, bonuses                             | **No.** Held as published; the adjustment ships only once B3's per-label factor convention is verified against the tape. |
+| `b3_corporate_event`          | splits, bonuses                             | **No.** Held as published. The convention was measured on 2026-08-31 (705 events with a print on both sides): `DESDOBRAMENTO`/`BONIFICACAO` fit `1 + factor/100` to within 0.4% at the median, `GRUPAMENTO` fits `factor` directly — but only 76-83% of events land within ±5%, below the 90% bar, so `adjusted` stays `FALSE`. See `docs/planning/INSTRUMENTS.md`. |
 | `cvm_fii_imovel`              | FII property register                       | **No.**                                                                                                                  |
 | `bacen_expectativas`          | Focus survey                                | **No.** `bacen_sgs` reaches `panel`; the survey does not.                                                                |
 | `anbima_class_monthly`        | class benchmarks                            | **No.**                                                                                                                  |
