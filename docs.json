@@ -10,7 +10,16 @@
     "groups": [
       {
         "group": "Overview",
-        "pages": ["index"]
+        "pages": [
+          "index"
+        ]
+      },
+      {
+        "group": "Data",
+        "icon": "database",
+        "pages": [
+          "docs/DATA_INVENTORY"
+        ]
       },
       {
         "group": "Get started",
