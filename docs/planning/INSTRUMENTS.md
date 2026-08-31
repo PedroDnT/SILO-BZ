@@ -354,6 +354,73 @@ The real sources, in the order worth trying:
 3. **ISIN continuity** in `b3_cotahist` — a ticker whose ISIN changes is
    telling you the instrument changed. Free signal, already in the table.
 
+### MEASURED 2026-08-31: what B3's factor actually means, per label
+
+The blocker on shipping `close_adj` was never missing data — it was an
+unanswerable query. `vw_b3_share_count_event` asks, per event, for the last cash
+close on or before the entitlement date and the first one after, keyed by ISIN.
+No index served that access pattern, so the verification diagnostic exceeded its
+90-second budget and was **silently skipped on every health run**. Migration 36
+adds `(isin, trade_date DESC) WHERE tpmerc = '010'`; the same diagnostics run
+went from 4m30s to 63s and the query now returns.
+
+**Inputs available** (diagnostic 11): 11,657 corporate events, 1,382 of them
+share-count events, **705 with a cash print on both sides** of the entitlement
+date, across 2,270 distinct ISINs.
+
+**Two candidate conventions**, from the shape of the published values:
+
+    direct   ratio = factor             (factor is the share multiplier itself)
+    percent  ratio = 1 + factor / 100   (factor is new shares per 100 held)
+
+**Result** (diagnostic 09, all 705 events with both sides; `ratio` is
+`close_before / close_after`, and a candidate "fits" when it reproduces that
+ratio within ±5%):
+
+    label            events   median vs direct  ±5%     median vs percent  ±5%
+    DESDOBRAMENTO       424             0.0117   0.0%              0.9963  76.4%
+    CIS RED CAP          97             0.0175   0.0%              0.6909  17.5%
+    GRUPAMENTO           97             1.0549  41.2%              0.1297   8.2%
+    BONIFICACAO          80             0.1058   3.8%              0.9979  82.5%
+    REST CAP ACOES        5             0.0300   0.0%              1.4977   0.0%
+    INCORPORACAO          2             0.0333   0.0%              1.6643   0.0%
+
+**What this establishes.** The convention is **not uniform across labels**, and
+the two large share-count labels agree with the *percent* reading to within
+0.4% at the median — 0.9963 and 0.9979 are not coincidences, they are the
+convention. `GRUPAMENTO` is the *direct* family instead (median 1.0549 against
+`factor`, versus 0.1297 against the percent form — an order of magnitude out).
+`CIS RED CAP` matches neither, which is expected: a capital reduction moves the
+price by a cash distribution, not by a share-count ratio, so no factor
+convention should describe it.
+
+**What this does NOT establish, and why nothing shipped.** A median of 0.9963 is
+a statement about the middle of the distribution. Only **76.4%** of
+`DESDOBRAMENTO` events land inside ±5%, and 82.5% of `BONIFICACAO`. The
+pre-committed bar was 90% — high enough that applying the factor silently to
+every event is safe. It was not met, so `adjusted` stays `FALSE` and no
+adjustment is computed. Shipping on a 76% fit would rescale roughly one
+historical price in four by an amount nobody measured, which is precisely the
+failure the flag exists to prevent.
+
+**The most likely explanation, and how to test it.** The "after" price is the
+*first print after* the entitlement date. For a liquid name that is the next
+session and the ratio is nearly pure corporate action; for an illiquid one it
+can be weeks later, and every session in between contributes real price
+movement. Diagnostic 12 (`12_d1b_factor_convention_by_session_gap.sql`) buckets
+the same events by the calendar gap between the two prints. If the hit rate
+climbs sharply as the gap narrows and is near-total at consecutive sessions, the
+convention is verified and `close_adj` can ship for `DESDOBRAMENTO`,
+`BONIFICACAO` and `GRUPAMENTO` — restricted to events whose ratio the convention
+actually reproduces, with the rest left unadjusted and flagged. If the hit rate
+is flat across buckets, the dispersion is something else (a per-issuer or
+per-era convention difference, or bad published factors) and no adjustment
+should ship on this evidence.
+
+Run it with `health.yml mode=diagnostics`. Until it answers, the honest state is
+the one shipped: prices as published, `adjusted = FALSE`, and the measurement
+above on the record instead of a guess.
+
 ### How to _verify_ a series, whatever the source
 
 The honest test is not "did we apply a factor" but "does the series still
