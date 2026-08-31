@@ -16,7 +16,13 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sdk"))
 
-from silo_client import SiloClient, SiloError  # noqa: E402
+from silo_client import (  # noqa: E402
+    SERVER_ROW_CAP,
+    SiloClient,
+    SiloError,
+    SiloTimeout,
+    SiloTruncated,
+)
 
 CATALOG = {
     "kind": "catalog",
@@ -57,19 +63,163 @@ def test_requires_url_and_key(monkeypatch):
         SiloClient(url="https://example.supabase.co")
 
 
-def test_apikey_header_only_never_bearer():
+def _header_probe():
     seen = {}
 
     def responder(request):
         seen.update(request.headers)
         return httpx.Response(200, json=[])
 
+    return seen, responder
+
+
+def test_anonymous_sends_the_key_and_no_bearer():
+    """Without a caller token the request must stay in the anon role."""
+    seen, responder = _header_probe()
     c = make_client(catalog_then(responder))
+    assert c.tier == "anon"
     c.coverage()
     assert seen.get("apikey") == "test-key"
-    # The docs are explicit: publishable key via apikey only, never a
-    # bearer token the server would treat as an auth credential.
     assert "authorization" not in seen
+
+
+def test_a_token_moves_the_caller_to_the_authenticated_tier():
+    """The publishable key identifies the PROJECT; the bearer identifies the CALLER.
+
+    Without this the SDK was structurally stuck at the anonymous ceiling —
+    3 panel ids, 25 search_funds rows, a 3s budget — no matter who was using
+    it. The previous version of this test actively pinned that limitation.
+    """
+    seen, responder = _header_probe()
+    c = SiloClient(
+        url="https://example.supabase.co", key="test-key", token="jwt-abc",
+        transport=httpx.MockTransport(catalog_then(responder)),
+    )
+    assert c.tier == "authenticated"
+    c.coverage()
+    assert seen.get("apikey") == "test-key", "the project key is still required"
+    assert seen.get("authorization") == "Bearer jwt-abc"
+
+
+def test_the_token_can_come_from_the_environment(monkeypatch):
+    monkeypatch.setenv("SILO_TOKEN", "env-jwt")
+    seen, responder = _header_probe()
+    c = SiloClient(
+        url="https://example.supabase.co", key="test-key",
+        transport=httpx.MockTransport(catalog_then(responder)),
+    )
+    c.coverage()
+    assert seen.get("authorization") == "Bearer env-jwt"
+
+
+def test_the_server_is_asked_to_count():
+    """Without count=exact a capped response is indistinguishable from a whole one."""
+    seen, responder = _header_probe()
+    c = make_client(catalog_then(responder))
+    c.coverage()
+    assert "count=exact" in seen.get("prefer", "")
+
+
+# ---------------------------------------------------------------------------
+# Truncation. THE defect this release exists to close: PostgREST caps every
+# response at db-max-rows (1000) and answers HTTP 200 with the first page,
+# oldest first. Six years of daily quotes come back as three and a half, and
+# the series simply appears to end. Range paging does not work on RPC, so the
+# SDK cannot stitch the rest — raising is the only honest answer.
+# ---------------------------------------------------------------------------
+
+def _rows(n):
+    return [{"date": "2024-01-01", "close": 1} for _ in range(n)]
+
+
+def test_a_capped_response_raises_instead_of_returning_a_short_series():
+    def responder(request):
+        return httpx.Response(
+            200, json=_rows(SERVER_ROW_CAP),
+            headers={"Content-Range": f"0-{SERVER_ROW_CAP - 1}/4382"},
+        )
+
+    c = make_client(catalog_then(responder))
+    with pytest.raises(SiloTruncated) as exc:
+        c.quote_history("PETR4", start="2019-01-01")
+    assert exc.value.returned == SERVER_ROW_CAP
+    assert exc.value.total == 4382
+    # The message must name what the caller can actually do about it.
+    for lever in ("Narrow the window", "fewer ids", "one metric"):
+        assert lever in str(exc.value)
+    assert "aging does not work" in str(exc.value), "paging is not a workaround here"
+
+
+def test_an_unconfirmable_full_page_also_raises():
+    """Exactly the cap with no count is indistinguishable from truncation.
+
+    Claiming completeness we cannot prove is the failure mode; a false positive
+    costs the caller one narrower request.
+    """
+    def responder(request):
+        return httpx.Response(200, json=_rows(SERVER_ROW_CAP))  # no Content-Range
+
+    c = make_client(catalog_then(responder))
+    with pytest.raises(SiloTruncated) as exc:
+        c.quote_history("PETR4")
+    assert exc.value.total is None
+
+
+def test_a_complete_response_is_returned_untouched():
+    def responder(request):
+        return httpx.Response(200, json=_rows(42), headers={"Content-Range": "0-41/42"})
+
+    c = make_client(catalog_then(responder))
+    assert len(c.quote_history("PETR4")) == 42
+
+
+def test_a_star_total_is_treated_as_unknown_not_zero():
+    """PostgREST answers `0-41/*` when it was not asked to count."""
+    def responder(request):
+        return httpx.Response(200, json=_rows(42), headers={"Content-Range": "0-41/*"})
+
+    c = make_client(catalog_then(responder))
+    assert len(c.quote_history("PETR4")) == 42
+
+
+def test_a_statement_timeout_is_its_own_error_with_advice():
+    """57014 is a budget, not a bug — and the caller cannot raise the budget."""
+    def responder(request):
+        return httpx.Response(500, json={
+            "code": "57014", "message": "canceling statement due to statement timeout",
+        })
+
+    c = make_client(catalog_then(responder))
+    with pytest.raises(SiloTimeout) as exc:
+        c.panel(["PETR4"], metrics=["close"])
+    assert "3s to 8s" in str(exc.value), "signing in is the one lever that raises it"
+
+
+def test_every_published_function_has_a_wrapper():
+    """7 of 13 were wrapped; the rest were reachable only by hand.
+
+    Read from the contract SQL so a new api.* function shows up here rather
+    than being quietly absent from the client.
+    """
+    import re
+    from pathlib import Path
+
+    sql = (Path(__file__).resolve().parents[1]
+           / "src/store/analytical/19_api_contract.sql").read_text()
+    published = {
+        m for m in re.findall(r"CREATE (?:OR REPLACE )?FUNCTION api\.(\w+)", sql)
+        # internal helpers: REVOKEd from PUBLIC, never callable by a client
+        if m not in {"caller_tier", "assert_panel_ids"}
+    }
+    missing = sorted(published - set(dir(SiloClient)))
+    assert not missing, f"api functions with no SDK wrapper: {missing}"
+
+
+def test_every_published_view_is_reachable():
+    c = make_client(catalog_then(lambda r: httpx.Response(200, json=[])))
+    assert len(SiloClient.VIEWS) == 8
+    with pytest.raises(ValueError, match="unknown view"):
+        c.view("not_a_view")
 
 
 def test_catalog_is_cached():
