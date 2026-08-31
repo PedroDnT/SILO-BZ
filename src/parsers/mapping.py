@@ -16,6 +16,8 @@ coerce_type values: text, cnpj, cd_cvm, int, numeric, pct, date, bool
 """
 from __future__ import annotations
 
+import hashlib as _hashlib
+
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -262,3 +264,20 @@ def derive_is_active(status: Any) -> Optional[bool]:
     if not s:
         return None
     return any(token in s for token in _ACTIVE_STATUS_TOKENS)
+
+
+def row_hash(row: "Mapping[str, Any]") -> str:
+    """Stable sha256 over a source row's own fields.
+
+    For datasets where CVM publishes no identifier that separates two genuinely
+    different filings — the FII property register, FIP restatements — this is
+    the tiebreaker that goes LAST in a natural key, never in place of one.
+
+    Deterministic for a given row, so re-ingesting an unchanged file is an exact
+    no-op, and it can never map one source row onto another's. Nothing is
+    invented: the digest is a function of the published values alone.
+    """
+    payload = "\x1f".join(
+        f"{k}={'' if row.get(k) is None else row.get(k)}" for k in sorted(row)
+    )
+    return _hashlib.sha256(payload.encode("utf-8")).hexdigest()

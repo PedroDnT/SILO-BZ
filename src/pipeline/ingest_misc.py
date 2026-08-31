@@ -8,7 +8,9 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
-from src.parsers.mapping import _norm, apply_map, assert_map_matches, derive_is_active
+from src.parsers.mapping import (
+    _norm, apply_map, assert_map_matches, derive_is_active, row_hash,
+)
 from src.parsers.field_maps import fiagro_mensal as _fiagro
 from src.parsers.field_maps import fip_periodic as _fip
 from src.parsers.field_maps import fund_registry as _reg
@@ -64,17 +66,40 @@ def ingest_fip_periodic(
         number of rows upserted
     """
     records: List[Dict[str, Any]] = []
+    undated = 0
 
     for row in raw_rows:
         typed, residual = apply_map(row, _fip.FIELD_MAP)
         typed["doc_type"] = doc_type
-        typed["period_year"] = year
         typed["raw"] = residual
+
+        # period is the row's OWN DT_COMPTC. A FIP yearly CSV holds every
+        # filing of the year (4 quarters, or 3 quadrimestral periods), so
+        # stamping the archive year on all of them collapsed 72-77% of every
+        # file onto one row per fund. period_year stays as a stored column
+        # because the coverage gate reads it, but it is not the key.
+        period = typed.get("period")
+        if period is None:
+            undated += 1
+            continue
+        typed["period_year"] = period.year
+
+        # Last element of the key, and only a tiebreaker: CVM restates the same
+        # (fund, date, class) with different capital figures and publishes no
+        # column that separates the two filings. Keeping both is honest;
+        # picking one silently is not. See the field map for the audit.
+        typed["row_hash"] = row_hash(row)
 
         if not typed.get("cnpj"):
             typed["cnpj"] = None  # table allows NULL
 
         records.append(typed)
+
+    if undated:
+        logger.warning(
+            "cvm_fip_periodic: dropped %d of %d rows with no parseable DT_COMPTC",
+            undated, len(raw_rows),
+        )
 
     if not records:
         return 0
