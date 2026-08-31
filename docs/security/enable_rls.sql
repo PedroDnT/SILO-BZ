@@ -13,10 +13,20 @@
 -- WHY
 -- -----------------------------------------------------------------------------
 -- A Supabase audit found 52 of 59 public tables with RLS OFF (pg_class.relrowsecurity
--- = false). With RLS off, the anon / publishable client key — which the dashboard and
--- webapp ship to the browser — can read every row, and (depending on table GRANTs)
--- potentially write too. All CVM/BACEN data here is public, so READ access for anon
--- is intended; unrestricted WRITE access from a browser key is not.
+-- = false), and this script was written on the reading that the anon / publishable
+-- key could therefore reach every row.
+--
+-- CORRECTION (2026-08-31): that is not what governs access here. The primary
+-- control is the GRANT boundary, not RLS: `anon` holds no privilege on the public
+-- landing tables at all, and the only readable surface is schema `api`. health.yml
+-- asserts this on every run by probing cvm_fi_diario, b3_cotahist, cia_account and
+-- bacen_sgs with the published key and requiring a non-200 — they currently answer
+-- 401. So there is no live exposure for this file to remediate.
+--
+-- It is kept as an OPTIONAL SECOND LAYER (defence in depth: RLS would still deny if
+-- a future GRANT were widened by mistake), which is how docs/DATABASE_MAINTENANCE.md
+-- describes it. Read that section before applying this; do not apply it believing
+-- you are closing an open door.
 --
 -- This script, for every public BASE TABLE:
 --   1. ENABLEs row-level security, and
