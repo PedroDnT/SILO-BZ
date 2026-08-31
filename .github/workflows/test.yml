@@ -95,46 +95,88 @@ jobs:
       #   2. a widened key that DROPS a column, so legacy rows distinguished
       #      only by the dropped column collided once the new ones were NULL
       #      (NULLS NOT DISTINCT makes NULL equal to NULL).
-      # Neither is visible without pre-existing rows. This step builds a second
-      # database the way production was built, puts rows in it, and then runs
-      # the upgrade.
+      # Neither is visible without pre-existing rows.
+      #
+      # The old shape is built by removing the new columns from a current
+      # database rather than by checking out an old schema.sql: actions/checkout
+      # is a shallow clone, so git history is not available here, and naming the
+      # columns explicitly says what "before" means instead of leaving it to
+      # whatever a commit offset happens to point at.
       - name: Upgrade path — an EXISTING database with rows in it
         run: |
           set -euo pipefail
           OLD_URL="postgresql://postgres:ci@localhost:5432/silo_upgrade"
           psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE silo_upgrade;"
 
-          # The schema as it was before tonight's key changes, plus the
-          # migrations that existed then: production's actual starting shape.
-          git show "$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)~8:src/store/schema.sql"             > /tmp/old_schema.sql 2>/dev/null             || git show HEAD~8:src/store/schema.sql > /tmp/old_schema.sql
-          psql "$OLD_URL" -q -f /tmp/old_schema.sql > /dev/null 2>&1 || true
-          for f in $(ls src/store/migrations/*.sql | sort | head -32); do
-            psql "$OLD_URL" -q -f "$f" > /dev/null 2>&1 || true
+          psql "$OLD_URL" -v ON_ERROR_STOP=1 -q -f src/store/schema.sql > /dev/null
+          for f in $(ls src/store/migrations/*.sql | sort); do
+            psql "$OLD_URL" -v ON_ERROR_STOP=1 -q -f "$f" > /dev/null
           done
 
-          # Rows in the pre-change shape. FIP is the sharp case: several years
-          # of one fund, none of the new key columns, and a raw payload with no
-          # recoverable date — the exact rows that made the index build fail.
+          echo "--- rewind to the pre-change shape ---"
+          psql "$OLD_URL" -v ON_ERROR_STOP=1 <<'REWIND'
+          DROP INDEX IF EXISTS uq_fip_periodic;
+          ALTER TABLE cvm_fip_periodic
+              DROP COLUMN IF EXISTS period,
+              DROP COLUMN IF EXISTS classe_cota,
+              DROP COLUMN IF EXISTS row_hash;
+          ALTER TABLE cvm_fip_periodic
+              ADD CONSTRAINT uq_fip_periodic
+              UNIQUE NULLS NOT DISTINCT (cnpj, doc_type, period_year);
+
+          DROP INDEX IF EXISTS uq_fi_cda_acoes;
+          ALTER TABLE cvm_fi_cda_acoes DROP COLUMN IF EXISTS tp_fundo;
+          CREATE UNIQUE INDEX uq_fi_cda_acoes
+              ON cvm_fi_cda_acoes (cnpj, period, tp_aplic, cd_ativo, tp_negoc)
+              NULLS NOT DISTINCT;
+
+          DROP INDEX IF EXISTS uq_fi_cda_cotas;
+          ALTER TABLE cvm_fi_cda_cotas
+              DROP COLUMN IF EXISTS tp_fundo,
+              DROP COLUMN IF EXISTS tp_negoc;
+          ALTER TABLE cvm_fi_cda_cotas
+              ADD CONSTRAINT uq_fi_cda_cotas UNIQUE (cnpj, period, cnpj_cota);
+          REWIND
+
+          echo "--- rows in that shape (this is what production holds) ---"
           psql "$OLD_URL" -v ON_ERROR_STOP=1 <<'SEED'
+          -- FIP is the sharp case: many years of ONE fund, distinguished only
+          -- by period_year, and a raw payload with no recoverable date. These
+          -- are the exact rows that made the index build fail in production.
           INSERT INTO cvm_fip_periodic (cnpj, doc_type, period_year, vl_patrim_liq, raw)
-          SELECT '34964435000178', 'inf_trimestral', y, 1000 + y, '{"DENOM_SOCIAL":"LEGACY"}'::jsonb
+          SELECT '34964435000178', 'inf_trimestral', y, 1000 + y,
+                 '{"DENOM_SOCIAL":"LEGACY"}'::jsonb
           FROM generate_series(2010, 2023) AS y;
+
+          -- One row that DOES carry a recoverable date, to prove the recovery
+          -- reads `raw` rather than only marking rows.
+          INSERT INTO cvm_fip_periodic (cnpj, doc_type, period_year, vl_patrim_liq, raw)
+          VALUES ('11111111111111', 'inf_trimestral', 2022, 5,
+                  '{"DT_COMPTC":"2022-06-30","CLASSE_COTA":"A"}'::jsonb);
+
+          INSERT INTO cvm_fi_cda_acoes
+              (cnpj, period, tp_aplic, tp_ativo, cd_ativo, tp_negoc, raw)
+          VALUES ('00102322000141','2022-05-01','Ações','BDR nível I','NFLX34',
+                  'Para negociação','{"TP_FUNDO":"FI"}'::jsonb);
           SEED
 
-          echo "--- applying the CURRENT schema.sql to that database ---"
+          echo "--- the upgrade: current schema.sql, every migration, then again ---"
           psql "$OLD_URL" -v ON_ERROR_STOP=1 -f src/store/schema.sql > /dev/null
-          echo "--- then every migration ---"
           for f in $(ls src/store/migrations/*.sql | sort); do
             psql "$OLD_URL" -v ON_ERROR_STOP=1 -f "$f" > /dev/null
           done
-          echo "--- and again, to prove it is idempotent ---"
           psql "$OLD_URL" -v ON_ERROR_STOP=1 -f src/store/schema.sql > /dev/null
 
           kept=$(psql "$OLD_URL" -tAc "SELECT count(*) FROM cvm_fip_periodic;")
           uniq=$(psql "$OLD_URL" -tAc "SELECT count(DISTINCT row_hash) FROM cvm_fip_periodic;")
-          echo "legacy rows kept: $kept, distinct row_hash: $uniq"
-          test "$kept" = "14" || { echo "legacy rows were lost by the upgrade"; exit 1; }
-          test "$uniq" = "14" || { echo "legacy rows are not distinguishable under the new key"; exit 1; }
+          recovered=$(psql "$OLD_URL" -tAc "SELECT coalesce(period::text,'-')||'/'||coalesce(classe_cota,'-') FROM cvm_fip_periodic WHERE cnpj='11111111111111';")
+          acoes=$(psql "$OLD_URL" -tAc "SELECT coalesce(tp_fundo,'-') FROM cvm_fi_cda_acoes;")
+          echo "fip rows kept=$kept distinct row_hash=$uniq recovered=$recovered | cda tp_fundo=$acoes"
+
+          test "$kept" = "15"  || { echo "FAIL: legacy rows lost by the upgrade"; exit 1; }
+          test "$uniq" = "15"  || { echo "FAIL: legacy rows not distinguishable under the new key"; exit 1; }
+          test "$recovered" = "2022-06-30/A" || { echo "FAIL: recovery did not read raw"; exit 1; }
+          test "$acoes" = "FI" || { echo "FAIL: cda tp_fundo not recovered from raw"; exit 1; }
 
       - name: Apply analytical layer (empty-DB bypass)
         run: PGOPTIONS="-c silo.ci_smoke_bypass=on" bash scripts/apply_analytical.sh
