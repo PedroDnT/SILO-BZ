@@ -170,9 +170,9 @@ wired (see `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_securit_serie`, `cvm_secur
 
 ## ETL Schema
 
-The pipeline writes to **16 tables** across **two logical domains**: CVM fund data and BACEN macroeconomic context.
+The pipeline writes to **34 tables** across **two logical domains**: CVM fund data and BACEN macroeconomic context.
 
-### CVM Fund Data (12 core tables)
+### CVM Fund Data (18 core tables)
 
 Each CVM entity gets one or more tables per data release frequency:
 
@@ -219,7 +219,7 @@ Each CVM entity gets one or more tables per data release frequency:
 | `etf_market_snapshot` | ETF scraped snapshots (nav, price, yields, volatility, drawdown)                                                   | `(ticker, snapshot_date)`                                 |
 | `b3_cotahist`         | B3 COTAHIST quotes (unadjusted OHLC, volume, ticker, ISIN). `vw_b3_instrument_typed` classifies published instrument types; `api.quotes` serves typed cash rows. | `(codneg, trade_date, tpmerc, codbdi, prazot)`            |
 
-**Total: 20 tables across 11 logical domains (FI, FIDC, FII, FIP, FIAGRO, SECURIT, Registry, BACEN, Audit, ETF, B3).**
+**Total: 34 base tables across 12 logical domains (FI, FIDC, FII, FIP, FIAGRO, SECURIT, CIA Aberta, Registry, BACEN, Audit, ETF, B3).** The authoritative list is `src/store/schema.sql` plus `migrations/`; `docs/DATA_INVENTORY.md` maps every table to its source, grain and coverage, and says which are ingested but not served.
 
 ### Design Principles
 
@@ -452,47 +452,52 @@ The pipeline is production-grade and runs unattended; **serving is the open fron
 Everything below is either an operator action or a known defect — none of it is
 speculative roadmap.
 
-### Blocking the API going live
-
-The public Data API is:
+### The API is live
 
 ```
 https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/
 ```
 
-Remaining operator work (do not skip):
+Schema `api` is applied and exposed, the row caps and landing-table REVOKEs are
+in place, and `health.yml` verifies both on every run — the anon probe asserts
+`rpc/coverage`, `rpc/catalog`, `quotes` and `funds` answer 200 while
+`cvm_fi_diario`, `b3_cotahist`, `cia_account` and `bacen_sgs` under
+`Accept-Profile: public` do **not**.
 
-1. **Apply the serving SQL** if production is still on the pre-caps `api` schema.
-   Actions → Daily Ingest → `workflow_dispatch`, `mode=analytics-only`. This applies
-   the row caps, the `silo_api` role, `SET search_path = ''`, and the landing-table
-   REVOKEs. Run it when no Vercel build is in flight — concurrent dashboard builds
-   hold locks on `cvm_fi_perfil` and have blocked this apply before (now bounded by
-   `lock_timeout`).
-2. **Confirm `api` is in Exposed schemas** (Supabase Dashboard → Settings → API).
-3. **Verify** with the `curl` in [api-docs/quickstart.mdx](api-docs/quickstart.mdx).
+Sign-in is live too: GitHub OAuth, with the page at
+`dashboard/static/signin.html`. A user token raises `panel` ids 3 → 50,
+`search_funds` 25 → 200, `option_chain` 200 → 2,000 and the query budget
+3s → 8s. It does not raise PostgREST's server-wide 1,000-row cap, which is the
+same for everyone. Google is configured but not yet enabled.
 
 ### Known defects
 
-- **`etf_daily` matview refresh fails on every daily run**
-  (`"etf_daily" is not a table or materialized view`). The ETF page depends on it.
-  Diagnosing needs the production `relkind` for that relation.
-- **`mv_savings_flow_monthly` is granted to `anon`** in both `public` and `api`
-  (`18_savings_flow.sql`), so exposing `api` publishes an endpoint the contract in
-  `19_api_contract.sql` says should not exist. Either document it or revoke it.
+- **`etf_daily` / `etf_latest` can be absent from production.** Migration 06
+  recreates them when missing, so a run whose schema step failed leaves them
+  gone and the backfill's "Refresh ETF metrics" job then fails on an assertion
+  that is really reporting the earlier failure. The ETF dashboard page depends
+  on these views.
 - **Dashboard builds are slow** (~25 min). The remaining cost is `fi_investor_mix`
   (4m19) and `fi_investor_split` (3m13), which scan `cvm_fi_perfil` across 24 months.
   Optimizing them needs `EXPLAIN ANALYZE` against real data.
+- **`cvm_fip_periodic` holds a pre-fix remnant.** Rows stored before the key was
+  corrected carry `row_hash = 'pre-migration-34:<id>'` and are the survivors of
+  a key that discarded 72–77% of each file. A backfill of `entity=fip` writes
+  the real rows alongside them.
 
 ### Deferred by design
 
 - **Historical backfills** for `securit` and `fidc` — the daily window only heals the
   trailing months, so deep history for the recently-fixed field maps needs `backfill.yml`.
-- **`VERCEL_DEPLOY_HOOK_URL`** — optional; it is used only when a manual Daily Ingest
-  dispatch sets `rebuild_dashboard=true`. Scheduled ingest and fills leave Vercel alone.
-- **`APIFY_TOKEN`** — the ETF market scrape self-skips without it.
+- **`VERCEL_DEPLOY_HOOK_URL`** — set. Used only when a manual Daily Ingest dispatch
+  sets `rebuild_dashboard=true`; scheduled ingest and fills leave Vercel alone.
+- **`APIFY_TOKEN`** — set. The ETF market scrape self-skips without it.
 - **Company ↔ ticker** comes from CVM's published FCA valores-mobiliários filing
-  (`cia_ticker` → `vw_company_ticker`), never from name matching. A fund ↔ listed-company
-  edge still does not exist and is not inferred.
+  (`cia_ticker` → `vw_company_ticker`), never from name matching.
+- **Fund → company** now exists as data but is not served. `cvm_fi_cda_acoes.cd_ativo`
+  is the published B3 ticker a fund holds, so fund → ticker → `cia_ticker` → company
+  is a real join over ingested rows. No `api.*` object exposes it yet, and no edge
+  is ever inferred from a name.
 - **Prices are not corporate-action adjusted.** `close_unit` (= `close / quotation_factor`,
   both published) makes levels comparable across papers quoted per lot, but a split still
   reads as a jump and `adjusted` is `false` on every row. `b3_corporate_event` holds the

@@ -123,6 +123,48 @@ Not variations on COTAHIST; separate files with separate shapes.
 Called the highest-value additions in `docs/planning/INSTRUMENTS.md`. Each is a
 new fetcher, not a new field map.
 
+### `cvm_fi_cda` keeps one bond in five and calls it the class total
+
+Measured against the real `cda_fi_BLC_1_2005.csv` (198,432 rows) on 2026-08-31:
+
+| key | rows kept | lost | groups differing in position |
+| --- | ---: | ---: | ---: |
+| `cnpj+period+tp_aplic+tp_ativo` **(shipped)** | 38,968 | **159,464 (80.4%)** | 26,716 |
+| `+ cd_selic` | 67,704 | 130,728 (65.9%) | 36,545 |
+| `+ cd_selic + dt_venc` | 196,146 | 2,286 (1.2%) | 2,123 |
+| `+ cd_isin + dt_venc + tp_negoc` | 198,288 | 144 (0.1%) | 16 |
+
+BLC_1 is one row per **security**: each carries `CD_SELIC`, `CD_ISIN`, `DT_EMISSAO`
+and `DT_VENC`. The shipped key has none of them, so every government bond a fund
+holds in a month collapses onto one row per asset class.
+
+A worked example from that file — fund `01.147.641/0001-36`, January 2005,
+`TP_ATIVO = 'Título Público'`:
+
+```
+257 distinct bonds  ->  1 stored row
+    selic 235479  venc 2013-05-28   vl      9,847,492.69
+    selic 235479  venc 2014-08-02   vl     16,652,007.43
+    selic 240200  venc 2005-02-15   vl          1,527.14
+    …
+true total position   R$ 261,631,340.11
+stored value          R$  39,296,938.72     (15% of the truth)
+```
+
+**This is not aggregation.** An aggregate would `SUM`. `ON CONFLICT DO UPDATE`
+keeps whichever row was written last and discards the rest, so the stored number
+is one arbitrary bond's position wearing the label of the fund's whole
+government-bond book. `CLAUDE.md` describes the table as "AGGREGATED by asset
+class — one number per (fund, month, tp_aplic, tp_ativo)"; that is what it
+intends, not what it does.
+
+The fix is additive and follows the pattern blocks 4 and 2 already use: a
+`cvm_fi_cda_titpub` table keyed on the security
+(`cnpj, period, tp_aplic, cd_selic, dt_venc`, ~98.8% retention), leaving
+`cvm_fi_cda` as the class-level roll-up the dashboards already read. Changing
+`cvm_fi_cda`'s own key would change its grain and break every consumer of it,
+which is why it is not proposed here.
+
 ### Periods no wired source reaches
 
 | Gap                                      | Why                                                                                                                                                              |

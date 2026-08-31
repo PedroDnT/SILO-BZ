@@ -341,11 +341,24 @@ aggregates without a separate cron.
 
 ## 8. Security / RLS
 
-**52 of 59 public tables currently have RLS disabled**, so the anon/publishable key that
-ships to browsers can read — and potentially write — almost everything.
+**The boundary is the grant, not RLS — and it is closed.** `anon` and
+`authenticated` hold no privilege on any landing table: `12_grants_and_rls.sql`
+revokes them and grants only `USAGE` on schema `api`, `SELECT` on its eight
+views and `EXECUTE` on its thirteen functions. A request with
+`Accept-Profile: public`, or any path naming `cvm_*` / `b3_cotahist` / `cia_*`,
+answers **401 for every caller**. `.github/workflows/health.yml` probes exactly
+that on every run and fails the job if a landing table ever answers 200.
 
-Remediation is written but deliberately **not auto-applied**, and lives outside
-`migrations/` so the CI bootstrap can't run it:
+This section previously read "52 of 59 public tables have RLS disabled, so the
+anon key can read — and potentially write — almost everything." That was true
+before the privilege sweep and is not true now. RLS being off is not the same
+statement as the data being reachable: with no grant there is no row for a
+policy to filter. Enabling RLS on top would be defence in depth, not the
+boundary itself.
+
+`docs/security/enable_rls.sql` remains as that optional second layer. It is
+deliberately outside `migrations/` so the CI bootstrap cannot run it, and it is
+**not** what stands between the publishable key and the warehouse today:
 
 ```bash
 psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f docs/security/enable_rls.sql
