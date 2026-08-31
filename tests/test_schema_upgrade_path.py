@@ -29,6 +29,10 @@ from pathlib import Path
 import pytest
 
 SCHEMA = Path(__file__).resolve().parents[1] / "src/store/schema.sql"
+MIG33 = (
+    Path(__file__).resolve().parents[1]
+    / "src/store/migrations/33_cda_holdings_key_widening.sql"
+)
 
 
 def _strip_sql_comments(sql: str) -> str:
@@ -155,3 +159,39 @@ def test_a_replaced_unique_index_is_dropped_first(sql: str):
         create = sql.find(f"INDEX IF NOT EXISTS {name}")
         assert drop != -1, f"{name} is re-created without a preceding DROP"
         assert drop < create, f"{name} is dropped after it is created"
+
+
+def test_migration_33_never_overwrites_a_typed_key_column():
+    """Backfill #24: SET tp_fundo = raw->>'TP_FUNDO' wiped a live 'FI'.
+
+    `_strip_raw_duplicates` has already removed typed keys from `raw`, so a
+    row with tp_fundo='FI' and tp_negoc NULL matched WHERE tp_negoc IS NULL
+    and was reset to (NULL, NULL). That collided with a sibling already on
+    that key under NULLS NOT DISTINCT. COALESCE keeps the typed value.
+    """
+    flat = re.sub(r"\s+", " ", MIG33.read_text())
+    assert "COALESCE( t.tp_fundo" in flat, (
+        "migration 33 must not assign tp_fundo from raw when the typed column "
+        "already holds a value — that is the wipe that failed Backfill #24"
+    )
+    assert "COALESCE( t.tp_negoc" in flat, (
+        "migration 33 must not assign tp_negoc from raw when the typed column "
+        "already holds a value"
+    )
+
+
+def test_migration_33_drops_the_wide_unique_before_the_backfill():
+    """schema.sql installs uq_fi_cda_cotas before this file runs.
+
+    The original 33 UPDATEd first, then dropped the index. On live that
+    UPDATE fought the unique schema.sql had just built. Drop first.
+    """
+    sql = _strip_sql_comments(MIG33.read_text()).upper()
+    drop = sql.find("DROP INDEX IF EXISTS UQ_FI_CDA_COTAS")
+    update = sql.find("UPDATE CVM_FI_CDA_COTAS")
+    assert drop != -1, "migration 33 must drop uq_fi_cda_cotas"
+    assert update != -1, "migration 33 must still backfill cvm_fi_cda_cotas"
+    assert drop < update, (
+        "uq_fi_cda_cotas must be dropped before the backfill UPDATE — "
+        "schema.sql has already created the widened unique index"
+    )
