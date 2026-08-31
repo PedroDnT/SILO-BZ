@@ -301,17 +301,35 @@ CREATE INDEX IF NOT EXISTS idx_fiagro_mensal_period ON cvm_fiagro_mensal (period
 -- Generic structure: key CNPJ/period, full data in JSONB
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS cvm_fip_periodic (
-    id            BIGSERIAL    PRIMARY KEY,
-    cnpj          TEXT,
-    doc_type      TEXT         NOT NULL,   -- inf_trimestral | inf_quadrimestral
-    period_year   INT          NOT NULL,
-    vl_patrim_liq NUMERIC(20,6),
-    raw           JSONB        NOT NULL,
-    fetched_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_fip_periodic UNIQUE NULLS NOT DISTINCT (cnpj, doc_type, period_year)
+    id             BIGSERIAL    PRIMARY KEY,
+    cnpj           TEXT,
+    doc_type       TEXT         NOT NULL,  -- inf_trimestral | inf_quadrimestral
+    period         DATE,                   -- the filing's own DT_COMPTC
+    period_year    INT          NOT NULL,
+    classe_cota    TEXT,                   -- share class A/B/C; part of the key
+    row_hash       TEXT,                   -- tiebreaker for restated filings
+    tp_fundo       TEXT,
+    denom_social   TEXT,
+    vl_patrim_liq  NUMERIC(20,6),
+    qt_cota        NUMERIC(28,8),
+    vl_patrim_cota NUMERIC(28,8),
+    nr_cotst       NUMERIC(20,2),
+    vl_cap_comprom NUMERIC(20,2),
+    vl_cap_subscr  NUMERIC(20,2),
+    vl_cap_integr  NUMERIC(20,2),
+    raw            JSONB        NOT NULL,
+    fetched_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
+
+-- A FIP yearly CSV holds every filing of the year (4 quarters, or 3
+-- quadrimestral periods) and one row per share class inside each. Keying on
+-- period_year alone discarded 72-77% of every published file.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_fip_periodic
+    ON cvm_fip_periodic (cnpj, doc_type, period, classe_cota, row_hash)
+    NULLS NOT DISTINCT;
 CREATE INDEX IF NOT EXISTS idx_fip_periodic_cnpj      ON cvm_fip_periodic (cnpj) WHERE cnpj IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_fip_periodic_type_year ON cvm_fip_periodic (doc_type, period_year DESC);
+CREATE INDEX IF NOT EXISTS idx_fip_periodic_period    ON cvm_fip_periodic (period DESC);
 
 -- ---------------------------------------------------------------------------
 -- FII — monthly general summary  (mensal_geral, yearly ZIP)
