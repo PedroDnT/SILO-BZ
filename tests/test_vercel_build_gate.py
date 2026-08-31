@@ -272,6 +272,22 @@ def test_backfill_is_sliceable_serial_and_never_rebuilds_dashboard():
     assert "Marked stale by backfill coverage inspection after 24 hours" in text
 
 
+def test_refresh_etf_does_not_run_when_schema_apply_failed():
+    """Backfill #18: apply-schema failed, ingest jobs skipped, refresh-etf
+    still ran (`if: always()`) and failed because etf_daily had been dropped.
+
+    `always()` stays so a failed *slice* still verifies whatever landed.
+    apply-schema itself must have succeeded.
+    """
+    jobs = yaml.safe_load((ROOT / ".github/workflows/backfill.yml").read_text())["jobs"]
+    refresh = jobs["refresh-etf"]
+    needs = refresh["needs"]
+    needs = [needs] if isinstance(needs, str) else needs
+    assert "apply-schema" in needs
+    assert "always()" in refresh["if"]
+    assert "needs.apply-schema.result == 'success'" in refresh["if"]
+
+
 def test_every_fi_doc_type_is_dispatchable_and_repairable():
     """A doc type wired into backfill but absent from the dropdown is unreachable.
 

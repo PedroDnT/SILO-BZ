@@ -125,6 +125,15 @@ CREATE TABLE IF NOT EXISTS cvm_fi_cda_acoes (
     fetched_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- CREATE TABLE IF NOT EXISTS is a no-op when the table already exists (the
+-- live warehouse was created by migration 32 without tp_fundo). schema.sql
+-- runs BEFORE migrations, so the unique index below would fail with
+-- `column "tp_fundo" does not exist` and migration 33 would never run.
+-- Backfill #18 (run 33428561498) died here three times; the apply-schema
+-- retry loop misread it as lock contention. ADD COLUMN first. Guarded at
+-- apply time so a later replay does not take AccessExclusiveLock.
+ALTER TABLE cvm_fi_cda_acoes ADD COLUMN IF NOT EXISTS tp_fundo TEXT;
+
 -- NULLS NOT DISTINCT: cd_ativo and tp_negoc are empty on a minority of rows,
 -- and without it Postgres would treat every such row as distinct and let
 -- duplicates through the constraint the audit exists to enforce.
@@ -160,6 +169,11 @@ CREATE TABLE IF NOT EXISTS cvm_fi_cda_cotas (
     raw                 JSONB       NOT NULL,
     fetched_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Same replay trap as cvm_fi_cda_acoes: migration 32 created this table
+-- without tp_fundo / tp_negoc. The unique index names both.
+ALTER TABLE cvm_fi_cda_cotas ADD COLUMN IF NOT EXISTS tp_fundo TEXT;
+ALTER TABLE cvm_fi_cda_cotas ADD COLUMN IF NOT EXISTS tp_negoc TEXT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_fi_cda_cotas
     ON cvm_fi_cda_cotas (cnpj, period, tp_fundo, cnpj_cota, tp_aplic, tp_negoc)

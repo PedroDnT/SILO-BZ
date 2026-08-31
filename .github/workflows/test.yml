@@ -80,6 +80,17 @@ jobs:
             -c "CREATE ROLE anon NOLOGIN;" \
             -c "CREATE ROLE authenticated NOLOGIN;"
 
+      # Reproduce the live-warehouse replay that empty-DB compile cannot catch.
+      # Migration 32 created cvm_fi_cda_acoes / cvm_fi_cda_cotas; schema.sql
+      # later widened their unique indexes with tp_fundo. CREATE TABLE IF NOT
+      # EXISTS is a no-op on those tables, so schema.sql (applied BEFORE
+      # migrations, including 33) must ADD COLUMN first. Backfill #18
+      # (run 33428561498) died on `column "tp_fundo" does not exist`.
+      - name: Seed migration-32 holdings tables (existing-DB replay)
+        run: |
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 \
+            -f src/store/migrations/32_cda_holdings.sql
+
       # Same composite action as daily/backfill/watchdog, so the CI bootstrap
       # can never drift from the production one.
       - name: Apply schema + migrations
