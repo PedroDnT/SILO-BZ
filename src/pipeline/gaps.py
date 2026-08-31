@@ -35,6 +35,11 @@ FI_MONTHLY_TABLES: Dict[str, Tuple[str, str]] = {
     "inf_diario":    ("cvm_fi_diario",    "dt_comptc"),
     "perfil_mensal": ("cvm_fi_perfil",    "period"),
     "cda":           ("cvm_fi_cda",       "period"),
+    # CDA blocks 4 and 2 — holdings, not the aggregate. Same competency grain as
+    # `cda` (first-of-month `period`), but separate tables, so a gap in one says
+    # nothing about the others and each is repaired on its own.
+    "cda_acoes":     ("cvm_fi_cda_acoes",  "period"),
+    "cda_cotas":     ("cvm_fi_cda_cotas",  "period"),
 }
 
 # CVM publishes a competency month one to two months late. Probing months that

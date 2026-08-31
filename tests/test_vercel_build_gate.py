@@ -13,10 +13,14 @@ Getting that backwards silently stops publishing the site, so it is pinned here.
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
+import re
 import shutil
 import subprocess
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -266,6 +270,107 @@ def test_backfill_is_sliceable_serial_and_never_rebuilds_dashboard():
     assert "Print ingest_log + coverage snapshot" in text
     assert "started_at < NOW() - INTERVAL '24 hours'" in text
     assert "Marked stale by backfill coverage inspection after 24 hours" in text
+
+
+def test_every_fi_doc_type_is_dispatchable_and_repairable():
+    """A doc type wired into backfill but absent from the dropdown is unreachable.
+
+    `_want_fi_doc` honours any doc type, so a new FI dataset lands correctly on
+    the daily run and is picked up by `fi_doc_type: all`. But `all` re-fetches
+    inf_diario, perfil_mensal and balancete (24 GB) for every year, so the only
+    affordable way to fill one dataset's history is to select it — and a fixed
+    `type: choice` list silently makes that impossible. CDA blocks 4 and 2
+    shipped that way.
+
+    Two more places hardcode the same list and would raise rather than degrade:
+    the coverage gate's `counts` dict (KeyError, outside its try/except) and
+    gaps.FI_MONTHLY_TABLES (ValueError from missing_fi_months, which is what
+    --repair-gaps runs on). All three are asserted together because a doc type
+    present in one and missing from another is still a broken dispatch.
+    """
+    from src.pipeline.gaps import FI_MONTHLY_TABLES
+
+    pipeline = (ROOT / "src/pipeline/cvm_pipeline.py").read_text()
+    wired = set(re.findall(r'_want_fi_doc\("([a-z_]+)"\)', pipeline))
+    assert wired, "no FI doc-type filter call sites found — did _want_fi_doc get renamed?"
+
+    wf = yaml.safe_load((ROOT / ".github/workflows/backfill.yml").read_text())
+    options = set(wf[True]["workflow_dispatch"]["inputs"]["fi_doc_type"]["options"])
+
+    assert wired <= options, (
+        f"{sorted(wired - options)} are ingested by backfill but cannot be selected in "
+        "backfill.yml — the only way to fill their history would be a full FI re-ingest"
+    )
+    assert wired <= set(FI_MONTHLY_TABLES), (
+        f"{sorted(wired - set(FI_MONTHLY_TABLES))} are missing from gaps.FI_MONTHLY_TABLES, "
+        "so --repair-gaps raises ValueError for a doc type the dropdown offers"
+    )
+
+
+def _gate_decision(doc_type: str, year: int, repair: bool = False, **coverage) -> str:
+    """Run backfill.yml's coverage-gate decision block, without a database.
+
+    The block lives inside a heredoc, so nothing else in CI executes it — a
+    KeyError there surfaces only when an operator dispatches the workflow and
+    the job dies before fetching anything. Lifting it out and exec'ing it is
+    the only way to hold its behaviour from an offline test.
+    """
+    text = (ROOT / ".github/workflows/backfill.yml").read_text()
+    start = text.index("          skip = False\n")
+    block = textwrap.dedent(text[start:text.index("          if skip:", start)])
+    block = (
+        block.replace("${{ inputs.fi_doc_type }}", doc_type)
+        .replace("${{ inputs.fi_repair_gaps }}", "true" if repair else "false")
+        .replace("${{ inputs.fi_months }}", "")
+    )
+    ns = dict(
+        year=year, diario_months=12, perfil_months=12, balancete_months=3,
+        cda_months=0, cda_acoes_months=0, cda_cotas_months=0, diario_rows=0,
+    )
+    ns.update(coverage)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        exec(block, ns)  # noqa: S102 — the point is to run the shipped block
+    return out.getvalue().strip()
+
+
+def test_the_coverage_gate_decides_every_dispatchable_doc_type():
+    """`counts[doc]` sits outside the gate's try/except — a miss kills the job.
+
+    Failing closed is the wrong default here: the gate exists to skip work
+    already done, so a doc type it does not recognise must run the year rather
+    than abort the dispatch.
+    """
+    wf = yaml.safe_load((ROOT / ".github/workflows/backfill.yml").read_text())
+    for doc in wf[True]["workflow_dispatch"]["inputs"]["fi_doc_type"]["options"]:
+        if doc == "all":
+            continue
+        assert _gate_decision(doc, 2024).startswith(("RUN", "SKIP"))
+
+    assert _gate_decision("a_doc_type_added_later", 2024).startswith("RUN")
+
+
+def test_the_gate_skips_years_the_holdings_blocks_cannot_reach():
+    """cvm_pipeline schedules cda_acoes/cda_cotas only from 2023.
+
+    Before that, the FI CDA history comes from the yearly HIST archive, and
+    `hist_cda` reads BLC_1 only (src/fetchers/cvm_config.py). So an earlier year
+    would spin up a job, download nothing and report success — which reads as
+    "2019 holdings are empty upstream" rather than "we never wired it".
+    """
+    for year in (2019, 2022):
+        assert _gate_decision("cda_acoes", year).startswith("SKIP")
+    assert _gate_decision("cda_acoes", 2023).startswith("RUN")
+    # `cda` itself does have a pre-2023 path, so it must not be caught by this.
+    assert _gate_decision("cda", 2019).startswith("RUN")
+
+    # Repair mode too: --repair-gaps on 2019 would report all twelve months as
+    # gaps (the table is empty) and then schedule none of them, because the
+    # backfill loop gates the block on year >= 2023. The check has to sit ahead
+    # of the repair branch, not inside the coverage one.
+    assert _gate_decision("cda_acoes", 2019, repair=True).startswith("SKIP")
+    assert _gate_decision("cda_acoes", 2024, repair=True).startswith("RUN")
+    assert _gate_decision("balancete", 2019, repair=True).startswith("RUN")
 
 
 def test_b3_backfill_accepts_an_exact_year_range():
