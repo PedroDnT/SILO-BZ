@@ -56,12 +56,47 @@ class TestWiring:
                 f"{name} downloads from CVM but does not gate on the preflight"
             )
 
+    def test_each_backfill_cvm_job_probes_on_the_same_runner(self):
+        """needs: cvm-preflight tests a different VM.
+
+        Backfill #22 (run 33434522442) passed that job at 20:10, FI 2024
+        landed 2.7M cda_acoes rows, then FI 2025 and FI 2026 each spent
+        ~7 minutes proving Connect call failed on new runners. Daily ingest
+        already probes on the same job; backfill must too.
+        """
+        jobs = yaml.safe_load(BACKFILL.read_text())["jobs"]
+        for name, ingest_prefix in (
+            ("backfill-fi", "Run FI backfill for"),
+            ("backfill-other", "Run ${{ matrix.entity }} backfill"),
+            ("backfill-etf", "Run ETF registry backfill"),
+        ):
+            steps = jobs[name]["steps"]
+            names = [s.get("name") for s in steps]
+            assert "Probe dados.cvm.gov.br" in names, name
+            probe_i = names.index("Probe dados.cvm.gov.br")
+            ingest_i = next(
+                i for i, n in enumerate(names)
+                if n and n.startswith(ingest_prefix)
+            )
+            setup_i = next(
+                i for i, s in enumerate(steps)
+                if str(s.get("uses", "")).startswith("actions/setup-python")
+            )
+            assert setup_i < probe_i < ingest_i, name
+            probe = steps[probe_i]
+            assert "python scripts/check_cvm_reachable.py" in str(probe.get("run"))
+            # Stdlib only, so this can (and does) run before pip install.
+            install_i = names.index("Install dependencies")
+            assert probe_i < install_i, name
+
     def test_bacen_does_not_gate_on_it(self):
         """BACEN never touches CVM; blocking it on CVM would invent an outage."""
         jobs = yaml.safe_load(BACKFILL.read_text())["jobs"]
         needs = jobs["backfill-bacen"].get("needs") or []
         needs = [needs] if isinstance(needs, str) else needs
         assert "cvm-preflight" not in needs
+        names = [s.get("name") for s in jobs["backfill-bacen"]["steps"]]
+        assert "Probe dados.cvm.gov.br" not in names
 
     def test_preflight_is_skipped_for_bacen_only_runs(self):
         jobs = yaml.safe_load(BACKFILL.read_text())["jobs"]

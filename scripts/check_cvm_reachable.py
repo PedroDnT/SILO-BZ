@@ -10,8 +10,13 @@ spent ~40 minutes proving the same refusal across twenty slices, logged each
 as error, and DB Health (run 33272549567) failed on those 44 unhealed rows.
 
 This asks the question once, in about a second, so the answer arrives before
-the work does rather than after. Wired into daily_ingest.yml, watchdog
-recovery, and every CVM job in backfill.yml.
+the work does rather than after. Wired into daily_ingest.yml and watchdog
+recovery on the same job as the fetch, and into backfill.yml twice: a
+workflow-level job other CVM jobs `needs:` (cheap global abort) plus a
+per-job step on each ingest runner. `needs:` is a different GitHub-hosted
+VM, so a green workflow-level probe does not mean this year's runner can
+reach CVM. Backfill #22 (run 33434522442) passed the workflow probe, then
+FI 2025 / FI 2026 died on `Connect call failed ('45.7.170.66', 443)`.
 
 WHAT IT CHECKS, AND WHAT IT DELIBERATELY DOES NOT
 It issues a ranged GET for the first bytes of a file that has existed for years
