@@ -39,6 +39,7 @@
           "api-docs/options",
           "api-docs/termo",
           "api-docs/funds",
+          "api-docs/holdings",
           "api-docs/panel",
           "api-docs/lookup",
           "api-docs/coverage",

@@ -68,7 +68,7 @@ __all__ = [
 # 6: one endpoint per cash instrument type, each carrying both lot sizes.
 # 5: main's typed cash asset classes (4) merged with the option/termo id_types
 # and list-valued id_type this branch introduced (3).
-CATALOG_VERSION = 16
+CATALOG_VERSION = 17
 
 B3_CASH_ASSET_CLASSES = [
     "equity",

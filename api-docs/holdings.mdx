@@ -1,0 +1,75 @@
+---
+title: "Fund holdings"
+description: "What a fund owns, and which funds own a ticker — the one edge joining the fund universe to the quote tape."
+icon: "link"
+---
+
+CVM's portfolio composition filing (CDA) publishes, per fund and month, the
+**B3 ticker** of each equity position and the **CNPJ** of each held fund. That
+makes two questions answerable that nothing else in this warehouse can answer:
+
+- *What does this fund actually own?*
+- *Which funds own this ticker, and how did that change?*
+
+<Note>
+  This is the only join between funds and the quote tape, and it is CVM's own
+  published identifier — never a name match.
+</Note>
+
+## POST /rpc/fund_holdings
+
+Give **exactly one** of `p_cnpj` or `p_ticker`. Neither would be an unbounded
+scan of every fund ever filed; both is ambiguous. Either mistake is a `22023`
+error naming which one you made, not a silently narrowed query.
+
+| Argument | Type | Meaning |
+| --- | --- | --- |
+| `p_cnpj` | text | The **holder**. What this fund owns. Punctuation is stripped. |
+| `p_ticker` | text | The **held** equity. Which funds own it. Case-insensitive. |
+| `p_from` / `p_to` | date | Competency-month window. Omit for everything held. |
+| `p_kind` | text | `equity` (default, CDA block 4) or `fund` (block 2). |
+| `p_limit` | int | Clamped by tier: **500** anonymous, 5,000 signed in. |
+
+```bash
+# Which funds held PETR4, most recent months first
+curl -s -X POST "$SILO/rest/v1/rpc/fund_holdings" \
+  -H "apikey: $KEY" -H "Content-Type: application/json" \
+  -d '{"p_ticker":"PETR4","p_from":"2024-01-01"}'
+```
+
+```python
+silo.fund_holdings(ticker="PETR4", start="2024-01-01")
+silo.fund_holdings(cnpj="05754060000113")                # what it owns
+silo.fund_holdings(cnpj="05754060000113", kind="fund")   # held FUNDS
+```
+
+### Response
+
+| Column | Meaning |
+| --- | --- |
+| `cnpj` | the holding fund |
+| `period` | competency month, first-of-month |
+| `kind` | `equity` or `fund` |
+| `held_id` | B3 ticker, or the held fund's CNPJ |
+| `held_name` | as published |
+| `tp_aplic` | application type — see the warning below |
+| `tp_negoc` | trading intent (`Para negociação`, …) |
+| `emissor_ligado` | `S` when the held asset belongs to the same economic group. **CVM's published flag, not an inference.** |
+| `qt_pos_final`, `vl_merc_pos_final` | quantity and market value, as filed |
+
+<Warning>
+  **Rows are not summed.** A fund files the same ticker under several
+  application types — `Ações`, `BDR nível I`, `BDR não patrocinado`, *"Ações e
+  outros TVM cedidos em empréstimo"* — and those are genuinely different
+  positions with different quantities. One `NFLX34` holding appears twice in a
+  single month for a single fund because the fund holds two different BDR
+  programmes. Sum them yourself if that is what you want; the API will not
+  decide it for you.
+</Warning>
+
+## Coverage
+
+Holdings run from **2005**, from the yearly CDA archives before 2023 and the
+monthly ones after. `coverage()` reports the real bound. Blocks 1, 3, 5, 6, 7
+and 8 of the same filing are not served — see
+[the data inventory](/docs/DATA_INVENTORY) for what each holds and why.
