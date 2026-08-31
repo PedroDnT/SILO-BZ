@@ -28,18 +28,25 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-# doc_type -> (table, date column). Only FI monthly documents; these are the
-# ones run_backfill can repair a month at a time via --doc-type.
-FI_MONTHLY_TABLES: Dict[str, Tuple[str, str]] = {
-    "balancete":     ("cvm_fi_balancete", "dt_comptc"),
-    "inf_diario":    ("cvm_fi_diario",    "dt_comptc"),
-    "perfil_mensal": ("cvm_fi_perfil",    "period"),
-    "cda":           ("cvm_fi_cda",       "period"),
+# doc_type -> (table, date column, first year published as monthly files).
+#
+# The third element is the HIST cutoff, and it is what keeps --repair-gaps
+# honest. CVM publishes the older years only as whole-year archives, which
+# cannot be fetched one month at a time: cvm_pipeline gates the monthly tasks on
+# that same year, so a month below it would be reported as a gap and then
+# scheduled as nothing. Those years are filled by a plain backfill of the year,
+# not by a repair. None means every year has monthly files.
+FI_MONTHLY_TABLES: Dict[str, Tuple[str, str, Optional[int]]] = {
+    "balancete":     ("cvm_fi_balancete", "dt_comptc", None),
+    "inf_diario":    ("cvm_fi_diario",    "dt_comptc", 2021),
+    "perfil_mensal": ("cvm_fi_perfil",    "period",    None),
+    "cda":           ("cvm_fi_cda",       "period",    2023),
     # CDA blocks 4 and 2 — holdings, not the aggregate. Same competency grain as
-    # `cda` (first-of-month `period`), but separate tables, so a gap in one says
+    # `cda` (first-of-month `period`) and the same 2023 cutoff, since they are
+    # blocks of the same archive; but separate tables, so a gap in one says
     # nothing about the others and each is repaired on its own.
-    "cda_acoes":     ("cvm_fi_cda_acoes",  "period"),
-    "cda_cotas":     ("cvm_fi_cda_cotas",  "period"),
+    "cda_acoes":     ("cvm_fi_cda_acoes", "period",    2023),
+    "cda_cotas":     ("cvm_fi_cda_cotas", "period",    2023),
 }
 
 # CVM publishes a competency month one to two months late. Probing months that
@@ -122,9 +129,20 @@ def missing_fi_months(
             f"expected one of {sorted(FI_MONTHLY_TABLES)}"
         )
 
-    table, date_col = FI_MONTHLY_TABLES[doc_type]
+    table, date_col, monthly_from = FI_MONTHLY_TABLES[doc_type]
     today = today or date.today()
     end_year = end_year or today.year
+
+    if monthly_from is not None and start_year < monthly_from:
+        logger.info(
+            "gap scan fi/%s: skipping %d-%d — published only as yearly HIST "
+            "archives, which a month repair cannot fetch. Backfill those years "
+            "without --repair-gaps.",
+            doc_type, start_year, min(monthly_from - 1, end_year),
+        )
+        start_year = monthly_from
+    if start_year > end_year:
+        return []
 
     unpublished = _skipped_months(client, doc_type)
     gaps: List[MonthGap] = []

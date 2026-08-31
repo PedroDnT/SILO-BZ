@@ -730,19 +730,21 @@ class CVMIngestor:
         rows_inserted = 0
         try:
             raw_rows = await self._fetch_all_pages("fi", "hist_cda", year, None)
-            # Flush in chunks; use month=1 as placeholder (period normalised in ingest_fi_cda)
+            # Flush in chunks: a yearly archive does not fit comfortably in memory.
             chunk: List[Dict[str, Any]] = []
             for row in raw_rows:
                 chunk.append(row)
                 if len(chunk) >= _PAGE_SIZE:
-                    # For HIST, DT_COMPTC contains the actual date — ingest_fi_cda
-                    # will read it from the field map and normalise to first-of-month.
-                    # We pass year=0, month=1 so the fallback is safe; apply_map
-                    # reads DT_COMPTC directly.
-                    rows_inserted += ingest_fi_cda(self._supabase, chunk, year, 1)
+                    # month=None: this archive is twelve competency months in one
+                    # file, so each row's own DT_COMPTC decides its period. The
+                    # comment that used to sit here claimed that already, but the
+                    # code passed month=1 and ingest_fi_cda overwrote period with
+                    # January — collapsing every pre-2023 year onto one month
+                    # under the (cnpj, period, tp_aplic, tp_ativo) key.
+                    rows_inserted += ingest_fi_cda(self._supabase, chunk, year, None)
                     chunk = []
             if chunk:
-                rows_inserted += ingest_fi_cda(self._supabase, chunk, year, 1)
+                rows_inserted += ingest_fi_cda(self._supabase, chunk, year, None)
         except Exception as exc:
             logger.warning("ingest_fi_hist_cda %d failed: %s", year, _describe(exc))
             self._log_finish(run_id, 0, _describe(exc))
@@ -750,6 +752,53 @@ class CVMIngestor:
         self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
         logger.info("fi/hist_cda %d: %d rows", year, rows_inserted)
         return rows_inserted
+
+    async def _ingest_hist_cda_block(self, doc_type: str, dataset: str, fn: Any, year: int) -> int:
+        """One yearly HIST holdings block (BLC_4 or BLC_2).
+
+        Same shape as ingest_fi_hist_cda, with two differences that matter:
+
+        month=None — the archive is twelve competency months in ONE csv, so each
+        row's DT_COMPTC decides its period. Passing a month here is what
+        collapsed twelve months of cvm_fi_cda onto January for every pre-2023
+        year, and this path must not repeat it.
+
+        Its own doc_type in cvm_ingest_log — `cda_acoes` / `cda_cotas`, not
+        `cda`. Sharing the aggregate's audit rows would make a failed holdings
+        year look like a successful CDA year to the backfill coverage gate.
+        """
+        run_id = str(uuid4())
+        self._log_start(run_id, "fi", doc_type, year, None)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages("fi", dataset, year, None)
+            chunk: List[Dict[str, Any]] = []
+            for row in raw_rows:
+                chunk.append(row)
+                if len(chunk) >= _PAGE_SIZE:
+                    rows_inserted += fn(self._supabase, chunk, year, None)
+                    chunk = []
+            if chunk:
+                rows_inserted += fn(self._supabase, chunk, year, None)
+        except Exception as exc:
+            logger.warning("ingest_fi_hist_%s %d failed: %s", doc_type, year, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
+        logger.info("fi/hist_%s %d: %d rows", doc_type, year, rows_inserted)
+        return rows_inserted
+
+    async def ingest_fi_hist_cda_acoes(self, year: int) -> int:
+        """One year of pre-2023 equity holdings (CDA block 4) from HIST/."""
+        return await self._ingest_hist_cda_block(
+            "cda_acoes", "hist_cda_acoes", ingest_fi_cda_acoes, year
+        )
+
+    async def ingest_fi_hist_cda_cotas(self, year: int) -> int:
+        """One year of pre-2023 fund-of-fund holdings (CDA block 2) from HIST/."""
+        return await self._ingest_hist_cda_block(
+            "cda_cotas", "hist_cda_cotas", ingest_fi_cda_cotas, year
+        )
 
     # ------------------------------------------------------------------
     # FI — portfolio composition  (CDA)
@@ -1448,6 +1497,17 @@ class CVMIngestor:
                 for year in hist_cda_years:
                     n = await self.ingest_fi_hist_cda(year)
                     totals["cvm_fi_cda"] += n
+
+            # Holdings for the same pre-2023 span, from blocks 4 and 2 of the
+            # archive hist_cda already downloaded. Separate loops rather than
+            # one, so selecting a single doc type fetches a single block.
+            if _want_fi_doc("cda_acoes") and months is None:
+                for year in hist_cda_years:
+                    totals["cvm_fi_cda_acoes"] += await self.ingest_fi_hist_cda_acoes(year)
+
+            if _want_fi_doc("cda_cotas") and months is None:
+                for year in hist_cda_years:
+                    totals["cvm_fi_cda_cotas"] += await self.ingest_fi_hist_cda_cotas(year)
 
             month_pairs = (
                 sorted(set(months)) if months is not None

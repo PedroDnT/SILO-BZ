@@ -26,6 +26,37 @@ from src.store.pg_client import upsert_rows
 logger = logging.getLogger(__name__)
 
 
+def _period_for(row: Dict[str, Any], typed: Dict[str, Any], fallback: Optional[_date]) -> Optional[_date]:
+    """First-of-month for a CDA row, from the row itself when the caller cannot say.
+
+    The monthly archives are one competency month per file, so the caller knows
+    the period and passes it as `fallback`. The yearly HIST archives are twelve
+    months in one file, and there the period has to come from each row's own
+    DT_COMPTC — passing a single month for the whole file stamps every row with
+    it, and the unique key then collapses December onto January.
+
+    That is not hypothetical: ingest_fi_hist_cda called ingest_fi_cda(rows,
+    year, 1) and cvm_fi_cda's key is (cnpj, period, tp_aplic, tp_ativo), so
+    every pre-2023 year held one month instead of twelve.
+
+    A row whose date will not parse returns None and is dropped by the caller.
+    Guessing a month here would be inventing the one column that says when the
+    position was held.
+    """
+    if fallback is not None:
+        return fallback
+    value = typed.get("period") or row.get("DT_COMPTC")
+    if isinstance(value, _date):
+        return value.replace(day=1)
+    if not value:
+        return None
+    try:
+        parsed = _date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+    return parsed.replace(day=1)
+
+
 def ingest_fi_diario(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     """Parse and upsert FI daily snapshot rows.
 
@@ -75,27 +106,41 @@ def ingest_fi_diario(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     )
 
 
-def ingest_fi_cda(conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: int) -> int:
+def ingest_fi_cda(
+    conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: Optional[int]
+) -> int:
     """Parse and upsert FI portfolio composition rows.
 
-    period is normalised to first-of-month (YYYY-MM-01).
+    period is normalised to first-of-month (YYYY-MM-01). Pass month=None for a
+    yearly HIST archive, where each row carries its own competency month and a
+    single value for the file would collapse the year — see _period_for.
 
     Returns:
         number of rows upserted
     """
-    first_of_month = _date(year, month, 1)
+    first_of_month = _date(year, month, 1) if month is not None else None
     records: List[Dict[str, Any]] = []
+    undated = 0
 
     for row in raw_rows:
         typed, residual = apply_map(row, _cda.FIELD_MAP)
         typed["raw"] = residual
-        # Override period to first-of-month regardless of DT_COMPTC precision
-        typed["period"] = first_of_month
+        period = _period_for(row, typed, first_of_month)
+        if period is None:
+            undated += 1
+            continue
+        typed["period"] = period
 
         if not typed.get("cnpj"):
             continue
 
         records.append(typed)
+
+    if undated:
+        logger.warning(
+            "%s: dropped %d of %d rows with no parseable DT_COMPTC",
+            _cda.TABLE, undated, len(raw_rows),
+        )
 
     if not records:
         return 0
@@ -112,7 +157,7 @@ def _ingest_cda_holdings(
     conn: Any,
     raw_rows: List[Dict[str, Any]],
     year: int,
-    month: int,
+    month: Optional[int],
     field_map_module: Any,
     required: str,
 ) -> int:
@@ -129,15 +174,23 @@ def _ingest_cda_holdings(
     the fabrication the ingest rules forbid.
 
     period is normalised to first-of-month, matching every other monthly table.
+    Pass month=None for a yearly HIST archive so each row keeps its own
+    competency month; see _period_for for what a single value costs there.
     """
-    first_of_month = _date(year, month, 1)
+    first_of_month = _date(year, month, 1) if month is not None else None
     records: List[Dict[str, Any]] = []
     dropped = 0
+    undated = 0
 
     for row in raw_rows:
         typed, residual = apply_map(row, field_map_module.FIELD_MAP)
         typed["raw"] = residual
-        typed["period"] = first_of_month
+
+        period = _period_for(row, typed, first_of_month)
+        if period is None:
+            undated += 1
+            continue
+        typed["period"] = period
 
         if not typed.get("cnpj") or not typed.get(required):
             dropped += 1
@@ -145,10 +198,10 @@ def _ingest_cda_holdings(
 
         records.append(typed)
 
-    if dropped:
-        logging.getLogger(__name__).info(
-            "%s: dropped %d of %d rows with no %s",
-            field_map_module.TABLE, dropped, len(raw_rows), required,
+    if dropped or undated:
+        logger.info(
+            "%s: dropped %d of %d rows with no %s, %d with no parseable DT_COMPTC",
+            field_map_module.TABLE, dropped, len(raw_rows), required, undated,
         )
 
     if not records:
@@ -162,7 +215,9 @@ def _ingest_cda_holdings(
     )
 
 
-def ingest_fi_cda_acoes(conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: int) -> int:
+def ingest_fi_cda_acoes(
+    conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: Optional[int]
+) -> int:
     """Parse and upsert FI equity holdings (CDA block 4).
 
     cd_ativo is the published B3 ticker; it is what joins these rows to
@@ -171,7 +226,9 @@ def ingest_fi_cda_acoes(conn: Any, raw_rows: List[Dict[str, Any]], year: int, mo
     return _ingest_cda_holdings(conn, raw_rows, year, month, _cda_acoes, "cd_ativo")
 
 
-def ingest_fi_cda_cotas(conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: int) -> int:
+def ingest_fi_cda_cotas(
+    conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: Optional[int]
+) -> int:
     """Parse and upsert FI fund-of-fund holdings (CDA block 2).
 
     cnpj_cota identifies the held fund and is NOT NULL in the target table, so a

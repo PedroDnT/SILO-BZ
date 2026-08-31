@@ -10,32 +10,49 @@ to the same economic group, which is the published signal behind the
 captive-vehicle screen in 15_fraud_screens.sql — currently inferred from AUM and
 investor counts rather than read from the filing.
 
-UNIQUE-KEY AUDIT, against the real cda_fi_BLC_2_202606.csv (81,899 rows):
+COLUMN NAMES DRIFT. The 2023+ monthly files use CNPJ_FUNDO_CLASSE /
+CNPJ_FUNDO_CLASSE_COTA / NM_FUNDO_CLASSE_SUBCLASSE_COTA / TP_FUNDO_CLASSE; the
+yearly HIST archives (2005-2022) use CNPJ_FUNDO / CNPJ_FUNDO_COTA /
+NM_FUNDO_COTA / TP_FUNDO. Without the fallbacks below every historical row
+would fail the cnpj_cota check and be dropped — the whole block, silently, as
+"no rows".
 
-    cnpj + period + cnpj_cota                   UNIQUE
-    cnpj + period + cnpj_cota + id_subclasse    UNIQUE
+UNIQUE-KEY AUDIT across four real files (collisions are groups; "differ" means
+the positions are not identical):
 
-The shorter key is already unique, so it is the one used: adding ID_SUBCLASSE
-would buy nothing today and would change the grain the moment CVM starts
-populating a column that is empty in every row of the audited file.
+    key                                          2005  2015    2022  202606
+    cnpj+period+cnpj_cota                          46     3       1  UNIQUE
+    + tp_aplic + tp_negoc                          35     0       1  UNIQUE
+    + tp_aplic + tp_negoc + tp_fundo (shipped)  UNIQUE  UNIQUE  UNIQUE  UNIQUE
 
-Note this block does NOT need TP_APLIC in its key, unlike block 4 — a fund
-cannot hold the same fund under two application types in the audited data. If a
-future file collides, re-run the audit before widening.
+The monthly file alone reports the bare key as UNIQUE, which is how the first
+version of this map came to ship with it. On the yearly files a fund holds the
+same fund under two application types ("Cotas de fundos de renda fixa" vs
+"Cotas de fundos de investimento - Instrução Nº 409") and under two trading
+intents, with different positions; and in 2005 one CNPJ filed as both FI and
+FIF. All four columns are needed, and together they are exactly unique.
+
+ID_SUBCLASSE is deliberately not in the key: it is empty in every row of every
+audited file, so it would buy nothing today and change the grain the moment
+CVM starts populating it.
 """
 
 TABLE = "cvm_fi_cda_cotas"
-CONFLICT = ("cnpj", "period", "cnpj_cota")
+CONFLICT = ("cnpj", "period", "tp_fundo", "cnpj_cota", "tp_aplic", "tp_negoc")
 
 FIELD_MAP = {
     "cnpj":                (["CNPJ_FUNDO_CLASSE", "CNPJ_FUNDO"],   "cnpj"),
+    "tp_fundo":            (["TP_FUNDO_CLASSE", "TP_FUNDO"],       "text"),
     # Recomputed as first-of-month by the ingest module; listed so DT_COMPTC is
     # consumed rather than duplicated into raw.
     "period":              (["DT_COMPTC"],                          "date"),
-    "cnpj_cota":           (["CNPJ_FUNDO_CLASSE_COTA"],             "cnpj"),
-    "nm_fundo_cota":       (["NM_FUNDO_CLASSE_SUBCLASSE_COTA"],     "text"),
+    "cnpj_cota":           (["CNPJ_FUNDO_CLASSE_COTA",
+                            "CNPJ_FUNDO_COTA"],                  "cnpj"),
+    "nm_fundo_cota":       (["NM_FUNDO_CLASSE_SUBCLASSE_COTA",
+                            "NM_FUNDO_COTA"],                    "text"),
     "tp_aplic":            (["TP_APLIC"],                           "text"),
     "tp_ativo":            (["TP_ATIVO"],                           "text"),
+    "tp_negoc":            (["TP_NEGOC"],                           "text"),
     "emissor_ligado":      (["EMISSOR_LIGADO"],                     "text"),
     "qt_pos_final":        (["QT_POS_FINAL"],                       "numeric"),
     "vl_merc_pos_final":   (["VL_MERC_POS_FINAL"],                  "numeric"),

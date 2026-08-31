@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS cvm_fi_cda_acoes (
     id                  BIGSERIAL   PRIMARY KEY,
     cnpj                TEXT        NOT NULL CHECK (char_length(cnpj) = 14),
     period              DATE        NOT NULL,   -- first day of month
+    tp_fundo            TEXT,                   -- FI / FIF as filed; part of the key
     tp_aplic            TEXT        NOT NULL,   -- application type; part of the key
     tp_ativo            TEXT,
     tp_negoc            TEXT,                   -- "Para negociação" etc.
@@ -128,7 +129,7 @@ CREATE TABLE IF NOT EXISTS cvm_fi_cda_acoes (
 -- and without it Postgres would treat every such row as distinct and let
 -- duplicates through the constraint the audit exists to enforce.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_fi_cda_acoes
-    ON cvm_fi_cda_acoes (cnpj, period, tp_aplic, cd_ativo, tp_negoc)
+    ON cvm_fi_cda_acoes (cnpj, period, tp_fundo, tp_aplic, tp_ativo, cd_ativo, tp_negoc)
     NULLS NOT DISTINCT;
 
 -- The join everyone will actually make: which funds held this ticker.
@@ -144,8 +145,10 @@ CREATE TABLE IF NOT EXISTS cvm_fi_cda_cotas (
     period              DATE        NOT NULL,
     cnpj_cota           TEXT        NOT NULL CHECK (char_length(cnpj_cota) = 14),
     nm_fundo_cota       TEXT,
+    tp_fundo            TEXT,                   -- part of the key
     tp_aplic            TEXT,
     tp_ativo            TEXT,
+    tp_negoc            TEXT,                   -- part of the key
     emissor_ligado      TEXT,                   -- 'S' = same economic group
     qt_pos_final        NUMERIC(28,6),
     vl_merc_pos_final   NUMERIC(20,2),
@@ -155,9 +158,12 @@ CREATE TABLE IF NOT EXISTS cvm_fi_cda_cotas (
     qt_venda_negoc      NUMERIC(28,6),
     vl_venda_negoc      NUMERIC(20,2),
     raw                 JSONB       NOT NULL,
-    fetched_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_fi_cda_cotas UNIQUE (cnpj, period, cnpj_cota)
+    fetched_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_fi_cda_cotas
+    ON cvm_fi_cda_cotas (cnpj, period, tp_fundo, cnpj_cota, tp_aplic, tp_negoc)
+    NULLS NOT DISTINCT;
 
 -- The reverse edge: who holds this fund.
 CREATE INDEX IF NOT EXISTS idx_fi_cda_cotas_held
