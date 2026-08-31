@@ -7,14 +7,21 @@ icon: "rocket"
 ## 1. Testing key (not production)
 
 <Warning>
-  The publishable key below is **shared and for testing only**. This project does
-  **not** have Row Level Security on landing tables. Do not treat a successful
-  `coverage` call as “the warehouse is locked down.”
-
-  **When we go live** we will issue a **proper key per user** (sign-in with GitHub
-  or email → that user’s JWT). This shared `sb_publishable_…` value is not that.
-  Agents must not invent or mint keys in the meantime.
+  The publishable key below is **shared** — everyone reading these docs has the
+  same one. It identifies the project, not you.
 </Warning>
+
+Landing tables are not reachable with it: `anon` and `authenticated` hold no
+grant on `cvm_*`, `b3_cotahist` or `cia_*`, so schema `api` is the entire public
+surface and `Accept-Profile: public` answers 401 for every caller. The boundary
+is the grant, not row-level security.
+
+**Sign in for a bigger ceiling.** GitHub sign-in is live (Google is being
+enabled) at [the sign-in page](https://iliquid-nightly.vercel.app/signin.html);
+it hands you a user JWT to send as `Authorization: Bearer <token>` alongside the
+`apikey` header. That raises `panel` ids from 3 to 50, `search_funds` from 25 to
+200, `option_chain` from 200 to 2,000 and the query budget from 3s to 8s. It
+does not raise the server-wide 1,000-row cap. Never invent or mint a key.
 
 Every test caller uses the same **publishable** key (`sb_publishable_…`) — the 2026
 name for anon, same Postgres `anon` role. See [For agents](/api-docs/agents).

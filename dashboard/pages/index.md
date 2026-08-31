@@ -209,3 +209,17 @@ from it, so a thin table can be told apart from a thin market.
 **Terminology.** "Net assets" throughout is CVM's `vl_patrim_liq` (patrimônio
 líquido) — the figure loosely called AUM elsewhere. "Quotaholders" is `nr_cotst`,
 a count of positions in a fund rather than of distinct people.
+
+---
+
+## Want to know more?
+
+**[What Silo serves](https://claude.ai/code/artifact/10fa2f4d-ce1f-48b1-aa31-064cdb0cb1dd)** — a plain-language walkthrough of what this
+is, why the data is hard to get at, and what the warehouse does and does not
+claim. Start here if you are not already deep in Brazilian fund filings.
+
+**[API docs](https://octo-98895abd.mintlify.site/)** — every number on this site
+is queryable. Free and anonymous to read.
+
+**[Sign in](/signin.html)** — a GitHub account raises the query ceilings (3 → 50
+ids per call, and a longer time budget). Nothing on this page requires it.

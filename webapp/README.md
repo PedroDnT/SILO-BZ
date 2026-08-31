@@ -25,5 +25,5 @@ npm run dev          # localhost:3000
 npm run build        # static site → build/
 ```
 
-Deploys like `dashboard/`: Vercel (primary) or any static host pointed at
+**Not currently deployed.** `vercel.json` hardcodes `cd dashboard` for install/build/output and `scripts/vercel_should_build.sh` only triggers on `dashboard/`, so a change here can never reach Vercel. Run it locally (`npm install && npm run dev`), or add a second Vercel project pointed at this directory or any static host pointed at
 `build/`.
