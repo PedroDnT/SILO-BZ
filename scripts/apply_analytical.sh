@@ -29,6 +29,30 @@ if [[ -z "$POSTGRES_URL" || "$POSTGRES_URL" == *"[SUPABASE_DB_PASSWORD]"* || "$P
   exit 1
 fi
 
+# TCP keepalives — same values as src/store/pg_client.py. CI talks to Supabase
+# through the IPv4 session pooler (aws-*.pooler.supabase.com:5432). A CREATE
+# MATERIALIZED VIEW sends nothing on the wire for minutes; without probes the
+# pooler drops the client (~4m44s on Daily CVM Ingest #207) while the backend
+# keeps AccessExclusiveLock from DROP ... CASCADE, and every later file that
+# touches the same relation dies the same way. Do not print the URL: it holds
+# the password.
+_KEEPALIVE_QS="keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3"
+_KEEPALIVE_KV="keepalives=1 keepalives_idle=30 keepalives_interval=10 keepalives_count=3"
+if [[ "$POSTGRES_URL" != *"keepalives="* ]]; then
+  case "$POSTGRES_URL" in
+    postgres://*|postgresql://*)
+      if [[ "$POSTGRES_URL" == *"?"* ]]; then
+        POSTGRES_URL="${POSTGRES_URL}&${_KEEPALIVE_QS}"
+      else
+        POSTGRES_URL="${POSTGRES_URL}?${_KEEPALIVE_QS}"
+      fi
+      ;;
+    *)
+      POSTGRES_URL="${POSTGRES_URL} ${_KEEPALIVE_KV}"
+      ;;
+  esac
+fi
+
 failed=()
 warned=()
 applied=0

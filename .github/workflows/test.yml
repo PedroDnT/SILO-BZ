@@ -208,6 +208,35 @@ jobs:
               ('49930492000103','informe',2024, NULL,       'A',999,'{}'::jsonb);
           SQL
 
+      # Daily CVM Ingest #207 (run 33535880218) died during CREATE of
+      # fact_fund_monthly with `connection to server was lost` at the
+      # statement's closing semicolon — not the FIP unique-index error #177
+      # fixed. The expensive shape is FI daily: several subclasses, several
+      # days, a null-PL day that still has flow, and an ETF CNPJ that must
+      # not leak into the fund fact. An empty database cannot catch a rewrite
+      # that double-counts subclass flows or drops the null-PL day.
+      - name: Seed the FI daily shape that #207 was aggregating
+        run: |
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO cvm_etf_registry (ticker, cnpj, fund_name)
+          VALUES ('FAKE11', '22222222000182', 'carved-out ETF');
+
+          INSERT INTO cvm_fi_diario
+              (cnpj, id_subclasse, dt_comptc, vl_patrim_liq, vl_quota, nr_cotst,
+               captc_dia, resg_dia, raw)
+          VALUES
+              -- subclass A, three days; 16th has PL, 15th has flow but no PL
+              ('11111111000191','A','2024-12-02',100, 1.0, 10, 5, 1, '{}'::jsonb),
+              ('11111111000191','A','2024-12-15',NULL,1.05,10, 7, 0, '{}'::jsonb),
+              ('11111111000191','A','2024-12-16',110, 1.1, 11, 3, 0, '{}'::jsonb),
+              ('11111111000191','A','2024-12-31',200, 2.0, 20, 0, 2, '{}'::jsonb),
+              -- subclass B, two days; smaller than A in the latest month
+              ('11111111000191','B','2024-12-02', 50,10.0,  2, 1, 0, '{}'::jsonb),
+              ('11111111000191','B','2024-12-31', 80,16.0,  3, 0, 1, '{}'::jsonb),
+              -- ETF: same month, must not appear in fact_fund_monthly
+              ('22222222000182','','2024-12-31',9999,1, 1, 0, 0, '{}'::jsonb);
+          SQL
+
       - name: Apply analytical layer (empty-DB bypass)
         run: PGOPTIONS="-c silo.ci_smoke_bypass=on" bash scripts/apply_analytical.sh
 
@@ -225,6 +254,36 @@ jobs:
           echo "fip rows/PL = $got (expected 1/220.00 — latest period 200+20)"
           test "$got" = "1/220.00" || {
             echo "FAIL: the FIP branch no longer yields one summed row per fund-year"; exit 1; }
+
+      # Pins the FI rewrite that #207 forced: one scan must still (a) sum last-
+      # day PL across subclasses, (b) follow the larger subclass's quota,
+      # (c) include flow from a null-PL day, (d) exclude the ETF CNPJ.
+      # Expected: PL 200+80=280, quota 2.0 (A is larger), cotistas 20+3=23,
+      # captc 5+7+3+1=16, resg 1+0+2+0+1=4, period = first of month.
+      - name: FI daily collapses to one row per fund-month, flows include null-PL days
+        run: |
+          set -euo pipefail
+          ok=$(psql "$POSTGRES_URL" -tAc "
+            SELECT COUNT(*) = 1
+               AND SUM(vl_patrim_liq) = 280
+               AND MAX(vl_quota) = 2
+               AND SUM(nr_cotst) = 23
+               AND SUM(captc_mes) = 16
+               AND SUM(resg_mes) = 4
+               AND MIN(period) = DATE '2024-12-01'
+              FROM fact_fund_monthly
+             WHERE entity_type = 'fi'
+               AND cnpj = '11111111000191';")
+          echo "fi aggregate match = $ok (expected t)"
+          test "$ok" = "t" || {
+            psql "$POSTGRES_URL" -c "SELECT cnpj, period, vl_patrim_liq, vl_quota,
+                   nr_cotst, captc_mes, resg_mes, quota_subclass_id
+              FROM fact_fund_monthly WHERE cnpj='11111111000191';"
+            echo "FAIL: the FI branch no longer aggregates subclasses + null-PL flows"; exit 1; }
+          etf=$(psql "$POSTGRES_URL" -tAc "SELECT count(*) FROM fact_fund_monthly
+                                            WHERE cnpj='22222222000182';")
+          test "$etf" = "0" || {
+            echo "FAIL: ETF CNPJ leaked into fact_fund_monthly"; exit 1; }
 
       # The tier helpers decide how much an anonymous caller may pull. Regex
       # tests over the SQL text prove the code says the right thing; only
