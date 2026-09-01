@@ -173,6 +173,58 @@ ALTER TABLE cvm_fi_cda_cotas ADD COLUMN IF NOT EXISTS tp_fundo TEXT;
 ALTER TABLE cvm_fi_cda_cotas ADD COLUMN IF NOT EXISTS tp_negoc TEXT;
 ALTER TABLE cvm_fi_cda_cotas DROP CONSTRAINT IF EXISTS uq_fi_cda_cotas;
 
+-- Legacy rows that the widened key cannot separate, removed before the index
+-- is built. THIS EXISTS BECAUSE THE SCHEMA GATE WENT DOWN ON IT (2026-08-31,
+-- run 33449184287): migration 33's CREATE UNIQUE INDEX failed three times with
+--
+--   duplicate key ... (cnpj, period, tp_fundo, cnpj_cota, tp_aplic, tp_negoc)
+--   = (32300050000180, 2023-10-01, null, 43809974000123, Cotas de Fundos, null)
+--
+-- Both tp_fundo and tp_negoc are NULL, and NULLS NOT DISTINCT makes every such
+-- row collide with its siblings. Migration 33 tries to repair those NULLs from
+-- `raw`, but reports UPDATE 0: upsert_rows strips a key out of `raw` once a
+-- typed column of the same name exists, so for rows written after 33 added the
+-- columns the fallback is already gone. The rows are unrecoverable.
+--
+-- Removing the older copies is what ON CONFLICT DO UPDATE would itself have
+-- produced had the index existed when they were written — the newest row per
+-- key is the current truth, and the superseded copies are the ones an upsert
+-- discards. It is not a data-loss decision dressed up: it restores the
+-- invariant the key audit exists to enforce. The count is raised as a NOTICE so
+-- an operator can see it in the apply log rather than discovering it later.
+--
+-- This lives in schema.sql, not a new migration, because schema.sql runs BEFORE
+-- the migrations and migration 33 is the statement that fails — a later
+-- migration would never be reached. Historical migrations stay append-only.
+DO $cotas_dedup$
+DECLARE
+    v_removed BIGINT;
+BEGIN
+    IF to_regclass('public.cvm_fi_cda_cotas') IS NULL THEN
+        RETURN;
+    END IF;
+    WITH ranked AS (
+        SELECT id,
+               row_number() OVER (
+                   PARTITION BY cnpj, period, tp_fundo, cnpj_cota, tp_aplic, tp_negoc
+                   ORDER BY fetched_at DESC, id DESC
+               ) AS rn
+          FROM cvm_fi_cda_cotas
+    ), doomed AS (
+        DELETE FROM cvm_fi_cda_cotas t
+         USING ranked r
+         WHERE t.id = r.id AND r.rn > 1
+        RETURNING 1
+    )
+    SELECT count(*) INTO v_removed FROM doomed;
+    IF v_removed > 0 THEN
+        RAISE NOTICE
+            'cvm_fi_cda_cotas: removed % superseded duplicate row(s) before building uq_fi_cda_cotas (kept the newest per key, as ON CONFLICT DO UPDATE would have)',
+            v_removed;
+    END IF;
+END
+$cotas_dedup$;
+
 DROP INDEX IF EXISTS uq_fi_cda_cotas;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_fi_cda_cotas
     ON cvm_fi_cda_cotas (cnpj, period, tp_fundo, cnpj_cota, tp_aplic, tp_negoc)
