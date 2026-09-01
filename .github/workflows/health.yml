@@ -48,6 +48,10 @@ jobs:
       # CVM's normal 1-2 month publication lag.
       MAX_COMPLETE_AGE_DAYS: "75" # a monthly family with no complete period in this window is stalled
       MAX_INGEST_ERROR_HOURS: "26" # unhealed error slices in this window fail the run
+      # Same bound as CVM_DAILY_LOOKBACK_MONTHS (src/pipeline/cvm_pipeline.py).
+      # Unhealed errors outside this window are historical backfill; daily_update
+      # will never retry them, so they must not fail warehouse health.
+      DAILY_LOOKBACK_MONTHS: "4"
       DISK_WARN_PCT: "85" # warn past this share of PLAN_DISK_GB, when that is set
       # The plan allowance, which Postgres cannot see. This is the PROVISIONED
       # disk reported by the Supabase dashboard on 2026-08-29: 135 GB, of which
@@ -99,7 +103,8 @@ jobs:
 
           echo "## Warehouse health $(date -u +%FT%TZ)" >> "$GITHUB_STEP_SUMMARY"
 
-          # 1. UNHEALED ingest errors in the last MAX_INGEST_ERROR_HOURS.
+          # 1. UNHEALED ingest errors in the last MAX_INGEST_ERROR_HOURS,
+          #    but only for slices daily_update is responsible for.
           #
           # Counting every error row fired on its first run: 29 rows, all
           # `fi/balancete TimeoutError` from a backfill whose slices then
@@ -118,6 +123,21 @@ jobs:
           #
           # IS NOT DISTINCT FROM is required: NULL entity/period keys must match.
           # Fail only on slices whose latest attempt is still error.
+          #
+          # DB Health #14 (33507857471): 31 unhealed fi/cda_cotas 2010-2022
+          # yearly + fi/cda_acoes 2025-12..2026-08 rows from a historical
+          # backfill that hit CVMHostUnreachable. Completeness, catalog, disk,
+          # and the anon API check all passed. Daily CVM Ingest #203 on the
+          # same SHA was analytics-only (skipped run_daily) and could not have
+          # healed those years anyway — daily_update only probes the trailing
+          # CVM_DAILY_LOOKBACK_MONTHS window plus current-year yearly docs.
+          # The backfill workflow already went red; duplicating that as a
+          # 26h warehouse alarm (which watchdog then "heals" by re-running
+          # daily, which never touches 2010) is the false positive. Restrict
+          # the fail set to slices daily would retry: undated (registry,
+          # b3/corporate_events), current-year yearly, and monthly periods
+          # inside DAILY_LOOKBACK_MONTHS. Deep history stays a backfill
+          # problem; check 3 (completeness) already alarms if a family stalls.
           attempts=$(q "SELECT count(*) FROM cvm_ingest_log
                          WHERE status = 'error'
                            AND started_at > now() - interval '${MAX_INGEST_ERROR_HOURS} hours'")
@@ -134,8 +154,18 @@ jobs:
                                   AND s.period_year  IS NOT DISTINCT FROM e.period_year
                                   AND s.period_month IS NOT DISTINCT FROM e.period_month
                                   AND s.started_at   > e.started_at)
+                         AND (
+                               e.period_year IS NULL
+                            OR (e.period_month IS NULL
+                                AND e.period_year = EXTRACT(YEAR FROM CURRENT_DATE)::int)
+                            OR (e.period_month IS NOT NULL
+                                AND make_date(e.period_year, e.period_month, 1)
+                                    >= (date_trunc('month', CURRENT_DATE)
+                                        - (${DAILY_LOOKBACK_MONTHS}::int - 1)
+                                          * INTERVAL '1 month')::date)
+                         )
                     ) unhealed")
-          echo "unhealed ingest errors (${MAX_INGEST_ERROR_HOURS}h): $errs (of ${attempts:-0} error rows)"
+          echo "unhealed ingest errors (${MAX_INGEST_ERROR_HOURS}h, daily window): $errs (of ${attempts:-0} error rows)"
           # A non-numeric $errs (psql error text after tr -d space) must not
           # fall through to the success branch. Zeroing it and continuing used
           # to print both ❌ query failed and ✅ recovered on the same run.
@@ -144,7 +174,7 @@ jobs:
             echo "- ❌ ingest-error query failed" >> "$GITHUB_STEP_SUMMARY"
             fail=1
           elif [ "${errs:-0}" -gt 0 ]; then
-            echo "FAIL: $errs UNHEALED ingest error slices (${attempts:-0} error rows in window)" >&2
+            echo "FAIL: $errs UNHEALED ingest error slices in the daily window (${attempts:-0} error rows in ${MAX_INGEST_ERROR_HOURS}h)" >&2
             psql "$POSTGRES_URL" -c "SET default_transaction_read_only = on" -c \
               "SELECT e.started_at, e.entity, e.doc_type, e.period_year, e.period_month,
                       left(coalesce(e.error_msg,''),200) AS error
@@ -159,11 +189,21 @@ jobs:
                            AND s.period_year  IS NOT DISTINCT FROM e.period_year
                            AND s.period_month IS NOT DISTINCT FROM e.period_month
                            AND s.started_at   > e.started_at)
+                  AND (
+                        e.period_year IS NULL
+                     OR (e.period_month IS NULL
+                         AND e.period_year = EXTRACT(YEAR FROM CURRENT_DATE)::int)
+                     OR (e.period_month IS NOT NULL
+                         AND make_date(e.period_year, e.period_month, 1)
+                             >= (date_trunc('month', CURRENT_DATE)
+                                 - (${DAILY_LOOKBACK_MONTHS}::int - 1)
+                                   * INTERVAL '1 month')::date)
+                  )
                 ORDER BY e.started_at DESC LIMIT 20"
-            echo "- ❌ unhealed ingest errors: $errs" >> "$GITHUB_STEP_SUMMARY"
+            echo "- ❌ unhealed ingest errors: $errs (daily window)" >> "$GITHUB_STEP_SUMMARY"
             fail=1
           else
-            echo "- ✅ no unhealed ingest errors in ${MAX_INGEST_ERROR_HOURS}h (${attempts:-0} recovered error rows)" >> "$GITHUB_STEP_SUMMARY"
+            echo "- ✅ no unhealed ingest errors in ${MAX_INGEST_ERROR_HOURS}h daily window (${attempts:-0} error rows; historical/backfill slices outside lookback are ignored)" >> "$GITHUB_STEP_SUMMARY"
           fi
 
           # 2. Ingest ran at all yesterday (a workflow that never fires is invisible otherwise).

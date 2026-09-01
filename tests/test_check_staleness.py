@@ -138,6 +138,24 @@ def test_unhealed_error_sql_matches_the_health_gate():
     assert "s.status IN ('ok', 'skipped')" in src
     assert "IS NOT DISTINCT FROM e.entity" in src
     assert "IS NOT DISTINCT FROM e.period_month" in src
+    # DB Health #14: historical backfill errors outside the daily lookback
+    # must not page the watchdog into a useless run_daily.
+    assert "make_date(e.period_year, e.period_month, 1)" in src
+    assert "EXTRACT(YEAR FROM CURRENT_DATE)::int" in src
+    assert "e.period_year IS NULL" in src
+    assert "DAILY_LOOKBACK_MONTHS" in src
+
+
+def test_daily_lookback_months_matches_the_health_gate():
+    yaml = pytest.importorskip("yaml")
+    from pathlib import Path
+    spec = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / ".github/workflows/health.yml")
+        .read_text(encoding="utf-8")
+    )
+    assert spec["jobs"]["health"]["env"]["DAILY_LOOKBACK_MONTHS"] == str(
+        cs.DAILY_LOOKBACK_MONTHS
+    )
 
 
 def test_main_unhealed_errors_recover_on_weekend(monkeypatch, capsys):

@@ -46,6 +46,12 @@ MONTHLY_THRESHOLD_HOURS = 35 * 24   # ~35 days — boletim is published monthly
 # them, including on weekends.
 UNHEALED_ERROR_HOURS = 26
 
+# Same bound as health.yml DAILY_LOOKBACK_MONTHS / CVM_DAILY_LOOKBACK_MONTHS.
+# Historical backfill errors outside this window cannot be healed by run_daily
+# (DB Health #14: 31 fi/cda_* hist slices). Watchdog must not re-run daily for
+# them either — that recovery never touches 2010.
+DAILY_LOOKBACK_MONTHS = 4
+
 EXIT_FRESH = 0
 EXIT_DAILY_STALE = 10
 EXIT_MONTHLY_STALE = 11
@@ -81,10 +87,14 @@ def unhealed_error_slices(conn: Any, hours: float = UNHEALED_ERROR_HOURS) -> int
 
     Same predicate as ``.github/workflows/health.yml`` check 1: a later ``ok``
     or ``skipped`` heals; ``IS NOT DISTINCT FROM`` matches NULL period keys
-    (yearly FII/SECURIT). Watchdog recovery on 2026-08-29 no-op'd because
+    (yearly FII/SECURIT). Only slices ``daily_update`` would retry count —
+    undated, current-year yearly, and monthly periods inside
+    ``DAILY_LOOKBACK_MONTHS``. Watchdog recovery on 2026-08-29 no-op'd because
     ``fi/inf_diario`` still had Friday's ``ok`` and Saturday is weekday-gated,
     while DB Health failed on 44 unhealed ``CVMHostUnreachable`` slices from
     the 06:00 run (33237536770). Those are a failed cron, not a quiet weekend.
+    DB Health #14 (33507857471) then failed on 31 historical ``fi/cda_*``
+    backfill errors daily will never retry; those must not page the watchdog.
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -102,9 +112,18 @@ def unhealed_error_slices(conn: Any, hours: float = UNHEALED_ERROR_HOURS) -> int
                           AND s.period_year  IS NOT DISTINCT FROM e.period_year
                           AND s.period_month IS NOT DISTINCT FROM e.period_month
                           AND s.started_at   > e.started_at)
+                 AND (
+                       e.period_year IS NULL
+                    OR (e.period_month IS NULL
+                        AND e.period_year = EXTRACT(YEAR FROM CURRENT_DATE)::int)
+                    OR (e.period_month IS NOT NULL
+                        AND make_date(e.period_year, e.period_month, 1)
+                            >= (date_trunc('month', CURRENT_DATE)
+                                - (%s::int - 1) * INTERVAL '1 month')::date)
+                 )
             ) unhealed
             """,
-            (hours,),
+            (hours, DAILY_LOOKBACK_MONTHS),
         )
         row = cur.fetchone()
     return int(row[0] if row and row[0] is not None else 0)

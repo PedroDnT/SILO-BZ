@@ -3,10 +3,12 @@ name: Ingest Watchdog
 # Self-healing safety net for the daily ingest. Runs a couple of hours after the
 # 06:00 UTC cron in daily_ingest.yml; if the daily FI slice (or the monthly
 # ANBIMA/ETF slice) is stale in cvm_ingest_log, OR if unhealed ingest errors
-# remain in the 26h health-gate window, it re-runs the daily ingest. Unhealed
-# errors are not weekend-gated: a Saturday CVMHostUnreachable burst is a failed
-# cron, not a quiet market day. Recovery probes CVM first so a blocked runner
-# IP fails in a second instead of writing another round of error rows.
+# remain in the 26h health-gate daily window, it re-runs the daily ingest.
+# Historical backfill errors outside DAILY_LOOKBACK_MONTHS do not count —
+# run_daily cannot heal 2010 (DB Health #14). Unhealed daily-window errors are
+# not weekend-gated: a Saturday CVMHostUnreachable burst is a failed cron, not
+# a quiet market day. Recovery probes CVM first so a blocked runner IP fails
+# in a second instead of writing another round of error rows.
 #
 # This lives entirely in GitHub Actions and reuses the existing POSTGRES_URL
 # secret — no GitHub PAT in the database, no pg_net. See scripts/check_staleness.py.
