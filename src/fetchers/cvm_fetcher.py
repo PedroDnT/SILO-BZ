@@ -16,6 +16,7 @@ import itertools
 import json
 import logging
 import os
+import re
 import socket
 import sys
 import time
@@ -92,6 +93,42 @@ class CVMHostUnreachable(RuntimeError):
     backoff — 4h22m of work that could never succeed, ending in a green CI run
     with two empty year partitions.
     """
+
+
+_CDA_BLOCK_RE = re.compile(r"^(?P<fam>.*_BLC_)(?P<blk>\d+)_(?P<per>\d{4}|\d{6})\.csv$", re.I)
+
+
+def _cda_block_key(name: str) -> Optional[Tuple[str, str, str]]:
+    """(family, block, period) for a CDA block member, else None.
+
+    'cda_fi_BLC_6_202608.csv' -> ('cda_fi_blc_', '6', '202608'). The period is
+    4 digits (yearly HIST archive) or 6 (monthly). A member without this exact
+    shape is not a CDA block and gets no sibling reasoning at all.
+    """
+    m = _CDA_BLOCK_RE.match(name.rsplit("/", 1)[-1])
+    if not m:
+        return None
+    return m.group("fam").lower(), m.group("blk"), m.group("per")
+
+
+def _cda_sibling_blocks(members: List[str], expected: str) -> List[str]:
+    """Members that are OTHER blocks of the same CDA family and period.
+
+    Their presence is what proves an archive is the right one when the
+    requested block is missing: cda_fi_202608.zip holding BLC_1, BLC_2 and
+    BLC_4 but no BLC_6 is CVM's partial current-month publication, not a
+    wrong file. An empty result means no such proof exists.
+    """
+    want = _cda_block_key(expected)
+    if want is None:
+        return []
+    fam, blk, per = want
+    out = []
+    for m in members:
+        key = _cda_block_key(m)
+        if key is not None and key[0] == fam and key[2] == per and key[1] != blk:
+            out.append(m)
+    return out
 
 
 class CVMFetcher:
@@ -430,6 +467,31 @@ class CVMFetcher:
 
         matches = [f for f in csvs if expected.lower() in f.lower()]
         if not matches:
+            # Two different things produce "member not found", and they must
+            # be logged differently (2026-09-01, health run 33558708450):
+            #
+            #   * the archive is the WRONG one, or the member was renamed —
+            #     a source-drift regression the audit log must call an error;
+            #   * the archive is the RIGHT one and CVM has simply not published
+            #     this block yet: cda_fi_202608.zip carried BLC_1/2/4 but no
+            #     BLC_6 (a partial current-month archive), and the 2005 HIST
+            #     archive predates block 6 entirely. Re-fetching daily until
+            #     CVM adds the member is correct; logging it 'error' every day
+            #     is a standing false alarm on the health gate.
+            #
+            # Only the CDA block family (…_BLC_<n>_<period>.csv) is told apart:
+            # sibling blocks for the SAME period prove the archive is the one
+            # we meant, so the absence is publication, not drift. Any other
+            # dataset keeps the fatal wording. Either way nothing falls back.
+            siblings = _cda_sibling_blocks(csvs, expected)
+            if siblings:
+                raise ValueError(
+                    f"ZIP member {expected!r} not published in this archive — "
+                    f"{len(siblings)} sibling block(s) for the same period are "
+                    f"present ({sorted(siblings)}), so the archive is the right "
+                    f"one and this block has not been released yet. Refusing to "
+                    f"fall back to another member."
+                )
             raise ValueError(
                 f"ZIP member {expected!r} not found in archive — refusing to fall "
                 f"back to another member, which would silently ingest the wrong "

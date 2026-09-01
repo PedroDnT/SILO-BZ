@@ -366,6 +366,49 @@ def _iter_month_pairs(
 # Ingestor class
 # ---------------------------------------------------------------------------
 
+_NOT_PUBLISHED_MARKERS = (
+    # 404 from dados.cvm.gov.br: the month/year file does not exist yet.
+    "Data not found",
+    # The archive exists and sibling CDA blocks for the same period are in
+    # it, but the requested block is not: CVM has not released it (partial
+    # current-month archive, or a year that predates the block). The fetcher
+    # uses this wording ONLY when the siblings prove the archive is the right
+    # one — a renamed member says "not found in archive" and stays an error.
+    "not published in this archive",
+)
+
+
+def _classify_finish(
+    error: Optional[str], fetched: Optional[int], rows: int
+) -> Tuple[str, Optional[str]]:
+    """Audit status for a finished slice, and the message to store with it.
+
+    Pure so it can be tested without a database. The three outcomes:
+
+    * 'skipped' — the source has not published this slice yet. Not a failure,
+      and staleness checks (which count only 'ok') still do not treat it as
+      loaded. Before 2026-09-01 only a 404 qualified; health run 33558708450
+      showed cda_debentures 2026-08 and 2005 red every day because the
+      archive existed but carried no BLC_6 member.
+    * 'error' — anything else that raised, PLUS the data-contract case: the
+      source returned rows but none survived parsing/validation. Logging that
+      'ok' is exactly how cvm_fiagro_mensal sat empty behind 34 'ok' slices.
+    * 'ok' — rows landed, or the published file was genuinely empty
+      (fetched == 0).
+    """
+    if error and any(marker in error for marker in _NOT_PUBLISHED_MARKERS):
+        return "skipped", error
+    if error:
+        return "error", error
+    if fetched and rows == 0:
+        return "error", (
+            f"fetched {fetched} source row(s) but upserted 0 — every row was "
+            f"dropped (check the field map against the current source header "
+            f"and the DataValidator rules)"
+        )
+    return "ok", None
+
+
 class CVMIngestor:
     """Downloads CVM data via CVMFetcher and persists to Supabase Postgres."""
 
@@ -513,25 +556,13 @@ class CVMIngestor:
         # as 'skipped' so it isn't a false error and so staleness checks (which
         # count only 'ok') don't treat the slice as loaded. Any other error —
         # including a malformed ZIP ("No CSV file found …") — stays 'error'.
-        if error and "Data not found" in error:
-            status = "skipped"
-        elif error:
-            status = "error"
-        elif fetched and rows == 0:
-            # Per-slice data contract: the source returned rows but none survived
-            # parsing/validation. That is a defect (stale field map, changed
-            # layout, validation rejecting everything) — NOT a successful no-op.
-            # Logging it 'ok' is exactly how cvm_fiagro_mensal sat empty behind 34
-            # 'ok' slices. A genuinely empty published file (fetched == 0) stays
-            # 'ok'; a not-yet-published month is already 'skipped' above.
-            status = "error"
-            error = (
-                f"fetched {fetched} source row(s) but upserted 0 — every row was "
-                f"dropped (check the field map against the current source header "
-                f"and the DataValidator rules)"
-            )
-        else:
-            status = "ok"
+        # A present archive that lacks the requested CDA block, with sibling
+        # blocks for the same period proving it is the right archive, is the
+        # same not-yet-published condition as a 404 and is logged the same way.
+        # The fetcher composes that wording only when the siblings are there;
+        # a renamed or missing member with no siblings keeps the fatal wording
+        # and stays 'error'. See _classify_finish and health run 33558708450.
+        status, error = _classify_finish(error, fetched, rows)
         # Single point where a slice becomes a run-level failure: exactly the
         # branches above that resolve to 'error', so the ledger and the audit
         # table can never disagree, and 'skipped' (unpublished month) is never
