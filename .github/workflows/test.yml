@@ -188,9 +188,9 @@ jobs:
           echo "--- re-apply 33 on the live-shaped unique (Backfill #24) ---"
           # Two rows unique under the wide key: one already has tp_fundo='FI'
           # and tp_negoc NULL, raw stripped (what ingest writes today); the
-          # other is the narrow-key remnant (both key columns NULL). The old
-          # UPDATE reset the FI row to (NULL, NULL) because WHERE matched on
-          # tp_negoc IS NULL and raw no longer carried TP_FUNDO.
+          # other is already (NULL, NULL). The pre-#173 UPDATE matched the FI
+          # row on tp_negoc IS NULL and reset it to (NULL, NULL). Both rows
+          # use empty raw so this is the wipe, not a remnant-fill-into-sibling.
           psql "$OLD_URL" -v ON_ERROR_STOP=1 <<'LIVE'
           INSERT INTO cvm_fi_cda_cotas
               (cnpj, period, cnpj_cota, tp_fundo, tp_aplic, tp_negoc, raw)
@@ -198,7 +198,7 @@ jobs:
               ('32300050000180','2023-10-01','43809974000123','FI',
                'Cotas de Fundos',NULL,'{}'::jsonb),
               ('32300050000180','2023-10-01','43809974000123',NULL,
-               'Cotas de Fundos',NULL,'{"TP_FUNDO":"FI"}'::jsonb);
+               'Cotas de Fundos',NULL,'{}'::jsonb);
           LIVE
           psql "$OLD_URL" -v ON_ERROR_STOP=1 -f src/store/migrations/33_cda_holdings_key_widening.sql > /dev/null
           live_keys=$(psql "$OLD_URL" -tAc "SELECT string_agg(coalesce(tp_fundo,'-'), ',' ORDER BY tp_fundo NULLS LAST) FROM cvm_fi_cda_cotas WHERE cnpj='32300050000180';")
@@ -207,8 +207,112 @@ jobs:
           test "$live_n" = "2" || { echo "FAIL: Backfill #24 replay lost a cotas row"; exit 1; }
           test "$live_keys" = "FI,-" || { echo "FAIL: Backfill #24 replay wiped tp_fundo (got $live_keys)"; exit 1; }
 
+      # fact_fund_monthly's FIP branch is keyed (cnpj, period, entity_type) with
+      # period forced to Dec-31, and it used to select cvm_fip_periodic straight.
+      # That was unique per fund-year only because the OLD key discarded the rest
+      # of each yearly file. Once migration 34 rekeyed the table and the backfill
+      # restored those rows, production got:
+      #
+      #     ERROR: could not create unique index "ix_fact_fund_monthly_pk"
+      #     DETAIL: Key (cnpj, period, entity_type)
+      #             = (49930492000103, 2024-12-31, fip) is duplicated.
+      #
+      # The analytical apply below runs against an empty database, so it could
+      # not have caught that. Seeding the shape first makes the apply itself the
+      # test: several periods in one year (only the latest belongs at an annual
+      # grain), several classes at that period (additive — they are parts of one
+      # fund), a second doc_type at the same period (must not double count), and
+      # a row migration 34 left undated (must not win the pick).
+      - name: Seed the FIP shape that broke fact_fund_monthly
+        run: |
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO cvm_fip_periodic
+              (cnpj, doc_type, period_year, period, classe_cota, vl_patrim_liq, raw)
+          VALUES
+              ('49930492000103','informe',2024,'2024-06-30','A',100,'{}'::jsonb),
+              ('49930492000103','informe',2024,'2024-06-30','B', 10,'{}'::jsonb),
+              ('49930492000103','informe',2024,'2024-12-31','A',200,'{}'::jsonb),
+              ('49930492000103','informe',2024,'2024-12-31','B', 20,'{}'::jsonb),
+              ('49930492000103','anual',  2024,'2024-12-31','A',200,'{}'::jsonb),
+              ('49930492000103','informe',2024, NULL,       'A',999,'{}'::jsonb);
+          SQL
+
+      # Daily CVM Ingest #207 (run 33535880218) died during CREATE of
+      # fact_fund_monthly with `connection to server was lost` at the
+      # statement's closing semicolon — not the FIP unique-index error #177
+      # fixed. The expensive shape is FI daily: several subclasses, several
+      # days, a null-PL day that still has flow, and an ETF CNPJ that must
+      # not leak into the fund fact. An empty database cannot catch a rewrite
+      # that double-counts subclass flows or drops the null-PL day.
+      - name: Seed the FI daily shape that #207 was aggregating
+        run: |
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO cvm_etf_registry (ticker, cnpj, fund_name)
+          VALUES ('FAKE11', '22222222000182', 'carved-out ETF');
+
+          INSERT INTO cvm_fi_diario
+              (cnpj, id_subclasse, dt_comptc, vl_patrim_liq, vl_quota, nr_cotst,
+               captc_dia, resg_dia, raw)
+          VALUES
+              -- subclass A, three days; 16th has PL, 15th has flow but no PL
+              ('11111111000191','A','2024-12-02',100, 1.0, 10, 5, 1, '{}'::jsonb),
+              ('11111111000191','A','2024-12-15',NULL,1.05,10, 7, 0, '{}'::jsonb),
+              ('11111111000191','A','2024-12-16',110, 1.1, 11, 3, 0, '{}'::jsonb),
+              ('11111111000191','A','2024-12-31',200, 2.0, 20, 0, 2, '{}'::jsonb),
+              -- subclass B, two days; smaller than A in the latest month
+              ('11111111000191','B','2024-12-02', 50,10.0,  2, 1, 0, '{}'::jsonb),
+              ('11111111000191','B','2024-12-31', 80,16.0,  3, 0, 1, '{}'::jsonb),
+              -- ETF: same month, must not appear in fact_fund_monthly
+              ('22222222000182','','2024-12-31',9999,1, 1, 0, 0, '{}'::jsonb);
+          SQL
+
       - name: Apply analytical layer (empty-DB bypass)
         run: PGOPTIONS="-c silo.ci_smoke_bypass=on" bash scripts/apply_analytical.sh
+
+      # The apply above already fails if the branch emits duplicates. This also
+      # pins the VALUE, because the two ways of getting one row are not equally
+      # correct: summing across periods would report Q2+Q4 as year-end AUM, and
+      # picking one class would report a share class as the whole fund.
+      - name: FIP collapses to one row per fund-year, with classes summed
+        run: |
+          set -euo pipefail
+          got=$(psql "$POSTGRES_URL" -tAc "SELECT count(*)||'/'||coalesce(sum(vl_patrim_liq)::text,'-')
+                                             FROM fact_fund_monthly
+                                            WHERE entity_type='fip'
+                                              AND cnpj='49930492000103';")
+          echo "fip rows/PL = $got (expected 1/220.00 — latest period 200+20)"
+          test "$got" = "1/220.00" || {
+            echo "FAIL: the FIP branch no longer yields one summed row per fund-year"; exit 1; }
+
+      # Pins the FI rewrite that #207 forced: one scan must still (a) sum last-
+      # day PL across subclasses, (b) follow the larger subclass's quota,
+      # (c) include flow from a null-PL day, (d) exclude the ETF CNPJ.
+      # Expected: PL 200+80=280, quota 2.0 (A is larger), cotistas 20+3=23,
+      # captc 5+7+3+1=16, resg 1+0+2+0+1=4, period = first of month.
+      - name: FI daily collapses to one row per fund-month, flows include null-PL days
+        run: |
+          set -euo pipefail
+          ok=$(psql "$POSTGRES_URL" -tAc "
+            SELECT COUNT(*) = 1
+               AND SUM(vl_patrim_liq) = 280
+               AND MAX(vl_quota) = 2
+               AND SUM(nr_cotst) = 23
+               AND SUM(captc_mes) = 16
+               AND SUM(resg_mes) = 4
+               AND MIN(period) = DATE '2024-12-01'
+              FROM fact_fund_monthly
+             WHERE entity_type = 'fi'
+               AND cnpj = '11111111000191';")
+          echo "fi aggregate match = $ok (expected t)"
+          test "$ok" = "t" || {
+            psql "$POSTGRES_URL" -c "SELECT cnpj, period, vl_patrim_liq, vl_quota,
+                   nr_cotst, captc_mes, resg_mes, quota_subclass_id
+              FROM fact_fund_monthly WHERE cnpj='11111111000191';"
+            echo "FAIL: the FI branch no longer aggregates subclasses + null-PL flows"; exit 1; }
+          etf=$(psql "$POSTGRES_URL" -tAc "SELECT count(*) FROM fact_fund_monthly
+                                            WHERE cnpj='22222222000182';")
+          test "$etf" = "0" || {
+            echo "FAIL: ETF CNPJ leaked into fact_fund_monthly"; exit 1; }
 
       # The tier helpers decide how much an anonymous caller may pull. Regex
       # tests over the SQL text prove the code says the right thing; only

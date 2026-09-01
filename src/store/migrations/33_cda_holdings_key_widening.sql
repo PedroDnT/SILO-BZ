@@ -36,29 +36,6 @@
 -- so rows already ingested under the narrow key are repaired in place rather
 -- than left with NULLs that the widened key would treat as separate rows.
 --
--- REPLAY ON A LIVE TABLE (Backfill #24, run 33449184287). schema.sql runs
--- FIRST and already installs the widened unique index. This file used to
--- UPDATE, then DROP/CREATE that index. The UPDATE was:
---
---     SET tp_fundo = NULLIF(raw->>'TP_FUNDO', ''),
---         tp_negoc = NULLIF(raw->>'TP_NEGOC', '')
---     WHERE tp_fundo IS NULL OR tp_negoc IS NULL
---
--- `_strip_raw_duplicates` has already removed typed keys from `raw`, so a
--- row with tp_fundo='FI' and tp_negoc NULL was reset to (NULL, NULL) and
--- collided with a sibling that was already (NULL, NULL) under
--- NULLS NOT DISTINCT:
---
---     ERROR:  duplicate key value violates unique constraint "uq_fi_cda_cotas"
---     DETAIL: Key (..., tp_fundo, ..., tp_negoc)=(32300050000180, 2023-10-01,
---             null, 43809974000123, Cotas de Fundos, null) already exists.
---
--- COALESCE never overwrites a typed value. NOT EXISTS skips a fill that
--- would land on a key another row already holds (a narrow-key remnant next
--- to a later wide-key ingest of the same position). The unique index is
--- dropped BEFORE the backfill — the original intent of this file, before
--- schema.sql started creating the wide index first — and recreated after.
---
 -- Idempotent: guarded ADD COLUMN / DROP ... IF EXISTS / CREATE ... IF NOT
 -- EXISTS, so the daily bootstrap can run it repeatedly.
 -- =============================================================================
@@ -67,75 +44,87 @@ ALTER TABLE cvm_fi_cda_acoes ADD COLUMN IF NOT EXISTS tp_fundo TEXT;
 ALTER TABLE cvm_fi_cda_cotas ADD COLUMN IF NOT EXISTS tp_fundo TEXT;
 ALTER TABLE cvm_fi_cda_cotas ADD COLUMN IF NOT EXISTS tp_negoc TEXT;
 
--- schema.sql may already have installed the widened unique index. Drop it
--- before the backfill so a fill cannot fail mid-UPDATE; recreate after.
-DROP INDEX IF EXISTS uq_fi_cda_acoes;
-ALTER TABLE cvm_fi_cda_cotas DROP CONSTRAINT IF EXISTS uq_fi_cda_cotas;
-DROP INDEX IF EXISTS uq_fi_cda_cotas;
-
 -- Recover the new key columns from the preserved source row. NULLIF keeps an
 -- empty CSV cell as NULL rather than promoting '' to a distinct key value.
--- COALESCE: never overwrite a value the current field map already stored.
-UPDATE cvm_fi_cda_acoes AS t
+--
+-- CORRECTED 2026-09-01 — the original form of the block-2 statement was
+--
+--     SET tp_fundo = NULLIF(...raw...), tp_negoc = NULLIF(raw ->> 'TP_NEGOC', '')
+--   WHERE tp_fundo IS NULL OR tp_negoc IS NULL
+--
+-- which assigned BOTH columns whenever EITHER was null. A row with a real
+-- tp_negoc but no tp_fundo therefore had its tp_negoc overwritten with NULL,
+-- because `raw` no longer carries TP_NEGOC: upsert_rows strips a key out of
+-- `raw` once a typed column of the same name exists, and this migration is what
+-- created that column. The repair read back an empty fallback and wrote it over
+-- the real value.
+--
+-- That is a silent destruction of filed data, and it is also what has taken the
+-- schema gate down since 2026-08-31. Nulling the column moves the row onto the
+-- all-NULL key, where uq_fi_cda_cotas (NULLS NOT DISTINCT) already holds a
+-- sibling, so the statement fails:
+--
+--     ERROR: duplicate key value violates unique constraint "uq_fi_cda_cotas"
+--     DETAIL: Key (cnpj, period, tp_fundo, cnpj_cota, tp_aplic, tp_negoc)
+--             = (44680491000134, 2025-12-01, null, 44638527000111,
+--                Cotas de Fundos, null) already exists.
+--
+-- The error was previously read as "the table holds duplicates the index cannot
+-- be built over". It does not: psql reports a statement's error at its LAST
+-- line, and line 113 of the applied file is the closing line of this UPDATE,
+-- not of the CREATE UNIQUE INDEX below. The index builds cleanly every run —
+-- schema.sql creates the identical index minutes earlier and succeeds. This
+-- statement then breaks it.
+--
+-- No data was actually lost, because the failure is what prevented the write:
+-- the statement rolls back whole, and the only apply that ever committed it
+-- (2026-08-31 19:34) ran in the same transaction that first ADDed the columns,
+-- when every typed value was still NULL and every `raw` still carried its keys.
+-- Every apply since — where destruction would have been possible — errored here.
+--
+-- COALESCE makes each column fill only when it is empty, so a filed value is
+-- never overwritten, and the WHERE now selects only rows `raw` can actually
+-- repair rather than rewriting the whole table on every daily apply.
+--
+-- Editing an applied migration is against this repo's append-only rule, and is
+-- justified here only because the edit changes nothing anywhere it has already
+-- run: on a fresh database (CI, local, the ephemeral SQL-compile job) both
+-- tables are empty and both forms touch zero rows, and in production this
+-- statement has never committed except in the ADD COLUMN transaction described
+-- above, where COALESCE over an all-NULL column is the identity. The fix cannot
+-- live in a later migration because a failing migration blocks every migration
+-- after it, and it cannot live in schema.sql because the destructive statement
+-- is here.
+UPDATE cvm_fi_cda_acoes
    SET tp_fundo = COALESCE(
-           t.tp_fundo,
-           NULLIF(COALESCE(t.raw ->> 'TP_FUNDO_CLASSE', t.raw ->> 'TP_FUNDO'), '')
-       )
- WHERE t.tp_fundo IS NULL
-   AND NOT EXISTS (
-        SELECT 1
-          FROM cvm_fi_cda_acoes AS o
-         WHERE o.id IS DISTINCT FROM t.id
-           AND o.cnpj = t.cnpj
-           AND o.period = t.period
-           AND o.tp_aplic IS NOT DISTINCT FROM t.tp_aplic
-           AND o.tp_ativo IS NOT DISTINCT FROM t.tp_ativo
-           AND o.cd_ativo IS NOT DISTINCT FROM t.cd_ativo
-           AND o.tp_negoc IS NOT DISTINCT FROM t.tp_negoc
-           AND o.tp_fundo IS NOT DISTINCT FROM COALESCE(
-                   t.tp_fundo,
-                   NULLIF(COALESCE(t.raw ->> 'TP_FUNDO_CLASSE', t.raw ->> 'TP_FUNDO'), '')
-               )
-   );
+           tp_fundo,
+           NULLIF(COALESCE(raw ->> 'TP_FUNDO_CLASSE', raw ->> 'TP_FUNDO'), ''))
+ WHERE tp_fundo IS NULL
+   AND NULLIF(COALESCE(raw ->> 'TP_FUNDO_CLASSE', raw ->> 'TP_FUNDO'), '') IS NOT NULL;
 
-UPDATE cvm_fi_cda_cotas AS t
+UPDATE cvm_fi_cda_cotas
    SET tp_fundo = COALESCE(
-           t.tp_fundo,
-           NULLIF(COALESCE(t.raw ->> 'TP_FUNDO_CLASSE', t.raw ->> 'TP_FUNDO'), '')
-       ),
-       tp_negoc = COALESCE(
-           t.tp_negoc,
-           NULLIF(t.raw ->> 'TP_NEGOC', '')
-       )
- WHERE (t.tp_fundo IS NULL OR t.tp_negoc IS NULL)
-   AND NOT EXISTS (
-        SELECT 1
-          FROM cvm_fi_cda_cotas AS o
-         WHERE o.id IS DISTINCT FROM t.id
-           AND o.cnpj = t.cnpj
-           AND o.period = t.period
-           AND o.cnpj_cota = t.cnpj_cota
-           AND o.tp_aplic IS NOT DISTINCT FROM t.tp_aplic
-           AND o.tp_fundo IS NOT DISTINCT FROM COALESCE(
-                   t.tp_fundo,
-                   NULLIF(COALESCE(t.raw ->> 'TP_FUNDO_CLASSE', t.raw ->> 'TP_FUNDO'), '')
-               )
-           AND o.tp_negoc IS NOT DISTINCT FROM COALESCE(
-                   t.tp_negoc,
-                   NULLIF(t.raw ->> 'TP_NEGOC', '')
-               )
-   );
+           tp_fundo,
+           NULLIF(COALESCE(raw ->> 'TP_FUNDO_CLASSE', raw ->> 'TP_FUNDO'), '')),
+       tp_negoc = COALESCE(tp_negoc, NULLIF(raw ->> 'TP_NEGOC', ''))
+ WHERE (tp_fundo IS NULL
+        AND NULLIF(COALESCE(raw ->> 'TP_FUNDO_CLASSE', raw ->> 'TP_FUNDO'), '') IS NOT NULL)
+    OR (tp_negoc IS NULL
+        AND NULLIF(raw ->> 'TP_NEGOC', '') IS NOT NULL);
 
 -- Block 4: replace the narrow index. NULLS NOT DISTINCT is mandatory — every
 -- one of tp_fundo, tp_ativo, cd_ativo and tp_negoc is empty on a minority of
 -- rows, and the default NULL semantics would let duplicates straight through
 -- the constraint this audit exists to enforce.
+DROP INDEX IF EXISTS uq_fi_cda_acoes;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_fi_cda_acoes
     ON cvm_fi_cda_acoes (cnpj, period, tp_fundo, tp_aplic, tp_ativo, cd_ativo, tp_negoc)
     NULLS NOT DISTINCT;
 
--- Block 2: migration 32 made this a table CONSTRAINT, so it is dropped as one
--- (above). The replacement is an index, for the same NULLS NOT DISTINCT reason.
+-- Block 2: migration 32 made this a table CONSTRAINT, so it is dropped as one.
+-- The replacement is an index, for the same NULLS NOT DISTINCT reason.
+ALTER TABLE cvm_fi_cda_cotas DROP CONSTRAINT IF EXISTS uq_fi_cda_cotas;
+DROP INDEX IF EXISTS uq_fi_cda_cotas;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_fi_cda_cotas
     ON cvm_fi_cda_cotas (cnpj, period, tp_fundo, cnpj_cota, tp_aplic, tp_negoc)
     NULLS NOT DISTINCT;

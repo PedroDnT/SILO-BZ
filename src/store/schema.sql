@@ -173,6 +173,64 @@ ALTER TABLE cvm_fi_cda_cotas ADD COLUMN IF NOT EXISTS tp_fundo TEXT;
 ALTER TABLE cvm_fi_cda_cotas ADD COLUMN IF NOT EXISTS tp_negoc TEXT;
 ALTER TABLE cvm_fi_cda_cotas DROP CONSTRAINT IF EXISTS uq_fi_cda_cotas;
 
+-- A guard, not the fix for the 2026-08-31 gate outage. It was added as that fix
+-- and the diagnosis was wrong, so the reasoning is corrected here rather than
+-- left to mislead the next reader.
+--
+-- What the failing apply log showed was
+--
+--   duplicate key ... (cnpj, period, tp_fundo, cnpj_cota, tp_aplic, tp_negoc)
+--   = (32300050000180, 2023-10-01, null, 43809974000123, Cotas de Fundos, null)
+--
+-- reported at line 113 of the applied migration 33, which was read as its
+-- CREATE UNIQUE INDEX failing over pre-existing duplicates. psql reports a
+-- statement's error at its LAST line, and line 113 is the closing line of the
+-- UPDATE above that index, not of the index itself. The table holds no
+-- duplicates: the CREATE UNIQUE INDEX below builds over the same rows minutes
+-- earlier in this very file, and succeeds, every run. Migration 33's repair
+-- UPDATE then nulled a filed tp_negoc — `raw` no longer carries TP_NEGOC once
+-- the typed column exists — and collided the row with its all-NULL sibling.
+-- That statement is fixed in place; see the note there.
+--
+-- This block is kept because the invariant is still worth asserting: a
+-- duplicate here means the index cannot be built at all, which takes down every
+-- ingest, and finding out during an apply is expensive. It removed 0 rows on
+-- production (no NOTICE in the 2026-09-01 10:28 log), so it is cheap insurance
+-- rather than a live repair. If it ever does fire, removing the older copies is
+-- what ON CONFLICT DO UPDATE would itself have produced had the index existed
+-- when they were written: the newest row per key is the current truth, and the
+-- superseded copies are the ones an upsert discards. The count is raised as a
+-- NOTICE so an operator sees it in the apply log rather than discovering it
+-- later.
+DO $cotas_dedup$
+DECLARE
+    v_removed BIGINT;
+BEGIN
+    IF to_regclass('public.cvm_fi_cda_cotas') IS NULL THEN
+        RETURN;
+    END IF;
+    WITH ranked AS (
+        SELECT id,
+               row_number() OVER (
+                   PARTITION BY cnpj, period, tp_fundo, cnpj_cota, tp_aplic, tp_negoc
+                   ORDER BY fetched_at DESC, id DESC
+               ) AS rn
+          FROM cvm_fi_cda_cotas
+    ), doomed AS (
+        DELETE FROM cvm_fi_cda_cotas t
+         USING ranked r
+         WHERE t.id = r.id AND r.rn > 1
+        RETURNING 1
+    )
+    SELECT count(*) INTO v_removed FROM doomed;
+    IF v_removed > 0 THEN
+        RAISE NOTICE
+            'cvm_fi_cda_cotas: removed % superseded duplicate row(s) before building uq_fi_cda_cotas (kept the newest per key, as ON CONFLICT DO UPDATE would have)',
+            v_removed;
+    END IF;
+END
+$cotas_dedup$;
+
 DROP INDEX IF EXISTS uq_fi_cda_cotas;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_fi_cda_cotas
     ON cvm_fi_cda_cotas (cnpj, period, tp_fundo, cnpj_cota, tp_aplic, tp_negoc)
