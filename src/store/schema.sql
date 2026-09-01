@@ -173,29 +173,35 @@ ALTER TABLE cvm_fi_cda_cotas ADD COLUMN IF NOT EXISTS tp_fundo TEXT;
 ALTER TABLE cvm_fi_cda_cotas ADD COLUMN IF NOT EXISTS tp_negoc TEXT;
 ALTER TABLE cvm_fi_cda_cotas DROP CONSTRAINT IF EXISTS uq_fi_cda_cotas;
 
--- Legacy rows that the widened key cannot separate, removed before the index
--- is built. THIS EXISTS BECAUSE THE SCHEMA GATE WENT DOWN ON IT (2026-08-31,
--- run 33449184287): migration 33's CREATE UNIQUE INDEX failed three times with
+-- A guard, not the fix for the 2026-08-31 gate outage. It was added as that fix
+-- and the diagnosis was wrong, so the reasoning is corrected here rather than
+-- left to mislead the next reader.
+--
+-- What the failing apply log showed was
 --
 --   duplicate key ... (cnpj, period, tp_fundo, cnpj_cota, tp_aplic, tp_negoc)
 --   = (32300050000180, 2023-10-01, null, 43809974000123, Cotas de Fundos, null)
 --
--- Both tp_fundo and tp_negoc are NULL, and NULLS NOT DISTINCT makes every such
--- row collide with its siblings. Migration 33 tries to repair those NULLs from
--- `raw`, but reports UPDATE 0: upsert_rows strips a key out of `raw` once a
--- typed column of the same name exists, so for rows written after 33 added the
--- columns the fallback is already gone. The rows are unrecoverable.
+-- reported at line 113 of the applied migration 33, which was read as its
+-- CREATE UNIQUE INDEX failing over pre-existing duplicates. psql reports a
+-- statement's error at its LAST line, and line 113 is the closing line of the
+-- UPDATE above that index, not of the index itself. The table holds no
+-- duplicates: the CREATE UNIQUE INDEX below builds over the same rows minutes
+-- earlier in this very file, and succeeds, every run. Migration 33's repair
+-- UPDATE then nulled a filed tp_negoc — `raw` no longer carries TP_NEGOC once
+-- the typed column exists — and collided the row with its all-NULL sibling.
+-- That statement is fixed in place; see the note there.
 --
--- Removing the older copies is what ON CONFLICT DO UPDATE would itself have
--- produced had the index existed when they were written — the newest row per
--- key is the current truth, and the superseded copies are the ones an upsert
--- discards. It is not a data-loss decision dressed up: it restores the
--- invariant the key audit exists to enforce. The count is raised as a NOTICE so
--- an operator can see it in the apply log rather than discovering it later.
---
--- This lives in schema.sql, not a new migration, because schema.sql runs BEFORE
--- the migrations and migration 33 is the statement that fails — a later
--- migration would never be reached. Historical migrations stay append-only.
+-- This block is kept because the invariant is still worth asserting: a
+-- duplicate here means the index cannot be built at all, which takes down every
+-- ingest, and finding out during an apply is expensive. It removed 0 rows on
+-- production (no NOTICE in the 2026-09-01 10:28 log), so it is cheap insurance
+-- rather than a live repair. If it ever does fire, removing the older copies is
+-- what ON CONFLICT DO UPDATE would itself have produced had the index existed
+-- when they were written: the newest row per key is the current truth, and the
+-- superseded copies are the ones an upsert discards. The count is raised as a
+-- NOTICE so an operator sees it in the apply log rather than discovering it
+-- later.
 DO $cotas_dedup$
 DECLARE
     v_removed BIGINT;
