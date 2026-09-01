@@ -31,8 +31,8 @@ runner IP fails in a second instead of writing another round of error rows.
 `.github/workflows/backfill.yml` is on-demand only (see §4).
 
 > **⚠️ All three share one concurrency group (`supabase-ingest`, `cancel-in-progress:
-> false`), and GitHub keeps only ONE pending run per group.** A queued run is therefore
-> not safe: when a newer run enters the group, the older *pending* one is **cancelled**,
+false`), and GitHub keeps only ONE pending run per group.** A queued run is therefore
+> not safe: when a newer run enters the group, the older _pending_ one is **cancelled**,
 > silently, with no failure anywhere.
 >
 > Observed 2026-08-28: a `cia_aberta` backfill ran for hours; an `analytics-only`
@@ -57,15 +57,15 @@ runner IP fails in a second instead of writing another round of error rows.
 
 ## 2. Checks and cadence
 
-| When                 | Command                                      | Looking for                                                                    |
-| -------------------- | -------------------------------------------- | ------------------------------------------------------------------------------ |
+| When                 | Command                                      | Looking for                                                                                                               |
+| -------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | Daily 07:30 UTC      | Actions → **DB Health** (`health.yml`)       | unhealed ingest errors, stalled monthly families, `api.catalog()`/`coverage()`, disk size (warn-only; `PLAN_DISK_GB=135`) |
-| After any run        | `python scripts/check_staleness.py`          | exit `0` fresh · `10` daily stale **or unhealed errors** · `11` monthly (ANBIMA) stale          |
-| Weekly               | `python scripts/verify_pipeline.py`          | presence, field-population rates, sample business metrics per entity           |
-| Weekly               | the audit-log triage query (§3)              | `error` slices, slices stuck `running`, entities missing entirely              |
-| Monthly              | `POSTGRES_URL=… python scripts/db_parity.py` | table/view inventory + row estimates and sizes (`--exact` for true `COUNT(*)`) |
-| Monthly              | `SELECT * FROM data_coverage();`             | per-entity date coverage — the gap detector                                    |
-| **Yearly (Nov–Dec)** | partition rollover (§6)                      | next year's partitions must exist before January                               |
+| After any run        | `python scripts/check_staleness.py`          | exit `0` fresh · `10` daily stale **or unhealed errors** · `11` monthly (ANBIMA) stale                                    |
+| Weekly               | `python scripts/verify_pipeline.py`          | presence, field-population rates, sample business metrics per entity                                                      |
+| Weekly               | the audit-log triage query (§3)              | `error` slices, slices stuck `running`, entities missing entirely                                                         |
+| Monthly              | `POSTGRES_URL=… python scripts/db_parity.py` | table/view inventory + row estimates and sizes (`--exact` for true `COUNT(*)`)                                            |
+| Monthly              | `SELECT * FROM data_coverage();`             | per-entity date coverage — the gap detector                                                                               |
+| **Yearly (Nov–Dec)** | partition rollover (§6)                      | next year's partitions must exist before January                                                                          |
 
 `data_coverage(p_entity_type, start_date, end_date)` and
 `ingest_log_summary(start_date, end_date)` (defaults: last 7 days) are analytical-layer
@@ -133,7 +133,7 @@ still is. Re-run daily ingest after that fix so the later `ok` heals the row.
 
 `CVM_DB_POOL_SIZE` (default **4**) sets how many Postgres connections the ingest
 holds. It is not the connection ceiling — the instance reports
-`max_connections = 120`; the *10* people remember is the GoTrue/Auth pool, which
+`max_connections = 120`; the _10_ people remember is the GoTrue/Auth pool, which
 ingest never touches. The real limit is compute: `max_parallel_workers = 2` and
 `max_worker_processes = 6` (a ~2 vCPU box), plus every concurrent writer
 maintaining the same indexes on one unpartitioned table.
@@ -179,12 +179,12 @@ explicitly instead. Each year job takes the months belonging to its own year; a 
 none exits immediately.
 
 Both bypass the "year already complete" check, on purpose. That check counts `ok` rows in
-`cvm_ingest_log`, and the audit log records *attempts*, not coverage — the exact signal
+`cvm_ingest_log`, and the audit log records _attempts_, not coverage — the exact signal
 that produced this gap. Coverage in repair mode is decided by probing the table.
 
 > **Never diagnose coverage from `cvm_ingest_log` alone.** On 2026-08-27 `fi/balancete`
 > 2026-06 had a fresh `error` / `TimeoutError` row sitting on top of 2,178,163 real rows
-> from an earlier `ok` attempt. The newest audit row for a slice is the newest *attempt*.
+> from an earlier `ok` attempt. The newest audit row for a slice is the newest _attempt_.
 > Ask the table:
 >
 > ```sql
@@ -385,18 +385,46 @@ Verify afterwards with the query in the file's footer.
   `--exact` when a number needs to be authoritative.
 - Largest objects (2026-08-28 health gate, `pg_total_relation_size`):
 
-  | relation            | size   |
-  | ------------------- | ------ |
-  | `cvm_fi_balancete`  | 30 GB  |
-  | `cia_account_2021`  | 3.7 GB |
-  | `cvm_fi_perfil`     | 3.6 GB |
-  | `cia_account_2020`  | 3.3 GB |
-  | `cia_account_2019`  | 2.6 GB |
-  | `cia_account_2022`… | ~2 GB each |
-  | `b3_cotahist_2025`  | 1.5 GB |
-  | `cvm_fi_diario_2026`| 1.4 GB |
+  | relation             | size       |
+  | -------------------- | ---------- |
+  | `cvm_fi_balancete`   | 30 GB      |
+  | `cia_account_2021`   | 3.7 GB     |
+  | `cvm_fi_perfil`      | 3.6 GB     |
+  | `cia_account_2020`   | 3.3 GB     |
+  | `cia_account_2019`   | 2.6 GB     |
+  | `cia_account_2022`…  | ~2 GB each |
+  | `b3_cotahist_2025`   | 1.5 GB     |
+  | `cvm_fi_diario_2026` | 1.4 GB     |
 
-  Whole database **~72 GB**. `db_parity.py` prints live sizes.
+  Whole database **~72 GB** on 2026-08-28; **104 GB** on 2026-09-01 after the
+  holdings, FIP and debenture backfills. `db_parity.py` prints live sizes.
+
+### Where the bytes go, and what is actually reclaimable
+
+`scripts/health_diagnostics/14_disk_what_is_reclaimable.sql` (DB Health,
+`mode=diagnostics`) is the measurement to run before any reclaim. It is
+read-only and catalog-only. Its 2026-09-01 reading, which is what a future
+run should be compared against:
+
+- `pg_stat_database.stats_reset` is NULL, so an `idx_scan = 0` is real.
+- TOAST is 8 KB on every large table: `raw` JSONB is stored inline. There is
+  no JSONB lever.
+- The only index that met migration 22's bar was `cvm_fi_cda_acoes_pkey`
+  (517 MB, never scanned) — migration 37. `cvm_fi_cda_cotas_pkey` looks the
+  same but its 30 scans are the `$cotas_dedup$` guard in `schema.sql` reading
+  `id`; it is load-bearing.
+- **The growth is not new data.** `cia_account_2019…2022` showed 55–78
+  updates per insert and `cvm_fi_perfil` 31: whole yearly files re-upserted
+  daily, unchanged. Before 2026-09-01 `upsert_rows` rewrote every conflicting
+  row unconditionally, and each rewrite is a dead tuple. It now updates only
+  `WHERE (cols) IS DISTINCT FROM (EXCLUDED.cols)`. If `n_tup_upd` climbs
+  again relative to `n_tup_ins`, that guard has been lost.
+- `cvm_fi_balancete` was 8.1% dead (15M tuples) with its last autovacuum five
+  days old: autovacuum's default 20% scale factor on 172M rows does not fire
+  until 34M dead. A per-table `autovacuum_vacuum_scale_factor` is the
+  reversible lever if that ratio keeps rising; a plain `VACUUM` (not FULL)
+  marks the space reusable without the ACCESS EXCLUSIVE lock. Neither
+  returns disk to the OS — only a rewrite does, and §9 item 3 still applies.
 
 ### Disk vs the plan allowance
 
@@ -405,7 +433,7 @@ GB figure. `PLAN_DISK_GB` is **empty by default**: a placeholder of 8 GB against
 a ~72 GB warehouse printed "899%" and trained everyone to ignore the line. Set
 it only to a real purchased allowance (included + addon). The gate **warns, it
 does not fail**, and it must not be "fixed" by dropping landing tables: those
-relations *are* the warehouse.
+relations _are_ the warehouse.
 
 What to do (operator, not a migration):
 
@@ -444,12 +472,12 @@ Classify with:
 psql "$POSTGRES_URL" -f scripts/queries/14_advisor_triage.sql
 ```
 
-| Advisor lint | What it is here | Do |
-| ------------ | --------------- | -- |
-| **Auth DB Connection Strategy is not Percentage** | GoTrue is capped at 10 connections. This project does **not** use Supabase Auth for ingest or the read API. | **Leave it.** Percentage would let unused Auth compete with ingest writers for the pool we just paid to enlarge. Dashboard-only; there is no repo setting. |
-| **Unindexed FK `public.messages(messages_sender_id_fkey)`** | `messages` is **not in this repo**. Not in `schema.sql`, not in any migration. Leftover on the project (chat demo / old app). | If the triage query shows it and it is empty (or junk), `DROP TABLE public.messages CASCADE` from the SQL editor — **not** from a pipeline migration. Do not add an index to keep a table we do not own. |
-| **`no_primary_key` (many tables)** | Almost entirely **partition children** of `cvm_fi_diario`, `b3_cotahist`, and `cia_account`. Postgres stores the UNIQUE/PK on the parent; the linter counts each yearly slice as a table without its own PK. Parents use a named `UNIQUE` on the natural key (required for `ON CONFLICT`) rather than `PRIMARY KEY`. | **Do not** `ALTER TABLE … ADD PRIMARY KEY` to silence the lint. That locks the largest relations in the database. Upserts already have a named UNIQUE that includes the partition key. |
-| **`unused_index`** | `idx_scan = 0` after a stats reset, a compute move, or because the planner prefers the UNIQUE. The vista covering index, BRINs, and CNPJ/date indexes exist for ingest, `api.quotes`, and the dashboard. | **Do not drop — with one narrow exception (below).** A previous dashboard bug was a sequential scan of millions of rows to print four numbers. Dropping "unused" indexes recreates that. |
+| Advisor lint                                                | What it is here                                                                                                                                                                                                                                                                                                      | Do                                                                                                                                                                                                       |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Auth DB Connection Strategy is not Percentage**           | GoTrue is capped at 10 connections. This project does **not** use Supabase Auth for ingest or the read API.                                                                                                                                                                                                          | **Leave it.** Percentage would let unused Auth compete with ingest writers for the pool we just paid to enlarge. Dashboard-only; there is no repo setting.                                               |
+| **Unindexed FK `public.messages(messages_sender_id_fkey)`** | `messages` is **not in this repo**. Not in `schema.sql`, not in any migration. Leftover on the project (chat demo / old app).                                                                                                                                                                                        | If the triage query shows it and it is empty (or junk), `DROP TABLE public.messages CASCADE` from the SQL editor — **not** from a pipeline migration. Do not add an index to keep a table we do not own. |
+| **`no_primary_key` (many tables)**                          | Almost entirely **partition children** of `cvm_fi_diario`, `b3_cotahist`, and `cia_account`. Postgres stores the UNIQUE/PK on the parent; the linter counts each yearly slice as a table without its own PK. Parents use a named `UNIQUE` on the natural key (required for `ON CONFLICT`) rather than `PRIMARY KEY`. | **Do not** `ALTER TABLE … ADD PRIMARY KEY` to silence the lint. That locks the largest relations in the database. Upserts already have a named UNIQUE that includes the partition key.                   |
+| **`unused_index`**                                          | `idx_scan = 0` after a stats reset, a compute move, or because the planner prefers the UNIQUE. The vista covering index, BRINs, and CNPJ/date indexes exist for ingest, `api.quotes`, and the dashboard.                                                                                                             | **Do not drop — with one narrow exception (below).** A previous dashboard bug was a sequential scan of millions of rows to print four numbers. Dropping "unused" indexes recreates that.                 |
 
 ### The one case where dropping is right
 
@@ -474,18 +502,18 @@ time a query planner needs it.
 Live as of 2026-08-27. Keep this current — it exists so the next person doesn't have to
 rediscover these by querying the warehouse from scratch.
 
-| Gap                                                                  | Closes by                                                                        |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `cvm_fi_balancete`: 32 published months missing (2019-04/07/10/11/12, 2020-02/05/06/09/12, 2021-04/07/08, 2022-07/09/10/12, 2023-01/03/04/06/07/09/10/12, 2024-02/04, 2025-04/05/10, 2026-01/04). Verified from the table 2026-08-27: 59 of 91 published months present. | Backfill with `fi_doc_type=balancete` + `fi_repair_gaps=true` (§4) |
-| `b3_cotahist` starts 2025-01-02 — every B3 endpoint serves ~20 months | `daily_ingest.yml` → `mode=b3-backfill`, one year at a time from 2019           |
-| `cvm_fi_diario` 2024 + 2025 empty; 2026 starts Mar 2; 2019/2020 thin | Re-dispatch the backfill (§4)                                                    |
-| `cvm_fiagro_mensal` empty                                            | Field map fixed in PR #72 — needs a backfill run                                 |
-| `anbima_class_monthly` empty                                         | Audit-log bug fixed in PR #72 — next daily run fills it                          |
-| `etf_market_snapshot` empty                                          | Set the `APIFY_TOKEN` secret, then verify the scrape's selectors on one real run |
-| SECURIT (all tables) 2026 only                                       | Undiagnosed — earlier years sit stuck `running`                                  |
-| `cia_account` 2026 partition only                                    | Undiagnosed — pre-2026 ITR/DFP never backfilled                                  |
-| `cvm_fii_mensal` starts 2021                                         | Undiagnosed — 2019–2020 never landed                                             |
-| RLS off on 52 tables                                                 | Apply §8 when ready                                                              |
+| Gap                                                                                                                                                                                                                                                                      | Closes by                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| `cvm_fi_balancete`: 32 published months missing (2019-04/07/10/11/12, 2020-02/05/06/09/12, 2021-04/07/08, 2022-07/09/10/12, 2023-01/03/04/06/07/09/10/12, 2024-02/04, 2025-04/05/10, 2026-01/04). Verified from the table 2026-08-27: 59 of 91 published months present. | Backfill with `fi_doc_type=balancete` + `fi_repair_gaps=true` (§4)               |
+| `b3_cotahist` starts 2025-01-02 — every B3 endpoint serves ~20 months                                                                                                                                                                                                    | `daily_ingest.yml` → `mode=b3-backfill`, one year at a time from 2019            |
+| `cvm_fi_diario` 2024 + 2025 empty; 2026 starts Mar 2; 2019/2020 thin                                                                                                                                                                                                     | Re-dispatch the backfill (§4)                                                    |
+| `cvm_fiagro_mensal` empty                                                                                                                                                                                                                                                | Field map fixed in PR #72 — needs a backfill run                                 |
+| `anbima_class_monthly` empty                                                                                                                                                                                                                                             | Audit-log bug fixed in PR #72 — next daily run fills it                          |
+| `etf_market_snapshot` empty                                                                                                                                                                                                                                              | Set the `APIFY_TOKEN` secret, then verify the scrape's selectors on one real run |
+| SECURIT (all tables) 2026 only                                                                                                                                                                                                                                           | Undiagnosed — earlier years sit stuck `running`                                  |
+| `cia_account` 2026 partition only                                                                                                                                                                                                                                        | Undiagnosed — pre-2026 ITR/DFP never backfilled                                  |
+| `cvm_fii_mensal` starts 2021                                                                                                                                                                                                                                             | Undiagnosed — 2019–2020 never landed                                             |
+| RLS off on 52 tables                                                                                                                                                                                                                                                     | Apply §8 when ready                                                              |
 
 ---
 
