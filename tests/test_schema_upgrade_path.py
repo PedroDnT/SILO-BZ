@@ -29,6 +29,7 @@ from pathlib import Path
 import pytest
 
 SCHEMA = Path(__file__).resolve().parents[1] / "src/store/schema.sql"
+MIGRATIONS = Path(__file__).resolve().parents[1] / "src/store/migrations"
 
 
 def _strip_sql_comments(sql: str) -> str:
@@ -158,18 +159,16 @@ def test_a_replaced_unique_index_is_dropped_first(sql: str):
 
 
 def test_cotas_duplicates_are_cleared_before_the_unique_index(sql: str):
-    """The schema gate went down on this (2026-08-31, run 33449184287).
+    """A duplicate here cannot be indexed, and an unindexable table stops ingest.
 
-    Migration 33's CREATE UNIQUE INDEX uq_fi_cda_cotas failed three times with
-    a duplicate key whose tp_fundo and tp_negoc were both NULL. NULLS NOT
-    DISTINCT makes every such row collide, and 33's repair-from-`raw` reports
-    UPDATE 0 because upsert_rows strips a key out of `raw` once a typed column
-    of the same name exists — so the fallback is gone for exactly the rows that
-    need it.
+    This is a guard, not the fix for the 2026-08-31 gate outage — that was
+    migration 33's repair UPDATE nulling a filed tp_negoc (see
+    test_the_cotas_repair_never_overwrites_a_filed_value). It removed zero rows
+    on production, which is the outcome it is supposed to have.
 
-    A failing migration blocks every later one, so the de-duplication has to
-    happen in schema.sql, which runs FIRST. If it is ever moved into a
-    migration numbered above 33, the gate breaks again and nothing later runs.
+    A failing migration blocks every later one, so if the invariant ever does
+    need enforcing it has to happen in schema.sql, which runs FIRST. Moved into
+    a migration numbered above 33, it would never be reached.
     """
     dedup = sql.find("PARTITION BY cnpj, period, tp_fundo, cnpj_cota, tp_aplic, tp_negoc")
     create = sql.find("INDEX IF NOT EXISTS uq_fi_cda_cotas")
@@ -194,3 +193,51 @@ def test_the_cotas_dedup_keeps_the_newest_row():
         "discards data arbitrarily instead of restoring the upsert's outcome"
     )
     assert "RAISE NOTICE" in text, "the removed count must be visible in the apply log"
+
+
+def test_the_cotas_repair_never_overwrites_a_filed_value():
+    """THE bug that took the schema gate down, and destroyed data doing it.
+
+    Migration 33 added tp_fundo/tp_negoc and repaired existing rows from the
+    preserved source row. Its block-2 statement assigned BOTH columns whenever
+    EITHER was null:
+
+        SET tp_fundo = NULLIF(...), tp_negoc = NULLIF(raw ->> 'TP_NEGOC', '')
+      WHERE tp_fundo IS NULL OR tp_negoc IS NULL
+
+    For a row with a real tp_negoc and no tp_fundo that reads TP_NEGOC back out
+    of a `raw` that no longer has it — upsert_rows strips a key from `raw` once
+    a typed column of the same name exists, and this migration created it — and
+    writes NULL over the filed value. The row lands on the all-NULL key, where
+    uq_fi_cda_cotas (NULLS NOT DISTINCT) already holds a sibling, so every apply
+    since 2026-08-31 has died here and taken the daily ingest with it.
+
+    COALESCE is what makes the fill one-directional. Without it the statement is
+    a silent overwrite of source-filed data, which is the one thing this
+    codebase must never do.
+    """
+    text = (MIGRATIONS / "33_cda_holdings_key_widening.sql").read_text()
+    body = text[text.index("UPDATE cvm_fi_cda_cotas"):]
+    body = re.sub(r"\s+", " ", body[: body.index(";")])
+    for col in ("tp_fundo", "tp_negoc"):
+        assert f"COALESCE( {col}," in body or f"COALESCE({col}," in body, (
+            f"migration 33 assigns {col} without COALESCE({col}, ...) — it will "
+            f"overwrite a filed value with NULL whenever `raw` has been stripped"
+        )
+
+
+def test_the_cotas_repair_only_touches_rows_raw_can_repair():
+    """Its WHERE must require a value to actually be recoverable.
+
+    `WHERE tp_fundo IS NULL OR tp_negoc IS NULL` rewrites every unrepairable row
+    on every daily apply — millions of no-op tuple versions on a table this
+    size — and each rewrite is another chance to collide. Requiring the raw key
+    to be present makes the statement touch only what it can fix.
+    """
+    text = (MIGRATIONS / "33_cda_holdings_key_widening.sql").read_text()
+    body = text[text.index("UPDATE cvm_fi_cda_cotas"):]
+    body = body[: body.index(";")]
+    assert "IS NOT NULL" in body, (
+        "migration 33's block-2 repair no longer requires the source key to be "
+        "present in `raw`, so it rewrites rows it cannot repair"
+    )
