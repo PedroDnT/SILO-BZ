@@ -38,7 +38,50 @@
 -- =============================================================================
 
 BEGIN;
-SET statement_timeout = '15min';
+-- 30min, raised from 15: the build below is deliberately single-threaded now,
+-- which trades wall-clock for peak memory. It has never come close to either
+-- bound — it dies of memory long before — but a timeout that a slower plan
+-- could reach would replace one silent failure with another.
+SET statement_timeout = '30min';
+
+-- WHY THIS BUILD IS SINGLE-THREADED (2026-09-01).
+--
+-- The CREATE MATERIALIZED VIEW below had been killing its own backend on every
+-- apply since at least 2026-08-30, and the run reported green each time —
+-- `continue-on-error: true` on the workflow step, and no health check covering
+-- the analytical layer. psql saw only:
+--
+--     server closed the connection unexpectedly
+--     psql:.../04_fact_fund_monthly.sql:211: error: connection to server was lost
+--
+-- Because the whole file is one transaction (BEGIN here, COMMIT at the end),
+-- the DROP above rolled back with it, so fact_fund_monthly kept its previous
+-- contents. Nothing was lost — but nothing was refreshed either, for days,
+-- while every signal said the apply had succeeded.
+--
+-- IT IS MEMORY, NOT A TIMEOUT, and the evidence is the death time. Two applies
+-- of identical code over identical data:
+--
+--     run 33505756897   03 ok 12:19:35.17   04 died 12:24:58.67   5m23.5s
+--     run 33508173503   03 ok 12:45:11.62   04 died 12:49:34.29   4m22.7s
+--
+-- 61 seconds apart. A statement_timeout or a pooler cap fires at a fixed
+-- duration; this does not, and statement_timeout was 15min and never reached.
+-- A backend that dies at a varying point under a constant workload was
+-- terminated from outside — memory pressure, which varies with whatever else
+-- the instance is doing.
+--
+-- The FI branch is what costs: two full passes over cvm_fi_diario (a DISTINCT
+-- ON for the per-subclass snapshot, then a GROUP BY for the flows), each with
+-- its own sort or hash. Under a Gather every one of those nodes gets its own
+-- work_mem PER WORKER, so the peak is a multiple of the single-threaded plan
+-- for no benefit that matters on a matview built once a day. Turning the
+-- multiplier off is the smallest change that addresses the measured cause;
+-- work_mem itself is left alone, because forcing a spill would slow the build
+-- toward the timeout without bounding what actually overflowed.
+--
+-- LOCAL, so it reverts at COMMIT and touches nothing else in the session.
+SET LOCAL max_parallel_workers_per_gather = 0;
 
 DROP MATERIALIZED VIEW IF EXISTS fact_fund_monthly CASCADE;
 

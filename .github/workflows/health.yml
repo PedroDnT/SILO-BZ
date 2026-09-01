@@ -196,7 +196,13 @@ jobs:
             echo "- ✅ completeness current for all monthly families" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          # 4. api.* contract still answers (catches a broken analytical apply).
+          # 4. api.* contract still answers.
+          #
+          # This was commented "catches a broken analytical apply". It does not,
+          # and did not: 04_fact_fund_monthly.sql failed on every apply from at
+          # least 2026-08-30 while this check stayed green, because neither
+          # api.catalog() nor api.coverage() reads fact_fund_monthly. Check 4b
+          # below is the one that covers it.
           cat=$(q "SELECT api.catalog()->>'version'")
           cov=$(q "SELECT count(*) FROM api.coverage()")
           echo "catalog_version=$cat coverage_rows=$cov"
@@ -206,6 +212,40 @@ jobs:
             fail=1
           else
             echo "- ✅ api contract OK (catalog v$cat, $cov coverage rows)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # 4b. The fund fact table is REFRESHED, not merely present.
+          #
+          # fact_fund_monthly is rebuilt by 04_fact_fund_monthly.sql, whose whole
+          # file is one transaction. When that build dies the DROP rolls back with
+          # it, so the matview keeps serving its previous contents — present,
+          # queryable, and silently frozen. Every existence check passes; the
+          # dashboards just quietly stop moving. That is what happened from
+          # 2026-08-30 until it was found by reading an apply log.
+          #
+          # The honest invariant is that the fact table must not trail the data
+          # that has actually been ingested. Both sides are month-granular, so a
+          # healthy pair is equal and a stalled matview drifts a whole month
+          # behind within weeks — which is the failure worth alarming on. This
+          # deliberately does not try to detect "refreshed yesterday rather than
+          # today": the source is monthly, so that would be noise.
+          #
+          # A missing or unpopulated matview makes the query error, $lag comes
+          # back non-numeric, and the guard below fails rather than passing.
+          lag=$(q "SELECT (public.latest_complete_period('fi') - max(period))::int
+                     FROM fact_fund_monthly WHERE entity_type = 'fi'")
+          echo "fact_fund_monthly lag behind ingested fi completeness: ${lag:-<none>} days"
+          if ! [ "${lag:-}" -ge 0 ] 2>/dev/null; then
+            echo "FAIL: fact_fund_monthly did not answer (missing, unpopulated, or empty)" >&2
+            echo "- ❌ fact_fund_monthly not queryable" >> "$GITHUB_STEP_SUMMARY"
+            fail=1
+          elif [ "$lag" -gt 31 ]; then
+            echo "FAIL: fact_fund_monthly is $lag days behind ingested fi data —" \
+                 "the analytical apply is failing; check 04_fact_fund_monthly.sql" >&2
+            echo "- ❌ fact_fund_monthly stale by $lag days" >> "$GITHUB_STEP_SUMMARY"
+            fail=1
+          else
+            echo "- ✅ fact_fund_monthly fresh ($lag days behind ingest)" >> "$GITHUB_STEP_SUMMARY"
           fi
 
           # 5. Disk. Supabase bills on database size; the plan allowance is a
