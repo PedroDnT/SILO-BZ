@@ -178,8 +178,53 @@ jobs:
           test "$recovered" = "2022-06-30/A" || { echo "FAIL: recovery did not read raw"; exit 1; }
           test "$acoes" = "FI" || { echo "FAIL: cda tp_fundo not recovered from raw"; exit 1; }
 
+      # fact_fund_monthly's FIP branch is keyed (cnpj, period, entity_type) with
+      # period forced to Dec-31, and it used to select cvm_fip_periodic straight.
+      # That was unique per fund-year only because the OLD key discarded the rest
+      # of each yearly file. Once migration 34 rekeyed the table and the backfill
+      # restored those rows, production got:
+      #
+      #     ERROR: could not create unique index "ix_fact_fund_monthly_pk"
+      #     DETAIL: Key (cnpj, period, entity_type)
+      #             = (49930492000103, 2024-12-31, fip) is duplicated.
+      #
+      # The analytical apply below runs against an empty database, so it could
+      # not have caught that. Seeding the shape first makes the apply itself the
+      # test: several periods in one year (only the latest belongs at an annual
+      # grain), several classes at that period (additive — they are parts of one
+      # fund), a second doc_type at the same period (must not double count), and
+      # a row migration 34 left undated (must not win the pick).
+      - name: Seed the FIP shape that broke fact_fund_monthly
+        run: |
+          psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO cvm_fip_periodic
+              (cnpj, doc_type, period_year, period, classe_cota, vl_patrim_liq, raw)
+          VALUES
+              ('49930492000103','informe',2024,'2024-06-30','A',100,'{}'::jsonb),
+              ('49930492000103','informe',2024,'2024-06-30','B', 10,'{}'::jsonb),
+              ('49930492000103','informe',2024,'2024-12-31','A',200,'{}'::jsonb),
+              ('49930492000103','informe',2024,'2024-12-31','B', 20,'{}'::jsonb),
+              ('49930492000103','anual',  2024,'2024-12-31','A',200,'{}'::jsonb),
+              ('49930492000103','informe',2024, NULL,       'A',999,'{}'::jsonb);
+          SQL
+
       - name: Apply analytical layer (empty-DB bypass)
         run: PGOPTIONS="-c silo.ci_smoke_bypass=on" bash scripts/apply_analytical.sh
+
+      # The apply above already fails if the branch emits duplicates. This also
+      # pins the VALUE, because the two ways of getting one row are not equally
+      # correct: summing across periods would report Q2+Q4 as year-end AUM, and
+      # picking one class would report a share class as the whole fund.
+      - name: FIP collapses to one row per fund-year, with classes summed
+        run: |
+          set -euo pipefail
+          got=$(psql "$POSTGRES_URL" -tAc "SELECT count(*)||'/'||coalesce(sum(vl_patrim_liq)::text,'-')
+                                             FROM fact_fund_monthly
+                                            WHERE entity_type='fip'
+                                              AND cnpj='49930492000103';")
+          echo "fip rows/PL = $got (expected 1/220.00 — latest period 200+20)"
+          test "$got" = "1/220.00" || {
+            echo "FAIL: the FIP branch no longer yields one summed row per fund-year"; exit 1; }
 
       # The tier helpers decide how much an anonymous caller may pull. Regex
       # tests over the SQL text prove the code says the right thing; only

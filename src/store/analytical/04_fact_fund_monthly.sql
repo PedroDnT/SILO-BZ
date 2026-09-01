@@ -235,6 +235,41 @@ fi_flows AS (
 
   -- -------------------------------------------------------------------------
   -- FIP: yearly grain — period = Dec-31 of the reported year
+  --
+  -- ONE ROW PER (fund, year), and it takes work to get there. This branch used
+  -- to select cvm_fip_periodic straight, which was unique per fund-year only
+  -- because the OLD key discarded everything else: the table keyed on
+  -- (cnpj, doc_type, period_year), so a yearly archive that carries every
+  -- period of the year kept one filing and overwrote the rest — 72-77% of each
+  -- file. Migration 34 rekeyed it on the filing's own DT_COMPTC plus
+  -- classe_cota, and once the backfill restored those rows this branch emitted
+  -- several per fund-year and ix_fact_fund_monthly_pk could not be built:
+  --
+  --     ERROR: could not create unique index "ix_fact_fund_monthly_pk"
+  --     DETAIL: Key (cnpj, period, entity_type)
+  --             = (49930492000103, 2024-12-31, fip) is duplicated.
+  --
+  -- Two different things multiply the rows, and they need opposite treatment.
+  --
+  -- SEVERAL PERIODS IN ONE YEAR are successive observations of the same fund,
+  -- so exactly one belongs at a Dec-31 annual grain: the latest. Summing them
+  -- would add a fund's Q1 net assets to its Q4 net assets and report the total
+  -- as year-end AUM.
+  --
+  -- SEVERAL CLASSES AT ONE PERIOD are parts of one fund, so they are additive —
+  -- the same rule the FI branch above applies to subclasses, for the same
+  -- reason. Picking one class instead would report a share class's net assets
+  -- as the whole fund's.
+  --
+  -- Hence: latest filing PER CLASS, then sum across classes. DISTINCT ON also
+  -- settles doc_type deterministically, so a fund filing under two document
+  -- types in one period contributes once rather than twice.
+  --
+  -- The year bucket stays period_year rather than EXTRACT(YEAR FROM period):
+  -- migration 34 deliberately leaves period NULL on rows whose DT_COMPTC could
+  -- not be recovered rather than deleting published data, and those rows still
+  -- belong to their archive year. NULLS LAST keeps them from winning the
+  -- DISTINCT ON over a row that does carry a date.
   -- -------------------------------------------------------------------------
   SELECT
     cnpj,
@@ -249,8 +284,23 @@ fi_flows AS (
     NULL::numeric                   AS resg_mes,
     NULL::numeric                   AS vl_ativo,
     NULL::text                      AS quota_subclass_id
-  FROM cvm_fip_periodic
-  WHERE cnpj IS NOT NULL
+  FROM (
+    SELECT cnpj,
+           period_year,
+           sum(vl_patrim_liq) AS vl_patrim_liq
+      FROM (
+        SELECT DISTINCT ON (cnpj, period_year, classe_cota)
+               cnpj,
+               period_year,
+               classe_cota,
+               vl_patrim_liq
+          FROM cvm_fip_periodic
+         WHERE cnpj IS NOT NULL
+           AND period_year IS NOT NULL
+         ORDER BY cnpj, period_year, classe_cota, period DESC NULLS LAST, doc_type
+      ) latest_filing_per_class
+     GROUP BY cnpj, period_year
+  ) fip_year
 ;
 
 -- Primary-key index — enforces uniqueness across the union
