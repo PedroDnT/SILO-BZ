@@ -168,7 +168,15 @@ jobs:
       # CVM history is backfill.yml, not a mode on this workflow.
       - name: Build / refresh analytical layer
         if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'analytics-only') }}
-        continue-on-error: true
+        # NOT continue-on-error. It was, and that is the only reason
+        # 04_fact_fund_monthly.sql could fail on every apply from 2026-08-30
+        # onwards while the run reported green and the dashboard rebuild fired
+        # off a fact table that had not been rebuilt. apply_analytical.sh already
+        # applies each file independently and reports "Applied: N Failures: M",
+        # so a non-zero exit means a file genuinely did not apply — exactly the
+        # kind of failure this repo requires to be raised rather than swallowed.
+        # Ingested rows are already committed by this point, so failing here
+        # costs no data; it costs a red run, which is the correct signal.
         run: bash scripts/apply_analytical.sh
 
       # The dashboard is a STATIC SNAPSHOT: `evidence sources` extracts Supabase
