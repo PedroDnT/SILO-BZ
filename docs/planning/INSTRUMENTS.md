@@ -403,23 +403,45 @@ adjustment is computed. Shipping on a 76% fit would rescale roughly one
 historical price in four by an amount nobody measured, which is precisely the
 failure the flag exists to prevent.
 
-**The most likely explanation, and how to test it.** The "after" price is the
-*first print after* the entitlement date. For a liquid name that is the next
-session and the ratio is nearly pure corporate action; for an illiquid one it
-can be weeks later, and every session in between contributes real price
-movement. Diagnostic 12 (`12_d1b_factor_convention_by_session_gap.sql`) buckets
-the same events by the calendar gap between the two prints. If the hit rate
-climbs sharply as the gap narrows and is near-total at consecutive sessions, the
-convention is verified and `close_adj` can ship for `DESDOBRAMENTO`,
-`BONIFICACAO` and `GRUPAMENTO` — restricted to events whose ratio the convention
-actually reproduces, with the rest left unadjusted and flagged. If the hit rate
-is flat across buckets, the dispersion is something else (a per-issuer or
-per-era convention difference, or bad published factors) and no adjustment
-should ship on this evidence.
+**THE GAP HYPOTHESIS, TESTED (diagnostic 12, same run).** The "after" price is
+the *first print after* the entitlement date. For a liquid name that is the next
+session; for an illiquid one it can be weeks later, and every session in between
+contributes real price movement. Bucketing the same events by the calendar gap
+between the two prints:
 
-Run it with `health.yml mode=diagnostics`. Until it answers, the honest state is
-the one shipped: prices as published, `adjusted = FALSE`, and the measurement
-above on the record instead of a guess.
+    label            >40 days   <=40 days   <=10 days   consecutive
+    DESDOBRAMENTO       44.4%       64.1%       67.8%    82.6% (n=299)
+    BONIFICACAO         33.3%       33.3%      100% (n=1) 86.3% (n=73)
+    GRUPAMENTO (direct) 50% (n=2)   50% (n=4)   25.0%     42.2% (n=83)
+    CIS RED CAP          0.0%       18.8%       27.8%     15.5% (n=58)
+
+The hypothesis is **confirmed in direction and still insufficient**.
+`DESDOBRAMENTO` climbs monotonically as the gap narrows — 44.4% -> 64.1% ->
+67.8% -> 82.6% — exactly as predicted, and its median at consecutive sessions is
+0.9984. Stale "after" prices really were polluting the measurement. But 82.6% is
+below the 90% bar, and `BONIFICACAO` reaches only 86.3%. **So `close_adj` does
+not ship**, and `adjusted` stays `FALSE` — now for a measured reason rather than
+an unexamined one.
+
+Two further findings worth keeping:
+
+- **`GRUPAMENTO` does not verify at all.** Its best bucket is 42.2%, and it does
+  not improve as the gap narrows. Whatever describes a reverse split here, it is
+  not `ratio = factor` applied uniformly. Do not adjust groupings.
+- **`CIS RED CAP` is correctly excluded**, as expected: 15.5% at consecutive
+  sessions confirms a capital reduction moves price by a cash distribution, not
+  a share-count ratio. It should never have been a candidate.
+
+**The open question, for whoever picks this up.** Restricted to consecutive
+sessions, roughly one `DESDOBRAMENTO` in six still misses by more than 5% with a
+median essentially at 1.0000 — so the convention is right and something else
+perturbs a minority of events. The candidates not yet tested: two events on the
+same ISIN and date (a split plus a bonus would compound, and the query treats
+them independently), an entitlement-date convention that differs for some
+issuers, and genuinely large single-session moves. Each is a separate query
+against data already held. Until one of them explains the residual, the honest
+state is the one shipped: prices as published, `adjusted = FALSE`, and this
+measurement on the record instead of a guess.
 
 ### How to _verify_ a series, whatever the source
 
