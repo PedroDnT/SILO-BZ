@@ -155,3 +155,42 @@ def test_a_replaced_unique_index_is_dropped_first(sql: str):
         create = sql.find(f"INDEX IF NOT EXISTS {name}")
         assert drop != -1, f"{name} is re-created without a preceding DROP"
         assert drop < create, f"{name} is dropped after it is created"
+
+
+def test_cotas_duplicates_are_cleared_before_the_unique_index(sql: str):
+    """The schema gate went down on this (2026-08-31, run 33449184287).
+
+    Migration 33's CREATE UNIQUE INDEX uq_fi_cda_cotas failed three times with
+    a duplicate key whose tp_fundo and tp_negoc were both NULL. NULLS NOT
+    DISTINCT makes every such row collide, and 33's repair-from-`raw` reports
+    UPDATE 0 because upsert_rows strips a key out of `raw` once a typed column
+    of the same name exists — so the fallback is gone for exactly the rows that
+    need it.
+
+    A failing migration blocks every later one, so the de-duplication has to
+    happen in schema.sql, which runs FIRST. If it is ever moved into a
+    migration numbered above 33, the gate breaks again and nothing later runs.
+    """
+    dedup = sql.find("PARTITION BY cnpj, period, tp_fundo, cnpj_cota, tp_aplic, tp_negoc")
+    create = sql.find("INDEX IF NOT EXISTS uq_fi_cda_cotas")
+    assert dedup != -1, (
+        "schema.sql no longer de-duplicates cvm_fi_cda_cotas before building "
+        "uq_fi_cda_cotas — migration 33 will fail on legacy NULL-key rows and "
+        "take the whole schema gate down with it"
+    )
+    assert dedup < create, "the de-duplication must run BEFORE the index is created"
+
+
+def test_the_cotas_dedup_keeps_the_newest_row():
+    """Last write wins — the row ON CONFLICT DO UPDATE would itself have kept.
+
+    Ordering by fetched_at DESC is the whole justification for deleting
+    anything here: it reproduces the upsert's own semantics rather than making
+    an arbitrary choice about which real position to discard.
+    """
+    text = SCHEMA.read_text()
+    assert "ORDER BY fetched_at DESC, id DESC" in text, (
+        "the dedup must keep the newest row per key; any other ordering "
+        "discards data arbitrarily instead of restoring the upsert's outcome"
+    )
+    assert "RAISE NOTICE" in text, "the removed count must be visible in the apply log"
