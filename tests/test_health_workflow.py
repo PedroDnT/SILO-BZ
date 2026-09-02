@@ -319,3 +319,97 @@ def test_backlog_diagnostic_is_read_only():
     ).upper()
     for verb in ("INSERT ", "UPDATE ", "DELETE ", "DROP ", "ALTER ", "CREATE ", "TRUNCATE "):
         assert verb not in body, f"diagnostic 15 must not contain {verb.strip()}"
+
+
+# --- check 4b: a negative lag is healthy -----------------------------------
+#
+# Run 33666142198 failed with "fact_fund_monthly did not answer (missing,
+# unpopulated, or empty)" about a matview that had been rebuilt 44 minutes
+# earlier and answered -31. The fact table aggregates cvm_fi_diario, which the
+# daily fills through the CURRENT month, while latest_complete_period('fi')
+# counts only complete months — so a freshly built matview is one calendar
+# month AHEAD, and `[ "$lag" -ge 0 ]` sent that into the not-queryable branch.
+#
+# These tests RUN the block rather than reading it. The defect was in shell
+# control flow, which a substring assertion cannot see.
+
+import subprocess
+import tempfile
+
+
+def _run_check_4b(lag_value: str) -> tuple[int, str, str]:
+    """Execute check 4b's branch with a given $lag. Returns (fail, stderr, summary)."""
+    body = _step("Health checks")["run"]
+    start = body.index('if ! printf \'%s\' "${lag:-}"')
+    end = body.index("\n", body.index("fi", body.index("fact_fund_monthly fresh ($lag days behind")))
+    block = body[start:end]
+    with tempfile.NamedTemporaryFile("w+", suffix=".md", delete=False) as summary:
+        summary_path = summary.name
+    script = (
+        f'set -u\nfail=0\nlag="{lag_value}"\n'
+        f'GITHUB_STEP_SUMMARY="{summary_path}"\n'
+        f"{block}\n"
+        'echo "FAILFLAG=$fail"\n'
+    )
+    proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    fail = int(proc.stdout.split("FAILFLAG=")[1].strip())
+    with open(summary_path) as fh:
+        return fail, proc.stderr, fh.read()
+
+
+class TestFactFundMonthlyLagBranch:
+    def test_one_month_ahead_is_healthy(self):
+        """-31: the exact value run 33666142198 failed on."""
+        fail, stderr, summary = _run_check_4b("-31")
+        assert fail == 0, f"a rebuilt matview must not fail the gate: {stderr}"
+        assert "✅" in summary
+        assert "in-progress month" in summary
+        assert "did not answer" not in stderr
+
+    def test_a_short_month_ahead_is_healthy(self):
+        """February gives -28. The whole legitimate band must pass."""
+        for lag in ("-28", "-29", "-30"):
+            fail, _, _ = _run_check_4b(lag)
+            assert fail == 0, f"lag={lag} must pass"
+
+    def test_equal_periods_are_healthy(self):
+        fail, _, summary = _run_check_4b("0")
+        assert fail == 0 and "✅" in summary
+
+    def test_within_a_month_behind_is_healthy(self):
+        fail, _, summary = _run_check_4b("31")
+        assert fail == 0 and "✅" in summary
+
+    def test_stale_still_fails_with_the_stale_message(self):
+        """The 2026-08-30 bug this check was built for."""
+        fail, stderr, summary = _run_check_4b("45")
+        assert fail == 1
+        assert "45 days behind" in stderr
+        assert "04_fact_fund_monthly.sql" in stderr
+        assert "stale by 45 days" in summary
+
+    def test_more_than_a_month_ahead_fails_as_future_dated(self):
+        """Two months ahead is not an in-progress month; it is a bad DT_COMPTC."""
+        fail, stderr, summary = _run_check_4b("-61")
+        assert fail == 1
+        assert "61 days AHEAD" in stderr
+        assert "DT_COMPTC" in stderr
+        assert "future-dated" in summary
+
+    def test_a_genuinely_absent_answer_still_says_so(self):
+        """An empty $lag must keep the not-queryable message — the branch is real."""
+        fail, stderr, summary = _run_check_4b("")
+        assert fail == 1
+        assert "did not answer" in stderr
+        assert "not queryable" in summary
+
+    def test_psql_error_text_is_not_read_as_a_number(self):
+        fail, stderr, _ = _run_check_4b("ERROR:relationdoesnotexist")
+        assert fail == 1
+        assert "did not answer" in stderr
+
+    def test_the_two_failure_modes_have_different_messages(self):
+        """Conflating them is what produced the wrong diagnosis in the first place."""
+        _, absent, _ = _run_check_4b("")
+        _, ahead, _ = _run_check_4b("-61")
+        assert "did not answer" in absent and "did not answer" not in ahead
