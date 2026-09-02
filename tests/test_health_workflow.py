@@ -254,3 +254,68 @@ def test_publishable_key_has_a_single_source():
     body = _anon_step()["run"]
     assert "grep -oE 'sb_publishable_[A-Za-z0-9_]+' skill.md" in body
     assert "sb_publishable__" not in body, "do not paste the key into the workflow"
+
+
+# --- 15_unhealed_ingest_errors.sql -----------------------------------------
+#
+# #174 narrowed check 1 so it fails only on slices daily_update would retry.
+# That is correct — daily never probes 2005, so alarming on a 2005 slice every
+# 26 hours is a red light only a backfill can clear. But it left the run
+# printing "0 (of 7 error rows)" with no way to see the 7. Diagnostic 15 is
+# that view. It restates the daily-window predicate as a literal, because
+# `psql -f` gets no variables, so the two definitions can drift silently
+# unless something holds them together. These tests are that something.
+
+DIAG_BACKLOG = DIAG_DIR / "15_unhealed_ingest_errors.sql"
+
+
+def _lookback_months() -> int:
+    return int(_spec()["jobs"]["health"]["env"]["DAILY_LOOKBACK_MONTHS"])
+
+
+def test_the_ingest_backlog_diagnostic_exists():
+    assert DIAG_BACKLOG.exists(), (
+        "check 1 no longer fails on historical slices; without this file the "
+        "backlog is invisible as well as non-fatal"
+    )
+
+
+def test_backlog_diagnostic_uses_the_workflows_own_lookback():
+    """The literal must equal DAILY_LOOKBACK_MONTHS - 1, as in health.yml."""
+    sql = DIAG_BACKLOG.read_text(encoding="utf-8")
+    expected = f"- {_lookback_months() - 1} * INTERVAL '1 month'"
+    assert expected in sql, (
+        f"diagnostic 15 must offset by {expected!r} to match health.yml's "
+        f"DAILY_LOOKBACK_MONTHS={_lookback_months()}; otherwise the gate and "
+        "the backlog view disagree about what the daily window is"
+    )
+
+
+def test_backlog_diagnostic_defines_unhealed_exactly_as_check_1_does():
+    """A slice is healed by a later ok OR skipped row, matched NULL-safely."""
+    sql = DIAG_BACKLOG.read_text(encoding="utf-8")
+    check1 = _step("Health checks")["run"]
+    for clause in (
+        "s.status IN ('ok', 'skipped')",
+        "s.entity       IS NOT DISTINCT FROM e.entity",
+        "s.doc_type     IS NOT DISTINCT FROM e.doc_type",
+        "s.period_year  IS NOT DISTINCT FROM e.period_year",
+        "s.period_month IS NOT DISTINCT FROM e.period_month",
+        "s.started_at   > e.started_at",
+    ):
+        assert clause in sql, f"diagnostic 15 is missing {clause!r}"
+        assert clause in check1, f"check 1 no longer contains {clause!r} — resync diagnostic 15"
+
+
+def test_backlog_diagnostic_is_read_only():
+    """It runs against production. Nothing in it may write.
+
+    Comments are stripped first: the header explains daily_update, and a
+    substring match on prose would fail on the word rather than on a statement.
+    """
+    body = "\n".join(
+        line.split("--", 1)[0]
+        for line in DIAG_BACKLOG.read_text(encoding="utf-8").splitlines()
+    ).upper()
+    for verb in ("INSERT ", "UPDATE ", "DELETE ", "DROP ", "ALTER ", "CREATE ", "TRUNCATE "):
+        assert verb not in body, f"diagnostic 15 must not contain {verb.strip()}"
