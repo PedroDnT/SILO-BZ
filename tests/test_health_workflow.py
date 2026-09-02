@@ -67,6 +67,34 @@ def test_embedded_catalog_key_is_version_in_sql_and_python():
     assert '"catalog_version"' not in sql
 
 
+def test_ingest_errors_ignore_historical_backfill_outside_daily_window():
+    """DB Health #14: hist CDA backfill errors must not fail warehouse health.
+
+    Run 33507857471 failed on 31 unhealed fi/cda_cotas 2010-2022 yearly and
+    fi/cda_acoes 2025-12..2026-08 slices after a CVMHostUnreachable backfill.
+    Completeness, catalog v17, and the anon API check all passed. Daily ingest
+    #203 on that SHA was analytics-only; even a real daily run never retries
+    those years. Restrict the fail set to slices daily_update would retry.
+    """
+    spec = _spec()
+    env = spec["jobs"]["health"]["env"]
+    assert env["DAILY_LOOKBACK_MONTHS"] == "4", (
+        "must match CVM_DAILY_LOOKBACK_MONTHS default; a tighter window would "
+        "miss in-window daily failures, a looser one re-counts hist backfill"
+    )
+    body = _step("Health checks")["run"]
+    assert "make_date(e.period_year, e.period_month, 1)" in body
+    assert "date_trunc('month', CURRENT_DATE)" in body
+    assert "EXTRACT(YEAR FROM CURRENT_DATE)::int" in body
+    assert "e.period_year IS NULL" in body
+    assert body.count("make_date(e.period_year, e.period_month, 1)") >= 2, (
+        "count query and the evidence SELECT must agree on the daily window"
+    )
+    # The fail signal names the daily window so a future edit cannot silently
+    # revert to counting every historical error row.
+    assert "daily window" in body
+
+
 def test_ingest_errors_treat_later_skipped_as_healed():
     """Run 33164105326: TimeoutError then 404-skip must not fail the gate."""
     body = _step("Health checks")["run"]

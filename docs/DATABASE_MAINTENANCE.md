@@ -23,9 +23,10 @@ your environment or `.env`.
 
 `.github/workflows/watchdog.yml` runs a couple of hours later, calls
 `scripts/check_staleness.py`, and re-runs the daily ingest if a slice looks stale
-**or** if unhealed ingest errors remain in the same 26h window DB Health uses
-(including weekends — a Saturday `CVMHostUnreachable` burst is a failed cron,
-not a quiet market day). Recovery probes `dados.cvm.gov.br` first so a blocked
+**or** if unhealed ingest errors remain in the same 26h **daily window** DB Health
+uses (including weekends — a Saturday `CVMHostUnreachable` burst is a failed cron,
+not a quiet market day). Historical backfill errors outside `DAILY_LOOKBACK_MONTHS`
+do not count. Recovery probes `dados.cvm.gov.br` first so a blocked
 runner IP fails in a second instead of writing another round of error rows.
 
 `.github/workflows/backfill.yml` is on-demand only (see §4).
@@ -113,11 +114,16 @@ returned rows. That combination was what let `cvm_fiagro_mensal` sit empty behin
 `ok` slices; it is now an `error` naming the likely cause.
 
 The DB Health workflow (`.github/workflows/health.yml`) fails on **unhealed**
-error slices: an `error` whose slice has no later `ok` **or** `skipped`. A
-`TimeoutError` on the current unpublished month, followed by the daily window's
+error slices **that daily ingest would retry**: an `error` whose slice has no
+later `ok` **or** `skipped`, and whose period is undated, current-year yearly,
+or a month inside `DAILY_LOOKBACK_MONTHS` (4, same as `CVM_DAILY_LOOKBACK_MONTHS`).
+A `TimeoutError` on the current unpublished month, followed by the daily window's
 404 `skipped`, is a recovered probe — not a broken warehouse. Run 33164105326
-went red on exactly that (`fidc/mensal_tab_x2` 2026-08). Disk size is a warning
-only; do not DROP landing tables to clear it.
+went red on exactly that (`fidc/mensal_tab_x2` 2026-08). Historical backfill
+errors (DB Health #14: 31 `fi/cda_cotas` 2010–2022 yearly + `fi/cda_acoes`
+2025-12..2026-05 slices after CVM refused the runner) do **not** fail this
+gate: `run_daily` never touches those years, and the backfill workflow already
+went red. Disk size is a warning only; do not DROP landing tables to clear it.
 
 A later `ok` that still leaves the slice unhealed is a classification bug, not
 a missed cron. Run 33299581405 (DB Health #6) failed on `b3/corporate_events`
