@@ -495,7 +495,9 @@ same for everyone. Google is configured but not yet enabled.
   trailing months, so deep history for the recently-fixed field maps needs `backfill.yml`.
 - **`VERCEL_DEPLOY_HOOK_URL`** — set. Used only when a manual Daily Ingest dispatch
   sets `rebuild_dashboard=true`; scheduled ingest and fills leave Vercel alone.
-- **`APIFY_TOKEN`** — set. The ETF market scrape self-skips without it.
+- **`APIFY_TOKEN`** — set. The ETF market scrape self-skips without it, and also
+  skips (does not fail the daily run) when Apify returns
+  `full-permission-actor-not-approved`. Default actor is `apify/playwright-scraper`.
 - **Company ↔ ticker** comes from CVM's published FCA valores-mobiliários filing
   (`cia_ticker` → `vw_company_ticker`), never from name matching.
 - **Fund → company** now exists as data but is not served. `cvm_fi_cda_acoes.cd_ativo`
