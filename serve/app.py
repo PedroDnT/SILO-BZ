@@ -19,6 +19,8 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+import psycopg2
+import psycopg2.errors
 from flask import Flask, jsonify, request
 
 from serve.catalog import METRICS, catalog_payload, tool_specs
@@ -79,6 +81,22 @@ def normalize_cnpj(raw: str) -> str:
     return digits
 
 
+def _iso_date(value: Optional[str], field: str) -> Optional[str]:
+    """Validate a caller-supplied date before it reaches SQL.
+
+    Without this, `?from=notadate` reached Postgres and came back as
+    psycopg2.errors.InvalidDatetimeFormat — which Flask rendered as an HTML 500
+    traceback from a JSON API. The caller's own typo looked like a server fault.
+    """
+    if value is None or value == "":
+        return value
+    try:
+        date.fromisoformat(str(value)[:10])
+    except ValueError:
+        raise ValueError(f"{field} must be an ISO date (YYYY-MM-DD), got {value!r}")
+    return value
+
+
 def parse_window(
     args: Any,
     *,
@@ -96,8 +114,8 @@ def parse_window(
     the today default: a session print is complete by construction.
     """
     raw_range = (args.get("range") or "").strip().lower()
-    raw_from = args.get("from")
-    raw_to = args.get("to")
+    raw_from = _iso_date(args.get("from"), "from")
+    raw_to = _iso_date(args.get("to"), "to")
     if not raw_range and not raw_from and not raw_to and default_from is None:
         return None
     today = date.today()
@@ -299,7 +317,14 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
     @app.get("/v1/coverage")
     def coverage():
         with pool.connection() as conn, conn.cursor() as cur:
-            cur.execute("SELECT dataset, as_of, source FROM api.coverage()")
+            # complete_through, not just as_of: as_of is the newest row we hold,
+            # complete_through is the last period we believe is COMPLETE. A
+            # partially-published month has an as_of inside it and a
+            # complete_through before it, and dropping the second column turns
+            # "we have some of August" into "we have August".
+            cur.execute(
+                "SELECT dataset, as_of, complete_through, source FROM api.coverage()"
+            )
             cols = [d[0] for d in cur.description]
             rows = [_row(r, cols) for r in cur.fetchall()]
         return jsonify({"data": rows}), 200, _cache(300)
@@ -508,6 +533,57 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
         if not rows:
             return jsonify({"error": "not found", "q": q}), 404
         return jsonify({"data": rows}), 200, _cache(300)
+
+    # ------------------------------------------------------------------
+    # Error handling. Every deliberate error path in this file already returns
+    # JSON; these cover the ones nobody wrote. Before them, a bad date or a
+    # statement timeout came back as Flask's HTML traceback page — from an API
+    # whose every success is application/json — so a client parsing the
+    # response got a JSON decode error instead of the reason.
+    # ------------------------------------------------------------------
+
+    @app.errorhandler(404)
+    def _not_found(_exc):
+        return jsonify({"error": "no such endpoint", "see": "/v1/catalog"}), 404
+
+    @app.errorhandler(405)
+    def _bad_method(_exc):
+        return jsonify({"error": "method not allowed; this API is read-only (GET)"}), 405
+
+    @app.errorhandler(psycopg2.errors.QueryCanceled)
+    def _timed_out(_exc):
+        # SQLSTATE 57014. The pool sets a per-transaction statement_timeout, so
+        # this is a query that ran out of budget rather than a broken one. Say
+        # what the caller can change; they cannot change the timeout.
+        return jsonify({
+            "error": "query exceeded the time budget",
+            "hint": "narrow the window (from/to), ask for fewer ids, or request "
+                    "fewer metrics per call",
+        }), 504
+
+    @app.errorhandler(psycopg2.errors.UndefinedFunction)
+    @app.errorhandler(psycopg2.errors.UndefinedTable)
+    def _contract_missing(exc):
+        # The analytical layer has not been applied to this database.
+        return jsonify({
+            "error": "the api schema is not present on this database",
+            "detail": str(exc).strip().splitlines()[0],
+            "hint": "run scripts/apply_analytical.sh against POSTGRES_URL",
+        }), 503
+
+    @app.errorhandler(psycopg2.Error)
+    def _db_error(exc):
+        # Anything else from the driver. The message is the driver's own first
+        # line — enough to act on, without a traceback and without leaking the
+        # DSN or the query text.
+        return jsonify({
+            "error": "database error",
+            "detail": str(exc).strip().splitlines()[0],
+        }), 502
+
+    @app.errorhandler(ValueError)
+    def _bad_request(exc):
+        return jsonify({"error": str(exc)}), 400
 
     return app
 

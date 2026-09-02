@@ -866,10 +866,16 @@ COMMENT ON FUNCTION api.option_history(TEXT, DATE, DATE) IS
 -- them as history would invite return math over non-quotes, so they get their
 -- own endpoints. side/kind derive only from tpmerc.
 
+-- The 3-argument form is dropped rather than left as an overload: PostgREST
+-- resolves an RPC by argument names, and two candidates differing only by an
+-- optional p_limit make every call ambiguous.
+DROP FUNCTION IF EXISTS api.option_exercises(TEXT, DATE, DATE);
+
 CREATE OR REPLACE FUNCTION api.option_exercises(
     p_prefix TEXT,
     p_from   DATE DEFAULT (CURRENT_DATE - 365),
-    p_to     DATE DEFAULT CURRENT_DATE
+    p_to     DATE DEFAULT CURRENT_DATE,
+    p_limit  INT  DEFAULT NULL
 )
 RETURNS TABLE (
     codneg              TEXT,
@@ -893,6 +899,8 @@ SET search_path = ''
 AS $$
 DECLARE
     v_prefix TEXT := upper(btrim(COALESCE(p_prefix, '')));
+    v_cap    INT  := CASE api.caller_tier()
+                          WHEN 'authenticated' THEN 5000 ELSE 500 END;
 BEGIN
     -- Same required-prefix contract as option_chain, same reason.
     IF length(v_prefix) < 3 THEN
@@ -929,15 +937,24 @@ BEGIN
       AND b.codneg LIKE v_prefix || '%'
       AND b.trade_date BETWEEN p_from AND p_to
     ORDER BY b.trade_date, b.codneg
-    LIMIT 5001;
+    -- Ceiling by tier, like every other row-capped function here. The old
+    -- hardcoded LIMIT 5001 was a truncation sentinel that no caller could ever
+    -- observe: PostgREST caps a response at 1000 rows regardless, so an
+    -- anonymous caller silently received 1000 and had no way to learn the
+    -- other 4001 existed. A tier ceiling makes the cut deterministic and the
+    -- documented number true.
+    LIMIT LEAST(
+        GREATEST(COALESCE(p_limit, v_cap), 1),
+        v_cap
+    );
 END;
 $$;
 
-COMMENT ON FUNCTION api.option_exercises(TEXT, DATE, DATE) IS
-    'Option exercise EVENTS (tpmerc 012 call / 013 put) for a REQUIRED codneg prefix (>= 3 chars). One row per exercise print — these are not quotes and carry no return semantics. underlying_ticker per the published ISIN mapping. Capped at 5001 rows.';
+COMMENT ON FUNCTION api.option_exercises(TEXT, DATE, DATE, INT) IS
+    'Option exercise EVENTS (tpmerc 012 call / 013 put) for a REQUIRED codneg prefix (>= 3 chars). One row per exercise print — these are not quotes and carry no return semantics. underlying_ticker per the published ISIN mapping. Rows clamped to 1..500 anonymous, 1..5000 signed in.';
 
-REVOKE ALL ON FUNCTION api.option_exercises(TEXT, DATE, DATE) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION api.option_exercises(TEXT, DATE, DATE) TO anon, authenticated, silo_api;
+REVOKE ALL ON FUNCTION api.option_exercises(TEXT, DATE, DATE, INT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.option_exercises(TEXT, DATE, DATE, INT) TO anon, authenticated, silo_api;
 
 -- Auction prints: tpmerc 017 (leilão). 210 rows over the whole 2019-2026 tape,
 -- so a plain filterable view is proportionate; no cap needed at this size.
@@ -1203,6 +1220,117 @@ REVOKE ALL ON FUNCTION api.search_funds(TEXT, TEXT, INT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.fund_profile(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION api.search_funds(TEXT, TEXT, INT) TO anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Fund holdings — the fund → ticker edge, made queryable
+--
+-- cvm_fi_cda_acoes carries CD_ATIVO, the published B3 ticker a fund holds, and
+-- cvm_fi_cda_cotas carries the CNPJ of a held fund. Both have been ingested
+-- since 2005 and neither was reachable through the API, so the one edge that
+-- joins the fund universe to the quote tape existed only as rows in a landing
+-- table nobody can read.
+--
+-- Two directions, one function:
+--   p_cnpj   -> what this fund holds
+--   p_ticker -> which funds hold this ticker
+-- Exactly one must be given; asking for both, or neither, is an error rather
+-- than a silently narrowed or unbounded scan.
+--
+-- Rows are as filed. Values are the fund's own reported position; nothing here
+-- is summed across share classes or re-based, because the source publishes one
+-- row per (application type, trading intent) and collapsing them is precisely
+-- the mistake the holdings key audit exists to prevent.
+-- ---------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION api.fund_holdings(
+    p_cnpj   TEXT DEFAULT NULL,
+    p_ticker TEXT DEFAULT NULL,
+    p_from   DATE DEFAULT NULL,
+    p_to     DATE DEFAULT NULL,
+    p_kind   TEXT DEFAULT 'equity',   -- 'equity' | 'fund'
+    p_limit  INT  DEFAULT NULL
+)
+RETURNS TABLE (
+    cnpj              TEXT,
+    period            DATE,
+    kind              TEXT,
+    held_id           TEXT,   -- ticker for equities, CNPJ for fund quotas
+    held_name         TEXT,
+    tp_aplic          TEXT,
+    tp_negoc          TEXT,
+    emissor_ligado    TEXT,
+    qt_pos_final      NUMERIC,
+    vl_merc_pos_final NUMERIC
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+DECLARE
+    v_cnpj   TEXT := NULLIF(regexp_replace(COALESCE(p_cnpj, ''), '\D', '', 'g'), '');
+    v_ticker TEXT := NULLIF(upper(btrim(COALESCE(p_ticker, ''))), '');
+    v_cap    INT  := CASE api.caller_tier()
+                          WHEN 'authenticated' THEN 5000 ELSE 500 END;
+    v_limit  INT;
+BEGIN
+    IF (v_cnpj IS NULL) = (v_ticker IS NULL) THEN
+        RAISE EXCEPTION
+            'fund_holdings needs exactly one of p_cnpj (what this fund holds) '
+            'or p_ticker (which funds hold this ticker); % were given',
+            CASE WHEN v_cnpj IS NULL THEN 'neither' ELSE 'both' END
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF p_kind IS NOT NULL AND p_kind NOT IN ('equity', 'fund') THEN
+        RAISE EXCEPTION
+            'p_kind must be equity or fund, got %; equity reads CDA block 4 '
+            '(tickers), fund reads block 2 (held funds)', p_kind
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF v_ticker IS NOT NULL AND COALESCE(p_kind, 'equity') <> 'equity' THEN
+        RAISE EXCEPTION
+            'p_ticker only applies to p_kind=equity; a held FUND is identified '
+            'by its CNPJ, so search block 2 with p_cnpj instead'
+            USING ERRCODE = '22023';
+    END IF;
+
+    v_limit := LEAST(GREATEST(COALESCE(p_limit, v_cap), 1), v_cap);
+
+    IF COALESCE(p_kind, 'equity') = 'equity' THEN
+        RETURN QUERY
+        SELECT h.cnpj, h.period, 'equity'::TEXT, h.cd_ativo, h.ds_ativo,
+               h.tp_aplic, h.tp_negoc, h.emissor_ligado,
+               h.qt_pos_final, h.vl_merc_pos_final
+        FROM public.cvm_fi_cda_acoes h
+        WHERE (v_cnpj   IS NULL OR h.cnpj     = v_cnpj)
+          AND (v_ticker IS NULL OR h.cd_ativo = v_ticker)
+          AND (p_from IS NULL OR h.period >= p_from)
+          AND (p_to   IS NULL OR h.period <= p_to)
+        ORDER BY h.period DESC, h.vl_merc_pos_final DESC NULLS LAST
+        LIMIT v_limit;
+    ELSE
+        RETURN QUERY
+        SELECT h.cnpj, h.period, 'fund'::TEXT, h.cnpj_cota, h.nm_fundo_cota,
+               h.tp_aplic, h.tp_negoc, h.emissor_ligado,
+               h.qt_pos_final, h.vl_merc_pos_final
+        FROM public.cvm_fi_cda_cotas h
+        WHERE h.cnpj = v_cnpj
+          AND (p_from IS NULL OR h.period >= p_from)
+          AND (p_to   IS NULL OR h.period <= p_to)
+        ORDER BY h.period DESC, h.vl_merc_pos_final DESC NULLS LAST
+        LIMIT v_limit;
+    END IF;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION api.fund_holdings(TEXT, TEXT, DATE, DATE, TEXT, INT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.fund_holdings(TEXT, TEXT, DATE, DATE, TEXT, INT)
+    TO anon, authenticated;
+
+COMMENT ON FUNCTION api.fund_holdings(TEXT, TEXT, DATE, DATE, TEXT, INT) IS
+    'Fund holdings from CDA blocks 4 (equities, by B3 ticker) and 2 (held funds, by CNPJ). Give exactly one of p_cnpj (what this fund holds) or p_ticker (which funds hold this ticker). Rows are as filed; nothing is summed across application types.';
 
 -- ---------------------------------------------------------------------------
 -- Coverage — freshness without exposing cvm_ingest_log
@@ -1736,7 +1864,7 @@ STABLE
 AS $fn$
 SELECT $json${
   "kind": "catalog",
-  "version": 16,
+  "version": 17,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint carefully, and READ THE Content-Range RESPONSE HEADER ON EVERY CALL: PostgREST truncates every response at 1000 rows and keeps the OLDEST ones, so a cut-short series is indistinguishable from a complete one by its contents alone — `0-999/*` is the only thing that tells you. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -2111,6 +2239,7 @@ GRANT EXECUTE ON FUNCTION api.search_funds(TEXT, TEXT, INT)           TO silo_ap
 GRANT EXECUTE ON FUNCTION api.coverage()                              TO silo_api;
 GRANT EXECUTE ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.lookup(TEXT)                            TO silo_api;
+GRANT EXECUTE ON FUNCTION api.fund_holdings(TEXT, TEXT, DATE, DATE, TEXT, INT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.catalog()                               TO silo_api;
 
 -- Defensive, idempotent no-ops today (silo_api is never directly granted

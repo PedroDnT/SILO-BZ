@@ -492,3 +492,128 @@ def test_quote_endpoints_keep_the_today_default(client):
     assert rv.status_code == 200
     assert "api.quote_history" in client.pool.cur.sql
     assert client.pool.cur.params[2] == _date.today().isoformat()
+
+
+# ---------------------------------------------------------------------------
+# Error handling. Every deliberate error path in serve/app.py already returned
+# JSON; the gap was the paths nobody wrote. A bad date reached Postgres as
+# InvalidDatetimeFormat and a slow query as QueryCanceled, and Flask rendered
+# both as an HTML traceback — from an API whose every success is JSON, so a
+# client got a JSON decode error instead of the reason.
+# ---------------------------------------------------------------------------
+
+class _RaisingCur(_Cur):
+    """A cursor whose execute() raises, to reach the error handlers."""
+
+    def __init__(self, exc):
+        super().__init__()
+        self._exc = exc
+
+    def execute(self, sql, params=None):
+        raise self._exc
+
+
+class _RaisingPool(_FakePool):
+    def __init__(self, exc):
+        super().__init__()
+        self.cur = _RaisingCur(exc)
+
+
+def _client_raising(exc):
+    app = create_app(pool=_RaisingPool(exc))
+    app.config["TESTING"] = True
+    return app.test_client()
+
+
+def test_a_bad_date_is_a_400_not_an_html_500(client):
+    """The caller's typo must not read as a server fault.
+
+    Before validation this reached SQL and came back as psycopg2's
+    InvalidDatetimeFormat, rendered by Flask as an HTML traceback page.
+    """
+    r = client.get("/v1/quotes/PETR4?from=notadate")
+    assert r.status_code == 400
+    assert r.is_json, "an API that answers JSON on success must answer JSON on error"
+    assert "ISO date" in r.get_json()["error"]
+    assert "from" in r.get_json()["error"]
+
+
+def test_a_bad_to_date_is_also_caught(client):
+    r = client.get("/v1/quotes/PETR4?from=2024-01-01&to=13/07/2024")
+    assert r.status_code == 400
+    assert "to" in r.get_json()["error"]
+
+
+def test_a_real_date_passes_validation(client):
+    """A well-formed window must reach the query, not be rejected as malformed.
+
+    The fake pool holds no rows, so the honest answer is 404 (no data) — what
+    matters here is that it is NOT 400, i.e. validation let it through.
+    """
+    r = client.get("/v1/quotes/PETR4?from=2024-01-01&to=2024-03-01")
+    assert r.status_code != 400, r.get_json()
+
+
+def test_a_timeout_says_what_the_caller_can_change():
+    """57014 is a budget, not a bug. The caller cannot raise the timeout.
+
+    So the response names the three things they CAN change, rather than
+    reporting a bare 500 they can only retry.
+    """
+    import psycopg2.errors
+
+    c = _client_raising(psycopg2.errors.QueryCanceled("canceling statement"))
+    r = c.get("/v1/coverage")
+    assert r.status_code == 504
+    assert r.is_json
+    body = r.get_json()
+    assert "time budget" in body["error"]
+    for lever in ("window", "ids", "metrics"):
+        assert lever in body["hint"], f"the hint must name {lever}"
+
+
+def test_a_missing_api_schema_says_how_to_fix_it():
+    """The most common local failure: the analytical layer was never applied."""
+    import psycopg2.errors
+
+    c = _client_raising(psycopg2.errors.UndefinedFunction("function api.coverage() does not exist"))
+    r = c.get("/v1/coverage")
+    assert r.status_code == 503
+    assert "apply_analytical" in r.get_json()["hint"]
+
+
+def test_an_unexpected_db_error_is_json_without_a_traceback():
+    import psycopg2
+
+    c = _client_raising(psycopg2.OperationalError("connection reset by peer\nDETAIL: secret dsn"))
+    r = c.get("/v1/coverage")
+    assert r.status_code == 502
+    body = r.get_json()
+    assert body["error"] == "database error"
+    # First line only — no multi-line driver dump, no DSN.
+    assert "\n" not in body["detail"]
+    assert "secret dsn" not in body["detail"]
+
+
+def test_an_unknown_route_answers_json(client):
+    r = client.get("/v1/does-not-exist")
+    assert r.status_code == 404
+    assert r.is_json
+    assert "/v1/catalog" in r.get_json()["see"]
+
+
+def test_the_api_is_read_only(client):
+    r = client.post("/v1/coverage")
+    assert r.status_code == 405
+    assert r.is_json
+    assert "read-only" in r.get_json()["error"]
+
+
+def test_coverage_serves_complete_through(client):
+    """as_of alone turns "we have some of August" into "we have August".
+
+    api.coverage() returns four columns; serve/ selected three and dropped the
+    one the whole honest-completeness design rests on.
+    """
+    client.get("/v1/coverage")
+    assert "complete_through" in client.application.extensions["silo_pool"].cur.sql

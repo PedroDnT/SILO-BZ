@@ -103,7 +103,11 @@ CREATE INDEX IF NOT EXISTS idx_fi_cda_period ON cvm_fi_cda (period DESC);
 -- CDA holdings (blocks 4 and 2). See migrations/32_cda_holdings.sql for the
 -- unique-key audit that produced these constraints.
 CREATE TABLE IF NOT EXISTS cvm_fi_cda_acoes (
-    id                  BIGSERIAL   PRIMARY KEY,
+    -- No PRIMARY KEY on id: migration 37 dropped it (517 MB, never scanned;
+    -- the upsert arbiter is uq_fi_cda_acoes). Same treatment as balancete
+    -- after migration 22. Declared here without it so a fresh database does
+    -- not build the index only for the migration to drop it.
+    id                  BIGSERIAL,
     cnpj                TEXT        NOT NULL CHECK (char_length(cnpj) = 14),
     period              DATE        NOT NULL,   -- first day of month
     tp_fundo            TEXT,                   -- FI / FIF as filed; part of the key
@@ -132,11 +136,16 @@ CREATE TABLE IF NOT EXISTS cvm_fi_cda_acoes (
 -- Backfill #18 (run 33428561498) died here three times; the apply-schema
 -- retry loop misread it as lock contention. ADD COLUMN first. Guarded at
 -- apply time so a later replay does not take AccessExclusiveLock.
+-- Columns added after this table first shipped (migration 33). On an existing
+-- database the CREATE TABLE above is a no-op, so the index below would
+-- reference a column that does not exist yet — schema.sql runs BEFORE the
+-- migrations. Every post-CREATE column needs its own guarded ALTER here.
 ALTER TABLE cvm_fi_cda_acoes ADD COLUMN IF NOT EXISTS tp_fundo TEXT;
 
 -- NULLS NOT DISTINCT: cd_ativo and tp_negoc are empty on a minority of rows,
 -- and without it Postgres would treat every such row as distinct and let
 -- duplicates through the constraint the audit exists to enforce.
+DROP INDEX IF EXISTS uq_fi_cda_acoes;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_fi_cda_acoes
     ON cvm_fi_cda_acoes (cnpj, period, tp_fundo, tp_aplic, tp_ativo, cd_ativo, tp_negoc)
     NULLS NOT DISTINCT;
@@ -175,6 +184,70 @@ CREATE TABLE IF NOT EXISTS cvm_fi_cda_cotas (
 ALTER TABLE cvm_fi_cda_cotas ADD COLUMN IF NOT EXISTS tp_fundo TEXT;
 ALTER TABLE cvm_fi_cda_cotas ADD COLUMN IF NOT EXISTS tp_negoc TEXT;
 
+-- Same reason as cvm_fi_cda_acoes above: migration 33 added these.
+ALTER TABLE cvm_fi_cda_cotas ADD COLUMN IF NOT EXISTS tp_fundo TEXT;
+ALTER TABLE cvm_fi_cda_cotas ADD COLUMN IF NOT EXISTS tp_negoc TEXT;
+ALTER TABLE cvm_fi_cda_cotas DROP CONSTRAINT IF EXISTS uq_fi_cda_cotas;
+
+-- A guard, not the fix for the 2026-08-31 gate outage. It was added as that fix
+-- and the diagnosis was wrong, so the reasoning is corrected here rather than
+-- left to mislead the next reader.
+--
+-- What the failing apply log showed was
+--
+--   duplicate key ... (cnpj, period, tp_fundo, cnpj_cota, tp_aplic, tp_negoc)
+--   = (32300050000180, 2023-10-01, null, 43809974000123, Cotas de Fundos, null)
+--
+-- reported at line 113 of the applied migration 33, which was read as its
+-- CREATE UNIQUE INDEX failing over pre-existing duplicates. psql reports a
+-- statement's error at its LAST line, and line 113 is the closing line of the
+-- UPDATE above that index, not of the index itself. The table holds no
+-- duplicates: the CREATE UNIQUE INDEX below builds over the same rows minutes
+-- earlier in this very file, and succeeds, every run. Migration 33's repair
+-- UPDATE then nulled a filed tp_negoc — `raw` no longer carries TP_NEGOC once
+-- the typed column exists — and collided the row with its all-NULL sibling.
+-- That statement is fixed in place; see the note there.
+--
+-- This block is kept because the invariant is still worth asserting: a
+-- duplicate here means the index cannot be built at all, which takes down every
+-- ingest, and finding out during an apply is expensive. It removed 0 rows on
+-- production (no NOTICE in the 2026-09-01 10:28 log), so it is cheap insurance
+-- rather than a live repair. If it ever does fire, removing the older copies is
+-- what ON CONFLICT DO UPDATE would itself have produced had the index existed
+-- when they were written: the newest row per key is the current truth, and the
+-- superseded copies are the ones an upsert discards. The count is raised as a
+-- NOTICE so an operator sees it in the apply log rather than discovering it
+-- later.
+DO $cotas_dedup$
+DECLARE
+    v_removed BIGINT;
+BEGIN
+    IF to_regclass('public.cvm_fi_cda_cotas') IS NULL THEN
+        RETURN;
+    END IF;
+    WITH ranked AS (
+        SELECT id,
+               row_number() OVER (
+                   PARTITION BY cnpj, period, tp_fundo, cnpj_cota, tp_aplic, tp_negoc
+                   ORDER BY fetched_at DESC, id DESC
+               ) AS rn
+          FROM cvm_fi_cda_cotas
+    ), doomed AS (
+        DELETE FROM cvm_fi_cda_cotas t
+         USING ranked r
+         WHERE t.id = r.id AND r.rn > 1
+        RETURNING 1
+    )
+    SELECT count(*) INTO v_removed FROM doomed;
+    IF v_removed > 0 THEN
+        RAISE NOTICE
+            'cvm_fi_cda_cotas: removed % superseded duplicate row(s) before building uq_fi_cda_cotas (kept the newest per key, as ON CONFLICT DO UPDATE would have)',
+            v_removed;
+    END IF;
+END
+$cotas_dedup$;
+
+DROP INDEX IF EXISTS uq_fi_cda_cotas;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_fi_cda_cotas
     ON cvm_fi_cda_cotas (cnpj, period, tp_fundo, cnpj_cota, tp_aplic, tp_negoc)
     NULLS NOT DISTINCT;
@@ -185,6 +258,68 @@ CREATE INDEX IF NOT EXISTS idx_fi_cda_cotas_held
 
 COMMENT ON TABLE cvm_fi_cda_cotas IS
     'FI fund-of-fund holdings, CDA block 2. One row per (holder fund, month, held fund). emissor_ligado is CVM''s published related-party flag, not an inference.';
+
+
+-- CDA block 6 — debenture holdings. See migrations/35_cda_debentures.sql for the
+-- unique-key audit measured on both file eras.
+CREATE TABLE IF NOT EXISTS cvm_fi_cda_debentures (
+    id                  BIGSERIAL   PRIMARY KEY,
+    cnpj                TEXT        NOT NULL CHECK (char_length(cnpj) = 14),
+    period              DATE        NOT NULL,   -- first day of month
+    tp_fundo            TEXT,                   -- FI / FIF as filed; part of the key
+    denom_social        TEXT,
+    tp_aplic            TEXT,                   -- "Debêntures" / "Debêntures conversíveis"
+    tp_ativo            TEXT,                   -- "Debênture simples" etc.
+    tp_negoc            TEXT,
+    emissor_ligado      TEXT,                   -- 'S' / 'N' related-party flag, as published
+    -- The issuer. PF_PJ_EMISSOR says which of CPF/CNPJ cpf_cnpj_emissor holds,
+    -- so it is stored as published text with no 14-digit CHECK: a CPF issuer is
+    -- a real filing and a CNPJ constraint would reject it.
+    pf_pj_emissor       TEXT,
+    cpf_cnpj_emissor    TEXT,
+    emissor             TEXT,
+    dt_venc             DATE,                   -- maturity; part of the key
+    titulo_posfx        TEXT,
+    cd_indexador_posfx  TEXT,                   -- 'DI1', 'IPCA', …
+    ds_indexador_posfx  TEXT,
+    pr_indexador_posfx  NUMERIC(20,6),          -- % of the indexer
+    pr_cupom_posfx      NUMERIC(20,6),          -- spread over it
+    pr_taxa_prefx       NUMERIC(20,6),          -- pre-fixed rate instead
+    titulo_cetip        TEXT,
+    titulo_garantia     TEXT,
+    cnpj_instituicao_financ_coobr TEXT,
+    qt_pos_final        NUMERIC(28,6),
+    vl_merc_pos_final   NUMERIC(20,2),
+    vl_custo_pos_final  NUMERIC(20,2),
+    qt_aquis_negoc      NUMERIC(28,6),
+    vl_aquis_negoc      NUMERIC(20,2),
+    qt_venda_negoc      NUMERIC(28,6),
+    vl_venda_negoc      NUMERIC(20,2),
+    -- Tiebreaker, LAST in the key. A debenture has no CD_ATIVO, and two series
+    -- of one issuer maturing the same day at different coupons are different
+    -- securities holding different money. See the field map for the audit.
+    row_hash            TEXT        NOT NULL,
+    raw                 JSONB       NOT NULL,
+    fetched_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- NULLS NOT DISTINCT: dt_venc, tp_negoc and tp_ativo are empty on a minority of
+-- rows; without it Postgres treats every such row as distinct and the constraint
+-- stops enforcing anything.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_fi_cda_debentures
+    ON cvm_fi_cda_debentures
+       (cnpj, period, tp_fundo, tp_aplic, tp_ativo, cpf_cnpj_emissor, dt_venc,
+        tp_negoc, row_hash)
+    NULLS NOT DISTINCT;
+
+-- The join this table exists for: which funds hold this issuer's paper.
+CREATE INDEX IF NOT EXISTS idx_fi_cda_deb_emissor
+    ON cvm_fi_cda_debentures (cpf_cnpj_emissor, period DESC);
+CREATE INDEX IF NOT EXISTS idx_fi_cda_deb_fund
+    ON cvm_fi_cda_debentures (cnpj, period DESC);
+
+COMMENT ON TABLE cvm_fi_cda_debentures IS
+    'FI debenture holdings, CDA block 6. One row per (fund, month, issuer, maturity, series). cpf_cnpj_emissor is the issuer''s own CPF/CNPJ, so this is the join between the fund universe and the corporate-credit issuer. Values are as filed; no adjustment applied.';
 
 
 CREATE TABLE IF NOT EXISTS cvm_fi_perfil (
@@ -315,17 +450,74 @@ CREATE INDEX IF NOT EXISTS idx_fiagro_mensal_period ON cvm_fiagro_mensal (period
 -- Generic structure: key CNPJ/period, full data in JSONB
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS cvm_fip_periodic (
-    id            BIGSERIAL    PRIMARY KEY,
-    cnpj          TEXT,
-    doc_type      TEXT         NOT NULL,   -- inf_trimestral | inf_quadrimestral
-    period_year   INT          NOT NULL,
-    vl_patrim_liq NUMERIC(20,6),
-    raw           JSONB        NOT NULL,
-    fetched_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_fip_periodic UNIQUE NULLS NOT DISTINCT (cnpj, doc_type, period_year)
+    id             BIGSERIAL    PRIMARY KEY,
+    cnpj           TEXT,
+    doc_type       TEXT         NOT NULL,  -- inf_trimestral | inf_quadrimestral
+    period         DATE,                   -- the filing's own DT_COMPTC
+    period_year    INT          NOT NULL,
+    classe_cota    TEXT,                   -- share class A/B/C; part of the key
+    row_hash       TEXT,                   -- tiebreaker for restated filings
+    tp_fundo       TEXT,
+    denom_social   TEXT,
+    vl_patrim_liq  NUMERIC(20,6),
+    qt_cota        NUMERIC(28,8),
+    vl_patrim_cota NUMERIC(28,8),
+    nr_cotst       NUMERIC(20,2),
+    vl_cap_comprom NUMERIC(20,2),
+    vl_cap_subscr  NUMERIC(20,2),
+    vl_cap_integr  NUMERIC(20,2),
+    raw            JSONB        NOT NULL,
+    fetched_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
+
+-- Added by migration 34; guarded here because schema.sql runs before the
+-- migrations and the CREATE TABLE above is a no-op on an existing database.
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS period         DATE;
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS classe_cota    TEXT;
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS row_hash       TEXT;
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS tp_fundo       TEXT;
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS denom_social   TEXT;
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS qt_cota        NUMERIC(28,8);
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS vl_patrim_cota NUMERIC(28,8);
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS nr_cotst       NUMERIC(20,2);
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS vl_cap_comprom NUMERIC(20,2);
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS vl_cap_subscr  NUMERIC(20,2);
+ALTER TABLE cvm_fip_periodic ADD COLUMN IF NOT EXISTS vl_cap_integr  NUMERIC(20,2);
+ALTER TABLE cvm_fip_periodic DROP CONSTRAINT IF EXISTS uq_fip_periodic;
+
+-- Recover the key columns from the preserved source row before the index is
+-- built. Order matters: the new key DROPS period_year, so until these run every
+-- year of a fund has (period, classe_cota, row_hash) = (NULL, NULL, NULL) and
+-- NULLS NOT DISTINCT makes them all duplicates of each other.
+UPDATE cvm_fip_periodic
+   SET period = NULLIF(raw ->> 'DT_COMPTC', '')::DATE
+ WHERE period IS NULL
+   AND NULLIF(raw ->> 'DT_COMPTC', '') IS NOT NULL;
+
+UPDATE cvm_fip_periodic
+   SET classe_cota = NULLIF(raw ->> 'CLASSE_COTA', '')
+ WHERE classe_cota IS NULL;
+
+-- The marker carries the row's own id. A constant would make every legacy row
+-- of a fund identical under the new key — which is precisely the collapse this
+-- change exists to end. `raw` holds only the columns the OLD field map did not
+-- consume, so the real digest cannot be recomputed here; the next ingest of
+-- that slice writes it as a new row and these remain distinguishable as the
+-- pre-fix remnant.
+UPDATE cvm_fip_periodic
+   SET row_hash = 'pre-migration-34:' || id::TEXT
+ WHERE row_hash IS NULL;
+
+-- A FIP yearly CSV holds every filing of the year (4 quarters, or 3
+-- quadrimestral periods) and one row per share class inside each. Keying on
+-- period_year alone discarded 72-77% of every published file.
+DROP INDEX IF EXISTS uq_fip_periodic;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_fip_periodic
+    ON cvm_fip_periodic (cnpj, doc_type, period, classe_cota, row_hash)
+    NULLS NOT DISTINCT;
 CREATE INDEX IF NOT EXISTS idx_fip_periodic_cnpj      ON cvm_fip_periodic (cnpj) WHERE cnpj IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_fip_periodic_type_year ON cvm_fip_periodic (doc_type, period_year DESC);
+CREATE INDEX IF NOT EXISTS idx_fip_periodic_period    ON cvm_fip_periodic (period DESC);
 
 -- ---------------------------------------------------------------------------
 -- FII — monthly general summary  (mensal_geral, yearly ZIP)
@@ -984,6 +1176,15 @@ CREATE INDEX IF NOT EXISTS idx_b3_cotahist_isin
     ON b3_cotahist (isin) WHERE isin IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_b3_cotahist_tpmerc_dt
     ON b3_cotahist (tpmerc, trade_date DESC);
+-- ISIN-keyed lookup (migration 36). idx_b3_cotahist_isin is unordered and
+-- idx_b3_cotahist_vista is keyed on codneg with isin only as payload, so
+-- "last close on or before date D for this ISIN" had no index and scanned the
+-- instrument's whole history. That is the lookup vw_b3_share_count_event makes
+-- twice per corporate event, and the one any event-sourced adjustment needs.
+CREATE INDEX IF NOT EXISTS idx_b3_cotahist_isin_dt
+    ON b3_cotahist (isin, trade_date DESC)
+    INCLUDE (preco_fechamento, fator_cotacao)
+    WHERE tpmerc = '010' AND isin IS NOT NULL;
 -- Option serve path (api.option_chain / api.option_history, migration 21):
 -- options (tpmerc 070/080) are ~89% of each session, so per-codneg lookups get
 -- the same partial-index treatment as vista. Termo ('030') deliberately has no

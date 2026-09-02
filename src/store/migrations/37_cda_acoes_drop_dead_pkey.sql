@@ -1,0 +1,77 @@
+-- =============================================================================
+-- Migration 37 — drop the never-used surrogate primary key on cvm_fi_cda_acoes
+--
+-- WHY
+-- ---
+-- cvm_fi_cda_acoes is 23.4M rows / 12 GB, of which 3.4 GB is indexes. One of
+-- them has never served a query. Measured 2026-09-01 by health diagnostic 14
+-- (scripts/health_diagnostics/14_disk_what_is_reclaimable.sql, run
+-- 33549228682), over a window in which pg_stat_database.stats_reset is NULL —
+-- statistics have never been reset for this database — and n_tup_ins on this
+-- table is 23,475,654:
+--
+--   index                    size      idx_scan   kind
+--   -----------------------  --------  ---------  --------------------------
+--   uq_fi_cda_acoes          2670 MB          0   UNIQUE — the ON CONFLICT probe
+--   cvm_fi_cda_acoes_pkey     517 MB          0   PRIMARY KEY (id)   <- dropped here
+--   idx_fi_cda_acoes_ativo    257 MB          7   (cd_ativo, period DESC)
+--
+-- `id` is a surrogate BIGSERIAL referenced nowhere: not in api.fund_holdings
+-- (19_api_contract.sql selects cnpj/period/cd_ativo and orders by period and
+-- value), not in any analytical view, not in the dashboard, not in the SDK,
+-- and — unlike cvm_fi_cda_cotas — not in a schema.sql guard block. upsert_rows
+-- conflicts on uq_fi_cda_acoes, which is untouched.
+--
+-- uq_fi_cda_acoes also reads 0 because migration 33 rebuilt it on 2026-09-01
+-- and the counter started over; it is the arbiter index and stays regardless.
+--
+-- WHY cvm_fi_cda_cotas_pkey IS NOT DROPPED TOO
+-- --------------------------------------------
+-- Same shape, 425 MB, but idx_scan = 30, and the reader is known: the
+-- $cotas_dedup$ block in schema.sql orders by `fetched_at DESC, id DESC` and
+-- deletes `WHERE id IN (...)` on every apply — ~30 applies since migration 33.
+-- tests/test_schema_upgrade_path.py::test_the_cotas_dedup_keeps_the_newest_row
+-- pins that ordering. The column is load-bearing there; the index stays.
+--
+-- Effect: 1 of 3 index writes per row disappears, and ~517 MB is returned.
+-- This is the whole sanctioned reclaim: diagnostic 14 found zero structurally
+-- redundant indexes and TOAST at 8 KB on every large table (raw is inline, so
+-- there is no JSONB lever). The bytes the warehouse is actually gaining come
+-- from an unconditional DO UPDATE rewriting unchanged rows daily — that is a
+-- pg_client.py change, not a migration, and it is filed separately.
+--
+-- WHAT IS DELIBERATELY *NOT* DONE
+-- -------------------------------
+-- The `id` column and its sequence stay, exactly as migration 22 kept them on
+-- balancete: dropping a column reclaims nothing without a full rewrite, and
+-- nextval() is trivial next to a B-tree insert. The PRIMARY KEY *constraint*
+-- is what costs. schema.sql is reconciled in the same change so a fresh
+-- database never builds this index only to drop it here.
+--
+-- SAFETY (verified against the repository and diagnostic 14)
+-- -----------------------------------------------------------
+--   * no `REFERENCES cvm_fi_cda_acoes` anywhere — zero inbound foreign keys;
+--   * no GRANT to anon/authenticated and no publication — it is a landing
+--     table in `public`, reached only through api.fund_holdings, so PostgREST
+--     never needs a PK here for row-level PATCH/DELETE;
+--   * upsert_rows() conflicts on (cnpj, period, tp_fundo, tp_aplic, tp_ativo,
+--     cd_ativo, tp_negoc), which is uq_fi_cda_acoes — untouched.
+--
+-- ROLLBACK (copy-paste)
+-- ---------------------
+--   ALTER TABLE cvm_fi_cda_acoes
+--       ADD CONSTRAINT cvm_fi_cda_acoes_pkey PRIMARY KEY (id);
+--
+-- NOTE ON TRANSACTIONS: not wrapped in BEGIN/COMMIT, matching migration 22.
+-- The apply runs `psql -v ON_ERROR_STOP=1 -f` with no --single-transaction,
+-- so the statement autocommits.
+-- =============================================================================
+
+-- ALTER TABLE needs ACCESS EXCLUSIVE. The work is catalog-only plus a file
+-- unlink; the risk is queueing behind a long reader, and a queued ACCESS
+-- EXCLUSIVE blocks every reader behind it. lock_timeout makes it fail fast:
+-- the schema apply retries (3 attempts in .github/actions/apply-schema), and
+-- IF EXISTS makes the retry — and every later re-apply — a no-op.
+SET lock_timeout = '15s';
+ALTER TABLE cvm_fi_cda_acoes DROP CONSTRAINT IF EXISTS cvm_fi_cda_acoes_pkey;
+RESET lock_timeout;

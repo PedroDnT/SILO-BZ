@@ -46,14 +46,71 @@ ALTER TABLE cvm_fi_cda_cotas ADD COLUMN IF NOT EXISTS tp_negoc TEXT;
 
 -- Recover the new key columns from the preserved source row. NULLIF keeps an
 -- empty CSV cell as NULL rather than promoting '' to a distinct key value.
+--
+-- CORRECTED 2026-09-01 — the original form of the block-2 statement was
+--
+--     SET tp_fundo = NULLIF(...raw...), tp_negoc = NULLIF(raw ->> 'TP_NEGOC', '')
+--   WHERE tp_fundo IS NULL OR tp_negoc IS NULL
+--
+-- which assigned BOTH columns whenever EITHER was null. A row with a real
+-- tp_negoc but no tp_fundo therefore had its tp_negoc overwritten with NULL,
+-- because `raw` no longer carries TP_NEGOC: upsert_rows strips a key out of
+-- `raw` once a typed column of the same name exists, and this migration is what
+-- created that column. The repair read back an empty fallback and wrote it over
+-- the real value.
+--
+-- That is a silent destruction of filed data, and it is also what has taken the
+-- schema gate down since 2026-08-31. Nulling the column moves the row onto the
+-- all-NULL key, where uq_fi_cda_cotas (NULLS NOT DISTINCT) already holds a
+-- sibling, so the statement fails:
+--
+--     ERROR: duplicate key value violates unique constraint "uq_fi_cda_cotas"
+--     DETAIL: Key (cnpj, period, tp_fundo, cnpj_cota, tp_aplic, tp_negoc)
+--             = (44680491000134, 2025-12-01, null, 44638527000111,
+--                Cotas de Fundos, null) already exists.
+--
+-- The error was previously read as "the table holds duplicates the index cannot
+-- be built over". It does not: psql reports a statement's error at its LAST
+-- line, and line 113 of the applied file is the closing line of this UPDATE,
+-- not of the CREATE UNIQUE INDEX below. The index builds cleanly every run —
+-- schema.sql creates the identical index minutes earlier and succeeds. This
+-- statement then breaks it.
+--
+-- No data was actually lost, because the failure is what prevented the write:
+-- the statement rolls back whole, and the only apply that ever committed it
+-- (2026-08-31 19:34) ran in the same transaction that first ADDed the columns,
+-- when every typed value was still NULL and every `raw` still carried its keys.
+-- Every apply since — where destruction would have been possible — errored here.
+--
+-- COALESCE makes each column fill only when it is empty, so a filed value is
+-- never overwritten, and the WHERE now selects only rows `raw` can actually
+-- repair rather than rewriting the whole table on every daily apply.
+--
+-- Editing an applied migration is against this repo's append-only rule, and is
+-- justified here only because the edit changes nothing anywhere it has already
+-- run: on a fresh database (CI, local, the ephemeral SQL-compile job) both
+-- tables are empty and both forms touch zero rows, and in production this
+-- statement has never committed except in the ADD COLUMN transaction described
+-- above, where COALESCE over an all-NULL column is the identity. The fix cannot
+-- live in a later migration because a failing migration blocks every migration
+-- after it, and it cannot live in schema.sql because the destructive statement
+-- is here.
 UPDATE cvm_fi_cda_acoes
-   SET tp_fundo = NULLIF(COALESCE(raw ->> 'TP_FUNDO_CLASSE', raw ->> 'TP_FUNDO'), '')
- WHERE tp_fundo IS NULL;
+   SET tp_fundo = COALESCE(
+           tp_fundo,
+           NULLIF(COALESCE(raw ->> 'TP_FUNDO_CLASSE', raw ->> 'TP_FUNDO'), ''))
+ WHERE tp_fundo IS NULL
+   AND NULLIF(COALESCE(raw ->> 'TP_FUNDO_CLASSE', raw ->> 'TP_FUNDO'), '') IS NOT NULL;
 
 UPDATE cvm_fi_cda_cotas
-   SET tp_fundo = NULLIF(COALESCE(raw ->> 'TP_FUNDO_CLASSE', raw ->> 'TP_FUNDO'), ''),
-       tp_negoc = NULLIF(raw ->> 'TP_NEGOC', '')
- WHERE tp_fundo IS NULL OR tp_negoc IS NULL;
+   SET tp_fundo = COALESCE(
+           tp_fundo,
+           NULLIF(COALESCE(raw ->> 'TP_FUNDO_CLASSE', raw ->> 'TP_FUNDO'), '')),
+       tp_negoc = COALESCE(tp_negoc, NULLIF(raw ->> 'TP_NEGOC', ''))
+ WHERE (tp_fundo IS NULL
+        AND NULLIF(COALESCE(raw ->> 'TP_FUNDO_CLASSE', raw ->> 'TP_FUNDO'), '') IS NOT NULL)
+    OR (tp_negoc IS NULL
+        AND NULLIF(raw ->> 'TP_NEGOC', '') IS NOT NULL);
 
 -- Block 4: replace the narrow index. NULLS NOT DISTINCT is mandatory — every
 -- one of tp_fundo, tp_ativo, cd_ativo and tp_negoc is empty on a minority of

@@ -354,6 +354,95 @@ The real sources, in the order worth trying:
 3. **ISIN continuity** in `b3_cotahist` — a ticker whose ISIN changes is
    telling you the instrument changed. Free signal, already in the table.
 
+### MEASURED 2026-08-31: what B3's factor actually means, per label
+
+The blocker on shipping `close_adj` was never missing data — it was an
+unanswerable query. `vw_b3_share_count_event` asks, per event, for the last cash
+close on or before the entitlement date and the first one after, keyed by ISIN.
+No index served that access pattern, so the verification diagnostic exceeded its
+90-second budget and was **silently skipped on every health run**. Migration 36
+adds `(isin, trade_date DESC) WHERE tpmerc = '010'`; the same diagnostics run
+went from 4m30s to 63s and the query now returns.
+
+**Inputs available** (diagnostic 11): 11,657 corporate events, 1,382 of them
+share-count events, **705 with a cash print on both sides** of the entitlement
+date, across 2,270 distinct ISINs.
+
+**Two candidate conventions**, from the shape of the published values:
+
+    direct   ratio = factor             (factor is the share multiplier itself)
+    percent  ratio = 1 + factor / 100   (factor is new shares per 100 held)
+
+**Result** (diagnostic 09, all 705 events with both sides; `ratio` is
+`close_before / close_after`, and a candidate "fits" when it reproduces that
+ratio within ±5%):
+
+    label            events   median vs direct  ±5%     median vs percent  ±5%
+    DESDOBRAMENTO       424             0.0117   0.0%              0.9963  76.4%
+    CIS RED CAP          97             0.0175   0.0%              0.6909  17.5%
+    GRUPAMENTO           97             1.0549  41.2%              0.1297   8.2%
+    BONIFICACAO          80             0.1058   3.8%              0.9979  82.5%
+    REST CAP ACOES        5             0.0300   0.0%              1.4977   0.0%
+    INCORPORACAO          2             0.0333   0.0%              1.6643   0.0%
+
+**What this establishes.** The convention is **not uniform across labels**, and
+the two large share-count labels agree with the *percent* reading to within
+0.4% at the median — 0.9963 and 0.9979 are not coincidences, they are the
+convention. `GRUPAMENTO` is the *direct* family instead (median 1.0549 against
+`factor`, versus 0.1297 against the percent form — an order of magnitude out).
+`CIS RED CAP` matches neither, which is expected: a capital reduction moves the
+price by a cash distribution, not by a share-count ratio, so no factor
+convention should describe it.
+
+**What this does NOT establish, and why nothing shipped.** A median of 0.9963 is
+a statement about the middle of the distribution. Only **76.4%** of
+`DESDOBRAMENTO` events land inside ±5%, and 82.5% of `BONIFICACAO`. The
+pre-committed bar was 90% — high enough that applying the factor silently to
+every event is safe. It was not met, so `adjusted` stays `FALSE` and no
+adjustment is computed. Shipping on a 76% fit would rescale roughly one
+historical price in four by an amount nobody measured, which is precisely the
+failure the flag exists to prevent.
+
+**THE GAP HYPOTHESIS, TESTED (diagnostic 12, same run).** The "after" price is
+the *first print after* the entitlement date. For a liquid name that is the next
+session; for an illiquid one it can be weeks later, and every session in between
+contributes real price movement. Bucketing the same events by the calendar gap
+between the two prints:
+
+    label            >40 days   <=40 days   <=10 days   consecutive
+    DESDOBRAMENTO       44.4%       64.1%       67.8%    82.6% (n=299)
+    BONIFICACAO         33.3%       33.3%      100% (n=1) 86.3% (n=73)
+    GRUPAMENTO (direct) 50% (n=2)   50% (n=4)   25.0%     42.2% (n=83)
+    CIS RED CAP          0.0%       18.8%       27.8%     15.5% (n=58)
+
+The hypothesis is **confirmed in direction and still insufficient**.
+`DESDOBRAMENTO` climbs monotonically as the gap narrows — 44.4% -> 64.1% ->
+67.8% -> 82.6% — exactly as predicted, and its median at consecutive sessions is
+0.9984. Stale "after" prices really were polluting the measurement. But 82.6% is
+below the 90% bar, and `BONIFICACAO` reaches only 86.3%. **So `close_adj` does
+not ship**, and `adjusted` stays `FALSE` — now for a measured reason rather than
+an unexamined one.
+
+Two further findings worth keeping:
+
+- **`GRUPAMENTO` does not verify at all.** Its best bucket is 42.2%, and it does
+  not improve as the gap narrows. Whatever describes a reverse split here, it is
+  not `ratio = factor` applied uniformly. Do not adjust groupings.
+- **`CIS RED CAP` is correctly excluded**, as expected: 15.5% at consecutive
+  sessions confirms a capital reduction moves price by a cash distribution, not
+  a share-count ratio. It should never have been a candidate.
+
+**The open question, for whoever picks this up.** Restricted to consecutive
+sessions, roughly one `DESDOBRAMENTO` in six still misses by more than 5% with a
+median essentially at 1.0000 — so the convention is right and something else
+perturbs a minority of events. The candidates not yet tested: two events on the
+same ISIN and date (a split plus a bonus would compound, and the query treats
+them independently), an entitlement-date convention that differs for some
+issuers, and genuinely large single-session moves. Each is a separate query
+against data already held. Until one of them explains the residual, the honest
+state is the one shipped: prices as published, `adjusted = FALSE`, and this
+measurement on the record instead of a guess.
+
 ### How to _verify_ a series, whatever the source
 
 The honest test is not "did we apply a factor" but "does the series still

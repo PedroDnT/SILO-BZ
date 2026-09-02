@@ -28,7 +28,7 @@ on:
           - etf
           - all
       fi_doc_type:
-        description: "FI only: fill one document type, or all. Use balancete to repair the known balance-sheet gap without re-fetching diario/CDA/perfil; cda_acoes / cda_cotas fill the holdings tables (2023+) without touching the aggregate cda table."
+        description: "FI only: fill one document type, or all. Use balancete to repair the known balance-sheet gap without re-fetching diario/CDA/perfil; cda_acoes / cda_cotas / cda_debentures fill the holdings tables without touching the aggregate cda table."
         type: choice
         default: all
         options:
@@ -38,6 +38,7 @@ on:
           - cda
           - cda_acoes
           - cda_cotas
+          - cda_debentures
           - perfil_mensal
       fi_repair_gaps:
         description: "FI only: fetch ONLY the months missing from the fi_doc_type table (reads the table, not the audit log). Requires a specific fi_doc_type."
@@ -63,7 +64,18 @@ jobs:
   apply-schema:
     name: "Apply schema"
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 25, not 15. The apply is one pass over schema.sql + 36 migrations with
+    # every ADD COLUMN guarded to a catalog probe, and it has been getting
+    # slower as the holdings tables grow: 10m41s, 12m36s, then 14m25s on
+    # 2026-09-01 (run 33547870143). That last one SUCCEEDED at 14:25 and the
+    # job was still cancelled — GitHub enforces timeout-minutes on the job,
+    # the step finished one second before the limit, and job teardown crossed
+    # it. `needs: apply-schema` then failed and every FI year job was
+    # skipped, so the whole dispatch did nothing. Run 25 died the same way at
+    # 15m18s. Neither was a stuck lock: apply() retries on lock_timeout and
+    # neither log shows a retry. The apply is just long, and a limit inside
+    # its normal range turns a slow success into a silent no-op.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
 
@@ -75,12 +87,15 @@ jobs:
         with:
           postgres-url: ${{ secrets.POSTGRES_URL }}
 
-  # Ask CVM once, in about a second, whether it will talk to this runner at all.
-  # Every CVM job below gates on this: a dispatch is up to 300 minutes and every
-  # download goes to that one host, so when the IP is refused the whole thing is
-  # doomed before it starts. On 2026-08-29 the 06:00 ingest spent ~40 minutes
-  # proving the same refusal across twenty slices. bacen_only runs skip it —
-  # they never touch CVM.
+  # Ask CVM once, in about a second, whether it is answering anyone at all.
+  # Every CVM job below `needs:` this so a globally-down host fails the matrix
+  # before 22 year-jobs spin up. That is not the same runner as the downloads:
+  # GitHub-hosted jobs are different VMs with different IPs. Backfill #22
+  # (run 33434522442) passed this probe at 20:10, FI 2024 landed 2.7M
+  # cda_acoes rows, then FI 2025 and FI 2026 each spent ~7 minutes proving
+  # `Connect call failed ('45.7.170.66', 443)` on new runners. Each ingest job
+  # therefore also probes locally (same pattern as daily_ingest.yml) before it
+  # fetches. bacen_only runs skip this job — they never touch CVM.
   cvm-preflight:
     name: "Can this runner reach CVM?"
     if: ${{ inputs.bacen_only != true }}
@@ -176,7 +191,31 @@ jobs:
         # 2005 is where the CDA yearly archives start. A year not listed here
         # cannot be dispatched at all; one outside the requested range exits 0
         # in seconds, so the unused entries cost a skipped job, not a fetch.
-        year: [2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026]
+        year:
+          [
+            2005,
+            2006,
+            2007,
+            2008,
+            2009,
+            2010,
+            2011,
+            2012,
+            2013,
+            2014,
+            2015,
+            2016,
+            2017,
+            2018,
+            2019,
+            2020,
+            2021,
+            2022,
+            2023,
+            2024,
+            2025,
+            2026,
+          ]
     steps:
       - uses: actions/checkout@v5
 
@@ -191,6 +230,13 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+
+      # Same runner as the fetch below. The workflow-level cvm-preflight job
+      # cannot see this VM's IP; without this step a blocked year grinds the
+      # connect-retry loop (~7 min) and writes CVMHostUnreachable audit rows.
+      - name: Probe dados.cvm.gov.br
+        if: ${{ matrix.year >= fromJSON(inputs.start_year) && matrix.year <= fromJSON(inputs.end_year) }}
+        run: python scripts/check_cvm_reachable.py
 
       - name: Install dependencies
         if: ${{ matrix.year >= fromJSON(inputs.start_year) && matrix.year <= fromJSON(inputs.end_year) }}
@@ -236,6 +282,7 @@ jobs:
                   cda_months = ok_months(cur, "cda", year)
                   cda_acoes_months = ok_months(cur, "cda_acoes", year)
                   cda_cotas_months = ok_months(cur, "cda_cotas", year)
+                  cda_deb_months = ok_months(cur, "cda_debentures", year)
                   diario_rows = None
                   if year in (2019, 2020):
                       cur.execute(f"SELECT COUNT(*) FROM cvm_fi_diario_{year}")
@@ -267,6 +314,7 @@ jobs:
                   "cda": cda_months,
                   "cda_acoes": cda_acoes_months,
                   "cda_cotas": cda_cotas_months,
+                  "cda_debentures": cda_deb_months,
               }
               # .get, not []: this runs outside the try/except above, so a doc
               # type the gate has not learned yet would abort the dispatch
@@ -363,6 +411,10 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Probe dados.cvm.gov.br
+        if: ${{ inputs.entity == 'all' || inputs.entity == matrix.entity }}
+        run: python scripts/check_cvm_reachable.py
+
       - name: Install dependencies
         if: ${{ inputs.entity == 'all' || inputs.entity == matrix.entity }}
         run: pip install -r requirements.txt
@@ -399,6 +451,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+
+      - name: Probe dados.cvm.gov.br
+        run: python scripts/check_cvm_reachable.py
 
       - name: Install dependencies
         run: pip install -r requirements.txt

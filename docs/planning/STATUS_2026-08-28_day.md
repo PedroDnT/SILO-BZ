@@ -1,5 +1,12 @@
 # Status — 2026-08-28 (day session)
 
+
+> **Superseded snapshot — 2026-08-28.** Kept as the record of that session, not as
+> live state. The queue below has largely been worked since: historical FCA years and
+> the corporate-actions feed both shipped, and the holdings, FIP and CDA key repairs
+> that followed are in `docs/planning/CHANGELOG.md`. For what the warehouse holds and
+> serves **today**, read `docs/DATA_INVENTORY.md`.
+
 Follows the overnight run (`STATUS_2026-08-28.md`). Ordered by what the user
 asked for, not by what was easiest.
 

@@ -140,7 +140,7 @@ api.search_funds(p_query       TEXT DEFAULT '',
 </ParamField>
 
 <ParamField body="p_limit" type="integer" default="50">
-  Clamped into `1..200`. A null is treated as 50; anything above 200 becomes 200.
+  Clamped by tier: **25** for anonymous callers, 200 signed in. A null is treated as 50. A larger value is silently reduced, not refused.
 </ParamField>
 
 <ResponseField name="cnpj" type="text">14-digit CNPJ.</ResponseField>
