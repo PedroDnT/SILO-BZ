@@ -127,6 +127,32 @@ async def test_etf_scrape_failure_exits_nonzero(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_etf_actor_not_approved_is_not_a_failure(monkeypatch, caplog):
+    """Apify 403 full-permission-actor-not-approved never started a scrape.
+
+    Daily CVM Ingest #209 ingested 3.1M CVM rows then exited 1 on this error,
+    which skipped ANALYZE and the analytical layer. Same class as an unset
+    APIFY_TOKEN: skip, do not fail the daily run.
+    """
+    from src.fetchers.apify_etf_fetcher import ApifyActorNotApprovedError
+
+    monkeypatch.setenv("APIFY_TOKEN", "tok")
+    p1, p2, p3, p4, *_ = _patches()
+    with p1, p2, p3, p4, \
+         patch(
+             "src.pipeline.ingest_etf_market.ingest_etf_market",
+             side_effect=ApifyActorNotApprovedError(
+                 "approve at https://console.apify.com/actors/moJRLRc85AitArpNN"
+                 "?approvePermissions=true"
+             ),
+         ), \
+         patch("src.store.pg_client.get_pg_client", return_value=MagicMock()), \
+         caplog.at_level("ERROR"):
+        await rd.main()  # no SystemExit
+    assert "actor not approved" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_b3_failure_exits_nonzero(monkeypatch):
     monkeypatch.delenv("APIFY_TOKEN", raising=False)
     p1, p2, p3, p4, *_ = _patches(b3=RuntimeError("cotahist 500"))
