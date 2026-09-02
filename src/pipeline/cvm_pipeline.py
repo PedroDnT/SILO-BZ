@@ -429,6 +429,27 @@ class CVMIngestor:
         return self._failures
 
     @property
+    def skips(self) -> List[str]:
+        """Slices this run recorded as 'skipped', rendered for the operator.
+
+        A skip is CVM not having published something — a 404 for a month inside
+        the daily window, or a CDA block absent from an archive whose siblings
+        prove it is the right archive. Never a failure: nothing is missing that
+        the source has.
+
+        But it is not nothing either. When a run's ONLY requested slice is
+        skipped, the run upserts zero rows, and ensure_rows_landed() reads that
+        zero as "every fetch failed" and exits 1 — which is exactly what run
+        33659046190 did to fi/cda_debentures/2005 after #184 had correctly
+        classified it. Strings, not SliceFailure records: this ledger exists to
+        explain a zero, and naming a skip a "failure" is the confusion being
+        fixed.
+        """
+        if not hasattr(self, "_skips"):
+            self._skips: List[str] = []
+        return self._skips
+
+    @property
     def _slice_of_run(self) -> Dict[str, Tuple[str, str, Optional[int], Optional[int]]]:
         """run_id -> slice identity from _log_start, so _log_finish can name it."""
         if not hasattr(self, "_slice_of_run_map"):
@@ -475,6 +496,21 @@ class CVMIngestor:
             SliceFailure(entity=entity, doc_type=doc_type, year=year,
                          month=month, error=error, rows=rows)
         )
+
+    def _record_skip(self, run_id: str, reason: str) -> None:
+        """Append a slice to the run's skip ledger.
+
+        Called only from _log_finish, and only when it resolved the status to
+        'skipped' — so the ledger cannot drift from the audit table, exactly as
+        _record_failure cannot.
+        """
+        entity, doc_type, year, month = self._slice_of_run.get(
+            run_id, ("unknown", "unknown", None, None)
+        )
+        period = ""
+        if year:
+            period = f" {year}" + (f"-{month:02d}" if month else "")
+        self.skips.append(f"{entity}/{doc_type}{period}: {reason}")
 
     async def _run_task_batches(
         self,
@@ -570,6 +606,8 @@ class CVMIngestor:
         # of them without touching ~50 except blocks.
         if status == "error":
             self._record_failure(run_id, error or "unknown error", rows)
+        elif status == "skipped":
+            self._record_skip(run_id, error or "not published")
         # The shared connection may have idled out during a long fetch (CVM
         # hangs of 15+ min killed it in the 2026-06-10 backfill, leaving every
         # slice stuck 'running'). Reconnect once and retry so the audit log
