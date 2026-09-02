@@ -7,11 +7,19 @@ returned HTTP 403 while branch pushes to the same remote succeeded.
 To create the tag from a checkout that can push tags:
 
     git fetch origin
-    git tag -a v1.1 -F docs/planning/RELEASE_v1.1.md 75e536d3e1bbbe5a40dacb487c5dc9d19062cefe
+    git tag -a v1.1 -F docs/planning/RELEASE_v1.1.md 6ae818c1f06530d7883437aff71999ecf7bc8a66
     git push origin v1.1
 
-75e536d is the merge of #190, and the commit every reading below was measured
-against (DB Health run 33666952637, 2026-09-02T18:24Z, HEALTH: PASS).
+Tag 6ae818c, not its parent: 6ae818c is the merge of #191, which adds this very
+file, so the tag's tree contains its own release notes. The first draft of this
+comment said 75e536d — the merge of #190 — which would have produced a v1.1
+whose tree does not include the notes describing it.
+
+Nothing measured is weakened by that choice. Every reading below was taken
+against 75e536d by DB Health run 33666952637 (2026-09-02T18:24Z, HEALTH: PASS),
+and 75e536d..6ae818c is exactly one added Markdown file: no code, no schema, no
+workflow, no serving surface. If you prefer the tag to sit on the precise tree
+that was measured, 75e536d is defensible for that reason and that reason only.
 -->
 
 # v1.1 — the data-loss release
