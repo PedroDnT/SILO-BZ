@@ -25,6 +25,19 @@ class TestEnsureRowsLanded:
         assert ensure_rows_landed(1) is None
         assert ensure_rows_landed(5_000_000) is None
 
+    def test_zero_rows_with_unpublished_skips_is_not_a_failure(self):
+        """FI 2005 cda_debentures: archive present, BLC_6 never released.
+
+        Ingest logs skipped (not error). The zero-row guard used to treat that
+        as 'every fetch failed' and fail CVM Historical Backfill job FI 2005.
+        """
+        assert ensure_rows_landed(0, skipped=1) is None
+
+    def test_zero_rows_without_skips_still_exits(self):
+        with pytest.raises(SystemExit) as excinfo:
+            ensure_rows_landed(0, skipped=0)
+        assert excinfo.value.code == 1
+
 
 class _FakeCursor:
     """Context-manager cursor whose execute() fails a configurable number of times."""

@@ -57,6 +57,7 @@ logger = logging.getLogger("run_backfill")
 async def main(args: argparse.Namespace) -> None:
     totals: dict = {}
     cvm_failures: list = []
+    cvm_skips: list = []
     start_ts = time.monotonic()
     doc_type = getattr(args, "doc_type", None)
     if doc_type and args.entity != "fi":
@@ -102,6 +103,7 @@ async def main(args: argparse.Namespace) -> None:
         )
         totals.update(cvm_totals)
         cvm_failures = list(ingestor.failures)
+        cvm_skips = list(ingestor.skips)
 
     if not args.cvm_only and not args.b3_only:
         logger.info("Starting BACEN backfill: start=%s", args.bacen_start)
@@ -130,11 +132,11 @@ async def main(args: argparse.Namespace) -> None:
         "Backfill complete in %.1fs — %d total rows: %s",
         elapsed, total_rows, totals,
     )
-    ensure_rows_landed(total_rows)
+    ensure_rows_landed(total_rows, skipped=len(cvm_skips))
     ensure_no_failed_slices(cvm_failures)
 
 
-def ensure_rows_landed(total_rows: int) -> None:
+def ensure_rows_landed(total_rows: int, skipped: int = 0) -> None:
     """Fail the process when a backfill upserts nothing.
 
     A backfill exists to land rows; zero across every slice means every fetch
@@ -144,7 +146,23 @@ def ensure_rows_landed(total_rows: int) -> None:
     that visible in CI instead of masquerading as success. Re-running over
     already-complete years still lands rows (idempotent ON CONFLICT upserts
     count them), so this only trips when nothing was ingested at all.
+
+    Exception: every requested slice was unpublished (`skipped`). FI 2005
+    cda_debentures is the case this exists for — the yearly CDA archive
+    downloads fine, sibling blocks are present, block 6 has never been
+    released. That is the same non-event as a 404, already logged `skipped`
+    in cvm_ingest_log; treating the resulting 0 rows as "every fetch failed"
+    failed CVM Historical Backfill run 33659046190 (job FI 2005) after a
+    32s download. Skips are not failures; `ensure_no_failed_slices` still
+    catches a real error in the same run.
     """
+    if total_rows == 0 and skipped > 0:
+        logger.info(
+            "Backfill upserted 0 rows because %d requested slice(s) are "
+            "unpublished (skipped) — not a failure",
+            skipped,
+        )
+        return
     if total_rows == 0:
         logger.error(
             "Backfill upserted 0 rows across all slices — treating as failure "

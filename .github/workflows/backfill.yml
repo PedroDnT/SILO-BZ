@@ -265,6 +265,23 @@ jobs:
               """, (doc_type, year))
               return cur.fetchone()[0]
 
+          def yearly_hist_status(cur, doc_type, year):
+              # Pre-2023 CDA holdings (and other yearly HIST files) log
+              # period_month NULL. COUNT(DISTINCT period_month) ignores
+              # NULL, so a finished or unpublished-block year looks like
+              # 0 months and the job re-downloads forever. Latest yearly
+              # row is the ground truth for that archive.
+              cur.execute("""
+                  SELECT status
+                  FROM cvm_ingest_log
+                  WHERE entity='fi' AND doc_type=%s
+                    AND period_year=%s AND period_month IS NULL
+                  ORDER BY finished_at DESC NULLS LAST
+                  LIMIT 1
+              """, (doc_type, year))
+              row = cur.fetchone()
+              return row[0] if row else None
+
           url = os.environ.get("POSTGRES_URL", "").replace("\n", "").replace(" ", "")
           year = int("${{ matrix.year }}")
           if not url:
@@ -283,6 +300,12 @@ jobs:
                   cda_acoes_months = ok_months(cur, "cda_acoes", year)
                   cda_cotas_months = ok_months(cur, "cda_cotas", year)
                   cda_deb_months = ok_months(cur, "cda_debentures", year)
+                  yearly_status = None
+                  requested_doc_for_query = "${{ inputs.fi_doc_type }}"
+                  if requested_doc_for_query != "all":
+                      yearly_status = yearly_hist_status(
+                          cur, requested_doc_for_query, year
+                      )
                   diario_rows = None
                   if year in (2019, 2020):
                       cur.execute(f"SELECT COUNT(*) FROM cvm_fi_diario_{year}")
@@ -300,10 +323,13 @@ jobs:
           # 2026-06 carries a fresh 'error' row over 2,178,163 real rows, and
           # 32 other months carry no 'ok' row at all. --repair-gaps / --months
           # decide what to fetch by reading the table itself.
-          # No pre-2023 exclusion for the holdings blocks: they come from blocks
-          # 4 and 2 of the same yearly HIST archive as `cda`, so every year from
-          # 2005 has a source. A month repair still cannot reach those years —
-          # gaps.FI_MONTHLY_TABLES carries that cutoff and says so.
+          # No pre-2023 exclusion for holdings blocks 4 and 2: they live in
+          # the same yearly HIST archive as `cda`, from 2005. Block 6
+          # (cda_debentures) is absent from the 2005 archive — sibling
+          # blocks present, BLC_6 never released. That is logged skipped,
+          # not a gap; yearly_hist_status below keeps the job from
+          # re-downloading it. A month repair still cannot reach hist
+          # years — gaps.FI_MONTHLY_TABLES carries that cutoff and says so.
           if "${{ inputs.fi_repair_gaps }}" == "true" or "${{ inputs.fi_months }}".strip():
               print(f"RUN: {year} (repair mode — coverage is decided from the table, not the audit log)")
           elif requested_doc != "all":
@@ -324,6 +350,14 @@ jobs:
                   print(f"RUN: {year} {requested_doc} (no coverage rule — not skipping)")
               elif months >= 11:
                   print(f"SKIP: {year} {requested_doc} complete ({months} ok months)")
+                  skip = True
+              elif year <= 2022 and yearly_status in ("ok", "skipped"):
+                  # Yearly HIST archives (inf_diario through 2020, CDA through
+                  # 2022) log period_month NULL. 2023+ is monthly; a stray
+                  # yearly row must not skip an incomplete monthly year.
+                  print(
+                      f"SKIP: {year} {requested_doc} yearly HIST {yearly_status}"
+                  )
                   skip = True
               else:
                   print(f"RUN: {year} {requested_doc} incomplete ({months} ok months)")

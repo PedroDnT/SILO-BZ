@@ -385,7 +385,7 @@ def _gate_decision(doc_type: str, year: int, repair: bool = False, **coverage) -
     # about the gate's behaviour, which is the only thing under test.
     ns = {name: 0 for name in set(re.findall(r"\b(\w+_months)\b", block))}
     ns.update(year=year, diario_months=12, perfil_months=12, balancete_months=3,
-              diario_rows=0)
+              diario_rows=0, yearly_status=None)
     ns.update(coverage)
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
@@ -413,13 +413,42 @@ def test_the_gate_runs_every_year_the_holdings_blocks_can_reach():
     """Holdings history goes back to 2005, so no year may be gated out.
 
     cda_acoes/cda_cotas read blocks 4 and 2 of the same yearly HIST archive
-    `cda` reads block 1 of, so every year from 2005 has a source. A gate that
-    skipped the earlier years would make "2019 holdings are empty" look like an
+    `cda` reads block 1 of, so every year from 2005 has a source. Block 6
+    (cda_debentures) is absent from the 2005 archive, but the first attempt
+    must still run so ingest can log `skipped`. A gate that skipped the
+    earlier years would make "2019 holdings are empty" look like an
     upstream fact rather than a dispatch we declined to run.
     """
     for year in (2005, 2019, 2022, 2023, 2026):
         assert _gate_decision("cda_acoes", year).startswith("RUN")
         assert _gate_decision("cda_cotas", year).startswith("RUN")
+        assert _gate_decision("cda_debentures", year).startswith("RUN")
+
+
+def test_yearly_hist_skipped_or_ok_does_not_redownload():
+    """FI 2005 cda_debentures: archive exists, BLC_6 has never been released.
+
+    The slice is logged skipped with period_month NULL. COUNT(DISTINCT
+    period_month) ignores NULL, so the year looks like 0 ok months and the
+    job re-downloaded the zip, then failed the zero-row guard (run
+    33659046190). A yearly skipped or ok row means that archive is done.
+    """
+    assert _gate_decision(
+        "cda_debentures", 2005, yearly_status="skipped"
+    ).startswith("SKIP")
+    assert _gate_decision(
+        "cda_debentures", 2006, yearly_status="ok"
+    ).startswith("SKIP")
+    # No yearly row yet: first attempt must still fetch.
+    assert _gate_decision("cda_debentures", 2005).startswith("RUN")
+    # An error yearly row is not a reason to skip — retry.
+    assert _gate_decision(
+        "cda_debentures", 2005, yearly_status="error"
+    ).startswith("RUN")
+    # 2023+ is monthly; a stray yearly skip must not hide missing months.
+    assert _gate_decision(
+        "cda_debentures", 2023, yearly_status="skipped"
+    ).startswith("RUN")
 
 
 def test_repair_mode_does_not_offer_to_repair_a_yearly_archive():
