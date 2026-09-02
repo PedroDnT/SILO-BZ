@@ -589,8 +589,9 @@ class CVMIngestor:
         # Single point where a slice becomes a run-level failure: exactly the
         # branches above that resolve to 'error', so the ledger and the audit
         # table can never disagree, and 'skipped' (unpublished month) is never
-        # counted. Every ingest_* method routes through here, so this covers all
-        # of them without touching ~50 except blocks.
+        # counted as a failure. Skips are recorded on a separate ledger so
+        # run_backfill can tell "unpublished" from "every fetch failed" when
+        # zero rows landed. Every ingest_* method routes through here.
         if status == "error":
             self._record_failure(run_id, error or "unknown error", rows)
         elif status == "skipped":
