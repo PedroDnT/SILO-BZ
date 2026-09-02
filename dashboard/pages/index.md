@@ -86,6 +86,9 @@ Three questions the data can answer, and where each is answered:
   receivables funds, [Securitization](/securit) for CRI/CRA certificates, and
   [Suspicious Deal Screens](/suspicious) for the specific patterns worth a second
   look.
+- **Which funds exist but do nothing?** → [Dormant Funds](/dormant) for the
+  vehicles that file every month with zero flow — empty shells with no investor,
+  and parked capital that has stopped moving.
 
 ---
 
@@ -156,12 +159,13 @@ Three questions the data can answer, and where each is answered:
 
 ### Context and scrutiny
 
-| Page                                   | What it answers                                                                                | Watch out for                                                                           |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| [Macro Context](/macro)                | SELIC, CDI, inflation, PTAX and the BACEN Focus consensus                                      | Units are BACEN's and are **not converted** — % a.a. and % a.d. sit side by side        |
-| [B3 Markets](/markets)                 | Exchange session prints from the COTAHIST tape: volume by board and instrument type, options   | Quotes are **unadjusted** and some papers quote per lot (`fator_cotacao` ≠ 1)           |
-| [Suspicious Deal Screens](/suspicious) | Four forensic patterns: zombie growth, evergreen aging, overdue certificates, captive vehicles | Screens produce **signals, not findings** — every hit needs primary-source verification |
-| [Pipeline Ops](/ops)                   | Whether the ingest ran, whether it succeeded, and whether the data actually landed             | A recent `ok` over a stale table is the disagreement worth catching                     |
+| Page                                   | What it answers                                                                                 | Watch out for                                                                           |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| [Macro Context](/macro)                | SELIC, CDI, inflation, PTAX and the BACEN Focus consensus                                       | Units are BACEN's and are **not converted** — % a.a. and % a.d. sit side by side        |
+| [B3 Markets](/markets)                 | Exchange session prints from the COTAHIST tape: volume by board and instrument type, options    | Quotes are **unadjusted** and some papers quote per lot (`fator_cotacao` ≠ 1)           |
+| [Suspicious Deal Screens](/suspicious) | Four forensic patterns: zombie growth, evergreen aging, overdue certificates, captive vehicles  | Screens produce **signals, not findings** — every hit needs primary-source verification |
+| [Dormant Funds](/dormant)              | FI classes with zero subscriptions and redemptions for 3 months: empty shells vs parked capital | Three months is a **floor**; NULL flows disqualify rather than count as zero; FI only   |
+| [Pipeline Ops](/ops)                   | Whether the ingest ran, whether it succeeded, and whether the data actually landed              | A recent `ok` over a stale table is the disagreement worth catching                     |
 
 ---
 
