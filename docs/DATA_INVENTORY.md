@@ -61,10 +61,10 @@ from behind a login, or purchased — except the one ETF market feed noted below
 
 ### B3 — market data (`bvmf.bmfbovespa.com.br`)
 
-| Table                 | Grain                    | Notes                                                                              |
-| --------------------- | ------------------------ | ---------------------------------------------------------------------------------- |
-| `b3_cotahist`         | instrument × **session** | every COTAHIST print: equities, BDRs, units, fund quotas, options, termo, auctions |
-| `b3_cotahist_pre2019` | instrument × session     | pre-2019 archive, kept separate                                                    |
+| Table                 | Grain                    | Notes                                                                                                    |
+| --------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `b3_cotahist`         | instrument × **session** | every COTAHIST print: equities, BDRs, units, fund quotas, options, termo, auctions                       |
+| `b3_cotahist_pre2019` | instrument × session     | pre-2019 archive, kept separate                                                                          |
 | `b3_corporate_event`  | instrument × event       | splits/bonuses as published; **no adjustment factor derived** (convention measured, not yet met the bar) |
 
 ### BACEN — macro
@@ -97,16 +97,16 @@ oversight, and each says what it would cost.
 
 The monthly CDA archive holds eight blocks. We read four.
 
-| Block | Content                  | Status                                                                                                                                                                    |
-| ----- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| BLC_1 | Títulos públicos         | **ingested** (`cvm_fi_cda`)                                                                                                                                               |
-| BLC_2 | Cotas de fundos          | **ingested** (`cvm_fi_cda_cotas`)                                                                                                                                         |
-| BLC_4 | Ações / BDR              | **ingested** (`cvm_fi_cda_acoes`)                                                                                                                                         |
-| BLC_3 | Swaps                    | not ingested — no consumer asked                                                                                                                                          |
-| BLC_5 | Títulos privados         | not ingested                                                                                                                                                              |
+| Block | Content                  | Status                                                                                                                                                                      |
+| ----- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| BLC_1 | Títulos públicos         | **ingested** (`cvm_fi_cda`)                                                                                                                                                 |
+| BLC_2 | Cotas de fundos          | **ingested** (`cvm_fi_cda_cotas`)                                                                                                                                           |
+| BLC_4 | Ações / BDR              | **ingested** (`cvm_fi_cda_acoes`)                                                                                                                                           |
+| BLC_3 | Swaps                    | not ingested — no consumer asked                                                                                                                                            |
+| BLC_5 | Títulos privados         | not ingested                                                                                                                                                                |
 | BLC_6 | Debêntures               | **ingested** (`cvm_fi_cda_debentures`) — a debenture has no `CD_ATIVO`, so the key ends in `row_hash` after (fund, month, issuer, maturity); see migration 35 for the audit |
-| BLC_7 | Investimento no exterior | not ingested                                                                                                                                                              |
-| BLC_8 | Disponibilidades         | not ingested — 28.9% of the archive by size for cash balances and a description of "Outros"                                                                               |
+| BLC_7 | Investimento no exterior | not ingested                                                                                                                                                                |
+| BLC_8 | Disponibilidades         | not ingested — 28.9% of the archive by size for cash balances and a description of "Outros"                                                                                 |
 
 Cost of adding one: a field map, a migration, and one `ingest_*` method. The
 download is already happening — these are members of a zip we fetch anyway.
@@ -128,12 +128,12 @@ new fetcher, not a new field map.
 
 Measured against the real `cda_fi_BLC_1_2005.csv` (198,432 rows) on 2026-08-31:
 
-| key | rows kept | lost | groups differing in position |
-| --- | ---: | ---: | ---: |
-| `cnpj+period+tp_aplic+tp_ativo` **(shipped)** | 38,968 | **159,464 (80.4%)** | 26,716 |
-| `+ cd_selic` | 67,704 | 130,728 (65.9%) | 36,545 |
-| `+ cd_selic + dt_venc` | 196,146 | 2,286 (1.2%) | 2,123 |
-| `+ cd_isin + dt_venc + tp_negoc` | 198,288 | 144 (0.1%) | 16 |
+| key                                           | rows kept |                lost | groups differing in position |
+| --------------------------------------------- | --------: | ------------------: | ---------------------------: |
+| `cnpj+period+tp_aplic+tp_ativo` **(shipped)** |    38,968 | **159,464 (80.4%)** |                       26,716 |
+| `+ cd_selic`                                  |    67,704 |     130,728 (65.9%) |                       36,545 |
+| `+ cd_selic + dt_venc`                        |   196,146 |        2,286 (1.2%) |                        2,123 |
+| `+ cd_isin + dt_venc + tp_negoc`              |   198,288 |          144 (0.1%) |                           16 |
 
 BLC_1 is one row per **security**: each carries `CD_SELIC`, `CD_ISIN`, `DT_EMISSAO`
 and `DT_VENC`. The shipped key has none of them, so every government bond a fund
@@ -166,6 +166,41 @@ The fix is additive and follows the pattern blocks 4 and 2 already use: a
 `cvm_fi_cda`'s own key would change its grain and break every consumer of it,
 which is why it is not proposed here.
 
+### `cia_event` cannot key an IPE filing that has no protocol — and before 2015 none do
+
+Measured on the real files on 2026-09-02, after the first `cia_aberta`
+2010–2018 backfill (run 33595953379) loaded 2015–2018 and reported
+`ipe` 2010–2014 as "fetched N source rows but upserted 0":
+
+| file                      |   rows | `Protocolo_Entrega` empty | `Versao` empty | `Codigo_CVM` / `CNPJ` empty |
+| ------------------------- | -----: | ------------------------: | -------------: | --------------------------: |
+| `ipe_cia_aberta_2012.csv` | 26,880 |         **26,880 (100%)** |  26,880 (100%) |                           0 |
+| `ipe_cia_aberta_2015.csv` | 30,175 |           **3,615 (12%)** |    3,615 (12%) |                           0 |
+
+The header is byte-identical across 2012, 2015 and 2024. This is not source
+drift; CVM did not assign a protocol number to IPE filings before 2015, and
+still does not to a minority of them. `cia_event`'s natural key is
+`(protocolo, versao)`, so `ingest_cia_event` drops those rows — correctly. A
+key is never synthesized, and the alternative (a fabricated protocol) would be
+worse than the gap.
+
+Two consequences, one of which is live today:
+
+- 2010–2014 cannot be loaded at all under the current key. Their audit rows
+  are honest `error`s and stay that way.
+- **2015 silently loses 12% of its filings** behind an `ok` slice, and any
+  later year with a protocol-less filing loses that filing the same way. This
+  is the v1.1 data-loss family — `ON CONFLICT` keeping what it can key and
+  discarding the rest — found by the "fetched N, upserted 0" contract on its
+  first live outing, which only fires when _every_ row is dropped.
+
+The fix is a second key era rather than a rekey: a `row_hash` over
+`(cd_cvm, data_refer, data_entrega, categoria, tipo, especie, assunto,
+link_download)` and a unique key that admits it for protocol-less rows — the
+pattern `cvm_fii_imovel` and `cvm_fi_cda_debentures` already use. It changes
+`cia_event`'s grain for the protocol-less era, so it is written up here for the
+owner's call and not proposed as a migration in this release.
+
 ### Periods no wired source reaches
 
 | Gap                                      | Why                                                                                                                                                              |
@@ -191,17 +226,17 @@ which is why it is not proposed here.
 
 The warehouse is wider than the API. This is the honest gap.
 
-| Held                          | Rows                                        | Served through `api`?                                                                                                    |
-| ----------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `cia_*` (5 tables, ~31M rows) | listed-company financials and events        | **No.** `webapp/` queries them directly. No `api.*` object exposes a single company.                                     |
-| `cvm_securit_*` (4 tables)    | CRI/CRA vehicles, series, flows, statements | **No.** Deliberate: CRI/CRA are notes, not funds, and would not fit the fund shape.                                      |
-| `cvm_fi_balancete`            | ~111M rows, fund accounting                 | **No.** Largest table in the warehouse; nothing reads it.                                                                |
-| `cvm_fi_cda_acoes` / `_cotas` | fund holdings                               | **Yes**, via `api.fund_holdings` (catalog v17) — both directions: what a fund holds, and which funds hold a ticker.      |
-| `cvm_fi_cda_debentures`       | fund → corporate-credit holdings            | **Not yet.** `api.fund_holdings` covers equities and quotas; the debenture leg needs its own `p_kind` and issuer lookup. |
+| Held                          | Rows                                        | Served through `api`?                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ----------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cia_*` (5 tables, ~31M rows) | listed-company financials and events        | **No.** `webapp/` queries them directly. No `api.*` object exposes a single company.                                                                                                                                                                                                                                                                                                                                                                                 |
+| `cvm_securit_*` (4 tables)    | CRI/CRA vehicles, series, flows, statements | **No.** Deliberate: CRI/CRA are notes, not funds, and would not fit the fund shape.                                                                                                                                                                                                                                                                                                                                                                                  |
+| `cvm_fi_balancete`            | ~111M rows, fund accounting                 | **No.** Largest table in the warehouse; nothing reads it.                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `cvm_fi_cda_acoes` / `_cotas` | fund holdings                               | **Yes**, via `api.fund_holdings` (catalog v17) — both directions: what a fund holds, and which funds hold a ticker.                                                                                                                                                                                                                                                                                                                                                  |
+| `cvm_fi_cda_debentures`       | fund → corporate-credit holdings            | **Not yet.** `api.fund_holdings` covers equities and quotas; the debenture leg needs its own `p_kind` and issuer lookup.                                                                                                                                                                                                                                                                                                                                             |
 | `b3_corporate_event`          | splits, bonuses                             | **No.** Held as published. The convention was measured on 2026-08-31 (705 events with a print on both sides): `DESDOBRAMENTO`/`BONIFICACAO` fit `1 + factor/100` to within 0.4% at the median. Restricting to events whose two prints are consecutive sessions raises the ±5% hit rate to 82.6%/86.3% — a confirmed improvement that still misses the 90% bar — and `GRUPAMENTO` never exceeds 42%. So `adjusted` stays `FALSE`. See `docs/planning/INSTRUMENTS.md`. |
-| `cvm_fii_imovel`              | FII property register                       | **No.**                                                                                                                  |
-| `bacen_expectativas`          | Focus survey                                | **No.** `bacen_sgs` reaches `panel`; the survey does not.                                                                |
-| `anbima_class_monthly`        | class benchmarks                            | **No.**                                                                                                                  |
+| `cvm_fii_imovel`              | FII property register                       | **No.**                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `bacen_expectativas`          | Focus survey                                | **No.** `bacen_sgs` reaches `panel`; the survey does not.                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `anbima_class_monthly`        | class benchmarks                            | **No.**                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 Two are structural rather than accidental: the `cia_*` tables are a different
 universe (companies, not funds) and want their own endpoints rather than being
