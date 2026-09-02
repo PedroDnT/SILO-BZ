@@ -158,6 +158,11 @@ jobs:
               (cnpj, period, tp_aplic, tp_ativo, cd_ativo, tp_negoc, raw)
           VALUES ('00102322000141','2022-05-01','Ações','BDR nível I','NFLX34',
                   'Para negociação','{"TP_FUNDO":"FI"}'::jsonb);
+
+          INSERT INTO cvm_fi_cda_cotas
+              (cnpj, period, cnpj_cota, tp_aplic, raw)
+          VALUES ('00068305000135','2022-03-01','01165780000192','Cotas de Fundos',
+                  '{"TP_FUNDO":"FI"}'::jsonb);
           SEED
 
           echo "--- the upgrade: current schema.sql, every migration, then again ---"
@@ -171,12 +176,36 @@ jobs:
           uniq=$(psql "$OLD_URL" -tAc "SELECT count(DISTINCT row_hash) FROM cvm_fip_periodic;")
           recovered=$(psql "$OLD_URL" -tAc "SELECT coalesce(period::text,'-')||'/'||coalesce(classe_cota,'-') FROM cvm_fip_periodic WHERE cnpj='11111111111111';")
           acoes=$(psql "$OLD_URL" -tAc "SELECT coalesce(tp_fundo,'-') FROM cvm_fi_cda_acoes;")
-          echo "fip rows kept=$kept distinct row_hash=$uniq recovered=$recovered | cda tp_fundo=$acoes"
+          cotas=$(psql "$OLD_URL" -tAc "SELECT coalesce(tp_fundo,'-') FROM cvm_fi_cda_cotas WHERE cnpj='00068305000135';")
+          echo "fip rows kept=$kept distinct row_hash=$uniq recovered=$recovered | cda tp_fundo=$acoes cotas=$cotas"
 
           test "$kept" = "15"  || { echo "FAIL: legacy rows lost by the upgrade"; exit 1; }
           test "$uniq" = "15"  || { echo "FAIL: legacy rows not distinguishable under the new key"; exit 1; }
           test "$recovered" = "2022-06-30/A" || { echo "FAIL: recovery did not read raw"; exit 1; }
           test "$acoes" = "FI" || { echo "FAIL: cda tp_fundo not recovered from raw"; exit 1; }
+          test "$cotas" = "FI" || { echo "FAIL: cda cotas tp_fundo not recovered from raw"; exit 1; }
+
+          echo "--- re-apply 33 on the live-shaped unique (Backfill #24) ---"
+          # Two rows unique under the wide key: one already has tp_fundo='FI'
+          # and tp_negoc NULL, raw stripped (what ingest writes today); the
+          # other is already (NULL, NULL). The pre-#173 UPDATE matched the FI
+          # row on tp_negoc IS NULL and reset it to (NULL, NULL). Both rows
+          # use empty raw so this is the wipe, not a remnant-fill-into-sibling.
+          psql "$OLD_URL" -v ON_ERROR_STOP=1 <<'LIVE'
+          INSERT INTO cvm_fi_cda_cotas
+              (cnpj, period, cnpj_cota, tp_fundo, tp_aplic, tp_negoc, raw)
+          VALUES
+              ('32300050000180','2023-10-01','43809974000123','FI',
+               'Cotas de Fundos',NULL,'{}'::jsonb),
+              ('32300050000180','2023-10-01','43809974000123',NULL,
+               'Cotas de Fundos',NULL,'{}'::jsonb);
+          LIVE
+          psql "$OLD_URL" -v ON_ERROR_STOP=1 -f src/store/migrations/33_cda_holdings_key_widening.sql > /dev/null
+          live_keys=$(psql "$OLD_URL" -tAc "SELECT string_agg(coalesce(tp_fundo,'-'), ',' ORDER BY tp_fundo NULLS LAST) FROM cvm_fi_cda_cotas WHERE cnpj='32300050000180';")
+          live_n=$(psql "$OLD_URL" -tAc "SELECT count(*) FROM cvm_fi_cda_cotas WHERE cnpj='32300050000180';")
+          echo "backfill24 keys=$live_keys n=$live_n"
+          test "$live_n" = "2" || { echo "FAIL: Backfill #24 replay lost a cotas row"; exit 1; }
+          test "$live_keys" = "FI,-" || { echo "FAIL: Backfill #24 replay wiped tp_fundo (got $live_keys)"; exit 1; }
 
       # fact_fund_monthly's FIP branch is keyed (cnpj, period, entity_type) with
       # period forced to Dec-31, and it used to select cvm_fip_periodic straight.
