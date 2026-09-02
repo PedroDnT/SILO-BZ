@@ -1,11 +1,11 @@
 name: Apply schema + migrations
 description: >-
-  Bootstrap the Supabase Postgres schema idempotently: install psql, drop the
-  migration-dependent views, apply schema.sql + every migrations/*.sql in lexical
-  order, then assert key tables exist. Used by EVERY workflow that ingests so no
-  ingest path ever runs against a DB that is missing a migration — that drift is
-  what left cvm_fund_registry without its admin/gestor columns (migration 11) and
-  silently failed registry ingestion. The repository must already be checked out.
+  Bootstrap the Supabase Postgres schema idempotently: install psql, apply
+  schema.sql + every migrations/*.sql in lexical order, then assert key tables
+  exist. Used by EVERY workflow that ingests so no ingest path ever runs against
+  a DB that is missing a migration — that drift is what left cvm_fund_registry
+  without its admin/gestor columns (migration 11) and silently failed registry
+  ingestion. The repository must already be checked out.
 
 inputs:
   postgres-url:
@@ -21,19 +21,13 @@ runs:
         sudo apt-get update
         sudo apt-get install -y postgresql-client
 
-    # Pre-flight: drop views that depend on columns widened by migration 01.
-    # Migration 06 recreates them after the ALTERs. On a fresh DB they don't
-    # exist yet — IF EXISTS makes this a no-op. Errors suppressed (|| true)
-    # because the Supabase pooler sometimes reports 'not a view' for already
-    # absent objects; the DROP is best-effort and 06 always recreates them.
-    - name: Drop migration-dependent views (pre-flight)
-      shell: bash
-      env:
-        POSTGRES_URL: ${{ inputs.postgres-url }}
-      run: |
-        psql "$POSTGRES_URL" -c "DROP VIEW IF EXISTS etf_latest CASCADE;" || true
-        psql "$POSTGRES_URL" -c "DROP VIEW IF EXISTS etf_daily CASCADE;" || true
-        psql "$POSTGRES_URL" -c "DROP VIEW IF EXISTS instrument_activity CASCADE;" || true
+    # Do NOT DROP etf_daily / etf_latest here. Migration 01 already drops them
+    # inside the DO block that actually retypes cvm_fi_diario, and 06/10
+    # recreate them. An unconditional pre-flight DROP is AccessExclusiveLock
+    # on every ingest, and if schema.sql then fails the views stay gone —
+    # Backfill #18 (run 33428561498) dropped them, died on `column "tp_fundo"
+    # does not exist`, and Refresh ETF failed with relation "etf_daily" does
+    # not exist.
 
     # Schema first, then migrations in lexical order. psql (not apply_schema.py)
     # parses SQL comments/statements correctly and ON_ERROR_STOP fails the job on
@@ -93,27 +87,41 @@ runs:
         # rewriter now appends WITH NO DATA so the type commits instantly.
         # Population is a later REFRESH (schema.sql refresh-if-empty, or
         # pg_cron CONCURRENTLY), which does not insert into pg_type.
+        #
+        # 2026-08-31 19:04 UTC (CVM Historical Backfill #18 / run 33428561498):
+        # schema.sql failed three times with `column "tp_fundo" does not exist`
+        # and the loop retried it as lock contention (90s of sleep, a
+        # misleading annotation). Only lock_timeout is retryable.
         export PGOPTIONS="-c lock_timeout=15s -c statement_timeout=0"
 
         apply() {
-          local file="$1" attempt guarded
+          local file="$1" attempt guarded log
           guarded="$(mktemp)"
+          log="$(mktemp)"
           python3 scripts/guard_noop_ddl.py "$file" > "$guarded"
           for attempt in 1 2 3; do
-            if psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f "$guarded"; then
-              rm -f "$guarded"
+            if psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f "$guarded" >"$log" 2>&1; then
+              cat "$log"
+              rm -f "$guarded" "$log"
               return 0
             fi
+            cat "$log"
+            if ! grep -qi 'canceling statement due to lock timeout' "$log"; then
+              rm -f "$guarded" "$log"
+              echo "::error::$file failed with a SQL error that is not lock" \
+                   "contention. Not retrying."
+              return 1
+            fi
             if [ "$attempt" -lt 3 ]; then
-              echo "== $file failed (attempt $attempt/3) — likely lock contention;" \
+              echo "== $file failed (attempt $attempt/3) — lock contention;" \
                    "retrying in $((attempt * 30))s =="
               sleep $((attempt * 30))
             fi
           done
-          rm -f "$guarded"
-          echo "::error::$file failed after 3 attempts. If the log shows" \
-               "'canceling statement due to lock timeout', a long-running query" \
-               "(a Vercel dashboard build?) is holding a lock on the table."
+          rm -f "$guarded" "$log"
+          echo "::error::$file failed after 3 lock-timeout attempts. A" \
+               "long-running query (a Vercel dashboard build?) is holding a" \
+               "lock on the table."
           return 1
         }
 

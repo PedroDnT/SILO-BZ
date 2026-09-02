@@ -65,6 +65,21 @@ def test_apply_retries_before_failing():
     assert "sleep" in body
 
 
+def test_apply_retries_only_on_lock_timeout():
+    """Backfill #18 retried `column "tp_fundo" does not exist` three times.
+
+    The sleep loop is for AccessExclusiveLock waiters. A deterministic SQL
+    error must fail on the first attempt with the real message, not a
+    lock-contention annotation.
+    """
+    body = _apply_step()["run"]
+    assert "canceling statement due to lock timeout" in body
+    assert "Not retrying" in body
+    assert body.index("canceling statement due to lock timeout") < body.index(
+        "retrying in"
+    )
+
+
 def test_apply_still_stops_on_error_and_covers_schema_and_migrations():
     body = _apply_step()["run"]
     assert "ON_ERROR_STOP=1" in body, "a real SQL error must still fail the job"
@@ -97,3 +112,17 @@ def test_apply_body_is_valid_bash():
         ["bash", "-n"], input=body, text=True, capture_output=True,
     )
     assert proc.returncode == 0, f"apply step is not valid bash:\n{proc.stderr}"
+
+
+def test_apply_does_not_drop_etf_views_before_schema():
+    """Unconditional DROP VIEW before apply left etf_daily missing on #18.
+
+    Migration 01 already drops the views when it actually retypes
+    cvm_fi_diario; 06/10 recreate them. A pre-flight DROP is
+    AccessExclusiveLock on every ingest and is not rolled back if
+    schema.sql then fails.
+    """
+    spec = yaml.safe_load(ACTION.read_text())
+    names = [s.get("name", "") for s in spec["runs"]["steps"]]
+    assert not any("drop" in n.lower() and "view" in n.lower() for n in names)
+    assert "DROP VIEW" not in _apply_step()["run"]

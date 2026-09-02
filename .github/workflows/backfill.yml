@@ -474,11 +474,13 @@ jobs:
   # etf_daily / etf_latest are matviews over cvm_etf_registry + cvm_fi_diario, so
   # they must be rebuilt after both the FI matrix and the ETF registry have
   # landed. The ingest jobs set CVM_SKIP_ETF_REFRESH so only this job refreshes.
-  # `if: always()` so partial-but-useful data is still surfaced if a slice failed.
+  # `always()` so a failed *slice* still surfaces whatever landed. apply-schema
+  # must have succeeded: Backfill #18 ran this job after a failed schema apply
+  # (ingest jobs skipped) and failed a second time because etf_daily was gone.
   refresh-etf:
     name: "Refresh ETF metrics"
-    needs: [backfill-fi, backfill-other, backfill-etf]
-    if: ${{ always() && inputs.bacen_only != true && (inputs.entity == 'all' || inputs.entity == 'fi' || inputs.entity == 'etf') }}
+    needs: [apply-schema, backfill-fi, backfill-other, backfill-etf]
+    if: ${{ always() && !cancelled() && needs.apply-schema.result == 'success' && inputs.bacen_only != true && (inputs.entity == 'all' || inputs.entity == 'fi' || inputs.entity == 'etf') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

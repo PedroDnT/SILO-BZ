@@ -7,13 +7,19 @@ future change drops TP_APLIC from the key, `test_tp_aplic_is_load_bearing` fails
 rather than the collapse being discovered in production as a missing position.
 """
 
+import sys
 from datetime import date
+from pathlib import Path
 
 import pytest
 
 from src.parsers.field_maps import fi_cda_acoes as _acoes
 from src.parsers.field_maps import fi_cda_cotas as _cotas
 from src.pipeline.ingest_fi import ingest_fi_cda_acoes, ingest_fi_cda_cotas
+
+_REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_REPO / "scripts"))
+from guard_noop_ddl import split_sql_statements  # noqa: E402
 
 
 class FakeConn:
@@ -299,3 +305,63 @@ def test_historical_blocks_are_wired_into_backfill():
     # like a successful `cda` year to the backfill coverage gate.
     assert '"cda_acoes", "hist_cda_acoes"' in body
     assert '"cda_cotas", "hist_cda_cotas"' in body
+
+
+def _schema_statements() -> list[str]:
+    sql = (_REPO / "src" / "store" / "schema.sql").read_text(encoding="utf-8")
+    return split_sql_statements(sql)
+
+
+def _first(stmts: list[str], needle: str) -> int:
+    for i, stmt in enumerate(stmts):
+        if needle in stmt:
+            return i
+    raise AssertionError(f"no schema.sql statement contains {needle!r}")
+
+
+def test_migration_32_still_ships_the_narrow_table():
+    """The live warehouse was created by this file, without tp_fundo.
+
+    If 32 is rewritten to include the widened columns, the ADD COLUMN in
+    schema.sql stays correct — but this pin documents the shape Backfill #18
+    actually hit, so the replay test below does not bit-rot into a tautology.
+    """
+    sql = (_REPO / "src" / "store" / "migrations" / "32_cda_holdings.sql").read_text(
+        encoding="utf-8"
+    )
+    acoes = sql.split("CREATE TABLE IF NOT EXISTS cvm_fi_cda_acoes", 1)[1].split(";", 1)[0]
+    cotas = sql.split("CREATE TABLE IF NOT EXISTS cvm_fi_cda_cotas", 1)[1].split(";", 1)[0]
+    assert "tp_fundo" not in acoes
+    assert "tp_fundo" not in cotas
+    assert "tp_negoc" not in cotas
+
+
+def test_schema_sql_adds_holdings_key_columns_before_the_unique_index():
+    """Backfill #18 (run 33428561498): schema.sql runs before migration 33.
+
+    CREATE TABLE IF NOT EXISTS skipped (table from 32, no tp_fundo). The
+    unique index then failed with `column "tp_fundo" does not exist`. Empty-DB
+    SQL compile cannot catch this; the ADD COLUMN must precede the index.
+    """
+    stmts = _schema_statements()
+    acoes_add = _first(stmts, "ALTER TABLE cvm_fi_cda_acoes ADD COLUMN IF NOT EXISTS tp_fundo")
+    acoes_idx = _first(stmts, "CREATE UNIQUE INDEX IF NOT EXISTS uq_fi_cda_acoes")
+    cotas_add_fundo = _first(
+        stmts, "ALTER TABLE cvm_fi_cda_cotas ADD COLUMN IF NOT EXISTS tp_fundo"
+    )
+    cotas_add_negoc = _first(
+        stmts, "ALTER TABLE cvm_fi_cda_cotas ADD COLUMN IF NOT EXISTS tp_negoc"
+    )
+    cotas_idx = _first(stmts, "CREATE UNIQUE INDEX IF NOT EXISTS uq_fi_cda_cotas")
+    assert acoes_add < acoes_idx, "tp_fundo must exist before uq_fi_cda_acoes names it"
+    assert cotas_add_fundo < cotas_idx
+    assert cotas_add_negoc < cotas_idx
+
+
+def test_sql_compile_replays_schema_against_the_migration_32_table():
+    """Empty Postgres is not the production shape; CI must seed 32 first."""
+    text = (_REPO / ".github" / "workflows" / "test.yml").read_text()
+    apply_at = text.index("Apply schema + migrations")
+    seed_at = text.index("Seed migration-32 holdings tables")
+    assert seed_at < apply_at
+    assert "src/store/migrations/32_cda_holdings.sql" in text[:apply_at]
