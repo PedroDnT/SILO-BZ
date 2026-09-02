@@ -103,7 +103,11 @@ CREATE INDEX IF NOT EXISTS idx_fi_cda_period ON cvm_fi_cda (period DESC);
 -- CDA holdings (blocks 4 and 2). See migrations/32_cda_holdings.sql for the
 -- unique-key audit that produced these constraints.
 CREATE TABLE IF NOT EXISTS cvm_fi_cda_acoes (
-    id                  BIGSERIAL   PRIMARY KEY,
+    -- No PRIMARY KEY on id: migration 37 dropped it (517 MB, never scanned;
+    -- the upsert arbiter is uq_fi_cda_acoes). Same treatment as balancete
+    -- after migration 22. Declared here without it so a fresh database does
+    -- not build the index only for the migration to drop it.
+    id                  BIGSERIAL,
     cnpj                TEXT        NOT NULL CHECK (char_length(cnpj) = 14),
     period              DATE        NOT NULL,   -- first day of month
     tp_fundo            TEXT,                   -- FI / FIF as filed; part of the key

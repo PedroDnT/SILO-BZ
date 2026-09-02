@@ -53,6 +53,58 @@ def count_table(client: Any, table: str, extra_filter=None) -> int:
     return _scalar(client, query, params)
 
 
+def table_has_rows(client: Any, table: str) -> bool:
+    """Presence without a COUNT(*).
+
+    The holdings tables are the largest in the warehouse (cvm_fi_cda_acoes alone
+    is 11 GB). COUNT(*) on them is a full scan that adds minutes to a script
+    whose whole job is a fast smoke test, and the answer it buys — "is anything
+    here" — is one row's worth of information. LIMIT 1 stops at the first tuple.
+    """
+    query = sql.SQL("SELECT EXISTS (SELECT 1 FROM {} LIMIT 1)").format(
+        sql.Identifier(table)
+    )
+    with client.cursor() as cur:
+        cur.execute(query)
+        row = cur.fetchone()
+    return bool(row and row[0])
+
+
+def estimate_rows(client: Any, table: str) -> int:
+    """Planner row estimate — an ESTIMATE, and labelled as one at the callsite.
+
+    reltuples is maintained by ANALYZE (CI runs one after every ingest), so it
+    trails the table by at most a day and can read -1 on a relation never
+    analyzed. Never print it as a count: a verification script that rounds an
+    estimate into a fact is the same defect class as fabricating data.
+    """
+    return _scalar(
+        client,
+        "SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE relname = %s",
+        (table,),
+    )
+
+
+def sample_nonnull_pct(client: Any, table: str, col: str, sample: int = 50_000
+                       ) -> Optional[int]:
+    """Population rate over a bounded sample, or None if the sample is empty.
+
+    Reads the first `sample` rows rather than the table, so the cost is fixed.
+    It is a sample, not the rate — the callsite prints it with a ~ so nobody
+    reads it as the whole table's number.
+    """
+    query = sql.SQL(
+        "SELECT count(*) FILTER (WHERE {col} IS NOT NULL), count(*) "
+        "FROM (SELECT {col} FROM {tbl} LIMIT %s) s"
+    ).format(col=sql.Identifier(col), tbl=sql.Identifier(table))
+    with client.cursor() as cur:
+        cur.execute(query, (sample,))
+        row = cur.fetchone()
+    if not row or not row[1]:
+        return None
+    return 100 * row[0] // row[1]
+
+
 def count_nonnull(client: Any, table: str, col: str, extra_filter=None) -> int:
     query = sql.SQL("SELECT count(*) FROM {} WHERE {} IS NOT NULL").format(
         sql.Identifier(table), sql.Identifier(col)
@@ -131,6 +183,35 @@ def report_presence(client):
             pct = "—" if total == 0 else "n/a"
         flag = "  ✓" if total > 0 else "  ✗ EMPTY"
         print(f"  {label:<42} {total:>8}  {pct:>10}{flag}")
+
+    report_holdings_presence(client)
+
+
+# The fund holdings blocks. Kept out of the COUNT(*) list above on purpose:
+# these are the three largest ingest tables in the warehouse, and counting them
+# exactly would dominate the runtime of a script meant to finish in seconds.
+# Presence is EXISTS, size is the planner's estimate, and the key-field rate is
+# a bounded sample — each printed as what it is.
+HOLDINGS_CHECKS = [
+    ("cvm_fi_cda_acoes",      "cd_ativo"),          # block 4 — the B3 ticker edge
+    ("cvm_fi_cda_cotas",      "cnpj_cota"),         # block 2 — fund-of-fund
+    ("cvm_fi_cda_debentures", "cpf_cnpj_emissor"),  # block 6 — corporate credit
+]
+
+
+def report_holdings_presence(client):
+    print(f"\n  {'Holdings block (est. rows, sampled %)':<42} {'~rows':>8}  {'~key %':>10}")
+    print(f"  {SEP2}")
+    for table, key_field in HOLDINGS_CHECKS:
+        present = table_has_rows(client, table)
+        if not present:
+            print(f"  {table:<42} {0:>8}  {'—':>10}  ✗ EMPTY")
+            continue
+        est = estimate_rows(client, table)
+        pct = sample_nonnull_pct(client, table, key_field)
+        est_s = f"~{est}" if est else "?"
+        pct_s = f"~{pct}%" if pct is not None else "n/a"
+        print(f"  {table:<42} {est_s:>8}  {pct_s:>10}  ✓")
 
 
 def report_quality(client):

@@ -34,6 +34,9 @@ def test_fi_quota_uses_one_stable_subclass_across_months():
     assert "ARRAY_AGG(vl_quota ORDER BY vl_patrim_liq" not in fact_sql
     assert "m.entity_type <> 'fi' OR m.vl_quota > 0" in performance_sql
     assert "COALESCE(vl_quota, vl_patrim_liq)" not in performance_sql
+    # Last-day PL is still summed across subclasses; quota is not.
+    assert "SUM(p.vl_patrim_liq)" in fact_sql
+    assert "MAX(p.vl_quota) FILTER (WHERE p.id_subclasse = q.id_subclasse)" in fact_sql
 
 
 def test_dashboard_does_not_present_pl_growth_as_return():

@@ -317,8 +317,38 @@ def upsert_rows(
 
     cols = list(rows[0].keys())
     if conflict_columns:
+        # Only rewrite a row that actually changed. Without the WHERE, every
+        # ON CONFLICT hit rewrites the row even when EXCLUDED is byte-identical,
+        # and each rewrite is a new tuple version with a dead one left behind.
+        # Measured 2026-09-01 (health diagnostic 14): cia_account_2019..2022 at
+        # 55-78 updates per insert, cia_account_2026 at 47M updates on 1.2M
+        # rows, cvm_fi_perfil at 31 — whole yearly files re-upserted daily,
+        # unchanged. That is where the disk was going.
+        #
+        # Row-wise IS DISTINCT FROM treats NULL = NULL as "not distinct", so a
+        # row whose only difference is a NULL still updates, and one with no
+        # difference at all does not. The conflict key columns are left out of
+        # the comparison: on the DO UPDATE path they are equal by definition.
+        # jsonb `raw` compares by value, so key order inside it does not count
+        # as a change.
+        #
+        # `total` is still len(rows): it is "rows processed", and _log_finish's
+        # "fetched N but upserted 0" defect detector depends on that meaning.
+        # It must not become an affected-row count, or an idle daily re-fetch
+        # would read as every row having been dropped by validation.
         update_set = ", ".join(f"{c}=EXCLUDED.{c}" for c in cols)
-        conflict_clause = f"ON CONFLICT ({conflict_columns}) DO UPDATE SET {update_set}"
+        compared = [c for c in cols if c not in keys]
+        if compared:
+            lhs = ", ".join(f"{table}.{c}" for c in compared)
+            rhs = ", ".join(f"EXCLUDED.{c}" for c in compared)
+            conflict_clause = (
+                f"ON CONFLICT ({conflict_columns}) DO UPDATE SET {update_set}"
+                f" WHERE ({lhs}) IS DISTINCT FROM ({rhs})"
+            )
+        else:
+            # Every supplied column is part of the key: a conflicting row is
+            # already identical, and there is nothing to set.
+            conflict_clause = f"ON CONFLICT ({conflict_columns}) DO NOTHING"
     else:
         conflict_clause = "ON CONFLICT DO NOTHING"
 
