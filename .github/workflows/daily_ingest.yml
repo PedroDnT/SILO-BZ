@@ -135,7 +135,7 @@ jobs:
       # its own table instead of the other 19, and no single statement runs long
       # enough to look like a hung connection.
       - name: Analyze tables post-ingest
-        if: ${{ github.event_name == 'schedule' || (github.event.inputs && (github.event.inputs.mode == 'analytics-only' || github.event.inputs.mode == 'b3-backfill')) }}
+        if: ${{ github.event_name == 'schedule' || (github.event.inputs && (github.event.inputs.mode == 'daily' || github.event.inputs.mode == 'analytics-only' || github.event.inputs.mode == 'b3-backfill')) }}
         continue-on-error: true
         run: |
           set +e
@@ -167,7 +167,7 @@ jobs:
       # has no fast way to push it otherwise, short of waiting for 06:00 UTC.
       # CVM history is backfill.yml, not a mode on this workflow.
       - name: Build / refresh analytical layer
-        if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'analytics-only') }}
+        if: ${{ github.event_name == 'schedule' || (github.event.inputs && (github.event.inputs.mode == 'daily' || github.event.inputs.mode == 'analytics-only')) }}
         # NOT continue-on-error. It was, and that is the only reason
         # 04_fact_fund_monthly.sql could fail on every apply from 2026-08-30
         # onwards while the run reported green and the dashboard rebuild fired
