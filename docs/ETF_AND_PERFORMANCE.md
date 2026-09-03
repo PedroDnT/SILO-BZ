@@ -61,13 +61,15 @@ rate-limits direct scraping) — not a plain HTTP fetch.
 Pieces (FETCH → PARSE → STORE):
 - `apify/etfsbrasil_scraper.js` — the web-scraper `pageFunction`; it returns the page's
   full rendered text + `__NEXT_DATA__` JSON (field parsing is done server-side in Python).
-- `src/fetchers/apify_etf_fetcher.py` — `ApifyETFFetcher` runs
+- `src/fetchers/apify_etf_fetcher.py` — `ApifyETFFetcher` starts
   `apify/playwright-scraper` (limited permissions; override with `APIFY_ETF_ACTOR`)
-  via `run-sync-get-dataset-items`, passing that pageFunction + one startUrl per
-  active registry ticker + the proxy config. Raises on any failure / empty result.
-  HTTP 403 `full-permission-actor-not-approved` (Apify full-permission store
-  actors, historically `apify/web-scraper` after 2026-08-31) is
-  `ApifyActorNotApprovedError`: the daily run skips it like an unset token.
+  asynchronously, polls until the run finishes, then reads the dataset. Input is
+  that pageFunction + one startUrl per active registry ticker + the proxy config.
+  Raises on any failure / empty result. HTTP 403 `full-permission-actor-not-approved`
+  (Apify full-permission store actors, historically `apify/web-scraper` after
+  2026-08-31) is `ApifyActorNotApprovedError`. HTTP 408 `run-timeout-exceeded`
+  (Apify's sync endpoint caps at 300s; ~187 playwright pages take longer) and a
+  wait-budget miss are `ApifyRunTimeoutError`. Both skip like an unset token.
 - `src/pipeline/ingest_etf_market.py` — parses Brazilian number/date formats and
   upserts into `etf_market_snapshot` (migration `12_etf_market.sql`), idempotent on
   `(ticker, snapshot_date)`.
@@ -83,7 +85,9 @@ python -m src.pipeline.ingest_etf_market
 Wired into `run_daily` when `APIFY_TOKEN` is set. An unset token skips the scrape
 and never fails the daily run. The same skip applies when Apify returns
 `full-permission-actor-not-approved` (the actor never started — approve it in
-Console if you still pin `APIFY_ETF_ACTOR` to a full-permission store actor).
+Console if you still pin `APIFY_ETF_ACTOR` to a full-permission store actor) or
+HTTP 408 `run-timeout-exceeded` (the scrape did not finish in time — we never
+got a dataset).
 The label-based parsers keep the full rendered page text **and** `__NEXT_DATA__`
 in each row's `raw`, so a moved label never silently drops data.
 
