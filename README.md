@@ -498,7 +498,9 @@ same for everyone. Google is configured but not yet enabled.
   sets `rebuild_dashboard=true`; scheduled ingest and fills leave Vercel alone.
 - **`APIFY_TOKEN`** — set. The ETF market scrape self-skips without it, and also
   skips (does not fail the daily run) when Apify returns
-  `full-permission-actor-not-approved`. Default actor is `apify/playwright-scraper`.
+  `full-permission-actor-not-approved` or HTTP 408 `run-timeout-exceeded`.
+  The fetcher starts the actor asynchronously (the sync dataset endpoint caps
+  at 300s). Default actor is `apify/playwright-scraper`.
 - **Company ↔ ticker** comes from CVM's published FCA valores-mobiliários filing
   (`cia_ticker` → `vw_company_ticker`), never from name matching.
 - **Fund → company** now exists as data but is not served. `cvm_fi_cda_acoes.cd_ativo`

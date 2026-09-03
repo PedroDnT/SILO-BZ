@@ -149,7 +149,33 @@ async def test_etf_actor_not_approved_is_not_a_failure(monkeypatch, caplog):
          patch("src.store.pg_client.get_pg_client", return_value=MagicMock()), \
          caplog.at_level("ERROR"):
         await rd.main()  # no SystemExit
-    assert "actor not approved" in caplog.text
+    assert "did not return a dataset" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_etf_run_timeout_is_not_a_failure(monkeypatch, caplog):
+    """Apify 408 run-timeout-exceeded never delivered a dataset.
+
+    Daily CVM Ingest 33721538761 ingested 3.1M CVM rows then exited 1 on this
+    error, which skipped ANALYZE and the analytical layer. Same class as an
+    unset APIFY_TOKEN: skip, do not fail the daily run.
+    """
+    from src.fetchers.apify_etf_fetcher import ApifyRunTimeoutError
+
+    monkeypatch.setenv("APIFY_TOKEN", "tok")
+    p1, p2, p3, p4, *_ = _patches()
+    with p1, p2, p3, p4, \
+         patch(
+             "src.pipeline.ingest_etf_market.ingest_etf_market",
+             side_effect=ApifyRunTimeoutError(
+                 "HTTP 408 run-timeout-exceeded: Actor run exceeded the "
+                 "timeout of 300 seconds for this API endpoint"
+             ),
+         ), \
+         patch("src.store.pg_client.get_pg_client", return_value=MagicMock()), \
+         caplog.at_level("ERROR"):
+        await rd.main()  # no SystemExit
+    assert "did not return a dataset" in caplog.text
 
 
 @pytest.mark.asyncio
