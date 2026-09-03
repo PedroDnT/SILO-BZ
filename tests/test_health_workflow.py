@@ -413,3 +413,97 @@ class TestFactFundMonthlyLagBranch:
         _, absent, _ = _run_check_4b("")
         _, ahead, _ = _run_check_4b("-61")
         assert "did not answer" in absent and "did not answer" not in ahead
+
+
+# --- check 4c: bacen_sgs daily series must keep moving -----------------------
+#
+# 2026-09-03: both daily runs logged `bacen_sgs: 0` and stayed green. Check 2
+# saw ingest activity (CVM rows land), check 3 judges CVM completeness only,
+# and nothing looked at bacen_sgs. These tests pin the gate's shape and RUN
+# its branch, as the 4b tests do, because the failure modes are shell control
+# flow.
+
+DIAG_SGS = DIAG_DIR / "17_bacen_sgs_freshness_by_series.sql"
+
+
+def test_sgs_gate_judges_only_the_daily_series():
+    body = _step("Health checks")["run"]
+    i = body.index("# 4c. BACEN SGS freshness")
+    section = body[i: body.index("# 5. Disk.", i)]
+    assert "FROM bacen_sgs WHERE series_code IN (11, 12)" in section, (
+        "CDI (12) and SELIC_DIARIA (11) are the only series that publish every "
+        "business day; a monthly series in this gate would fire every month"
+    )
+    assert "MAX_SGS_AGE_DAYS" in section
+    assert "fail=1" in section
+
+
+def test_sgs_age_limit_is_a_workflow_knob():
+    spec = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    env = spec["jobs"]["health"]["env"]
+    assert int(env["MAX_SGS_AGE_DAYS"]) >= 5, "must absorb a long weekend plus a holiday"
+    assert int(env["MAX_SGS_AGE_DAYS"]) <= 10, "beyond this the refresh has been failing for a week"
+
+
+def test_sgs_diagnostic_exists_and_is_read_only():
+    assert DIAG_SGS.exists()
+    body = " ".join(
+        line for line in DIAG_SGS.read_text(encoding="utf-8").splitlines()
+        if not line.lstrip().startswith("--")
+    ).upper()
+    for verb in ("INSERT ", "UPDATE ", "DELETE ", "DROP ", "ALTER ", "CREATE ", "TRUNCATE "):
+        assert verb not in body, f"diagnostic 17 must not contain {verb.strip()}"
+    assert "BACEN_SGS" in body and "GROUP BY" in body
+
+
+def _run_check_4c(age_value: str, limit: str = "7") -> tuple[int, str, str]:
+    """Execute check 4c's branch with a given $sgs_age. Returns (fail, stderr, summary)."""
+    body = _step("Health checks")["run"]
+    start = body.index('if ! printf \'%s\' "${sgs_age:-}"')
+    end = body.index("\n", body.index("fi", body.index("bacen_sgs fresh ($sgs_age days")))
+    block = body[start:end]
+    with tempfile.NamedTemporaryFile("w+", suffix=".md", delete=False) as summary:
+        summary_path = summary.name
+    script = (
+        f'set -u\nfail=0\nsgs_age="{age_value}"\nMAX_SGS_AGE_DAYS="{limit}"\n'
+        f'GITHUB_STEP_SUMMARY="{summary_path}"\n'
+        f"{block}\n"
+        'echo "FAILFLAG=$fail"\n'
+    )
+    proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    fail = int(proc.stdout.split("FAILFLAG=")[1].strip())
+    with open(summary_path) as fh:
+        return fail, proc.stderr, fh.read()
+
+
+class TestBacenSgsFreshnessBranch:
+    def test_yesterday_is_fresh(self):
+        fail, err, summary = _run_check_4c("1")
+        assert fail == 0 and "✅ bacen_sgs fresh" in summary and err == ""
+
+    def test_a_long_weekend_is_fresh(self):
+        fail, _, summary = _run_check_4c("4")
+        assert fail == 0 and "fresh" in summary
+
+    def test_at_the_limit_is_fresh(self):
+        fail, _, _ = _run_check_4c("7")
+        assert fail == 0
+
+    def test_past_the_limit_fails_as_stale(self):
+        """The 2026-09-03 shape: rows exist but nothing new has landed."""
+        fail, err, summary = _run_check_4c("12")
+        assert fail == 1 and "12 days old" in err and "stale by 12 days" in summary
+        assert "did not answer" not in err
+
+    def test_an_empty_table_fails_as_not_queryable(self):
+        """max() over no rows is NULL → empty string, which is not a number."""
+        fail, err, summary = _run_check_4c("")
+        assert fail == 1 and "did not answer" in err and "not queryable" in summary
+
+    def test_psql_error_text_is_not_read_as_a_number(self):
+        fail, err, _ = _run_check_4c("ERROR:relationbacen_sgsdoesnotexist")
+        assert fail == 1 and "did not answer" in err
+
+    def test_the_limit_comes_from_the_knob(self):
+        assert _run_check_4c("9", limit="10")[0] == 0
+        assert _run_check_4c("9", limit="8")[0] == 1
