@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
+import uuid
+
 from src.fetchers.bacen_fetcher import BacenClient
 from src.store.pg_client import get_pg_client, upsert_rows
 
@@ -37,6 +39,16 @@ SGS_SERIES: Dict[str, int] = {
 }
 
 PTAX_CURRENCIES: List[str] = ["USD", "EUR", "GBP", "JPY", "ARS"]
+
+# Audit log. Every ingest writes exactly one cvm_ingest_log row (integrity
+# rule 3); until 2026-09-03 the BACEN ingestor wrote none, so the day both
+# daily runs landed bacen_sgs=0 there was nothing for DB Health check 1 or
+# diagnostic 15 to see. One row per source per run: entity 'bacen',
+# doc_type sgs | ptax | expectativas, no period (the window is a trailing
+# range, not a filing month). Undated rows are inside check 1's daily
+# window, so an error row fails the gate until a later ok row heals it.
+LOG_ENTITY = "bacen"
+LOG_DOC_TYPES = ("sgs", "ptax", "expectativas")
 
 EXPECTATIVAS_ENDPOINTS: List[str] = [
     "ExpectativasMercadoAnuais",
@@ -306,6 +318,107 @@ class BacenIngestor:
         return total
 
     # ------------------------------------------------------------------
+    # Audit log
+    # ------------------------------------------------------------------
+
+    def _log_start(self, run_id: str, doc_type: str) -> None:
+        """Write the 'running' row. Lets a failure propagate — a run that cannot
+        record itself must not proceed unrecorded (same stance as ANBIMA)."""
+        upsert_rows(
+            self._supabase,
+            "cvm_ingest_log",
+            [{
+                "run_id":        run_id,
+                "entity":        LOG_ENTITY,
+                "doc_type":      doc_type,
+                "period_year":   None,
+                "period_month":  None,
+                "rows_upserted": 0,          # NOT NULL — finish overwrites it
+                "status":        "running",
+                "started_at":    datetime.now(timezone.utc),
+            }],
+            conflict_columns="run_id",
+        )
+
+    def _log_finish(
+        self, run_id: str, doc_type: str, status: str, rows: int,
+        error: Optional[str] = None,
+    ) -> None:
+        # started_at is deliberately NOT sent: ON CONFLICT DO UPDATE sets every
+        # column present, and resending it would make every run look
+        # instantaneous. The row exists because _log_start succeeded.
+        upsert_rows(
+            self._supabase,
+            "cvm_ingest_log",
+            [{
+                "run_id":        run_id,
+                "entity":        LOG_ENTITY,
+                "doc_type":      doc_type,
+                "status":        status,
+                "rows_upserted": rows,
+                "finished_at":   datetime.now(timezone.utc),
+                "error_msg":     error,
+            }],
+            conflict_columns="run_id",
+        )
+
+    async def _audited(self, doc_type: str, coro) -> int:
+        """Run one source under an audit row: running → ok | error.
+
+        The error row is written BEFORE the exception is re-raised, so the
+        failure is in the warehouse even if the process dies right after.
+        A failure to write the error row is logged and the original error
+        still propagates — the audit must never mask the ingest failure.
+        """
+        run_id = str(uuid.uuid4())
+        try:
+            self._log_start(run_id, doc_type)
+        except Exception:
+            coro.close()  # never awaited; do not leave it dangling
+            raise
+        try:
+            rows = await coro
+        except Exception as exc:
+            try:
+                self._log_finish(run_id, doc_type, "error", 0, error=str(exc)[:2000])
+            except Exception as log_exc:  # noqa: BLE001 — must not mask exc
+                logger.warning("bacen/%s: could not write error row: %s", doc_type, log_exc)
+            raise
+        self._log_finish(run_id, doc_type, "ok", int(rows or 0))
+        return int(rows or 0)
+
+    async def _run_all(self, start: str, end: str, label: str) -> Dict[str, int]:
+        """Run the three sources under audit rows, then raise if any failed.
+
+        return_exceptions=True so every source finishes and writes its own
+        row before the run fails; plain gather would propagate the first
+        error while the other two were still mid-flight, and their rows
+        might never be written.
+        """
+        results = await asyncio.gather(
+            self._audited("sgs", self.ingest_sgs(start, end)),
+            self._audited("ptax", self.ingest_ptax(start, end)),
+            self._audited("expectativas", self.ingest_expectativas(start)),
+            return_exceptions=True,
+        )
+        totals: Dict[str, int] = {}
+        failures: List[str] = []
+        for doc_type, table, res in zip(
+            LOG_DOC_TYPES, ("bacen_sgs", "bacen_ptax", "bacen_expectativas"), results,
+        ):
+            if isinstance(res, BaseException):
+                failures.append(f"{doc_type}: {res}")
+                totals[table] = 0
+            else:
+                totals[table] = int(res)
+        logger.info("BACEN %s done: %s", label, totals)
+        if failures:
+            raise RuntimeError(
+                f"BACEN {label} failed for {len(failures)} source(s) — " + "; ".join(failures)
+            )
+        return totals
+
+    # ------------------------------------------------------------------
     # Orchestrated runs
     # ------------------------------------------------------------------
 
@@ -313,37 +426,11 @@ class BacenIngestor:
         """Full historical backfill for all BACEN data from start to today."""
         end = date.today().isoformat()
         logger.info("BACEN backfill: start=%s end=%s", start, end)
-
-        sgs_n, ptax_n, exp_n = await asyncio.gather(
-            self.ingest_sgs(start, end),
-            self.ingest_ptax(start, end),
-            self.ingest_expectativas(start),
-        )
-
-        totals = {
-            "bacen_sgs":          sgs_n,
-            "bacen_ptax":         ptax_n,
-            "bacen_expectativas": exp_n,
-        }
-        logger.info("BACEN backfill done: %s", totals)
-        return totals
+        return await self._run_all(start, end, "backfill")
 
     async def daily_update(self) -> Dict[str, int]:
         """Incremental update: last 7 days of all BACEN data."""
         end   = date.today()
         start = (end - timedelta(days=7)).isoformat()
         end   = end.isoformat()
-
-        sgs_n, ptax_n, exp_n = await asyncio.gather(
-            self.ingest_sgs(start, end),
-            self.ingest_ptax(start, end),
-            self.ingest_expectativas(start),
-        )
-
-        totals = {
-            "bacen_sgs":          sgs_n,
-            "bacen_ptax":         ptax_n,
-            "bacen_expectativas": exp_n,
-        }
-        logger.info("BACEN daily update done: %s", totals)
-        return totals
+        return await self._run_all(start, end, "daily update")
