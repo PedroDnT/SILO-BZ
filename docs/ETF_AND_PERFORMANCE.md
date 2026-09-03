@@ -63,8 +63,15 @@ Pieces (FETCH → PARSE → STORE):
   full rendered text + `__NEXT_DATA__` JSON (field parsing is done server-side in Python).
 - `src/fetchers/apify_etf_fetcher.py` — `ApifyETFFetcher` runs
   `apify/playwright-scraper` (limited permissions; override with `APIFY_ETF_ACTOR`)
-  via `run-sync-get-dataset-items`, passing that pageFunction + one startUrl per
-  active registry ticker + the proxy config. Raises on any failure / empty result.
+  asynchronously — `POST /acts/{actor}/runs`, long-poll `GET /actor-runs/{id}`
+  with `waitForFinish=60` until a terminal status, then read the run's dataset —
+  passing that pageFunction + one startUrl per active registry ticker + the proxy
+  config. Apify's synchronous `run-sync-get-dataset-items` holds a request for
+  at most 300 s and then answers HTTP 408 `run-timeout-exceeded` (the 2026-09-03
+  daily died on it), so it is not used. The whole run is capped by
+  `APIFY_ETF_RUN_BUDGET_SECS` (default 1500), passed to Apify as the run's own
+  `timeout` and enforced by the poller, which aborts an overrunning run. Raises
+  on any failure, a run ending FAILED/TIMED-OUT/ABORTED, or an empty dataset.
   HTTP 403 `full-permission-actor-not-approved` (Apify full-permission store
   actors, historically `apify/web-scraper` after 2026-08-31) is
   `ApifyActorNotApprovedError`: the daily run skips it like an unset token.
@@ -77,6 +84,7 @@ Run it:
 ```bash
 export APIFY_TOKEN=…            # required
 # optional: APIFY_ETF_ACTOR=apify~playwright-scraper  APIFY_PROXY_GROUPS=RESIDENTIAL
+#           APIFY_ETF_RUN_BUDGET_SECS=1500 (whole-run wall clock, seconds)
 python -m src.pipeline.ingest_etf_market
 ```
 

@@ -91,9 +91,20 @@ class TestFetch:
         assert "approvePermissions=true" in str(exc.value)
 
     def test_empty_dataset_raises(self):
+        """A SUCCEEDED run whose dataset is empty is still a failure, not "no ETFs".
+
+        The run is driven asynchronously (start → poll → read dataset; see
+        tests/test_apify_etf_run.py), so the fake answers the start and poll
+        calls with a Run object and only the dataset call with ``[]``.
+        """
+        import json
+
         class _Resp:
+            def __init__(self, payload):
+                self._payload = json.dumps(payload).encode()
+
             def read(self):
-                return b"[]"
+                return self._payload
 
             def __enter__(self):
                 return self
@@ -101,8 +112,15 @@ class TestFetch:
             def __exit__(self, *args):
                 return False
 
-        with patch("urllib.request.urlopen", return_value=_Resp()):
-            with pytest.raises(RuntimeError, match="empty dataset"):
+        run = {"data": {"id": "run1", "status": "SUCCEEDED", "defaultDatasetId": "ds1"}}
+
+        def fake_urlopen(req, timeout=None):
+            if req.full_url.split("?")[0].endswith("/dataset/items"):
+                return _Resp([])
+            return _Resp(run)
+
+        with patch("urllib.request.urlopen", fake_urlopen):
+            with pytest.raises(RuntimeError, match="dataset is empty"):
                 _fetcher().fetch(["BOVA11"])
 
     def test_network_error_raises(self):
