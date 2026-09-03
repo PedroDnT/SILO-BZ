@@ -38,7 +38,7 @@ Configuration (env)
     APIFY_TOKEN              required — Apify API token.
     APIFY_ETF_ACTOR          optional — actor id (default 'apify~playwright-scraper').
     APIFY_PROXY_GROUPS       optional — comma list (default 'RESIDENTIAL').
-    APIFY_ETF_TIMEOUT_SECS   optional — wait budget for the actor run (default 1200).
+    APIFY_ETF_TIMEOUT_SECS   optional — wait budget for the actor run (default 2400).
 
 Data-integrity: a failed run (non-2xx, actor FAILED/ABORTED, or empty dataset)
 RAISES — it never returns a plausible-looking empty/fallback result. Timeouts
@@ -63,7 +63,12 @@ _ETF_URL = "https://www.etfsbrasil.com.br/etfs/{ticker}"
 _PAGE_FUNCTION_PATH = Path(__file__).resolve().parents[2] / "apify" / "etfsbrasil_scraper.js"
 _APIFY_BASE = "https://api.apify.com/v2"
 _DEFAULT_ACTOR = "apify~playwright-scraper"
-_DEFAULT_TIMEOUT_SECS = 1200
+# Wait budget for one scrape, in seconds. Measured: the first async run
+# (Apify run 7RmFKAYQfqWraHaX6, Daily CVM Ingest 33798733736, 2026-09-03)
+# took 1,145 s for 178 tickers at concurrency 5 — 55 s short of the original
+# 1,200 s default, so any slower day would have been skipped. 2,400 s is
+# roughly twice the measured time; the daily job's own timeout is 180 min.
+_DEFAULT_TIMEOUT_SECS = 2400
 _APPROVAL_ERROR_TYPE = "full-permission-actor-not-approved"
 _TIMEOUT_ERROR_TYPE = "run-timeout-exceeded"
 _TERMINAL_STATUSES = frozenset(
