@@ -23,7 +23,7 @@ import pandas as pd
 
 try:
     import bcb
-    from bcb import sgs, PTAX, Expectativas, TaxaJuros
+    from bcb import PTAX, Expectativas, TaxaJuros
 except ImportError as exc:  # pragma: no cover
     raise ImportError("python-bcb is required. Run: pip install python-bcb") from exc
 
@@ -57,6 +57,11 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _OLINDA = "https://olinda.bcb.gov.br/olinda/servico"
+# SGS (Sistema Gerenciador de Séries Temporais) REST API. One series per
+# request; python-bcb's sgs.get() wrapped the same endpoint but raised on the
+# first series that answered 404 and discarded every series fetched before it.
+_SGS = "https://api.bcb.gov.br/dados/serie"
+
 _OLINDA_PAGE = 10_000
 _OLINDA_MAX_PAGES = 50
 # Same transient set as B3 COTAHIST. Olinda returned HTML 503 on the
@@ -245,8 +250,116 @@ def _df_to_records(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
 
 def _to_sgs_date(d: Optional[str]) -> Optional[str]:
-    """Accept ISO date (YYYY-MM-DD) and return it unchanged for python-bcb sgs.get."""
-    return d  # python-bcb sgs accepts ISO strings directly
+    """ISO YYYY-MM-DD → the DD/MM/YYYY the SGS REST API expects."""
+    if not d:
+        return None
+    return datetime.strptime(d[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+
+
+def _sgs_iso(d: str) -> str:
+    """SGS answers dates as DD/MM/YYYY; the warehouse keys on ISO."""
+    return datetime.strptime(d.strip(), "%d/%m/%Y").date().isoformat()
+
+
+def _sgs_value(raw: Any, *, label: str, code: int, when: str) -> Optional[float]:
+    """SGS answers values as strings. Empty is NULL; anything else must parse.
+
+    "Null stays null": an empty observation is stored as None, never as 0.
+    A non-empty value that is not a number is a contract change on BACEN's
+    side and raises rather than being coerced into a guess.
+    """
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if text in ("", "-"):
+        return None
+    try:
+        return float(text)
+    except ValueError as exc:
+        raise BacenFetchError(
+            f"SGS {label} ({code}) {when}: non-numeric value {text!r}"
+        ) from exc
+
+
+_SGS_NOT_FOUND_MARKERS = ("Value(s) not found", "SGSNegocioException")
+
+
+async def _sgs_request(
+    client: httpx.AsyncClient,
+    label: str,
+    code: int,
+    start: Optional[str],
+    end: Optional[str],
+    last: Optional[int],
+    *,
+    attempts: int,
+    delay: float,
+) -> List[Dict[str, Any]]:
+    """GET one SGS series, retrying transient failures.
+
+    Returns the raw ``[{"data": "DD/MM/YYYY", "valor": "..."}]`` list.
+
+    A 404 whose body says ``Value(s) not found`` is BACEN's answer for "no
+    observation in this window" — a monthly series asked for a window that
+    starts after the 1st, or before this month's figure is published. That
+    is a legitimate empty answer for THIS series and returns ``[]``. Every
+    other failure raises ``BacenFetchError``: an outage must not read as a
+    quiet month.
+    """
+    if last is not None:
+        url = f"{_SGS}/bcdata.sgs.{code}/dados/ultimos/{int(last)}"
+        params: Dict[str, str] = {"formato": "json"}
+    else:
+        url = f"{_SGS}/bcdata.sgs.{code}/dados"
+        params = {"formato": "json"}
+        if start:
+            params["dataInicial"] = _to_sgs_date(start) or ""
+        if end:
+            params["dataFinal"] = _to_sgs_date(end) or ""
+    full = f"{url}?{urlencode(params)}"
+    where = f"SGS {label} ({code})"
+
+    last_exc: Optional[BaseException] = None
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = await client.get(full)
+        except httpx.HTTPError as exc:
+            last_exc = exc
+            logger.warning("%s request error attempt=%d/%d: %s", where, attempt, attempts, exc)
+            if attempt < attempts:
+                await asyncio.sleep(delay * attempt)
+            continue
+
+        if resp.status_code in _OLINDA_RETRY_STATUSES:
+            last_exc = BacenFetchError(f"{where}: HTTP {resp.status_code}")
+            logger.warning("%s HTTP %s attempt=%d/%d", where, resp.status_code, attempt, attempts)
+            if attempt < attempts:
+                await asyncio.sleep(delay * attempt)
+            continue
+
+        if resp.status_code == 404 and any(m in resp.text for m in _SGS_NOT_FOUND_MARKERS):
+            return []
+
+        if resp.status_code != 200:
+            raise BacenFetchError(f"{where}: HTTP {resp.status_code}: {resp.text[:200]}")
+
+        try:
+            payload = json.loads(resp.text)
+        except json.JSONDecodeError as exc:
+            # Seen live 2026-09-03: HTTP 200 with an XHTML interstitial for
+            # series 432, gone on the next request. A page is not data;
+            # treat it as transient like a 503 and retry. Exhausted retries
+            # still raise — never an empty window.
+            last_exc = BacenFetchError(f"{where}: response is not JSON: {resp.text[:200]}")
+            logger.warning("%s non-JSON 200 attempt=%d/%d: %s", where, attempt, attempts, resp.text[:80].replace("\n", " "))
+            if attempt < attempts:
+                await asyncio.sleep(delay * attempt)
+            continue
+        if not isinstance(payload, list):
+            raise BacenFetchError(f"{where}: expected a JSON list, got {type(payload).__name__}")
+        return payload
+
+    raise BacenFetchError(f"{where}: failed after {attempts} attempts: {last_exc}")
 
 # ---------------------------------------------------------------------------
 # Client
@@ -272,7 +385,7 @@ class BacenClient:
         last: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Fetch one or more SGS time series.
+        Fetch one or more SGS time series, one request per series.
 
         Args:
             codes: mapping of label → series code. E.g. {"IPCA": 433, "CDI": 12}
@@ -281,21 +394,47 @@ class BacenClient:
             last:  fetch only the last N observations (mutually exclusive with start/end)
 
         Returns:
-            List of dicts with keys matching ``codes`` plus a 'date' key.
-        """
-        def _fetch() -> pd.DataFrame:
-            kwargs: Dict[str, Any] = {}
-            if last is not None:
-                kwargs["last"] = last
-            else:
-                if start:
-                    kwargs["start"] = start
-                if end:
-                    kwargs["end"] = end
-            return sgs.get(codes, **kwargs)
+            List of dicts with keys matching ``codes`` plus a 'date' key
+            (ISO), one dict per distinct observation date, sorted ascending.
+            A series with no observation in the window is simply absent
+            from every dict — it is not zero and it does not fail the
+            others.
 
-        df = await asyncio.to_thread(_fetch)
-        return _df_to_records(df)
+        Why not python-bcb's ``sgs.get``: it fetched the series in sequence
+        and raised ``Download error: code = 433`` (433 is the IPCA series
+        code, not an HTTP status) on the first 404, discarding CDI, Selic and
+        every other series already fetched. The daily 30-day window asks
+        for IPCA before the month's figure is published, so BACEN answers
+        404 ``Value(s) not found`` for it most days — and until 2026-09-03
+        that took all ten series down to zero rows (Daily CVM Ingest
+        33721538761 and 33798733736 both logged ``bacen_sgs: 0``).
+
+        Raises ``BacenFetchError`` on any failure that is not that documented
+        404 — a broken fetch must not look like a quiet window.
+        """
+        attempts, delay = _olinda_retry_config()
+        by_date: Dict[str, Dict[str, Any]] = {}
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            for label, code in codes.items():
+                points = await _sgs_request(
+                    client, label, int(code), start, end, last,
+                    attempts=attempts, delay=delay,
+                )
+                if not points:
+                    logger.warning(
+                        "SGS %s (%s): no observation for %s..%s (BACEN 404 or empty)",
+                        label, code, start, end,
+                    )
+                    continue
+                for point in points:
+                    when = str(point.get("data", "")).strip()
+                    if not when:
+                        raise BacenFetchError(f"SGS {label} ({code}): observation without a date")
+                    iso = _sgs_iso(when)
+                    by_date.setdefault(iso, {"date": iso})[label] = _sgs_value(
+                        point.get("valor"), label=label, code=int(code), when=iso,
+                    )
+        return [by_date[d] for d in sorted(by_date)]
 
     # ------------------------------------------------------------------
     # PTAX – exchange rates
