@@ -105,10 +105,16 @@ class BacenIngestor:
                 end=end,
             )
         except Exception as exc:
-            logger.error("SGS fetch failed: %s", exc)
-            return 0
+            # Fatal, like PTAX and Expectativas. This used to log and return
+            # 0, and the daily run stayed green with bacen_sgs=0 (2026-09-03,
+            # runs 33721538761 and 33798733736). A per-series "no observation
+            # in the window" is handled inside the fetcher and is not an
+            # exception; anything that reaches here is a broken fetch.
+            raise RuntimeError(f"SGS fetch failed: {exc}") from exc
 
         if not records:
+            # Every series empty for the window is possible only for a window
+            # with no business day; visible, not silent.
             logger.warning("SGS: no data returned for %s–%s", start, end)
             return 0
 
