@@ -236,3 +236,20 @@ class TestFetch:
         ):
             with pytest.raises(RuntimeError, match="network"):
                 _fetcher().fetch(["BOVA11"])
+
+
+class TestWaitBudgetDefault:
+    def test_default_covers_the_measured_scrape_with_margin(self, monkeypatch):
+        """Apify run 7RmFKAYQfqWraHaX6 (Daily CVM Ingest 33798733736, 2026-09-03)
+        took 1,145 s for 178 tickers. The original 1,200 s default left 55 s of
+        margin; a slower day would have skipped the snapshot. The default must
+        stay comfortably above the measured time and below the job's 180 min.
+        """
+        monkeypatch.delenv("APIFY_ETF_TIMEOUT_SECS", raising=False)
+        budget = ApifyETFFetcher(token="tok")._timeout
+        assert budget >= 2 * 1145, "wait budget must be at least 2x the measured scrape"
+        assert budget < 180 * 60
+
+    def test_env_overrides_default(self, monkeypatch):
+        monkeypatch.setenv("APIFY_ETF_TIMEOUT_SECS", "900")
+        assert ApifyETFFetcher(token="tok")._timeout == 900
