@@ -140,6 +140,8 @@ jobs:
           # daily, which never touches 2010) is the false positive. Restrict
           # the fail set to slices daily would retry: undated (registry,
           # b3/corporate_events), current-year yearly, and monthly periods
+          # (CVM filing months, and the window start month that bacen/*
+          # rows carry — src/pipeline/ingest_log.py)
           # inside DAILY_LOOKBACK_MONTHS. Deep history stays a backfill
           # problem; check 3 (completeness) already alarms if a family stalls.
           attempts=$(q "SELECT count(*) FROM cvm_ingest_log

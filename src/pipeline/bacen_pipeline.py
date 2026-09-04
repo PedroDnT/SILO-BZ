@@ -1,8 +1,9 @@
 """
 BACEN data ingestor — fetches SGS time series, PTAX exchange rates, and
-Expectativas (Focus bulletin) from python-bcb and persists to Supabase.
+Expectativas (Focus bulletin) and persists to Supabase.
 
-Reuses BacenClient from src/clients/bacen_client.py.
+Fetching is src/fetchers/bacen_fetcher.BacenClient (SGS and Olinda over
+httpx); audit rows go through src/pipeline/ingest_log.
 """
 
 import asyncio
@@ -14,9 +15,8 @@ from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-import uuid
-
 from src.fetchers.bacen_fetcher import BacenClient
+from src.pipeline.ingest_log import PartialIngestError, audited, describe
 from src.store.pg_client import get_pg_client, upsert_rows
 
 logger = logging.getLogger(__name__)
@@ -40,15 +40,12 @@ SGS_SERIES: Dict[str, int] = {
 
 PTAX_CURRENCIES: List[str] = ["USD", "EUR", "GBP", "JPY", "ARS"]
 
-# Audit log. Every ingest writes exactly one cvm_ingest_log row (integrity
-# rule 3); until 2026-09-03 the BACEN ingestor wrote none, so the day both
-# daily runs landed bacen_sgs=0 there was nothing for DB Health check 1 or
-# diagnostic 15 to see. One row per source per run: entity 'bacen',
-# doc_type sgs | ptax | expectativas, no period (the window is a trailing
-# range, not a filing month). Undated rows are inside check 1's daily
-# window, so an error row fails the gate until a later ok row heals it.
+# Audit rows: one per source per run, written by src/pipeline/ingest_log
+# (entity 'bacen'; period = the fetch window's start month — see that module
+# for why a trailing window is keyed that way). The registry below is the
+# single place the three sources are enumerated: doc_type, landing table,
+# and how to run it. Nothing else may zip parallel lists.
 LOG_ENTITY = "bacen"
-LOG_DOC_TYPES = ("sgs", "ptax", "expectativas")
 
 EXPECTATIVAS_ENDPOINTS: List[str] = [
     "ExpectativasMercadoAnuais",
@@ -219,9 +216,10 @@ class BacenIngestor:
             # reports success is how the FX series silently stayed empty.
             for err in errors:
                 logger.error("PTAX task error: %s", err)
-            raise RuntimeError(
+            raise PartialIngestError(
                 f"PTAX: {len(errors)} of {len(PTAX_CURRENCIES)} currencies failed; "
-                f"first error: {errors[0]}"
+                f"first error: {describe(errors[0])}",
+                rows=total,
             )
 
         logger.info("PTAX done: total=%d", total)
@@ -309,128 +307,78 @@ class BacenIngestor:
             # a healthy-looking total from the one endpoint that worked.
             for err in errors:
                 logger.error("Expectativas task error: %s", err)
-            raise RuntimeError(
+            raise PartialIngestError(
                 f"Expectativas: {len(errors)} of {len(tasks)} fetches failed; "
-                f"first error: {errors[0]}"
+                f"first error: {describe(errors[0])}",
+                rows=total,
             )
 
         logger.info("Expectativas done: total=%d", total)
         return total
 
     # ------------------------------------------------------------------
-    # Audit log
+    # Orchestrated run
     # ------------------------------------------------------------------
 
-    def _log_start(self, run_id: str, doc_type: str) -> None:
-        """Write the 'running' row. Lets a failure propagate — a run that cannot
-        record itself must not proceed unrecorded (same stance as ANBIMA)."""
-        upsert_rows(
-            self._supabase,
-            "cvm_ingest_log",
-            [{
-                "run_id":        run_id,
-                "entity":        LOG_ENTITY,
-                "doc_type":      doc_type,
-                "period_year":   None,
-                "period_month":  None,
-                "rows_upserted": 0,          # NOT NULL — finish overwrites it
-                "status":        "running",
-                "started_at":    datetime.now(timezone.utc),
-            }],
-            conflict_columns="run_id",
+    def _sources(self, start: str, end: str):
+        """(doc_type, landing table, factory) — the only enumeration of the three."""
+        return (
+            ("sgs",          "bacen_sgs",          lambda: self.ingest_sgs(start, end)),
+            ("ptax",         "bacen_ptax",         lambda: self.ingest_ptax(start, end)),
+            ("expectativas", "bacen_expectativas", lambda: self.ingest_expectativas(start)),
         )
-
-    def _log_finish(
-        self, run_id: str, doc_type: str, status: str, rows: int,
-        error: Optional[str] = None,
-    ) -> None:
-        # started_at is deliberately NOT sent: ON CONFLICT DO UPDATE sets every
-        # column present, and resending it would make every run look
-        # instantaneous. The row exists because _log_start succeeded.
-        upsert_rows(
-            self._supabase,
-            "cvm_ingest_log",
-            [{
-                "run_id":        run_id,
-                "entity":        LOG_ENTITY,
-                "doc_type":      doc_type,
-                "status":        status,
-                "rows_upserted": rows,
-                "finished_at":   datetime.now(timezone.utc),
-                "error_msg":     error,
-            }],
-            conflict_columns="run_id",
-        )
-
-    async def _audited(self, doc_type: str, coro) -> int:
-        """Run one source under an audit row: running → ok | error.
-
-        The error row is written BEFORE the exception is re-raised, so the
-        failure is in the warehouse even if the process dies right after.
-        A failure to write the error row is logged and the original error
-        still propagates — the audit must never mask the ingest failure.
-        """
-        run_id = str(uuid.uuid4())
-        try:
-            self._log_start(run_id, doc_type)
-        except Exception:
-            coro.close()  # never awaited; do not leave it dangling
-            raise
-        try:
-            rows = await coro
-        except Exception as exc:
-            try:
-                self._log_finish(run_id, doc_type, "error", 0, error=str(exc)[:2000])
-            except Exception as log_exc:  # noqa: BLE001 — must not mask exc
-                logger.warning("bacen/%s: could not write error row: %s", doc_type, log_exc)
-            raise
-        self._log_finish(run_id, doc_type, "ok", int(rows or 0))
-        return int(rows or 0)
 
     async def _run_all(self, start: str, end: str, label: str) -> Dict[str, int]:
-        """Run the three sources under audit rows, then raise if any failed.
+        """Run the three sources under audit rows; raise if any failed.
 
-        return_exceptions=True so every source finishes and writes its own
-        row before the run fails; plain gather would propagate the first
-        error while the other two were still mid-flight, and their rows
-        might never be written.
+        ``return_exceptions=True`` so every source finishes and records
+        itself before the run fails. Failures are re-raised as an
+        ``ExceptionGroup`` carrying the original exceptions, so run_daily's
+        ``exc_info`` prints the real tracebacks; a child cancelled on its
+        own is re-raised as the cancellation it is, never folded into a
+        failure message.
         """
+        window_start = date.fromisoformat(start[:10])
+        sources = self._sources(start, end)
         results = await asyncio.gather(
-            self._audited("sgs", self.ingest_sgs(start, end)),
-            self._audited("ptax", self.ingest_ptax(start, end)),
-            self._audited("expectativas", self.ingest_expectativas(start)),
+            *(
+                audited(
+                    self._supabase, LOG_ENTITY, doc_type, factory,
+                    period_year=window_start.year, period_month=window_start.month,
+                )
+                for doc_type, _, factory in sources
+            ),
             return_exceptions=True,
         )
         totals: Dict[str, int] = {}
-        failures: List[str] = []
-        for doc_type, table, res in zip(
-            LOG_DOC_TYPES, ("bacen_sgs", "bacen_ptax", "bacen_expectativas"), results,
-        ):
+        failures: List[tuple[str, Exception]] = []
+        for (doc_type, table, _), res in zip(sources, results):
+            if isinstance(res, asyncio.CancelledError):
+                raise res
             if isinstance(res, BaseException):
-                failures.append(f"{doc_type}: {res}")
-                totals[table] = 0
+                if not isinstance(res, Exception):
+                    raise res
+                logger.error("BACEN %s: %s failed", label, doc_type, exc_info=res)
+                failures.append((doc_type, res))
+                totals[table] = int(getattr(res, "rows", 0) or 0)
             else:
                 totals[table] = int(res)
         logger.info("BACEN %s done: %s", label, totals)
         if failures:
-            raise RuntimeError(
-                f"BACEN {label} failed for {len(failures)} source(s) — " + "; ".join(failures)
+            raise ExceptionGroup(
+                f"BACEN {label} failed for {len(failures)} source(s) — "
+                + "; ".join(f"{d}: {describe(e)}" for d, e in failures),
+                [e for _, e in failures],
             )
         return totals
 
-    # ------------------------------------------------------------------
-    # Orchestrated runs
-    # ------------------------------------------------------------------
-
     async def backfill(self, start: str = "2019-01-01") -> Dict[str, int]:
-        """Full historical backfill for all BACEN data from start to today."""
+        """Fetch every BACEN source from ``start`` to today and upsert.
+
+        This is the one orchestrated entry point: run_daily calls it with a
+        30-day window, run_backfill with the historical start. The audit
+        rows tell the two apart by the window's start month.
+        """
         end = date.today().isoformat()
         logger.info("BACEN backfill: start=%s end=%s", start, end)
         return await self._run_all(start, end, "backfill")
-
-    async def daily_update(self) -> Dict[str, int]:
-        """Incremental update: last 7 days of all BACEN data."""
-        end   = date.today()
-        start = (end - timedelta(days=7)).isoformat()
-        end   = end.isoformat()
-        return await self._run_all(start, end, "daily update")

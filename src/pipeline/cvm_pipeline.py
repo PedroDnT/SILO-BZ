@@ -35,6 +35,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.fetchers.cvm_fetcher import CVMFetcher
 from src.store.pg_client import get_pg_client, upsert_rows
+from src.pipeline.ingest_log import describe
 
 # Per-entity ingest modules (parsing logic lives there)
 from src.pipeline.ingest_fi import (
@@ -82,16 +83,8 @@ from src.fetchers.cia_fetcher import CIAFetcher
 logger = logging.getLogger(__name__)
 
 
-def _describe(exc: BaseException) -> str:
-    """Render an exception for a log line and the cvm_ingest_log error column.
-
-    `str(exc)` is the empty string for any exception raised without args, so a
-    real failure logged as "ingest_fi_diario 2026-07 failed: %s" printed
-    nothing after the colon and wrote an empty `error` to the audit table —
-    a failure that is recorded but not diagnosable. Always carry the type.
-    """
-    text = str(exc).strip()
-    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+# One renderer for every audit writer — see src/pipeline/ingest_log.describe.
+_describe = describe
 
 # ---------------------------------------------------------------------------
 # Backward-compatibility shims for existing tests / callers

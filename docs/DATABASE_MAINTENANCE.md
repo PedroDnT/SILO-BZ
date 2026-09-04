@@ -77,7 +77,8 @@ functions — they exist only after `apply_analytical.sh` has run.
 ## 3. Reading `cvm_ingest_log`
 
 Exactly one row per ingest run, written by `_log_start` / `_log_finish` in
-`src/pipeline/cvm_pipeline.py`.
+`src/pipeline/cvm_pipeline.py` (CVM slices) and by `src/pipeline/ingest_log.py`
+(`bacen/*`, keyed on the fetch window's start month; partial counts on error).
 
 | Status    | Meaning                                                                                                | Action                |
 | --------- | ------------------------------------------------------------------------------------------------------ | --------------------- |
