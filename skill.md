@@ -27,7 +27,7 @@ those to 50 / 200 / 2000 and 8s. It does **not** raise rows-per-response — the
 Exceeding the id ceiling returns `22023` as a `400` naming the limit; the panel
 is never silently truncated. Landing tables are closed to both tiers.
 
-To sign in, send a human to https://silo-deloslabs.vercel.app/signin.html — it returns an access token. Then send
+To sign in, send a human to https://iliquid-nightly.vercel.app/signin.html — it returns an access token. Then send
 BOTH headers:
 
 ```

@@ -186,7 +186,7 @@ Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources 
 `@evidence-dev/postgres` and only read — never write.
 
 - **`dashboard/`** — fund-health analytics at
-  [https://silo-deloslabs.vercel.app/](https://silo-deloslabs.vercel.app/):
+  [https://iliquid-nightly.vercel.app/](https://iliquid-nightly.vercel.app/):
   Overview (`/`), FIDC Credit Monitor (`/fidc`), FII Market (`/fii`), Suspicious
   Screens (`/suspicious`), Performance (`/performance`), and ETF (`/etf`).
   Evidence static snapshot (parquet at build). The Vercel project in team
@@ -201,7 +201,7 @@ Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources 
 
 Ingestion target: **GitHub Actions cron → Supabase Postgres** (SILO). Required GitHub
 secret: `POSTGRES_URL`. No container registry or Docker. The read-only dashboard is
-[https://silo-deloslabs.vercel.app/](https://silo-deloslabs.vercel.app/) (Vercel
+[https://iliquid-nightly.vercel.app/](https://iliquid-nightly.vercel.app/) (Vercel
 project `silo` in team `deloslabs`; any static host also works).
 
 - `.github/workflows/daily_ingest.yml` — 06:00 UTC daily (`run_daily`) + `workflow_dispatch`
