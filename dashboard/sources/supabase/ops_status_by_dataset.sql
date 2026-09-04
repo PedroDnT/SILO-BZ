@@ -14,7 +14,8 @@
 -- not-yet-published CVM month is recorded.
 with entities (entity) as (
   values ('fi'), ('fidc'), ('fiagro'), ('fii'), ('fip'),
-         ('securit'), ('etf'), ('cia_aberta'), ('anbima_etf')
+         ('securit'), ('etf'), ('cia_aberta'), ('anbima_etf'),
+         ('b3'), ('bacen')
 )
 select
   e.entity,

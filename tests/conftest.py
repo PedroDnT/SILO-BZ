@@ -193,3 +193,16 @@ def event_loop():
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
+
+# Exactly the columns of public.cvm_ingest_log (verified against Silo). Every
+# audit writer's rows must be a subset: the 2026-07-25 ANBIMA incident sent
+# `notes`/`error_message`, which do not exist, and ingest was silently disabled.
+INGEST_LOG_COLUMNS = frozenset({
+    "id", "run_id", "entity", "doc_type", "period_year", "period_month",
+    "rows_upserted", "status", "error_msg", "started_at", "finished_at",
+})
+
+
+@pytest.fixture
+def ingest_log_columns():
+    return INGEST_LOG_COLUMNS

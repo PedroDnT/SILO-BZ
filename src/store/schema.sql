@@ -16,7 +16,7 @@
 CREATE TABLE IF NOT EXISTS cvm_ingest_log (
     id            BIGSERIAL    PRIMARY KEY,
     run_id        UUID         NOT NULL DEFAULT gen_random_uuid(),
-    entity        TEXT         NOT NULL,   -- fi | fidc | fip | fiagro | fii | securit
+    entity        TEXT         NOT NULL,   -- fi | fidc | fip | fiagro | fii | securit | cia_aberta | etf | anbima_etf | b3 | bacen
     doc_type      TEXT         NOT NULL,
     period_year   INT,
     period_month  INT,
