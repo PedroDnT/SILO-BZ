@@ -87,10 +87,8 @@ npm run dev       # http://localhost:3000
 npm run build     # outputs to build/
 ```
 
-Deployed to **Vercel** (project `silo` in team `deloslabs`; production alias
-`silo-deloslabs.vercel.app`). Production rebuilds on every merge to `main` that
-touches `dashboard/`; the nightly ingest does not rebuild it. Can also be served
-as a static build — point any static host at `build/`.
+Deployed to **Vercel** (project `iliquid-nightly`, primary live target). Can also be served as
+a static build — point any static host at `build/`.
 
 ### Vercel configuration (`vercel.json`)
 

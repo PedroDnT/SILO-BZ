@@ -24,7 +24,7 @@ on:
         required: false
         default: "2026"
       rebuild_dashboard:
-        description: "Fire the Vercel deploy hook after this run: publishes a PRODUCTION deployment of the dashboard (silo-deloslabs.vercel.app) from the data as of now. Off by default and left off deliberately: a dashboard build is 25–45 min of SELECTs on the same Postgres, and merges to main that touch dashboard/ already rebuild production."
+        description: "Fire the Vercel deploy hook after this run. NOTE: this publishes a PRODUCTION deployment, which aliases to silo-deloslabs.vercel.app — verified 2026-08-29 that iliquid-nightly.vercel.app does NOT follow production, so this does not refresh the public URL until that domain is attached. Leave off while filling data either way: a dashboard build is 25–45 min of SELECTs on the same Postgres."
         type: boolean
         default: false
 
@@ -196,7 +196,7 @@ jobs:
       # Evidence build (~90 queries, including 4+ min scans of cvm_fi_perfil)
       # on the same Postgres the ingest just wrote. That overlap is what killed
       # schema apply on 2026-08-26 and tripped quota. Cron now leaves
-      # https://silo-deloslabs.vercel.app/ as the last merge built it. To publish a new snapshot:
+      # https://iliquid-nightly.vercel.app/ frozen. To publish a new snapshot:
       # Actions → Daily CVM Ingest → rebuild_dashboard = true (and have the
       # secret set). continue-on-error: a failed hook must not fail ingest.
       - name: Trigger dashboard rebuild (Vercel deploy hook)
@@ -209,7 +209,7 @@ jobs:
           if [ -z "${VERCEL_DEPLOY_HOOK_URL:-}" ]; then
             echo "VERCEL_DEPLOY_HOOK_URL unset — skipping dashboard rebuild."
             echo "Create one at Vercel → Project silo → Settings → Git → Deploy Hooks"
-            echo "(public dashboard: https://silo-deloslabs.vercel.app/)"
+            echo "(public dashboard: https://iliquid-nightly.vercel.app/)"
             echo "and store it as the repository secret VERCEL_DEPLOY_HOOK_URL."
             exit 0
           fi
