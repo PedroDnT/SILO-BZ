@@ -429,15 +429,24 @@ class CVMIngestor:
         return self._failures
 
     @property
-    def skips(self) -> List["SliceFailure"]:
-        """Slices this run recorded as 'skipped' (unpublished).
+    def skips(self) -> List[str]:
+        """Slices this run recorded as 'skipped', rendered for the operator.
 
-        run_backfill's zero-row guard needs this: a year whose archive exists
-        but has not released the requested CDA block upserts nothing, and that
-        used to look identical to 'every fetch failed'. Skips are not failures.
+        A skip is CVM not having published something — a 404 for a month inside
+        the daily window, or a CDA block absent from an archive whose siblings
+        prove it is the right archive. Never a failure: nothing is missing that
+        the source has.
+
+        But it is not nothing either. When a run's ONLY requested slice is
+        skipped, the run upserts zero rows, and ensure_rows_landed() reads that
+        zero as "every fetch failed" and exits 1 — which is exactly what run
+        33659046190 did to fi/cda_debentures/2005 after #184 had correctly
+        classified it. Strings, not SliceFailure records: this ledger exists to
+        explain a zero, and naming a skip a "failure" is the confusion being
+        fixed.
         """
         if not hasattr(self, "_skips"):
-            self._skips: List[SliceFailure] = []
+            self._skips: List[str] = []
         return self._skips
 
     @property
@@ -480,24 +489,28 @@ class CVMIngestor:
         'error' — so 'skipped' (a 404 for a month CVM has not published) never
         counts as a failure, and the ledger cannot drift from the audit table.
         """
-        self.failures.append(self._slice_outcome(run_id, error, rows))
-
-    def _record_skip(
-        self, run_id: str, error: str, rows: int = 0,
-    ) -> None:
-        """Append a slice to the run's skip ledger (unpublished, not a failure)."""
-        self.skips.append(self._slice_outcome(run_id, error, rows))
-
-    def _slice_outcome(
-        self, run_id: str, error: str, rows: int = 0,
-    ) -> "SliceFailure":
         entity, doc_type, year, month = self._slice_of_run.get(
             run_id, ("unknown", "unknown", None, None)
         )
-        return SliceFailure(
-            entity=entity, doc_type=doc_type, year=year,
-            month=month, error=error, rows=rows,
+        self.failures.append(
+            SliceFailure(entity=entity, doc_type=doc_type, year=year,
+                         month=month, error=error, rows=rows)
         )
+
+    def _record_skip(self, run_id: str, reason: str) -> None:
+        """Append a slice to the run's skip ledger.
+
+        Called only from _log_finish, and only when it resolved the status to
+        'skipped' — so the ledger cannot drift from the audit table, exactly as
+        _record_failure cannot.
+        """
+        entity, doc_type, year, month = self._slice_of_run.get(
+            run_id, ("unknown", "unknown", None, None)
+        )
+        period = ""
+        if year:
+            period = f" {year}" + (f"-{month:02d}" if month else "")
+        self.skips.append(f"{entity}/{doc_type}{period}: {reason}")
 
     async def _run_task_batches(
         self,
@@ -589,13 +602,12 @@ class CVMIngestor:
         # Single point where a slice becomes a run-level failure: exactly the
         # branches above that resolve to 'error', so the ledger and the audit
         # table can never disagree, and 'skipped' (unpublished month) is never
-        # counted as a failure. Skips are recorded on a separate ledger so
-        # run_backfill can tell "unpublished" from "every fetch failed" when
-        # zero rows landed. Every ingest_* method routes through here.
+        # counted. Every ingest_* method routes through here, so this covers all
+        # of them without touching ~50 except blocks.
         if status == "error":
             self._record_failure(run_id, error or "unknown error", rows)
         elif status == "skipped":
-            self._record_skip(run_id, error or "unpublished", rows)
+            self._record_skip(run_id, error or "not published")
         # The shared connection may have idled out during a long fetch (CVM
         # hangs of 15+ min killed it in the 2026-06-10 backfill, leaving every
         # slice stuck 'running'). Reconnect once and retry so the audit log

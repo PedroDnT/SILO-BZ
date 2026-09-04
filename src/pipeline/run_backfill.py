@@ -57,7 +57,9 @@ logger = logging.getLogger("run_backfill")
 async def main(args: argparse.Namespace) -> None:
     totals: dict = {}
     cvm_failures: list = []
-    cvm_skips: list = []
+    # Both ledgers are pre-initialised: a --bacen-only or --b3-only run never
+    # enters the CVM branch, and ensure_rows_landed reads them unconditionally.
+    cvm_skips: List[str] = []
     start_ts = time.monotonic()
     doc_type = getattr(args, "doc_type", None)
     if doc_type and args.entity != "fi":
@@ -132,43 +134,62 @@ async def main(args: argparse.Namespace) -> None:
         "Backfill complete in %.1fs — %d total rows: %s",
         elapsed, total_rows, totals,
     )
-    ensure_rows_landed(total_rows, skipped=len(cvm_skips))
+    ensure_rows_landed(total_rows, skips=cvm_skips, failures=cvm_failures)
     ensure_no_failed_slices(cvm_failures)
 
 
-def ensure_rows_landed(total_rows: int, skipped: int = 0) -> None:
-    """Fail the process when a backfill upserts nothing.
+def ensure_rows_landed(
+    total_rows: int,
+    skips: Sequence[str] = (),
+    failures: Sequence = (),
+) -> None:
+    """Fail the process when a backfill upserts nothing it should have.
 
-    A backfill exists to land rows; zero across every slice means every fetch
-    failed (e.g. CVM refusing the runner's IP — the 2026-06-10 run spent 4h
-    failing each download, printed "0 total rows", and exited 0, so CI showed
+    A backfill exists to land rows; zero across every slice usually means every
+    fetch failed (e.g. CVM refusing the runner's IP — the 2026-06-10 run spent
+    4h failing each download, printed "0 total rows", and exited 0, so CI showed
     green while the 2024/2025 partitions stayed empty). Exiting non-zero makes
     that visible in CI instead of masquerading as success. Re-running over
-    already-complete years still lands rows (idempotent ON CONFLICT upserts
-    count them), so this only trips when nothing was ingested at all.
+    already-complete years still lands rows: upsert_rows counts rows PROCESSED,
+    not rows the server changed, so #183's IS DISTINCT FROM guard did not turn
+    an idempotent re-run into a false zero here.
 
-    Exception: every requested slice was unpublished (`skipped`). FI 2005
-    cda_debentures is the case this exists for — the yearly CDA archive
-    downloads fine, sibling blocks are present, block 6 has never been
-    released. That is the same non-event as a 404, already logged `skipped`
-    in cvm_ingest_log; treating the resulting 0 rows as "every fetch failed"
-    failed CVM Historical Backfill run 33659046190 (job FI 2005) after a
-    32s download. Skips are not failures; `ensure_no_failed_slices` still
-    catches a real error in the same run.
+    Two zeros are not that failure, and this used to conflate all three:
+
+    * **Every requested slice was skipped.** Run 33659046190 asked for exactly
+      one slice, fi/cda_debentures/2005. #184 correctly classified it 'skipped'
+      — the 2005 HIST archive predates block 6, and its five sibling blocks
+      prove it is the right archive — and then this guard failed the job with
+      "every fetch likely failed; check network/CVM availability", which was
+      false in every clause. A source that has not published what you asked for
+      is not an outage, and a red run that means "working as intended" is how
+      people learn to ignore red runs.
+    * **Slices failed.** Then ensure_no_failed_slices() reports it next, naming
+      each one. Exiting here first would replace that specific list with a
+      guess about the network.
+
+    Only an unexplained zero — nothing skipped, nothing failed, nothing landed —
+    is still fatal.
     """
-    if total_rows == 0 and skipped > 0:
-        logger.info(
-            "Backfill upserted 0 rows because %d requested slice(s) are "
-            "unpublished (skipped) — not a failure",
-            skipped,
-        )
+    if total_rows:
         return
-    if total_rows == 0:
-        logger.error(
-            "Backfill upserted 0 rows across all slices — treating as failure "
-            "(every fetch likely failed; check network/CVM availability)"
+    if failures:
+        # Deliberately quiet: ensure_no_failed_slices names the slices.
+        return
+    if skips:
+        logger.info(
+            "Backfill upserted 0 rows because every requested slice was skipped "
+            "— the source has not published them. Not a failure:"
         )
-        sys.exit(1)
+        for skip in skips:
+            logger.info("  %s", skip)
+        return
+    logger.error(
+        "Backfill upserted 0 rows across all slices, with nothing skipped and "
+        "nothing recorded as failed — treating as failure (check network/CVM "
+        "availability, and that the requested filters match any slice)"
+    )
+    sys.exit(1)
 
 
 def parse_months(raw: Optional[str]) -> Optional[List[Tuple[int, int]]]:

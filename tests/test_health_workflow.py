@@ -254,3 +254,256 @@ def test_publishable_key_has_a_single_source():
     body = _anon_step()["run"]
     assert "grep -oE 'sb_publishable_[A-Za-z0-9_]+' skill.md" in body
     assert "sb_publishable__" not in body, "do not paste the key into the workflow"
+
+
+# --- 15_unhealed_ingest_errors.sql -----------------------------------------
+#
+# #174 narrowed check 1 so it fails only on slices daily_update would retry.
+# That is correct — daily never probes 2005, so alarming on a 2005 slice every
+# 26 hours is a red light only a backfill can clear. But it left the run
+# printing "0 (of 7 error rows)" with no way to see the 7. Diagnostic 15 is
+# that view. It restates the daily-window predicate as a literal, because
+# `psql -f` gets no variables, so the two definitions can drift silently
+# unless something holds them together. These tests are that something.
+
+DIAG_BACKLOG = DIAG_DIR / "15_unhealed_ingest_errors.sql"
+
+
+def _lookback_months() -> int:
+    return int(_spec()["jobs"]["health"]["env"]["DAILY_LOOKBACK_MONTHS"])
+
+
+def test_the_ingest_backlog_diagnostic_exists():
+    assert DIAG_BACKLOG.exists(), (
+        "check 1 no longer fails on historical slices; without this file the "
+        "backlog is invisible as well as non-fatal"
+    )
+
+
+def test_backlog_diagnostic_uses_the_workflows_own_lookback():
+    """The literal must equal DAILY_LOOKBACK_MONTHS - 1, as in health.yml."""
+    sql = DIAG_BACKLOG.read_text(encoding="utf-8")
+    expected = f"- {_lookback_months() - 1} * INTERVAL '1 month'"
+    assert expected in sql, (
+        f"diagnostic 15 must offset by {expected!r} to match health.yml's "
+        f"DAILY_LOOKBACK_MONTHS={_lookback_months()}; otherwise the gate and "
+        "the backlog view disagree about what the daily window is"
+    )
+
+
+def test_backlog_diagnostic_defines_unhealed_exactly_as_check_1_does():
+    """A slice is healed by a later ok OR skipped row, matched NULL-safely."""
+    sql = DIAG_BACKLOG.read_text(encoding="utf-8")
+    check1 = _step("Health checks")["run"]
+    for clause in (
+        "s.status IN ('ok', 'skipped')",
+        "s.entity       IS NOT DISTINCT FROM e.entity",
+        "s.doc_type     IS NOT DISTINCT FROM e.doc_type",
+        "s.period_year  IS NOT DISTINCT FROM e.period_year",
+        "s.period_month IS NOT DISTINCT FROM e.period_month",
+        "s.started_at   > e.started_at",
+    ):
+        assert clause in sql, f"diagnostic 15 is missing {clause!r}"
+        assert clause in check1, f"check 1 no longer contains {clause!r} — resync diagnostic 15"
+
+
+def test_backlog_diagnostic_is_read_only():
+    """It runs against production. Nothing in it may write.
+
+    Comments are stripped first: the header explains daily_update, and a
+    substring match on prose would fail on the word rather than on a statement.
+    """
+    body = "\n".join(
+        line.split("--", 1)[0]
+        for line in DIAG_BACKLOG.read_text(encoding="utf-8").splitlines()
+    ).upper()
+    for verb in ("INSERT ", "UPDATE ", "DELETE ", "DROP ", "ALTER ", "CREATE ", "TRUNCATE "):
+        assert verb not in body, f"diagnostic 15 must not contain {verb.strip()}"
+
+
+# --- check 4b: a negative lag is healthy -----------------------------------
+#
+# Run 33666142198 failed with "fact_fund_monthly did not answer (missing,
+# unpopulated, or empty)" about a matview that had been rebuilt 44 minutes
+# earlier and answered -31. The fact table aggregates cvm_fi_diario, which the
+# daily fills through the CURRENT month, while latest_complete_period('fi')
+# counts only complete months — so a freshly built matview is one calendar
+# month AHEAD, and `[ "$lag" -ge 0 ]` sent that into the not-queryable branch.
+#
+# These tests RUN the block rather than reading it. The defect was in shell
+# control flow, which a substring assertion cannot see.
+
+import subprocess
+import tempfile
+
+
+def _run_check_4b(lag_value: str) -> tuple[int, str, str]:
+    """Execute check 4b's branch with a given $lag. Returns (fail, stderr, summary)."""
+    body = _step("Health checks")["run"]
+    start = body.index('if ! printf \'%s\' "${lag:-}"')
+    end = body.index("\n", body.index("fi", body.index("fact_fund_monthly fresh ($lag days behind")))
+    block = body[start:end]
+    with tempfile.NamedTemporaryFile("w+", suffix=".md", delete=False) as summary:
+        summary_path = summary.name
+    script = (
+        f'set -u\nfail=0\nlag="{lag_value}"\n'
+        f'GITHUB_STEP_SUMMARY="{summary_path}"\n'
+        f"{block}\n"
+        'echo "FAILFLAG=$fail"\n'
+    )
+    proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    fail = int(proc.stdout.split("FAILFLAG=")[1].strip())
+    with open(summary_path) as fh:
+        return fail, proc.stderr, fh.read()
+
+
+class TestFactFundMonthlyLagBranch:
+    def test_one_month_ahead_is_healthy(self):
+        """-31: the exact value run 33666142198 failed on."""
+        fail, stderr, summary = _run_check_4b("-31")
+        assert fail == 0, f"a rebuilt matview must not fail the gate: {stderr}"
+        assert "✅" in summary
+        assert "in-progress month" in summary
+        assert "did not answer" not in stderr
+
+    def test_a_short_month_ahead_is_healthy(self):
+        """February gives -28. The whole legitimate band must pass."""
+        for lag in ("-28", "-29", "-30"):
+            fail, _, _ = _run_check_4b(lag)
+            assert fail == 0, f"lag={lag} must pass"
+
+    def test_equal_periods_are_healthy(self):
+        fail, _, summary = _run_check_4b("0")
+        assert fail == 0 and "✅" in summary
+
+    def test_within_a_month_behind_is_healthy(self):
+        fail, _, summary = _run_check_4b("31")
+        assert fail == 0 and "✅" in summary
+
+    def test_stale_still_fails_with_the_stale_message(self):
+        """The 2026-08-30 bug this check was built for."""
+        fail, stderr, summary = _run_check_4b("45")
+        assert fail == 1
+        assert "45 days behind" in stderr
+        assert "04_fact_fund_monthly.sql" in stderr
+        assert "stale by 45 days" in summary
+
+    def test_more_than_a_month_ahead_fails_as_future_dated(self):
+        """Two months ahead is not an in-progress month; it is a bad DT_COMPTC."""
+        fail, stderr, summary = _run_check_4b("-61")
+        assert fail == 1
+        assert "61 days AHEAD" in stderr
+        assert "DT_COMPTC" in stderr
+        assert "future-dated" in summary
+
+    def test_a_genuinely_absent_answer_still_says_so(self):
+        """An empty $lag must keep the not-queryable message — the branch is real."""
+        fail, stderr, summary = _run_check_4b("")
+        assert fail == 1
+        assert "did not answer" in stderr
+        assert "not queryable" in summary
+
+    def test_psql_error_text_is_not_read_as_a_number(self):
+        fail, stderr, _ = _run_check_4b("ERROR:relationdoesnotexist")
+        assert fail == 1
+        assert "did not answer" in stderr
+
+    def test_the_two_failure_modes_have_different_messages(self):
+        """Conflating them is what produced the wrong diagnosis in the first place."""
+        _, absent, _ = _run_check_4b("")
+        _, ahead, _ = _run_check_4b("-61")
+        assert "did not answer" in absent and "did not answer" not in ahead
+
+
+# --- check 4c: bacen_sgs daily series must keep moving -----------------------
+#
+# 2026-09-03: both daily runs logged `bacen_sgs: 0` and stayed green. Check 2
+# saw ingest activity (CVM rows land), check 3 judges CVM completeness only,
+# and nothing looked at bacen_sgs. These tests pin the gate's shape and RUN
+# its branch, as the 4b tests do, because the failure modes are shell control
+# flow.
+
+DIAG_SGS = DIAG_DIR / "17_bacen_sgs_freshness_by_series.sql"
+
+
+def test_sgs_gate_judges_only_the_daily_series():
+    body = _step("Health checks")["run"]
+    i = body.index("# 4c. BACEN SGS freshness")
+    section = body[i: body.index("# 5. Disk.", i)]
+    assert "FROM bacen_sgs WHERE series_code IN (11, 12)" in section, (
+        "CDI (12) and SELIC_DIARIA (11) are the only series that publish every "
+        "business day; a monthly series in this gate would fire every month"
+    )
+    assert "MAX_SGS_AGE_DAYS" in section
+    assert "fail=1" in section
+
+
+def test_sgs_age_limit_is_a_workflow_knob():
+    spec = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    env = spec["jobs"]["health"]["env"]
+    assert int(env["MAX_SGS_AGE_DAYS"]) >= 5, "must absorb a long weekend plus a holiday"
+    assert int(env["MAX_SGS_AGE_DAYS"]) <= 10, "beyond this the refresh has been failing for a week"
+
+
+def test_sgs_diagnostic_exists_and_is_read_only():
+    assert DIAG_SGS.exists()
+    body = " ".join(
+        line for line in DIAG_SGS.read_text(encoding="utf-8").splitlines()
+        if not line.lstrip().startswith("--")
+    ).upper()
+    for verb in ("INSERT ", "UPDATE ", "DELETE ", "DROP ", "ALTER ", "CREATE ", "TRUNCATE "):
+        assert verb not in body, f"diagnostic 17 must not contain {verb.strip()}"
+    assert "BACEN_SGS" in body and "GROUP BY" in body
+
+
+def _run_check_4c(age_value: str, limit: str = "7") -> tuple[int, str, str]:
+    """Execute check 4c's branch with a given $sgs_age. Returns (fail, stderr, summary)."""
+    body = _step("Health checks")["run"]
+    start = body.index('if ! printf \'%s\' "${sgs_age:-}"')
+    end = body.index("\n", body.index("fi", body.index("bacen_sgs fresh ($sgs_age days")))
+    block = body[start:end]
+    with tempfile.NamedTemporaryFile("w+", suffix=".md", delete=False) as summary:
+        summary_path = summary.name
+    script = (
+        f'set -u\nfail=0\nsgs_age="{age_value}"\nMAX_SGS_AGE_DAYS="{limit}"\n'
+        f'GITHUB_STEP_SUMMARY="{summary_path}"\n'
+        f"{block}\n"
+        'echo "FAILFLAG=$fail"\n'
+    )
+    proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    fail = int(proc.stdout.split("FAILFLAG=")[1].strip())
+    with open(summary_path) as fh:
+        return fail, proc.stderr, fh.read()
+
+
+class TestBacenSgsFreshnessBranch:
+    def test_yesterday_is_fresh(self):
+        fail, err, summary = _run_check_4c("1")
+        assert fail == 0 and "✅ bacen_sgs fresh" in summary and err == ""
+
+    def test_a_long_weekend_is_fresh(self):
+        fail, _, summary = _run_check_4c("4")
+        assert fail == 0 and "fresh" in summary
+
+    def test_at_the_limit_is_fresh(self):
+        fail, _, _ = _run_check_4c("7")
+        assert fail == 0
+
+    def test_past_the_limit_fails_as_stale(self):
+        """The 2026-09-03 shape: rows exist but nothing new has landed."""
+        fail, err, summary = _run_check_4c("12")
+        assert fail == 1 and "12 days old" in err and "stale by 12 days" in summary
+        assert "did not answer" not in err
+
+    def test_an_empty_table_fails_as_not_queryable(self):
+        """max() over no rows is NULL → empty string, which is not a number."""
+        fail, err, summary = _run_check_4c("")
+        assert fail == 1 and "did not answer" in err and "not queryable" in summary
+
+    def test_psql_error_text_is_not_read_as_a_number(self):
+        fail, err, _ = _run_check_4c("ERROR:relationbacen_sgsdoesnotexist")
+        assert fail == 1 and "did not answer" in err
+
+    def test_the_limit_comes_from_the_knob(self):
+        assert _run_check_4c("9", limit="10")[0] == 0
+        assert _run_check_4c("9", limit="8")[0] == 1

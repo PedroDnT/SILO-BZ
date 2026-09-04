@@ -634,18 +634,23 @@ class TestBacenIngestorSGS:
         assert count == 0
 
     @pytest.mark.asyncio
-    async def test_ingest_sgs_fetch_error_returns_zero(self):
+    async def test_ingest_sgs_fetch_error_raises(self):
+        """A broken SGS fetch is fatal, like PTAX and Expectativas.
+
+        It used to log and return 0; the daily run then stayed green with
+        bacen_sgs=0 (2026-09-03, runs 33721538761 and 33798733736).
+        """
         from src.pipeline.bacen_pipeline import BacenIngestor
 
         with patch("src.pipeline.bacen_pipeline.BacenClient") as mock_client_cls, \
              patch("src.pipeline.bacen_pipeline.get_pg_client", return_value=MagicMock()), \
-             patch("src.pipeline.bacen_pipeline.upsert_rows", return_value=0):
+             patch("src.pipeline.bacen_pipeline.upsert_rows", return_value=0) as up:
             mock_client = mock_client_cls.return_value
             mock_client.get_sgs_series = AsyncMock(side_effect=Exception("BCB unreachable"))
             ingestor = BacenIngestor()
-            count = await ingestor.ingest_sgs("2024-01-01")
-
-        assert count == 0
+            with pytest.raises(RuntimeError, match="SGS fetch failed: BCB unreachable"):
+                await ingestor.ingest_sgs("2024-01-01")
+            up.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

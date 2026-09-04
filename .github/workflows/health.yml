@@ -53,6 +53,10 @@ jobs:
       # will never retry them, so they must not fail warehouse health.
       DAILY_LOOKBACK_MONTHS: "4"
       DISK_WARN_PCT: "85" # warn past this share of PLAN_DISK_GB, when that is set
+      # BACEN SGS daily series (CDI 12, SELIC_DIARIA 11) publish every business
+      # day, one day in arrears. 7 calendar days absorbs a long weekend plus a
+      # holiday; older than that, the BACEN refresh is not landing.
+      MAX_SGS_AGE_DAYS: "7"
       # The plan allowance, which Postgres cannot see. This is the PROVISIONED
       # disk reported by the Supabase dashboard on 2026-08-29: 135 GB, of which
       # 82.5 GB was in use (database 80, WAL 2, system 0.6). An earlier
@@ -275,7 +279,25 @@ jobs:
           lag=$(q "SELECT (public.latest_complete_period('fi') - max(period))::int
                      FROM fact_fund_monthly WHERE entity_type = 'fi'")
           echo "fact_fund_monthly lag behind ingested fi completeness: ${lag:-<none>} days"
-          if ! [ "${lag:-}" -ge 0 ] 2>/dev/null; then
+          # A NEGATIVE lag is normal and this check used to fail on it. The fact
+          # table aggregates cvm_fi_diario, which the daily run fills through the
+          # CURRENT month; latest_complete_period('fi') only counts months that
+          # are complete. So a freshly rebuilt matview sits one calendar month
+          # ahead — lag between -28 and -31 — and `[ "$lag" -ge 0 ]` sent that
+          # into the not-queryable branch. Run 33666142198 reported
+          # "fact_fund_monthly did not answer (missing, unpopulated, or empty)"
+          # about a matview rebuilt 44 minutes earlier that answered -31. A gate
+          # that cries missing-data at a healthy warehouse is the false alarm
+          # this file exists to avoid.
+          #
+          # Numeric-ness is now tested on its own, because conflating it with
+          # the range test is what produced the wrong diagnosis: a genuinely
+          # absent answer and an out-of-range one need different messages.
+          #   > 31   stale — the analytical apply is failing (the 2026-08-30 bug)
+          #   < -31  more than one calendar month ahead: periods that have not
+          #          happened, i.e. bad DT_COMPTC in the source
+          #   else   healthy, in-progress month included
+          if ! printf '%s' "${lag:-}" | grep -Eq '^-?[0-9]+$'; then
             echo "FAIL: fact_fund_monthly did not answer (missing, unpopulated, or empty)" >&2
             echo "- ❌ fact_fund_monthly not queryable" >> "$GITHUB_STEP_SUMMARY"
             fail=1
@@ -284,8 +306,52 @@ jobs:
                  "the analytical apply is failing; check 04_fact_fund_monthly.sql" >&2
             echo "- ❌ fact_fund_monthly stale by $lag days" >> "$GITHUB_STEP_SUMMARY"
             fail=1
+          elif [ "$lag" -lt -31 ]; then
+            echo "FAIL: fact_fund_monthly holds periods $((0 - lag)) days AHEAD of the" \
+                 "latest complete fi period — more than the in-progress month, so the" \
+                 "source dates are wrong; check DT_COMPTC in cvm_fi_diario" >&2
+            echo "- ❌ fact_fund_monthly $((0 - lag)) days ahead (future-dated periods)" \
+              >> "$GITHUB_STEP_SUMMARY"
+            fail=1
+          elif [ "$lag" -lt 0 ]; then
+            echo "- ✅ fact_fund_monthly fresh ($((0 - lag)) days ahead — in-progress month)" \
+              >> "$GITHUB_STEP_SUMMARY"
           else
             echo "- ✅ fact_fund_monthly fresh ($lag days behind ingest)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # 4c. BACEN SGS freshness — the daily series must keep moving.
+          #
+          # 2026-09-03: both daily runs (33721538761, 33798733736) logged
+          # `bacen_sgs: 0` and stayed green. python-bcb's sgs.get() raised on
+          # IPCA's 404 (no August figure yet) and every SGS series was dropped
+          # with it; ingest_sgs swallowed the exception; and nothing here looked
+          # at the table. Check 2 sees "ingest activity" because the CVM rows
+          # land; check 3 judges CVM completeness only. The BACEN refresh could
+          # stop for months without a red run. This is the gate for it.
+          #
+          # Only the daily series are judged: CDI (12) and SELIC_DIARIA (11)
+          # publish every business day, one day in arrears. Monthly and
+          # quarterly series (IPCA, INPC, IGPM, PIB) legitimately go 30-90 days
+          # between observations and would only make this noisy; diagnostic 17
+          # shows their freshness per series instead.
+          #
+          # A missing or empty table makes max() NULL, $sgs_age comes back
+          # non-numeric, and the guard fails rather than passing.
+          sgs_age=$(q "SELECT (CURRENT_DATE - max(reference_date))::int
+                         FROM bacen_sgs WHERE series_code IN (11, 12)")
+          echo "bacen_sgs daily series (CDI/Selic) age: ${sgs_age:-<none>} days"
+          if ! printf '%s' "${sgs_age:-}" | grep -Eq '^-?[0-9]+$'; then
+            echo "FAIL: bacen_sgs did not answer for the daily series (missing table or no CDI/Selic rows)" >&2
+            echo "- ❌ bacen_sgs not queryable / empty for CDI + Selic" >> "$GITHUB_STEP_SUMMARY"
+            fail=1
+          elif [ "$sgs_age" -gt "$MAX_SGS_AGE_DAYS" ]; then
+            echo "FAIL: bacen_sgs daily series are $sgs_age days old (limit ${MAX_SGS_AGE_DAYS}d) —" \
+                 "the BACEN refresh in run_daily is not landing; check the SGS fetch in the daily log" >&2
+            echo "- ❌ bacen_sgs stale by $sgs_age days (CDI/Selic)" >> "$GITHUB_STEP_SUMMARY"
+            fail=1
+          else
+            echo "- ✅ bacen_sgs fresh ($sgs_age days, CDI/Selic)" >> "$GITHUB_STEP_SUMMARY"
           fi
 
           # 5. Disk. Supabase bills on database size; the plan allowance is a

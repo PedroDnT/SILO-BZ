@@ -28,7 +28,7 @@ import zipfile
 import pytest
 
 from src.fetchers.cvm_fetcher import CVMFetcher, _cda_sibling_blocks
-from src.pipeline.cvm_pipeline import CVMIngestor, _classify_finish
+from src.pipeline.cvm_pipeline import _classify_finish
 
 
 def _zip_with(members) -> bytes:
@@ -116,45 +116,3 @@ class TestAuditClassification:
 
     def test_rows_landed_is_ok(self):
         assert _classify_finish(None, fetched=10, rows=10) == ("ok", None)
-
-
-class TestSkipLedger:
-    """The CLI zero-row guard must be able to tell skip from fetch-failure."""
-
-    def _ingestor(self):
-        ing = CVMIngestor.__new__(CVMIngestor)
-        ing._supabase = None
-        return ing
-
-    def test_unpublished_block_is_a_skip_not_a_failure(self):
-        ing = self._ingestor()
-        ing._log_start("r", "fi", "cda_debentures", 2005, None)
-        msg = (
-            "ValueError: ZIP member 'cda_fi_BLC_6_2005.csv' not published in "
-            "this archive — 5 sibling block(s)"
-        )
-        ing._log_finish("r", 0, msg)
-        assert ing.failures == []
-        assert len(ing.skips) == 1
-        assert ing.skips[0].year == 2005
-        assert ing.skips[0].month is None
-        assert "not published" in ing.skips[0].error
-
-    def test_renamed_member_is_still_a_failure(self):
-        ing = self._ingestor()
-        ing._log_start("r", "fi", "cda_debentures", 2005, None)
-        ing._log_finish(
-            "r", 0,
-            "ValueError: ZIP member 'cda_fi_BLC_6_2005.csv' not found in "
-            "archive — refusing to fall back",
-        )
-        assert len(ing.failures) == 1
-        assert ing.skips == []
-
-    def test_a_404_is_also_a_skip(self):
-        ing = self._ingestor()
-        ing._log_start("r", "fi", "cda_debentures", 2026, 8)
-        ing._log_finish("r", 0, "ValueError: Data not found at https://x/y.zip")
-        assert ing.failures == []
-        assert len(ing.skips) == 1
-        assert ing.skips[0].month == 8

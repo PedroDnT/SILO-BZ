@@ -109,11 +109,11 @@ async def main() -> None:
     # ETF market snapshot: scrape etfsbrasil.com.br via Apify (NAV/price/cotistas
     # the post-CVM-175 daily file no longer exposes). The scrape is paid + rate-
     # limited, so it ONLY runs when APIFY_TOKEN is configured — an absent token
-    # skips it and never fails the daily run. A 403
-    # full-permission-actor-not-approved is the same class (actor never started)
-    # and is also skipped; any scrape that actually ran and failed still fails
-    # the daily run. One snapshot per ticker per UTC day; idempotent upsert on
-    # (ticker, snapshot_date).
+    # skips it and never fails the daily run. ApifyScrapeUnavailableError is the
+    # same class (403 actor-not-approved, 408 run-timeout-exceeded, wait-budget
+    # miss): we never got a dataset, so there is nothing to fabricate. A scrape
+    # that ran and returned bad/empty data still fails the daily run. One
+    # snapshot per ticker per UTC day; idempotent upsert on (ticker, snapshot_date).
     if os.getenv("APIFY_TOKEN"):
         try:
             from src.pipeline.ingest_etf_market import ingest_etf_market
@@ -121,15 +121,15 @@ async def main() -> None:
             etf_rows = ingest_etf_market(get_pg_client())
             totals["etf_market_snapshot"] = etf_rows
         except Exception as exc:
-            from src.fetchers.apify_etf_fetcher import ApifyActorNotApprovedError
-            if isinstance(exc, ApifyActorNotApprovedError):
-                # The actor never started. Same class as an unset token: log
-                # loudly and continue so CVM/BACEN/B3 success still refreshes
-                # analytical. Daily CVM Ingest #209 (2026-09-02) ingested 3.1M
-                # CVM rows then exited 1 on this 403, which skipped ANALYZE
-                # and the analytical layer.
+            from src.fetchers.apify_etf_fetcher import ApifyScrapeUnavailableError
+            if isinstance(exc, ApifyScrapeUnavailableError):
+                # No dataset. Same class as an unset token: log loudly and
+                # continue so CVM/BACEN/B3 success still refreshes analytical.
+                # Daily CVM Ingest #209 (2026-09-02) exited 1 on 403; run
+                # 33721538761 (2026-09-03) did the same on 408 after 3.1M CVM
+                # rows — both skipped ANALYZE and the analytical layer.
                 logger.error(
-                    "ETF market scrape skipped — Apify actor not approved: %s",
+                    "ETF market scrape skipped — Apify did not return a dataset: %s",
                     exc,
                 )
                 print(f"::warning title=ETF scrape skipped::{exc}", flush=True)
