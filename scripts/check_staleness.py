@@ -45,6 +45,9 @@ MONTHLY_THRESHOLD_HOURS = 35 * 24   # ~35 days — boletim is published monthly
 # this window are exactly what turns DB Health red; the watchdog must retry
 # them, including on weekends.
 UNHEALED_ERROR_HOURS = 26
+# Same bound as health.yml MAX_RUNNING_AGE_HOURS: a row still 'running' after
+# this long belongs to a process that died (the longest job is 300 minutes).
+STUCK_RUNNING_HOURS = 6
 
 # Same bound as health.yml DAILY_LOOKBACK_MONTHS / CVM_DAILY_LOOKBACK_MONTHS.
 # Historical backfill errors outside this window cannot be healed by run_daily
@@ -129,6 +132,48 @@ def unhealed_error_slices(conn: Any, hours: float = UNHEALED_ERROR_HOURS) -> int
     return int(row[0] if row and row[0] is not None else 0)
 
 
+def stuck_running_slices(conn: Any, hours: float = STUCK_RUNNING_HOURS) -> int:
+    """Count daily-window slices whose latest attempt is a ``running`` row older than ``hours``.
+
+    Same slice scope and heal rule as ``unhealed_error_slices`` / health check
+    1b: a later ``ok`` or ``skipped`` for the same key heals it; historical
+    backfill slices are excluded (daily cannot heal 2010). A job killed by
+    ``timeout-minutes`` or a runner loss never writes its finish row, and
+    until 2026-09-04 nothing but a backfill dispatch's 24 h sweep noticed.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT count(*) FROM (
+              SELECT DISTINCT entity, doc_type, period_year, period_month
+                FROM cvm_ingest_log e
+               WHERE e.status = 'running'
+                 AND e.started_at < now() - (%s * interval '1 hour')
+                 AND NOT EXISTS (
+                       SELECT 1 FROM cvm_ingest_log s
+                        WHERE s.status IN ('ok', 'skipped')
+                          AND s.entity       IS NOT DISTINCT FROM e.entity
+                          AND s.doc_type     IS NOT DISTINCT FROM e.doc_type
+                          AND s.period_year  IS NOT DISTINCT FROM e.period_year
+                          AND s.period_month IS NOT DISTINCT FROM e.period_month
+                          AND s.started_at   > e.started_at)
+                 AND (
+                       e.period_year IS NULL
+                    OR (e.period_month IS NULL
+                        AND e.period_year = EXTRACT(YEAR FROM CURRENT_DATE)::int)
+                    OR (e.period_month IS NOT NULL
+                        AND make_date(e.period_year, e.period_month, 1)
+                            >= (date_trunc('month', CURRENT_DATE)
+                                - (%s::int - 1) * INTERVAL '1 month')::date)
+                 )
+            ) stuck
+            """,
+            (hours, DAILY_LOOKBACK_MONTHS),
+        )
+        row = cur.fetchone()
+    return int(row[0] if row and row[0] is not None else 0)
+
+
 def is_stale(
     conn: Any,
     entity: str,
@@ -151,6 +196,7 @@ def main() -> int:
     conn = get_pg_client()
     try:
         unhealed = unhealed_error_slices(conn, UNHEALED_ERROR_HOURS)
+        stuck = stuck_running_slices(conn, STUCK_RUNNING_HOURS)
         daily_stale = is_stale(
             conn, DAILY_ENTITY, DAILY_DOC, DAILY_THRESHOLD_HOURS,
             weekday_only=True,
@@ -171,12 +217,16 @@ def main() -> int:
     print(f"[staleness] daily ({DAILY_ENTITY}/{DAILY_DOC}): {daily_age}")
     print(f"[staleness] monthly ({MONTHLY_ENTITY}/{MONTHLY_DOC}): {monthly_age}")
     print(f"[staleness] unhealed ingest errors ({UNHEALED_ERROR_HOURS}h): {unhealed}")
+    print(f"[staleness] slices stuck at running (>{STUCK_RUNNING_HOURS}h): {stuck}")
 
     # Unhealed errors first, and never weekend-gated. weekday_only exists so a
     # quiet Saturday does not look like a missed cron; 44 CVMHostUnreachable
     # rows from a Saturday 06:00 that DID fire are the opposite.
     if unhealed > 0:
         print("[staleness] -> unhealed ingest errors; recovery required")
+        return EXIT_DAILY_STALE
+    if stuck > 0:
+        print("[staleness] -> slices stuck at running; a job died mid-slice; recovery required")
         return EXIT_DAILY_STALE
     if daily_stale:
         print("[staleness] -> daily ingest is stale; recovery required")

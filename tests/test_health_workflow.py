@@ -507,3 +507,95 @@ class TestBacenSgsFreshnessBranch:
     def test_the_limit_comes_from_the_knob(self):
         assert _run_check_4c("9", limit="10")[0] == 0
         assert _run_check_4c("9", limit="8")[0] == 1
+
+
+# --- check 1b: slices stuck at 'running' ------------------------------------
+#
+# A job past timeout-minutes, a lost runner or a SIGKILL never reaches the
+# finish write, so the audit row stays 'running'. Check 1 filters
+# status='error' and check 2 counts the row as activity, so such a death was
+# invisible until a backfill dispatch's 24 h sweep flipped it. These tests pin
+# the gate's shape and RUN its branch, as the 4b/4c tests do.
+
+DIAG_STUCK = DIAG_DIR / "18_stuck_running_rows.sql"
+
+
+def _check_1b_section() -> str:
+    body = _step("Health checks")["run"]
+    i = body.index("# 1b. Slices stuck at 'running'")
+    return body[i: body.index("# 2. Ingest ran at all yesterday", i)]
+
+
+def test_stuck_running_gate_uses_check_1s_slice_scope_and_heal_rule():
+    section = _check_1b_section()
+    assert "e.status = 'running'" in section
+    assert "interval '${MAX_RUNNING_AGE_HOURS} hours'" in section
+    for clause in (
+        "s.status IN ('ok', 'skipped')",
+        "s.entity       IS NOT DISTINCT FROM e.entity",
+        "s.period_month IS NOT DISTINCT FROM e.period_month",
+        "s.started_at   > e.started_at",
+        "e.period_year IS NULL",
+        "make_date(e.period_year, e.period_month, 1)",
+        "${DAILY_LOOKBACK_MONTHS}::int - 1",
+    ):
+        assert clause in section, f"check 1b is missing {clause!r}"
+    assert "fail=1" in section
+
+
+def test_running_age_limit_is_a_knob_past_the_longest_job():
+    spec = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    hours = int(spec["jobs"]["health"]["env"]["MAX_RUNNING_AGE_HOURS"])
+    assert hours * 60 > 300, "backfill.yml's FI matrix may legitimately run 300 minutes"
+    assert hours <= 12, "beyond half a day a dead job has been invisible too long"
+
+
+def test_stuck_diagnostic_exists_and_is_read_only():
+    assert DIAG_STUCK.exists()
+    body = " ".join(
+        line for line in DIAG_STUCK.read_text(encoding="utf-8").splitlines()
+        if not line.lstrip().startswith("--")
+    ).upper()
+    for verb in ("INSERT ", "UPDATE ", "DELETE ", "DROP ", "ALTER ", "CREATE ", "TRUNCATE "):
+        assert verb not in body, f"diagnostic 18 must not contain {verb.strip()}"
+    assert "STATUS = 'RUNNING'" in body and "LATER_ATTEMPT_STATUS" in body
+
+
+def _run_check_1b(stuck_value: str, hours: str = "6") -> tuple[int, str, str]:
+    body = _step("Health checks")["run"]
+    start = body.index('if ! [ "${stuck:-}" -ge 0 ]')
+    end = body.index("\n", body.index("fi", body.index("no slice stuck at running beyond")))
+    block = body[start:end]
+    # The failure branch runs psql to list the rows; stub it so the branch is
+    # exercised without a database.
+    with tempfile.NamedTemporaryFile("w+", suffix=".md", delete=False) as summary:
+        summary_path = summary.name
+    script = (
+        f'set -u\nfail=0\nstuck="{stuck_value}"\nMAX_RUNNING_AGE_HOURS="{hours}"\n'
+        'POSTGRES_URL="stub"\npsql() { :; }\n'
+        f'GITHUB_STEP_SUMMARY="{summary_path}"\n'
+        f"{block}\n"
+        'echo "FAILFLAG=$fail"\n'
+    )
+    proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    fail = int(proc.stdout.split("FAILFLAG=")[1].strip())
+    with open(summary_path) as fh:
+        return fail, proc.stderr, fh.read()
+
+
+class TestStuckRunningBranch:
+    def test_zero_is_healthy(self):
+        fail, err, summary = _run_check_1b("0")
+        assert fail == 0 and "no slice stuck" in summary and err == ""
+
+    def test_one_stuck_slice_fails_and_names_the_cause(self):
+        fail, err, summary = _run_check_1b("1")
+        assert fail == 1 and "a job died mid-slice" in err and "stuck at running" in summary
+
+    def test_an_empty_answer_fails_as_query_failure_not_as_healthy(self):
+        fail, err, _ = _run_check_1b("")
+        assert fail == 1 and "did not return a count" in err
+
+    def test_psql_error_text_is_not_read_as_zero(self):
+        fail, err, _ = _run_check_1b("ERROR:relationdoesnotexist")
+        assert fail == 1 and "did not return a count" in err

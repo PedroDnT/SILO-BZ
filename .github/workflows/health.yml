@@ -57,6 +57,12 @@ jobs:
       # day, one day in arrears. 7 calendar days absorbs a long weekend plus a
       # holiday; older than that, the BACEN refresh is not landing.
       MAX_SGS_AGE_DAYS: "7"
+      # A cvm_ingest_log row still 'running' after this many hours belongs to
+      # a process that died (job timeout, SIGKILL, runner loss). The longest
+      # ingest job is backfill.yml's 300-minute FI matrix, so 6 h is past any
+      # legitimate run. Check 1 reads status='error' only; without 1b such
+      # rows are invisible to every gate until a backfill dispatch sweeps them.
+      MAX_RUNNING_AGE_HOURS: "6"
       # The plan allowance, which Postgres cannot see. This is the PROVISIONED
       # disk reported by the Supabase dashboard on 2026-08-29: 135 GB, of which
       # 82.5 GB was in use (database 80, WAL 2, system 0.6). An earlier
@@ -210,6 +216,59 @@ jobs:
             fail=1
           else
             echo "- ✅ no unhealed ingest errors in ${MAX_INGEST_ERROR_HOURS}h daily window (${attempts:-0} error rows; historical/backfill slices outside lookback are ignored)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # 1b. Slices stuck at 'running'. A job killed mid-slice (GitHub
+          #     timeout-minutes, SIGKILL, runner loss) never reaches the finish
+          #     write, so the row stays 'running' forever. Check 1 filters
+          #     status='error' and never sees it; check 2 counts the row as
+          #     "ingest activity". The only sweep lived in backfill.yml and ran
+          #     only when someone dispatched a backfill. Same slice scope and
+          #     heal rule as check 1: a later ok/skipped row for the same key
+          #     (a re-run) heals it; historical backfill slices are the
+          #     backlog's business (diagnostic 18 lists every stuck row).
+          stuck=$(q "SELECT count(*) FROM (
+                       SELECT DISTINCT entity, doc_type, period_year, period_month
+                         FROM cvm_ingest_log e
+                        WHERE e.status = 'running'
+                          AND e.started_at < now() - interval '${MAX_RUNNING_AGE_HOURS} hours'
+                          AND NOT EXISTS (
+                                SELECT 1 FROM cvm_ingest_log s
+                                 WHERE s.status IN ('ok', 'skipped')
+                                   AND s.entity       IS NOT DISTINCT FROM e.entity
+                                   AND s.doc_type     IS NOT DISTINCT FROM e.doc_type
+                                   AND s.period_year  IS NOT DISTINCT FROM e.period_year
+                                   AND s.period_month IS NOT DISTINCT FROM e.period_month
+                                   AND s.started_at   > e.started_at)
+                          AND (
+                                e.period_year IS NULL
+                             OR (e.period_month IS NULL
+                                 AND e.period_year = EXTRACT(YEAR FROM CURRENT_DATE)::int)
+                             OR (e.period_month IS NOT NULL
+                                 AND make_date(e.period_year, e.period_month, 1)
+                                     >= (date_trunc('month', CURRENT_DATE)
+                                         - (${DAILY_LOOKBACK_MONTHS}::int - 1)
+                                           * INTERVAL '1 month')::date)
+                          )
+                     ) stuck")
+          echo "slices stuck at running for over ${MAX_RUNNING_AGE_HOURS}h (daily window, unhealed): ${stuck:-<none>}"
+          if ! [ "${stuck:-}" -ge 0 ] 2>/dev/null; then
+            echo "FAIL: stuck-running query did not return a count ('$stuck')" >&2
+            echo "- ❌ stuck-running query failed" >> "$GITHUB_STEP_SUMMARY"
+            fail=1
+          elif [ "${stuck:-0}" -gt 0 ]; then
+            echo "FAIL: $stuck slice(s) stuck at 'running' for over ${MAX_RUNNING_AGE_HOURS}h — a job died mid-slice; re-run daily (or the backfill) for those slices" >&2
+            psql "$POSTGRES_URL" -c "SET default_transaction_read_only = on" -c \
+              "SELECT started_at, entity, doc_type, period_year, period_month,
+                      round(extract(epoch from (now() - started_at)) / 3600.0, 1) AS hours_running
+                 FROM cvm_ingest_log
+                WHERE status = 'running'
+                  AND started_at < now() - interval '${MAX_RUNNING_AGE_HOURS} hours'
+                ORDER BY started_at DESC LIMIT 20"
+            echo "- ❌ $stuck slice(s) stuck at running (daily window)" >> "$GITHUB_STEP_SUMMARY"
+            fail=1
+          else
+            echo "- ✅ no slice stuck at running beyond ${MAX_RUNNING_AGE_HOURS}h" >> "$GITHUB_STEP_SUMMARY"
           fi
 
           # 2. Ingest ran at all yesterday (a workflow that never fires is invisible otherwise).

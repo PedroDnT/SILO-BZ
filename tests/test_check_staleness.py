@@ -33,6 +33,8 @@ class _Cursor:
         self._sql = sql
 
     def fetchone(self):
+        if ") stuck" in self._sql:
+            return [self._conn._stuck]
         if "unhealed" in self._sql:
             return [self._conn._unhealed]
         return [self._conn._last]
@@ -45,9 +47,10 @@ class _Cursor:
 
 
 class _Conn:
-    def __init__(self, last_finished, unhealed=0):
+    def __init__(self, last_finished, unhealed=0, stuck=0):
         self._last = last_finished
         self._unhealed = unhealed
+        self._stuck = stuck
 
     def cursor(self):
         return _Cursor(self)
@@ -175,3 +178,45 @@ def test_main_weekend_without_errors_is_still_a_noop(monkeypatch):
     monkeypatch.setattr(cs, "get_pg_client", lambda: conn)
     with p:
         assert cs.main() == cs.EXIT_FRESH
+
+
+# --- stuck 'running' rows (health check 1b) ---------------------------------
+#
+# A job killed by timeout-minutes / a runner loss never writes its finish
+# row. Check 1 reads status='error' only, so until 2026-09-04 such a slice
+# was invisible to the watchdog until a backfill dispatch swept it.
+
+
+def test_stuck_running_slices_reads_the_count():
+    conn = _Conn(last_finished=None, stuck=3)
+    assert cs.stuck_running_slices(conn) == 3
+
+
+def test_stuck_running_sql_matches_the_health_gate():
+    import inspect
+    src = inspect.getsource(cs.stuck_running_slices)
+    assert "e.status = 'running'" in src
+    assert "s.status IN ('ok', 'skipped')" in src, "a later ok/skipped heals a stuck row"
+    assert "IS NOT DISTINCT FROM e.period_month" in src
+    assert "make_date(e.period_year, e.period_month, 1)" in src, "historical slices must not page the watchdog"
+    assert "DAILY_LOOKBACK_MONTHS" in src
+
+
+def test_stuck_running_hours_matches_the_health_gate():
+    yaml = pytest.importorskip("yaml")
+    from pathlib import Path
+    spec = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / ".github/workflows/health.yml")
+        .read_text(encoding="utf-8")
+    )
+    assert spec["jobs"]["health"]["env"]["MAX_RUNNING_AGE_HOURS"] == str(cs.STUCK_RUNNING_HOURS)
+
+
+def test_main_pages_on_stuck_running_rows_even_when_everything_else_is_fresh(monkeypatch, capsys):
+    p, fixed = _patch_now(weekday=5)  # Saturday: weekday gating must not hide it
+    conn = _Conn(last_finished=fixed - timedelta(hours=2), unhealed=0, stuck=1)
+    monkeypatch.setattr(cs, "get_pg_client", lambda: conn)
+    with p:
+        code = cs.main()
+    assert code == cs.EXIT_DAILY_STALE
+    assert "stuck at running" in capsys.readouterr().out
