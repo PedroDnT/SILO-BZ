@@ -18,6 +18,7 @@ from uuid import uuid4
 from src.fetchers.b3_fetcher import B3CotahistFetcher, B3CotahistNotFound
 from src.parsers.cotahist import CONFLICT, TABLE, batched, parse_cotahist_bytes
 from src.store.pg_client import get_pg_client, upsert_rows
+from src.pipeline import ingest_log
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class B3Ingestor:
     def __init__(self, fetcher: Optional[B3CotahistFetcher] = None) -> None:
         self._fetcher = fetcher or B3CotahistFetcher()
         self._supabase = get_pg_client()
+        self._doc_type_of: Dict[str, str] = {}
 
     def _lookback_days(self) -> int:
         raw = os.getenv("B3_DAILY_LOOKBACK_DAYS", "7").strip()
@@ -37,19 +39,18 @@ class B3Ingestor:
             return 7
         return n if n >= 1 else 7
 
+    # Audit rows go through src/pipeline/ingest_log (the one writer). Both
+    # calls are best-effort: the audit table must not be able to stop ingest,
+    # and a failed write is logged, never swallowed. The doc_type is remembered
+    # per run so the finish upsert can INSERT a keyed row if the start never
+    # landed.
     def _log_start(self, run_id: str, doc_type: str, year: Optional[int], month: Optional[int]) -> None:
+        self._doc_type_of[run_id] = doc_type
         try:
-            upsert_rows(self._supabase, "cvm_ingest_log", [{
-                "run_id": run_id,
-                "entity": "b3",
-                "doc_type": doc_type,
-                "period_year": year,
-                "period_month": month,
-                "status": "running",
-                "started_at": datetime.now(timezone.utc).isoformat(),
-            }])
-        except Exception as exc:
-            logger.warning("ingest_log start failed: %s", exc)
+            ingest_log.start(self._supabase, run_id, "b3", doc_type,
+                             period_year=year, period_month=month, upsert=upsert_rows)
+        except Exception as exc:  # noqa: BLE001 — audit must not stop ingest
+            logger.warning("ingest_log start failed: %s", ingest_log.describe(exc))
 
     def _log_finish(
         self,
@@ -59,27 +60,12 @@ class B3Ingestor:
         *,
         skipped: bool = False,
     ) -> None:
-        if skipped:
-            status = "skipped"
-        elif error:
-            status = "error"
-        else:
-            status = "ok"
+        status = "skipped" if skipped else ("error" if error else "ok")
         try:
-            with self._supabase.cursor() as cur:
-                cur.execute(
-                    "UPDATE cvm_ingest_log SET rows_upserted=%s, status=%s,"
-                    " error_msg=%s, finished_at=%s WHERE run_id=%s",
-                    (
-                        rows,
-                        status,
-                        error,
-                        datetime.now(timezone.utc).isoformat(),
-                        run_id,
-                    ),
-                )
-        except Exception as exc:
-            logger.warning("ingest_log finish failed: %s", exc)
+            ingest_log.finish(self._supabase, run_id, "b3", self._doc_type_of.get(run_id, "unknown"),
+                              status=status, rows=rows, error=error, upsert=upsert_rows)
+        except Exception as exc:  # noqa: BLE001 — audit must not mask the outcome
+            logger.warning("ingest_log finish failed: %s", ingest_log.describe(exc))
 
     def _upsert(self, rows: List[Dict[str, Any]]) -> int:
         total = 0
@@ -101,18 +87,18 @@ class B3Ingestor:
             payload = await self._fetcher.fetch_daily(session)
         except B3CotahistNotFound as exc:
             logger.info("B3 COTAHIST daily %s not published — skipped", label)
-            self._log_finish(run_id, 0, str(exc), skipped=True)
+            self._log_finish(run_id, 0, ingest_log.describe(exc), skipped=True)
             return 0
         except Exception as exc:
             logger.error("B3 COTAHIST daily %s fetch failed: %s", label, exc)
-            self._log_finish(run_id, 0, str(exc))
+            self._log_finish(run_id, 0, ingest_log.describe(exc))
             raise
 
         try:
             rows = parse_cotahist_bytes(payload, origin=label)
             n = self._upsert(rows)
         except Exception as exc:
-            self._log_finish(run_id, 0, str(exc))
+            self._log_finish(run_id, 0, ingest_log.describe(exc))
             raise
 
         self._log_finish(run_id, n)
@@ -127,18 +113,18 @@ class B3Ingestor:
             payload = await self._fetcher.fetch_year(year)
         except B3CotahistNotFound as exc:
             logger.info("B3 COTAHIST year %s not published — skipped", year)
-            self._log_finish(run_id, 0, str(exc), skipped=True)
+            self._log_finish(run_id, 0, ingest_log.describe(exc), skipped=True)
             return 0
         except Exception as exc:
             logger.error("B3 COTAHIST year %s fetch failed: %s", year, exc)
-            self._log_finish(run_id, 0, str(exc))
+            self._log_finish(run_id, 0, ingest_log.describe(exc))
             raise
 
         try:
             rows = parse_cotahist_bytes(payload, origin=str(year))
             n = self._upsert(rows)
         except Exception as exc:
-            self._log_finish(run_id, 0, str(exc))
+            self._log_finish(run_id, 0, ingest_log.describe(exc))
             raise
 
         self._log_finish(run_id, n)
@@ -257,7 +243,7 @@ class B3Ingestor:
             )
             return total
         except Exception as exc:
-            self._log_finish(run_id, 0, error=str(exc))
+            self._log_finish(run_id, 0, error=ingest_log.describe(exc))
             raise
 
     async def daily_update(self) -> Dict[str, int]:

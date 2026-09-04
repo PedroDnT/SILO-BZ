@@ -70,6 +70,7 @@ import openpyxl
 # ── repo-local imports ────────────────────────────────────────────────────────
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from src.store.pg_client import get_pg_client, upsert_rows  # noqa: E402
+from src.pipeline import ingest_log  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -787,33 +788,15 @@ class AnbimaIngestor:
 
     # ── internal helpers ──────────────────────────────────────────────────────
 
-    # cvm_ingest_log columns are exactly: run_id, entity, doc_type, period_year,
-    # period_month, rows_upserted, status, error_msg, started_at, finished_at.
-    # upsert_rows builds `INSERT INTO ... (<dict keys>)` with NO filtering against
-    # the table, so any key that isn't a real column raises "column does not
-    # exist". These two helpers previously sent `notes` and `error_message`,
-    # neither of which exists — _log_start raised before the upsert try/except,
-    # daily_update() propagated, and run_daily's catch-all downgraded it to a
-    # warning. Result: ANBIMA silently skipped every day, no log row, empty table.
+    # Audit rows go through src/pipeline/ingest_log — the one writer, so the
+    # 2026-07-25 incident (these helpers once sent `notes`/`error_message`,
+    # columns that do not exist; _log_start raised before the upsert try/except
+    # and ANBIMA silently skipped every day) cannot recur here or elsewhere.
     # Provenance for the source file is not lost: every record carries boletim_ref.
 
     def _log_start(self, conn, run_id: str, boletim_ref: str) -> None:
         logger.info("[anbima] run %s boletim=%s", run_id, boletim_ref)
-        upsert_rows(
-            conn,
-            "cvm_ingest_log",  # reuse shared log table (matches cvm_pipeline pattern)
-            [{
-                "run_id":        run_id,
-                "entity":        LOG_ENTITY,
-                "doc_type":      LOG_DOC_TYPE,
-                "period_year":   None,
-                "period_month":  None,
-                "rows_upserted": 0,          # NOT NULL — finish() overwrites it
-                "status":        "running",
-                "started_at":    datetime.now(timezone.utc),
-            }],
-            conflict_columns="run_id",
-        )
+        ingest_log.start(conn, run_id, LOG_ENTITY, LOG_DOC_TYPE, upsert=upsert_rows)
 
     def _log_finish(
         self,
@@ -823,28 +806,9 @@ class AnbimaIngestor:
         rows_upserted: int,
         error: Optional[str] = None,
     ) -> None:
-        upsert_rows(
-            conn,
-            "cvm_ingest_log",
-            [{
-                "run_id":        run_id,
-                "entity":        LOG_ENTITY,
-                "doc_type":      LOG_DOC_TYPE,
-                "status":        status,
-                "rows_upserted": rows_upserted,
-                # started_at is deliberately NOT sent: ON CONFLICT DO UPDATE sets
-                # every column present, so including it would overwrite the real
-                # start time and make every run look instantaneous. _log_finish is
-                # only reachable after _log_start succeeded (an exception there
-                # propagates instead), so the row always exists and this is an
-                # UPDATE — the NOT NULL column keeps its original value.
-                "finished_at":   datetime.now(timezone.utc),
-                "error_msg":     error,
-            }],
-            conflict_columns="run_id",
-        )
-
-    # ── public API ────────────────────────────────────────────────────────────
+        ingest_log.finish(conn, run_id, LOG_ENTITY, LOG_DOC_TYPE,
+                          status=status, rows=rows_upserted, error=error,
+                          upsert=upsert_rows)
 
     async def daily_update(self) -> Dict[str, int]:
         """
@@ -884,7 +848,7 @@ class AnbimaIngestor:
             self._log_finish(self._pg, run_id, "ok", rows_upserted)
             logger.info("[anbima] Upserted %d rows", rows_upserted)
         except Exception as exc:
-            self._log_finish(self._pg, run_id, "error", 0, str(exc))
+            self._log_finish(self._pg, run_id, "error", 0, ingest_log.describe(exc))
             logger.error("[anbima] Upsert failed: %s", exc)
             raise
 

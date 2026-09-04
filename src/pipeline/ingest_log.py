@@ -44,6 +44,12 @@ from typing import Any, Awaitable, Callable, Optional
 
 from src.store.pg_client import upsert_rows
 
+# Every writer passes its own module's ``upsert_rows`` name (``upsert=``):
+# tests mock that name per pipeline module, and audit rows must land in the
+# same capture as the data rows or the mocks miss them and the real client's
+# 75 s retry ladder runs against a MagicMock.
+Upsert = Callable[..., int]
+
 logger = logging.getLogger(__name__)
 
 TABLE = "cvm_ingest_log"
@@ -76,9 +82,10 @@ def start(
     *,
     period_year: Optional[int] = None,
     period_month: Optional[int] = None,
+    upsert: Optional[Upsert] = None,
 ) -> None:
     """Write the ``running`` row. Raises on failure; callers decide the stance."""
-    upsert_rows(
+    (upsert or upsert_rows)(
         client,
         TABLE,
         [{
@@ -106,8 +113,9 @@ def finish(
     error: Optional[str] = None,
     period_year: Optional[int] = None,
     period_month: Optional[int] = None,
+    upsert: Optional[Upsert] = None,
 ) -> None:
-    """Write the terminal row. Raises on failure; callers decide the stance.
+    """Write the terminal row (``ok`` | ``error`` | ``skipped``). Raises on failure.
 
     ``started_at`` is deliberately NOT sent: ``ON CONFLICT DO UPDATE`` sets
     every column present, and resending it would make every run look
@@ -115,22 +123,23 @@ def finish(
     the column takes its ``NOW()`` default — a slightly-late start beats no
     record at all.
     """
-    upsert_rows(
-        client,
-        TABLE,
-        [{
-            "run_id":        run_id,
-            "entity":        entity,
-            "doc_type":      doc_type,
-            "period_year":   period_year,
-            "period_month":  period_month,
-            "status":        status,
-            "rows_upserted": int(rows),
-            "finished_at":   datetime.now(timezone.utc),
-            "error_msg":     error,
-        }],
-        conflict_columns="run_id",
-    )
+    row = {
+        "run_id":        run_id,
+        "entity":        entity,
+        "doc_type":      doc_type,
+        "status":        status,
+        "rows_upserted": int(rows),
+        "finished_at":   datetime.now(timezone.utc),
+        "error_msg":     error,
+    }
+    # The period key is sent only when the caller supplies it: ON CONFLICT DO
+    # UPDATE sets every column present, so a finish that always sent NULLs
+    # would erase the key the start row wrote. Callers that pass it (BACEN)
+    # get a self-healing INSERT with the key when the start never landed.
+    if period_year is not None or period_month is not None:
+        row["period_year"] = period_year
+        row["period_month"] = period_month
+    (upsert or upsert_rows)(client, TABLE, [row], conflict_columns="run_id")
 
 
 async def audited(
@@ -141,6 +150,7 @@ async def audited(
     *,
     period_year: Optional[int] = None,
     period_month: Optional[int] = None,
+    upsert: Optional[Upsert] = None,
 ) -> int:
     """Run ``fn()`` under an audit row: running → ok | error. Returns its rows.
 
@@ -154,7 +164,7 @@ async def audited(
     try:
         await asyncio.to_thread(
             start, client, run_id, entity, doc_type,
-            period_year=period_year, period_month=period_month,
+            period_year=period_year, period_month=period_month, upsert=upsert,
         )
     except Exception as exc:  # noqa: BLE001 — audit must not stop ingest
         logger.warning("%s: could not write the running row (%s); continuing", key, describe(exc))
@@ -173,7 +183,7 @@ async def audited(
             await asyncio.to_thread(
                 finish, client, run_id, entity, doc_type,
                 status=status, rows=rows, error=error,
-                period_year=period_year, period_month=period_month,
+                period_year=period_year, period_month=period_month, upsert=upsert,
             )
         except Exception as log_exc:  # noqa: BLE001 — must not mask the ingest outcome
             logger.warning("%s: could not write the %s row (%s)", key, status, describe(log_exc))
