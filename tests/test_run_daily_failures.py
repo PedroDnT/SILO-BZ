@@ -208,6 +208,35 @@ async def test_etf_run_aborted_is_not_a_failure(monkeypatch, caplog):
 
 
 @pytest.mark.asyncio
+async def test_etf_usage_limit_is_not_a_failure(monkeypatch, caplog):
+    """Apify 403 platform-feature-disabled / usage hard limit never started.
+
+    Daily CVM Ingest #220 / #221 ingested ~3.6M CVM/BACEN/B3 rows then
+    exited 1 on HTTP 403 Monthly usage hard limit exceeded, which skipped
+    ANALYZE and the analytical layer. Same class as an unset APIFY_TOKEN:
+    skip, do not fail the daily run. Other 403s (billing) still fail.
+    """
+    from src.fetchers.apify_etf_fetcher import ApifyUsageLimitError
+
+    monkeypatch.setenv("APIFY_TOKEN", "tok")
+    p1, p2, p3, p4, *_ = _patches()
+    with p1, p2, p3, p4, \
+         patch(
+             "src.pipeline.ingest_etf_market.ingest_etf_market",
+             side_effect=ApifyUsageLimitError(
+                 "Apify actor apify~playwright-scraper cannot start the "
+                 "etfsbrasil scrape: account usage limit exceeded "
+                 "(HTTP 403 platform-feature-disabled)"
+             ),
+         ), \
+         patch("src.store.pg_client.get_pg_client", return_value=MagicMock()), \
+         caplog.at_level("ERROR"):
+        await rd.main()  # no SystemExit
+    assert "did not return a dataset" in caplog.text
+    assert "usage limit exceeded" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_b3_failure_exits_nonzero(monkeypatch):
     monkeypatch.delenv("APIFY_TOKEN", raising=False)
     p1, p2, p3, p4, *_ = _patches(b3=RuntimeError("cotahist 500"))
