@@ -21,9 +21,12 @@
 -- Month value = the LAST survey date in the month (DISTINCT ON), so the number
 -- shown is one real Focus publication, not a blend of several.
 with spine as (
+  -- SPINE END: the last ENDED month. Focus is a weekly survey, so the month in
+  -- progress always has a reading — but it is the month's LAST survey so far,
+  -- not the month's value, and a monthly view does not draw it.
   select generate_series(
-           date_trunc('month', current_date) - interval '23 months',
-           date_trunc('month', current_date),
+           date_trunc('month', current_date) - interval '24 months',
+           date_trunc('month', current_date) - interval '1 month',
            interval '1 month'
          )::date as period
 ),
@@ -41,7 +44,8 @@ monthly as (
     std_dev
   from bacen_expectativas
   where endpoint_name = 'ExpectativasMercadoAnuais'
-    and reference_date >= (date_trunc('month', current_date) - interval '23 months')::date
+    and reference_date >= (date_trunc('month', current_date) - interval '24 months')::date
+    and reference_date <  date_trunc('month', current_date)::date
     -- the forecast for the year the survey was taken in
     and horizon = to_char(reference_date, 'YYYY')
   order by indicador, date_trunc('month', reference_date), reference_date desc

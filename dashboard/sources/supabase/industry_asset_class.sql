@@ -13,13 +13,26 @@
 -- median_yield_num2: fact_fund_monthly.pct_yield_mes is populated for FII only
 -- (monthly dividend yield), so this column is blank for every other class by
 -- construction. It is NOT a cross-class return comparison.
-with spine as (
+with anchor as (
+  -- SPINE END for a chart whose classes span families: the last month at
+  -- which every family behind a class is complete. latest_complete_period(null)
+  -- is the max across families (FI's), while Structured Credit (FIDC) and Real
+  -- Estate (FII) close 1–2 months later, so the global bound drew trailing
+  -- months with those classes blank. FIP is Dec-only and FIAGRO may lag by
+  -- design; neither truncates the view (see industry_aum_trend.sql).
+  select least(
+           latest_complete_period('fi'),
+           latest_complete_period('fidc'),
+           latest_complete_period('fii')
+         ) as p_end
+),
+spine as (
   select generate_series(
-           -- global completeness bound: classes span families
-           date_trunc('month', latest_complete_period(null)) - interval '23 months',
-           date_trunc('month', latest_complete_period(null)),
+           date_trunc('month', a.p_end) - interval '23 months',
+           date_trunc('month', a.p_end),
            interval '1 month'
          )::date as period
+  from anchor a
 ),
 classes (asset_class) as (
   values

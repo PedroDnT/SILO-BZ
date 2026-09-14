@@ -15,14 +15,6 @@ with anchor as (
   -- rebased-return chart; it also anchored on partially-filed months.
   select latest_complete_period(null) as p_end
 ),
-months as (
-  select generate_series(
-           date_trunc('month', a.p_end) - interval '35 months',
-           date_trunc('month', a.p_end),
-           interval '1 month'
-         )::date as period
-  from anchor a
-),
 top_funds as (
   select
     s.cnpj                        as cnpj,
@@ -59,6 +51,21 @@ series as (
   ) p
   -- per-family completeness clamp (raw-convention comparison)
   where p.period <= latest_complete_period(t.entity_type)
+),
+months as (
+  -- SPINE END: the last month any of the six plotted funds has a row, capped
+  -- at the global completeness bound (FI and FII close at different months).
+  -- Defined after `series` because it reads it; the coalesce keeps the spine
+  -- when no fund has rows at all.
+  select generate_series(
+           date_trunc('month', a.p_end) - interval '35 months',
+           coalesce(
+             (select max(date_trunc('month', s.period)) from series s),
+             date_trunc('month', a.p_end)
+           ),
+           interval '1 month'
+         )::date as period
+  from anchor a
 )
 select
   m.period                              as period,

@@ -24,15 +24,28 @@
 -- last underscore as a format tag: `_pct` means "this value is a 0–1 fraction"
 -- and multiplies by 100 on every chart. These shares are already percentage
 -- points (80 = 80%). `_num1` is the format this dashboard actually uses.
-with spine as (
-  -- Clamp to complete periods (mv_period_completeness): the trailing month is
-  -- served only once its calendar month ended AND enough funds reported, so
-  -- charts stop dipping toward zero on partially-filed data.
+with anchor as (
+  -- SPINE END for a STACKED, share-of-total chart: the last month at which
+  -- every band is complete. latest_complete_period(null) is the max across
+  -- families — FI's, in practice — while FIDC and FII close 1–2 months later,
+  -- so anchoring on it drew trailing months where the non-FI bands were blank
+  -- and fi_share snapped toward 100%: a fake composition shift. FIP is Dec-only
+  -- and FIAGRO (2,494 rows, well under 1% of AUM) may lag by design; neither
+  -- is allowed to truncate the industry view, so the bound is the slowest of
+  -- the three families that make up the stack.
+  select least(
+           latest_complete_period('fi'),
+           latest_complete_period('fidc'),
+           latest_complete_period('fii')
+         ) as p_end
+),
+spine as (
   select generate_series(
-           date_trunc('month', latest_complete_period(null)) - interval '35 months',
-           date_trunc('month', latest_complete_period(null)),
+           date_trunc('month', a.p_end) - interval '35 months',
+           date_trunc('month', a.p_end),
            interval '1 month'
          )::date as period
+  from anchor a
 ),
 t as (
   select *

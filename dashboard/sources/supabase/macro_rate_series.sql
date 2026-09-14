@@ -13,9 +13,15 @@
 -- Units, unconverted: SELIC meta % a.a. · SELIC diária and CDI % a.d. ·
 -- IPCA / IGP-M / INPC / poupança % change in the month.
 with spine as (
+  -- SPINE END: the last ENDED month. A monthly view must not draw the month in
+  -- progress: its "last reading" is whatever has printed so far. The monthly
+  -- indices (IPCA, IGP-M, INPC, poupança) publish month M during M+1, so even
+  -- the last ended month can be empty for them — macro.md clamps that chart
+  -- to its own last non-null month (cpi_series). The daily-carried levels
+  -- (SELIC target, SELIC/CDI) always fill the last ended month.
   select generate_series(
-           date_trunc('month', current_date) - interval '59 months',
-           date_trunc('month', current_date),
+           date_trunc('month', current_date) - interval '60 months',
+           date_trunc('month', current_date) - interval '1 month',
            interval '1 month'
          )::date as period
 ),
@@ -25,7 +31,8 @@ monthly as (
     date_trunc('month', reference_date)::date as period,
     value
   from bacen_sgs
-  where reference_date >= (date_trunc('month', current_date) - interval '59 months')::date
+  where reference_date >= (date_trunc('month', current_date) - interval '60 months')::date
+    and reference_date <  date_trunc('month', current_date)::date
   order by series_code, date_trunc('month', reference_date), reference_date desc
 )
 select

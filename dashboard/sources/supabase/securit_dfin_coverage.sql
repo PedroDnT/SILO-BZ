@@ -16,7 +16,14 @@
 -- (dfin_cri starts 2018, dfin_cra 2019 per src/fetchers/cvm_config.py); the
 -- aggregate is LEFT JOINed, so an unfetched year reports NULL.
 with years as (
-  select generate_series(2018, extract(year from current_date)::int) as period_year
+  -- SPINE END: the last year with a filing on record, not the current calendar
+  -- year — DFIN is yearly and lands in arrears, so the current year (often the
+  -- prior one too) would be a blank bar on the axis. Unfetched years INSIDE the
+  -- range still report NULL, which is the coverage gap this page exists to show.
+  select generate_series(
+           2018,
+           greatest(2018, coalesce((select max(period_year) from cvm_securit_dfin), 2018))
+         ) as period_year
 ),
 agg as (
   select

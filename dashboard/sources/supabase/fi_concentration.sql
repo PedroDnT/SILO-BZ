@@ -25,7 +25,15 @@ select
 from (values (1)) as g(one)
 left join lateral (
   with anchor as (
-    select coalesce(max(period), current_date) as p_end
+    -- the latest PERFIL month AT OR BEFORE the last complete FI month — the
+    -- newest ingested month can be a thin, partly filed file. The filter keeps
+    -- p_end an actual stored period value (month end), so equality still matches.
+    select coalesce(
+             max(period) filter (
+               where period <= (date_trunc('month', latest_complete_period('fi')) + interval '1 month' - interval '1 day')::date
+             ),
+             current_date
+           ) as p_end
     from cvm_fi_perfil
   ),
   latest_fact as (

@@ -15,8 +15,12 @@
 -- The literal type list drives the row count with the aggregate LEFT JOINed, so
 -- a type absent from a month reads NULL rather than dropping out of the chart.
 with bounds as (
+  -- Last ENDED month only. The matview carries the in-progress month with the
+  -- sessions traded so far, and drawing it reads as a volume collapse; COTAHIST
+  -- is complete per session, not per month.
   select coalesce(
-           (select max(period) from mv_b3_monthly_activity),
+           (select max(period) from mv_b3_monthly_activity
+             where period < date_trunc('month', current_date)::date),
            date '2019-01-01'
          ) as month_end
 ),

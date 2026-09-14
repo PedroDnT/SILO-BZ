@@ -59,6 +59,23 @@ select * from supabase.macro_latest
 select * from supabase.macro_rate_series
 ```
 
+```sql cpi_series
+-- The monthly indices publish month M during M+1, so the source's last ended
+-- month is usually still empty for them. Stop this chart at its own last month
+-- with a reading; the SELIC/CDI charts keep the full spine (daily-carried).
+select *
+from supabase.macro_rate_series
+where period <= (
+  select max(period)
+  from supabase.macro_rate_series
+  where ipca_mes_num2 is not null
+     or igpm_mes_num2 is not null
+     or inpc_mes_num2 is not null
+     or poupanca_mes_num2 is not null
+)
+order by period
+```
+
 ```sql macro_fx_series
 select * from supabase.macro_fx_series
 ```
@@ -133,7 +150,7 @@ title="SELIC Diária vs CDI (% per Day)"
 > zero.
 
 <LineChart
-data={macro_rate_series}
+data={cpi_series}
 x=period
 y={['ipca_mes_num2','igpm_mes_num2','inpc_mes_num2','poupanca_mes_num2']}
 yAxisTitle="% Change in Month"

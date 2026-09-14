@@ -35,8 +35,13 @@ select
 from (values (1)) as g(one)
 left join lateral (
   with anchor as (
+    -- the latest FII month AT OR BEFORE the last complete FII month: never a
+    -- partly filed newest month. The filter keeps p_end an actual stored
+    -- period value, so the equality join below still matches.
     select coalesce(
-             max(period),
+             max(period) filter (
+               where period <= (date_trunc('month', latest_complete_period('fii')) + interval '1 month' - interval '1 day')::date
+             ),
              date_trunc('month', current_date)::date
            ) as p_end
     from cvm_fii_mensal

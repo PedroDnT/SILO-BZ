@@ -26,8 +26,12 @@
 -- collapses the spine to one month of NULLs — never zero rows, never a 0-byte
 -- parquet (see delinquency_trend.sql for why that matters).
 with bounds as (
+  -- Last ENDED month only. The matview carries the in-progress month with the
+  -- sessions traded so far, and drawing it reads as a volume collapse; COTAHIST
+  -- is complete per session, not per month.
   select coalesce(
-           (select max(period) from mv_b3_monthly_activity),
+           (select max(period) from mv_b3_monthly_activity
+             where period < date_trunc('month', current_date)::date),
            date '2019-01-01'
          ) as month_end
 ),

@@ -14,13 +14,25 @@
 --
 -- ZERO-ROW SAFETY: generate_series over the last 12 months drives the rows; the
 -- aggregate is LEFT JOINed, so an unpublished month is NULL rather than absent.
-with months as (
-  select generate_series(
-           -- clamp: fidc's completeness bound (mv_period_completeness)
-           date_trunc('month', latest_complete_period('fidc') - interval '11 months'),
+with anchor as (
+  -- SPINE END: the last month the aging filings have actually reached, capped
+  -- at FIDC's completeness bound. That bound (mv_period_completeness) is
+  -- measured on cvm_fidc_mensal — a different filing from the one plotted
+  -- here — so the cap alone left the trailing months on the axis, empty.
+  -- least() ignores a NULL max() on an empty table.
+  select least(
            date_trunc('month', latest_complete_period('fidc')),
+           date_trunc('month', max(period))
+         )::date as p_end
+  from cvm_fidc_aging
+),
+months as (
+  select generate_series(
+           date_trunc('month', a.p_end) - interval '11 months',
+           date_trunc('month', a.p_end),
            interval '1 month'
          )::date as period
+  from anchor a
 ),
 agg as (
   select
@@ -38,8 +50,9 @@ agg as (
     sum(a.vl_total_inad)       / 1e6         as inad_total_mm,
     count(distinct a.cnpj)                   as n_funds
   from cvm_fidc_aging a
-  where a.period >= (date_trunc('month', latest_complete_period('fidc')) - interval '11 months')::date
-    and a.period <= latest_complete_period('fidc')
+  cross join anchor x
+  where a.period >= (date_trunc('month', x.p_end) - interval '11 months')::date
+    and a.period <  (date_trunc('month', x.p_end) + interval '1 month')::date
   group by date_trunc('month', a.period)::date
 )
 select

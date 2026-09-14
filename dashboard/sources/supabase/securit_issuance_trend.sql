@@ -12,16 +12,26 @@
 -- 'ots_mensal' — NOT the 'cra_classe' spelling that the dim_security comment
 -- and yield_universe()'s default still mention. The prefix/suffix match below
 -- classifies either spelling correctly.
-with months as (
-  select generate_series(
-           -- Securitizadoras are outside fact_fund_monthly, so no coverage-based
-           -- completeness exists for them; the honest cheap rule is to stop at
-           -- the last ENDED month (the in-progress month is partial by
-           -- construction for a monthly filing).
-           date_trunc('month', current_date - interval '35 months'),
+with anchor as (
+  -- SPINE END. Securitizadoras are outside fact_fund_monthly, so no
+  -- coverage-based completeness exists for them. The rule is the last ENDED
+  -- month that has a filing: never the in-progress month (partial by
+  -- construction for a monthly filing) and never a month the filings have not
+  -- reached yet — the axis would run past the data. least() ignores a NULL
+  -- max() on an empty table, so this falls back to the last ended month.
+  select least(
            date_trunc('month', current_date) - interval '1 month',
+           date_trunc('month', max(data_referencia))
+         )::date as p_end
+  from cvm_securit_serie
+),
+months as (
+  select generate_series(
+           date_trunc('month', a.p_end) - interval '35 months',
+           date_trunc('month', a.p_end),
            interval '1 month'
          )::date as period
+  from anchor a
 ),
 trend as (
   select
@@ -36,10 +46,11 @@ trend as (
     t.total_value,
     t.n_adimplente,
     t.n_inadimplente
-  from security_issuance_trend(
+  from anchor a
+  cross join lateral security_issuance_trend(
          null::text,
-         (date_trunc('month', current_date) - interval '35 months')::date,
-         (date_trunc('month', current_date) - interval '1 day')::date
+         (date_trunc('month', a.p_end) - interval '35 months')::date,
+         (date_trunc('month', a.p_end) + interval '1 month' - interval '1 day')::date
        ) t
 ),
 agg as (

@@ -23,9 +23,13 @@
 -- ZERO-ROW SAFETY: driven by a 24-month generate_series spine; the aggregate is
 -- LEFT JOINed on, so the source always returns 24 rows.
 with anchor as (
-  select coalesce(
+  -- SPINE END: the last ingested PERFIL month, capped at the last COMPLETE FI
+  -- month (mv_period_completeness) — a partly filed newest month moved the
+  -- retail/institutional ratio. Cap expressed as that month's LAST day
+  -- (cvm_fi_perfil.period is month end); least() ignores a NULL max().
+  select least(
            max(period),
-           date_trunc('month', current_date)::date
+           (date_trunc('month', latest_complete_period('fi')) + interval '1 month' - interval '1 day')::date
          ) as p_end
   from cvm_fi_perfil
 ),

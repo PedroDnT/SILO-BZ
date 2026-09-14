@@ -12,7 +12,15 @@
 -- ZERO-ROW SAFETY: aggregate without GROUP BY over a one-row anchor → exactly
 -- one row, always.
 with anchor as (
-  select coalesce(max(period), current_date) as p_end
+  -- the latest PERFIL month AT OR BEFORE the last complete FI month, so the
+  -- coverage figure is never quoted on a partly filed newest month. The
+  -- filter keeps p_end an actual stored period value (month end).
+  select coalesce(
+           max(period) filter (
+             where period <= (date_trunc('month', latest_complete_period('fi')) + interval '1 month' - interval '1 day')::date
+           ),
+           current_date
+         ) as p_end
   from cvm_fi_perfil
 )
 select

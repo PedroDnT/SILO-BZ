@@ -15,8 +15,12 @@
 -- ZERO-ROW SAFETY: the month spine drives the row count; the aggregate is
 -- LEFT JOINed on, so an empty matview yields NULLs, never a 0-row source.
 with bounds as (
+  -- Last ENDED month only. The matview carries the in-progress month with the
+  -- sessions traded so far, and drawing it reads as a volume collapse; COTAHIST
+  -- is complete per session, not per month.
   select coalesce(
-           (select max(period) from mv_b3_monthly_activity),
+           (select max(period) from mv_b3_monthly_activity
+             where period < date_trunc('month', current_date)::date),
            date '2019-01-01'
          ) as month_end
 ),
