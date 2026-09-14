@@ -13,6 +13,11 @@ and treat a timeout as the same skip class as the 403.
 Daily CVM Ingest #219 (run 34015471961, 2026-09-06) failed the same step on
 a platform ABORTED status after ~11 minutes with no dataset. That is the
 same skip class — not a scrape that returned bad data.
+
+Daily CVM Ingest #220 / #221 (runs 34089192930, 34193021487, 2026-09-07/08)
+failed the same step on HTTP 403 platform-feature-disabled / monthly usage
+hard limit. The actor never started — same skip class. Other 403s (billing)
+must still fail the daily run.
 """
 
 import json
@@ -28,6 +33,7 @@ from src.fetchers.apify_etf_fetcher import (
     ApifyRunAbortedError,
     ApifyRunTimeoutError,
     ApifyScrapeUnavailableError,
+    ApifyUsageLimitError,
     ApifyETFFetcher,
     apify_http_error,
 )
@@ -47,6 +53,13 @@ _TIMEOUT_BODY = """{
   "error": {
     "type": "run-timeout-exceeded",
     "message": "Actor run exceeded the timeout of 300 seconds for this API endpoint"
+  }
+}"""
+
+_USAGE_LIMIT_BODY = """{
+  "error": {
+    "type": "platform-feature-disabled",
+    "message": "Monthly usage hard limit exceeded"
   }
 }"""
 
@@ -106,6 +119,15 @@ class TestApifyHttpError:
         assert isinstance(err, ApifyScrapeUnavailableError)
         assert "run-timeout-exceeded" in str(err)
         assert "HTTP 408" in str(err)
+
+    def test_usage_limit_403_is_scrape_unavailable(self):
+        """Daily CVM Ingest #220/#221: Apify 403 monthly usage hard limit."""
+        err = apify_http_error("apify~playwright-scraper", 403, _USAGE_LIMIT_BODY)
+        assert isinstance(err, ApifyUsageLimitError)
+        assert isinstance(err, ApifyScrapeUnavailableError)
+        assert "usage limit exceeded" in str(err)
+        assert "HTTP 403" in str(err)
+        assert "platform-feature-disabled" in str(err)
 
     def test_other_403_still_raises_runtime_error(self):
         err = apify_http_error("apify~web-scraper", 403, '{"error":{"type":"billing"}}')
@@ -167,6 +189,19 @@ class TestFetch:
             with pytest.raises(ApifyRunTimeoutError) as exc:
                 _fetcher().fetch(["BOVA11"])
         assert "run-timeout-exceeded" in str(exc.value)
+
+    def test_usage_limit_403_raises_usage_limit(self):
+        err = _http_error(
+            "https://api.apify.com/v2/acts/apify~playwright-scraper/runs",
+            403,
+            "Forbidden",
+            _USAGE_LIMIT_BODY,
+        )
+        with patch("urllib.request.urlopen", side_effect=err):
+            with pytest.raises(ApifyUsageLimitError) as exc:
+                _fetcher().fetch(["BOVA11"])
+        assert isinstance(exc.value, ApifyScrapeUnavailableError)
+        assert "Monthly usage hard limit exceeded" in str(exc.value)
 
     def test_starts_async_polls_and_reads_dataset(self):
         urlopen = _urlopen_script([

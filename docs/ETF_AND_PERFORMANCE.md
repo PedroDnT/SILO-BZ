@@ -67,11 +67,14 @@ Pieces (FETCH → PARSE → STORE):
   that pageFunction + one startUrl per active registry ticker + the proxy config.
   Raises on any failure / empty result. HTTP 403 `full-permission-actor-not-approved`
   (Apify full-permission store actors, historically `apify/web-scraper` after
-  2026-08-31) is `ApifyActorNotApprovedError`. HTTP 408 `run-timeout-exceeded`
+  2026-08-31) is `ApifyActorNotApprovedError`. HTTP 403 `platform-feature-disabled`
+  / "Monthly usage hard limit exceeded" (Daily CVM Ingest #220/#221) is
+  `ApifyUsageLimitError`. HTTP 408 `run-timeout-exceeded`
   (Apify's sync endpoint caps at 300s; ~187 playwright pages take longer) and a
   wait-budget miss are `ApifyRunTimeoutError`. Platform `ABORTED` /
   `ABORTING` (Daily CVM Ingest #219, run 34015471961) is `ApifyRunAbortedError`.
-  All three skip like an unset token. An actor `FAILED` or empty dataset still raises.
+  All four skip like an unset token. An actor `FAILED` or empty dataset still raises.
+  Other 403s (for example `billing`) still fail the daily run.
 - `src/pipeline/ingest_etf_market.py` — parses Brazilian number/date formats and
   upserts into `etf_market_snapshot` (migration `12_etf_market.sql`), idempotent on
   `(ticker, snapshot_date)`.
@@ -88,9 +91,11 @@ Wired into `run_daily` when `APIFY_TOKEN` is set. An unset token skips the scrap
 and never fails the daily run. The same skip applies when Apify returns
 `full-permission-actor-not-approved` (the actor never started — approve it in
 Console if you still pin `APIFY_ETF_ACTOR` to a full-permission store actor),
-HTTP 408 `run-timeout-exceeded` (the scrape did not finish in time — we never
-got a dataset), or a platform `ABORTED` status (the run was killed before a
-dataset landed — Daily CVM Ingest #219).
+HTTP 403 `platform-feature-disabled` / monthly usage hard limit (the scrape
+cannot start until the Apify plan resets or is raised — Daily CVM Ingest
+#220/#221), HTTP 408 `run-timeout-exceeded` (the scrape did not finish in time
+— we never got a dataset), or a platform `ABORTED` status (the run was killed
+before a dataset landed — Daily CVM Ingest #219).
 The label-based parsers keep the full rendered page text **and** `__NEXT_DATA__`
 in each row's `raw`, so a moved label never silently drops data.
 
