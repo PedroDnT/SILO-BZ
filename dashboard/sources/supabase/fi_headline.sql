@@ -6,8 +6,12 @@
 -- row of NULLs instead of an empty parquet (see etf_market.sql for the same
 -- pattern and the build failure it prevents).
 with latest as (
+  -- The tiles quote the last COMPLETE FI month (mv_period_completeness), not
+  -- the newest month in the matview: the daily ingest fills the current month
+  -- as it goes, and a headline built on a half-filled month understates the
+  -- industry. least() ignores a NULL max(); coalesce covers a cold matview.
   select coalesce(
-           max(period),
+           least(max(period), latest_complete_period('fi')),
            date_trunc('month', current_date)::date
          ) as period
   from fact_fund_monthly

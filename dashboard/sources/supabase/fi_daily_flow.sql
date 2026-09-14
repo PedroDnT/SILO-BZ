@@ -24,10 +24,6 @@ win as (
     (a.p_month + interval '1 month' - interval '1 day')::date - 119      as d_start
   from anchor a
 ),
-days as (
-  select generate_series(w.d_start, w.d_end, interval '1 day')::date as dt
-  from win w
-),
 flow as (
   select
     d.dt_comptc                                                    as dt,
@@ -40,6 +36,21 @@ flow as (
   cross join win w
   where d.dt_comptc between w.d_start and w.d_end
   group by d.dt_comptc
+),
+days as (
+  -- SPINE END: the last session that actually printed, not the month's last
+  -- calendar day. The anchor month is the latest one in fact_fund_monthly, and
+  -- the daily ingest fills it as it goes — ending the spine at the calendar
+  -- month-end left every remaining weekday on the axis, empty, and the
+  -- cumulative line below flat for the rest of the month. Read from the
+  -- aggregate already computed, so no second pass over the partitions; an
+  -- empty window collapses to one day, never zero rows.
+  select generate_series(
+           w.d_start,
+           coalesce((select max(f.dt) from flow f), w.d_start),
+           interval '1 day'
+         )::date as dt
+  from win w
 )
 select
   s.dt                                                         as dt_comptc,

@@ -10,7 +10,15 @@
 -- the breakdown is LEFT JOINed onto it, so an empty cvm_fi_cda yields one
 -- all-NULL row instead of an empty parquet.
 with anchor as (
-  select coalesce(max(period), date_trunc('month', current_date)::date) as p_end
+  -- the latest CDA month AT OR BEFORE the last complete FI month: the newest
+  -- ingested month is routinely only partly filed. The filter keeps p_end an
+  -- actual stored period value, so the equality join below still matches.
+  select coalesce(
+           max(period) filter (
+             where period <= (date_trunc('month', latest_complete_period('fi')) + interval '1 month' - interval '1 day')::date
+           ),
+           date_trunc('month', current_date)::date
+         ) as p_end
   from cvm_fi_cda
 ),
 base as (

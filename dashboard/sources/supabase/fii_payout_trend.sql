@@ -9,8 +9,19 @@
 -- ZERO-ROW SAFETY: 24-month generate_series spine drives the result; the monthly
 -- aggregate is LEFT JOINed on, so the source always returns 24 rows.
 with anchor as (
-  -- anchor on FII's completeness bound: never a partially-filed month
-  select latest_complete_period('fii') as p_end
+  -- SPINE END: FII's completeness bound (mv_period_completeness) is measured
+  -- on doc_subtype 'complemento' — fact_fund_monthly's FII branch — but the
+  -- payout plotted here comes from 'ativo_passivo', a filing that can land
+  -- later. Cap at the last month where that subtype actually carries a payout
+  -- figure, so the axis never runs past the series. least() ignores a NULL
+  -- max() on an empty table; never a partially-filed month either way.
+  select least(
+           latest_complete_period('fii'),
+           date_trunc('month', max(period))::date
+         ) as p_end
+  from cvm_fii_mensal
+  where doc_subtype = 'ativo_passivo'
+    and rendimentos_distribuir is not null
 ),
 months as (
   select generate_series(
@@ -37,8 +48,8 @@ per_fund as (
     )                                                                          as cotas_emitidas
   from cvm_fii_mensal m
   cross join anchor a
-  where m.period between (date_trunc('month', a.p_end) - interval '23 months')::date
-                     and a.p_end
+  where m.period >= (date_trunc('month', a.p_end) - interval '23 months')::date
+    and m.period <  (date_trunc('month', a.p_end) + interval '1 month')::date
     and m.cnpj is not null
   group by m.period, m.cnpj
 ),

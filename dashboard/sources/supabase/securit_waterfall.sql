@@ -12,14 +12,24 @@
 -- paid, matching the source. cobertura_num1 is the share of the month's
 -- receivables consumed by all payments — above 100 means the structure paid out
 -- more than it collected that month.
-with months as (
-  select generate_series(
-           -- last ENDED month: securit is outside fund completeness; the
-           -- in-progress month of a monthly filing is partial by construction
-           date_trunc('month', current_date - interval '23 months'),
+with anchor as (
+  -- SPINE END: the last ENDED month that has a cash-flow filing. Securit is
+  -- outside fund completeness; the in-progress month of a monthly filing is
+  -- partial by construction, and a month the filings have not reached yet
+  -- must not be on the axis. least() ignores a NULL max() on an empty table.
+  select least(
            date_trunc('month', current_date) - interval '1 month',
+           date_trunc('month', max(data_referencia))
+         )::date as p_end
+  from cvm_securit_fluxo
+),
+months as (
+  select generate_series(
+           date_trunc('month', a.p_end) - interval '23 months',
+           date_trunc('month', a.p_end),
            interval '1 month'
          )::date as period
+  from anchor a
 ),
 agg as (
   select
@@ -59,7 +69,9 @@ agg as (
          or f.pagamentos_despesas is not null
     )                                                     as pgt_total_raw
   from cvm_securit_fluxo f
-  where f.data_referencia >= (date_trunc('month', current_date) - interval '23 months')::date
+  cross join anchor a
+  where f.data_referencia >= (date_trunc('month', a.p_end) - interval '23 months')::date
+    and f.data_referencia <  (date_trunc('month', a.p_end) + interval '1 month')::date
   group by date_trunc('month', f.data_referencia)::date
 )
 select

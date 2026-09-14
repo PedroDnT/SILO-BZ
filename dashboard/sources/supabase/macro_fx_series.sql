@@ -6,9 +6,12 @@
 --
 -- All rates are BRL per unit of the foreign currency, straight from PTAX.
 with spine as (
+  -- SPINE END: the last ENDED month. This is a MONTH-END rate, and the month in
+  -- progress has no month-end yet — its last quote so far was being charted
+  -- under that label. macro_fx_latest carries today's quote.
   select generate_series(
-           date_trunc('month', current_date) - interval '35 months',
-           date_trunc('month', current_date),
+           date_trunc('month', current_date) - interval '36 months',
+           date_trunc('month', current_date) - interval '1 month',
            interval '1 month'
          )::date as period
 ),
@@ -19,7 +22,8 @@ monthly as (
     buy_rate,
     sell_rate
   from bacen_ptax
-  where reference_date >= (date_trunc('month', current_date) - interval '35 months')::date
+  where reference_date >= (date_trunc('month', current_date) - interval '36 months')::date
+    and reference_date <  date_trunc('month', current_date)::date
   order by currency, date_trunc('month', reference_date), reference_date desc
 )
 select

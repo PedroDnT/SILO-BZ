@@ -15,7 +15,17 @@
 -- vl_patrim_liq is net assets as filed. Funds that filed without a PL figure are
 -- counted in n_funds but contribute nothing to pl_bn — hence n_funds_with_pl.
 with years as (
-  select generate_series(2019, extract(year from current_date)::int) as period_year
+  -- SPINE END: the last reporting year with a filing, not the current calendar
+  -- year. FIP files yearly and in arrears, so the current year is blank by
+  -- construction until its report lands; drawing it put an empty year on the
+  -- axis every day of the year.
+  select generate_series(
+           2019,
+           greatest(2019, coalesce(
+             (select max(period_year) from cvm_fip_periodic where cnpj is not null),
+             2019
+           ))
+         ) as period_year
 )
 select
   y.period_year,

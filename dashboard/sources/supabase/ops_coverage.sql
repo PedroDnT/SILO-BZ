@@ -14,20 +14,36 @@
 -- December month is populated), FIAGRO's monthly file only begins 2025-05, and
 -- CVM publishes monthly datasets with a 1-2 month lag, so the newest month or
 -- two are legitimately thin.
-with spine as (
+with anchor as (
+  -- SPINE END: the last ENDED month any monthly family has reached. This page's
+  -- job is to show the per-family lag, so a slow family's blank trailing month
+  -- stays visible on purpose — but a month NO family has reached, or the
+  -- in-progress month, is not drawn. FIP is excluded from the max because it is
+  -- stored at 31-Dec of its reporting year, a date in the future for most of the
+  -- calendar year.
+  select least(
+           date_trunc('month', current_date) - interval '1 month',
+           date_trunc('month', max(period))
+         )::date as p_end
+  from fact_fund_monthly
+  where entity_type <> 'fip'
+),
+spine as (
   select generate_series(
-           date_trunc('month', current_date) - interval '23 months',
-           date_trunc('month', current_date),
+           date_trunc('month', a.p_end) - interval '23 months',
+           date_trunc('month', a.p_end),
            interval '1 month'
          )::date as period
+  from anchor a
 ),
 t as (
-  select *
-  from data_coverage(
+  select c.*
+  from anchor a
+  cross join lateral data_coverage(
     null,
-    (date_trunc('month', current_date) - interval '23 months')::date,
-    current_date
-  )
+    (date_trunc('month', a.p_end) - interval '23 months')::date,
+    (date_trunc('month', a.p_end) + interval '1 month' - interval '1 day')::date
+  ) c
 )
 select
   sp.period,

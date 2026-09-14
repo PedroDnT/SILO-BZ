@@ -13,18 +13,32 @@
 -- ZERO-ROW SAFETY: generate_series over 24 months drives the rows; the fund's
 -- series is LEFT JOINed onto it, so months it did not file (or an entirely
 -- empty cvm_fidc_tranche) come back NULL instead of no-row.
-with months as (
-  select generate_series(
-           -- clamp: fidc's completeness bound (mv_period_completeness)
-           date_trunc('month', latest_complete_period('fidc') - interval '23 months'),
+with anchor as (
+  -- SPINE END: the last month the tranche filings have actually reached,
+  -- capped at FIDC's completeness bound. That bound (mv_period_completeness)
+  -- is measured on cvm_fidc_mensal, not on cvm_fidc_tranche, so the cap alone
+  -- left the trailing months on the axis, empty — and this chart is ONE fund,
+  -- so a single missed filing empties the point. least() ignores a NULL max().
+  select least(
            date_trunc('month', latest_complete_period('fidc')),
+           date_trunc('month', max(period))
+         )::date as p_end
+  from cvm_fidc_tranche
+),
+months as (
+  select generate_series(
+           date_trunc('month', a.p_end) - interval '23 months',
+           date_trunc('month', a.p_end),
            interval '1 month'
          )::date as period
+  from anchor a
 ),
 latest as (
-  -- clamp: never anchor "latest" on a partially-filed month
-  select max(period) as period from cvm_fidc_tranche
-  where period <= latest_complete_period('fidc')
+  -- never anchor "latest" on a partially-filed month: the same bound as the spine
+  select max(t.period) as period
+  from cvm_fidc_tranche t
+  cross join anchor a
+  where t.period < (date_trunc('month', a.p_end) + interval '1 month')::date
 ),
 biggest as (
   select m.cnpj
@@ -48,10 +62,11 @@ series as (
     st.qt_subordinada,
     st.subordination_ratio
   from biggest b
+  cross join anchor a
   cross join lateral fidc_subordination_trend(
     b.cnpj,
-    (date_trunc('month', current_date) - interval '23 months')::date,
-    current_date
+    (date_trunc('month', a.p_end) - interval '23 months')::date,
+    (date_trunc('month', a.p_end) + interval '1 month' - interval '1 day')::date
   ) st
 )
 select

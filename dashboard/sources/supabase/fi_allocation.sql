@@ -13,9 +13,14 @@
 -- per-month breakdown is LEFT JOIN LATERAL'd on, so months with no CDA rows (and
 -- an entirely empty cvm_fi_cda) still emit a row.
 with anchor as (
-  select coalesce(
+  -- SPINE END: the last ingested CDA month, capped at the last COMPLETE FI
+  -- month (mv_period_completeness). The newest ingested month is routinely only
+  -- partly filed, and an anchor on max(period) alone drew it as a cliff. The
+  -- cap is expressed as that month's LAST day so a month-end `period` and a
+  -- first-of-month one both fall inside it; least() ignores a NULL max().
+  select least(
            max(period),
-           date_trunc('month', current_date)::date
+           (date_trunc('month', latest_complete_period('fi')) + interval '1 month' - interval '1 day')::date
          ) as p_end
   from cvm_fi_cda
 ),

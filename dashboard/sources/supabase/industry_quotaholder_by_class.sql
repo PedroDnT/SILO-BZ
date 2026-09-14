@@ -22,12 +22,21 @@
 -- quotaholder count. Agribusiness was listed here as populated and is not; the
 -- figures above are what the tables actually hold, not what the doc assumed.
 -- A blank in those rows is the source being silent, never a load failure.
-with spine as (
+with anchor as (
+  -- SPINE END: the last COMPLETE FI month (mv_period_completeness), never the
+  -- in-progress month and never a partially filed one. FI is the family that
+  -- populates this chart (COVERAGE above); FII's own bound may trail it, in
+  -- which case Real Estate is blank for the trailing month while the FI
+  -- classes still carry the axis. See dashboard/README, "Spine rule".
+  select latest_complete_period('fi') as p_end
+),
+spine as (
   select generate_series(
-           date_trunc('month', current_date) - interval '23 months',
-           date_trunc('month', current_date),
+           date_trunc('month', a.p_end) - interval '23 months',
+           date_trunc('month', a.p_end),
            interval '1 month'
          )::date as period
+  from anchor a
 ),
 classes (asset_class) as (
   values
@@ -36,11 +45,12 @@ classes (asset_class) as (
     ('Private Equity'), ('Other')
 ),
 t as (
-  select *
-  from quotaholder_trend_by_class(
-    (date_trunc('month', current_date) - interval '23 months')::date,
-    current_date
-  )
+  select f.*
+  from anchor a
+  cross join lateral quotaholder_trend_by_class(
+    (date_trunc('month', a.p_end) - interval '23 months')::date,
+    (date_trunc('month', a.p_end) + interval '1 month' - interval '1 day')::date
+  ) f
 )
 select
   sp.period,
