@@ -24,7 +24,7 @@ on:
         required: false
         default: "2026"
       rebuild_dashboard:
-        description: "Fire the Vercel deploy hook after this run. NOTE: this publishes a PRODUCTION deployment, which aliases to silo-deloslabs.vercel.app — verified 2026-08-29 that iliquid-nightly.vercel.app does NOT follow production, so this does not refresh the public URL until that domain is attached. Leave off while filling data either way: a dashboard build is 25–45 min of SELECTs on the same Postgres."
+        description: "Also fire the Vercel deploy hook after this manual run (every successful scheduled run fires it on its own). Publishes a PRODUCTION deployment of the dashboard at silo-bz.vercel.app — a 25–45 min Evidence build of SELECTs against the same Postgres — so leave it off for re-runs and experiments."
         type: boolean
         default: false
 
@@ -182,25 +182,26 @@ jobs:
       # The dashboard is a STATIC SNAPSHOT: `evidence sources` extracts Supabase
       # into parquet at build time, and the site then serves that parquet through
       # DuckDB in the browser. Fresh rows in Supabase therefore reach the site
-      # only when a build runs — and until now the only trigger was a git push,
-      # so the published numbers were as old as the last unrelated commit.
+      # only when a build runs.
       #
-      # Firing the hook HERE is also the cheapest possible timing: ingest and the
+      # Every successful SCHEDULED run fires the hook (decision 2026-09-14: the
+      # published snapshot must never be more than a day behind the warehouse).
+      # Firing it HERE is also the cheapest possible timing: ingest and the
       # analytical layer are done, ANALYZE has just refreshed the statistics the
       # source queries plan against, and no other build is competing for the
-      # database. Concurrent builds are what turned 2026-08-26 into four
-      # overlapping 45-minute timeouts and a killed schema apply.
+      # database — the 2026-08-26 damage (four overlapping 45-minute timeouts
+      # and a killed schema apply) came from CONCURRENT builds, not from one
+      # build a day. Manual dispatches stay opt-in via rebuild_dashboard: a
+      # re-run or an experiment must not publish by accident.
       #
-      # Dashboard rebuild is OPT-IN. A scheduled daily used to POST
-      # VERCEL_DEPLOY_HOOK_URL whenever the secret was set; that is a 25–45 min
-      # Evidence build (~90 queries, including 4+ min scans of cvm_fi_perfil)
-      # on the same Postgres the ingest just wrote. That overlap is what killed
-      # schema apply on 2026-08-26 and tripped quota. Cron now leaves
-      # https://iliquid-nightly.vercel.app/ frozen. To publish a new snapshot:
-      # Actions → Daily CVM Ingest → rebuild_dashboard = true (and have the
-      # secret set). continue-on-error: a failed hook must not fail ingest.
+      # The hook must belong to the `silo` project's production branch;
+      # scripts/vercel_should_build.sh never skips a production build, so a hook
+      # on an unchanged commit still refreshes the data. success(): a run whose
+      # ingest or analytical step failed must not publish a snapshot of a
+      # half-written warehouse. continue-on-error: a failed hook must not fail an
+      # ingest whose data already landed.
       - name: Trigger dashboard rebuild (Vercel deploy hook)
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.rebuild_dashboard == 'true' }}
+        if: ${{ success() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.rebuild_dashboard == 'true')) }}
         continue-on-error: true
         env:
           VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
@@ -209,7 +210,7 @@ jobs:
           if [ -z "${VERCEL_DEPLOY_HOOK_URL:-}" ]; then
             echo "VERCEL_DEPLOY_HOOK_URL unset — skipping dashboard rebuild."
             echo "Create one at Vercel → Project silo → Settings → Git → Deploy Hooks"
-            echo "(public dashboard: https://iliquid-nightly.vercel.app/)"
+            echo "(public dashboard: https://silo-bz.vercel.app/)"
             echo "and store it as the repository secret VERCEL_DEPLOY_HOOK_URL."
             exit 0
           fi

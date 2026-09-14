@@ -47,10 +47,10 @@
 #
 # PRODUCTION ALWAYS BUILDS; PREVIEWS ARE PATH-FILTERED
 # The dashboard is a static snapshot: new rows in Supabase only reach it when
-# a build runs. The daily ingest workflow POSTs a Vercel deploy hook after it
-# finishes (.github/workflows/daily_ingest.yml, rebuild_dashboard=true), which
-# is better timed than a human push — it runs when no other build is competing
-# for the database.
+# a build runs. The daily ingest workflow POSTs a Vercel deploy hook after every
+# successful scheduled run (.github/workflows/daily_ingest.yml; manual runs opt
+# in with rebuild_dashboard=true), which is better timed than a human push — it
+# runs when no other build is competing for the database.
 #
 # A deploy hook fires on a COMMIT THAT DID NOT CHANGE. That is the entire point
 # of it, and it is why a pure path-diff rule can never let one through:

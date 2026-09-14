@@ -87,8 +87,22 @@ npm run dev       # http://localhost:3000
 npm run build     # outputs to build/
 ```
 
-Deployed to **Vercel** (project `iliquid-nightly`, primary live target). Can also be served as
-a static build — point any static host at `build/`.
+Deployed to **Vercel** (project `silo` in team `deloslabs`; public URL
+[https://silo-bz.vercel.app/](https://silo-bz.vercel.app/) — the auto alias
+`silo-deloslabs.vercel.app` is not the public URL). Production rebuilds on every merge to
+`main` that touches `dashboard/` and after every successful scheduled Daily CVM Ingest
+(deploy hook), so the snapshot is at most a day old; `/` and `/ops` show when it was
+built (`sources/supabase/build_stamp.sql`). Can also be served as a static build — point
+any static host at `build/`.
+
+### Analytics
+
+Visits are counted by Vercel Web Analytics. `pages/+layout.svelte` is the Evidence
+template layout plus one `<svelte:head>` block that loads `/_vercel/insights/script.js`
+— a script Vercel serves on every deployment of the project, no package or key needed.
+It only collects once **Analytics is enabled on the Vercel project** (Project → Analytics
+→ Enable), and it is skipped under `npm run dev`. When upgrading Evidence, re-copy
+`.evidence/template/src/pages/+layout.svelte` over the file and re-add that block.
 
 ### Vercel configuration (`vercel.json`)
 
