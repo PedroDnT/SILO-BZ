@@ -206,11 +206,15 @@ def test_every_published_function_has_a_wrapper():
 
     sql = (Path(__file__).resolve().parents[1]
            / "src/store/analytical/19_api_contract.sql").read_text()
-    published = {
-        m for m in re.findall(r"CREATE (?:OR REPLACE )?FUNCTION api\.(\w+)", sql)
-        # internal helpers: REVOKEd from PUBLIC, never callable by a client
-        if m not in {"caller_tier", "assert_panel_ids"}
-    }
+    # "Published" is not the same as "defined": an internal helper is CREATEd
+    # exactly like a public function and then REVOKEd from PUBLIC. The client
+    # surface is precisely what anon may EXECUTE, so read the grants rather
+    # than maintaining a second hand-written list of helpers that drifts.
+    published = set(
+        re.findall(r"GRANT EXECUTE ON FUNCTION api\.(\w+)\([^)]*\)\s*TO anon", sql)
+    )
+    assert len(published) >= 14, f"grant scan found too few functions: {published}"
+
     missing = sorted(published - set(dir(SiloClient)))
     assert not missing, f"api functions with no SDK wrapper: {missing}"
 

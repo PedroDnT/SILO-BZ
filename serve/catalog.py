@@ -68,7 +68,17 @@ __all__ = [
 # 6: one endpoint per cash instrument type, each carrying both lot sizes.
 # 5: main's typed cash asset classes (4) merged with the option/termo id_types
 # and list-valued id_type this branch introduced (3).
-CATALOG_VERSION = 17
+# 18: listed-company financial statements reach the API. api.financials
+# serves the statement lines long (one row per account, carrying doc_type,
+# statement, scope, the ÚLTIMO/restatement choice as `version`, and the
+# dt_ini_exerc span as `period_months`); api.company_financials serves the
+# headline lines wide with margin and ROE. Both resolve a B3 ticker to the
+# company through CVM's published FCA map, so `panel('PETR4', close)` and
+# `financials('PETR4')` take the same id. coverage() gains a `financials`
+# row. No panel arm yet: an ITR files a 3-month AND a year-to-date figure
+# under one date and the panel is 1-D per (id, date, metric), so choosing a
+# span silently is exactly the fabricated number this contract forbids.
+CATALOG_VERSION = 18
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -206,6 +216,9 @@ NOTEBOOK_REDUCERS: Dict[str, str] = {
 }
 
 CONSTRAINTS = [
+    "LISTED-COMPANY FINANCIALS ARE FILED, NOT DERIVED. api.financials returns one row per account line exactly as the company filed it; nothing is summed, annualised or restated. Read period_months before comparing two rows: an ITR publishes the SAME account twice under one reference date, once for the three months and once year-to-date, and they are distinguished only by the period span. Adding a 3-month row to a 6-month row double-counts the quarter.",
+    "FINANCIALS DEFAULT TO CONSOLIDATED (scope=con) AND TO THE PERIOD THE DOCUMENT IS FOR (ordem_exerc ULTIMO). The prior-year comparative printed beside it is never returned. When a company re-files, only the newest version of each statement is served and `version` carries it; in company_financials a balance sheet from a different version than the income statement reads NULL rather than being paired across filings.",
+    "A TICKER RESOLVES TO A COMPANY ONLY THROUGH CVM'S PUBLISHED FCA MAP, active listings only — the CNPJ and the trading code arrive on the same filed row. financials('PETR4'), financials('33000167000101') and financials('9512') are the same company. A delisted code resolves to nothing rather than to a guess, and no company↔ticker edge is ever inferred from a name.",
     "Never invent a price, NAV, or identifier match.",
     "Missing observations stay null; do not ffill or interpolate.",
     "freq=day is quotes only. Mix equity with fund fundamentals on freq=month.",
@@ -418,6 +431,8 @@ def catalog_payload() -> Dict[str, Any]:
             "option_history": "POST /rest/v1/rpc/option_history",
             "option_exercises": "POST /rest/v1/rpc/option_exercises",
             "termo_history": "POST /rest/v1/rpc/termo_history",
+            "financials": "POST /rest/v1/rpc/financials",
+            "company_financials": "POST /rest/v1/rpc/company_financials",
         },
     }
 

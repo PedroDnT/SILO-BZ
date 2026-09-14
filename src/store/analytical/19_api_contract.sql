@@ -1393,7 +1393,17 @@ AS $$
                (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '080'),
                (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '030')
            ),
-           'b3_cotahist'::text;
+           'b3_cotahist'::text
+    UNION ALL
+    -- Listed-company filings. Read from cia_filing (one row per submitted
+    -- ITR/DFP document) rather than from cia_account: the account table is
+    -- ~31M rows across yearly partitions and MAX(dt_refer) over it is a scan
+    -- no anonymous caller's 3-second budget can absorb. complete_through is
+    -- NULL on purpose — mv_period_completeness models fund filing cadence and
+    -- says nothing about companies, and a fabricated completeness date is
+    -- exactly the claim this function exists to prevent.
+    SELECT 'financials'::text, MAX(f.dt_refer), NULL::date, 'cvm'::text
+    FROM public.cia_filing f;
 $$;
 
 COMMENT ON FUNCTION api.coverage() IS
@@ -1840,6 +1850,282 @@ REVOKE ALL ON FUNCTION api.lookup(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.lookup(TEXT) TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
+-- Listed companies (CIA Aberta) — financial statements
+-- ---------------------------------------------------------------------------
+
+-- Internal: resolve a caller id to one company. Never granted.
+CREATE OR REPLACE FUNCTION api.company_ref(p_id TEXT)
+RETURNS TABLE (cd_cvm TEXT, cnpj TEXT, company TEXT, ticker TEXT)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+    WITH q AS (
+        SELECT upper(btrim(COALESCE(p_id, ''))) AS raw,
+               regexp_replace(COALESCE(p_id, ''), '[^0-9]', '', 'g') AS digits
+    ),
+    hits AS (
+        -- A ticker resolves ONLY through CVM's published FCA map, active
+        -- listings only: the CNPJ and the codneg arrive on the same filed row,
+        -- so nothing here is name-matched or inferred.
+        SELECT c.cd_cvm, c.cnpj_cia, c.denom_cia, vt.codneg AS codneg, 0 AS rank
+        FROM q
+        JOIN public.vw_company_ticker vt ON vt.codneg = q.raw AND vt.is_active
+        JOIN public.cia_company c ON c.cnpj_cia = vt.cnpj_cia
+        UNION ALL
+        SELECT c.cd_cvm, c.cnpj_cia, c.denom_cia, NULL::text, 1
+        FROM q JOIN public.cia_company c
+          ON length(q.digits) = 14 AND c.cnpj_cia = q.digits
+        UNION ALL
+        SELECT c.cd_cvm, c.cnpj_cia, c.denom_cia, NULL::text, 2
+        FROM q JOIN public.cia_company c ON c.cd_cvm = q.raw
+    )
+    SELECT h.cd_cvm, h.cnpj_cia, h.denom_cia, h.codneg
+    FROM hits h
+    ORDER BY h.rank, h.cd_cvm
+    LIMIT 1;
+$$;
+
+REVOKE ALL ON FUNCTION api.company_ref(TEXT) FROM PUBLIC;
+
+-- Internal: the filtered statement rows both public functions read. Uncapped
+-- on purpose — api.financials caps the long result, api.company_financials
+-- aggregates first. Keeping one body means the honesty filters below cannot
+-- drift between the two surfaces.
+CREATE OR REPLACE FUNCTION api.cia_statement_rows(
+    p_id        TEXT,
+    p_from      DATE,
+    p_to        DATE,
+    p_scope     TEXT,
+    p_doc_type  TEXT,
+    p_statement TEXT
+)
+RETURNS TABLE (
+    cd_cvm        TEXT,
+    cnpj          TEXT,
+    company       TEXT,
+    ticker        TEXT,
+    doc_type      TEXT,
+    statement     TEXT,
+    scope         TEXT,
+    ref_date      DATE,
+    period_start  DATE,
+    period_end    DATE,
+    period_months INT,
+    account_code  TEXT,
+    account_name  TEXT,
+    value         NUMERIC,
+    version       INT
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+    WITH ref AS (
+        SELECT r.cd_cvm, r.cnpj, r.company, r.ticker FROM api.company_ref(p_id) r
+    ),
+    win AS (
+        SELECT COALESCE(p_from, CURRENT_DATE - 1825) AS d0,
+               COALESCE(p_to,   CURRENT_DATE)        AS d1,
+               lower(btrim(COALESCE(p_scope, 'con'))) AS scope
+    ),
+    rows_ AS (
+        SELECT
+            r.cd_cvm AS r_cd_cvm, r.cnpj AS r_cnpj,
+            r.company AS r_company, r.ticker AS r_ticker,
+            a.doc_type, a.grupo, a.escopo, a.dt_refer,
+            a.dt_ini_exerc, a.dt_fim_exerc,
+            a.cd_conta, a.ds_conta, a.vl_conta, a.versao,
+            -- A restatement re-files the document under a higher versao and
+            -- the old rows stay (they are part of the natural key). Serving
+            -- both would report the same quarter twice with different
+            -- numbers, so only the newest version of each statement is kept.
+            MAX(a.versao) OVER (
+                PARTITION BY a.doc_type, a.grupo, a.escopo, a.dt_refer
+            ) AS latest_versao
+        FROM public.cia_account a
+        JOIN ref r ON r.cd_cvm = a.cd_cvm
+        JOIN win w ON TRUE
+        WHERE
+            -- 'ÚLTIMO' is the period the document is FOR; 'PENÚLTIMO' is the
+            -- prior-year comparative printed beside it. Accented, verbatim
+            -- from the latin-1 source: an unaccented comparison matches zero
+            -- rows.
+              a.ordem_exerc = 'ÚLTIMO'
+          AND a.escopo = w.scope
+          AND a.dt_refer BETWEEN w.d0 AND w.d1
+          AND (p_statement IS NULL OR a.grupo    = upper(btrim(p_statement)))
+          AND (p_doc_type  IS NULL OR a.doc_type = lower(btrim(p_doc_type)))
+    )
+    SELECT
+        x.r_cd_cvm, x.r_cnpj, x.r_company, x.r_ticker,
+        x.doc_type, x.grupo, x.escopo,
+        x.dt_refer, x.dt_ini_exerc, x.dt_fim_exerc,
+        -- An ITR prints the same account twice under one dt_refer: once for
+        -- the three months and once year-to-date, separated ONLY by
+        -- dt_ini_exerc. Publishing the span is what stops a caller adding a
+        -- quarter to a cumulative figure; it is never collapsed here.
+        CASE
+            WHEN x.dt_ini_exerc IS NOT NULL AND x.dt_fim_exerc IS NOT NULL
+            THEN (EXTRACT(YEAR  FROM AGE(x.dt_fim_exerc + 1, x.dt_ini_exerc)) * 12
+                + EXTRACT(MONTH FROM AGE(x.dt_fim_exerc + 1, x.dt_ini_exerc)))::int
+        END AS period_months,
+        x.cd_conta, x.ds_conta, x.vl_conta, x.versao
+    FROM rows_ x
+    WHERE x.versao = x.latest_versao;
+$$;
+
+REVOKE ALL ON FUNCTION api.cia_statement_rows(TEXT, DATE, DATE, TEXT, TEXT, TEXT) FROM PUBLIC;
+
+DROP FUNCTION IF EXISTS api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT);
+CREATE OR REPLACE FUNCTION api.financials(
+    p_id        TEXT,
+    p_statement TEXT DEFAULT NULL,
+    p_from      DATE DEFAULT (CURRENT_DATE - 1825),
+    p_to        DATE DEFAULT CURRENT_DATE,
+    p_scope     TEXT DEFAULT 'con',
+    p_doc_type  TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+    id            TEXT,
+    id_type       TEXT,
+    cnpj          TEXT,
+    company       TEXT,
+    ticker        TEXT,
+    doc_type      TEXT,
+    statement     TEXT,
+    scope         TEXT,
+    ref_date      DATE,
+    period_start  DATE,
+    period_end    DATE,
+    period_months INT,
+    account_code  TEXT,
+    account_name  TEXT,
+    value         NUMERIC,
+    version       INT,
+    source        TEXT
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+    SELECT
+        s.cd_cvm, 'cd_cvm'::text, s.cnpj, s.company, s.ticker,
+        s.doc_type, s.statement, s.scope,
+        s.ref_date, s.period_start, s.period_end, s.period_months,
+        s.account_code, s.account_name, s.value, s.version, 'cvm'::text
+    FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, p_statement) s
+    ORDER BY s.ref_date DESC, s.statement, s.period_months NULLS FIRST, s.account_code
+    -- Cap = serve _MAX_POINTS (5000) + 1, same lockstep as quote_history.
+    LIMIT 5001;
+$$;
+
+REVOKE ALL ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
+
+DROP FUNCTION IF EXISTS api.company_financials(TEXT, DATE, DATE, TEXT);
+CREATE OR REPLACE FUNCTION api.company_financials(
+    p_id    TEXT,
+    p_from  DATE DEFAULT (CURRENT_DATE - 1825),
+    p_to    DATE DEFAULT CURRENT_DATE,
+    p_scope TEXT DEFAULT 'con'
+)
+RETURNS TABLE (
+    id             TEXT,
+    id_type        TEXT,
+    cnpj           TEXT,
+    company        TEXT,
+    ticker         TEXT,
+    doc_type       TEXT,
+    scope          TEXT,
+    ref_date       DATE,
+    period_start   DATE,
+    period_end     DATE,
+    period_months  INT,
+    revenue        NUMERIC,
+    gross_profit   NUMERIC,
+    net_income     NUMERIC,
+    total_assets   NUMERIC,
+    equity         NUMERIC,
+    net_margin_pct NUMERIC,
+    roe_pct        NUMERIC,
+    version        INT,
+    source         TEXT
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+    WITH s AS (
+        SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, NULL, NULL)
+    ),
+    income AS (
+        SELECT
+            s.cd_cvm, s.cnpj, s.company, s.ticker,
+            s.doc_type, s.scope, s.ref_date,
+            s.period_start, s.period_end, s.period_months, s.version,
+            -- max(...) FILTER, not sum: one (document, account) group can hold
+            -- several rows and summing them would double-count.
+            MAX(s.value) FILTER (WHERE s.account_code = '3.01') AS revenue,
+            MAX(s.value) FILTER (WHERE s.account_code = '3.03') AS gross_profit,
+            -- Banks file a different chart of accounts: 3.11 is absent and
+            -- net income lands on 3.09. Documented in docs/CIA_DATA_MAP.md.
+            COALESCE(
+                MAX(s.value) FILTER (WHERE s.account_code = '3.11'),
+                MAX(s.value) FILTER (WHERE s.account_code = '3.09')
+            ) AS net_income
+        FROM s
+        WHERE s.statement = 'DRE'
+        GROUP BY s.cd_cvm, s.cnpj, s.company, s.ticker, s.doc_type, s.scope,
+                 s.ref_date, s.period_start, s.period_end, s.period_months, s.version
+    ),
+    balance AS (
+        SELECT
+            s.doc_type, s.ref_date, s.version,
+            MAX(s.value) FILTER (WHERE s.statement = 'BPA' AND s.account_code = '1') AS total_assets,
+            -- Equity is matched by its published LABEL, not by code: the code
+            -- moves between 2.03 and 2.08 across chart layouts. This is the
+            -- one label match in the contract and it stays inside a single
+            -- company's own filing — it never joins two entities.
+            MAX(s.value) FILTER (
+                WHERE s.statement = 'BPP'
+                  AND s.account_name IN ('Patrimônio Líquido Consolidado', 'Patrimônio Líquido')
+            ) AS equity
+        FROM s
+        WHERE s.statement IN ('BPA', 'BPP')
+        GROUP BY s.doc_type, s.ref_date, s.version
+    )
+    SELECT
+        i.cd_cvm, 'cd_cvm'::text, i.cnpj, i.company, i.ticker,
+        i.doc_type, i.scope, i.ref_date,
+        i.period_start, i.period_end, i.period_months,
+        i.revenue, i.gross_profit, i.net_income,
+        b.total_assets, b.equity,
+        CASE WHEN i.revenue > 0 THEN round(100.0 * i.net_income / i.revenue, 2) END,
+        -- The period's return on equity, NOT annualised: a three-month row
+        -- divides a quarter's profit by equity. period_months says which.
+        CASE WHEN b.equity  > 0 THEN round(100.0 * i.net_income / b.equity,  2) END,
+        i.version, 'cvm'::text
+    FROM income i
+    -- Balance rows are joined on the SAME document version. A restatement that
+    -- bumps only the balance sheet leaves assets/equity NULL rather than
+    -- pairing this period's profit with a different filing's balance.
+    LEFT JOIN balance b
+           ON b.doc_type = i.doc_type
+          AND b.ref_date = i.ref_date
+          AND b.version IS NOT DISTINCT FROM i.version
+    ORDER BY i.ref_date DESC, i.doc_type, i.period_months NULLS FIRST
+    LIMIT 5001;
+$$;
+
+REVOKE ALL ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT) TO anon, authenticated;
+
+-- ---------------------------------------------------------------------------
 -- Catalog — the metric map, public (INSTRUMENTS.md: discovery is contract)
 -- ---------------------------------------------------------------------------
 -- The same JSON serve/catalog.py's catalog_payload() serves at /v1/catalog,
@@ -1862,9 +2148,10 @@ RETURNS jsonb
 LANGUAGE sql
 STABLE
 AS $fn$
-SELECT $json${
+SELECT $json$
+{
   "kind": "catalog",
-  "version": 17,
+  "version": 18,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint carefully, and READ THE Content-Range RESPONSE HEADER ON EVERY CALL: PostgREST truncates every response at 1000 rows and keeps the OLDEST ones, so a cut-short series is indistinguishable from a complete one by its contents alone — `0-999/*` is the only thing that tells you. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -2089,6 +2376,9 @@ SELECT $json${
     "spread": "First column minus second column of the wide matrix, dates aligned."
   },
   "constraints": [
+    "LISTED-COMPANY FINANCIALS ARE FILED, NOT DERIVED. api.financials returns one row per account line exactly as the company filed it; nothing is summed, annualised or restated. Read period_months before comparing two rows: an ITR publishes the SAME account twice under one reference date, once for the three months and once year-to-date, and they are distinguished only by the period span. Adding a 3-month row to a 6-month row double-counts the quarter.",
+    "FINANCIALS DEFAULT TO CONSOLIDATED (scope=con) AND TO THE PERIOD THE DOCUMENT IS FOR (ordem_exerc ULTIMO). The prior-year comparative printed beside it is never returned. When a company re-files, only the newest version of each statement is served and `version` carries it; in company_financials a balance sheet from a different version than the income statement reads NULL rather than being paired across filings.",
+    "A TICKER RESOLVES TO A COMPANY ONLY THROUGH CVM'S PUBLISHED FCA MAP, active listings only — the CNPJ and the trading code arrive on the same filed row. financials('PETR4'), financials('33000167000101') and financials('9512') are the same company. A delisted code resolves to nothing rather than to a guess, and no company↔ticker edge is ever inferred from a name.",
     "Never invent a price, NAV, or identifier match.",
     "Missing observations stay null; do not ffill or interpolate.",
     "freq=day is quotes only. Mix equity with fund fundamentals on freq=month.",
@@ -2194,9 +2484,12 @@ SELECT $json${
     "option_chain": "POST /rest/v1/rpc/option_chain",
     "option_history": "POST /rest/v1/rpc/option_history",
     "option_exercises": "POST /rest/v1/rpc/option_exercises",
-    "termo_history": "POST /rest/v1/rpc/termo_history"
+    "termo_history": "POST /rest/v1/rpc/termo_history",
+    "financials": "POST /rest/v1/rpc/financials",
+    "company_financials": "POST /rest/v1/rpc/company_financials"
   }
-}$json$::jsonb;
+}
+$json$::jsonb;
 $fn$;
 
 COMMENT ON FUNCTION api.catalog() IS
@@ -2240,6 +2533,8 @@ GRANT EXECUTE ON FUNCTION api.coverage()                              TO silo_ap
 GRANT EXECUTE ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.lookup(TEXT)                            TO silo_api;
 GRANT EXECUTE ON FUNCTION api.fund_holdings(TEXT, TEXT, DATE, DATE, TEXT, INT) TO silo_api;
+GRANT EXECUTE ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT) TO silo_api;
+GRANT EXECUTE ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.catalog()                               TO silo_api;
 
 -- Defensive, idempotent no-ops today (silo_api is never directly granted
