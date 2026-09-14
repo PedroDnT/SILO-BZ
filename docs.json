@@ -18,7 +18,7 @@
         "group": "Data",
         "icon": "database",
         "pages": [
-          "docs/DATA_INVENTORY"
+          "api-docs/data-inventory"
         ]
       },
       {
@@ -64,5 +64,15 @@
     "socials": {
       "github": "https://github.com/PedroDnT/SILO-BZ"
     }
-  }
+  },
+  "redirects": [
+    {
+      "source": "/docs/DATA_INVENTORY",
+      "destination": "/api-docs/data-inventory"
+    },
+    {
+      "source": "/api-docs/universe",
+      "destination": "/api-docs/lookup"
+    }
+  ]
 }
