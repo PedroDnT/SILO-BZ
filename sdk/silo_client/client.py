@@ -337,6 +337,58 @@ class SiloClient:
             "p_kind": kind, "p_limit": limit,
         })
 
+    # -- listed companies (CIA Aberta) ---------------------------------------
+
+    def financials(self, id: str, statement: Optional[str] = None,
+                   start: Datish = None, end: Datish = None,
+                   scope: str = "con",
+                   doc_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Filed financial-statement lines for one listed company.
+
+        `id` is a B3 ticker, a CNPJ, or a CVM code — they resolve to the same
+        company through CVM's published FCA map, so the id you price with is
+        the id you read fundamentals with:
+
+            silo.financials("PETR4")                      # every statement
+            silo.financials("PETR4", statement="DRE")     # income statement
+            silo.financials("PETR4", doc_type="dfp")      # annual filings only
+            silo.financials("PETR4", scope="ind")         # individual, not consolidated
+
+        One row per account line, exactly as filed. **Read `period_months`
+        before comparing rows**: a quarterly filing publishes the same account
+        twice under one `ref_date`, once for the three months and once
+        year-to-date, and only that span tells them apart — adding them
+        double-counts the quarter. `version` carries the restatement: only the
+        newest version of each statement is returned.
+        """
+        return self._rpc("financials", {
+            "p_id": id, "p_statement": statement,
+            "p_from": _iso(start), "p_to": _iso(end),
+            "p_scope": scope, "p_doc_type": doc_type,
+        })
+
+    def company_financials(self, id: str, start: Datish = None,
+                           end: Datish = None,
+                           scope: str = "con") -> List[Dict[str, Any]]:
+        """Headline financials for one company, one row per filed period.
+
+        The convenience shape over :meth:`financials`: revenue, gross profit,
+        net income, total assets, equity, net margin and ROE per
+        (document, reference date, period span).
+
+            silo.company_financials("PETR4")
+
+        `roe_pct` is the period's return on equity and is **not** annualised —
+        a three-month row divides one quarter's profit by equity; `period_months`
+        says which span you are looking at. A balance sheet filed under a
+        different version than the income statement reads NULL rather than
+        being paired across filings.
+        """
+        return self._rpc("company_financials", {
+            "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
+            "p_scope": scope,
+        })
+
     # -- typed views (GET resources, not functions) --------------------------
 
     #: The eight published views. PostgREST serves these as filterable

@@ -1,0 +1,137 @@
+---
+title: "Company financials"
+description: "Filed income statements, balance sheets and cash flows for Brazilian listed companies — resolved by ticker, CNPJ or CVM code."
+icon: "building-columns"
+---
+
+Every ITR (quarterly) and DFP (annual) statement CVM publishes, as filed. Two
+endpoints over the same rows: `financials` returns the statement lines long,
+`company_financials` returns the headline lines wide.
+
+<Note>
+  The id you price with is the id you read fundamentals with.
+  `financials("PETR4")`, `financials("33000167000101")` and
+  `financials("9512")` are the same company — a ticker resolves through CVM's
+  published FCA valores-mobiliários map, where the trading code and the CNPJ
+  arrive on the same filed row. Nothing is matched by name. A delisted code
+  resolves to nothing rather than to a guess.
+</Note>
+
+## Read this before comparing two rows
+
+<Warning>
+  **A quarterly filing publishes the same account twice.** Under one
+  `ref_date`, an ITR carries the three-month figure *and* the year-to-date
+  figure, and only the period span tells them apart. Every row carries
+  `period_months` (3, 6, 9, 12 — `null` on a balance sheet, which is a point in
+  time). Adding a 3-month row to a 6-month row double-counts the quarter.
+
+  Nothing here is summed, annualised or reconstructed for you: a non-calendar
+  fiscal year and a restated earlier quarter both break naive quarter-subtraction,
+  so the spans are published and the arithmetic is yours.
+</Warning>
+
+Three more discriminators, all decided for you and all visible in the response:
+
+| Behaviour | Default | Why |
+| --- | --- | --- |
+| `ordem_exerc` | the period the document is **for** | A filing prints the prior-year column beside the current one. Returning it would double every series and date last year's numbers to this year's `ref_date`. |
+| `scope` | `con` (consolidated) | Consolidated and individual are separate filings of the same period. Pass `p_scope: "ind"` for the individual one; they are never merged. |
+| `version` | newest only | A restatement re-files under a higher version and the original rows remain. Only the newest version of each statement is served, and `version` carries which. |
+
+## `financials` — statement lines, long
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/financials" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_id":"PETR4","p_statement":"DRE"}'
+```
+
+Arguments — all optional but `p_id`:
+
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `p_id` | — | ticker, CNPJ (14 digits) or CVM code |
+| `p_statement` | every statement | `DRE` income · `BPA` assets · `BPP` liabilities + equity · `DFC_MD` / `DFC_MI` cash flow · `DMPL` changes in equity · `DRA` comprehensive income · `DVA` value added |
+| `p_from` / `p_to` | last 5 years | window on `ref_date` |
+| `p_scope` | `con` | `con` or `ind` |
+| `p_doc_type` | both | `itr` (quarterly) or `dfp` (annual) |
+
+One row per account line:
+
+```json
+[
+  { "id": "9512", "id_type": "cd_cvm", "ticker": "PETR4",
+    "company": "PETROLEO BRASILEIRO S.A. PETROBRAS",
+    "doc_type": "itr", "statement": "DRE", "scope": "con",
+    "ref_date": "2025-06-30", "period_start": "2025-04-01",
+    "period_end": "2025-06-30", "period_months": 3,
+    "account_code": "3.01", "account_name": "Receita de Venda",
+    "value": 120000000000.00, "version": 1, "source": "cvm" }
+]
+```
+
+`value` is absolute BRL — the publication scale (thousands, millions) is
+applied at ingest, so no caller has to know it.
+
+## `company_financials` — headline lines, wide
+
+One row per (document, reference date, period span), for when you want the
+shape rather than the ledger:
+
+<CodeGroup>
+
+```bash curl
+curl -s -X POST "$SILO_URL/rpc/company_financials" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_id":"PETR4"}'
+```
+
+```python Python
+rows = requests.post(f"{URL}/rpc/company_financials",
+                     headers=H, json={"p_id": "PETR4"}).json()
+```
+
+```javascript JavaScript
+const { data } = await supabase.rpc('company_financials', { p_id: 'PETR4' })
+```
+
+</CodeGroup>
+
+Carries `revenue`, `gross_profit`, `net_income`, `total_assets`, `equity`,
+`net_margin_pct` and `roe_pct` beside the same `period_months`, `scope` and
+`version` columns.
+
+<Warning>
+  `roe_pct` is the **period's** return on equity and is not annualised: a
+  three-month row divides one quarter's profit by equity. `period_months` says
+  which span you are looking at.
+
+  Where a company re-filed only its balance sheet, `total_assets` and `equity`
+  read `null` rather than being paired with an income statement from a
+  different version of the document.
+</Warning>
+
+Banks file a different chart of accounts — net income lands on a different
+account code — and that fallback is applied for you, so `net_income` is
+populated for banks and non-banks alike.
+
+## Freshness
+
+`coverage` carries a `financials` row whose `as_of` is the newest reference
+date any filing has reached. Its `complete_through` is deliberately `null`:
+the completeness model in this warehouse describes fund filing cadence and
+says nothing about companies, and a fabricated completeness date is exactly
+the claim `coverage` exists to prevent.
+
+## Not served here
+
+- **`panel` has no company arm yet.** The panel is one value per
+  `(id, date, metric)`, and a quarterly filing offers two spans under one date;
+  picking one silently is the kind of wrong number this API refuses to make.
+  Use these endpoints for fundamentals and `panel` for prices until the span is
+  settled in the contract.
+- **Per-share figures.** Share counts are a separate filing; nothing here
+  divides by a number it did not read.

@@ -78,6 +78,8 @@ EXPECTED_FUNCTIONS = {
     "api.panel",
     "api.lookup",
     "api.catalog",
+    "api.financials",
+    "api.company_financials",
 }
 
 # Internal helpers: called only from inside SECURITY DEFINER functions, which
@@ -87,6 +89,8 @@ EXPECTED_FUNCTIONS = {
 INTERNAL_FUNCTIONS = {
     "api.caller_tier",
     "api.assert_panel_ids",
+    "api.company_ref",
+    "api.cia_statement_rows",
 }
 
 
