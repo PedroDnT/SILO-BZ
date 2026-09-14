@@ -191,3 +191,38 @@ a query can legitimately be empty — a screen with no current hits, or a feed t
 has not landed yet — drive it from a table that is always populated and `LEFT
 JOIN` the optional data, so the columns come back NULL rather than the result
 coming back empty. `sources/supabase/etf_market.sql` is the worked example.
+
+## Spine rule — where a chart's x-axis ends
+
+Every time-series source is a `generate_series` spine LEFT JOINed to the data
+(zero-row safety: a 0-row source writes a zero-byte parquet and kills the build),
+and no chart sets `xMin`/`xMax`. So **the spine's last period is the x-axis end**,
+and a spine that runs past the data draws months with nothing in them.
+
+A period is drawn only if it is **over** — never the calendar month (or day, or
+year) in progress — **and at least one plotted series has a value there**; a
+stacked or share-of-total chart needs **every** band. In each source the `anchor`
+CTE computes `p_end = least(<completeness bound, where one exists>, max(period)
+of the rows the chart plots)`, the window start is derived from `p_end` (window
+length unchanged), and the data CTE filters on the same bounds. `least()` ignores
+a NULL `max()`, so an empty table still falls back to the bound. Tiles that quote
+one month keep an actual stored period value (`max(period) FILTER (WHERE period
+<= bound)`) so equality joins match whether the table stores month-end or
+first-of-month periods.
+
+Specifics worth knowing:
+
+- `latest_complete_period(entity)` is measured on `fact_fund_monthly` — FIDC on
+  `cvm_fidc_mensal`, FII on `cvm_fii_mensal` `complemento` only. A chart that plots
+  a sibling filing (aging, tranches, tranche flows, `ativo_passivo`) must also cap
+  at that filing's own last month.
+- `latest_complete_period(null)` is the max across families (FI's). A chart that
+  stacks families uses the slowest of FI/FIDC/FII; FIP (Dec-only) and FIAGRO (tiny,
+  may lag by design) never truncate the industry view.
+- `mv_b3_monthly_activity` carries the month in progress; the B3 sources take
+  `max(period)` where `period < date_trunc('month', current_date)`.
+- The monthly BACEN indices publish month M in M+1, so `macro.md` clamps the
+  inflation chart (`cpi_series`) to its own last reading.
+- Deliberate exceptions, allowlisted in `tests/test_dashboard_economic_integrity.py`:
+  `ops_daily_rows` (today's 0 bar is the point) and `securit_maturity_wall` (a
+  forward ladder).
