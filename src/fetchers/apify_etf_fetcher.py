@@ -29,8 +29,15 @@ Daily CVM Ingest #219 (run 34015471961, 2026-09-06) then failed the same way
 on a platform ``ABORTED`` status after ~11 minutes (run ``d2UCTxohVY9IcQX9a``).
 CVM/BACEN/ANBIMA/B3 had already upserted ~3.6M rows. ``ABORTED`` / ``ABORTING``
 are ``ApifyRunAbortedError`` (same skip class): the actor was killed before
-delivering a dataset. An actor that ran and ended ``FAILED``, or that returned
-an empty dataset, still raises a hard ``RuntimeError``.
+delivering a dataset.
+
+Daily CVM Ingest #220 / #221 (runs 34089192930, 34193021487, 2026-09-07/08)
+then failed after the same CVM/BACEN/B3 success on HTTP 403
+``platform-feature-disabled`` / "Monthly usage hard limit exceeded". The
+actor never started — that is ``ApifyUsageLimitError`` (same skip class).
+An actor that ran and ended ``FAILED``, or that returned an empty dataset,
+still raises a hard ``RuntimeError``. Other 403s (for example ``billing``)
+stay hard failures.
 
 Public surface
 --------------
@@ -50,7 +57,8 @@ Configuration (env)
 Data-integrity: a failed run (non-2xx, actor FAILED, or empty dataset)
 RAISES — it never returns a plausible-looking empty/fallback result. Timeouts
 raise ``ApifyRunTimeoutError`` (no rows). Platform abort (``ABORTED`` /
-``ABORTING``) raises ``ApifyRunAbortedError`` (no rows). Parsing/validation
+``ABORTING``) raises ``ApifyRunAbortedError`` (no rows). A monthly usage
+hard-limit 403 raises ``ApifyUsageLimitError`` (no rows). Parsing/validation
 and the DB upsert live in src/pipeline/ingest_etf_market.py.
 """
 
@@ -79,6 +87,8 @@ _DEFAULT_ACTOR = "apify~playwright-scraper"
 _DEFAULT_TIMEOUT_SECS = 2400
 _APPROVAL_ERROR_TYPE = "full-permission-actor-not-approved"
 _TIMEOUT_ERROR_TYPE = "run-timeout-exceeded"
+_USAGE_LIMIT_ERROR_TYPE = "platform-feature-disabled"
+_USAGE_LIMIT_MESSAGE = "usage hard limit"
 _TERMINAL_STATUSES = frozenset(
     {"SUCCEEDED", "FAILED", "TIMING-OUT", "TIMED-OUT", "ABORTING", "ABORTED"}
 )
@@ -121,6 +131,18 @@ class ApifyRunAbortedError(ApifyScrapeUnavailableError):
     CVM/BACEN/B3 rows then exited 1 on ``ended ABORTED`` after ~11 minutes
     (run d2UCTxohVY9IcQX9a), which skipped ANALYZE and the analytical layer.
     Same skip class as an unset token, a 403, or a timeout.
+    """
+
+
+class ApifyUsageLimitError(ApifyScrapeUnavailableError):
+    """Apify refused to start the actor because the account hit a usage cap.
+
+    Distinct from a scrape that returned bad data: the actor never started.
+    Daily CVM Ingest #220 / #221 (runs 34089192930, 34193021487) ingested
+    ~3.6M CVM/BACEN/B3 rows then exited 1 on HTTP 403
+    ``platform-feature-disabled`` / "Monthly usage hard limit exceeded",
+    which skipped ANALYZE and the analytical layer. Same skip class as an
+    unset token. Other 403s (for example ``billing``) stay hard failures.
     """
 
 
@@ -331,6 +353,13 @@ def apify_http_error(actor: str, code: int, detail: str) -> RuntimeError:
             f"approval before it can run. Approve at {where} — until then "
             f"the scrape cannot start (HTTP {code})."
         )
+    if code == 403 and _is_usage_limit(detail):
+        return ApifyUsageLimitError(
+            f"Apify actor {actor} cannot start the etfsbrasil scrape: "
+            f"account usage limit exceeded (HTTP {code} "
+            f"{_USAGE_LIMIT_ERROR_TYPE}). The scrape is optional — daily "
+            f"CVM ingest must not fail because of it. Detail: {detail}"
+        )
     if code == 408 or _TIMEOUT_ERROR_TYPE in detail:
         return ApifyRunTimeoutError(
             f"Apify actor {actor} did not finish within the API wait "
@@ -354,19 +383,39 @@ def _unwrap_run(payload: Any) -> Dict[str, Any]:
 
 
 def _approval_url(detail: str) -> Optional[str]:
-    try:
-        payload = json.loads(detail)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(payload, dict):
-        return None
-    err = payload.get("error") or {}
-    if not isinstance(err, dict):
-        return None
-    if err.get("type") != _APPROVAL_ERROR_TYPE:
+    err = _apify_error(detail)
+    if not err or err.get("type") != _APPROVAL_ERROR_TYPE:
         return None
     data = err.get("data") or {}
     if not isinstance(data, dict):
         return None
     url = data.get("approvalUrl")
     return url if isinstance(url, str) and url else None
+
+
+def _is_usage_limit(detail: str) -> bool:
+    """True for Apify 403 platform-feature-disabled / usage hard limit.
+
+    Matches the JSON error type from Daily CVM Ingest #220/#221, and the
+    message text if the body is not JSON. Does not match other 403s
+    (for example ``billing``).
+    """
+    err = _apify_error(detail)
+    err_type = err.get("type") if err else None
+    err_msg = err.get("message") if err else None
+    if err_type == _USAGE_LIMIT_ERROR_TYPE:
+        return True
+    if isinstance(err_msg, str) and _USAGE_LIMIT_MESSAGE in err_msg.lower():
+        return True
+    return _USAGE_LIMIT_MESSAGE in detail.lower()
+
+
+def _apify_error(detail: str) -> Dict[str, Any]:
+    try:
+        payload = json.loads(detail)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    err = payload.get("error") or {}
+    return err if isinstance(err, dict) else {}
