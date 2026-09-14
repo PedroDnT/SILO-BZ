@@ -24,6 +24,10 @@ title: Brazilian Fund Industry Data
   month" tile built on it would be wrong for eleven months of twelve.
 -->
 
+```sql build_stamp
+select * from supabase.build_stamp
+```
+
 ```sql fund_headline
 select * from supabase.fund_headline
 ```
@@ -61,6 +65,7 @@ select * from supabase.row_counts
 <BigValue data={fund_headline} value=investor_positions label="Quotaholder Positions" fmt=num0/>
 <BigValue data={ops_health} value=rows_7d label="Rows Ingested (7d)" fmt=num0/>
 <BigValue data={ops_health} value=hours_since_last_run label="Hours Since Last Ingest" fmt=num1/>
+<BigValue data={build_stamp} value=built_at_utc label="Snapshot Built"/>
 
 > Net assets are each fund's most recent reported `vl_patrim_liq`, summed — so
 > the total is latest-available per fund, not an as-of-one-date figure. Quotaholder
@@ -68,7 +73,9 @@ select * from supabase.row_counts
 > in three funds counts three times, and FIDC and FIP report no holder count at
 > all. If **Hours Since Last Ingest** is much above 30, the daily cron has stopped
 > and every number on the site is older than it looks — check
-> [Pipeline Ops](/ops).
+> [Pipeline Ops](/ops). **Snapshot Built** is when this site was last extracted
+> from the warehouse: the site is a build-time snapshot, rebuilt after every
+> successful daily ingest, so nothing here is newer than that stamp.
 
 ---
 

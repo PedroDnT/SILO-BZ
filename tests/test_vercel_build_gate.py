@@ -230,8 +230,14 @@ def test_vercel_json_wires_the_gate():
     assert "npm run sources" in cfg["buildCommand"]
 
 
-def test_daily_ingest_dashboard_rebuild_is_dispatch_only_opt_in():
-    """A fill or scheduled ingest must not start a competing dashboard build."""
+def test_daily_ingest_rebuilds_dashboard_after_scheduled_runs():
+    """The snapshot refreshes after every successful scheduled ingest (2026-09-14).
+
+    Until then the hook was dispatch-only opt-in and the published site stayed
+    as old as the last merge that touched dashboard/. Manual dispatches keep
+    the opt-in: a re-run or an experiment must not publish by accident, and a
+    failed run must never publish a half-written warehouse.
+    """
     text = (ROOT / ".github/workflows/daily_ingest.yml").read_text()
     wf = yaml.safe_load(text)
     steps = wf["jobs"]["ingest"]["steps"]
@@ -239,6 +245,8 @@ def test_daily_ingest_dashboard_rebuild_is_dispatch_only_opt_in():
     assert hook, f"no deploy-hook step in: {[s.get('name') for s in steps]}"
     step = hook[0]
     condition = step.get("if", "")
+    assert "success()" in condition, "a failed ingest must not publish"
+    assert "github.event_name == 'schedule'" in condition
     assert "github.event_name == 'workflow_dispatch'" in condition
     assert "rebuild_dashboard == 'true'" in condition
     assert "rebuild_dashboard:" in text

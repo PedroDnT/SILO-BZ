@@ -49,6 +49,10 @@ title: Pipeline Ops
   "2,026".
 -->
 
+```sql build_stamp
+select * from supabase.build_stamp
+```
+
 ```sql ops_health
 select * from supabase.ops_health
 ```
@@ -95,6 +99,7 @@ select * from supabase.ops_recent_runs
 <BigValue data={ops_health} value=errors_7d label="Errors (7d)" fmt=num0/>
 <BigValue data={ops_health} value=stuck_running label="Stuck 'running'" fmt=num0/>
 <BigValue data={ops_health} value=rows_7d label="Rows Upserted (7d)" fmt=num0/>
+<BigValue data={build_stamp} value=built_at_utc label="Snapshot Built"/>
 
 > **How to read the health strip.** The cron runs daily at 06:00 UTC, so
 > `Hours Since Last Run` above ~30 means the schedule itself has stopped — the

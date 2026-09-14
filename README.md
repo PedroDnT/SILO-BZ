@@ -3,7 +3,7 @@
 > **Read API:** [https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/)
 > — schema `api`, anon key, open read. Caller docs: [https://octo-98895abd.mintlify.site](https://octo-98895abd.mintlify.site)
 > (source: [`api-docs/`](api-docs/quickstart.mdx)).
-> **Dashboard:** [https://iliquid-nightly.vercel.app/](https://iliquid-nightly.vercel.app/)
+> **Dashboard:** [https://silo-bz.vercel.app/](https://silo-bz.vercel.app/)
 > — Evidence static snapshot. **SILO** is this repo: GitHub Actions ingest into Supabase,
 > plus schema `api`. See [What's next](#whats-next) for remaining ops.
 
@@ -31,7 +31,7 @@ Supabase. SILO (this repo) writes and serves; the dashboard only reads at build 
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
 | **Supabase Data API** | PostgREST over schema `api` at [https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/), anon key, public read | live public path                         |
 | **`serve/`**          | local read-only Flask adapter (`python -m serve.app`)                                                                                                        | for notebooks and development            |
-| **Dashboard**         | Evidence.dev at [https://iliquid-nightly.vercel.app/](https://iliquid-nightly.vercel.app/) (`dashboard/` in this repo)                                       | static snapshot; `webapp/` is CIA Aberta |
+| **Dashboard**         | Evidence.dev at [https://silo-bz.vercel.app/](https://silo-bz.vercel.app/) (`dashboard/` in this repo)                                       | static snapshot; `webapp/` is CIA Aberta |
 
 Docs: [https://octo-98895abd.mintlify.site](https://octo-98895abd.mintlify.site)
 (Mintlify, source in [`api-docs/`](api-docs/quickstart.mdx); agents: [`api-docs/agents.mdx`](api-docs/agents.mdx)) for callers,
@@ -417,13 +417,13 @@ rows do not.
 - Required GitHub secret: `POSTGRES_URL` (Supabase connection string with `sslmode=require`).
 
 The read-only **Evidence.dev dashboard** lives at
-[https://iliquid-nightly.vercel.app/](https://iliquid-nightly.vercel.app/).
+[https://silo-bz.vercel.app/](https://silo-bz.vercel.app/).
 Source is `dashboard/` in this repo; it only reads from Supabase. **SILO** is the
 ingest + store + schema `api` serve: GitHub Actions (`daily_ingest.yml` /
 `backfill.yml`) write Postgres. The Vercel _project_ in the Deloslabs team is
 named `silo` (that is the GitHub integration and the deploy-hook target) — the
-URL people open is `iliquid-nightly.vercel.app`. It can also be served as a
-static build on any static host.
+URL people open is `silo-bz.vercel.app`; the auto alias `silo-deloslabs.vercel.app`
+is not the public URL. It can also be served as a static build on any static host.
 
 The dashboard is a **static snapshot, not a live view**. `npm run sources` extracts
 Supabase into parquet at build time, and the browser then queries that parquet through
@@ -436,10 +436,11 @@ consequences worth knowing:
   25–45 minutes, so rebuilding for a tests-only commit burned that for a byte-identical
   site — and concurrent builds were slow enough to block the schema apply's `ALTER TABLE`
   until Postgres killed it.
-- **Data refreshes are explicit.** Scheduled ingest and historical fills never POST the
-  Vercel hook. Dispatch **Daily CVM Ingest** with `rebuild_dashboard=true` after the
-  database is ready for a 25–45 minute Evidence extraction; otherwise the published
-  snapshot remains unchanged.
+- **Data refreshes are automatic, once a day.** Every successful *scheduled* run of
+  **Daily CVM Ingest** POSTs the Vercel deploy hook after the analytical refresh, so the
+  published snapshot is never more than a day behind the warehouse (the page header
+  shows when it was built). Manual dispatches and historical fills leave Vercel alone
+  unless `rebuild_dashboard=true`.
 
 Schema applies run with `lock_timeout` and retries (`.github/actions/apply-schema`): a
 blocked `ALTER TABLE` gives up in seconds instead of queueing and blocking every reader
@@ -495,8 +496,9 @@ same for everyone. Google is configured but not yet enabled.
 
 - **Historical backfills** for `securit` and `fidc` — the daily window only heals the
   trailing months, so deep history for the recently-fixed field maps needs `backfill.yml`.
-- **`VERCEL_DEPLOY_HOOK_URL`** — set. Used only when a manual Daily Ingest dispatch
-  sets `rebuild_dashboard=true`; scheduled ingest and fills leave Vercel alone.
+- **`VERCEL_DEPLOY_HOOK_URL`** — set. Fired after every successful scheduled Daily
+  Ingest, and after a manual dispatch that sets `rebuild_dashboard=true`; fills never
+  touch Vercel. Must be a deploy hook of the `silo` project on `main`.
 - **`APIFY_TOKEN`** — set. The ETF market scrape self-skips without it, and also
   skips (does not fail the daily run) when Apify returns
   `full-permission-actor-not-approved` or HTTP 408 `run-timeout-exceeded`.
