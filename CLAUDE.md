@@ -18,7 +18,8 @@ SQL smoke → pool → honest returns → lookup → privileges → HTTPS) is
 `docs/planning/SERVING.md`. Operators trigger ingest with GitHub Actions or
 `python -m src.pipeline.run_daily` / `run_backfill` (optional `--entity`).
 
-> Read `README.md` for the full operator guide, `docs/DATABASE_MAINTENANCE.md` for the
+> Read `README.md` for what SILO is and how it works (operator commands are folded at
+> its end and in `scripts/README.md`), `docs/DATABASE_MAINTENANCE.md` for the
 > ongoing DB upkeep runbook (checks, cadence, audit-log triage, partition rollover,
 > troubleshooting), and `docs/planning/CHANGELOG.md` for the
 > workstream history. A previous version had multiple FastAPI
