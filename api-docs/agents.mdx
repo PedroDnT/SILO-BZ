@@ -41,6 +41,10 @@ caller credential.
 | Query timeout | 3s | 8s |
 | Rows per response | 1000 | **1000 — same** |
 
+The same table as numbers — with `option_exercises`, `fund_holdings` and the
+detection rule for the row cap — is the catalog's `limits` block
+(`POST /rpc/catalog` → `.limits`), so nothing here has to be parsed out of prose.
+
 Anonymous is sized for discovery: read the catalog, check coverage, resolve a
 name, sample an instrument or two. Signing in is sized for actual work — a
 handful of assets over real history, which is what a backtest or a screen

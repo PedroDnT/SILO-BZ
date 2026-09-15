@@ -44,7 +44,22 @@ try:
     rows = silo.quote_history("PETR4", start="2019-01-01")
 except SiloTruncated as e:
     print(e.returned, "of", e.total)     # 1000 of 4382
+    print(e.rows[-1]["trade_date"])      # where the cut fell — inspect, never use
 ```
+
+**Views are the one surface that pages**, and the client knows it. `view()`
+with an explicit `limit`/`offset` returns that page whatever the total;
+`view_all()` walks every page for you (an `order` is required — offset paging
+without one can duplicate or drop a row at a boundary without saying so):
+
+```python
+fidcs = silo.view_all("funds", entity_type="eq.fidc", order="cnpj.asc",
+                      select="cnpj,fund_name,first_period,last_period")
+page2 = silo.view("funds", order="cnpj.asc", limit=1000, offset=1000)
+```
+
+A `view()` call with no `limit` that lands on the 1,000-row cap still raises:
+that is the silent cut, not a page.
 
 **Signing in raises four ceilings, and not the fifth.** Pass a user JWT as
 `token=` (or set `SILO_TOKEN`) and the request moves from the anonymous role to
@@ -61,7 +76,14 @@ except SiloTruncated as e:
 That last row is not a typo. `db-max-rows` is a server-wide setting applied
 identically to every caller; no tier changes it. Get a token from the sign-in
 page in the docs, and check `silo.tier` if you need to know which ceiling you
-are under.
+are under. The same table, as numbers, is `silo.limits()` — read from the
+catalog's `limits` block, which a test pins to the SQL that enforces it.
+
+**The client tells you when it is out of date.** `catalog()` compares the
+server's catalog version with the one this client was written against and
+warns (`SiloCatalogDrift`) on a mismatch — a newer server has endpoints or
+limits the wrappers do not know; an older one lacks some they call. It never
+refuses: everything read off the catalog itself keeps working.
 
 ## The contract, in client form
 
