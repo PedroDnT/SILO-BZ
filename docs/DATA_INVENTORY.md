@@ -224,24 +224,64 @@ owner's call and not proposed as a migration in this release.
 
 ## 3. What we ingest and don't serve
 
-The warehouse is wider than the API. This is the honest gap.
+The warehouse is wider than the API. This is the honest gap, one row per held
+relation, checked against `19_api_contract.sql` on 2026-09-15 (every `api.*`
+object and what it reads). "Indirect" means the table feeds `dim_fund` /
+`fact_fund_monthly` and so reaches `funds`, `fund_nav` and `panel` without an
+endpoint of its own.
 
-| Held                          | Rows                                        | Served through `api`?                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ----------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cia_*` (5 tables, ~31M rows) | listed-company financials and events | **Partly.** `api.financials` and `api.company_financials` serve the filed statements (ITR + DFP, every statement family, consolidated or individual), resolved by ticker / CNPJ / CVM code through the published FCA map; `coverage` carries a `financials` row. Not served: `cia_event` (IPE filings), `cia_filing` metadata, and a `panel` arm — an ITR files a 3-month AND a year-to-date figure under one date, and the panel is one value per (id, date, metric). |
-| `cvm_securit_*` (4 tables)    | CRI/CRA vehicles, series, flows, statements | **No.** Deliberate: CRI/CRA are notes, not funds, and would not fit the fund shape.                                                                                                                                                                                                                                                                                                                                                                                  |
-| `cvm_fi_balancete`            | ~111M rows, fund accounting                 | **No.** Largest table in the warehouse; nothing reads it.                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `cvm_fi_cda_acoes` / `_cotas` | fund holdings                               | **Yes**, via `api.fund_holdings` (catalog v17) — both directions: what a fund holds, and which funds hold a ticker.                                                                                                                                                                                                                                                                                                                                                  |
-| `cvm_fi_cda_debentures`       | fund → corporate-credit holdings            | **Yes**, via `api.fund_debentures` (catalog v21): its own shape (issuer, maturity, rate structure), by holder CNPJ or by issuer — a listed ticker/CVM code through the FCA map, or any CPF/CNPJ. |
-| `b3_corporate_event`          | splits, bonuses                             | **No.** Held as published. The convention was measured on 2026-08-31 (705 events with a print on both sides): `DESDOBRAMENTO`/`BONIFICACAO` fit `1 + factor/100` to within 0.4% at the median. Restricting to events whose two prints are consecutive sessions raises the ±5% hit rate to 82.6%/86.3% — a confirmed improvement that still misses the 90% bar — and `GRUPAMENTO` never exceeds 42%. So `adjusted` stays `FALSE`. See `docs/planning/INSTRUMENTS.md`. |
-| `cvm_fii_imovel`              | FII property register                       | **No.**                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `bacen_expectativas`          | Focus survey                                | **No.** `bacen_sgs` reaches `panel`; the survey does not.                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `anbima_class_monthly`        | class benchmarks                            | **Yes**, via `api.anbima_classes` (catalog v20): AUM, net flows, returns and fund counts per class, ANBIMA type or industry total, as published. No fund↔class mapping exists, so no panel arm and no name join.                                                                                                                                                                                                                                                                |
+### Served
 
-Two are structural rather than accidental: the `cia_*` tables are a different
-universe (companies, not funds) and want their own endpoints rather than being
-forced through `panel`; the securitization tables are notes and would need a
-third id type.
+| Held | Rows | Through `api` |
+| --- | --- | --- |
+| `cvm_fi_diario`, `cvm_fidc_mensal`, `cvm_fii_mensal`, `cvm_fiagro_mensal`, `cvm_fip_periodic`, `cvm_fund_registry` | the fund universe and its monthly fundamentals | **Indirect**, via `dim_fund` / `fact_fund_monthly`: `funds`, `fund_profile`, `fund_nav`, `search_funds`, `panel` (fund arms), `lookup`, `coverage`. No table is served raw. |
+| `b3_cotahist` | the COTAHIST tape | **Yes**: `quotes` and the five typed views, `auctions`, `quote_history`, `quote_latest`, `option_chain`, `option_history`, `option_exercises`, `termo_history`, `panel` (quote arms). |
+| `cia_account`, `cia_company`, `cia_ticker` | listed-company statements and the FCA ticker map | **Yes**: `financials`, `company_financials`, `lookup` (company rows with `tickers`), `fund_debentures` (`issuer_tickers`). `cia_filing` reaches `coverage` only (its `financials` row). |
+| `cvm_fi_cda_acoes` / `_cotas` | fund holdings, CDA blocks 4 and 2 | **Yes**, via `fund_holdings` — both directions. |
+| `cvm_fi_cda_debentures` | fund → corporate-credit holdings, block 6 | **Yes**, via `fund_debentures`: its own shape (issuer, maturity, rate structure), by holder CNPJ or by issuer. |
+| `anbima_class_monthly` | ANBIMA class benchmarks | **Yes**, via `anbima_classes`: AUM, flows, returns, fund counts per class / type / total, as published. |
+
+### Held and not served — candidates
+
+Each of these is a real gap a caller could reasonably want; none has an
+endpoint. Listed with what serving it would take.
+
+| Held | Rows | Why not yet / what it would take |
+| --- | --- | --- |
+| `bacen_sgs`, `bacen_ptax`, `bacen_expectativas` | SELIC, CDI, IPCA and the other SGS series; PTAX; the Focus survey | **No.** Ingested daily (`run_daily.py`, 30-day refresh) and read only by the `/macro` dashboard page and by `mv_savings_flow_monthly`, which is revoked from every client role. Nothing in schema `api` reads a `bacen_*` table — `panel` has no macro arm. Candidate: a `macro_series(p_code, p_from, p_to)` function over `bacen_sgs` (the series code is the id), and PTAX as a second function; the Focus survey needs its own shape (indicator × horizon × statistic). |
+| `cvm_fidc_tranche`, `cvm_fidc_tranche_flows` | per-tranche promised vs realised performance; subscriptions / redemptions per tranche | **No.** Read by `/fidc` through `vw_fidc_tranche_detail` and `fidc_tranche_performance`. Candidate: `fidc_tranches(p_cnpj, p_from, p_to)` in the `fund_nav` style — the CNPJ is already an id the API resolves. |
+| `cvm_fidc_aging` | receivables by aging bucket per FIDC | **No.** Read by `/fidc` and `fraud_screen_evergreen_aging`. Candidate: `fidc_aging(p_cnpj, …)`, same shape argument as tranches. `panel`'s `delinquency` metric is the total only. |
+| `cvm_fi_perfil` | FI investor mix (retail / institutional / …) and single-holder concentration | **No.** Read by `/fi` only. Candidate: `fund_investors(p_cnpj, …)`. |
+| `cvm_fii_periodic`, `cvm_fii_imovel` | FII quarterly/annual filings; the property register | **No.** `cvm_fii_periodic` is read by `/fii`; `cvm_fii_imovel` by nothing. Candidate: `fii_properties(p_cnpj)` — the register is the one FII fact with no monthly counterpart. |
+| `cvm_securit_*` (4 tables) | CRI/CRA vehicles, series, flows, statements | **No**, and structural: CRI/CRA are notes, not funds, and would need a third id type (the securitiser's CNPJ plus a series key). Read by `/securit` and `fraud_screen_overdue_securit`. |
+| `cia_event` | IPE filings and fatos relevantes | **No.** Read by `webapp/` only. Candidate: `company_events(p_id, p_from, p_to)` — the resolver `api.company_ref` already exists. |
+| `etf_market_snapshot`, `cvm_etf_registry` | scraped ETF NAV / price / quotaholders; the ETF registry | **No.** The registry is used only as an *exclusion* filter in `dim_fund`; the snapshot is read by `/etf` through `etf_market_latest`. Post-CVM-175 ETFs have no monthly CVM row, so this is the only ETF fundamentals path. Candidate: `etf_snapshot(p_ticker)`. |
+| `b3_corporate_event` | splits, bonuses, groupings | **No.** Held as published; `adjusted` stays `FALSE` everywhere. The convention was measured on 2026-08-31 (705 events with a print on both sides): `DESDOBRAMENTO`/`BONIFICACAO` fit `1 + factor/100` to within 0.4% at the median; consecutive-session pairs hit ±5% only 82.6%/86.3% of the time, and `GRUPAMENTO` never exceeds 42%. Below the 90% bar, so no adjusted series. See `docs/planning/INSTRUMENTS.md`. Candidate: serve the events themselves (`corporate_events(p_ticker)`) without applying them. |
+| `cvm_fi_balancete` | ~111M rows, fund accounting | **No.** Largest table in the warehouse; nothing reads it, including the dashboard. Deliberate until a question needs it. |
+| `cvm_fi_cda` | CDA header block (portfolio totals per fund-month) | **No.** Blocks 4, 2 and 6 are served; the header is read by nothing. |
+
+### Not served by design
+
+| Held | Why |
+| --- | --- |
+| `cvm_ingest_log` | The audit table. Operator-only (`12_grants_and_rls.sql`); `/ops` reads it through the build-time connection, never a client role. |
+| `mv_savings_flow_monthly` / `api.mv_savings_flow_monthly` | Reproduced as-found so CASCADE recreates cannot destroy it; revoked from `anon` and `authenticated` in both schemas. Not in the catalog, not documented. |
+| `anbima_etf_class_monthly` | An ETF-only compatibility **view** over `anbima_class_monthly`; `anbima_classes` with `p_category = 'ETF'` is the served form. |
+| `dim_*`, `fact_security_monthly`, `vw_*`, `mv_b3_monthly_activity`, `instrument_activity`, `etf_daily`, `etf_latest`, `etf_market_latest` | Analytical-layer objects the dashboard reads; the API reads what it needs through them (`dim_fund`, `fact_fund_monthly`, `vw_b3_instrument_typed`, `vw_company_ticker`) and never exposes them as resources. |
+
+### Two things the audit found beside the tables
+
+- **`coverage()` has no row for holdings or debentures.** `fund_holdings` and
+  `fund_debentures` are served and documented, but nothing tells a caller how far
+  CDA data goes. Until a row exists, take the freshness from the rows themselves
+  (`ORDER BY period DESC LIMIT 1`) or from `/ops`. A row would be read from
+  `cvm_ingest_log` (the CDA slices' last `ok`), not from a `MAX(period)` over the
+  holdings tables inside the anonymous budget.
+- **The `fraud_screen_*`, `fund_performance_*`, `etf_*` and ranking functions live
+  in schema `public` with `GRANT EXECUTE … TO anon, authenticated`.** They are
+  unreachable only because `public` is not in Supabase's exposed-schemas list, not
+  because the grants are gone. Schema `api` is the whole *exposed* surface; the
+  grants are a defence-in-depth gap worth closing.
 
 ---
 
