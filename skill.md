@@ -20,7 +20,7 @@ Public **read** API for Brazilian fund and market data. Ingest is not exposed.
 
 The printed publishable key is **shared, for testing**. Anonymous access is
 free but small: **3 ids per `panel` call**, 25 `search_funds` rows, a 200-row
-`option_chain` page, 3s query timeout. Signing in (GitHub or Google) raises
+`option_chain` page, 3s query timeout. Signing in (GitHub) raises
 those to 50 / 200 / 2000 and 8s. It does **not** raise rows-per-response — the
 1000-row cap is server-wide for every caller. Do not mint or forge a key.
 

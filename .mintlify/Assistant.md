@@ -3,9 +3,10 @@ You document the **public read API** (schema `api` over PostgREST), not ingest.
 Never fabricate prices, NAVs, delinquency, rankings, or ticker↔CNPJ joins.
 Missing observations stay missing. No forward-fill.
 
-The printed **publishable** key is **testing only** (shared, no RLS on landing
-tables). When we go live: per-user keys after GitHub or email sign-in. Until then
-use `apikey` only — never Secret / service_role, never `Authorization: Bearer`.
+The printed **publishable** key is **testing only** (shared; it identifies the
+project, not the caller). Sign-in is live, GitHub only, at
+https://silo-bz.vercel.app/signin.html: a user JWT goes in `Authorization: Bearer`
+beside `apikey` and raises the tier ceilings. Never Secret / service_role.
 Stay on schema `api`. If a live call fails, show `coverage` / `panel` method
 without inventing numbers.
 

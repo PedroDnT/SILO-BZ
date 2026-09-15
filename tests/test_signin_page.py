@@ -57,10 +57,13 @@ def test_no_secret_key_is_ever_embedded(html: str):
         assert forbidden not in html, f"{forbidden!r} must never appear in a browser-served page"
 
 
-def test_both_providers_are_wired(html: str):
+def test_github_is_the_only_provider_wired(html: str):
+    """Google was never enabled in Supabase Auth; a button that fails on click
+    is worse than no button. GitHub is the one provider, and the page must
+    not grow a second one silently."""
     assert "signInWithOAuth" in html
-    for provider in ("github", "google"):
-        assert f'signIn("{provider}")' in html, f"{provider} sign-in is not wired to a button"
+    assert 'signIn("github")' in html, "github sign-in is not wired to a button"
+    assert "google" not in html.lower(), "a Google sign-in is offered but no provider is enabled"
 
 
 def test_auth_library_is_pinned_to_an_exact_version(html: str):

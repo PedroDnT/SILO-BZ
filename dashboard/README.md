@@ -4,7 +4,7 @@ Evidence.dev analytics dashboard backed by the Supabase Postgres pipeline.
 
 ## Pages
 
-Thirteen routes in three groups. `/` is the entry point: it carries the headline
+Fifteen routes in three groups. `/` is the entry point: it carries the headline
 figures, a "start here" reading path, and the grouped index below. Evidence builds
 the nav automatically from the file stems, so the grouping lives in `index.md`, in
 the cross-links between pages, and in the page titles — not in config.
@@ -28,6 +28,7 @@ the cross-links between pages, and in the page titles — not in config.
 | FII Market          | `/fii`     | FII vs FIAGRO net assets, yield distribution, top payers, filing coverage, payout coverage, property explorer                                 |
 | Securitização       | `/securit` | CRI/CRA/OTS reported value, maturity wall, payment waterfall, ratings, subordination, distressed series                                       |
 | ETF                 | `/etf`     | ETF universe by provider / segment / index from `cvm_etf_registry`, plus the scraped market snapshot (NAV/return largely absent post-CVM-175) |
+| B3 Markets          | `/markets` | B3 tape as a market: monthly traded volume (standard vs odd lot), volume by instrument type, most traded tickers over 90 days, options activity — all from `b3_cotahist`, unadjusted |
 
 **Context and scrutiny** — what the numbers should be read against, and whether they landed.
 
@@ -35,11 +36,12 @@ the cross-links between pages, and in the page titles — not in config.
 | ------------------ | ------------- | --------------------------------------------------------------------------------------------------------- |
 | Macro Context      | `/macro`      | SELIC / CDI / IPCA / IGP-M series, PTAX FX and spreads, BACEN Focus consensus + dispersion, SGS inventory |
 | Suspicious Screens | `/suspicious` | Zombie growth, evergreen aging, overdue securit series, captive vehicles — with thresholds stated         |
+| Dormant Funds      | `/dormant`    | Funds with capital parked for 36 months (definition stated first), where the money stands still, by administrator, and the empty shells |
 | Pipeline Health    | `/ops`        | Ingest freshness per entity, rows/day, status breakdown, table freshness, coverage, audit-log triage      |
 
 ### Page conventions
 
-Applied uniformly across all thirteen pages, so a reader who learns them once can
+Applied uniformly across all fifteen pages, so a reader who learns them once can
 read any page:
 
 - **Structure.** Frontmatter `title` matches the `# H1` exactly. A `>` blockquote
