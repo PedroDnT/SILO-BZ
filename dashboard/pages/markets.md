@@ -1,6 +1,7 @@
 ---
 title: B3 Markets
 hide_title: true
+sidebar_position: 3
 ---
 
 <!--

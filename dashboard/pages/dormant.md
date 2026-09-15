@@ -1,6 +1,7 @@
 ---
 title: Dormant Funds
 hide_title: true
+sidebar_position: 13
 ---
 
 <!--
