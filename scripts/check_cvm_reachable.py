@@ -37,6 +37,7 @@ because a loaded CVM is still a working CVM.
 from __future__ import annotations
 
 import argparse
+import socket
 import sys
 import time
 import urllib.error
@@ -48,6 +49,25 @@ import urllib.request
 DEFAULT_URL = (
     "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_2019.zip"
 )
+
+# IPv4 ONLY, like the fetcher it stands in for. dados.cvm.gov.br publishes an
+# AAAA record (2804:3e68:170::66, seen 2026-09-15) and GitHub-hosted runners
+# have no IPv6 route. urllib tries every address getaddrinfo returns and
+# reports the LAST failure, so on 2026-09-14 and -15 the nightly died on
+# "[Errno 101] Network is unreachable" — the IPv6 attempt's error — while the
+# real answer (CVM refusing the runner's IPv4, the 2026-08-29 failure) was
+# never printed. src/fetchers/cvm_fetcher.py resolves A records only
+# (family=socket.AF_INET), so this probe must ask the same question it does.
+# Stdlib only (the preflight runs before pip install), hence the module-level
+# override rather than the fetcher's dnspython resolver.
+_system_getaddrinfo = socket.getaddrinfo
+
+
+def _ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    return _system_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+
+
+socket.getaddrinfo = _ipv4_getaddrinfo
 
 
 def probe(url: str, timeout: float, attempts: int) -> int:
@@ -77,7 +97,7 @@ def probe(url: str, timeout: float, attempts: int) -> int:
 
     print(
         "CVM UNREACHABLE from this runner — connect-level failure, not a missing "
-        f"file. Last error: {last}\n"
+        f"file (IPv4 only, as the fetcher connects). Last error: {last}\n"
         "Every download in this dispatch goes to this host, so the run would "
         "spend its whole timeout proving the same refusal. Re-dispatch to draw a "
         "fresh runner IP; CVM being up from elsewhere does not mean it is up "
