@@ -81,6 +81,7 @@ EXPECTED_FUNCTIONS = {
     "api.financials",
     "api.company_financials",
     "api.anbima_classes",
+    "api.fund_debentures",
 }
 
 # Internal helpers: called only from inside SECURITY DEFINER functions, which
@@ -722,6 +723,7 @@ def test_catalog_limits_are_the_sql_tier_clamps():
     assert clamp("api.option_chain") == (anon["option_chain_rows"], auth["option_chain_rows"])
     assert clamp("api.option_exercises") == (anon["option_exercises_rows"], auth["option_exercises_rows"])
     assert clamp("api.fund_holdings") == (anon["fund_holdings_rows"], auth["fund_holdings_rows"])
+    assert clamp("api.fund_debentures") == (anon["fund_debentures_rows"], auth["fund_debentures_rows"])
 
     limits = catalog_payload()["limits"]
     assert limits["sql_sentinel"] == {**limits["sql_sentinel"], "series": SERIES_CAP, "panel": PANEL_CAP}
