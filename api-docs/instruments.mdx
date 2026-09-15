@@ -14,9 +14,14 @@ split by instrument type, so you can ask for one class without filtering client-
 | `GET /units` | `unit` | Units — bundled share packages (`especi` `UNT*`) |
 | `GET /fund_quotas` | `fund_quota` | Listed fund quotas: ETFs, FIIs and other `CI*` paper |
 | `GET /cash_securities` | `cash_security` | The residual: ESPECI codes none of the named types cover. Subscription rights (`right`), bonus rights (`bonus`) and index lines (`index`) were split out of this bucket in catalog v12 and are no longer here |
+| `GET /auctions` | `auction` | **Not a cash instrument type but the same view family:** auction prints (`tpmerc` `017`, leilão) — one-off event rows, ~210 on the whole 2019–2026 tape. Same OHLCV/identity columns as `quotes`, unadjusted, straight from COTAHIST. Never compute returns over them; they are events, not a series |
 
 The type comes from `vw_b3_instrument_typed`, which classifies **only** from B3's published
 `TPMERC` and `ESPECI`. Nothing is inferred from a ticker's shape.
+
+`auctions` is filtered by `tpmerc` alone (`017`), so it carries no `lot`, `share_class`
+or `fund_type`; it is listed here because it is the last of the eight views and had no
+page of its own.
 
 `fund_quotas` rows carry **`fund_type`** — `etf` | `fii` | `fidc` | `fiagro` — derived
 from B3's published CODBDI board code (codbdi 14 → etf, 05/12 → fii, 13 → fiagro;
