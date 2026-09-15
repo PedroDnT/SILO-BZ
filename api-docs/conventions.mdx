@@ -35,11 +35,23 @@ header, and the request moves from `anon` to `authenticated`:
 | `panel` ids per call | 3 | 50 |
 | `search_funds` rows | 25 | 200 |
 | `option_chain` rows | 200 | 2,000 |
+| `option_exercises` rows | 500 | 5,000 |
+| `fund_holdings` rows | 500 | 5,000 |
 | statement timeout | 3s | 8s |
 | **rows per response** | **1,000** | **1,000** |
 
-That last row is not a mistake. `db-max-rows` is a server-wide PostgREST
-setting applied identically to every caller — no tier changes it.
+This is the only copy of that table on the site; every other page links here.
+The same numbers are served as `POST /rpc/catalog` → `.limits`, and a test in
+the repository pins each one to the SQL that enforces it.
+
+Two things are worth being exact about, because guessing wrong wastes a call:
+
+- **Rows per response never change.** `db-max-rows` is a server-wide PostgREST
+  setting applied identically to every caller — no tier raises it. Page views;
+  narrow the window on functions ([row caps](#row-caps)).
+- **Exceeding an id ceiling is an error, not a trim.** You get `22023` (a `400`)
+  naming the limit. A panel is never silently shortened to fit, because a short
+  panel that looks complete is the one failure you cannot detect downstream.
 
 Send the project's **publishable** key (`sb_publishable_…`) — the 2026
 replacement for the legacy **anon** JWT — on the `apikey` header. Do not put the
@@ -54,7 +66,7 @@ apikey: sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437
 Never **Secret** / `service_role`. Stay on schema `api` — never
 `Accept-Profile: public`, never `cvm_*` / `b3_cotahist`. The documented surface is
 `USAGE` on `api`, `SELECT` on the eight `api` views, and `EXECUTE` on the
-thirteen `api` functions.
+fifteen `api` functions.
 
 <Note>
   If the project exposes more than one schema and `api` is not the default, add

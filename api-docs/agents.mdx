@@ -33,28 +33,15 @@ caller credential.
 
 ### What each tier gets
 
-| | Anonymous | Signed in |
-| --- | --- | --- |
-| `panel` ids per call | **3** | **50** |
-| `search_funds` rows | 25 | 200 |
-| `option_chain` page | 200 | 2000 |
-| Query timeout | 3s | 8s |
-| Rows per response | 1000 | **1000 — same** |
-
 Anonymous is sized for discovery: read the catalog, check coverage, resolve a
 name, sample an instrument or two. Signing in is sized for actual work — a
 handful of assets over real history, which is what a backtest or a screen
-needs.
-
-Two things are worth being exact about, because guessing wrong wastes a call:
-
-- **Rows per response never change.** The 1000-row cap is a server-wide
-  PostgREST setting applied identically to everyone. No tier raises it. Page
-  views; narrow the window on functions.
-- **Exceeding the id ceiling is an error, not a trim.** You get `22023` (a
-  `400`) naming the limit. A panel is never silently shortened to fit, because
-  a short panel that looks complete is the one failure you cannot detect
-  downstream.
+needs. The numbers live in one place — the table on
+[Conventions & limits](/api-docs/conventions#authentication) — and, for code,
+in the catalog's `limits` block (`POST /rpc/catalog` → `.limits`: per-tier
+ceilings, the 1000-row cap and how to detect it), so nothing has to be parsed
+out of prose. Rows per response never change with tier; exceeding an id ceiling
+is a `22023` error, never a silent trim.
 
 Landing tables (`cvm_*`, `b3_cotahist`, `cia_*`, `bacen_*`) are closed to both
 tiers and always will be — schema `api` is the whole public surface.

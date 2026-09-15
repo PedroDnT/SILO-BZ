@@ -1,7 +1,7 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
-  "name": "iliquid nightly",
+  "name": "SILO",
   "description": "Public read API for Brazilian public financial data. Schema api over PostgREST.",
   "colors": {
     "primary": "#16A34A"
