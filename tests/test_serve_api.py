@@ -616,4 +616,6 @@ def test_coverage_serves_complete_through(client):
     one the whole honest-completeness design rests on.
     """
     client.get("/v1/coverage")
-    assert "complete_through" in client.application.extensions["silo_pool"].cur.sql
+    sql = client.application.extensions["silo_pool"].cur.sql
+    assert "complete_through" in sql
+    assert "notes" in sql, "the regime-break / applicability caveat must reach /v1/coverage"

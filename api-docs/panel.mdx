@@ -76,7 +76,14 @@ api.panel(p_ids     TEXT[],
 | `yield` | cnpj | fii | month | `cvm` | Monthly yield percentage as published. |
 | `inflows` | cnpj | fi | month | `cvm` | Gross monthly subscriptions. |
 | `redemptions` | cnpj | fi | month | `cvm` | Gross monthly redemptions. |
-| `quotaholders` | cnpj | fi, fidc, fii, fip, fiagro | month | `cvm` | Number of unit-holders, cast to numeric. |
+| `quotaholders` | cnpj | fi, fii | month | `cvm` | Number of unit-holders, cast to numeric. Not served for fidc, fiagro, fip — their fact-table arms carry no quotaholder count. |
+
+The *Asset class* column for the fund metrics is exactly the set of families whose fact-table
+arm files that column (`catalog().applicability`; the table on
+[`fund_nav`](/api-docs/funds#which-columns-each-family-files)). Ask for a metric outside its
+families and you get **no rows** for those ids — not nulls, not zeros. And one boundary to
+know: FIDC `delinquency` is null on every row through 2024-12 and filed from 2025-01
+(`catalog().regime_breaks`) — a FIDC delinquency series starts at 2025-01.
 
 <Warning>
   **`freq=day` is quotes only.** No CVM fundamental is published daily, so the fund arms are
@@ -213,7 +220,9 @@ Two distinct representations of "no data", and the difference is load-bearing:
 - **Absent row.** Every derived and fund-side metric is emitted only when its value is
   non-null. So `nav`, `quota`, `delinquency`, `yield`, `inflows`, `redemptions`,
   `quotaholders`, and `close_return` never appear with a null `value` — the observation is
-  simply not in the array.
+  simply not in the array. A metric a family does not file (`quota` for a FIDC,
+  `quotaholders` for a FIP) is therefore absent for every month, and FIDC `delinquency`
+  is absent for every month before 2025-01 — see the metric table's note.
 - **Null `value`.** `close` and `volume` are emitted for every session in range, so they can
   carry a JSON `null` when the source left the field blank.
 

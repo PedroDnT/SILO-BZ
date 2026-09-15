@@ -63,6 +63,14 @@ different cadences and one blended date misreads all of them:
   `b3_cotahist` for quotes and derivatives, `cvm` for the fund and company datasets,
   `anbima` for the class benchmarks.
 </ResponseField>
+<ResponseField name="notes" type="text">
+  A caveat the two dates cannot carry. **Nullable** — null on every row that has none.
+  Today two rows carry one: **`funds_fidc`** states the 2025-01 `delinquency` regime break
+  (null on every row before it, filed on every row after it — never chain-link through
+  it), and **`fund_nav`** points at `catalog().applicability`, the per-family column sets.
+  Read it before differencing any fund series; the same boundaries are machine-readable in
+  `catalog().regime_breaks`.
+</ResponseField>
 
 ## Example
 
@@ -88,17 +96,19 @@ const { data } = await supabase.rpc('coverage')
 
 ```json
 [
-  { "dataset": "quotes",         "as_of": "2026-08-26", "complete_through": "2026-08-26", "source": "b3_cotahist" },
-  { "dataset": "funds",          "as_of": "2026-07-31", "complete_through": "2026-06-01", "source": "cvm" },
-  { "dataset": "fund_nav",       "as_of": "2026-07-01", "complete_through": "2026-06-01", "source": "cvm" },
-  { "dataset": "derivatives",    "as_of": "2026-08-26", "complete_through": "2026-08-26", "source": "b3_cotahist" },
-  { "dataset": "financials",     "as_of": "2026-06-30", "complete_through": null,         "source": "cvm" },
-  { "dataset": "anbima_classes", "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "anbima" },
-  { "dataset": "funds_fi",       "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "cvm" },
-  { "dataset": "funds_fidc",  "as_of": "2026-07-31", "complete_through": "2026-07-31", "source": "cvm" },
-  { "dataset": "funds_fii",   "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "cvm" },
-  { "dataset": "funds_fiagro","as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "cvm" },
-  { "dataset": "funds_fip",   "as_of": "2025-12-31", "complete_through": "2025-12-31", "source": "cvm" }
+  { "dataset": "quotes",         "as_of": "2026-08-26", "complete_through": "2026-08-26", "source": "b3_cotahist", "notes": null },
+  { "dataset": "funds",          "as_of": "2026-07-31", "complete_through": "2026-06-01", "source": "cvm",         "notes": null },
+  { "dataset": "fund_nav",       "as_of": "2026-07-01", "complete_through": "2026-06-01", "source": "cvm",
+    "notes": "columns are per family: a null outside the family's list in catalog().applicability is not applicable, not missing" },
+  { "dataset": "derivatives",    "as_of": "2026-08-26", "complete_through": "2026-08-26", "source": "b3_cotahist", "notes": null },
+  { "dataset": "financials",     "as_of": "2026-06-30", "complete_through": null,         "source": "cvm",         "notes": null },
+  { "dataset": "anbima_classes", "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "anbima",      "notes": null },
+  { "dataset": "funds_fi",       "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "cvm",         "notes": null },
+  { "dataset": "funds_fidc",     "as_of": "2026-07-31", "complete_through": "2026-07-31", "source": "cvm",
+    "notes": "regime break at 2025-01-31: delinquency is null on every row through 2024-12-31 (CVM's pre-2025 tab II/III monthly file carries no delinquency field) and filed on every row from 2025-01-31 (tab IV/VI). Not zero, not clean books — never chain-link across 2024-12 → 2025-01. See catalog().regime_breaks." },
+  { "dataset": "funds_fii",      "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "cvm",         "notes": null },
+  { "dataset": "funds_fiagro",   "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "cvm",         "notes": null },
+  { "dataset": "funds_fip",      "as_of": "2025-12-31", "complete_through": "2025-12-31", "source": "cvm",         "notes": null }
 ]
 ```
 
@@ -127,6 +137,18 @@ what an omitted `p_to` clamps to. `funds` and `fund_nav` carry the blended value
 - These are **maxima across the whole dataset**, not per-instrument. An individual fund can
   be months behind the aggregate `as_of` while still filing normally. Use
   [`fund_profile`](/api-docs/funds)'s `last_period` for a single vehicle.
+
+## Regime boundaries
+
+`complete_through` tells you where a series ends; it cannot tell you where a series
+**changes meaning**. That is what `notes` is for. A boundary is recorded when the source
+format changed such that the same column means something different on either side — the
+one on the books today is FIDC `delinquency`, absent from CVM's pre-2025 monthly file and
+present on every row from 2025-01. Chain-linking a level or a change across such a
+boundary manufactures a move the fund never made. The list is machine-readable as
+`catalog().regime_breaks` (dataset, column, boundary, before, after, never); check it
+before differencing any fund series, the way you check `complete_through` before a
+window claim. Details on the FIDC case: [`fund_nav`](/api-docs/funds#which-columns-each-family-files).
 
 ## Errors
 

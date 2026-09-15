@@ -61,6 +61,10 @@ Base URL (no trailing slash when joining `/rpc/...`):
 4. Reduce **locally** (corr, rank, ratios). There is no `POST /query` and no server-side correlation.
 
 `delinquency` is delinquent **value in BRL**, not a rate — divide by `nav` yourself.
+FIDC `delinquency` is null on every row before 2025-01 and filed from 2025-01 (a
+source-format boundary, `catalog().regime_breaks` / `coverage().notes`): start the
+series at 2025-01, never chain-link through it. `fund_nav` nulls outside a family's
+`catalog().applicability` list are not applicable, not missing.
 
 ## Do not
 

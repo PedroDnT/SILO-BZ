@@ -1177,7 +1177,7 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT) IS
-    'Monthly NAV/flows series for one CNPJ. Default window (p_to NULL) ends at the family''s latest COMPLETE period per mv_period_completeness; an explicit p_to serves the window verbatim, partial months included. Hard-capped at 5001 rows (= serve _MAX_POINTS + 1): above 5000 the adapter answers 400, never a truncated series.';
+    'Monthly NAV/flows series for one CNPJ. Default window (p_to NULL) ends at the family''s latest COMPLETE period per mv_period_completeness; an explicit p_to serves the window verbatim, partial months included. Hard-capped at 5001 rows (= serve _MAX_POINTS + 1): above 5000 the adapter answers 400, never a truncated series. Columns are per family (fact_fund_monthly arms): fi files quota, quotaholders, inflows, redemptions; fidc and fiagro file delinquency; fii files quotaholders, monthly_yield, assets; fip files nav only — a null outside that list is not applicable, not missing (catalog().applicability). fidc delinquency is null through 2024-12 and filed from 2025-01 (regime break; catalog().regime_breaks).';
 
 CREATE OR REPLACE FUNCTION api.search_funds(
     p_query       TEXT DEFAULT '',
@@ -1605,7 +1605,7 @@ COMMENT ON FUNCTION api.anbima_classes(TEXT, TEXT, TEXT, DATE, DATE) IS
 -- Coverage — freshness without exposing cvm_ingest_log
 -- ---------------------------------------------------------------------------
 
--- Signature change (complete_through column + per-family rows): drop first.
+-- Signature change (complete_through column, per-family rows, notes): drop first.
 DROP FUNCTION IF EXISTS api.coverage();
 
 CREATE OR REPLACE FUNCTION api.coverage()
@@ -1613,13 +1613,22 @@ RETURNS TABLE (
     dataset          TEXT,
     as_of            DATE,
     complete_through DATE,
-    source           TEXT
+    source           TEXT,
+    notes            TEXT
 )
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
+    -- notes = a caveat the dates cannot carry: a regime boundary where the
+    -- series changes meaning mid-stream, or where the columns are per
+    -- family. NULL on every row that has none. The FIDC boundary below is
+    -- the same one api.catalog() publishes under regime_breaks — the
+    -- pre-2025 monthly FIDC file (tab II/III) has no delinquency field, so
+    -- vl_inadimpl is NULL on every row through 2024-12-31 and filed on every
+    -- row from 2025-01-31 (tab IV + VI). Chain-linking through it turns a
+    -- format change into a credit event.
     -- as_of = the newest period that has LANDED (freshness — what ingest has
     -- seen). complete_through = the newest period classified COMPLETE by
     -- mv_period_completeness (honesty — what the default windows serve).
@@ -1627,22 +1636,28 @@ AS $$
     -- period partial: an in-progress month, a lagging family, or FIP's
     -- year-end row filed months before the year closes. Session data
     -- (quotes/derivatives) is complete by construction: both dates equal.
-    SELECT 'quotes'::text, MAX(trade_date), MAX(trade_date), 'b3_cotahist'::text
+    SELECT 'quotes'::text, MAX(trade_date), MAX(trade_date), 'b3_cotahist'::text,
+           NULL::text
     FROM public.vw_b3_quote_vista
     UNION ALL
     SELECT 'funds'::text, MAX(last_period),
-           public.latest_complete_period(NULL), 'cvm'::text
+           public.latest_complete_period(NULL), 'cvm'::text, NULL::text
     FROM public.dim_fund
     UNION ALL
     SELECT 'fund_nav'::text, MAX(period),
-           public.latest_complete_period(NULL), 'cvm'::text
+           public.latest_complete_period(NULL), 'cvm'::text,
+           'columns are per family: a null outside the family''s list in catalog().applicability is not applicable, not missing'::text
     FROM public.fact_fund_monthly
     UNION ALL
     -- Per-family rows: the families file on different cadences (FI daily,
     -- FIDC/FII with a 1-2 month lag, FIP annually), so one blended date
     -- misreads all of them.
     SELECT 'funds_' || f.entity_type, MAX(f.period),
-           public.latest_complete_period(f.entity_type), 'cvm'::text
+           public.latest_complete_period(f.entity_type), 'cvm'::text,
+           CASE f.entity_type
+               WHEN 'fidc' THEN
+                   'regime break at 2025-01-31: delinquency is null on every row through 2024-12-31 (CVM''s pre-2025 tab II/III monthly file carries no delinquency field) and filed on every row from 2025-01-31 (tab IV/VI). Not zero, not clean books — never chain-link across 2024-12 → 2025-01. See catalog().regime_breaks.'
+           END::text
     FROM public.fact_fund_monthly f
     GROUP BY f.entity_type
     UNION ALL
@@ -1662,7 +1677,8 @@ AS $$
                (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '080'),
                (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '030')
            ),
-           'b3_cotahist'::text
+           'b3_cotahist'::text,
+           NULL::text
     UNION ALL
     -- Listed-company filings. Read from cia_filing (one row per submitted
     -- ITR/DFP document) rather than from cia_account: the account table is
@@ -1671,17 +1687,18 @@ AS $$
     -- NULL on purpose — mv_period_completeness models fund filing cadence and
     -- says nothing about companies, and a fabricated completeness date is
     -- exactly the claim this function exists to prevent.
-    SELECT 'financials'::text, MAX(f.dt_refer), NULL::date, 'cvm'::text
+    SELECT 'financials'::text, MAX(f.dt_refer), NULL::date, 'cvm'::text, NULL::text
     FROM public.cia_filing f
     UNION ALL
     -- ANBIMA boletim: a published edition is complete by construction (a
     -- monthly publication, not a filing cadence), so both dates coincide.
-    SELECT 'anbima_classes'::text, MAX(a.reference_date), MAX(a.reference_date), 'anbima'::text
+    SELECT 'anbima_classes'::text, MAX(a.reference_date), MAX(a.reference_date), 'anbima'::text,
+           NULL::text
     FROM public.anbima_class_monthly a;
 $$;
 
 COMMENT ON FUNCTION api.coverage() IS
-    'Freshness AND honesty per dataset: as_of = newest landed period; complete_through = newest COMPLETE period (what default windows serve). funds_<family> rows report each filing cadence separately — FIP files annually, so its as_of is a year-end date even when current.';
+    'Freshness AND honesty per dataset: as_of = newest landed period; complete_through = newest COMPLETE period (what default windows serve). funds_<family> rows report each filing cadence separately — FIP files annually, so its as_of is a year-end date even when current. notes carries a caveat the dates cannot: the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); fund_nav points at catalog().applicability, the per-family column sets.';
 
 REVOKE ALL ON FUNCTION api.coverage() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.coverage() TO anon, authenticated;
@@ -2425,7 +2442,7 @@ AS $fn$
 SELECT $json$
 {
   "kind": "catalog",
-  "version": 22,
+  "version": 23,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint carefully, and READ THE Content-Range RESPONSE HEADER ON EVERY CALL: PostgREST truncates every response at 1000 rows and keeps the OLDEST ones, so a cut-short series is indistinguishable from a complete one by its contents alone — `0-999/*` is the only thing that tells you. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -2631,16 +2648,13 @@ SELECT $json$
       ],
       "asset_class": [
         "fi",
-        "fidc",
-        "fii",
-        "fip",
-        "fiagro"
+        "fii"
       ],
       "grain": [
         "month"
       ],
       "source": "cvm",
-      "meaning": "Number of unit-holders."
+      "meaning": "Number of unit-holders (fi, fii). Not served for fidc, fiagro, fip."
     }
   },
   "notebook_reducers": {
@@ -2650,6 +2664,8 @@ SELECT $json$
     "spread": "First column minus second column of the wide matrix, dates aligned."
   },
   "constraints": [
+    "A NULL OUTSIDE A FAMILY'S COLUMN SET IS NOT APPLICABLE, NOT MISSING. fund_nav returns the same eleven columns for every family, but each family files only some of them (`applicability` in this catalog, read off fact_fund_monthly's per-family arms): fi files quota, quotaholders, inflows and redemptions; fidc and fiagro file delinquency; fii files quotaholders, monthly_yield and assets; fip files nav alone. A null outside that list is set by construction and carries no information; a null inside it is a blank in that month's filing.",
+    "FIDC DELINQUENCY STARTS IN 2025-01. CVM's pre-2025 monthly FIDC file (tab II/III) carried no delinquency field, so `delinquency` is null on every fidc row through 2024-12-31 — not zero, not clean books, not a missing month. From 2025-01-31 the tab IV/VI format is ingested and delinquency is filed on every row. Never chain-link, difference or average a FIDC delinquency series across 2024-12 → 2025-01; the series begins there. Machine-readable in `regime_breaks`, and on the funds_fidc coverage row's `notes`.",
     "A FUND'S DEBENTURE HOLDINGS ARE A DIFFERENT SHAPE FROM ITS EQUITY HOLDINGS. api.fund_debentures (CDA block 6) is one row per (fund, month, issuer, maturity, rate structure, application type), as filed and never summed — two series of one issuer maturing the same day at different coupons are different securities. The issuer is its own filed CPF/CNPJ (issuer_id); p_issuer also takes a listed company's ticker or CVM code, resolved only through CVM's published FCA map, and issuer_tickers carries the issuer's active listed codes back (NULL when not listed — most debenture issuers are not). Nothing is matched by name.",
     "ANBIMA CLASS ROWS ARE INDUSTRY AGGREGATES, NOT FUNDS. api.anbima_classes serves the Boletim de Fundos de Investimento as published — R$ milhões (unit brl_mm) and percentage points (unit pct) — per class, ANBIMA type or industry total (`level`; class aggregates by default). No fund in this warehouse is mapped to an ANBIMA class: CVM's `classe` is CVM's taxonomy, so never join a fund to a class by name, and there is no panel arm because these rows carry no id. An unknown category, metric or level raises 22023 listing what exists rather than returning an empty array.",
     "LISTED-COMPANY FINANCIALS ARE FILED, NOT DERIVED. api.financials returns one row per account line exactly as the company filed it; nothing is summed, annualised or restated. Read period_months before comparing two rows: an ITR publishes the SAME account twice under one reference date, once for the three months and once year-to-date, and they are distinguished only by the period span. Adding a 3-month row to a 6-month row double-counts the quarter.",
@@ -2716,6 +2732,57 @@ SELECT $json$
       "how_to_sign_in": "GitHub at https://silo-bz.vercel.app/signin.html; send the JWT as `Authorization: Bearer <jwt>` beside `apikey` (the SDK takes it as token= or SILO_TOKEN)"
     }
   },
+  "applicability": {
+    "fund_nav": {
+      "rule": "every family returns the same eleven columns; a null OUTSIDE the family's list below is set by construction (not applicable), a null INSIDE it is a blank in that month's filing",
+      "columns_by_family": {
+        "fi": [
+          "nav",
+          "quota",
+          "quotaholders",
+          "inflows",
+          "redemptions"
+        ],
+        "fidc": [
+          "nav",
+          "delinquency"
+        ],
+        "fiagro": [
+          "nav",
+          "delinquency"
+        ],
+        "fii": [
+          "nav",
+          "quotaholders",
+          "monthly_yield",
+          "assets"
+        ],
+        "fip": [
+          "nav"
+        ]
+      },
+      "period_convention": {
+        "fi": "first day of the month",
+        "fidc": "last day of the month",
+        "fiagro": "first day of the month",
+        "fii": "first day of the month",
+        "fip": "31-Dec of the filing year (annual)"
+      },
+      "panel_metric_names": {
+        "monthly_yield": "yield"
+      }
+    }
+  },
+  "regime_breaks": [
+    {
+      "dataset": "funds_fidc",
+      "column": "delinquency",
+      "boundary": "2025-01-31",
+      "before": "CVM's monthly FIDC file (tab II/III, ingested for 2019-01..2024-12) carries no delinquency field: delinquency is null on every fidc row through 2024-12-31 — not zero, not clean books, not a missing month",
+      "after": "from 2025-01-31 the inf_mensal tab IV/VI format is ingested; delinquency is tab VI's total, filed on every row (a fund with no delinquent receivables files 0)",
+      "never": "chain-link, difference or average delinquency across 2024-12 → 2025-01, or read a pre-2025 null as zero; a FIDC delinquency series starts at 2025-01"
+    }
+  ],
   "examples": [
     {
       "ask": "How does PETR4 relate to delinquency in this FIDC?",

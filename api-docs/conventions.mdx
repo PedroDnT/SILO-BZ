@@ -213,6 +213,17 @@ Specific guarantees worth repeating:
   ±99.9% with no market move behind it (see the
   [COTAHIST dictionary](/api-docs/cotahist-dictionary)). The ratio itself is of
   **unadjusted** closes: a 2:1 split reports roughly −50 %. See [`panel`](/api-docs/panel).
+- **Not applicable is not missing.** `fund_nav` returns the same eleven columns for every
+  family, but each family files only some of them — `fi` quota / quotaholders / flows,
+  `fidc` and `fiagro` delinquency, `fii` quotaholders / yield / assets, `fip` net assets
+  alone. A null outside a family's list is set by construction and carries no information;
+  a null inside it is a blank in that filing. The map is `catalog().applicability` and the
+  table on [`fund_nav`](/api-docs/funds#which-columns-each-family-files).
+- **Regime boundaries are published, not smoothed.** Where a source format changed so
+  that one column means different things on either side of a date, the boundary is listed
+  in `catalog().regime_breaks` and on that dataset's [`coverage`](/api-docs/coverage) row
+  (`notes`). Today: FIDC `delinquency`, null on every row through 2024-12 and filed on
+  every row from 2025-01. Never chain-link through one.
 - **Default windows serve only complete periods.** With no explicit `to`, fund metrics
   end at each family's latest COMPLETE period — a month CVM has only fractionally
   published (its 1–2 month lag) is not served as if it were the industry, and FIP's
@@ -252,6 +263,17 @@ PostgREST returns a JSON array on success. There is no envelope, no `count`, no 
   [`coverage`](/api-docs/coverage) to confirm the date range is loaded, rather than
   inferring either from an empty result.
 </Note>
+
+## What is live
+
+A page on this site can describe a function before the production database has it: SQL
+under `api` reaches production only when the analytical layer is applied (the nightly
+ingest, or an operator's `analytics-only` run), so a merge and a deploy are not the same
+moment. The truth is `POST /rpc/catalog` — its `version` is the contract the database is
+actually serving, and a function this site documents that answers `404 PGRST202` is one
+that has not been applied yet, not one that was removed. Compare against the version this
+site was written for (the Python SDK does it for you and warns `SiloCatalogDrift`), and
+read `catalog().postgrest` for the functions that exist on the server you are talking to.
 
 ## Caching
 

@@ -302,36 +302,72 @@ api.fund_nav(p_cnpj        TEXT,
 </ParamField>
 
 <ResponseField name="cnpj" type="text">14-digit CNPJ.</ResponseField>
-<ResponseField name="period" type="date">First day of the reported month.</ResponseField>
+<ResponseField name="period" type="date">
+  The filing period **as stored, per family**: first day of the month for `fi`, `fii` and
+  `fiagro`; the month's **last** day for `fidc`; 31-Dec of the filing year for `fip`
+  (one row per year). `date_trunc('month', period)` before aligning families.
+</ResponseField>
 <ResponseField name="entity_type" type="text">Vehicle type for this row.</ResponseField>
 <ResponseField name="nav" type="numeric">
   Net assets — CVM `vl_patrim_liq`. The headline "fund size" figure.
 </ResponseField>
 <ResponseField name="quota" type="numeric">
-  Unit quota value (`vl_quota`). Meaningful for `fi`; null for vehicle types that do not
-  publish it.
+  Unit quota value (`vl_quota`). **`fi` only** — null by construction for every other
+  family (see [which columns each family files](#which-columns-each-family-files)).
 </ResponseField>
 <ResponseField name="quotaholders" type="integer">
-  Number of unit-holders (`nr_cotst`).
+  Number of unit-holders (`nr_cotst`). **`fi` and `fii` only**; null by construction for
+  `fidc`, `fiagro` and `fip`.
 </ResponseField>
 <ResponseField name="delinquency" type="numeric">
-  Delinquent portfolio **value** (`vl_inadimpl`), in BRL — mainly `fidc` and `fiagro`. This
-  is an amount, not a rate; divide by `nav` yourself if you want a ratio.
+  Delinquent portfolio **value** (`vl_inadimpl`), in BRL — **`fidc` and `fiagro` only**.
+  This is an amount, not a rate; divide by `nav` yourself if you want a ratio. For `fidc`
+  it is **null on every row through 2024-12 and filed on every row from 2025-01** — a
+  source-format boundary, not a credit event (warning below).
 </ResponseField>
 <ResponseField name="monthly_yield" type="numeric">
-  Monthly yield percentage as published (`pct_yield_mes`), an FII disclosure.
+  Monthly yield percentage as published (`pct_yield_mes`). **`fii` only.**
 </ResponseField>
 <ResponseField name="inflows" type="numeric">
-  Gross monthly subscriptions (`captc_mes`).
+  Gross monthly subscriptions (`captc_mes`). **`fi` only.**
 </ResponseField>
 <ResponseField name="redemptions" type="numeric">
-  Gross monthly redemptions (`resg_mes`).
+  Gross monthly redemptions (`resg_mes`). **`fi` only.**
 </ResponseField>
 <ResponseField name="assets" type="numeric">
-  Total assets (`vl_ativo`), as distinct from net assets.
+  Total assets (`vl_ativo`), as distinct from net assets. **`fii` only.**
 </ResponseField>
 
 Rows are ordered by `period`, then `entity_type`.
+
+### Which columns each family files
+
+Every family comes back with the same eleven columns, but each family's arm of the fact
+table fills only some of them; the rest are `NULL` **by construction**. So a null has two
+meanings and the table decides which: outside a family's list it is *not applicable*
+(carries no information); inside it, it is a blank in that month's filing. The same map
+is machine-readable as `catalog().applicability.fund_nav.columns_by_family`, and it is
+what the [`panel`](/api-docs/panel) metric table's *Asset class* column is derived from.
+
+| Family | `nav` | `quota` | `quotaholders` | `delinquency` | `monthly_yield` | `inflows` | `redemptions` | `assets` | `period` is |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `fi` | ✓ | ✓ | ✓ | — | — | ✓ | ✓ | — | first of month |
+| `fidc` | ✓ | — | — | ✓ (2025-01+) | — | — | — | — | **month-end** |
+| `fiagro` | ✓ | — | — | ✓ | — | — | — | — | first of month |
+| `fii` | ✓ | — | ✓ | — | ✓ | — | — | ✓ | first of month |
+| `fip` | ✓ | — | — | — | — | — | — | — | 31-Dec, yearly |
+
+<Warning>
+  **FIDC `delinquency` starts in 2025-01 — a regime break, not a series.** CVM's monthly
+  FIDC file before 2025 (tab II/III) carries no delinquency field, so every `fidc` row
+  through `2024-12-31` has `delinquency: null` — not zero, not clean books, not a missing
+  month. From `2025-01-31` the tab IV/VI format is ingested and the field is filed on every
+  row (a fund with no delinquent receivables files `0`). Never chain-link, difference or
+  average a FIDC delinquency series across 2024-12 → 2025-01; start it at 2025-01. The
+  boundary is published in `catalog().regime_breaks` and on the `funds_fidc` row of
+  [`coverage`](/api-docs/coverage) (`notes`), so a program can check it rather than a
+  reader remembering it.
+</Warning>
 
 <CodeGroup>
 
@@ -361,25 +397,29 @@ const { data } = await supabase.rpc('fund_nav', {
 [
   {
     "cnpj": "12345678000190",
-    "period": "2024-01-01",
+    "period": "2025-03-31",
     "entity_type": "fidc",
     "nav": 388120044.12,
     "quota": null,
-    "quotaholders": 214,
+    "quotaholders": null,
     "delinquency": 9120044.7,
     "monthly_yield": null,
-    "inflows": 15000000.0,
-    "redemptions": 8250000.0,
-    "assets": 401993310.88
+    "inflows": null,
+    "redemptions": null,
+    "assets": null
   }
 ]
 ```
 
+A `fidc` row: `nav` and `delinquency` are the two columns that family files; the other six
+are null by construction, and `period` is the month's last day.
+
 <Warning>
-  **Nulls here are real.** A column is null because that vehicle type does not publish that
-  field, or because the filing left it blank — never because a value was dropped or replaced.
-  Nothing is forward-filled, and a month with no filing is an **absent row**, not a repeated
-  one. Check `period` continuity before differencing.
+  **Nulls here are real.** A column is null because that family does not file that field
+  (null by construction — the table above), or because the filing left it blank — never
+  because a value was dropped or replaced. Nothing is forward-filled, and a month with no
+  filing is an **absent row**, not a repeated one. Check `period` continuity before
+  differencing.
 </Warning>
 
 <Warning>
