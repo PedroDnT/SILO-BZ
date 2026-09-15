@@ -1,6 +1,7 @@
 ---
 title: Fund Performance
 hide_title: true
+sidebar_position: 11
 ---
 
 <!--

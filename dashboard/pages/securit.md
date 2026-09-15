@@ -1,6 +1,7 @@
 ---
 title: Securitization
 hide_title: true
+sidebar_position: 7
 ---
 
 <!--

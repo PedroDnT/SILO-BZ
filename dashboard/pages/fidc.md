@@ -1,6 +1,7 @@
 ---
 title: FIDC Credit Monitor
 hide_title: true
+sidebar_position: 5
 ---
 
 <!--
@@ -78,6 +79,30 @@ select * from supabase.delinquency_trend
 
 ```sql top_delinquent
 select * from supabase.top_delinquent
+```
+
+```sql fidc_drivers_summary
+select * from supabase.fidc_drivers_summary
+```
+
+```sql fidc_drivers_consistent
+select * from supabase.fidc_drivers_consistent
+```
+
+```sql fidc_drivers_masked
+select * from supabase.fidc_drivers_masked
+```
+
+```sql fidc_drivers_denominator
+select * from supabase.fidc_drivers_denominator
+```
+
+```sql fidc_drivers_all
+select * from supabase.fidc_drivers_all
+```
+
+```sql fidc_stopped_reporting
+select * from supabase.fidc_stopped_reporting
 ```
 
 ```sql aging_buckets
@@ -176,6 +201,128 @@ select * from supabase.fidc_flows_by_oper
   <Column id=inad_mm title="Delinquent (R$mm)" fmt=num1/>
   <Column id=delinquency_num1 title="Delinquency (%)" fmt=num1/>
 </DataTable>
+
+---
+
+## Where Delinquency Worsened — and Why
+
+> Ranking FIDCs by the change in their delinquency **rate** alone misleads in the
+> middle of the table: the rate is `overdue (R$) ÷ net assets (R$)`, so it also
+> moves when net assets move. Each fund below is scored on **both** metrics over
+> the last twelve complete months — first observation against last — and the
+> move is classified by its motor. Thresholds are the function's arguments and
+> are printed here: "value moved" is **|Δ R$| ≥ R$1mm**, "rate moved" is
+> **|Δ| ≥ 1 p.p.**; a fund needs **≥ 6 observations** in the window and the
+> tables keep funds with **≥ R$10mm** of latest net assets. One definition,
+> `fidc_delinquency_drivers()`, reads the same series the API serves.
+
+| Driver | What happened | Read it as |
+| --- | --- | --- |
+| **Consistent worsening** | overdue R$ **up** and rate **up** | credit deteriorated — the cleanest signal |
+| **Value up, rate masked** | overdue R$ up, rate flat or down | net assets grew with it: real deterioration the rate hides |
+| **Denominator only** | rate up, overdue R$ flat or down | net assets shrank — amortisation or outflow, not new delinquency |
+| Improvement / stable | — | — |
+
+<BigValue data={fidc_drivers_summary} value=n_active title="Funds Scored (≥ R$10mm)" fmt=num0/>
+<BigValue data={fidc_drivers_summary} value=n_consistent title="Consistent Worsening" fmt=num0/>
+<BigValue data={fidc_drivers_summary} value=n_masked title="Value Up, Rate Masked" fmt=num0/>
+<BigValue data={fidc_drivers_summary} value=n_denominator title="Denominator Only" fmt=num0/>
+<BigValue data={fidc_drivers_summary} value=consistent_delta_bn title="New Overdue, Consistent (R$bn)" fmt=num1/>
+<BigValue data={fidc_drivers_summary} value=masked_delta_bn title="New Overdue, Masked (R$bn)" fmt=num1/>
+
+<ScatterPlot
+  data={fidc_drivers_all}
+  x=delta_pp_num1
+  y=delta_mm
+  series=driver
+  xAxisTitle="Δ delinquency rate (p.p.)"
+  yAxisTitle="Δ overdue value (R$mm)"
+  title="Every Scored FIDC — Δ Value vs Δ Rate, Coloured by Driver"
+/>
+
+### Consistent worsening — overdue value and rate both rose
+
+> Ranked by the **R$ change**, the more robust of the two: the largest absolute
+> deterioration of the year sat tenth in a rate-only ranking. Read the rate
+> columns as how compromised the book already is — a rate above 100 % means
+> overdue receivables exceed the fund's own net assets.
+
+<DataTable data={fidc_drivers_consistent} rows=25>
+  <Column id=delta_mm title="Δ Overdue (R$mm)" fmt=num1/>
+  <Column id=rate_start_num1 title="Rate Start (%)" fmt=num1/>
+  <Column id=rate_end_num1 title="Rate End (%)" fmt=num1/>
+  <Column id=delta_pp_num1 title="Δ Rate (pp)" fmt=num1/>
+  <Column id=nav_end_mm title="Net Assets (R$mm)" fmt=num1/>
+  <Column id=n_months title="Months" fmt=num0/>
+  <Column id=fund_name title="Fund"/>
+</DataTable>
+
+### Real deterioration the rate hides
+
+> Overdue value rose by at least R$1mm while the rate barely moved — or fell —
+> because net assets grew in the same window (new funding dilutes a rate). A
+> rate-only screen never shows these.
+
+<DataTable data={fidc_drivers_masked} rows=15>
+  <Column id=delta_mm title="Δ Overdue (R$mm)" fmt=num1/>
+  <Column id=delta_nav_mm title="Δ Net Assets (R$mm)" fmt=num1/>
+  <Column id=rate_start_num1 title="Rate Start (%)" fmt=num1/>
+  <Column id=rate_end_num1 title="Rate End (%)" fmt=num1/>
+  <Column id=delta_pp_num1 title="Δ Rate (pp)" fmt=num1/>
+  <Column id=fund_name title="Fund"/>
+</DataTable>
+
+### False positives — the rate rose only because net assets shrank
+
+> Overdue value did not rise (it may have fallen) and the rate still climbed:
+> contraction or amortisation of the book, not new delinquency. High on a
+> rate-only ranking, not a credit event.
+
+<DataTable data={fidc_drivers_denominator} rows=15>
+  <Column id=delta_pp_num1 title="Δ Rate (pp)" fmt=num1/>
+  <Column id=delta_mm title="Δ Overdue (R$mm)" fmt=num1/>
+  <Column id=delta_nav_mm title="Δ Net Assets (R$mm)" fmt=num1/>
+  <Column id=rate_end_num1 title="Rate End (%)" fmt=num1/>
+  <Column id=fund_name title="Fund"/>
+</DataTable>
+
+### Stopped reporting
+
+> A month a fund did not file is **absent, never zero** — so a fund that quit
+> reporting drops out of every rate above rather than reading as clean. These
+> filed at least six months of the window and then went two or more months
+> quiet while the family kept filing. Ask why before anything else.
+
+<DataTable data={fidc_stopped_reporting} rows=25>
+  <Column id=last_month title="Last Filing"/>
+  <Column id=months_missing title="Months Missing" fmt=num0/>
+  <Column id=nav_end_mm title="Last Net Assets (R$mm)" fmt=num1/>
+  <Column id=rate_end_num1 title="Last Rate (%)" fmt=num1/>
+  <Column id=fund_name title="Fund"/>
+</DataTable>
+
+### Every scored fund
+
+<DataTable data={fidc_drivers_all} rows=20 search=true>
+  <Column id=driver title="Driver"/>
+  <Column id=delta_mm title="Δ Overdue (R$mm)" fmt=num1/>
+  <Column id=delta_pp_num1 title="Δ Rate (pp)" fmt=num1/>
+  <Column id=rate_end_num1 title="Rate End (%)" fmt=num1/>
+  <Column id=nav_end_mm title="Net Assets (R$mm)" fmt=num1/>
+  <Column id=n_months title="Months" fmt=num0/>
+  <Column id=fund_name title="Fund"/>
+</DataTable>
+
+> **What this cannot tell you.** CVM's monthly FIDC file carries no portfolio
+> composition — no sector, no debtor, no guarantee — so nothing here says *whose*
+> receivables went overdue, or whether a loss is absorbed by a subordinated
+> tranche or an insurer before it reaches `vl_inadimpl` (see the subordination
+> section below). `vl_inadimpl` is the **overdue** value, not a realised loss:
+> nothing is published on provisions or recovery, and a figure can sit unchanged
+> for months and then jump on the administrator's revaluation. The Δ in R$ is
+> nominal and does not separate new delinquency from an old balance that was
+> never written off. Delinquency is filed only from 2025-01 (the pre-2025 file
+> has no such field), so no window here reaches further back.
 
 ---
 

@@ -41,6 +41,10 @@ select * from supabase.ops_health
 select * from supabase.aum_by_entity
 ```
 
+```sql fip_latest
+select * from supabase.fip_latest
+```
+
 ```sql fidc_delinquency
 select * from supabase.fidc_delinquency
 ```
@@ -102,13 +106,15 @@ Three questions the data can answer, and where each is answered:
 
 ## Industry Net Assets by Family — 12 Months
 
-> The five CVM fund families stacked. FI dominates by an order of magnitude, so
-> the other four are readable only as the thin bands at the top; the same series
-> over 36 months, split out per family, is on [Industry Structure](/industry).
+> The four **monthly** CVM fund families stacked. FI dominates by an order of
+> magnitude, so the other three are readable only as the thin bands at the top;
+> the same series over 36 months, split out per family, is on
+> [Industry Structure](/industry). The stack ends at the last month **every**
+> family has fully filed, so the right edge is never one family's partial month.
 >
-> FIP files **yearly** and is mapped to 31-Dec of its reporting year, so it
-> contributes to one month and is absent from the other eleven. That is a filing
-> grain, not a collapse in private-equity assets.
+> FIP is not in the stack: it files **yearly** and would appear as one December
+> band larger than FIDC, FII and FIAGRO together. Its latest year-end figure is
+> the tile below, and its yearly bars are on [Industry Structure](/industry).
 
 <AreaChart
   data={aum_by_entity}
@@ -117,8 +123,12 @@ Three questions the data can answer, and where each is answered:
   series=entity_type
   type=stacked
   yAxisTitle="Net Assets (R$bn)"
-  title="Net Assets by Fund Family — Last 12 Months"
+  title="Net Assets by Monthly Fund Family — Last 12 Months"
 />
+
+<BigValue data={fip_latest} value=aum_bn title="FIP Net Assets, Latest Year-End (R$bn)" fmt=num0/>
+<BigValue data={fip_latest} value=period title="FIP Filing Year-End"/>
+<BigValue data={fip_latest} value=n_funds title="FIP Vehicles Filing" fmt=num0/>
 
 ---
 
@@ -146,34 +156,43 @@ Three questions the data can answer, and where each is answered:
 
 ## Pages
 
-### Industry-wide
+In sidebar order: the industry and its backdrop first, then one page per asset
+class, then the granular views (houses, single funds, rankings, screens), and
+the pipeline last.
+
+### Industry and backdrop
 
 | Page                            | What it answers                                                                                                                   | Watch out for                                                                                      |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | [Industry Structure](/industry) | Size, concentration (HHI and top-N share), fund formation, investor base, composition by asset class, plus FIP and FIAGRO by name | Families are measured at their **own** latest period; FIP's grain is yearly                        |
-| [Managers](/managers)           | Administrator and gestor league tables by net assets and by net flow                                                              | Built on registry names, which are **sparsely populated** — the page publishes the size of the gap |
-| [Fund Explorer](/fund)          | The searchable universe, then per-fund net assets, quota, return and flow                                                         | Only the largest funds carry per-fund time series; the site is static                              |
-| [Performance](/performance)     | Who beat their peers, ranked **within** each asset class                                                                          | The return basis differs per class and is never mixed                                              |
+| [Macro Context](/macro)         | SELIC, CDI, inflation, PTAX and the BACEN Focus consensus                                                                         | Units are BACEN's and are **not converted** — % a.a. and % a.d. sit side by side                   |
+| [B3 Markets](/markets)          | Exchange session prints from the COTAHIST tape: volume by board and instrument type, options                                      | Quotes are **unadjusted** and some papers quote per lot (`fator_cotacao` ≠ 1)                      |
 
 ### By asset class
 
 | Page                         | What it answers                                                                                               | Watch out for                                                                                   |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | [FI Industry](/fi)           | Open-ended funds: daily flows, quotaholder base, investor mix, portfolio allocation, largest funds            | CDA allocation is a **directional mix, not a market-value census**                              |
-| [FIDC Credit Monitor](/fidc) | Receivables funds: delinquency, both aging bands, tranche promised-vs-realised, subordination, tranche flows  | Raw CVM performance percentages carry extreme outliers — aggregates are medians                 |
+| [FIDC Credit Monitor](/fidc) | Receivables funds: delinquency and its drivers, both aging bands, tranche promised-vs-realised, subordination | Raw CVM performance percentages carry extreme outliers — aggregates are medians                 |
 | [FII Market](/fii)           | Real-estate funds: net assets, dividend-yield distribution, payout coverage, individual properties            | Property detail is partial by construction; the coverage tiles say how partial                  |
 | [Securitization](/securit)   | CRI / CRA / OTS certificates: outstanding value, maturity wall, payment waterfall, ratings, distressed series | These are **not funds**; "reported value" is stock outstanding, not new issuance                |
 | [ETF Market](/etf)           | Listed ETFs by provider, segment and tracked index, plus a scraped market snapshot                            | ETFs are carved out of the fund universe; NAV/return history is largely **absent post-CVM-175** |
 
-### Context and scrutiny
+### Houses, funds, rankings and screens
 
-| Page                                   | What it answers                                                                                 | Watch out for                                                                           |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| [Macro Context](/macro)                | SELIC, CDI, inflation, PTAX and the BACEN Focus consensus                                       | Units are BACEN's and are **not converted** — % a.a. and % a.d. sit side by side        |
-| [B3 Markets](/markets)                 | Exchange session prints from the COTAHIST tape: volume by board and instrument type, options    | Quotes are **unadjusted** and some papers quote per lot (`fator_cotacao` ≠ 1)           |
-| [Suspicious Deal Screens](/suspicious) | Four forensic patterns: zombie growth, evergreen aging, overdue certificates, captive vehicles  | Screens produce **signals, not findings** — every hit needs primary-source verification |
-| [Dormant Funds](/dormant)              | FI classes with zero subscriptions and redemptions for 3 months: empty shells vs parked capital | Three months is a **floor**; NULL flows disqualify rather than count as zero; FI only   |
-| [Pipeline Ops](/ops)                   | Whether the ingest ran, whether it succeeded, and whether the data actually landed              | A recent `ok` over a stale table is the disagreement worth catching                     |
+| Page                                   | What it answers                                                                                 | Watch out for                                                                                      |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| [Managers](/managers)                  | Administrator and gestor league tables by net assets and by net flow                            | Built on registry names, which are **sparsely populated** — the page publishes the size of the gap |
+| [Fund Explorer](/fund)                 | The searchable universe, then per-fund net assets, quota, return and flow                       | Only the largest funds carry per-fund time series; the site is static                              |
+| [Performance](/performance)            | Who beat their peers, ranked **within** each asset class                                        | The return basis differs per class and is never mixed                                              |
+| [Suspicious Deal Screens](/suspicious) | Four forensic patterns: zombie growth, evergreen aging, overdue certificates, captive vehicles  | Screens produce **signals, not findings** — every hit needs primary-source verification            |
+| [Dormant Funds](/dormant)              | FI classes with zero subscriptions and redemptions for 3 months: empty shells vs parked capital | Three months is a **floor**; NULL flows disqualify rather than count as zero; FI only              |
+
+### Operations
+
+| Page                 | What it answers                                                                    | Watch out for                                                       |
+| -------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| [Pipeline Ops](/ops) | Whether the ingest ran, whether it succeeded, and whether the data actually landed | A recent `ok` over a stale table is the disagreement worth catching |
 
 ---
 

@@ -4,40 +4,47 @@ Evidence.dev analytics dashboard backed by the Supabase Postgres pipeline.
 
 ## Pages
 
-Fifteen routes in three groups. `/` is the entry point: it carries the headline
-figures, a "start here" reading path, and the grouped index below. Evidence builds
-the nav automatically from the file stems, so the grouping lives in `index.md`, in
-the cross-links between pages, and in the page titles — not in config.
+Fifteen routes in four groups, ordered broad → granular → operational. `/` is
+the entry point: it carries the headline figures, a "start here" reading path,
+and the grouped index. The sidebar order is the `sidebar_position` in each page's
+frontmatter (1–14 below; Evidence sorts alphabetically without it), and
+`index.md`'s "Pages" tables and this table repeat the same order —
+`tests/test_dashboard_nav_order.py` keeps the three in step.
 
-**Industry-wide** — the market as a whole and the houses that run it.
+**Industry and backdrop** — the market as a whole and what it is read against.
 
-| Page               | Path           | What it shows                                                                                                               |
-| ------------------ | -------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Overview           | `/`            | Headline scale + freshness tiles, net assets by family (12mo), FIDC sector delinquency (12mo), grouped page index           |
-| Industry Structure | `/industry`    | Net assets by family, concentration (HHI, top-N share), asset-class composition, FI flow, formation, investors, FIP, FIAGRO |
-| Managers           | `/managers`    | Administrator and gestor league tables by net assets and net flow, led by the registry-name coverage disclosure             |
-| Fund Explorer      | `/fund`        | Searchable fund universe first, then net assets / quota / return / flow series for the largest funds                        |
-| Performance        | `/performance` | Per-asset-class ranking (who beat their peers), with the per-class return basis and the coverage caveat                     |
+| # | Page               | Path        | What it shows                                                                                                                                                                       |
+| - | ------------------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|   | Overview           | `/`         | Headline scale + freshness tiles, net assets by monthly family (12mo) + FIP tile, FIDC sector delinquency (12mo), grouped page index                                                |
+| 1 | Industry Structure | `/industry` | Net assets by family, concentration (HHI, top-N share), asset-class composition, FI flow, formation, investors, FIP, FIAGRO                                                          |
+| 2 | Macro Context      | `/macro`    | SELIC / CDI / IPCA / IGP-M series, PTAX FX and spreads, BACEN Focus consensus + dispersion, SGS inventory                                                                            |
+| 3 | B3 Markets         | `/markets`  | B3 tape as a market: monthly traded volume (standard vs odd lot), volume by instrument type, most traded tickers over 90 days, options activity — all from `b3_cotahist`, unadjusted |
 
 **By asset class** — one page per CVM family, plus the securitisation market.
 
-| Page                | Path       | What it shows                                                                                                                                 |
-| ------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| FI Industry         | `/fi`      | Net assets, daily flow, quotaholder base, investor mix (`cvm_fi_perfil`), single-holder screen, allocation (`cvm_fi_cda`)                     |
-| FIDC Credit Monitor | `/fidc`    | Sector delinquency, worst funds, both aging bands, tranche promised-vs-realised, subordination, tranche flows                                 |
-| FII Market          | `/fii`     | FII vs FIAGRO net assets, yield distribution, top payers, filing coverage, payout coverage, property explorer                                 |
-| Securitização       | `/securit` | CRI/CRA/OTS reported value, maturity wall, payment waterfall, ratings, subordination, distressed series                                       |
-| ETF                 | `/etf`     | ETF universe by provider / segment / index from `cvm_etf_registry`, plus the scraped market snapshot (NAV/return largely absent post-CVM-175) |
-| B3 Markets          | `/markets` | B3 tape as a market: monthly traded volume (standard vs odd lot), volume by instrument type, most traded tickers over 90 days, options activity — all from `b3_cotahist`, unadjusted |
+| # | Page                | Path       | What it shows                                                                                                                                 |
+| - | ------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 4 | FI Industry         | `/fi`      | Net assets, daily flow, quotaholder base, investor mix (`cvm_fi_perfil`), single-holder screen, allocation (`cvm_fi_cda`)                     |
+| 5 | FIDC Credit Monitor | `/fidc`    | Sector delinquency, worst funds, delinquency drivers (Δ R$ vs Δ rate), both aging bands, tranche promised-vs-realised, subordination, flows   |
+| 6 | FII Market          | `/fii`     | FII vs FIAGRO net assets, yield distribution, top payers, filing coverage, payout coverage, property explorer                                 |
+| 7 | Securitização       | `/securit` | CRI/CRA/OTS reported value, maturity wall, payment waterfall, ratings, subordination, distressed series                                       |
+| 8 | ETF                 | `/etf`     | ETF universe by provider / segment / index from `cvm_etf_registry`, plus the scraped market snapshot (NAV/return largely absent post-CVM-175) |
 
-**Context and scrutiny** — what the numbers should be read against, and whether they landed.
+**Houses, funds, rankings and screens** — the granular views.
 
-| Page               | Path          | What it shows                                                                                             |
-| ------------------ | ------------- | --------------------------------------------------------------------------------------------------------- |
-| Macro Context      | `/macro`      | SELIC / CDI / IPCA / IGP-M series, PTAX FX and spreads, BACEN Focus consensus + dispersion, SGS inventory |
-| Suspicious Screens | `/suspicious` | Zombie growth, evergreen aging, overdue securit series, captive vehicles — with thresholds stated         |
-| Dormant Funds      | `/dormant`    | Funds with capital parked for 36 months (definition stated first), where the money stands still, by administrator, and the empty shells |
-| Pipeline Health    | `/ops`        | Ingest freshness per entity, rows/day, status breakdown, table freshness, coverage, audit-log triage      |
+| #  | Page               | Path           | What it shows                                                                                                                           |
+| -- | ------------------ | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 9  | Managers           | `/managers`    | Administrator and gestor league tables by net assets and net flow, led by the registry-name coverage disclosure                         |
+| 10 | Fund Explorer      | `/fund`        | Searchable fund universe first, then net assets / quota / return / flow series for the largest funds                                    |
+| 11 | Performance        | `/performance` | Per-asset-class ranking (who beat their peers), with the per-class return basis and the coverage caveat                                 |
+| 12 | Suspicious Screens | `/suspicious`  | Zombie growth, evergreen aging, overdue securit series, captive vehicles — with thresholds stated                                       |
+| 13 | Dormant Funds      | `/dormant`     | Funds with capital parked for 36 months (definition stated first), where the money stands still, by administrator, and the empty shells |
+
+**Operations** — whether the numbers landed.
+
+| #  | Page            | Path   | What it shows                                                                                        |
+| -- | --------------- | ------ | ---------------------------------------------------------------------------------------------------- |
+| 14 | Pipeline Health | `/ops` | Ingest freshness per entity, rows/day, status breakdown, table freshness, coverage, audit-log triage |
 
 ### Page conventions
 
@@ -46,7 +53,8 @@ read any page:
 
 - **Structure.** Frontmatter `title` matches the `# H1` exactly, with
   `hide_title: true` beside it — Evidence otherwise renders the frontmatter title as
-  a second H1 above the page's own. A `>` blockquote
+  a second H1 above the page's own — and `sidebar_position: N` (the order in the
+  table above; `/` has none). A `>` blockquote
   lede follows the H1 and states the headline finding **and** what the data does
   not support. Optional `<BigValue>` strip next, then `---`-separated `##`
   sections ordered by importance, each with its own `>` note where a caveat
