@@ -1,12 +1,12 @@
 ---
-name: iliquid-nightly
+name: silo
 description: >
   Use when answering questions about Brazilian public financial data via the
   public read API — B3 cash quotes, CVM funds (NAV, flows, FIDC delinquency),
   panels, lookup, and coverage. Not for ingest, schema, or landing tables.
 ---
 
-# iliquid nightly (agents)
+# SILO (agents)
 
 Public **read** API for Brazilian fund and market data. Ingest is not exposed.
 
@@ -25,7 +25,8 @@ those to 50 / 200 / 2000 and 8s. It does **not** raise rows-per-response — the
 1000-row cap is server-wide for every caller. Do not mint or forge a key.
 
 Exceeding the id ceiling returns `22023` as a `400` naming the limit; the panel
-is never silently truncated. Landing tables are closed to both tiers.
+is never silently truncated. Landing tables are closed to both tiers. The same
+ceilings, as numbers, are `POST /rpc/catalog` → `.limits`.
 
 To sign in, send a human to https://silo-bz.vercel.app/signin.html — it returns an access token. Then send
 BOTH headers:

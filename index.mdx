@@ -1,25 +1,23 @@
 ---
-title: "iliquid nightly"
+title: "SILO"
 description: "Public read API for Brazilian public financial data — CVM fund disclosures, BACEN series, and B3 cash quotes — served from Supabase Postgres."
 ---
 
 ## What this is
 
-**iliquid nightly** (SILO) is a headless ingestion pipeline that downloads, parses,
-validates, and upserts Brazilian public financial data into a Supabase Postgres
-database — CVM fund disclosures (FI, FIDC, FII, FIP, FIAGRO, SECURIT, plus listed-company
-filings), BACEN time series, and B3 COTAHIST cash quotes. It exists for **financial
-accountability** of the fund industry: NAV, delinquency, flows, and structural health.
+**SILO** is a warehouse of Brazilian public financial data — CVM fund disclosures
+(FI, FIDC, FII, FIP, FIAGRO, SECURIT) and listed-company filings, BACEN time series,
+and B3 COTAHIST cash quotes — ingested daily into Supabase Postgres for **financial
+accountability** of the fund industry: NAV, delinquency, flows, filed financials,
+and structural health.
 
-The warehouse is readable through schema `api` (PostgREST) with a **shared
-publishable key**. Anonymous access is free and deliberately small — 3 ids per
-panel call, enough to explore. Signing in with **GitHub or Google** raises that
-to 50 and the query timeout from 3s to 8s; it does not change the 1000-row
-response cap, which is server-wide. Landing tables are closed to both tiers.
-[Sign in here](https://silo-bz.vercel.app/signin.html) to get a token.
-This site documents the read API. The human dashboard is
-[https://silo-bz.vercel.app/](https://silo-bz.vercel.app/). **SILO**
-is the GitHub repo: Actions ingest into Supabase, plus schema `api`.
+This site documents the **read API**: schema `api` over PostgREST, with a shared
+publishable key. Anonymous access is free and deliberately small; signing in
+raises the ceilings. The one table of what each tier gets is on
+[Conventions & limits](/api-docs/conventions#authentication), and the same
+numbers are served machine-readably as `catalog().limits`. The human dashboard
+is [silo-bz.vercel.app](https://silo-bz.vercel.app/); the code is
+[PedroDnT/SILO-BZ](https://github.com/PedroDnT/SILO-BZ).
 
 ## Base URL
 
@@ -63,6 +61,7 @@ curl -s -X POST "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/rpc/panel" \
 | [`options`](/api-docs/options) / [`termo`](/api-docs/termo) | functions | Derivative chain and forward history |
 | [`funds`](/api-docs/funds) | view + 3 functions | Fund registry, profile, and monthly NAV/flows by CNPJ |
 | [`holdings`](/api-docs/holdings) | function | What a fund owns, and which funds own a ticker |
+| [`financials`](/api-docs/financials) | 2 functions | Listed-company income statements, balance sheets and cash flows, by ticker, CNPJ or CVM code |
 | [`panel`](/api-docs/panel) | function | Long `(id, date, metric, value)` observations across both |
 | [`lookup`](/api-docs/lookup) | function | Resolve a ticker, ISIN, CNPJ, or name to an id |
 | [`coverage`](/api-docs/coverage) | function | Latest date per dataset, before you claim freshness |
@@ -84,8 +83,9 @@ flag so nobody mistakes these for split-adjusted prices.
   - **`close_return` across a calendar gap is null**, not a two-month return.
     The ratio is of unadjusted closes: a 2:1 split reports roughly −50 %.
   - **`freq=day` is quotes only.** Mix equity with fund fundamentals on `freq=month`.
-  - **Responses are hard-capped** (100,001 rows for `panel`, 5,001 for the series
-    functions) so a too-large ask is visible, never silently truncated.
+  - **A response stops at 1,000 rows**, server-wide, and the `Content-Range`
+    header says so — read it, narrow the ask, never analyse a cut series.
+    Details on [Conventions & limits](/api-docs/conventions#row-caps).
 </Warning>
 
 ## Ingest
@@ -94,6 +94,6 @@ Ingestion runs on a GitHub Actions cron (`run_daily`) plus on-demand backfills
 (`run_backfill`). There is **no ingest HTTP API** — this documentation covers the read side
 only. The full operator guide lives in the repository:
 
-- [README](https://github.com/PedroDnT/SILO-BZ/blob/main/README.md) — operator guide
+- [README](https://github.com/PedroDnT/SILO-BZ/blob/main/README.md) — what SILO is and how it works
 - [docs/](https://github.com/PedroDnT/SILO-BZ/tree/main/docs) — architecture, data
   modeling, and the serving roadmap
