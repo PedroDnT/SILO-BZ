@@ -1,21 +1,21 @@
 -- =============================================================================
 -- 03_fact_bacen_monthly.sql
--- DEPRECATED — BACEN data is no longer replicated locally.
+-- DEPRECATED — fact_bacen_monthly is dropped and not rebuilt.
 --
--- Benchmark comparisons (CDI, SELIC, IPCA) are handled client-side by
--- fetching from the BCB public API at query time and passing the rate as a
--- parameter to the analytical functions (benchmark_rate NUMERIC DEFAULT NULL).
+-- The raw tables ARE still populated: src/pipeline/run_daily.py runs
+-- BacenIngestor every day (a 30-day trailing refresh into bacen_sgs,
+-- bacen_ptax and bacen_expectativas), and the dashboard's /macro page reads
+-- them directly through the build-time connection. What was removed is only
+-- this monthly matview: the analytical functions take the benchmark rate as a
+-- parameter (benchmark_rate NUMERIC DEFAULT NULL) instead of joining it.
 --
--- BCB API endpoints:
---   CDI  (code 12): https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados/ultimos/1?formato=json
---   SELIC(code 11): https://api.bcb.gov.br/dados/serie/bcdata.sgs.11/dados/ultimos/1?formato=json
---   IPCA (code 433):https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados/ultimos/1?formato=json
+-- Nothing in schema `api` reads a bacen_* table (docs/DATA_INVENTORY.md §3
+-- lists the macro series as held-not-served), and mv_savings_flow_monthly —
+-- the one analytical reader of bacen_sgs — is revoked from every client role.
 --
--- Raw tables (bacen_sgs, bacen_ptax, bacen_expectativas) are kept in the schema
--- but are no longer populated by the pipeline.
---
--- To restore BACEN ingestion in future, re-add BacenIngestor to run_daily.py
--- and rebuild this matview.
+-- An earlier version of this header said the pipeline no longer ingested
+-- BACEN. It does; the claim was wrong and the ops page would have shown the
+-- rows landing daily.
 -- =============================================================================
 
 -- This file is intentionally a no-op. The DROP was applied in migration

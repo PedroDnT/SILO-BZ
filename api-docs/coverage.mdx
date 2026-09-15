@@ -5,10 +5,9 @@ icon: "calendar-check"
 ---
 
 `coverage` answers one question: **how far does the data actually go?** One row per
-dataset (`quotes`, `funds`, `fund_nav`, `derivatives`) plus one `funds_<family>` row for
-each fund family that has data — so the row count grows with coverage rather than being
-fixed. No
-arguments, no filters.
+dataset (`quotes`, `funds`, `fund_nav`, `derivatives`, `financials`, `anbima_classes`)
+plus one `funds_<family>` row for each fund family that has data — so the row count
+grows with coverage rather than being fixed. No arguments, no filters.
 
 ```sql
 api.coverage()
@@ -24,18 +23,25 @@ None. Send an empty JSON body.
 
 ## Returns
 
-One row per dataset — the four originals plus one `funds_<family>` row per fund
-family (`funds_fi`, `funds_fidc`, `funds_fii`, `funds_fip`, `funds_fiagro`), because
-the families file on different cadences and one blended date misreads all of them:
+One row per dataset, plus one `funds_<family>` row per fund family (`funds_fi`,
+`funds_fidc`, `funds_fii`, `funds_fip`, `funds_fiagro`), because the families file on
+different cadences and one blended date misreads all of them:
 
 <ResponseField name="dataset" type="text">
-  `quotes`, `funds`, `fund_nav`, or `derivatives`.
+  `quotes`, `funds`, `fund_nav`, `derivatives`, `financials`, `anbima_classes`, or
+  `funds_<family>`.
 
   - **`quotes`** — the most recent B3 cash session stored, across all tickers and boards.
   - **`funds`** — the most recent filing period in the fund registry, across all vehicles.
   - **`fund_nav`** — the most recent period in the monthly fundamentals fact.
   - **`derivatives`** — the most recent session stored across options and termo
     (`tpmerc` `070`, `080`, `030`).
+  - **`financials`** — the newest reference date any listed-company filing (ITR/DFP)
+    has reached, read from the filing index, not the 31M-row account table.
+  - **`anbima_classes`** — the newest boletim reference month.
+
+  Not covered: **holdings and debentures** (`fund_holdings`, `fund_debentures`) have no
+  row yet — read the newest `period` off the rows themselves until one exists.
 </ResponseField>
 <ResponseField name="as_of" type="date">
   The newest period that has **landed** (freshness — what ingest has seen). **Nullable**
@@ -47,10 +53,15 @@ the families file on different cadences and one blended date misreads all of the
   partial: an in-progress month, a family under CVM's 1–2 month publication lag, or
   FIP's annual year-end row (its `as_of` is a Dec-31 date even when perfectly
   current — read `complete_through`, not staleness, for FIP). Equal to `as_of` for
-  session data (quotes/derivatives).
+  data that is complete by construction (`quotes`, `derivatives`, `anbima_classes` — a
+  session print and a published boletim edition are whole when they land); the
+  family-blended value for `funds` and `fund_nav`; and **`null` for `financials`** on
+  purpose — no completeness model exists for company filings, and a fabricated date is
+  exactly the claim this endpoint exists to prevent.
 </ResponseField>
 <ResponseField name="source" type="text">
-  `b3_cotahist` for quotes and derivatives, `cvm` for the two fund datasets.
+  `b3_cotahist` for quotes and derivatives, `cvm` for the fund and company datasets,
+  `anbima` for the class benchmarks.
 </ResponseField>
 
 ## Example
@@ -77,11 +88,13 @@ const { data } = await supabase.rpc('coverage')
 
 ```json
 [
-  { "dataset": "quotes",      "as_of": "2026-08-26", "complete_through": null,         "source": "b3_cotahist" },
-  { "dataset": "funds",       "as_of": "2026-06-30", "complete_through": null,         "source": "cvm" },
-  { "dataset": "fund_nav",    "as_of": "2026-06-01", "complete_through": null,         "source": "cvm" },
-  { "dataset": "derivatives", "as_of": "2026-08-26", "complete_through": null,         "source": "b3_cotahist" },
-  { "dataset": "funds_fi",    "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "cvm" },
+  { "dataset": "quotes",         "as_of": "2026-08-26", "complete_through": "2026-08-26", "source": "b3_cotahist" },
+  { "dataset": "funds",          "as_of": "2026-07-31", "complete_through": "2026-06-01", "source": "cvm" },
+  { "dataset": "fund_nav",       "as_of": "2026-07-01", "complete_through": "2026-06-01", "source": "cvm" },
+  { "dataset": "derivatives",    "as_of": "2026-08-26", "complete_through": "2026-08-26", "source": "b3_cotahist" },
+  { "dataset": "financials",     "as_of": "2026-06-30", "complete_through": null,         "source": "cvm" },
+  { "dataset": "anbima_classes", "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "anbima" },
+  { "dataset": "funds_fi",       "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "cvm" },
   { "dataset": "funds_fidc",  "as_of": "2026-07-31", "complete_through": "2026-07-31", "source": "cvm" },
   { "dataset": "funds_fii",   "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "cvm" },
   { "dataset": "funds_fiagro","as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "cvm" },
@@ -91,7 +104,8 @@ const { data } = await supabase.rpc('coverage')
 
 The `funds_<family>` rows are the ones to read before a window claim:
 `complete_through` is the latest period that family has **fully** filed, which is
-what an omitted `p_to` clamps to. The four dataset rows carry `as_of` only.
+what an omitted `p_to` clamps to. `funds` and `fund_nav` carry the blended value
+(`latest_complete_period(NULL)`), which is the *most lagging* family's bound.
 
 ## Reading it
 
