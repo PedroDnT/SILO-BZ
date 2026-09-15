@@ -1,5 +1,6 @@
 ---
 title: Managers
+hide_title: true
 ---
 
 <!--
@@ -80,11 +81,11 @@ select * from supabase.mgr_gestor_universe
 > gap. Industry-wide concentration measured without needing names is on
 > [Industry Structure](/industry).
 
-<BigValue data={mgr_coverage} value=admin_coverage_num1 label="Registry Rows w/ Administrator (%)" fmt=num1/>
-<BigValue data={mgr_coverage} value=gestor_coverage_num1 label="Registry Rows w/ Gestor (%)" fmt=num1/>
-<BigValue data={mgr_coverage} value=n_administrators label="Administrators Named" fmt=num0/>
-<BigValue data={mgr_coverage} value=n_gestores label="Gestores Named" fmt=num0/>
-<BigValue data={mgr_coverage} value=ranking_period label="Ranking Period"/>
+<BigValue data={mgr_coverage} value=admin_coverage_num1 title="Registry Rows w/ Administrator (%)" fmt=num1/>
+<BigValue data={mgr_coverage} value=gestor_coverage_num1 title="Registry Rows w/ Gestor (%)" fmt=num1/>
+<BigValue data={mgr_coverage} value=n_administrators title="Administrators Named" fmt=num0/>
+<BigValue data={mgr_coverage} value=n_gestores title="Gestores Named" fmt=num0/>
+<BigValue data={mgr_coverage} value=ranking_period title="Ranking Period"/>
 
 ---
 

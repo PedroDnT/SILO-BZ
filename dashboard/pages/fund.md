@@ -1,5 +1,6 @@
 ---
 title: Fund Explorer
+hide_title: true
 ---
 
 <!--
@@ -75,11 +76,11 @@ select * from supabase.fund_flow_series
 > class is on [Performance](/performance); the FI industry aggregate is on
 > [FI Industry](/fi).
 
-<BigValue data={fund_headline} value=funds_tracked label="Funds Tracked" fmt=num0/>
-<BigValue data={fund_headline} value=aum_bn label="Net Assets, Latest Obs. (R$bn)" fmt=num0/>
-<BigValue data={fund_headline} value=investor_positions label="Quotaholder Positions" fmt=num0/>
-<BigValue data={fund_headline} value=funds_with_name label="Funds with a Registry Name" fmt=num0/>
-<BigValue data={fund_headline} value=funds_reporting_latest label="Reporting in Newest Period (Any Family)" fmt=num0/>
+<BigValue data={fund_headline} value=funds_tracked title="Funds Tracked" fmt=num0/>
+<BigValue data={fund_headline} value=aum_bn title="Net Assets, Latest Obs. (R$bn)" fmt=num0/>
+<BigValue data={fund_headline} value=investor_positions title="Quotaholder Positions" fmt=num0/>
+<BigValue data={fund_headline} value=funds_with_name title="Funds with a Registry Name" fmt=num0/>
+<BigValue data={fund_headline} value=funds_reporting_latest title="Reporting in Newest Period (Any Family)" fmt=num0/>
 
 > "Funds with a registry name" is the honest read on labelling: every other fund
 > below is identified by CNPJ because `cvm_fund_registry` has not published a name

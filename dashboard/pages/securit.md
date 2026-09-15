@@ -1,5 +1,6 @@
 ---
 title: Securitization
+hide_title: true
 ---
 
 <!--
@@ -88,11 +89,11 @@ select * from supabase.securit_dfin_coverage
 > [the FIDC Credit Monitor](/fidc); series that are past maturity and still open
 > are screened on [Suspicious Deal Screens](/suspicious).
 
-<BigValue data={securit_overview} value=n_series label="Live Series" fmt=num0/>
-<BigValue data={securit_overview} value=n_securitizadoras label="Securitizadoras" fmt=num0/>
-<BigValue data={securit_overview} value=outstanding_bn label="Outstanding (R$bn)" fmt=num0/>
-<BigValue data={securit_overview} value=inadimplente_num1 label="Series Inadimplente (%)" fmt=num1/>
-<BigValue data={securit_overview} value=last_reference label="Latest Reference"/>
+<BigValue data={securit_overview} value=n_series title="Live Series" fmt=num0/>
+<BigValue data={securit_overview} value=n_securitizadoras title="Securitizadoras" fmt=num0/>
+<BigValue data={securit_overview} value=outstanding_bn title="Outstanding (R$bn)" fmt=num0/>
+<BigValue data={securit_overview} value=inadimplente_num1 title="Series Inadimplente (%)" fmt=num1/>
+<BigValue data={securit_overview} value=last_reference title="Latest Reference"/>
 
 > `Series Inadimplente` is a share of the **series count**, not of value: it says
 > what fraction of live series carry that filed status, and a single large
@@ -166,8 +167,8 @@ yAxisTitle="R$bn"
 > folded into a bucket they do not belong in. The past-maturity population is
 > listed series by series on [Suspicious Deal Screens](/suspicious).
 
-<BigValue data={securit_overview} value=n_past_maturity label="Past Maturity, Still Open" fmt=num0/>
-<BigValue data={securit_overview} value=n_sem_vencimento label="No Maturity Date Filed" fmt=num0/>
+<BigValue data={securit_overview} value=n_past_maturity title="Past Maturity, Still Open" fmt=num0/>
+<BigValue data={securit_overview} value=n_sem_vencimento title="No Maturity Date Filed" fmt=num0/>
 
 ---
 

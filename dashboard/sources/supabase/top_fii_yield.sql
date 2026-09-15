@@ -1,10 +1,13 @@
+-- pct_dividend_yield_mes is CVM's Percentual_Dividend_Yield_Mes stored AS PUBLISHED,
+-- i.e. already a percent (the API's `yield` metric documents it the same way).
+-- An earlier version multiplied by 100 and the p90 line read ~2,000 %.
 select
   m.cnpj,
   coalesce(r.fund_name, m.cnpj) as fund_name,
   m.period,
   m.vl_patrim_liq / 1e6 as pl_mm,
   m.nr_cotst as investors,
-  round(m.pct_dividend_yield_mes * 100, 2) as dy_num2,
+  round(m.pct_dividend_yield_mes, 2) as dy_num2,
   round(m.pct_rentab_patrimonial * 100, 2) as return_num2
 from cvm_fii_mensal m
 left join cvm_fund_registry r on r.cnpj = m.cnpj and r.entity_type = 'fii'

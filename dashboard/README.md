@@ -42,11 +42,15 @@ the cross-links between pages, and in the page titles — not in config.
 Applied uniformly across all thirteen pages, so a reader who learns them once can
 read any page:
 
-- **Structure.** Frontmatter `title` matches the `# H1` exactly. A `>` blockquote
+- **Structure.** Frontmatter `title` matches the `# H1` exactly, with
+  `hide_title: true` beside it — Evidence otherwise renders the frontmatter title as
+  a second H1 above the page's own. A `>` blockquote
   lede follows the H1 and states the headline finding **and** what the data does
   not support. Optional `<BigValue>` strip next, then `---`-separated `##`
   sections ordered by importance, each with its own `>` note where a caveat
   applies.
+- **Tiles.** `<BigValue>` takes `title=`, not `label=` — `label` is not a prop and
+  the tile falls back to the column name ("Aum Bn").
 - **Units live in the column title.** Scaling happens in SQL: `(R$mm)`, `(R$bn)`,
   `(R$tn)`, `(%)`, `(pp)`, `(R$)`. Fields CVM publishes without a documented scale
   are labelled **source units** and shown unconverted.

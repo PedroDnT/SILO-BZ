@@ -1,5 +1,6 @@
 ---
 title: B3 Markets
+hide_title: true
 ---
 
 <!--
@@ -71,10 +72,10 @@ select * from supabase.b3_options_activity
 > series that stops means the ingest stopped, not that the market did (check
 > [Pipeline Ops](/ops)).
 
-<BigValue data={b3_market_overview} value=latest_session label="Latest Session"/>
-<BigValue data={b3_market_overview} value=cash_instruments label="Cash Instruments Printed" fmt=num0/>
-<BigValue data={b3_market_overview} value=session_volume_bn label="Session Volume (R$bn)" fmt=num1/>
-<BigValue data={b3_market_overview} value=option_series label="Option Series Printed" fmt=num0/>
+<BigValue data={b3_market_overview} value=latest_session title="Latest Session"/>
+<BigValue data={b3_market_overview} value=cash_instruments title="Cash Instruments Printed" fmt=num0/>
+<BigValue data={b3_market_overview} value=session_volume_bn title="Session Volume (R$bn)" fmt=num1/>
+<BigValue data={b3_market_overview} value=option_series title="Option Series Printed" fmt=num0/>
 
 ---
 

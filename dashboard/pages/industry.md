@@ -1,5 +1,6 @@
 ---
 title: Industry Structure
+hide_title: true
 ---
 
 <!--

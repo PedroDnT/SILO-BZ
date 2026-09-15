@@ -1,5 +1,6 @@
 ---
 title: Macro Context
+hide_title: true
 ---
 
 <!--
@@ -110,11 +111,11 @@ select * from supabase.macro_series_inventory
 > annualised, chained or rebased, because each of those is an assumption rather
 > than data. The unit travels with every row in the inventory table at the bottom.
 
-<BigValue data={macro_latest} value=selic_meta_num2 label="SELIC Target (% a.a.)" fmt=num2/>
-<BigValue data={macro_latest} value=ipca_mes_num2 label="IPCA (% in Month)" fmt=num2/>
-<BigValue data={macro_latest} value=usd_brl label="USD/BRL (PTAX Sell)" fmt=num2/>
-<BigValue data={macro_latest} value=focus_ipca_median_num2 label="Focus IPCA Median (%)" fmt=num2/>
-<BigValue data={macro_latest} value=sgs_through label="SGS Data Through"/>
+<BigValue data={macro_latest} value=selic_meta_num2 title="SELIC Target (% a.a.)" fmt=num2/>
+<BigValue data={macro_latest} value=ipca_mes_num2 title="IPCA (% in Month)" fmt=num2/>
+<BigValue data={macro_latest} value=usd_brl title="USD/BRL (PTAX Sell)" fmt=num2/>
+<BigValue data={macro_latest} value=focus_ipca_median_num2 title="Focus IPCA Median (%)" fmt=num2/>
+<BigValue data={macro_latest} value=sgs_through title="SGS Data Through"/>
 
 ---
 
