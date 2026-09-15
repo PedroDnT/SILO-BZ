@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Sequence
 __all__ = [
     "CATALOG_VERSION",
     "CONSTRAINTS",
+    "LIMITS",
     "METRICS",
     "catalog_payload",
     "tool_specs",
@@ -68,6 +69,13 @@ __all__ = [
 # 6: one endpoint per cash instrument type, each carrying both lot sizes.
 # 5: main's typed cash asset classes (4) merged with the option/termo id_types
 # and list-valued id_type this branch introduced (3).
+# 19: `limits` — every ceiling in one machine-readable block. The numbers were
+# already in the contract, but scattered across prose constraints, the agents
+# page and the SDK README, and an agent that has to parse "3 ids anonymous,
+# 50 signed in" out of a sentence will get one of them wrong. rows_per_response
+# (server-wide 1000, with how to detect and what pages), the functions' own
+# unreachable LIMIT sentinels (named so nobody waits for them), and the per-tier
+# ceilings — read from the same SQL a lockstep test pins them to.
 # 18: listed-company financial statements reach the API. api.financials
 # serves the statement lines long (one row per account, carrying doc_type,
 # statement, scope, the ÚLTIMO/restatement choice as `version`, and the
@@ -78,7 +86,7 @@ __all__ = [
 # row. No panel arm yet: an ITR files a 3-month AND a year-to-date figure
 # under one date and the panel is 1-D per (id, date, metric), so choosing a
 # span silently is exactly the fabricated number this contract forbids.
-CATALOG_VERSION = 18
+CATALOG_VERSION = 19
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -375,6 +383,71 @@ DEFAULTS = {
 }
 
 
+# Every ceiling a caller can hit, as numbers. The prose constraints above say
+# the same things; this is the copy an agent can read without parsing a
+# sentence. tests/test_api_contract_sql.py pins each tier number to the CASE
+# api.caller_tier() expression in 19_api_contract.sql, so this block cannot
+# quietly lag the SQL.
+LIMITS = {
+    "rows_per_response": {
+        "value": 1000,
+        "scope": (
+            "every response, every tier — PostgREST db-max-rows, a server-wide "
+            "setting; signing in does not change it"
+        ),
+        "kept": "the OLDEST rows; a cut-short series looks like one that simply ends",
+        "detect": (
+            "the Content-Range response header: `0-999/*` is a truncated page; "
+            "send `Prefer: count=exact` and it reads `0-999/<total>`"
+        ),
+        "paging": {
+            "views": "limit/offset (and Range) page normally on GET /rest/v1/<view>",
+            "rpc": (
+                "does not page: a Range on /rest/v1/rpc/<function> returns the "
+                "first page again — narrow p_from/p_to, ids or metrics instead"
+            ),
+        },
+    },
+    "sql_sentinel": {
+        "series": 5001,
+        "panel": 100001,
+        "reachable": False,
+        "note": (
+            "the functions' own LIMITs (serve _MAX_POINTS/_MAX_PANEL + 1). "
+            "Unreachable behind the 1000-row ceiling on the hosted API; never "
+            "a truncation signal there"
+        ),
+    },
+    "tiers": {
+        "anon": {
+            "panel_ids": 3,
+            "search_funds_rows": 25,
+            "option_chain_rows": 200,
+            "option_exercises_rows": 500,
+            "fund_holdings_rows": 500,
+            "statement_timeout_seconds": 3,
+        },
+        "authenticated": {
+            "panel_ids": 50,
+            "search_funds_rows": 200,
+            "option_chain_rows": 2000,
+            "option_exercises_rows": 5000,
+            "fund_holdings_rows": 5000,
+            "statement_timeout_seconds": 8,
+        },
+        "exceeding_an_id_ceiling": (
+            "SQLSTATE 22023 naming the limit — a panel is never silently "
+            "trimmed to fit"
+        ),
+        "how_to_sign_in": (
+            "GitHub or Google at https://silo-bz.vercel.app/signin.html; send "
+            "the JWT as `Authorization: Bearer <jwt>` beside `apikey` (the SDK "
+            "takes it as token= or SILO_TOKEN)"
+        ),
+    },
+}
+
+
 def catalog_payload() -> Dict[str, Any]:
     return {
         "kind": "catalog",
@@ -385,6 +458,7 @@ def catalog_payload() -> Dict[str, Any]:
         "metrics": METRICS,
         "notebook_reducers": NOTEBOOK_REDUCERS,
         "constraints": CONSTRAINTS,
+        "limits": LIMITS,
         "examples": EXAMPLES,
         "id_types": ["ticker", "cnpj", "cd_cvm", "option", "termo"],
         "asset_classes": [
