@@ -26,6 +26,7 @@
         "icon": "rocket",
         "pages": [
           "api-docs/quickstart",
+          "api-docs/sdk",
           "api-docs/agents",
           "api-docs/conventions"
         ]

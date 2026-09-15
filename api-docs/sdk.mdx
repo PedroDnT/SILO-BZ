@@ -1,0 +1,142 @@
+---
+title: "Python SDK"
+description: "silo-client — a thin, honest Python client over the read API: one method per endpoint, a capped response raises, views page, nothing is fabricated."
+icon: "python"
+---
+
+`silo-client` is a small Python client for the Data API. One class, one method
+per endpoint, PostgREST underneath. It exists to make the two things that bite
+hand-written callers impossible to miss: a **capped response raises** instead of
+returning a short series, and **views page while functions do not**.
+
+It lives in the repository and is not on PyPI — deliberately, while the API's
+own surface is still moving.
+
+## Install
+
+```bash
+git clone https://github.com/PedroDnT/SILO-BZ && cd SILO-BZ
+pip install -e sdk/              # httpx only
+pip install -e "sdk/[pandas]"    # adds the wide-DataFrame panel
+```
+
+Python ≥ 3.10. Or copy `sdk/silo_client/` into your project.
+
+## Configure
+
+```python
+from silo_client import SiloClient
+
+silo = SiloClient(url="https://zcjbtpxuhdekpwcxmepn.supabase.co",
+                  key="sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437")   # testing key
+```
+
+Or set `SILO_URL` and `SILO_ANON_KEY` and call `SiloClient()`. The publishable
+key identifies the **project**; to move from the anonymous tier to the signed-in
+one, pass a user JWT as `token=` (or set `SILO_TOKEN`) — see
+[Conventions & limits](/api-docs/conventions#authentication) for what each tier
+gets, and check `silo.tier` to know which ceiling you are under.
+
+## First calls
+
+```python
+silo.catalog()                    # metric map + constraints + limits — cached, call once
+silo.coverage()                   # as_of (landed) vs complete_through (served), per dataset
+silo.lookup("petrobras")          # company rows carry tickers=["PETR3","PETR4"]
+
+df = silo.panel(["PETR4", "05754060000113"],
+                metrics=["close_return", "delinquency"])   # wide DataFrame, (date) × (id, metric)
+df.corr()                         # reductions happen HERE, not over HTTP
+```
+
+`panel` validates metric names against the live catalog, so a typo raises
+`ValueError` client-side instead of returning an empty panel that looks like
+missing data. Missing observations stay `NaN` — never filled.
+
+## Every method
+
+One per published endpoint. Dates accept `date` objects or ISO strings; `None`
+means "the server's default", which for fund windows is the honest one (only
+complete periods).
+
+| Method | Endpoint | Notes |
+| --- | --- | --- |
+| `catalog()`, `metrics()`, `limits()` | `catalog` | cached once per client |
+| `coverage()` | `coverage` | call before claiming freshness |
+| `lookup(query)` | `lookup` | never a name-inferred ticker↔CNPJ |
+| `panel(ids, metrics, start, end, freq, wide)` | `panel` | `wide=False` for the long rows |
+| `quote_history(ticker, start, end, board)` · `quote_latest(ticker, board)` | `quote_history` · `quote_latest` | unadjusted prices |
+| `option_chain(prefix, trade_date, expiry_from, limit)` · `option_history(codneg, …)` · `option_exercises(prefix, …)` | options | prefix ≥ 3 chars, checked client-side |
+| `termo_history(codneg, start, end)` | `termo_history` | |
+| `fund_profile(cnpj)` · `fund_nav(cnpj, start, end, entity_type)` · `search_funds(query, limit)` | funds | |
+| `fund_holdings(cnpj \| ticker, start, end, kind, limit)` | `fund_holdings` | exactly one of holder / held ticker |
+| `fund_debentures(cnpj \| issuer, start, end, limit)` | `fund_debentures` | issuer = ticker, CVM code or any CPF/CNPJ |
+| `financials(id, statement, start, end, scope, doc_type)` · `company_financials(id, …)` | financials | read `period_months` before comparing rows |
+| `anbima_classes(category, metric, level, start, end)` | `anbima_classes` | industry aggregates, no fund join |
+| `view(name, **filters)` · `view_all(name, **filters)` · `iter_view(...)` | the eight views | PostgREST filter syntax passed through verbatim |
+
+## The three rules the client enforces
+
+### A capped response raises
+
+PostgREST stops every response at **1,000 rows** and answers `200` with the
+oldest page. Six years of daily quotes come back as three and a half, and the
+series simply looks like it ended. The client asks the server for a true count
+(`Prefer: count=exact`) and raises `SiloTruncated` rather than hand you the
+short answer:
+
+```python
+from silo_client import SiloTruncated
+
+try:
+    rows = silo.quote_history("PETR4", start="2019-01-01")
+except SiloTruncated as e:
+    print(e.returned, "of", e.total)      # 1000 of 4382
+    print(e.rows[-1]["trade_date"])       # where the cut fell — inspect, never use
+```
+
+Range paging does not work on function calls, so the client cannot stitch the
+rest: narrow the window, ask for fewer ids, or take one metric at a time.
+
+### Views page; functions do not
+
+The eight views (`quotes`, `funds`, `equities`, …) are the one surface where
+`limit`/`offset` work, and the client knows it:
+
+```python
+page2 = silo.view("funds", order="cnpj.asc", limit=1000, offset=1000)   # one explicit page
+fidcs = silo.view_all("funds", entity_type="eq.fidc", order="cnpj.asc",
+                      select="cnpj,fund_name,first_period,last_period")  # every page
+```
+
+`view_all` / `iter_view` **require an `order`** — offset paging without a total
+order can duplicate a row at one boundary and drop one at the next with nothing
+in the response to say so. A `view()` with no `limit` that lands on the
+1,000-row cap still raises: that is the silent cut, not a page.
+
+### The client tells you when it is out of date
+
+`catalog()` compares the server's catalog version with the one the client was
+written against and warns (`SiloCatalogDrift`) on a mismatch — a newer server
+has endpoints or limits the wrappers do not know; an older one lacks some they
+call. It never refuses: everything read off the catalog itself keeps working.
+`silo.limits()` is the same tier table as numbers, straight from the server.
+
+## Errors
+
+| Exception | When |
+| --- | --- |
+| `SiloError` | any 4xx/5xx — carries `.status` and the server's own message (`22023` ceilings, required prefixes, unknown ANBIMA categories) |
+| `SiloTruncated` | a capped response; `.returned`, `.total`, `.rows` |
+| `SiloTimeout` | SQLSTATE `57014` — the tier's statement budget (3 s / 8 s); narrow the call or sign in |
+| `ValueError` | caught before the round trip: unknown metric, missing `order`, both/neither of an exactly-one pair |
+
+The client never retries a 4xx into a different answer, and connection retries
+are safe only because every endpoint is read-only.
+
+## Source
+
+[`sdk/silo_client/client.py`](https://github.com/PedroDnT/SILO-BZ/blob/main/sdk/silo_client/client.py)
+is short enough to read in one sitting, and
+[`tests/test_sdk_client.py`](https://github.com/PedroDnT/SILO-BZ/blob/main/tests/test_sdk_client.py)
+is the contract: offline, via `httpx.MockTransport`, no network.
