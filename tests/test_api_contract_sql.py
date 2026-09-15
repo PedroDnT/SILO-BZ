@@ -80,6 +80,7 @@ EXPECTED_FUNCTIONS = {
     "api.catalog",
     "api.financials",
     "api.company_financials",
+    "api.anbima_classes",
 }
 
 # Internal helpers: called only from inside SECURITY DEFINER functions, which

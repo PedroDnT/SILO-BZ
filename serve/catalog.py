@@ -69,6 +69,12 @@ __all__ = [
 # 6: one endpoint per cash instrument type, each carrying both lot sizes.
 # 5: main's typed cash asset classes (4) merged with the option/termo id_types
 # and list-valued id_type this branch introduced (3).
+# 20: api.anbima_classes — the ANBIMA Boletim de Fundos class series (AUM, net
+# flows, returns, fund counts per class / type / industry total) reach the API
+# as the industry aggregates they are: no id, no panel arm, no fund↔class join
+# (CVM's `classe` is not ANBIMA's taxonomy). coverage() gains an
+# `anbima_classes` row with as_of = complete_through — a published edition is
+# complete by construction.
 # 19: `limits` — every ceiling in one machine-readable block. The numbers were
 # already in the contract, but scattered across prose constraints, the agents
 # page and the SDK README, and an agent that has to parse "3 ids anonymous,
@@ -86,7 +92,7 @@ __all__ = [
 # row. No panel arm yet: an ITR files a 3-month AND a year-to-date figure
 # under one date and the panel is 1-D per (id, date, metric), so choosing a
 # span silently is exactly the fabricated number this contract forbids.
-CATALOG_VERSION = 19
+CATALOG_VERSION = 20
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -224,6 +230,7 @@ NOTEBOOK_REDUCERS: Dict[str, str] = {
 }
 
 CONSTRAINTS = [
+    "ANBIMA CLASS ROWS ARE INDUSTRY AGGREGATES, NOT FUNDS. api.anbima_classes serves the Boletim de Fundos de Investimento as published — R$ milhões (unit brl_mm) and percentage points (unit pct) — per class, ANBIMA type or industry total (`level`; class aggregates by default). No fund in this warehouse is mapped to an ANBIMA class: CVM's `classe` is CVM's taxonomy, so never join a fund to a class by name, and there is no panel arm because these rows carry no id. An unknown category, metric or level raises 22023 listing what exists rather than returning an empty array.",
     "LISTED-COMPANY FINANCIALS ARE FILED, NOT DERIVED. api.financials returns one row per account line exactly as the company filed it; nothing is summed, annualised or restated. Read period_months before comparing two rows: an ITR publishes the SAME account twice under one reference date, once for the three months and once year-to-date, and they are distinguished only by the period span. Adding a 3-month row to a 6-month row double-counts the quarter.",
     "FINANCIALS DEFAULT TO CONSOLIDATED (scope=con) AND TO THE PERIOD THE DOCUMENT IS FOR (ordem_exerc ULTIMO). The prior-year comparative printed beside it is never returned. When a company re-files, only the newest version of each statement is served and `version` carries it; in company_financials a balance sheet from a different version than the income statement reads NULL rather than being paired across filings.",
     "A TICKER RESOLVES TO A COMPANY ONLY THROUGH CVM'S PUBLISHED FCA MAP, active listings only — the CNPJ and the trading code arrive on the same filed row. financials('PETR4'), financials('33000167000101') and financials('9512') are the same company. A delisted code resolves to nothing rather than to a guess, and no company↔ticker edge is ever inferred from a name.",
@@ -507,6 +514,7 @@ def catalog_payload() -> Dict[str, Any]:
             "termo_history": "POST /rest/v1/rpc/termo_history",
             "financials": "POST /rest/v1/rpc/financials",
             "company_financials": "POST /rest/v1/rpc/company_financials",
+            "anbima_classes": "POST /rest/v1/rpc/anbima_classes",
         },
     }
 

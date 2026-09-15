@@ -1,0 +1,98 @@
+---
+title: "ANBIMA classes"
+description: "The industry's own benchmark series — AUM, net flows, returns and fund counts per ANBIMA class, as the Boletim de Fundos publishes them."
+icon: "chart-column"
+---
+
+ANBIMA's monthly *Boletim de Fundos de Investimento* is the reference every
+Brazilian fund manager is measured against: net assets, net flows, returns and
+fund counts per **class** (Renda Fixa, Ações, Multimercados, ETF, FIDC, FII, …),
+per **ANBIMA type** under each class, and for the industry as a whole. One
+function serves it, long, exactly as published.
+
+<Warning>
+  **These rows are industry aggregates, not funds.** No fund in this warehouse
+  is mapped to an ANBIMA class — CVM's `classe` is CVM's taxonomy, not
+  ANBIMA's — so nothing here joins to `fund_nav`, `funds` or `panel`, and
+  a class is never matched to a fund by name. Use them as the benchmark they
+  are: the series a fund, a family or a strategy is compared against.
+</Warning>
+
+## `anbima_classes`
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/anbima_classes" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_category":"Renda Fixa","p_metric":"pl_brl_mm"}'
+```
+
+Arguments — all optional:
+
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `p_category` | every class | one ANBIMA class, e.g. `Renda Fixa`, `Ações`, `Multimercados`, `ETF` (case-insensitive) |
+| `p_metric` | every metric | one of the boletim metrics below |
+| `p_level` | `category` | `category` (class aggregate) · `type` (the ANBIMA types under a class) · `total` (the industry total) · `null` for every level |
+| `p_from` / `p_to` | 2019 → latest edition | window on `reference_date` |
+
+An unknown category, metric or level **raises `22023` listing what exists**,
+rather than returning an empty array — an empty array reads as "ANBIMA
+published nothing", which is a different claim from "you misspelt the class".
+
+One row per (reference date, class, type, level, metric):
+
+```json
+[
+  { "reference_date": "2026-07-01", "category": "Renda Fixa", "type_id": null,
+    "type_name": "Renda Fixa", "level": "category",
+    "metric": "pl_brl_mm", "value": 3456789.12, "unit": "brl_mm",
+    "boletim_ref": "2026-08", "source": "anbima" }
+]
+```
+
+### Metrics and units
+
+Values are **as published** — R$ milhões and percentage points — and `unit`
+says which, read off the metric name, never off the number:
+
+| `metric` | `unit` | Meaning |
+| --- | --- | --- |
+| `pl_brl_mm` | `brl_mm` | net assets (patrimônio líquido), R$ millions |
+| `captacao_liquida_brl_mm` | `brl_mm` | net flow in the month |
+| `captacao_liquida_ytd_brl_mm` | `brl_mm` | net flow, year to date |
+| `captacao_liquida_12m_brl_mm` | `brl_mm` | net flow, trailing 12 months |
+| `rentabilidade_pct` | `pct` | return in the month, percentage points (`4.37` = 4.37 %) |
+| `rentabilidade_ytd_pct` | `pct` | return, year to date |
+| `rentabilidade_12m_pct` | `pct` | return, trailing 12 months |
+| `fund_count` | `count` | number of funds |
+
+Class-level `pl_brl_mm`, `captacao_liquida_brl_mm` and `fund_count` carry the
+full published history (from 2006); the type-level and return series cover the
+trailing window each boletim edition prints (about 19 months). Ask for a
+longer type-level window and you get what was published, not a reconstruction.
+
+### Why `level` is part of the grain
+
+**Cambial**, **FIP** and **FIAGRO** each appear twice in the same boletim
+sheet — once as the class aggregate and once as an ANBIMA type of the identical
+name. `level` is what keeps them apart:
+
+```bash
+# both rows for FIP, side by side
+-d '{"p_category":"FIP","p_level":null}'
+```
+
+## Freshness
+
+`coverage` carries an `anbima_classes` row. Its `complete_through` equals its
+`as_of`: a published edition is complete by construction — this is a monthly
+publication, not a filing cadence — so there is no partial trailing month to
+clamp.
+
+## Not served here
+
+- **A fund's ANBIMA class.** Not held; see the warning above.
+- **A `panel` arm.** The panel is one value per `(id, date, metric)`, and
+  these rows carry no id. Fetch the class series with this function and align
+  it with a panel in the notebook.
