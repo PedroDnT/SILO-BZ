@@ -28,7 +28,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 19
+KNOWN_CATALOG_VERSION = 20
 
 
 class SiloCatalogDrift(UserWarning):
@@ -447,6 +447,32 @@ class SiloClient:
         return self._rpc("company_financials", {
             "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
             "p_scope": scope,
+        })
+
+    # -- industry aggregates (ANBIMA) ----------------------------------------
+
+    def anbima_classes(self, category: Optional[str] = None,
+                       metric: Optional[str] = None,
+                       level: Optional[str] = "category",
+                       start: Datish = None,
+                       end: Datish = None) -> List[Dict[str, Any]]:
+        """ANBIMA Boletim de Fundos class series, as published.
+
+            silo.anbima_classes()                                  # every class, AUM/flows/returns/counts
+            silo.anbima_classes("Renda Fixa", metric="pl_brl_mm")  # one class, one metric
+            silo.anbima_classes("Ações", level="type")             # the ANBIMA types under a class
+            silo.anbima_classes(level="total")                     # the industry total
+
+        One row per (reference_date, category, type, level, metric); `unit`
+        is brl_mm (R$ millions, as published), pct (percentage points) or
+        count. These are industry aggregates: no fund is mapped to a class
+        here, so nothing joins them to `fund_nav` or `panel`. An unknown
+        category, metric or level is a `SiloError` (22023) listing what
+        exists — never an empty list that looks like "nothing published".
+        """
+        return self._rpc("anbima_classes", {
+            "p_category": category, "p_metric": metric, "p_level": level,
+            "p_from": _iso(start), "p_to": _iso(end),
         })
 
     # -- typed views (GET resources, not functions) --------------------------

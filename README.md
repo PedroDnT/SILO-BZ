@@ -49,7 +49,7 @@ so. Concretely, every change is held to five rules (`CLAUDE.md`):
 | CVM | **CIA Aberta** — listed companies | registry; ITR/DFP accounts; IPE events (Fatos Relevantes); FCA tickers | per filing | company financials and events; the only company ↔ ticker link, never name-matched |
 | BACEN | SGS, PTAX, Focus | SELIC, CDI, IPCA, IGP-M, INPC, poupança, PIB; PTAX buy/sell per currency; Focus consensus per indicator and horizon | daily / business days | the macro context every fund is measured against |
 | B3 | COTAHIST, corporate events | unadjusted OHLC, volume, ticker and ISIN per session; splits, groupings, bonuses and dividends per ISIN | daily (yearly zips for history) | quotes, monthly market and option activity; adjustment factors once verified against the tape |
-| ANBIMA | class boletim | monthly figures per ANBIMA class and type | monthly | class-level benchmarks (an ETF-only view is kept for compatibility) |
+| ANBIMA | class boletim | monthly figures per ANBIMA class and type | monthly | class-level benchmarks, served by `api.anbima_classes` (an ETF-only view is kept for compatibility) |
 | Apify scrape | ETF market snapshot | NAV, price, yields, volatility, drawdown per listed ETF | daily, gated on `APIFY_TOKEN` | the market side of the ETF page; self-skips without the token |
 
 Where each dataset lands, at what grain, and what is ingested but not yet served is in
