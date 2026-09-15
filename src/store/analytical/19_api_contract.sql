@@ -157,6 +157,131 @@ COMMENT ON FUNCTION api.assert_panel_ids(TEXT[]) IS
 REVOKE ALL ON FUNCTION api.caller_tier() FROM PUBLIC;
 REVOKE ALL ON FUNCTION api.assert_panel_ids(TEXT[]) FROM PUBLIC;
 
+-- The row cap refuses instead of trimming.
+--
+-- PostgREST cuts every response at db-max-rows = 1000 and answers 200 with
+-- the OLDEST rows, so a panel over the cap looked exactly like a complete
+-- one; the only signal was the Content-Range header, and a caller who did
+-- not read it analysed a fabricated series. An external cross-check
+-- (2026-09-15) read the header on all 912 batches because the docs said to;
+-- an agent that skims will not. So the function now counts its own result
+-- and raises 22023 whenever it would exceed the page, unless the caller is
+-- paging with p_after — the same argument-position trick as
+-- assert_panel_ids, so the capped functions stay LANGUAGE sql.
+--
+-- 1000 is the ONE page size: PostgREST db-max-rows, the SDK's
+-- SERVER_ROW_CAP and catalog().limits.page.size — tests/test_api_contract_sql.py
+-- pins them to each other.
+CREATE OR REPLACE FUNCTION api.assert_row_cap(p_n BIGINT, p_paging BOOLEAN, p_fn TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+    IF NOT COALESCE(p_paging, FALSE) AND p_n > 1000 THEN
+        RAISE EXCEPTION
+            '%: your window produces more than 1000 rows, which the server would silently cut at 1000. Narrow p_from/p_to, ids or metrics, or page with p_after (start with p_after = '''' and pass the last row''s key back).',
+            p_fn
+            USING ERRCODE = '22023';
+    END IF;
+    RETURN TRUE;
+END;
+$$;
+
+COMMENT ON FUNCTION api.assert_row_cap(BIGINT, BOOLEAN, TEXT) IS
+    'Internal. Raises 22023 when a capped function would return more than the 1000-row page and the caller is not paging with p_after. The page size is PostgREST db-max-rows; nothing is ever trimmed to fit.';
+
+REVOKE ALL ON FUNCTION api.assert_row_cap(BIGINT, BOOLEAN, TEXT) FROM PUBLIC;
+
+-- Cursor for api.panel's paging mode. Transparent on purpose so an agent can
+-- build it from the last row it received: 'date|id|metric|asset_class'.
+--   NULL  → whole-result mode (assert_row_cap raises above 1000 rows)
+--   ''    → first page of paging mode
+--   key   → the page after that key, ordered (date, id, metric, asset_class)
+-- asset_class is part of the key because a CNPJ can file under two families
+-- in one month (385 do, fi + fidc), so (id, date, metric) alone is not unique
+-- and a 3-part cursor could skip or repeat a row at a page edge.
+CREATE OR REPLACE FUNCTION api.parse_panel_cursor(p_after TEXT)
+RETURNS TABLE (paging BOOLEAN, after_date DATE, after_id TEXT, after_metric TEXT, after_class TEXT)
+LANGUAGE plpgsql
+IMMUTABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_parts TEXT[];
+BEGIN
+    IF p_after IS NULL THEN
+        RETURN QUERY SELECT FALSE, NULL::date, NULL::text, NULL::text, NULL::text;
+        RETURN;
+    END IF;
+    IF btrim(p_after) = '' THEN
+        RETURN QUERY SELECT TRUE, NULL::date, NULL::text, NULL::text, NULL::text;
+        RETURN;
+    END IF;
+    v_parts := string_to_array(p_after, '|');
+    IF array_length(v_parts, 1) <> 4 OR v_parts[1] !~ '^\d{4}-\d{2}-\d{2}$' THEN
+        RAISE EXCEPTION
+            'panel: p_after must be '''' (first page) or ''<date>|<id>|<metric>|<asset_class>'' copied from the last row of the previous page; got %',
+            p_after
+            USING ERRCODE = '22023';
+    END IF;
+    RETURN QUERY SELECT TRUE, v_parts[1]::date, v_parts[2], v_parts[3], v_parts[4];
+END;
+$$;
+
+COMMENT ON FUNCTION api.parse_panel_cursor(TEXT) IS
+    'Internal. Parses api.panel''s p_after cursor: NULL = whole result (refuses over 1000 rows), '''' = first page, ''date|id|metric|asset_class'' = the page after that key. Malformed → 22023.';
+
+REVOKE ALL ON FUNCTION api.parse_panel_cursor(TEXT) FROM PUBLIC;
+
+-- Universe mode: p_ids empty, p_entity_type names the family. The panel then
+-- selects the family's funds itself (a filter on published values — latest
+-- NAV, observation count — never a rank; reductions stay in the notebook).
+-- Signed-in only (decision 2026-09-15): every page re-scans a whole family's
+-- window, and the tier header above says anonymous access is sized for
+-- discovery, not for pulling the warehouse through the front door. The
+-- explicit-ids path is unchanged for both tiers.
+CREATE OR REPLACE FUNCTION api.assert_panel_universe(p_n_ids INT, p_entity_type TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_type    TEXT := NULLIF(lower(btrim(p_entity_type)), '');
+    -- Universe pages per call by tier: the lockstep test reads this CASE.
+    v_allowed INT  := CASE api.caller_tier() WHEN 'authenticated' THEN 1 ELSE 0 END;
+BEGIN
+    IF v_type IS NOT NULL AND v_type NOT IN ('fi', 'fidc', 'fii', 'fip', 'fiagro') THEN
+        RAISE EXCEPTION
+            'panel: p_entity_type must be one of fi, fidc, fii, fip, fiagro; got %', v_type
+            USING ERRCODE = '22023';
+    END IF;
+    IF COALESCE(p_n_ids, 0) = 0 THEN
+        IF v_type IS NULL THEN
+            RAISE EXCEPTION
+                'panel: no ids were given. Pass p_ids, or pass p_entity_type (fi|fidc|fii|fip|fiagro) to walk a whole family (universe mode, signed-in callers only).'
+                USING ERRCODE = '22023';
+        END IF;
+        IF v_allowed = 0 THEN
+            RAISE EXCEPTION
+                'panel: universe mode (p_ids empty + p_entity_type) is available to signed-in callers only; anonymous callers pass explicit ids (up to 3 per call). Sign in at https://silo-bz.vercel.app/signin.html.'
+                USING ERRCODE = '22023';
+        END IF;
+    END IF;
+    RETURN v_type;
+END;
+$$;
+
+COMMENT ON FUNCTION api.assert_panel_universe(INT, TEXT) IS
+    'Internal. Validates p_entity_type (fi|fidc|fii|fip|fiagro) and gates api.panel''s universe mode (no ids + a family) to the authenticated tier (1 signed in, 0 anonymous).';
+
+REVOKE ALL ON FUNCTION api.assert_panel_universe(INT, TEXT) FROM PUBLIC;
+
 -- ---------------------------------------------------------------------------
 -- Quotes (B3 COTAHIST cash market)
 -- ---------------------------------------------------------------------------
@@ -1711,6 +1836,12 @@ GRANT EXECUTE ON FUNCTION api.coverage() TO anon, authenticated;
 -- no interpolated return across a gap. freq=day is quotes only.
 -- ---------------------------------------------------------------------------
 
+-- Signature change (p_entity_type, p_min_nav, p_min_months, p_after): drop the
+-- old shape first — CREATE OR REPLACE cannot add parameters, and PostgREST
+-- resolves an RPC by argument names, so the 5-argument form must not survive
+-- as an overload.
+DROP FUNCTION IF EXISTS api.panel(TEXT[], TEXT[], DATE, DATE, TEXT);
+
 CREATE OR REPLACE FUNCTION api.panel(
     p_ids     TEXT[],
     p_metrics TEXT[] DEFAULT ARRAY['close', 'nav']::TEXT[],
@@ -1722,7 +1853,21 @@ CREATE OR REPLACE FUNCTION api.panel(
     -- industry. An EXPLICIT p_to is the researcher escape hatch: it serves
     -- whatever exists in the window, partial months included.
     p_to      DATE   DEFAULT NULL,
-    p_freq    TEXT   DEFAULT 'month'
+    p_freq    TEXT   DEFAULT 'month',
+    -- Restrict the fund arms to one family. A CNPJ can file under two
+    -- families in one month (385 do, fi + fidc), so without it the grain is
+    -- (id, asset_class, date, metric), not (id, date, metric).
+    p_entity_type TEXT    DEFAULT NULL,
+    -- Universe mode (p_ids empty + p_entity_type): keep funds whose latest
+    -- non-null NAV in the window is at least p_min_nav (BRL) and which have
+    -- at least p_min_months non-null observations of the FIRST requested
+    -- metric. Filters on published values; never a rank.
+    p_min_nav     NUMERIC DEFAULT NULL,
+    p_min_months  INT     DEFAULT NULL,
+    -- Cursor. NULL = whole result (refused above 1000 rows); '' = first page;
+    -- 'date|id|metric|asset_class' = the page after that key. A page is
+    -- exactly 1000 rows until the last, which is shorter.
+    p_after       TEXT    DEFAULT NULL
 )
 RETURNS TABLE (
     id          TEXT,
@@ -1759,17 +1904,64 @@ params AS (
         CASE WHEN lower(COALESCE(p_freq, 'month')) IN ('day', 'd', 'daily') THEN 'day' ELSE 'month' END AS freq,
         p_from AS d0,
         COALESCE(p_to, CURRENT_DATE) AS d1,  -- quote/option/termo upper bound
-        p_to AS d1_explicit                  -- NULL = clamp fund arms (below)
+        p_to AS d1_explicit,                 -- NULL = clamp fund arms (below)
+        -- Universe gate + family validation, in argument position like
+        -- assert_panel_ids above: evaluated on every call, raises 22023.
+        api.assert_panel_universe(
+            cardinality(ARRAY(SELECT x FROM unnest(COALESCE(p_ids, ARRAY[]::TEXT[])) AS x WHERE btrim(x) <> '')),
+            p_entity_type
+        ) AS entity_type,
+        cardinality(ARRAY(SELECT x FROM unnest(COALESCE(p_ids, ARRAY[]::TEXT[])) AS x WHERE btrim(x) <> '')) = 0 AS universe,
+        p_min_nav    AS min_nav,
+        p_min_months AS min_months,
+        c.paging, c.after_date, c.after_id, c.after_metric, c.after_class
+    FROM api.parse_panel_cursor(p_after) c
 ),
 tickers AS (
     SELECT x AS ticker
     FROM params p, unnest(p.ids) AS x
     WHERE length(regexp_replace(x, '[^0-9]', '', 'g')) <> 14
 ),
+-- Universe mode: the family's funds in the window, filtered on published
+-- values only. "Latest NAV" is the last non-null vl_patrim_liq by raw period;
+-- "observations" counts non-null values of the FIRST requested metric. Both
+-- bounds use the same two-regime upper bound as fund_rows below.
+universe AS (
+    SELECT f.cnpj
+    FROM public.fact_fund_monthly f
+    JOIN params p ON TRUE
+    WHERE p.universe
+      AND p.freq = 'month'
+      AND f.entity_type = p.entity_type
+      AND date_trunc('month', f.period)::date >= date_trunc('month', p.d0)::date
+      AND (
+            (p.d1_explicit IS NOT NULL
+             AND date_trunc('month', f.period)::date
+                 <= date_trunc('month', p.d1_explicit)::date)
+         OR (p.d1_explicit IS NULL
+             AND f.period <= public.latest_complete_period(f.entity_type))
+      )
+    GROUP BY f.cnpj
+    HAVING ((SELECT min_nav FROM params) IS NULL
+            OR (ARRAY_AGG(f.vl_patrim_liq ORDER BY f.period DESC) FILTER (WHERE f.vl_patrim_liq IS NOT NULL))[1]
+               >= (SELECT min_nav FROM params))
+       AND ((SELECT min_months FROM params) IS NULL
+            OR COUNT(CASE (SELECT metrics[1] FROM params)
+                         WHEN 'nav'          THEN f.vl_patrim_liq
+                         WHEN 'quota'        THEN f.vl_quota
+                         WHEN 'delinquency'  THEN f.vl_inadimpl
+                         WHEN 'yield'        THEN f.pct_yield_mes
+                         WHEN 'inflows'      THEN f.captc_mes
+                         WHEN 'redemptions'  THEN f.resg_mes
+                         WHEN 'quotaholders' THEN f.nr_cotst::numeric
+                     END) >= (SELECT min_months FROM params))
+),
 cnpjs AS (
     SELECT regexp_replace(x, '[^0-9]', '', 'g') AS cnpj
     FROM params p, unnest(p.ids) AS x
     WHERE length(regexp_replace(x, '[^0-9]', '', 'g')) = 14
+    UNION ALL
+    SELECT u.cnpj FROM universe u
 ),
 -- Last session in each month (real print, not a made-up month-end).
 quote_month AS (
@@ -1961,7 +2153,9 @@ fund_rows AS (
              AND f.period <= public.latest_complete_period(f.entity_type))
       )
       AND f.cnpj IN (SELECT cnpj FROM cnpjs)
+      AND (p.entity_type IS NULL OR f.entity_type = p.entity_type)
 )
+, ranked (id, id_type, asset_class, date, metric, value, source) AS (
 SELECT q.ticker, 'ticker'::text, q.asset_class, q.period, 'close'::text, q.close, 'b3_cotahist'::text
 FROM quote_px q JOIN params p ON TRUE
 WHERE 'close' = ANY (p.metrics)
@@ -2023,21 +2217,35 @@ UNION ALL
 SELECT f.cnpj, 'cnpj', f.entity_type, f.period, 'quotaholders', f.quotaholders::numeric, 'cvm'
 FROM fund_rows f JOIN params p ON TRUE
 WHERE 'quotaholders' = ANY (p.metrics) AND f.quotaholders IS NOT NULL
-ORDER BY 4, 1, 5
--- Cap = serve _MAX_PANEL (100000) + 1. Generosity: the Step 3 envelope
--- (50 ids x ~7 applicable metrics x 20 years monthly ~ 84k rows) fits; an
--- unbounded ask (e.g. freq=day over decades) stops materializing here instead
--- of being built, shipped, fetchall()'d and then rejected. The +1 row lets
--- serve/ answer 400 "panel too large" — never a silently truncated (i.e.
--- fabricated) panel. ORDER BY (date, id, metric) makes the cut deterministic.
-LIMIT 100001;
+)
+-- One page + one. ORDER BY (date, id, metric, asset_class) — the cursor key
+-- — makes both the page and the cut deterministic. Columns by position:
+-- 1 id, 3 asset_class, 4 date, 5 metric.
+, page AS (
+    SELECT r.*
+    FROM ranked r
+    JOIN params p ON TRUE
+    WHERE p.after_date IS NULL
+       OR (r.date, r.id, r.metric, COALESCE(r.asset_class, ''))
+          > (p.after_date, p.after_id, p.after_metric, COALESCE(p.after_class, ''))
+    ORDER BY 4, 1, 5, 3
+    LIMIT 1001
+)
+-- assert_row_cap sees the 1001st row and REFUSES (22023) unless the caller
+-- is paging: a panel over the page is never trimmed to look complete. The
+-- subquery is uncorrelated, so it is evaluated once, not per row.
+SELECT g.id, g.id_type, g.asset_class, g.date, g.metric, g.value, g.source
+FROM page g
+WHERE api.assert_row_cap((SELECT count(*) FROM page), (SELECT paging FROM params), 'panel')
+ORDER BY 4, 1, 5, 3
+LIMIT 1000;
 $$;
 
-COMMENT ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) IS
-    'Long panel for correlation/factor work. Mix tickers, option/termo codnegs, + CNPJs. No ffill. close_return is p_t/p_{t-1}-1 from unadjusted closes (a split appears as a jump), cash tickers only, and is null across calendar gaps. Hard-capped at 100001 rows (= serve _MAX_PANEL + 1): above 100000 the adapter answers 400, never a truncated panel.';
+COMMENT ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT, TEXT, NUMERIC, INT, TEXT) IS
+    'Long panel for correlation/factor work. Mix tickers, option/termo codnegs, + CNPJs. Grain is (id, asset_class, date, metric): a CNPJ filing under two families yields one row per family unless p_entity_type narrows it. No ffill. close_return is p_t/p_{t-1}-1 from unadjusted closes (a split appears as a jump), cash tickers only, and is null across calendar gaps. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '''' = first page, ''date|id|metric|asset_class'' = next; a page shorter than 1000 is the last. Universe mode: p_ids empty + p_entity_type walks a whole family (optionally p_min_nav, p_min_months), signed-in callers only.';
 
-REVOKE ALL ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) TO anon, authenticated;
+REVOKE ALL ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT, TEXT, NUMERIC, INT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT, TEXT, NUMERIC, INT, TEXT) TO anon, authenticated;
 
 
 -- Signature change (trailing tickers column): drop the old shape first.
@@ -2442,9 +2650,9 @@ AS $fn$
 SELECT $json$
 {
   "kind": "catalog",
-  "version": 23,
+  "version": 24,
   "primitive": "panel",
-  "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint carefully, and READ THE Content-Range RESPONSE HEADER ON EVERY CALL: PostgREST truncates every response at 1000 rows and keeps the OLDEST ones, so a cut-short series is indistinguishable from a complete one by its contents alone — `0-999/*` is the only thing that tells you. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
+  "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: panel REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page it with p_after or narrow it. The views and series functions still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
     "principle": "price by default; every other measure is opt-in",
     "panel": {
@@ -2453,6 +2661,7 @@ SELECT $json$
         "nav"
       ],
       "means": "close for ticker ids, nav for cnpj ids; a metric absent for an id type simply yields no rows",
+      "grain": "(id, asset_class, date, metric) — a CNPJ filing under two families yields one row per family; p_entity_type narrows to one",
       "to_widen": "pass p_metrics explicitly, e.g. p_metrics=['close','volume']"
     },
     "wide_endpoints": {
@@ -2671,6 +2880,7 @@ SELECT $json$
     "LISTED-COMPANY FINANCIALS ARE FILED, NOT DERIVED. api.financials returns one row per account line exactly as the company filed it; nothing is summed, annualised or restated. Read period_months before comparing two rows: an ITR publishes the SAME account twice under one reference date, once for the three months and once year-to-date, and they are distinguished only by the period span. Adding a 3-month row to a 6-month row double-counts the quarter.",
     "FINANCIALS DEFAULT TO CONSOLIDATED (scope=con) AND TO THE PERIOD THE DOCUMENT IS FOR (ordem_exerc ULTIMO). The prior-year comparative printed beside it is never returned. When a company re-files, only the newest version of each statement is served and `version` carries it; in company_financials a balance sheet from a different version than the income statement reads NULL rather than being paired across filings.",
     "A TICKER RESOLVES TO A COMPANY ONLY THROUGH CVM'S PUBLISHED FCA MAP, active listings only — the CNPJ and the trading code arrive on the same filed row. financials('PETR4'), financials('33000167000101') and financials('9512') are the same company. A delisted code resolves to nothing rather than to a guess, and no company↔ticker edge is ever inferred from a name.",
+    "PANEL GRAIN IS (id, asset_class, date, metric), NOT (id, date, metric). A CNPJ can file under two fund families in one month (385 do, fi + fidc), and the panel returns one row per family for it — pivoting on (id, date, metric) then either raises on the duplicate or silently averages two vehicles. Pass p_entity_type (fi|fidc|fii|fip|fiagro) to keep one family, or keep asset_class in your pivot key.",
     "Never invent a price, NAV, or identifier match.",
     "Missing observations stay null; do not ffill or interpolate.",
     "freq=day is quotes only. Mix equity with fund fundamentals on freq=month.",
@@ -2681,10 +2891,10 @@ SELECT $json$
     "Default windows are honest: with no explicit `to`, fund metrics end at each family's latest COMPLETE period (coverage() reports it as complete_through) — a partially-filed trailing month is not served. An explicit `to` serves the window verbatim, partial months included.",
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
-    "Row caps — getting this wrong means silently analysing a TRUNCATED panel, the exact fabrication this API exists to prevent. THE BINDING CAP IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. It is NOT the SQL cap+1 sentinel (panel 100001, series 5001): that sentinel is unreachable on the deployed surface and must not be used to detect truncation. Measured 2026-08-28 against production: panel for one ticker from 2019 returns exactly 1000 rows spanning 2019-01-02..2023-01-09 with a 200, and the OLDEST rows are the ones kept — so a truncated series looks like a complete series that simply ends three years ago. DETECT IT WITH THE Content-Range RESPONSE HEADER, which is the only signal there is: `0-999/*` means truncated, and sending `Prefer: count=exact` turns it into `0-999/1906` so you also learn the true total. A range whose end is below 999 is complete. RANGE PAGING DOES NOT WORK ON RPC: sending `Range: 1000-1999` to /rest/v1/rpc/panel returns the SAME first page again (verified), so a panel cannot be paged — narrow p_from/p_to, ids or metrics until Content-Range comes back under 1000. GET views do page with Range normally. The local /v1 Flask adapter is a different surface with its own cap+1 400 behaviour; do not carry its rules over.",
+    "Row caps — getting this wrong means silently analysing a TRUNCATED panel, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. api.panel now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short panel can no longer look complete. To get past 1000 rows, PAGE WITH p_after: send p_after='' for the first page, then the last row's 'date|id|metric|asset_class' for the next; every page is exactly 1000 rows until the last, which is shorter. Or narrow p_from/p_to, ids or metrics. The old 100001 sentinel is gone; 5001 on the series functions is still unreachable behind the 1000-row page and must not be used to detect truncation there (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views and on the series functions the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
     "An unrecognised metric name is IGNORED, not rejected: the panel comes back smaller and perfectly plausible. Take metric names from this catalog's `metrics` map, never from memory.",
     "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
-    "CALLER TIERS. Anonymous access is free but deliberately small: panel accepts at most 3 ids per call, search_funds returns at most 25 rows, and option_chain pages at most 200. Signing in (GitHub) raises those to 50 ids, 200 rows and 2000 respectively, and the query timeout from 3s to 8s. Exceeding the id ceiling raises SQLSTATE 22023 naming the limit — the panel is never silently truncated to fit.",
+    "CALLER TIERS. Anonymous access is free but deliberately small: panel accepts at most 3 ids per call, search_funds returns at most 25 rows, and option_chain pages at most 200. Signing in (GitHub) raises those to 50 ids, 200 rows and 2000 respectively, and the query timeout from 3s to 8s, and unlocks panel universe mode (p_ids empty + p_entity_type: a whole family, paged with p_after). Exceeding the id ceiling raises SQLSTATE 22023 naming the limit — the panel is never silently truncated to fit.",
     "Signing in does NOT raise rows-per-response: the 1000-row cap is a server-wide PostgREST setting applied identically to every caller. Page views, and narrow the window on functions, whatever tier you are.",
     "Option rows carry underlying_ticker resolved from the PUBLISHED ISIN mapping (an option row's ISIN is its underlying's ISIN), never from the codneg root; it is null when the underlying had no cash print that session. Termo rows still carry no underlying column.",
     "tpmerc 012/013 are option exercise EVENTS served by option_exercises, and 017 auction prints by auctions — neither is a quote series; do not compute returns over them.",
@@ -2703,15 +2913,24 @@ SELECT $json$
         "rpc": "does not page: a Range on /rest/v1/rpc/<function> returns the first page again — narrow p_from/p_to, ids or metrics instead"
       }
     },
+    "page": {
+      "size": 1000,
+      "functions": [
+        "panel"
+      ],
+      "over_cap": "SQLSTATE 22023 naming the function — nothing is trimmed to fit; the message says to page or narrow",
+      "cursor": "p_after: null = whole result (refused above 1000 rows); '' = first page; '<date>|<id>|<metric>|<asset_class>' copied from the last row = the next page; a page shorter than 1000 is the last",
+      "order": "date, id, metric, asset_class"
+    },
     "sql_sentinel": {
       "series": 5001,
-      "panel": 100001,
       "reachable": false,
-      "note": "the functions' own LIMITs (serve _MAX_POINTS/_MAX_PANEL + 1). Unreachable behind the 1000-row ceiling on the hosted API; never a truncation signal there"
+      "note": "the series functions' own LIMIT (serve _MAX_POINTS + 1). Unreachable behind the 1000-row ceiling on the hosted API; never a truncation signal there. panel no longer has one: it refuses over the page (see `page`)"
     },
     "tiers": {
       "anon": {
         "panel_ids": 3,
+        "panel_universe": false,
         "search_funds_rows": 25,
         "option_chain_rows": 200,
         "option_exercises_rows": 500,
@@ -2721,6 +2940,7 @@ SELECT $json$
       },
       "authenticated": {
         "panel_ids": 50,
+        "panel_universe": true,
         "search_funds_rows": 200,
         "option_chain_rows": 2000,
         "option_exercises_rows": 5000,
@@ -2916,7 +3136,7 @@ GRANT EXECUTE ON FUNCTION api.fund_profile(TEXT)                      TO silo_ap
 GRANT EXECUTE ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT)        TO silo_api;
 GRANT EXECUTE ON FUNCTION api.search_funds(TEXT, TEXT, INT)           TO silo_api;
 GRANT EXECUTE ON FUNCTION api.coverage()                              TO silo_api;
-GRANT EXECUTE ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT) TO silo_api;
+GRANT EXECUTE ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT, TEXT, NUMERIC, INT, TEXT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.lookup(TEXT)                            TO silo_api;
 GRANT EXECUTE ON FUNCTION api.fund_holdings(TEXT, TEXT, DATE, DATE, TEXT, INT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT) TO silo_api;

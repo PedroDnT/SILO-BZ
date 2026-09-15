@@ -22,6 +22,7 @@ from silo_client import (  # noqa: E402
     SiloCatalogDrift,
     SiloClient,
     SiloError,
+    SiloOverCap,
     SiloTimeout,
     SiloTruncated,
 )
@@ -498,3 +499,122 @@ def test_dates_serialize_iso():
     c.fund_nav("11222333000144", start=date(2019, 1, 1), end="2026-07-31")
     assert captured["body"]["p_from"] == "2019-01-01"
     assert captured["body"]["p_to"] == "2026-07-31"
+
+
+# ---------------------------------------------------------------------------
+# The panel refuses over the page and pages with p_after (catalog v24)
+# ---------------------------------------------------------------------------
+
+_OVER_CAP_BODY = (
+    '{"code":"22023","message":"panel: your window produces more than 1000 rows, '
+    'which the server would silently cut at 1000. Narrow p_from/p_to, ids or '
+    'metrics, or page with p_after (start with p_after = \'\')."}'
+)
+
+
+def _panel_rows(n, start=0, id_="PETR4", asset_class="equity", metric="close"):
+    return [
+        {"id": id_, "id_type": "ticker", "asset_class": asset_class,
+         "date": f"2024-{(i // 28) % 12 + 1:02d}-{i % 28 + 1:02d}", "metric": metric,
+         "value": float(i), "source": "b3_cotahist"}
+        for i in range(start, start + n)
+    ]
+
+
+def test_a_refused_panel_is_its_own_error_and_names_the_way_out():
+    c = make_client(catalog_then(lambda r: httpx.Response(400, text=_OVER_CAP_BODY)))
+    with pytest.raises(SiloOverCap) as exc:
+        c.panel(["PETR4"], metrics=["close"], start="2019-01-01", freq="day")
+    assert exc.value.status == 400
+    assert "iter_panel" in exc.value.hint and "p_after" in exc.value.hint
+    assert isinstance(exc.value, SiloError)
+
+
+def test_other_22023s_stay_plain_errors():
+    body = '{"code":"22023","message":"panel accepts at most 3 ids per call"}'
+    c = make_client(catalog_then(lambda r: httpx.Response(400, text=body)))
+    with pytest.raises(SiloError) as exc:
+        c.panel(["A", "B", "C", "D"], metrics=["close"], wide=False)
+    assert not isinstance(exc.value, SiloOverCap)
+
+
+def test_iter_panel_walks_pages_with_the_last_rows_key_and_stops_on_a_short_page():
+    seen = []
+    page1 = _panel_rows(SERVER_ROW_CAP)
+    page2 = _panel_rows(3, start=SERVER_ROW_CAP)
+
+    def responder(request):
+        body = json.loads(request.content)
+        seen.append(body.get("p_after"))
+        rows = page1 if body.get("p_after") == "" else page2
+        return httpx.Response(200, json=rows, headers={"Content-Range": f"0-{len(rows)-1}/*"})
+
+    c = make_client(catalog_then(responder))
+    rows = list(c.iter_panel(["PETR4"], metrics=["close"], start="2019-01-01", freq="day"))
+    assert len(rows) == SERVER_ROW_CAP + 3
+    last = page1[-1]
+    assert seen == ["", f"{last['date']}|{last['id']}|{last['metric']}|{last['asset_class']}"]
+
+
+def test_panel_all_is_iter_panel_collected_and_can_pivot():
+    def responder(request):
+        return httpx.Response(200, json=_panel_rows(5))
+
+    c = make_client(catalog_then(responder))
+    rows = c.panel_all(["PETR4"], metrics=["close"], freq="day")
+    assert len(rows) == 5
+    df = c.panel_all(["PETR4"], metrics=["close"], freq="day", wide=True)
+    assert df.shape == (5, 1)
+
+
+def test_a_full_page_in_paging_mode_is_a_page_not_a_truncation():
+    """iter_panel passes page=True, so exactly 1000 rows with no total does
+    not raise SiloTruncated — it asks for the next page."""
+    calls = {"n": 0}
+
+    def responder(request):
+        calls["n"] += 1
+        rows = _panel_rows(SERVER_ROW_CAP) if calls["n"] == 1 else []
+        return httpx.Response(200, json=rows)
+
+    c = make_client(catalog_then(responder))
+    assert len(list(c.iter_panel(["PETR4"], metrics=["close"], freq="day"))) == SERVER_ROW_CAP
+    assert calls["n"] == 2
+
+
+def test_wide_pivot_refuses_a_cnpj_that_files_under_two_families():
+    rows = [
+        {"id": "11726466000195", "id_type": "cnpj", "asset_class": "fi",
+         "date": "2025-06-01", "metric": "nav", "value": 26520603.71, "source": "cvm"},
+        {"id": "11726466000195", "id_type": "cnpj", "asset_class": "fidc",
+         "date": "2025-06-01", "metric": "nav", "value": 26579571.83, "source": "cvm"},
+    ]
+    c = make_client(catalog_then(lambda r: httpx.Response(200, json=rows)))
+    with pytest.raises(ValueError) as exc:
+        c.panel(["11726466000195"], metrics=["nav"])
+    assert "11726466000195" in str(exc.value) and "entity_type" in str(exc.value)
+    # long rows are handed back untouched: the caller keeps asset_class
+    assert len(c.panel(["11726466000195"], metrics=["nav"], wide=False)) == 2
+
+
+def test_panel_sends_entity_type_and_universe_filters():
+    captured = {}
+
+    def responder(request):
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=[])
+
+    c = make_client(catalog_then(responder))
+    c.panel(None, metrics=["nav"], entity_type="fidc", min_nav=1e7, min_months=12, wide=False)
+    assert captured["body"]["p_ids"] == []
+    assert captured["body"]["p_entity_type"] == "fidc"
+    assert captured["body"]["p_min_nav"] == 1e7
+    assert captured["body"]["p_min_months"] == 12
+
+
+def test_universe_mode_needs_a_family_client_side():
+    c = make_client(catalog_then(lambda r: httpx.Response(200, json=[])))
+    with pytest.raises(ValueError):
+        c.panel(None, metrics=["nav"])
+    with pytest.raises(ValueError):
+        list(c.iter_panel([], metrics=["nav"]))

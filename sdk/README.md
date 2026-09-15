@@ -33,9 +33,13 @@ HTTP 200 with the first page, oldest first. Six years of daily quotes come back
 as three and a half, and the series simply looks like it ended — which is
 indistinguishable from a company that stopped trading. The client asks the
 server for a true count and raises `SiloTruncated` rather than handing you the
-short answer. Range paging does not work on RPC calls, so it cannot stitch the
-rest for you; narrow the window, ask for fewer ids, or take one metric at a
-time.
+short answer. Range paging does not work on RPC calls, so for the series
+functions it cannot stitch the rest for you; narrow the window, ask for fewer
+ids, or take one metric at a time. `panel` is different since catalog v24: the
+server **refuses** a call over one 1,000-row page (`SiloOverCap`) and pages
+with its own `p_after` cursor — `iter_panel()` / `panel_all()` walk it, and
+`panel_all(None, [...], entity_type="fidc", min_nav=1e7, min_months=12)` walks
+a whole family for a signed-in caller.
 
 ```python
 from silo_client import SiloClient, SiloTruncated

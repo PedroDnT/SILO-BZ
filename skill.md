@@ -71,7 +71,7 @@ series at 2025-01, never chain-link through it. `fund_nav` nulls outside a famil
 - Fabricate a price, NAV, fill, or ranking. Missing stays missing. No ffill.
 - Treat a calendar gap as a multi-month `close_return` (it is null / omitted).
 - Use quotes as split-adjusted total return (`adjusted = false`).
-- Analyze a `panel` response of 100,001 rows (truncated).
+- Retry a refused `panel` (22023 "more than 1000 rows") by shrinking the ask blindly: page it with `p_after` ('' first, then the last row's `date|id|metric|asset_class`) or narrow it. Never pivot a panel on (id, date, metric) alone — the grain includes `asset_class`.
 - Touch landing tables (`cvm_*`, `b3_cotahist`, `cvm_ingest_log`) or send `Accept-Profile: public`.
 
 Pages: [agents](/api-docs/agents), [panel](/api-docs/panel), [conventions](/api-docs/conventions).

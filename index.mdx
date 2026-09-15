@@ -84,9 +84,10 @@ flag so nobody mistakes these for split-adjusted prices.
   - **`close_return` across a calendar gap is null**, not a two-month return.
     The ratio is of unadjusted closes: a 2:1 split reports roughly −50 %.
   - **`freq=day` is quotes only.** Mix equity with fund fundamentals on `freq=month`.
-  - **A response stops at 1,000 rows**, server-wide, and the `Content-Range`
-    header says so — read it, narrow the ask, never analyse a cut series.
-    Details on [Conventions & limits](/api-docs/conventions#row-caps).
+  - **A response stops at 1,000 rows**, server-wide. `panel` refuses a larger
+    window (`22023`) and pages with `p_after`; views and series functions are
+    cut and the `Content-Range` header says so — read it, narrow the ask, never
+    analyse a cut series. Details on [Conventions & limits](/api-docs/conventions#row-caps).
 </Warning>
 
 ## Ingest

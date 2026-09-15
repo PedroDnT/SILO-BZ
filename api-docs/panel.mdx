@@ -16,12 +16,32 @@ or event studies in your notebook. There is no server-side `corr`, `rank`, or re
 reductions belong where you can see and change their assumptions.
 
 ```sql
-api.panel(p_ids     TEXT[],
-          p_metrics TEXT[] DEFAULT ARRAY['close','nav'],
-          p_from    DATE   DEFAULT CURRENT_DATE - 365,
-          p_to      DATE   DEFAULT NULL,  -- null = clamp fund rows to complete periods
-          p_freq    TEXT   DEFAULT 'month')
+api.panel(p_ids         TEXT[],
+          p_metrics     TEXT[]  DEFAULT ARRAY['close','nav'],
+          p_from        DATE    DEFAULT CURRENT_DATE - 365,
+          p_to          DATE    DEFAULT NULL,  -- null = clamp fund rows to complete periods
+          p_freq        TEXT    DEFAULT 'month',
+          p_entity_type TEXT    DEFAULT NULL,  -- keep one fund family
+          p_min_nav     NUMERIC DEFAULT NULL,  -- universe mode: latest NAV floor (BRL)
+          p_min_months  INT     DEFAULT NULL,  -- universe mode: min observations of the first metric
+          p_after       TEXT    DEFAULT NULL)  -- cursor: '' = first page, then the last row's key
 ```
+
+<Note>
+  **The grain is `(id, asset_class, date, metric)`.** A CNPJ can file under two fund
+  families in the same month (385 do, `fi` + `fidc`), and the panel returns one row per
+  family for it. Pivoting on `(id, date, metric)` alone then either raises on the duplicate
+  or silently averages two vehicles. Pass `p_entity_type` to keep one family, or keep
+  `asset_class` in your pivot key.
+</Note>
+
+<Warning>
+  **Over 1,000 rows the panel refuses; it never trims.** PostgREST cuts every response at
+  1,000 rows and used to answer `200` with the oldest rows, so a cut panel looked complete.
+  Since catalog v24 a window that would produce more than 1,000 rows raises `22023`
+  (surfacing as a `400`) naming the fix: **page with `p_after`** or narrow the request. See
+  [Paging](#paging).
+</Warning>
 
 ## Parameters
 
@@ -61,6 +81,48 @@ api.panel(p_ids     TEXT[],
   `month` or `day`. `day`, `d`, and `daily` all mean daily; **every other value — including
   a typo like `week` — falls back to `month`** rather than erroring.
 </ParamField>
+
+<ParamField body="p_entity_type" type="string" default="null">
+  Restrict the fund arms to one family: `fi`, `fidc`, `fii`, `fip` or `fiagro`. Anything
+  else raises `22023` listing the five. With `p_ids` empty it selects **universe mode**
+  (below).
+</ParamField>
+
+<ParamField body="p_min_nav" type="numeric" default="null">
+  Universe mode only: keep funds whose **latest non-null net assets in the window** are at
+  least this many BRL. A filter on a published value, not a rank.
+</ParamField>
+
+<ParamField body="p_min_months" type="integer" default="null">
+  Universe mode only: keep funds with at least this many **non-null observations of the
+  first requested metric** in the window — so a fund that filed two of twelve months cannot
+  be compared with one that filed all twelve.
+</ParamField>
+
+<ParamField body="p_after" type="string" default="null">
+  The paging cursor. **`null` (omitted)** is whole-result mode: the call refuses above
+  1,000 rows. **`''`** asks for the first page. **`'<date>|<id>|<metric>|<asset_class>'`**,
+  copied from the last row you received, asks for the page after it. Every page is exactly
+  1,000 rows until the last, which is shorter. A malformed cursor raises `22023`.
+</ParamField>
+
+## Universe mode
+
+Leave `p_ids` empty and name a family with `p_entity_type`, and the panel selects the
+family's funds itself — every fund with rows in the window, optionally floored by
+`p_min_nav` and `p_min_months`. The rows are the same long `(id, asset_class, date,
+metric, value)` rows; nothing is ranked or reduced server-side. This is how *"every FIDC
+by how much its delinquency worsened"* becomes a handful of paged calls instead of
+hundreds of three-id calls:
+
+```json
+{"p_ids": [], "p_metrics": ["delinquency", "nav"], "p_entity_type": "fidc",
+ "p_from": "2025-09-01", "p_min_nav": 10000000, "p_min_months": 12, "p_after": ""}
+```
+
+**Signed-in callers only.** Each page re-scans the family's whole window, and the
+anonymous tier is sized for discovery. Anonymous callers pass explicit ids (three per
+call). `catalog().limits.tiers.<tier>.panel_universe` says which you are.
 
 ## Metrics
 
@@ -268,16 +330,39 @@ correlate on pairwise-complete observations rather than filling.
   month. If you cached a mixed FI/FIDC panel before this date, refetch it.
 </Note>
 
+## Paging
+
+Rows are ordered by `(date, id, metric, asset_class)`, and that tuple is the cursor.
+Send `p_after: ""` for the first page; take the last row of each page and send
+`"<date>|<id>|<metric>|<asset_class>"` for the next; stop when a page comes back with
+fewer than 1,000 rows. Nothing is ever cut: a full page always has a next page, and a
+short page is always the last.
+
+```bash
+after=""
+while :; do
+  page=$(curl -s -X POST "$SILO_URL/rpc/panel" -H "apikey: $SILO_ANON_KEY" \
+    -H "Content-Type: application/json" \
+    -d "{\"p_ids\":[\"PETR4\"],\"p_metrics\":[\"close\"],\"p_from\":\"2019-01-01\",\"p_freq\":\"day\",\"p_after\":\"$after\"}")
+  echo "$page" | jq -c '.[]' >> panel.jsonl
+  n=$(echo "$page" | jq 'length'); [ "$n" -lt 1000 ] && break
+  after=$(echo "$page" | jq -r '.[-1] | "\(.date)|\(.id)|\(.metric)|\(.asset_class)"')
+done
+```
+
+The Python SDK does this for you: `iter_panel(...)` / `panel_all(...)`. `Range` headers
+and `limit`/`offset` still do **not** page an RPC call; `p_after` is the only cursor here.
+
 ## Limits
 
 <Warning>
-  **Capped at 100,001 rows.** A response of exactly 100,001 rows means your request was too
-  large and was cut at the earliest 100,000 observations by `(date, id, metric)`. That slice
-  is not a dataset — do not analyze it. Narrow `p_ids`, drop metrics, or shorten the window
-  and call again.
+  **One page is 1,000 rows, and an unpaged call over it is refused, not trimmed.** Without
+  `p_after`, a window that would produce more than 1,000 rows raises `22023`. The message
+  says what to do: page with `p_after`, or narrow `p_ids`, drop metrics, or shorten the
+  window. There is no 100,001-row sentinel any more.
 
-  For scale: 50 ids × ~7 applicable metrics × 20 years of monthly observations is about
-  84,000 rows and fits comfortably. `freq=day` over decades does not.
+  For scale: one id × two metrics × 12 months is 24 rows; 3 ids × 2 metrics × 5 years of
+  daily quotes is ~7,500 rows — eight pages, or one call after narrowing to a year.
 </Warning>
 
 Requests are also bounded by the platform statement timeout. A call that runs too long fails

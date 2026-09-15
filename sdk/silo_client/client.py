@@ -28,7 +28,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 23
+KNOWN_CATALOG_VERSION = 24
 
 
 class SiloCatalogDrift(UserWarning):
@@ -74,6 +74,19 @@ class SiloTruncated(SiloError):
             f"fewer ids, or request one metric at a time. Paging does not work "
             f"on this endpoint. The partial rows are on .rows.",
             url,
+        )
+
+
+class SiloOverCap(SiloError):
+    """The server REFUSED a function call whose result would exceed the
+    1000-row page (SQLSTATE 22023) rather than trim it. Not a bug: page it
+    (`iter_panel` / `panel_all`) or narrow the window, ids or metrics."""
+
+    def __init__(self, body: str, url: str) -> None:
+        super().__init__(400, body, url)
+        self.hint = (
+            "the result is larger than one 1000-row page; use iter_panel()/"
+            "panel_all() to page with p_after, or narrow the request"
         )
 
 
@@ -198,6 +211,8 @@ class SiloClient:
             # statement timeout and needs its own advice, not a generic 500.
             if "57014" in body or "canceling statement due to statement timeout" in body:
                 raise SiloTimeout(body, url)
+            if "22023" in body and "more than 1000 rows" in body:
+                raise SiloOverCap(body, url)
             raise SiloError(r.status_code, body, url)
 
         payload = r.json()
@@ -220,10 +235,10 @@ class SiloClient:
         r = self._http.get(url, params={k: v for k, v in params.items() if v is not None})
         return self._check(r, url, page=page)
 
-    def _rpc(self, fn: str, body: Dict[str, Any]) -> Any:
+    def _rpc(self, fn: str, body: Dict[str, Any], page: bool = False) -> Any:
         url = f"{self._rest}/rpc/{fn}"
         r = self._http.post(url, json={k: v for k, v in body.items() if v is not None})
-        rows, _ = self._check(r, url)
+        rows, _ = self._check(r, url, page=page)
         return rows
 
     # -- discovery ----------------------------------------------------------
@@ -591,35 +606,28 @@ class SiloClient:
 
     # -- the primitive ------------------------------------------------------
 
-    def panel(
-        self,
-        ids: Sequence[str],
-        metrics: Sequence[str] = ("close", "nav"),
-        start: Datish = None,
-        end: Datish = None,
-        freq: str = "month",
-        wide: bool = True,
-    ):
-        """The (id, date, metric, value) panel — the API's one primitive.
-
-        Metric names are validated against the live catalog so a typo fails
-        HERE, loudly, instead of returning an empty panel that looks like
-        missing data. `end=None` keeps the server's honest window for fund
-        metrics. wide=True pivots to a DataFrame with (date) index and
-        (id, metric) columns; missing observations stay NaN — never filled.
-        """
+    def _panel_body(self, ids, metrics, start, end, freq, entity_type,
+                    min_nav, min_months) -> Dict[str, Any]:
         known = set(self.catalog()["metrics"].keys())
         bad = [m for m in metrics if m not in known]
         if bad:
             raise ValueError(
                 f"unknown metric(s) {bad}; the catalog serves {sorted(known)}"
             )
-        rows = self._rpc("panel", {
-            "p_ids": list(ids), "p_metrics": list(metrics),
+        if not ids and not entity_type:
+            raise ValueError(
+                "pass ids, or entity_type= to walk a whole family (universe "
+                "mode, signed-in callers only)"
+            )
+        return {
+            "p_ids": list(ids) if ids else [], "p_metrics": list(metrics),
             "p_from": _iso(start), "p_to": _iso(end), "p_freq": freq,
-        })
-        if not wide:
-            return rows
+            "p_entity_type": entity_type, "p_min_nav": min_nav,
+            "p_min_months": min_months,
+        }
+
+    @staticmethod
+    def _pivot(rows: List[Dict[str, Any]], entity_type: Optional[str]):
         try:
             import pandas as pd  # deferred: long-format callers never pay for it
         except ImportError as exc:  # pragma: no cover - exercised by hand
@@ -634,10 +642,110 @@ class SiloClient:
             return pd.DataFrame()
         df = pd.DataFrame(rows)
         df["date"] = pd.to_datetime(df["date"])
+        # The server's grain is (id, asset_class, date, metric): a CNPJ that
+        # files under two families (fi + fidc) comes back twice per month.
+        # Averaging or "first"-picking those silently would hand back a
+        # vehicle that does not exist — refuse and say how to disambiguate.
+        dup = df.duplicated(["date", "id", "metric"], keep=False)
+        if dup.any():
+            offenders = sorted(df.loc[dup, "id"].unique().tolist())
+            raise ValueError(
+                f"panel is not unique on (id, date, metric): {offenders} file "
+                "under more than one asset_class in the window. Pass "
+                "entity_type='fi'|'fidc'|... to keep one family, or use "
+                "wide=False and keep asset_class in your own pivot key."
+            )
         return df.pivot_table(
             index="date", columns=["id", "metric"], values="value",
-            aggfunc="first",  # the grain is unique; never averages anything
+            aggfunc="first",  # the grain is unique (checked above); never averages
         ).sort_index()
+
+    def panel(
+        self,
+        ids: Optional[Sequence[str]],
+        metrics: Sequence[str] = ("close", "nav"),
+        start: Datish = None,
+        end: Datish = None,
+        freq: str = "month",
+        wide: bool = True,
+        entity_type: Optional[str] = None,
+        min_nav: Optional[float] = None,
+        min_months: Optional[int] = None,
+    ):
+        """The (id, date, metric, value) panel — the API's one primitive.
+
+        Whole-result mode: the server REFUSES (`SiloOverCap`) a window that
+        would exceed one 1000-row page rather than trim it. Use
+        `iter_panel` / `panel_all` to page, or narrow the request.
+
+        Metric names are validated against the live catalog so a typo fails
+        HERE, loudly, instead of returning an empty panel that looks like
+        missing data. `end=None` keeps the server's honest window for fund
+        metrics. `entity_type` keeps one fund family (a CNPJ can file under
+        two). `ids=None` with `entity_type` is universe mode: the family's
+        funds, optionally filtered by `min_nav` (latest NAV, BRL) and
+        `min_months` (non-null observations of the first metric); signed-in
+        callers only. wide=True pivots to a DataFrame with (date) index and
+        (id, metric) columns; missing observations stay NaN — never filled —
+        and a duplicate (id, date, metric) raises instead of being averaged.
+        """
+        rows = self._rpc("panel", self._panel_body(
+            ids, metrics, start, end, freq, entity_type, min_nav, min_months,
+        ))
+        if not wide:
+            return rows
+        return self._pivot(rows, entity_type)
+
+    def iter_panel(
+        self,
+        ids: Optional[Sequence[str]] = None,
+        metrics: Sequence[str] = ("close", "nav"),
+        start: Datish = None,
+        end: Datish = None,
+        freq: str = "month",
+        entity_type: Optional[str] = None,
+        min_nav: Optional[float] = None,
+        min_months: Optional[int] = None,
+    ) -> Iterator[Dict[str, Any]]:
+        """Every panel row, paged with the server's cursor (`p_after`).
+
+        Page 1 is `p_after=''`; each next page is the last row's
+        `date|id|metric|asset_class`. A page shorter than the 1000-row cap is
+        the last one — nothing is ever cut. Rows arrive ordered by
+        (date, id, metric, asset_class).
+        """
+        body = self._panel_body(ids, metrics, start, end, freq, entity_type,
+                                min_nav, min_months)
+        after = ""
+        while True:
+            rows = self._rpc("panel", {**body, "p_after": after}, page=True)
+            for row in rows:
+                yield row
+            if len(rows) < SERVER_ROW_CAP:
+                return
+            last = rows[-1]
+            after = f"{last['date']}|{last['id']}|{last['metric']}|{last.get('asset_class') or ''}"
+
+    def panel_all(
+        self,
+        ids: Optional[Sequence[str]] = None,
+        metrics: Sequence[str] = ("close", "nav"),
+        start: Datish = None,
+        end: Datish = None,
+        freq: str = "month",
+        wide: bool = False,
+        entity_type: Optional[str] = None,
+        min_nav: Optional[float] = None,
+        min_months: Optional[int] = None,
+    ):
+        """`list(iter_panel(...))`, optionally pivoted wide (same duplicate
+        guard as `panel`). The way to pull a whole family: `panel_all(None,
+        ["delinquency", "nav"], entity_type="fidc", min_months=12)`."""
+        rows = list(self.iter_panel(ids, metrics, start, end, freq,
+                                    entity_type, min_nav, min_months))
+        if not wide:
+            return rows
+        return self._pivot(rows, entity_type)
 
     def close(self) -> None:
         self._http.close()
