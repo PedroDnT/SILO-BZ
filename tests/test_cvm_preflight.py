@@ -102,6 +102,27 @@ class TestWiring:
         jobs = yaml.safe_load(BACKFILL.read_text())["jobs"]
         assert "bacen_only" in jobs["cvm-preflight"]["if"]
 
+    def test_probe_asks_over_ipv4_like_the_fetcher(self):
+        """dados.cvm.gov.br has an AAAA record and the runners have no IPv6
+        route. urllib reports the LAST address's error, so without the pin the
+        nightly's red preflight said "Network is unreachable" (IPv6) and hid
+        the IPv4 refusal that actually happened (2026-09-14/15)."""
+        src = SCRIPT.read_text()
+        assert "socket.getaddrinfo = _ipv4_getaddrinfo" in src
+        assert "socket.AF_INET" in src
+        fetcher = (ROOT / "src/fetchers/cvm_fetcher.py").read_text()
+        assert '"family": socket.AF_INET' in fetcher, (
+            "the fetcher stopped pinning IPv4; the probe must follow it"
+        )
+
+    def test_ipv6_literal_is_unreachable_not_a_crash(self):
+        """With the pin, an IPv6-only target cannot be resolved into a
+        connection at all — the probe must still classify that as unreachable
+        and name the recovery, never raise."""
+        r = _run("--url", "https://[::1]:9/x.zip", "--attempts", "1", "--timeout", "5")
+        assert r.returncode == 1, r.stdout + r.stderr
+        assert "UNREACHABLE" in r.stderr and "IPv4" in r.stderr
+
     def test_preflight_uses_only_the_standard_library(self):
         """It must not be the step that dies on a dependency while reporting
         that the network is fine."""
