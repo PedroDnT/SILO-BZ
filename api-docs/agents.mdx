@@ -101,13 +101,15 @@ There is no server-side `corr`. If `panel` comes back with `Content-Range: 0-999
 the platform cap fired and the panel is truncated — do not analyze it. Details:
 [panel](/api-docs/panel), [conventions](/api-docs/conventions).
 
-## 5. Screening a whole family (enumerate → batch → check the cap)
+## 5. Screening a whole family (universe mode, paged)
 
 The most common quant question — *rank every FIDC by how much its delinquency
-worsened* — needs a pattern no single endpoint provides, because `panel` requires
-explicit ids and nothing hands you the whole list in one call. Enumerate from the
-`funds` **view**, which is the only surface that pages correctly: `limit`/`offset`
-work on views and are ignored on `/rpc/` calls.
+worsened* — is one paged `panel` call for a signed-in caller: leave `p_ids` empty,
+name the family with `p_entity_type`, floor it with `p_min_nav` / `p_min_months`, and
+walk `p_after` until a short page. The rows are the same long rows; the ranking
+stays in your notebook. Anonymous callers still enumerate from the `funds` **view**
+(the only view surface that pages with `limit`/`offset`) and batch three ids per
+call — and since catalog v24 a batch over 1,000 rows is **refused**, never trimmed.
 
 <Steps>
   <Step title="Check the family is complete through your window">
@@ -128,24 +130,23 @@ work on views and are ignored on `/rpc/` calls.
     `last_period` actually span your window — a fund that filed for two of your
     twelve months cannot be ranked against one that filed for all twelve.
   </Step>
-  <Step title="Batch the ids into panel calls">
-    Size the batch by **rows, not ids**: one row per id × month × metric. The
-    1,000-row platform cap means 13 months × 2 metrics fits about **38 ids** per
-    call, not a few hundred. Ask for the rate's two ingredients together, since
-    `delinquency` is a BRL amount:
+  <Step title="Signed in: walk the family with p_after">
+    Ask for the rate's two ingredients together, since `delinquency` is a BRL
+    amount, and page until a page comes back shorter than 1,000 rows:
     ```json
-    {"p_ids": ["<cnpj>", "..."], "p_metrics": ["delinquency", "nav"],
-     "p_from": "2024-12-01", "p_to": "2025-12-31", "p_freq": "month"}
+    {"p_ids": [], "p_metrics": ["delinquency", "nav"], "p_entity_type": "fidc",
+     "p_from": "2025-09-01", "p_min_nav": 10000000, "p_min_months": 12, "p_after": ""}
     ```
+    Next page: `p_after` = the last row's `"<date>|<id>|<metric>|<asset_class>"`.
+    The SDK's `panel_all(None, ["delinquency","nav"], entity_type="fidc", …)` does
+    the loop. Anonymous: batch the enumerated ids **three per call**; a call whose
+    window would exceed 1,000 rows raises `22023` telling you to narrow it — it
+    is never trimmed, so there is no header to check on `panel` any more.
   </Step>
-  <Step title="Read Content-Range on EVERY batch">
-    On the hosted API the cap that fires is PostgREST's `db-max-rows = 1000`,
-    long before the function's own 100,001. It arrives as a normal `200` holding
-    the **oldest** 1,000 rows, so the payload looks like a complete series.
-    `Content-Range: 0-999/*` is the only thing that tells you otherwise — discard
-    that batch and split it. Do not retry with `Range`: paging does not work on
-    RPC and page 2 is page 1 again. Checking the status code alone will silently
-    analyse a truncated panel.
+  <Step title="Keep asset_class in the key">
+    The grain is `(id, asset_class, date, metric)`: a CNPJ that also files as an
+    FI comes back twice per month. `p_entity_type` keeps one family; otherwise
+    pivot on the four-part key, never on three.
   </Step>
   <Step title="Reduce locally">
     Pivot to wide, compute `delinquency / nav` per fund-month (guard `nav` of

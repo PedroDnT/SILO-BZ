@@ -29,6 +29,10 @@ from serve.pool import ServePool
 _CNPJ_DIGITS = re.compile(r"\D")
 _TICKER = re.compile(r"^[A-Z0-9]{4,12}$")
 _MAX_POINTS = 5000
+# api.panel returns one 1000-row page per call (PostgREST db-max-rows, the
+# SDK's SERVER_ROW_CAP); this adapter pages it with p_after up to its own
+# total, _MAX_PANEL, and answers 400 above that rather than a cut panel.
+_PAGE = 1000
 _MAX_PANEL = 100_000
 _MAX_IDS = 50
 _PANEL_METRICS = tuple(METRICS)
@@ -486,19 +490,28 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
         fmt = (request.args.get("format") or "long").strip().lower()
         if fmt not in ("long", "wide"):
             return jsonify({"error": "format must be long or wide"}), 400
+        rows: list = []
+        after = ""  # '' = first page of api.panel's paging mode
         with pool.connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM api.panel(%s::text[], %s::text[], %s::date, %s::date, %s)",
-                (ids, metrics, p_from, p_to, freq),
-            )
-            cols = [d[0] for d in cur.description]
-            rows = [_row(r, cols) for r in cur.fetchall()]
-        if len(rows) > _MAX_PANEL:
-            return jsonify({
-                "error": "panel too large",
-                "count": len(rows),
-                "max": _MAX_PANEL,
-            }), 400
+            while True:
+                cur.execute(
+                    "SELECT * FROM api.panel(%s::text[], %s::text[], %s::date, %s::date, %s, "
+                    "NULL, NULL, NULL, %s)",
+                    (ids, metrics, p_from, p_to, freq, after),
+                )
+                cols = [d[0] for d in cur.description]
+                page_rows = [_row(r, cols) for r in cur.fetchall()]
+                rows.extend(page_rows)
+                if len(rows) > _MAX_PANEL:
+                    return jsonify({
+                        "error": "panel too large",
+                        "count": len(rows),
+                        "max": _MAX_PANEL,
+                    }), 400
+                if len(page_rows) < _PAGE:
+                    break
+                last = page_rows[-1]
+                after = f"{last['date']}|{last['id']}|{last['metric']}|{last.get('asset_class') or ''}"
         if fmt == "wide":
             body = panel_wide(rows)
             body.update({

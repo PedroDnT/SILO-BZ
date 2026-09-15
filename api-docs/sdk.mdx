@@ -64,7 +64,8 @@ complete periods).
 | `catalog()`, `metrics()`, `limits()` | `catalog` | cached once per client |
 | `coverage()` | `coverage` | call before claiming freshness |
 | `lookup(query)` | `lookup` | never a name-inferred ticker↔CNPJ |
-| `panel(ids, metrics, start, end, freq, wide)` | `panel` | `wide=False` for the long rows |
+| `panel(ids, metrics, start, end, freq, wide, entity_type, min_nav, min_months)` | `panel` | whole result; raises `SiloOverCap` above one 1,000-row page; `wide=False` for the long rows |
+| `iter_panel(...)` · `panel_all(..., wide)` | `panel` with `p_after` | pages the cursor until a short page; `ids=None` + `entity_type=` is universe mode (signed in) |
 | `quote_history(ticker, start, end, board)` · `quote_latest(ticker, board)` | `quote_history` · `quote_latest` | unadjusted prices |
 | `option_chain(prefix, trade_date, expiry_from, limit)` · `option_history(codneg, …)` · `option_exercises(prefix, …)` | options | prefix ≥ 3 chars, checked client-side |
 | `termo_history(codneg, start, end)` | `termo_history` | |
@@ -95,8 +96,27 @@ except SiloTruncated as e:
     print(e.rows[-1]["trade_date"])       # where the cut fell — inspect, never use
 ```
 
-Range paging does not work on function calls, so the client cannot stitch the
-rest: narrow the window, ask for fewer ids, or take one metric at a time.
+Range paging does not work on function calls, so for the series functions the
+client cannot stitch the rest: narrow the window, ask for fewer ids, or take one
+metric at a time. `panel` is different since catalog v24: the server **refuses**
+a call over one 1,000-row page (`SiloOverCap`) and pages with its own cursor:
+
+```python
+from silo_client import SiloOverCap
+
+try:
+    df = silo.panel(["PETR4"], ["close"], start="2019-01-01", freq="day")
+except SiloOverCap:
+    rows = silo.panel_all(["PETR4"], ["close"], start="2019-01-01", freq="day")
+
+# a whole family, signed in: every FIDC with >= 12 filed months and >= R$10mm
+fidcs = silo.panel_all(None, ["delinquency", "nav"], entity_type="fidc",
+                       min_nav=1e7, min_months=12, wide=True)
+```
+
+`panel(wide=True)` refuses to pivot a CNPJ that files under two families in the
+same month (the grain is `(id, asset_class, date, metric)`): pass `entity_type=`
+or take `wide=False` and keep `asset_class` in your own key.
 
 ### Views page; functions do not
 
@@ -127,7 +147,8 @@ call. It never refuses: everything read off the catalog itself keeps working.
 | Exception | When |
 | --- | --- |
 | `SiloError` | any 4xx/5xx — carries `.status` and the server's own message (`22023` ceilings, required prefixes, unknown ANBIMA categories) |
-| `SiloTruncated` | a capped response; `.returned`, `.total`, `.rows` |
+| `SiloTruncated` | a capped response (views, series functions); `.returned`, `.total`, `.rows` |
+| `SiloOverCap` | `panel` refused a window over one 1,000-row page (`22023`); page with `iter_panel` / `panel_all` or narrow |
 | `SiloTimeout` | SQLSTATE `57014` — the tier's statement budget (3 s / 8 s); narrow the call or sign in |
 | `ValueError` | caught before the round trip: unknown metric, missing `order`, both/neither of an exactly-one pair |
 

@@ -117,7 +117,14 @@ __all__ = [
 # from 2025-01 (tab IV + VI): a series that changes meaning mid-stream must
 # not be chain-linked through the boundary. coverage() gains a `notes`
 # column carrying the same boundary on the funds_fidc row.
-CATALOG_VERSION = 23
+# v24: the panel REFUSES instead of trimming. More than 1000 rows now raises
+# 22023 unless the caller pages with p_after ('' = first page, then the last
+# row's 'date|id|metric|asset_class'); the unreachable 100001 sentinel leaves
+# the contract (limits.page replaces limits.sql_sentinel.panel). The grain is
+# stated as (id, asset_class, date, metric) and p_entity_type narrows the fund
+# arms to one family. Universe mode (p_ids empty + p_entity_type, optional
+# p_min_nav / p_min_months) walks a whole family for signed-in callers.
+CATALOG_VERSION = 24
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -265,6 +272,7 @@ CONSTRAINTS = [
     "LISTED-COMPANY FINANCIALS ARE FILED, NOT DERIVED. api.financials returns one row per account line exactly as the company filed it; nothing is summed, annualised or restated. Read period_months before comparing two rows: an ITR publishes the SAME account twice under one reference date, once for the three months and once year-to-date, and they are distinguished only by the period span. Adding a 3-month row to a 6-month row double-counts the quarter.",
     "FINANCIALS DEFAULT TO CONSOLIDATED (scope=con) AND TO THE PERIOD THE DOCUMENT IS FOR (ordem_exerc ULTIMO). The prior-year comparative printed beside it is never returned. When a company re-files, only the newest version of each statement is served and `version` carries it; in company_financials a balance sheet from a different version than the income statement reads NULL rather than being paired across filings.",
     "A TICKER RESOLVES TO A COMPANY ONLY THROUGH CVM'S PUBLISHED FCA MAP, active listings only — the CNPJ and the trading code arrive on the same filed row. financials('PETR4'), financials('33000167000101') and financials('9512') are the same company. A delisted code resolves to nothing rather than to a guess, and no company↔ticker edge is ever inferred from a name.",
+    "PANEL GRAIN IS (id, asset_class, date, metric), NOT (id, date, metric). A CNPJ can file under two fund families in one month (385 do, fi + fidc), and the panel returns one row per family for it — pivoting on (id, date, metric) then either raises on the duplicate or silently averages two vehicles. Pass p_entity_type (fi|fidc|fii|fip|fiagro) to keep one family, or keep asset_class in your pivot key.",
     "Never invent a price, NAV, or identifier match.",
     "Missing observations stay null; do not ffill or interpolate.",
     "freq=day is quotes only. Mix equity with fund fundamentals on freq=month.",
@@ -285,24 +293,25 @@ CONSTRAINTS = [
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
     "Row caps — getting this wrong means silently analysing a TRUNCATED panel, "
-    "the exact fabrication this API exists to prevent. THE BINDING CAP IS 1000 "
-    "ROWS, imposed by PostgREST (db-max-rows) on every response. It is NOT the "
-    "SQL cap+1 sentinel (panel 100001, series 5001): that sentinel is "
-    "unreachable on the deployed surface and must not be used to detect "
-    "truncation. Measured 2026-08-28 against production: panel for one ticker "
-    "from 2019 returns exactly 1000 rows spanning 2019-01-02..2023-01-09 with a "
-    "200, and the OLDEST rows are the ones kept — so a truncated series looks "
-    "like a complete series that simply ends three years ago. "
-    "DETECT IT WITH THE Content-Range RESPONSE HEADER, which is the only signal "
-    "there is: `0-999/*` means truncated, and sending `Prefer: count=exact` "
-    "turns it into `0-999/1906` so you also learn the true total. A range whose "
-    "end is below 999 is complete. "
-    "RANGE PAGING DOES NOT WORK ON RPC: sending `Range: 1000-1999` to "
-    "/rest/v1/rpc/panel returns the SAME first page again (verified), so a "
-    "panel cannot be paged — narrow p_from/p_to, ids or metrics until "
-    "Content-Range comes back under 1000. GET views do page with Range "
-    "normally. The local /v1 Flask adapter is a different surface with its own "
-    "cap+1 400 behaviour; do not carry its rules over.",
+    "the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, "
+    "imposed by PostgREST (db-max-rows) on every response. api.panel now "
+    "REFUSES rather than trims: a window that would produce more than 1000 "
+    "rows raises SQLSTATE 22023 naming the function, so a short panel can no "
+    "longer look complete. To get past 1000 rows, PAGE WITH p_after: send "
+    "p_after='' for the first page, then the last row's 'date|id|metric|"
+    "asset_class' for the next; every page is exactly 1000 rows until the "
+    "last, which is shorter. Or narrow p_from/p_to, ids or metrics. The old "
+    "100001 sentinel is gone; 5001 on the series functions is still "
+    "unreachable behind the 1000-row page and must not be used to detect "
+    "truncation there (measured 2026-08-28: quote_history from 2019 returned "
+    "exactly 1000 rows, 200, OLDEST rows kept). On GET views and on the "
+    "series functions the Content-Range RESPONSE HEADER is still the signal: "
+    "`0-999/*` means cut; send `Prefer: count=exact` to read the true total. "
+    "RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel "
+    "returns the same first page again); p_after is the RPC cursor, Range/"
+    "limit/offset are the view cursor. The local /v1 Flask adapter pages the "
+    "SQL itself and answers 400 above its own total; do not carry its rules "
+    "over.",
     "An unrecognised metric name is IGNORED, not rejected: the panel comes "
     "back smaller and perfectly plausible. Take metric names from this "
     "catalog's `metrics` map, never from memory.",
@@ -312,8 +321,10 @@ CONSTRAINTS = [
     "accepts at most 3 ids per call, search_funds returns at most 25 rows, "
     "and option_chain pages at most 200. Signing in (GitHub) raises "
     "those to 50 ids, 200 rows and 2000 respectively, and the query timeout "
-    "from 3s to 8s. Exceeding the id ceiling raises SQLSTATE 22023 naming the "
-    "limit — the panel is never silently truncated to fit.",
+    "from 3s to 8s, and unlocks panel universe mode (p_ids empty + "
+    "p_entity_type: a whole family, paged with p_after). Exceeding the id "
+    "ceiling raises SQLSTATE 22023 naming the limit — the panel is never "
+    "silently truncated to fit.",
     "Signing in does NOT raise rows-per-response: the 1000-row cap is a "
     "server-wide PostgREST setting applied identically to every caller. Page "
     "views, and narrow the window on functions, whatever tier you are.",
@@ -387,11 +398,11 @@ AGENT_INSTRUCTIONS = (
     "adapter (serve/app.py) that is not necessarily deployed; its query-string "
     "form and its `format=wide` envelope exist ONLY there. Prefer the "
     "postgrest section unless you know the /v1 adapter is running. Read the "
-    "row-cap constraint carefully, and READ THE Content-Range RESPONSE HEADER "
-    "ON EVERY CALL: PostgREST truncates every response at 1000 rows and keeps "
-    "the OLDEST ones, so a cut-short series is indistinguishable from a "
-    "complete one by its contents alone — `0-999/*` is the only thing that "
-    "tells you. "
+    "row-cap constraint: panel REFUSES (SQLSTATE 22023) a window over 1000 "
+    "rows instead of trimming it — page it with p_after or narrow it. The "
+    "views and series functions still cut at 1000 and keep the OLDEST rows, "
+    "so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the "
+    "only thing that tells you. "
     "PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics "
     "returns `close` for tickers and `nav` for CNPJs, and that is the call to "
     "make unless you actually need another measure — name metrics explicitly "
@@ -411,6 +422,7 @@ DEFAULTS = {
     "panel": {
         "metrics": ["close", "nav"],
         "means": "close for ticker ids, nav for cnpj ids; a metric absent for an id type simply yields no rows",
+        "grain": "(id, asset_class, date, metric) — a CNPJ filing under two families yields one row per family; p_entity_type narrows to one",
         "to_widen": "pass p_metrics explicitly, e.g. p_metrics=['close','volume']",
     },
     "wide_endpoints": {
@@ -446,19 +458,34 @@ LIMITS = {
             ),
         },
     },
+    "page": {
+        "size": 1000,
+        "functions": ["panel"],
+        "over_cap": (
+            "SQLSTATE 22023 naming the function — nothing is trimmed to fit; "
+            "the message says to page or narrow"
+        ),
+        "cursor": (
+            "p_after: null = whole result (refused above 1000 rows); '' = first "
+            "page; '<date>|<id>|<metric>|<asset_class>' copied from the last "
+            "row = the next page; a page shorter than 1000 is the last"
+        ),
+        "order": "date, id, metric, asset_class",
+    },
     "sql_sentinel": {
         "series": 5001,
-        "panel": 100001,
         "reachable": False,
         "note": (
-            "the functions' own LIMITs (serve _MAX_POINTS/_MAX_PANEL + 1). "
+            "the series functions' own LIMIT (serve _MAX_POINTS + 1). "
             "Unreachable behind the 1000-row ceiling on the hosted API; never "
-            "a truncation signal there"
+            "a truncation signal there. panel no longer has one: it refuses "
+            "over the page (see `page`)"
         ),
     },
     "tiers": {
         "anon": {
             "panel_ids": 3,
+            "panel_universe": False,
             "search_funds_rows": 25,
             "option_chain_rows": 200,
             "option_exercises_rows": 500,
@@ -468,6 +495,7 @@ LIMITS = {
         },
         "authenticated": {
             "panel_ids": 50,
+            "panel_universe": True,
             "search_funds_rows": 200,
             "option_chain_rows": 2000,
             "option_exercises_rows": 5000,
@@ -667,6 +695,11 @@ def tool_specs() -> List[Dict[str, Any]]:
                         "freq": {"type": "string", "enum": ["day", "month"]},
                         "from": {"type": "string", "description": "ISO date"},
                         "to": {"type": "string", "description": "ISO date"},
+                        "entity_type": {
+                            "type": "string",
+                            "enum": ["fi", "fidc", "fii", "fip", "fiagro"],
+                            "description": "Keep one fund family; a CNPJ can file under two",
+                        },
                         "format": {"type": "string", "enum": ["long", "wide"]},
                     },
                     "required": ["ids", "metrics"],

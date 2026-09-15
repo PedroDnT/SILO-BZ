@@ -38,16 +38,18 @@ from .client import (
     SiloCatalogDrift,
     SiloClient,
     SiloError,
+    SiloOverCap,
     SiloTimeout,
     SiloTruncated,
 )
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "SiloClient",
     "SiloError",
     "SiloTruncated",
+    "SiloOverCap",
     "SiloTimeout",
     "SiloCatalogDrift",
     "SERVER_ROW_CAP",

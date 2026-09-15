@@ -29,7 +29,9 @@ SQL12 = SQL12_PATH.read_text(encoding="utf-8")
 # comments in 19_api_contract.sql: SQL caps are serve cap + 1 so the adapter
 # can 400 instead of silently truncating.
 SERIES_CAP = 5001
-PANEL_CAP = 100001
+# api.panel has no sentinel any more: it returns one 1000-row page (PostgREST
+# db-max-rows) and REFUSES (22023) above it unless the caller pages with p_after.
+PANEL_PAGE = 1000
 
 LANDING_PATTERN = re.compile(
     r"\b(?:public\.)?(?:cvm_\w+|b3_cotahist\w*|vw_b3_(?:quote_vista|instrument_typed))\b",
@@ -91,6 +93,9 @@ EXPECTED_FUNCTIONS = {
 INTERNAL_FUNCTIONS = {
     "api.caller_tier",
     "api.assert_panel_ids",
+    "api.assert_row_cap",
+    "api.parse_panel_cursor",
+    "api.assert_panel_universe",
     "api.company_ref",
     "api.cia_statement_rows",
 }
@@ -431,7 +436,6 @@ def test_no_password_outside_comments():
 @pytest.mark.parametrize(
     "fn,cap",
     [
-        ("api.panel", PANEL_CAP),
         ("api.quote_history", SERIES_CAP),
         ("api.fund_nav", SERIES_CAP),
         ("api.option_history", SERIES_CAP),
@@ -444,15 +448,83 @@ def test_series_functions_carry_internal_row_caps(fn, cap):
 
 
 def test_caps_are_serve_caps_plus_one():
-    """The SQL cap must be exactly serve's cap + 1: at the cap itself serve
-    could never distinguish 'too large' from 'complete' and would silently
-    hand back a truncated (fabricated) panel."""
+    """The series SQL cap must be exactly serve's cap + 1: at the cap itself
+    serve could never distinguish 'too large' from 'complete' and would
+    silently hand back a truncated (fabricated) series. The panel is paged
+    instead: serve's total must be a whole number of 1000-row pages and its
+    page size must be the server's."""
     app_py = (ROOT / "serve" / "app.py").read_text(encoding="utf-8")
     m_points = re.search(r"_MAX_POINTS\s*=\s*([\d_]+)", app_py)
     m_panel = re.search(r"_MAX_PANEL\s*=\s*([\d_]+)", app_py)
-    assert m_points and m_panel, "serve/app.py no longer defines _MAX_POINTS/_MAX_PANEL"
+    m_page = re.search(r"_PAGE\s*=\s*([\d_]+)", app_py)
+    assert m_points and m_panel and m_page, "serve/app.py no longer defines _MAX_POINTS/_MAX_PANEL/_PAGE"
     assert SERIES_CAP == int(m_points.group(1).replace("_", "")) + 1
-    assert PANEL_CAP == int(m_panel.group(1).replace("_", "")) + 1
+    assert int(m_page.group(1)) == PANEL_PAGE
+    assert int(m_panel.group(1).replace("_", "")) % PANEL_PAGE == 0
+
+
+# ---------------------------------------------------------------------------
+# The panel refuses instead of trimming (2026-09-15): one 1000-row page,
+# 22023 above it unless p_after pages, a transparent cursor, and universe
+# mode for signed-in callers. One page size everywhere.
+# ---------------------------------------------------------------------------
+
+def test_panel_returns_one_page_and_refuses_above_it():
+    body = _strip_comments(FUNCS["api.panel"])
+    page = body[body.index("page AS ("):]
+    assert re.search(rf"\bLIMIT\s+{PANEL_PAGE + 1}\b", page), "the page CTE must fetch page+1 rows to see the overflow"
+    assert re.search(rf"\bLIMIT\s+{PANEL_PAGE}\b\s*;", page), "the final select must return exactly one page"
+    assert "api.assert_row_cap((SELECT count(*) FROM page), (SELECT paging FROM params), 'panel')" in page
+    assert not re.search(r"\bLIMIT\s+100001\b", body), "the unreachable sentinel is gone"
+
+
+def test_row_cap_helper_page_size_is_the_one_constant():
+    helper = _strip_comments(FUNCS["api.assert_row_cap"])
+    assert f"p_n > {PANEL_PAGE}" in helper
+    assert "ERRCODE = '22023'" in helper
+    from serve.catalog import catalog_payload
+    from sdk.silo_client.client import SERVER_ROW_CAP
+    limits = catalog_payload()["limits"]
+    assert limits["page"]["size"] == PANEL_PAGE == SERVER_ROW_CAP == limits["rows_per_response"]["value"]
+    assert "panel" in limits["page"]["functions"]
+
+
+def test_panel_cursor_is_transparent_and_keyed_on_the_full_grain():
+    body = _strip_comments(FUNCS["api.panel"])
+    assert "api.parse_panel_cursor(p_after)" in body
+    assert "(r.date, r.id, r.metric, COALESCE(r.asset_class, ''))" in body, (
+        "the cursor must include asset_class: (id, date, metric) is not unique"
+    )
+    parser = _strip_comments(FUNCS["api.parse_panel_cursor"])
+    assert "string_to_array(p_after, '|')" in parser
+    assert "ERRCODE = '22023'" in parser
+    from serve.catalog import catalog_payload
+    cursor = catalog_payload()["limits"]["page"]["cursor"]
+    assert "'' = first" in cursor and "<date>|<id>|<metric>|<asset_class>" in cursor
+
+
+def test_panel_fund_arm_filters_entity_type_and_declares_the_grain():
+    panel = FUNCS["api.panel"]
+    fund_rows = panel[panel.index("fund_rows AS ("):panel.index(", ranked (")]
+    assert "(p.entity_type IS NULL OR f.entity_type = p.entity_type)" in fund_rows
+    from serve.catalog import catalog_payload, CONSTRAINTS
+    assert "(id, asset_class, date, metric)" in catalog_payload()["defaults"]["panel"]["grain"]
+    assert any(c.startswith("PANEL GRAIN IS (id, asset_class, date, metric)") for c in CONSTRAINTS)
+
+
+def test_universe_mode_requires_a_family_and_a_signed_in_caller():
+    gate = _strip_comments(FUNCS["api.assert_panel_universe"])
+    assert "NOT IN ('fi', 'fidc', 'fii', 'fip', 'fiagro')" in gate
+    assert "v_allowed = 0" in gate and "CASE api.caller_tier() WHEN 'authenticated' THEN 1 ELSE 0 END" in gate
+    assert gate.count("ERRCODE = '22023'") >= 3
+    body = _strip_comments(FUNCS["api.panel"])
+    universe = body[body.index("universe AS ("):body.index("cnpjs AS (")]
+    # filters on published values only: latest non-null NAV, count of the
+    # first requested metric — no arithmetic, no rank.
+    assert "ARRAY_AGG(f.vl_patrim_liq ORDER BY f.period DESC) FILTER (WHERE f.vl_patrim_liq IS NOT NULL))[1]" in universe
+    assert "COUNT(CASE (SELECT metrics[1] FROM params)" in universe
+    assert "public.latest_complete_period(f.entity_type)" in universe
+    assert "SELECT u.cnpj FROM universe u" in body
 
 
 def test_discovery_functions_stay_bounded():
@@ -722,10 +794,10 @@ def test_lookup_escapes_like_and_ranks_before_the_limit():
 
 def test_panel_cap_applies_after_deterministic_order():
     body = _strip_comments(FUNCS["api.panel"])
-    order = re.search(r"ORDER\s+BY\s+4\s*,\s*1\s*,\s*5", body)
-    limit = re.search(rf"\bLIMIT\s+{PANEL_CAP}\b", body)
+    order = re.search(r"ORDER\s+BY\s+4\s*,\s*1\s*,\s*5\s*,\s*3", body)
+    limit = re.search(rf"\bLIMIT\s+{PANEL_PAGE + 1}\b", body)
     assert order and limit and order.start() < limit.start(), (
-        "api.panel must ORDER BY (date, id, metric) before its LIMIT so the cut is deterministic"
+        "api.panel must ORDER BY (date, id, metric, asset_class) before its page LIMIT so the page is deterministic"
     )
 
 
@@ -807,9 +879,15 @@ def test_catalog_limits_are_the_sql_tier_clamps():
     assert clamp("api.fund_holdings") == (anon["fund_holdings_rows"], auth["fund_holdings_rows"])
     assert clamp("api.fund_debentures") == (anon["fund_debentures_rows"], auth["fund_debentures_rows"])
 
+    # Universe mode is a tier feature too: 0 anonymous, 1 signed in, read out
+    # of the gate's COMMENT the same way.
+    assert clamp("api.assert_panel_universe") == (int(anon["panel_universe"]), int(auth["panel_universe"]))
+
     limits = catalog_payload()["limits"]
-    assert limits["sql_sentinel"] == {**limits["sql_sentinel"], "series": SERIES_CAP, "panel": PANEL_CAP}
+    assert limits["sql_sentinel"] == {**limits["sql_sentinel"], "series": SERIES_CAP}
+    assert "panel" not in limits["sql_sentinel"], "the panel has no sentinel: it refuses over the page"
     assert limits["sql_sentinel"]["reachable"] is False
+    assert limits["page"]["size"] == PANEL_PAGE
     assert limits["rows_per_response"]["value"] == 1000
     # The timeouts are Supabase's per-role defaults, stated in the SQL header.
     header = SQL19[:SQL19.index("CREATE OR REPLACE FUNCTION api.caller_tier")]

@@ -135,6 +135,11 @@ function.
   `db-max-rows = 1000`, so *every* response over the hosted API is truncated to the first
   1,000 rows — whatever the function's own `LIMIT` says. It keeps the **oldest** rows and
   returns `200`, not an error.
+
+  **`panel` is the exception, since catalog v24: it refuses instead.** A `panel` call
+  whose window would produce more than 1,000 rows raises `22023` unless you page it with
+  `p_after` (`''` for the first page, then the last row's `date|id|metric|asset_class`).
+  A short panel can no longer look complete. See [Paging](/api-docs/panel#paging).
 </Warning>
 
 The only truthful signal is the `Content-Range` response header:
@@ -146,9 +151,10 @@ The only truthful signal is the `Content-Range` response header:
 
 <Warning>
   **`Range` paging does not work on RPC.** Asking for rows 1000–1999 of an `/rpc/` call
-  re-runs the function and hands you the first page again. To get past 1,000 rows, narrow
-  the request — fewer ids, fewer metrics, a shorter date window — and call again. Do not
-  stitch "pages" together; they are the same page.
+  re-runs the function and hands you the first page again. To get past 1,000 rows on
+  `panel`, use its `p_after` cursor; on the other functions, narrow the request — fewer
+  ids, fewer metrics, a shorter date window — and call again. Do not stitch `Range`
+  "pages" together; they are the same page.
 </Warning>
 
 Each function also carries its own `LIMIT`, which matters for the local adapter (`serve/`,
@@ -156,7 +162,7 @@ no PostgREST in front) and tells you what the function would return unclipped:
 
 | Endpoint | Function's own cap |
 | --- | --- |
-| [`panel`](/api-docs/panel) | 100,001 rows |
+| [`panel`](/api-docs/panel) | **one 1,000-row page**; refuses (`22023`) above it unless `p_after` pages |
 | [`quote_history`](/api-docs/quotes) | 5,001 rows |
 | [`fund_nav`](/api-docs/funds) | 5,001 rows |
 | [`search_funds`](/api-docs/funds) | **25** rows anonymous, 200 signed in (`p_limit` is clamped, not refused) |
@@ -167,13 +173,13 @@ no PostgREST in front) and tells you what the function would return unclipped:
 | [`option_history`](/api-docs/options) | 5,001 rows |
 | [`option_exercises`](/api-docs/options) | **500** rows anonymous, 5,000 signed in (`p_limit` is clamped, not refused) |
 | [`termo_history`](/api-docs/termo) | 5,001 rows |
-| [`panel`](/api-docs/panel) | 100,001 rows, and **3 ids** anonymous / 50 signed in |
+| [`panel`](/api-docs/panel) | **3 ids** anonymous / 50 signed in; universe mode (no ids + a family) signed in only |
 
 <Warning>
-  **A capped response is not a valid dataset.** The cut is deterministic (`panel` orders by
-  `date, id, metric`; the series functions keep the oldest rows), but it is still an
-  arbitrary slice of what you asked for. Do not correlate it, rank it, or chart it — narrow
-  the ids, metrics, or date window and call again.
+  **A capped response is not a valid dataset.** The cut is deterministic (the series
+  functions keep the oldest rows), but it is still an arbitrary slice of what you asked
+  for. Do not correlate it, rank it, or chart it — narrow the ids, metrics, or date window
+  and call again. `panel` cannot be cut any more: it pages or it refuses.
 </Warning>
 
 Requests are also bounded by the Supabase platform `statement_timeout` on the API

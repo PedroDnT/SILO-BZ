@@ -443,6 +443,55 @@ def test_quote_series_columnar(client):
 # ---------------------------------------------------------------------------
 
 
+class _PagedCur(_Cur):
+    """Serves api.panel pages from a queue, one per execute()."""
+
+    def __init__(self, pages, description):
+        super().__init__(rows=[], description=description)
+        self._pages = list(pages)
+        self.calls = []
+
+    def execute(self, sql, params=None):
+        super().execute(sql, params)
+        self.calls.append(params)
+        self._rows = self._pages.pop(0) if self._pages else []
+
+
+_PANEL_DESC = [(c,) for c in ("id", "id_type", "asset_class", "date", "metric", "value", "source")]
+
+
+def _panel_row(i):
+    return ("PETR4", "ticker", "equity", f"2024-01-{(i % 28) + 1:02d}", "close", 1.0, "b3_cotahist")
+
+
+def test_panel_pages_the_sql_with_the_last_rows_cursor(client):
+    """api.panel returns one 1000-row page; the adapter walks p_after until a
+    short page and hands back the whole panel, never a cut one."""
+    import serve.app as app_mod
+    first = [_panel_row(i) for i in range(app_mod._PAGE)]
+    second = [_panel_row(1)]
+    cur = _PagedCur([first, second], _PANEL_DESC)
+    client.pool.cur = cur
+    r = client.get("/v1/panel?ids=PETR4&metrics=close&from=2024-01-01&to=2024-12-31&freq=day")
+    assert r.status_code == 200, r.get_json()
+    assert r.get_json()["count"] == app_mod._PAGE + 1
+    assert len(cur.calls) == 2
+    assert cur.calls[0][-1] == "", "page 1 is p_after = ''"
+    last = first[-1]
+    assert cur.calls[1][-1] == f"{last[3]}|{last[0]}|{last[4]}|{last[2]}", "page 2 is the last row's key"
+
+
+def test_panel_answers_400_above_the_adapters_own_total(client, monkeypatch):
+    import serve.app as app_mod
+    monkeypatch.setattr(app_mod, "_MAX_PANEL", 2 * app_mod._PAGE)
+    full = [_panel_row(i) for i in range(app_mod._PAGE)]
+    cur = _PagedCur([full, full, full], _PANEL_DESC)
+    client.pool.cur = cur
+    r = client.get("/v1/panel?ids=PETR4&metrics=close&from=2024-01-01&to=2024-12-31&freq=day")
+    assert r.status_code == 400
+    assert r.get_json()["error"] == "panel too large"
+
+
 def test_panel_omitted_to_reaches_sql_as_null(client):
     client.pool.cur = _Cur(rows=[], description=[("id",), ("date",), ("metric",), ("value",)])
     rv = client.get("/v1/panel?ids=PETR4&metrics=close")
