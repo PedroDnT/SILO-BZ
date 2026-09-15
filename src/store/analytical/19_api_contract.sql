@@ -1285,7 +1285,8 @@ BEGIN
     IF p_kind IS NOT NULL AND p_kind NOT IN ('equity', 'fund') THEN
         RAISE EXCEPTION
             'p_kind must be equity or fund, got %; equity reads CDA block 4 '
-            '(tickers), fund reads block 2 (held funds)', p_kind
+            '(tickers), fund reads block 2 (held funds). Debentures (block 6) '
+            'have their own shape — call api.fund_debentures', p_kind
             USING ERRCODE = '22023';
     END IF;
 
@@ -1331,6 +1332,274 @@ GRANT EXECUTE ON FUNCTION api.fund_holdings(TEXT, TEXT, DATE, DATE, TEXT, INT)
 
 COMMENT ON FUNCTION api.fund_holdings(TEXT, TEXT, DATE, DATE, TEXT, INT) IS
     'Fund holdings from CDA blocks 4 (equities, by B3 ticker) and 2 (held funds, by CNPJ). Give exactly one of p_cnpj (what this fund holds) or p_ticker (which funds hold this ticker). Rows are as filed; nothing is summed across application types.';
+
+-- ---------------------------------------------------------------------------
+-- Fund debenture holdings — CDA block 6, the fund → corporate-credit edge
+-- ---------------------------------------------------------------------------
+-- Block 6 is not a third p_kind of fund_holdings, on purpose. Blocks 4 and 2
+-- identify what is held with one published column (a ticker, a CNPJ); a
+-- debenture has no CD_ATIVO and its identity is (issuer, maturity, rate
+-- structure) — two series of one issuer maturing the same day at different
+-- coupons are different securities holding different money. Forcing that
+-- into held_id/held_name would collapse them into indistinguishable rows,
+-- which is a wrong number wearing a familiar shape. So it gets its own shape.
+--
+-- The issuer is the join. cpf_cnpj_emissor is the issuer's OWN CPF/CNPJ as
+-- filed (block 6 publishes it; PF_PJ_EMISSOR says which), so "which funds
+-- hold this issuer's paper" needs no bridge. p_issuer accepts a listed
+-- company's ticker (resolved ONLY through CVM's published FCA map via
+-- api.company_ref — never a name), a CVM code, or any CPF/CNPJ, listed or
+-- not: most debenture issuers are not listed and a raw CNPJ is the honest way
+-- to reach them. issuer_tickers carries the issuer's active listed codes when
+-- it has any, from the same map — an array, because one issuer can have
+-- PETR3 and PETR4 and picking one would be a guess.
+--
+-- cpf_cnpj_emissor is stored as published (text, unvalidated — a CPF issuer
+-- is a real filing). The lookup matches BOTH the bare digits and CVM's
+-- punctuated form through an IN list so the (cpf_cnpj_emissor, period) index
+-- is used; a regexp on the column would scan every row a fund ever filed.
+--
+-- Rows are as filed and never summed: a fund files the same series under
+-- several application types and trading intents (the fund_holdings rule).
+
+CREATE OR REPLACE FUNCTION api.fund_debentures(
+    p_cnpj   TEXT DEFAULT NULL,   -- the HOLDER: what this fund holds
+    p_issuer TEXT DEFAULT NULL,   -- the ISSUER: ticker / CVM code / CPF-CNPJ — which funds hold its paper
+    p_from   DATE DEFAULT NULL,
+    p_to     DATE DEFAULT NULL,
+    p_limit  INT  DEFAULT NULL
+)
+RETURNS TABLE (
+    cnpj               TEXT,
+    period             DATE,
+    issuer_id          TEXT,     -- the issuer's CPF/CNPJ, digits only
+    issuer_kind        TEXT,     -- PF | PJ, as published
+    issuer             TEXT,     -- issuer name, as published
+    issuer_tickers     TEXT[],   -- active listed codes from the FCA map; NULL when not listed
+    tp_aplic           TEXT,
+    tp_ativo           TEXT,
+    tp_negoc           TEXT,
+    emissor_ligado     TEXT,
+    maturity           DATE,
+    indexer            TEXT,     -- cd_indexador_posfx: DI1, IPCA, …
+    indexer_pct        NUMERIC,  -- % of the indexer
+    coupon_pct         NUMERIC,  -- spread over it
+    fixed_rate_pct     NUMERIC,  -- pre-fixed rate instead
+    titulo_cetip       TEXT,
+    qt_pos_final       NUMERIC,
+    vl_merc_pos_final  NUMERIC,
+    vl_custo_pos_final NUMERIC
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+DECLARE
+    v_cnpj    TEXT := NULLIF(regexp_replace(COALESCE(p_cnpj, ''), '\D', '', 'g'), '');
+    v_raw     TEXT := NULLIF(btrim(COALESCE(p_issuer, '')), '');
+    v_digits  TEXT;
+    v_forms   TEXT[];
+    v_cap     INT  := CASE api.caller_tier()
+                          WHEN 'authenticated' THEN 5000 ELSE 500 END;
+    v_limit   INT;
+BEGIN
+    IF (v_cnpj IS NULL) = (v_raw IS NULL) THEN
+        RAISE EXCEPTION
+            'fund_debentures needs exactly one of p_cnpj (what this fund holds) '
+            'or p_issuer (which funds hold this issuer''s debentures); % were given',
+            CASE WHEN v_cnpj IS NULL THEN 'neither' ELSE 'both' END
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF v_raw IS NOT NULL THEN
+        v_digits := NULLIF(regexp_replace(v_raw, '\D', '', 'g'), '');
+        IF v_digits IS NOT NULL AND length(v_digits) IN (11, 14) AND v_digits = regexp_replace(v_raw, '[.\-/ ]', '', 'g') THEN
+            -- A CPF or CNPJ, listed or not: matched as given, no map needed.
+            NULL;
+        ELSE
+            -- A ticker or CVM code: the published FCA map, active listings
+            -- only, via the same resolver api.financials uses.
+            SELECT r.cnpj INTO v_digits FROM api.company_ref(v_raw) r;
+            IF v_digits IS NULL THEN
+                RAISE EXCEPTION
+                    'unknown issuer %: give a listed company''s ticker or CVM code (resolved through CVM''s published FCA map, active listings only) or the issuer''s CPF/CNPJ — most debenture issuers are not listed and only their CNPJ reaches them',
+                    p_issuer
+                    USING ERRCODE = '22023';
+            END IF;
+        END IF;
+        -- Bare digits and CVM's punctuated spelling, so the index is used
+        -- whichever way the block was published.
+        v_forms := CASE length(v_digits)
+            WHEN 14 THEN ARRAY[v_digits,
+                               substr(v_digits,1,2)||'.'||substr(v_digits,3,3)||'.'||substr(v_digits,6,3)||'/'||substr(v_digits,9,4)||'-'||substr(v_digits,13,2)]
+            WHEN 11 THEN ARRAY[v_digits,
+                               substr(v_digits,1,3)||'.'||substr(v_digits,4,3)||'.'||substr(v_digits,7,3)||'-'||substr(v_digits,10,2)]
+            ELSE ARRAY[v_digits]
+        END;
+    END IF;
+
+    v_limit := LEAST(GREATEST(COALESCE(p_limit, v_cap), 1), v_cap);
+
+    RETURN QUERY
+    SELECT h.cnpj,
+           h.period,
+           regexp_replace(h.cpf_cnpj_emissor, '\D', '', 'g'),
+           h.pf_pj_emissor,
+           h.emissor,
+           t.tickers,
+           h.tp_aplic,
+           h.tp_ativo,
+           h.tp_negoc,
+           h.emissor_ligado,
+           h.dt_venc,
+           h.cd_indexador_posfx,
+           h.pr_indexador_posfx,
+           h.pr_cupom_posfx,
+           h.pr_taxa_prefx,
+           h.titulo_cetip,
+           h.qt_pos_final,
+           h.vl_merc_pos_final,
+           h.vl_custo_pos_final
+    FROM public.cvm_fi_cda_debentures h
+    LEFT JOIN LATERAL (
+        SELECT array_agg(vt.codneg ORDER BY vt.codneg) AS tickers
+        FROM public.vw_company_ticker vt
+        WHERE vt.is_active
+          AND vt.cnpj_cia = regexp_replace(h.cpf_cnpj_emissor, '\D', '', 'g')
+    ) t ON TRUE
+    WHERE (v_cnpj  IS NULL OR h.cnpj = v_cnpj)
+      AND (v_forms IS NULL OR h.cpf_cnpj_emissor = ANY (v_forms))
+      AND (p_from IS NULL OR h.period >= p_from)
+      AND (p_to   IS NULL OR h.period <= p_to)
+    ORDER BY h.period DESC, h.vl_merc_pos_final DESC NULLS LAST, h.dt_venc
+    LIMIT v_limit;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION api.fund_debentures(TEXT, TEXT, DATE, DATE, INT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.fund_debentures(TEXT, TEXT, DATE, DATE, INT)
+    TO anon, authenticated;
+
+COMMENT ON FUNCTION api.fund_debentures(TEXT, TEXT, DATE, DATE, INT) IS
+    'Fund debenture holdings from CDA block 6. Give exactly one of p_cnpj (what this fund holds) or p_issuer (which funds hold this issuer''s paper; a listed ticker/CVM code via the published FCA map, or any CPF/CNPJ). One row per (fund, month, issuer, maturity, rate structure, application type), as filed — never summed. issuer_tickers = the issuer''s active listed codes, NULL when not listed.';
+
+-- ---------------------------------------------------------------------------
+-- ANBIMA class aggregates — the industry benchmark series, as published
+-- ---------------------------------------------------------------------------
+-- anbima_class_monthly is the "Boletim de Fundos de Investimento" read long:
+-- one row per (reference_date, category, type, metric, level). Nothing in it
+-- is per fund, and nothing in this warehouse maps a fund to its ANBIMA class
+-- (CVM's `classe` is CVM's taxonomy, not ANBIMA's), so these rows are served
+-- as what they are — industry aggregates — with no id, no panel arm and no
+-- name join. Values are R$ milhões and percentage points AS PUBLISHED; `unit`
+-- says which, read off the metric name the ingest assigned (brl_mm / pct /
+-- count), never off the number.
+--
+-- `level` is part of the grain because Cambial, FIP and FIAGRO each appear
+-- twice in one sheet: as the class aggregate and as an ANBIMA type of the
+-- same name. The default serves class aggregates; p_level = 'type' serves the
+-- types under a class, 'total' the industry total, NULL every level.
+--
+-- An unknown category, metric or level RAISES 22023 listing what exists. The
+-- alternative — an empty array — is indistinguishable from "ANBIMA published
+-- nothing", which is the same silent-miss the catalog warns about for panel
+-- metrics. The lists are read from the table (tiny: ~10^4 rows), never
+-- hard-coded, so a class ANBIMA adds is accepted the day it lands.
+--
+-- Default window: p_to NULL = the latest published edition. A boletim month
+-- is complete by construction (it is a publication, not a filing cadence), so
+-- there is no completeness clamp and coverage() reports both dates equal.
+
+CREATE OR REPLACE FUNCTION api.anbima_classes(
+    p_category TEXT DEFAULT NULL,        -- 'Renda Fixa', 'Ações', 'ETF', …; NULL = every class
+    p_metric   TEXT DEFAULT NULL,        -- one boletim metric; NULL = every metric
+    p_level    TEXT DEFAULT 'category',  -- 'category' | 'type' | 'total'; NULL = every level
+    p_from     DATE DEFAULT '2019-01-01',
+    p_to       DATE DEFAULT NULL         -- NULL = latest published edition
+)
+RETURNS TABLE (
+    reference_date DATE,
+    category       TEXT,
+    type_id        INT,
+    type_name      TEXT,
+    level          TEXT,
+    metric         TEXT,
+    value          NUMERIC,
+    unit           TEXT,
+    boletim_ref    TEXT,
+    source         TEXT
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+DECLARE
+    v_known TEXT;
+BEGIN
+    IF p_level IS NOT NULL AND p_level NOT IN ('category', 'type', 'total') THEN
+        RAISE EXCEPTION
+            'p_level must be category (class aggregate), type (ANBIMA type) or total (industry total); got %',
+            p_level
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF p_category IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM public.anbima_class_monthly a
+        WHERE lower(a.anbima_category) = lower(btrim(p_category))
+    ) THEN
+        SELECT string_agg(DISTINCT a.anbima_category, ', ' ORDER BY a.anbima_category)
+          INTO v_known FROM public.anbima_class_monthly a;
+        RAISE EXCEPTION
+            'unknown ANBIMA category %; the boletim publishes: %', p_category, COALESCE(v_known, '(none loaded)')
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF p_metric IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM public.anbima_class_monthly a WHERE a.metric = p_metric
+    ) THEN
+        SELECT string_agg(DISTINCT a.metric, ', ' ORDER BY a.metric)
+          INTO v_known FROM public.anbima_class_monthly a;
+        RAISE EXCEPTION
+            'unknown metric %; anbima_classes serves: %', p_metric, COALESCE(v_known, '(none loaded)')
+            USING ERRCODE = '22023';
+    END IF;
+
+    RETURN QUERY
+    SELECT a.reference_date,
+           a.anbima_category,
+           a.anbima_type_id,
+           a.anbima_type_name,
+           a.level,
+           a.metric,
+           a.value,
+           CASE
+               WHEN a.metric LIKE '%\_brl\_mm' THEN 'brl_mm'
+               WHEN a.metric LIKE '%\_pct'     THEN 'pct'
+               WHEN a.metric = 'fund_count'     THEN 'count'
+           END,
+           a.boletim_ref,
+           'anbima'::text
+    FROM public.anbima_class_monthly a
+    WHERE (p_category IS NULL OR lower(a.anbima_category) = lower(btrim(p_category)))
+      AND (p_metric   IS NULL OR a.metric = p_metric)
+      AND (p_level    IS NULL OR a.level  = p_level)
+      AND a.reference_date >= p_from
+      AND a.reference_date <= COALESCE(p_to, CURRENT_DATE)
+    -- Cap = serve _MAX_POINTS (5000) + 1, same lockstep as quote_history.
+    -- Positional ORDER BY so the cut is deterministic and dodges OUT-name
+    -- ambiguity: (reference_date, category, type_name, metric).
+    ORDER BY 1, 2, 4, 6
+    LIMIT 5001;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION api.anbima_classes(TEXT, TEXT, TEXT, DATE, DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.anbima_classes(TEXT, TEXT, TEXT, DATE, DATE) TO anon, authenticated;
+
+COMMENT ON FUNCTION api.anbima_classes(TEXT, TEXT, TEXT, DATE, DATE) IS
+    'ANBIMA Boletim de Fundos class series as published: AUM, net flows (month / YTD / 12m), returns (month / YTD / 12m) and fund counts per class, ANBIMA type or industry total (p_level). Industry aggregates — no fund is mapped to a class here, and there is no panel arm. Unknown category/metric/level raises 22023 listing what exists. Hard-capped at 5001 rows.';
 
 -- ---------------------------------------------------------------------------
 -- Coverage — freshness without exposing cvm_ingest_log
@@ -1403,7 +1672,12 @@ AS $$
     -- says nothing about companies, and a fabricated completeness date is
     -- exactly the claim this function exists to prevent.
     SELECT 'financials'::text, MAX(f.dt_refer), NULL::date, 'cvm'::text
-    FROM public.cia_filing f;
+    FROM public.cia_filing f
+    UNION ALL
+    -- ANBIMA boletim: a published edition is complete by construction (a
+    -- monthly publication, not a filing cadence), so both dates coincide.
+    SELECT 'anbima_classes'::text, MAX(a.reference_date), MAX(a.reference_date), 'anbima'::text
+    FROM public.anbima_class_monthly a;
 $$;
 
 COMMENT ON FUNCTION api.coverage() IS
@@ -2151,7 +2425,7 @@ AS $fn$
 SELECT $json$
 {
   "kind": "catalog",
-  "version": 19,
+  "version": 21,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint carefully, and READ THE Content-Range RESPONSE HEADER ON EVERY CALL: PostgREST truncates every response at 1000 rows and keeps the OLDEST ones, so a cut-short series is indistinguishable from a complete one by its contents alone — `0-999/*` is the only thing that tells you. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -2376,6 +2650,8 @@ SELECT $json$
     "spread": "First column minus second column of the wide matrix, dates aligned."
   },
   "constraints": [
+    "A FUND'S DEBENTURE HOLDINGS ARE A DIFFERENT SHAPE FROM ITS EQUITY HOLDINGS. api.fund_debentures (CDA block 6) is one row per (fund, month, issuer, maturity, rate structure, application type), as filed and never summed — two series of one issuer maturing the same day at different coupons are different securities. The issuer is its own filed CPF/CNPJ (issuer_id); p_issuer also takes a listed company's ticker or CVM code, resolved only through CVM's published FCA map, and issuer_tickers carries the issuer's active listed codes back (NULL when not listed — most debenture issuers are not). Nothing is matched by name.",
+    "ANBIMA CLASS ROWS ARE INDUSTRY AGGREGATES, NOT FUNDS. api.anbima_classes serves the Boletim de Fundos de Investimento as published — R$ milhões (unit brl_mm) and percentage points (unit pct) — per class, ANBIMA type or industry total (`level`; class aggregates by default). No fund in this warehouse is mapped to an ANBIMA class: CVM's `classe` is CVM's taxonomy, so never join a fund to a class by name, and there is no panel arm because these rows carry no id. An unknown category, metric or level raises 22023 listing what exists rather than returning an empty array.",
     "LISTED-COMPANY FINANCIALS ARE FILED, NOT DERIVED. api.financials returns one row per account line exactly as the company filed it; nothing is summed, annualised or restated. Read period_months before comparing two rows: an ITR publishes the SAME account twice under one reference date, once for the three months and once year-to-date, and they are distinguished only by the period span. Adding a 3-month row to a 6-month row double-counts the quarter.",
     "FINANCIALS DEFAULT TO CONSOLIDATED (scope=con) AND TO THE PERIOD THE DOCUMENT IS FOR (ordem_exerc ULTIMO). The prior-year comparative printed beside it is never returned. When a company re-files, only the newest version of each statement is served and `version` carries it; in company_financials a balance sheet from a different version than the income statement reads NULL rather than being paired across filings.",
     "A TICKER RESOLVES TO A COMPANY ONLY THROUGH CVM'S PUBLISHED FCA MAP, active listings only — the CNPJ and the trading code arrive on the same filed row. financials('PETR4'), financials('33000167000101') and financials('9512') are the same company. A delisted code resolves to nothing rather than to a guess, and no company↔ticker edge is ever inferred from a name.",
@@ -2424,6 +2700,7 @@ SELECT $json$
         "option_chain_rows": 200,
         "option_exercises_rows": 500,
         "fund_holdings_rows": 500,
+        "fund_debentures_rows": 500,
         "statement_timeout_seconds": 3
       },
       "authenticated": {
@@ -2432,6 +2709,7 @@ SELECT $json$
         "option_chain_rows": 2000,
         "option_exercises_rows": 5000,
         "fund_holdings_rows": 5000,
+        "fund_debentures_rows": 5000,
         "statement_timeout_seconds": 8
       },
       "exceeding_an_id_ceiling": "SQLSTATE 22023 naming the limit — a panel is never silently trimmed to fit",
@@ -2524,7 +2802,9 @@ SELECT $json$
     "option_exercises": "POST /rest/v1/rpc/option_exercises",
     "termo_history": "POST /rest/v1/rpc/termo_history",
     "financials": "POST /rest/v1/rpc/financials",
-    "company_financials": "POST /rest/v1/rpc/company_financials"
+    "company_financials": "POST /rest/v1/rpc/company_financials",
+    "anbima_classes": "POST /rest/v1/rpc/anbima_classes",
+    "fund_debentures": "POST /rest/v1/rpc/fund_debentures"
   }
 }
 $json$::jsonb;
@@ -2573,6 +2853,8 @@ GRANT EXECUTE ON FUNCTION api.lookup(TEXT)                            TO silo_ap
 GRANT EXECUTE ON FUNCTION api.fund_holdings(TEXT, TEXT, DATE, DATE, TEXT, INT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT) TO silo_api;
+GRANT EXECUTE ON FUNCTION api.anbima_classes(TEXT, TEXT, TEXT, DATE, DATE) TO silo_api;
+GRANT EXECUTE ON FUNCTION api.fund_debentures(TEXT, TEXT, DATE, DATE, INT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.catalog()                               TO silo_api;
 
 -- Defensive, idempotent no-ops today (silo_api is never directly granted

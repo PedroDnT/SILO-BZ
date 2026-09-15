@@ -28,7 +28,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 19
+KNOWN_CATALOG_VERSION = 21
 
 
 class SiloCatalogDrift(UserWarning):
@@ -397,6 +397,36 @@ class SiloClient:
             "p_kind": kind, "p_limit": limit,
         })
 
+    def fund_debentures(self, cnpj: Optional[str] = None,
+                        issuer: Optional[str] = None,
+                        start: Datish = None, end: Datish = None,
+                        limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """A fund's debenture holdings, or which funds hold an issuer's paper.
+
+        CDA block 6 — its own shape, not a third `kind` of :meth:`fund_holdings`,
+        because a debenture's identity is (issuer, maturity, rate structure)
+        and those columns have nowhere to go in the equity shape. Exactly one
+        of `cnpj` or `issuer`:
+
+            silo.fund_debentures(cnpj="05754060000113")   # what it holds
+            silo.fund_debentures(issuer="PETR4")           # who holds Petrobras paper (FCA map)
+            silo.fund_debentures(issuer="33000167000101")  # same issuer by CNPJ
+            silo.fund_debentures(issuer="02998301000181")  # an UNLISTED issuer — CNPJ is the only way
+
+        Rows are as filed and never summed. `issuer_tickers` is the issuer's
+        active listed codes from CVM's published map, None when not listed.
+        Rows are clamped to 500 anonymous / 5000 signed in.
+        """
+        if (cnpj is None) == (issuer is None):
+            raise ValueError(
+                "fund_debentures needs exactly one of cnpj (what this fund holds) "
+                "or issuer (which funds hold this issuer's debentures)"
+            )
+        return self._rpc("fund_debentures", {
+            "p_cnpj": cnpj, "p_issuer": issuer,
+            "p_from": _iso(start), "p_to": _iso(end), "p_limit": limit,
+        })
+
     # -- listed companies (CIA Aberta) ---------------------------------------
 
     def financials(self, id: str, statement: Optional[str] = None,
@@ -447,6 +477,32 @@ class SiloClient:
         return self._rpc("company_financials", {
             "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
             "p_scope": scope,
+        })
+
+    # -- industry aggregates (ANBIMA) ----------------------------------------
+
+    def anbima_classes(self, category: Optional[str] = None,
+                       metric: Optional[str] = None,
+                       level: Optional[str] = "category",
+                       start: Datish = None,
+                       end: Datish = None) -> List[Dict[str, Any]]:
+        """ANBIMA Boletim de Fundos class series, as published.
+
+            silo.anbima_classes()                                  # every class, AUM/flows/returns/counts
+            silo.anbima_classes("Renda Fixa", metric="pl_brl_mm")  # one class, one metric
+            silo.anbima_classes("Ações", level="type")             # the ANBIMA types under a class
+            silo.anbima_classes(level="total")                     # the industry total
+
+        One row per (reference_date, category, type, level, metric); `unit`
+        is brl_mm (R$ millions, as published), pct (percentage points) or
+        count. These are industry aggregates: no fund is mapped to a class
+        here, so nothing joins them to `fund_nav` or `panel`. An unknown
+        category, metric or level is a `SiloError` (22023) listing what
+        exists — never an empty list that looks like "nothing published".
+        """
+        return self._rpc("anbima_classes", {
+            "p_category": category, "p_metric": metric, "p_level": level,
+            "p_from": _iso(start), "p_to": _iso(end),
         })
 
     # -- typed views (GET resources, not functions) --------------------------
