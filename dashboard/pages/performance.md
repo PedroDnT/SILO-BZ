@@ -1,5 +1,6 @@
 ---
 title: Fund Performance
+hide_title: true
 ---
 
 <!--

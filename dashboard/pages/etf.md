@@ -1,5 +1,6 @@
 ---
 title: ETF Market
+hide_title: true
 ---
 
 <!--
@@ -76,10 +77,10 @@ select * from supabase.etf_market_series
 > been back-filled to close that gap. Fund performance on comparable measures is
 > on [Performance](/performance).
 
-<BigValue data={etf_counts} value=total_etfs label="Total ETFs" fmt=num0/>
-<BigValue data={etf_counts} value=active_etfs label="Active" fmt=num0/>
-<BigValue data={etf_counts} value=providers label="Brands" fmt=num0/>
-<BigValue data={etf_counts} value=indices_tracked label="Indices Tracked" fmt=num0/>
+<BigValue data={etf_counts} value=total_etfs title="Total ETFs" fmt=num0/>
+<BigValue data={etf_counts} value=active_etfs title="Active" fmt=num0/>
+<BigValue data={etf_counts} value=providers title="Brands" fmt=num0/>
+<BigValue data={etf_counts} value=indices_tracked title="Indices Tracked" fmt=num0/>
 
 ---
 
@@ -208,10 +209,10 @@ select * from supabase.etf_market_series
 > `run_daily` scrape runs only when `APIFY_TOKEN` is configured — see
 > [Pipeline Ops](/ops) for whether it has run).
 
-<BigValue data={etf_market_coverage} value=etfs_with_snapshot label="ETFs w/ Snapshot" fmt=num0/>
-<BigValue data={etf_market_coverage} value=with_nav label="With NAV" fmt=num0/>
-<BigValue data={etf_market_coverage} value=with_cotistas label="With Quotaholders" fmt=num0/>
-<BigValue data={etf_market_coverage} value=latest_snapshot label="Latest Snapshot"/>
+<BigValue data={etf_market_coverage} value=etfs_with_snapshot title="ETFs w/ Snapshot" fmt=num0/>
+<BigValue data={etf_market_coverage} value=with_nav title="With NAV" fmt=num0/>
+<BigValue data={etf_market_coverage} value=with_cotistas title="With Quotaholders" fmt=num0/>
+<BigValue data={etf_market_coverage} value=latest_snapshot title="Latest Snapshot"/>
 
 <DataTable data={etf_market} rows=20 search=true>
   <Column id=ticker title="Ticker"/>

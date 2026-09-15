@@ -1,5 +1,6 @@
 ---
 title: FIDC Credit Monitor
+hide_title: true
 ---
 
 <!--

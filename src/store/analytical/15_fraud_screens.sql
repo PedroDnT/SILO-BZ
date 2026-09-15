@@ -138,6 +138,19 @@ RETURNS TABLE (
 )
 LANGUAGE sql STABLE SECURITY INVOKER
 AS $$
+    -- cvm_securit_serie holds one row per series PER MONTHLY FILING
+    -- (data_referencia is in the key), so a series past maturity appeared once
+    -- for every month it was ever filed — the /suspicious table showed the
+    -- same CRA thirty times. Take each series' newest filing first, then
+    -- screen it: a series whose latest filing says Liquidado is not overdue,
+    -- however many earlier filings said Adimplente.
+    WITH latest AS (
+        SELECT DISTINCT ON (s.instrument_type, s.cnpj_securit, s.codigo_identificacao, s.numero_serie)
+               s.*
+        FROM cvm_securit_serie s
+        ORDER BY s.instrument_type, s.cnpj_securit, s.codigo_identificacao, s.numero_serie,
+                 s.data_referencia DESC
+    )
     SELECT
         s.instrument_type,
         s.cnpj_securit,
@@ -146,7 +159,7 @@ AS $$
         s.situacao,
         s.valor_total_integralizado / 1e6  AS volume_mm,
         s.classificacao_risco_atual         AS rating
-    FROM cvm_securit_serie s
+    FROM latest s
     WHERE s.data_vencimento < CURRENT_DATE
       AND s.situacao NOT IN ('Cancelado', 'Vencido', 'Liquidado', 'Encerrado')
       AND s.valor_total_integralizado > min_volume

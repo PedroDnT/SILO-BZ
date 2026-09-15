@@ -1,5 +1,6 @@
 ---
 title: Pipeline Ops
+hide_title: true
 ---
 
 <!--
@@ -94,12 +95,12 @@ select * from supabase.ops_recent_runs
 > That is why the log and the tables themselves are both shown, and why a
 > disagreement between them is the thing to look for.
 
-<BigValue data={ops_health} value=hours_since_last_run label="Hours Since Last Run" fmt=num1/>
-<BigValue data={ops_health} value=runs_24h label="Runs (24h)" fmt=num0/>
-<BigValue data={ops_health} value=errors_7d label="Errors (7d)" fmt=num0/>
-<BigValue data={ops_health} value=stuck_running label="Stuck 'running'" fmt=num0/>
-<BigValue data={ops_health} value=rows_7d label="Rows Upserted (7d)" fmt=num0/>
-<BigValue data={build_stamp} value=built_at_utc label="Snapshot Built"/>
+<BigValue data={ops_health} value=hours_since_last_run title="Hours Since Last Run" fmt=num1/>
+<BigValue data={ops_health} value=runs_24h title="Runs (24h)" fmt=num0/>
+<BigValue data={ops_health} value=errors_7d title="Errors (7d)" fmt=num0/>
+<BigValue data={ops_health} value=stuck_running title="Stuck 'running'" fmt=num0/>
+<BigValue data={ops_health} value=rows_7d title="Rows Upserted (7d)" fmt=num0/>
+<BigValue data={build_stamp} value=built_at_utc title="Snapshot Built"/>
 
 > **How to read the health strip.** The cron runs daily at 06:00 UTC, so
 > `Hours Since Last Run` above ~30 means the schedule itself has stopped — the

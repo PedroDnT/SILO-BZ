@@ -1,5 +1,6 @@
 ---
 title: FII Market
+hide_title: true
 ---
 
 <!--
@@ -221,11 +222,11 @@ title="FII Monthly Dividend Yield Distribution"
 
 ## Property Explorer
 
-<BigValue data={fii_property_coverage} value=property_rows label="Buildings Registered" fmt=num0/>
-<BigValue data={fii_property_coverage} value=funds_with_register label="Funds with a Register" fmt=num0/>
-<BigValue data={fii_property_coverage} value=rows_with_invested_share label="…with an Invested Share" fmt=num0/>
-<BigValue data={fii_property_coverage} value=rows_with_vacancy label="…with Vacancy Reported" fmt=num0/>
-<BigValue data={fii_property_coverage} value=rows_single_asset_over_50pct label="Single Asset > 50% Invested" fmt=num0/>
+<BigValue data={fii_property_coverage} value=property_rows title="Buildings Registered" fmt=num0/>
+<BigValue data={fii_property_coverage} value=funds_with_register title="Funds with a Register" fmt=num0/>
+<BigValue data={fii_property_coverage} value=rows_with_invested_share title="…with an Invested Share" fmt=num0/>
+<BigValue data={fii_property_coverage} value=rows_with_vacancy title="…with Vacancy Reported" fmt=num0/>
+<BigValue data={fii_property_coverage} value=rows_single_asset_over_50pct title="Single Asset > 50% Invested" fmt=num0/>
 
 > **Coverage first.** These rows come from `cvm_fii_imovel`, the per-building
 > register CVM ships as its own member of the `INF_TRIMESTRAL` zip. Until

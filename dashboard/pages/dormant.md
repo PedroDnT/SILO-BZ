@@ -1,5 +1,6 @@
 ---
 title: Dormant Funds
+hide_title: true
 ---
 
 <!--
@@ -97,12 +98,12 @@ select * from supabase.dormant_admin_coverage
 > closed-end listed vehicle. Three months is a **floor** — a longer window would
 > raise the bar, not lower it.
 
-<BigValue data={headline} value=empty_shells label="Empty Shells" fmt=num0/>
-<BigValue data={headline} value=parked_capital label="Parked-Capital Funds" fmt=num0/>
-<BigValue data={headline} value=parked_pl_bn label="Net Assets Standing Still (R$bn)" fmt=num1/>
-<BigValue data={headline} value=parked_share_num1 label="Share of FI Classes Filing (%)" fmt=num1/>
-<BigValue data={headline} value=funds_filing label="FI Classes Filing" fmt=num0/>
-<BigValue data={headline} value=listed_companies label="Listed Companies, for Scale" fmt=num0/>
+<BigValue data={headline} value=empty_shells title="Empty Shells" fmt=num0/>
+<BigValue data={headline} value=parked_capital title="Parked-Capital Funds" fmt=num0/>
+<BigValue data={headline} value=parked_pl_bn title="Net Assets Standing Still (R$bn)" fmt=num1/>
+<BigValue data={headline} value=parked_share_num1 title="Share of FI Classes Filing (%)" fmt=num1/>
+<BigValue data={headline} value=funds_filing title="FI Classes Filing" fmt=num0/>
+<BigValue data={headline} value=listed_companies title="Listed Companies, for Scale" fmt=num0/>
 
 > **For scale** is the count of registered companhias abertas not marked
 > cancelled — the honest denominator for "empresas na bolsa". It is not a ticker
@@ -161,9 +162,9 @@ select * from supabase.dormant_admin_coverage
 
 ## By Administrator
 
-<BigValue data={admin_coverage} value=hits label="Screen Hits" fmt=num0/>
-<BigValue data={admin_coverage} value=hits_with_admin label="…with a Registry Administrator" fmt=num0/>
-<BigValue data={admin_coverage} value=hits_without_admin label="…with None" fmt=num0/>
+<BigValue data={admin_coverage} value=hits title="Screen Hits" fmt=num0/>
+<BigValue data={admin_coverage} value=hits_with_admin title="…with a Registry Administrator" fmt=num0/>
+<BigValue data={admin_coverage} value=hits_without_admin title="…with None" fmt=num0/>
 
 > **Coverage first.** `admin_name` comes from CVM's cadastral file and is
 > sparsely populated. The ranking below covers only the hits the registry names;

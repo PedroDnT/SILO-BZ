@@ -1,5 +1,6 @@
 ---
 title: Suspicious Deal Screens
+hide_title: true
 ---
 
 <!--

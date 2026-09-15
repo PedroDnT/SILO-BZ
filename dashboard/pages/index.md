@@ -1,5 +1,6 @@
 ---
 title: Brazilian Fund Industry Data
+hide_title: true
 ---
 
 <!--
@@ -60,12 +61,12 @@ select * from supabase.row_counts
 > not been ingested, or is ambiguous in the source, the page says so and leaves
 > the cell blank rather than filling it with an estimate.
 
-<BigValue data={fund_headline} value=funds_tracked label="Funds Tracked" fmt=num0/>
-<BigValue data={fund_headline} value=aum_bn label="Net Assets (R$bn)" fmt=num0/>
-<BigValue data={fund_headline} value=investor_positions label="Quotaholder Positions" fmt=num0/>
-<BigValue data={ops_health} value=rows_7d label="Rows Ingested (7d)" fmt=num0/>
-<BigValue data={ops_health} value=hours_since_last_run label="Hours Since Last Ingest" fmt=num1/>
-<BigValue data={build_stamp} value=built_at_utc label="Snapshot Built"/>
+<BigValue data={fund_headline} value=funds_tracked title="Funds Tracked" fmt=num0/>
+<BigValue data={fund_headline} value=aum_bn title="Net Assets (R$bn)" fmt=num0/>
+<BigValue data={fund_headline} value=investor_positions title="Quotaholder Positions" fmt=num0/>
+<BigValue data={ops_health} value=rows_7d title="Rows Ingested (7d)" fmt=num0/>
+<BigValue data={ops_health} value=hours_since_last_run title="Hours Since Last Ingest" fmt=num1/>
+<BigValue data={build_stamp} value=built_at_utc title="Snapshot Built"/>
 
 > Net assets are each fund's most recent reported `vl_patrim_liq`, summed — so
 > the total is latest-available per fund, not an as-of-one-date figure. Quotaholder

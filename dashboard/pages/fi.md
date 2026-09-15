@@ -1,5 +1,6 @@
 ---
 title: FI Industry
+hide_title: true
 ---
 
 <!--
@@ -97,11 +98,11 @@ select * from supabase.fi_top_funds
 > before any chart is drawn from it. ETFs are excluded here and analysed on
 > [the ETF page](/etf).
 
-<BigValue data={fi_headline} value=aum_bn label="Industry Net Assets (R$bn)" fmt=num0/>
-<BigValue data={fi_headline} value=n_funds label="Funds Reporting" fmt=num0/>
-<BigValue data={fi_headline} value=investors label="Quotaholder Positions" fmt=num0/>
-<BigValue data={fi_headline} value=net_flow_bn label="Net Flow, Latest Month (R$bn)" fmt=num0/>
-<BigValue data={fi_headline} value=latest_period label="Latest Month"/>
+<BigValue data={fi_headline} value=aum_bn title="Industry Net Assets (R$bn)" fmt=num0/>
+<BigValue data={fi_headline} value=n_funds title="Funds Reporting" fmt=num0/>
+<BigValue data={fi_headline} value=investors title="Quotaholder Positions" fmt=num0/>
+<BigValue data={fi_headline} value=net_flow_bn title="Net Flow, Latest Month (R$bn)" fmt=num0/>
+<BigValue data={fi_headline} value=latest_period title="Latest Month"/>
 
 ---
 
@@ -181,10 +182,10 @@ title="Daily Subscriptions vs Redemptions"
 
 ## Investor Mix — Retail vs Institutional
 
-<BigValue data={fi_perfil_coverage} value=funds_reporting label="Funds in Latest PERFIL File" fmt=num0/>
-<BigValue data={fi_perfil_coverage} value=funds_with_investor_split label="…with an Investor Split" fmt=num0/>
-<BigValue data={fi_perfil_coverage} value=funds_with_holder_share label="…with a Largest-Holder Share" fmt=num0/>
-<BigValue data={fi_perfil_coverage} value=latest_period label="PERFIL Period"/>
+<BigValue data={fi_perfil_coverage} value=funds_reporting title="Funds in Latest PERFIL File" fmt=num0/>
+<BigValue data={fi_perfil_coverage} value=funds_with_investor_split title="…with an Investor Split" fmt=num0/>
+<BigValue data={fi_perfil_coverage} value=funds_with_holder_share title="…with a Largest-Holder Share" fmt=num0/>
+<BigValue data={fi_perfil_coverage} value=latest_period title="PERFIL Period"/>
 
 > **Coverage first.** The `nr_cotst_*` holder buckets are declared on
 > `cvm_fi_perfil` but have not historically been lifted by the perfil field map,
