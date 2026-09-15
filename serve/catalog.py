@@ -69,6 +69,13 @@ __all__ = [
 # 6: one endpoint per cash instrument type, each carrying both lot sizes.
 # 5: main's typed cash asset classes (4) merged with the option/termo id_types
 # and list-valued id_type this branch introduced (3).
+# 21: api.fund_debentures — CDA block 6, the fund → corporate-credit edge.
+# Not a third p_kind of fund_holdings: a debenture has no CD_ATIVO and its
+# identity is (issuer, maturity, rate structure), so it gets a shape that
+# carries them. The issuer is reached by its own filed CPF/CNPJ, or — for a
+# listed company — by ticker/CVM code through the published FCA map;
+# issuer_tickers carries the listed codes back. Tiered 500 / 5000 like
+# fund_holdings.
 # 20: api.anbima_classes — the ANBIMA Boletim de Fundos class series (AUM, net
 # flows, returns, fund counts per class / type / industry total) reach the API
 # as the industry aggregates they are: no id, no panel arm, no fund↔class join
@@ -92,7 +99,7 @@ __all__ = [
 # row. No panel arm yet: an ITR files a 3-month AND a year-to-date figure
 # under one date and the panel is 1-D per (id, date, metric), so choosing a
 # span silently is exactly the fabricated number this contract forbids.
-CATALOG_VERSION = 20
+CATALOG_VERSION = 21
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -230,6 +237,7 @@ NOTEBOOK_REDUCERS: Dict[str, str] = {
 }
 
 CONSTRAINTS = [
+    "A FUND'S DEBENTURE HOLDINGS ARE A DIFFERENT SHAPE FROM ITS EQUITY HOLDINGS. api.fund_debentures (CDA block 6) is one row per (fund, month, issuer, maturity, rate structure, application type), as filed and never summed — two series of one issuer maturing the same day at different coupons are different securities. The issuer is its own filed CPF/CNPJ (issuer_id); p_issuer also takes a listed company's ticker or CVM code, resolved only through CVM's published FCA map, and issuer_tickers carries the issuer's active listed codes back (NULL when not listed — most debenture issuers are not). Nothing is matched by name.",
     "ANBIMA CLASS ROWS ARE INDUSTRY AGGREGATES, NOT FUNDS. api.anbima_classes serves the Boletim de Fundos de Investimento as published — R$ milhões (unit brl_mm) and percentage points (unit pct) — per class, ANBIMA type or industry total (`level`; class aggregates by default). No fund in this warehouse is mapped to an ANBIMA class: CVM's `classe` is CVM's taxonomy, so never join a fund to a class by name, and there is no panel arm because these rows carry no id. An unknown category, metric or level raises 22023 listing what exists rather than returning an empty array.",
     "LISTED-COMPANY FINANCIALS ARE FILED, NOT DERIVED. api.financials returns one row per account line exactly as the company filed it; nothing is summed, annualised or restated. Read period_months before comparing two rows: an ITR publishes the SAME account twice under one reference date, once for the three months and once year-to-date, and they are distinguished only by the period span. Adding a 3-month row to a 6-month row double-counts the quarter.",
     "FINANCIALS DEFAULT TO CONSOLIDATED (scope=con) AND TO THE PERIOD THE DOCUMENT IS FOR (ordem_exerc ULTIMO). The prior-year comparative printed beside it is never returned. When a company re-files, only the newest version of each statement is served and `version` carries it; in company_financials a balance sheet from a different version than the income statement reads NULL rather than being paired across filings.",
@@ -432,6 +440,7 @@ LIMITS = {
             "option_chain_rows": 200,
             "option_exercises_rows": 500,
             "fund_holdings_rows": 500,
+            "fund_debentures_rows": 500,
             "statement_timeout_seconds": 3,
         },
         "authenticated": {
@@ -440,6 +449,7 @@ LIMITS = {
             "option_chain_rows": 2000,
             "option_exercises_rows": 5000,
             "fund_holdings_rows": 5000,
+            "fund_debentures_rows": 5000,
             "statement_timeout_seconds": 8,
         },
         "exceeding_an_id_ceiling": (
@@ -515,6 +525,7 @@ def catalog_payload() -> Dict[str, Any]:
             "financials": "POST /rest/v1/rpc/financials",
             "company_financials": "POST /rest/v1/rpc/company_financials",
             "anbima_classes": "POST /rest/v1/rpc/anbima_classes",
+            "fund_debentures": "POST /rest/v1/rpc/fund_debentures",
         },
     }
 

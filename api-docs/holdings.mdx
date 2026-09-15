@@ -67,9 +67,62 @@ silo.fund_holdings(cnpj="05754060000113", kind="fund")   # held FUNDS
   decide it for you.
 </Warning>
 
+## POST /rpc/fund_debentures — the corporate-credit edge
+
+CDA **block 6** publishes, per fund and month, each debenture position with
+the **issuer's own CPF/CNPJ** — so *which funds hold this issuer's paper?* is
+answerable with no bridge table and no name match.
+
+It is a separate function, not a third `p_kind`, on purpose. A debenture has
+no `CD_ATIVO`: its identity is (issuer, maturity, rate structure), and two
+series of one issuer maturing the same day at different coupons are different
+securities holding different money. Forcing that into `held_id` / `held_name`
+would collapse them into indistinguishable rows.
+
+Give **exactly one** of `p_cnpj` or `p_issuer`:
+
+| Argument | Type | Meaning |
+| --- | --- | --- |
+| `p_cnpj` | text | The **holder**. What this fund owns. |
+| `p_issuer` | text | The **issuer**. A listed company's ticker or CVM code (resolved only through CVM's published FCA map, active listings), or **any CPF/CNPJ** — most debenture issuers are not listed, and their CNPJ is the only way to reach them. |
+| `p_from` / `p_to` | date | Competency-month window. |
+| `p_limit` | int | Clamped by tier: **500** anonymous, 5,000 signed in. |
+
+```bash
+# Which funds hold Petrobras debentures — the ticker resolves through the FCA map
+-d '{"p_issuer":"PETR4","p_from":"2025-01-01"}'
+# An unlisted issuer, by CNPJ
+-d '{"p_issuer":"02998301000181"}'
+```
+
+```python
+silo.fund_debentures(cnpj="05754060000113")     # what it holds
+silo.fund_debentures(issuer="PETR4")             # who holds its paper
+silo.fund_debentures(issuer="02998301000181")    # an unlisted issuer
+```
+
+One row per (fund, month, issuer, maturity, rate structure, application type),
+as filed — **never summed**:
+
+| Column | Meaning |
+| --- | --- |
+| `cnpj`, `period` | the holding fund and the competency month |
+| `issuer_id`, `issuer_kind`, `issuer` | the issuer's CPF/CNPJ (digits), `PF`/`PJ`, and name, as published |
+| `issuer_tickers` | the issuer's **active** listed codes from the FCA map — an array, because one issuer can have `PETR3` and `PETR4`; `null` when not listed |
+| `tp_aplic`, `tp_ativo`, `tp_negoc`, `emissor_ligado` | application type, security type, trading intent, CVM's related-party flag |
+| `maturity` | `DT_VENC` |
+| `indexer`, `indexer_pct`, `coupon_pct` | post-fixed structure: `DI1` / `IPCA` …, % of the indexer, spread over it |
+| `fixed_rate_pct` | pre-fixed rate, when the paper is pre-fixed instead |
+| `titulo_cetip` | CETIP code, as published |
+| `qt_pos_final`, `vl_merc_pos_final`, `vl_custo_pos_final` | quantity, market value, cost, as filed |
+
+An unknown ticker raises `22023`; an unknown CNPJ simply has no rows — the
+warehouse cannot tell an issuer it has never seen from one that has no
+debentures held.
+
 ## Coverage
 
 Holdings run from **2005**, from the yearly CDA archives before 2023 and the
-monthly ones after. `coverage()` reports the real bound. Blocks 1, 3, 5, 6, 7
-and 8 of the same filing are not served — see
-[the data inventory](/api-docs/data-inventory) for what each holds and why.
+monthly ones after. Blocks 1, 3, 5, 7 and 8 of the same filing are not
+served — see [the data inventory](/api-docs/data-inventory) for what each
+holds and why.
