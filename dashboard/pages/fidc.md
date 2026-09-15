@@ -67,8 +67,8 @@ title: FIDC Credit Monitor
   R$1mm" table (source high_delinq_growing.sql) that is the same screen as
   fraud_screen_zombie_growth on /suspicious — same latest period, same 5%
   threshold, same R$1mm floor, same columns. It has been dropped in favour of a
-  link, so the screen has ONE definition on the site. high_delinq_growing.sql now
-  has no caller and is a deletion candidate for the source owner.
+  link, so the screen has ONE definition on the site. high_delinq_growing.sql was
+  deleted once it had no caller.
 -->
 
 ```sql delinquency_trend
