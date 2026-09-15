@@ -10,6 +10,8 @@
 --   • fraud_screen_overdue_securit(min_volume)
 --   • fraud_screen_dormant_funds(lookback_months)          — dashboard/pages/dormant.md
 --   • fraud_screen_dormant_trend(lookback_months, history_months)
+--   • fidc_delinquency_drivers(end, months, min_months, min_delta_brl, min_delta_pp)
+--                                                          — dashboard/pages/fidc.md
 --
 -- These are signals, not verdicts — always confirm against primary sources.
 -- Delinquency-acceleration is already covered by fidc_delinquency_screen() in
@@ -332,5 +334,160 @@ GRANT EXECUTE ON FUNCTION fraud_screen_zombie_growth(DATE, NUMERIC, NUMERIC)    
 GRANT EXECUTE ON FUNCTION fraud_screen_captive_vehicles(INT, INT, NUMERIC)        TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION fraud_screen_evergreen_aging(INT, NUMERIC, NUMERIC)     TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION fraud_screen_overdue_securit(NUMERIC)                   TO anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Delinquency drivers — rank FIDCs by how much their delinquency worsened,
+-- with BOTH metrics side by side and the "motor" of the move classified.
+-- dashboard/pages/fidc.md ("Where delinquency worsened — and why").
+--
+-- The rate is vl_inadimpl / vl_patrim_liq, so a rate move can only come from
+-- the numerator, the denominator, or both. Ranking by rate alone (the older
+-- report) put a fund whose PL melted above one that added R$1.5bn of overdue
+-- receivables. Each fund gets first-vs-last observation in the window on
+-- both series and a driver:
+--
+--   consistent_worsening   value up AND rate up            — the clean signal
+--   value_up_rate_masked   value up, rate flat/down        — PL grew with it:
+--                                                            real deterioration
+--                                                            the rate hides
+--   denominator_only       rate up, value flat/down        — PL shrank; not new
+--                                                            delinquency
+--   improvement            value down AND rate down
+--   stable                 everything else
+--
+-- "Up" / "down" are the two thresholds (p_min_delta_brl, p_min_delta_pp),
+-- arguments so the page can print them rather than leave them implicit.
+--
+-- Reads fact_fund_monthly — the same series api.fund_nav / api.panel serve —
+-- so a caller of the API reproduces this table exactly. Observations need
+-- BOTH vl_inadimpl and a positive vl_patrim_liq; a month without a
+-- delinquency filing is absent (never zero) and counts toward months_missing.
+-- stopped_reporting = the fund's last observation is two or more months
+-- before the window end while the family kept filing — a fund that quit
+-- reporting does not read as "clean".
+--
+-- Window: p_months months ending COALESCE(p_end, latest_complete_period('fidc'))
+-- (FIDC periods are month-END; compared on date_trunc('month')). It may not
+-- start before 2025-01: CVM's pre-2025 monthly file carries no delinquency
+-- field (catalog().regime_breaks), so an earlier start would difference a
+-- NULL regime against a filed one.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fidc_delinquency_drivers(
+    p_end           DATE    DEFAULT NULL,
+    p_months        INT     DEFAULT 12,
+    p_min_months    INT     DEFAULT 6,
+    p_min_delta_brl NUMERIC DEFAULT 1e6,
+    p_min_delta_pp  NUMERIC DEFAULT 1.0
+)
+RETURNS TABLE (
+    cnpj              TEXT,
+    fund_name         TEXT,
+    status            TEXT,
+    window_from       DATE,
+    window_to         DATE,
+    n_months          BIGINT,
+    months_missing    INT,
+    first_month       DATE,
+    last_month        DATE,
+    del_start         NUMERIC,
+    del_end           NUMERIC,
+    delta_brl         NUMERIC,
+    nav_start         NUMERIC,
+    nav_end           NUMERIC,
+    delta_nav         NUMERIC,
+    rate_start        NUMERIC,
+    rate_end          NUMERIC,
+    delta_pp          NUMERIC,
+    stopped_reporting BOOLEAN,
+    driver            TEXT
+)
+LANGUAGE plpgsql STABLE SECURITY INVOKER
+AS $$
+#variable_conflict use_column
+DECLARE
+    v_to   DATE := date_trunc('month', COALESCE(p_end, latest_complete_period('fidc')))::date;
+    v_from DATE := (date_trunc('month', COALESCE(p_end, latest_complete_period('fidc')))
+                    - (p_months - 1) * INTERVAL '1 month')::date;
+BEGIN
+    IF p_months < 2 OR p_min_months < 2 THEN
+        RAISE EXCEPTION 'fidc_delinquency_drivers: p_months and p_min_months must be at least 2 (a delta needs two observations)'
+            USING ERRCODE = '22023';
+    END IF;
+    IF v_from < DATE '2025-01-01' THEN
+        RAISE EXCEPTION 'fidc_delinquency_drivers: window starts % but FIDC delinquency is filed only from 2025-01 (CVM tab IV/VI regime, catalog().regime_breaks); shorten p_months or move p_end',
+            v_from USING ERRCODE = '22023';
+    END IF;
+    RETURN QUERY
+    WITH obs AS (
+        SELECT f.cnpj,
+               date_trunc('month', f.period)::date AS m,
+               f.vl_patrim_liq                     AS nav,
+               f.vl_inadimpl                       AS del
+        FROM fact_fund_monthly f
+        WHERE f.entity_type = 'fidc'
+          AND date_trunc('month', f.period)::date BETWEEN v_from AND v_to
+          AND f.vl_inadimpl IS NOT NULL
+          AND f.vl_patrim_liq IS NOT NULL
+          AND f.vl_patrim_liq > 0
+    ),
+    per_fund AS (
+        SELECT o.cnpj,
+               COUNT(*)                                     AS n_months,
+               MIN(o.m)                                     AS first_month,
+               MAX(o.m)                                     AS last_month,
+               (ARRAY_AGG(o.del ORDER BY o.m))[1]           AS del_start,
+               (ARRAY_AGG(o.del ORDER BY o.m DESC))[1]      AS del_end,
+               (ARRAY_AGG(o.nav ORDER BY o.m))[1]           AS nav_start,
+               (ARRAY_AGG(o.nav ORDER BY o.m DESC))[1]      AS nav_end
+        FROM obs o
+        GROUP BY o.cnpj
+    ),
+    scored AS (
+        SELECT p.*,
+               p.del_end - p.del_start                           AS delta_brl,
+               p.nav_end - p.nav_start                           AS delta_nav,
+               100.0 * p.del_start / p.nav_start                 AS rate_start,
+               100.0 * p.del_end   / p.nav_end                   AS rate_end
+        FROM per_fund p
+        WHERE p.n_months >= p_min_months
+    )
+    SELECT s.cnpj,
+           COALESCE(r.fund_name, s.cnpj)                          AS fund_name,
+           r.status,
+           v_from                                                 AS window_from,
+           v_to                                                   AS window_to,
+           s.n_months,
+           (p_months - s.n_months)::int                           AS months_missing,
+           s.first_month,
+           s.last_month,
+           s.del_start,
+           s.del_end,
+           s.delta_brl,
+           s.nav_start,
+           s.nav_end,
+           s.delta_nav,
+           ROUND(s.rate_start, 2)                                 AS rate_start,
+           ROUND(s.rate_end, 2)                                   AS rate_end,
+           ROUND(s.rate_end - s.rate_start, 2)                    AS delta_pp,
+           s.last_month < (v_to - INTERVAL '1 month')::date       AS stopped_reporting,
+           CASE
+               WHEN s.delta_brl >= p_min_delta_brl
+                AND (s.rate_end - s.rate_start) >= p_min_delta_pp  THEN 'consistent_worsening'
+               WHEN s.delta_brl >= p_min_delta_brl                 THEN 'value_up_rate_masked'
+               WHEN (s.rate_end - s.rate_start) >= p_min_delta_pp  THEN 'denominator_only'
+               WHEN s.delta_brl <= -p_min_delta_brl
+                AND (s.rate_end - s.rate_start) <= -p_min_delta_pp THEN 'improvement'
+               ELSE 'stable'
+           END                                                    AS driver
+    FROM scored s
+    LEFT JOIN cvm_fund_registry r ON r.cnpj = s.cnpj AND r.entity_type = 'fidc'
+    ORDER BY s.delta_brl DESC NULLS LAST;
+END;
+$$;
+
+COMMENT ON FUNCTION fidc_delinquency_drivers(DATE, INT, INT, NUMERIC, NUMERIC) IS
+    'FIDC delinquency deterioration over a window, both metrics side by side: delta in BRL (vl_inadimpl) and in percentage points (100*vl_inadimpl/vl_patrim_liq), first vs last observation, with the driver classified (consistent_worsening | value_up_rate_masked | denominator_only | improvement | stable) from the two thresholds. Reads fact_fund_monthly, the series the API serves. Refuses a window that starts before 2025-01 (no delinquency field before the tab IV/VI regime). stopped_reporting flags a fund whose last filing is two or more months behind the window end.';
+
+GRANT EXECUTE ON FUNCTION fidc_delinquency_drivers(DATE, INT, INT, NUMERIC, NUMERIC) TO anon, authenticated;
 
 COMMIT;

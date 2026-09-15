@@ -1,6 +1,7 @@
 ---
 title: ETF Market
 hide_title: true
+sidebar_position: 8
 ---
 
 <!--

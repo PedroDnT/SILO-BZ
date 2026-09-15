@@ -1,6 +1,7 @@
 ---
 title: Industry Structure
 hide_title: true
+sidebar_position: 1
 ---
 
 <!--
@@ -134,10 +135,15 @@ title="Net Assets by Family — Last 36 Months (share of total)"
 <AreaChart
 data={industry_aum_trend}
 x=period
-y={['fidc_aum_bn','fii_aum_bn','fiagro_aum_bn','fip_aum_bn']}
+y={['fidc_aum_bn','fii_aum_bn','fiagro_aum_bn']}
 yAxisTitle="Net Assets (R$bn)"
-title="Net Assets by Family — Last 36 Months (ex-FI, absolute)"
+title="Net Assets by Family — Last 36 Months (ex-FI and ex-FIP, absolute)"
 />
+
+> FIP is left off the absolute stack: its yearly filing lands in one month of
+> twelve as a band larger than the other three families together, which turns a
+> monthly chart into a saw. Its yearly bars are further down this page.
+
 
 ---
 

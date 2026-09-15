@@ -1,6 +1,7 @@
 ---
 title: Managers
 hide_title: true
+sidebar_position: 9
 ---
 
 <!--
