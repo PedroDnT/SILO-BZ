@@ -19,7 +19,12 @@ Design rules (mirroring the API's own contract):
     with the first page; six years of daily quotes come back as three and a
     half with nothing to say so. SiloTruncated is that missing signal — paging
     does not work on RPC, so the SDK cannot stitch the rest and will not
-    pretend the short answer is the whole one.
+    pretend the short answer is the whole one (the partial page is on .rows,
+    for inspection, not for use). Views DO page: view() returns one explicit
+    page and view_all() walks them all, ordered.
+  * the catalog carries the ceilings as numbers (limits()), and the client
+    warns (SiloCatalogDrift) when the server's catalog version is not the one
+    it was written against.
 
 Signing in (a `token=`, or SILO_TOKEN) raises the panel id ceiling from 3 to
 50, search_funds from 25 to 200, option_chain from 200 to 2,000 and the query
@@ -28,20 +33,24 @@ server-wide and identical for every caller.
 """
 
 from .client import (
+    KNOWN_CATALOG_VERSION,
     SERVER_ROW_CAP,
+    SiloCatalogDrift,
     SiloClient,
     SiloError,
     SiloTimeout,
     SiloTruncated,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "SiloClient",
     "SiloError",
     "SiloTruncated",
     "SiloTimeout",
+    "SiloCatalogDrift",
     "SERVER_ROW_CAP",
+    "KNOWN_CATALOG_VERSION",
     "__version__",
 ]

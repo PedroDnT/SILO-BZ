@@ -8,8 +8,9 @@ catalog is fetched once per client and drives metric validation.
 from __future__ import annotations
 
 import os
+import warnings
 from datetime import date
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
 
 import httpx
 
@@ -21,6 +22,17 @@ Datish = Union[str, date, None]
 #: timeout, never this. A response of exactly this many rows is therefore
 #: indistinguishable from a truncated one unless the server tells us the total.
 SERVER_ROW_CAP = 1000
+
+#: The catalog version this client was written against (serve/catalog.py
+#: CATALOG_VERSION). The server's catalog() carries its own; when the two
+#: differ the client warns once — a newer server has endpoints, metrics or
+#: limits this client does not know, an older one lacks some this client
+#: wraps. Neither is an error, both are worth knowing before a long run.
+KNOWN_CATALOG_VERSION = 19
+
+
+class SiloCatalogDrift(UserWarning):
+    """The server's catalog version is not the one this client was built for."""
 
 
 class SiloError(RuntimeError):
@@ -46,16 +58,21 @@ class SiloTruncated(SiloError):
     raising is the only honest answer.
     """
 
-    def __init__(self, returned: int, total: Optional[int], url: str):
+    def __init__(self, returned: int, total: Optional[int], url: str,
+                 rows: Optional[List[Dict[str, Any]]] = None):
         self.returned = returned
         self.total = total
+        #: The partial page the server did send. Inspectable — to see where the
+        #: cut fell, or which ids made it — and never to be treated as the
+        #: series: it is the oldest `returned` rows of `total`, nothing more.
+        self.rows: List[Dict[str, Any]] = rows if rows is not None else []
         of = f"of {total:,}" if total is not None else "of an unknown total"
         super().__init__(
             206,
             f"the server returned {returned:,} rows {of} and stopped at its "
             f"{SERVER_ROW_CAP}-row cap. Narrow the window (start/end), ask for "
             f"fewer ids, or request one metric at a time. Paging does not work "
-            f"on this endpoint.",
+            f"on this endpoint. The partial rows are on .rows.",
             url,
         )
 
@@ -161,12 +178,19 @@ class SiloClient:
         total = value.rsplit("/", 1)[1].strip()
         return int(total) if total.isdigit() else None
 
-    def _check(self, r: httpx.Response, url: str) -> Any:
-        """Turn a response into rows, or into the most useful exception.
+    def _check(self, r: httpx.Response, url: str,
+               page: bool = False) -> Tuple[Any, Optional[int]]:
+        """Turn a response into (rows, total), or into the most useful exception.
 
         Truncation is checked BEFORE the rows are handed back, because a
         truncated series is not a smaller answer — it is a wrong one, and it
         looks exactly like a company that stopped trading.
+
+        `page=True` is the one exception, and it is a narrow one: the caller
+        asked a VIEW for an explicit limit/offset, so a total larger than the
+        page is the paging contract working, not the cap firing. RPC calls
+        never pass it — Range paging does not work there, so on a function a
+        short answer is always a wrong one.
         """
         if r.status_code >= 400:
             body = r.text
@@ -177,37 +201,73 @@ class SiloClient:
             raise SiloError(r.status_code, body, url)
 
         payload = r.json()
+        total = None
         if isinstance(payload, list):
             total = self._total_from_content_range(r.headers.get("Content-Range"))
             n = len(payload)
-            if total is not None and total > n:
-                raise SiloTruncated(n, total, url)
-            if total is None and n >= SERVER_ROW_CAP:
-                # No count came back and we are sitting exactly on the cap.
-                # Cannot prove completeness, so do not imply it.
-                raise SiloTruncated(n, None, url)
-        return payload
+            if not page:
+                if total is not None and total > n:
+                    raise SiloTruncated(n, total, url, rows=payload)
+                if total is None and n >= SERVER_ROW_CAP:
+                    # No count came back and we are sitting exactly on the cap.
+                    # Cannot prove completeness, so do not imply it.
+                    raise SiloTruncated(n, None, url, rows=payload)
+        return payload, total
 
-    def _get(self, resource: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _get(self, resource: str, params: Dict[str, Any],
+             page: bool = False) -> Tuple[List[Dict[str, Any]], Optional[int]]:
         url = f"{self._rest}/{resource}"
         r = self._http.get(url, params={k: v for k, v in params.items() if v is not None})
-        return self._check(r, url)
+        return self._check(r, url, page=page)
 
     def _rpc(self, fn: str, body: Dict[str, Any]) -> Any:
         url = f"{self._rest}/rpc/{fn}"
         r = self._http.post(url, json={k: v for k, v in body.items() if v is not None})
-        return self._check(r, url)
+        rows, _ = self._check(r, url)
+        return rows
 
     # -- discovery ----------------------------------------------------------
 
     def catalog(self, refresh: bool = False) -> Dict[str, Any]:
-        """The metric map + constraints. Cached; the server tells you the rules."""
+        """The metric map + constraints + limits. Cached; the server tells you the rules.
+
+        Warns (`SiloCatalogDrift`) when the server's catalog version is not
+        the one this client was written against. Not an error: an agent that
+        reads `limits` and `metrics` off the payload keeps working either
+        way — the warning is for the wrappers, which are only as current as
+        the catalog they were written from.
+        """
         if self._catalog is None or refresh:
             self._catalog = self._rpc("catalog", {})
+            served = self._catalog.get("version")
+            if served != KNOWN_CATALOG_VERSION:
+                relation = "newer" if isinstance(served, int) and served > KNOWN_CATALOG_VERSION else "older"
+                advice = (
+                    "the server may publish endpoints, metrics or limits this "
+                    "client does not wrap — read catalog() directly, or upgrade "
+                    "silo-client"
+                    if relation == "newer" else
+                    "some wrappers here may call functions that server does "
+                    "not have yet"
+                )
+                warnings.warn(
+                    f"the server's catalog is version {served!r}, {relation} than the "
+                    f"{KNOWN_CATALOG_VERSION} this client was written against: {advice}.",
+                    SiloCatalogDrift, stacklevel=2,
+                )
         return self._catalog
 
     def metrics(self) -> List[str]:
         return sorted(self.catalog()["metrics"].keys())
+
+    def limits(self) -> Dict[str, Any]:
+        """Every ceiling as numbers, from the catalog's `limits` block:
+        rows_per_response (the server-wide 1000 and how to detect it),
+        sql_sentinel (the functions' own unreachable LIMITs) and the per-tier
+        table (panel ids, search_funds/option_chain/option_exercises/
+        fund_holdings rows, statement timeout). Empty on a server older than
+        catalog v19, which had the same numbers only as prose."""
+        return self.catalog().get("limits") or {}
 
     def coverage(self) -> List[Dict[str, Any]]:
         """Per-dataset freshness (`as_of`) and honesty bound (`complete_through`)."""
@@ -400,16 +460,75 @@ class SiloClient:
     )
 
     def view(self, name: str, **filters: Any) -> List[Dict[str, Any]]:
-        """Read one of the typed views.
+        """Read one of the typed views — one page.
 
             client.view("equities", cd_ativo="eq.PETR4", limit=10)
+            client.view("funds", entity_type="eq.fidc", order="cnpj.asc",
+                        limit=1000, offset=1000)          # page two
 
         Filter syntax is PostgREST's own, passed through verbatim — the SDK
         does not invent a query language over it.
+
+        Views are the one surface that pages, so the truncation rule bends
+        here and nowhere else: with an explicit `limit` or `offset` you asked
+        for a page and get that page, whatever the total. Without either, a
+        response that hits the server's 1000-row cap raises `SiloTruncated`
+        exactly as a function call would — the registry is large, and a
+        1000-row `funds` view with no `limit` is a silent cut, not a result.
+        Use :meth:`view_all` to walk every page.
         """
         if name not in self.VIEWS:
             raise ValueError(f"unknown view {name!r}; served views are {list(self.VIEWS)}")
-        return self._get(name, filters)
+        paged = "limit" in filters or "offset" in filters
+        rows, _ = self._get(name, filters, page=paged)
+        return rows
+
+    def view_all(self, name: str, page_size: int = SERVER_ROW_CAP,
+                 **filters: Any) -> List[Dict[str, Any]]:
+        """Every row of a view, paged with limit/offset until the server runs out.
+
+            fidcs = client.view_all("funds", entity_type="eq.fidc",
+                                    order="cnpj.asc",
+                                    select="cnpj,fund_name,first_period,last_period")
+
+        `order` is REQUIRED: offset paging without a total order is not
+        stable, and an unstable page boundary duplicates one row and drops
+        another with nothing to say so — which is fabrication by omission.
+        `page_size` is clamped to the server's 1000-row cap (a larger limit is
+        silently reduced server-side anyway). Stops when a page comes back
+        short, or when Content-Range says the total has been reached.
+        """
+        return list(self.iter_view(name, page_size=page_size, **filters))
+
+    def iter_view(self, name: str, page_size: int = SERVER_ROW_CAP,
+                  **filters: Any) -> Iterator[Dict[str, Any]]:
+        """:meth:`view_all` as a generator — same contract, row by row."""
+        if name not in self.VIEWS:
+            raise ValueError(f"unknown view {name!r}; served views are {list(self.VIEWS)}")
+        if "limit" in filters or "offset" in filters:
+            raise ValueError(
+                "view_all/iter_view page for you; pass page_size instead of "
+                "limit, and no offset. Use view() for one explicit page."
+            )
+        if not filters.get("order"):
+            raise ValueError(
+                "view_all/iter_view need an `order` (e.g. order='cnpj.asc'): "
+                "offset paging without a total order can duplicate or drop rows "
+                "at page boundaries without saying so"
+            )
+        size = max(1, min(int(page_size), SERVER_ROW_CAP))
+        offset = 0
+        while True:
+            rows, total = self._get(
+                name, {**filters, "limit": size, "offset": offset}, page=True,
+            )
+            for row in rows:
+                yield row
+            offset += len(rows)
+            if len(rows) < size:
+                return
+            if total is not None and offset >= total:
+                return
 
     # -- the primitive ------------------------------------------------------
 

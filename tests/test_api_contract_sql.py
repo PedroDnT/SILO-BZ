@@ -696,6 +696,42 @@ def test_api_catalog_matches_serve_catalog_payload_exactly():
     )
 
 
+def test_catalog_limits_are_the_sql_tier_clamps():
+    """The `limits` block is only worth publishing if it cannot lag the SQL.
+
+    Every tiered ceiling is a `CASE api.caller_tier() WHEN 'authenticated'
+    THEN <hi> ELSE <lo>` (or the panel's `v_max := CASE v_tier ...`); read them
+    out of the function that owns each and compare number for number.
+    """
+    from serve.catalog import catalog_payload
+
+    tiers = catalog_payload()["limits"]["tiers"]
+    anon, auth = tiers["anon"], tiers["authenticated"]
+
+    def clamp(fn):
+        body = _strip_comments(FUNCS[fn])
+        m = re.search(r"WHEN\s+'authenticated'\s+THEN\s+(\d+)\s+ELSE\s+(\d+)", body)
+        assert m, f"{fn} has no tier CASE"
+        return int(m.group(2)), int(m.group(1))
+
+    # The panel ceiling lives in its id validator, not in api.panel itself.
+    validator = "api.assert_panel_ids"
+    assert clamp(validator) == (anon["panel_ids"], auth["panel_ids"])
+    assert clamp("api.search_funds") == (anon["search_funds_rows"], auth["search_funds_rows"])
+    assert clamp("api.option_chain") == (anon["option_chain_rows"], auth["option_chain_rows"])
+    assert clamp("api.option_exercises") == (anon["option_exercises_rows"], auth["option_exercises_rows"])
+    assert clamp("api.fund_holdings") == (anon["fund_holdings_rows"], auth["fund_holdings_rows"])
+
+    limits = catalog_payload()["limits"]
+    assert limits["sql_sentinel"] == {**limits["sql_sentinel"], "series": SERIES_CAP, "panel": PANEL_CAP}
+    assert limits["sql_sentinel"]["reachable"] is False
+    assert limits["rows_per_response"]["value"] == 1000
+    # The timeouts are Supabase's per-role defaults, stated in the SQL header.
+    header = SQL19[:SQL19.index("CREATE OR REPLACE FUNCTION api.caller_tier")]
+    assert "`anon` a 3s" in header and "`authenticated` 8s" in header
+    assert (anon["statement_timeout_seconds"], auth["statement_timeout_seconds"]) == (3, 8)
+
+
 def test_catalog_version_bumped_for_the_derivative_metrics():
     from serve.catalog import CATALOG_VERSION
 

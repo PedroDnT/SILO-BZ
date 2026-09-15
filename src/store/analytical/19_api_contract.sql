@@ -2151,7 +2151,7 @@ AS $fn$
 SELECT $json$
 {
   "kind": "catalog",
-  "version": 18,
+  "version": 19,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint carefully, and READ THE Content-Range RESPONSE HEADER ON EVERY CALL: PostgREST truncates every response at 1000 rows and keeps the OLDEST ones, so a cut-short series is indistinguishable from a complete one by its contents alone — `0-999/*` is the only thing that tells you. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -2400,6 +2400,44 @@ SELECT $json$
     "Each cash instrument type has its own endpoint (equities, bdrs, units, fund_quotas, cash_securities) — the same rows as quotes, split by the type derived from published TPMERC/ESPECI. Their grain adds `lot` (standard = tpmerc 010, odd = 020/021); filter lot=eq.standard for round lots. quotes itself stays standard-lot only.",
     "Price series stay unified: a codneg has exactly one instrument type, so quote_history works for any cash ticker without knowing its type first."
   ],
+  "limits": {
+    "rows_per_response": {
+      "value": 1000,
+      "scope": "every response, every tier — PostgREST db-max-rows, a server-wide setting; signing in does not change it",
+      "kept": "the OLDEST rows; a cut-short series looks like one that simply ends",
+      "detect": "the Content-Range response header: `0-999/*` is a truncated page; send `Prefer: count=exact` and it reads `0-999/<total>`",
+      "paging": {
+        "views": "limit/offset (and Range) page normally on GET /rest/v1/<view>",
+        "rpc": "does not page: a Range on /rest/v1/rpc/<function> returns the first page again — narrow p_from/p_to, ids or metrics instead"
+      }
+    },
+    "sql_sentinel": {
+      "series": 5001,
+      "panel": 100001,
+      "reachable": false,
+      "note": "the functions' own LIMITs (serve _MAX_POINTS/_MAX_PANEL + 1). Unreachable behind the 1000-row ceiling on the hosted API; never a truncation signal there"
+    },
+    "tiers": {
+      "anon": {
+        "panel_ids": 3,
+        "search_funds_rows": 25,
+        "option_chain_rows": 200,
+        "option_exercises_rows": 500,
+        "fund_holdings_rows": 500,
+        "statement_timeout_seconds": 3
+      },
+      "authenticated": {
+        "panel_ids": 50,
+        "search_funds_rows": 200,
+        "option_chain_rows": 2000,
+        "option_exercises_rows": 5000,
+        "fund_holdings_rows": 5000,
+        "statement_timeout_seconds": 8
+      },
+      "exceeding_an_id_ceiling": "SQLSTATE 22023 naming the limit — a panel is never silently trimmed to fit",
+      "how_to_sign_in": "GitHub or Google at https://silo-bz.vercel.app/signin.html; send the JWT as `Authorization: Bearer <jwt>` beside `apikey` (the SDK takes it as token= or SILO_TOKEN)"
+    }
+  },
   "examples": [
     {
       "ask": "How does PETR4 relate to delinquency in this FIDC?",
