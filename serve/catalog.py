@@ -69,6 +69,13 @@ __all__ = [
 # 6: one endpoint per cash instrument type, each carrying both lot sizes.
 # 5: main's typed cash asset classes (4) merged with the option/termo id_types
 # and list-valued id_type this branch introduced (3).
+# 22: GitHub is the only sign-in provider. The catalog said "GitHub or Google";
+# Google was never enabled in Supabase Auth, so the sign-in page offered a
+# button that failed on click and the machine-readable how_to_sign_in sent
+# agents to a provider that does not exist. Prose corrected, button removed.
+# Also: api.fund_holdings had been missing from the postgrest endpoint map since
+# v17 (only its tier row was listed), so an agent caching the catalog could not
+# discover holdings. Added.
 # 21: api.fund_debentures — CDA block 6, the fund → corporate-credit edge.
 # Not a third p_kind of fund_holdings: a debenture has no CD_ATIVO and its
 # identity is (issuer, maturity, rate structure), so it gets a shape that
@@ -99,7 +106,7 @@ __all__ = [
 # row. No panel arm yet: an ITR files a 3-month AND a year-to-date figure
 # under one date and the panel is 1-D per (id, date, metric), so choosing a
 # span silently is exactly the fabricated number this contract forbids.
-CATALOG_VERSION = 21
+CATALOG_VERSION = 22
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -287,7 +294,7 @@ CONSTRAINTS = [
     "(api.option_chain); an unfiltered whole-market chain is refused.",
     "CALLER TIERS. Anonymous access is free but deliberately small: panel "
     "accepts at most 3 ids per call, search_funds returns at most 25 rows, "
-    "and option_chain pages at most 200. Signing in (GitHub or Google) raises "
+    "and option_chain pages at most 200. Signing in (GitHub) raises "
     "those to 50 ids, 200 rows and 2000 respectively, and the query timeout "
     "from 3s to 8s. Exceeding the id ceiling raises SQLSTATE 22023 naming the "
     "limit — the panel is never silently truncated to fit.",
@@ -457,7 +464,7 @@ LIMITS = {
             "trimmed to fit"
         ),
         "how_to_sign_in": (
-            "GitHub or Google at https://silo-bz.vercel.app/signin.html; send "
+            "GitHub at https://silo-bz.vercel.app/signin.html; send "
             "the JWT as `Authorization: Bearer <jwt>` beside `apikey` (the SDK "
             "takes it as token= or SILO_TOKEN)"
         ),
@@ -507,6 +514,7 @@ def catalog_payload() -> Dict[str, Any]:
             "coverage": "POST /rest/v1/rpc/coverage",
             "search_funds": "POST /rest/v1/rpc/search_funds",
             "fund_profile": "POST /rest/v1/rpc/fund_profile",
+            "fund_holdings": "POST /rest/v1/rpc/fund_holdings",
             "fund_nav": "POST /rest/v1/rpc/fund_nav",
             "quote_history": "POST /rest/v1/rpc/quote_history",
             "quote_latest": "POST /rest/v1/rpc/quote_latest",

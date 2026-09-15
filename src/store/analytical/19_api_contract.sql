@@ -36,8 +36,8 @@
 -- Keep 5001/100001 in lockstep with serve/app.py _MAX_POINTS/_MAX_PANEL.
 -- option_chain is page-shaped, not series-shaped: its own clamp (1..2000) is
 -- documented at the function. Discovery functions are already bounded:
--- universe <= 500, lookup <= 20, search_funds <= 200, quote_latest = 1,
--- coverage = 4 rows.
+-- lookup <= 20, search_funds <= 200 (tiered), quote_latest = 1, coverage = one
+-- row per dataset plus one per fund family (~11 rows). (universe was dropped in v15.)
 --
 -- Never fabricate: a ticker with no rows returns zero rows (HTTP 404 at serve/).
 -- Prices are unadjusted. Default cash quote is board (codbdi) '02' (standard lot).
@@ -57,7 +57,7 @@ GRANT USAGE ON SCHEMA api TO anon, authenticated;
 --
 -- Anonymous access stays free and is deliberately small: enough to discover
 -- what exists and sample it, not enough to pull the warehouse through the
--- front door. Signing in (GitHub or Google, via Supabase Auth) raises the
+-- front door. Signing in (GitHub, via Supabase Auth) raises the
 -- limits to something a person or an agent can actually work with — a handful
 -- of instruments over real history.
 --
@@ -2425,7 +2425,7 @@ AS $fn$
 SELECT $json$
 {
   "kind": "catalog",
-  "version": 21,
+  "version": 22,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint carefully, and READ THE Content-Range RESPONSE HEADER ON EVERY CALL: PostgREST truncates every response at 1000 rows and keeps the OLDEST ones, so a cut-short series is indistinguishable from a complete one by its contents alone — `0-999/*` is the only thing that tells you. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -2668,7 +2668,7 @@ SELECT $json$
     "Row caps — getting this wrong means silently analysing a TRUNCATED panel, the exact fabrication this API exists to prevent. THE BINDING CAP IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. It is NOT the SQL cap+1 sentinel (panel 100001, series 5001): that sentinel is unreachable on the deployed surface and must not be used to detect truncation. Measured 2026-08-28 against production: panel for one ticker from 2019 returns exactly 1000 rows spanning 2019-01-02..2023-01-09 with a 200, and the OLDEST rows are the ones kept — so a truncated series looks like a complete series that simply ends three years ago. DETECT IT WITH THE Content-Range RESPONSE HEADER, which is the only signal there is: `0-999/*` means truncated, and sending `Prefer: count=exact` turns it into `0-999/1906` so you also learn the true total. A range whose end is below 999 is complete. RANGE PAGING DOES NOT WORK ON RPC: sending `Range: 1000-1999` to /rest/v1/rpc/panel returns the SAME first page again (verified), so a panel cannot be paged — narrow p_from/p_to, ids or metrics until Content-Range comes back under 1000. GET views do page with Range normally. The local /v1 Flask adapter is a different surface with its own cap+1 400 behaviour; do not carry its rules over.",
     "An unrecognised metric name is IGNORED, not rejected: the panel comes back smaller and perfectly plausible. Take metric names from this catalog's `metrics` map, never from memory.",
     "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
-    "CALLER TIERS. Anonymous access is free but deliberately small: panel accepts at most 3 ids per call, search_funds returns at most 25 rows, and option_chain pages at most 200. Signing in (GitHub or Google) raises those to 50 ids, 200 rows and 2000 respectively, and the query timeout from 3s to 8s. Exceeding the id ceiling raises SQLSTATE 22023 naming the limit — the panel is never silently truncated to fit.",
+    "CALLER TIERS. Anonymous access is free but deliberately small: panel accepts at most 3 ids per call, search_funds returns at most 25 rows, and option_chain pages at most 200. Signing in (GitHub) raises those to 50 ids, 200 rows and 2000 respectively, and the query timeout from 3s to 8s. Exceeding the id ceiling raises SQLSTATE 22023 naming the limit — the panel is never silently truncated to fit.",
     "Signing in does NOT raise rows-per-response: the 1000-row cap is a server-wide PostgREST setting applied identically to every caller. Page views, and narrow the window on functions, whatever tier you are.",
     "Option rows carry underlying_ticker resolved from the PUBLISHED ISIN mapping (an option row's ISIN is its underlying's ISIN), never from the codneg root; it is null when the underlying had no cash print that session. Termo rows still carry no underlying column.",
     "tpmerc 012/013 are option exercise EVENTS served by option_exercises, and 017 auction prints by auctions — neither is a quote series; do not compute returns over them.",
@@ -2713,7 +2713,7 @@ SELECT $json$
         "statement_timeout_seconds": 8
       },
       "exceeding_an_id_ceiling": "SQLSTATE 22023 naming the limit — a panel is never silently trimmed to fit",
-      "how_to_sign_in": "GitHub or Google at https://silo-bz.vercel.app/signin.html; send the JWT as `Authorization: Bearer <jwt>` beside `apikey` (the SDK takes it as token= or SILO_TOKEN)"
+      "how_to_sign_in": "GitHub at https://silo-bz.vercel.app/signin.html; send the JWT as `Authorization: Bearer <jwt>` beside `apikey` (the SDK takes it as token= or SILO_TOKEN)"
     }
   },
   "examples": [
@@ -2786,6 +2786,7 @@ SELECT $json$
     "coverage": "POST /rest/v1/rpc/coverage",
     "search_funds": "POST /rest/v1/rpc/search_funds",
     "fund_profile": "POST /rest/v1/rpc/fund_profile",
+    "fund_holdings": "POST /rest/v1/rpc/fund_holdings",
     "fund_nav": "POST /rest/v1/rpc/fund_nav",
     "quote_history": "POST /rest/v1/rpc/quote_history",
     "quote_latest": "POST /rest/v1/rpc/quote_latest",
