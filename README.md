@@ -229,7 +229,7 @@ Sign-in is live too: GitHub OAuth, with the page at
 `dashboard/static/signin.html`. A user token raises `panel` ids 3 → 50,
 `search_funds` 25 → 200, `option_chain` 200 → 2,000 and the query budget
 3s → 8s. It does not raise PostgREST's server-wide 1,000-row cap, which is the
-same for everyone. Google is configured but not yet enabled.
+same for everyone.
 
 ### Known defects
 

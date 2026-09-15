@@ -26,8 +26,7 @@ grant on `cvm_*`, `b3_cotahist`, `cia_*` or any other landing table; the boundar
 is the grant, not row-level security, and schema `api` is the whole public
 surface. A request with `Accept-Profile: public` gets 401, not rows.
 
-**Signing in raises four ceilings.** Send a user JWT (GitHub sign-in; Google is
-being enabled) as `Authorization: Bearer <token>` *alongside* the `apikey`
+**Signing in raises four ceilings.** Send a user JWT (GitHub sign-in) as `Authorization: Bearer <token>` *alongside* the `apikey`
 header, and the request moves from `anon` to `authenticated`:
 
 | | anonymous | signed in |
