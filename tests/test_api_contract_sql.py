@@ -627,6 +627,88 @@ def test_coverage_reports_completeness_and_per_family_rows():
     assert "public.latest_complete_period(NULL)" in cov
     assert "'funds_' || f.entity_type" in cov
     assert "public.latest_complete_period(f.entity_type)" in cov
+    assert re.search(r"\bnotes\s+TEXT\b", cov), "coverage() must return a notes column"
+
+
+# ---------------------------------------------------------------------------
+# Applicability + regime breaks: the catalog says which fund_nav columns each
+# family files, and 04_fact_fund_monthly.sql is the only place that is true.
+# ---------------------------------------------------------------------------
+
+FACT04_PATH = ROOT / "src" / "store" / "analytical" / "04_fact_fund_monthly.sql"
+
+# fact_fund_monthly column -> api.fund_nav column
+_FACT_TO_API = {
+    "vl_patrim_liq": "nav",
+    "vl_quota": "quota",
+    "nr_cotst": "quotaholders",
+    "vl_inadimpl": "delinquency",
+    "pct_yield_mes": "monthly_yield",
+    "captc_mes": "inflows",
+    "resg_mes": "redemptions",
+    "vl_ativo": "assets",
+}
+
+
+def _fact_arms_served_columns() -> dict[str, set[str]]:
+    """Per family, the fund_nav columns its fact_fund_monthly arm actually
+    fills: every mapped column minus the ones that arm sets `NULL::… AS`."""
+    sql = _strip_comments(FACT04_PATH.read_text(encoding="utf-8"))
+    out: dict[str, set[str]] = {}
+    for m in re.finditer(r"'(fi|fidc|fiagro|fii|fip)'\s+AS\s+entity_type", sql):
+        fam = m.group(1)
+        end = re.search(r"\bFROM\b", sql[m.end():]).start() + m.end()
+        nulled = set(re.findall(r"NULL::\w+\s+AS\s+(\w+)", sql[m.end():end]))
+        out[fam] = {api for col, api in _FACT_TO_API.items() if col not in nulled}
+    return out
+
+
+def test_catalog_applicability_matches_the_fact_table_arms():
+    from serve.catalog import catalog_payload
+
+    declared = catalog_payload()["applicability"]["fund_nav"]["columns_by_family"]
+    arms = _fact_arms_served_columns()
+    assert set(declared) == set(arms) == {"fi", "fidc", "fiagro", "fii", "fip"}
+    for fam, served in arms.items():
+        assert set(declared[fam]) == served, (
+            f"{fam}: catalog applicability says {sorted(declared[fam])}, "
+            f"04_fact_fund_monthly.sql serves {sorted(served)}"
+        )
+
+
+def test_fund_metric_asset_classes_follow_applicability():
+    """A panel metric's asset_class list is exactly the families whose arm
+    fills that column — the catalog must not offer quotaholders for a family
+    whose arm sets nr_cotst NULL."""
+    from serve.catalog import catalog_payload
+
+    cat = catalog_payload()
+    fam_cols = cat["applicability"]["fund_nav"]["columns_by_family"]
+    rename = cat["applicability"]["fund_nav"]["panel_metric_names"]
+    checked = 0
+    for metric, spec in cat["metrics"].items():
+        if spec["id_type"] != ["cnpj"]:
+            continue
+        col = next((k for k, v in rename.items() if v == metric), metric)
+        expected = sorted(f for f, cols in fam_cols.items() if col in cols)
+        assert sorted(spec["asset_class"]) == expected, (
+            f"metrics.{metric}.asset_class = {spec['asset_class']}; "
+            f"applicability serves it for {expected}"
+        )
+        checked += 1
+    assert checked >= 7
+
+
+def test_fidc_regime_break_is_in_catalog_and_on_the_coverage_row():
+    from serve.catalog import catalog_payload
+
+    breaks = catalog_payload()["regime_breaks"]
+    fidc = [b for b in breaks if b["dataset"] == "funds_fidc" and b["column"] == "delinquency"]
+    assert len(fidc) == 1 and fidc[0]["boundary"] == "2025-01-31"
+    cov = _strip_comments(FUNCS["api.coverage"])
+    assert "WHEN 'fidc'" in cov and "2025-01-31" in cov, (
+        "the funds_fidc coverage row must carry the same boundary in notes"
+    )
 
 
 def test_lookup_escapes_like_and_ranks_before_the_limit():

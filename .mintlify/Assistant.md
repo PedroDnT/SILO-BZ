@@ -37,5 +37,7 @@ across session gaps > 7 days and across quotation-factor changes.
 (a published CNPJ↔ticker mapping, not a name match).
 
 Prefer `panel` at `freq=month` when mixing equities with fund fundamentals.
-`delinquency` is BRL value, not a rate. Quotes are unadjusted (`adjusted = false`);
+`delinquency` is BRL value, not a rate, and for FIDCs it starts at 2025-01 (null on every
+row before: `catalog().regime_breaks`). `fund_nav` nulls outside a family's
+`catalog().applicability` list are not applicable. Quotes are unadjusted (`adjusted = false`);
 unit price = close / quotation_factor when the factor is not 1.

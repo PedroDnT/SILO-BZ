@@ -28,7 +28,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 22
+KNOWN_CATALOG_VERSION = 23
 
 
 class SiloCatalogDrift(UserWarning):
@@ -270,7 +270,10 @@ class SiloClient:
         return self.catalog().get("limits") or {}
 
     def coverage(self) -> List[Dict[str, Any]]:
-        """Per-dataset freshness (`as_of`) and honesty bound (`complete_through`)."""
+        """Per-dataset freshness (`as_of`), honesty bound (`complete_through`)
+        and `notes` — a regime boundary or applicability caveat the dates
+        cannot carry (the `funds_fidc` row: delinquency starts 2025-01), null
+        on rows that have none."""
         return self._rpc("coverage", {})
 
     def lookup(self, query: str) -> List[Dict[str, Any]]:

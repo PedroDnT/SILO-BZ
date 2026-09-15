@@ -322,8 +322,11 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
             # partially-published month has an as_of inside it and a
             # complete_through before it, and dropping the second column turns
             # "we have some of August" into "we have August".
+            # notes: a regime boundary or per-family applicability caveat the
+            # dates cannot carry (funds_fidc: delinquency starts 2025-01).
             cur.execute(
-                "SELECT dataset, as_of, complete_through, source FROM api.coverage()"
+                "SELECT dataset, as_of, complete_through, source, notes "
+                "FROM api.coverage()"
             )
             cols = [d[0] for d in cur.description]
             rows = [_row(r, cols) for r in cur.fetchall()]

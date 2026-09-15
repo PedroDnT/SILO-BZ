@@ -106,7 +106,18 @@ __all__ = [
 # row. No panel arm yet: an ITR files a 3-month AND a year-to-date figure
 # under one date and the panel is 1-D per (id, date, metric), so choosing a
 # span silently is exactly the fabricated number this contract forbids.
-CATALOG_VERSION = 22
+# v23: honest nulls per family, and the one regime break in the fund
+# series. `applicability` says which fund_nav / panel columns each family
+# actually files into fact_fund_monthly, so a null OUTSIDE that list reads
+# as not-applicable (the fact table sets it NULL by construction) rather
+# than as missing data; the `quotaholders` metric drops fidc/fip/fiagro,
+# where it was never served. `regime_breaks` records that FIDC
+# `delinquency` is null on every row through 2024-12 (CVM's pre-2025 tab
+# II/III monthly file carried no delinquency field) and filed on every row
+# from 2025-01 (tab IV + VI): a series that changes meaning mid-stream must
+# not be chain-linked through the boundary. coverage() gains a `notes`
+# column carrying the same boundary on the funds_fidc row.
+CATALOG_VERSION = 23
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -228,10 +239,13 @@ METRICS: Dict[str, Dict[str, Any]] = {
     },
     "quotaholders": {
         "id_type": ["cnpj"],
-        "asset_class": ["fi", "fidc", "fii", "fip", "fiagro"],
+        # fi and fii only: fact_fund_monthly's fidc, fiagro and fip arms set
+        # nr_cotst NULL by construction (see `applicability`), so the panel
+        # emits no quotaholders row for those families — not a gap, not served.
+        "asset_class": ["fi", "fii"],
         "grain": ["month"],
         "source": "cvm",
-        "meaning": "Number of unit-holders.",
+        "meaning": "Number of unit-holders (fi, fii). Not served for fidc, fiagro, fip.",
     },
 }
 
@@ -244,6 +258,8 @@ NOTEBOOK_REDUCERS: Dict[str, str] = {
 }
 
 CONSTRAINTS = [
+    "A NULL OUTSIDE A FAMILY'S COLUMN SET IS NOT APPLICABLE, NOT MISSING. fund_nav returns the same eleven columns for every family, but each family files only some of them (`applicability` in this catalog, read off fact_fund_monthly's per-family arms): fi files quota, quotaholders, inflows and redemptions; fidc and fiagro file delinquency; fii files quotaholders, monthly_yield and assets; fip files nav alone. A null outside that list is set by construction and carries no information; a null inside it is a blank in that month's filing.",
+    "FIDC DELINQUENCY STARTS IN 2025-01. CVM's pre-2025 monthly FIDC file (tab II/III) carried no delinquency field, so `delinquency` is null on every fidc row through 2024-12-31 — not zero, not clean books, not a missing month. From 2025-01-31 the tab IV/VI format is ingested and delinquency is filed on every row. Never chain-link, difference or average a FIDC delinquency series across 2024-12 → 2025-01; the series begins there. Machine-readable in `regime_breaks`, and on the funds_fidc coverage row's `notes`.",
     "A FUND'S DEBENTURE HOLDINGS ARE A DIFFERENT SHAPE FROM ITS EQUITY HOLDINGS. api.fund_debentures (CDA block 6) is one row per (fund, month, issuer, maturity, rate structure, application type), as filed and never summed — two series of one issuer maturing the same day at different coupons are different securities. The issuer is its own filed CPF/CNPJ (issuer_id); p_issuer also takes a listed company's ticker or CVM code, resolved only through CVM's published FCA map, and issuer_tickers carries the issuer's active listed codes back (NULL when not listed — most debenture issuers are not). Nothing is matched by name.",
     "ANBIMA CLASS ROWS ARE INDUSTRY AGGREGATES, NOT FUNDS. api.anbima_classes serves the Boletim de Fundos de Investimento as published — R$ milhões (unit brl_mm) and percentage points (unit pct) — per class, ANBIMA type or industry total (`level`; class aggregates by default). No fund in this warehouse is mapped to an ANBIMA class: CVM's `classe` is CVM's taxonomy, so never join a fund to a class by name, and there is no panel arm because these rows carry no id. An unknown category, metric or level raises 22023 listing what exists rather than returning an empty array.",
     "LISTED-COMPANY FINANCIALS ARE FILED, NOT DERIVED. api.financials returns one row per account line exactly as the company filed it; nothing is summed, annualised or restated. Read period_months before comparing two rows: an ITR publishes the SAME account twice under one reference date, once for the three months and once year-to-date, and they are distinguished only by the period span. Adding a 3-month row to a 6-month row double-counts the quarter.",
@@ -472,6 +488,65 @@ LIMITS = {
 }
 
 
+# Which fund_nav columns (and therefore which panel metrics) each family
+# actually files. Read off fact_fund_monthly's per-family arms in
+# 04_fact_fund_monthly.sql, where every column outside a family's list is
+# `NULL::<type> AS <col>` by construction. tests/test_api_contract_sql.py
+# parses those arms and fails if this block drifts from the SQL, and pins
+# every fund metric's asset_class list in METRICS to the same source.
+APPLICABILITY = {
+    "fund_nav": {
+        "rule": (
+            "every family returns the same eleven columns; a null OUTSIDE the "
+            "family's list below is set by construction (not applicable), a "
+            "null INSIDE it is a blank in that month's filing"
+        ),
+        "columns_by_family": {
+            "fi": ["nav", "quota", "quotaholders", "inflows", "redemptions"],
+            "fidc": ["nav", "delinquency"],
+            "fiagro": ["nav", "delinquency"],
+            "fii": ["nav", "quotaholders", "monthly_yield", "assets"],
+            "fip": ["nav"],
+        },
+        "period_convention": {
+            "fi": "first day of the month",
+            "fidc": "last day of the month",
+            "fiagro": "first day of the month",
+            "fii": "first day of the month",
+            "fip": "31-Dec of the filing year (annual)",
+        },
+        "panel_metric_names": {"monthly_yield": "yield"},
+    },
+}
+
+# Points where a served series changes meaning mid-stream because the SOURCE
+# format changed. A caller that chain-links across one of these fabricates a
+# move the market never made. Each entry is also carried as prose on the
+# matching coverage() row's `notes` column (19_api_contract.sql).
+REGIME_BREAKS = [
+    {
+        "dataset": "funds_fidc",
+        "column": "delinquency",
+        "boundary": "2025-01-31",
+        "before": (
+            "CVM's monthly FIDC file (tab II/III, ingested for 2019-01..2024-12) "
+            "carries no delinquency field: delinquency is null on every fidc row "
+            "through 2024-12-31 — not zero, not clean books, not a missing month"
+        ),
+        "after": (
+            "from 2025-01-31 the inf_mensal tab IV/VI format is ingested; "
+            "delinquency is tab VI's total, filed on every row (a fund with no "
+            "delinquent receivables files 0)"
+        ),
+        "never": (
+            "chain-link, difference or average delinquency across 2024-12 → "
+            "2025-01, or read a pre-2025 null as zero; a FIDC delinquency series "
+            "starts at 2025-01"
+        ),
+    },
+]
+
+
 def catalog_payload() -> Dict[str, Any]:
     return {
         "kind": "catalog",
@@ -483,6 +558,8 @@ def catalog_payload() -> Dict[str, Any]:
         "notebook_reducers": NOTEBOOK_REDUCERS,
         "constraints": CONSTRAINTS,
         "limits": LIMITS,
+        "applicability": APPLICABILITY,
+        "regime_breaks": REGIME_BREAKS,
         "examples": EXAMPLES,
         "id_types": ["ticker", "cnpj", "cd_cvm", "option", "termo"],
         "asset_classes": [
