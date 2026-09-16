@@ -222,6 +222,29 @@ def test_previews_stay_path_filtered(repo: Path):
     assert _gate(repo, VERCEL_ENV="preview").returncode == BUILD
 
 
+def test_dependabot_previews_skip_even_when_the_lockfile_changed(repo: Path):
+    """PR #230: qs lockfile bump, GitHub tests green, merge blocked by Vercel.
+
+    dashboard/package-lock.json is watched, so a Dependabot preview still ran
+    `evidence sources` for 45 minutes and died BUILD_EXCEEDED_MAXIMUM_TIME.
+    The published site does not change until the merge commit, which is
+    VERCEL_ENV=production and still always builds.
+    """
+    _commit(repo, "dashboard/package-lock.json", "{}\n")
+    preview = _gate(
+        repo,
+        VERCEL_ENV="preview",
+        VERCEL_GIT_COMMIT_REF="dependabot/npm_and_yarn/dashboard/npm_and_yarn-049d63b98d",
+    )
+    assert preview.returncode == SKIP, preview.stdout
+    production = _gate(
+        repo,
+        VERCEL_ENV="production",
+        VERCEL_GIT_COMMIT_REF="dependabot/npm_and_yarn/dashboard/npm_and_yarn-049d63b98d",
+    )
+    assert production.returncode == BUILD, production.stdout
+
+
 def test_vercel_json_wires_the_gate():
     cfg = json.loads(VERCEL_JSON.read_text())
     assert "ignoreCommand" in cfg, "the gate does nothing unless vercel.json calls it"
