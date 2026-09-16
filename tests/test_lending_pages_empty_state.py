@@ -82,6 +82,30 @@ def test_every_non_backfillable_binding_sits_behind_a_guard(page):
             )
 
 
+@pytest.mark.parametrize("page", sorted(GUARDED))
+def test_each_guard_tests_its_own_component(page):
+    """A guard must name the query it wraps, not a neighbour's.
+
+    The first cut of this fix shared one condition (`headline[0].trade_date`)
+    across every component on short.md, on the assumption that they fill
+    together. Production disproved it: in the #239 preview, `short_history`
+    wrote 21 rows while `by_sector` and the `top_*` tables wrote their 1-row
+    sentinel — those depend on the instrument registry (b3_sector, free float)
+    and `history` does not. A shared condition therefore passed and rendered
+    tables of blanks instead of the honest empty state.
+    """
+    s = _text(page)
+    for query in sorted(GUARDED[page]):
+        for h in re.finditer(r"data=\{" + query + r"\}", s):
+            i = s.rfind("{#if ", 0, h.start())
+            cond = s[i + len("{#if "):s.index("}", i)]
+            assert re.match(rf"^{query}[\[.]", cond), (
+                f"{page}: the guard on data={{{query}}} tests {cond!r}, which is "
+                f"another query. These sources do not fill together — guard each "
+                f"component on the column it actually needs."
+            )
+
+
 @pytest.mark.parametrize("page,queries", sorted(UNGUARDED_OK.items()))
 def test_populated_sources_are_not_needlessly_guarded(page, queries):
     """A guard on an always-populated source would hide a real regression."""

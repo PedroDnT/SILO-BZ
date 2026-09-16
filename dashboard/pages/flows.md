@@ -176,7 +176,7 @@ SILO's first daily capture. Nothing is missing that can be recovered — the fir
 > it printed beside it — the honest replacement for a year-to-date column on a
 > feed that keeps three weeks.
 
-{#if headline[0].reference_date}
+{#if flow_summary[0].last_date}
 
 <DataTable data={flow_summary}>
   <Column id=investor_type title="Categoria"/>

@@ -124,7 +124,7 @@ be recovered — the first `run_daily` after deploy fills it.
 > own quota count for creation/redemption reasons that have nothing to do with a
 > directional view.
 
-{#if headline[0].trade_date}
+{#if top_float[0].ticker}
 
 <DataTable data={top_float} rows=20>
   <Column id=rank title="#" align=center/>
@@ -158,7 +158,7 @@ be recovered — the first `run_daily` after deploy fills it.
 > produces an enormous and meaningless ratio. `Sessões` is how many sessions the
 > ADTV average actually covers; fewer than 21 means a shorter, noisier window.
 
-{#if headline[0].trade_date}
+{#if top_sir[0].ticker}
 
 <DataTable data={top_sir} rows=20>
   <Column id=rank title="#" align=center/>
@@ -190,7 +190,7 @@ be recovered — the first `run_daily` after deploy fills it.
 > Markets with no registered quantity publish a nominal rate on no business and
 > are excluded, which is what keeps a dormant BDR off the top of this table.
 
-{#if headline[0].trade_date}
+{#if top_rate[0].ticker}
 
 <DataTable data={top_rate} rows=20>
   <Column id=rank title="#" align=center/>
@@ -221,7 +221,7 @@ be recovered — the first `run_daily` after deploy fills it.
 > UNIT are counted: ETFs and BDRs carry no B3 sector, and including them would
 > make an unclassified bucket the largest bar on a chart about single-name risk.
 
-{#if headline[0].trade_date}
+{#if by_sector[0].sector}
 
 <BarChart
   data={by_sector}
@@ -248,7 +248,7 @@ be recovered — the first `run_daily` after deploy fills it.
 > Total short balance per session over the window SILO holds. A short line here
 > means recent coverage, not a quiet market.
 
-{#if headline[0].trade_date}
+{#if history[0].trade_date}
 
 <LineChart
   data={history}
@@ -278,7 +278,7 @@ be recovered — the first `run_daily` after deploy fills it.
 > `sem denominador` is a ticker B3 published neither figure for, whose `% float`
 > is NULL rather than zero.
 
-{#if headline[0].trade_date}
+{#if basis_split[0].float_basis}
 
 <DataTable data={basis_split}>
   <Column id=float_basis title="Base"/>
