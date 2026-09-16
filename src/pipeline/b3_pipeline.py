@@ -15,8 +15,11 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+from src.fetchers.b3_bdi_fetcher import B3BdiEmpty, B3BdiFetcher
 from src.fetchers.b3_fetcher import B3CotahistFetcher, B3CotahistNotFound
+from src.parsers import b3_bdi as bdi
 from src.parsers.cotahist import CONFLICT, TABLE, batched, parse_cotahist_bytes
+from src.pipeline import ingest_b3_lending as lending
 from src.store.pg_client import get_pg_client, upsert_rows
 from src.pipeline import ingest_log
 
@@ -26,8 +29,13 @@ _UPSERT_BATCH = 5000
 
 
 class B3Ingestor:
-    def __init__(self, fetcher: Optional[B3CotahistFetcher] = None) -> None:
+    def __init__(
+        self,
+        fetcher: Optional[B3CotahistFetcher] = None,
+        bdi_fetcher: Optional[B3BdiFetcher] = None,
+    ) -> None:
         self._fetcher = fetcher or B3CotahistFetcher()
+        self._bdi = bdi_fetcher or B3BdiFetcher()
         self._supabase = get_pg_client()
         self._doc_type_of: Dict[str, str] = {}
 
@@ -246,6 +254,268 @@ class B3Ingestor:
             self._log_finish(run_id, 0, error=ingest_log.describe(exc))
             raise
 
+
+    # ── B3 BDI: securities lending, investor flow, free float, instruments ──
+    #
+    # These four are on a clock the rest of this class is not: B3 keeps ~21
+    # business days and then the session is unrecoverable. Every one of them
+    # therefore reports what it MEANT to fetch against what B3 actually
+    # delivered, because the export answers an over-wide window with HTTP 200
+    # and a silently truncated result set.
+
+    async def _ingest_bdi_span(
+        self,
+        *,
+        doc_type: str,
+        b3_table: str,
+        parse,
+        upsert,
+        targets: List[date],
+        date_field: str,
+    ) -> int:
+        """Fetch one BDI table over [min(targets), max(targets)] and upsert.
+
+        One ranged request instead of one per session: B3 supports it, and it
+        is the difference between 1 and 21 trips through Cloudflare on the
+        first run of a fresh database.
+        """
+        if not targets:
+            return 0
+        run_id = str(uuid4())
+        start, end = targets[0], targets[-1]
+        self._log_start(run_id, doc_type, start.year, start.month)
+        label = f"{b3_table} {start.isoformat()}..{end.isoformat()}"
+        try:
+            text = await self._bdi.fetch_table(b3_table, start, end)
+        except B3BdiEmpty as exc:
+            # Outside retention, or none of these were sessions. Not an error —
+            # but if it keeps happening the staleness check must escalate it,
+            # because for these tables an unfetched session never comes back.
+            logger.info("B3 BDI %s returned no rows — skipped", label)
+            self._log_finish(run_id, 0, ingest_log.describe(exc), skipped=True)
+            return 0
+        except Exception as exc:
+            logger.error("B3 BDI %s fetch failed: %s", label, exc)
+            self._log_finish(run_id, 0, ingest_log.describe(exc))
+            raise
+
+        try:
+            rows = parse(text)
+            n = upsert(self._supabase, rows)
+            delivered, missing = bdi.reconcile_span(rows, date_field, targets)
+        except Exception as exc:
+            self._log_finish(run_id, 0, ingest_log.describe(exc))
+            raise
+
+        if missing:
+            # A 200 is not evidence the span arrived. Record the shortfall on
+            # the audit row rather than letting the run look clean while the
+            # series quietly has holes in it.
+            msg = (
+                f"B3 delivered {len(delivered)}/{len(targets)} requested sessions; "
+                f"missing {', '.join(d.isoformat() for d in missing[:8])}"
+                f"{' …' if len(missing) > 8 else ''}"
+            )
+            logger.warning("B3 BDI %s: %s", label, msg)
+            self._log_finish(run_id, n, error=msg)
+        else:
+            self._log_finish(run_id, n)
+        logger.info("B3 BDI %s upserted %d rows over %d sessions", label, n, len(delivered))
+        return n
+
+    async def ingest_lending(self) -> Dict[str, int]:
+        """Short balances and lending rates for every retrievable missing session."""
+        totals: Dict[str, int] = {}
+        targets = lending.sessions_to_fetch(
+            self._supabase, bdi.TABLE_OPEN_POSITION, "trade_date"
+        )
+        totals[bdi.TABLE_OPEN_POSITION] = await self._ingest_bdi_span(
+            doc_type="lending_open_position",
+            b3_table="BTBLendingOpenPosition",
+            parse=lambda t: bdi.parse_lending_open_position(t, origin="daily"),
+            upsert=lending.upsert_open_positions,
+            targets=targets,
+            date_field="trade_date",
+        )
+
+        rate_targets = lending.sessions_to_fetch(
+            self._supabase, bdi.TABLE_LENDING_RATE, "trade_date"
+        )
+        totals[bdi.TABLE_LENDING_RATE] = await self._ingest_bdi_span(
+            doc_type="lending_rate",
+            b3_table="BTBLoanBalance",
+            parse=lambda t: bdi.parse_lending_rate(t, origin="daily"),
+            upsert=lending.upsert_lending_rates,
+            targets=rate_targets,
+            date_field="trade_date",
+        )
+        return totals
+
+    async def ingest_investor_flow(self) -> Dict[str, int]:
+        """Month-to-date investor participation, one request per missing session.
+
+        This table has no ranged form worth using: each export is a single
+        cumulative snapshot, so a range would return one file, not a series.
+        The request date is NOT the reference date — B3 publishes T+2 — so
+        the dates asked for are derived from the sessions that are missing.
+        """
+        sessions = lending.known_sessions(self._supabase) or lending._fallback_sessions(
+            lending.RETENTION_SESSIONS
+        )
+        missing = lending.sessions_to_fetch(
+            self._supabase, bdi.TABLE_INVESTOR, "reference_date"
+        )
+        requests = lending.investor_request_dates(sessions, missing)
+
+        total = 0
+        failures: List[str] = []
+        for request_date in requests:
+            run_id = str(uuid4())
+            self._log_start(run_id, "investor_participation", request_date.year, request_date.month)
+            try:
+                text = await self._bdi.fetch_table("SharesInvesVolum", request_date)
+            except B3BdiEmpty as exc:
+                self._log_finish(run_id, 0, ingest_log.describe(exc), skipped=True)
+                continue
+            except Exception as exc:  # noqa: BLE001 — counted, reported below
+                self._log_finish(run_id, 0, ingest_log.describe(exc))
+                failures.append(f"{request_date.isoformat()}: {exc}")
+                continue
+            try:
+                rows = bdi.parse_investor_participation(text, origin=request_date.isoformat())
+                n = lending.upsert_investor_participation(self._supabase, rows)
+            except Exception as exc:  # noqa: BLE001 — counted, reported below
+                self._log_finish(run_id, 0, ingest_log.describe(exc))
+                failures.append(f"{request_date.isoformat()}: {exc}")
+                continue
+            self._log_finish(run_id, n)
+            total += n
+
+        if failures and total == 0:
+            # Every request failed: that is a broken source, not a bad day.
+            raise RuntimeError(
+                f"B3 investor participation: all {len(requests)} requests failed; "
+                f"first: {failures[0][:200]}"
+            )
+        if failures:
+            logger.warning(
+                "B3 investor participation: %d/%d requests failed; first: %s",
+                len(failures), len(requests), failures[0][:200],
+            )
+
+        monthly = await self._ingest_investor_flow_monthly()
+        return {bdi.TABLE_INVESTOR: total, bdi.TABLE_INVESTOR_MONTHLY: monthly}
+
+    async def _ingest_investor_flow_monthly(self) -> int:
+        """Last month's participation by market. Only the latest month exists.
+
+        Dated by the newest session we know about, not by today: B3 publishes
+        the BDI from ~15:00 (their 2026-07-31 notice), so asking for the
+        current date during a morning cron reliably returns "Nenhum
+        resultado". Verified 2026-09-16 — 09-15 had data, 09-16 did not yet.
+        """
+        run_id = str(uuid4())
+        sessions = lending.known_sessions(self._supabase, limit=1)
+        request_date = sessions[-1] if sessions else date.today()
+        self._log_start(
+            run_id, "investor_participation_monthly", request_date.year, request_date.month
+        )
+        try:
+            text = await self._bdi.fetch_table("SharesInvesVolumMonthly", request_date)
+        except B3BdiEmpty as exc:
+            self._log_finish(run_id, 0, ingest_log.describe(exc), skipped=True)
+            return 0
+        except Exception as exc:
+            self._log_finish(run_id, 0, ingest_log.describe(exc))
+            raise
+        try:
+            rows = bdi.parse_investor_participation_monthly(
+                text, request_date=request_date, origin=request_date.isoformat()
+            )
+            n = lending.upsert_investor_participation_monthly(self._supabase, rows)
+        except Exception as exc:
+            self._log_finish(run_id, 0, ingest_log.describe(exc))
+            raise
+        self._log_finish(run_id, n)
+        return n
+
+    async def ingest_index_portfolios(self, indices: Optional[List[str]] = None) -> int:
+        """Free float and B3 sector for the index universe.
+
+        IBRA is the broad one (~148 names) and IBOV the headline; SMLL adds
+        the small caps that dominate a crowded-short list. A failure on one
+        index must not abandon the others, but it must not vanish either.
+        """
+        codes = indices or [c.strip() for c in
+                            os.getenv("B3_INDEX_CODES", "IBOV,IBRA,SMLL").split(",") if c.strip()]
+        run_id = str(uuid4())
+        self._log_start(run_id, "index_portfolio", None, None)
+        total = 0
+        failures: List[str] = []
+        try:
+            for code in codes:
+                try:
+                    records = await self._bdi.fetch_index_portfolio(code)
+                    rows = bdi.parse_index_portfolio(records, origin=code)
+                    total += lending.upsert_index_portfolio(self._supabase, rows)
+                except Exception as exc:  # noqa: BLE001 — counted, then reported
+                    failures.append(f"{code}: {exc}")
+        except Exception as exc:
+            self._log_finish(run_id, total, ingest_log.describe(exc))
+            raise
+
+        if failures and total == 0:
+            msg = f"all {len(codes)} indices failed; first: {failures[0][:200]}"
+            self._log_finish(run_id, 0, error=msg)
+            raise RuntimeError(f"B3 index portfolios: {msg}")
+        if failures:
+            msg = f"{len(failures)}/{len(codes)} indices failed; first: {failures[0][:200]}"
+            self._log_finish(run_id, total, error=msg)
+            logger.warning("B3 index portfolios partial: %s", msg)
+        else:
+            self._log_finish(run_id, total)
+        logger.info("B3 index portfolios: %d rows from %s", total, ",".join(codes))
+        return total
+
+    async def ingest_instruments(self) -> int:
+        """Cash-market instrument registry (shares outstanding, ISIN, governance).
+
+        Dated by the newest session we know about rather than by today, so a
+        Saturday run does not file Friday's registry under Saturday.
+        """
+        sessions = lending.known_sessions(self._supabase, limit=1)
+        reference_date = sessions[-1] if sessions else date.today()
+        run_id = str(uuid4())
+        self._log_start(run_id, "instrument_registry", reference_date.year, reference_date.month)
+        try:
+            text = await self._bdi.fetch_table("InstrumentsEquities", reference_date)
+        except B3BdiEmpty as exc:
+            self._log_finish(run_id, 0, ingest_log.describe(exc), skipped=True)
+            return 0
+        except Exception as exc:
+            self._log_finish(run_id, 0, ingest_log.describe(exc))
+            raise
+        try:
+            rows = bdi.parse_instrument_registry(
+                text, reference_date=reference_date, origin=reference_date.isoformat()
+            )
+            n = lending.upsert_instrument_registry(self._supabase, rows)
+        except Exception as exc:
+            self._log_finish(run_id, 0, ingest_log.describe(exc))
+            raise
+        self._log_finish(run_id, n)
+        logger.info("B3 instrument registry %s: %d rows", reference_date, n)
+        return n
+
+    async def daily_update_bdi(self) -> Dict[str, int]:
+        """Every BDI-sourced table, in one call. Ratchet — see the fetcher."""
+        totals: Dict[str, int] = {}
+        totals.update(await self.ingest_lending())
+        totals.update(await self.ingest_investor_flow())
+        totals[bdi.TABLE_INDEX_PORTFOLIO] = await self.ingest_index_portfolios()
+        totals[bdi.TABLE_INSTRUMENT] = await self.ingest_instruments()
+        return totals
+
     async def daily_update(self) -> Dict[str, int]:
         """Re-fetch the trailing calendar window of daily zips.
 
@@ -262,6 +532,13 @@ class B3Ingestor:
         return {TABLE: total}
 
     async def backfill(self, start_year: int = 2019, end_year: Optional[int] = None) -> Dict[str, int]:
+        """Yearly COTAHIST zips. COTAHIST ONLY — there is no lending backfill.
+
+        The BDI lending and investor-flow tables are capped at ~21 business
+        days by B3 (src/fetchers/b3_bdi_fetcher.py). Offering a start_year
+        for them would imply a history that cannot be retrieved at any
+        price, so they are reachable only through daily_update_bdi.
+        """
         if end_year is None:
             end_year = date.today().year
         if end_year < start_year:

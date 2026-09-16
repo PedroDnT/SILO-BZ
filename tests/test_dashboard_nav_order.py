@@ -15,7 +15,9 @@ ROOT = Path(__file__).resolve().parents[1]
 PAGES = ROOT / "dashboard" / "pages"
 
 ORDER = [
-    "industry", "macro", "markets",
+    # Industry backdrop and market structure first: /short and /flows sit with
+    # /markets because they are all about the exchange, not about funds.
+    "industry", "macro", "markets", "short", "flows",
     "fi", "fidc", "fii", "securit", "etf",
     "managers", "fund", "performance", "suspicious", "dormant",
     "ops",

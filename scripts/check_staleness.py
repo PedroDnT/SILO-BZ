@@ -16,7 +16,8 @@ is *fresh* when its most recent `status='ok'` row finished within the threshold.
 
 Exit codes (consumed by the workflow's `if:` steps):
     0   — everything fresh (no-op)
-    10  — the daily FI slice is stale, or unhealed ingest errors remain → re-run daily ingest
+    10  — the daily FI slice or the B3 lending slice is stale, or unhealed
+          ingest errors remain → re-run daily ingest
     11  — only the monthly ANBIMA/ETF slice is stale → re-run daily ingest
 
 Run standalone:
@@ -40,6 +41,23 @@ DAILY_THRESHOLD_HOURS = 26          # one cron period + slack
 
 MONTHLY_ENTITY, MONTHLY_DOC = "anbima_etf", "boletim_mensal"
 MONTHLY_THRESHOLD_HOURS = 35 * 24   # ~35 days — boletim is published monthly
+
+# The B3 securities-lending slice, and the ONE place in this file where
+# staleness is not merely inconvenient.
+#
+# Every other slice here can be healed by re-running the ingest: CVM, BACEN and
+# ANBIMA all keep their archives, so a slice missed today is fetched tomorrow
+# with nothing lost. B3 keeps roughly 21 BUSINESS DAYS of the lending tables
+# and publishes no archive at all (verified 2026-09-16: 2026-08-17 returns
+# rows, 2026-08-14 returns "Nenhum resultado"). A session that ages out of
+# that window is gone at any price.
+#
+# So this gets the TIGHTEST threshold in the file, not the loosest. A gap of a
+# day or two is still recoverable by the gap-aware window in
+# src/pipeline/ingest_b3_lending.py; the point of alarming early is to make
+# sure recovery happens while it still can.
+LENDING_ENTITY, LENDING_DOC = "b3", "lending_open_position"
+LENDING_THRESHOLD_HOURS = 26        # same as the daily slice: one cron + slack
 
 # Same window as health.yml MAX_INGEST_ERROR_HOURS. Unhealed error slices in
 # this window are exactly what turns DB Health red; the watchdog must retry
@@ -206,6 +224,12 @@ def main() -> int:
             conn, MONTHLY_ENTITY, MONTHLY_DOC, MONTHLY_THRESHOLD_HOURS,
             weekday_only=False,
         )
+        # Weekday-gated like the daily slice: B3 publishes no lending file on a
+        # Saturday, and a quiet weekend is not a missed capture.
+        lending_stale = is_stale(
+            conn, LENDING_ENTITY, LENDING_DOC, LENDING_THRESHOLD_HOURS,
+            weekday_only=True,
+        )
     finally:
         try:
             conn.close()
@@ -216,6 +240,8 @@ def main() -> int:
     monthly_age = "fresh" if not monthly_stale else "STALE"
     print(f"[staleness] daily ({DAILY_ENTITY}/{DAILY_DOC}): {daily_age}")
     print(f"[staleness] monthly ({MONTHLY_ENTITY}/{MONTHLY_DOC}): {monthly_age}")
+    lending_age = "fresh" if not lending_stale else "STALE"
+    print(f"[staleness] lending ({LENDING_ENTITY}/{LENDING_DOC}): {lending_age}")
     print(f"[staleness] unhealed ingest errors ({UNHEALED_ERROR_HOURS}h): {unhealed}")
     print(f"[staleness] slices stuck at running (>{STUCK_RUNNING_HOURS}h): {stuck}")
 
@@ -230,6 +256,16 @@ def main() -> int:
         return EXIT_DAILY_STALE
     if daily_stale:
         print("[staleness] -> daily ingest is stale; recovery required")
+        return EXIT_DAILY_STALE
+    # Ahead of the monthly slice on purpose. A stale ANBIMA boletim is a late
+    # number; a stale lending slice is a session counting down to being
+    # unrecoverable, and run_daily is what claims it back.
+    if lending_stale:
+        print(
+            "[staleness] -> B3 lending slice is stale; recovery required NOW "
+            "(B3 retains ~21 business days and keeps no archive — a session "
+            "that ages out cannot be backfilled)"
+        )
         return EXIT_DAILY_STALE
     if monthly_stale:
         print("[staleness] -> monthly ANBIMA/ETF slice is stale; recovery required")

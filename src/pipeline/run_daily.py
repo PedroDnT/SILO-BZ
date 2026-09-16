@@ -94,6 +94,22 @@ async def main() -> None:
         logger.error("B3 COTAHIST daily refresh failed: %s", exc, exc_info=True)
         failures.append(("b3", exc))
 
+    # B3 BDI: securities lending (short balances + rates), investor-type
+    # participation, index free float and the cash-market instrument registry.
+    #
+    # THIS ONE IS A RATCHET. B3 retains ~21 business days and then the session
+    # is gone at any price (see src/fetchers/b3_bdi_fetcher.py), so unlike
+    # every CVM slice a miss here is permanent, not merely late. It still does
+    # not fail the whole daily run — the CVM sources have their own value and
+    # must land — but the failure is recorded loudly and check_staleness.py
+    # escalates a lending gap harder than a CVM one.
+    try:
+        bdi_totals = await B3Ingestor().daily_update_bdi()
+        totals.update(bdi_totals)
+    except Exception as exc:
+        logger.error("B3 BDI lending/flow refresh failed: %s", exc, exc_info=True)
+        failures.append(("b3_bdi", exc))
+
     # B3 corporate events: published splits, groupings, bonuses, dividends and
     # subscriptions per ISIN. One request per traded issuer (derived from our
     # own tape, not B3's 3,500-company list), so it is a few hundred small

@@ -1,0 +1,178 @@
+"""Offline assertions over 20_short_interest.sql and migration 38.
+
+No database: these parse the SQL text and assert the invariants that make the
+short-interest numbers trustworthy. A real apply is still the analytics-only
+dispatch's job — a substring test is not proof the SQL runs — but these catch
+the specific regressions that would produce a plausible WRONG number, which
+is worse than an error.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+SQL_PATH = ROOT / "src" / "store" / "analytical" / "20_short_interest.sql"
+MIG_PATH = ROOT / "src" / "store" / "migrations" / "38_b3_lending_flow.sql"
+SCHEMA_PATH = ROOT / "src" / "store" / "schema.sql"
+
+SQL = SQL_PATH.read_text(encoding="utf-8")
+MIG = MIG_PATH.read_text(encoding="utf-8")
+SCHEMA = SCHEMA_PATH.read_text(encoding="utf-8")
+
+
+def strip_comments(text: str) -> str:
+    return re.sub(r"--[^\n]*", "", text)
+
+
+SQL_CODE = strip_comments(SQL)
+MIG_CODE = strip_comments(MIG)
+
+
+# ── the double-count guard ────────────────────────────────────────────────
+
+
+def test_short_interest_reads_only_b3s_total_rows():
+    """B3 publishes per-market rows AND their own 'Total' sum for each group.
+
+    Reading both doubles every short balance, which would look entirely
+    plausible on a dashboard. The fact view must filter.
+    """
+    fact = SQL_CODE.split("CREATE OR REPLACE VIEW fact_short_interest_daily")[1]
+    position_cte = fact.split("rate AS")[0]
+    assert "b3_lending_open_position" in position_cte
+    assert re.search(r"WHERE\s+p\.is_total", position_cte), (
+        "fact_short_interest_daily must filter on is_total or it double-counts"
+    )
+
+
+def test_is_total_column_exists_in_both_schema_and_migration():
+    for name, text in (("migration 38", MIG_CODE), ("schema.sql", SCHEMA)):
+        assert "is_total" in text, f"{name} is missing the is_total double-count guard"
+
+
+# ── denominators are never faked ──────────────────────────────────────────
+
+
+@pytest.mark.parametrize("metric", ["pct_float", "days_to_cover"])
+def test_ratios_are_null_when_their_denominator_is_missing(metric):
+    """A missing float or a name that did not trade yields NULL, never 0.
+
+    0% float reads as "nobody is short"; 0 days to cover sorts an untradeable
+    position to the safe end of a risk screen. Both are lies.
+    """
+    body = SQL_CODE.split(f"END                                   AS {metric}")[0]
+    tail = body[-600:]
+    assert "THEN NULL" in tail, f"{metric} must resolve to NULL on a missing denominator"
+
+
+def test_float_basis_is_published_beside_every_percentage():
+    """% of free float and % of shares outstanding are different metrics."""
+    assert "float_basis" in SQL_CODE
+    assert "'index_free_float'" in SQL_CODE
+    assert "'shares_outstanding'" in SQL_CODE
+    api = SQL_CODE.split("CREATE OR REPLACE VIEW api.short_interest AS")[1]
+    assert "float_basis" in api.split(";")[0], (
+        "api.short_interest must expose float_basis next to pct_float"
+    )
+
+
+def test_free_float_prefers_the_least_capped_index():
+    """Index weight caps only shrink theoretical_qty below the true float.
+
+    Verified 2026-09-16: PETR3 is 3,478,479,815 in IBRA but 2,441,951,100 in
+    IBOV. Taking whichever row sorted first would understate the float and so
+    overstate every short percentage on the biggest names.
+    """
+    order = SQL_CODE.split("latest_index AS")[1].split("latest_instrument AS")[0]
+    for code in ("'IBRA'", "'SMLL'", "'IBXX'", "'IBOV'"):
+        assert code in order, f"index priority is missing {code}"
+    assert order.index("'IBRA'") < order.index("'IBOV'"), (
+        "IBOV must rank last: its weight caps shrink theoretical_qty below the real float"
+    )
+
+
+# ── the month-boundary guard ──────────────────────────────────────────────
+
+
+def test_investor_flow_never_differences_across_a_month():
+    """MTD resets on the 1st; a LAG across it reports a month as one day."""
+    flow = SQL_CODE.split("CREATE OR REPLACE VIEW fact_investor_flow_daily")[1]
+    window = flow.split("WINDOW w AS")[1].split(")")[0]
+    assert "date_trunc('month'" in window, (
+        "the LAG window must be partitioned by month or it subtracts across the reset"
+    )
+
+
+def test_investor_flow_marks_an_opening_snapshot_it_cannot_interpret():
+    """The first snapshot we hold may not be the month's first session.
+
+    Treating that MTD total as one day's flow would invent a spike on an
+    arbitrary date — exactly what happened on the day this pipeline was first
+    deployed mid-month.
+    """
+    flow = SQL_CODE.split("CREATE OR REPLACE VIEW fact_investor_flow_daily")[1]
+    assert "'unknown_opening_snapshot'" in flow
+    assert "first_session" in flow
+    basis = flow.split("AS flow_basis")[0][-500:]
+    assert "'month_open'" in basis
+
+
+# ── privilege boundary (same stance as 12 and 19) ─────────────────────────
+
+
+@pytest.mark.parametrize("table", [
+    "b3_lending_open_position",
+    "b3_lending_rate",
+    "b3_investor_participation",
+    "b3_investor_participation_monthly",
+    "b3_index_portfolio",
+    "b3_instrument_registry",
+])
+def test_landing_tables_are_revoked_from_client_roles(table):
+    assert re.search(rf"REVOKE ALL ON TABLE\s+{table}\s+FROM anon, authenticated", SQL_CODE), (
+        f"{table} is a landing table and must stay closed to anon/authenticated"
+    )
+
+
+@pytest.mark.parametrize("view", ["short_interest", "short_interest_by_sector", "investor_flow"])
+def test_api_views_are_owner_privileged_and_granted(view):
+    assert f"ALTER VIEW api.{view} SET (security_invoker = false)" in SQL_CODE, (
+        f"api.{view} must be owner-privileged so its grant never implies one on the tape"
+    )
+    assert re.search(rf"GRANT SELECT ON api\.{view} TO anon, authenticated", SQL_CODE)
+
+
+# ── idempotent apply ──────────────────────────────────────────────────────
+
+
+def test_views_are_dropped_before_recreation():
+    """CREATE OR REPLACE cannot insert a column mid-list; these views grow."""
+    for view in ("fact_short_interest_daily", "dim_ticker_float", "vw_b3_adtv_21",
+                 "vw_short_by_sector", "fact_investor_flow_daily"):
+        assert f"DROP VIEW IF EXISTS {view}" in SQL_CODE, f"{view} has no guarded DROP"
+
+
+def test_migration_is_idempotent_and_keyed():
+    for table in ("b3_lending_open_position", "b3_lending_rate",
+                  "b3_investor_participation", "b3_investor_participation_monthly",
+                  "b3_index_portfolio", "b3_instrument_registry"):
+        assert f"CREATE TABLE IF NOT EXISTS {table}" in MIG_CODE
+        assert f"uq_{table}" in MIG_CODE, f"{table} has no named UNIQUE constraint"
+
+
+def test_schema_and_migration_agree_on_every_table():
+    """schema.sql stays canonical; migrations are append-only."""
+    tables = re.findall(r"CREATE TABLE IF NOT EXISTS (b3_\w+)", MIG_CODE)
+    assert len(tables) == 6
+    for t in tables:
+        assert f"CREATE TABLE IF NOT EXISTS {t}" in SCHEMA, f"{t} never reached schema.sql"
+
+
+def test_the_retention_ratchet_is_documented_where_an_operator_will_see_it():
+    """A gap here is permanent. The DDL must say so, not just the fetcher."""
+    assert re.search(r"21[- ]BUSINESS[- ]DAY|21 business day", MIG, re.IGNORECASE)
+    assert "backfill" in MIG.lower()

@@ -102,7 +102,21 @@ Storage layout: ~30 tables named `cvm_<entity>_<doctype>` or `bacen_<series>` (p
   into the daily run but **gated on the `APIFY_TOKEN` secret**; it self-skips when the
   token is unset. See `docs/ETF_AND_PERFORMANCE.md`), and `b3_cotahist` (B3 COTAHIST
   quotes; daily run fetches the last 7 calendar days, yearly backfill is opt-in.
-  Serve cash quotes from `vw_b3_quote_vista` (`tpmerc = '010'`), not the option-heavy parent).
+  Serve cash quotes from `vw_b3_quote_vista` (`tpmerc = '010'`), not the option-heavy parent),
+  and the **B3 BDI** group — `b3_lending_open_position`, `b3_lending_rate`,
+  `b3_investor_participation`, `b3_investor_participation_monthly`,
+  `b3_index_portfolio`, `b3_instrument_registry` (securities lending, investor-type
+  flow, index free float and the cash instrument registry; `src/fetchers/b3_bdi_fetcher.py`
+  carries the verified endpoint contract).
+
+**The BDI group is a ratchet, and the only part of this warehouse that is.** B3 keeps
+~21 business days of those tables and publishes no archive, and an over-wide request
+returns HTTP 200 with a silently clamped window — so a missed session is lost at any
+price, `run_backfill` deliberately offers no lending option, and every ingest reconciles
+the sessions it received against the ones it asked for. Read `b3_lending_open_position`
+through `is_total` (B3 publishes both the per-market rows and its own `Total` sum; adding
+them double-counts), and read `% of float` together with `float_basis`
+(`index_free_float` and `shares_outstanding` are different denominators).
 
 The **analytical layer** (`src/store/analytical/`, applied by `scripts/apply_analytical.sh`
 after ingest) is the read side the dashboards query: `dim_fund` (a **materialized view**,

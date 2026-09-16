@@ -153,9 +153,29 @@ them under a separate `postgrest` section):
 | GET    | `/rest/v1/equities` (+ `bdrs`, `units`, `fund_quotas`, `cash_securities`)             | typed cash views, `lot` grain; `equities` adds `share_class`/`governance_segment`, `fund_quotas` adds `fund_type` |
 | GET    | `/rest/v1/auctions`                                                                   | tpmerc 017 auction prints                                                                                         |
 | POST   | `/rest/v1/rpc/option_chain` / `option_history` / `option_exercises` / `termo_history` | option/termo functions; option rows carry `underlying_ticker`                                                     |
+| GET    | `/rest/v1/short_interest`                                                             | B3 securities lending per (ticker, trade_date): balance, `pct_float` + `float_basis`, `days_to_cover`, borrow rates |
+| GET    | `/rest/v1/short_interest_by_sector`                                                   | the same book aggregated by B3 top-level sector                                                                  |
+| GET    | `/rest/v1/investor_flow`                                                              | daily net flow by investor type (R$ thousands), differenced from B3's month-to-date snapshots                    |
 
 CNPJ in the path may include punctuation (`12.345.678/0001-90`); it is stripped
 to 14 digits. Tickers are uppercased.
+
+**Three caveats on the short-interest and flow resources**, all published as columns
+rather than left to the caller:
+
+* **History starts at first capture.** B3 retains ~21 business days of its lending and
+  participation files and keeps no archive, so these resources are as deep as the daily
+  job has been running and no deeper. Nothing can backfill them.
+* **`pct_float` is two metrics, and `float_basis` says which.** `index_free_float` is
+  B3's real free float (index constituents only); `shares_outstanding` is a larger
+  denominator and therefore a smaller percentage. Do not rank across the two.
+  `days_to_cover` and `pct_float` are `null` — never `0` — when their denominator is
+  missing.
+* **`investor_flow` is derived and lags T+2.** B3 publishes a month-to-date cumulative
+  snapshot; the daily figure is its first difference within a month. Rows whose
+  `flow_basis` is `unknown_opening_snapshot` carry `null` flows on purpose: they are the
+  first snapshot held in a month when that is not the month's first session, and
+  reporting the cumulative total as one day's flow would invent a spike.
 
 Later: CIA line items and BACEN macro as extra `api.panel` metrics once identifiers
 are matched — same long grain, not a new API style.

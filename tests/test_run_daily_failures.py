@@ -43,6 +43,10 @@ def _patches(cvm_totals=None, bacen=None, anbima=None, b3=None):
     # the mock needs it too — otherwise every daily-run test reports a
     # b3_corporate_events failure that the code under test did not have.
     b3_ing.ingest_corporate_events = AsyncMock(return_value=0)
+    # Same for the BDI lending/flow block (b3_pipeline.daily_update_bdi): it is
+    # its own guarded await, so a plain MagicMock attribute would make every
+    # daily-run test report a b3_bdi failure the code under test never had.
+    b3_ing.daily_update_bdi = AsyncMock(return_value={"b3_lending_open_position": 0})
     b3_ing.daily_update = AsyncMock()
     if isinstance(b3, Exception):
         b3_ing.daily_update.side_effect = b3

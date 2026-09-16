@@ -1,0 +1,12 @@
+﻿Informações sobre empréstimos de ativos que ainda estão ativos e não foram devolvidos. O objetivo é fornecer visão clara das posições de empréstimo em andamento, permitindo que os investidores monitorem seus ativos emprestados e gerenciem suas exposições no mercado. Os detalhes sobre as regras utilizadas, bem como a definição de cada um dos campos, estão disponíveis no 
+Glossário;https://www.b3.com.br/data/files/BF/F1/58/15/391EA810E9C1AAA8AC094EA8/Glossario%20_%20Posicao_Em_Aberto.pdf
+
+Data;Código IF;Código ISIN;Empresa ou fundo;Tipo de empréstimo;Mercado;Saldo em quantidade do ativo;Preço médio;Saldo em R$
+10/09/2026;BIJR39;BRBIJRBDR005;ISHARES CORE S&P SMALL-CAP ETF;DRE;Registro;2737;95,561969;261553,11
+10/09/2026;CASN3;BRCASNACNOR6;CIA CATARINENSE DE AGUAS E SANEAM.-CASAN;ON;Registro;1;7,93;7,93
+10/09/2026;TRIS3;BRTRISACNOR4;TRISUL S.A.;ON      NM;Registro;349561;4,662574;1629853,95
+10/09/2026;TRIS3;BRTRISACNOR4;TRISUL S.A.;ON      NM;Neg. Eletrônica D+1;46669;4,418112;206188,85
+10/09/2026;BIJR39;BRBIJRBDR005;ISHARES CORE S&P SMALL-CAP ETF;DRE;Neg. Eletrônica D+1;1667;95,193941;158688,3
+10/09/2026;BIJR39;BRBIJRBDR005;ISHARES CORE S&P SMALL-CAP ETF;DRE;Total;4404;-;420241,41
+10/09/2026;CASN3;BRCASNACNOR6;CIA CATARINENSE DE AGUAS E SANEAM.-CASAN;ON;Total;1;-;7,93
+10/09/2026;TRIS3;BRTRISACNOR4;TRISUL S.A.;ON      NM;Total;396230;-;1836042,8
