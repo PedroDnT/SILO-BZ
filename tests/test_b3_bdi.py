@@ -293,6 +293,25 @@ async def test_fetch_table_retries_cloudflare_403_then_raises():
 
 
 @pytest.mark.asyncio
+async def test_fetch_table_retries_499_then_succeeds():
+    """B3's edge reports the same stalled BTBTrade request as 499 or 504.
+
+    Observed in production 2026-09-16: 504, 504, then 499 on the same URL
+    within minutes. 504 was retried and 499 was not, so 3 of 5 BTBTrade
+    sessions failed on a table B3 keeps for 21 business days. A closed
+    connection is not a statement about the data.
+    """
+    ok = _response(200, "Data;Código IF\n15/09/2026;PETR4\n")
+    post = AsyncMock(side_effect=[_response(504, ""), _response(499, ""), ok])
+    with patch("httpx.AsyncClient.post", new=post):
+        text = await B3BdiFetcher(max_retries=4, retry_delay=0).fetch_table(
+            "BTBTrade", date(2026, 9, 15)
+        )
+    assert "PETR4" in text
+    assert post.await_count == 3
+
+
+@pytest.mark.asyncio
 async def test_fetch_table_retries_an_html_body_served_with_200():
     ok = _response(200, "Data;Código IF\n10/09/2026;PETR4\n")
     post = AsyncMock(side_effect=[_response(200, "<!DOCTYPE html><html>nope</html>"), ok])
