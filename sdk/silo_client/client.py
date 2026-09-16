@@ -28,7 +28,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 24
+KNOWN_CATALOG_VERSION = 25
 
 
 class SiloCatalogDrift(UserWarning):
@@ -79,14 +79,21 @@ class SiloTruncated(SiloError):
 
 class SiloOverCap(SiloError):
     """The server REFUSED a function call whose result would exceed the
-    1000-row page (SQLSTATE 22023) rather than trim it. Not a bug: page it
-    (`iter_panel` / `panel_all`) or narrow the window, ids or metrics."""
+    1000-row page (SQLSTATE 22023) rather than trim it. Not a bug: page it or
+    narrow the window, ids or metrics.
+
+    Three functions page: panel (`iter_panel`/`panel_all`), quote_history
+    (`iter_quote_history`/`quote_history_all`) and fund_nav
+    (`iter_fund_nav`/`fund_nav_all`, which need an `entity_type`). The rest —
+    option_history, termo_history, financials, company_financials,
+    anbima_classes — have no cursor: narrow the window instead."""
 
     def __init__(self, body: str, url: str) -> None:
         super().__init__(400, body, url)
         self.hint = (
-            "the result is larger than one 1000-row page; use iter_panel()/"
-            "panel_all() to page with p_after, or narrow the request"
+            "the result is larger than one 1000-row page; page it with "
+            "p_after via iter_panel()/iter_quote_history()/iter_fund_nav(), "
+            "or narrow the request"
         )
 
 
@@ -285,11 +292,29 @@ class SiloClient:
         return self.catalog().get("limits") or {}
 
     def coverage(self) -> List[Dict[str, Any]]:
-        """Per-dataset freshness (`as_of`), honesty bound (`complete_through`)
-        and `notes` — a regime boundary or applicability caveat the dates
-        cannot carry (the `funds_fidc` row: delinquency starts 2025-01), null
-        on rows that have none."""
+        """Per-dataset freshness and honesty.
+
+        `as_of` is the newest period that has landed AND has actually elapsed;
+        `complete_through` is the newest period classified COMPLETE, which is
+        what default windows serve; `newest_period` is the newest period KEY
+        present, which can sit in the FUTURE when a family files forward-dated
+        (FIP is keyed 31-December) — never read it as freshness; `landed_at` is
+        when ingest last SUCCEEDED for that source, so a later failed run never
+        advances it. `notes` carries a caveat the dates cannot (the
+        `funds_fidc` row: delinquency starts 2025-01), null on rows with none.
+        """
         return self._rpc("coverage", {})
+
+    def metric_coverage(self) -> List[Dict[str, Any]]:
+        """Which (family, metric) pairs are ACTUALLY filed, and over what span.
+
+        `first_period` / `last_period` are the oldest and newest periods
+        carrying a non-null value; `filed_rows` / `total_rows` say how dense it
+        is. A pair ABSENT from this list is one the family never files — not
+        one whose data is late. Use it instead of inferring from nulls in a
+        series, which is how a format change gets read as a credit event.
+        """
+        return self._rpc("metric_coverage", {})
 
     def lookup(self, query: str) -> List[Dict[str, Any]]:
         """Resolve ticker/ISIN/CNPJ/name. Company rows carry a `tickers` array
@@ -317,6 +342,71 @@ class SiloClient:
             "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
             "p_entity_type": entity_type,
         })
+
+    def iter_quote_history(
+        self, ticker: str, start: Datish = None, end: Datish = None,
+        board: Optional[str] = None,
+    ) -> Iterator[Dict[str, Any]]:
+        """Every quote row, paged with the server's cursor (`p_after`).
+
+        Page 1 is `p_after=''`; each next page is the last row's `trade_date`.
+        A page shorter than the 1000-row cap is the last one — nothing is ever
+        cut. Rows arrive oldest first.
+        """
+        body = {"p_ticker": ticker, "p_from": _iso(start), "p_to": _iso(end),
+                "p_board": board}
+        after = ""
+        while True:
+            rows = self._rpc("quote_history", {**body, "p_after": after}, page=True)
+            for row in rows:
+                yield row
+            if len(rows) < SERVER_ROW_CAP:
+                return
+            after = str(rows[-1]["trade_date"])
+
+    def quote_history_all(
+        self, ticker: str, start: Datish = None, end: Datish = None,
+        board: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """iter_quote_history collected into a list."""
+        return list(self.iter_quote_history(ticker, start, end, board))
+
+    def iter_fund_nav(
+        self, cnpj: str, entity_type: str, start: Datish = None,
+        end: Datish = None,
+    ) -> Iterator[Dict[str, Any]]:
+        """Every nav row for ONE family, paged with the server's cursor.
+
+        `entity_type` is REQUIRED, and the server enforces it: the cursor is a
+        bare period, which is unique only within one family, and 385 CNPJs file
+        under two (fi + fidc) in the same month. Paging without it raises
+        22023 rather than skipping or repeating a row at a page edge. Use
+        `fund_nav()` (no cursor) to see every family at once.
+        """
+        if not entity_type:
+            raise ValueError(
+                "iter_fund_nav needs an entity_type (fi, fidc, fii, fip or "
+                "fiagro): the cursor is a bare period and one CNPJ can file "
+                "under two families in the same month. Use fund_nav() for the "
+                "whole result across families."
+            )
+        body = {"p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
+                "p_entity_type": entity_type}
+        after = ""
+        while True:
+            rows = self._rpc("fund_nav", {**body, "p_after": after}, page=True)
+            for row in rows:
+                yield row
+            if len(rows) < SERVER_ROW_CAP:
+                return
+            after = str(rows[-1]["period"])
+
+    def fund_nav_all(
+        self, cnpj: str, entity_type: str, start: Datish = None,
+        end: Datish = None,
+    ) -> List[Dict[str, Any]]:
+        """iter_fund_nav collected into a list."""
+        return list(self.iter_fund_nav(cnpj, entity_type, start, end))
 
     def option_chain(self, prefix: str, trade_date: Datish = None,
                      expiry_from: Datish = None,

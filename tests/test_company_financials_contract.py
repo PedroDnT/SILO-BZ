@@ -105,8 +105,14 @@ def test_consolidated_is_the_default_scope() -> None:
 
 @pytest.mark.parametrize("name", ["financials", "company_financials"])
 def test_the_public_surfaces_are_capped(name: str) -> None:
-    """Same lockstep as every other series function: serve _MAX_POINTS + 1."""
-    assert "LIMIT 5001" in _body(name)
+    """Same shape as every other capped function since v25: fetch one page
+    plus one row, then REFUSE (22023) rather than trim. These two have no
+    cursor — a statement window over 1000 rows is a mistake, not a walk."""
+    body = _body(name)
+    assert "LIMIT 1001" in body and "LIMIT 1000" in body
+    assert "api.assert_row_cap((SELECT count(*) FROM page)" in body
+    assert f"'{name}')" in body, "the 22023 must name the function"
+    assert "LIMIT 5001" not in body
 
 
 @pytest.mark.parametrize("name", COMPANY_FUNCTIONS)
@@ -162,7 +168,12 @@ def test_coverage_reports_financials_without_scanning_the_account_table() -> Non
     assert "public.cia_filing" in cov
     assert "FROM public.cia_account" not in cov
     # No completeness model exists for companies; claiming one would be a lie.
-    assert "SELECT 'financials'::text, MAX(f.dt_refer), NULL::date" in cov
+    # as_of is bounded by today (a filing keyed ahead of the calendar is not
+    # freshness); complete_through stays NULL because no completeness model
+    # exists for companies and claiming one would be a lie.
+    assert "SELECT 'financials'::text," in cov
+    assert "MAX(f.dt_refer) FILTER (WHERE f.dt_refer <= CURRENT_DATE)" in cov
+    assert "NULL::date" in cov
 
 
 def test_the_catalog_tells_an_agent_the_endpoints_exist() -> None:

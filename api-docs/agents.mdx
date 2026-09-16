@@ -97,9 +97,18 @@ Example: *does Brazilian equity stress show up in FIDC credit?*
    every row before 2025-01 and filed from 2025-01 (a source-format boundary, `catalog().regime_breaks`): start the series at 2025-01, never chain-link through it.
 5. Quotes are unadjusted. A missing month is not a two-month return.
 
-There is no server-side `corr`. If `panel` comes back with `Content-Range: 0-999/*`,
-the platform cap fired and the panel is truncated — do not analyze it. Details:
-[panel](/api-docs/panel), [conventions](/api-docs/conventions).
+There is no server-side `corr`. Since catalog v25 no RPC hands you a truncated
+result: every set-returning function **refuses** with `22023` above one 1,000-row
+page rather than trimming, and `panel`, `quote_history` and `fund_nav` page with
+`p_after`. `Content-Range: 0-999/*` can now only mean you are reading a **GET
+view**, which still cuts. Details: [panel](/api-docs/panel),
+[conventions](/api-docs/conventions).
+
+6. Before reading a null as a gap, call `coverage` and `metric_coverage`. A null
+   outside a family's column set is not-applicable, and a `(family, metric)` pair
+   absent from `metric_coverage` is one that family never files. `coverage.as_of`
+   is the newest *elapsed* period; `newest_period` can sit in the future (FIP is
+   keyed 31-December), so never read that one as freshness.
 
 ## 5. Screening a whole family (universe mode, paged)
 
@@ -110,6 +119,7 @@ walk `p_after` until a short page. The rows are the same long rows; the ranking
 stays in your notebook. Anonymous callers still enumerate from the `funds` **view**
 (the only view surface that pages with `limit`/`offset`) and batch three ids per
 call — and since catalog v24 a batch over 1,000 rows is **refused**, never trimmed.
+The same is true of every other function since v25.
 
 <Steps>
   <Step title="Check the family is complete through your window">
@@ -118,7 +128,9 @@ call — and since catalog v24 a batch over 1,000 rows is **refused**, never tri
       -H "Content-Type: application/json" -H "Content-Profile: api" -d '{}'
     ```
     Require `complete_through >= ` your end month on the `funds_fidc` row before
-    claiming anything about that window.
+    claiming anything about that window. Read `as_of`, not `newest_period`, for
+    freshness, and check `landed_at` if you need to know the pipeline itself is
+    healthy rather than just how far the data goes.
   </Step>
   <Step title="Enumerate the family from the funds view, paging">
     ```bash

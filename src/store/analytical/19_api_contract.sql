@@ -23,17 +23,23 @@
 --   * silo_api (created in 12_grants_and_rls.sql, which applies first) is the
 --     read bundle serve/ connects through. It gets schema api only.
 --
--- Row caps (SERVING.md Step 3, SQL half). serve/app.py rejects oversized
--- results with HTTP 400 when a series exceeds _MAX_POINTS (5000) or a panel
--- exceeds _MAX_PANEL (100000). Each set-returning series/panel function below
--- therefore LIMITs at cap + 1 (5001 / 100001):
---   * Postgres stops materializing just past the boundary instead of building
---     and shipping an unbounded body for Python to fetchall() and discard;
---   * the adapter can still tell "too large" (cap+1 rows -> 400) apart from
---     "complete" (<= cap rows). A LIMIT at exactly the cap would make the
---     oversized case indistinguishable and silently hand back a truncated —
---     i.e. fabricated — panel, which integrity rule 1 forbids.
--- Keep 5001/100001 in lockstep with serve/app.py _MAX_POINTS/_MAX_PANEL.
+-- Row caps (SERVING.md Step 3, SQL half). ONE page size, 1000 rows, which is
+-- PostgREST's db-max-rows. Every set-returning function below fetches one page
+-- plus one row (LIMIT 1001) and then calls api.assert_row_cap, which RAISES
+-- 22023 rather than returning the page:
+--   * the 1001st row is what makes "over the page" observable at all;
+--   * a result trimmed to fit looks exactly like a complete one, and integrity
+--     rule 1 forbids handing back a series the caller cannot tell is partial.
+-- This replaced the old cap+1 sentinels (5001 on the series functions, 100001
+-- on the panel). They were unobservable in production: PostgREST cuts every
+-- response at 1000 rows long before 5001 is reached, so an anonymous caller
+-- silently received the OLDEST 1000 with a 200 and no way to learn the rest
+-- existed (measured 2026-08-28 on quote_history from 2019). The panel lost its
+-- sentinel in v24; the series and statement functions lose theirs here.
+-- quote_history and fund_nav additionally page with p_after; the rest ask the
+-- caller to narrow the window. serve/app.py pages the SQL itself and keeps
+-- _MAX_POINTS/_MAX_PANEL for its own envelope — those are the adapter's
+-- limits, not the server's.
 -- option_chain is page-shaped, not series-shaped: its own clamp (1..2000) is
 -- documented at the function. Discovery functions are already bounded:
 -- lookup <= 20, search_funds <= 200 (tiered), quote_latest = 1, coverage = one
@@ -236,6 +242,75 @@ COMMENT ON FUNCTION api.parse_panel_cursor(TEXT) IS
     'Internal. Parses api.panel''s p_after cursor: NULL = whole result (refuses over 1000 rows), '''' = first page, ''date|id|metric|asset_class'' = the page after that key. Malformed → 22023.';
 
 REVOKE ALL ON FUNCTION api.parse_panel_cursor(TEXT) FROM PUBLIC;
+
+-- Cursor for the date-ordered series functions (quote_history, fund_nav).
+-- Simpler than parse_panel_cursor because those series carry one date per row
+-- within a single subject -- one ticker, or one CNPJ within one family:
+--   NULL  -> whole-result mode (assert_row_cap raises above 1000 rows)
+--   ''    -> first page of paging mode
+--   date  -> the page after that date, as YYYY-MM-DD
+-- p_fn names the caller so the 22023 points at the function the agent called.
+CREATE OR REPLACE FUNCTION api.parse_date_cursor(p_after TEXT, p_fn TEXT)
+RETURNS TABLE (paging BOOLEAN, after_date DATE)
+LANGUAGE plpgsql
+IMMUTABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+    IF p_after IS NULL THEN
+        RETURN QUERY SELECT FALSE, NULL::date;
+        RETURN;
+    END IF;
+    IF btrim(p_after) = '' THEN
+        RETURN QUERY SELECT TRUE, NULL::date;
+        RETURN;
+    END IF;
+    IF btrim(p_after) !~ '^\d{4}-\d{2}-\d{2}$' THEN
+        RAISE EXCEPTION
+            '%: p_after must be '''' (first page) or the last row''s date as YYYY-MM-DD, copied from the previous page; got %',
+            p_fn, p_after
+            USING ERRCODE = '22023';
+    END IF;
+    RETURN QUERY SELECT TRUE, btrim(p_after)::date;
+END;
+$$;
+
+COMMENT ON FUNCTION api.parse_date_cursor(TEXT, TEXT) IS
+    'Internal. Parses the date cursor used by api.quote_history and api.fund_nav: NULL = whole result (refuses over 1000 rows), '''' = first page, ''YYYY-MM-DD'' = the page after that date. Malformed -> 22023 naming the calling function.';
+
+REVOKE ALL ON FUNCTION api.parse_date_cursor(TEXT, TEXT) FROM PUBLIC;
+
+-- fund_nav's cursor is a bare period, and a period is unique only WITHIN one
+-- family: 385 CNPJs file under two families (fi + fidc) in the same month, so
+-- a two-family result holds two rows sharing a period and a bare-date cursor
+-- would skip or repeat one at a page edge. Widening the cursor to
+-- (period, entity_type) was rejected -- more surface for the same result --
+-- so paging REQUIRES p_entity_type instead: the page is then always within
+-- one family and the period is unique again. Whole-result mode is unaffected
+-- and still serves both families (the caller reads entity_type per row).
+CREATE OR REPLACE FUNCTION api.assert_fund_nav_cursor(p_paging BOOLEAN, p_entity_type TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+IMMUTABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+    IF COALESCE(p_paging, FALSE)
+       AND NULLIF(btrim(COALESCE(p_entity_type, '')), '') IS NULL THEN
+        RAISE EXCEPTION
+            'fund_nav: paging with p_after requires p_entity_type, because one CNPJ can file under two families in the same month and the cursor is a bare period. Pass p_entity_type (fi, fidc, fii, fip or fiagro) with p_after, or drop p_after and narrow p_from/p_to instead.'
+            USING ERRCODE = '22023';
+    END IF;
+    RETURN TRUE;
+END;
+$$;
+
+COMMENT ON FUNCTION api.assert_fund_nav_cursor(BOOLEAN, TEXT) IS
+    'Internal. Raises 22023 when api.fund_nav is asked to page without p_entity_type: the cursor is a bare period, which is unique only within one family (385 CNPJs file under two in the same month).';
+
+REVOKE ALL ON FUNCTION api.assert_fund_nav_cursor(BOOLEAN, TEXT) FROM PUBLIC;
 
 -- Universe mode: p_ids empty, p_entity_type names the family. The panel then
 -- selects the family's funds itself (a filter on published values — latest
@@ -591,12 +666,19 @@ ALTER VIEW api.cash_securities SET (security_invoker = false);
 GRANT SELECT ON api.cash_securities TO anon, authenticated;
 
 
+-- Signature change (trailing p_after cursor): drop the old shape first.
+-- CREATE OR REPLACE cannot add a parameter, and PostgREST resolves an RPC by
+-- argument names, so the 4-argument form must not survive as an overload.
 DROP FUNCTION IF EXISTS api.quote_history(TEXT, DATE, DATE, TEXT);
+
 CREATE OR REPLACE FUNCTION api.quote_history(
     p_ticker TEXT,
     p_from   DATE DEFAULT (CURRENT_DATE - 365),
     p_to     DATE DEFAULT CURRENT_DATE,
-    p_board  TEXT DEFAULT NULL
+    p_board  TEXT DEFAULT NULL,
+    -- NULL = whole result (refuses over 1000 rows); '' = first page;
+    -- 'YYYY-MM-DD' = the page after that trade_date.
+    p_after  TEXT DEFAULT NULL
 )
 RETURNS TABLE (
     ticker            TEXT,
@@ -626,7 +708,11 @@ STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-    WITH selected_board AS (
+    WITH params AS (
+        SELECT c.paging, c.after_date
+        FROM api.parse_date_cursor(p_after, 'quote_history') c
+    ),
+    selected_board AS (
         SELECT COALESCE(
             p_board,
             (
@@ -637,42 +723,46 @@ AS $$
                 LIMIT 1
             )
         ) AS board
+    ),
+    -- One page + one. The 1001st row is what makes "over the page" detectable;
+    -- assert_row_cap then REFUSES (22023) instead of handing back a truncated
+    -- series that looks complete. Measured 2026-08-28: this window from 2019
+    -- returned exactly 1000 rows with a 200 under the old LIMIT 5001, because
+    -- PostgREST cuts at db-max-rows long before 5001 is reached.
+    page AS (
+        SELECT
+            q.ticker, q.trade_date, q.board, q.short_name, q.spec, q.currency,
+            q.open, q.high, q.low, q.average, q.close, q.bid, q.ask,
+            q.trades, q.quantity, q.volume, q.isin, q.quotation_factor,
+            q.adjusted, q.source, q.asset_class
+        FROM api.quotes q
+        JOIN params pp ON TRUE
+        WHERE q.ticker = upper(btrim(p_ticker))
+          AND q.trade_date BETWEEN p_from AND p_to
+          AND q.board = (SELECT sb.board FROM selected_board sb)
+          AND (pp.after_date IS NULL OR q.trade_date > pp.after_date)
+        ORDER BY q.trade_date
+        LIMIT 1001
     )
+    -- Positional ORDER BY dodges OUT-parameter name ambiguity (trade_date is
+    -- column 2). The subquery is uncorrelated, so it runs once, not per row.
     SELECT
-        q.ticker,
-        q.trade_date,
-        q.board,
-        q.short_name,
-        q.spec,
-        q.currency,
-        q.open,
-        q.high,
-        q.low,
-        q.average,
-        q.close,
-        q.bid,
-        q.ask,
-        q.trades,
-        q.quantity,
-        q.volume,
-        q.isin,
-        q.quotation_factor,
-        q.adjusted,
-        q.source,
-        q.asset_class
-    FROM api.quotes q
-    WHERE q.ticker = upper(btrim(p_ticker))
-      AND q.trade_date BETWEEN p_from AND p_to
-      AND q.board = (SELECT board FROM selected_board)
-    ORDER BY q.trade_date
-    -- Cap = serve _MAX_POINTS (5000) + 1. 5000 daily prints ~ 20 years of one
-    -- ticker's sessions; the +1 row lets serve/ return 400 instead of a
-    -- silently truncated series (see header). Deterministic: oldest kept.
-    LIMIT 5001;
+        g.ticker, g.trade_date, g.board, g.short_name, g.spec, g.currency,
+        g.open, g.high, g.low, g.average, g.close, g.bid, g.ask,
+        g.trades, g.quantity, g.volume, g.isin, g.quotation_factor,
+        g.adjusted, g.source, g.asset_class
+    FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page),
+                             (SELECT pp.paging FROM params pp), 'quote_history')
+    ORDER BY 2
+    LIMIT 1000;
 $$;
 
-COMMENT ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT) IS
-    'Daily unadjusted quote series for one ticker. Hard-capped at 5001 rows (= serve _MAX_POINTS + 1): above 5000 the adapter answers 400, never a truncated series.';
+COMMENT ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT) IS
+    'Daily unadjusted quote series for one ticker, oldest first. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '''' = first page, then the last row''s trade_date as ''YYYY-MM-DD''; a page shorter than 1000 is the last. Or narrow p_from/p_to.';
+
+REVOKE ALL ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
 
 DROP FUNCTION IF EXISTS api.quote_latest(TEXT, TEXT);
 CREATE OR REPLACE FUNCTION api.quote_latest(
@@ -736,9 +826,7 @@ AS $$
     LIMIT 1;
 $$;
 
-REVOKE ALL ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION api.quote_latest(TEXT, TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION api.quote_latest(TEXT, TEXT) TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -879,7 +967,7 @@ BEGIN
       AND b.codneg LIKE v_prefix || '%'
       AND (p_expiry_from IS NULL OR b.data_vencimento >= p_expiry_from)
     ORDER BY b.data_vencimento, b.preco_exercicio, b.tpmerc, b.codneg
-    -- Clamp 1..2000. This is a chain-page cap, not the 5001 series cap: one
+    -- Clamp 1..2000. This is a chain-page cap, not the series page: one
     -- underlying's chain on one session is hundreds of series (strike ×
     -- expiry × side), so 2000 comfortably holds any honest single-prefix
     -- chain while an over-broad prefix is cut deterministically (ORDER BY
@@ -934,55 +1022,63 @@ STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-    SELECT
-        b.codneg,
-        b.trade_date,
-        CASE b.tpmerc WHEN '070' THEN 'call' WHEN '080' THEN 'put' END,
-        b.preco_exercicio,
-        b.data_vencimento,
-        b.especi,
-        COALESCE(b.moeda, 'R$'),
-        b.preco_abertura,
-        b.preco_maximo,
-        b.preco_minimo,
-        b.preco_medio,
-        b.preco_fechamento,
-        b.oferta_compra,
-        b.oferta_venda,
-        b.negocios,
-        b.quantidade,
-        b.volume,
-        b.isin,
-        b.fator_cotacao,
-        FALSE,
-        b.source,
-        u.codneg,
-        NULLIF((b.raw ->> 'ptoexe')::NUMERIC, 0) / 1e6,
-        b.raw ->> 'indopc',
-        b.raw ->> 'dismes'
-    FROM public.b3_cotahist b
-    LEFT JOIN LATERAL (
-        SELECT c.codneg
-        FROM public.b3_cotahist c
-        WHERE c.tpmerc = '010'
-          AND c.isin = b.isin
-          AND c.trade_date = b.trade_date
-        ORDER BY (c.codbdi = '02') DESC, length(c.codneg), c.codneg
-        LIMIT 1
-    ) u ON TRUE
-    WHERE b.tpmerc IN ('070', '080')
-      AND b.codneg = upper(btrim(p_codneg))
-      AND b.trade_date BETWEEN p_from AND p_to
-    ORDER BY b.trade_date
-    -- Cap = serve _MAX_POINTS (5000) + 1, in lockstep with quote_history: the
-    -- +1 row lets an adapter tell "too large" from "complete" instead of
-    -- silently truncating. An option series is short-lived (months), so 5000
-    -- is a pure backstop. Deterministic: oldest kept.
-    LIMIT 5001;
+    -- One page + one. The 1001st row is what makes "over the page"
+    -- detectable; assert_row_cap then REFUSES (22023) rather than handing
+    -- back a truncated series that looks complete. This function has no
+    -- cursor, so a caller over the page narrows the window instead.
+    -- The explicit column list lets the outer ORDER BY name columns as
+    -- declared, which also dodges OUT-parameter ambiguity.
+    WITH page (codneg, trade_date, side, strike, expiry, spec, currency, open, high, low, average, close, bid, ask, trades, quantity, volume, isin, quotation_factor, adjusted, source, underlying_ticker, strike_points, strike_correction, distribution_number) AS (
+        SELECT
+            b.codneg,
+            b.trade_date,
+            CASE b.tpmerc WHEN '070' THEN 'call' WHEN '080' THEN 'put' END,
+            b.preco_exercicio,
+            b.data_vencimento,
+            b.especi,
+            COALESCE(b.moeda, 'R$'),
+            b.preco_abertura,
+            b.preco_maximo,
+            b.preco_minimo,
+            b.preco_medio,
+            b.preco_fechamento,
+            b.oferta_compra,
+            b.oferta_venda,
+            b.negocios,
+            b.quantidade,
+            b.volume,
+            b.isin,
+            b.fator_cotacao,
+            FALSE,
+            b.source,
+            u.codneg,
+            NULLIF((b.raw ->> 'ptoexe')::NUMERIC, 0) / 1e6,
+            b.raw ->> 'indopc',
+            b.raw ->> 'dismes'
+        FROM public.b3_cotahist b
+        LEFT JOIN LATERAL (
+            SELECT c.codneg
+            FROM public.b3_cotahist c
+            WHERE c.tpmerc = '010'
+              AND c.isin = b.isin
+              AND c.trade_date = b.trade_date
+            ORDER BY (c.codbdi = '02') DESC, length(c.codneg), c.codneg
+            LIMIT 1
+        ) u ON TRUE
+        WHERE b.tpmerc IN ('070', '080')
+          AND b.codneg = upper(btrim(p_codneg))
+          AND b.trade_date BETWEEN p_from AND p_to
+        ORDER BY b.trade_date
+        LIMIT 1001
+    )
+    SELECT g.* FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'option_history')
+    ORDER BY g.trade_date
+    LIMIT 1000;
 $$;
 
 COMMENT ON FUNCTION api.option_history(TEXT, DATE, DATE) IS
-    'Daily unadjusted series for one option codneg (tpmerc 070/080), quote_history''s shape plus side/strike/expiry and underlying_ticker (resolved per session from the published ISIN mapping; NULL when the underlying had no cash print that day). Hard-capped at 5001 rows (= serve _MAX_POINTS + 1).';
+    'Daily unadjusted series for one option codneg (tpmerc 070/080), quote_history''s shape plus side/strike/expiry and underlying_ticker (resolved per session from the published ISIN mapping; NULL when the underlying had no cash print that day). Row cap: more than 1000 rows RAISES 22023 (never trimmed); narrow p_from/p_to. No cursor — an option series is short-lived, so a window over a page is a mistake, not a walk.';
 
 -- ---------------------------------------------------------------------------
 -- Option exercise events (tpmerc 012/013) and auction prints (tpmerc 017)
@@ -1140,41 +1236,52 @@ STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-    SELECT
-        b.codneg,
-        b.trade_date,
-        b.prazot,           -- term in days; TEXT as stored (api.quotes precedent)
-        b.especi,
-        COALESCE(b.moeda, 'R$'),
-        b.preco_abertura,
-        b.preco_maximo,
-        b.preco_minimo,
-        b.preco_medio,
-        b.preco_fechamento,
-        b.oferta_compra,
-        b.oferta_venda,
-        b.negocios,
-        b.quantidade,
-        b.volume,
-        b.isin,
-        b.fator_cotacao,
-        FALSE,
-        b.source
-    FROM public.b3_cotahist b
-    WHERE b.tpmerc = '030'
-      AND b.codneg = upper(btrim(p_codneg))
-      AND b.trade_date BETWEEN p_from AND p_to
-    -- Termo grain includes prazot (several terms of one codneg can print on
-    -- one session), so order by it too for a deterministic cut. length-then-
-    -- text sorts digit strings numerically without a cast that could blow up
-    -- on source garbage.
-    ORDER BY b.trade_date, length(b.prazot), b.prazot
-    -- Cap = serve _MAX_POINTS (5000) + 1, same lockstep as quote_history.
-    LIMIT 5001;
+    -- One page + one. The 1001st row is what makes "over the page"
+    -- detectable; assert_row_cap then REFUSES (22023) rather than handing
+    -- back a truncated series that looks complete. This function has no
+    -- cursor, so a caller over the page narrows the window instead.
+    -- The explicit column list lets the outer ORDER BY name columns as
+    -- declared, which also dodges OUT-parameter ambiguity.
+    WITH page (codneg, trade_date, term_days, spec, currency, open, high, low, average, close, bid, ask, trades, quantity, volume, isin, quotation_factor, adjusted, source) AS (
+        SELECT
+            b.codneg,
+            b.trade_date,
+            b.prazot,           -- term in days; TEXT as stored (api.quotes precedent)
+            b.especi,
+            COALESCE(b.moeda, 'R$'),
+            b.preco_abertura,
+            b.preco_maximo,
+            b.preco_minimo,
+            b.preco_medio,
+            b.preco_fechamento,
+            b.oferta_compra,
+            b.oferta_venda,
+            b.negocios,
+            b.quantidade,
+            b.volume,
+            b.isin,
+            b.fator_cotacao,
+            FALSE,
+            b.source
+        FROM public.b3_cotahist b
+        WHERE b.tpmerc = '030'
+          AND b.codneg = upper(btrim(p_codneg))
+          AND b.trade_date BETWEEN p_from AND p_to
+        -- Termo grain includes prazot (several terms of one codneg can print on
+        -- one session), so order by it too for a deterministic cut. length-then-
+        -- text sorts digit strings numerically without a cast that could blow up
+        -- on source garbage.
+        ORDER BY b.trade_date, length(b.prazot), b.prazot
+        LIMIT 1001
+    )
+    SELECT g.* FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'termo_history')
+    ORDER BY g.trade_date, length(g.term_days), g.term_days
+    LIMIT 1000;
 $$;
 
 COMMENT ON FUNCTION api.termo_history(TEXT, DATE, DATE) IS
-    'Daily unadjusted series for one termo codneg (tpmerc 030), including term_days (prazot). Grain is (codneg, trade_date, term_days). Hard-capped at 5001 rows (= serve _MAX_POINTS + 1).';
+    'Daily unadjusted series for one termo codneg (tpmerc 030), including term_days (prazot). Grain is (codneg, trade_date, term_days). Row cap: more than 1000 rows RAISES 22023 (never trimmed); narrow p_from/p_to.';
 
 REVOKE ALL ON FUNCTION api.option_chain(TEXT, DATE, DATE, INT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION api.option_history(TEXT, DATE, DATE) FROM PUBLIC;
@@ -1236,6 +1343,10 @@ AS $$
     FROM public.fund_profile(regexp_replace(p_cnpj, '[^0-9]', '', 'g'));
 $$;
 
+-- Signature change (trailing p_after cursor) and a new trailing output column
+-- (period_month): drop the old shape first.
+DROP FUNCTION IF EXISTS api.fund_nav(TEXT, DATE, DATE, TEXT);
+
 CREATE OR REPLACE FUNCTION api.fund_nav(
     p_cnpj        TEXT,
     p_from        DATE DEFAULT '2019-01-01',
@@ -1244,7 +1355,11 @@ CREATE OR REPLACE FUNCTION api.fund_nav(
     -- served unless the caller pins p_to explicitly (the escape hatch, which
     -- serves the window verbatim, partial months included).
     p_to          DATE DEFAULT NULL,
-    p_entity_type TEXT DEFAULT NULL
+    p_entity_type TEXT DEFAULT NULL,
+    -- NULL = whole result (refuses over 1000 rows); '' = first page;
+    -- 'YYYY-MM-DD' = the page after that period. Paging REQUIRES
+    -- p_entity_type -- see api.assert_fund_nav_cursor.
+    p_after       TEXT DEFAULT NULL
 )
 RETURNS TABLE (
     cnpj          TEXT,
@@ -1257,7 +1372,12 @@ RETURNS TABLE (
     monthly_yield NUMERIC,
     inflows       NUMERIC,
     redemptions   NUMERIC,
-    assets        NUMERIC
+    assets        NUMERIC,
+    -- period normalised to the first of the month, which is the convention
+    -- api.panel serves fund observations on. Published so a caller joining a
+    -- nav series to a panel does not have to rediscover that the two differ:
+    -- period is CVM's filed month-END date, period_month is the panel's key.
+    period_month  DATE
 )
 LANGUAGE sql
 STABLE
@@ -1266,43 +1386,61 @@ SECURITY DEFINER
 -- delegates to a public.* analytical function whose body resolves relation
 -- names unqualified, and search_path propagates down the call stack. An
 -- empty pin here broke the call at runtime ("relation does not exist").
--- A per-function pinned GUC still closes the DEFINER hole — the attack is
+-- A per-function pinned GUC still closes the DEFINER hole -- the attack is
 -- a caller-controlled search_path, and this one is immutable per call.
 SET search_path = public, pg_temp
 AS $$
+    WITH params AS (
+        SELECT c.paging,
+               c.after_date,
+               -- Rides the cursor parse so the check happens before any rows
+               -- are read: paging a two-family result on a bare period would
+               -- skip or repeat a row at a page edge.
+               api.assert_fund_nav_cursor(c.paging, p_entity_type) AS checked
+        FROM api.parse_date_cursor(p_after, 'fund_nav') c
+    ),
+    -- One page + one, so the 1001st row makes "over the page" detectable and
+    -- assert_row_cap can REFUSE instead of trimming. params drives the join
+    -- so the cursor guard is evaluated before the series is walked.
+    page AS (
+        SELECT
+            s.cnpj, s.period, s.entity_type, s.vl_patrim_liq, s.vl_quota,
+            s.nr_cotst, s.vl_inadimpl, s.pct_yield_mes, s.captc_mes,
+            s.resg_mes, s.vl_ativo
+        FROM params pp
+        JOIN public.fund_nav_series(
+            regexp_replace(p_cnpj, '[^0-9]', '', 'g'),
+            p_from,
+            COALESCE(p_to, CURRENT_DATE),
+            p_entity_type
+        ) s ON pp.checked
+        -- NULL p_to = clamp each row to its own family's latest complete
+        -- period (raw-convention comparison; see api.panel). Explicit p_to =
+        -- verbatim.
+        WHERE (p_to IS NOT NULL
+               OR s.period <= public.latest_complete_period(s.entity_type))
+          AND (pp.after_date IS NULL OR s.period > pp.after_date)
+        -- Positional, to dodge OUT-parameter name ambiguity.
+        ORDER BY 2, 3
+        LIMIT 1001
+    )
     SELECT
-        s.cnpj,
-        s.period,
-        s.entity_type,
-        s.vl_patrim_liq,
-        s.vl_quota,
-        s.nr_cotst,
-        s.vl_inadimpl,
-        s.pct_yield_mes,
-        s.captc_mes,
-        s.resg_mes,
-        s.vl_ativo
-    FROM public.fund_nav_series(
-        regexp_replace(p_cnpj, '[^0-9]', '', 'g'),
-        p_from,
-        COALESCE(p_to, CURRENT_DATE),
-        p_entity_type
-    ) s
-    -- NULL p_to = clamp each row to its own family's latest complete period
-    -- (raw-convention comparison; see api.panel). Explicit p_to = verbatim.
-    WHERE p_to IS NOT NULL
-       OR s.period <= public.latest_complete_period(s.entity_type)
-    -- Cap = serve _MAX_POINTS (5000) + 1. Monthly grain: one CNPJ has ~12
-    -- rows/year/entity_type, so 5000 is far beyond any honest series — this is
-    -- a backstop, and the +1 row lets serve/ 400 instead of truncating.
-    -- ORDER BY (period, entity_type) positionally so truncation is
-    -- deterministic and dodges OUT-parameter name ambiguity.
+        r.cnpj, r.period, r.entity_type, r.vl_patrim_liq, r.vl_quota,
+        r.nr_cotst, r.vl_inadimpl, r.pct_yield_mes, r.captc_mes,
+        r.resg_mes, r.vl_ativo,
+        date_trunc('month', r.period)::date
+    FROM page r
+    WHERE api.assert_row_cap((SELECT count(*) FROM page),
+                             (SELECT pp.paging FROM params pp), 'fund_nav')
     ORDER BY 2, 3
-    LIMIT 5001;
+    LIMIT 1000;
 $$;
 
-COMMENT ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT) IS
-    'Monthly NAV/flows series for one CNPJ. Default window (p_to NULL) ends at the family''s latest COMPLETE period per mv_period_completeness; an explicit p_to serves the window verbatim, partial months included. Hard-capped at 5001 rows (= serve _MAX_POINTS + 1): above 5000 the adapter answers 400, never a truncated series. Columns are per family (fact_fund_monthly arms): fi files quota, quotaholders, inflows, redemptions; fidc and fiagro file delinquency; fii files quotaholders, monthly_yield, assets; fip files nav only — a null outside that list is not applicable, not missing (catalog().applicability). fidc delinquency is null through 2024-12 and filed from 2025-01 (regime break; catalog().regime_breaks).';
+COMMENT ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT, TEXT) IS
+    'Monthly NAV/flows series for one CNPJ, oldest first. Default window (p_to NULL) ends at the family''s latest COMPLETE period per mv_period_completeness; an explicit p_to serves the window verbatim, partial months included. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '''' = first page, then the last row''s period as ''YYYY-MM-DD''. PAGING REQUIRES p_entity_type — one CNPJ can file under two families in the same month (385 do), so a bare period is unique only within one family; whole-result mode serves both and labels each row. period is CVM''s filed month-END date; the trailing period_month is the same month as api.panel keys it (first of month). Columns are per family (fact_fund_monthly arms): fi files quota, quotaholders, inflows, redemptions; fidc and fiagro file delinquency; fii files quotaholders, monthly_yield, assets; fip files nav only — a null outside that list is not applicable, not missing (catalog().applicability). fidc delinquency is null through 2024-12 and filed from 2025-01 (regime break; catalog().regime_breaks).';
+
+REVOKE ALL ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
 
 CREATE OR REPLACE FUNCTION api.search_funds(
     p_query       TEXT DEFAULT '',
@@ -1340,10 +1478,8 @@ AS $$
 $$;
 
 REVOKE ALL ON FUNCTION api.fund_profile(TEXT) FROM PUBLIC;
-REVOKE ALL ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION api.search_funds(TEXT, TEXT, INT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.fund_profile(TEXT) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION api.search_funds(TEXT, TEXT, INT) TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -1692,31 +1828,42 @@ BEGIN
     END IF;
 
     RETURN QUERY
-    SELECT a.reference_date,
-           a.anbima_category,
-           a.anbima_type_id,
-           a.anbima_type_name,
-           a.level,
-           a.metric,
-           a.value,
-           CASE
-               WHEN a.metric LIKE '%\_brl\_mm' THEN 'brl_mm'
-               WHEN a.metric LIKE '%\_pct'     THEN 'pct'
-               WHEN a.metric = 'fund_count'     THEN 'count'
-           END,
-           a.boletim_ref,
-           'anbima'::text
-    FROM public.anbima_class_monthly a
-    WHERE (p_category IS NULL OR lower(a.anbima_category) = lower(btrim(p_category)))
-      AND (p_metric   IS NULL OR a.metric = p_metric)
-      AND (p_level    IS NULL OR a.level  = p_level)
-      AND a.reference_date >= p_from
-      AND a.reference_date <= COALESCE(p_to, CURRENT_DATE)
-    -- Cap = serve _MAX_POINTS (5000) + 1, same lockstep as quote_history.
-    -- Positional ORDER BY so the cut is deterministic and dodges OUT-name
-    -- ambiguity: (reference_date, category, type_name, metric).
-    ORDER BY 1, 2, 4, 6
-    LIMIT 5001;
+    -- One page + one. The 1001st row is what makes "over the page"
+    -- detectable; assert_row_cap then REFUSES (22023) rather than handing
+    -- back a truncated series that looks complete. This function has no
+    -- cursor, so a caller over the page narrows the window instead.
+    -- The explicit column list lets the outer ORDER BY name columns as
+    -- declared, which also dodges OUT-parameter ambiguity.
+    WITH page (reference_date, category, type_id, type_name, level, metric, value, unit, boletim_ref, source) AS (
+        SELECT a.reference_date,
+               a.anbima_category,
+               a.anbima_type_id,
+               a.anbima_type_name,
+               a.level,
+               a.metric,
+               a.value,
+               CASE
+                   WHEN a.metric LIKE '%\_brl\_mm' THEN 'brl_mm'
+                   WHEN a.metric LIKE '%\_pct'     THEN 'pct'
+                   WHEN a.metric = 'fund_count'     THEN 'count'
+               END,
+               a.boletim_ref,
+               'anbima'::text
+        FROM public.anbima_class_monthly a
+        WHERE (p_category IS NULL OR lower(a.anbima_category) = lower(btrim(p_category)))
+          AND (p_metric   IS NULL OR a.metric = p_metric)
+          AND (p_level    IS NULL OR a.level  = p_level)
+          AND a.reference_date >= p_from
+          AND a.reference_date <= COALESCE(p_to, CURRENT_DATE)
+        -- Positional inside the page; the outer ORDER BY names the
+        -- declared columns.
+        ORDER BY 1, 2, 4, 6
+        LIMIT 1001
+    )
+    SELECT g.* FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'anbima_classes')
+    ORDER BY g.reference_date, g.category, g.type_name, g.metric
+    LIMIT 1000;
 END;
 $fn$;
 
@@ -1724,7 +1871,7 @@ REVOKE ALL ON FUNCTION api.anbima_classes(TEXT, TEXT, TEXT, DATE, DATE) FROM PUB
 GRANT EXECUTE ON FUNCTION api.anbima_classes(TEXT, TEXT, TEXT, DATE, DATE) TO anon, authenticated;
 
 COMMENT ON FUNCTION api.anbima_classes(TEXT, TEXT, TEXT, DATE, DATE) IS
-    'ANBIMA Boletim de Fundos class series as published: AUM, net flows (month / YTD / 12m), returns (month / YTD / 12m) and fund counts per class, ANBIMA type or industry total (p_level). Industry aggregates — no fund is mapped to a class here, and there is no panel arm. Unknown category/metric/level raises 22023 listing what exists. Hard-capped at 5001 rows.';
+    'ANBIMA Boletim de Fundos class series as published: AUM, net flows (month / YTD / 12m), returns (month / YTD / 12m) and fund counts per class, ANBIMA type or industry total (p_level). Industry aggregates — no fund is mapped to a class here, and there is no panel arm. Unknown category/metric/level raises 22023 listing what exists. Row cap: more than 1000 rows RAISES 22023 (never trimmed); narrow p_from/p_to or p_category.';
 
 -- ---------------------------------------------------------------------------
 -- Coverage — freshness without exposing cvm_ingest_log
@@ -1733,100 +1880,194 @@ COMMENT ON FUNCTION api.anbima_classes(TEXT, TEXT, TEXT, DATE, DATE) IS
 -- Signature change (complete_through column, per-family rows, notes): drop first.
 DROP FUNCTION IF EXISTS api.coverage();
 
+-- Signature change (trailing newest_period, landed_at): drop the old shape.
+DROP FUNCTION IF EXISTS api.coverage();
+
 CREATE OR REPLACE FUNCTION api.coverage()
 RETURNS TABLE (
     dataset          TEXT,
     as_of            DATE,
     complete_through DATE,
     source           TEXT,
-    notes            TEXT
+    notes            TEXT,
+    newest_period    DATE,
+    landed_at        TIMESTAMPTZ
 )
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
+    -- THREE different questions, which one date used to answer wrongly:
+    --   as_of            the newest period that has landed AND has actually
+    --                    elapsed -- "data exists through here".
+    --   complete_through the newest period classified COMPLETE by
+    --                    mv_period_completeness -- what default windows serve.
+    --   newest_period    the newest period KEY present, which can be in the
+    --                    future, and landed_at, the wall-clock time ingest
+    --                    last succeeded for the source.
+    --
+    -- as_of is bounded by CURRENT_DATE because a period key is not a
+    -- statement about elapsed time. FIP files annually and is keyed to
+    -- 31-December, so a row filed in March carries period 2026-12-31 and the
+    -- blended MAX(last_period) read 2026-12-31 while it was still September --
+    -- an agent reading as_of as freshness believed it had Q4. It is not a
+    -- fabricated row: the key is CVM's. It is a grain collision, so the fix
+    -- publishes both numbers instead of picking one. Measured 2026-09-16:
+    -- production coverage() reported funds.as_of = 2026-12-31.
+    --
+    -- landed_at comes from cvm_ingest_log rows with status='ok' AND a
+    -- finished_at: a run still in flight has not landed, and a later FAILED
+    -- run must not advance the date (that would report a failure as freshness).
+    --
     -- notes = a caveat the dates cannot carry: a regime boundary where the
-    -- series changes meaning mid-stream, or where the columns are per
-    -- family. NULL on every row that has none. The FIDC boundary below is
-    -- the same one api.catalog() publishes under regime_breaks — the
-    -- pre-2025 monthly FIDC file (tab II/III) has no delinquency field, so
-    -- vl_inadimpl is NULL on every row through 2024-12-31 and filed on every
-    -- row from 2025-01-31 (tab IV + VI). Chain-linking through it turns a
-    -- format change into a credit event.
-    -- as_of = the newest period that has LANDED (freshness — what ingest has
-    -- seen). complete_through = the newest period classified COMPLETE by
-    -- mv_period_completeness (honesty — what the default windows serve).
-    -- They diverge exactly where CVM's publication cadence makes the newest
-    -- period partial: an in-progress month, a lagging family, or FIP's
-    -- year-end row filed months before the year closes. Session data
-    -- (quotes/derivatives) is complete by construction: both dates equal.
-    SELECT 'quotes'::text, MAX(trade_date), MAX(trade_date), 'b3_cotahist'::text,
-           NULL::text
-    FROM public.vw_b3_quote_vista
-    UNION ALL
-    SELECT 'funds'::text, MAX(last_period),
-           public.latest_complete_period(NULL), 'cvm'::text, NULL::text
-    FROM public.dim_fund
-    UNION ALL
-    SELECT 'fund_nav'::text, MAX(period),
-           public.latest_complete_period(NULL), 'cvm'::text,
-           'columns are per family: a null outside the family''s list in catalog().applicability is not applicable, not missing'::text
-    FROM public.fact_fund_monthly
-    UNION ALL
-    -- Per-family rows: the families file on different cadences (FI daily,
-    -- FIDC/FII with a 1-2 month lag, FIP annually), so one blended date
-    -- misreads all of them.
-    SELECT 'funds_' || f.entity_type, MAX(f.period),
-           public.latest_complete_period(f.entity_type), 'cvm'::text,
-           CASE f.entity_type
-               WHEN 'fidc' THEN
-                   'regime break at 2025-01-31: delinquency is null on every row through 2024-12-31 (CVM''s pre-2025 tab II/III monthly file carries no delinquency field) and filed on every row from 2025-01-31 (tab IV/VI). Not zero, not clean books — never chain-link across 2024-12 → 2025-01. See catalog().regime_breaks.'
-           END::text
-    FROM public.fact_fund_monthly f
-    GROUP BY f.entity_type
-    UNION ALL
-    -- Options + termo land in the same COTAHIST file as cash quotes, but the
-    -- segments can lag independently, so freshness is reported per segment.
-    -- GREATEST of three equality maxes rather than one IN-list max: coverage()
-    -- is the bootstrap call every agent makes first, and only the equality
-    -- form gets the MIN/MAX index rewrite (see api.option_chain).
-    SELECT 'derivatives'::text,
-           GREATEST(
-               (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '070'),
-               (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '080'),
-               (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '030')
-           ),
-           GREATEST(
-               (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '070'),
-               (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '080'),
-               (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '030')
-           ),
-           'b3_cotahist'::text,
-           NULL::text
-    UNION ALL
-    -- Listed-company filings. Read from cia_filing (one row per submitted
-    -- ITR/DFP document) rather than from cia_account: the account table is
-    -- ~31M rows across yearly partitions and MAX(dt_refer) over it is a scan
-    -- no anonymous caller's 3-second budget can absorb. complete_through is
-    -- NULL on purpose — mv_period_completeness models fund filing cadence and
-    -- says nothing about companies, and a fabricated completeness date is
-    -- exactly the claim this function exists to prevent.
-    SELECT 'financials'::text, MAX(f.dt_refer), NULL::date, 'cvm'::text, NULL::text
-    FROM public.cia_filing f
-    UNION ALL
-    -- ANBIMA boletim: a published edition is complete by construction (a
-    -- monthly publication, not a filing cadence), so both dates coincide.
-    SELECT 'anbima_classes'::text, MAX(a.reference_date), MAX(a.reference_date), 'anbima'::text,
-           NULL::text
-    FROM public.anbima_class_monthly a;
+    -- series changes meaning mid-stream, or where the columns are per family.
+    -- NULL on every row that has none.
+    WITH landed AS (
+        SELECT l.entity, MAX(l.finished_at) AS landed_at
+        FROM public.cvm_ingest_log l
+        WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
+        GROUP BY l.entity
+        UNION ALL
+        -- The blended fund rows below span the five families.
+        SELECT '*funds*'::text, MAX(l.finished_at)
+        FROM public.cvm_ingest_log l
+        WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
+          AND l.entity IN ('fi', 'fidc', 'fii', 'fip', 'fiagro')
+    ),
+    base AS (
+        -- Session data (quotes/derivatives) is complete by construction and a
+        -- trade_date is never in the future, so all three dates coincide.
+        SELECT 'quotes'::text AS dataset, MAX(q.trade_date) AS as_of,
+               MAX(q.trade_date) AS complete_through, 'b3_cotahist'::text AS source,
+               NULL::text AS notes, MAX(q.trade_date) AS newest_period,
+               'b3'::text AS log_entity
+        FROM public.vw_b3_quote_vista q
+        UNION ALL
+        SELECT 'funds'::text,
+               MAX(d.last_period) FILTER (WHERE d.last_period <= CURRENT_DATE),
+               public.latest_complete_period(NULL), 'cvm'::text, NULL::text,
+               MAX(d.last_period), '*funds*'::text
+        FROM public.dim_fund d
+        UNION ALL
+        SELECT 'fund_nav'::text,
+               MAX(f.period) FILTER (WHERE f.period <= CURRENT_DATE),
+               public.latest_complete_period(NULL), 'cvm'::text,
+               'columns are per family: a null outside the family''s list in catalog().applicability is not applicable, not missing. api.metric_coverage() reports the filed span of each (family, metric) pair.'::text,
+               MAX(f.period), '*funds*'::text
+        FROM public.fact_fund_monthly f
+        UNION ALL
+        -- Per-family rows: the families file on different cadences (FI daily,
+        -- FIDC/FII with a 1-2 month lag, FIP annually), so one blended date
+        -- misreads all of them. FIP is exactly where as_of and newest_period
+        -- diverge.
+        SELECT 'funds_' || f.entity_type,
+               MAX(f.period) FILTER (WHERE f.period <= CURRENT_DATE),
+               public.latest_complete_period(f.entity_type), 'cvm'::text,
+               CASE f.entity_type
+                   WHEN 'fidc' THEN
+                       'regime break at 2025-01-31: delinquency is null on every row through 2024-12-31 (CVM''s pre-2025 tab II/III monthly file carries no delinquency field) and filed on every row from 2025-01-31 (tab IV/VI). Not zero, not clean books — never chain-link across 2024-12 → 2025-01. See catalog().regime_breaks.'
+                   WHEN 'fip' THEN
+                       'files annually, keyed to 31-December: newest_period is a year-end key that can sit in the future, as_of is the newest period that has actually elapsed. Never read newest_period as freshness.'
+               END::text,
+               MAX(f.period), f.entity_type
+        FROM public.fact_fund_monthly f
+        GROUP BY f.entity_type
+        UNION ALL
+        -- Options + termo land in the same COTAHIST file as cash quotes, but the
+        -- segments can lag independently, so freshness is reported per segment.
+        -- GREATEST of three equality maxes rather than one IN-list max: coverage()
+        -- is the bootstrap call every agent makes first, and only the equality
+        -- form gets the MIN/MAX index rewrite (see api.option_chain).
+        SELECT 'derivatives'::text,
+               GREATEST(
+                   (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '070'),
+                   (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '080'),
+                   (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '030')
+               ),
+               GREATEST(
+                   (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '070'),
+                   (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '080'),
+                   (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '030')
+               ),
+               'b3_cotahist'::text,
+               NULL::text,
+               GREATEST(
+                   (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '070'),
+                   (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '080'),
+                   (SELECT MAX(b.trade_date) FROM public.b3_cotahist b WHERE b.tpmerc = '030')
+               ),
+               'b3'::text
+        UNION ALL
+        -- Listed-company filings. Read from cia_filing (one row per submitted
+        -- ITR/DFP document) rather than from cia_account: the account table is
+        -- ~31M rows across yearly partitions and MAX(dt_refer) over it is a scan
+        -- no anonymous caller's 3-second budget can absorb. complete_through is
+        -- NULL on purpose — mv_period_completeness models fund filing cadence and
+        -- says nothing about companies, and a fabricated completeness date is
+        -- exactly the claim this function exists to prevent.
+        SELECT 'financials'::text,
+               MAX(f.dt_refer) FILTER (WHERE f.dt_refer <= CURRENT_DATE),
+               NULL::date, 'cvm'::text, NULL::text,
+               MAX(f.dt_refer), 'cia_aberta'::text
+        FROM public.cia_filing f
+        UNION ALL
+        -- ANBIMA boletim: a published edition is complete by construction (a
+        -- monthly publication, not a filing cadence), so both dates coincide.
+        -- The log entity is 'anbima_etf' for history's sake (see
+        -- src/pipeline/anbima_pipeline.py), though the table is no longer
+        -- ETF-only.
+        SELECT 'anbima_classes'::text, MAX(a.reference_date), MAX(a.reference_date),
+               'anbima'::text, NULL::text, MAX(a.reference_date), 'anbima_etf'::text
+        FROM public.anbima_class_monthly a
+    )
+    SELECT b.dataset, b.as_of, b.complete_through, b.source, b.notes,
+           b.newest_period, l.landed_at
+    FROM base b
+    LEFT JOIN landed l ON l.entity = b.log_entity
+    ORDER BY 1;
 $$;
 
 COMMENT ON FUNCTION api.coverage() IS
-    'Freshness AND honesty per dataset: as_of = newest landed period; complete_through = newest COMPLETE period (what default windows serve). funds_<family> rows report each filing cadence separately — FIP files annually, so its as_of is a year-end date even when current. notes carries a caveat the dates cannot: the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); fund_nav points at catalog().applicability, the per-family column sets.';
+    'Freshness AND honesty per dataset. as_of = the newest period that has landed and has actually ELAPSED (bounded by today); complete_through = the newest COMPLETE period, which is what default windows serve; newest_period = the newest period KEY present, which can sit in the future when a family files forward-dated (FIP is keyed 31-December); landed_at = when ingest last SUCCEEDED for that source, from cvm_ingest_log (status ok with a finish time, so a later failed run never advances it). funds_<family> rows report each filing cadence separately. notes carries a caveat the dates cannot: the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); funds_fip states why its newest_period runs ahead; fund_nav points at catalog().applicability and api.metric_coverage().';
 
 REVOKE ALL ON FUNCTION api.coverage() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.coverage() TO anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- metric_coverage — the filed span of every (family, metric) pair
+-- ---------------------------------------------------------------------------
+-- coverage() answers "how fresh is this dataset". This answers "does this
+-- family file this metric at all, and since when" — the question an agent
+-- otherwise answers by pulling a series and inferring from nulls, which is
+-- exactly how a format change gets read as a credit event. Only pairs with at
+-- least one filed value are listed (see mv_metric_coverage): an absent pair is
+-- not-applicable, not late.
+CREATE OR REPLACE FUNCTION api.metric_coverage()
+RETURNS TABLE (
+    entity_type  TEXT,
+    metric       TEXT,
+    first_period DATE,
+    last_period  DATE,
+    filed_rows   BIGINT,
+    total_rows   BIGINT
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+    SELECT m.entity_type, m.metric, m.first_period, m.last_period,
+           m.filed_rows, m.total_rows
+    FROM public.mv_metric_coverage m
+    ORDER BY 1, 2;
+$$;
+
+COMMENT ON FUNCTION api.metric_coverage() IS
+    'Filed span per (entity_type, metric): first_period / last_period are the oldest and newest periods carrying a NON-NULL value, filed_rows / total_rows say how dense it is. A pair absent from this list is one the family never files (catalog().applicability) — not one whose data is late. Use it to read catalog().metrics.<m>.since against the warehouse instead of trusting a note.';
+
+REVOKE ALL ON FUNCTION api.metric_coverage() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.metric_coverage() TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Research panel — long observations a researcher can correlate / factor
@@ -2511,15 +2752,26 @@ STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-    SELECT
-        s.cd_cvm, 'cd_cvm'::text, s.cnpj, s.company, s.ticker,
-        s.doc_type, s.statement, s.scope,
-        s.ref_date, s.period_start, s.period_end, s.period_months,
-        s.account_code, s.account_name, s.value, s.version, 'cvm'::text
-    FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, p_statement) s
-    ORDER BY s.ref_date DESC, s.statement, s.period_months NULLS FIRST, s.account_code
-    -- Cap = serve _MAX_POINTS (5000) + 1, same lockstep as quote_history.
-    LIMIT 5001;
+    -- One page + one. The 1001st row is what makes "over the page"
+    -- detectable; assert_row_cap then REFUSES (22023) rather than handing
+    -- back a truncated series that looks complete. This function has no
+    -- cursor, so a caller over the page narrows the window instead.
+    -- The explicit column list lets the outer ORDER BY name columns as
+    -- declared, which also dodges OUT-parameter ambiguity.
+    WITH page (id, id_type, cnpj, company, ticker, doc_type, statement, scope, ref_date, period_start, period_end, period_months, account_code, account_name, value, version, source) AS (
+        SELECT
+            s.cd_cvm, 'cd_cvm'::text, s.cnpj, s.company, s.ticker,
+            s.doc_type, s.statement, s.scope,
+            s.ref_date, s.period_start, s.period_end, s.period_months,
+            s.account_code, s.account_name, s.value, s.version, 'cvm'::text
+        FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, p_statement) s
+        ORDER BY s.ref_date DESC, s.statement, s.period_months NULLS FIRST, s.account_code
+        LIMIT 1001
+    )
+    SELECT g.* FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'financials')
+    ORDER BY g.ref_date DESC, g.statement, g.period_months NULLS FIRST, g.account_code
+    LIMIT 1000;
 $$;
 
 REVOKE ALL ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
@@ -2559,66 +2811,78 @@ STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-    WITH s AS (
-        SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, NULL, NULL)
-    ),
-    income AS (
+    -- One page + one. The 1001st row is what makes "over the page"
+    -- detectable; assert_row_cap then REFUSES (22023) rather than handing
+    -- back a truncated series that looks complete. This function has no
+    -- cursor, so a caller over the page narrows the window instead.
+    -- The explicit column list lets the outer ORDER BY name columns as
+    -- declared, which also dodges OUT-parameter ambiguity.
+    WITH page (id, id_type, cnpj, company, ticker, doc_type, scope, ref_date, period_start, period_end, period_months, revenue, gross_profit, net_income, total_assets, equity, net_margin_pct, roe_pct, version, source) AS (
+        WITH s AS (
+            SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, NULL, NULL)
+        ),
+        income AS (
+            SELECT
+                s.cd_cvm, s.cnpj, s.company, s.ticker,
+                s.doc_type, s.scope, s.ref_date,
+                s.period_start, s.period_end, s.period_months, s.version,
+                -- max(...) FILTER, not sum: one (document, account) group can hold
+                -- several rows and summing them would double-count.
+                MAX(s.value) FILTER (WHERE s.account_code = '3.01') AS revenue,
+                MAX(s.value) FILTER (WHERE s.account_code = '3.03') AS gross_profit,
+                -- Banks file a different chart of accounts: 3.11 is absent and
+                -- net income lands on 3.09. Documented in docs/CIA_DATA_MAP.md.
+                COALESCE(
+                    MAX(s.value) FILTER (WHERE s.account_code = '3.11'),
+                    MAX(s.value) FILTER (WHERE s.account_code = '3.09')
+                ) AS net_income
+            FROM s
+            WHERE s.statement = 'DRE'
+            GROUP BY s.cd_cvm, s.cnpj, s.company, s.ticker, s.doc_type, s.scope,
+                     s.ref_date, s.period_start, s.period_end, s.period_months, s.version
+        ),
+        balance AS (
+            SELECT
+                s.doc_type, s.ref_date, s.version,
+                MAX(s.value) FILTER (WHERE s.statement = 'BPA' AND s.account_code = '1') AS total_assets,
+                -- Equity is matched by its published LABEL, not by code: the code
+                -- moves between 2.03 and 2.08 across chart layouts. This is the
+                -- one label match in the contract and it stays inside a single
+                -- company's own filing — it never joins two entities.
+                MAX(s.value) FILTER (
+                    WHERE s.statement = 'BPP'
+                      AND s.account_name IN ('Patrimônio Líquido Consolidado', 'Patrimônio Líquido')
+                ) AS equity
+            FROM s
+            WHERE s.statement IN ('BPA', 'BPP')
+            GROUP BY s.doc_type, s.ref_date, s.version
+        )
         SELECT
-            s.cd_cvm, s.cnpj, s.company, s.ticker,
-            s.doc_type, s.scope, s.ref_date,
-            s.period_start, s.period_end, s.period_months, s.version,
-            -- max(...) FILTER, not sum: one (document, account) group can hold
-            -- several rows and summing them would double-count.
-            MAX(s.value) FILTER (WHERE s.account_code = '3.01') AS revenue,
-            MAX(s.value) FILTER (WHERE s.account_code = '3.03') AS gross_profit,
-            -- Banks file a different chart of accounts: 3.11 is absent and
-            -- net income lands on 3.09. Documented in docs/CIA_DATA_MAP.md.
-            COALESCE(
-                MAX(s.value) FILTER (WHERE s.account_code = '3.11'),
-                MAX(s.value) FILTER (WHERE s.account_code = '3.09')
-            ) AS net_income
-        FROM s
-        WHERE s.statement = 'DRE'
-        GROUP BY s.cd_cvm, s.cnpj, s.company, s.ticker, s.doc_type, s.scope,
-                 s.ref_date, s.period_start, s.period_end, s.period_months, s.version
-    ),
-    balance AS (
-        SELECT
-            s.doc_type, s.ref_date, s.version,
-            MAX(s.value) FILTER (WHERE s.statement = 'BPA' AND s.account_code = '1') AS total_assets,
-            -- Equity is matched by its published LABEL, not by code: the code
-            -- moves between 2.03 and 2.08 across chart layouts. This is the
-            -- one label match in the contract and it stays inside a single
-            -- company's own filing — it never joins two entities.
-            MAX(s.value) FILTER (
-                WHERE s.statement = 'BPP'
-                  AND s.account_name IN ('Patrimônio Líquido Consolidado', 'Patrimônio Líquido')
-            ) AS equity
-        FROM s
-        WHERE s.statement IN ('BPA', 'BPP')
-        GROUP BY s.doc_type, s.ref_date, s.version
+            i.cd_cvm, 'cd_cvm'::text, i.cnpj, i.company, i.ticker,
+            i.doc_type, i.scope, i.ref_date,
+            i.period_start, i.period_end, i.period_months,
+            i.revenue, i.gross_profit, i.net_income,
+            b.total_assets, b.equity,
+            CASE WHEN i.revenue > 0 THEN round(100.0 * i.net_income / i.revenue, 2) END,
+            -- The period's return on equity, NOT annualised: a three-month row
+            -- divides a quarter's profit by equity. period_months says which.
+            CASE WHEN b.equity  > 0 THEN round(100.0 * i.net_income / b.equity,  2) END,
+            i.version, 'cvm'::text
+        FROM income i
+        -- Balance rows are joined on the SAME document version. A restatement that
+        -- bumps only the balance sheet leaves assets/equity NULL rather than
+        -- pairing this period's profit with a different filing's balance.
+        LEFT JOIN balance b
+               ON b.doc_type = i.doc_type
+              AND b.ref_date = i.ref_date
+              AND b.version IS NOT DISTINCT FROM i.version
+        ORDER BY i.ref_date DESC, i.doc_type, i.period_months NULLS FIRST
+        LIMIT 1001
     )
-    SELECT
-        i.cd_cvm, 'cd_cvm'::text, i.cnpj, i.company, i.ticker,
-        i.doc_type, i.scope, i.ref_date,
-        i.period_start, i.period_end, i.period_months,
-        i.revenue, i.gross_profit, i.net_income,
-        b.total_assets, b.equity,
-        CASE WHEN i.revenue > 0 THEN round(100.0 * i.net_income / i.revenue, 2) END,
-        -- The period's return on equity, NOT annualised: a three-month row
-        -- divides a quarter's profit by equity. period_months says which.
-        CASE WHEN b.equity  > 0 THEN round(100.0 * i.net_income / b.equity,  2) END,
-        i.version, 'cvm'::text
-    FROM income i
-    -- Balance rows are joined on the SAME document version. A restatement that
-    -- bumps only the balance sheet leaves assets/equity NULL rather than
-    -- pairing this period's profit with a different filing's balance.
-    LEFT JOIN balance b
-           ON b.doc_type = i.doc_type
-          AND b.ref_date = i.ref_date
-          AND b.version IS NOT DISTINCT FROM i.version
-    ORDER BY i.ref_date DESC, i.doc_type, i.period_months NULLS FIRST
-    LIMIT 5001;
+    SELECT g.* FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'company_financials')
+    ORDER BY g.ref_date DESC, g.doc_type, g.period_months NULLS FIRST
+    LIMIT 1000;
 $$;
 
 REVOKE ALL ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT) FROM PUBLIC;
@@ -2650,9 +2914,9 @@ AS $fn$
 SELECT $json$
 {
   "kind": "catalog",
-  "version": 24,
+  "version": 25,
   "primitive": "panel",
-  "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: panel REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page it with p_after or narrow it. The views and series functions still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
+  "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
     "principle": "price by default; every other measure is opt-in",
     "panel": {
@@ -2783,7 +3047,8 @@ SELECT $json$
         "month"
       ],
       "source": "cvm",
-      "meaning": "Fund net assets (vl_patrim_liq)."
+      "meaning": "Fund net assets (vl_patrim_liq).",
+      "coverage": "api.metric_coverage()"
     },
     "quota": {
       "id_type": [
@@ -2796,7 +3061,8 @@ SELECT $json$
         "month"
       ],
       "source": "cvm",
-      "meaning": "FI unit quota. Comparable subclass only."
+      "meaning": "FI unit quota. Comparable subclass only.",
+      "coverage": "api.metric_coverage()"
     },
     "delinquency": {
       "id_type": [
@@ -2810,7 +3076,11 @@ SELECT $json$
         "month"
       ],
       "source": "cvm",
-      "meaning": "Delinquent portfolio value (not a rate unless you divide by nav)."
+      "meaning": "Delinquent portfolio value (not a rate unless you divide by nav).",
+      "since": {
+        "fidc": "2025-01-31"
+      },
+      "coverage": "api.metric_coverage()"
     },
     "yield": {
       "id_type": [
@@ -2823,7 +3093,8 @@ SELECT $json$
         "month"
       ],
       "source": "cvm",
-      "meaning": "Monthly yield % as published (FII complemento)."
+      "meaning": "Monthly yield % as published (FII complemento).",
+      "coverage": "api.metric_coverage()"
     },
     "inflows": {
       "id_type": [
@@ -2836,7 +3107,8 @@ SELECT $json$
         "month"
       ],
       "source": "cvm",
-      "meaning": "Gross monthly subscriptions."
+      "meaning": "Gross monthly subscriptions.",
+      "coverage": "api.metric_coverage()"
     },
     "redemptions": {
       "id_type": [
@@ -2849,7 +3121,8 @@ SELECT $json$
         "month"
       ],
       "source": "cvm",
-      "meaning": "Gross monthly redemptions."
+      "meaning": "Gross monthly redemptions.",
+      "coverage": "api.metric_coverage()"
     },
     "quotaholders": {
       "id_type": [
@@ -2863,7 +3136,8 @@ SELECT $json$
         "month"
       ],
       "source": "cvm",
-      "meaning": "Number of unit-holders (fi, fii). Not served for fidc, fiagro, fip."
+      "meaning": "Number of unit-holders (fi, fii). Not served for fidc, fiagro, fip.",
+      "coverage": "api.metric_coverage()"
     }
   },
   "notebook_reducers": {
@@ -2891,7 +3165,7 @@ SELECT $json$
     "Default windows are honest: with no explicit `to`, fund metrics end at each family's latest COMPLETE period (coverage() reports it as complete_through) — a partially-filed trailing month is not served. An explicit `to` serves the window verbatim, partial months included.",
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
-    "Row caps — getting this wrong means silently analysing a TRUNCATED panel, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. api.panel now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short panel can no longer look complete. To get past 1000 rows, PAGE WITH p_after: send p_after='' for the first page, then the last row's 'date|id|metric|asset_class' for the next; every page is exactly 1000 rows until the last, which is shorter. Or narrow p_from/p_to, ids or metrics. The old 100001 sentinel is gone; 5001 on the series functions is still unreachable behind the 1000-row page and must not be used to detect truncation there (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views and on the series functions the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
+    "Row caps — getting this wrong means silently analysing a TRUNCATED series, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY set-returning function now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short result can no longer look complete. That is all eight — panel, quote_history, fund_nav, option_history, termo_history, financials, company_financials, anbima_classes (`limits.page.all`). THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send p_after='' for the first page, then the key from the last row — for the panel 'date|id|metric|asset_class', for quote_history and fund_nav just that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when paging, because its cursor is a bare period and one CNPJ can file under two families in the same month. The other five do not page: narrow p_from/p_to instead. The old sentinels (5001 on the series functions, 100001 on the panel) are GONE and were never observable anyway — PostgREST cut the response at 1000 first (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. The RPC functions no longer need it — they raise instead. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
     "An unrecognised metric name is IGNORED, not rejected: the panel comes back smaller and perfectly plausible. Take metric names from this catalog's `metrics` map, never from memory.",
     "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
     "CALLER TIERS. Anonymous access is free but deliberately small: panel accepts at most 3 ids per call, search_funds returns at most 25 rows, and option_chain pages at most 200. Signing in (GitHub) raises those to 50 ids, 200 rows and 2000 respectively, and the query timeout from 3s to 8s, and unlocks panel universe mode (p_ids empty + p_entity_type: a whole family, paged with p_after). Exceeding the id ceiling raises SQLSTATE 22023 naming the limit — the panel is never silently truncated to fit.",
@@ -2915,17 +3189,33 @@ SELECT $json$
     },
     "page": {
       "size": 1000,
-      "functions": [
-        "panel"
+      "all": [
+        "panel",
+        "quote_history",
+        "fund_nav",
+        "option_history",
+        "termo_history",
+        "financials",
+        "company_financials",
+        "anbima_classes"
       ],
+      "cursor_protocol": "p_after: null = whole result (refused above 1000 rows); '' = first page; the function's key copied from the last row = the next page; a page shorter than 1000 is the last",
+      "functions": {
+        "paged": {
+          "panel": "'<date>|<id>|<metric>|<asset_class>' copied from the last row; order is date, id, metric, asset_class",
+          "quote_history": "the last row's trade_date as 'YYYY-MM-DD'; order is trade_date",
+          "fund_nav": "the last row's period as 'YYYY-MM-DD'; order is period, entity_type. PAGING REQUIRES p_entity_type — the cursor is a bare period, which is unique only within one family, and 385 CNPJs file under two (fi + fidc) in the same month. Without it you get 22023, not a wrong answer. Whole-result mode needs no p_entity_type and labels every row with its family"
+        },
+        "raise_only": [
+          "option_history",
+          "termo_history",
+          "financials",
+          "company_financials",
+          "anbima_classes"
+        ]
+      },
       "over_cap": "SQLSTATE 22023 naming the function — nothing is trimmed to fit; the message says to page or narrow",
-      "cursor": "p_after: null = whole result (refused above 1000 rows); '' = first page; '<date>|<id>|<metric>|<asset_class>' copied from the last row = the next page; a page shorter than 1000 is the last",
-      "order": "date, id, metric, asset_class"
-    },
-    "sql_sentinel": {
-      "series": 5001,
-      "reachable": false,
-      "note": "the series functions' own LIMIT (serve _MAX_POINTS + 1). Unreachable behind the 1000-row ceiling on the hosted API; never a truncation signal there. panel no longer has one: it refuses over the page (see `page`)"
+      "no_sentinel": "there is no cap+1 row to count any more. The old 5001 (series) and 100001 (panel) sentinels were unobservable on the hosted API, because PostgREST cuts every response at 1000 rows long before either is reached; they are gone, and the 22023 replaces them"
     },
     "tiers": {
       "anon": {
@@ -3065,12 +3355,14 @@ SELECT $json$
     "lookup": "GET /v1/lookup?q=",
     "quotes": "GET /v1/quotes/{ticker}",
     "funds": "GET /v1/funds/{cnpj}/nav",
-    "coverage": "GET /v1/coverage"
+    "coverage": "GET /v1/coverage",
+    "metric_coverage": "GET /v1/metric-coverage"
   },
   "postgrest": {
     "panel": "POST /rest/v1/rpc/panel",
     "lookup": "POST /rest/v1/rpc/lookup",
     "coverage": "POST /rest/v1/rpc/coverage",
+    "metric_coverage": "POST /rest/v1/rpc/metric_coverage",
     "search_funds": "POST /rest/v1/rpc/search_funds",
     "fund_profile": "POST /rest/v1/rpc/fund_profile",
     "fund_holdings": "POST /rest/v1/rpc/fund_holdings",
@@ -3127,15 +3419,16 @@ GRANT SELECT ON api.equities, api.bdrs, api.units,
                 api.fund_quotas, api.cash_securities TO silo_api;
 GRANT SELECT ON api.auctions TO silo_api;
 
-GRANT EXECUTE ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT)   TO silo_api;
+GRANT EXECUTE ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.quote_latest(TEXT, TEXT)                TO silo_api;
 GRANT EXECUTE ON FUNCTION api.option_chain(TEXT, DATE, DATE, INT)     TO silo_api;
 GRANT EXECUTE ON FUNCTION api.option_history(TEXT, DATE, DATE)        TO silo_api;
 GRANT EXECUTE ON FUNCTION api.termo_history(TEXT, DATE, DATE)         TO silo_api;
 GRANT EXECUTE ON FUNCTION api.fund_profile(TEXT)                      TO silo_api;
-GRANT EXECUTE ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT)        TO silo_api;
+GRANT EXECUTE ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT, TEXT)  TO silo_api;
 GRANT EXECUTE ON FUNCTION api.search_funds(TEXT, TEXT, INT)           TO silo_api;
 GRANT EXECUTE ON FUNCTION api.coverage()                              TO silo_api;
+GRANT EXECUTE ON FUNCTION api.metric_coverage()                       TO silo_api;
 GRANT EXECUTE ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT, TEXT, NUMERIC, INT, TEXT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.lookup(TEXT)                            TO silo_api;
 GRANT EXECUTE ON FUNCTION api.fund_holdings(TEXT, TEXT, DATE, DATE, TEXT, INT) TO silo_api;

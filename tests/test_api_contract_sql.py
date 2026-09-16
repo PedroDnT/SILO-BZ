@@ -25,13 +25,24 @@ MIG_OPTION_PATH = ROOT / "src" / "store" / "migrations" / "21_b3_cotahist_option
 SQL19 = SQL19_PATH.read_text(encoding="utf-8")
 SQL12 = SQL12_PATH.read_text(encoding="utf-8")
 
-# Keep in lockstep with serve/app.py (_MAX_POINTS / _MAX_PANEL) and the cap
-# comments in 19_api_contract.sql: SQL caps are serve cap + 1 so the adapter
-# can 400 instead of silently truncating.
-SERIES_CAP = 5001
-# api.panel has no sentinel any more: it returns one 1000-row page (PostgREST
-# db-max-rows) and REFUSES (22023) above it unless the caller pages with p_after.
+# ONE page size everywhere: PostgREST db-max-rows, the SDK's SERVER_ROW_CAP,
+# serve/app.py's _PAGE and catalog().limits.page.size. Since v25 NO function
+# has a cap+1 sentinel: every one of them fetches PANEL_PAGE + 1 rows, sees the
+# overflow, and REFUSES (22023) rather than trimming.
 PANEL_PAGE = 1000
+
+# Every set-returning function that refuses above one page, and how it behaves
+# above it. The three `paged` ones take a p_after cursor; the rest ask the
+# caller to narrow the window.
+PAGED_FUNCTIONS = ("api.panel", "api.quote_history", "api.fund_nav")
+RAISE_ONLY_FUNCTIONS = (
+    "api.option_history",
+    "api.termo_history",
+    "api.financials",
+    "api.company_financials",
+    "api.anbima_classes",
+)
+CAPPED_FUNCTIONS = PAGED_FUNCTIONS + RAISE_ONLY_FUNCTIONS
 
 LANDING_PATTERN = re.compile(
     r"\b(?:public\.)?(?:cvm_\w+|b3_cotahist\w*|vw_b3_(?:quote_vista|instrument_typed))\b",
@@ -84,6 +95,7 @@ EXPECTED_FUNCTIONS = {
     "api.company_financials",
     "api.anbima_classes",
     "api.fund_debentures",
+    "api.metric_coverage",
 }
 
 # Internal helpers: called only from inside SECURITY DEFINER functions, which
@@ -95,6 +107,8 @@ INTERNAL_FUNCTIONS = {
     "api.assert_panel_ids",
     "api.assert_row_cap",
     "api.parse_panel_cursor",
+    "api.parse_date_cursor",
+    "api.assert_fund_nav_cursor",
     "api.assert_panel_universe",
     "api.company_ref",
     "api.cia_statement_rows",
@@ -433,32 +447,48 @@ def test_no_password_outside_comments():
 # Step 3 (SQL half) — hard row caps inside the functions
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize(
-    "fn,cap",
-    [
-        ("api.quote_history", SERIES_CAP),
-        ("api.fund_nav", SERIES_CAP),
-        ("api.option_history", SERIES_CAP),
-        ("api.termo_history", SERIES_CAP),
-    ],
-)
-def test_series_functions_carry_internal_row_caps(fn, cap):
+@pytest.mark.parametrize("fn", CAPPED_FUNCTIONS)
+def test_every_capped_function_fetches_one_page_plus_one_and_refuses(fn):
+    """A result trimmed to fit looks exactly like a complete one.
+
+    So no function returns a partial page: each fetches PANEL_PAGE + 1 rows,
+    and api.assert_row_cap sees the extra row and raises 22023. The final
+    LIMIT is the page itself, for the paging case.
+    """
     body = _strip_comments(FUNCS[fn])
-    assert re.search(rf"\bLIMIT\s+{cap}\b", body), f"{fn} lost its LIMIT {cap} cap"
+    page = body[body.index("page"):]
+    assert re.search(rf"\bLIMIT\s+{PANEL_PAGE + 1}\b", page), (
+        f"{fn} must fetch page+1 rows to see the overflow"
+    )
+    assert re.search(rf"\bLIMIT\s+{PANEL_PAGE}\b", page), (
+        f"{fn} must return at most one page"
+    )
+    name = fn.split(".", 1)[1]
+    assert f"api.assert_row_cap((SELECT count(*) FROM page)" in page, (
+        f"{fn} must count its own page and refuse over it"
+    )
+    assert f"'{name}')" in page, f"{fn} must name itself in the 22023"
 
 
-def test_caps_are_serve_caps_plus_one():
-    """The series SQL cap must be exactly serve's cap + 1: at the cap itself
-    serve could never distinguish 'too large' from 'complete' and would
-    silently hand back a truncated (fabricated) series. The panel is paged
-    instead: serve's total must be a whole number of 1000-row pages and its
-    page size must be the server's."""
+@pytest.mark.parametrize("fn", CAPPED_FUNCTIONS)
+def test_no_capped_function_keeps_the_unreachable_sentinel(fn):
+    """5001 and 100001 were cap+1 sentinels the hosted API could never reach:
+    PostgREST cut every response at 1000 rows first, so an oversized series
+    came back as 1000 rows with a 200 and no signal at all. They are gone."""
+    body = _strip_comments(FUNCS[fn])
+    assert not re.search(r"\bLIMIT\s+5001\b", body), f"{fn} still has the 5001 sentinel"
+    assert not re.search(r"\bLIMIT\s+100001\b", body), f"{fn} still has the 100001 sentinel"
+
+
+def test_serve_page_size_is_the_server_page_size():
+    """serve/ pages the SQL itself, so its page size must be the server's.
+    _MAX_POINTS/_MAX_PANEL are the ADAPTER's own envelope ceilings — they stop
+    its walk — and no longer stand in a cap+1 relation to anything in SQL."""
     app_py = (ROOT / "serve" / "app.py").read_text(encoding="utf-8")
     m_points = re.search(r"_MAX_POINTS\s*=\s*([\d_]+)", app_py)
     m_panel = re.search(r"_MAX_PANEL\s*=\s*([\d_]+)", app_py)
     m_page = re.search(r"_PAGE\s*=\s*([\d_]+)", app_py)
     assert m_points and m_panel and m_page, "serve/app.py no longer defines _MAX_POINTS/_MAX_PANEL/_PAGE"
-    assert SERIES_CAP == int(m_points.group(1).replace("_", "")) + 1
     assert int(m_page.group(1)) == PANEL_PAGE
     assert int(m_panel.group(1).replace("_", "")) % PANEL_PAGE == 0
 
@@ -486,7 +516,12 @@ def test_row_cap_helper_page_size_is_the_one_constant():
     from sdk.silo_client.client import SERVER_ROW_CAP
     limits = catalog_payload()["limits"]
     assert limits["page"]["size"] == PANEL_PAGE == SERVER_ROW_CAP == limits["rows_per_response"]["value"]
-    assert "panel" in limits["page"]["functions"]
+    # Every capped function is published, split by whether it hands back a
+    # cursor or asks the caller to narrow.
+    page = limits["page"]
+    assert set(page["all"]) == {f.split(".", 1)[1] for f in CAPPED_FUNCTIONS}
+    assert set(page["functions"]["paged"]) == {f.split(".", 1)[1] for f in PAGED_FUNCTIONS}
+    assert set(page["functions"]["raise_only"]) == {f.split(".", 1)[1] for f in RAISE_ONLY_FUNCTIONS}
 
 
 def test_panel_cursor_is_transparent_and_keyed_on_the_full_grain():
@@ -499,8 +534,13 @@ def test_panel_cursor_is_transparent_and_keyed_on_the_full_grain():
     assert "string_to_array(p_after, '|')" in parser
     assert "ERRCODE = '22023'" in parser
     from serve.catalog import catalog_payload
-    cursor = catalog_payload()["limits"]["page"]["cursor"]
-    assert "'' = first" in cursor and "<date>|<id>|<metric>|<asset_class>" in cursor
+    published = catalog_payload()["limits"]["page"]["functions"]["paged"]["panel"]
+    assert "date>|<id>|<metric>|<asset_class" in published, (
+        "the panel cursor must be published in full: an agent builds it from "
+        "the last row it received"
+    )
+    protocol = catalog_payload()["limits"]["page"]["cursor_protocol"]
+    assert "'' = first page" in protocol and "null = whole result" in protocol
 
 
 def test_panel_fund_arm_filters_entity_type_and_declares_the_grain():
@@ -678,7 +718,7 @@ def test_panel_and_fund_nav_default_windows_clamp_to_complete_periods():
     nav = _strip_comments(FUNCS["api.fund_nav"])
     assert re.search(r"p_to\s+DATE\s+DEFAULT\s+NULL", nav)
     assert "s.period <= public.latest_complete_period(s.entity_type)" in nav
-    assert "WHERE p_to IS NOT NULL" in nav
+    assert "(p_to IS NOT NULL" in nav
 
 
 def test_close_return_guards_adjacency_and_quotation_factor():
@@ -884,9 +924,12 @@ def test_catalog_limits_are_the_sql_tier_clamps():
     assert clamp("api.assert_panel_universe") == (int(anon["panel_universe"]), int(auth["panel_universe"]))
 
     limits = catalog_payload()["limits"]
-    assert limits["sql_sentinel"] == {**limits["sql_sentinel"], "series": SERIES_CAP}
-    assert "panel" not in limits["sql_sentinel"], "the panel has no sentinel: it refuses over the page"
-    assert limits["sql_sentinel"]["reachable"] is False
+    # v25: there is no sentinel block left to publish. Every function refuses
+    # over the page instead of leaving a cap+1 row for the caller to count.
+    assert "sql_sentinel" not in limits, (
+        "the sentinels are gone; publishing one again would tell agents to "
+        "detect truncation by a row count that PostgREST never lets them see"
+    )
     assert limits["page"]["size"] == PANEL_PAGE
     assert limits["rows_per_response"]["value"] == 1000
     # The timeouts are Supabase's per-role defaults, stated in the SQL header.
@@ -1252,14 +1295,21 @@ def test_cap_constraint_names_the_binding_cap_and_the_only_signal():
     assert "OLDEST" in c, "which end is kept is the reason truncation is invisible"
 
 
-def test_cap_constraint_no_longer_tells_agents_to_check_an_unreachable_sentinel():
+def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
     c = _cap_constraint()
-    # The sentinel may still be MENTIONED (to say it is unreachable), but the
-    # constraint must not present it as the way to detect truncation.
-    assert "unreachable" in c.lower(), (
-        "100001/5001 cannot fire behind a 1000-row ceiling; saying so is the point"
+    # The sentinels are gone, so the constraint no longer explains how to read
+    # one. What it must carry now is which functions page and which do not —
+    # getting THAT wrong is how a caller ends up narrowing a window they could
+    # have walked, or walking one that has no cursor.
+    assert "GONE" in c, "say plainly that the sentinels are gone"
+    for name in ("panel", "quote_history", "fund_nav"):
+        assert name in c, f"{name} pages; the constraint must say so"
+    assert "p_entity_type" in c, (
+        "fund_nav's cursor is a bare period: paging it without a family would "
+        "skip or repeat a row at a page edge, so the requirement is part of "
+        "the contract, not an implementation detail"
     )
-    assert "must not be used to detect truncation" in c
+    assert "eight" in c.lower(), "all eight capped functions refuse"
 
 
 def test_cap_constraint_warns_that_rpc_paging_does_not_work():
@@ -1335,3 +1385,138 @@ def test_catalog_version_moved_with_the_surface():
     py_v = int(re.search(r"CATALOG_VERSION = (\d+)", py).group(1))
     assert sql_v == py_v, f"catalog version drift: SQL {sql_v} vs serve {py_v}"
     assert sql_v >= 17, "fund_holdings shipped at v17"
+
+
+# ---------------------------------------------------------------------------
+# v25 — the series functions page, and coverage stops claiming the future
+# ---------------------------------------------------------------------------
+
+SQL04 = (ROOT / "src" / "store" / "analytical" / "04_fact_fund_monthly.sql").read_text(encoding="utf-8")
+SQL08 = (ROOT / "src" / "store" / "analytical" / "08_cron_schedules.sql").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("fn", PAGED_FUNCTIONS)
+def test_paged_functions_take_a_cursor_and_the_others_do_not(fn):
+    body = _strip_comments(FUNCS[fn])
+    assert "p_after" in body, f"{fn} is published as paged but takes no cursor"
+
+
+@pytest.mark.parametrize("fn", RAISE_ONLY_FUNCTIONS)
+def test_raise_only_functions_have_no_cursor(fn):
+    """Publishing a cursor these functions do not implement would send an
+    agent round a loop that never advances."""
+    body = _strip_comments(FUNCS[fn])
+    assert "p_after" not in body, f"{fn} is published as raise-only but takes a cursor"
+
+
+def test_the_date_cursor_is_shared_by_exactly_the_two_series_functions():
+    parser = _strip_comments(FUNCS["api.parse_date_cursor"])
+    assert r"^\d{4}-\d{2}-\d{2}$" in parser, "the cursor is a plain ISO date"
+    assert "ERRCODE = '22023'" in parser, "a malformed cursor must raise, not be ignored"
+    # p_fn is passed so the error names the function the agent actually called.
+    assert "p_fn" in parser
+    for fn in ("api.quote_history", "api.fund_nav"):
+        body = _strip_comments(FUNCS[fn])
+        name = fn.split(".", 1)[1]
+        assert f"api.parse_date_cursor(p_after, '{name}')" in body
+
+
+def test_fund_nav_paging_requires_a_family():
+    """The cursor is a bare period, and a period is unique only WITHIN one
+    family — 385 CNPJs file under two (fi + fidc) in the same month. Paging a
+    two-family result on a bare date would skip or repeat a row at a page
+    edge, so the server refuses rather than answering wrongly."""
+    guard = _strip_comments(FUNCS["api.assert_fund_nav_cursor"])
+    assert "ERRCODE = '22023'" in guard
+    assert "p_entity_type" in guard
+    nav = _strip_comments(FUNCS["api.fund_nav"])
+    assert "api.assert_fund_nav_cursor(c.paging, p_entity_type)" in nav, (
+        "the guard must ride the cursor parse, so it fires before any row is read"
+    )
+    # And the contract says so, in the copy an agent actually reads.
+    from serve.catalog import catalog_payload
+    published = catalog_payload()["limits"]["page"]["functions"]["paged"]["fund_nav"]
+    assert "p_entity_type" in published
+
+
+def test_fund_nav_publishes_the_panel_month_beside_the_filed_month():
+    """period is CVM's filed month-END date; api.panel keys fund rows on the
+    first of the month. Serving both means a caller joining the two does not
+    have to rediscover the difference."""
+    nav = _strip_comments(FUNCS["api.fund_nav"])
+    assert "period_month" in nav
+    assert "date_trunc('month', r.period)::date" in nav
+
+
+def test_coverage_separates_elapsed_from_filed_and_from_landed():
+    cov = _strip_comments(FUNCS["api.coverage"])
+    assert "newest_period    DATE" in cov and "landed_at        TIMESTAMPTZ" in cov
+    # as_of is bounded by today on every arm that can carry a forward-dated
+    # key. FIP files annually keyed to 31-December, so on 2026-09-16 the
+    # blended MAX read 2026-12-31 and an agent read it as freshness.
+    assert cov.count("FILTER (WHERE") >= 4, (
+        "every period arm must bound as_of by CURRENT_DATE"
+    )
+    assert "<= CURRENT_DATE" in cov
+
+
+def test_landed_at_reads_only_successful_finished_runs():
+    """A later FAILED run must not advance the date — that would report a
+    failure as freshness — and a run still in flight has not landed."""
+    cov = _strip_comments(FUNCS["api.coverage"])
+    landed = cov[cov.index("WITH landed AS ("):cov.index("base AS (")]
+    assert "l.status = 'ok'" in landed
+    assert "l.finished_at IS NOT NULL" in landed
+    assert "MAX(l.finished_at)" in landed
+
+
+def test_the_fip_row_explains_why_its_newest_period_runs_ahead():
+    cov = FUNCS["api.coverage"]
+    assert "WHEN 'fip' THEN" in cov
+    fip = cov[cov.index("WHEN 'fip' THEN"):].lower()
+    assert "never read newest_period as freshness" in fip, (
+        "the funds_fip row is exactly where as_of and newest_period diverge, "
+        "so it must say which one is freshness"
+    )
+
+
+def test_metric_coverage_is_measured_not_declared():
+    """An absent (family, metric) pair means the family never files it. The
+    HAVING is what makes that true: a pair with no filed value anywhere is
+    omitted rather than listed with null dates that read as a gap."""
+    assert "CREATE MATERIALIZED VIEW mv_metric_coverage AS" in SQL04
+    mv = SQL04[SQL04.index("CREATE MATERIALIZED VIEW mv_metric_coverage AS"):]
+    mv = mv[:mv.index("COMMENT ON MATERIALIZED VIEW mv_metric_coverage")]
+    assert "HAVING COUNT(*) FILTER (WHERE m.value IS NOT NULL) > 0" in mv
+    assert "CREATE UNIQUE INDEX ix_metric_coverage_pk" in mv, (
+        "a unique index is what lets the daily refresh run CONCURRENTLY"
+    )
+    fn = _strip_comments(FUNCS["api.metric_coverage"])
+    assert "public.mv_metric_coverage" in fn
+
+
+def test_metric_coverage_is_refreshed_and_granted():
+    assert "REFRESH MATERIALIZED VIEW CONCURRENTLY mv_metric_coverage" in SQL08
+    assert "'refresh-metric-coverage'" in SQL08
+    assert re.search(
+        r"GRANT\s+SELECT\s+ON\s+mv_metric_coverage\s+TO\s+anon,\s*authenticated", SQL12
+    ), "the function is DEFINER, but the matview still needs its own grant line"
+
+
+def test_fund_metrics_point_at_the_measured_coverage_not_a_written_date():
+    """Only one `since` is stated as a constant — the FIDC regime break, which
+    is a published boundary with its own lockstep test. Every other span is
+    measured, so the catalog points at the function instead of carrying a date
+    that can drift silently."""
+    from serve.catalog import METRICS
+
+    fund_metrics = [m for m, spec in METRICS.items() if spec.get("id_type") == ["cnpj"]]
+    assert fund_metrics, "expected fund metrics in the catalog"
+    with_since = [m for m in fund_metrics if "since" in METRICS[m]]
+    assert with_since == ["delinquency"], (
+        "a hardcoded `since` is a claim nobody re-measures; only the published "
+        f"regime break earns one, got {with_since}"
+    )
+    assert METRICS["delinquency"]["since"] == {"fidc": "2025-01-31"}
+    for m in fund_metrics:
+        assert METRICS[m].get("coverage") == "api.metric_coverage()", m

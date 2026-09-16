@@ -16,7 +16,9 @@ silo = SiloClient(url="https://<ref>.supabase.co", key="<publishable key>")
 # or set SILO_URL / SILO_ANON_KEY and call SiloClient()
 
 silo.catalog()                    # metric map + constraints — read it once
-silo.coverage()                   # as_of (landed) vs complete_through (served)
+silo.coverage()                   # as_of (elapsed) vs complete_through (served)
+                                  # vs newest_period (may be future) vs landed_at
+silo.metric_coverage()            # which (family, metric) pairs are filed, since when
 silo.lookup("petrobras")          # company rows carry tickers=["PETR3","PETR4"]
 
 df = silo.panel(
@@ -42,14 +44,30 @@ with its own `p_after` cursor — `iter_panel()` / `panel_all()` walk it, and
 a whole family for a signed-in caller.
 
 ```python
-from silo_client import SiloClient, SiloTruncated
+from silo_client import SiloClient, SiloOverCap, SiloTruncated
 
 try:
     rows = silo.quote_history("PETR4", start="2019-01-01")
+except SiloOverCap:
+    # Since catalog v25 the server REFUSES rather than trims, and the three
+    # long series page. A cursor walk, not a stitched guess:
+    rows = silo.quote_history_all("PETR4", start="2019-01-01")
+
+# fund_nav pages within ONE family: its cursor is a bare period, and 385 CNPJs
+# file under two families in the same month, so the family is not optional.
+nav = silo.fund_nav_all("05754060000113", "fi", start="2019-01-01")
+
+# SiloTruncated still fires on the GET views, which do cut at 1000 rows.
+try:
+    page = silo.view("funds", entity_type="eq.fidc")
 except SiloTruncated as e:
     print(e.returned, "of", e.total)     # 1000 of 4382
-    print(e.rows[-1]["trade_date"])      # where the cut fell — inspect, never use
+    print(e.rows[-1]["cnpj"])            # where the cut fell — inspect, never use
 ```
+
+`option_history`, `termo_history`, `financials`, `company_financials` and
+`anbima_classes` have no cursor: `SiloOverCap` there means narrow the window
+and call again.
 
 **Views are the one surface that pages**, and the client knows it. `view()`
 with an explicit `limit`/`offset` returns that page whatever the total;

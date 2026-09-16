@@ -72,7 +72,12 @@ def test_values_are_served_as_published():
 
 def test_the_cap_and_definer_hygiene():
     body = _body("anbima_classes")
-    assert "LIMIT 5001" in body
+    # v25: one page plus one row, then REFUSE. The old LIMIT 5001 was a
+    # sentinel PostgREST never let a caller reach.
+    assert "LIMIT 1001" in body and "LIMIT 1000" in body
+    assert "api.assert_row_cap((SELECT count(*) FROM page)" in body
+    assert "'anbima_classes')" in body, "the 22023 must name the function"
+    assert "LIMIT 5001" not in body
     assert "SECURITY DEFINER" in body and "SET search_path = ''" in body
     assert "ORDER BY 1, 2, 4, 6" in body, "positional order so the cut is deterministic"
 
@@ -85,7 +90,8 @@ def test_granted_to_every_client_role():
 
 def test_coverage_reports_the_boletim_as_complete_by_construction():
     cov = _body("coverage")
-    assert "SELECT 'anbima_classes'::text, MAX(a.reference_date), MAX(a.reference_date), 'anbima'::text" in cov
+    assert "SELECT 'anbima_classes'::text, MAX(a.reference_date), MAX(a.reference_date)," in cov
+    assert "'anbima'::text" in cov
 
 
 def test_the_catalog_names_the_endpoint_and_the_no_fund_rule():

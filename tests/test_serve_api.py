@@ -668,3 +668,88 @@ def test_coverage_serves_complete_through(client):
     sql = client.application.extensions["silo_pool"].cur.sql
     assert "complete_through" in sql
     assert "notes" in sql, "the regime-break / applicability caveat must reach /v1/coverage"
+
+
+# ---------------------------------------------------------------------------
+# v25 — the adapter pages the SQL and forwards the honest coverage columns
+# ---------------------------------------------------------------------------
+
+class _PagingCur(_Cur):
+    """Serves successive pages, recording the cursor it was asked for.
+
+    api.quote_history / api.fund_nav refuse a whole result over one page, so
+    the adapter must walk them; a single-shot cursor would silently stop at
+    1000 rows, which is the exact truncation this release removes.
+    """
+
+    def __init__(self, pages, description):
+        super().__init__(rows=[], description=description)
+        self._pages = list(pages)
+        self.cursors = []
+        self._i = 0
+
+    def execute(self, sql, params=None):
+        self.sql = sql
+        self.params = params
+        self.cursors.append(params[-1])
+        self._rows = self._pages[self._i] if self._i < len(self._pages) else []
+        self._i += 1
+
+
+def test_coverage_forwards_newest_period_and_landed_at(client):
+    """as_of is the newest ELAPSED period; newest_period is the newest KEY,
+    which sits in the future for a family that files forward-dated (FIP is
+    keyed 31-December). Dropping either column re-creates the bug."""
+    client.get("/v1/coverage")
+    sql = client.application.extensions["silo_pool"].cur.sql
+    assert "newest_period" in sql
+    assert "landed_at" in sql
+    assert "complete_through" in sql and "notes" in sql
+
+
+def test_metric_coverage_is_served(client):
+    client.pool.cur = _Cur(
+        rows=[("fidc", "delinquency", "2025-01-31", "2026-08-31", 73259, 73259)],
+        description=[("entity_type",), ("metric",), ("first_period",),
+                     ("last_period",), ("filed_rows",), ("total_rows",)],
+    )
+    rv = client.get("/v1/metric-coverage")
+    assert rv.status_code == 200
+    row = rv.get_json()["data"][0]
+    assert row["entity_type"] == "fidc" and row["metric"] == "delinquency"
+    assert "api.metric_coverage()" in client.pool.cur.sql
+
+
+def test_quote_history_walks_every_page(client):
+    page1 = [("PETR4", f"2019-01-{1 + (i % 28):02d}", 10.0 + i, "b3_cotahist", "R$", "02")
+             for i in range(1000)]
+    page2 = [("PETR4", "2023-06-01", 30.0, "b3_cotahist", "R$", "02")]
+    cur = _PagingCur([page1, page2],
+                     [("ticker",), ("trade_date",), ("close",), ("source",),
+                      ("currency",), ("board",)])
+    client.pool.cur = cur
+    rv = client.get("/v1/quotes/PETR4/history?from=2019-01-01&to=2023-12-31")
+    assert rv.status_code == 200
+    assert rv.get_json()["count"] == 1001, "a short page ends the walk, not a full one"
+    assert len(rv.get_json()["series"]) == 1001
+    # '' opens paging mode; the next cursor is the last row's trade_date.
+    assert cur.cursors[0] == ""
+    assert cur.cursors[1] == page1[-1][1]
+
+
+def test_fund_nav_pages_only_when_a_family_is_pinned(client):
+    """The nav cursor is a bare period, unique only within one family. With no
+    ?type= the adapter must ask for the whole result (p_after NULL) rather than
+    page on a key it cannot make unique."""
+    rows = [("05754060000113", "2024-01-31", "fi", 1.0)]
+    desc = [("cnpj",), ("period",), ("entity_type",), ("nav",)]
+
+    cur = _PagingCur([rows], desc)
+    client.pool.cur = cur
+    client.get("/v1/funds/05754060000113/nav")
+    assert cur.cursors == [None], "no family: whole-result mode, no cursor"
+
+    cur = _PagingCur([rows], desc)
+    client.pool.cur = cur
+    client.get("/v1/funds/05754060000113/nav?type=fi")
+    assert cur.cursors == [""], "family pinned: paging mode opens with ''"

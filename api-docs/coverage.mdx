@@ -44,8 +44,15 @@ different cadences and one blended date misreads all of them:
   row yet — read the newest `period` off the rows themselves until one exists.
 </ResponseField>
 <ResponseField name="as_of" type="date">
-  The newest period that has **landed** (freshness — what ingest has seen). **Nullable**
-  — a null means the dataset is empty, which is a real answer, not an error.
+  The newest period that has landed **and has actually elapsed** — freshness, bounded by
+  today. **Nullable** — a null means the dataset is empty, which is a real answer, not an
+  error.
+
+  It is bounded on purpose. A period key is not a statement about elapsed time: FIP files
+  annually keyed to 31-December, so a filing that arrives in March carries the period
+  `2026-12-31`. Before v25 the blended `funds.as_of` read `2026-12-31` in September, and
+  an agent reading it as freshness believed it had the fourth quarter. The forward-dated
+  key is still published, as `newest_period`.
 </ResponseField>
 <ResponseField name="complete_through" type="date">
   The newest period classified **complete** — what the default windows actually serve.
@@ -59,15 +66,33 @@ different cadences and one blended date misreads all of them:
   purpose — no completeness model exists for company filings, and a fabricated date is
   exactly the claim this endpoint exists to prevent.
 </ResponseField>
+<ResponseField name="newest_period" type="date">
+  The newest period **key** present, which can sit in the **future** — this is the raw
+  maximum, unbounded. For `funds_fip` it is a year-end date; for every dataset that files
+  in arrears it equals `as_of`. **Never read this as freshness**: it tells you the newest
+  label in the warehouse, not that the period has happened.
+</ResponseField>
+<ResponseField name="landed_at" type="timestamptz">
+  When ingest last **succeeded** for that source, from the `cvm_ingest_log` audit trail —
+  a wall-clock time, not a period. Only runs with `status = 'ok'` **and** a finish time
+  count, so a run still in flight has not landed and a later *failed* run never advances
+  it. **Nullable** when no successful run is recorded yet.
+
+  This is the column that answers "is the pipeline healthy" as opposed to "how far does
+  the data go". A `landed_at` days old with a current `as_of` means ingest has stopped but
+  the data it left behind is still fine.
+</ResponseField>
 <ResponseField name="source" type="text">
   `b3_cotahist` for quotes and derivatives, `cvm` for the fund and company datasets,
   `anbima` for the class benchmarks.
 </ResponseField>
 <ResponseField name="notes" type="text">
   A caveat the two dates cannot carry. **Nullable** — null on every row that has none.
-  Today two rows carry one: **`funds_fidc`** states the 2025-01 `delinquency` regime break
-  (null on every row before it, filed on every row after it — never chain-link through
-  it), and **`fund_nav`** points at `catalog().applicability`, the per-family column sets.
+  Today three rows carry one: **`funds_fidc`** states the 2025-01 `delinquency` regime
+  break (null on every row before it, filed on every row after it — never chain-link
+  through it), **`funds_fip`** explains why its `newest_period` runs ahead of the
+  calendar, and **`fund_nav`** points at `catalog().applicability` and
+  [`metric_coverage`](#metric-coverage).
   Read it before differencing any fund series; the same boundaries are machine-readable in
   `catalog().regime_breaks`.
 </ResponseField>
@@ -96,7 +121,8 @@ const { data } = await supabase.rpc('coverage')
 
 ```json
 [
-  { "dataset": "quotes",         "as_of": "2026-08-26", "complete_through": "2026-08-26", "source": "b3_cotahist", "notes": null },
+  { "dataset": "quotes",         "as_of": "2026-08-26", "complete_through": "2026-08-26", "source": "b3_cotahist", "notes": null,
+    "newest_period": "2026-08-26", "landed_at": "2026-08-27T06:12:44Z" },
   { "dataset": "funds",          "as_of": "2026-07-31", "complete_through": "2026-06-01", "source": "cvm",         "notes": null },
   { "dataset": "fund_nav",       "as_of": "2026-07-01", "complete_through": "2026-06-01", "source": "cvm",
     "notes": "columns are per family: a null outside the family's list in catalog().applicability is not applicable, not missing" },
@@ -108,7 +134,9 @@ const { data } = await supabase.rpc('coverage')
     "notes": "regime break at 2025-01-31: delinquency is null on every row through 2024-12-31 (CVM's pre-2025 tab II/III monthly file carries no delinquency field) and filed on every row from 2025-01-31 (tab IV/VI). Not zero, not clean books — never chain-link across 2024-12 → 2025-01. See catalog().regime_breaks." },
   { "dataset": "funds_fii",      "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "cvm",         "notes": null },
   { "dataset": "funds_fiagro",   "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "cvm",         "notes": null },
-  { "dataset": "funds_fip",      "as_of": "2025-12-31", "complete_through": "2025-12-31", "source": "cvm",         "notes": null }
+  { "dataset": "funds_fip",      "as_of": "2025-12-31", "complete_through": "2025-12-31", "source": "cvm",
+    "newest_period": "2026-12-31", "landed_at": "2026-08-27T06:31:02Z",
+    "notes": "files annually, keyed to 31-December: newest_period is a year-end key that can sit in the future, as_of is the newest period that has actually elapsed. Never read newest_period as freshness." }
 ]
 ```
 
@@ -149,6 +177,51 @@ boundary manufactures a move the fund never made. The list is machine-readable a
 `catalog().regime_breaks` (dataset, column, boundary, before, after, never); check it
 before differencing any fund series, the way you check `complete_through` before a
 window claim. Details on the FIDC case: [`fund_nav`](/api-docs/funds#which-columns-each-family-files).
+
+## metric_coverage
+
+`coverage` answers *how fresh is this dataset*. `metric_coverage` answers a different
+question: **does this family file this metric at all, and since when?**
+
+```bash
+curl -s -X POST "$SILO_URL/rest/v1/rpc/metric_coverage" \
+  -H "apikey: $SILO_ANON_KEY" -H "Content-Type: application/json" -d '{}'
+```
+
+```json
+[
+  { "entity_type": "fidc", "metric": "delinquency",
+    "first_period": "2025-01-31", "last_period": "2026-08-31",
+    "filed_rows": 73259, "total_rows": 178928 },
+  { "entity_type": "fidc", "metric": "nav",
+    "first_period": "2019-01-31", "last_period": "2026-08-31",
+    "filed_rows": 178928, "total_rows": 178928 }
+]
+```
+
+<ResponseField name="first_period / last_period" type="date">
+  The oldest and newest periods carrying a **non-null** value for that pair.
+</ResponseField>
+<ResponseField name="filed_rows / total_rows" type="bigint">
+  How dense the pair is: `filed_rows` counts the rows where the metric is present,
+  `total_rows` every row of that family in the window. `filed_rows` well below
+  `total_rows` means the metric is filed *sometimes*, which is different from filed
+  *always* and different again from never.
+</ResponseField>
+
+<Note>
+  **An absent pair is not-applicable, not late.** Only pairs with at least one filed
+  value appear. `("fip", "quotaholders")` is missing because FIP never files it — the
+  column is null by construction, exactly as `catalog().applicability` says — not because
+  the data has yet to arrive. Listing it with null dates would read as a gap, so it is
+  omitted instead.
+</Note>
+
+This is measured off the warehouse on every refresh, not written down once. That is why
+`catalog().metrics.<m>.coverage` points here rather than carrying a date: the one
+exception is `delinquency`, whose `since` is a published regime boundary with its own
+test. Use `metric_coverage` instead of inferring a start date from nulls in a series —
+inferring is how a format change gets read as a credit event.
 
 ## Errors
 

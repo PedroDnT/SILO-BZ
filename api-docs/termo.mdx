@@ -168,10 +168,13 @@ const { data } = await supabase.rpc('termo_history', {
 ```
 
 <Warning>
-  **Capped at 5,001 rows**, the same backstop as `quote_history`. Because several terms can
-  print per session, a busy code burns through the cap faster than a cash ticker — roughly
-  5,000 ÷ (terms per session) sessions. Exactly 5,001 rows means the oldest were kept and
-  the newest cut; narrow the window.
+  **One 1,000-row page, and it refuses above it.** A wider window raises SQLSTATE `22023`
+  naming the function — never a truncated series. Because several terms can print per
+  session, a busy code reaches the page faster than a cash ticker: roughly
+  1,000 ÷ (terms per session) sessions.
+
+  `termo_history` has **no cursor**: narrow `p_from` / `p_to` and call again. A term series
+  over a page is a sign the window is too wide, not something to walk.
 </Warning>
 
 ---
