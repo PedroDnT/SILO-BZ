@@ -118,6 +118,13 @@ Banks file a different chart of accounts — net income lands on a different
 account code — and that fallback is applied for you, so `net_income` is
 populated for banks and non-banks alike.
 
+<Warning>
+  **One 1,000-row page, and it refuses above it.** A request whose result would pass
+  1,000 rows raises SQLSTATE `22023` naming the function rather than handing back a
+  slice that looks complete. There is **no cursor** here: narrow the window, pin a `p_statement`, or ask for one `p_doc_type`,
+  and call again.
+</Warning>
+
 ## Freshness
 
 `coverage` carries a `financials` row whose `as_of` is the newest reference

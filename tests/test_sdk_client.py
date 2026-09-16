@@ -618,3 +618,93 @@ def test_universe_mode_needs_a_family_client_side():
         c.panel(None, metrics=["nav"])
     with pytest.raises(ValueError):
         list(c.iter_panel([], metrics=["nav"]))
+
+
+# ---------------------------------------------------------------------------
+# v26 — the series functions refuse and page like the panel
+# ---------------------------------------------------------------------------
+
+def _quote_rows(n: int, start: int = 0):
+    return [
+        {"ticker": "PETR4",
+         "trade_date": f"2019-{1 + (start + i) // 28 % 12:02d}-{1 + (start + i) % 28:02d}",
+         "close": 10.0 + i}
+        for i in range(n)
+    ]
+
+
+def test_iter_quote_history_walks_pages_with_the_last_rows_trade_date():
+    seen = []
+    page1 = _quote_rows(SERVER_ROW_CAP)
+    page2 = _quote_rows(7, start=SERVER_ROW_CAP)
+
+    def responder(request):
+        body = json.loads(request.content)
+        seen.append(body.get("p_after"))
+        rows = page1 if body.get("p_after") == "" else page2
+        return httpx.Response(200, json=rows,
+                              headers={"Content-Range": f"0-{len(rows)-1}/*"})
+
+    c = make_client(catalog_then(responder))
+    rows = list(c.iter_quote_history("PETR4", start="2019-01-01"))
+    assert len(rows) == SERVER_ROW_CAP + 7
+    # The cursor is the bare date of the last row, not a composite key.
+    assert seen == ["", page1[-1]["trade_date"]]
+
+
+def test_quote_history_all_is_the_iterator_collected():
+    def responder(request):
+        return httpx.Response(200, json=_quote_rows(4))
+
+    c = make_client(catalog_then(responder))
+    assert len(c.quote_history_all("PETR4")) == 4
+
+
+def test_iter_fund_nav_refuses_to_page_without_a_family():
+    """The cursor is a bare period, unique only within one family: 385 CNPJs
+    file under two in the same month. Paging without a family would skip or
+    repeat a row at a page edge, so the client refuses before the round trip
+    — the server refuses too (22023), but failing here names the fix."""
+    c = make_client(catalog_then(lambda r: httpx.Response(200, json=[])))
+    with pytest.raises(ValueError) as exc:
+        list(c.iter_fund_nav("05754060000113", ""))
+    assert "entity_type" in str(exc.value)
+    assert "fund_nav()" in str(exc.value), "name the whole-result escape hatch"
+
+
+def test_iter_fund_nav_pages_within_one_family_on_the_period():
+    seen = []
+    page1 = [{"cnpj": "05754060000113", "period": f"20{19 + i // 12:02d}-{1 + i % 12:02d}-28",
+              "entity_type": "fi", "nav": 1.0 * i} for i in range(SERVER_ROW_CAP)]
+    page2 = [{"cnpj": "05754060000113", "period": "2099-01-31",
+              "entity_type": "fi", "nav": 2.0}]
+
+    def responder(request):
+        body = json.loads(request.content)
+        seen.append((body.get("p_after"), body.get("p_entity_type")))
+        rows = page1 if body.get("p_after") == "" else page2
+        return httpx.Response(200, json=rows,
+                              headers={"Content-Range": f"0-{len(rows)-1}/*"})
+
+    c = make_client(catalog_then(responder))
+    rows = list(c.iter_fund_nav("05754060000113", "fi"))
+    assert len(rows) == SERVER_ROW_CAP + 1
+    # Every page carries the family; the cursor is the last row's period.
+    assert seen == [("", "fi"), (page1[-1]["period"], "fi")]
+
+
+def test_metric_coverage_is_served_and_separate_from_coverage():
+    calls = []
+
+    def responder(request):
+        calls.append(request.url.path)
+        return httpx.Response(200, json=[
+            {"entity_type": "fidc", "metric": "delinquency",
+             "first_period": "2025-01-31", "last_period": "2026-08-31",
+             "filed_rows": 73259, "total_rows": 73259},
+        ])
+
+    c = make_client(catalog_then(responder))
+    rows = c.metric_coverage()
+    assert calls[-1].endswith("/rpc/metric_coverage")
+    assert rows[0]["first_period"] == "2025-01-31"

@@ -168,8 +168,8 @@ const { data } = await supabase.rpc('option_chain', {
 ```
 
 <Warning>
-  **Capped at 2,000 rows.** This is a chain-*page* cap, distinct from the 5,001 series cap
-  elsewhere: one underlying's chain on one session is hundreds of series (strike × expiry ×
+  **Capped at 2,000 rows.** This is a chain-*page* cap, distinct from the 1,000-row series
+  page elsewhere: one underlying's chain on one session is hundreds of series (strike × expiry ×
   side), so 2,000 comfortably holds any honest single-prefix chain. Exactly 2,000 rows back
   means your prefix was broad enough to be cut — narrow it, or pin `p_expiry_from`.
 </Warning>
@@ -260,10 +260,13 @@ const { data } = await supabase.rpc('option_history', {
 ```
 
 <Warning>
-  **Capped at 5,001 rows**, the same backstop as `quote_history`. An option series lives for
-  months, so you will not reach it in practice. Exactly 5,001 rows means the oldest sessions
-  were kept and the newest were cut — narrow the window rather than using the truncated
-  series.
+  **One 1,000-row page, and it refuses above it.** A wider window raises SQLSTATE `22023`
+  naming the function — never a truncated series. An option series lives for months, so you
+  will not reach the page in practice.
+
+  `option_history` has **no cursor**: narrow `p_from` / `p_to` and call again. A window
+  over a page on a months-long series means the request is wrong, not that there is more
+  to walk.
 </Warning>
 
 ---

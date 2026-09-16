@@ -430,6 +430,46 @@ CREATE UNIQUE INDEX ix_period_completeness_pk
 COMMENT ON MATERIALIZED VIEW mv_period_completeness IS
     'Serving-readiness per (entity_type, period): a period is complete when its calendar month ended AND >= 80% of the trailing-6-period median fund count has reported. Drives latest_complete_period(); refreshed daily at 06:35 UTC and on every analytical apply. Classification only — no data is modified or dropped.';
 
+-- ---------------------------------------------------------------------------
+-- mv_metric_coverage — which (family, metric) pairs are ACTUALLY filed, and
+-- from when. Measured, not declared.
+-- ---------------------------------------------------------------------------
+-- catalog().applicability says which columns a family is expected to file;
+-- this says which ones the warehouse actually holds and over what span, so a
+-- caller can tell "not applicable to this family" from "applicable but not
+-- filed yet" without differencing a series to find out. The HAVING is the
+-- honest part: a pair with no filed value anywhere never appears, rather than
+-- appearing with null dates that read as a gap.
+--
+-- One scan of fact_fund_monthly (a VALUES unpivot), not eight UNION ALL arms.
+CREATE MATERIALIZED VIEW mv_metric_coverage AS
+SELECT
+    f.entity_type,
+    m.metric,
+    MIN(f.period) FILTER (WHERE m.value IS NOT NULL) AS first_period,
+    MAX(f.period) FILTER (WHERE m.value IS NOT NULL) AS last_period,
+    COUNT(*)      FILTER (WHERE m.value IS NOT NULL) AS filed_rows,
+    COUNT(*)                                          AS total_rows
+FROM fact_fund_monthly f
+CROSS JOIN LATERAL (VALUES
+    ('nav',           f.vl_patrim_liq::numeric),
+    ('quota',         f.vl_quota::numeric),
+    ('quotaholders',  f.nr_cotst::numeric),
+    ('delinquency',   f.vl_inadimpl::numeric),
+    ('monthly_yield', f.pct_yield_mes::numeric),
+    ('inflows',       f.captc_mes::numeric),
+    ('redemptions',   f.resg_mes::numeric),
+    ('assets',        f.vl_ativo::numeric)
+) AS m(metric, value)
+GROUP BY f.entity_type, m.metric
+HAVING COUNT(*) FILTER (WHERE m.value IS NOT NULL) > 0;
+
+CREATE UNIQUE INDEX ix_metric_coverage_pk
+    ON mv_metric_coverage (entity_type, metric);
+
+COMMENT ON MATERIALIZED VIEW mv_metric_coverage IS
+    'Filed span per (entity_type, metric) over fact_fund_monthly: first_period / last_period are the oldest and newest periods carrying a NON-NULL value, filed_rows / total_rows say how dense it is. Only pairs with at least one filed value appear — an absent pair means the family never files that metric (catalog().applicability), not that the data is late. Refreshed daily at 06:40 UTC and on every analytical apply. Served by api.metric_coverage().';
+
 -- The one-call form every consumer uses. NULL entity = the max over families
 -- (a spine upper bound for mixed charts; per-family rows still filter by
 -- their own family's bound). COALESCE floor: on an empty/cold database the

@@ -24,9 +24,23 @@ free but small: **3 ids per `panel` call**, 25 `search_funds` rows, a 200-row
 those to 50 / 200 / 2000 and 8s. It does **not** raise rows-per-response — the
 1000-row cap is server-wide for every caller. Do not mint or forge a key.
 
-Exceeding the id ceiling returns `22023` as a `400` naming the limit; the panel
-is never silently truncated. Landing tables are closed to both tiers. The same
-ceilings, as numbers, are `POST /rpc/catalog` → `.limits`.
+Exceeding the id ceiling returns `22023` as a `400` naming the limit; nothing is
+ever silently truncated. Since catalog v26 that holds for **every** set-returning
+function, not just the panel: a call whose result would pass one 1000-row page
+raises `22023` instead of trimming. Three of them page with a `p_after` cursor —
+`panel` (key `date|id|metric|asset_class`), `quote_history` (the last row's
+`trade_date`) and `fund_nav` (the last row's `period`, and paging there also
+requires `p_entity_type`, because one CNPJ can file under two families in the
+same month). The other five — `option_history`, `termo_history`, `financials`,
+`company_financials`, `anbima_classes` — have no cursor: narrow the window.
+
+Call `coverage` before claiming freshness, and read `as_of` (the newest period
+that has actually elapsed), not `newest_period` (the newest period key, which
+sits in the future for FIP — it files annually keyed to 31-December).
+`metric_coverage` says which `(family, metric)` pairs are filed at all and since
+when; a pair missing from it is one the family never files, not one that is
+late. Landing tables are closed to both tiers. The same ceilings, as numbers,
+are `POST /rpc/catalog` → `.limits`.
 
 To sign in, send a human to https://silo-bz.vercel.app/signin.html — it returns an access token. Then send
 BOTH headers:

@@ -83,6 +83,13 @@ name. `level` is what keeps them apart:
 -d '{"p_category":"FIP","p_level":null}'
 ```
 
+<Warning>
+  **One 1,000-row page, and it refuses above it.** A request whose result would pass
+  1,000 rows raises SQLSTATE `22023` naming the function rather than handing back a
+  slice that looks complete. There is **no cursor** here: narrow the window, pin a `p_category` or a `p_metric`,
+  and call again.
+</Warning>
+
 ## Freshness
 
 `coverage` carries an `anbima_classes` row. Its `complete_through` equals its

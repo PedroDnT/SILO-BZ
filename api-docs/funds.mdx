@@ -423,10 +423,32 @@ are null by construction, and `period` is the month's last day.
 </Warning>
 
 <Warning>
-  **Capped at 5,001 rows.** At a monthly grain that is roughly 400 years, so hitting it means
-  something is wrong with the request rather than the fund. Exactly 5,001 rows means the
-  oldest were kept and the rest cut.
+  **One 1,000-row page, and it refuses above it.** A window that would return more than
+  1,000 rows raises SQLSTATE `22023` rather than handing back a slice. At a monthly grain
+  1,000 rows is over 80 years of one fund, so reaching it usually means the request is
+  wrong rather than the fund.
+
+  **Paging requires `p_entity_type`.** The cursor is a bare `period`, and a period is
+  unique only *within* one family — 385 CNPJs file under two (`fi` and `fidc`) in the same
+  month, so a bare-date cursor would skip or repeat a row at a page edge. Pass the family
+  alongside `p_after`, or drop `p_after` and let the whole result come back with every row
+  labelled by `entity_type`:
+
+  ```json
+  { "p_cnpj": "05754060000113", "p_entity_type": "fi", "p_after": "" }
+  { "p_cnpj": "05754060000113", "p_entity_type": "fi", "p_after": "2023-06-30" }
+  ```
+
+  In the Python SDK: `silo.iter_fund_nav("05754060000113", "fi")`, which raises locally if
+  you leave the family out.
 </Warning>
+
+<Note>
+  **`period` and `period_month` are two conventions for the same month.** `period` is
+  CVM's filed month-**end** date (`2024-01-31`); the trailing `period_month` is the first
+  of that month (`2024-01-01`), which is how [`panel`](/api-docs/panel) keys fund
+  observations. Join a nav series to a panel on `period_month`, not on `period`.
+</Note>
 
 ## Empty and error behavior
 
