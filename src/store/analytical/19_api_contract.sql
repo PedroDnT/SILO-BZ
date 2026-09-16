@@ -1746,6 +1746,294 @@ COMMENT ON FUNCTION api.fund_debentures(TEXT, TEXT, DATE, DATE, INT) IS
     'Fund debenture holdings from CDA block 6. Give exactly one of p_cnpj (what this fund holds) or p_issuer (which funds hold this issuer''s paper; a listed ticker/CVM code via the published FCA map, or any CPF/CNPJ). One row per (fund, month, issuer, maturity, rate structure, application type), as filed — never summed. issuer_tickers = the issuer''s active listed codes, NULL when not listed.';
 
 -- ---------------------------------------------------------------------------
+-- FIDC concentration — tabs I, VIII, II and X of the informe mensal (mig. 38)
+-- ---------------------------------------------------------------------------
+-- Three shapes, because the source has three:
+--   fidc_cedentes   tab I's cedente slots — the fund → named-ORIGINATOR edge.
+--                   The identifier is the cedente's own filed CPF/CNPJ (kept
+--                   at ingest only when its check digits verify), so which
+--                   funds buy from one originator is answerable by CNPJ with
+--                   no name match; a listed originator is also reachable by
+--                   ticker through the FCA map, like fund_debentures' issuer.
+--                   share_pct is a percent OF THE BLOCK (A = risks retained by
+--                   the originator, B = not), not of the fund.
+--   fidc_sacados    tab VIII — the 25 largest DEBTORS as (rank, value), with
+--                   no identity in the source. seq is CVM's rank as filed and
+--                   is never recomputed here.
+--   fidc_portfolio  tab II's sector hierarchy and tab X's SCR grade ladders,
+--                   long: (kind, code, parent, item, value). The wide tables
+--                   are the ingest shape; the long form is what a notebook
+--                   pivots. `parent` is what keeps a caller from summing C
+--                   and C1 together.
+-- Tiered 500 / 5000 like fund_holdings. Default windows are verbatim (an
+-- explicit range); these tabs are members of the same monthly informe as
+-- cvm_fidc_mensal, so coverage()'s fidc_* rows report their completeness.
+
+CREATE OR REPLACE FUNCTION api.fidc_cedentes(
+    p_cnpj    TEXT DEFAULT NULL,   -- the FUND: who it buys receivables from
+    p_cedente TEXT DEFAULT NULL,   -- the ORIGINATOR: CPF/CNPJ, or a listed ticker / CVM code — which funds buy from it
+    p_from    DATE DEFAULT NULL,
+    p_to      DATE DEFAULT NULL,
+    p_limit   INT  DEFAULT NULL
+)
+RETURNS TABLE (
+    cnpj            TEXT,
+    period          DATE,
+    bloco           TEXT,     -- A = risks/benefits retained by the cedente; B = not
+    seq             INT,      -- CVM's slot 1..9, as filed
+    cedente_id      TEXT,     -- the originator's CPF/CNPJ, digits only, checksum-verified at ingest
+    cedente_tickers TEXT[],   -- active listed codes from the FCA map; NULL when not listed
+    share_pct       NUMERIC   -- percent of the block, as filed
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+DECLARE
+    v_cnpj   TEXT := NULLIF(regexp_replace(COALESCE(p_cnpj, ''), '\D', '', 'g'), '');
+    v_raw    TEXT := NULLIF(btrim(COALESCE(p_cedente, '')), '');
+    v_digits TEXT;
+    v_cap    INT  := CASE api.caller_tier()
+                         WHEN 'authenticated' THEN 5000 ELSE 500 END;
+    v_limit  INT;
+BEGIN
+    IF (v_cnpj IS NULL) = (v_raw IS NULL) THEN
+        RAISE EXCEPTION
+            'fidc_cedentes needs exactly one of p_cnpj (which originators this fund buys from) '
+            'or p_cedente (which funds buy from this originator); % were given',
+            CASE WHEN v_cnpj IS NULL THEN 'neither' ELSE 'both' END
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF v_raw IS NOT NULL THEN
+        v_digits := NULLIF(regexp_replace(v_raw, '\D', '', 'g'), '');
+        IF v_digits IS NOT NULL AND length(v_digits) IN (11, 14) AND v_digits = regexp_replace(v_raw, '[.\-/ ]', '', 'g') THEN
+            -- A CPF or CNPJ, listed or not: matched as given. The column
+            -- holds digits only (ingest strips and verifies them), so no
+            -- punctuated form is needed.
+            NULL;
+        ELSE
+            -- A ticker or CVM code: the published FCA map, active listings
+            -- only, via the same resolver api.financials uses.
+            SELECT r.cnpj INTO v_digits FROM api.company_ref(v_raw) r;
+            IF v_digits IS NULL THEN
+                RAISE EXCEPTION
+                    'unknown cedente %: give a listed company''s ticker or CVM code (resolved through CVM''s published FCA map, active listings only) or the originator''s CPF/CNPJ — most originators are not listed and only their CNPJ reaches them',
+                    p_cedente
+                    USING ERRCODE = '22023';
+            END IF;
+        END IF;
+    END IF;
+
+    v_limit := LEAST(GREATEST(COALESCE(p_limit, v_cap), 1), v_cap);
+
+    RETURN QUERY
+    SELECT c.cnpj,
+           c.period,
+           c.bloco,
+           c.seq,
+           c.cpf_cnpj_cedente,
+           t.tickers,
+           c.pr_cedente
+    FROM public.cvm_fidc_cedente c
+    LEFT JOIN LATERAL (
+        SELECT array_agg(vt.codneg ORDER BY vt.codneg) AS tickers
+        FROM public.vw_company_ticker vt
+        WHERE vt.is_active
+          AND vt.cnpj_cia = c.cpf_cnpj_cedente
+    ) t ON TRUE
+    WHERE (v_cnpj   IS NULL OR c.cnpj = v_cnpj)
+      AND (v_digits IS NULL OR c.cpf_cnpj_cedente = v_digits)
+      AND (p_from IS NULL OR c.period >= p_from)
+      AND (p_to   IS NULL OR c.period <= p_to)
+    ORDER BY c.period DESC, c.cnpj, c.bloco, c.seq
+    LIMIT v_limit;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION api.fidc_cedentes(TEXT, TEXT, DATE, DATE, INT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.fidc_cedentes(TEXT, TEXT, DATE, DATE, INT)
+    TO anon, authenticated;
+
+COMMENT ON FUNCTION api.fidc_cedentes(TEXT, TEXT, DATE, DATE, INT) IS
+    'FIDC named-originator concentration from informe tab I. Give exactly one of p_cnpj (which originators this fund buys from) or p_cedente (which funds buy from this originator: any CPF/CNPJ, or a listed ticker/CVM code via the published FCA map). One row per (fund, month, block, slot) as filed; share_pct is a percent of the BLOCK (A = risks retained by the cedente, B = not), never of the fund. cedente_id was checksum-verified at ingest; cedente_tickers = its active listed codes, NULL when not listed. share_pct is as filed and carries CVM''s percentage-field outliers (9% of slots above 100 in 2026-07) — range-check it, never read it as a fraction. Slots exist from 2019-11.';
+
+CREATE OR REPLACE FUNCTION api.fidc_sacados(
+    p_cnpj  TEXT,
+    p_from  DATE DEFAULT NULL,
+    p_to    DATE DEFAULT NULL,
+    p_limit INT  DEFAULT NULL
+)
+RETURNS TABLE (
+    cnpj   TEXT,
+    period DATE,
+    seq    INT,      -- CVM's rank 1..25, as filed, never recomputed
+    valor  NUMERIC   -- exposure to that (anonymized) debtor
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+DECLARE
+    v_cnpj  TEXT := NULLIF(regexp_replace(COALESCE(p_cnpj, ''), '\D', '', 'g'), '');
+    v_cap   INT  := CASE api.caller_tier()
+                        WHEN 'authenticated' THEN 5000 ELSE 500 END;
+    v_limit INT;
+BEGIN
+    IF v_cnpj IS NULL THEN
+        RAISE EXCEPTION
+            'fidc_sacados needs p_cnpj: tab VIII publishes debtors as anonymized ranks, so there is no debtor-side lookup'
+            USING ERRCODE = '22023';
+    END IF;
+
+    v_limit := LEAST(GREATEST(COALESCE(p_limit, v_cap), 1), v_cap);
+
+    RETURN QUERY
+    SELECT k.cnpj, k.period, k.seq, k.valor
+    FROM public.cvm_fidc_sacado k
+    WHERE k.cnpj = v_cnpj
+      AND (p_from IS NULL OR k.period >= p_from)
+      AND (p_to   IS NULL OR k.period <= p_to)
+    ORDER BY k.period DESC, k.seq
+    LIMIT v_limit;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION api.fidc_sacados(TEXT, DATE, DATE, INT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.fidc_sacados(TEXT, DATE, DATE, INT)
+    TO anon, authenticated;
+
+COMMENT ON FUNCTION api.fidc_sacados(TEXT, DATE, DATE, INT) IS
+    'The 25 largest debtors of one FIDC from informe tab VIII, as filed: (rank, value), no identity — CVM publishes the concentration anonymized and its dictionary describes neither column. seq is CVM''s rank and is never recomputed from valor; a fund that files fewer than 25 ranks has fewer rows. A concentration ratio is valor / receivables (panel metric) in the notebook. From 2013-01.';
+
+CREATE OR REPLACE FUNCTION api.fidc_portfolio(
+    p_cnpj  TEXT,
+    p_kind  TEXT DEFAULT NULL,   -- sector | scr_debtor | scr_operation | tax_debt; NULL = every kind
+    p_from  DATE DEFAULT NULL,
+    p_to    DATE DEFAULT NULL,
+    p_limit INT  DEFAULT NULL
+)
+RETURNS TABLE (
+    cnpj   TEXT,
+    period DATE,
+    kind   TEXT,
+    code   TEXT,     -- sector: TOTAL, A..K, C1..I4 (CVM's item code); scr: AA..H; tax_debt: DEBITO_TRIBUT
+    parent TEXT,     -- the lettered sector a numbered code belongs to; NULL at the top
+    item   TEXT,     -- the column's own name, e.g. cred_corp, midmarket
+    value  NUMERIC
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+DECLARE
+    v_cnpj  TEXT := NULLIF(regexp_replace(COALESCE(p_cnpj, ''), '\D', '', 'g'), '');
+    v_kind  TEXT := NULLIF(lower(btrim(COALESCE(p_kind, ''))), '');
+    v_cap   INT  := CASE api.caller_tier()
+                        WHEN 'authenticated' THEN 5000 ELSE 500 END;
+    v_limit INT;
+BEGIN
+    IF v_cnpj IS NULL THEN
+        RAISE EXCEPTION 'fidc_portfolio needs p_cnpj' USING ERRCODE = '22023';
+    END IF;
+    IF v_kind IS NOT NULL AND v_kind NOT IN ('sector', 'scr_debtor', 'scr_operation', 'tax_debt') THEN
+        RAISE EXCEPTION
+            'unknown p_kind %: one of sector (tab II), scr_debtor, scr_operation (tab X ladders), tax_debt, or NULL for all',
+            p_kind
+            USING ERRCODE = '22023';
+    END IF;
+
+    v_limit := LEAST(GREATEST(COALESCE(p_limit, v_cap), 1), v_cap);
+
+    RETURN QUERY
+    SELECT u.cnpj, u.period, u.kind, u.code, u.parent, u.item, u.value
+    FROM (
+        SELECT s.cnpj, s.period, 'sector'::text AS kind, v.code, v.parent, v.item, v.value
+        FROM public.cvm_fidc_setor s
+        CROSS JOIN LATERAL (VALUES
+            ('TOTAL', NULL, 'carteira',            s.vl_carteira),
+            ('A',  NULL, 'indust',                 s.vl_a_indust),
+            ('B',  NULL, 'imobil',                 s.vl_b_imobil),
+            ('C',  NULL, 'comerc',                 s.vl_c_comerc),
+            ('C1', 'C',  'comerc',                 s.vl_c1_comerc),
+            ('C2', 'C',  'varejo',                 s.vl_c2_varejo),
+            ('C3', 'C',  'arrend',                 s.vl_c3_arrend),
+            ('D',  NULL, 'serv',                   s.vl_d_serv),
+            ('D1', 'D',  'serv',                   s.vl_d1_serv),
+            ('D2', 'D',  'serv_publico',           s.vl_d2_serv_publico),
+            ('D3', 'D',  'serv_educ',              s.vl_d3_serv_educ),
+            ('D4', 'D',  'entret',                 s.vl_d4_entret),
+            ('E',  NULL, 'agroneg',                s.vl_e_agroneg),
+            ('F',  NULL, 'financ',                 s.vl_f_financ),
+            ('F1', 'F',  'cred_pessoa',            s.vl_f1_cred_pessoa),
+            ('F2', 'F',  'cred_pessoa_consig',     s.vl_f2_cred_pessoa_consig),
+            ('F3', 'F',  'cred_corp',              s.vl_f3_cred_corp),
+            ('F4', 'F',  'midmarket',              s.vl_f4_midmarket),
+            ('F5', 'F',  'veiculo',                s.vl_f5_veiculo),
+            ('F6', 'F',  'imobil_empresa',         s.vl_f6_imobil_empresa),
+            ('F7', 'F',  'imobil_resid',           s.vl_f7_imobil_resid),
+            ('F8', 'F',  'outro',                  s.vl_f8_outro),
+            ('G',  NULL, 'credito',                s.vl_g_credito),
+            ('H',  NULL, 'factor',                 s.vl_h_factor),
+            ('H1', 'H',  'pessoa',                 s.vl_h1_pessoa),
+            ('H2', 'H',  'corp',                   s.vl_h2_corp),
+            ('I',  NULL, 'setor_publico',          s.vl_i_setor_publico),
+            ('I1', 'I',  'precat',                 s.vl_i1_precat),
+            ('I2', 'I',  'tribut',                 s.vl_i2_tribut),
+            ('I3', 'I',  'royalties',              s.vl_i3_royalties),
+            ('I4', 'I',  'outro',                  s.vl_i4_outro),
+            ('J',  NULL, 'judicial',               s.vl_j_judicial),
+            ('K',  NULL, 'marca',                  s.vl_k_marca)
+        ) AS v(code, parent, item, value)
+        WHERE s.cnpj = v_cnpj
+          AND (v_kind IS NULL OR v_kind = 'sector')
+          AND (p_from IS NULL OR s.period >= p_from)
+          AND (p_to   IS NULL OR s.period <= p_to)
+        UNION ALL
+        SELECT r.cnpj, r.period, v.kind, v.code, NULL::text, v.item, v.value
+        FROM public.cvm_fidc_scr r
+        CROSS JOIN LATERAL (VALUES
+            ('scr_debtor',    'AA', 'devedor_aa',  r.vl_devedor_aa),
+            ('scr_debtor',    'A',  'devedor_a',   r.vl_devedor_a),
+            ('scr_debtor',    'B',  'devedor_b',   r.vl_devedor_b),
+            ('scr_debtor',    'C',  'devedor_c',   r.vl_devedor_c),
+            ('scr_debtor',    'D',  'devedor_d',   r.vl_devedor_d),
+            ('scr_debtor',    'E',  'devedor_e',   r.vl_devedor_e),
+            ('scr_debtor',    'F',  'devedor_f',   r.vl_devedor_f),
+            ('scr_debtor',    'G',  'devedor_g',   r.vl_devedor_g),
+            ('scr_debtor',    'H',  'devedor_h',   r.vl_devedor_h),
+            ('scr_operation', 'AA', 'oper_aa',     r.vl_oper_aa),
+            ('scr_operation', 'A',  'oper_a',      r.vl_oper_a),
+            ('scr_operation', 'B',  'oper_b',      r.vl_oper_b),
+            ('scr_operation', 'C',  'oper_c',      r.vl_oper_c),
+            ('scr_operation', 'D',  'oper_d',      r.vl_oper_d),
+            ('scr_operation', 'E',  'oper_e',      r.vl_oper_e),
+            ('scr_operation', 'F',  'oper_f',      r.vl_oper_f),
+            ('scr_operation', 'G',  'oper_g',      r.vl_oper_g),
+            ('scr_operation', 'H',  'oper_h',      r.vl_oper_h),
+            ('tax_debt',      'DEBITO_TRIBUT', 'debito_tribut', r.vl_debito_tribut)
+        ) AS v(kind, code, item, value)
+        WHERE r.cnpj = v_cnpj
+          AND (v_kind IS NULL OR v_kind = v.kind)
+          AND (p_from IS NULL OR r.period >= p_from)
+          AND (p_to   IS NULL OR r.period <= p_to)
+    ) u
+    ORDER BY u.period DESC, u.kind, u.code
+    LIMIT v_limit;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION api.fidc_portfolio(TEXT, TEXT, DATE, DATE, INT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.fidc_portfolio(TEXT, TEXT, DATE, DATE, INT)
+    TO anon, authenticated;
+
+COMMENT ON FUNCTION api.fidc_portfolio(TEXT, TEXT, DATE, DATE, INT) IS
+    'One FIDC''s receivables book, long: kind=sector is informe tab II (TOTAL, the lettered sectors A..K, and their numbered members — `parent` names the letter a numbered code belongs to; sum leaves or parents, never both); kind=scr_debtor / scr_operation are tab X''s BACEN SCR grade ladders AA..H for the same receivables graded two ways; kind=tax_debt is TAB_X_DEBITO_TRIBUT. Values as filed. tab II from 2013-01; tab X from 2023-10 (earlier months have no scr rows, not zero-graded ones). An unknown p_kind raises 22023.';
+
+-- ---------------------------------------------------------------------------
 -- ANBIMA class aggregates — the industry benchmark series, as published
 -- ---------------------------------------------------------------------------
 -- anbima_class_monthly is the "Boletim de Fundos de Investimento" read long:
@@ -2020,6 +2308,40 @@ AS $$
         SELECT 'anbima_classes'::text, MAX(a.reference_date), MAX(a.reference_date),
                'anbima'::text, NULL::text, MAX(a.reference_date), 'anbima_etf'::text
         FROM public.anbima_class_monthly a
+        UNION ALL
+        -- FIDC concentration tabs (migration 38, #233). Members of the same
+        -- monthly informe as cvm_fidc_mensal, so the fidc completeness clamp
+        -- applies. Each MAX is an index-only probe on (period DESC). notes
+        -- carry what the dates cannot: where each series starts and what its
+        -- identifiers are. as_of is bounded like every other period arm; these
+        -- file monthly in arrears, so it should equal newest_period.
+        SELECT 'fidc_cedentes'::text,
+               MAX(c.period) FILTER (WHERE c.period <= CURRENT_DATE),
+               public.latest_complete_period('fidc'), 'cvm'::text,
+               'tab I cedente slots exist from 2019-11; cedente_id is checksum-verified at ingest (placeholders dropped, never coerced); share_pct is a percent of the block, not of the fund'::text,
+               MAX(c.period), 'fidc'::text
+        FROM public.cvm_fidc_cedente c
+        UNION ALL
+        SELECT 'fidc_sacados'::text,
+               MAX(k.period) FILTER (WHERE k.period <= CURRENT_DATE),
+               public.latest_complete_period('fidc'), 'cvm'::text,
+               'tab VIII from 2013-01: the 25 largest debtors as anonymized (rank, value); seq is CVM''s rank as filed, never recomputed'::text,
+               MAX(k.period), 'fidc'::text
+        FROM public.cvm_fidc_sacado k
+        UNION ALL
+        SELECT 'fidc_sectors'::text,
+               MAX(s.period) FILTER (WHERE s.period <= CURRENT_DATE),
+               public.latest_complete_period('fidc'), 'cvm'::text,
+               'tab II from 2013-01: receivables by sector, a hierarchy (fidc_portfolio.parent); TOTAL is the panel metric receivables'::text,
+               MAX(s.period), 'fidc'::text
+        FROM public.cvm_fidc_setor s
+        UNION ALL
+        SELECT 'fidc_scr'::text,
+               MAX(r2.period) FILTER (WHERE r2.period <= CURRENT_DATE),
+               public.latest_complete_period('fidc'), 'cvm'::text,
+               'tab X exists from 2023-10 only: SCR grade ladders AA..H by debtor and by operation; a month before that has no rows, not zero-graded ones'::text,
+               MAX(r2.period), 'fidc'::text
+        FROM public.cvm_fidc_scr r2
     )
     SELECT b.dataset, b.as_of, b.complete_through, b.source, b.notes,
            b.newest_period, l.landed_at
@@ -2395,6 +2717,54 @@ fund_rows AS (
       )
       AND f.cnpj IN (SELECT cnpj FROM cnpjs)
       AND (p.entity_type IS NULL OR f.entity_type = p.entity_type)
+),
+-- FIDC concentration arms (migration 38). Same month normalisation and the
+-- same two-regime upper bound as fund_rows; the family is fidc by
+-- construction, so p_entity_type either is NULL, is 'fidc', or excludes
+-- these rows. Read only when asked for: the metric test is in the WHERE so
+-- a default (close, nav) panel never touches these tables.
+fidc_book AS (
+    SELECT s.cnpj,
+           date_trunc('month', s.period)::date AS period,
+           s.vl_carteira AS receivables
+    FROM public.cvm_fidc_setor s
+    JOIN params p ON TRUE
+    WHERE p.freq = 'month'
+      AND 'receivables' = ANY (p.metrics)
+      AND (p.entity_type IS NULL OR p.entity_type = 'fidc')
+      AND s.cnpj IN (SELECT cnpj FROM cnpjs)
+      AND date_trunc('month', s.period)::date >= date_trunc('month', p.d0)::date
+      AND (
+            (p.d1_explicit IS NOT NULL
+             AND date_trunc('month', s.period)::date
+                 <= date_trunc('month', p.d1_explicit)::date)
+         OR (p.d1_explicit IS NULL
+             AND s.period <= public.latest_complete_period('fidc'))
+      )
+),
+-- top1 = the rank-1 row as filed; top25 = the sum of whatever ranks the fund
+-- filed (1..n, n <= 25) — nothing imputed for ranks it did not file. The
+-- rank is CVM's (seq), never recomputed from valor.
+fidc_sacado AS (
+    SELECT k.cnpj,
+           date_trunc('month', k.period)::date AS period,
+           MAX(k.valor) FILTER (WHERE k.seq = 1) AS sacado_top1,
+           SUM(k.valor)                          AS sacado_top25
+    FROM public.cvm_fidc_sacado k
+    JOIN params p ON TRUE
+    WHERE p.freq = 'month'
+      AND ('sacado_top1' = ANY (p.metrics) OR 'sacado_top25' = ANY (p.metrics))
+      AND (p.entity_type IS NULL OR p.entity_type = 'fidc')
+      AND k.cnpj IN (SELECT cnpj FROM cnpjs)
+      AND date_trunc('month', k.period)::date >= date_trunc('month', p.d0)::date
+      AND (
+            (p.d1_explicit IS NOT NULL
+             AND date_trunc('month', k.period)::date
+                 <= date_trunc('month', p.d1_explicit)::date)
+         OR (p.d1_explicit IS NULL
+             AND k.period <= public.latest_complete_period('fidc'))
+      )
+    GROUP BY k.cnpj, date_trunc('month', k.period)::date
 )
 , ranked (id, id_type, asset_class, date, metric, value, source) AS (
 SELECT q.ticker, 'ticker'::text, q.asset_class, q.period, 'close'::text, q.close, 'b3_cotahist'::text
@@ -2458,6 +2828,18 @@ UNION ALL
 SELECT f.cnpj, 'cnpj', f.entity_type, f.period, 'quotaholders', f.quotaholders::numeric, 'cvm'
 FROM fund_rows f JOIN params p ON TRUE
 WHERE 'quotaholders' = ANY (p.metrics) AND f.quotaholders IS NOT NULL
+UNION ALL
+SELECT b.cnpj, 'cnpj', 'fidc', b.period, 'receivables', b.receivables, 'cvm'
+FROM fidc_book b
+WHERE b.receivables IS NOT NULL
+UNION ALL
+SELECT k.cnpj, 'cnpj', 'fidc', k.period, 'sacado_top1', k.sacado_top1, 'cvm'
+FROM fidc_sacado k JOIN params p ON TRUE
+WHERE 'sacado_top1' = ANY (p.metrics) AND k.sacado_top1 IS NOT NULL
+UNION ALL
+SELECT k.cnpj, 'cnpj', 'fidc', k.period, 'sacado_top25', k.sacado_top25, 'cvm'
+FROM fidc_sacado k JOIN params p ON TRUE
+WHERE 'sacado_top25' = ANY (p.metrics) AND k.sacado_top25 IS NOT NULL
 )
 -- One page + one. ORDER BY (date, id, metric, asset_class) — the cursor key
 -- — makes both the page and the cut deterministic. Columns by position:
@@ -2914,7 +3296,7 @@ AS $fn$
 SELECT $json$
 {
   "kind": "catalog",
-  "version": 25,
+  "version": 26,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -3138,6 +3520,46 @@ SELECT $json$
       "source": "cvm",
       "meaning": "Number of unit-holders (fi, fii). Not served for fidc, fiagro, fip.",
       "coverage": "api.metric_coverage()"
+    },
+    "receivables": {
+      "id_type": [
+        "cnpj"
+      ],
+      "asset_class": [
+        "fidc"
+      ],
+      "grain": [
+        "month"
+      ],
+      "source": "cvm",
+      "meaning": "Receivables portfolio total (tab II TAB_II_VL_CARTEIRA), the denominator for any concentration ratio. Sector lines are in fidc_portfolio."
+    },
+    "sacado_top1": {
+      "id_type": [
+        "cnpj"
+      ],
+      "asset_class": [
+        "fidc"
+      ],
+      "grain": [
+        "month"
+      ],
+      "source": "cvm",
+      "meaning": "Exposure to the single largest sacado (tab VIII rank 1), as filed. The debtor is anonymized in the source; divide by receivables in the notebook for a concentration ratio."
+    },
+    "sacado_top25": {
+      "id_type": [
+        "cnpj"
+      ],
+      "asset_class": [
+        "fidc"
+      ],
+      "grain": [
+        "month"
+      ],
+      "source": "cvm",
+      "meaning": "Sum of the exposures to the largest sacados the fund filed (tab VIII ranks 1..n, n at most 25). A fund that files fewer than 25 ranks sums fewer; nothing is imputed for the missing ranks. Divide by receivables in the notebook.",
+      "derived": true
     }
   },
   "notebook_reducers": {
@@ -3148,6 +3570,9 @@ SELECT $json$
   },
   "constraints": [
     "A NULL OUTSIDE A FAMILY'S COLUMN SET IS NOT APPLICABLE, NOT MISSING. fund_nav returns the same eleven columns for every family, but each family files only some of them (`applicability` in this catalog, read off fact_fund_monthly's per-family arms): fi files quota, quotaholders, inflows and redemptions; fidc and fiagro file delinquency; fii files quotaholders, monthly_yield and assets; fip files nav alone. A null outside that list is set by construction and carries no information; a null inside it is a blank in that month's filing.",
+    "A FIDC CEDENTE SHARE IS A PERCENT OF ITS BLOCK, NOT OF THE FUND. fidc_cedentes serves tab I's nine slots per block: bloco A is the receivables acquired WITH substantial retention of risks and benefits by the originator, B WITHOUT, and share_pct is the cedente's share of that block. The block totals are not served (tab I's asset lines are not ingested), so a share cannot be turned into reais here. cedente_id is the originator's own filed CPF/CNPJ, kept only when its check digits verify — placeholders (all-zero, all-nine) and unrecoverable identifiers were dropped at ingest, never coerced — and cedente_tickers is the FCA map's active listings for it, NULL when not listed. share_pct is AS FILED and dirty in the way CVM's percentage fields are: 9% of slots carry a value above 100 (max 19,771 in 2026-07); validate the range in the notebook, never read it as a fraction. Slots exist from 2019-11; nothing is matched by name.",
+    "FIDC SACADOS ARE ANONYMIZED RANKS. fidc_sacados and the sacado_top1 / sacado_top25 metrics come from tab VIII, which publishes the 25 largest debtors as (rank, value) with no identity — CVM's dictionary describes neither column. seq is CVM's rank as filed and is never recomputed from valor (65 of 3,043 funds filed a non-descending series in 2026-07; they are served as filed). sacado_top25 sums the ranks the fund filed, which may be fewer than 25. Concentration = sacado_top1 / receivables (or top25 / receivables) is a notebook division, not a served number — and it can exceed 1: tab VIII and tab II do not share a base for every fund (2026-07: the top-25 sum exceeds the receivables total for 1.9% of funds, rank 1 alone for 0.5%), served as filed and never capped.",
+    "FIDC PORTFOLIO ROWS ARE A HIERARCHY. fidc_portfolio kind=sector serves tab II as one row per code: TOTAL is the whole receivables book, a lettered code (A..K) a sector, and a code with a digit (C1, F3) a member of its lettered parent (`parent`). Sum leaves or sum parents, never both. kind=scr_debtor and kind=scr_operation are the BACEN SCR grade ladders AA..H for the same receivables, graded by debtor and by operation respectively — two views of one book, not two books. tab X exists from 2023-10 only; earlier months have no scr rows, not zero-graded ones.",
     "FIDC DELINQUENCY STARTS IN 2025-01. CVM's pre-2025 monthly FIDC file (tab II/III) carried no delinquency field, so `delinquency` is null on every fidc row through 2024-12-31 — not zero, not clean books, not a missing month. From 2025-01-31 the tab IV/VI format is ingested and delinquency is filed on every row. Never chain-link, difference or average a FIDC delinquency series across 2024-12 → 2025-01; the series begins there. Machine-readable in `regime_breaks`, and on the funds_fidc coverage row's `notes`.",
     "A FUND'S DEBENTURE HOLDINGS ARE A DIFFERENT SHAPE FROM ITS EQUITY HOLDINGS. api.fund_debentures (CDA block 6) is one row per (fund, month, issuer, maturity, rate structure, application type), as filed and never summed — two series of one issuer maturing the same day at different coupons are different securities. The issuer is its own filed CPF/CNPJ (issuer_id); p_issuer also takes a listed company's ticker or CVM code, resolved only through CVM's published FCA map, and issuer_tickers carries the issuer's active listed codes back (NULL when not listed — most debenture issuers are not). Nothing is matched by name.",
     "ANBIMA CLASS ROWS ARE INDUSTRY AGGREGATES, NOT FUNDS. api.anbima_classes serves the Boletim de Fundos de Investimento as published — R$ milhões (unit brl_mm) and percentage points (unit pct) — per class, ANBIMA type or industry total (`level`; class aggregates by default). No fund in this warehouse is mapped to an ANBIMA class: CVM's `classe` is CVM's taxonomy, so never join a fund to a class by name, and there is no panel arm because these rows carry no id. An unknown category, metric or level raises 22023 listing what exists rather than returning an empty array.",
@@ -3226,6 +3651,9 @@ SELECT $json$
         "option_exercises_rows": 500,
         "fund_holdings_rows": 500,
         "fund_debentures_rows": 500,
+        "fidc_cedentes_rows": 500,
+        "fidc_sacados_rows": 500,
+        "fidc_portfolio_rows": 500,
         "statement_timeout_seconds": 3
       },
       "authenticated": {
@@ -3236,6 +3664,9 @@ SELECT $json$
         "option_exercises_rows": 5000,
         "fund_holdings_rows": 5000,
         "fund_debentures_rows": 5000,
+        "fidc_cedentes_rows": 5000,
+        "fidc_sacados_rows": 5000,
+        "fidc_portfolio_rows": 5000,
         "statement_timeout_seconds": 8
       },
       "exceeding_an_id_ceiling": "SQLSTATE 22023 naming the limit — a panel is never silently trimmed to fit",
@@ -3281,6 +3712,21 @@ SELECT $json$
       "panel_metric_names": {
         "monthly_yield": "yield"
       }
+    },
+    "fidc_concentration": {
+      "rule": "receivables, sacado_top1 and sacado_top25 exist for fidc only; a fund of any other family simply has no rows for them",
+      "columns_by_family": {
+        "fidc": [
+          "receivables",
+          "sacado_top1",
+          "sacado_top25"
+        ]
+      },
+      "starts": {
+        "receivables": "2013-01 (tab II)",
+        "sacado_top1": "2013-01 (tab VIII)",
+        "sacado_top25": "2013-01 (tab VIII)"
+      }
     }
   },
   "regime_breaks": [
@@ -3313,6 +3759,11 @@ SELECT $json$
       "ask": "Spread of two equity closes at month end",
       "call": "GET /v1/panel?ids=PETR4,VALE3&metrics=close&freq=month&format=wide",
       "then": "Subtract aligned columns; a missing month is null, not interpolated."
+    },
+    {
+      "ask": "Which of these FIDCs is most exposed to one debtor?",
+      "call": "GET /v1/panel?ids=<cnpj>,<cnpj>,<cnpj>&metrics=sacado_top1,receivables&freq=month&format=wide",
+      "then": "Divide sacado_top1 by receivables per row; the debtor is anonymized, so this is a ratio, not a name."
     },
     {
       "ask": "Just give me the panel; I will run a factor model",
@@ -3384,7 +3835,10 @@ SELECT $json$
     "financials": "POST /rest/v1/rpc/financials",
     "company_financials": "POST /rest/v1/rpc/company_financials",
     "anbima_classes": "POST /rest/v1/rpc/anbima_classes",
-    "fund_debentures": "POST /rest/v1/rpc/fund_debentures"
+    "fund_debentures": "POST /rest/v1/rpc/fund_debentures",
+    "fidc_cedentes": "POST /rest/v1/rpc/fidc_cedentes",
+    "fidc_sacados": "POST /rest/v1/rpc/fidc_sacados",
+    "fidc_portfolio": "POST /rest/v1/rpc/fidc_portfolio"
   }
 }
 $json$::jsonb;
@@ -3436,6 +3890,9 @@ GRANT EXECUTE ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT) TO 
 GRANT EXECUTE ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.anbima_classes(TEXT, TEXT, TEXT, DATE, DATE) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.fund_debentures(TEXT, TEXT, DATE, DATE, INT) TO silo_api;
+GRANT EXECUTE ON FUNCTION api.fidc_cedentes(TEXT, TEXT, DATE, DATE, INT)   TO silo_api;
+GRANT EXECUTE ON FUNCTION api.fidc_sacados(TEXT, DATE, DATE, INT)          TO silo_api;
+GRANT EXECUTE ON FUNCTION api.fidc_portfolio(TEXT, TEXT, DATE, DATE, INT)  TO silo_api;
 GRANT EXECUTE ON FUNCTION api.catalog()                               TO silo_api;
 
 -- Defensive, idempotent no-ops today (silo_api is never directly granted

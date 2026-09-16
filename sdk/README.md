@@ -49,7 +49,7 @@ from silo_client import SiloClient, SiloOverCap, SiloTruncated
 try:
     rows = silo.quote_history("PETR4", start="2019-01-01")
 except SiloOverCap:
-    # Since catalog v25 the server REFUSES rather than trims, and the three
+    # Since catalog v26 the server REFUSES rather than trims, and the three
     # long series page. A cursor walk, not a stitched guess:
     rows = silo.quote_history_all("PETR4", start="2019-01-01")
 

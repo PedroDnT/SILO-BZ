@@ -42,6 +42,7 @@
           "api-docs/funds",
           "api-docs/financials",
           "api-docs/holdings",
+          "api-docs/fidc",
           "api-docs/anbima",
           "api-docs/panel",
           "api-docs/lookup",

@@ -190,7 +190,7 @@ give you a cursor to walk instead; the rest ask you to narrow the window.
 
 <Warning>
   **A capped response is not a valid dataset** — which is why no function returns one any
-  more. Before v25 the series functions kept the oldest rows and answered `200`, so a
+  more. Before v26 the series functions kept the oldest rows and answered `200`, so a
   truncated series was indistinguishable from one that simply ended. Now every one of
   them pages or refuses. If you still read a `Content-Range` of `0-999/*`, you are on a
   **GET view**, not an RPC: those do still cut, and the header is still the only signal.

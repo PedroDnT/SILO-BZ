@@ -270,11 +270,60 @@ class DatasetConfig:
             "csv_name_pattern": "inf_mensal_fidc_tab_III_{year}{month:02d}.csv",
             "description": "FIDC historical liabilities (tab III, 2013-2024) — yearly HIST/ ZIP, monthly CSV inside",
         },
+        # Tabs I, II, VIII and X ship with the same header in both eras (HIST
+        # 2013-2024 and monthly 2025+; verified column-for-column on the
+        # 2024-12 and 2026-07 files), so one field map serves both and only
+        # the archive differs. The period suffix follows the tab id directly,
+        # which is what keeps `tab_I_` from matching `tab_II_`/`tab_III_`/
+        # `tab_IX_`, `tab_X_` from `tab_X_1_`, and `tab_VII_` from `tab_VIII_`
+        # in _select_zip_member.
+        "hist_mensal_tab_i": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/HIST/inf_mensal_fidc_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_I_{year}{month:02d}.csv",
+            "description": "FIDC historical tab I (2013-2024) — named cedente concentration",
+        },
+        "hist_mensal_tab_viii": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/HIST/inf_mensal_fidc_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_VIII_{year}{month:02d}.csv",
+            "description": "FIDC historical tab VIII (2013-2024) — 25 largest sacados, anonymized",
+        },
+        "hist_mensal_tab_x": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/HIST/inf_mensal_fidc_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_X_{year}{month:02d}.csv",
+            "description": "FIDC historical tab X (2013-2024) — SCR risk-rating ladder",
+        },
         "mensal": {
             "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
             "is_zip": True,
             "csv_name_pattern": "inf_mensal_fidc_tab_IV_{year}{month:02d}.csv",
             "description": "Monthly information for FIDC funds — targets tab_IV (NAV/PL)",
+        },
+        "mensal_tab_i": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_I_{year}{month:02d}.csv",
+            "description": "FIDC tab_I — the nine largest cedentes by CPF/CNPJ and share, per risk block",
+        },
+        "mensal_tab_ii": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_II_{year}{month:02d}.csv",
+            "description": "FIDC tab_II — receivables portfolio total and breakdown by sector",
+        },
+        "mensal_tab_viii": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_VIII_{year}{month:02d}.csv",
+            "description": "FIDC tab_VIII — the 25 largest sacados, anonymized and ranked",
+        },
+        "mensal_tab_x": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_X_{year}{month:02d}.csv",
+            "description": "FIDC tab_X — SCR risk-rating ladder AA..H by debtor and by operation",
         },
         "mensal_tab_vi": {
             "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",

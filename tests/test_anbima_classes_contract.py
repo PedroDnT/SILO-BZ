@@ -72,7 +72,7 @@ def test_values_are_served_as_published():
 
 def test_the_cap_and_definer_hygiene():
     body = _body("anbima_classes")
-    # v25: one page plus one row, then REFUSE. The old LIMIT 5001 was a
+    # v26: one page plus one row, then REFUSE. The old LIMIT 5001 was a
     # sentinel PostgREST never let a caller reach.
     assert "LIMIT 1001" in body and "LIMIT 1000" in body
     assert "api.assert_row_cap((SELECT count(*) FROM page)" in body

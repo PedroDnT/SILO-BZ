@@ -28,7 +28,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 25
+KNOWN_CATALOG_VERSION = 26
 
 
 class SiloCatalogDrift(UserWarning):
@@ -532,6 +532,70 @@ class SiloClient:
             )
         return self._rpc("fund_debentures", {
             "p_cnpj": cnpj, "p_issuer": issuer,
+            "p_from": _iso(start), "p_to": _iso(end), "p_limit": limit,
+        })
+
+    # -- FIDC concentration (informe tabs I, VIII, II, X) ---------------------
+
+    def fidc_cedentes(self, cnpj: Optional[str] = None,
+                      cedente: Optional[str] = None,
+                      start: Datish = None, end: Datish = None,
+                      limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """A FIDC's named originators, or which FIDCs buy from one originator.
+
+        Informe tab I publishes, per fund and month, the nine largest cedentes
+        of each block (A = receivables acquired with substantial retention of
+        risks and benefits by the originator, B = without) by their own
+        CPF/CNPJ and their share OF THAT BLOCK. Exactly one of `cnpj` or
+        `cedente`:
+
+            silo.fidc_cedentes(cnpj="05754060000113")      # who this fund buys from
+            silo.fidc_cedentes(cedente="61064911000177")   # which funds buy from this CNPJ
+            silo.fidc_cedentes(cedente="PETR4")            # a listed originator, via the FCA map
+
+        `share_pct` is a percent of the block, never of the fund. `cedente_id`
+        was checksum-verified at ingest; `cedente_tickers` is its active listed
+        codes, None when not listed. Slots exist from 2019-11. Rows are clamped
+        to 500 anonymous / 5000 signed in.
+        """
+        if (cnpj is None) == (cedente is None):
+            raise ValueError(
+                "fidc_cedentes needs exactly one of cnpj (who this fund buys from) "
+                "or cedente (which funds buy from this originator)"
+            )
+        return self._rpc("fidc_cedentes", {
+            "p_cnpj": cnpj, "p_cedente": cedente,
+            "p_from": _iso(start), "p_to": _iso(end), "p_limit": limit,
+        })
+
+    def fidc_sacados(self, cnpj: str, start: Datish = None, end: Datish = None,
+                     limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """The 25 largest debtors of one FIDC, as CVM publishes them: anonymized.
+
+        Informe tab VIII carries (rank, value) and nothing else — no debtor
+        identity exists in the source, so there is no debtor-side lookup.
+        `seq` is CVM's rank as filed and is never recomputed; a fund that files
+        fewer than 25 ranks has fewer rows. A concentration ratio is
+        `valor / receivables` (the panel metric) in the notebook.
+        """
+        return self._rpc("fidc_sacados", {
+            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end), "p_limit": limit,
+        })
+
+    def fidc_portfolio(self, cnpj: str, kind: Optional[str] = None,
+                       start: Datish = None, end: Datish = None,
+                       limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """One FIDC's receivables book, long: (kind, code, parent, item, value).
+
+        `kind`: 'sector' (tab II — TOTAL, the lettered sectors A..K and their
+        numbered members; `parent` names the letter a numbered code belongs
+        to, so sum leaves or parents, never both), 'scr_debtor' /
+        'scr_operation' (tab X — BACEN SCR grades AA..H for the same
+        receivables graded two ways), 'tax_debt', or None for all. tab X
+        exists from 2023-10 only; earlier months have no scr rows.
+        """
+        return self._rpc("fidc_portfolio", {
+            "p_cnpj": cnpj, "p_kind": kind,
             "p_from": _iso(start), "p_to": _iso(end), "p_limit": limit,
         })
 

@@ -97,7 +97,7 @@ Example: *does Brazilian equity stress show up in FIDC credit?*
    every row before 2025-01 and filed from 2025-01 (a source-format boundary, `catalog().regime_breaks`): start the series at 2025-01, never chain-link through it.
 5. Quotes are unadjusted. A missing month is not a two-month return.
 
-There is no server-side `corr`. Since catalog v25 no RPC hands you a truncated
+There is no server-side `corr`. Since catalog v26 no RPC hands you a truncated
 result: every set-returning function **refuses** with `22023` above one 1,000-row
 page rather than trimming, and `panel`, `quote_history` and `fund_nav` page with
 `p_after`. `Content-Range: 0-999/*` can now only mean you are reading a **GET
@@ -119,7 +119,7 @@ walk `p_after` until a short page. The rows are the same long rows; the ranking
 stays in your notebook. Anonymous callers still enumerate from the `funds` **view**
 (the only view surface that pages with `limit`/`offset`) and batch three ids per
 call — and since catalog v24 a batch over 1,000 rows is **refused**, never trimmed.
-The same is true of every other function since v25.
+The same is true of every other function since v26.
 
 <Steps>
   <Step title="Check the family is complete through your window">

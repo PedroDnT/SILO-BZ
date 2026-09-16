@@ -671,7 +671,7 @@ def test_coverage_serves_complete_through(client):
 
 
 # ---------------------------------------------------------------------------
-# v25 — the adapter pages the SQL and forwards the honest coverage columns
+# v26 — the adapter pages the SQL and forwards the honest coverage columns
 # ---------------------------------------------------------------------------
 
 class _PagingCur(_Cur):

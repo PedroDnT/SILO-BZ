@@ -42,6 +42,10 @@ from behind a login, or purchased — except the one ETF market feed noted below
 | FIDC    | `cvm_fidc_tranche`       | fund × month × tranche               | monthly (tab X2/X3/X6)               | **2025**               |
 | FIDC    | `cvm_fidc_tranche_flows` | fund × month × tranche               | monthly (tab X4)                     | **2025**               |
 | FIDC    | `cvm_fidc_aging`         | fund × month × bucket                | monthly (tab VI)                     | **2025**               |
+| FIDC    | `cvm_fidc_setor`         | fund × month                         | tab II, monthly 2025+, HIST ≤2024    | 2013                   |
+| FIDC    | `cvm_fidc_sacado`        | fund × month × **rank** (1–25)       | tab VIII, monthly 2025+, HIST ≤2024  | 2013                   |
+| FIDC    | `cvm_fidc_cedente`       | fund × month × block × slot (1–9)    | tab I cedente slots, unpivoted       | 2019-11 (slots appear) |
+| FIDC    | `cvm_fidc_scr`           | fund × month                         | tab X, monthly 2025+, HIST ≤2024     | 2023-10 (member appears) |
 | FII     | `cvm_fii_mensal`         | fund × month                         | yearly ZIP                           | 2021                   |
 | FII     | `cvm_fii_periodic`       | fund × quarter/year × doc            | yearly ZIP, 4 members                | 2019                   |
 | FII     | `cvm_fii_imovel`         | fund × quarter × **property**        | yearly ZIP                           | 2019                   |
@@ -114,6 +118,16 @@ The monthly CDA archive holds eight blocks. We read four.
 
 Cost of adding one: a field map, a migration, and one `ingest_*` method. The
 download is already happening — these are members of a zip we fetch anyway.
+
+### FIDC informe mensal — the tabs still unread
+
+The monthly FIDC ZIP has 18 members; ten are ingested after migration 38 (`IV`,
+`VI`, `X_2`/`X_3`/`X_6`, `X_4`, and `I` cedente slots, `II`, `VIII`, `X`). Still
+unread: tab I's other ~70 columns (asset composition, admin, condomínio), `III`
+(2025+), `V` (maturity ladder of credits with risk retention), `VII` (custody
+split, repurchases), `IX` (assignment prices), `X_1` / `X_1_1` (quotaholders per
+tranche and by investor type), `X_5` (liquidity ladder), `X_7` (collateral
+coverage).
 
 ### B3 — the three genuinely new sources
 
@@ -244,6 +258,7 @@ endpoint of its own.
 | `cvm_fi_cda_acoes` / `_cotas` | fund holdings, CDA blocks 4 and 2 | **Yes**, via `fund_holdings` — both directions. |
 | `cvm_fi_cda_debentures` | fund → corporate-credit holdings, block 6 | **Yes**, via `fund_debentures`: its own shape (issuer, maturity, rate structure), by holder CNPJ or by issuer. |
 | `anbima_class_monthly` | ANBIMA class benchmarks | **Yes**, via `anbima_classes`: AUM, flows, returns, fund counts per class / type / total, as published. |
+| `cvm_fidc_cedente`, `cvm_fidc_sacado`, `cvm_fidc_setor`, `cvm_fidc_scr` | FIDC informe tabs I, VIII, II, X (migration 38) | **Yes**: `fidc_cedentes` (by fund or by originator CPF/CNPJ/ticker, `cedente_tickers` from the FCA map), `fidc_sacados` (anonymized ranks, by fund only), `fidc_portfolio` (sector hierarchy with `parent`, SCR ladders, tax debt — long), the panel metrics `receivables` / `sacado_top1` / `sacado_top25`, and four `coverage()` rows. See [FIDC concentration](/api-docs/fidc). |
 
 ### Held and not served — candidates
 

@@ -1,0 +1,143 @@
+---
+title: "FIDC concentration"
+description: "Who a receivables fund buys from, who owes it, what sector the book is in and how BACEN grades it — informe tabs I, VIII, II and X, served as filed."
+icon: "layer-group"
+---
+
+The monthly FIDC informe has 18 members. Four of them carry the concentration
+and credit-quality picture of a receivables fund, and each has its own shape:
+
+| Tab | What it publishes | Endpoint |
+| --- | --- | --- |
+| **I** | the nine largest **originators** (cedentes) of each block, by their own CPF/CNPJ, with a share of the block | `fidc_cedentes` |
+| **VIII** | the 25 largest **debtors** (sacados) as **anonymized ranks** — a value per rank, no identity | `fidc_sacados` |
+| **II** | the receivables book by **sector**, a hierarchy | `fidc_portfolio` (`kind=sector`) |
+| **X** | the same book under BACEN **SCR grades** AA..H, by debtor and by operation | `fidc_portfolio` (`kind=scr_*`) |
+
+<Note>
+  Tab VIII is the series a 2026 industry post described as newly published. It
+  has been in Dados Abertos since 2013 with a blank dictionary entry for both of
+  its columns; the shape (a rank ceiling of exactly 25, values descending, no
+  identifier) is the reading. Tab I is the table that carries **names** — and
+  nobody was reading it.
+</Note>
+
+## POST /rpc/fidc_cedentes — the originator edge
+
+Give **exactly one** of `p_cnpj` or `p_cedente`:
+
+| Argument | Type | Meaning |
+| --- | --- | --- |
+| `p_cnpj` | text | The **fund**. Which originators it buys receivables from. |
+| `p_cedente` | text | The **originator**. Any CPF/CNPJ, or a listed company's ticker / CVM code resolved only through CVM's published FCA map (active listings). Most originators are not listed; their CNPJ is the only way to reach them. |
+| `p_from` / `p_to` | date | Competency-month window. |
+| `p_limit` | int | Clamped by tier: **500** anonymous, 5,000 signed in. |
+
+```bash
+# Who does this FIDC buy from?
+-d '{"p_cnpj":"05754060000113"}'
+# Which FIDCs buy from this originator?
+-d '{"p_cedente":"61064911000177","p_from":"2025-01-01"}'
+```
+
+```python
+silo.fidc_cedentes(cnpj="05754060000113")       # who it buys from
+silo.fidc_cedentes(cedente="61064911000177")    # which funds buy from this CNPJ
+silo.fidc_cedentes(cedente="PETR4")             # a listed originator, via the FCA map
+```
+
+One row per (fund, month, block, slot), as filed:
+
+| Column | Meaning |
+| --- | --- |
+| `cnpj`, `period` | the fund and the competency month |
+| `bloco` | `A` = receivables acquired **with** substantial retention of risks and benefits by the originator; `B` = without |
+| `seq` | CVM's slot 1..9 |
+| `cedente_id` | the originator's CPF/CNPJ, digits only. Checksum-verified at ingest: placeholders (`0`, all-nines) were dropped and counted, a dropped leading zero was recovered only when the check digits verify |
+| `cedente_tickers` | its **active** listed codes from the FCA map; `null` when not listed |
+| `share_pct` | the originator's share **of the block**, as filed |
+
+<Warning>
+  `share_pct` is a percent of the **block**, never of the fund, and the block
+  totals are not served (tab I's asset lines are not ingested) — so a share
+  cannot be turned into reais here. It is also dirty as filed, the way CVM's
+  percentage fields are: **9% of slots carry a value above 100** (one reads
+  19,771). Range-check it in the notebook; never read it as a fraction.
+</Warning>
+
+Slots exist from **2019-11**; the pre-2019-11 form of tab I is a different
+block structure with placeholder values and is not ingested.
+
+## POST /rpc/fidc_sacados — anonymized debtor ranks
+
+| Argument | Type | Meaning |
+| --- | --- | --- |
+| `p_cnpj` | text | The fund. **Required** — there is no debtor-side lookup, because the source carries no debtor identity. |
+| `p_from` / `p_to` | date | Competency-month window. |
+| `p_limit` | int | **500** anonymous, 5,000 signed in. 25 rows per month at most. |
+
+```python
+silo.fidc_sacados("11003181000126", start="2026-01-01")
+```
+
+| Column | Meaning |
+| --- | --- |
+| `seq` | CVM's rank 1..25, **as filed, never recomputed** from `valor` (65 of 3,043 funds filed a non-descending series in 2026-07; they are served as filed) |
+| `valor` | the exposure to that debtor |
+
+A fund that files fewer than 25 ranks has fewer rows; nothing is imputed for
+the ranks it did not file. From 2013-01.
+
+## POST /rpc/fidc_portfolio — the book, long
+
+| Argument | Type | Meaning |
+| --- | --- | --- |
+| `p_cnpj` | text | The fund. Required. |
+| `p_kind` | text | `sector`, `scr_debtor`, `scr_operation`, `tax_debt`, or `null` for all. An unknown kind raises `22023`. |
+| `p_from` / `p_to` / `p_limit` | | As above; **500** / 5,000. |
+
+```python
+silo.fidc_portfolio("05754060000113", kind="sector", start="2026-01-01")
+```
+
+| Column | Meaning |
+| --- | --- |
+| `kind` | `sector` (tab II), `scr_debtor` / `scr_operation` (tab X), `tax_debt` |
+| `code` | sector: `TOTAL`, a lettered sector `A`..`K`, or a numbered member `C1`..`I4`; scr: the grade `AA`..`H` |
+| `parent` | the lettered sector a numbered code belongs to; `null` at the top |
+| `item` | the source column's own name (`cred_corp`, `midmarket`, `precat`, …) |
+| `value` | as filed |
+
+<Warning>
+  Tab II is a **hierarchy**: `C1`..`C3` are members of `C`. Sum leaves or sum
+  parents — never both. The two SCR ladders are **one book graded two ways**,
+  not two books; each sums to the graded total. **Tab X exists from 2023-10
+  only**: an earlier month has no `scr_*` rows, not zero-graded ones.
+</Warning>
+
+## Panel metrics
+
+Three `cnpj` metrics join the [panel](/api-docs/panel) for `fidc` ids:
+
+| Metric | Source | Meaning |
+| --- | --- | --- |
+| `receivables` | tab II `TOTAL` | the receivables portfolio total — the denominator for a concentration ratio |
+| `sacado_top1` | tab VIII rank 1 | exposure to the single largest (anonymized) debtor |
+| `sacado_top25` | tab VIII ranks 1..n | the sum of the ranks the fund filed, n ≤ 25 |
+
+```python
+wide = silo.panel(["05754060000113", "11003181000126"],
+                  metrics=["sacado_top1", "receivables"], freq="month")
+wide["sacado_top1"] / wide["receivables"]      # concentration, in the notebook
+```
+
+The ratio **can exceed 1**: tabs VIII and II do not share a base for every
+fund (2026-07: the top-25 sum exceeds the receivables total for 1.9% of funds,
+rank 1 alone for 0.5%). Served as filed, never capped.
+
+## Coverage
+
+`coverage()` carries one row per tab — `fidc_cedentes`, `fidc_sacados`,
+`fidc_sectors`, `fidc_scr` — with `complete_through` clamped to the FIDC
+family's latest complete period (the tabs are members of the same monthly
+informe as `fund_nav`'s FIDC rows) and `notes` stating where each series starts.

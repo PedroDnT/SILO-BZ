@@ -25,7 +25,7 @@ those to 50 / 200 / 2000 and 8s. It does **not** raise rows-per-response — the
 1000-row cap is server-wide for every caller. Do not mint or forge a key.
 
 Exceeding the id ceiling returns `22023` as a `400` naming the limit; nothing is
-ever silently truncated. Since catalog v25 that holds for **every** set-returning
+ever silently truncated. Since catalog v26 that holds for **every** set-returning
 function, not just the panel: a call whose result would pass one 1000-row page
 raises `22023` instead of trimming. Three of them page with a `p_after` cursor —
 `panel` (key `date|id|metric|asset_class`), `quote_history` (the last row's

@@ -621,7 +621,7 @@ def test_universe_mode_needs_a_family_client_side():
 
 
 # ---------------------------------------------------------------------------
-# v25 — the series functions refuse and page like the panel
+# v26 — the series functions refuse and page like the panel
 # ---------------------------------------------------------------------------
 
 def _quote_rows(n: int, start: int = 0):

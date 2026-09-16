@@ -105,7 +105,7 @@ def test_consolidated_is_the_default_scope() -> None:
 
 @pytest.mark.parametrize("name", ["financials", "company_financials"])
 def test_the_public_surfaces_are_capped(name: str) -> None:
-    """Same shape as every other capped function since v25: fetch one page
+    """Same shape as every other capped function since v26: fetch one page
     plus one row, then REFUSE (22023) rather than trim. These two have no
     cursor — a statement window over 1000 rows is a mistake, not a walk."""
     body = _body(name)

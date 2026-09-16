@@ -28,8 +28,8 @@ One row per dataset, plus one `funds_<family>` row per fund family (`funds_fi`,
 different cadences and one blended date misreads all of them:
 
 <ResponseField name="dataset" type="text">
-  `quotes`, `funds`, `fund_nav`, `derivatives`, `financials`, `anbima_classes`, or
-  `funds_<family>`.
+  `quotes`, `funds`, `fund_nav`, `derivatives`, `financials`, `anbima_classes`,
+  `fidc_cedentes`, `fidc_sacados`, `fidc_sectors`, `fidc_scr`, or `funds_<family>`.
 
   - **`quotes`** — the most recent B3 cash session stored, across all tickers and boards.
   - **`funds`** — the most recent filing period in the fund registry, across all vehicles.
@@ -39,6 +39,10 @@ different cadences and one blended date misreads all of them:
   - **`financials`** — the newest reference date any listed-company filing (ITR/DFP)
     has reached, read from the filing index, not the 31M-row account table.
   - **`anbima_classes`** — the newest boletim reference month.
+  - **`fidc_cedentes`**, **`fidc_sacados`**, **`fidc_sectors`**, **`fidc_scr`** — the
+    newest competency month landed for each [FIDC concentration](/api-docs/fidc) tab;
+    `notes` states where each series starts (tab I's cedente slots 2019-11, tab X
+    2023-10).
 
   Not covered: **holdings and debentures** (`fund_holdings`, `fund_debentures`) have no
   row yet — read the newest `period` off the rows themselves until one exists.
@@ -50,7 +54,7 @@ different cadences and one blended date misreads all of them:
 
   It is bounded on purpose. A period key is not a statement about elapsed time: FIP files
   annually keyed to 31-December, so a filing that arrives in March carries the period
-  `2026-12-31`. Before v25 the blended `funds.as_of` read `2026-12-31` in September, and
+  `2026-12-31`. Before v26 the blended `funds.as_of` read `2026-12-31` in September, and
   an agent reading it as freshness believed it had the fourth quarter. The forward-dated
   key is still published, as `newest_period`.
 </ResponseField>

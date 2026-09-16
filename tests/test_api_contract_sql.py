@@ -26,7 +26,7 @@ SQL19 = SQL19_PATH.read_text(encoding="utf-8")
 SQL12 = SQL12_PATH.read_text(encoding="utf-8")
 
 # ONE page size everywhere: PostgREST db-max-rows, the SDK's SERVER_ROW_CAP,
-# serve/app.py's _PAGE and catalog().limits.page.size. Since v25 NO function
+# serve/app.py's _PAGE and catalog().limits.page.size. Since v26 NO function
 # has a cap+1 sentinel: every one of them fetches PANEL_PAGE + 1 rows, sees the
 # overflow, and REFUSES (22023) rather than trimming.
 PANEL_PAGE = 1000
@@ -96,6 +96,9 @@ EXPECTED_FUNCTIONS = {
     "api.anbima_classes",
     "api.fund_debentures",
     "api.metric_coverage",
+    "api.fidc_cedentes",
+    "api.fidc_sacados",
+    "api.fidc_portfolio",
 }
 
 # Internal helpers: called only from inside SECURITY DEFINER functions, which
@@ -795,7 +798,13 @@ def test_fund_metric_asset_classes_follow_applicability():
     from serve.catalog import catalog_payload
 
     cat = catalog_payload()
-    fam_cols = cat["applicability"]["fund_nav"]["columns_by_family"]
+    # Every applicability block pins some cnpj metrics to a source: fund_nav
+    # to fact_fund_monthly's arms, fidc_concentration to the informe tabs of
+    # migration 38. A cnpj metric must be named by exactly one of them.
+    fam_cols: dict[str, set[str]] = {}
+    for block in cat["applicability"].values():
+        for fam, cols in block["columns_by_family"].items():
+            fam_cols.setdefault(fam, set()).update(cols)
     rename = cat["applicability"]["fund_nav"]["panel_metric_names"]
     checked = 0
     for metric, spec in cat["metrics"].items():
@@ -803,6 +812,7 @@ def test_fund_metric_asset_classes_follow_applicability():
             continue
         col = next((k for k, v in rename.items() if v == metric), metric)
         expected = sorted(f for f, cols in fam_cols.items() if col in cols)
+        assert expected, f"metrics.{metric} is pinned by no applicability block"
         assert sorted(spec["asset_class"]) == expected, (
             f"metrics.{metric}.asset_class = {spec['asset_class']}; "
             f"applicability serves it for {expected}"
@@ -918,13 +928,16 @@ def test_catalog_limits_are_the_sql_tier_clamps():
     assert clamp("api.option_exercises") == (anon["option_exercises_rows"], auth["option_exercises_rows"])
     assert clamp("api.fund_holdings") == (anon["fund_holdings_rows"], auth["fund_holdings_rows"])
     assert clamp("api.fund_debentures") == (anon["fund_debentures_rows"], auth["fund_debentures_rows"])
+    assert clamp("api.fidc_cedentes") == (anon["fidc_cedentes_rows"], auth["fidc_cedentes_rows"])
+    assert clamp("api.fidc_sacados") == (anon["fidc_sacados_rows"], auth["fidc_sacados_rows"])
+    assert clamp("api.fidc_portfolio") == (anon["fidc_portfolio_rows"], auth["fidc_portfolio_rows"])
 
     # Universe mode is a tier feature too: 0 anonymous, 1 signed in, read out
     # of the gate's COMMENT the same way.
     assert clamp("api.assert_panel_universe") == (int(anon["panel_universe"]), int(auth["panel_universe"]))
 
     limits = catalog_payload()["limits"]
-    # v25: there is no sentinel block left to publish. Every function refuses
+    # v26: there is no sentinel block left to publish. Every function refuses
     # over the page instead of leaving a cap+1 row for the caller to count.
     assert "sql_sentinel" not in limits, (
         "the sentinels are gone; publishing one again would tell agents to "
@@ -1388,7 +1401,7 @@ def test_catalog_version_moved_with_the_surface():
 
 
 # ---------------------------------------------------------------------------
-# v25 — the series functions page, and coverage stops claiming the future
+# v26 — the series functions page, and coverage stops claiming the future
 # ---------------------------------------------------------------------------
 
 SQL04 = (ROOT / "src" / "store" / "analytical" / "04_fact_fund_monthly.sql").read_text(encoding="utf-8")
@@ -1508,10 +1521,24 @@ def test_fund_metrics_point_at_the_measured_coverage_not_a_written_date():
     is a published boundary with its own lockstep test. Every other span is
     measured, so the catalog points at the function instead of carrying a date
     that can drift silently."""
-    from serve.catalog import METRICS
+    from serve.catalog import METRICS, catalog_payload
 
-    fund_metrics = [m for m, spec in METRICS.items() if spec.get("id_type") == ["cnpj"]]
+    # Scope: mv_metric_coverage reads fact_fund_monthly, so it measures exactly
+    # the fund_nav metrics. The fidc_concentration metrics (receivables,
+    # sacado_top1, sacado_top25) come from the FIDC informe tabs, NOT from the
+    # fact table, so pointing them here would be a claim this function cannot
+    # back — their spans live in applicability.fidc_concentration.starts.
+    applic = catalog_payload()["applicability"]["fund_nav"]
+    rename = applic["panel_metric_names"]
+    # `assets` is a fund_nav column with no panel metric of its own, so
+    # intersect with METRICS rather than assuming the two lists coincide.
+    fund_metrics = sorted({
+        rename.get(col, col)
+        for cols in applic["columns_by_family"].values()
+        for col in cols
+    } & set(METRICS))
     assert fund_metrics, "expected fund metrics in the catalog"
+    assert all(METRICS[m].get("id_type") == ["cnpj"] for m in fund_metrics)
     with_since = [m for m in fund_metrics if "since" in METRICS[m]]
     assert with_since == ["delinquency"], (
         "a hardcoded `since` is a claim nobody re-measures; only the published "
