@@ -17,11 +17,22 @@ def test_percentage_point_outputs_do_not_use_evidence_pct_tag():
 
     sql_alias = re.compile(r"\bas\s+[a-z0-9_]+_pct\b", re.IGNORECASE)
     page_binding = re.compile(r"(?:\by\s*=|<Column\s+id=)[^\n>]*_pct\b")
+    # A page's inline ```sql block can name a column too, and that is a THIRD
+    # place the suffix leaks in. It is also how a renamed source column goes
+    # stale: rename `participacao_pct` to `participacao` in the source, update
+    # every <Column id=...>, and the `select ..._pct from supabase.x` inside the
+    # page still points at a column that no longer exists — a DuckDB "column not
+    # found" at build time, caught on PR #235 by a review bot rather than here.
+    inline_sql_column = re.compile(r"```sql\b.*?```", re.S)
 
     for path in (DASHBOARD / "sources").rglob("*.sql"):
         assert not sql_alias.search(path.read_text(encoding="utf-8")), path
     for path in (DASHBOARD / "pages").glob("*.md"):
-        assert not page_binding.search(path.read_text(encoding="utf-8")), path
+        text = path.read_text(encoding="utf-8")
+        assert not page_binding.search(text), path
+        for block in inline_sql_column.findall(text):
+            offenders = re.findall(r"\b[a-z0-9_]+_pct\b", block, re.IGNORECASE)
+            assert not offenders, f"{path}: inline sql selects {sorted(set(offenders))}"
 
 
 def test_fi_quota_uses_one_stable_subclass_across_months():
