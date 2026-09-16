@@ -139,6 +139,9 @@ call). `catalog().limits.tiers.<tier>.panel_universe` says which you are.
 | `inflows` | cnpj | fi | month | `cvm` | Gross monthly subscriptions. |
 | `redemptions` | cnpj | fi | month | `cvm` | Gross monthly redemptions. |
 | `quotaholders` | cnpj | fi, fii | month | `cvm` | Number of unit-holders, cast to numeric. Not served for fidc, fiagro, fip — their fact-table arms carry no quotaholder count. |
+| `receivables` | cnpj | fidc | month | `cvm` | Receivables portfolio total (informe tab II `TOTAL`) — the denominator for a concentration ratio. See [FIDC concentration](/api-docs/fidc). |
+| `sacado_top1` | cnpj | fidc | month | `cvm` | Exposure to the single largest debtor (tab VIII rank 1, as filed). The debtor is anonymized in the source. |
+| `sacado_top25` | cnpj | fidc | month | `cvm` | Sum of the largest-debtor ranks the fund filed (1..n, n ≤ 25); nothing imputed for unfiled ranks. `sacado_top25 / receivables` can exceed 1 for ~2% of funds — served as filed, never capped. |
 
 The *Asset class* column for the fund metrics is exactly the set of families whose fact-table
 arm files that column (`catalog().applicability`; the table on

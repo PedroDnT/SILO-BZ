@@ -20,7 +20,9 @@ of that block in percent. ingest_fidc_cedente unpivots the slots into one row
 per (fund, month, block, slot), emitting only slots whose identifier
 validates: placeholders (all-zero, all-nine — 2,959 slots in 2024-12, none in
 2026-07) are dropped and counted, and a short identifier is kept only when
-zero-padding yields a CNPJ or CPF whose check digits verify.
+zero-padding yields a CNPJ or CPF whose check digits verify. The share
+(PR_CEDENTE) is stored as filed and is dirty the way CVM's percentage fields
+are (9% of slots above 100 in 2026-07); readers range-check it.
 
 The remaining ~70 tab_I columns (asset composition, admin, condomínio,
 derivatives) are not modeled here; see docs/DATA_INVENTORY.md §2.

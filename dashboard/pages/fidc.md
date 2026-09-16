@@ -60,6 +60,13 @@ sidebar_position: 5
       chart and the table share a scale.
     * FIDC ingestion has historically lagged (CVM publication delay); months with
       no filing render blank rather than zero.
+    * CONCENTRATION (migration 38): cvm_fidc_setor (tab II sector hierarchy —
+      sum one level, never parents with children), cvm_fidc_scr (tab X SCR
+      ladders, 2023-10+), cvm_fidc_sacado (tab VIII — the 25 largest debtors as
+      ANONYMIZED ranks; ~2% of funds file a top-25 sum above their tab II total,
+      shown as filed, never capped) and cvm_fidc_cedente (tab I — named
+      originators; PR_CEDENTE is dirty as filed, ~9% of slots above 100, read
+      only inside [0,100] on this page with the set-aside count printed).
 
   SECTION ORDER runs asset side (how bad, who, and in which buckets) before
   liability side (who absorbs it) — the deterioration is the finding and the
@@ -143,6 +150,22 @@ select * from supabase.fidc_tranche_flows
 
 ```sql fidc_flows_by_oper
 select * from supabase.fidc_flows_by_oper
+```
+
+```sql fidc_sector_mix
+select * from supabase.fidc_sector_mix
+```
+
+```sql fidc_scr_ladder
+select * from supabase.fidc_scr_ladder
+```
+
+```sql fidc_concentration_top
+select * from supabase.fidc_concentration_top
+```
+
+```sql fidc_cedentes_top
+select * from supabase.fidc_cedentes_top
 ```
 
 # FIDC Credit Monitor
@@ -398,6 +421,118 @@ yAxisTitle="R$mm"
   <Column id=perf_over1080d title="Over 1080d (R$mm)" fmt=num1/>
   <Column id=inad_total_mm title="Total Delinquent (R$mm)" fmt=num1/>
   <Column id=n_funds title="Funds" fmt=num0/>
+</DataTable>
+
+---
+
+## What the Receivables Are — Sector Mix, Latest Period
+
+> Informe tab II files each fund's receivables by sector (`cvm_fidc_setor`,
+> migration 38). Tab II is a **hierarchy** — eleven lettered sectors, some with
+> numbered members — and this chart sums the lettered level only, so nothing is
+> counted twice. The share is of the summed sector lines, **not of each fund's
+> filed TOTAL**: a fund's TOTAL can differ from the sum of its lines, and dividing
+> by it would present that gap as a phantom sector. The numbered detail
+> (consignado vs corporate inside *Financeiro*, precatórios inside *Setor
+> público*) is served per fund by `api.fidc_portfolio`.
+
+<BarChart
+  data={fidc_sector_mix}
+  x=sector
+  y=value_bn
+  swapXY=true
+  xAxisTitle="R$bn"
+  title="Receivables by Sector, All FIDCs (R$bn)"
+/>
+
+<DataTable data={fidc_sector_mix} rows=11>
+  <Column id=sector title="Sector (tab II)"/>
+  <Column id=value_bn title="Receivables (R$bn)" fmt=num1/>
+  <Column id=share_num1 title="Share of Sector Lines (%)" fmt=num1/>
+  <Column id=n_funds title="Funds Filing" fmt=num0/>
+</DataTable>
+
+---
+
+## How the Receivables Are Graded — SCR Ladder, Latest Period
+
+> Tab X files the same receivables under the BACEN SCR grades **AA..H** twice:
+> by the **debtor's** rating and by the **operation's** rating (`cvm_fidc_scr`).
+> Two views of one book, not two books — each ladder sums to the graded total.
+> `H` is the grade a provisioning rule treats as close to a full loss; a book
+> whose mass sits in `AA`/`A` while its delinquency rate rises is one whose
+> grades have not caught up with its arrears. **Tab X exists from 2023-10 only**;
+> the period shown is the latest complete month that has it.
+
+<BarChart
+  data={fidc_scr_ladder}
+  x=grade
+  y={['by_debtor_bn', 'by_operation_bn']}
+  type=grouped
+  xAxisTitle="SCR grade"
+  yAxisTitle="R$bn"
+  title="Receivables by SCR Grade — by Debtor vs by Operation (R$bn)"
+/>
+
+<DataTable data={fidc_scr_ladder} rows=9>
+  <Column id=grade title="Grade"/>
+  <Column id=by_debtor_bn title="By Debtor (R$bn)" fmt=num1/>
+  <Column id=by_operation_bn title="By Operation (R$bn)" fmt=num1/>
+  <Column id=debtor_share_num1 title="Share, by Debtor (%)" fmt=num1/>
+</DataTable>
+
+---
+
+## Debtor Concentration — Books Most Exposed to One Sacado
+
+> Tab VIII publishes each fund's **25 largest debtors as anonymized ranks**
+> (`cvm_fidc_sacado`): a value per rank and nothing else — CVM's own dictionary
+> describes neither column, and this file has carried the series since 2013. So
+> this table can say *how concentrated* a book is, never *in whom*. The ratio is
+> the rank-1 value (and the sum of the filed ranks) over the tab II receivables
+> total of the same filing. **The two tabs do not share a base for every fund**:
+> in 2026-07 the rank-1 value alone exceeded the receivables total for 0.5% of
+> funds and the top-25 sum for 1.9% — face value versus book, or a debtor's whole
+> obligation versus the slice the fund holds. Those rows are shown as filed,
+> above 100%, **not capped**; a fund at the head of this table with `Ranks Filed`
+> = 1 is one that reported a single debtor. Floor: receivables ≥ R$10mm.
+
+<DataTable data={fidc_concentration_top} rows=20 search=true>
+  <Column id=fund_name title="Fund"/>
+  <Column id=receivables_mm title="Receivables (R$mm)" fmt=num1/>
+  <Column id=pl_mm title="Net Assets (R$mm)" fmt=num1/>
+  <Column id=top1_mm title="Largest Debtor (R$mm)" fmt=num1/>
+  <Column id=top1_num1 title="Largest Debtor / Receivables (%)" fmt=num1/>
+  <Column id=top25_num1 title="Top-25 / Receivables (%)" fmt=num1/>
+  <Column id=n_ranks title="Ranks Filed" fmt=num0/>
+</DataTable>
+
+---
+
+## Named Originators — Who Sells Receivables to the Most Funds
+
+> Tab I is the one concentration table CVM publishes **with identities**: each
+> fund names the nine largest cedentes of each block by CPF/CNPJ
+> (`cvm_fidc_cedente`), and those identifiers were checksum-verified at ingest.
+> Block A is receivables acquired *with* substantial retention of risks and
+> benefits by the originator, block B *without*. This table counts **funds per
+> originator**; it never adds shares across funds, because each share is a percent
+> of one fund's block and the block totals are not filed here. Names appear only
+> for listed companies (from `cia_company`, keyed by CNPJ) — an unlisted
+> originator is its CNPJ, never a name match. **The share field is dirty as
+> filed**: 9% of slots carry a "share" above 100 (one reads 19,771), the same
+> outlier class as the tranche percentage fields; `Max Share` reads only values
+> inside 0–100 and `Outlier Slots` counts the ones set aside.
+
+<DataTable data={fidc_cedentes_top} rows=20 search=true>
+  <Column id=originator title="Originator (name if listed)"/>
+  <Column id=cedente_id title="CPF/CNPJ"/>
+  <Column id=tickers title="Tickers"/>
+  <Column id=n_funds title="Funds Buying" fmt=num0/>
+  <Column id=n_funds_block_a title="of which Block A" fmt=num0/>
+  <Column id=n_rank1 title="Funds Where #1" fmt=num0/>
+  <Column id=max_share_num1 title="Max Share of a Block (%)" fmt=num1/>
+  <Column id=n_share_outliers title="Outlier Slots" fmt=num0/>
 </DataTable>
 
 ---

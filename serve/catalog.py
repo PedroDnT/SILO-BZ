@@ -117,6 +117,19 @@ __all__ = [
 # from 2025-01 (tab IV + VI): a series that changes meaning mid-stream must
 # not be chain-linked through the boundary. coverage() gains a `notes`
 # column carrying the same boundary on the funds_fidc row.
+# v25: the FIDC concentration tabs reach the API. Three functions —
+# fidc_cedentes (tab I, the fund → named-originator edge, by fund or by
+# cedente CPF/CNPJ/ticker, cedente_tickers from the FCA map like
+# fund_debentures.issuer_tickers), fidc_sacados (tab VIII, the 25 largest
+# debtors as anonymized ranks, as filed), fidc_portfolio (tab II sector
+# hierarchy and tab X SCR grade ladders, long: kind/code/parent/item/value) —
+# and three fidc panel metrics: receivables (tab II portfolio total),
+# sacado_top1 and sacado_top25 (the rank-1 exposure and the sum of the filed
+# ranks). A concentration ratio is a notebook division of two of them, not a
+# served number. `applicability` gains a fidc_concentration block so the
+# per-metric family list stays pinned to a source; coverage() gains
+# fidc_cedentes / fidc_sacados / fidc_sectors / fidc_scr rows whose notes
+# carry the start months (cedente slots from 2019-11, tab X from 2023-10).
 # v24: the panel REFUSES instead of trimming. More than 1000 rows now raises
 # 22023 unless the caller pages with p_after ('' = first page, then the last
 # row's 'date|id|metric|asset_class'); the unreachable 100001 sentinel leaves
@@ -124,7 +137,7 @@ __all__ = [
 # stated as (id, asset_class, date, metric) and p_entity_type narrows the fund
 # arms to one family. Universe mode (p_ids empty + p_entity_type, optional
 # p_min_nav / p_min_months) walks a whole family for signed-in callers.
-CATALOG_VERSION = 24
+CATALOG_VERSION = 25
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -254,6 +267,44 @@ METRICS: Dict[str, Dict[str, Any]] = {
         "source": "cvm",
         "meaning": "Number of unit-holders (fi, fii). Not served for fidc, fiagro, fip.",
     },
+    # FIDC concentration (migration 38). These read the informe's own tabs,
+    # not fact_fund_monthly, so their family list is pinned by
+    # applicability.fidc_concentration rather than by fund_nav's arms.
+    "receivables": {
+        "id_type": ["cnpj"],
+        "asset_class": ["fidc"],
+        "grain": ["month"],
+        "source": "cvm",
+        "meaning": (
+            "Receivables portfolio total (tab II TAB_II_VL_CARTEIRA), the "
+            "denominator for any concentration ratio. Sector lines are in "
+            "fidc_portfolio."
+        ),
+    },
+    "sacado_top1": {
+        "id_type": ["cnpj"],
+        "asset_class": ["fidc"],
+        "grain": ["month"],
+        "source": "cvm",
+        "meaning": (
+            "Exposure to the single largest sacado (tab VIII rank 1), as "
+            "filed. The debtor is anonymized in the source; divide by "
+            "receivables in the notebook for a concentration ratio."
+        ),
+    },
+    "sacado_top25": {
+        "id_type": ["cnpj"],
+        "asset_class": ["fidc"],
+        "grain": ["month"],
+        "source": "cvm",
+        "meaning": (
+            "Sum of the exposures to the largest sacados the fund filed "
+            "(tab VIII ranks 1..n, n at most 25). A fund that files fewer "
+            "than 25 ranks sums fewer; nothing is imputed for the missing "
+            "ranks. Divide by receivables in the notebook."
+        ),
+        "derived": True,
+    },
 }
 
 # Suggested notebook reductions. Not HTTP.
@@ -266,6 +317,9 @@ NOTEBOOK_REDUCERS: Dict[str, str] = {
 
 CONSTRAINTS = [
     "A NULL OUTSIDE A FAMILY'S COLUMN SET IS NOT APPLICABLE, NOT MISSING. fund_nav returns the same eleven columns for every family, but each family files only some of them (`applicability` in this catalog, read off fact_fund_monthly's per-family arms): fi files quota, quotaholders, inflows and redemptions; fidc and fiagro file delinquency; fii files quotaholders, monthly_yield and assets; fip files nav alone. A null outside that list is set by construction and carries no information; a null inside it is a blank in that month's filing.",
+    "A FIDC CEDENTE SHARE IS A PERCENT OF ITS BLOCK, NOT OF THE FUND. fidc_cedentes serves tab I''s nine slots per block: bloco A is the receivables acquired WITH substantial retention of risks and benefits by the originator, B WITHOUT, and share_pct is the cedente''s share of that block. The block totals are not served (tab I''s asset lines are not ingested), so a share cannot be turned into reais here. cedente_id is the originator''s own filed CPF/CNPJ, kept only when its check digits verify — placeholders (all-zero, all-nine) and unrecoverable identifiers were dropped at ingest, never coerced — and cedente_tickers is the FCA map''s active listings for it, NULL when not listed. share_pct is AS FILED and dirty in the way CVM''s percentage fields are: 9% of slots carry a value above 100 (max 19,771 in 2026-07); validate the range in the notebook, never read it as a fraction. Slots exist from 2019-11; nothing is matched by name.".replace("''", "'"),
+    "FIDC SACADOS ARE ANONYMIZED RANKS. fidc_sacados and the sacado_top1 / sacado_top25 metrics come from tab VIII, which publishes the 25 largest debtors as (rank, value) with no identity — CVM''s dictionary describes neither column. seq is CVM''s rank as filed and is never recomputed from valor (65 of 3,043 funds filed a non-descending series in 2026-07; they are served as filed). sacado_top25 sums the ranks the fund filed, which may be fewer than 25. Concentration = sacado_top1 / receivables (or top25 / receivables) is a notebook division, not a served number — and it can exceed 1: tab VIII and tab II do not share a base for every fund (2026-07: the top-25 sum exceeds the receivables total for 1.9% of funds, rank 1 alone for 0.5%), served as filed and never capped.".replace("''", "'"),
+    "FIDC PORTFOLIO ROWS ARE A HIERARCHY. fidc_portfolio kind=sector serves tab II as one row per code: TOTAL is the whole receivables book, a lettered code (A..K) a sector, and a code with a digit (C1, F3) a member of its lettered parent (`parent`). Sum leaves or sum parents, never both. kind=scr_debtor and kind=scr_operation are the BACEN SCR grade ladders AA..H for the same receivables, graded by debtor and by operation respectively — two views of one book, not two books. tab X exists from 2023-10 only; earlier months have no scr rows, not zero-graded ones.",
     "FIDC DELINQUENCY STARTS IN 2025-01. CVM's pre-2025 monthly FIDC file (tab II/III) carried no delinquency field, so `delinquency` is null on every fidc row through 2024-12-31 — not zero, not clean books, not a missing month. From 2025-01-31 the tab IV/VI format is ingested and delinquency is filed on every row. Never chain-link, difference or average a FIDC delinquency series across 2024-12 → 2025-01; the series begins there. Machine-readable in `regime_breaks`, and on the funds_fidc coverage row's `notes`.",
     "A FUND'S DEBENTURE HOLDINGS ARE A DIFFERENT SHAPE FROM ITS EQUITY HOLDINGS. api.fund_debentures (CDA block 6) is one row per (fund, month, issuer, maturity, rate structure, application type), as filed and never summed — two series of one issuer maturing the same day at different coupons are different securities. The issuer is its own filed CPF/CNPJ (issuer_id); p_issuer also takes a listed company's ticker or CVM code, resolved only through CVM's published FCA map, and issuer_tickers carries the issuer's active listed codes back (NULL when not listed — most debenture issuers are not). Nothing is matched by name.",
     "ANBIMA CLASS ROWS ARE INDUSTRY AGGREGATES, NOT FUNDS. api.anbima_classes serves the Boletim de Fundos de Investimento as published — R$ milhões (unit brl_mm) and percentage points (unit pct) — per class, ANBIMA type or industry total (`level`; class aggregates by default). No fund in this warehouse is mapped to an ANBIMA class: CVM's `classe` is CVM's taxonomy, so never join a fund to a class by name, and there is no panel arm because these rows carry no id. An unknown category, metric or level raises 22023 listing what exists rather than returning an empty array.",
@@ -372,6 +426,14 @@ EXAMPLES = [
         "ask": "Spread of two equity closes at month end",
         "call": "GET /v1/panel?ids=PETR4,VALE3&metrics=close&freq=month&format=wide",
         "then": "Subtract aligned columns; a missing month is null, not interpolated.",
+    },
+    {
+        "ask": "Which of these FIDCs is most exposed to one debtor?",
+        "call": (
+            "GET /v1/panel?ids=<cnpj>,<cnpj>,<cnpj>"
+            "&metrics=sacado_top1,receivables&freq=month&format=wide"
+        ),
+        "then": "Divide sacado_top1 by receivables per row; the debtor is anonymized, so this is a ratio, not a name.",
     },
     {
         "ask": "Just give me the panel; I will run a factor model",
@@ -491,6 +553,9 @@ LIMITS = {
             "option_exercises_rows": 500,
             "fund_holdings_rows": 500,
             "fund_debentures_rows": 500,
+            "fidc_cedentes_rows": 500,
+            "fidc_sacados_rows": 500,
+            "fidc_portfolio_rows": 500,
             "statement_timeout_seconds": 3,
         },
         "authenticated": {
@@ -501,6 +566,9 @@ LIMITS = {
             "option_exercises_rows": 5000,
             "fund_holdings_rows": 5000,
             "fund_debentures_rows": 5000,
+            "fidc_cedentes_rows": 5000,
+            "fidc_sacados_rows": 5000,
+            "fidc_portfolio_rows": 5000,
             "statement_timeout_seconds": 8,
         },
         "exceeding_an_id_ceiling": (
@@ -544,6 +612,24 @@ APPLICABILITY = {
             "fip": "31-Dec of the filing year (annual)",
         },
         "panel_metric_names": {"monthly_yield": "yield"},
+    },
+    # The three concentration metrics read the FIDC informe's own tabs
+    # (cvm_fidc_setor, cvm_fidc_sacado — migration 38), which only FIDCs
+    # file. tests/test_api_contract_sql.py pins every cnpj metric's family
+    # list to the union of these blocks.
+    "fidc_concentration": {
+        "rule": (
+            "receivables, sacado_top1 and sacado_top25 exist for fidc only; "
+            "a fund of any other family simply has no rows for them"
+        ),
+        "columns_by_family": {
+            "fidc": ["receivables", "sacado_top1", "sacado_top25"],
+        },
+        "starts": {
+            "receivables": "2013-01 (tab II)",
+            "sacado_top1": "2013-01 (tab VIII)",
+            "sacado_top25": "2013-01 (tab VIII)",
+        },
     },
 }
 
@@ -639,6 +725,9 @@ def catalog_payload() -> Dict[str, Any]:
             "company_financials": "POST /rest/v1/rpc/company_financials",
             "anbima_classes": "POST /rest/v1/rpc/anbima_classes",
             "fund_debentures": "POST /rest/v1/rpc/fund_debentures",
+            "fidc_cedentes": "POST /rest/v1/rpc/fidc_cedentes",
+            "fidc_sacados": "POST /rest/v1/rpc/fidc_sacados",
+            "fidc_portfolio": "POST /rest/v1/rpc/fidc_portfolio",
         },
     }
 

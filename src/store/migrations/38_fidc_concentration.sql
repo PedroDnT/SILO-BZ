@@ -39,6 +39,10 @@
 --     reported) and identifiers with a dropped leading zero (2026-07: 37
 --     thirteen-digit, 2 twelve-digit, e.g. 6084614000185 → 06084614000185).
 --     A placeholder is dropped and counted (ingest_fidc_cedente logs it).
+--   * pr_cedente is stored AS FILED, like the tranche percentage fields: 9.1%
+--     of 2026-07 slots are above 100 (max 19,771; 20,076,780 in 2024-12). The
+--     identifier is the edge and stays; the share is range-checked by readers
+--     (the dashboard reads [0,100] and prints what it set aside).
 --     A short identifier is kept only when zero-padding it yields a CNPJ (or,
 --     for ≤11 digits, a CPF) whose check digits verify — a recovered
 --     formatting loss, not a guess; anything else is dropped and counted.
