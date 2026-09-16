@@ -17,3 +17,7 @@ migrations/
 .codex/
 cache/
 temp/
+# Local virtualenv: vendored package READMEs are not MDX and break
+# `mint broken-links` before it reaches api-docs/. Gitignored, so CI never
+# saw it; this makes the local run usable too.
+.venv/

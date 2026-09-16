@@ -276,10 +276,20 @@ const { data } = await supabase.rpc('quote_history', {
 ```
 
 <Warning>
-  **Capped at 5,001 rows.** 5,000 daily prints is roughly twenty years of one ticker's
-  sessions, so this is a backstop rather than a normal limit. If you get exactly 5,001 rows,
-  the oldest sessions were kept and the newest were cut — narrow `p_from` / `p_to` and call
-  again rather than using the truncated series.
+  **One 1,000-row page, and it refuses above it.** A window wider than 1,000 sessions
+  raises SQLSTATE `22023` naming the function — you never receive a truncated series that
+  looks complete. Roughly four years of one ticker's sessions fit in a page.
+
+  Two ways past it. **Page it**: send `p_after: ""` for the first page, then the last row's
+  `trade_date` as `"YYYY-MM-DD"` for each next page; a page shorter than 1,000 rows is the
+  last. Or **narrow** `p_from` / `p_to` and call again.
+
+  ```json
+  { "p_ticker": "PETR4", "p_from": "2019-01-01", "p_after": "" }
+  { "p_ticker": "PETR4", "p_from": "2019-01-01", "p_after": "2022-12-29" }
+  ```
+
+  The Python SDK walks this for you: `silo.iter_quote_history("PETR4", start="2019-01-01")`.
 </Warning>
 
 ---

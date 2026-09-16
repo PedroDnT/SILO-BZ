@@ -36,7 +36,8 @@ api.panel(p_ids         TEXT[],
 </Note>
 
 <Warning>
-  **Over 1,000 rows the panel refuses; it never trims.** PostgREST cuts every response at
+  **Over 1,000 rows the panel refuses; it never trims.** Since v26 every other
+  set-returning function does the same. PostgREST cuts every response at
   1,000 rows and used to answer `200` with the oldest rows, so a cut panel looked complete.
   Since catalog v24 a window that would produce more than 1,000 rows raises `22023`
   (surfacing as a `400`) naming the fix: **page with `p_after`** or narrow the request. See

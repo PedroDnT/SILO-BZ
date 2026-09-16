@@ -257,14 +257,33 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
     app.extensions["silo_pool"] = pool
 
     def _quote_series(code: str, p_from: str, p_to: str, board: Optional[str], fmt: str, fields: Sequence[str]):
+        rows: list = []
+        # api.quote_history refuses a whole result over one page, so the
+        # adapter walks it with the cursor rather than asking for everything
+        # and being told no. '' = first page; then the last row's trade_date.
+        after = ""
         with pool.connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT * FROM api.quote_history(%s, %s::date, %s::date, %s)",
-                    (code, p_from, p_to, board),
-                )
-                cols = [d[0] for d in cur.description]
-                rows = [_row(r, cols) for r in cur.fetchall()]
+                while True:
+                    cur.execute(
+                        "SELECT * FROM api.quote_history(%s, %s::date, %s::date, %s, %s)",
+                        (code, p_from, p_to, board, after),
+                    )
+                    cols = [d[0] for d in cur.description]
+                    page_rows = [_row(r, cols) for r in cur.fetchall()]
+                    rows.extend(page_rows)
+                    # Bound inside the loop: the adapter's own ceiling stops the
+                    # walk instead of accumulating an unbounded list first.
+                    if len(rows) > _MAX_POINTS:
+                        return jsonify({
+                            "error": "series too long",
+                            "count": len(rows),
+                            "max": _MAX_POINTS,
+                            "hint": "narrow from/to or range",
+                        }), 400
+                    if len(page_rows) < _PAGE:
+                        break
+                    after = str(page_rows[-1]["trade_date"])
             if not rows:
                 with conn.cursor() as cur:
                     cur.execute(
@@ -274,13 +293,6 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
                     exists = cur.fetchone() is not None
                 if not exists:
                     return jsonify({"error": "not found", "ticker": code}), 404
-        if len(rows) > _MAX_POINTS:
-            return jsonify({
-                "error": "series too long",
-                "count": len(rows),
-                "max": _MAX_POINTS,
-                "hint": "narrow from/to or range",
-            }), 400
         points = series_points(rows, date_field="trade_date", fields=fields)
         source = rows[0]["source"] if rows else "b3_cotahist"
         currency = rows[0].get("currency") if rows else None
@@ -328,9 +340,30 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
             # "we have some of August" into "we have August".
             # notes: a regime boundary or per-family applicability caveat the
             # dates cannot carry (funds_fidc: delinquency starts 2025-01).
+            # newest_period and landed_at separate three questions one date
+            # used to answer wrongly: as_of is the newest ELAPSED period,
+            # newest_period is the newest period KEY (which can sit in the
+            # future — FIP is keyed 31-December), and landed_at is when ingest
+            # last SUCCEEDED for that source.
             cur.execute(
-                "SELECT dataset, as_of, complete_through, source, notes "
+                "SELECT dataset, as_of, complete_through, source, notes, "
+                "newest_period, landed_at "
                 "FROM api.coverage()"
+            )
+            cols = [d[0] for d in cur.description]
+            rows = [_row(r, cols) for r in cur.fetchall()]
+        return jsonify({"data": rows}), 200, _cache(300)
+
+    @app.get("/v1/metric-coverage")
+    def metric_coverage():
+        # Which (family, metric) pairs are ACTUALLY filed, and over what span.
+        # A pair absent here is one the family never files — not one whose data
+        # is late. Lets a caller tell "not applicable" from "missing" without
+        # differencing a series to find out.
+        with pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT entity_type, metric, first_period, last_period, "
+                "filed_rows, total_rows FROM api.metric_coverage()"
             )
             cols = [d[0] for d in cur.description]
             rows = [_row(r, cols) for r in cur.fetchall()]
@@ -427,21 +460,35 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
         if fmt not in ("rows", "columnar"):
             return jsonify({"error": "format must be rows or columnar"}), 400
         entity = request.args.get("type")
+        rows: list = []
+        # api.fund_nav pages only with p_entity_type: its cursor is a bare
+        # period, which is unique only within one family, and one CNPJ can file
+        # under two in the same month. With no ?type= the adapter therefore
+        # asks for the whole result, which the server refuses above 1000 rows —
+        # unreachable for one CNPJ's MONTHLY series (1000 months is 83 years,
+        # and the warehouse starts at 2019), so that branch is left unguarded
+        # rather than carrying a cursor it cannot key correctly.
+        after = "" if entity else None
         with pool.connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM api.fund_nav(%s, %s::date, %s::date, %s)",
-                (ident, p_from, p_to, entity),
-            )
-            cols = [d[0] for d in cur.description]
-            rows = [_row(r, cols) for r in cur.fetchall()]
+            while True:
+                cur.execute(
+                    "SELECT * FROM api.fund_nav(%s, %s::date, %s::date, %s, %s)",
+                    (ident, p_from, p_to, entity, after),
+                )
+                cols = [d[0] for d in cur.description]
+                page_rows = [_row(r, cols) for r in cur.fetchall()]
+                rows.extend(page_rows)
+                if len(rows) > _MAX_POINTS:
+                    return jsonify({
+                        "error": "series too long",
+                        "count": len(rows),
+                        "max": _MAX_POINTS,
+                    }), 400
+                if after is None or len(page_rows) < _PAGE:
+                    break
+                after = str(page_rows[-1]["period"])
         if not rows:
             return jsonify({"error": "not found", "cnpj": ident}), 404
-        if len(rows) > _MAX_POINTS:
-            return jsonify({
-                "error": "series too long",
-                "count": len(rows),
-                "max": _MAX_POINTS,
-            }), 400
         points = series_points(rows, date_field="period", fields=fields)
         body = series_envelope(
             key="cnpj",

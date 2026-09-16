@@ -216,10 +216,14 @@ reproduced against production on 2026-08-28. Both surprise callers, so read them
 before writing a client.
 
 **1. PostgREST truncates every response at 1000 rows, oldest first, silently.**
-This is `db-max-rows` on the Supabase project — not the in-function caps, which
-LIMIT at cap+1 (panel 100001, series 5001). Behind a 1000-row ceiling those
-sentinels can never fire, so the old advice to "check for exactly 100001 rows"
-detected nothing. Measured:
+This is `db-max-rows` on the Supabase project. The in-function caps used to
+LIMIT at cap+1 (panel 100001, series 5001) so a caller could detect truncation
+by counting one extra row; behind a 1000-row ceiling those sentinels could never
+fire, so the advice to "check for exactly 100001 rows" detected nothing. Both
+sentinels are gone — panel in catalog v24, the seven series and statement
+functions in v25. Every one of them now fetches one page plus one row and RAISES
+22023 rather than returning a trimmed result, and panel / quote_history /
+fund_nav take a `p_after` cursor. The measurement that forced it:
 
 ```
 POST /rest/v1/rpc/panel  p_ids=[PETR4] p_metrics=[close] p_freq=day p_to=2026-08-26

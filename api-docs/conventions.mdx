@@ -151,35 +151,49 @@ The only truthful signal is the `Content-Range` response header:
 
 <Warning>
   **`Range` paging does not work on RPC.** Asking for rows 1000–1999 of an `/rpc/` call
-  re-runs the function and hands you the first page again. To get past 1,000 rows on
-  `panel`, use its `p_after` cursor; on the other functions, narrow the request — fewer
-  ids, fewer metrics, a shorter date window — and call again. Do not stitch `Range`
-  "pages" together; they are the same page.
+  re-runs the function and hands you the first page again. To get past 1,000 rows, use
+  the `p_after` cursor on `panel`, `quote_history` and `fund_nav`; on every other
+  function, narrow the request — fewer ids, fewer metrics, a shorter date window — and
+  call again. Do not stitch `Range` "pages" together; they are the same page.
 </Warning>
 
-Each function also carries its own `LIMIT`, which matters for the local adapter (`serve/`,
-no PostgREST in front) and tells you what the function would return unclipped:
+Every set-returning function now behaves the same way above one page: it **refuses**
+with SQLSTATE `22023` rather than handing back a slice that looks whole. Three of them
+give you a cursor to walk instead; the rest ask you to narrow the window.
 
-| Endpoint | Function's own cap |
+| Endpoint | Above one 1,000-row page |
 | --- | --- |
-| [`panel`](/api-docs/panel) | **one 1,000-row page**; refuses (`22023`) above it unless `p_after` pages |
-| [`quote_history`](/api-docs/quotes) | 5,001 rows |
-| [`fund_nav`](/api-docs/funds) | 5,001 rows |
+| [`panel`](/api-docs/panel) | refuses (`22023`); pages with `p_after` = `'<date>\|<id>\|<metric>\|<asset_class>'` |
+| [`quote_history`](/api-docs/quotes) | refuses (`22023`); pages with `p_after` = the last row's `trade_date` |
+| [`fund_nav`](/api-docs/funds) | refuses (`22023`); pages with `p_after` = the last row's `period` — **and `p_entity_type` is required to page** |
+| [`option_history`](/api-docs/options) | refuses (`22023`); no cursor — narrow `p_from`/`p_to` |
+| [`termo_history`](/api-docs/termo) | refuses (`22023`); no cursor — narrow `p_from`/`p_to` |
+| [`financials`](/api-docs/financials) | refuses (`22023`); no cursor — narrow the window or pin a statement |
+| [`company_financials`](/api-docs/financials) | refuses (`22023`); no cursor — narrow the window |
+| [`anbima_classes`](/api-docs/anbima) | refuses (`22023`); no cursor — narrow the window or pin a category |
 | [`search_funds`](/api-docs/funds) | **25** rows anonymous, 200 signed in (`p_limit` is clamped, not refused) |
 | [`lookup`](/api-docs/lookup) | 20 rows |
 | [`quote_latest`](/api-docs/quotes) | 1 row |
 | [`coverage`](/api-docs/coverage) | one row per dataset, plus one `funds_<family>` row per family (~9) |
+| [`metric_coverage`](/api-docs/coverage) | one row per filed `(family, metric)` pair |
 | [`option_chain`](/api-docs/options) | **200** rows anonymous, 2,000 signed in (default 100) |
-| [`option_history`](/api-docs/options) | 5,001 rows |
 | [`option_exercises`](/api-docs/options) | **500** rows anonymous, 5,000 signed in (`p_limit` is clamped, not refused) |
-| [`termo_history`](/api-docs/termo) | 5,001 rows |
 | [`panel`](/api-docs/panel) | **3 ids** anonymous / 50 signed in; universe mode (no ids + a family) signed in only |
 
+<Note>
+  **Why `fund_nav` asks for a family before it will page.** Its cursor is a bare period,
+  and a period is unique only *within* one family — 385 CNPJs file under two (`fi` and
+  `fidc`) in the same month. Paging a two-family result on a bare date would skip or
+  repeat a row at a page edge, so the server refuses instead of answering wrongly. Without
+  `p_after` you get every family at once, each row labelled with its `entity_type`.
+</Note>
+
 <Warning>
-  **A capped response is not a valid dataset.** The cut is deterministic (the series
-  functions keep the oldest rows), but it is still an arbitrary slice of what you asked
-  for. Do not correlate it, rank it, or chart it — narrow the ids, metrics, or date window
-  and call again. `panel` cannot be cut any more: it pages or it refuses.
+  **A capped response is not a valid dataset** — which is why no function returns one any
+  more. Before v26 the series functions kept the oldest rows and answered `200`, so a
+  truncated series was indistinguishable from one that simply ended. Now every one of
+  them pages or refuses. If you still read a `Content-Range` of `0-999/*`, you are on a
+  **GET view**, not an RPC: those do still cut, and the header is still the only signal.
 </Warning>
 
 Requests are also bounded by the Supabase platform `statement_timeout` on the API
@@ -188,9 +202,17 @@ roles — **3 seconds for `anon`** (the role the published key uses on its own) 
 fails with SQLSTATE `57014` and never returns a partial result.
 
 Every one of these caps sits **under** PostgREST's server-wide 1,000-row
-`db-max-rows`, which no tier changes. `Content-Range` is the only signal that
-you were cut; the Python SDK reads it and raises rather than hand back a short
-series.
+`db-max-rows`, which no tier changes. On the GET views `Content-Range` is the only signal
+that you were cut; the Python SDK reads it and raises rather than hand back a short
+series. On the RPC functions there is nothing to read: they raise `22023` themselves.
+
+<Note>
+  **The old `5,001` cap is gone.** Each series function used to `LIMIT` at 5,001 rows so
+  an adapter could tell "too large" from "complete" by counting one extra row. On the
+  hosted API that number was unreachable — PostgREST cut the response at 1,000 rows long
+  before it — so an oversized series came back as exactly 1,000 rows with a `200` and no
+  signal at all. Nothing counts rows to detect truncation any more.
+</Note>
 
 ## Nulls, gaps, and what "missing" looks like
 

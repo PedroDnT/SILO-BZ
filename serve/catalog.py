@@ -117,6 +117,17 @@ __all__ = [
 # from 2025-01 (tab IV + VI): a series that changes meaning mid-stream must
 # not be chain-linked through the boundary. coverage() gains a `notes`
 # column carrying the same boundary on the funds_fidc row.
+# v26: the REST of the contract refuses instead of trimming. The seven series
+# and statement functions (quote_history, fund_nav, option_history,
+# termo_history, financials, company_financials, anbima_classes) join the panel
+# on one 1000-row page and raise 22023 above it; quote_history and fund_nav
+# also take a p_after date cursor, and fund_nav's paging REQUIRES p_entity_type
+# because its cursor is a bare period and a CNPJ can file under two families in
+# one month. The unreachable 5001 sentinel leaves the contract with
+# limits.sql_sentinel. coverage() gains newest_period and landed_at and bounds
+# as_of by today (funds.as_of read 2026-12-31 in production on 2026-09-16,
+# because FIP is keyed to 31-December). New api.metric_coverage() publishes the
+# filed span of every (family, metric) pair, measured rather than declared.
 # v25: the FIDC concentration tabs reach the API. Three functions —
 # fidc_cedentes (tab I, the fund → named-originator edge, by fund or by
 # cedente CPF/CNPJ/ticker, cedente_tickers from the FCA map like
@@ -137,7 +148,7 @@ __all__ = [
 # stated as (id, asset_class, date, metric) and p_entity_type narrows the fund
 # arms to one family. Universe mode (p_ids empty + p_entity_type, optional
 # p_min_nav / p_min_months) walks a whole family for signed-in callers.
-CATALOG_VERSION = 25
+CATALOG_VERSION = 26
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -221,6 +232,7 @@ METRICS: Dict[str, Dict[str, Any]] = {
         "grain": ["month"],
         "source": "cvm",
         "meaning": "Fund net assets (vl_patrim_liq).",
+        "coverage": "api.metric_coverage()",
     },
     "quota": {
         "id_type": ["cnpj"],
@@ -228,6 +240,7 @@ METRICS: Dict[str, Dict[str, Any]] = {
         "grain": ["month"],
         "source": "cvm",
         "meaning": "FI unit quota. Comparable subclass only.",
+        "coverage": "api.metric_coverage()",
     },
     "delinquency": {
         "id_type": ["cnpj"],
@@ -235,6 +248,12 @@ METRICS: Dict[str, Dict[str, Any]] = {
         "grain": ["month"],
         "source": "cvm",
         "meaning": "Delinquent portfolio value (not a rate unless you divide by nav).",
+        # The one `since` this catalog states as a constant, because it is a
+        # published regime boundary (see `regime_breaks`) and a lockstep test
+        # pins it. Every other span is MEASURED — call api.metric_coverage()
+        # rather than trusting a date written here once.
+        "since": {"fidc": "2025-01-31"},
+        "coverage": "api.metric_coverage()",
     },
     "yield": {
         "id_type": ["cnpj"],
@@ -242,6 +261,7 @@ METRICS: Dict[str, Dict[str, Any]] = {
         "grain": ["month"],
         "source": "cvm",
         "meaning": "Monthly yield % as published (FII complemento).",
+        "coverage": "api.metric_coverage()",
     },
     "inflows": {
         "id_type": ["cnpj"],
@@ -249,6 +269,7 @@ METRICS: Dict[str, Dict[str, Any]] = {
         "grain": ["month"],
         "source": "cvm",
         "meaning": "Gross monthly subscriptions.",
+        "coverage": "api.metric_coverage()",
     },
     "redemptions": {
         "id_type": ["cnpj"],
@@ -256,6 +277,7 @@ METRICS: Dict[str, Dict[str, Any]] = {
         "grain": ["month"],
         "source": "cvm",
         "meaning": "Gross monthly redemptions.",
+        "coverage": "api.metric_coverage()",
     },
     "quotaholders": {
         "id_type": ["cnpj"],
@@ -266,6 +288,7 @@ METRICS: Dict[str, Dict[str, Any]] = {
         "grain": ["month"],
         "source": "cvm",
         "meaning": "Number of unit-holders (fi, fii). Not served for fidc, fiagro, fip.",
+        "coverage": "api.metric_coverage()",
     },
     # FIDC concentration (migration 38). These read the informe's own tabs,
     # not fact_fund_monthly, so their family list is pinned by
@@ -346,21 +369,28 @@ CONSTRAINTS = [
     "explicit `to` serves the window verbatim, partial months included.",
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
-    "Row caps — getting this wrong means silently analysing a TRUNCATED panel, "
-    "the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, "
-    "imposed by PostgREST (db-max-rows) on every response. api.panel now "
-    "REFUSES rather than trims: a window that would produce more than 1000 "
-    "rows raises SQLSTATE 22023 naming the function, so a short panel can no "
-    "longer look complete. To get past 1000 rows, PAGE WITH p_after: send "
-    "p_after='' for the first page, then the last row's 'date|id|metric|"
-    "asset_class' for the next; every page is exactly 1000 rows until the "
-    "last, which is shorter. Or narrow p_from/p_to, ids or metrics. The old "
-    "100001 sentinel is gone; 5001 on the series functions is still "
-    "unreachable behind the 1000-row page and must not be used to detect "
-    "truncation there (measured 2026-08-28: quote_history from 2019 returned "
-    "exactly 1000 rows, 200, OLDEST rows kept). On GET views and on the "
-    "series functions the Content-Range RESPONSE HEADER is still the signal: "
-    "`0-999/*` means cut; send `Prefer: count=exact` to read the true total. "
+    "Row caps — getting this wrong means silently analysing a TRUNCATED "
+    "series, the exact fabrication this API exists to prevent. THE PAGE IS "
+    "1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY "
+    "set-returning function now REFUSES rather than trims: a window that "
+    "would produce more than 1000 rows raises SQLSTATE 22023 naming the "
+    "function, so a short result can no longer look complete. That is all "
+    "eight — panel, quote_history, fund_nav, option_history, termo_history, "
+    "financials, company_financials, anbima_classes (`limits.page.all`). "
+    "THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send "
+    "p_after='' for the first page, then the key from the last row — for the "
+    "panel 'date|id|metric|asset_class', for quote_history and fund_nav just "
+    "that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until "
+    "the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when "
+    "paging, because its cursor is a bare period and one CNPJ can file under "
+    "two families in the same month. The other five do not page: narrow "
+    "p_from/p_to instead. The old sentinels (5001 on the series functions, "
+    "100001 on the panel) are GONE and were never observable anyway — "
+    "PostgREST cut the response at 1000 first (measured 2026-08-28: "
+    "quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows "
+    "kept). On GET views the Content-Range RESPONSE HEADER is still the "
+    "signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true "
+    "total. The RPC functions no longer need it — they raise instead. "
     "RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel "
     "returns the same first page again); p_after is the RPC cursor, Range/"
     "limit/offset are the view cursor. The local /v1 Flask adapter pages the "
@@ -460,11 +490,17 @@ AGENT_INSTRUCTIONS = (
     "adapter (serve/app.py) that is not necessarily deployed; its query-string "
     "form and its `format=wide` envelope exist ONLY there. Prefer the "
     "postgrest section unless you know the /v1 adapter is running. Read the "
-    "row-cap constraint: panel REFUSES (SQLSTATE 22023) a window over 1000 "
-    "rows instead of trimming it — page it with p_after or narrow it. The "
-    "views and series functions still cut at 1000 and keep the OLDEST rows, "
-    "so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the "
-    "only thing that tells you. "
+    "row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window "
+    "over 1000 rows instead of trimming it — page panel, quote_history and "
+    "fund_nav with p_after, narrow the rest. fund_nav also needs "
+    "p_entity_type to page. The GET views still cut at 1000 and keep the "
+    "OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: "
+    "`0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A "
+    "GAP, call coverage() and metric_coverage(): a null outside a family's "
+    "column set is not applicable, and a metric absent from metric_coverage() "
+    "is one that family never files. coverage().as_of is the newest ELAPSED "
+    "period; newest_period can sit in the future when a family files "
+    "forward-dated (FIP is keyed 31-December), so never read it as freshness. "
     "PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics "
     "returns `close` for tickers and `nav` for CNPJs, and that is the call to "
     "make unless you actually need another measure — name metrics explicitly "
@@ -522,26 +558,57 @@ LIMITS = {
     },
     "page": {
         "size": 1000,
-        "functions": ["panel"],
+        # Every set-returning function, split by what it offers ABOVE one page.
+        "all": [
+            "panel", "quote_history", "fund_nav", "option_history",
+            "termo_history", "financials", "company_financials",
+            "anbima_classes",
+        ],
+        # The protocol every cursor below shares.
+        "cursor_protocol": (
+            "p_after: null = whole result (refused above 1000 rows); "
+            "'' = first page; the function's key copied from the last row = "
+            "the next page; a page shorter than 1000 is the last"
+        ),
+        "functions": {
+            # Walking the whole series is the normal case, so these take a
+            # cursor, keyed as below.
+            "paged": {
+                "panel": (
+                    "'<date>|<id>|<metric>|<asset_class>' copied from the last "
+                    "row; order is date, id, metric, asset_class"
+                ),
+                "quote_history": (
+                    "the last row's trade_date as 'YYYY-MM-DD'; order is "
+                    "trade_date"
+                ),
+                "fund_nav": (
+                    "the last row's period as 'YYYY-MM-DD'; order is period, "
+                    "entity_type. PAGING REQUIRES p_entity_type — the cursor "
+                    "is a bare period, which is unique only within one family, "
+                    "and 385 CNPJs file under two (fi + fidc) in the same "
+                    "month. Without it you get 22023, not a wrong answer. "
+                    "Whole-result mode needs no p_entity_type and labels every "
+                    "row with its family"
+                ),
+            },
+            # A window over one page here is a mistake, not a walk (an option
+            # series lives months; a statement has tens of rows), so these
+            # refuse and ask you to narrow instead of handing you a cursor.
+            "raise_only": [
+                "option_history", "termo_history", "financials",
+                "company_financials", "anbima_classes",
+            ],
+        },
         "over_cap": (
             "SQLSTATE 22023 naming the function — nothing is trimmed to fit; "
             "the message says to page or narrow"
         ),
-        "cursor": (
-            "p_after: null = whole result (refused above 1000 rows); '' = first "
-            "page; '<date>|<id>|<metric>|<asset_class>' copied from the last "
-            "row = the next page; a page shorter than 1000 is the last"
-        ),
-        "order": "date, id, metric, asset_class",
-    },
-    "sql_sentinel": {
-        "series": 5001,
-        "reachable": False,
-        "note": (
-            "the series functions' own LIMIT (serve _MAX_POINTS + 1). "
-            "Unreachable behind the 1000-row ceiling on the hosted API; never "
-            "a truncation signal there. panel no longer has one: it refuses "
-            "over the page (see `page`)"
+        "no_sentinel": (
+            "there is no cap+1 row to count any more. The old 5001 (series) "
+            "and 100001 (panel) sentinels were unobservable on the hosted API, "
+            "because PostgREST cuts every response at 1000 rows long before "
+            "either is reached; they are gone, and the 22023 replaces them"
         ),
     },
     "tiers": {
@@ -695,6 +762,7 @@ def catalog_payload() -> Dict[str, Any]:
             "quotes": "GET /v1/quotes/{ticker}",
             "funds": "GET /v1/funds/{cnpj}/nav",
             "coverage": "GET /v1/coverage",
+            "metric_coverage": "GET /v1/metric-coverage",
         },
         "postgrest": {
             # The core contract. These were absent from this section, so an
@@ -703,6 +771,7 @@ def catalog_payload() -> Dict[str, Any]:
             "panel": "POST /rest/v1/rpc/panel",
             "lookup": "POST /rest/v1/rpc/lookup",
             "coverage": "POST /rest/v1/rpc/coverage",
+            "metric_coverage": "POST /rest/v1/rpc/metric_coverage",
             "search_funds": "POST /rest/v1/rpc/search_funds",
             "fund_profile": "POST /rest/v1/rpc/fund_profile",
             "fund_holdings": "POST /rest/v1/rpc/fund_holdings",

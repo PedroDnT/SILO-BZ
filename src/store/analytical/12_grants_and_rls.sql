@@ -193,6 +193,9 @@ GRANT SELECT ON fact_security_monthly  TO anon, authenticated;
 -- Serving-readiness classification (04): tiny, aggregated, no fund identities
 -- beyond a count — the dashboards' spines clamp on it.
 GRANT SELECT ON mv_period_completeness TO anon, authenticated;
+-- Filed-span classification per (entity_type, metric) (04): aggregate counts
+-- and dates only, no fund identities. Served by api.metric_coverage().
+GRANT SELECT ON mv_metric_coverage     TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Dimension views

@@ -62,11 +62,14 @@ complete periods).
 | Method | Endpoint | Notes |
 | --- | --- | --- |
 | `catalog()`, `metrics()`, `limits()` | `catalog` | cached once per client |
-| `coverage()` | `coverage` | call before claiming freshness |
+| `coverage()` | `coverage` | call before claiming freshness; `as_of` is the newest *elapsed* period, `newest_period` can be in the future |
+| `metric_coverage()` | `metric_coverage` | which `(family, metric)` pairs are actually filed, and since when |
 | `lookup(query)` | `lookup` | never a name-inferred ticker↔CNPJ |
 | `panel(ids, metrics, start, end, freq, wide, entity_type, min_nav, min_months)` | `panel` | whole result; raises `SiloOverCap` above one 1,000-row page; `wide=False` for the long rows |
 | `iter_panel(...)` · `panel_all(..., wide)` | `panel` with `p_after` | pages the cursor until a short page; `ids=None` + `entity_type=` is universe mode (signed in) |
-| `quote_history(ticker, start, end, board)` · `quote_latest(ticker, board)` | `quote_history` · `quote_latest` | unadjusted prices |
+| `quote_history(ticker, start, end, board)` · `quote_latest(ticker, board)` | `quote_history` · `quote_latest` | unadjusted prices; whole result, raises `SiloOverCap` above one page |
+| `iter_quote_history(...)` · `quote_history_all(...)` | `quote_history` with `p_after` | pages on the last row's `trade_date` until a short page |
+| `iter_fund_nav(cnpj, entity_type, start, end)` · `fund_nav_all(...)` | `fund_nav` with `p_after` | pages on `period`; **`entity_type` is required** and checked client-side |
 | `option_chain(prefix, trade_date, expiry_from, limit)` · `option_history(codneg, …)` · `option_exercises(prefix, …)` | options | prefix ≥ 3 chars, checked client-side |
 | `termo_history(codneg, start, end)` | `termo_history` | |
 | `fund_profile(cnpj)` · `fund_nav(cnpj, start, end, entity_type)` · `search_funds(query, limit)` | funds | |
@@ -97,10 +100,10 @@ except SiloTruncated as e:
     print(e.rows[-1]["trade_date"])       # where the cut fell — inspect, never use
 ```
 
-Range paging does not work on function calls, so for the series functions the
-client cannot stitch the rest: narrow the window, ask for fewer ids, or take one
-metric at a time. `panel` is different since catalog v24: the server **refuses**
-a call over one 1,000-row page (`SiloOverCap`) and pages with its own cursor:
+Range paging does not work on function calls, so the client never stitches
+`Range` "pages". Since catalog v26 it does not have to for the three long
+series: the server **refuses** a call over one 1,000-row page (`SiloOverCap`)
+and `panel`, `quote_history` and `fund_nav` each page with their own cursor.
 
 ```python
 from silo_client import SiloOverCap
@@ -110,10 +113,23 @@ try:
 except SiloOverCap:
     rows = silo.panel_all(["PETR4"], ["close"], start="2019-01-01", freq="day")
 
+# the same shape for a long quote series
+quotes = silo.quote_history_all("PETR4", start="2019-01-01")
+
+# nav pages within ONE family — the cursor is a bare period, and 385 CNPJs
+# file under two in the same month, so the family is not optional
+nav = silo.fund_nav_all("05754060000113", "fi", start="2019-01-01")
+
 # a whole family, signed in: every FIDC with >= 12 filed months and >= R$10mm
 fidcs = silo.panel_all(None, ["delinquency", "nav"], entity_type="fidc",
                        min_nav=1e7, min_months=12, wide=True)
 ```
+
+For `option_history`, `termo_history`, `financials`, `company_financials` and
+`anbima_classes` there is no cursor: `SiloOverCap` there means narrow the
+window and call again. A window over one page on a months-long option series or
+a single statement is a sign the request is wrong, not that there is more to
+walk.
 
 `panel(wide=True)` refuses to pivot a CNPJ that files under two families in the
 same month (the grain is `(id, asset_class, date, metric)`): pass `entity_type=`

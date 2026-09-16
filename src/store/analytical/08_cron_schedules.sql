@@ -86,6 +86,15 @@ BEGIN
       'REFRESH MATERIALIZED VIEW CONCURRENTLY mv_period_completeness'
     );
 
+    -- mv_metric_coverage — 06:40 UTC daily, AFTER the fact refresh it reads.
+    -- Serves api.metric_coverage(), which reports which (family, metric) pairs
+    -- are actually filed and from when.
+    PERFORM cron.schedule(
+      'refresh-metric-coverage',
+      '40 6 * * *',
+      'REFRESH MATERIALIZED VIEW CONCURRENTLY mv_metric_coverage'
+    );
+
     RAISE NOTICE 'pg_cron schedules registered: refresh-fact-fund-monthly (06:20), refresh-fact-security-monthly (06:25)';
 
   ELSE
