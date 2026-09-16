@@ -17,13 +17,28 @@
 --     Clamped per family, only FI had the newest month and the total fell
 --     from ~R$15.6tn to R$14.3tn at the right edge — a cliff that read as an
 --     outflow.
-with anchor as (
-  select least(
+--
+-- PLAN SHAPE MATTERS HERE (measured on production, 2026-09-16). The first
+-- version of this anchor was a plain CTE and the window predicate wrapped
+-- f.period in date_trunc(). Postgres inlined the CTE and evaluated the four
+-- latest_complete_period() calls INSIDE the row filter of an index-only scan
+-- over all 2.35M fact rows — 37 minutes for one 48-row source, and every
+-- dashboard build since #228 died at Vercel's 45-minute limit (the previous
+-- shape took 48 s). Hence:
+--   * `as materialized` — the anchor is computed once, as a CTE scan;
+--   * the window is a RANGE ON THE RAW period column, so it is an Index Cond
+--     on ix_fact_fund_monthly_period, not a per-row expression. The bounds
+--     are month-aligned, and every family's raw period falls inside its own
+--     calendar month, so the range selects the same 12 months as
+--     date_trunc('month', period) BETWEEN p_end - 11 months AND p_end.
+-- Same 48 rows, 0.6 s.
+with anchor as materialized (
+  select date_trunc('month', least(
            latest_complete_period('fi'),
            latest_complete_period('fidc'),
            latest_complete_period('fii'),
            latest_complete_period('fiagro')
-         ) as p_end
+         ))::date as p_end
 )
 select
   f.entity_type,
@@ -32,7 +47,7 @@ select
 from fact_fund_monthly f
 cross join anchor a
 where f.entity_type <> 'fip'
-  and date_trunc('month', f.period)::date >  (date_trunc('month', a.p_end) - interval '12 months')::date
-  and date_trunc('month', f.period)::date <= date_trunc('month', a.p_end)::date
+  and f.period >= (a.p_end - interval '11 months')::date
+  and f.period <  (a.p_end + interval '1 month')::date
 group by f.entity_type, date_trunc('month', f.period)
 order by period desc, aum_bn desc
