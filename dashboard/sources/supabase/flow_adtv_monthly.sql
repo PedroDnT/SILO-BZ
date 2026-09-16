@@ -11,13 +11,25 @@
 --
 -- Zero-row safe: returns no rows on a fresh database, which the page renders as
 -- an empty chart rather than failing the build.
-select
-  a.period                                as month,
-  a.volume / nullif(a.n_sessions, 0) / 1e9 as adtv_brl_bn,
-  a.n_sessions,
-  a.n_tickers
-from mv_b3_monthly_activity a
-where a.grain = 'segment'
-  and a.market_segment = 'cash'
-  and a.n_sessions > 0
-order by a.period
+--
+-- ZERO-ROW SAFETY: this source is empty until the first daily run lands, and a
+-- zero-row source writes the 0-byte parquet that kills the whole Evidence build
+-- (same guard as b3_top_volume.sql / delinquency_trend.sql). That window is not
+-- hypothetical here — B3 keeps no archive, so on a fresh deploy these tables are
+-- empty until the cron has run once. Hence the union-all sentinel row.
+with rows_ as (
+  select
+    a.period                                as month,
+    a.volume / nullif(a.n_sessions, 0) / 1e9 as adtv_brl_bn,
+    a.n_sessions,
+    a.n_tickers
+  from mv_b3_monthly_activity a
+  where a.grain = 'segment'
+    and a.market_segment = 'cash'
+    and a.n_sessions > 0
+  order by a.period
+)
+select * from rows_
+union all
+select null::date, null::numeric, null::bigint, null::bigint
+where not exists (select 1 from rows_)

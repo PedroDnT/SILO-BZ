@@ -176,3 +176,49 @@ def test_the_retention_ratchet_is_documented_where_an_operator_will_see_it():
     """A gap here is permanent. The DDL must say so, not just the fetcher."""
     assert re.search(r"21[- ]BUSINESS[- ]DAY|21 business day", MIG, re.IGNORECASE)
     assert "backfill" in MIG.lower()
+
+
+# ── zero-row safety on a fresh deploy ─────────────────────────────────────
+
+DASHBOARD = ROOT / "dashboard"
+
+# Sources that are a single aggregate row by construction (max() over an empty
+# table still returns one row), so they cannot emit the 0-byte parquet.
+_SINGLE_ROW_SOURCES = {"short_headline", "flow_headline"}
+
+
+def _new_sources():
+    return sorted(
+        p for p in (DASHBOARD / "sources" / "supabase").glob("*.sql")
+        if p.stem.startswith(("short_", "flow_"))
+    )
+
+
+def test_every_new_source_exists():
+    assert len(_new_sources()) == 12
+
+
+@pytest.mark.parametrize("path", _new_sources(), ids=lambda p: p.stem)
+def test_new_sources_survive_an_empty_database(path):
+    """These tables are empty until the first daily run — and B3 has no archive.
+
+    A zero-row Evidence source writes a 0-byte parquet that kills the whole
+    dashboard build, not just its own page. Every other dataset here is
+    backfilled before a deploy ever sees it; these cannot be, so the empty
+    window is real on every fresh database. Verified against an empty Postgres
+    during development: 10 of the 12 returned zero rows before the guard.
+    """
+    body = strip_comments(path.read_text(encoding="utf-8"))
+    if path.stem in _SINGLE_ROW_SOURCES:
+        assert "max(" in body.lower(), (
+            f"{path.stem} is listed as single-row but has no aggregate to guarantee it"
+        )
+        return
+    assert re.search(r"union\s+all", body, re.IGNORECASE), (
+        f"{path.stem} is a ranked/grouped source with no union-all sentinel: it "
+        "returns zero rows on a fresh database and takes the whole build with it"
+    )
+    assert re.search(r"where\s+not\s+exists\s*\(\s*select\s+1", body, re.IGNORECASE), (
+        f"{path.stem}'s sentinel is not gated on `where not exists (select 1 ...)`, "
+        "so it would emit a null row even when real data exists"
+    )
