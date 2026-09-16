@@ -46,6 +46,14 @@ ALWAYS_REFRESH_SESSIONS = 2
 # session, and B3 sits behind Cloudflare, which throttles bursts.
 MAX_REQUESTS_PER_RUN = 30
 
+# BTBTrade is fetched one session per request (it ignores FinalDate — see the
+# fetcher) and each response is ~5.9 MB / ~43k rows. A cold start facing the
+# full 21-session window would be ~124 MB and ~900k rows in one run, which is
+# a long way outside a daily job's budget. So it claims the newest sessions
+# first and walks backwards over subsequent runs: the window is 21 sessions
+# wide and this takes at most a handful of days to fill, well inside it.
+MAX_TRADE_SESSIONS_PER_RUN = 5
+
 _UPSERT_BATCH = 5000
 
 
@@ -62,6 +70,10 @@ def upsert_open_positions(conn: Any, rows: List[Dict[str, Any]]) -> int:
 
 def upsert_lending_rates(conn: Any, rows: List[Dict[str, Any]]) -> int:
     return _upsert(conn, P.TABLE_LENDING_RATE, P.CONFLICT_LENDING_RATE, rows)
+
+
+def upsert_lending_trades(conn: Any, rows: List[Dict[str, Any]]) -> int:
+    return _upsert(conn, P.TABLE_LENDING_TRADE, P.CONFLICT_LENDING_TRADE, rows)
 
 
 def upsert_investor_participation(conn: Any, rows: List[Dict[str, Any]]) -> int:

@@ -368,3 +368,91 @@ def test_investor_request_dates_apply_the_t_plus_two_lag():
     # 09-02 is delivered two sessions later, on 09-04. 09-10 is the newest
     # session, so nothing can deliver it yet — it is left for a later run.
     assert requests == [date(2026, 9, 4)]
+
+
+# ── BTBTrade (individual lending trades) ──────────────────────────────────
+
+
+def test_lending_trade_parses_real_export():
+    from src.parsers.b3_bdi import parse_lending_trade
+
+    rows = parse_lending_trade(fixture("lending_trade.csv"))
+    assert rows
+    natu = next(r for r in rows if r["codneg"] == "NATU3")
+    assert natu["trade_date"] == date(2026, 9, 10)
+    assert natu["numero_negocio"] == 113392202
+    assert natu["quantidade"] == Decimal("497549")
+    assert natu["taxa_pct"] == Decimal("40.00")     # percentage points, not 0.40
+    assert natu["mercado"] == "Balcão"
+    assert natu["hora"] == "19:14:32"
+
+
+def test_lending_trade_reads_participants_from_the_band_row():
+    """The header says `Código` twice; only the band distinguishes the legs.
+
+    Swapping doador and tomador would invert every flow this table exists to
+    show, so this pins the mapping against a trade whose two legs differ.
+    """
+    from src.parsers.b3_bdi import parse_lending_trade
+
+    rows = parse_lending_trade(fixture("lending_trade.csv"))
+    smft = next(r for r in rows if r["codneg"] == "SMFT3")
+    assert smft["doador_codigo"] == "39"
+    assert smft["doador_nome"].startswith("AGORA")
+    assert smft["tomador_codigo"] == "3"
+    assert smft["tomador_nome"].startswith("XP")
+
+
+def test_lending_trade_raises_without_the_participant_band():
+    from src.parsers.b3_bdi import parse_lending_trade
+
+    lines = fixture("lending_trade.csv").splitlines()
+    header_i = next(i for i, l in enumerate(lines) if l.startswith("Código IF;"))
+    with pytest.raises(B3BdiParseError, match="band"):
+        parse_lending_trade("\n".join(lines[:header_i - 1] + lines[header_i:]))
+
+
+def test_lending_trade_key_is_unique_within_a_session():
+    """`Número do negócio` keys the row with its date — 0 duplicates in 43,165
+    rows on 2026-09-10. If that ever stopped holding, rows would silently
+    overwrite each other on upsert."""
+    from src.parsers.b3_bdi import CONFLICT_LENDING_TRADE, parse_lending_trade
+
+    rows = parse_lending_trade(fixture("lending_trade.csv"))
+    keys = {tuple(r[c] for c in CONFLICT_LENDING_TRADE) for r in rows}
+    assert len(keys) == len(rows)
+    assert CONFLICT_LENDING_TRADE == ("trade_date", "numero_negocio")
+
+
+def test_lending_trade_stores_no_raw_but_warns_on_an_unmapped_column(caplog):
+    """This table has no `raw` column, so a new B3 column must not vanish.
+
+    Detection replaces storage: the parser names the unmapped label loudly and
+    still returns the rows, because losing a session that can never be
+    re-fetched is worse than temporarily not storing one field.
+    """
+    from src.parsers.b3_bdi import parse_lending_trade
+
+    rows = parse_lending_trade(fixture("lending_trade.csv"))
+    assert "raw" not in rows[0]
+
+    lines = fixture("lending_trade.csv").splitlines()
+    hi = next(i for i, l in enumerate(lines) if l.startswith("Código IF;"))
+    lines[hi - 1] += ";"
+    lines[hi] += ";Novo Campo B3"
+    lines[hi + 1:] = [l + ";valor" for l in lines[hi + 1:] if l.strip()]
+
+    with caplog.at_level("WARNING"):
+        drifted = parse_lending_trade("\n".join(lines), origin="drift")
+    assert len(drifted) == len(rows)
+    assert "Novo Campo B3" in caplog.text
+
+
+def test_trade_sessions_are_capped_harder_than_the_other_tables():
+    """BTBTrade is ~43k rows / 5.9 MB per session and cannot be range-fetched.
+
+    A cold start against the full 21-session window would be ~124 MB in one
+    run, so it claims the newest sessions first and walks back over later runs.
+    """
+    assert lending.MAX_TRADE_SESSIONS_PER_RUN < lending.MAX_REQUESTS_PER_RUN
+    assert lending.MAX_TRADE_SESSIONS_PER_RUN <= 5

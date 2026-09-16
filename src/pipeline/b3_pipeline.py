@@ -351,6 +351,72 @@ class B3Ingestor:
         )
         return totals
 
+    async def ingest_lending_trades(self) -> int:
+        """Individual lending trades, ONE REQUEST PER SESSION.
+
+        Not a ranged fetch, and this is not an optimisation choice. BTBTrade
+        IGNORES `FinalDate`: verified 2026-09-16, asking for 2026-09-08..09-11
+        returns only 08/09, and 09-10..09-11 returns only 10/09 — byte-for-byte
+        the same body as the single day. `_ingest_bdi_span` would therefore
+        request the whole window, receive one session, and (correctly) log the
+        other twenty as a shortfall on every run, forever.
+
+        Each session is its own audit row, so a single bad day is visible as
+        one skipped/errored slice instead of poisoning the whole window. A
+        failure on one session does not abandon the rest, but it is counted
+        and reported — the sessions behind it are the ones about to age out.
+        """
+        targets = lending.sessions_to_fetch(
+            self._supabase, bdi.TABLE_LENDING_TRADE, "trade_date"
+        )
+        # Newest first: an older session is closer to ageing out, but a run
+        # that never reaches today leaves the freshest data missing, and the
+        # window is wide enough to come back for the rest tomorrow.
+        targets = sorted(targets, reverse=True)[:lending.MAX_TRADE_SESSIONS_PER_RUN]
+
+        total = 0
+        failures: List[str] = []
+        for session in targets:
+            run_id = str(uuid4())
+            self._log_start(run_id, "lending_trade", session.year, session.month)
+            try:
+                text = await self._bdi.fetch_table("BTBTrade", session)
+            except B3BdiEmpty as exc:
+                self._log_finish(run_id, 0, ingest_log.describe(exc), skipped=True)
+                continue
+            except Exception as exc:  # noqa: BLE001 — counted, reported below
+                self._log_finish(run_id, 0, ingest_log.describe(exc))
+                failures.append(f"{session.isoformat()}: {exc}")
+                continue
+            try:
+                rows = bdi.parse_lending_trade(text, origin=session.isoformat())
+                # The export is single-session, so anything else in the body
+                # means B3 answered a different day than the one asked for.
+                wrong = {r["trade_date"] for r in rows} - {session}
+                if wrong:
+                    raise RuntimeError(
+                        f"BTBTrade for {session} returned sessions "
+                        f"{sorted(d.isoformat() for d in wrong)}"
+                    )
+                n = lending.upsert_lending_trades(self._supabase, rows)
+            except Exception as exc:  # noqa: BLE001 — counted, reported below
+                self._log_finish(run_id, 0, ingest_log.describe(exc))
+                failures.append(f"{session.isoformat()}: {exc}")
+                continue
+            self._log_finish(run_id, n)
+            total += n
+            logger.info("B3 lending trades %s: %d rows", session, n)
+
+        if failures and total == 0 and targets:
+            raise RuntimeError(
+                f"B3 lending trades: all {len(targets)} sessions failed; "
+                f"first: {failures[0][:200]}"
+            )
+        if failures:
+            logger.warning("B3 lending trades: %d/%d sessions failed; first: %s",
+                           len(failures), len(targets), failures[0][:200])
+        return total
+
     async def ingest_investor_flow(self) -> Dict[str, int]:
         """Month-to-date investor participation, one request per missing session.
 
@@ -511,6 +577,7 @@ class B3Ingestor:
         """Every BDI-sourced table, in one call. Ratchet — see the fetcher."""
         totals: Dict[str, int] = {}
         totals.update(await self.ingest_lending())
+        totals[bdi.TABLE_LENDING_TRADE] = await self.ingest_lending_trades()
         totals.update(await self.ingest_investor_flow())
         totals[bdi.TABLE_INDEX_PORTFOLIO] = await self.ingest_index_portfolios()
         totals[bdi.TABLE_INSTRUMENT] = await self.ingest_instruments()

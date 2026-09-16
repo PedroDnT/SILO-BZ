@@ -1,0 +1,11 @@
+﻿Registro das transações de empréstimo de ativos realizadas entre investidores com visão detalhada das operações que permite que os investidores monitorem suas negociações. Os detalhes sobre as regras utilizadas, bem como a definição de cada um dos campos, estão disponíveis no 
+Glossário;https://www.b3.com.br/data/files/A6/C3/43/9D/3941B810E9C1AAA8AC094EA8/Negocio%20a%20Negocio%20-%20Emprestimos%20de%20Ativos%20-%20btb%202023.pdf
+
+;;;;;;;;;Participante doador;;Participante tomador;
+Código IF;Quantidade;Taxa % remuneração;Número do negócio;Mercado;Data de referência;Hora;Ação de atualização;Tipo sessão do pregão;Código;Nome doador;Código;Nome tomador
+NATU3;497.549;40,00%;113.392.202;Balcão;10/09/2026;19:14:32;Novo (0);Regular (1);1130;STONEX DISTRIBUIDORA DE TITULOS E VALORES MOBILIARIOS LTDA;1130;STONEX DISTRIBUIDORA DE TITULOS E VALORES MOBILIARIOS LTDA
+MOTV3;50.876;0,10%;113.390.448;Balcão;10/09/2026;19:12:52;Novo (0);Regular (1);3;XP INVESTIMENTOS CCTVM S/A;3;XP INVESTIMENTOS CCTVM S/A
+ENGI11;4.527;0,09%;113.400.395;Balcão;10/09/2026;19:05:17;Novo (0);Regular (1);1130;STONEX DISTRIBUIDORA DE TITULOS E VALORES MOBILIARIOS LTDA;1130;STONEX DISTRIBUIDORA DE TITULOS E VALORES MOBILIARIOS LTDA
+SMFT3;92.647;0,28%;113.405.837;Balcão;10/09/2026;18:51:58;Novo (0);Regular (1);39;AGORA CTVM S/A;3;XP INVESTIMENTOS CCTVM S/A
+SMFT3;7.353;0,28%;113.405.836;Balcão;10/09/2026;18:51:57;Novo (0);Regular (1);39;AGORA CTVM S/A;3;XP INVESTIMENTOS CCTVM S/A
+SNEL11;390.500;0,90%;113.404.144;Balcão;10/09/2026;18:50:24;Novo (0);Regular (1);1099;INTER DISTRIBUIDORA DE TITULOS E VALORES MOBILIARIOS LTDA;262;MIRAE ASSET WEALTH MANAGEMENT (BRASIL) CCTVM LTDA.
