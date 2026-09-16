@@ -9,17 +9,32 @@
 -- ZERO-ROW SAFETY: `total` is an aggregate without GROUP BY (always one row) and
 -- the breakdown is LEFT JOINed onto it, so an empty cvm_fi_cda yields one
 -- all-NULL row instead of an empty parquet.
-with anchor as (
+with bound as materialized (
+  -- ONE evaluation of latest_complete_period('fi'). The function is STABLE, so
+  -- the planner MAY hoist it out of a row filter -- but #231 measured exactly
+  -- this call being evaluated per row inside a scan of 2.35M fact rows, so the
+  -- single evaluation is pinned here rather than left to the planner.
+  select (date_trunc('month', latest_complete_period('fi'))
+          + interval '1 month' - interval '1 day')::date as last_complete_day
+),
+anchor as (
   -- the latest CDA month AT OR BEFORE the last complete FI month: the newest
-  -- ingested month is routinely only partly filed. The filter keeps p_end an
-  -- actual stored period value, so the equality join below still matches.
+  -- ingested month is routinely only partly filed. p_end stays an actual stored
+  -- period value, so the equality join below still matches.
+  --
+  -- ORDER BY period DESC LIMIT 1, NOT max(period) FILTER (...): an aggregate
+  -- FILTER blocks Postgres's index MIN/MAX rewrite, so the FILTER form reads
+  -- EVERY row of cvm_fi_cda -- the holdings book, the largest table this
+  -- dashboard touches -- to find one date. This form walks idx_fi_cda_period
+  -- (period DESC) and stops at the first qualifying row. Identical value.
   select coalesce(
-           max(period) filter (
-             where period <= (date_trunc('month', latest_complete_period('fi')) + interval '1 month' - interval '1 day')::date
-           ),
+           (select t.period
+              from cvm_fi_cda t
+             where t.period <= (select b.last_complete_day from bound b)
+             order by t.period desc
+             limit 1),
            date_trunc('month', current_date)::date
          ) as p_end
-  from cvm_fi_cda
 ),
 base as (
   select

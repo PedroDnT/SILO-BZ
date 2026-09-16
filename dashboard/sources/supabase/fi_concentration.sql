@@ -24,17 +24,32 @@ select
   x.credit_priv_share     as credit_priv_share
 from (values (1)) as g(one)
 left join lateral (
-  with anchor as (
-    -- the latest PERFIL month AT OR BEFORE the last complete FI month — the
-    -- newest ingested month can be a thin, partly filed file. The filter keeps
-    -- p_end an actual stored period value (month end), so equality still matches.
+  with bound as materialized (
+    -- ONE evaluation of latest_complete_period('fi'). The function is STABLE, so
+    -- the planner MAY hoist it out of a row filter -- but #231 measured exactly
+    -- this call being evaluated per row inside a scan of 2.35M fact rows, so the
+    -- single evaluation is pinned here rather than left to the planner.
+    select (date_trunc('month', latest_complete_period('fi'))
+            + interval '1 month' - interval '1 day')::date as last_complete_day
+  ),
+  anchor as (
+    -- the latest PERFIL month AT OR BEFORE the last complete FI month -- the
+    -- newest ingested month can be a thin, partly filed file. p_end stays an
+    -- actual stored period value (month end), so equality still matches.
+    --
+    -- ORDER BY period DESC LIMIT 1, NOT max(period) FILTER (...): an aggregate
+    -- FILTER blocks Postgres's index MIN/MAX rewrite, so the FILTER form reads
+    -- EVERY row of cvm_fi_perfil to find one date. This form walks
+    -- idx_fi_perfil_period (period DESC) and stops at the first qualifying
+    -- row. Identical value, bounded work.
     select coalesce(
-             max(period) filter (
-               where period <= (date_trunc('month', latest_complete_period('fi')) + interval '1 month' - interval '1 day')::date
-             ),
+             (select t.period
+                from cvm_fi_perfil t
+               where t.period <= (select b.last_complete_day from bound b)
+               order by t.period desc
+               limit 1),
              current_date
            ) as p_end
-    from cvm_fi_perfil
   ),
   latest_fact as (
     select distinct on (f.cnpj)
