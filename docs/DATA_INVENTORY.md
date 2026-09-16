@@ -38,6 +38,10 @@ from behind a login, or purchased — except the one ETF market feed noted below
 | FIDC    | `cvm_fidc_tranche`       | fund × month × tranche               | monthly (tab X2/X3/X6)               | **2025**               |
 | FIDC    | `cvm_fidc_tranche_flows` | fund × month × tranche               | monthly (tab X4)                     | **2025**               |
 | FIDC    | `cvm_fidc_aging`         | fund × month × bucket                | monthly (tab VI)                     | **2025**               |
+| FIDC    | `cvm_fidc_setor`         | fund × month                         | tab II, monthly 2025+, HIST ≤2024    | 2013                   |
+| FIDC    | `cvm_fidc_sacado`        | fund × month × **rank** (1–25)       | tab VIII, monthly 2025+, HIST ≤2024  | 2013                   |
+| FIDC    | `cvm_fidc_cedente`       | fund × month × block × slot (1–9)    | tab I cedente slots, unpivoted       | 2019-11 (slots appear) |
+| FIDC    | `cvm_fidc_scr`           | fund × month                         | tab X, monthly 2025+, HIST ≤2024     | 2023-10 (member appears) |
 | FII     | `cvm_fii_mensal`         | fund × month                         | yearly ZIP                           | 2021                   |
 | FII     | `cvm_fii_periodic`       | fund × quarter/year × doc            | yearly ZIP, 4 members                | 2019                   |
 | FII     | `cvm_fii_imovel`         | fund × quarter × **property**        | yearly ZIP                           | 2019                   |
@@ -110,6 +114,28 @@ The monthly CDA archive holds eight blocks. We read four.
 
 Cost of adding one: a field map, a migration, and one `ingest_*` method. The
 download is already happening — these are members of a zip we fetch anyway.
+
+### FIDC informe mensal — the tabs still unread
+
+The monthly FIDC ZIP has 18 members. Ten are ingested: `IV` (PL), `VI` (aging),
+`X_2`/`X_3`/`X_6` (tranche), `X_4` (tranche flows), and since migration 38 `I`
+(cedente slots only), `II` (sector), `VIII` (25 largest sacados), `X` (SCR ladder).
+Every HIST archive 2013–2024 was opened member by member for that migration; the
+same members exist there, with `tab_I`'s cedente slots from 2019-11 and `tab_X`
+from 2023-10 only.
+
+Not read, with what each carries:
+
+| Member | Content | Note |
+| --- | --- | --- |
+| `tab_I`, the other ~70 columns | asset composition (debentures, CRI, notas comerciais, cotas de FIDC, títulos públicos, derivatives by market), admin CNPJ, condomínio, exclusivo, conversion/redemption terms | Deliberately left out of `cvm_fidc_cedente`, which is the named-originator edge only. A wide `cvm_fidc_ativo` would be the shape. |
+| `tab_III` (2025+) | liabilities | Read from HIST only, to derive PL before 2025. The 2025+ member is the same header. |
+| `tab_V` | maturity ladder of credits WITH risk retention (tab VI is the without-risk twin), plus an early-settlement ladder | Same 10 buckets as `cvm_fidc_aging`. |
+| `tab_VII` | custody split (cedente / prestador / terceiro), substitutions, repurchases — quantity, value, book value | |
+| `tab_IX` | assignment prices: min / mean / max buy and sell across six credit categories | |
+| `tab_X_1`, `tab_X_1_1` | quotaholders per tranche, and by investor type × senior/subordinated | |
+| `tab_X_5` | liquidity ladder (0 / 30 / 60 / 90 / 180 / 360 / >360 days) | |
+| `tab_X_7` | collateral coverage of the receivables (value and %) | |
 
 ### B3 — the three genuinely new sources
 
@@ -251,6 +277,7 @@ endpoint. Listed with what serving it would take.
 | `bacen_sgs`, `bacen_ptax`, `bacen_expectativas` | SELIC, CDI, IPCA and the other SGS series; PTAX; the Focus survey | **No.** Ingested daily (`run_daily.py`, 30-day refresh) and read only by the `/macro` dashboard page and by `mv_savings_flow_monthly`, which is revoked from every client role. Nothing in schema `api` reads a `bacen_*` table — `panel` has no macro arm. Candidate: a `macro_series(p_code, p_from, p_to)` function over `bacen_sgs` (the series code is the id), and PTAX as a second function; the Focus survey needs its own shape (indicator × horizon × statistic). |
 | `cvm_fidc_tranche`, `cvm_fidc_tranche_flows` | per-tranche promised vs realised performance; subscriptions / redemptions per tranche | **No.** Read by `/fidc` through `vw_fidc_tranche_detail` and `fidc_tranche_performance`. Candidate: `fidc_tranches(p_cnpj, p_from, p_to)` in the `fund_nav` style — the CNPJ is already an id the API resolves. |
 | `cvm_fidc_aging` | receivables by aging bucket per FIDC | **No.** Read by `/fidc` and `fraud_screen_evergreen_aging`. Candidate: `fidc_aging(p_cnpj, …)`, same shape argument as tranches. `panel`'s `delinquency` metric is the total only. |
+| `cvm_fidc_cedente`, `cvm_fidc_sacado`, `cvm_fidc_setor`, `cvm_fidc_scr` | named originators with share (tab I); the 25 largest sacados, anonymized (tab VIII); portfolio by sector (tab II); SCR grade ladder (tab X) | **No** — landed by migration 38 (2026-09-16), nothing reads them yet. Candidates: `fidc_concentration(p_cnpj, p_from, p_to)` returning cedentes and sacados long; `fidc_cedente_funds(p_cedente)` for the reverse edge (which funds buy from this CNPJ — the cedente column is indexed for it); sector and SCR as `fund_nav`-style wide functions. The cedente CNPJ also joins to `cia_*` through no bridge, like `fund_debentures.issuer_id`. |
 | `cvm_fiagro_mensal.vl_quota` / `nr_cotst` / `vl_total`; `cvm_fidc_mensal.vl_total` (2019–2024) | FIAGRO quota, quotaholders and total assets — filed on every monthly row since 2025-05; FIDC total assets from the pre-2025 file (~82 % of rows) | **No.** `fact_fund_monthly`'s fiagro arm is a copy of the fidc arm and sets all three `NULL`, so `fund_nav` returns them null by construction (declared in `catalog().applicability`). Candidate: pass them through in the fiagro arm (and `vl_total` in the fidc arm); the applicability block and its lockstep test then have to follow. Measured 2026-09-15. |
 | `cvm_fi_perfil` | FI investor mix (retail / institutional / …) and single-holder concentration | **No.** Read by `/fi` only. Candidate: `fund_investors(p_cnpj, …)`. |
 | `cvm_fii_periodic`, `cvm_fii_imovel` | FII quarterly/annual filings; the property register | **No.** `cvm_fii_periodic` is read by `/fii`; `cvm_fii_imovel` by nothing. Candidate: `fii_properties(p_cnpj)` — the register is the one FII fact with no monthly counterpart. |
