@@ -72,6 +72,7 @@ complete periods).
 | `fund_profile(cnpj)` · `fund_nav(cnpj, start, end, entity_type)` · `search_funds(query, limit)` | funds | |
 | `fund_holdings(cnpj \| ticker, start, end, kind, limit)` | `fund_holdings` | exactly one of holder / held ticker |
 | `fund_debentures(cnpj \| issuer, start, end, limit)` | `fund_debentures` | issuer = ticker, CVM code or any CPF/CNPJ |
+| `fidc_cedentes(cnpj \| cedente, start, end, limit)` · `fidc_sacados(cnpj, …)` · `fidc_portfolio(cnpj, kind, …)` | [FIDC concentration](/api-docs/fidc) | cedente = CPF/CNPJ or a listed ticker; sacados are anonymized ranks; `kind` = sector / scr_debtor / scr_operation / tax_debt |
 | `financials(id, statement, start, end, scope, doc_type)` · `company_financials(id, …)` | financials | read `period_months` before comparing rows |
 | `anbima_classes(category, metric, level, start, end)` | `anbima_classes` | industry aggregates, no fund join |
 | `view(name, **filters)` · `view_all(name, **filters)` · `iter_view(...)` | the eight views | PostgREST filter syntax passed through verbatim |

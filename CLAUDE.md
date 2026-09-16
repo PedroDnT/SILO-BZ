@@ -90,7 +90,9 @@ Storage layout: ~30 tables named `cvm_<entity>_<doctype>` or `bacen_<series>` (p
   Wired ingest datasets include `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_fidc_cedente` /
   `cvm_fidc_sacado` / `cvm_fidc_setor` / `cvm_fidc_scr` (FIDC informe tabs I, VIII, II, X —
   named originators, anonymized top-25 debtors, sector, SCR ladder; migration 38, with
-  per-tab first months in `_FIDC_TAB_FIRST_PERIOD`), `cvm_securit_serie`,
+  per-tab first months in `_FIDC_TAB_FIRST_PERIOD`; served by `api.fidc_cedentes` /
+  `fidc_sacados` / `fidc_portfolio` and the panel metrics `receivables`, `sacado_top1`,
+  `sacado_top25`), `cvm_securit_serie`,
   `cvm_securit_fluxo`, `cvm_fi_balancete`, `cvm_cia_*`, `cvm_etf_registry`,
   `cvm_fi_cda_acoes`, `cvm_fi_cda_cotas` and `cvm_fi_cda_debentures` (fund holdings —
   CDA blocks 4, 2 and 6, members of the archive `cda` already downloads. Block 4

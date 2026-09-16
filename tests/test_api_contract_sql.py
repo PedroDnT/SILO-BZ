@@ -84,6 +84,9 @@ EXPECTED_FUNCTIONS = {
     "api.company_financials",
     "api.anbima_classes",
     "api.fund_debentures",
+    "api.fidc_cedentes",
+    "api.fidc_sacados",
+    "api.fidc_portfolio",
 }
 
 # Internal helpers: called only from inside SECURITY DEFINER functions, which
@@ -755,7 +758,13 @@ def test_fund_metric_asset_classes_follow_applicability():
     from serve.catalog import catalog_payload
 
     cat = catalog_payload()
-    fam_cols = cat["applicability"]["fund_nav"]["columns_by_family"]
+    # Every applicability block pins some cnpj metrics to a source: fund_nav
+    # to fact_fund_monthly's arms, fidc_concentration to the informe tabs of
+    # migration 38. A cnpj metric must be named by exactly one of them.
+    fam_cols: dict[str, set[str]] = {}
+    for block in cat["applicability"].values():
+        for fam, cols in block["columns_by_family"].items():
+            fam_cols.setdefault(fam, set()).update(cols)
     rename = cat["applicability"]["fund_nav"]["panel_metric_names"]
     checked = 0
     for metric, spec in cat["metrics"].items():
@@ -763,6 +772,7 @@ def test_fund_metric_asset_classes_follow_applicability():
             continue
         col = next((k for k, v in rename.items() if v == metric), metric)
         expected = sorted(f for f, cols in fam_cols.items() if col in cols)
+        assert expected, f"metrics.{metric} is pinned by no applicability block"
         assert sorted(spec["asset_class"]) == expected, (
             f"metrics.{metric}.asset_class = {spec['asset_class']}; "
             f"applicability serves it for {expected}"
@@ -878,6 +888,9 @@ def test_catalog_limits_are_the_sql_tier_clamps():
     assert clamp("api.option_exercises") == (anon["option_exercises_rows"], auth["option_exercises_rows"])
     assert clamp("api.fund_holdings") == (anon["fund_holdings_rows"], auth["fund_holdings_rows"])
     assert clamp("api.fund_debentures") == (anon["fund_debentures_rows"], auth["fund_debentures_rows"])
+    assert clamp("api.fidc_cedentes") == (anon["fidc_cedentes_rows"], auth["fidc_cedentes_rows"])
+    assert clamp("api.fidc_sacados") == (anon["fidc_sacados_rows"], auth["fidc_sacados_rows"])
+    assert clamp("api.fidc_portfolio") == (anon["fidc_portfolio_rows"], auth["fidc_portfolio_rows"])
 
     # Universe mode is a tier feature too: 0 anonymous, 1 signed in, read out
     # of the gate's COMMENT the same way.
