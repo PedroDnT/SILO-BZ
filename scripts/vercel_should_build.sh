@@ -23,6 +23,10 @@
 #   - anything under dashboard/   (the site itself)
 #   - vercel.json                 (build config)
 #   - this script                 (so a change to the rule is always exercised)
+# Preview exception: dependabot/* branches skip even when dashboard/ changed.
+# Those PRs only rewrite lockfiles; the 45-minute Evidence rebuild cannot
+# change the published snapshot, and it is what blocked merge on PR #230.
+# Production (including the daily deploy hook) still always builds.
 #
 # WHAT WE DIFF AGAINST: HEAD^, AND WHY THAT IS RIGHT HERE
 # main only ever advances by MERGE commits (git log --format=%p shows two
@@ -105,6 +109,19 @@ if [ "${VERCEL_ENV:-}" = "production" ]; then
     build "VERCEL_ENV=production — the published site always rebuilds, so a
      deploy-hook data refresh is never skipped for having an unchanged commit"
 fi
+
+# Dependabot PRs only rewrite lockfiles. A preview still runs `evidence sources`
+# (~90 queries, 25-45 min) because dashboard/package-lock.json is watched, and
+# that rebuild cannot change the published snapshot. Measured on PR #230
+# (2026-09-15): the qs 6.15.3 → 6.16.0 preview died at
+# BUILD_EXCEEDED_MAXIMUM_TIME after 45 minutes, which is what blocked merge —
+# GitHub tests were green and the branch was MERGEABLE. Production still
+# rebuilds on merge (the check above).
+case "${VERCEL_GIT_COMMIT_REF:-}" in
+    dependabot/*)
+        skip "dependabot preview — lockfile bump; production rebuilds on merge"
+        ;;
+esac
 
 # Diff base. On a merge commit HEAD^ is the first parent — main before the PR —
 # so this covers the whole pull request. See the header for why the last
