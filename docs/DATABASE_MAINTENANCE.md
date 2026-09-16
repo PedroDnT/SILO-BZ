@@ -167,6 +167,46 @@ once. Raising one without the other does nothing.
 
 ## 4. Healing gaps (backfill)
 
+> ### ⚠️ The B3 lending tables cannot be healed
+>
+> Everything else in this section assumes the source keeps an archive, so a gap is
+> *late* rather than lost. That assumption does not hold for
+> `b3_lending_open_position`, `b3_lending_rate`, `b3_investor_participation`,
+> `b3_investor_participation_monthly` and `b3_instrument_registry`.
+>
+> **B3 retains roughly 21 business days and publishes no archive.** Verified
+> 2026-09-16: `2026-08-17` returns rows, `2026-08-14` returns `Nenhum resultado`,
+> and a request spanning `2024-01-02..2026-09-10` comes back **HTTP 200 with 5.2 MB
+> containing exactly 18 sessions** — the API clamps silently, so a naive backfill
+> looks like it worked. There is no paid-free workaround inside the free tier: the
+> legacy `requestname` API has deeper retention but knows none of these tables, and
+> the `pesquisapregao` bulletin archive returns empty zips.
+>
+> Consequences for this runbook:
+>
+> * **There is no backfill command for them, on purpose.** `run_backfill` does not
+>   offer a lending option; offering one would imply a history that cannot be
+>   retrieved at any price.
+> * **Recovery is the daily run itself.** `B3Ingestor.daily_update_bdi()` re-reads
+>   the whole still-retrievable window on every run: it asks `b3_cotahist` which
+>   sessions actually happened, subtracts the ones already landed, and fetches the
+>   rest in one ranged request. So a run missed on Monday is repaired by Tuesday's —
+>   but only for as long as the session is inside B3's window.
+> * **`scripts/check_staleness.py` alarms on these at the DAILY threshold** (26 h),
+>   tighter than the monthly ANBIMA slice, because the clock here is running out
+>   rather than merely running late. A `b3/lending_open_position` staleness exit is
+>   urgent: re-run `daily_ingest.yml` the same day.
+> * **Every ingest reconciles what it asked for against what arrived** and records
+>   the shortfall on the `cvm_ingest_log` row, because a 200 is not evidence the
+>   span was delivered. An `ok` row whose `error_msg` names missing sessions means
+>   B3 clamped — check whether those sessions are still inside the window before
+>   assuming they are gone.
+>
+> If deeper history is ever needed, it has to be bought (B3 Up2Data / Datawise) or
+> reconstructed from a third party — and a third-party series must land in its own
+> table with its own `source`, never unioned into these.
+
+
 **Entity / per-year backfill** — GitHub → Actions → **CVM Historical Backfill** → _Run
 workflow_ (inputs: `entity`, `start_year`, `end_year`, `fi_doc_type`). The default is `fi`;
 choose one

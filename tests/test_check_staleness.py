@@ -220,3 +220,42 @@ def test_main_pages_on_stuck_running_rows_even_when_everything_else_is_fresh(mon
         code = cs.main()
     assert code == cs.EXIT_DAILY_STALE
     assert "stuck at running" in capsys.readouterr().out
+
+
+# ── the B3 lending ratchet ────────────────────────────────────────────────
+
+
+def test_lending_slice_is_checked_and_escalates_like_the_daily_slice():
+    """A stale lending slice is a countdown, not an inconvenience.
+
+    Every other source here keeps an archive, so a missed slice is late. B3
+    retains ~21 business days of the lending tables and publishes none of it
+    afterwards, so a session that ages out is unrecoverable. The check must
+    therefore fire at the DAILY threshold (not the monthly one) and return the
+    exit code that re-runs the ingest.
+    """
+    import scripts.check_staleness as cs
+
+    assert (cs.LENDING_ENTITY, cs.LENDING_DOC) == ("b3", "lending_open_position")
+    assert cs.LENDING_THRESHOLD_HOURS <= cs.DAILY_THRESHOLD_HOURS, (
+        "the lending slice must not be given a looser threshold than the daily slice"
+    )
+    assert cs.LENDING_THRESHOLD_HOURS < cs.MONTHLY_THRESHOLD_HOURS
+
+
+def test_stale_lending_returns_the_recovery_exit_code(monkeypatch, capsys):
+    import scripts.check_staleness as cs
+
+    monkeypatch.setattr(cs, "get_pg_client", lambda: _Conn(None))
+    monkeypatch.setattr(cs, "unhealed_error_slices", lambda *a, **k: 0)
+    monkeypatch.setattr(cs, "stuck_running_slices", lambda *a, **k: 0)
+    # Everything fresh except the lending slice.
+    monkeypatch.setattr(
+        cs, "is_stale",
+        lambda conn, entity, doc, hours, weekday_only=True: entity == cs.LENDING_ENTITY,
+    )
+
+    assert cs.main() == cs.EXIT_DAILY_STALE
+    out = capsys.readouterr().out
+    assert "lending slice is stale" in out
+    assert "cannot be backfilled" in out

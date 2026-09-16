@@ -1,0 +1,370 @@
+"""Offline tests for the B3 BDI fetcher, parsers and gap calendar.
+
+Every fixture under tests/fixtures/b3_bdi/ is a verbatim clip of a real
+2026-09-10 export — preamble, band rows, pt-BR numbers and all — so these
+tests fail if B3's layout drifts in a way the parsers would otherwise absorb
+silently. HTTP and Postgres are mocked; nothing here touches the network.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+from decimal import Decimal
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
+import pytest
+
+from src.fetchers.b3_bdi_fetcher import B3BdiEmpty, B3BdiFetchError, B3BdiFetcher
+from src.parsers.b3_bdi import (
+    B3BdiParseError,
+    mtd_reference_date,
+    monthly_reference_month,
+    parse_index_portfolio,
+    parse_instrument_registry,
+    parse_investor_participation,
+    parse_investor_participation_monthly,
+    parse_lending_open_position,
+    parse_lending_rate,
+    parse_number,
+    reconcile_span,
+)
+from src.pipeline import ingest_b3_lending as lending
+
+FIXTURES = Path(__file__).parent / "fixtures" / "b3_bdi"
+
+
+def fixture(name: str) -> str:
+    return (FIXTURES / name).read_text(encoding="utf-8-sig")
+
+
+# ── numbers and dates ─────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("2.737", Decimal("2737")),
+        ("95,561969", Decimal("95.561969")),
+        ("40,00%", Decimal("40.00")),
+        ("274.811.942.485", Decimal("274811942485")),
+        ("", None),
+        ("-", None),
+        (None, None),
+        ("não é número", None),
+    ],
+)
+def test_parse_number_handles_pt_br(raw, expected):
+    assert parse_number(raw) == expected
+
+
+# ── BTBLendingOpenPosition ────────────────────────────────────────────────
+
+
+def test_open_position_parses_real_export():
+    rows = parse_lending_open_position(fixture("lending_open_position.csv"))
+    assert rows, "fixture produced no rows"
+    bijr = next(r for r in rows if r["codneg"] == "BIJR39" and r["mercado"] == "Registro")
+    assert bijr["trade_date"] == date(2026, 9, 10)
+    assert bijr["isin"] == "BRBIJRBDR005"
+    assert bijr["tipo_emprestimo"] == "DRE"
+    assert bijr["saldo_quantidade"] == Decimal("2737")
+    assert bijr["saldo_brl"] == Decimal("261553.11")
+    assert bijr["is_total"] is False
+    # The published row survives verbatim for provenance.
+    assert bijr["raw"]["Código IF"] == "BIJR39"
+
+
+def test_open_position_flags_b3s_own_total_row():
+    """The 'Total' row is B3's sum of the others. Summing both doubles the book."""
+    rows = parse_lending_open_position(fixture("lending_open_position.csv"))
+    totals = [r for r in rows if r["is_total"]]
+    assert totals, "fixture has no Total row — the double-count guard is untested"
+    assert all(r["mercado"] == "Total" for r in totals)
+
+    for total in totals:
+        parts = [
+            r for r in rows
+            if not r["is_total"]
+            and (r["trade_date"], r["codneg"], r["tipo_emprestimo"])
+            == (total["trade_date"], total["codneg"], total["tipo_emprestimo"])
+        ]
+        assert parts, f"Total row for {total['codneg']} has no per-market rows"
+        assert sum(p["saldo_quantidade"] for p in parts) == total["saldo_quantidade"]
+
+
+def test_open_position_header_discovery_survives_extra_preamble():
+    """Header is found by label, not by line number."""
+    text = fixture("lending_open_position.csv")
+    noisy = "Um aviso novo da B3\nOutra linha qualquer\n\n" + text.lstrip("﻿")
+    assert parse_lending_open_position(noisy) == parse_lending_open_position(text)
+
+
+def test_open_position_raises_when_the_header_is_gone():
+    with pytest.raises(B3BdiParseError, match="no header row"):
+        parse_lending_open_position("Alguma coisa;outra\n1;2\n")
+
+
+# ── BTBLoanBalance ────────────────────────────────────────────────────────
+
+
+def test_loan_balance_reads_rates_from_the_band_row():
+    rows = parse_lending_rate(fixture("loan_balance.csv"))
+    tris = next(r for r in rows if r["codneg"] == "TRIS3")
+    assert tris["trade_date"] == date(2026, 9, 10)
+    assert tris["num_contratos"] == 12
+    assert tris["quantidade"] == Decimal("20829")
+    assert tris["valor_brl"] == Decimal("101645.52")
+    assert tris["taxa_doador_media"] == Decimal("0.15")
+    assert tris["taxa_tomador_media"] == Decimal("0.15")
+
+
+def test_loan_balance_raises_when_the_doador_tomador_band_is_missing():
+    """Without the band the two identical rate trios cannot be told apart.
+
+    Guessing an order would silently swap lender and borrower rates — a
+    plausible-looking wrong number, which is the one thing this repo will not
+    ship.
+    """
+    lines = fixture("loan_balance.csv").splitlines()
+    header_i = next(i for i, l in enumerate(lines) if l.startswith("Data;"))
+    without_band = "\n".join(lines[:header_i - 1] + lines[header_i:])
+    with pytest.raises(B3BdiParseError, match="band"):
+        parse_lending_rate(without_band)
+
+
+def test_loan_balance_raises_when_the_band_sits_over_the_wrong_columns():
+    lines = fixture("loan_balance.csv").splitlines()
+    header_i = next(i for i, l in enumerate(lines) if l.startswith("Data;"))
+    lines[header_i - 1] = "Taxa doador;Taxa tomador;;;;;;;;;;;;"
+    with pytest.raises(B3BdiParseError, match="expected"):
+        parse_lending_rate("\n".join(lines))
+
+
+# ── SharesInvesVolum ──────────────────────────────────────────────────────
+
+
+def test_investor_participation_dates_by_the_caption_not_the_request():
+    """B3 publishes T+2: the 2026-09-10 export is captioned 08/09/2026."""
+    text = fixture("investor_participation.csv")
+    assert mtd_reference_date(text) == date(2026, 9, 8)
+
+    rows = parse_investor_participation(text)
+    assert {r["reference_date"] for r in rows} == {date(2026, 9, 8)}
+    estrangeiro = next(r for r in rows if r["investor_type"] == "Investidor Estrangeiro")
+    assert estrangeiro["compras_brl_mil"] == Decimal("102641915")
+    assert estrangeiro["vendas_brl_mil"] == Decimal("96657202")
+    assert estrangeiro["vendas_participacao_pct"] == Decimal("29.43")
+
+
+def test_investor_participation_raises_without_a_caption():
+    text = fixture("investor_participation.csv").replace("até o dia", "sem data")
+    with pytest.raises(B3BdiParseError, match="caption"):
+        parse_investor_participation(text)
+
+
+# ── SharesInvesVolumMonthly ───────────────────────────────────────────────
+
+
+def test_monthly_participation_reads_the_market_band():
+    rows = parse_investor_participation_monthly(
+        fixture("investor_participation_monthly.csv"), request_date=date(2026, 9, 10)
+    )
+    assert {r["reference_month"] for r in rows} == {date(2026, 8, 1)}
+    assert {"À vista", "A termo", "Opções", "Total geral"} <= {r["market"] for r in rows}
+    vista = next(
+        r for r in rows
+        if r["investor_type"] == "Investidor Estrangeiro" and r["market"] == "À vista"
+    )
+    assert vista["valor_brl"] == Decimal("638327183953")
+    assert vista["participacao_pct"] == Decimal("59.00")
+
+
+def test_monthly_participation_rejects_a_month_that_contradicts_the_request():
+    """The caption names a month but never a year. A mismatch must not be filed."""
+    text = fixture("investor_participation_monthly.csv")
+    with pytest.raises(B3BdiParseError, match="previous month"):
+        # Requested in March, so the caption should say Fevereiro, not Agosto.
+        monthly_reference_month(text, request_date=date(2026, 3, 10))
+
+
+def test_monthly_participation_january_rolls_into_december():
+    assert monthly_reference_month("(Dezembro)", request_date=date(2026, 1, 8)) == date(2025, 12, 1)
+
+
+# ── InstrumentsEquities ───────────────────────────────────────────────────
+
+
+def test_instrument_registry_keeps_only_the_cash_market():
+    rows = parse_instrument_registry(
+        fixture("instruments_equities.csv"), reference_date=date(2026, 9, 10)
+    )
+    assert rows
+    assert {r["mercado"] for r in rows} == {"EQUITY-CASH"}
+    petr = next(r for r in rows if r["instrumento"] == "PETR4")
+    assert petr["isin"] == "BRPETRACNPR6"
+    assert petr["capital_social"] == Decimal("5446501379")
+    assert petr["nivel_governanca"] == "NIVEL 2"
+    assert petr["categoria"] == "SHARES"
+
+
+# ── index portfolio ───────────────────────────────────────────────────────
+
+
+def test_index_portfolio_parses_free_float_and_sector():
+    rows = parse_index_portfolio([{
+        "cod": "WEGE3", "asset": "WEG", "type": "ON      NM",
+        "segment": "Bens Indls / Máqs e Equips", "part": "2,840",
+        "theoricalQty": "1.460.506.056",
+        "index_code": "IBOV", "header_date": "16/09/26",
+    }])
+    assert rows[0]["reference_date"] == date(2026, 9, 16)
+    assert rows[0]["theoretical_qty"] == Decimal("1460506056")
+    assert rows[0]["b3_sector"] == "Bens Indls / Máqs e Equips"
+    assert rows[0]["participacao_pct"] == Decimal("2.840")
+
+
+# ── the clamp guard ───────────────────────────────────────────────────────
+
+
+def test_reconcile_span_reports_what_b3_actually_delivered():
+    """B3 answers an over-wide range with 200 and a truncated window.
+
+    Verified live: 2024-01-02..2026-09-10 came back 5.2 MB with 18 sessions.
+    A 200 is not evidence the span arrived.
+    """
+    rows = [{"trade_date": date(2026, 9, d)} for d in (8, 9, 10)]
+    requested = [date(2026, 9, d) for d in (1, 2, 8, 9, 10)]
+    delivered, missing = reconcile_span(rows, "trade_date", requested)
+    assert delivered == [date(2026, 9, 8), date(2026, 9, 9), date(2026, 9, 10)]
+    assert missing == [date(2026, 9, 1), date(2026, 9, 2)]
+
+
+# ── fetcher ───────────────────────────────────────────────────────────────
+
+
+def _response(status: int, text: str) -> httpx.Response:
+    return httpx.Response(
+        status, text=text, request=httpx.Request("POST", "https://arquivos.b3.com.br/x")
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_table_sends_filters_as_an_object():
+    """A list makes the endpoint return HTTP 400 — it wants a dictionary."""
+    import json
+
+    captured = {}
+
+    async def fake_post(url, content=None, **kw):
+        captured["url"] = url
+        captured["body"] = json.loads(content)
+        return _response(200, "Data;Código IF\n10/09/2026;PETR4\n")
+
+    with patch("httpx.AsyncClient.post", new=AsyncMock(side_effect=fake_post)):
+        await B3BdiFetcher().fetch_table("BTBLendingOpenPosition", date(2026, 9, 10))
+
+    assert captured["body"]["Filters"] == {}
+    assert captured["body"]["Name"] == "BTBLendingOpenPosition"
+    assert captured["body"]["Date"] == captured["body"]["FinalDate"] == "2026-09-10"
+
+
+@pytest.mark.asyncio
+async def test_fetch_table_raises_b3bdiempty_for_nenhum_resultado():
+    """Outside retention is a skip, not a failure — and never an empty ingest."""
+    body = "Data;Código IF;Mercado\nNenhum resultado\n"
+    with patch("httpx.AsyncClient.post", new=AsyncMock(return_value=_response(200, body))):
+        with pytest.raises(B3BdiEmpty):
+            await B3BdiFetcher(max_retries=1).fetch_table("BTBLoanBalance", date(2020, 1, 2))
+
+
+@pytest.mark.asyncio
+async def test_fetch_table_retries_cloudflare_403_then_raises():
+    """403 here is a throttle, not authorization. It must never look like no data."""
+    challenge = _response(403, "<!DOCTYPE html><html><title>Attention Required!</title>")
+    post = AsyncMock(return_value=challenge)
+    with patch("httpx.AsyncClient.post", new=post):
+        with pytest.raises(B3BdiFetchError):
+            await B3BdiFetcher(max_retries=3, retry_delay=0).fetch_table(
+                "BTBTrade", date(2026, 9, 10)
+            )
+    assert post.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_fetch_table_retries_an_html_body_served_with_200():
+    ok = _response(200, "Data;Código IF\n10/09/2026;PETR4\n")
+    post = AsyncMock(side_effect=[_response(200, "<!DOCTYPE html><html>nope</html>"), ok])
+    with patch("httpx.AsyncClient.post", new=post):
+        text = await B3BdiFetcher(max_retries=3, retry_delay=0).fetch_table(
+            "BTBLoanBalance", date(2026, 9, 10)
+        )
+    assert "PETR4" in text
+    assert post.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_fetch_table_rejects_a_backwards_range():
+    with pytest.raises(ValueError):
+        await B3BdiFetcher().fetch_table("X", date(2026, 9, 10), date(2026, 9, 1))
+
+
+# ── the gap calendar ──────────────────────────────────────────────────────
+
+
+def _conn(rows_by_query):
+    """A psycopg2-shaped connection whose cursor replays canned result sets."""
+    calls = {"n": 0}
+    cur = MagicMock()
+    cur.__enter__ = MagicMock(return_value=cur)
+    cur.__exit__ = MagicMock(return_value=False)
+
+    def execute(sql, params=None):
+        calls["n"] += 1
+        cur._rows = rows_by_query[calls["n"] - 1]
+
+    cur.execute = MagicMock(side_effect=execute)
+    cur.fetchall = MagicMock(side_effect=lambda: cur._rows)
+    conn = MagicMock()
+    conn.cursor = MagicMock(return_value=cur)
+    return conn
+
+
+def test_sessions_to_fetch_returns_only_missing_plus_the_fresh_tail():
+    sessions = [(date(2026, 9, d),) for d in (1, 2, 3, 4, 8, 9, 10)]
+    have = [(date(2026, 9, d),) for d in (1, 2, 4, 8, 9, 10)]
+    targets = lending.sessions_to_fetch(
+        _conn([sessions, have]), "b3_lending_open_position", "trade_date"
+    )
+    # 09-03 is the hole; 09-09 and 09-10 are the always-refresh tail.
+    assert targets == [date(2026, 9, 3), date(2026, 9, 9), date(2026, 9, 10)]
+
+
+def test_sessions_to_fetch_never_invents_a_holiday():
+    """Candidates come from sessions the tape proves happened, not from weekdays."""
+    sessions = [(date(2026, 9, d),) for d in (8, 9, 10)]   # 09-07 is a holiday
+    have = [(date(2026, 9, d),) for d in (8, 9, 10)]
+    targets = lending.sessions_to_fetch(
+        _conn([sessions, have]), "b3_lending_open_position", "trade_date"
+    )
+    assert date(2026, 9, 7) not in targets
+
+
+def test_sessions_to_fetch_is_capped_per_run():
+    many = [(date(2026, 1, 1) + __import__("datetime").timedelta(days=i),) for i in range(60)]
+    targets = lending.sessions_to_fetch(
+        _conn([many, []]), "b3_lending_open_position", "trade_date", limit=60
+    )
+    assert len(targets) == lending.MAX_REQUESTS_PER_RUN
+    # The newest survive: the oldest are about to age out of B3 anyway.
+    assert targets[-1] == many[-1][0]
+
+
+def test_investor_request_dates_apply_the_t_plus_two_lag():
+    sessions = [date(2026, 9, d) for d in (1, 2, 3, 4, 8, 9, 10)]
+    missing = [date(2026, 9, 2), date(2026, 9, 10)]
+    requests = lending.investor_request_dates(sessions, missing)
+    # 09-02 is delivered two sessions later, on 09-04. 09-10 is the newest
+    # session, so nothing can deliver it yet — it is left for a later run.
+    assert requests == [date(2026, 9, 4)]

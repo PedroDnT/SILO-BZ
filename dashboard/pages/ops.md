@@ -1,7 +1,7 @@
 ---
 title: Pipeline Ops
 hide_title: true
-sidebar_position: 14
+sidebar_position: 16
 ---
 
 <!--

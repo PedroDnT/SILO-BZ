@@ -167,6 +167,8 @@ the pipeline last.
 | [Industry Structure](/industry) | Size, concentration (HHI and top-N share), fund formation, investor base, composition by asset class, plus FIP and FIAGRO by name | Families are measured at their **own** latest period; FIP's grain is yearly                        |
 | [Macro Context](/macro)         | SELIC, CDI, inflation, PTAX and the BACEN Focus consensus                                                                         | Units are BACEN's and are **not converted** — % a.a. and % a.d. sit side by side                   |
 | [B3 Markets](/markets)          | Exchange session prints from the COTAHIST tape: volume by board and instrument type, options                                      | Quotes are **unadjusted** and some papers quote per lot (`fator_cotacao` ≠ 1)                      |
+| [Short Monitor](/short)         | Securities lending: short interest by ticker, % of free float, days to cover, borrow rates, sector concentration                  | History starts when SILO began capturing — B3 keeps ~21 business days and **cannot be backfilled** |
+| [Follow the Money](/flows)      | Net flow by investor type (foreign, institutional, retail) and B3 cash-market ADTV                                                | Flow is **derived** from B3's month-to-date snapshots and lags **T+2**; there is no YTD column     |
 
 ### By asset class
 

@@ -55,10 +55,45 @@ const REQUIRED = [
 // Checking them here turns that into one line naming the migration to apply.
 // The build still fails, and should: a dashboard querying columns that do not
 // exist is not deployable. The point is that the failure is legible.
+//
+// `source` is the file that creates the object and `fix` the command that
+// applies it. Two different commands land here: migrations go in with
+// apply_schema.py, analytical views with apply_analytical.sh, and naming the
+// wrong one sends whoever reads this log down the wrong path.
 const REQUIRED_AFTER_MIGRATION = [
-  { relation: 'cvm_fii_imovel', column: null, migration: '15_fii_trimestral_members.sql' },
-  { relation: 'cvm_fi_perfil', column: 'nr_cotst_pf_varejo', migration: '14_fi_perfil_columns.sql' },
-  { relation: 'bacen_expectativas', column: 'horizon', migration: '16_bacen_expectativas_horizon.sql' },
+  {
+    relation: 'cvm_fii_imovel', column: null,
+    source: 'src/store/migrations/15_fii_trimestral_members.sql',
+    fix: 'python scripts/apply_schema.py',
+  },
+  {
+    relation: 'cvm_fi_perfil', column: 'nr_cotst_pf_varejo',
+    source: 'src/store/migrations/14_fi_perfil_columns.sql',
+    fix: 'python scripts/apply_schema.py',
+  },
+  {
+    relation: 'bacen_expectativas', column: 'horizon',
+    source: 'src/store/migrations/16_bacen_expectativas_horizon.sql',
+    fix: 'python scripts/apply_schema.py',
+  },
+  // The B3 lending / investor-flow group. /short and /flows read these, and
+  // they arrive in two stages — landing tables from the migration, the views
+  // the pages actually query from the analytical layer — so both are checked.
+  {
+    relation: 'b3_lending_open_position', column: null,
+    source: 'src/store/migrations/39_b3_lending_flow.sql',
+    fix: 'python scripts/apply_schema.py',
+  },
+  {
+    relation: 'fact_short_interest_daily', column: null,
+    source: 'src/store/analytical/20_short_interest.sql',
+    fix: 'bash scripts/apply_analytical.sh',
+  },
+  {
+    relation: 'fact_investor_flow_daily', column: null,
+    source: 'src/store/analytical/20_short_interest.sql',
+    fix: 'bash scripts/apply_analytical.sh',
+  },
 ];
 
 const missingVars = ['host', 'database', 'user', 'password'].filter((v) => !env(v));
@@ -121,13 +156,15 @@ if (pending.length) {
       `${pending.length} object(s) a source query needs are not there yet:\n` +
       pending
         .map((p) => `             - ${p.relation}${p.column ? '.' + p.column : ''}` +
-                    `   (added by src/store/migrations/${p.migration})`)
+                    `   (added by ${p.source})`)
         .join('\n') +
-      `\n\n[preflight] The schema migration has not been applied to this database.` +
-      `\n[preflight] A deploy and a migration are independent events and the deploy` +
-      `\n[preflight] won the race. Apply the schema, then redeploy:` +
-      `\n[preflight]     python scripts/apply_schema.py` +
-      `\n[preflight] or run the Daily CVM Ingest workflow, which bootstraps it.\n`
+      `\n\n[preflight] The schema has not been applied to this database. A deploy` +
+      `\n[preflight] and a migration are independent events and the deploy won the` +
+      `\n[preflight] race. Run, then redeploy:\n` +
+      [...new Set(pending.map((p) => p.fix))]
+        .map((f) => `[preflight]     ${f}`)
+        .join('\n') +
+      `\n[preflight] The Daily CVM Ingest workflow does both.\n`
   );
   process.exit(1);
 }

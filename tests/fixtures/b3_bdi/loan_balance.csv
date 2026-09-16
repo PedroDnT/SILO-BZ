@@ -1,0 +1,11 @@
+﻿Informações detalhadas sobre empréstimos de ativos que foram formalmente registrados.  Para todas as modalidades que a B3 publica no Boletim Diário a metodologia da taxa média de cada ativo divulgada no empréstimo é a média ponderada pela quantidade de negócios na data do pregão. Nos dias em que não houver negociação no ativo, a taxa divulgada será a última calculada disponível. Os detalhes sobre as regras utilizadas, bem como a definição de cada um dos campos, estão disponíveis no 
+Glossário;https://www.b3.com.br/data/files/32/02/C0/25/391EA810E9C1AAA8AC094EA8/Glossario%20_%20Emprestimos_Registrados.pdf
+
+;;;;;;;;Taxa doador;;;Taxa tomador;;
+Data;Código IF;Código ISIN;Empresa ou fundo;Mercado;Número de contratos;Quantidade de ativos;Valor em R$;Mínima;Média ponderada;Máxima;Mínima;Média ponderada;Máxima
+10/09/2026;W1YN34;BRW1YNBDR000;WYNN RESORTS LTD;Registro;;0;0;8,00%;8,00%;8,00%;8,00%;8,00%;8,00%
+10/09/2026;CASN3;BRCASNACNOR6;CIA CATARINENSE DE AGUAS E SANEAM.-CASAN;Registro;;0;0;5,00%;5,00%;5,00%;5,00%;5,00%;5,00%
+10/09/2026;TRIS3;BRTRISACNOR4;TRISUL S.A.;Registro;12;20829;101645,52;0,15%;0,15%;0,15%;0,15%;0,15%;0,15%
+10/09/2026;W1YN34;BRW1YNBDR000;WYNN RESORTS LTD;Neg. Eletrônica D+0;;0;0;8,00%;8,00%;8,00%;8,00%;8,00%;8,00%
+10/09/2026;CASN3;BRCASNACNOR6;CIA CATARINENSE DE AGUAS E SANEAM.-CASAN;Neg. Eletrônica D+0;;0;0;5,00%;5,00%;5,00%;5,00%;5,00%;5,00%
+10/09/2026;TRIS3;BRTRISACNOR4;TRISUL S.A.;Neg. Eletrônica D+0;;0;0;0,15%;0,15%;0,15%;0,15%;0,15%;0,15%
