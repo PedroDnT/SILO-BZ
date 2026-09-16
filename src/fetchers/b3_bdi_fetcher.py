@@ -99,7 +99,14 @@ _HEADERS = {
 # 403 is in here on purpose: for this host it is Cloudflare rate-limiting a
 # burst, not an authorization verdict. Retrying it is correct; treating it as
 # "no data" would silently drop a session we can never fetch again.
-_RETRY_STATUSES = frozenset({403, 429, 500, 502, 503, 504})
+#
+# 499 is here for the same reason, learned the hard way. BTBTrade responses are
+# ~6 MB and slow enough to trip B3's edge, which closes the connection and
+# reports it as 499 or 504 interchangeably for the same URL minutes apart
+# (observed 2026-09-16: 504, 504, then 499 for BTBTrade 2026-09-15). 504 was
+# retried and 499 was not, so 3 of 5 sessions failed on a table whose sessions
+# expire in 21 business days. Neither status is a verdict about the data.
+_RETRY_STATUSES = frozenset({403, 429, 499, 500, 502, 503, 504})
 
 _EMPTY_MARKER = "Nenhum resultado"
 
