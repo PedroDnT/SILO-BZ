@@ -86,6 +86,8 @@ select * from supabase.short_basis_split
 > below is free-float-only so the rows are comparable. The split is charted at
 > the foot of the page.
 
+{#if headline[0].trade_date}
+
 <BigValue data={headline} value=trade_date title="Latest Session"/>
 <BigValue data={headline} value=short_brl_equities title="Short Book — Equities (R$)" fmt=num0/>
 <BigValue data={headline} value=tickers_short title="Equity Tickers on Loan" fmt=num0/>
@@ -99,6 +101,17 @@ business days and keeps no archive, so anything earlier is unrecoverable at any
 price.
 </Alert>
 
+{:else}
+
+<Alert status=warning>
+**No lending sessions captured yet.** B3 keeps roughly 21 business days of the
+securities-lending files and publishes no archive, so this page begins at SILO's
+first daily capture and grows one session per day. Nothing is missing that can
+be recovered — the first `run_daily` after deploy fills it.
+</Alert>
+
+{/if}
+
 ---
 
 ## Maiores Posições Short — % do Free Float
@@ -111,6 +124,8 @@ price.
 > own quota count for creation/redemption reasons that have nothing to do with a
 > directional view.
 
+{#if headline[0].trade_date}
+
 <DataTable data={top_float} rows=20>
   <Column id=rank title="#" align=center/>
   <Column id=ticker/>
@@ -122,6 +137,17 @@ price.
   <Column id=taxa_tomador_aa title="Taxa (a.a.)" fmt='0.0"%"'/>
 </DataTable>
 
+{:else}
+
+<Alert status=warning>
+**No lending sessions captured yet.** B3 keeps roughly 21 business days of the
+securities-lending files and publishes no archive, so this page begins at SILO's
+first daily capture and grows one session per day. Nothing is missing that can
+be recovered — the first `run_daily` after deploy fills it.
+</Alert>
+
+{/if}
+
 ## Maior SIR — Days to Cover
 
 > Short Interest Ratio: how many sessions of average volume it would take to buy
@@ -131,6 +157,8 @@ price.
 > Positions under R$5mn are excluded — a small short on an illiquid name
 > produces an enormous and meaningless ratio. `Sessões` is how many sessions the
 > ADTV average actually covers; fewer than 21 means a shorter, noisier window.
+
+{#if headline[0].trade_date}
 
 <DataTable data={top_sir} rows=20>
   <Column id=rank title="#" align=center/>
@@ -142,6 +170,17 @@ price.
   <Column id=adtv_sessions title="Sessões" fmt=num0/>
 </DataTable>
 
+{:else}
+
+<Alert status=warning>
+**No lending sessions captured yet.** B3 keeps roughly 21 business days of the
+securities-lending files and publishes no archive, so this page begins at SILO's
+first daily capture and grows one session per day. Nothing is missing that can
+be recovered — the first `run_daily` after deploy fills it.
+</Alert>
+
+{/if}
+
 ## Maiores Taxas de Aluguel
 
 > The annualized rate borrowers paid, quantity-weighted across B3's lending
@@ -150,6 +189,8 @@ price.
 >
 > Markets with no registered quantity publish a nominal rate on no business and
 > are excluded, which is what keeps a dormant BDR off the top of this table.
+
+{#if headline[0].trade_date}
 
 <DataTable data={top_rate} rows=20>
   <Column id=rank title="#" align=center/>
@@ -161,6 +202,17 @@ price.
   <Column id=num_contratos title="Contratos" fmt=num0/>
 </DataTable>
 
+{:else}
+
+<Alert status=warning>
+**No lending sessions captured yet.** B3 keeps roughly 21 business days of the
+securities-lending files and publishes no archive, so this page begins at SILO's
+first daily capture and grows one session per day. Nothing is missing that can
+be recovered — the first `run_daily` after deploy fills it.
+</Alert>
+
+{/if}
+
 ---
 
 ## Posições Short por Setor
@@ -168,6 +220,8 @@ price.
 > The equity short book aggregated by B3's own top-level sector. Only SHARES and
 > UNIT are counted: ETFs and BDRs carry no B3 sector, and including them would
 > make an unclassified bucket the largest bar on a chart about single-name risk.
+
+{#if headline[0].trade_date}
 
 <BarChart
   data={by_sector}
@@ -178,10 +232,23 @@ price.
   title="Short Book by B3 Sector — Equities Only (R$)"
 />
 
+{:else}
+
+<Alert status=warning>
+**No lending sessions captured yet.** B3 keeps roughly 21 business days of the
+securities-lending files and publishes no archive, so this page begins at SILO's
+first daily capture and grows one session per day. Nothing is missing that can
+be recovered — the first `run_daily` after deploy fills it.
+</Alert>
+
+{/if}
+
 ## Evolução do Short Book
 
 > Total short balance per session over the window SILO holds. A short line here
 > means recent coverage, not a quiet market.
+
+{#if headline[0].trade_date}
 
 <LineChart
   data={history}
@@ -190,6 +257,17 @@ price.
   yAxisTitle="Posição Short (R$)"
   title="Short Balance per Session — Equities vs All Instruments (R$)"
 />
+
+{:else}
+
+<Alert status=warning>
+**No lending sessions captured yet.** B3 keeps roughly 21 business days of the
+securities-lending files and publishes no archive, so this page begins at SILO's
+first daily capture and grows one session per day. Nothing is missing that can
+be recovered — the first `run_daily` after deploy fills it.
+</Alert>
+
+{/if}
 
 ## Qual Denominador — Free Float ou Capital Social
 
@@ -200,8 +278,21 @@ price.
 > `sem denominador` is a ticker B3 published neither figure for, whose `% float`
 > is NULL rather than zero.
 
+{#if headline[0].trade_date}
+
 <DataTable data={basis_split}>
   <Column id=float_basis title="Base"/>
   <Column id=tickers title="Tickers" fmt=num0/>
   <Column id=short_brl title="Posição (R$)" fmt=num0/>
 </DataTable>
+
+{:else}
+
+<Alert status=warning>
+**No lending sessions captured yet.** B3 keeps roughly 21 business days of the
+securities-lending files and publishes no archive, so this page begins at SILO's
+first daily capture and grows one session per day. Nothing is missing that can
+be recovered — the first `run_daily` after deploy fills it.
+</Alert>
+
+{/if}
