@@ -1,4 +1,4 @@
--- 38_b3_lending_flow.sql — securities lending, investor flow, free float, instruments.
+-- 39_b3_lending_flow.sql — securities lending, investor flow, free float, instruments.
 --
 -- Adds the six landing tables behind the Short Monitor and the B3 half of the
 -- flow dashboard. Every statement is idempotent (IF NOT EXISTS + named UNIQUE

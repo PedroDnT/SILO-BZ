@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 
 SOURCE = "b3_bdi"
 
-# Landing tables + their named UNIQUE keys (migration 38). Kept beside the
+# Landing tables + their named UNIQUE keys (migration 39). Kept beside the
 # parsers so a new column can never drift away from the conflict target.
 TABLE_OPEN_POSITION = "b3_lending_open_position"
 CONFLICT_OPEN_POSITION = ("trade_date", "codneg", "tipo_emprestimo", "mercado")

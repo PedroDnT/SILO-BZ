@@ -1,4 +1,4 @@
-"""Offline assertions over 20_short_interest.sql and migration 38.
+"""Offline assertions over 20_short_interest.sql and migration 39.
 
 No database: these parse the SQL text and assert the invariants that make the
 short-interest numbers trustworthy. A real apply is still the analytics-only
@@ -16,7 +16,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SQL_PATH = ROOT / "src" / "store" / "analytical" / "20_short_interest.sql"
-MIG_PATH = ROOT / "src" / "store" / "migrations" / "38_b3_lending_flow.sql"
+MIG_PATH = ROOT / "src" / "store" / "migrations" / "39_b3_lending_flow.sql"
 SCHEMA_PATH = ROOT / "src" / "store" / "schema.sql"
 
 SQL = SQL_PATH.read_text(encoding="utf-8")
@@ -50,7 +50,7 @@ def test_short_interest_reads_only_b3s_total_rows():
 
 
 def test_is_total_column_exists_in_both_schema_and_migration():
-    for name, text in (("migration 38", MIG_CODE), ("schema.sql", SCHEMA)):
+    for name, text in (("migration 39", MIG_CODE), ("schema.sql", SCHEMA)):
         assert "is_total" in text, f"{name} is missing the is_total double-count guard"
 
 
@@ -237,7 +237,7 @@ def test_preflight_names_the_new_objects_and_the_right_fix():
     which is what `REQUIRED_AFTER_MIGRATION` exists to turn from five
     identical "Cannot read properties of undefined" lines into one legible
     line. These tables arrive in TWO stages, so both are checked: the landing
-    table from migration 38, and the views the pages actually query from the
+    table from migration 39, and the views the pages actually query from the
     analytical layer. They also have DIFFERENT fix commands, and naming the
     wrong one sends whoever reads the log down the wrong path.
     """
@@ -245,7 +245,7 @@ def test_preflight_names_the_new_objects_and_the_right_fix():
     block = js.split("REQUIRED_AFTER_MIGRATION = [")[1].split("];")[0]
 
     assert "'b3_lending_open_position'" in block
-    assert "38_b3_lending_flow.sql" in block
+    assert "39_b3_lending_flow.sql" in block
     assert "'fact_short_interest_daily'" in block
     assert "'fact_investor_flow_daily'" in block
     assert "20_short_interest.sql" in block

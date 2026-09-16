@@ -427,6 +427,126 @@ CREATE INDEX IF NOT EXISTS idx_fidc_aging_cnpj   ON cvm_fidc_aging (cnpj);
 CREATE INDEX IF NOT EXISTS idx_fidc_aging_period ON cvm_fidc_aging (period DESC);
 
 -- ---------------------------------------------------------------------------
+-- FIDC — receivables portfolio by sector  (tab_II: total + 32 sector lines)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS cvm_fidc_setor (
+    id                       BIGSERIAL    PRIMARY KEY,
+    cnpj                     TEXT         NOT NULL CHECK (char_length(cnpj) = 14),
+    period                   DATE         NOT NULL,
+    vl_carteira              NUMERIC(20,6),
+    vl_a_indust              NUMERIC(20,6),
+    vl_b_imobil              NUMERIC(20,6),
+    vl_c_comerc              NUMERIC(20,6),
+    vl_c1_comerc             NUMERIC(20,6),
+    vl_c2_varejo             NUMERIC(20,6),
+    vl_c3_arrend             NUMERIC(20,6),
+    vl_d_serv                NUMERIC(20,6),
+    vl_d1_serv               NUMERIC(20,6),
+    vl_d2_serv_publico       NUMERIC(20,6),
+    vl_d3_serv_educ          NUMERIC(20,6),
+    vl_d4_entret             NUMERIC(20,6),
+    vl_e_agroneg             NUMERIC(20,6),
+    vl_f_financ              NUMERIC(20,6),
+    vl_f1_cred_pessoa        NUMERIC(20,6),
+    vl_f2_cred_pessoa_consig NUMERIC(20,6),
+    vl_f3_cred_corp          NUMERIC(20,6),
+    vl_f4_midmarket          NUMERIC(20,6),
+    vl_f5_veiculo            NUMERIC(20,6),
+    vl_f6_imobil_empresa     NUMERIC(20,6),
+    vl_f7_imobil_resid       NUMERIC(20,6),
+    vl_f8_outro              NUMERIC(20,6),
+    vl_g_credito             NUMERIC(20,6),
+    vl_h_factor              NUMERIC(20,6),
+    vl_h1_pessoa             NUMERIC(20,6),
+    vl_h2_corp               NUMERIC(20,6),
+    vl_i_setor_publico       NUMERIC(20,6),
+    vl_i1_precat             NUMERIC(20,6),
+    vl_i2_tribut             NUMERIC(20,6),
+    vl_i3_royalties          NUMERIC(20,6),
+    vl_i4_outro              NUMERIC(20,6),
+    vl_j_judicial            NUMERIC(20,6),
+    vl_k_marca               NUMERIC(20,6),
+    raw                      JSONB,
+    fetched_at               TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fidc_setor UNIQUE (cnpj, period)
+);
+CREATE INDEX IF NOT EXISTS idx_fidc_setor_cnpj   ON cvm_fidc_setor (cnpj);
+CREATE INDEX IF NOT EXISTS idx_fidc_setor_period ON cvm_fidc_setor (period DESC);
+
+-- ---------------------------------------------------------------------------
+-- FIDC — SCR risk-rating ladder  (tab_X: AA..H by debtor and by operation)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS cvm_fidc_scr (
+    id               BIGSERIAL    PRIMARY KEY,
+    cnpj             TEXT         NOT NULL CHECK (char_length(cnpj) = 14),
+    period           DATE         NOT NULL,
+    vl_devedor_aa    NUMERIC(20,6),
+    vl_devedor_a     NUMERIC(20,6),
+    vl_devedor_b     NUMERIC(20,6),
+    vl_devedor_c     NUMERIC(20,6),
+    vl_devedor_d     NUMERIC(20,6),
+    vl_devedor_e     NUMERIC(20,6),
+    vl_devedor_f     NUMERIC(20,6),
+    vl_devedor_g     NUMERIC(20,6),
+    vl_devedor_h     NUMERIC(20,6),
+    vl_oper_aa       NUMERIC(20,6),
+    vl_oper_a        NUMERIC(20,6),
+    vl_oper_b        NUMERIC(20,6),
+    vl_oper_c        NUMERIC(20,6),
+    vl_oper_d        NUMERIC(20,6),
+    vl_oper_e        NUMERIC(20,6),
+    vl_oper_f        NUMERIC(20,6),
+    vl_oper_g        NUMERIC(20,6),
+    vl_oper_h        NUMERIC(20,6),
+    vl_debito_tribut NUMERIC(20,6),
+    raw              JSONB,
+    fetched_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fidc_scr UNIQUE (cnpj, period)
+);
+CREATE INDEX IF NOT EXISTS idx_fidc_scr_cnpj   ON cvm_fidc_scr (cnpj);
+CREATE INDEX IF NOT EXISTS idx_fidc_scr_period ON cvm_fidc_scr (period DESC);
+
+-- ---------------------------------------------------------------------------
+-- FIDC — the 25 largest sacados, anonymized  (tab_VIII: one row per rank)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS cvm_fidc_sacado (
+    id         BIGSERIAL    PRIMARY KEY,
+    cnpj       TEXT         NOT NULL CHECK (char_length(cnpj) = 14),
+    period     DATE         NOT NULL,
+    -- CVM's rank as filed (1..25). Never recomputed from valor.
+    seq        INT          NOT NULL,
+    valor      NUMERIC(20,6),
+    fetched_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fidc_sacado UNIQUE (cnpj, period, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_fidc_sacado_cnpj   ON cvm_fidc_sacado (cnpj);
+CREATE INDEX IF NOT EXISTS idx_fidc_sacado_period ON cvm_fidc_sacado (period DESC);
+
+-- ---------------------------------------------------------------------------
+-- FIDC — named cedente concentration  (tab_I blocks A/B, slots 1..9, unpivoted)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS cvm_fidc_cedente (
+    id                BIGSERIAL    PRIMARY KEY,
+    cnpj              TEXT         NOT NULL CHECK (char_length(cnpj) = 14),
+    period            DATE         NOT NULL,
+    -- A = receivables acquired with substantial retention of risks and
+    -- benefits by the cedente (TAB_I2A); B = without (TAB_I2B).
+    bloco             TEXT         NOT NULL CHECK (bloco IN ('A', 'B')),
+    -- CVM's slot 1..9 as filed.
+    seq               INT          NOT NULL,
+    -- The cedente's own CPF or CNPJ, digits only. No 14-digit CHECK: the
+    -- source column is CPF_CNPJ and a CPF is a real filing.
+    cpf_cnpj_cedente  TEXT         NOT NULL,
+    pr_cedente        NUMERIC(20,6),
+    fetched_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fidc_cedente UNIQUE (cnpj, period, bloco, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_fidc_cedente_cnpj    ON cvm_fidc_cedente (cnpj);
+CREATE INDEX IF NOT EXISTS idx_fidc_cedente_period  ON cvm_fidc_cedente (period DESC);
+-- The join column: which funds buy from this originator.
+CREATE INDEX IF NOT EXISTS idx_fidc_cedente_cedente ON cvm_fidc_cedente (cpf_cnpj_cedente);
+
+-- ---------------------------------------------------------------------------
 -- FIAGRO — monthly snapshot  (INF_MENSAL, monthly ZIP, from 2025-05)
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS cvm_fiagro_mensal (

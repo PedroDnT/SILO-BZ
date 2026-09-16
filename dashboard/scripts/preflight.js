@@ -81,7 +81,7 @@ const REQUIRED_AFTER_MIGRATION = [
   // the pages actually query from the analytical layer — so both are checked.
   {
     relation: 'b3_lending_open_position', column: null,
-    source: 'src/store/migrations/38_b3_lending_flow.sql',
+    source: 'src/store/migrations/39_b3_lending_flow.sql',
     fix: 'python scripts/apply_schema.py',
   },
   {

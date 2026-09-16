@@ -17,10 +17,15 @@ month, which silently blanked every delinquency metric downstream
 `ingest_fidc_mensal` now merges the tab_VI total in on (cnpj, period) — same
 ZIP, same grain, real provenance.
 
-`vl_total`, `vl_quota` and `nr_cotst` have no tab_IV counterpart either and are
-deliberately left NULL rather than guessed: the closest candidates live at a
-different grain (tab_X_1 reports NR_COTST per tranche, not per fund), and this
-pipeline never synthesises a value it cannot source directly.
+`vl_total` has no tab_IV counterpart either, but it does have a same-ZIP,
+same-grain source: TAB_II_VL_CARTEIRA, the receivables portfolio total in tab_II
+(one row per fund-month, populated on 3,269 of 4,382 rows in 2026-07). It is
+the same column the HIST path already reads for the 2013-2024 era, so
+`ingest_fidc_mensal` merges it in on (cnpj, period) exactly as it merges tab_VI.
+Before that merge every 2025+ row had vl_total NULL. `vl_quota` and `nr_cotst`
+stay NULL: their closest candidates live at a different grain (tab_X_1 reports
+NR_COTST per tranche, not per fund), and this pipeline never synthesises a
+value it cannot source directly.
 """
 
 TABLE = "cvm_fidc_mensal"
@@ -32,7 +37,8 @@ CONFLICT = ("cnpj", "period")
 FIELD_MAP = {
     "cnpj":          (["CNPJ_FUNDO_CLASSE", "CNPJ_FUNDO"],                             "cnpj"),
     "period":        (["DT_COMPTC"],                                                    "date"),
-    "vl_total":      (["VL_TOTAL", "VL_CARTEIRA_TOTAL", "TAB_IV_A_VL_CARTEIRA"],       "numeric"),
+    "vl_total":      (["VL_TOTAL", "VL_CARTEIRA_TOTAL", "TAB_IV_A_VL_CARTEIRA",
+                       "TAB_II_VL_CARTEIRA"],                                           "numeric"),
     "vl_quota":      (["VL_QUOTA"],                                                     "numeric"),
     "vl_patrim_liq": (["TAB_IV_A_VL_PL", "VL_PATRIM_LIQ"],                             "numeric"),
     "vl_inadimpl":   (["TAB_VI_B_VL_DIRCRED_INAD", "TAB_VI_B_VL_TOTAL",

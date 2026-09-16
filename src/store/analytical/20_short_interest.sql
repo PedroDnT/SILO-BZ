@@ -204,7 +204,7 @@ COMMENT ON VIEW dim_ticker_float IS
 -- -----------------------------------------------------------------------------
 -- Reads ONLY the is_total rows. B3 publishes, per (session, ticker, spec),
 -- both the per-market breakdown and its own 'Total' sum; adding them together
--- doubles every short balance. See migration 38.
+-- doubles every short balance. See migration 39.
 CREATE OR REPLACE VIEW fact_short_interest_daily AS
 WITH position AS (
     SELECT
