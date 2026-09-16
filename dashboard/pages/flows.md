@@ -92,10 +92,23 @@ order by reference_month desc, valor_brl_bn desc
 > days of the participation table. That is why there is no year-to-date column
 > below: a YTD computed over a fortnight would be a YTD in name only.
 
+{#if headline[0].reference_date}
+
 <BigValue data={headline} value=reference_date title="Latest Flow Date"/>
 <BigValue data={headline} value=publication_lag_days title="Lag vs Tape (days)" fmt=num0/>
 <BigValue data={headline} value=estrangeiro_last_day_bn title="Estrangeiro — Last Day (R$bn)" fmt=num2/>
 <BigValue data={headline} value=sessions_held title="Sessions Captured" fmt=num0/>
+
+{:else}
+
+<Alert status=warning>
+**No investor-flow sessions captured yet.** B3 retains roughly 21 business days
+of the participation table and publishes no archive, so this page begins at
+SILO's first daily capture. Nothing is missing that can be recovered — the first
+`run_daily` after deploy fills it.
+</Alert>
+
+{/if}
 
 ---
 
@@ -106,6 +119,8 @@ order by reference_month desc, valor_brl_bn desc
 > Foreign and institutional are usually near mirror images of each other; that
 > is arithmetic, not a signal, since every purchase is someone's sale.
 
+{#if flow_main.length > 0}
+
 <LineChart
   data={flow_main}
   x=reference_date
@@ -115,11 +130,24 @@ order by reference_month desc, valor_brl_bn desc
   title="Cumulative Net Flow by Investor Type (R$ bn)"
 />
 
+{:else}
+
+<Alert status=warning>
+**No investor-flow sessions captured yet.** B3 retains roughly 21 business days
+of the participation table and publishes no archive, so this page begins at
+SILO's first daily capture. Nothing is missing that can be recovered — the first
+`run_daily` after deploy fills it.
+</Alert>
+
+{/if}
+
 ## Fluxo Líquido Diário
 
 > The per-session net, before accumulation. Sessions whose flow could not be
 > derived honestly — the first snapshot held in a month, when that is not the
 > month's first session — are omitted rather than drawn as zero.
+
+{#if flow_main.length > 0}
 
 <BarChart
   data={flow_main}
@@ -131,11 +159,24 @@ order by reference_month desc, valor_brl_bn desc
   title="Daily Net Flow by Investor Type (R$ bn)"
 />
 
+{:else}
+
+<Alert status=warning>
+**No investor-flow sessions captured yet.** B3 retains roughly 21 business days
+of the participation table and publishes no archive, so this page begins at
+SILO's first daily capture. Nothing is missing that can be recovered — the first
+`run_daily` after deploy fills it.
+</Alert>
+
+{/if}
+
 ## Resumo por Janela
 
 > `Coverage` is the sum over everything captured, with the window that produced
 > it printed beside it — the honest replacement for a year-to-date column on a
 > feed that keeps three weeks.
+
+{#if flow_summary[0].last_date}
 
 <DataTable data={flow_summary}>
   <Column id=investor_type title="Categoria"/>
@@ -146,6 +187,17 @@ order by reference_month desc, valor_brl_bn desc
   <Column id=coverage_from title="Desde"/>
   <Column id=coverage_to title="Até"/>
 </DataTable>
+
+{:else}
+
+<Alert status=warning>
+**No investor-flow sessions captured yet.** B3 retains roughly 21 business days
+of the participation table and publishes no archive, so this page begins at
+SILO's first daily capture. Nothing is missing that can be recovered — the first
+`run_daily` after deploy fills it.
+</Alert>
+
+{/if}
 
 ---
 
@@ -171,11 +223,22 @@ order by reference_month desc, valor_brl_bn desc
 > one carries no basis caveat. It is still forward-only: past months return no
 > rows at the source, so the history grows one month per run.
 
+{#if monthly_vista.length > 0}
+
 <DataTable data={monthly_vista} groupBy=reference_month>
   <Column id=investor_type title="Categoria"/>
   <Column id=valor_brl_bn title="Volume (R$ bn)" fmt=num1/>
   <Column id=participacao title="Participação" fmt='0.0"%"'/>
 </DataTable>
+
+{:else}
+
+<Alert status=warning>
+**No monthly participation published yet for the window we hold.** B3 returns no
+rows for past months at the source, so this table grows one month per run.
+</Alert>
+
+{/if}
 
 ---
 
