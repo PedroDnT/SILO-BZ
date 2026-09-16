@@ -222,3 +222,48 @@ def test_new_sources_survive_an_empty_database(path):
         f"{path.stem}'s sentinel is not gated on `where not exists (select 1 ...)`, "
         "so it would emit a null row even when real data exists"
     )
+
+
+# ── the deploy-vs-migration race ──────────────────────────────────────────
+
+PREFLIGHT = DASHBOARD / "scripts" / "preflight.js"
+
+
+def test_preflight_names_the_new_objects_and_the_right_fix():
+    """A Vercel deploy and a schema migration are independent events.
+
+    The dashboard builds on push; migrations are applied by the ingest
+    workflow. Merge a PR that adds both and the deploy can win the race —
+    which is what `REQUIRED_AFTER_MIGRATION` exists to turn from five
+    identical "Cannot read properties of undefined" lines into one legible
+    line. These tables arrive in TWO stages, so both are checked: the landing
+    table from migration 38, and the views the pages actually query from the
+    analytical layer. They also have DIFFERENT fix commands, and naming the
+    wrong one sends whoever reads the log down the wrong path.
+    """
+    js = PREFLIGHT.read_text(encoding="utf-8")
+    block = js.split("REQUIRED_AFTER_MIGRATION = [")[1].split("];")[0]
+
+    assert "'b3_lending_open_position'" in block
+    assert "38_b3_lending_flow.sql" in block
+    assert "'fact_short_interest_daily'" in block
+    assert "'fact_investor_flow_daily'" in block
+    assert "20_short_interest.sql" in block
+
+    # The analytical views are NOT applied by apply_schema.py.
+    for relation in ("fact_short_interest_daily", "fact_investor_flow_daily"):
+        entry = block.split(f"'{relation}'")[1].split("},")[0]
+        assert "apply_analytical.sh" in entry, (
+            f"{relation} comes from the analytical layer; apply_schema.py will not create it"
+        )
+    landing = block.split("'b3_lending_open_position'")[1].split("},")[0]
+    assert "apply_schema.py" in landing
+
+
+def test_preflight_prints_every_distinct_fix_command():
+    """Two stages means two commands, and the operator needs both."""
+    js = PREFLIGHT.read_text(encoding="utf-8")
+    assert "new Set(pending.map((p) => p.fix))" in js, (
+        "the failure message must derive its commands from the pending entries, "
+        "not hardcode a single one"
+    )
