@@ -71,7 +71,7 @@ order by reference_date
 ```
 
 ```sql monthly_vista
-select reference_month, investor_type, valor_brl_bn, participacao_pct
+select reference_month, investor_type, valor_brl_bn, participacao
 from supabase.flow_monthly_market
 where market = 'À vista'
 order by reference_month desc, valor_brl_bn desc
