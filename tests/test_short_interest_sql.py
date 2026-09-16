@@ -267,3 +267,76 @@ def test_preflight_prints_every_distinct_fix_command():
         "the failure message must derive its commands from the pending entries, "
         "not hardcode a single one"
     )
+
+
+# ── BTBTrade: the broker caveat and the per-session fetch ─────────────────
+
+MIG40_PATH = ROOT / "src" / "store" / "migrations" / "40_b3_lending_trade.sql"
+SQL21_PATH = ROOT / "src" / "store" / "analytical" / "21_lending_participants.sql"
+MIG40 = MIG40_PATH.read_text(encoding="utf-8")
+SQL21 = SQL21_PATH.read_text(encoding="utf-8")
+SQL21_CODE = strip_comments(SQL21)
+
+
+def test_trade_table_is_partitioned_and_keyed():
+    """~43k rows a session, ~2.8 GB a year — partitioned like b3_cotahist."""
+    assert "PARTITION BY RANGE (trade_date)" in MIG40
+    assert "b3_lending_trade_future" in MIG40
+    assert "uq_b3_lending_trade UNIQUE (trade_date, numero_negocio)" in MIG40
+    assert "CREATE TABLE IF NOT EXISTS b3_lending_trade " in MIG40
+    for t in ("b3_lending_trade", "b3_lending_trade_2026", "b3_lending_trade_future"):
+        assert f"CREATE TABLE IF NOT EXISTS {t}" in SCHEMA, f"{t} never reached schema.sql"
+
+
+def test_participant_views_publish_the_broker_caveat():
+    """doador/tomador are brokerages, and ~75% of trades are self-crossed.
+
+    Netting those away would make the rest look like inter-broker conviction;
+    hiding them would make a broker's own client churn look like demand. The
+    split has to be visible on the view and in its comment, or the numbers
+    invite exactly the wrong reading.
+    """
+    assert "internal_legs" in SQL21_CODE
+    assert "internal_qty" in SQL21_CODE
+    assert "internal_trades" in SQL21_CODE
+    for view in ("api.lending_participants", "fact_lending_participant_daily"):
+        comment = SQL21.split(f"COMMENT ON VIEW {view} IS")[1].split(";")[0].lower()
+        assert "broker" in comment
+        assert "beneficial owner" in comment
+
+
+def test_self_crossed_trades_cancel_rather_than_inflate_the_net():
+    """A broker on both legs contributes to lent AND borrowed, so qty_net is 0
+    for that trade instead of counting twice in one direction."""
+    legs = SQL21_CODE.split("WITH legs AS")[1].split("SELECT\n    l.trade_date")[0]
+    assert legs.count("UNION ALL") == 1
+    assert "sum(l.qty_lent) - sum(l.qty_borrowed)" in SQL21_CODE
+
+
+def test_landing_table_is_revoked_and_api_views_are_owner_privileged():
+    assert re.search(r"REVOKE ALL ON TABLE\s+b3_lending_trade\s+FROM anon, authenticated", SQL21_CODE)
+    for view in ("lending_trades", "lending_participants"):
+        assert f"ALTER VIEW api.{view} SET (security_invoker = false)" in SQL21_CODE
+        assert re.search(rf"GRANT SELECT ON api\.{view} TO anon, authenticated", SQL21_CODE)
+
+
+def test_trade_ingest_is_per_session_because_b3_ignores_finaldate():
+    """BTBTrade returns only the `Date` day whatever `FinalDate` says.
+
+    Verified live: 2026-09-08..09-11 returned only 08/09, and 09-10..09-11 came
+    back byte-identical to the single day. A ranged fetch would therefore log
+    twenty sessions as a shortfall on every run, forever — so the ingestor must
+    loop, not span.
+    """
+    pipeline = (ROOT / "src" / "pipeline" / "b3_pipeline.py").read_text(encoding="utf-8")
+    body = pipeline.split("async def ingest_lending_trades")[1].split("async def ")[0]
+    # The docstring names _ingest_bdi_span to explain why it is NOT used, so
+    # match the call, not the prose.
+    assert "self._ingest_bdi_span(" not in body, "BTBTrade cannot be range-fetched"
+    assert "fetch_table(\"BTBTrade\", session)" in body, (
+        "each request must name a single session"
+    )
+    assert "for session in targets" in body
+    assert "MAX_TRADE_SESSIONS_PER_RUN" in body
+    # And it must notice if B3 ever answers with a day it did not ask for.
+    assert "returned sessions" in body

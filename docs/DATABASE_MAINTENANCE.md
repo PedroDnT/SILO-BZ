@@ -172,7 +172,17 @@ once. Raising one without the other does nothing.
 > Everything else in this section assumes the source keeps an archive, so a gap is
 > *late* rather than lost. That assumption does not hold for
 > `b3_lending_open_position`, `b3_lending_rate`, `b3_investor_participation`,
-> `b3_investor_participation_monthly` and `b3_instrument_registry`.
+> `b3_investor_participation_monthly`, `b3_instrument_registry` and
+> `b3_lending_trade`.
+>
+> `b3_lending_trade` is the one to watch on **size**: ~43k rows and ~5.9 MB of
+> CSV per session, about **2.8 GB a year** measured on real data (20 MB for two
+> sessions, indexes included). It is RANGE-partitioned by `trade_date` with
+> partitions to 2029, so §6's yearly rollover applies to it; past 2029 rows land
+> in `b3_lending_trade_future`. It also cannot be range-fetched — B3 ignores
+> `FinalDate` on that export — so the daily job takes the newest
+> `MAX_TRADE_SESSIONS_PER_RUN` (5) sessions per run and walks backwards, which
+> fills the 21-session window in about four days from a cold start.
 >
 > **B3 retains roughly 21 business days and publishes no archive.** Verified
 > 2026-09-16: `2026-08-17` returns rows, `2026-08-14` returns `Nenhum resultado`,

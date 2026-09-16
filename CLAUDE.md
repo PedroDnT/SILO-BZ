@@ -110,7 +110,8 @@ Storage layout: ~30 tables named `cvm_<entity>_<doctype>` or `bacen_<series>` (p
   Serve cash quotes from `vw_b3_quote_vista` (`tpmerc = '010'`), not the option-heavy parent),
   and the **B3 BDI** group — `b3_lending_open_position`, `b3_lending_rate`,
   `b3_investor_participation`, `b3_investor_participation_monthly`,
-  `b3_index_portfolio`, `b3_instrument_registry` (securities lending, investor-type
+  `b3_index_portfolio`, `b3_instrument_registry`, `b3_lending_trade` (securities lending
+  including the trade-by-trade tape with the brokerage on each leg, investor-type
   flow, index free float and the cash instrument registry; `src/fetchers/b3_bdi_fetcher.py`
   carries the verified endpoint contract).
 
@@ -121,7 +122,10 @@ price, `run_backfill` deliberately offers no lending option, and every ingest re
 the sessions it received against the ones it asked for. Read `b3_lending_open_position`
 through `is_total` (B3 publishes both the per-market rows and its own `Total` sum; adding
 them double-counts), and read `% of float` together with `float_basis`
-(`index_free_float` and `shares_outstanding` are different denominators).
+(`index_free_float` and `shares_outstanding` are different denominators). In
+`b3_lending_trade`, `doador`/`tomador` are BROKERAGES, not beneficial owners —
+~75% of trades carry the same code on both legs, so a large borrow through a
+broker is its client book, not its own position.
 
 The **analytical layer** (`src/store/analytical/`, applied by `scripts/apply_analytical.sh`
 after ingest) is the read side the dashboards query: `dim_fund` (a **materialized view**,

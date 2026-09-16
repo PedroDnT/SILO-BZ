@@ -35,6 +35,10 @@ Layout facts this encodes (all verified against live 2026-09-10 exports):
   name is then cross-checked against it, and a mismatch raises rather than
   filing August's numbers under September.
 
+`BTBTrade` is the one table that IGNORES `FinalDate` — see the fetcher.
+Everything below still parses a multi-session body correctly; it is the
+caller that must not expect one.
+
 Money is stored in the unit B3 publishes it in, named accordingly
 (`*_brl_mil` for the daily investor table, `*_brl` elsewhere), and rates in
 percentage points (40,00% -> 40.00), matching `anbima_class_monthly`.
@@ -62,6 +66,12 @@ CONFLICT_OPEN_POSITION = ("trade_date", "codneg", "tipo_emprestimo", "mercado")
 
 TABLE_LENDING_RATE = "b3_lending_rate"
 CONFLICT_LENDING_RATE = ("trade_date", "codneg", "mercado")
+
+TABLE_LENDING_TRADE = "b3_lending_trade"
+# "Número do negócio" is unique inside a session (verified 2026-09-10: 0
+# duplicates in 43,165 rows), so the trade number plus its date is the key.
+# An amended trade re-uses its number and correctly overwrites on conflict.
+CONFLICT_LENDING_TRADE = ("trade_date", "numero_negocio")
 
 TABLE_INVESTOR = "b3_investor_participation"
 CONFLICT_INVESTOR = ("reference_date", "investor_type")
@@ -567,6 +577,123 @@ def parse_index_portfolio(records: Sequence[Dict[str, Any]], *, origin: str = ""
         raise B3BdiParseError(f"index portfolio{f' ({origin})' if origin else ''} had no usable rows")
     return out
 
+
+
+# ── BTBTrade (tick-level lending trades) ──────────────────────────────────
+
+_TRADE_LABELS = ("Código IF", "Quantidade", "Número do negócio", "Data de referência")
+
+
+def _trade_participants(rows: Sequence[Sequence[str]], hi: int, header: Sequence[str]) -> Dict[str, int]:
+    """Which `Código` column belongs to the lender and which to the borrower.
+
+    Same shape as BTBLoanBalance's rate bands, same reason: the header says
+    `Código` twice and only the band row above it distinguishes `Participante
+    doador` from `Participante tomador`. Swapping lender and borrower would
+    invert every flow this table is read for, so a missing band raises rather
+    than assuming column order.
+    """
+    if hi == 0:
+        raise B3BdiParseError("BTBTrade header has no participant band row above it")
+    band = rows[hi - 1]
+    starts: Dict[str, int] = {}
+    for i, cell in enumerate(band):
+        n = _norm(cell)
+        if "doador" in n:
+            starts["doador"] = i
+        elif "tomador" in n:
+            starts["tomador"] = i
+    if set(starts) != {"doador", "tomador"}:
+        raise B3BdiParseError(
+            f"BTBTrade band row names {sorted(starts)} — expected doador and tomador: {list(band)!r}"
+        )
+    for side, start in starts.items():
+        if start >= len(header) or _norm(header[start]) != "codigo":
+            got = header[start] if start < len(header) else None
+            raise B3BdiParseError(
+                f"BTBTrade {side} band at column {start} is over {got!r}, expected 'Código'"
+            )
+    return starts
+
+
+def parse_lending_trade(text: str, *, origin: str = "") -> List[Dict[str, Any]]:
+    """Every individual securities-lending trade of one session.
+
+    ~43k rows for 2026-09-10. The participants are BROKERAGES, not beneficial
+    owners — see the table comment in migration 40 before reading anything
+    directional into them.
+    """
+    rows = split_lines(text)
+    hi = find_header(rows, _TRADE_LABELS)
+    header = rows[hi]
+    sides = _trade_participants(rows, hi, header)
+    ix = {name: column_index(header, label) for name, label in (
+        ("codneg", "Código IF"),
+        ("quantidade", "Quantidade"),
+        ("taxa_pct", "Taxa % remuneração"),
+        ("numero_negocio", "Número do negócio"),
+        ("mercado", "Mercado"),
+        ("trade_date", "Data de referência"),
+        ("hora", "Hora"),
+        ("acao_atualizacao", "Ação de atualização"),
+        ("tipo_sessao", "Tipo sessão do pregão"),
+    )}
+    d0, t0 = sides["doador"], sides["tomador"]
+    last = max(max(ix.values()), d0 + 1, t0 + 1)
+
+    # This table stores no `raw` column (see migration 40), so a column B3 adds
+    # would otherwise vanish without trace. Name the unmapped ones loudly
+    # instead: detection is what raw was really buying here, and it costs
+    # nothing to keep.
+    mapped = set(ix.values()) | {d0, d0 + 1, t0, t0 + 1}
+    unmapped = [h.strip() for i, h in enumerate(header) if i not in mapped and h.strip()]
+    if unmapped:
+        logger.warning(
+            "B3 lending trade%s: export carries %d column(s) this parser does not "
+            "store: %s — add them to parse_lending_trade and migration 40",
+            f" ({origin})" if origin else "", len(unmapped), ", ".join(unmapped),
+        )
+
+    out: List[Dict[str, Any]] = []
+    dropped = 0
+    for cells in rows[hi + 1:]:
+        if len(cells) <= last:
+            dropped += 1
+            continue
+        numero = parse_number(cells[ix["numero_negocio"]])
+        if numero is None:
+            dropped += 1
+            continue
+        row = {
+            "trade_date": parse_date(cells[ix["trade_date"]]),
+            "numero_negocio": int(numero),
+            "codneg": cells[ix["codneg"]].strip(),
+            "quantidade": parse_number(cells[ix["quantidade"]]),
+            "taxa_pct": parse_number(cells[ix["taxa_pct"]]),
+            "mercado": cells[ix["mercado"]].strip() or None,
+            # B3 publishes the wall-clock time separately from the date; kept
+            # as published rather than fused into a timestamp, because the
+            # export names no timezone and inventing one would be a guess.
+            "hora": (cells[ix["hora"]].strip() or None),
+            "acao_atualizacao": cells[ix["acao_atualizacao"]].strip() or None,
+            "tipo_sessao": cells[ix["tipo_sessao"]].strip() or None,
+            "doador_codigo": cells[d0].strip() or None,
+            "doador_nome": cells[d0 + 1].strip() or None,
+            "tomador_codigo": cells[t0].strip() or None,
+            "tomador_nome": cells[t0 + 1].strip() or None,
+            "source": SOURCE,
+        }
+        if not _validated(row, ("trade_date", "codneg"), {"trade_date": "date"}):
+            dropped += 1
+            continue
+        out.append(row)
+
+    if dropped:
+        logger.warning("B3 lending trade%s: dropped %d unreadable rows",
+                       f" ({origin})" if origin else "", dropped)
+    if not out:
+        raise B3BdiParseError(f"lending trade export{f' ({origin})' if origin else ''} had no usable rows")
+    return out
 
 def batched(rows: Iterable[Dict[str, Any]], size: int) -> Iterator[List[Dict[str, Any]]]:
     batch: List[Dict[str, Any]] = []
