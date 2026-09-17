@@ -91,13 +91,13 @@ select * from supabase.fi_top_funds
 > the one place on the site where flows can be watched as they happen rather than
 > one to two months in arrears.
 >
-> Two things this page cannot tell you. The portfolio book comes from CDA, whose
-> natural key collapses a fund's security-level rows to one per bucket, so the
-> allocation section is a **directional mix and not a market-value census**. And
-> the investor split comes from PERFIL, most of whose holder-count columns are not
-> lifted by the field map — the coverage tiles state exactly how much resolves
-> before any chart is drawn from it. ETFs are excluded here and analysed on
-> [the ETF page](/etf).
+> Two things this page cannot tell you.
+>
+> - The portfolio book comes from CDA, whose natural key collapses security-level
+>   rows to one per bucket — a **directional mix, not a market-value census**.
+> - The investor split comes from PERFIL, most of whose holder-count columns are not
+>   lifted by the field map. The coverage tiles state how much resolves before any
+>   chart is drawn from it.
 
 <BigValue data={fi_headline} value=aum_bn title="Industry Net Assets (R$bn)" fmt=num0/>
 <BigValue data={fi_headline} value=n_funds title="Funds Reporting" fmt=num0/>
@@ -189,19 +189,17 @@ title="Daily Subscriptions vs Redemptions"
 <BigValue data={fi_perfil_coverage} value=latest_period title="PERFIL Period"/>
 
 > **Coverage first.** The `nr_cotst_*` holder buckets are declared on
-> `cvm_fi_perfil` but have not historically been lifted by the perfil field map,
-> so they sit in the residual `raw` JSONB; every query in this section reads the
-> typed column and falls back to the raw CVM key, and leaves the value NULL when
-> neither resolves. If the two tiles above read zero, the charts below are empty
-> **because the data is not lifted yet** — nothing has been estimated to fill the
-> space.
+> `cvm_fi_perfil` but not lifted by the perfil field map, so they sit in the
+> residual `raw` JSONB. Every query here reads the typed column, falls back to the
+> raw CVM key, and leaves NULL when neither resolves. If the two tiles above read
+> zero, the charts are empty **because the data is not lifted yet** — nothing was
+> estimated to fill the space.
 >
-> **"Retail" here is a modelled subset, not the retail base.** The split sums
-> seven buckets — individuals in private banking plus retail corporates on the
-> retail side — and **excludes CVM's mass-retail individual bucket**
-> (`NR_COTST_PF_VAREJO`) entirely, so the retail count and the retail share are
-> both understatements by construction. Use the quotaholder series above for
-> "how many investors"; use this one only for the direction of the mix.
+> **"Retail" here is a modelled subset, not the retail base.** The split sums seven
+> buckets and **excludes CVM's mass-retail individual bucket**
+> (`NR_COTST_PF_VAREJO`), so the retail count and share are both understatements by
+> construction. Use the quotaholder series above for "how many investors"; use this
+> one only for the direction of the mix.
 
 <AreaChart
   data={fi_investor_mix}

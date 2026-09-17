@@ -10,35 +10,21 @@ icon: "chart-candlestick"
   schema cannot: the conventions, the nulls that are deliberate, and the traps.
 </Note>
 
-Options are the same COTAHIST tape as [`quotes`](/api-docs/quotes), on a different market
-type: **`tpmerc` `070` = call, `080` = put**. They are roughly nine in ten rows of every
-session, which is why both endpoints here are narrower than their cash-market equivalents —
-neither will scan the whole segment for you.
+### Overview
 
-Everything is unadjusted and every row says so with `adjusted: false`.
+Options are the same COTAHIST tape as [`quotes`](/api-docs/quotes) on a different market type: **`tpmerc` `070` = call, `080` = put**. They are roughly nine in ten rows of every session, which is why both endpoints here are narrower than their cash-market equivalents — neither will scan the whole segment for you.
 
-Option rows carry **`underlying_ticker`** — and it is *published*, not the
-codneg-root convention: COTAHIST's ISIN on an option row is the **underlying's** ISIN,
-joined here to the same session's cash print. Measured on a full session: 14,895 of
-14,900 rows matched, 1:1 — PETR-prefix options split correctly between `PETR3` and
-`PETR4`, which the ticker root can never do. It is `null` when the underlying had no
-cash print that day, never guessed.
+Everything is unadjusted; every row carries `adjusted: false`.
 
-Also on every row: `strike_points` (PTOEXE, USD-referenced options; `null` when not
-points-referenced), `strike_correction` (INDOPC) and `distribution_number` (DISMES —
-it changes on corporate events, a useful split signal). See the
-[COTAHIST dictionary](/api-docs/cotahist-dictionary).
+Option rows carry **`underlying_ticker`**, and it is *published*, not the codneg-root convention: COTAHIST's ISIN on an option row is the **underlying's** ISIN, joined here to the same session's cash print. Measured on a full session, 14,895 of 14,900 rows matched 1:1 — PETR-prefix options split correctly between `PETR3` and `PETR4`, which a ticker root can never do. Null when the underlying had no cash print that day, never guessed.
+
+Also on every row: `strike_points` (PTOEXE, USD-referenced options; null when not points-referenced), `strike_correction` (INDOPC) and `distribution_number` (DISMES — it changes on corporate events, a useful split signal). See the [COTAHIST dictionary](/api-docs/cotahist-dictionary).
 
 <Warning>
-  **Exercises are not quotes.** `tpmerc` 012/013 rows are exercise *events* (~one print
-  per series) and live on `POST /rpc/option_exercises` (same required prefix, capped
-  at 500 rows anonymous / 5,000 signed in), not on the chain or history endpoints. Auction prints (`tpmerc` 017) live on
-  `GET /auctions`. Computing returns over either is meaningless.
+  **Exercises are not quotes.** `tpmerc` 012/013 rows are exercise *events* (~one print per series) and live on `POST /rpc/option_exercises` (same required prefix, capped at 500 rows anonymous / 5,000 signed in), not on the chain or history endpoints. Auction prints (`tpmerc` 017) live on `GET /auctions`. Computing returns over either is meaningless.
 </Warning>
 
----
-
-## `POST /rpc/option_chain`
+### `POST /rpc/option_chain`
 
 One session's chain for a codneg prefix: every strike, expiry and side that printed.
 
@@ -49,115 +35,31 @@ api.option_chain(p_prefix      TEXT,
                  p_limit       INT  DEFAULT 100)
 ```
 
-#### `p_prefix`
-
-Codneg prefix, **at least 3 characters**. Upper-cased and trimmed server-side, so `petr`
-works. Matched as `codneg LIKE '<prefix>%'`.
-
-
-#### `p_expiry_from`
-
-Keep only series expiring on or after this date — by default, live contracts. Pass `null`
-explicitly to include expired series in the session's chain.
-
-
-#### `p_trade_date`
-
-Which session. Null means **the latest session present in the option segment** — not the
-cash tape's latest, so a day where only cash quotes landed never gets served back as
-today's chain.
-
-
-#### `p_limit`
-
-Clamped into `1..2000`; null is treated as 100. The default is deliberately
-modest: the `anon` role has a 3-second statement timeout, and on the busiest
-chains (PETR, BOVA) a 200-row page already exceeds it and comes back as
-`57014`. Ask for a bigger page when you need one — just expect a timeout
-rather than a truncation if the prefix is a heavily traded name.
-
+| Parameter | What to know |
+| --- | --- |
+| `p_prefix` | **At least 3 characters.** Upper-cased and trimmed server-side, so `petr` works. Matched as `codneg LIKE '<prefix>%'`. |
+| `p_expiry_from` | Keep only series expiring on or after this date — by default, live contracts. Pass `null` explicitly to include expired series in the session's chain. |
+| `p_trade_date` | Null means **the latest session present in the option segment** — not the cash tape's latest, so a day where only cash quotes landed never gets served back as today's chain. |
+| `p_limit` | Clamped into `1..2000`; null is treated as 100. The modest default is deliberate: `anon` has a 3-second statement timeout, and on the busiest chains (PETR, BOVA) a 200-row page already exceeds it and comes back as `57014`. Ask for a bigger page when you need one — just expect a timeout rather than a truncation on a heavily traded name. |
 
 <Warning>
-  **A prefix is required, and a bad one is an error, not an empty array.** Fewer than 3
-  characters — including `null` or `""` — raises `22023`, surfacing as a `400` with the
-  message *"option_chain requires p_prefix…"*. This is the only endpoint in the API that
-  refuses to run rather than returning `[]`: an unfiltered whole-market chain is tens of
-  thousands of rows, exactly the query the row caps exist to prevent.
+  **A prefix is required, and a bad one is an error, not an empty array.** Fewer than 3 characters — including `null` or `""` — raises `22023`, surfacing as a `400` with the message *"option_chain requires p_prefix…"*. This is the only endpoint in the API that refuses to run rather than returning `[]`: an unfiltered whole-market chain is tens of thousands of rows, exactly the query the row caps exist to prevent.
 </Warning>
 
-### Returns
+| Field | What to know |
+| --- | --- |
+| `codneg` | The series' identifier. Pass it to `option_history` or [`panel`](/api-docs/panel). |
+| `side` | `call` or `put`, derived **only** from `tpmerc` (`070` / `080`). Never inferred from the codneg's letter. |
+| `trade_date` | Constant across the response — the session these prints are from. |
+| `quantity` | Exactly as COTAHIST publishes it. |
 
-#### `codneg`
-
-The B3 negotiation code — the series' identifier. Pass it to `option_history` or to
-[`panel`](/api-docs/panel).
-
-#### `side`
-
-`call` or `put`, derived **only** from `tpmerc` (`070` / `080`). Never inferred from the
-codneg's letter.
-
-#### `strike`
-
-Exercise price (`preco_exercicio`) as published.
-
-#### `expiry`
-
-Expiration date (`data_vencimento`).
-
-#### `trade_date`
-
-The session these prints are from. Constant across the response.
-
-#### `close`
-
-Closing premium. Unadjusted.
-
-#### `open`
-
-Opening premium.
-
-#### `high`
-
-Session high.
-
-#### `low`
-
-Session low.
-
-#### `trades`
-
-Number of trades (`negocios`).
-
-#### `quantity`
-
-Quantity traded (`quantidade`), exactly as COTAHIST publishes it.
-
-#### `volume`
-
-Financial volume in BRL.
-
-#### `isin`
-
-ISIN as published.
-
-#### `spec`
-
-Paper specification (`especi`).
-
-
-Rows are ordered by `expiry`, then `strike`, then side, then `codneg` — so if an over-broad
-prefix hits the 2,000-row clamp, the cut is deterministic and you get whole near expiries
-rather than a random slice.
-
-### Example
+Rows are ordered by `expiry`, then `strike`, then side, then `codneg` — so if an over-broad prefix hits the 2,000-row clamp, the cut is deterministic and you get whole near expiries rather than a random slice. Exactly 2,000 rows back means your prefix was broad enough to be cut; narrow it, or pin `p_expiry_from`.
 
 <CodeGroup>
 
 ```bash curl
 curl -s -X POST "$SILO_URL/rpc/option_chain" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{"p_prefix":"PETR","p_expiry_from":"2026-09-01"}'
 ```
@@ -191,16 +93,7 @@ const { data } = await supabase.rpc('option_chain', {
 ]
 ```
 
-<Warning>
-  **Capped at 2,000 rows.** This is a chain-*page* cap, distinct from the 1,000-row series
-  page elsewhere: one underlying's chain on one session is hundreds of series (strike × expiry ×
-  side), so 2,000 comfortably holds any honest single-prefix chain. Exactly 2,000 rows back
-  means your prefix was broad enough to be cut — narrow it, or pin `p_expiry_from`.
-</Warning>
-
----
-
-## `POST /rpc/option_history`
+### `POST /rpc/option_history`
 
 One series' daily prints over a window, ascending by `trade_date`.
 
@@ -210,115 +103,28 @@ api.option_history(p_codneg TEXT,
                    p_to     DATE DEFAULT CURRENT_DATE)
 ```
 
-#### `p_codneg`
+`p_codneg` is the exact series code, e.g. `PETRH400`, upper-cased server-side. Get one from `option_chain` — [`lookup`](/api-docs/lookup) does **not** resolve option codes and no endpoint enumerates them, so you need the underlying's root (the `p_prefix` argument) to find a series.
 
-The exact series code, e.g. `PETRH400`. Upper-cased and trimmed server-side. Get one from
-`option_chain` — [`lookup`](/api-docs/lookup) does **not** resolve option codes, and
-there is no endpoint that enumerates them, so you need the underlying's root (the
-`p_prefix` argument) to find a series.
+Returns [`quote_history`](/api-docs/quotes)'s column set with `side`, `strike` and `expiry` in place of `board` / `short_name`.
 
-
-#### `p_from`
-
-Window start, inclusive.
-
-
-#### `p_to`
-
-Window end, inclusive.
-
-
-Returns [`quote_history`](/api-docs/quotes)'s column set with `side`, `strike` and `expiry`
-in place of `board` / `short_name`: `codneg`, `trade_date`, `side`, `strike`, `expiry`,
-`spec`, `currency`, `open`, `high`, `low`, `average`, `close`, `bid`, `ask`, `trades`,
-`quantity`, `volume`, `isin`, `quotation_factor`, `adjusted`, `source`.
-
-<CodeGroup>
-
-```bash curl
+```bash
 curl -s -X POST "$SILO_URL/rpc/option_history" \
   -H "apikey: $SILO_ANON_KEY" \
-  -H "Authorization: Bearer $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{"p_codneg":"PETRH400","p_from":"2026-06-01","p_to":"2026-08-26"}'
 ```
 
-```python Python
-body = {"p_codneg": "PETRH400", "p_from": "2026-06-01", "p_to": "2026-08-26"}
-rows = requests.post(f"{URL}/rpc/option_history", headers=H, json=body).json()
-```
+**Note**: one 1,000-row page, and it refuses above it (`22023`) — never a truncated series. An option series lives for months, so you will not reach the page in practice. There is **no cursor**: narrow `p_from` / `p_to` and call again.
 
-```javascript JavaScript
-const { data } = await supabase.rpc('option_history', {
-  p_codneg: 'PETRH400',
-  p_from: '2026-06-01',
-  p_to: '2026-08-26',
-})
-```
+### Prices are raw
 
-</CodeGroup>
+Premiums are COTAHIST as published: no split, dividend or corporate-action adjustment anywhere in this warehouse. `adjusted` is a constant `false` so nothing here can be mistaken for an adjusted series.
 
-```json
-[
-  {
-    "codneg": "PETRH400",
-    "trade_date": "2026-08-26",
-    "side": "call",
-    "strike": 40.0,
-    "expiry": "2026-09-18",
-    "spec": "PN",
-    "currency": "R$",
-    "open": 1.1,
-    "high": 1.3,
-    "low": 1.0,
-    "average": 1.2,
-    "close": 1.25,
-    "bid": 1.2,
-    "ask": 1.3,
-    "trades": 500,
-    "quantity": 100000,
-    "volume": 125000.0,
-    "isin": "BRPETRACNPR6",
-    "quotation_factor": 1,
-    "adjusted": false,
-    "source": "b3_cotahist"
-  }
-]
-```
+`close_return` is deliberately **not offered for options**. In [`panel`](/api-docs/panel) it accepts `ticker` ids only — and even there it is computed from unadjusted closes, so a corporate action prints as a large fake return. Options are the same tape and would inherit the same flaw, with strike and quantity adjustments on top. Take `close` from `option_history` and difference it yourself, where you can see what you are assuming.
 
-<Warning>
-  **One 1,000-row page, and it refuses above it.** A wider window raises SQLSTATE `22023`
-  naming the function — never a truncated series. An option series lives for months, so you
-  will not reach the page in practice.
-
-  `option_history` has **no cursor**: narrow `p_from` / `p_to` and call again. A window
-  over a page on a months-long series means the request is wrong, not that there is more
-  to walk.
-</Warning>
-
----
-
-## Prices are raw
-
-Premiums are COTAHIST as published: no split, dividend, or corporate-action adjustment
-anywhere in this warehouse. `adjusted` is a constant `false` so nothing here can be mistaken
-for an adjusted series.
-
-`close_return` is deliberately **not offered for options**. In [`panel`](/api-docs/panel) it
-accepts `ticker` ids only — and even there it is computed from unadjusted closes, so a
-corporate action prints as a large fake return (a 2:1 split reads as roughly −50%). Options
-are the same tape and would inherit the same flaw, with strike and quantity adjustments on
-top. If you need option returns, take `close` from `option_history` and difference it
-yourself, where you can see what you are assuming.
-
-## Empty and error behavior
+### Empty and error behavior
 
 - **Unknown codneg → `200 []`.** Never a fabricated premium.
-- **Known codneg, no sessions in the window** (before it listed, after it expired) → also
-  `200 []`. The two cases are indistinguishable from the response; confirm the series exists
-  with `option_chain` on a session you know it traded.
-- **A prefix under 3 characters → `400`**, with the message quoted above. This is the one
-  case where the API errors instead of returning an empty array.
-- **`p_expiry_from` defaults to today**, so an `option_chain` call against a historical
-  `p_trade_date` will often come back empty — the series that printed that day have since
-  expired. Pass `"p_expiry_from": null` to see them.
+- **Known codneg, no sessions in the window** (before it listed, after it expired) → also `200 []`. The two cases are indistinguishable from the response; confirm the series exists with `option_chain` on a session you know it traded.
+- **A prefix under 3 characters → `400`.** The one case where the API errors instead of returning an empty array.
+- **`p_expiry_from` defaults to today**, so an `option_chain` call against a historical `p_trade_date` will often come back empty — the series that printed that day have since expired. Pass `"p_expiry_from": null` to see them.

@@ -87,14 +87,11 @@ select * from supabase.fund_perf_series
 
 ## Cumulative Return Through Time — Largest Funds
 
-> The time-series companion to the cross-sectional ranking above: rebased
-> cumulative return for the six largest FI/FII funds, from
-> `fund_performance_series()` (the same `fund_perf_series` source that powers
-> [Fund Explorer](/fund)). No per-**class** return series function exists —
-> aggregating returns across funds would require a weighting choice the data
-> does not justify — so this chart is per fund, on each fund's own class basis:
-> FI quota return, FII compounded dividend yield. Lines are comparable in shape,
-> not strictly in basis.
+> Rebased cumulative return for the six largest FI/FII funds — the time-series
+> companion to the ranking above. No per-**class** return series exists:
+> aggregating returns across funds would require a weighting choice the data does
+> not justify. So this is per fund, on each fund's own class basis (FI quota
+> return, FII compounded dividend yield). Comparable in shape, not in basis.
 
 <LineChart
   data={fund_perf_series}

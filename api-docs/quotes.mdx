@@ -10,169 +10,37 @@ icon: "chart-line"
   schema cannot: the conventions, the nulls that are deliberate, and the traps.
 </Note>
 
-B3 COTAHIST cash-market prints (`tpmerc = 010`), exactly as published. Nothing here is
-split- or dividend-adjusted, and every row says so with `adjusted: false`. `asset_class`
-is derived conservatively from B3's published `tpmerc` and `especi`: `equity`, `unit`,
-`bdr`, `fund_quota`, `index`, `right`, `bonus`, or `cash_security`. To split `fund_quota` into ETF vs FII vs
-FIAGRO, use [`fund_quotas`](/api-docs/instruments)' `fund_type` column — it comes from
-B3's published CODBDI board code (see the [COTAHIST
-dictionary](/api-docs/cotahist-dictionary)).
+### Overview
+
+B3 COTAHIST cash-market prints (`tpmerc = 010`), exactly as published. Nothing is split- or dividend-adjusted, and every row carries `adjusted: false`.
+
+The grain is **`(ticker, trade_date, board, term_days)`**. A ticker can print on more than one board on the same day, so a query that does not pin `board` can return several rows per session. `codbdi` varies by instrument type (`02` common equities, `12` FIIs, `14` ETFs, `34` BDRs). The functions select the ticker's latest board unless you pass one.
+
+`asset_class` is derived conservatively from B3's published `tpmerc` and `especi`: `equity`, `unit`, `bdr`, `fund_quota`, `index`, `right`, `bonus`, or `cash_security`. To split `fund_quota` into ETF vs FII vs FIAGRO, use [`fund_quotas`](/api-docs/instruments)' `fund_type` column, which comes from B3's published CODBDI board code.
 
 <Warning>
-  **`close` is the price of `quotation_factor` units, not always one.** The API now
-  serves that division for you as **`close_unit`** = `close / quotation_factor`, so
-  price levels are comparable across papers without any arithmetic on your side. The
-  factor is 1 for almost everything (13 tickers on the whole 2019–2026 tape carry
-  another value), but a paper quoted per lot reads 1000× its unit price in `close`.
-  `close_return` is still computed on raw `close` and is null across a factor change.
+  **`close` is the price of `quotation_factor` units, not always one.** `close_unit` = `close / quotation_factor` is served for you. The factor is 1 for almost everything (13 tickers on the whole 2019–2026 tape carry another value), but a paper quoted per lot reads 1000× its unit price in `close`.
+
+  **Neither is corporate-action adjusted.** `close_unit` divides by a published field; it does not account for splits, groupings or bonuses. A split still appears as a jump. `close_return` is computed on raw `close` and is null across a factor change.
 </Warning>
+
+### `GET /quotes`
+
+The view — full column set, arbitrary filters and sort. Use it for cross-sectional slices (a whole session, a set of tickers) rather than one instrument's series.
 
 <Warning>
-  **Nothing here is corporate-action adjusted.** `close_unit` divides by a published
-  field; it does not account for splits, groupings or bonuses, and `adjusted` is
-  `false` on every row. A split still appears as a jump in the price series.
+  **This view has no built-in cap — always send `limit`.** An unbounded read is cut at 1,000 rows server-side, and `Content-Range` is the only thing that tells you.
 </Warning>
 
-The grain is **`(ticker, trade_date, board, term_days)`**. A single ticker can print on more
-than one board on the same day, so a query that does not pin `board` can return several rows
-per session. COTAHIST `codbdi` varies by instrument type (for example `02` for common
-equities, `12` for FIIs, `14` for ETFs, and `34` for BDRs). The functions automatically
-select the ticker's latest board unless you pass one explicitly.
-
----
-
-## `GET /quotes`
-
-The view. Full column set, arbitrary filters, arbitrary sort — use it when you want
-cross-sectional slices (a whole session, a set of tickers) rather than one instrument's
-series.
-
-<Warning>
-  **This view has no built-in cap — always send `limit`.** An unbounded read is cut at
-  1,000 rows server-side, and `Content-Range` is the only thing that tells you.
-</Warning>
-
-#### `ticker`
-
-Filter by ticker, e.g. `ticker=eq.PETR4`. Stored upper-case; the view does **not**
-normalize your input, so send it upper-case (unlike the functions, which upper-case for you).
-
-
-#### `trade_date`
-
-Session date, e.g. `trade_date=gte.2026-01-01`.
-
-
-#### `board`
-
-COTAHIST `codbdi`. Do not assume `02` outside ordinary equities.
-
-
-### Columns
-
-#### `ticker`
-
-B3 negotiation code (`codneg`). Part of the grain.
-
-#### `trade_date`
-
-Session date. Part of the grain.
-
-#### `board`
-
-BDI code / `codbdi`; its meaning varies by instrument type. Part of the grain.
-
-#### `term_days`
-
-COTAHIST `prazot`. A **text** field despite the name, usually empty for cash. Part of the
-grain. Only on the view — the functions do not return it.
-
-#### `short_name`
-
-Issuer short name (`nome_resumido`).
-
-#### `spec`
-
-Paper specification (`especi`), e.g. the share class.
-
-#### `currency`
-
-Currency, defaulting to `R$` when the source leaves it blank.
-
-#### `open`
-
-Opening price.
-
-#### `high`
-
-Session high.
-
-#### `low`
-
-Session low.
-
-#### `average`
-
-Session average price.
-
-#### `close`
-
-Closing price. Unadjusted.
-
-#### `bid`
-
-Best bid at close (`oferta_compra`).
-
-#### `ask`
-
-Best ask at close (`oferta_venda`).
-
-#### `trades`
-
-Number of trades (`negocios`).
-
-#### `quantity`
-
-Shares traded (`quantidade`).
-
-#### `volume`
-
-Financial volume in BRL.
-
-#### `isin`
-
-ISIN as published.
-
-#### `quotation_factor`
-
-COTAHIST `fator_cotacao` — the number of shares the quoted price refers to.
-
-#### `close_unit`
-
-Close per single quoted unit: `close / quotation_factor`, both published. Division by
-a published field, not an adjustment — see the warning above.
-
-#### `adjusted`
-
-Always `false`. Constant, so nobody mistakes these for adjusted prices.
-
-#### `source`
-
-Provenance, `b3_cotahist`.
-
-#### `fetched_at`
-
-When the pipeline ingested this row. Only on the view.
-
-#### `asset_class`
-
-Conservative B3 type: `equity`, `unit`, `bdr`, `fund_quota`, `index`, `right`,
-`bonus`, or `cash_security`. `index` is an index line (IBOV11 — not an ETF,
-whatever the ticker suggests); `right` and `bonus` are claims, not the
-security itself; `cash_security` is the residual.
-
-
-### Example
+| Field | What to know |
+| --- | --- |
+| `ticker` | Stored upper-case, and the view does **not** normalize your input — send it upper-case, unlike the functions, which upper-case for you. |
+| `board` | COTAHIST `codbdi`. Do not assume `02` outside ordinary equities. Part of the grain. |
+| `term_days` | COTAHIST `prazot`. A **text** field despite the name, usually empty for cash. Part of the grain, and only on the view — the functions do not return it. |
+| `close_unit` | `close / quotation_factor`, both published. A division by a published field, not an adjustment. |
+| `adjusted` | Always `false`. Constant, so nobody mistakes these for adjusted prices. |
+| `fetched_at` | When the pipeline ingested this row. View only. |
+| `asset_class` | `index` is an index line (IBOV11 — not an ETF, whatever the ticker suggests); `right` and `bonus` are claims, not the security itself; `cash_security` is the residual. |
 
 <CodeGroup>
 
@@ -206,20 +74,9 @@ const { data } = await supabase
 
 </CodeGroup>
 
-```json
-[
-  { "ticker": "PETR4", "trade_date": "2026-08-26", "board": "02",
-    "close": 41.2, "volume": 1204533210.0, "adjusted": false, "asset_class": "equity" },
-  { "ticker": "VALE3", "trade_date": "2026-08-26", "board": "02",
-    "close": 58.94, "volume": 987441002.5, "adjusted": false, "asset_class": "equity" }
-]
-```
+### `POST /rpc/quote_history`
 
----
-
-## `POST /rpc/quote_history`
-
-One ticker's daily series over a window. Ordered by `trade_date` ascending.
+One ticker's daily series over a window, ordered by `trade_date` ascending.
 
 ```sql
 api.quote_history(p_ticker TEXT,
@@ -228,162 +85,53 @@ api.quote_history(p_ticker TEXT,
                   p_board  TEXT DEFAULT NULL)
 ```
 
-#### `p_ticker`
+`p_ticker` is upper-cased and trimmed server-side. `p_board` null selects the board on the ticker's latest stored row; pass a code explicitly only when you need that exact BDI category.
 
-Ticker. Upper-cased and trimmed server-side, so `petr4` is fine.
+Returns the view's columns minus `term_days` and `fetched_at`.
 
-
-#### `p_from`
-
-Window start, inclusive.
-
-
-#### `p_to`
-
-Window end, inclusive.
-
-
-#### `p_board`
-
-Board filter. Null or omitted automatically selects the board on the ticker's latest
-stored row. Pass a code explicitly only when you need that exact BDI category.
-
-
-Returns the view's columns minus `term_days` and `fetched_at`: `ticker`, `trade_date`,
-`board`, `short_name`, `spec`, `currency`, `open`, `high`, `low`, `average`, `close`, `bid`,
-`ask`, `trades`, `quantity`, `volume`, `isin`, `quotation_factor`, `adjusted`, `source`,
-`asset_class`, `close_unit`.
-
-<CodeGroup>
-
-```bash curl
+```bash
 curl -s -X POST "$SILO_URL/rpc/quote_history" \
   -H "apikey: $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{"p_ticker":"PETR4","p_from":"2026-01-02","p_to":"2026-08-26"}'
 ```
 
-```python Python
-body = {"p_ticker": "PETR4", "p_from": "2026-01-02", "p_to": "2026-08-26"}
-rows = requests.post(f"{URL}/rpc/quote_history", headers=H, json=body).json()
-```
-
-```javascript JavaScript
-const { data } = await supabase.rpc('quote_history', {
-  p_ticker: 'PETR4',
-  p_from: '2026-01-02',
-  p_to: '2026-08-26',
-})
-```
-
-</CodeGroup>
-
-```json
-[
-  {
-    "ticker": "PETR4",
-    "trade_date": "2026-01-02",
-    "board": "02",
-    "short_name": "PETROBRAS",
-    "spec": "PN      N2",
-    "currency": "R$",
-    "open": 38.4,
-    "high": 38.95,
-    "low": 38.11,
-    "average": 38.62,
-    "close": 38.77,
-    "bid": 38.76,
-    "ask": 38.78,
-    "trades": 41233,
-    "quantity": 22450100,
-    "volume": 866913862.0,
-    "isin": "BRPETRACNPR6",
-    "quotation_factor": 1,
-    "adjusted": false,
-    "source": "b3_cotahist"
-  }
-]
-```
-
 <Warning>
-  **One 1,000-row page, and it refuses above it.** A window wider than 1,000 sessions
-  raises SQLSTATE `22023` naming the function — you never receive a truncated series that
-  looks complete. Roughly four years of one ticker's sessions fit in a page.
+  **One 1,000-row page, and it refuses above it** (`22023`) — you never receive a truncated series that looks complete. Roughly four years of one ticker fits in a page.
 
-  Two ways past it. **Page it**: send `p_after: ""` for the first page, then the last row's
-  `trade_date` as `"YYYY-MM-DD"` for each next page; a page shorter than 1,000 rows is the
-  last. Or **narrow** `p_from` / `p_to` and call again.
+  Page it with `p_after: ""` then the last row's `trade_date`, or narrow the window:
 
   ```json
   { "p_ticker": "PETR4", "p_from": "2019-01-01", "p_after": "" }
   { "p_ticker": "PETR4", "p_from": "2019-01-01", "p_after": "2022-12-29" }
   ```
 
-  The Python SDK walks this for you: `silo.iter_quote_history("PETR4", start="2019-01-01")`.
+  The SDK walks it: `silo.iter_quote_history("PETR4", start="2019-01-01")`.
 </Warning>
 
----
+### `POST /rpc/quote_latest`
 
-## `POST /rpc/quote_latest`
-
-The most recent stored session for one ticker. At most one row.
+The most recent stored session for one ticker. At most one row, same columns as `quote_history`.
 
 ```sql
 api.quote_latest(p_ticker TEXT,
                  p_board  TEXT DEFAULT NULL)
 ```
 
-#### `p_ticker`
+`p_board` null means "latest across all boards".
 
-Ticker. Upper-cased and trimmed server-side.
-
-
-#### `p_board`
-
-Board filter; `null` means "latest across all boards".
-
-
-Same columns as `quote_history`.
-
-<CodeGroup>
-
-```bash curl
-curl -s -X POST "$SILO_URL/rpc/quote_latest" \
-  -H "apikey: $SILO_ANON_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"p_ticker":"PETR4"}'
-```
-
-```python Python
+```python
 rows = requests.post(
     f"{URL}/rpc/quote_latest", headers=H, json={"p_ticker": "PETR4"}
 ).json()
 latest = rows[0] if rows else None      # empty list = we have no print
 ```
 
-```javascript JavaScript
-const { data } = await supabase.rpc('quote_latest', { p_ticker: 'PETR4' })
-const latest = data?.[0] ?? null
-```
+**Note**: "latest" means the latest session stored, not today — whatever the last successful COTAHIST ingest loaded. Check `trade_date` on the row and [`coverage`](/api-docs/coverage) for the dataset. A stale close is never advanced to today's date to make it look current.
 
-</CodeGroup>
+### Empty and error behavior
 
-<Warning>
-  **"Latest" means the latest session we have stored, not today.** It is whatever the last
-  successful COTAHIST ingest loaded — check `trade_date` on the row, and
-  [`coverage`](/api-docs/coverage) for the dataset as a whole. The API will never advance a
-  stale close to today's date to make it look current.
-</Warning>
-
----
-
-## Empty and error behavior
-
-- **Unknown ticker → `200 []`.** Not a 404, and never a fabricated last close. An empty
-  array means "no row matches", full stop.
-- **Known ticker, no sessions in the window** (a holiday range, or a window before the
-  paper listed) → also `200 []`. The two cases are indistinguishable from the response
-  alone; use [`lookup`](/api-docs/lookup) to confirm the ticker exists.
-- **Wrong board** is a common cause of a surprising empty result. Some papers do not print
-  on `02`; retry with `"p_board": null`.
+- **Unknown ticker → `200 []`.** Not a 404, and never a fabricated last close.
+- **Known ticker, no sessions in the window** (a holiday range, or a window before the paper listed) → also `200 []`. The two cases are indistinguishable from the response; use [`lookup`](/api-docs/lookup) to confirm the ticker exists.
+- **Wrong board** is a common cause of a surprising empty result. Some papers do not print on `02` — retry with `"p_board": null`.
 - A malformed date or filter returns `400`.

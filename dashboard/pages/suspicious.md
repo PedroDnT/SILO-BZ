@@ -50,14 +50,12 @@ select * from supabase.captive_vehicles
 > a structure that keeps reported numbers stable while the underlying position
 > deteriorates.
 >
-> **These are signals, not findings.** A screen hit is a fund that matches a
-> threshold — nothing more. Every pattern here has innocent explanations: a
-> concentrated FII may be a legitimate single-asset mandate, a long-dated
-> receivable may be performing on its own contractual schedule, and a series past
-> maturity may simply be awaiting a filing. Nothing on this page asserts
-> wrongdoing, and no hit should be published without checking the fund's own
-> reports and CVM filings. The thresholds are stated with each screen so the
-> reader can see where the line was drawn and move it themselves.
+> **These are signals, not findings.** A hit is a fund that matches a threshold,
+> nothing more. Every pattern here has innocent explanations — a concentrated FII
+> may be a legitimate single-asset mandate, a series past maturity may simply be
+> awaiting a filing. Nothing here asserts wrongdoing, and no hit should be
+> published without checking the fund's own reports and CVM filings. Each screen
+> states its thresholds so you can see where the line was drawn, and move it.
 
 ---
 

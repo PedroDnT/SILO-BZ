@@ -145,7 +145,7 @@ The catalog advertises `cd_cvm` as an id type and `cia` as an asset class
 agent that resolves a company through `lookup` receives an id it cannot pass to
 `panel` for anything. This is precisely the dead end the docs-only field test
 hit on 2026-08-28 when it tried to relate FIDC credit to listed-company equity
-(`docs/planning/API_FIELD_TEST_2026-08-28.md`).
+(`docs/planning/archive/API_FIELD_TEST_2026-08-28.md`).
 
 ## 6. Served — dashboards: the `webapp/` site only
 

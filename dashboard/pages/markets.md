@@ -65,13 +65,13 @@ select * from supabase.b3_options_activity
 > tape since 2019 — cash equities, BDRs, units, listed fund quotas and the
 > option boards. This is what actually traded, at what price and in what volume.
 >
-> Quotes are **unadjusted**, straight from COTAHIST: no split or dividend
-> adjustment, so a price series across a corporate action is discontinuous by
-> construction, and papers with `fator_cotacao` ≠ 1 quote per lot rather than
-> per share. Volume in R$ is comparable across papers; raw close prices are not
-> always. Unlike CVM filings, session data has no publication lag to heal — a
-> series that stops means the ingest stopped, not that the market did (check
-> [Pipeline Ops](/ops)).
+> Quotes are **unadjusted**, straight from COTAHIST: a price series across a
+> corporate action is discontinuous by construction, and papers with
+> `fator_cotacao` ≠ 1 quote per lot rather than per share. Volume in R$ is
+> comparable across papers; raw close prices are not always.
+>
+> Unlike CVM filings, session data has no publication lag to heal — a series that
+> stops means the ingest stopped, not the market ([Pipeline Ops](/ops)).
 
 <BigValue data={b3_market_overview} value=latest_session title="Latest Session"/>
 <BigValue data={b3_market_overview} value=cash_instruments title="Cash Instruments Printed" fmt=num0/>
