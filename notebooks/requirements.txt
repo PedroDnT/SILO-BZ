@@ -1,0 +1,12 @@
+# Extra dependencies for notebooks/ only. The pipeline's own requirements.txt
+# does not carry these — nothing in src/, serve/ or tests/ imports them.
+#
+# The SDK itself is installed from this repository and is NOT on PyPI:
+#     pip install -e sdk/
+
+jupyter>=1.0
+nbconvert>=7.0
+ipykernel>=6.0
+pandas>=2.0
+matplotlib>=3.8
+httpx>=0.27
