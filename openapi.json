@@ -3779,21 +3779,29 @@
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::text`."
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
                   },
                   "p_metric": {
                     "type": [
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::text`."
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
                   },
                   "p_level": {
                     "type": [
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `'category'::text`."
+                    "description": "Defaults to `'category'::text`.",
+                    "default": "category",
+                    "enum": [
+                      "category",
+                      "type",
+                      "total"
+                    ]
                   },
                   "p_from": {
                     "type": [
@@ -3801,7 +3809,8 @@
                       "null"
                     ],
                     "format": "date",
-                    "description": "Defaults to `'2019-01-01'::date`."
+                    "description": "Defaults to `'2019-01-01'::date`.",
+                    "default": "2019-01-01"
                   },
                   "p_to": {
                     "type": [
@@ -3809,7 +3818,8 @@
                       "null"
                     ],
                     "format": "date",
-                    "description": "Defaults to `NULL::date`."
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
                   }
                 }
               }
@@ -4036,7 +4046,12 @@
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `'con'::text`."
+                    "description": "Defaults to `'con'::text`.",
+                    "default": "con",
+                    "examples": [
+                      "con",
+                      "ind"
+                    ]
                   }
                 },
                 "required": [
@@ -4367,14 +4382,16 @@
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::text`."
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
                   },
                   "p_cedente": {
                     "type": [
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::text`."
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
                   },
                   "p_from": {
                     "type": [
@@ -4382,7 +4399,8 @@
                       "null"
                     ],
                     "format": "date",
-                    "description": "Defaults to `NULL::date`."
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
                   },
                   "p_to": {
                     "type": [
@@ -4390,7 +4408,8 @@
                       "null"
                     ],
                     "format": "date",
-                    "description": "Defaults to `NULL::date`."
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
                   },
                   "p_limit": {
                     "type": [
@@ -4398,7 +4417,8 @@
                       "null"
                     ],
                     "format": "int32",
-                    "description": "Defaults to `NULL::integer`."
+                    "description": "Defaults to `NULL::integer`.",
+                    "default": null
                   }
                 }
               }
@@ -4530,7 +4550,14 @@
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::text`."
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null,
+                    "enum": [
+                      "sector",
+                      "scr_debtor",
+                      "scr_operation",
+                      "tax_debt"
+                    ]
                   },
                   "p_from": {
                     "type": [
@@ -4538,7 +4565,8 @@
                       "null"
                     ],
                     "format": "date",
-                    "description": "Defaults to `NULL::date`."
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
                   },
                   "p_to": {
                     "type": [
@@ -4546,7 +4574,8 @@
                       "null"
                     ],
                     "format": "date",
-                    "description": "Defaults to `NULL::date`."
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
                   },
                   "p_limit": {
                     "type": [
@@ -4554,7 +4583,8 @@
                       "null"
                     ],
                     "format": "int32",
-                    "description": "Defaults to `NULL::integer`."
+                    "description": "Defaults to `NULL::integer`.",
+                    "default": null
                   }
                 },
                 "required": [
@@ -4683,7 +4713,8 @@
                       "null"
                     ],
                     "format": "date",
-                    "description": "Defaults to `NULL::date`."
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
                   },
                   "p_to": {
                     "type": [
@@ -4691,7 +4722,8 @@
                       "null"
                     ],
                     "format": "date",
-                    "description": "Defaults to `NULL::date`."
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
                   },
                   "p_limit": {
                     "type": [
@@ -4699,7 +4731,8 @@
                       "null"
                     ],
                     "format": "int32",
-                    "description": "Defaults to `NULL::integer`."
+                    "description": "Defaults to `NULL::integer`.",
+                    "default": null
                   }
                 },
                 "required": [
@@ -4810,7 +4843,8 @@
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::text`."
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
                   },
                   "p_from": {
                     "type": [
@@ -4833,14 +4867,24 @@
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `'con'::text`."
+                    "description": "Defaults to `'con'::text`.",
+                    "default": "con",
+                    "examples": [
+                      "con",
+                      "ind"
+                    ]
                   },
                   "p_doc_type": {
                     "type": [
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::text`."
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null,
+                    "examples": [
+                      "itr",
+                      "dfp"
+                    ]
                   }
                 },
                 "required": [
@@ -5038,14 +5082,16 @@
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::text`."
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
                   },
                   "p_issuer": {
                     "type": [
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::text`."
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
                   },
                   "p_from": {
                     "type": [
@@ -5053,7 +5099,8 @@
                       "null"
                     ],
                     "format": "date",
-                    "description": "Defaults to `NULL::date`."
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
                   },
                   "p_to": {
                     "type": [
@@ -5061,7 +5108,8 @@
                       "null"
                     ],
                     "format": "date",
-                    "description": "Defaults to `NULL::date`."
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
                   },
                   "p_limit": {
                     "type": [
@@ -5069,7 +5117,8 @@
                       "null"
                     ],
                     "format": "int32",
-                    "description": "Defaults to `NULL::integer`."
+                    "description": "Defaults to `NULL::integer`.",
+                    "default": null
                   }
                 }
               }
@@ -5267,14 +5316,16 @@
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::text`."
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
                   },
                   "p_ticker": {
                     "type": [
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::text`."
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
                   },
                   "p_from": {
                     "type": [
@@ -5282,7 +5333,8 @@
                       "null"
                     ],
                     "format": "date",
-                    "description": "Defaults to `NULL::date`."
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
                   },
                   "p_to": {
                     "type": [
@@ -5290,14 +5342,20 @@
                       "null"
                     ],
                     "format": "date",
-                    "description": "Defaults to `NULL::date`."
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
                   },
                   "p_kind": {
                     "type": [
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `'equity'::text`."
+                    "description": "Defaults to `'equity'::text`.",
+                    "default": "equity",
+                    "enum": [
+                      "equity",
+                      "fund"
+                    ]
                   },
                   "p_limit": {
                     "type": [
@@ -5305,7 +5363,8 @@
                       "null"
                     ],
                     "format": "int32",
-                    "description": "Defaults to `NULL::integer`."
+                    "description": "Defaults to `NULL::integer`.",
+                    "default": null
                   }
                 }
               }
@@ -5449,7 +5508,8 @@
                       "null"
                     ],
                     "format": "date",
-                    "description": "Defaults to `'2019-01-01'::date`."
+                    "description": "Defaults to `'2019-01-01'::date`.",
+                    "default": "2019-01-01"
                   },
                   "p_to": {
                     "type": [
@@ -5457,21 +5517,24 @@
                       "null"
                     ],
                     "format": "date",
-                    "description": "Defaults to `NULL::date`."
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
                   },
                   "p_entity_type": {
                     "type": [
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::text`."
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
                   },
                   "p_after": {
                     "type": [
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::text`."
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
                   }
                 },
                 "required": [
@@ -6016,7 +6079,8 @@
                       "null"
                     ],
                     "format": "date",
-                    "description": "Defaults to `NULL::date`."
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
                   },
                   "p_limit": {
                     "type": [
@@ -6024,7 +6088,8 @@
                       "null"
                     ],
                     "format": "int32",
-                    "description": "Defaults to `100`."
+                    "description": "Defaults to `100`.",
+                    "default": 100
                   }
                 },
                 "required": [
@@ -6237,7 +6302,8 @@
                       "null"
                     ],
                     "format": "int32",
-                    "description": "Defaults to `NULL::integer`."
+                    "description": "Defaults to `NULL::integer`.",
+                    "default": null
                   }
                 },
                 "required": [
@@ -6663,7 +6729,11 @@
                         "null"
                       ]
                     },
-                    "description": "Defaults to `ARRAY['close'::text, 'nav'::text]`."
+                    "description": "Defaults to `ARRAY['close'::text, 'nav'::text]`.",
+                    "default": [
+                      "close",
+                      "nav"
+                    ]
                   },
                   "p_from": {
                     "type": [
@@ -6679,28 +6749,43 @@
                       "null"
                     ],
                     "format": "date",
-                    "description": "Defaults to `NULL::date`."
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
                   },
                   "p_freq": {
                     "type": [
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `'month'::text`."
+                    "description": "Defaults to `'month'::text`.",
+                    "default": "month",
+                    "examples": [
+                      "month",
+                      "day"
+                    ]
                   },
                   "p_entity_type": {
                     "type": [
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::text`."
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null,
+                    "enum": [
+                      "fi",
+                      "fidc",
+                      "fii",
+                      "fip",
+                      "fiagro"
+                    ]
                   },
                   "p_min_nav": {
                     "type": [
                       "number",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::numeric`."
+                    "description": "Defaults to `NULL::numeric`.",
+                    "default": null
                   },
                   "p_min_months": {
                     "type": [
@@ -6708,14 +6793,16 @@
                       "null"
                     ],
                     "format": "int32",
-                    "description": "Defaults to `NULL::integer`."
+                    "description": "Defaults to `NULL::integer`.",
+                    "default": null
                   },
                   "p_after": {
                     "type": [
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::text`."
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
                   }
                 },
                 "required": [
@@ -6859,14 +6946,16 @@
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::text`."
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
                   },
                   "p_after": {
                     "type": [
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::text`."
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
                   }
                 },
                 "required": [
@@ -7080,7 +7169,8 @@
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::text`."
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
                   }
                 },
                 "required": [
@@ -7288,14 +7378,16 @@
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `''::text`."
+                    "description": "Defaults to `''::text`.",
+                    "default": ""
                   },
                   "p_entity_type": {
                     "type": [
                       "string",
                       "null"
                     ],
-                    "description": "Defaults to `NULL::text`."
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
                   },
                   "p_limit": {
                     "type": [
@@ -7303,7 +7395,8 @@
                       "null"
                     ],
                     "format": "int32",
-                    "description": "Defaults to `50`."
+                    "description": "Defaults to `50`.",
+                    "default": 50
                   }
                 }
               }
