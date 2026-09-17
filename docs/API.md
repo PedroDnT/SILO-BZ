@@ -161,52 +161,17 @@ views, options, termo, holdings, debentures, FIDC concentration, ANBIMA classes,
 company financials, and the B3 lending and investor-flow views — has no `/v1`
 twin and is reachable only over PostgREST. Read those on the published site.
 
-### Public views this file is still the only home for
+### The B3 lending and investor-flow views
 
-<!-- TEMPORARY. These are PUBLIC PostgREST resources, not adapter routes, and
-     they do not belong in this file. They are parked here because nothing else
-     documents them yet. Move this section to the published site (api-docs/) and
-     delete it from here as soon as those pages exist. -->
+Five public views — `short_interest`, `short_interest_by_sector`,
+`investor_flow`, `lending_trades` and `lending_participants` — have no `/v1`
+twin either. They are documented on the published site: [Securities
+lending](https://octo-98895abd.mintlify.site/api-docs/lending) and [Investor
+flow](https://octo-98895abd.mintlify.site/api-docs/flows), with first-class SDK
+methods since catalog v27.
 
-Five views under schema `api` are granted to `anon` and `authenticated` and answer
-`200` in production today, but are not yet described on the published site and are
-not yet listed in `catalog().postgrest` (v26). They are documented here only until
-that is fixed:
-
-| Method | Resource | Backing |
-| ------ | -------- | ------- |
-| GET | `/rest/v1/short_interest` | B3 securities lending per `(ticker, trade_date)`: short balance, `pct_float` + `float_basis`, `days_to_cover`, borrow rates |
-| GET | `/rest/v1/short_interest_by_sector` | the same book aggregated by B3 top-level sector |
-| GET | `/rest/v1/investor_flow` | daily net flow by investor type (R$ thousands), differenced from B3's month-to-date snapshots |
-| GET | `/rest/v1/lending_trades` | the lending tape per `(ticker, trade_date)`: trades, quantity, rate min/mean/max, broker counts |
-| GET | `/rest/v1/lending_participants` | per-broker legs of that tape: quantity lent, borrowed and net, with `internal_legs` |
-
-The key column on all five is **`ticker`**, not `codneg`.
-
-**Three caveats, published as columns rather than left to the caller:**
-
-* **History starts at first capture.** B3 retains ~21 business days of its lending
-  and participation files and keeps no archive, so these resources are as deep as
-  the daily job has been running and no deeper. Nothing can backfill them; a
-  missed session is lost at any price.
-* **`pct_float` is two metrics, and `float_basis` says which.** `index_free_float`
-  is B3's real free float (index constituents only); `shares_outstanding` is a
-  larger denominator and therefore a smaller percentage. Do not rank across the
-  two. `days_to_cover` and `pct_float` are `null` — never `0` — when their
-  denominator is missing, because an untraded name is uncoverable, not instantly
-  coverable.
-* **`investor_flow` is derived and lags T+2.** B3 publishes a month-to-date
-  cumulative snapshot; the daily figure is its first difference within a month.
-  Rows whose `flow_basis` is `unknown_opening_snapshot` carry `null` flows on
-  purpose: they are the first snapshot held in a month when that is not the
-  month's first session, and reporting the cumulative total as one day's flow
-  would invent a spike.
-
-A fourth, for `lending_participants` and the broker columns of `lending_trades`:
-**`doador` / `tomador` are BROKERAGES, not beneficial owners.** ~75 % of trades
-carry the same broker code on both legs, so a large borrow through a broker is its
-client book, not its own position — which is what `internal_legs` / `internal_qty`
-measure.
+They were parked in this file while nothing else covered them. That is no longer
+true, so the caveats live with the pages that own them rather than here.
 
 ## Run
 
