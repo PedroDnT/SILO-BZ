@@ -494,8 +494,8 @@ class SiloClient:
         """
         return self._rpc("fund_profile", {"p_cnpj": cnpj})
 
-    def search_funds(self, query: str, entity_type: Optional[str] = None,
-                     limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def search_funds(self, query: str, limit: Optional[int] = None,
+                     entity_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """Name search over the fund universe.
 
             silo.search_funds("itau")
