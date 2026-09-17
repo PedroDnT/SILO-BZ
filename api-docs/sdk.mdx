@@ -42,9 +42,13 @@ silo.lookup("petrobras")          # company rows carry tickers=["PETR3","PETR4"]
 df = silo.panel(["PETR4", "05754060000113"],
                 metrics=["close_return", "delinquency"])   # wide DataFrame, (date) × (id, metric)
 df.corr()                         # reductions happen HERE, not over HTTP
+
+silo.panel("PETR4", "close")      # one id, one metric — brackets optional
 ```
 
 `panel` validates metric names against the live catalog, so a typo raises `ValueError` client-side instead of returning an empty panel. Missing observations stay `NaN` — never filled.
+
+`ids` and `metrics` each accept one bare string or any sequence of them. The single-string case is handled explicitly, not left to Python's sequence semantics: `str` *is* a `Sequence[str]`, so an unguarded `list("PETR4")` would ask for five one-character ids and the server's empty answer would read as "no data for PETR4".
 
 ### Every method
 

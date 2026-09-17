@@ -1,6 +1,6 @@
 # Python SDK — state
 
-`sdk/silo_client` today: **1,109 lines, v0.7.0, 53 tests, not published.**
+`sdk/silo_client` today: **1,140 lines, v0.7.0, 67 tests, not published.**
 Wraps 22 `api` functions and all 13 views, built against catalog **v28**.
 
 The client is not a convenience layer. It is the last place the project's
@@ -35,13 +35,20 @@ Three shapes, because the server offers three:
   sites — the worse failure. The `[pandas]` extra survives as a no-op so an
   existing pin still resolves. Pinned by `tests/test_sdk_client.py`.
 
+- **`ids` / `metrics` take a bare string** (2026-09-17). `str` satisfies
+  `Sequence[str]`, so `panel("PETR4", metrics=["close"])` sent five one-letter
+  ids, and the server's empty answer read as "no data for PETR4". `panel`,
+  `iter_panel` and `panel_all` normalise through `_as_list` before validating,
+  so the brackets are now optional and a bare metric typo names the metric
+  rather than its letters.
+
 ## What is still open
 
-| #   | Gap                                                              | Why it matters                                                                                                                                                                                            |
-| --- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Not published to PyPI                                            | Install is "clone the repo". `pip install silo-client` is the only install the docs can honestly promise                                                                                                  |
-| 2   | No wheel job in CI                                               | The 53 tests pass inside the repo; nothing proves the built wheel imports in a clean venv                                                                                                                 |
-| 3   | No `AsyncSiloClient`                                             | Deliberately last. An async client that silently truncates is worse than no async client — it ships only once it shares one `_check` / `_total_from_content_range` core with the sync client              |
+| #   | Gap                   | Why it matters                                                                                                                                                                               |
+| --- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Not published to PyPI | Install is "clone the repo". `pip install silo-client` is the only install the docs can honestly promise                                                                                     |
+| 2   | No wheel job in CI    | The 53 tests pass inside the repo; nothing proves the built wheel imports in a clean venv                                                                                                    |
+| 3   | No `AsyncSiloClient`  | Deliberately last. An async client that silently truncates is worse than no async client — it ships only once it shares one `_check` / `_total_from_content_range` core with the sync client |
 
 Items 1–2 are one release. Item 3 is its own.
 
