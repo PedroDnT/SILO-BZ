@@ -830,3 +830,48 @@ def test_metric_coverage_is_served_and_separate_from_coverage():
     rows = c.metric_coverage()
     assert calls[-1].endswith("/rpc/metric_coverage")
     assert rows[0]["first_period"] == "2025-01-31"
+
+
+# ---------------------------------------------------------------------------
+# pandas is a HARD dependency, not an extra.
+#
+# `panel()` defaults to `wide=True`, and the README, api-docs/sdk.mdx and the
+# notebooks all lead with a DataFrame — so while pandas was an optional extra,
+# a bare `pip install silo-client` followed by the documented first call raised
+# ImportError. Defaulting `wide=False` instead would have silently changed the
+# return type under fifteen existing call sites, which is the worse failure.
+# ---------------------------------------------------------------------------
+
+
+def test_pandas_is_a_hard_dependency():
+    """Not an extra: the documented first call must work on a bare install."""
+    import re
+    from pathlib import Path
+
+    pyproject = (Path(__file__).resolve().parents[1] / "sdk" / "pyproject.toml").read_text()
+    m = re.search(r"^dependencies\s*=\s*\[(?P<deps>[^\]]*)\]", pyproject, re.M)
+    assert m, "sdk/pyproject.toml declares no [project] dependencies"
+    assert "pandas" in m.group("deps"), (
+        "pandas must be a hard dependency — panel() defaults to wide=True, so a "
+        "bare install would otherwise fail on the documented first call"
+    )
+
+
+def test_panel_still_defaults_to_wide():
+    """If this default ever flips, the dependency rationale above changes too."""
+    import inspect
+
+    sig = inspect.signature(SiloClient.panel)
+    assert sig.parameters["wide"].default is True
+
+
+def test_install_docs_do_not_advertise_a_pandas_extra():
+    """The `[pandas]` extra is now a no-op; telling people to install it misleads."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    for rel in ("sdk/README.md", "api-docs/sdk.mdx"):
+        text = (root / rel).read_text()
+        assert "[pandas]" not in text, (
+            f"{rel} still advertises the pandas extra, which no longer adds anything"
+        )

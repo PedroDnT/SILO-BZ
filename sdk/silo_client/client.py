@@ -976,13 +976,18 @@ class SiloClient:
     @staticmethod
     def _pivot(rows: List[Dict[str, Any]], entity_type: Optional[str]):
         try:
-            import pandas as pd  # deferred: long-format callers never pay for it
+            # Deferred, not optional: pandas is a hard dependency (pyproject),
+            # so this only keeps `import silo_client` cheap for the callers who
+            # never pivot. Reaching the handler means a broken environment, not
+            # a missing extra.
+            import pandas as pd
         except ImportError as exc:  # pragma: no cover - exercised by hand
             raise ImportError(
-                "panel(wide=True) needs pandas, which is an optional extra. "
-                "Install it with `pip install silo-client[pandas]`, or call "
-                "panel(..., wide=False) for the long (id, date, metric, value) "
-                "rows this pivots."
+                "panel(wide=True) needs pandas, which silo-client depends on. "
+                "It is missing, so the install is broken — reinstall with "
+                "`pip install --force-reinstall silo-client`. To work without "
+                "it meanwhile, call panel(..., wide=False) for the long "
+                "(id, date, metric, value) rows this pivots."
             ) from exc
 
         if not rows:
