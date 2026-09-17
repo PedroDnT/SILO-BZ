@@ -334,12 +334,12 @@ select * from supabase.fidc_cedentes_top
 
 > **What this cannot tell you.** CVM's monthly FIDC file carries no portfolio
 > composition — no sector, no debtor, no guarantee — so nothing here says _whose_
-> receivables went overdue, or whether a
-> loss is absorbed by a subordinated tranche or an insurer first. `vl_inadimpl` is
-> the **overdue** value, not a realised loss — nothing is published on provisions
-> or recovery, and a figure can sit unchanged for months then jump on a
-> revaluation. The Δ in R$ is nominal and does not separate new delinquency from
-> an old balance never written off. Delinquency is filed only from **2025-01**.
+> receivables went overdue, or whether a subordinated tranche absorbs the loss first.
+>
+> `vl_inadimpl` is the **overdue** value, not a realised loss: no provisions, no
+> recovery, and a figure can sit unchanged for months then jump on a revaluation.
+> The Δ in R$ is nominal — it does not separate new delinquency from an old balance
+> never written off. Filed only from **2025-01**.
 
 ---
 
@@ -449,13 +449,13 @@ yAxisTitle="R$mm"
 
 ## How the Receivables Are Graded — SCR Ladder, Latest Period
 
-> Tab X files the same receivables under the BACEN SCR grades **AA..H** twice:
-> by the **debtor's** rating and by the **operation's** rating (`cvm_fidc_scr`).
-> Two views of one book, not two books — each ladder sums to the graded total.
-> `H` is the grade a provisioning rule treats as close to a full loss; a book
-> whose mass sits in `AA`/`A` while its delinquency rate rises is one whose
-> grades have not caught up with its arrears. **Tab X exists from 2023-10 only**;
-> the period shown is the latest complete month that has it.
+> Tab X files the same receivables under BACEN SCR grades **AA..H** twice — by the
+> **debtor's** rating and by the **operation's**. Two views of one book, not two
+> books; each ladder sums to the graded total.
+>
+> `H` is what a provisioning rule treats as near-total loss. Mass sitting in `AA`/`A`
+> while the delinquency rate rises means the grades have not caught up with the
+> arrears. **Tab X exists from 2023-10 only.**
 
 <BarChart
 data={fidc_scr_ladder}
@@ -483,11 +483,11 @@ yAxisTitle="R$bn"
 > entry. So this table says _how concentrated_ a book is, never _in whom_.
 >
 > The ratio is the rank-1 value (and the sum of filed ranks) over the tab II
-> receivables total of the same filing. **The two tabs do not share a base for
-> every fund**: in 2026-07 rank-1 alone exceeded the receivables total for 0.5% of
-> funds, the top-25 sum for 1.9% — face value versus book, or a debtor's whole
-> obligation versus the slice the fund holds. Shown as filed, **not capped**. A
-> fund with `Ranks Filed` = 1 reported a single debtor. Floor: receivables ≥ R$10mm.
+> receivables total of the same filing. **The two tabs do not share a base for every
+> fund**: in 2026-07 rank-1 alone exceeded the receivables total for 0.5% of funds,
+> the top-25 sum for 1.9% — face value versus book, or a debtor's whole obligation
+> versus the slice the fund holds. Shown as filed, **not capped**. `Ranks Filed` = 1
+> means the fund reported a single debtor. Floor: receivables ≥ R$10mm.
 
 <DataTable data={fidc_concentration_top} rows=20 search=true>
   <Column id=fund_name title="Fund"/>
@@ -509,11 +509,13 @@ yAxisTitle="R$bn"
 > benefits by the originator, block B _without_.
 >
 > This counts **funds per originator** and never adds shares across funds — each
-> share is a percent of one fund's block, and block totals are not filed here.
-> Names appear only for listed companies, keyed by CNPJ; an unlisted originator is
-> its CNPJ, never a name match. **The share field is dirty as filed**: 9% of slots
-> carry a "share" above 100 (one reads 19,771). `Max Share` reads only values
-> inside 0–100; `Outlier Slots` counts the ones set aside.
+> share is a percent of one fund's block, and block totals are not filed here. Names
+> appear only for listed companies, keyed by CNPJ; an unlisted originator is its
+> CNPJ, never a name match.
+>
+> **The share field is dirty as filed**: 9% of slots carry a "share" above 100 (one
+> reads 19,771). `Max Share` reads only values inside 0–100; `Outlier Slots` counts
+> the rest.
 
 <DataTable data={fidc_cedentes_top} rows=20 search=true>
   <Column id=originator title="Originator (name if listed)"/>

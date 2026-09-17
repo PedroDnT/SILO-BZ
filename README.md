@@ -1,4 +1,4 @@
-# SILO — Brazilian fund-industry data, ingested daily and served for accountability
+# SILO — Brazilian public financial data, ingested daily and served for accountability
 
 > **Dashboard:** [https://silo-bz-deloslabs.vercel.app/](https://silo-bz-deloslabs.vercel.app/) — rebuilt
 > after every nightly ingest; the page header says when.
@@ -14,13 +14,22 @@
 
 ## What SILO is
 
-SILO keeps a continuous, verifiable record of the Brazilian fund industry — net assets,
-flows, delinquency, tranche structure, payout behaviour — assembled every day from the
-public filings of **CVM**, **BACEN** and **B3** and stored in one Postgres warehouse
-(Supabase). It is built for **financial accountability**: checking a claim against what
-was actually filed, whether the reader is a researcher, an agent, or someone opening the
-dashboard. It is not built for choosing investments; there is no advice, rating or
-recommendation anywhere in it.
+SILO keeps a continuous, verifiable record of Brazilian public financial data, assembled
+every day from the filings of **CVM**, **BACEN** and **B3** and stored in one Postgres
+warehouse (Supabase). Three populations, not one:
+
+- **Funds** — FI, FIDC, FII, FIP, FIAGRO and securitisation vehicles: net assets, flows,
+  delinquency, tranche structure, payout behaviour, portfolio composition.
+- **Listed companies** — ITR/DFP financial statements as filed, the IPE event feed, and
+  CVM's published ticker map.
+- **Markets** — the B3 COTAHIST tape (equities, BDRs, units, fund quotas, options,
+  termo), the securities-lending book and short interest, investor-type flows, and the
+  BACEN macro series behind all of it.
+
+It is built for **financial accountability**: checking a claim against what was actually
+filed, whether the reader is a researcher, an agent, or someone opening the dashboard. It
+is not built for choosing investments; there is no advice, rating or recommendation
+anywhere in it.
 
 Three things read the warehouse: a **read API** (schema `api` over PostgREST, with a
 machine-readable catalog so an LLM can discover and query it without a human in the
@@ -167,7 +176,7 @@ Built** so nobody has to guess how old the numbers are; to publish sooner, dispa
 
 | Route          | Page                         | What it shows                                                                              |
 | -------------- | ---------------------------- | ------------------------------------------------------------------------------------------ |
-| `/`            | Brazilian Fund Industry Data | entry point: headline figures, freshness signal, reading path                              |
+| `/`            | Brazilian Public Financial Data | entry point: headline figures, freshness signal, reading path                            |
 | `/industry`    | Industry Structure           | net assets by family and by asset class, quotaholders, new funds, FIP and FIAGRO           |
 | `/fi`          | FI Industry                  | AUM and flows, daily subscriptions vs redemptions, investor base, allocation by asset type |
 | `/fidc`        | FIDC Credit Monitor          | delinquency, aging, subordination, tranche flows and performance                           |
@@ -177,6 +186,8 @@ Built** so nobody has to guess how old the numbers are; to publish sooner, dispa
 | `/etf`         | ETF Market                   | registry by provider and segment, exchange volume, scraped market snapshot                 |
 | `/markets`     | B3 Markets                   | monthly traded volume, instrument mix, option activity                                     |
 | `/macro`       | Macro Context                | SELIC and CDI, inflation, PTAX, Focus consensus                                            |
+| `/short`       | Short Monitor                | short interest by ticker, % of free float, days to cover, borrow rates, sector mix          |
+| `/flows`       | Follow the Money             | net flow by investor type (foreign, institutional, retail) and B3 cash-market ADTV          |
 | `/managers`    | Managers                     | administrator and gestor league tables                                                     |
 | `/securit`     | Securitization               | outstanding by family, defaults, payment waterfall, maturity wall                          |
 | `/suspicious`  | Suspicious Deal Screens      | zombie growth, captive vehicles and the other screens                                      |

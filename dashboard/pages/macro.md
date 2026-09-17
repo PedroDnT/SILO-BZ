@@ -106,11 +106,11 @@ select * from supabase.macro_series_inventory
 > doing nothing remarkable, and a credit book's delinquency has a macro
 > explanation as readily as a governance one.
 >
-> **Units are BACEN's and are not converted.** SELIC meta is annualised (% a.a.)
-> while SELIC diária and CDI are per-day (% a.d.); the inflation series are
-> month-on-month, not twelve-month accumulations. Nothing on this page has been
-> annualised, chained or rebased, because each of those is an assumption rather
-> than data. The unit travels with every row in the inventory table at the bottom.
+> **Units are BACEN's and are not converted.** SELIC meta is annualised (% a.a.),
+> SELIC diária and CDI are per-day (% a.d.), and the inflation series are
+> month-on-month rather than twelve-month accumulations. Nothing is annualised,
+> chained or rebased — each of those is an assumption, not data. The unit travels
+> with every row in the inventory table below.
 
 <BigValue data={macro_latest} value=selic_meta_num2 title="SELIC Target (% a.a.)" fmt=num2/>
 <BigValue data={macro_latest} value=ipca_mes_num2 title="IPCA (% in Month)" fmt=num2/>

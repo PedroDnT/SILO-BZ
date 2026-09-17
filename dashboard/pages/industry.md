@@ -166,12 +166,11 @@ title="Net Assets by Family — Last 36 Months (ex-FI and ex-FIP, absolute)"
 
 ## Composition by Asset Class
 
-> `dim_fund_category` conforms the five families onto one axis: FI splits into
-> Fixed Income / Equity / Multimarket / Other FI on the registry's `tp_fundo`
-> label, and each other family maps whole (FIDC → Structured Credit, FII → Real
-> Estate, FIAGRO → Agribusiness, FIP → Private Equity). Funds whose registry row
-> has not been ingested fall into **Other FI**, so that bucket is a coverage
-> artefact as much as a category.
+> `dim_fund_category` conforms the five families onto one axis: FI splits into Fixed
+> Income / Equity / Multimarket / Other FI on the registry's `tp_fundo`, and each
+> other family maps whole (FIDC → Structured Credit, FII → Real Estate, FIAGRO →
+> Agribusiness, FIP → Private Equity). Funds with no ingested registry row fall into
+> **Other FI**, so that bucket is a coverage artefact as much as a category.
 
 <AreaChart
   data={industry_asset_class}

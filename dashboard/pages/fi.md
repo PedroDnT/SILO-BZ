@@ -231,12 +231,13 @@ title="Daily Subscriptions vs Redemptions"
 
 ## Single-Holder Concentration Screen
 
-> A fund whose largest quotaholder owns most of the net assets behaves like a
-> managed account: one redemption decision can unwind it. `pr_patrim_liq_maior_cotst`
-> is published by CVM as a `PR_` field and the parser deliberately does **not**
-> rescale it (fraction vs percent varies by file), so the column below is in
+> A fund whose largest quotaholder owns most of the net assets behaves like a managed
+> account: one redemption decision can unwind it.
+>
+> `pr_patrim_liq_maior_cotst` is a CVM `PR_` field and the parser deliberately does
+> **not** rescale it (fraction vs percent varies by file), so the column is in
 > **source units** — read it as a ranking, and check the raw file before quoting a
-> number as a percentage. Funds are ordered by that share, then by size.
+> percentage. Ordered by that share, then by size.
 >
 > This is the FI counterpart of the captive-vehicle screen for FIIs on
 > [Suspicious Deal Screens](/suspicious); both look for a vehicle with one investor
@@ -256,12 +257,11 @@ title="Daily Subscriptions vs Redemptions"
 
 ## Portfolio Allocation
 
-> From `cvm_fi_cda`. **Directional mix, not a market-value census:** the table's
-> natural key is `(cnpj, period, tp_aplic, tp_ativo)` and the ingest upserts
-> `ON CONFLICT DO UPDATE`, so the many security-level rows a fund reports inside
-> one bucket collapse to the last one written rather than summing. Use the shape
-> of the stack and the ranking; treat the R$ levels as a lower bound. The top
-> eight asset types are shown individually, everything else is bucketed.
+> From `cvm_fi_cda`. **Directional mix, not a market-value census:** the natural key
+> is `(cnpj, period, tp_aplic, tp_ativo)` and the ingest upserts `ON CONFLICT DO
+> UPDATE`, so the many security-level rows inside one bucket collapse to the last
+> written rather than summing. Use the shape and the ranking; treat the R$ levels as
+> a lower bound. Top eight asset types shown individually, the rest bucketed.
 
 <AreaChart
   data={fi_allocation}
