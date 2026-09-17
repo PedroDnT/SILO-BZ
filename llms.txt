@@ -13,6 +13,7 @@ Start with Conventions & limits: it is the single source of truth for auth tiers
 - [For agents](https://octo-98895abd.mintlify.site/api-docs/agents.md): The operator guide for coding agents — what to read, how to get a token, the first live call, and how to screen a whole fund family.
 - [Data inventory](https://octo-98895abd.mintlify.site/api-docs/data-inventory.md): What we ingest, what we don't, and what we hold but don't serve.
 - [Market coverage](https://octo-98895abd.mintlify.site/api-docs/market-coverage.md): What exists, how far back it goes, how often it updates — and the one dataset that is a ratchet.
+- [Known limitations](https://octo-98895abd.mintlify.site/api-docs/known-limitations.md): What the API does not do yet and what is planned — sector-specific charts of accounts, tickers that resolve to nothing, the duplicated ITR spans, unadjusted prices.
 
 ## Guides
 
