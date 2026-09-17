@@ -36,7 +36,7 @@ call, 25 `search_funds` rows, a 3-second statement timeout. Every notebook here
 runs inside those limits.
 
 To run signed in, get a token from
-[silo-bz.vercel.app/signin.html](https://silo-bz.vercel.app/signin.html) (GitHub)
+[silo-bz-deloslabs.vercel.app/signin.html](https://silo-bz-deloslabs.vercel.app/signin.html) (GitHub)
 and export it before starting Jupyter:
 
 ```bash

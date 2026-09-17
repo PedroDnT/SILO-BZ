@@ -344,7 +344,7 @@ BEGIN
         END IF;
         IF v_allowed = 0 THEN
             RAISE EXCEPTION
-                'panel: universe mode (p_ids empty + p_entity_type) is available to signed-in callers only; anonymous callers pass explicit ids (up to 3 per call). Sign in at https://silo-bz.vercel.app/signin.html.'
+                'panel: universe mode (p_ids empty + p_entity_type) is available to signed-in callers only; anonymous callers pass explicit ids (up to 3 per call). Sign in at https://silo-bz-deloslabs.vercel.app/signin.html.'
                 USING ERRCODE = '22023';
         END IF;
     END IF;
@@ -3757,7 +3757,7 @@ SELECT $json$
         "statement_timeout_seconds": 8
       },
       "exceeding_an_id_ceiling": "SQLSTATE 22023 naming the limit — a panel is never silently trimmed to fit",
-      "how_to_sign_in": "GitHub at https://silo-bz.vercel.app/signin.html; send the JWT as `Authorization: Bearer <jwt>` beside `apikey` (the SDK takes it as token= or SILO_TOKEN)"
+      "how_to_sign_in": "GitHub at https://silo-bz-deloslabs.vercel.app/signin.html; send the JWT as `Authorization: Bearer <jwt>` beside `apikey` (the SDK takes it as token= or SILO_TOKEN)"
     }
   },
   "applicability": {

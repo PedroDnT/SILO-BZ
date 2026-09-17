@@ -61,6 +61,6 @@ Start with Conventions & limits: it is the single source of truth for auth tiers
 ## Optional
 
 - [Notebooks](https://github.com/PedroDnT/SILO-BZ/tree/main/notebooks): Nine runnable notebooks, `00_start_here` through `08_short_interest` — each one a real question answered end to end.
-- [Sign in](https://silo-bz.vercel.app/signin.html): GitHub OAuth. Returns a user token that raises the tier ceilings for about an hour.
-- [Dashboard](https://silo-bz.vercel.app/): The Evidence.dev fund-health site. A nightly static snapshot, not the API.
+- [Sign in](https://silo-bz-deloslabs.vercel.app/signin.html): GitHub OAuth. Returns a user token that raises the tier ceilings for about an hour.
+- [Dashboard](https://silo-bz-deloslabs.vercel.app/): The Evidence.dev fund-health site. A nightly static snapshot, not the API.
 - [Repository](https://github.com/PedroDnT/SILO-BZ): The ingestion pipeline that writes the warehouse these pages read.

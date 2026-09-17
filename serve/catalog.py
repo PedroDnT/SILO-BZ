@@ -733,7 +733,7 @@ LIMITS = {
             "trimmed to fit"
         ),
         "how_to_sign_in": (
-            "GitHub at https://silo-bz.vercel.app/signin.html; send "
+            "GitHub at https://silo-bz-deloslabs.vercel.app/signin.html; send "
             "the JWT as `Authorization: Bearer <jwt>` beside `apikey` (the SDK "
             "takes it as token= or SILO_TOKEN)"
         ),
