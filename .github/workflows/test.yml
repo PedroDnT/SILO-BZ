@@ -379,6 +379,50 @@ jobs:
           END $$;
           SQL
 
+      # Own Python, not the runner's system one: Ubuntu's /usr/bin/python3 is
+      # PEP 668 externally-managed, so a bare `pip install` there is one image
+      # bump away from failing.
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # openapi.json is GENERATED from this very catalog — scripts/gen_openapi.py
+      # reads pg_get_function_arguments, information_schema.columns and the
+      # granted-to-anon privilege set, so the published API reference cannot
+      # describe an endpoint the SQL does not grant. Regenerating here and
+      # diffing closes the last manual step: before this, bumping
+      # CATALOG_VERSION or editing a COMMENT meant owning a database, and a
+      # contributor who had none simply shipped a stale spec.
+      #
+      # This is the SECOND of two guards, and it catches strictly more.
+      # tests/test_openapi_spec.py runs offline against the SQL *text*: it sees
+      # a granted object missing from the spec, a spec path the SQL no longer
+      # grants, and RPC argument-name drift. It cannot see anything that only
+      # the built catalog knows — a changed view column list, a re-typed
+      # argument, a rewritten COMMENT, a new DEFAULT. Those land here.
+      #
+      # Placed after the tier checks so a spec is only compared once the api
+      # schema it describes has been proven to build AND behave. gen_openapi.py
+      # imports only psycopg2, so that is all this installs.
+      #
+      # Version-independent: the spec generated on postgres:15 (this job's
+      # image) was verified byte-identical to the committed one, generated on
+      # 16. pg_get_function_arguments and information_schema render the same.
+      - name: openapi.json still matches the catalog
+        run: |
+          set -euo pipefail
+          pip install --quiet --disable-pip-version-check "psycopg2-binary>=2.9"
+          python3 scripts/gen_openapi.py > /tmp/openapi.generated.json
+          if ! diff -u openapi.json /tmp/openapi.generated.json; then
+            echo
+            echo "FAIL: openapi.json is stale — the catalog and the published spec disagree."
+            echo "The diff above is what changed. Regenerate, never hand-edit:"
+            echo "    POSTGRES_URL=... python scripts/gen_openapi.py > openapi.json"
+            exit 1
+          fi
+          echo "openapi.json matches the catalog ($(python3 -c "import json;print(len(json.load(open('openapi.json'))['paths']))") paths)"
+
       - name: Compile every dashboard source query
         run: |
           set -uo pipefail
