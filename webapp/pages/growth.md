@@ -50,7 +50,7 @@ within CVM sector**. Every figure compares one annual (DFP) statement against th
 immediately preceding one.
 
 <BigValue data={coverage} value=companies_compared title="Companies compared" fmt=num0/>
-<BigValue data={coverage} value=fiscal_year title="Fiscal year"/>
+<BigValue data={coverage} value=fiscal_year title="Comparison year"/>
 <BigValue data={coverage} value=sectors_with_peers title="Sectors with ≥5 peers" fmt=num0/>
 
 <Alert status=warning>
@@ -111,7 +111,7 @@ median is 38% is not a growth story.
 
 ## Growth vs Profitability
 
-Each dot is a company in the latest fiscal year, sized by revenue: growth on the
+Each dot is a company in the comparison year, sized by revenue: growth on the
 horizontal, net margin on the vertical. Top-right is growing and profitable;
 bottom-right is buying growth at a loss. The view is clipped to ±200% growth and
 ±80% margin so a handful of extremes does not compress the readable cloud — clipped
@@ -125,7 +125,7 @@ companies still appear in the tables above.
   tooltipTitle=company
   xAxisTitle="YoY revenue growth (%)"
   yAxisTitle="Net margin (%)"
-  title="Growth vs margin, latest fiscal year"
+  title="Growth vs margin, comparison year"
 />
 
 ---
@@ -152,6 +152,15 @@ revenue growth without it.
 Each of these is a decision that changes the numbers, so they are stated rather than
 buried:
 
+- **The comparison year is the newest one that is actually filed broadly**, not
+  simply the newest one present. CVM's filing calendar is not synchronised: a
+  company with an April–March fiscal year files a whole year ahead of a
+  calendar-year filer, so the newest fiscal year in the data can hold a handful of
+  early filers while everyone else's latest is the year before. Measured
+  2026-09-17, fiscal 2026 had **8** filers against fiscal 2025's **438** — so this
+  page requires at least 50 comparable companies before it will use a year.
+  Companies that have already filed the excluded year still appear here, on the
+  same year as their peers, rather than being dropped.
 - **Annual only.** Every figure is a DFP filing with a 12-month span. An ITR prints
   each account twice under one reference date — the discrete quarter and the
   year-to-date figure — and mixing them is the most common way to produce a
