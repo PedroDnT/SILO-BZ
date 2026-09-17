@@ -25,6 +25,8 @@ df = silo.panel(
     metrics=["close_return", "delinquency"],
 )                                 # wide DataFrame, (date) x (id, metric)
 df.corr()                         # reductions happen HERE, not over HTTP
+
+silo.panel("PETR4", "close")      # one id, one metric — brackets optional
 ```
 
 ## Two things that will bite you if nobody says them
@@ -127,12 +129,12 @@ flows by construction and must never be read or summed as zeros.
 `token=` (or set `SILO_TOKEN`) and the request moves from the anonymous role to
 `authenticated`:
 
-| | anonymous | signed in |
-| --- | ---: | ---: |
-| `panel` ids per call | 3 | 50 |
-| `search_funds` rows | 25 | 200 |
-| `option_chain` rows | 200 | 2,000 |
-| query budget | 3s | 8s |
+|                       | anonymous | signed in |
+| --------------------- | --------: | --------: |
+| `panel` ids per call  |         3 |        50 |
+| `search_funds` rows   |        25 |       200 |
+| `option_chain` rows   |       200 |     2,000 |
+| query budget          |        3s |        8s |
 | **rows per response** | **1,000** | **1,000** |
 
 That last row is not a typo. `db-max-rows` is a server-wide setting applied

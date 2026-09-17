@@ -875,3 +875,70 @@ def test_install_docs_do_not_advertise_a_pandas_extra():
         assert "[pandas]" not in text, (
             f"{rel} still advertises the pandas extra, which no longer adds anything"
         )
+
+
+# ---------------------------------------------------------------------------
+# A bare string is ONE id / ONE metric, never its characters.
+#
+# `str` satisfies `Sequence[str]`, so `list("PETR4")` is ['P','E','T','R','4'] —
+# five ids that do not exist. The server answers that with an empty panel and a
+# 200, which reads as "no data for PETR4". Brackets stay optional, and the
+# single-string case is spelled out rather than left to sequence semantics.
+# ---------------------------------------------------------------------------
+
+
+def _capture_panel_body():
+    """A handler that records the RPC body and returns one row."""
+    seen = {}
+
+    def responder(request):
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json=[
+            {"id": "PETR4", "asset_class": "equity", "date": "2026-08-31",
+             "metric": "close", "value": 38.1},
+        ])
+
+    return seen, catalog_then(responder)
+
+
+def test_a_bare_string_id_is_one_id_not_five_characters():
+    seen, handler = _capture_panel_body()
+    make_client(handler).panel("PETR4", metrics="close")
+    assert seen["body"]["p_ids"] == ["PETR4"]
+    assert seen["body"]["p_metrics"] == ["close"]
+
+
+def test_brackets_and_bare_strings_send_the_same_body():
+    seen_a, handler_a = _capture_panel_body()
+    make_client(handler_a).panel("PETR4", metrics="close")
+    seen_b, handler_b = _capture_panel_body()
+    make_client(handler_b).panel(["PETR4"], metrics=["close"])
+    assert seen_a["body"] == seen_b["body"]
+
+
+def test_a_bare_metric_typo_names_the_metric_not_its_letters():
+    _, handler = _capture_panel_body()
+    with pytest.raises(ValueError) as exc:
+        make_client(handler).panel("PETR4", metrics="clse")
+    assert "'clse'" in str(exc.value)
+
+
+def test_sequences_still_work_for_ids_and_metrics():
+    seen, handler = _capture_panel_body()
+    make_client(handler).panel(("PETR4", "VALE3"), metrics=("close", "nav"))
+    assert seen["body"]["p_ids"] == ["PETR4", "VALE3"]
+    assert seen["body"]["p_metrics"] == ["close", "nav"]
+
+
+def test_universe_mode_still_sends_an_empty_id_list():
+    """ids=None + entity_type is universe mode; it must not become [''] ."""
+    seen, handler = _capture_panel_body()
+    make_client(handler).panel(None, metrics="nav", entity_type="fidc")
+    assert seen["body"]["p_ids"] == []
+    assert seen["body"]["p_entity_type"] == "fidc"
+
+
+def test_iter_panel_normalises_the_same_way():
+    seen, handler = _capture_panel_body()
+    list(make_client(handler).iter_panel("PETR4", metrics="close"))
+    assert seen["body"]["p_ids"] == ["PETR4"]

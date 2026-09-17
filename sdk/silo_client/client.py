@@ -130,6 +130,28 @@ def _iso(d: Datish) -> Optional[str]:
     return d.isoformat() if isinstance(d, date) else str(d)
 
 
+#: What `panel(ids=..., metrics=...)` accepts: one id/metric as a bare string,
+#: or any sequence of them.
+Listish = Union[str, Sequence[str], None]
+
+
+def _as_list(v: Listish) -> List[str]:
+    """One string or a sequence of them → a list of strings.
+
+    A bare `str` IS a `Sequence[str]`, so `list("PETR4")` is
+    `['P','E','T','R','4']` — five ids that do not exist. The server answers
+    that with an empty panel and no error, which reads as "no data for PETR4"
+    rather than "you were asked for the wrong thing". That is the silent-wrong-
+    answer class this client exists to make impossible, so the single-element
+    case is spelled out rather than left to sequence semantics.
+    """
+    if v is None:
+        return []
+    if isinstance(v, str):
+        return [v]
+    return [str(x) for x in v]
+
+
 class SiloClient:
     """Thin client for the Silo read API.
 
@@ -955,6 +977,11 @@ class SiloClient:
 
     def _panel_body(self, ids, metrics, start, end, freq, entity_type,
                     min_nav, min_months) -> Dict[str, Any]:
+        # Normalise FIRST: a bare string is one id / one metric, never its
+        # characters (see _as_list). Validation then runs on the real names,
+        # so `metrics="clse"` reports that metric as unknown instead of
+        # reporting five unknown letters.
+        ids, metrics = _as_list(ids), _as_list(metrics)
         known = set(self.catalog()["metrics"].keys())
         bad = [m for m in metrics if m not in known]
         if bad:
@@ -967,7 +994,7 @@ class SiloClient:
                 "mode, signed-in callers only)"
             )
         return {
-            "p_ids": list(ids) if ids else [], "p_metrics": list(metrics),
+            "p_ids": ids, "p_metrics": metrics,
             "p_from": _iso(start), "p_to": _iso(end), "p_freq": freq,
             "p_entity_type": entity_type, "p_min_nav": min_nav,
             "p_min_months": min_months,
@@ -1014,8 +1041,8 @@ class SiloClient:
 
     def panel(
         self,
-        ids: Optional[Sequence[str]],
-        metrics: Sequence[str] = ("close", "nav"),
+        ids: Listish,
+        metrics: Listish = ("close", "nav"),
         start: Datish = None,
         end: Datish = None,
         freq: str = "month",
@@ -1025,6 +1052,10 @@ class SiloClient:
         min_months: Optional[int] = None,
     ):
         """The (id, date, metric, value) panel — the API's one primitive.
+
+        `ids` and `metrics` each take one bare string or any sequence of them:
+        `panel("PETR4", "close")` and `panel(["PETR4"], ["close"])` are the
+        same call.
 
         Whole-result mode: the server REFUSES (`SiloOverCap`) a window that
         would exceed one 1000-row page rather than trim it. Use
@@ -1050,8 +1081,8 @@ class SiloClient:
 
     def iter_panel(
         self,
-        ids: Optional[Sequence[str]] = None,
-        metrics: Sequence[str] = ("close", "nav"),
+        ids: Listish = None,
+        metrics: Listish = ("close", "nav"),
         start: Datish = None,
         end: Datish = None,
         freq: str = "month",
@@ -1080,8 +1111,8 @@ class SiloClient:
 
     def panel_all(
         self,
-        ids: Optional[Sequence[str]] = None,
-        metrics: Sequence[str] = ("close", "nav"),
+        ids: Listish = None,
+        metrics: Listish = ("close", "nav"),
         start: Datish = None,
         end: Datish = None,
         freq: str = "month",
