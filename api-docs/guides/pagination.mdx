@@ -4,23 +4,15 @@ description: "Three different ways a response gets cut, and only one of them tel
 icon: "list-ol"
 ---
 
-This API has **two paging mechanisms and one silent ceiling**, and they do not
-interchange. Using the wrong one is the single most expensive mistake here, because
-two of the three failure modes look exactly like a series that simply ended.
+### Overview
+
+Two paging mechanisms and one silent ceiling, and they do not interchange. Two of the three failure modes look exactly like a series that simply ended.
 
 <Warning>
-  **The trap:** a `Range` header on `/rest/v1/rpc/<function>` does not page. It
-  returns the **first page again**, with a `200`. Loop on it and you will collect the
-  same 1000 rows forever, each batch looking like valid data.
+  **The trap:** a `Range` header on `/rest/v1/rpc/<function>` does not page. It returns the **first page again**, with a `200`. Loop on it and you collect the same 1,000 rows forever, each batch looking like valid data.
 </Warning>
 
-## The one number behind all of it
-
-PostgREST is configured with `db-max-rows = 1000`. That is server-wide: every
-response, every endpoint, every tier. **Signing in does not change it.** It is the
-page size the whole contract is built around.
-
-What differs is what each endpoint does when your request exceeds it.
+PostgREST is configured with `db-max-rows = 1000`, server-wide: every response, every endpoint, every tier. **Signing in does not change it.** What differs is what each endpoint does when your request exceeds it.
 
 | Endpoint kind | Above 1000 rows | How you find out |
 | --- | --- | --- |
@@ -29,9 +21,7 @@ What differs is what each endpoint does when your request exceeds it.
 | RPC without `p_after` | **refuses** — SQLSTATE `22023` | a `400` telling you to narrow |
 | RPC with a tier ceiling | **clamps, silently** | nothing tells you |
 
-## 1. GET views — `limit`, `offset`, `Range`
-
-Views page the ordinary PostgREST way.
+### 1. GET views — `limit`, `offset`, `Range`
 
 ```bash
 curl -s "$SILO_URL/short_interest?ticker=eq.VALE3&order=trade_date.desc&limit=1000&offset=0" \
@@ -39,33 +29,24 @@ curl -s "$SILO_URL/short_interest?ticker=eq.VALE3&order=trade_date.desc&limit=10
   -H "Prefer: count=exact" -D -
 ```
 
-<Note>
-  **Always send `order`.** Without it, `limit`/`offset` walk an undefined sequence and
-  pages can overlap or skip rows. This is a correctness bug, not a tidiness one.
-</Note>
-
-Read the response header to know whether you were cut:
+**Always send `order`.** Without it, `limit`/`offset` walk an undefined sequence and pages can overlap or skip rows — a correctness bug, not a tidiness one.
 
 ```
 Content-Range: 0-999/*        ← truncated; there is more
 Content-Range: 0-412/413      ← complete (with Prefer: count=exact)
 ```
 
-`0-999/*` is the tell. `Prefer: count=exact` turns the `*` into the real total, at the
-cost of a count query.
+`0-999/*` is the tell. `Prefer: count=exact` turns the `*` into the real total, at the cost of a count query.
 
-## 2. RPCs that page — the `p_after` cursor
+### 2. RPCs that page — the `p_after` cursor
 
-Exactly three functions take a cursor, because walking the whole series is the normal
-thing to want:
+Three functions take a cursor, because walking the whole series is the normal thing to want:
 
 | Function | Cursor value | Order |
 | --- | --- | --- |
 | `panel` | `'<date>\|<id>\|<metric>\|<asset_class>'` from the last row | date, id, metric, asset_class |
 | `quote_history` | the last row's `trade_date` as `YYYY-MM-DD` | trade_date |
 | `fund_nav` | the last row's `period` as `YYYY-MM-DD` | period, entity_type |
-
-The protocol is the same for all three:
 
 <Steps>
   <Step title="First page">
@@ -79,9 +60,7 @@ The protocol is the same for all three:
   </Step>
 </Steps>
 
-`p_after: null` (or omitting it) is **whole-result mode**: you get everything, unless
-that would exceed 1000 rows, in which case the call refuses with `22023` rather than
-handing you a truncated answer.
+`p_after: null` (or omitting it) is **whole-result mode**: everything, unless that would exceed 1,000 rows, in which case the call refuses with `22023`.
 
 ```python
 rows, cursor = [], ""
@@ -95,28 +74,19 @@ while True:
     cursor = page[-1]["trade_date"]     # the key, from the LAST row
 ```
 
-<Warning>
-  **`fund_nav` paging requires `p_entity_type`.** Its cursor is a bare period, which
-  is unique only *within* one family — and 385 CNPJs file under both `fi` and `fidc`
-  in the same month. Page without it and you get a `22023`, not a wrong answer. (In
-  whole-result mode you do not need it: every row is labelled with its family.)
-</Warning>
+**Note**: `fund_nav` paging requires `p_entity_type`. Its cursor is a bare period, unique only *within* one family, and 385 CNPJs file under both `fi` and `fidc` in the same month. Page without it and you get a `22023`, not a wrong answer. Whole-result mode does not need it — every row is labelled with its family.
 
-## 3. RPCs that refuse and do not page
+### 3. RPCs that refuse and do not page
 
-Five more functions raise `22023` above one page and offer no cursor, on purpose: a
-window that wide is a mistake rather than a walk. An option series lives months; a
-financial statement has tens of rows.
+Five functions raise `22023` above one page and offer no cursor, on purpose — a window that wide is a mistake rather than a walk. An option series lives months; a financial statement has tens of rows.
 
 `option_history` · `termo_history` · `financials` · `company_financials` · `anbima_classes`
 
-Narrow `p_from`/`p_to`, the ids, or the metrics. The error message names the function
-and says what to do.
+Narrow `p_from`/`p_to`, the ids, or the metrics. The error message names the function and says what to do.
 
-## 4. The silent one — tier ceilings
+### 4. The silent one — tier ceilings
 
-Eight functions do something different and more dangerous: they **clamp**. A `p_limit`
-above the ceiling is quietly lowered to it. No error, no header, no signal.
+Eight functions **clamp**: a `p_limit` above the ceiling is quietly lowered to it. No error, no header, no signal.
 
 | Function | Anonymous | Signed in |
 | --- | --- | --- |
@@ -129,15 +99,11 @@ above the ceiling is quietly lowered to it. No error, no header, no signal.
 | `fidc_sacados` | 500 | 5 000 |
 | `fidc_portfolio` | 500 | 5 000 |
 
-The only defence is arithmetic: **a result of exactly 500 rows is probably truncated.**
-If the count equals your tier's ceiling, assume there is more and narrow the window.
+The only defence is arithmetic: **a result of exactly 500 rows is probably truncated.** If the count equals your tier's ceiling, assume there is more and narrow the window.
 
-`panel` has a ceiling of its own on a different axis — at most **3 ids** per call
-anonymously, **50** signed in — but that one refuses with `22023` rather than trimming.
-Universe mode (`p_ids` empty plus `p_entity_type`, to walk a whole family) is for
-signed-in callers only.
+`panel` has a ceiling on a different axis — at most **3 ids** anonymously, **50** signed in — but it refuses with `22023` rather than trimming. Universe mode is signed-in only.
 
-## Deciding in one pass
+### Deciding in one pass
 
 <CodeGroup>
 ```text Is my result complete?
@@ -155,16 +121,13 @@ RPC with a tier ceiling?
 ```
 </CodeGroup>
 
-## Raising the ceilings
+### Raising the ceilings
 
-Signing in ([GitHub](https://silo-bz-deloslabs.vercel.app/signin.html)) returns a user JWT. Send
-it as `Authorization: Bearer <jwt>` **beside** `apikey`, never instead of it — the
-publishable key is not a JWT, and sending it as a bearer token fails as `Invalid JWT`.
+Signing in ([GitHub](https://silo-bz-deloslabs.vercel.app/signin.html)) returns a user JWT. Send it as `Authorization: Bearer <jwt>` **beside** `apikey`, never instead of it — the publishable key is not a JWT.
 
-Signing in raises ceilings and the statement timeout (3s → 8s). It never widens the set
-of objects you can reach: schema `api` is the entire public surface for every tier.
+Signing in raises ceilings and the statement timeout (3s → 8s). It never widens the set of objects you can reach: schema `api` is the entire public surface for every tier.
 
-## Next
+### Next
 
 <CardGroup cols={2}>
   <Card title="Your first screen" icon="play" href="/api-docs/guides/first-screen">

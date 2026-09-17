@@ -4,15 +4,15 @@ description: "silo-client — a thin, honest Python client over the read API: on
 icon: "python"
 ---
 
-`silo-client` is a small Python client for the Data API. One class, one method
-per endpoint, PostgREST underneath. It exists to make the two things that bite
-hand-written callers impossible to miss: a **capped response raises** instead of
-returning a short series, and **views page while functions do not**.
+### Overview
 
-It lives in the repository and is not on PyPI — deliberately, while the API's
-own surface is still moving.
+`silo-client` is a small Python client for the Data API. One class, one method per endpoint, PostgREST underneath.
 
-## Install
+It exists to make the two things that bite hand-written callers impossible to miss: a **capped response raises** instead of returning a short series, and **views page while functions do not**.
+
+It lives in the repository and is not on PyPI, deliberately, while the API's surface is still moving.
+
+### Install
 
 ```bash
 git clone https://github.com/PedroDnT/SILO-BZ && cd SILO-BZ
@@ -22,7 +22,7 @@ pip install -e "sdk/[pandas]"    # adds the wide-DataFrame panel
 
 Python ≥ 3.10. Or copy `sdk/silo_client/` into your project.
 
-## Configure
+### Configure
 
 ```python
 from silo_client import SiloClient
@@ -31,13 +31,9 @@ silo = SiloClient(url="https://zcjbtpxuhdekpwcxmepn.supabase.co",
                   key="sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437")   # testing key
 ```
 
-Or set `SILO_URL` and `SILO_ANON_KEY` and call `SiloClient()`. The publishable
-key identifies the **project**; to move from the anonymous tier to the signed-in
-one, pass a user JWT as `token=` (or set `SILO_TOKEN`) — see
-[Conventions & limits](/api-docs/conventions#authentication) for what each tier
-gets, and check `silo.tier` to know which ceiling you are under.
+Or set `SILO_URL` and `SILO_ANON_KEY` and call `SiloClient()`. To move to the signed-in tier, pass a user JWT as `token=` (or set `SILO_TOKEN`); `silo.tier` says which ceiling you are under.
 
-## First calls
+### First calls
 
 ```python
 silo.catalog()                    # metric map + constraints + limits — cached, call once
@@ -49,46 +45,39 @@ df = silo.panel(["PETR4", "05754060000113"],
 df.corr()                         # reductions happen HERE, not over HTTP
 ```
 
-`panel` validates metric names against the live catalog, so a typo raises
-`ValueError` client-side instead of returning an empty panel that looks like
-missing data. Missing observations stay `NaN` — never filled.
+`panel` validates metric names against the live catalog, so a typo raises `ValueError` client-side instead of returning an empty panel. Missing observations stay `NaN` — never filled.
 
-## Every method
+### Every method
 
-One per published endpoint. Dates accept `date` objects or ISO strings; `None`
-means "the server's default", which for fund windows is the honest one (only
-complete periods).
+One per published endpoint. Dates accept `date` objects or ISO strings; `None` means the server's default, which for fund windows is the honest one.
 
 | Method | Endpoint | Notes |
 | --- | --- | --- |
 | `catalog()`, `metrics()`, `limits()` | `catalog` | cached once per client |
-| `coverage()` | `coverage` | call before claiming freshness; `as_of` is the newest *elapsed* period, `newest_period` can be in the future |
-| `metric_coverage()` | `metric_coverage` | which `(family, metric)` pairs are actually filed, and since when |
+| `coverage()` | `coverage` | `as_of` is the newest *elapsed* period; `newest_period` can be in the future |
+| `metric_coverage()` | `metric_coverage` | which `(family, metric)` pairs are filed, and since when |
 | `lookup(query)` | `lookup` | never a name-inferred ticker↔CNPJ |
-| `panel(ids, metrics, start, end, freq, wide, entity_type, min_nav, min_months)` | `panel` | whole result; raises `SiloOverCap` above one 1,000-row page; `wide=False` for the long rows |
-| `iter_panel(...)` · `panel_all(..., wide)` | `panel` with `p_after` | pages the cursor until a short page; `ids=None` + `entity_type=` is universe mode (signed in) |
-| `quote_history(ticker, start, end, board)` · `quote_latest(ticker, board)` | `quote_history` · `quote_latest` | unadjusted prices; whole result, raises `SiloOverCap` above one page |
-| `iter_quote_history(...)` · `quote_history_all(...)` | `quote_history` with `p_after` | pages on the last row's `trade_date` until a short page |
-| `iter_fund_nav(cnpj, entity_type, start, end)` · `fund_nav_all(...)` | `fund_nav` with `p_after` | pages on `period`; **`entity_type` is required** and checked client-side |
+| `panel(ids, metrics, start, end, freq, wide, entity_type, min_nav, min_months)` | `panel` | raises `SiloOverCap` above one page; `wide=False` for long rows |
+| `iter_panel(...)` · `panel_all(..., wide)` | `panel` + `p_after` | `ids=None` + `entity_type=` is universe mode (signed in) |
+| `quote_history(ticker, start, end, board)` · `quote_latest(ticker, board)` | `quote_history` · `quote_latest` | unadjusted prices |
+| `iter_quote_history(...)` · `quote_history_all(...)` | `quote_history` + `p_after` | pages on `trade_date` |
+| `iter_fund_nav(cnpj, entity_type, start, end)` · `fund_nav_all(...)` | `fund_nav` + `p_after` | **`entity_type` is required**, checked client-side |
 | `option_chain(prefix, trade_date, expiry_from, limit)` · `option_history(codneg, …)` · `option_exercises(prefix, …)` | options | prefix ≥ 3 chars, checked client-side |
 | `termo_history(codneg, start, end)` | `termo_history` | |
-| `fund_profile(cnpj)` · `fund_nav(cnpj, start, end, entity_type)` · `search_funds(query, limit)` | funds | |
+| `fund_profile(cnpj)` · `fund_nav(cnpj, …)` · `search_funds(query, limit)` | funds | |
 | `fund_holdings(cnpj \| ticker, start, end, kind, limit)` | `fund_holdings` | exactly one of holder / held ticker |
 | `fund_debentures(cnpj \| issuer, start, end, limit)` | `fund_debentures` | issuer = ticker, CVM code or any CPF/CNPJ |
-| `fidc_cedentes(cnpj \| cedente, start, end, limit)` · `fidc_sacados(cnpj, …)` · `fidc_portfolio(cnpj, kind, …)` | [FIDC concentration](/api-docs/fidc) | cedente = CPF/CNPJ or a listed ticker; sacados are anonymized ranks; `kind` = sector / scr_debtor / scr_operation / tax_debt |
+| `fidc_cedentes(cnpj \| cedente, …)` · `fidc_sacados(cnpj, …)` · `fidc_portfolio(cnpj, kind, …)` | [FIDC](/api-docs/fidc) | `kind` = sector / scr_debtor / scr_operation / tax_debt |
 | `financials(id, statement, start, end, scope, doc_type)` · `company_financials(id, …)` | financials | read `period_months` before comparing rows |
 | `anbima_classes(category, metric, level, start, end)` | `anbima_classes` | industry aggregates, no fund join |
-| `view(name, **filters)` · `view_all(name, **filters)` · `iter_view(...)` | the eight views | PostgREST filter syntax passed through verbatim |
+| `short_interest(...)` · `short_interest_by_sector(...)` · `lending_trades(...)` · `lending_participants(...)` · `investor_flow(...)` | [lending](/api-docs/lending) · [flows](/api-docs/flows) | view readers, PostgREST filters passed through |
+| `view(name, **filters)` · `view_all(name, **filters)` · `iter_view(...)` | the 13 views | filter syntax passed through verbatim |
 
-## The three rules the client enforces
+### The three rules the client enforces
 
-### A capped response raises
+#### A capped response raises
 
-PostgREST stops every response at **1,000 rows** and answers `200` with the
-oldest page. Six years of daily quotes come back as three and a half, and the
-series simply looks like it ended. The client asks the server for a true count
-(`Prefer: count=exact`) and raises `SiloTruncated` rather than hand you the
-short answer:
+PostgREST stops every response at 1,000 rows and answers `200` with the oldest page. The client asks for a true count (`Prefer: count=exact`) and raises rather than hand you the short answer:
 
 ```python
 from silo_client import SiloTruncated
@@ -100,10 +89,7 @@ except SiloTruncated as e:
     print(e.rows[-1]["trade_date"])       # where the cut fell — inspect, never use
 ```
 
-Range paging does not work on function calls, so the client never stitches
-`Range` "pages". Since catalog v26 it does not have to for the three long
-series: the server **refuses** a call over one 1,000-row page (`SiloOverCap`)
-and `panel`, `quote_history` and `fund_nav` each page with their own cursor.
+For the three long series the server refuses instead (`SiloOverCap`), and each pages with its own cursor:
 
 ```python
 from silo_client import SiloOverCap
@@ -113,7 +99,6 @@ try:
 except SiloOverCap:
     rows = silo.panel_all(["PETR4"], ["close"], start="2019-01-01", freq="day")
 
-# the same shape for a long quote series
 quotes = silo.quote_history_all("PETR4", start="2019-01-01")
 
 # nav pages within ONE family — the cursor is a bare period, and 385 CNPJs
@@ -125,20 +110,11 @@ fidcs = silo.panel_all(None, ["delinquency", "nav"], entity_type="fidc",
                        min_nav=1e7, min_months=12, wide=True)
 ```
 
-For `option_history`, `termo_history`, `financials`, `company_financials` and
-`anbima_classes` there is no cursor: `SiloOverCap` there means narrow the
-window and call again. A window over one page on a months-long option series or
-a single statement is a sign the request is wrong, not that there is more to
-walk.
+For `option_history`, `termo_history`, `financials`, `company_financials` and `anbima_classes` there is no cursor: `SiloOverCap` means narrow the window.
 
-`panel(wide=True)` refuses to pivot a CNPJ that files under two families in the
-same month (the grain is `(id, asset_class, date, metric)`): pass `entity_type=`
-or take `wide=False` and keep `asset_class` in your own key.
+`panel(wide=True)` refuses to pivot a CNPJ that files under two families in the same month — pass `entity_type=`, or take `wide=False` and keep `asset_class` in your own key.
 
-### Views page; functions do not
-
-The eight views (`quotes`, `funds`, `equities`, …) are the one surface where
-`limit`/`offset` work, and the client knows it:
+#### Views page; functions do not
 
 ```python
 page2 = silo.view("funds", order="cnpj.asc", limit=1000, offset=1000)   # one explicit page
@@ -146,35 +122,24 @@ fidcs = silo.view_all("funds", entity_type="eq.fidc", order="cnpj.asc",
                       select="cnpj,fund_name,first_period,last_period")  # every page
 ```
 
-`view_all` / `iter_view` **require an `order`** — offset paging without a total
-order can duplicate a row at one boundary and drop one at the next with nothing
-in the response to say so. A `view()` with no `limit` that lands on the
-1,000-row cap still raises: that is the silent cut, not a page.
+`view_all` / `iter_view` **require an `order`** — offset paging without a total order can duplicate a row at one boundary and drop one at the next. A `view()` with no `limit` that lands on the cap still raises: that is the silent cut, not a page.
 
-### The client tells you when it is out of date
+#### The client tells you when it is out of date
 
-`catalog()` compares the server's catalog version with the one the client was
-written against and warns (`SiloCatalogDrift`) on a mismatch — a newer server
-has endpoints or limits the wrappers do not know; an older one lacks some they
-call. It never refuses: everything read off the catalog itself keeps working.
-`silo.limits()` is the same tier table as numbers, straight from the server.
+`catalog()` compares the server's catalog version against the one the client was written for and warns `SiloCatalogDrift` on a mismatch. It never refuses — everything read off the catalog keeps working. `silo.limits()` is the tier table straight from the server.
 
-## Errors
+### Errors
 
 | Exception | When |
 | --- | --- |
-| `SiloError` | any 4xx/5xx — carries `.status` and the server's own message (`22023` ceilings, required prefixes, unknown ANBIMA categories) |
+| `SiloError` | any 4xx/5xx — carries `.status` and the server's own message |
 | `SiloTruncated` | a capped response (views, series functions); `.returned`, `.total`, `.rows` |
-| `SiloOverCap` | `panel` refused a window over one 1,000-row page (`22023`); page with `iter_panel` / `panel_all` or narrow |
-| `SiloTimeout` | SQLSTATE `57014` — the tier's statement budget (3 s / 8 s); narrow the call or sign in |
+| `SiloOverCap` | a window over one page (`22023`); page with the cursor or narrow |
+| `SiloTimeout` | SQLSTATE `57014` — the tier's statement budget (3s / 8s) |
 | `ValueError` | caught before the round trip: unknown metric, missing `order`, both/neither of an exactly-one pair |
 
-The client never retries a 4xx into a different answer, and connection retries
-are safe only because every endpoint is read-only.
+The client never retries a 4xx into a different answer, and connection retries are safe only because every endpoint is read-only.
 
-## Source
+### Source
 
-[`sdk/silo_client/client.py`](https://github.com/PedroDnT/SILO-BZ/blob/main/sdk/silo_client/client.py)
-is short enough to read in one sitting, and
-[`tests/test_sdk_client.py`](https://github.com/PedroDnT/SILO-BZ/blob/main/tests/test_sdk_client.py)
-is the contract: offline, via `httpx.MockTransport`, no network.
+[`sdk/silo_client/client.py`](https://github.com/PedroDnT/SILO-BZ/blob/main/sdk/silo_client/client.py) is short enough to read in one sitting, and [`tests/test_sdk_client.py`](https://github.com/PedroDnT/SILO-BZ/blob/main/tests/test_sdk_client.py) is the contract: offline, via `httpx.MockTransport`, no network.

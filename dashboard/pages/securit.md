@@ -82,13 +82,12 @@ select * from supabase.securit_dfin_coverage
 > questions that matter are structural: when does it come due, who gets paid
 > first, and is the pool still paying.
 >
-> These are **not funds** and none of the fund pages apply to them: there is no
-> NAV, no quotaholder count and no return series. The one number that most invites
-> misreading is the trend below — it is the **stock outstanding as re-stated each
-> month**, not new issuance, because CVM publishes no clean issuance flow here.
-> FIDCs, which buy comparable receivables inside a fund wrapper, are on
-> [the FIDC Credit Monitor](/fidc); series that are past maturity and still open
-> are screened on [Suspicious Deal Screens](/suspicious).
+> These are **not funds**: no NAV, no quotaholder count, no return series. The
+> number that most invites misreading is the trend below — **stock outstanding as
+> re-stated each month**, not new issuance, because CVM publishes no clean issuance
+> flow here. FIDCs buy comparable receivables inside a fund wrapper
+> ([FIDC Credit Monitor](/fidc)); series past maturity and still open are screened
+> on [Suspicious Deal Screens](/suspicious).
 
 <BigValue data={securit_overview} value=n_series title="Live Series" fmt=num0/>
 <BigValue data={securit_overview} value=n_securitizadoras title="Securitizadoras" fmt=num0/>

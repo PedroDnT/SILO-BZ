@@ -77,14 +77,14 @@ select * from supabase.fii_property_explorer
 > dividend yield, then measures declared payouts against the funds' own books, then
 > looks at the buildings underneath.
 >
-> Two limits. A payout above what the book yields is **not** evidence of anything
-> on its own — it is consistent with realised gains, with a return of capital, and
-> with amortisation; the numbers are shown side by side and no verdict is asserted.
-> And the property detail is **partial**: CVM leaves vacancy and delinquency blank
-> for a large minority of buildings, so those columns are reported against their own
-> denominator rather than averaged. FIAGRO, the
-> agribusiness sibling charted below, is covered in more depth on
-> [Industry Structure](/industry).
+> Two limits.
+>
+> - A payout above what the book yields is **not** evidence of anything on its own —
+>   it is consistent with realised gains, return of capital and amortisation. The
+>   numbers sit side by side; no verdict is asserted.
+> - Property detail is **partial**: CVM leaves vacancy and delinquency blank for a
+>   large minority of buildings, so those columns are reported against their own
+>   denominator rather than averaged.
 
 ---
 
@@ -239,12 +239,12 @@ title="FII Monthly Dividend Yield Distribution"
 >
 > **Single-asset concentration:** a fund where one property is more than half of
 > everything it has invested has no diversification left — one tenant, one lease,
-> one roof. Those rows are flagged in the Concentration column. The share is of
-> the fund's **invested assets**, not of its net assets, and CVM publishes the
-> `pr_*` fields without a documented scale, so they are shown in **source units**
-> and read as a ranking rather than as a percentage. A fund concentrated in its
-> investor base rather than its assets is the captive-vehicle screen on
-> [Suspicious Deal Screens](/suspicious).
+> one roof. Flagged in the Concentration column.
+>
+> The share is of **invested assets**, not net assets, and CVM publishes the `pr_*`
+> fields without a documented scale — shown in **source units**, read as a ranking
+> rather than a percentage. Concentration in the _investor_ base instead is the
+> captive-vehicle screen on [Suspicious Deal Screens](/suspicious).
 
 <DataTable data={fii_property_explorer} rows=20 search=true>
   <Column id=fund_name title="Fund"/>

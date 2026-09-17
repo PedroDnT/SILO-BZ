@@ -10,86 +10,37 @@ icon: "arrow-right-arrow-left"
   schema cannot: the conventions, the nulls that are deliberate, and the traps.
 </Note>
 
-`investor_flow` answers one question: **what did each class of investor do on a given
-session?** Foreign investors, institutionals, individuals and the rest, bought and sold, in
-R$ thousands.
+### Overview
+
+`investor_flow` answers one question: **what did each class of investor do on a given session?** Foreign investors, institutionals, individuals and the rest, bought and sold, in R$ thousands.
 
 | Endpoint | Grain | What it holds |
 |---|---|---|
 | `GET /investor_flow` | `(investor_type, reference_date)` | Daily buy / sell / net flow, plus the month-to-date figures it was derived from |
 
-It is a **view**: read it with `GET`, filter with PostgREST syntax
-(`?investor_type=eq....`), page with `limit`/`offset`. The securities-lending views are on
-their own page, [Securities lending](/api-docs/lending).
+A **view**: `GET`, PostgREST filters, `limit`/`offset` paging. The securities-lending views are on [Securities lending](/api-docs/lending).
 
 <Warning>
-  **These numbers are a first difference that SILO computes. B3 does not publish a daily
-  flow series.**
+  **These numbers are a first difference that SILO computes. B3 does not publish a daily flow series.**
 
-  What B3 publishes is a **month-to-date cumulative snapshot** — "so far this month,
-  investor type X has bought R$ N" — released with a **T+2 lag**. A day's flow is therefore
-  the difference between two consecutive snapshots, and that arithmetic has two ways of
-  going badly wrong. Both are handled here rather than left to you:
+  What B3 publishes is a **month-to-date cumulative snapshot** — "so far this month, investor type X has bought R$ N" — released with a **T+2 lag**. A day's flow is the difference between two consecutive snapshots, and that arithmetic has two ways of going badly wrong. Both are handled here rather than left to you:
 
-  - **The difference never reaches across a month boundary.** Subtracting January's last
-    snapshot from February's first would report a whole month of buying as one day's flow.
-    The window is partitioned by month, so it simply cannot.
-  - **The first snapshot held for a month is not always that month's first session.** When
-    the pipeline was first deployed it was mid-month. Treating that month-to-date total as
-    one day's flow would invent a spike on an arbitrary date. So it counts as a daily flow
-    **only** when it really is the month's first session; otherwise the flow is `null` and
-    `flow_basis` says why.
+  - **The difference never reaches across a month boundary.** Subtracting January's last snapshot from February's first would report a whole month of buying as one day's flow. The window is partitioned by month, so it cannot.
+  - **The first snapshot held for a month is not always that month's first session.** Treating that month-to-date total as one day's flow would invent a spike on an arbitrary date, so it counts as a daily flow **only** when it really is the month's first session; otherwise the flow is `null` and `flow_basis` says why.
 
-  Combined with the ratchet below, this means the flow series has genuine holes near the
-  start of any month SILO began capturing mid-way through. They are marked, not filled.
+  Combined with the ratchet below, the series has genuine holes near the start of any month SILO began capturing mid-way through. They are marked, not filled.
 </Warning>
 
 <Warning>
-  **History starts at first capture and cannot be extended backwards.**
+  **History starts at first capture and cannot be extended backwards.** `b3_investor_participation` is part of B3's BDI group, retained for roughly **21 business days** with no archive. A missed session is lost at any price. Do not read the first date as a market event, and do not compute a long-run average or a year-over-year comparison until the warehouse has held that much.
 
-  `b3_investor_participation` is part of B3's BDI group, which B3 retains for roughly **21
-  business days** and publishes no archive for. A missed session is lost at any price —
-  there is no backfill to run. Do not read the first date in this view as a market event,
-  and do not compute a long-run average or a year-over-year comparison until the warehouse
-  has actually held that much. [`coverage`](/api-docs/coverage) reports the real span on
-  the `investor_flow` row and repeats this in `notes`.
-
-  The T+2 publication lag also means `as_of` trails the calendar by two sessions **even
-  when ingest is perfectly healthy**. That is the source's cadence, not staleness on our
-  side — `landed_at` on the same coverage row is the one that answers "did the pipeline
-  run?".
+  The T+2 publication lag also means `as_of` trails the calendar by two sessions **even when ingest is perfectly healthy**. That is the source's cadence, not staleness on our side — `landed_at` is the column that answers "did the pipeline run?".
 </Warning>
 
----
-
-## `GET /investor_flow`
-
-### Parameters
-
-#### `investor_type`
-
-`eq.<type>` — the investor class exactly as B3 publishes it. The distinct values are
-small in number and come straight from the source; read them off the data rather than
-hard-coding a translation.
-
-
-#### `reference_date`
-
-`eq.2026-09-16`, or `gte.` / `lte.` for a window. This is the session the flow is **for**,
-not the date B3 published it — the T+2 lag is already accounted for.
-
-
-#### `flow_basis`
-
-`eq.delta`, `eq.month_open` or `eq.unknown_opening_snapshot`. Filtering to
-`in.(delta,month_open)` is the usual way to drop the uninterpretable rows — see below.
-
-
-### Read `flow_basis` before you read anything else
+### Read `flow_basis` before anything else
 
 <Warning>
-  **Rows the view cannot interpret carry `null` flows — never zeros — and summing them as
-  zeros silently understates the month.**
+  **Rows the view cannot interpret carry `null` flows — never zeros — and summing them as zeros silently understates the month.**
 
   | `flow_basis` | Means | `*_value_thousands` |
   |---|---|---|
@@ -97,68 +48,21 @@ not the date B3 published it — the T+2 lag is already accounted for.
   | `month_open` | The month's first session, where the month-to-date total *is* the day | A flow |
   | `unknown_opening_snapshot` | No earlier snapshot is held for that month, so the day's flow is unknowable | **`null`, by construction** |
 
-  `null` here is a statement: *we do not know what happened on this day*. It is not zero
-  flow, not a quiet session, and not missing data to be filled. A `sum()` in SQL or pandas
-  will skip nulls silently and hand you a month total that is missing an unknown number of
-  days — which looks exactly like a real, smaller number.
+  `null` here is a statement: *we do not know what happened on this day*. It is not zero flow, not a quiet session, and not missing data to be filled. A `sum()` in SQL or pandas skips nulls silently and hands you a month total missing an unknown number of days — which looks exactly like a real, smaller number.
 
-  **Filter explicitly.** Either restrict to `flow_basis=in.(delta,month_open)` and know
-  your window is partial, or keep every row and treat the nulls as the gaps they are. What
-  you must not do is aggregate across the three bases without looking.
+  **Filter explicitly.** Either restrict to `flow_basis=in.(delta,month_open)` and know your window is partial, or keep every row and treat the nulls as the gaps they are. What you must not do is aggregate across the three bases without looking.
 </Warning>
 
-### Returns
+### Field notes
 
-#### `reference_date`
+| Field | What to know |
+| --- | --- |
+| `reference_date` | The session the flow is **for**, not the date B3 published it — the T+2 lag is already accounted for. |
+| `investor_type` | The investor class exactly as B3 publishes it. The distinct values are few and come straight from the source; read them off the data rather than hard-coding a translation. |
+| `buy_` / `sell_` / `net_value_thousands` | The session's purchases, sales and `buy - sell`, in **R$ thousands** (the source's own `brl_mil` — *mil* is Portuguese for thousand). Multiply by 1,000 for reais; do not assume millions. Null on `unknown_opening_snapshot` rows. |
+| `mtd_buy_` / `mtd_sell_value_thousands` | B3's **cumulative** month-to-date figures as published — what the difference was taken from. Never null. |
 
-The session the flow is for. Part of the grain.
-
-#### `investor_type`
-
-Investor class as B3 publishes it. Part of the grain.
-
-#### `flow_basis`
-
-`delta` | `month_open` | `unknown_opening_snapshot`. **Read this first.**
-
-#### `buy_value_thousands`
-
-The session's purchases, in **R$ thousands**. `null` when
-`flow_basis = unknown_opening_snapshot`.
-
-#### `sell_value_thousands`
-
-The session's sales, R$ thousands. `null` on the same rows.
-
-#### `net_value_thousands`
-
-`buy - sell` for the session, R$ thousands. Positive is net buying. `null` on the same
-rows.
-
-#### `mtd_buy_value_thousands`
-
-B3's **cumulative** month-to-date purchases as published — the figure the difference was
-taken from. Never null: this is the source value, kept so you can verify the arithmetic
-rather than trust it.
-
-#### `mtd_sell_value_thousands`
-
-Cumulative month-to-date sales as published.
-
-
-<Note>
-  **Units are R$ thousands, from the source's own `brl_mil` fields** (*mil* is Portuguese
-  for thousand). Multiply by 1,000 for reais; do not assume millions because a headline
-  elsewhere quotes them that way.
-</Note>
-
-<Note>
-  The `mtd_*` columns are the check on everything above them. Within one month,
-  `mtd_buy_value_thousands` on consecutive sessions should differ by exactly
-  `buy_value_thousands` on the later one. If you ever need to defend a flow figure, that
-  subtraction is the audit — and it is why the cumulative columns are published beside the
-  differenced ones instead of being discarded.
-</Note>
+The `mtd_*` columns are the check on everything above them: within one month, `mtd_buy_value_thousands` on consecutive sessions should differ by exactly `buy_value_thousands` on the later one. That subtraction is the audit, and it is why the cumulative columns are published beside the differenced ones instead of being discarded.
 
 ### Example
 
@@ -219,44 +123,20 @@ const { data } = await supabase
 ]
 ```
 
-<Note>
-  Illustrative values, shaped like real rows. Call the endpoint for live figures and check
-  `coverage` for the newest `reference_date` before pinning a window.
-</Note>
+Illustrative values. Check `coverage` for the newest `reference_date` before pinning a window.
 
----
+### What this is not
 
-## What this is not
+- **Not a flow by security.** The grain is investor *type*, market-wide. There is no per-ticker breakdown in the source, so no join to `quotes` or [`short_interest`](/api-docs/lending) exists at this grain. Aligning a market-wide flow series against one ticker's return is your inference to make and own, not an edge this warehouse publishes.
+- **Not a position.** These are gross purchases and sales over a session. A net figure is the session's direction, not anyone's holdings.
+- **Not a panel metric.** These rows carry no id in the panel's sense, so there is no [`panel`](/api-docs/panel) arm — the same reason [`anbima_classes`](/api-docs/anbima) has none.
 
-- **Not a flow by security.** The grain is investor *type*, market-wide. There is no
-  per-ticker breakdown in the source, so no join to `quotes` or
-  [`short_interest`](/api-docs/lending) exists at this grain. Aligning a market-wide flow
-  series against one ticker's return is your inference to make and own, not an edge this
-  warehouse publishes.
-- **Not a position.** These are gross purchases and sales over a session. A net figure is
-  the session's direction, not anyone's holdings.
-- **Not a panel metric.** `investor_flow` rows carry no id in the panel's sense, so there is
-  no [`panel`](/api-docs/panel) arm for them — the same reason
-  [`anbima_classes`](/api-docs/anbima) has none.
+### Paging and empty results
 
-## Row caps and paging
+The 1,000-row page is PostgREST's `db-max-rows`, and on a view it **cuts silently with a `200`**, keeping the oldest rows. Send `Prefer: count=exact` and read `Content-Range` (`0-999/*` means cut), or page with `limit`/`offset` and an explicit `order`. The [SDK](/api-docs/sdk) does both: `silo.investor_flow(...)` for one page, `silo.view_all("investor_flow", order="reference_date.asc")` to walk them all.
 
-The 1,000-row page is PostgREST's `db-max-rows`, and on a view it **cuts silently with a
-200**, keeping the oldest rows. Send `Prefer: count=exact` and read `Content-Range`
-(`0-999/*` means cut), or page with `limit`/`offset` and an explicit `order`. The
-[Python SDK](/api-docs/sdk) does both: `silo.investor_flow(...)` for one page,
-`silo.view_all("investor_flow", order="reference_date.asc")` to walk them all.
+Given the retention window and a handful of investor types, a whole capture window fits inside one page today — but do not build on that; it is a property of the ratchet, not a guarantee.
 
-Given the retention window and a handful of investor types, a whole capture window fits
-comfortably inside one page today — but do not build on that; it is a property of the
-ratchet, not a guarantee.
-
-## Empty and error behavior
-
-- **Unknown investor type → `200 []`.** Spelling must match B3's; read the distinct values
-  off the data rather than guessing a translation.
-- **Empty window → `200 []`.** With ~21 business days of retention and a T+2 lag this is
-  common. Check [`coverage`](/api-docs/coverage)'s `investor_flow` row first.
-- The landing tables (`b3_investor_participation`,
-  `b3_investor_participation_monthly`) are **not** readable by client roles; this view is
-  owner-privileged and the columns it selects are the whole boundary.
+- **Unknown investor type → `200 []`.** Spelling must match B3's.
+- **Empty window → `200 []`.** Common, given ~21 business days of retention and the T+2 lag. Check [`coverage`](/api-docs/coverage)'s `investor_flow` row first.
+- The landing tables are **not** readable by client roles; this view is owner-privileged and the columns it selects are the whole boundary.

@@ -10,111 +10,44 @@ icon: "calendar-check"
   schema cannot: the conventions, the nulls that are deliberate, and the traps.
 </Note>
 
-`coverage` answers one question: **how far does the data actually go?** One row per
-dataset (`quotes`, `funds`, `fund_nav`, `derivatives`, `financials`, `anbima_classes`)
-plus one `funds_<family>` row for each fund family that has data — so the row count
-grows with coverage rather than being fixed. No arguments, no filters.
+### Overview
+
+`coverage` answers one question: **how far does the data actually go?** Call it before reporting a "latest" figure, before reading an empty result as a fund that stopped filing, and before treating a series as up to date.
+
+One row per dataset, plus one `funds_<family>` row per fund family — the families file on different cadences and one blended date misreads all of them. No arguments.
 
 ```sql
 api.coverage()
 ```
 
-Call it before reporting a "latest" figure, before deciding an empty result means a fund
-stopped filing, and before treating a series as up to date. It is the only endpoint that
-tells you where the warehouse ends — the others just return fewer rows.
+### The four dates mean four different things
 
-## Parameters
+Reading one for another is the most common coverage mistake.
 
-None. Send an empty JSON body.
+| Column | Means |
+| --- | --- |
+| `as_of` | The newest period that has landed **and has actually elapsed** — freshness, bounded by today. Null means the dataset is empty, which is a real answer. |
+| `complete_through` | The newest period classified **complete** — what the default windows serve. `null` for `financials`: no completeness model exists for company filings, and a fabricated date is the claim this function exists to prevent. |
+| `newest_period` | The newest period **key** present, unbounded. Can sit in the future — FIP is keyed 31-December, so a filing arriving in March carries `2026-12-31`. **Never read as freshness.** |
+| `landed_at` | When ingest last **succeeded**, from the `cvm_ingest_log` audit trail. Only `status = 'ok'` runs with a finish time count, so a run in flight has not landed and a later failed run never advances it. Null when none is recorded. |
 
-## Returns
+`landed_at` answers "is the pipeline healthy"; `as_of` answers "how far does the data go". A `landed_at` days old with a current `as_of` means ingest stopped but the data it left is fine.
 
-One row per dataset, plus one `funds_<family>` row per fund family (`funds_fi`,
-`funds_fidc`, `funds_fii`, `funds_fip`, `funds_fiagro`), because the families file on
-different cadences and one blended date misreads all of them:
+### Datasets
 
-#### `dataset`
-
-`quotes`, `funds`, `fund_nav`, `derivatives`, `financials`, `anbima_classes`,
-`fidc_cedentes`, `fidc_sacados`, `fidc_sectors`, `fidc_scr`, or `funds_<family>`.
-
-- **`quotes`** — the most recent B3 cash session stored, across all tickers and boards.
-- **`funds`** — the most recent filing period in the fund registry, across all vehicles.
+- **`quotes`** — the most recent B3 cash session, across all tickers and boards.
+- **`funds`** — the most recent filing period in the fund registry.
 - **`fund_nav`** — the most recent period in the monthly fundamentals fact.
-- **`derivatives`** — the most recent session stored across options and termo
-  (`tpmerc` `070`, `080`, `030`).
-- **`financials`** — the newest reference date any listed-company filing (ITR/DFP)
-  has reached, read from the filing index, not the 31M-row account table.
+- **`derivatives`** — the most recent session across options and termo (`tpmerc` `070`, `080`, `030`).
+- **`financials`** — the newest reference date any ITR/DFP filing has reached, read from the filing index, not the 31M-row account table.
 - **`anbima_classes`** — the newest boletim reference month.
-- **`fidc_cedentes`**, **`fidc_sacados`**, **`fidc_sectors`**, **`fidc_scr`** — the
-  newest competency month landed for each [FIDC concentration](/api-docs/fidc) tab;
-  `notes` states where each series starts (tab I's cedente slots 2019-11, tab X
-  2023-10).
+- **`fidc_cedentes` / `fidc_sacados` / `fidc_sectors` / `fidc_scr`** — the newest month landed per [FIDC concentration](/api-docs/fidc) tab; `notes` states where each starts (tab I's cedente slots 2019-11, tab X 2023-10).
 
-Not covered: **holdings and debentures** (`fund_holdings`, `fund_debentures`) have no
-row yet — read the newest `period` off the rows themselves until one exists.
+**Not covered**: `fund_holdings` and `fund_debentures` have no row yet — read the newest `period` off the rows themselves.
 
-#### `as_of`
+`notes` carries a caveat the dates cannot, and is null on rows that have none. Three rows carry one today: `funds_fidc` (the 2025-01 delinquency regime break), `funds_fip` (why `newest_period` runs ahead of the calendar), and `fund_nav` (pointing at `catalog().applicability`).
 
-The newest period that has landed **and has actually elapsed** — freshness, bounded by
-today. **Nullable** — a null means the dataset is empty, which is a real answer, not an
-error.
-
-It is bounded on purpose. A period key is not a statement about elapsed time: FIP files
-annually keyed to 31-December, so a filing that arrives in March carries the period
-`2026-12-31`. Before v26 the blended `funds.as_of` read `2026-12-31` in September, and
-an agent reading it as freshness believed it had the fourth quarter. The forward-dated
-key is still published, as `newest_period`.
-
-#### `complete_through`
-
-The newest period classified **complete** — what the default windows actually serve.
-It diverges from `as_of` exactly where the filing cadence makes the newest period
-partial: an in-progress month, a family under CVM's 1–2 month publication lag, or
-FIP's annual year-end row (its `as_of` is a Dec-31 date even when perfectly
-current — read `complete_through`, not staleness, for FIP). Equal to `as_of` for
-data that is complete by construction (`quotes`, `derivatives`, `anbima_classes` — a
-session print and a published boletim edition are whole when they land); the
-family-blended value for `funds` and `fund_nav`; and **`null` for `financials`** on
-purpose — no completeness model exists for company filings, and a fabricated date is
-exactly the claim this endpoint exists to prevent.
-
-#### `newest_period`
-
-The newest period **key** present, which can sit in the **future** — this is the raw
-maximum, unbounded. For `funds_fip` it is a year-end date; for every dataset that files
-in arrears it equals `as_of`. **Never read this as freshness**: it tells you the newest
-label in the warehouse, not that the period has happened.
-
-#### `landed_at`
-
-When ingest last **succeeded** for that source, from the `cvm_ingest_log` audit trail —
-a wall-clock time, not a period. Only runs with `status = 'ok'` **and** a finish time
-count, so a run still in flight has not landed and a later *failed* run never advances
-it. **Nullable** when no successful run is recorded yet.
-
-This is the column that answers "is the pipeline healthy" as opposed to "how far does
-the data go". A `landed_at` days old with a current `as_of` means ingest has stopped but
-the data it left behind is still fine.
-
-#### `source`
-
-`b3_cotahist` for quotes and derivatives, `cvm` for the fund and company datasets,
-`anbima` for the class benchmarks.
-
-#### `notes`
-
-A caveat the two dates cannot carry. **Nullable** — null on every row that has none.
-Today three rows carry one: **`funds_fidc`** states the 2025-01 `delinquency` regime
-break (null on every row before it, filed on every row after it — never chain-link
-through it), **`funds_fip`** explains why its `newest_period` runs ahead of the
-calendar, and **`fund_nav`** points at `catalog().applicability` and
-[`metric_coverage`](#metric-coverage).
-Read it before differencing any fund series; the same boundaries are machine-readable in
-`catalog().regime_breaks`.
-
-
-## Example
+### Example
 
 <CodeGroup>
 
@@ -148,57 +81,33 @@ const { data } = await supabase.rpc('coverage')
   { "dataset": "anbima_classes", "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "anbima",      "notes": null },
   { "dataset": "funds_fi",       "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "cvm",         "notes": null },
   { "dataset": "funds_fidc",     "as_of": "2026-07-31", "complete_through": "2026-07-31", "source": "cvm",
-    "notes": "regime break at 2025-01-31: delinquency is null on every row through 2024-12-31 (CVM's pre-2025 tab II/III monthly file carries no delinquency field) and filed on every row from 2025-01-31 (tab IV/VI). Not zero, not clean books — never chain-link across 2024-12 → 2025-01. See catalog().regime_breaks." },
+    "notes": "regime break at 2025-01-31: delinquency is null on every row through 2024-12-31 and filed on every row from 2025-01-31. Never chain-link across 2024-12 → 2025-01." },
   { "dataset": "funds_fii",      "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "cvm",         "notes": null },
   { "dataset": "funds_fiagro",   "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "cvm",         "notes": null },
   { "dataset": "funds_fip",      "as_of": "2025-12-31", "complete_through": "2025-12-31", "source": "cvm",
     "newest_period": "2026-12-31", "landed_at": "2026-08-27T06:31:02Z",
-    "notes": "files annually, keyed to 31-December: newest_period is a year-end key that can sit in the future, as_of is the newest period that has actually elapsed. Never read newest_period as freshness." }
+    "notes": "files annually, keyed to 31-December: newest_period is a year-end key that can sit in the future. Never read newest_period as freshness." }
 ]
 ```
 
-The `funds_<family>` rows are the ones to read before a window claim:
-`complete_through` is the latest period that family has **fully** filed, which is
-what an omitted `p_to` clamps to. `funds` and `fund_nav` carry the blended value
-(`latest_complete_period(NULL)`), which is the *most lagging* family's bound.
+### Notes
 
-## Reading it
+- **The dates are supposed to differ.** B3 quotes arrive daily; CVM publishes fund filings on a one-to-two month lag. A `fund_nav` date two months behind `quotes` is normal, not a broken pipeline.
+- **Read the `funds_<family>` rows before a window claim.** `complete_through` is what an omitted `p_to` clamps to. `funds` and `fund_nav` carry the blended value — the *most lagging* family's bound.
+- **`derivatives` and `quotes` are reported separately** though they come from the same COTAHIST file: the segments can land independently. Check `derivatives` before claiming an option chain is current.
+- **`fund_nav.as_of` is a month key** — `2026-06-01` means the June 2026 period, not the first of June.
+- **These are maxima across a whole dataset**, not per-instrument. An individual fund can be months behind while still filing normally — use [`fund_profile`](/api-docs/funds)'s `last_period`.
+- **A window past a dataset's `as_of` is not an error.** It returns nothing for the months that do not exist yet; the API will not extend a series to reach the date you asked for.
 
-<Note>
-  **The dates are supposed to differ.** B3 quotes arrive daily; CVM publishes fund
-  filings on a one-to-two month lag. A `fund_nav` date two months behind `quotes` is the
-  normal state of the world, not a broken pipeline.
-</Note>
+### Regime boundaries
 
-- `derivatives` and `quotes` come out of the same COTAHIST file but are reported
-  separately, because the segments can land independently — a day where only the cash rows
-  parsed leaves `derivatives` a session behind. Check this row, not `quotes`, before
-  claiming an option chain is current.
-- `fund_nav.as_of` is a **month key** — `2026-06-01` means the June 2026 filing period, not
-  the first of June.
-- A `panel` request whose window extends past a dataset's `as_of` is not an error; it simply
-  returns nothing for the months that do not exist yet. That is the intended behavior — the
-  API will not extend a series with a repeated last value to reach the date you asked for.
-- These are **maxima across the whole dataset**, not per-instrument. An individual fund can
-  be months behind the aggregate `as_of` while still filing normally. Use
-  [`fund_profile`](/api-docs/funds)'s `last_period` for a single vehicle.
+`complete_through` tells you where a series ends; it cannot tell you where one **changes meaning**. That is `notes`, and machine-readably `catalog().regime_breaks` (dataset, column, boundary, before, after, never).
 
-## Regime boundaries
+The boundary on the books today is FIDC `delinquency` — absent from CVM's pre-2025 monthly file, present on every row from 2025-01. Chain-linking a level or a change across it manufactures a move the fund never made. Check it before differencing any fund series, the way you check `complete_through` before a window claim.
 
-`complete_through` tells you where a series ends; it cannot tell you where a series
-**changes meaning**. That is what `notes` is for. A boundary is recorded when the source
-format changed such that the same column means something different on either side — the
-one on the books today is FIDC `delinquency`, absent from CVM's pre-2025 monthly file and
-present on every row from 2025-01. Chain-linking a level or a change across such a
-boundary manufactures a move the fund never made. The list is machine-readable as
-`catalog().regime_breaks` (dataset, column, boundary, before, after, never); check it
-before differencing any fund series, the way you check `complete_through` before a
-window claim. Details on the FIDC case: [`fund_nav`](/api-docs/funds#which-columns-each-family-files).
+### metric_coverage
 
-## metric_coverage
-
-`coverage` answers *how fresh is this dataset*. `metric_coverage` answers a different
-question: **does this family file this metric at all, and since when?**
+`coverage` answers *how fresh is this dataset*. `metric_coverage` answers **does this family file this metric at all, and since when?**
 
 ```bash
 curl -s -X POST "$SILO_URL/rest/v1/rpc/metric_coverage" \
@@ -216,33 +125,15 @@ curl -s -X POST "$SILO_URL/rest/v1/rpc/metric_coverage" \
 ]
 ```
 
-#### `first_period / last_period`
+| Field | What to know |
+| --- | --- |
+| `first_period` / `last_period` | Oldest and newest periods carrying a **non-null** value for that pair. |
+| `filed_rows` / `total_rows` | How dense the pair is. `filed_rows` well below `total_rows` means the metric is filed *sometimes* — different from *always*, different again from never. |
 
-The oldest and newest periods carrying a **non-null** value for that pair.
+**Note**: an absent pair is not-applicable, not late. Only pairs with at least one filed value appear — `("fip", "quotaholders")` is missing because FIP never files it, not because the data has yet to arrive. Listing it with null dates would read as a gap. Use `metric_coverage` rather than inferring a start date from nulls in a series, which is how a format change gets read as a credit event.
 
-#### `filed_rows / total_rows`
+Measured off the warehouse on every refresh, which is why `catalog().metrics.<m>.coverage` points here rather than carrying a date.
 
-How dense the pair is: `filed_rows` counts the rows where the metric is present,
-`total_rows` every row of that family in the window. `filed_rows` well below
-`total_rows` means the metric is filed *sometimes*, which is different from filed
-*always* and different again from never.
+### Errors
 
-
-<Note>
-  **An absent pair is not-applicable, not late.** Only pairs with at least one filed
-  value appear. `("fip", "quotaholders")` is missing because FIP never files it — the
-  column is null by construction, exactly as `catalog().applicability` says — not because
-  the data has yet to arrive. Listing it with null dates would read as a gap, so it is
-  omitted instead.
-</Note>
-
-This is measured off the warehouse on every refresh, not written down once. That is why
-`catalog().metrics.<m>.coverage` points here rather than carrying a date: the one
-exception is `delinquency`, whose `since` is a published regime boundary with its own
-test. Use `metric_coverage` instead of inferring a start date from nulls in a series —
-inferring is how a format change gets read as a credit event.
-
-## Errors
-
-There are no arguments to get wrong. A `401` means the anon key headers are missing; a
-`404` (`PGRST202`) means you sent arguments to a function that takes none.
+There are no arguments to get wrong. `401` means the key headers are missing; `404` (`PGRST202`) means you sent arguments to a function that takes none.
