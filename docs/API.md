@@ -1,91 +1,93 @@
-# Silo API — how we serve the data
+# `serve/` — the local adapter (this is **not** the public API)
 
-The main user is a **researcher**: correlation tests, factor models, and
-relationships across asset classes, mixing market prints with CVM fundamentals.
-They need a **panel** — `(id, date, metric, value)` — not a quote widget.
+> **If you are looking for the read contract, you are in the wrong file.**
+>
+> The public surface is **`POST /rest/v1/rpc/<name>`** and **`GET /rest/v1/<view>`**
+> on Supabase PostgREST:
+>
+> ```
+> https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/
+> ```
+>
+> Its documentation is the published site — **[Conventions &
+> limits](https://octo-98895abd.mintlify.site/api-docs/conventions)** is the single
+> source of truth for auth tiers, row caps, null semantics and regime breaks, and
+> **`POST /rpc/catalog`** is the same contract as JSON. Start at
+> [llms.txt](https://octo-98895abd.mintlify.site/llms.txt) or
+> [Quickstart](https://octo-98895abd.mintlify.site/api-docs/quickstart).
+>
+> **Nothing in this file is normative for a caller.** It documents `serve/app.py`,
+> a read-only Flask adapter you can run on your own machine. It is not
+> necessarily deployed anywhere, and its `/v1/*` routes, query-string arguments
+> and `format=wide` envelope exist **only** there.
 
-Ingest stays in this repo; the contract is schema `api` plus `serve/`.
+`api.catalog()` says the same thing in its `agent` field: prefer the `postgrest`
+section; the `/v1/*` routes in `endpoints` are this adapter's.
 
-## Researcher workflow
+## Why the adapter exists
 
-```
-0. GET /v1/catalog                             → metrics, grains, constraints (agents: cache this)
-1. GET /v1/funds?type=fidc&limit=200           → pick vehicles (search_funds; to enumerate
-                                                 a whole family, page the api.funds VIEW on
-                                                 PostgREST — limit/offset work on views only)
-2. GET /v1/lookup?q=PETR4                     → ticker / ISIN (no invented CNPJ match)
-3. GET /v1/panel?ids=PETR4,VALE3,<cnpj>
-     &metrics=close,close_return,nav,delinquency
-     &freq=month&from=2019-01-01&format=wide
-4. In the notebook: corrcoef on the matrix, pairwise complete (nulls stay null)
-```
+The design premise, which the public API inherited: the main user is a
+**researcher** doing correlation tests, factor models and cross-asset
+relationships, mixing market prints with CVM fundamentals. They need a **panel**
+— `(id, date, metric, value)` — not a quote widget. Analysis (corr, OLS, event
+studies) is a *reduction* of a panel, computed in a notebook. There is no
+`POST /query` and no server-side `corr` on either surface; `api.catalog()` lists
+those as `notebook_reducers`.
 
-There is no `POST /v1/query` and no server-side `corr`/`rank`. The catalog lists
-those as `notebook_reducers`. Agents load `GET /v1/tools` (OpenAI-style specs)
-and call the same HTTP routes. Roadmap: [docs/planning/SERVING.md](planning/SERVING.md).
+`serve/` predates the decision (2026-08-26) to expose schema `api` through
+Supabase's own PostgREST. It survives for three things:
 
-`format=wide` is the correlation input: `dates × columns` (`PETR4.close`,
-`{cnpj}.delinquency`). Missing cells are JSON `null`. We never ffill, interpolate,
-or carry last-observation. Mixing daily equity with monthly NAV on a **daily**
-calendar would require filling — that is your notebook. Mix them on `freq=month`
-(equity close = last session in the month, a real print).
+1. **Local development and notebooks** against a database you control, without a
+   Supabase project or a network round trip.
+2. **A shaped 404.** PostgREST has no adapter layer, so an unknown ticker and an
+   empty window both return `200 []`. `serve/` distinguishes them (see
+   [404 vs empty](#404-vs-empty)).
+3. **A different envelope.** `format=wide` and `format=columnar` are chart- and
+   correlation-shaped responses that PostgREST does not produce.
 
-`close_return` is `p_t / p_{t-1} - 1` from stored **unadjusted** closes. A
-2:1 split reports roughly −50% — the arithmetic is faithful to B3's published
-prices, not a total return. Daily: previous session. Monthly: previous
-calendar month, else null (a missing month does not become a two-month
-return).
-
-Ticker↔listed-company (`cia_*`) join is **not** invented here. Lookup returns
-CIA by CNPJ/`cd_cvm`/name separately until that match exists.
-
-## Who else
-
-| Person             | Job                                  | Call                        |
-| ------------------ | ------------------------------------ | --------------------------- |
-| Researcher         | Panel across equity + funds + credit | `/v1/panel`                 |
-| Chart / app        | One ticker series                    | `/v1/quotes/PETR4?range=1y` |
-| Fund analyst       | One vehicle NAV                      | `/v1/funds/{cnpj}/nav`      |
-| Evidence dashboard | Already on `dim_*` / `fact_*`        | unchanged                   |
-
-Ingest is GitHub Actions cron and the pipeline CLI (`run_daily` /
-`run_backfill`). There is no ingest HTTP server. `serve/` is read-only.
+It is **not** an ingest trigger, and there is no ingest HTTP server anywhere in
+this repository. Ingest is GitHub Actions cron plus `python -m src.pipeline.run_daily`
+/ `run_backfill`.
 
 ## Layers
 
 ```
-client  →  HTTPS /v1/*   (serve/, bind 127.0.0.1 or a gateway)
+client  →  HTTP /v1/*   (serve/, bind 127.0.0.1 or a gateway)
               ↓  role silo_api: SELECT/EXECUTE on api.* only
          Postgres schema api     (views + functions)
               ↓  owner rights, not GRANT on landing tables
          public landing + dim_/fact_*     (ingest still writes here)
 ```
 
-1. **`api` schema is the product.** English names, ticker/CNPJ keys, unadjusted
-   flag, and automatic selection of each ticker's published BDI board. Clients
-   should not query `b3_cotahist`.
+The deployed path skips the top box entirely: the browser or agent talks to
+PostgREST as `anon` or `authenticated`, and the same schema `api` answers.
+
+1. **`api` schema is the product.** English names, ticker/CNPJ keys, an explicit
+   unadjusted flag, and automatic selection of each ticker's published BDI board.
+   Clients never query `b3_cotahist`.
 2. **HTTP is an adapter**, not a second database. Every handler is a single
    `SELECT` / `api.*()` call. No business logic that can invent a price.
-3. **Do not turn on PostgREST on `public`.** Today some landing tables are
-   GRANTed to `anon`. The end state is: expose schema `api` only, revoke `anon`
-   from `cvm_*` / `b3_cotahist` / `cvm_ingest_log`. Existing SECURITY INVOKER
-   RPCs in `public` still need those grants until they are wrapped — wrap first,
-   then revoke.
+3. **Do not turn on PostgREST for schema `public`.** Schema `api` is the whole
+   public surface; landing tables are revoked from `anon` and `authenticated`, and
+   `health.yml` asserts it on every run.
 4. **Cache at the edge.** History whose `to` is in the past is immutable
-   (`max-age=86400`). Latest quote is short (`max-age=300`). Header
+   (`max-age=86400`). Latest quote is short (`max-age=300`). `serve/` also sends
    `X-Silo-Adjusted: false` so nobody assumes brapi-style split adjustment.
-5. **404 vs empty.** On `serve/`, unknown ticker/CNPJ → 404. Known ticker,
-   no sessions in range (holiday window) → `200 { kind: "series", series: [] }`.
-   On PostgREST (`api.*`) there is no adapter to shape the error: unknown
-   ticker and empty window both return `200 []`. A caller that treats empty
-   as 404 will silently mis-read a miss. Never a plausible last-close
-   fallback.
+
+### 404 vs empty
+
+On `serve/`, an unknown ticker or CNPJ is a `404`; a known ticker with no sessions
+in the range is `200 { kind: "series", series: [] }`.
+
+On PostgREST both are `200 []`, because there is no adapter to shape the error. A
+caller that treats empty as 404 will silently mis-read a miss. Never a plausible
+last-close fallback, on either surface.
 
 ## Point vs series
 
 The same URL is a **point** until the caller asks for a window. Then it is a
-**series** — dated observations at the grain we actually store (day for B3,
-month for fund NAV). We do not invent weekly/monthly bars.
+**series** — dated observations at the grain actually stored (day for B3, month for
+fund NAV). No invented weekly/monthly bars.
 
 ```
 GET /v1/quotes/PETR4                         → one object (latest session)
@@ -129,7 +131,12 @@ Row envelope (default):
 Columnar (`format=columnar`) is for charts: `dates` plus one array per field,
 aligned by index. Cap is 5000 points — over that is `400`, not a silent trim.
 
-## Routes (v1)
+`format=wide` is the correlation input: `dates × columns` (`PETR4.close`,
+`{cnpj}.delinquency`). Missing cells are JSON `null`; nothing is filled. **This
+envelope exists only on `serve/`** — on PostgREST, `api.panel` returns long rows
+and you pivot locally (the Python SDK's `panel(wide=True)` does it for you).
+
+## Routes (v1) — adapter only
 
 | Method | Path                                        | Postgres                                              |
 | ------ | ------------------------------------------- | ----------------------------------------------------- |
@@ -137,6 +144,7 @@ aligned by index. Cap is 5000 points — over that is `400`, not a silent trim.
 | GET    | `/v1/tools`                                 | OpenAI/AI-SDK tool specs pointing at these routes     |
 | GET    | `/v1/health`                                | `SELECT 1 FROM api.quotes LIMIT 0`                    |
 | GET    | `/v1/coverage`                              | `api.coverage()`                                      |
+| GET    | `/v1/metric-coverage`                       | `api.metric_coverage()`                               |
 | GET    | `/v1/panel?ids&metrics&freq&from&to`        | `api.panel(...)` long or wide                         |
 | GET    | `/v1/lookup?q=`                             | `api.lookup(...)`                                     |
 | GET    | `/v1/quotes/{ticker}`                       | `api.quote_latest` or `api.quote_history` if windowed |
@@ -145,49 +153,60 @@ aligned by index. Cap is 5000 points — over that is `400`, not a silent trim.
 | GET    | `/v1/funds/{cnpj}`                          | `api.fund_profile(cnpj)`                              |
 | GET    | `/v1/funds/{cnpj}/nav?from&to&range`        | `api.fund_nav(...)`                                   |
 
-PostgREST-only resources (Supabase Data API, no `/v1` twin — `serve/`'s catalog lists
-them under a separate `postgrest` section):
+CNPJ in the path may include punctuation (`12.345.678/0001-90`); it is stripped to
+14 digits. Tickers are uppercased.
 
-| Method | Resource                                                                              | Backing                                                                                                           |
-| ------ | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| GET    | `/rest/v1/equities` (+ `bdrs`, `units`, `fund_quotas`, `cash_securities`)             | typed cash views, `lot` grain; `equities` adds `share_class`/`governance_segment`, `fund_quotas` adds `fund_type` |
-| GET    | `/rest/v1/auctions`                                                                   | tpmerc 017 auction prints                                                                                         |
-| POST   | `/rest/v1/rpc/option_chain` / `option_history` / `option_exercises` / `termo_history` | option/termo functions; option rows carry `underlying_ticker`                                                     |
-| GET    | `/rest/v1/short_interest`                                                             | B3 securities lending per (ticker, trade_date): balance, `pct_float` + `float_basis`, `days_to_cover`, borrow rates |
-| GET    | `/rest/v1/short_interest_by_sector`                                                   | the same book aggregated by B3 top-level sector                                                                  |
-| GET    | `/rest/v1/investor_flow`                                                              | daily net flow by investor type (R$ thousands), differenced from B3's month-to-date snapshots                    |
+The adapter wraps a **subset** of schema `api`. Everything else — the typed cash
+views, options, termo, holdings, debentures, FIDC concentration, ANBIMA classes,
+company financials, and the B3 lending and investor-flow views — has no `/v1`
+twin and is reachable only over PostgREST. Read those on the published site.
 
-CNPJ in the path may include punctuation (`12.345.678/0001-90`); it is stripped
-to 14 digits. Tickers are uppercased.
+### Public views this file is still the only home for
 
-**Three caveats on the short-interest and flow resources**, all published as columns
-rather than left to the caller:
+<!-- TEMPORARY. These are PUBLIC PostgREST resources, not adapter routes, and
+     they do not belong in this file. They are parked here because nothing else
+     documents them yet. Move this section to the published site (api-docs/) and
+     delete it from here as soon as those pages exist. -->
 
-* **History starts at first capture.** B3 retains ~21 business days of its lending and
-  participation files and keeps no archive, so these resources are as deep as the daily
-  job has been running and no deeper. Nothing can backfill them.
-* **`pct_float` is two metrics, and `float_basis` says which.** `index_free_float` is
-  B3's real free float (index constituents only); `shares_outstanding` is a larger
-  denominator and therefore a smaller percentage. Do not rank across the two.
-  `days_to_cover` and `pct_float` are `null` — never `0` — when their denominator is
-  missing.
-* **`investor_flow` is derived and lags T+2.** B3 publishes a month-to-date cumulative
-  snapshot; the daily figure is its first difference within a month. Rows whose
-  `flow_basis` is `unknown_opening_snapshot` carry `null` flows on purpose: they are the
-  first snapshot held in a month when that is not the month's first session, and
-  reporting the cumulative total as one day's flow would invent a spike.
+Five views under schema `api` are granted to `anon` and `authenticated` and answer
+`200` in production today, but are not yet described on the published site and are
+not yet listed in `catalog().postgrest` (v26). They are documented here only until
+that is fixed:
 
-Later: CIA line items and BACEN macro as extra `api.panel` metrics once identifiers
-are matched — same long grain, not a new API style.
+| Method | Resource | Backing |
+| ------ | -------- | ------- |
+| GET | `/rest/v1/short_interest` | B3 securities lending per `(ticker, trade_date)`: short balance, `pct_float` + `float_basis`, `days_to_cover`, borrow rates |
+| GET | `/rest/v1/short_interest_by_sector` | the same book aggregated by B3 top-level sector |
+| GET | `/rest/v1/investor_flow` | daily net flow by investor type (R$ thousands), differenced from B3's month-to-date snapshots |
+| GET | `/rest/v1/lending_trades` | the lending tape per `(ticker, trade_date)`: trades, quantity, rate min/mean/max, broker counts |
+| GET | `/rest/v1/lending_participants` | per-broker legs of that tape: quantity lent, borrowed and net, with `internal_legs` |
 
-## Why not the alternatives
+The key column on all five is **`ticker`**, not `codneg`.
 
-| Approach                                            | Why not as the user API                                                                  |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Raw PostgREST on `public`                           | Leaks `cvm_ingest_log`, options tape, Portuguese columns; users must learn the warehouse |
-| supabase.rpc only                                   | Fine as a power-user escape hatch; terrible onboarding vs `/v1/quotes/PETR4`             |
-| Revive the old ingest Flask (`app.py` / `src/api/`) | No auth, ingest triggers, localhost-only — mixing operators and readers                  |
-| Rebuilding FastAPI microservices                    | Already deleted; duplicates the warehouse                                                |
+**Three caveats, published as columns rather than left to the caller:**
+
+* **History starts at first capture.** B3 retains ~21 business days of its lending
+  and participation files and keeps no archive, so these resources are as deep as
+  the daily job has been running and no deeper. Nothing can backfill them; a
+  missed session is lost at any price.
+* **`pct_float` is two metrics, and `float_basis` says which.** `index_free_float`
+  is B3's real free float (index constituents only); `shares_outstanding` is a
+  larger denominator and therefore a smaller percentage. Do not rank across the
+  two. `days_to_cover` and `pct_float` are `null` — never `0` — when their
+  denominator is missing, because an untraded name is uncoverable, not instantly
+  coverable.
+* **`investor_flow` is derived and lags T+2.** B3 publishes a month-to-date
+  cumulative snapshot; the daily figure is its first difference within a month.
+  Rows whose `flow_basis` is `unknown_opening_snapshot` carry `null` flows on
+  purpose: they are the first snapshot held in a month when that is not the
+  month's first session, and reporting the cumulative total as one day's flow
+  would invent a spike.
+
+A fourth, for `lending_participants` and the broker columns of `lending_trades`:
+**`doador` / `tomador` are BROKERAGES, not beneficial owners.** ~75 % of trades
+carry the same broker code on both legs, so a large borrow through a broker is its
+client book, not its own position — which is what `internal_legs` / `internal_qty`
+measure.
 
 ## Run
 
@@ -197,33 +216,34 @@ python -m serve.app                 # 127.0.0.1:8080
 curl -s localhost:8080/v1/quotes/PETR4
 ```
 
-Production: the public path is **Supabase-native** (decided 2026-08-26) —
-schema `api` is exposed through the Supabase Data API (PostgREST), so there is
-no gateway, no TLS to terminate, and no serve/ host to run. The live base URL is
-`https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/` with the anon key. To enable
-it on a fresh project: Supabase Dashboard → Settings → API → add `api` to
-**Exposed schemas**. The generic form is `https://<project-ref>.supabase.co/rest/v1/`;
-views are read as `/rest/v1/quotes?select=...`, functions are called as
-`POST /rest/v1/rpc/<name>` with named arguments in the JSON body. The grants
-in `19_api_contract.sql` (anon/authenticated: `USAGE` on schema `api`,
-`SELECT` on the api views, `EXECUTE` on the api functions — and nothing on
-the `public` landing tables) are exactly the surface this exposes.
+`serve/` needs `POSTGRES_URL` or `SILO_API_DATABASE_URL`. If it is ever hosted,
+point `SILO_API_DATABASE_URL` at a login member of the **read-only** `silo_api`
+role (created by `12_grants_and_rls.sql`; see the operator comment there).
+Transaction pooler is correct here; ingest keeps the session pooler / direct URL.
 
-### Two platform limits bound every call, and neither is in the SQL
+---
 
-Both were found by an independent audit of the live deployment (2026-08-27) and
-reproduced against production on 2026-08-28. Both surprise callers, so read them
-before writing a client.
+## Operator notes on the deployed surface
 
-**1. PostgREST truncates every response at 1000 rows, oldest first, silently.**
-This is `db-max-rows` on the Supabase project. The in-function caps used to
-LIMIT at cap+1 (panel 100001, series 5001) so a caller could detect truncation
-by counting one extra row; behind a 1000-row ceiling those sentinels could never
-fire, so the advice to "check for exactly 100001 rows" detected nothing. Both
-sentinels are gone — panel in catalog v24, the seven series and statement
-functions in v25. Every one of them now fetches one page plus one row and RAISES
-22023 rather than returning a trimmed result, and panel / quote_history /
-fund_nav take a `p_after` cursor. The measurement that forced it:
+Caller-facing versions of everything below live on
+[Conventions & limits](https://octo-98895abd.mintlify.site/api-docs/conventions#row-caps).
+What is kept here is the operator half: the decision, the measurement, and the
+levers that are a dashboard setting rather than a code change.
+
+### Enabling it on a fresh project
+
+Supabase Dashboard → Settings → API → add `api` to **Exposed schemas**. The
+generic form is `https://<project-ref>.supabase.co/rest/v1/`; views are read as
+`/rest/v1/quotes?select=...`, functions called as `POST /rest/v1/rpc/<name>` with
+named arguments in the JSON body. The grants in `19_api_contract.sql`
+(`anon`/`authenticated`: `USAGE` on schema `api`, `SELECT` on the api views,
+`EXECUTE` on the api functions — and nothing on the `public` landing tables) are
+exactly the surface this exposes.
+
+### 1. PostgREST caps every response at 1,000 rows (`db-max-rows`)
+
+Found by an independent audit of the live deployment (2026-08-27) and reproduced
+against production on 2026-08-28. The measurement that forced the current design:
 
 ```
 POST /rest/v1/rpc/panel  p_ids=[PETR4] p_metrics=[close] p_freq=day p_to=2026-08-26
@@ -232,35 +252,55 @@ POST /rest/v1/rpc/panel  p_ids=[PETR4] p_metrics=[close] p_freq=day p_to=2026-08
   p_from=2024-01-01  ->  664 rows, 2024-01-02 .. 2026-08-26   complete
 ```
 
-A caller charting "PETR4 since 2019" gets a plausible line that simply stops in
-January 2023. **The only signal is the `Content-Range` response header**:
-`0-999/*` means truncated, and adding `Prefer: count=exact` turns it into
-`0-999/1906` so you also learn the true total. A range ending below 999 is
-complete.
+A caller charting "PETR4 since 2019" got a plausible line that simply stopped in
+January 2023.
 
-**`Range` paging does not work on RPC.** Sending `Range: 1000-1999` to
-`/rest/v1/rpc/panel` returns the _same first page_ again — verified, same
-`Content-Range: 0-999/1906`. So a panel cannot be paged: narrow `p_from`/`p_to`,
-ids, or metrics until the header comes back under 1000. `GET` views on the
-`api` schema do page with `Range` normally.
+The in-function caps used to `LIMIT` at cap+1 (panel 100001, series 5001) so a
+caller could detect truncation by counting one extra row; behind a 1,000-row
+ceiling those sentinels could never fire, so the advice to "check for exactly
+100001 rows" detected nothing. Both sentinels are gone — panel in catalog v24, the
+series and statement functions in v25/v26.
+
+**Current behaviour, and the correction to what this file used to say:** every
+set-returning function now fetches one page plus one row and **raises `22023`**
+rather than returning a trimmed result. This file previously stated that "a panel
+cannot be paged" — that stopped being true two catalog versions ago. **`panel`,
+`quote_history` and `fund_nav` page with a `p_after` cursor**; the other five
+(`option_history`, `termo_history`, `financials`, `company_financials`,
+`anbima_classes`) have no cursor and ask you to narrow the window. `fund_nav` also
+requires `p_entity_type` to page, because its cursor is a bare period and 385
+CNPJs file under two families in the same month.
+
+`Range` paging genuinely does not work on RPC — `Range: 1000-1999` on
+`/rest/v1/rpc/panel` returns the *same first page*, verified, same
+`Content-Range: 0-999/1906`. `Range` / `limit` / `offset` remain the **view**
+cursor, and `GET` views on schema `api` still truncate silently, so
+`Content-Range` is still the only signal there.
 
 Raising `db-max-rows` (Dashboard → Settings → API → Max rows) is an operator
 decision, not a code change.
 
-**2. The `statement_timeout` that applies is `anon`'s 3s, not `silo_api`'s 15s.**
-`12_grants_and_rls.sql` sets 15s on `silo_api` — but that role serves only the
-local `serve/` adapter. The deployed PostgREST surface runs as `anon`, which
-carries Supabase's default 3s (`authenticated` gets 8s). Anything over ~3s
-returns `57014 canceling statement due to statement timeout`.
+### 2. The `statement_timeout` that applies is `anon`'s 3s, not `silo_api`'s 15s
 
-Cold calls are the practical consequence: on a warehouse this size the first
-call after idle can take 16–43s and is cancelled at the ceiling, so a
-first-time caller meets an API that looks comprehensively down. Warm, the same
-calls return in 0.3–1.9s. Warming the endpoints, or raising the `anon` timeout,
-is an operator decision.
+`12_grants_and_rls.sql` sets 15s on `silo_api` — but that role serves only this
+local adapter. The deployed PostgREST surface runs as `anon`, which carries
+Supabase's default 3s (`authenticated` gets 8s). Anything over ~3s returns
+`57014 canceling statement due to statement timeout`.
 
-`serve/` remains the local adapter for notebooks and development. If it is
-ever hosted, point `SILO_API_DATABASE_URL` at a login member of the
-**read-only** `silo_api` role (created by `12_grants_and_rls.sql`; see the
-operator comment there). Transaction pooler is correct here; ingest keeps
-the session pooler / direct URL.
+Cold calls are the practical consequence: on a warehouse this size the first call
+after idle can take 16–43s and is cancelled at the ceiling, so a first-time caller
+meets an API that looks comprehensively down. Warm, the same calls return in
+0.3–1.9s. Warming the endpoints, or raising the `anon` timeout, is an operator
+decision.
+
+## Why not the alternatives
+
+| Approach                                            | Why not as the user API                                                                  |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Raw PostgREST on `public`                           | Leaks `cvm_ingest_log`, options tape, Portuguese columns; users must learn the warehouse |
+| `supabase.rpc` only, undocumented                   | Fine as a power-user escape hatch; terrible onboarding without the pages and the catalog |
+| Revive the old ingest Flask (`app.py` / `src/api/`) | No auth, ingest triggers, localhost-only — mixing operators and readers                  |
+| Rebuilding FastAPI microservices                    | Already deleted; duplicates the warehouse                                                |
+
+Roadmap for how "ingested" became "a researcher pulls a panel":
+[docs/planning/SERVING.md](planning/SERVING.md).

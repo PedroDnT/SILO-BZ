@@ -21,3 +21,23 @@ temp/
 # `mint broken-links` before it reaches api-docs/. Gitignored, so CI never
 # saw it; this makes the local run usable too.
 .venv/
+
+# Root-level *.md, decided explicitly.
+#
+# The entries above are all directories, so until now every Markdown file at
+# the repository root sat inside Mintlify's parse scope while being absent from
+# docs.json's navigation — published in the sense that the URL resolves, but
+# invisible in the sidebar, and neither state chosen on purpose.
+#
+# The decision: `skill.md` IS published, deliberately. It is the agent loader,
+# api-docs/agents.mdx and llms.txt both link to it by URL, and an agent that
+# fetches https://octo-98895abd.mintlify.site/skill.md must get the file rather
+# than a 404. It stays out of the sidebar because a human has no use for it.
+# So it is NOT listed here.
+#
+# The other three are repository documentation for people working ON SILO, not
+# on the API, and they are ignored so that neither `mint broken-links` nor the
+# published site treats them as pages:
+README.md
+CLAUDE.md
+AGENTS.md
