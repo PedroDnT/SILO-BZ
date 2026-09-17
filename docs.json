@@ -18,7 +18,8 @@
         "group": "Data",
         "icon": "database",
         "pages": [
-          "api-docs/data-inventory"
+          "api-docs/data-inventory",
+          "api-docs/market-coverage"
         ]
       },
       {
@@ -29,6 +30,15 @@
           "api-docs/sdk",
           "api-docs/agents",
           "api-docs/conventions"
+        ]
+      },
+      {
+        "group": "Guides",
+        "icon": "map",
+        "pages": [
+          "api-docs/guides/first-screen",
+          "api-docs/guides/pagination",
+          "api-docs/guides/fundamentals"
         ]
       },
       {
@@ -49,6 +59,11 @@
           "api-docs/coverage",
           "api-docs/cotahist-dictionary"
         ]
+      },
+      {
+        "group": "Endpoints",
+        "icon": "terminal",
+        "openapi": "openapi.json"
       }
     ]
   },

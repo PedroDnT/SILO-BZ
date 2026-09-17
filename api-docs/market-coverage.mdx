@@ -1,0 +1,158 @@
+---
+title: "Market coverage"
+description: "What exists, how far back it goes, how often it updates — and the one dataset that is a ratchet."
+icon: "calendar-range"
+---
+
+This page answers three questions before you write a query: **does SILO have it**,
+**how far back**, and **how stale can it be**. [Data inventory](/api-docs/data-inventory)
+is the table-by-table view of the warehouse; this is the view from the API.
+
+<Note>
+  Every date below is a *floor*, not a promise about today. The authoritative,
+  current answer is the API's own — `coverage()` and `metric_coverage()` are
+  generated from the data, so they cannot go stale the way a hand-written table
+  can. Ask them first; use this page to know what to ask for.
+</Note>
+
+## Ask the API what it holds
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/coverage" \
+  -H "apikey: $SILO_ANON_KEY" -H "Content-Type: application/json" -d '{}'
+```
+
+Four date columns, and they mean four different things. Reading one for another is
+the most common coverage mistake:
+
+| Column | Means | Use it for |
+| --- | --- | --- |
+| `as_of` | the newest period that has landed **and has actually elapsed** | "how current is this, really" |
+| `complete_through` | the newest **complete** period for that filing cadence | what a default window serves |
+| `newest_period` | the newest period **key** present — can sit in the future | spotting forward-dated keys (FIP is keyed 31-December) |
+| `landed_at` | when ingest last **succeeded** for that source | whether *we* are broken |
+
+<Warning>
+  `landed_at` and `complete_through` answer different questions and only one of
+  them is ours. A stale `landed_at` is a pipeline failure. A `complete_through`
+  that trails today is Brazil's filing calendar — CVM publishes monthly data one
+  to two months in arrears, and that is not an outage.
+</Warning>
+
+`metric_coverage()` goes one level finer: the first and last period carrying a
+**non-null** value for every `(entity_type, metric)` pair, plus how many rows
+actually filed it. A metric that is null for a whole family is not applicable by
+construction rather than missing — see `catalog().applicability`.
+
+## How far back
+
+| Domain | Endpoints | History starts | Cadence |
+| --- | --- | --- | --- |
+| **B3 cash quotes** | `quotes`, `equities`, `bdrs`, `units`, `fund_quotas`, `cash_securities`, `auctions`, `quote_history`, `quote_latest` | COTAHIST, as deep as it has been backfilled (2019 onward by default; earlier years load into the same partitioned tape) | daily, T+1 |
+| **Options & termo** | `option_chain`, `option_history`, `option_exercises`, `termo_history` | same tape, same depth | daily, T+1 |
+| **FI funds** | `fund_nav`, `funds`, `fund_profile`, `search_funds` | 2019 (daily `inf_diario` partition floor) | monthly, 1–2 months in arrears |
+| **Fund holdings** | `fund_holdings`, `fund_debentures` | 2005 (CDA blocks 4, 2 and 6) | monthly, in arrears |
+| **FIDC** | `fund_nav`, `fidc_portfolio`, `fidc_sacados`, `fidc_cedentes` | 2019 for the monthly informe; tab II sectors and tab VIII debtors from 2013; tab I originator slots from 2019-11; tab X SCR grades from 2023-10 only | monthly, in arrears |
+| **FII** | `fund_nav` | 2021 monthly, 2019 for the periodic documents | monthly / quarterly |
+| **FIAGRO** | `fund_nav` | **2025-05** — the family is new, not missing | monthly |
+| **FIP** | `fund_nav` | 2010, keyed 31-December (annual) | yearly |
+| **Listed companies** | `financials`, `company_financials`, `lookup` | 2019 for ITR/DFP filings; 2010 for IPE events and the published ticker map | quarterly, on the filing calendar |
+| **ANBIMA classes** | `anbima_classes` | 2019 | monthly, on publication |
+| **B3 BDI — lending & flows** | `short_interest`, `short_interest_by_sector`, `investor_flow`, `lending_trades`, `lending_participants` | **first capture only — see below** | daily, T+2 for `investor_flow` |
+
+Ingest runs **once a day at 06:00 UTC** (GitHub Actions cron). A slice CVM publishes
+late is healed on a later run: the daily job re-probes a trailing window and re-fetches
+any month with no successful ingest, so a late filing is picked up rather than missed
+forever.
+
+## The B3 BDI ratchet
+
+<Warning>
+  **B3 keeps roughly 21 business days of its lending and participation files and
+  publishes no archive. There is no backfill at any price.**
+
+  These five endpoints are exactly as deep as the daily job has been running, and
+  no deeper. A session missed is a session gone — not expensive to recover,
+  *impossible*. This is the only part of the warehouse that behaves this way.
+</Warning>
+
+It applies to `short_interest`, `short_interest_by_sector`, `investor_flow`,
+`lending_trades` and `lending_participants`.
+
+There is no deep-history route and none is coming. The legacy B3 download API still
+serves more than a year but returns HTTP 400 for every BDI table name; the
+`pesquisapregao` bulletin archive returns empty zips. `run_backfill` deliberately
+offers no lending option, because offering one would imply a history that cannot
+exist.
+
+Worse, the failure is silent by default: an over-wide request returns **HTTP 200**
+with the window quietly clamped — asking for 2024-01-02 through 2026-09-10 returns
+5.2 MB containing 18 sessions. A 200 is not evidence the span you asked for was
+delivered, which is why every ingest reconciles the sessions it received against the
+ones it requested.
+
+**What this means for you:** treat these five as a live feed with a short tail, not as
+history. If you need a long series, capture it yourself as it publishes. Always read
+`as_of` from `coverage()` before assuming a window exists.
+
+### Three caveats these endpoints publish as columns
+
+Rather than leaving them to the caller:
+
+<AccordionGroup>
+  <Accordion title="short_interest: pct_float is two different metrics">
+    `float_basis` says which denominator produced `pct_float`. `index_free_float`
+    is B3's real free float and covers index constituents only; `shares_outstanding`
+    is a larger denominator and therefore a smaller percentage. **Do not rank across
+    the two.** `pct_float` and `days_to_cover` are `null` — never `0` — when their
+    denominator is missing.
+  </Accordion>
+  <Accordion title="investor_flow is derived and lags T+2">
+    B3 publishes a month-to-date cumulative snapshot; the daily figure is its first
+    difference within a month. Rows whose `flow_basis` is
+    `unknown_opening_snapshot` carry null flows on purpose — they are the first
+    snapshot held in a month when that is not the month's first session, and
+    reporting the cumulative total as one day's flow would invent a spike.
+  </Accordion>
+  <Accordion title="lending_trades: doador and tomador are brokerages">
+    They are **not** beneficial owners. Around 75% of trades carry the same code on
+    both legs, so a large borrow through a broker is that broker's client book, not
+    the broker's own position. Read `short_interest` through `is_total` as well: B3
+    publishes both the per-market rows and its own `Total` sum, and adding them
+    double-counts.
+  </Accordion>
+</AccordionGroup>
+
+## What is not here
+
+Nothing on this API is adjusted, interpolated or forward-filled.
+
+* **Quotes are unadjusted.** `adjusted` is `false` on every row. `b3_corporate_event`
+  carries splits and bonuses as published, but no adjustment factor is derived — the
+  convention was measured and has not met the bar for publishing.
+* **A null is a null.** A missing value is never a guessed last close, a zero, or a
+  carried-forward figure. An unknown ticker returns an empty array, not a fabricated
+  row.
+* **A regime break is not a trend.** FIDC `delinquency` is null through 2024-12 and
+  filed from 2025-01. Never chain-link a series through it; `catalog().regime_breaks`
+  lists them.
+* **No ANBIMA-to-fund mapping exists.** ANBIMA rows are industry aggregates carrying
+  no fund id, and CVM's `classe` is a different taxonomy. Joining a fund to an ANBIMA
+  class by name would be an invention.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Your first screen" icon="play" href="/api-docs/guides/first-screen">
+    A working screen of real data in four calls.
+  </Card>
+  <Card title="Paging without losing rows" icon="list-ol" href="/api-docs/guides/pagination">
+    Two different cursors, and the trap of confusing them.
+  </Card>
+  <Card title="Coverage reference" icon="table" href="/api-docs/coverage">
+    The `coverage()` and `metric_coverage()` endpoints in full.
+  </Card>
+  <Card title="Data inventory" icon="database" href="/api-docs/data-inventory">
+    Every table, its grain, and what we deliberately do not ingest.
+  </Card>
+</CardGroup>
