@@ -4,6 +4,12 @@ description: "Daily buy/sell/net flow by investor type, differenced from B3's mo
 icon: "arrow-right-arrow-left"
 ---
 
+<Note>
+  **Parameters, response columns and types are generated** from the SQL catalog and
+  render under **Endpoints → Short interest & flows** in the sidebar. This page carries what a
+  schema cannot: the conventions, the nulls that are deliberate, and the traps.
+</Note>
+
 `investor_flow` answers one question: **what did each class of investor do on a given
 session?** Foreign investors, institutionals, individuals and the rest, bought and sold, in
 R$ thousands.
@@ -60,33 +66,24 @@ their own page, [Securities lending](/api-docs/lending).
 
 ### Parameters
 
-<ParamField query="investor_type" type="string">
-  `eq.<type>` — the investor class exactly as B3 publishes it. The distinct values are
-  small in number and come straight from the source; read them off the data rather than
-  hard-coding a translation.
-</ParamField>
+#### `investor_type`
 
-<ParamField query="reference_date" type="date">
-  `eq.2026-09-16`, or `gte.` / `lte.` for a window. This is the session the flow is **for**,
-  not the date B3 published it — the T+2 lag is already accounted for.
-</ParamField>
+`eq.<type>` — the investor class exactly as B3 publishes it. The distinct values are
+small in number and come straight from the source; read them off the data rather than
+hard-coding a translation.
 
-<ParamField query="flow_basis" type="string">
-  `eq.delta`, `eq.month_open` or `eq.unknown_opening_snapshot`. Filtering to
-  `in.(delta,month_open)` is the usual way to drop the uninterpretable rows — see below.
-</ParamField>
 
-<ParamField query="select" type="string">
-  Column list, e.g. `reference_date,investor_type,net_value_thousands,flow_basis`.
-</ParamField>
+#### `reference_date`
 
-<ParamField query="order" type="string">
-  e.g. `reference_date.asc`.
-</ParamField>
+`eq.2026-09-16`, or `gte.` / `lte.` for a window. This is the session the flow is **for**,
+not the date B3 published it — the T+2 lag is already accounted for.
 
-<ParamField query="limit" type="integer">
-  Page size, capped at 1,000 server-side.
-</ParamField>
+
+#### `flow_basis`
+
+`eq.delta`, `eq.month_open` or `eq.unknown_opening_snapshot`. Filtering to
+`in.(delta,month_open)` is the usual way to drop the uninterpretable rows — see below.
+
 
 ### Read `flow_basis` before you read anything else
 
@@ -112,34 +109,42 @@ their own page, [Securities lending](/api-docs/lending).
 
 ### Returns
 
-<ResponseField name="reference_date" type="date">
-  The session the flow is for. Part of the grain.
-</ResponseField>
-<ResponseField name="investor_type" type="text">
-  Investor class as B3 publishes it. Part of the grain.
-</ResponseField>
-<ResponseField name="flow_basis" type="text">
-  `delta` | `month_open` | `unknown_opening_snapshot`. **Read this first.**
-</ResponseField>
-<ResponseField name="buy_value_thousands" type="numeric">
-  The session's purchases, in **R$ thousands**. `null` when
-  `flow_basis = unknown_opening_snapshot`.
-</ResponseField>
-<ResponseField name="sell_value_thousands" type="numeric">
-  The session's sales, R$ thousands. `null` on the same rows.
-</ResponseField>
-<ResponseField name="net_value_thousands" type="numeric">
-  `buy - sell` for the session, R$ thousands. Positive is net buying. `null` on the same
-  rows.
-</ResponseField>
-<ResponseField name="mtd_buy_value_thousands" type="numeric">
-  B3's **cumulative** month-to-date purchases as published — the figure the difference was
-  taken from. Never null: this is the source value, kept so you can verify the arithmetic
-  rather than trust it.
-</ResponseField>
-<ResponseField name="mtd_sell_value_thousands" type="numeric">
-  Cumulative month-to-date sales as published.
-</ResponseField>
+#### `reference_date`
+
+The session the flow is for. Part of the grain.
+
+#### `investor_type`
+
+Investor class as B3 publishes it. Part of the grain.
+
+#### `flow_basis`
+
+`delta` | `month_open` | `unknown_opening_snapshot`. **Read this first.**
+
+#### `buy_value_thousands`
+
+The session's purchases, in **R$ thousands**. `null` when
+`flow_basis = unknown_opening_snapshot`.
+
+#### `sell_value_thousands`
+
+The session's sales, R$ thousands. `null` on the same rows.
+
+#### `net_value_thousands`
+
+`buy - sell` for the session, R$ thousands. Positive is net buying. `null` on the same
+rows.
+
+#### `mtd_buy_value_thousands`
+
+B3's **cumulative** month-to-date purchases as published — the figure the difference was
+taken from. Never null: this is the source value, kept so you can verify the arithmetic
+rather than trust it.
+
+#### `mtd_sell_value_thousands`
+
+Cumulative month-to-date sales as published.
+
 
 <Note>
   **Units are R$ thousands, from the source's own `brl_mil` fields** (*mil* is Portuguese

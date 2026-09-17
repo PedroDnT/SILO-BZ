@@ -4,6 +4,12 @@ description: "CVM fund registry and monthly fundamentals — the api.funds view 
 icon: "building-columns"
 ---
 
+<Note>
+  **Parameters, response columns and types are generated** from the SQL catalog and
+  render under **Endpoints → Funds** in the sidebar. This page carries what a
+  schema cannot: the conventions, the nulls that are deliberate, and the traps.
+</Note>
+
 Brazilian investment vehicles as disclosed to the CVM, keyed by **CNPJ**. The registry
 covers five `entity_type` values:
 
@@ -32,50 +38,57 @@ month**.
 The registry view: one row per `(cnpj, entity_type)`, describing what we hold rather than
 what the fund is worth.
 
-<ParamField query="cnpj" type="string">
-  e.g. `cnpj=eq.12345678000190`. Digits only — the view does no normalization.
-</ParamField>
+<Warning>
+  **This view has no built-in cap — always send `limit`.** The registry is large, and an
+  unbounded read is cut at 1,000 rows server-side with no signal beyond `Content-Range`.
+</Warning>
 
-<ParamField query="entity_type" type="string">
-  One of `fi`, `fidc`, `fii`, `fip`, `fiagro`.
-</ParamField>
+#### `cnpj`
 
-<ParamField query="select" type="string">
-  Columns to project.
-</ParamField>
+e.g. `cnpj=eq.12345678000190`. Digits only — the view does no normalization.
 
-<ParamField query="limit" type="integer">
-  Page size. The view has no built-in cap — always set one; the registry is large.
-</ParamField>
+
+#### `entity_type`
+
+One of `fi`, `fidc`, `fii`, `fip`, `fiagro`.
+
 
 ### Columns
 
-<ResponseField name="cnpj" type="text">
-  14-digit CNPJ, unpunctuated. The natural key, straight from the source filing.
-</ResponseField>
-<ResponseField name="entity_type" type="text">
-  `fi` | `fidc` | `fii` | `fip` | `fiagro`.
-</ResponseField>
-<ResponseField name="fund_name" type="text">
-  Registered name. **Nullable** — it comes from the CVM registry feed, which does not cover
-  every CNPJ that appears in the periodic filings.
-</ResponseField>
-<ResponseField name="status" type="text">
-  Registry status as published (e.g. active / cancelled). Nullable, same reason.
-</ResponseField>
-<ResponseField name="fund_class" type="text">
-  The registry's `tp_fundo` classification, as published. Nullable.
-</ResponseField>
-<ResponseField name="first_period" type="date">
-  Earliest period we hold a filing for.
-</ResponseField>
-<ResponseField name="last_period" type="date">
-  Latest period we hold a filing for. For `fip`, periods are yearly and mapped to
-  January 1 / December 31 of the year.
-</ResponseField>
-<ResponseField name="n_reports" type="bigint">
-  Count of distinct periods held. Coverage, not a quality score.
-</ResponseField>
+#### `cnpj`
+
+14-digit CNPJ, unpunctuated. The natural key, straight from the source filing.
+
+#### `entity_type`
+
+`fi` | `fidc` | `fii` | `fip` | `fiagro`.
+
+#### `fund_name`
+
+Registered name. **Nullable** — it comes from the CVM registry feed, which does not cover
+every CNPJ that appears in the periodic filings.
+
+#### `status`
+
+Registry status as published (e.g. active / cancelled). Nullable, same reason.
+
+#### `fund_class`
+
+The registry's `tp_fundo` classification, as published. Nullable.
+
+#### `first_period`
+
+Earliest period we hold a filing for.
+
+#### `last_period`
+
+Latest period we hold a filing for. For `fip`, periods are yearly and mapped to
+January 1 / December 31 of the year.
+
+#### `n_reports`
+
+Count of distinct periods held. Coverage, not a quality score.
+
 
 <CodeGroup>
 
@@ -129,29 +142,28 @@ api.search_funds(p_query       TEXT DEFAULT '',
                  p_limit       INT  DEFAULT 50)
 ```
 
-<ParamField body="p_query" type="string" default="''">
-  Case-insensitive substring, matched against **either the CNPJ or the fund name**. The
-  default `''` matches everything. A fund whose `fund_name` is null can only be found by
-  CNPJ.
-</ParamField>
+#### `p_query`
 
-<ParamField body="p_entity_type" type="string" default="null">
-  Restrict to one `entity_type`. `null` (or omitted) means all of them.
-</ParamField>
+Case-insensitive substring, matched against **either the CNPJ or the fund name**. The
+default `''` matches everything. A fund whose `fund_name` is null can only be found by
+CNPJ.
 
-<ParamField body="p_limit" type="integer" default="50">
-  Clamped by tier: **25** for anonymous callers, 200 signed in. A null is treated as 50. A larger value is silently reduced, not refused.
-</ParamField>
 
-<ResponseField name="cnpj" type="text">14-digit CNPJ.</ResponseField>
-<ResponseField name="entity_type" type="text">Vehicle type.</ResponseField>
-<ResponseField name="fund_name" type="text">Registered name; nullable.</ResponseField>
-<ResponseField name="first_period" type="date">Earliest period held.</ResponseField>
-<ResponseField name="last_period" type="date">Latest period held.</ResponseField>
-<ResponseField name="latest_aum" type="numeric">
-  Most recent non-null net assets for that `(cnpj, entity_type)`. **Nullable** — a fund with
-  no reported NAV sorts last rather than being dropped or zero-filled.
-</ResponseField>
+#### `p_entity_type`
+
+Restrict to one `entity_type`. `null` (or omitted) means all of them.
+
+
+#### `p_limit`
+
+Clamped by tier: **25** for anonymous callers, 200 signed in. A null is treated as 50. A larger value is silently reduced, not refused.
+
+
+#### `latest_aum`
+
+Most recent non-null net assets for that `(cnpj, entity_type)`. **Nullable** — a fund with
+no reported NAV sorts last rather than being dropped or zero-filled.
+
 
 <CodeGroup>
 
@@ -198,30 +210,29 @@ One fund's summary card: coverage plus peak and latest AUM.
 api.fund_profile(p_cnpj TEXT)
 ```
 
-<ParamField body="p_cnpj" type="string" required>
-  CNPJ, punctuated or not — non-digits are stripped before the lookup.
-</ParamField>
+#### `p_cnpj`
 
-<ResponseField name="cnpj" type="text">14-digit CNPJ.</ResponseField>
-<ResponseField name="entity_type" type="text">Vehicle type.</ResponseField>
-<ResponseField name="fund_name" type="text">Registered name; nullable.</ResponseField>
-<ResponseField name="status" type="text">Registry status; nullable.</ResponseField>
-<ResponseField name="first_period" type="date">Earliest period held.</ResponseField>
-<ResponseField name="last_period" type="date">Latest period held.</ResponseField>
-<ResponseField name="n_months_reported" type="bigint">
-  Distinct periods held — the same count as the view's `n_reports`.
-</ResponseField>
-<ResponseField name="peak_aum" type="numeric">
-  Maximum net assets ever reported.
-</ResponseField>
-<ResponseField name="latest_aum" type="numeric">
-  Net assets at the most recent period with a non-null value.
-</ResponseField>
-<ResponseField name="is_active" type="boolean">
-  `last_period >= CURRENT_DATE - 90 days`. A **filing-recency** flag, not a legal status —
-  CVM publishes with a one-to-two month lag, so read it alongside `status` and
-  [`coverage`](/api-docs/coverage).
-</ResponseField>
+CNPJ, punctuated or not — non-digits are stripped before the lookup.
+
+
+#### `n_months_reported`
+
+Distinct periods held — the same count as the view's `n_reports`.
+
+#### `peak_aum`
+
+Maximum net assets ever reported.
+
+#### `latest_aum`
+
+Net assets at the most recent period with a non-null value.
+
+#### `is_active`
+
+`last_period >= CURRENT_DATE - 90 days`. A **filing-recency** flag, not a legal status —
+CVM publishes with a one-to-two month lag, so read it alongside `status` and
+[`coverage`](/api-docs/coverage).
+
 
 <CodeGroup>
 
@@ -284,59 +295,70 @@ api.fund_nav(p_cnpj        TEXT,
              p_entity_type TEXT DEFAULT NULL)
 ```
 
-<ParamField body="p_cnpj" type="string" required>
-  CNPJ, punctuated or not.
-</ParamField>
+#### `p_cnpj`
 
-<ParamField body="p_from" type="date" default="2019-01-01">
-  Window start, inclusive. Note this default is a **fixed date**, not a rolling window —
-  omitting it gives you the full stored history.
-</ParamField>
+CNPJ, punctuated or not.
 
-<ParamField body="p_to" type="date" default="CURRENT_DATE">
-  Window end, inclusive.
-</ParamField>
 
-<ParamField body="p_entity_type" type="string" default="null">
-  Restrict to one vehicle type. Needed only for the rare CNPJ that reports under two.
-</ParamField>
+#### `p_from`
 
-<ResponseField name="cnpj" type="text">14-digit CNPJ.</ResponseField>
-<ResponseField name="period" type="date">
-  The filing period **as stored, per family**: first day of the month for `fi`, `fii` and
-  `fiagro`; the month's **last** day for `fidc`; 31-Dec of the filing year for `fip`
-  (one row per year). `date_trunc('month', period)` before aligning families.
-</ResponseField>
-<ResponseField name="entity_type" type="text">Vehicle type for this row.</ResponseField>
-<ResponseField name="nav" type="numeric">
-  Net assets — CVM `vl_patrim_liq`. The headline "fund size" figure.
-</ResponseField>
-<ResponseField name="quota" type="numeric">
-  Unit quota value (`vl_quota`). **`fi` only** — null by construction for every other
-  family (see [which columns each family files](#which-columns-each-family-files)).
-</ResponseField>
-<ResponseField name="quotaholders" type="integer">
-  Number of unit-holders (`nr_cotst`). **`fi` and `fii` only**; null by construction for
-  `fidc`, `fiagro` and `fip`.
-</ResponseField>
-<ResponseField name="delinquency" type="numeric">
-  Delinquent portfolio **value** (`vl_inadimpl`), in BRL — **`fidc` and `fiagro` only**.
-  This is an amount, not a rate; divide by `nav` yourself if you want a ratio. For `fidc`
-  it is **null on every row through 2024-12 and filed on every row from 2025-01** — a
-  source-format boundary, not a credit event (warning below).
-</ResponseField>
-<ResponseField name="monthly_yield" type="numeric">
-  Monthly yield percentage as published (`pct_yield_mes`). **`fii` only.**
-</ResponseField>
-<ResponseField name="inflows" type="numeric">
-  Gross monthly subscriptions (`captc_mes`). **`fi` only.**
-</ResponseField>
-<ResponseField name="redemptions" type="numeric">
-  Gross monthly redemptions (`resg_mes`). **`fi` only.**
-</ResponseField>
-<ResponseField name="assets" type="numeric">
-  Total assets (`vl_ativo`), as distinct from net assets. **`fii` only.**
-</ResponseField>
+Window start, inclusive. Note this default is a **fixed date**, not a rolling window —
+omitting it gives you the full stored history.
+
+
+#### `p_to`
+
+Window end, inclusive.
+
+
+#### `p_entity_type`
+
+Restrict to one vehicle type. Needed only for the rare CNPJ that reports under two.
+
+
+#### `period`
+
+The filing period **as stored, per family**: first day of the month for `fi`, `fii` and
+`fiagro`; the month's **last** day for `fidc`; 31-Dec of the filing year for `fip`
+(one row per year). `date_trunc('month', period)` before aligning families.
+
+#### `nav`
+
+Net assets — CVM `vl_patrim_liq`. The headline "fund size" figure.
+
+#### `quota`
+
+Unit quota value (`vl_quota`). **`fi` only** — null by construction for every other
+family (see [which columns each family files](#which-columns-each-family-files)).
+
+#### `quotaholders`
+
+Number of unit-holders (`nr_cotst`). **`fi` and `fii` only**; null by construction for
+`fidc`, `fiagro` and `fip`.
+
+#### `delinquency`
+
+Delinquent portfolio **value** (`vl_inadimpl`), in BRL — **`fidc` and `fiagro` only**.
+This is an amount, not a rate; divide by `nav` yourself if you want a ratio. For `fidc`
+it is **null on every row through 2024-12 and filed on every row from 2025-01** — a
+source-format boundary, not a credit event (warning below).
+
+#### `monthly_yield`
+
+Monthly yield percentage as published (`pct_yield_mes`). **`fii` only.**
+
+#### `inflows`
+
+Gross monthly subscriptions (`captc_mes`). **`fi` only.**
+
+#### `redemptions`
+
+Gross monthly redemptions (`resg_mes`). **`fi` only.**
+
+#### `assets`
+
+Total assets (`vl_ativo`), as distinct from net assets. **`fii` only.**
+
 
 Rows are ordered by `period`, then `entity_type`.
 

@@ -4,6 +4,12 @@ description: "Unadjusted B3 cash-market quotes — the api.quotes view plus the 
 icon: "chart-line"
 ---
 
+<Note>
+  **Parameters, response columns and types are generated** from the SQL catalog and
+  render under **Endpoints → Quotes** in the sidebar. This page carries what a
+  schema cannot: the conventions, the nulls that are deliberate, and the traps.
+</Note>
+
 B3 COTAHIST cash-market prints (`tpmerc = 010`), exactly as published. Nothing here is
 split- or dividend-adjusted, and every row says so with `adjusted: false`. `asset_class`
 is derived conservatively from B3's published `tpmerc` and `especi`: `equity`, `unit`,
@@ -41,110 +47,130 @@ The view. Full column set, arbitrary filters, arbitrary sort — use it when you
 cross-sectional slices (a whole session, a set of tickers) rather than one instrument's
 series.
 
-<ParamField query="ticker" type="string">
-  Filter by ticker, e.g. `ticker=eq.PETR4`. Stored upper-case; the view does **not**
-  normalize your input, so send it upper-case (unlike the functions, which upper-case for you).
-</ParamField>
+<Warning>
+  **This view has no built-in cap — always send `limit`.** An unbounded read is cut at
+  1,000 rows server-side, and `Content-Range` is the only thing that tells you.
+</Warning>
 
-<ParamField query="trade_date" type="date">
-  Session date, e.g. `trade_date=gte.2026-01-01`.
-</ParamField>
+#### `ticker`
 
-<ParamField query="board" type="string">
-  COTAHIST `codbdi`. Do not assume `02` outside ordinary equities.
-</ParamField>
+Filter by ticker, e.g. `ticker=eq.PETR4`. Stored upper-case; the view does **not**
+normalize your input, so send it upper-case (unlike the functions, which upper-case for you).
 
-<ParamField query="select" type="string">
-  Columns to project. Omit for all of them.
-</ParamField>
 
-<ParamField query="order" type="string">
-  e.g. `order=trade_date.desc`.
-</ParamField>
+#### `trade_date`
 
-<ParamField query="limit" type="integer">
-  Page size. The view itself has no built-in cap — always set one.
-</ParamField>
+Session date, e.g. `trade_date=gte.2026-01-01`.
+
+
+#### `board`
+
+COTAHIST `codbdi`. Do not assume `02` outside ordinary equities.
+
 
 ### Columns
 
-<ResponseField name="ticker" type="text">
-  B3 negotiation code (`codneg`). Part of the grain.
-</ResponseField>
-<ResponseField name="trade_date" type="date">
-  Session date. Part of the grain.
-</ResponseField>
-<ResponseField name="board" type="text">
-  BDI code / `codbdi`; its meaning varies by instrument type. Part of the grain.
-</ResponseField>
-<ResponseField name="term_days" type="text">
-  COTAHIST `prazot`. A **text** field despite the name, usually empty for cash. Part of the
-  grain. Only on the view — the functions do not return it.
-</ResponseField>
-<ResponseField name="short_name" type="text">
-  Issuer short name (`nome_resumido`).
-</ResponseField>
-<ResponseField name="spec" type="text">
-  Paper specification (`especi`), e.g. the share class.
-</ResponseField>
-<ResponseField name="currency" type="text">
-  Currency, defaulting to `R$` when the source leaves it blank.
-</ResponseField>
-<ResponseField name="open" type="numeric">
-  Opening price.
-</ResponseField>
-<ResponseField name="high" type="numeric">
-  Session high.
-</ResponseField>
-<ResponseField name="low" type="numeric">
-  Session low.
-</ResponseField>
-<ResponseField name="average" type="numeric">
-  Session average price.
-</ResponseField>
-<ResponseField name="close" type="numeric">
-  Closing price. Unadjusted.
-</ResponseField>
-<ResponseField name="bid" type="numeric">
-  Best bid at close (`oferta_compra`).
-</ResponseField>
-<ResponseField name="ask" type="numeric">
-  Best ask at close (`oferta_venda`).
-</ResponseField>
-<ResponseField name="trades" type="integer">
-  Number of trades (`negocios`).
-</ResponseField>
-<ResponseField name="quantity" type="numeric">
-  Shares traded (`quantidade`).
-</ResponseField>
-<ResponseField name="volume" type="numeric">
-  Financial volume in BRL.
-</ResponseField>
-<ResponseField name="isin" type="text">
-  ISIN as published.
-</ResponseField>
-<ResponseField name="quotation_factor" type="integer">
-  COTAHIST `fator_cotacao` — the number of shares the quoted price refers to.
-</ResponseField>
-<ResponseField name="close_unit" type="number">
-  Close per single quoted unit: `close / quotation_factor`, both published. Division by
-  a published field, not an adjustment — see the warning above.
-</ResponseField>
-<ResponseField name="adjusted" type="boolean">
-  Always `false`. Constant, so nobody mistakes these for adjusted prices.
-</ResponseField>
-<ResponseField name="source" type="text">
-  Provenance, `b3_cotahist`.
-</ResponseField>
-<ResponseField name="fetched_at" type="timestamptz">
-  When the pipeline ingested this row. Only on the view.
-</ResponseField>
-<ResponseField name="asset_class" type="text">
-  Conservative B3 type: `equity`, `unit`, `bdr`, `fund_quota`, `index`, `right`,
-  `bonus`, or `cash_security`. `index` is an index line (IBOV11 — not an ETF,
-  whatever the ticker suggests); `right` and `bonus` are claims, not the
-  security itself; `cash_security` is the residual.
-</ResponseField>
+#### `ticker`
+
+B3 negotiation code (`codneg`). Part of the grain.
+
+#### `trade_date`
+
+Session date. Part of the grain.
+
+#### `board`
+
+BDI code / `codbdi`; its meaning varies by instrument type. Part of the grain.
+
+#### `term_days`
+
+COTAHIST `prazot`. A **text** field despite the name, usually empty for cash. Part of the
+grain. Only on the view — the functions do not return it.
+
+#### `short_name`
+
+Issuer short name (`nome_resumido`).
+
+#### `spec`
+
+Paper specification (`especi`), e.g. the share class.
+
+#### `currency`
+
+Currency, defaulting to `R$` when the source leaves it blank.
+
+#### `open`
+
+Opening price.
+
+#### `high`
+
+Session high.
+
+#### `low`
+
+Session low.
+
+#### `average`
+
+Session average price.
+
+#### `close`
+
+Closing price. Unadjusted.
+
+#### `bid`
+
+Best bid at close (`oferta_compra`).
+
+#### `ask`
+
+Best ask at close (`oferta_venda`).
+
+#### `trades`
+
+Number of trades (`negocios`).
+
+#### `quantity`
+
+Shares traded (`quantidade`).
+
+#### `volume`
+
+Financial volume in BRL.
+
+#### `isin`
+
+ISIN as published.
+
+#### `quotation_factor`
+
+COTAHIST `fator_cotacao` — the number of shares the quoted price refers to.
+
+#### `close_unit`
+
+Close per single quoted unit: `close / quotation_factor`, both published. Division by
+a published field, not an adjustment — see the warning above.
+
+#### `adjusted`
+
+Always `false`. Constant, so nobody mistakes these for adjusted prices.
+
+#### `source`
+
+Provenance, `b3_cotahist`.
+
+#### `fetched_at`
+
+When the pipeline ingested this row. Only on the view.
+
+#### `asset_class`
+
+Conservative B3 type: `equity`, `unit`, `bdr`, `fund_quota`, `index`, `right`,
+`bonus`, or `cash_security`. `index` is an index line (IBOV11 — not an ETF,
+whatever the ticker suggests); `right` and `bonus` are claims, not the
+security itself; `cash_security` is the residual.
+
 
 ### Example
 
@@ -202,22 +228,26 @@ api.quote_history(p_ticker TEXT,
                   p_board  TEXT DEFAULT NULL)
 ```
 
-<ParamField body="p_ticker" type="string" required>
-  Ticker. Upper-cased and trimmed server-side, so `petr4` is fine.
-</ParamField>
+#### `p_ticker`
 
-<ParamField body="p_from" type="date" default="CURRENT_DATE - 365">
-  Window start, inclusive.
-</ParamField>
+Ticker. Upper-cased and trimmed server-side, so `petr4` is fine.
 
-<ParamField body="p_to" type="date" default="CURRENT_DATE">
-  Window end, inclusive.
-</ParamField>
 
-<ParamField body="p_board" type="string" default="null">
-  Board filter. Null or omitted automatically selects the board on the ticker's latest
-  stored row. Pass a code explicitly only when you need that exact BDI category.
-</ParamField>
+#### `p_from`
+
+Window start, inclusive.
+
+
+#### `p_to`
+
+Window end, inclusive.
+
+
+#### `p_board`
+
+Board filter. Null or omitted automatically selects the board on the ticker's latest
+stored row. Pass a code explicitly only when you need that exact BDI category.
+
 
 Returns the view's columns minus `term_days` and `fetched_at`: `ticker`, `trade_date`,
 `board`, `short_name`, `spec`, `currency`, `open`, `high`, `low`, `average`, `close`, `bid`,
@@ -303,13 +333,15 @@ api.quote_latest(p_ticker TEXT,
                  p_board  TEXT DEFAULT NULL)
 ```
 
-<ParamField body="p_ticker" type="string" required>
-  Ticker. Upper-cased and trimmed server-side.
-</ParamField>
+#### `p_ticker`
 
-<ParamField body="p_board" type="string" default="null">
-  Board filter; `null` means "latest across all boards".
-</ParamField>
+Ticker. Upper-cased and trimmed server-side.
+
+
+#### `p_board`
+
+Board filter; `null` means "latest across all boards".
+
 
 Same columns as `quote_history`.
 

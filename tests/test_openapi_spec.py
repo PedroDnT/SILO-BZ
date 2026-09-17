@@ -296,3 +296,69 @@ def test_spec_version_tracks_the_catalog(spec):
         f"openapi.json was generated against catalog v{spec['info']['version']} but "
         f"serve/catalog.py is now v{CATALOG_VERSION} — regenerate the spec."
     )
+
+
+# ---------------------------------------------------------------------------
+# The prose half of the drift class.
+#
+# The spec can no longer drift from the SQL (the tests above, plus the CI
+# regeneration step). The PROSE still could: before this, nine reference pages
+# hand-wrote 225 <ParamField>/<ResponseField> blocks restating parameters and
+# response columns that openapi.json already describes, and nothing checked
+# them. A renamed column rendered correctly in the generated Endpoints section
+# and stayed wrong on quotes.mdx indefinitely.
+#
+# The fix was to delete the mechanical blocks and keep the caveats as prose.
+# These tests keep it that way.
+# ---------------------------------------------------------------------------
+
+API_DOCS = ROOT / "api-docs"
+
+
+def _reference_pages() -> list:
+    return sorted(API_DOCS.glob("*.mdx"))
+
+
+def test_no_page_hand_writes_the_generated_schema():
+    """Parameters and response columns come from openapi.json, not from prose.
+
+    Mintlify renders <ParamField>/<ResponseField> as a parameter or response
+    table — the same thing the OpenAPI spec renders on the generated endpoint
+    pages, except hand-maintained and unguarded. A page that needs to explain a
+    field explains it in prose (a `#### `field`` section or a table row); it
+    does not restate the field's type.
+    """
+    offenders = {}
+    for path in _reference_pages():
+        text = path.read_text(encoding="utf-8")
+        n = text.count("<ParamField") + text.count("<ResponseField")
+        if n:
+            offenders[path.name] = n
+    assert not offenders, (
+        "these pages hand-write the schema that openapi.json already generates "
+        "(use a `#### `field`` prose section for a caveat instead): "
+        + ", ".join(f"{k} ({v} blocks)" for k, v in sorted(offenders.items()))
+    )
+
+
+def test_pages_documenting_endpoints_point_at_the_generated_section(spec):
+    """A page that lost its schema tables must say where the schema went.
+
+    Only pages that actually document an api.* endpoint are held to this — a
+    conceptual page (the COTAHIST dictionary, the data inventory) has no
+    endpoint to point at.
+    """
+    converted = {
+        "lookup", "termo", "coverage", "flows",
+        "options", "panel", "quotes", "funds", "lending",
+    }
+    missing = []
+    for path in _reference_pages():
+        if path.stem not in converted:
+            continue
+        if "are generated** from the SQL catalog" not in path.read_text(encoding="utf-8"):
+            missing.append(path.name)
+    assert not missing, (
+        "these pages no longer carry their own schema but do not point readers at "
+        "the generated Endpoints section: " + ", ".join(missing)
+    )

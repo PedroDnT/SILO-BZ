@@ -4,6 +4,12 @@ description: "B3 equity options as published — one session's chain for a codne
 icon: "chart-candlestick"
 ---
 
+<Note>
+  **Parameters, response columns and types are generated** from the SQL catalog and
+  render under **Endpoints → Derivatives** in the sidebar. This page carries what a
+  schema cannot: the conventions, the nulls that are deliberate, and the traps.
+</Note>
+
 Options are the same COTAHIST tape as [`quotes`](/api-docs/quotes), on a different market
 type: **`tpmerc` `070` = call, `080` = put**. They are roughly nine in ten rows of every
 session, which is why both endpoints here are narrower than their cash-market equivalents —
@@ -43,29 +49,33 @@ api.option_chain(p_prefix      TEXT,
                  p_limit       INT  DEFAULT 100)
 ```
 
-<ParamField body="p_prefix" type="string" required>
-  Codneg prefix, **at least 3 characters**. Upper-cased and trimmed server-side, so `petr`
-  works. Matched as `codneg LIKE '<prefix>%'`.
-</ParamField>
+#### `p_prefix`
 
-<ParamField body="p_expiry_from" type="date" default="CURRENT_DATE">
-  Keep only series expiring on or after this date — by default, live contracts. Pass `null`
-  explicitly to include expired series in the session's chain.
-</ParamField>
+Codneg prefix, **at least 3 characters**. Upper-cased and trimmed server-side, so `petr`
+works. Matched as `codneg LIKE '<prefix>%'`.
 
-<ParamField body="p_trade_date" type="date" default="null">
-  Which session. Null means **the latest session present in the option segment** — not the
-  cash tape's latest, so a day where only cash quotes landed never gets served back as
-  today's chain.
-</ParamField>
 
-<ParamField body="p_limit" type="integer" default="100">
-  Clamped into `1..2000`; null is treated as 100. The default is deliberately
-  modest: the `anon` role has a 3-second statement timeout, and on the busiest
-  chains (PETR, BOVA) a 200-row page already exceeds it and comes back as
-  `57014`. Ask for a bigger page when you need one — just expect a timeout
-  rather than a truncation if the prefix is a heavily traded name.
-</ParamField>
+#### `p_expiry_from`
+
+Keep only series expiring on or after this date — by default, live contracts. Pass `null`
+explicitly to include expired series in the session's chain.
+
+
+#### `p_trade_date`
+
+Which session. Null means **the latest session present in the option segment** — not the
+cash tape's latest, so a day where only cash quotes landed never gets served back as
+today's chain.
+
+
+#### `p_limit`
+
+Clamped into `1..2000`; null is treated as 100. The default is deliberately
+modest: the `anon` role has a 3-second statement timeout, and on the busiest
+chains (PETR, BOVA) a 200-row page already exceeds it and comes back as
+`57014`. Ask for a bigger page when you need one — just expect a timeout
+rather than a truncation if the prefix is a heavily traded name.
+
 
 <Warning>
   **A prefix is required, and a bad one is an error, not an empty array.** Fewer than 3
@@ -77,50 +87,64 @@ api.option_chain(p_prefix      TEXT,
 
 ### Returns
 
-<ResponseField name="codneg" type="text">
-  The B3 negotiation code — the series' identifier. Pass it to `option_history` or to
-  [`panel`](/api-docs/panel).
-</ResponseField>
-<ResponseField name="side" type="text">
-  `call` or `put`, derived **only** from `tpmerc` (`070` / `080`). Never inferred from the
-  codneg's letter.
-</ResponseField>
-<ResponseField name="strike" type="numeric">
-  Exercise price (`preco_exercicio`) as published.
-</ResponseField>
-<ResponseField name="expiry" type="date">
-  Expiration date (`data_vencimento`).
-</ResponseField>
-<ResponseField name="trade_date" type="date">
-  The session these prints are from. Constant across the response.
-</ResponseField>
-<ResponseField name="close" type="numeric">
-  Closing premium. Unadjusted.
-</ResponseField>
-<ResponseField name="open" type="numeric">
-  Opening premium.
-</ResponseField>
-<ResponseField name="high" type="numeric">
-  Session high.
-</ResponseField>
-<ResponseField name="low" type="numeric">
-  Session low.
-</ResponseField>
-<ResponseField name="trades" type="integer">
-  Number of trades (`negocios`).
-</ResponseField>
-<ResponseField name="quantity" type="numeric">
-  Quantity traded (`quantidade`), exactly as COTAHIST publishes it.
-</ResponseField>
-<ResponseField name="volume" type="numeric">
-  Financial volume in BRL.
-</ResponseField>
-<ResponseField name="isin" type="text">
-  ISIN as published.
-</ResponseField>
-<ResponseField name="spec" type="text">
-  Paper specification (`especi`).
-</ResponseField>
+#### `codneg`
+
+The B3 negotiation code — the series' identifier. Pass it to `option_history` or to
+[`panel`](/api-docs/panel).
+
+#### `side`
+
+`call` or `put`, derived **only** from `tpmerc` (`070` / `080`). Never inferred from the
+codneg's letter.
+
+#### `strike`
+
+Exercise price (`preco_exercicio`) as published.
+
+#### `expiry`
+
+Expiration date (`data_vencimento`).
+
+#### `trade_date`
+
+The session these prints are from. Constant across the response.
+
+#### `close`
+
+Closing premium. Unadjusted.
+
+#### `open`
+
+Opening premium.
+
+#### `high`
+
+Session high.
+
+#### `low`
+
+Session low.
+
+#### `trades`
+
+Number of trades (`negocios`).
+
+#### `quantity`
+
+Quantity traded (`quantidade`), exactly as COTAHIST publishes it.
+
+#### `volume`
+
+Financial volume in BRL.
+
+#### `isin`
+
+ISIN as published.
+
+#### `spec`
+
+Paper specification (`especi`).
+
 
 Rows are ordered by `expiry`, then `strike`, then side, then `codneg` — so if an over-broad
 prefix hits the 2,000-row clamp, the cut is deterministic and you get whole near expiries
@@ -186,20 +210,23 @@ api.option_history(p_codneg TEXT,
                    p_to     DATE DEFAULT CURRENT_DATE)
 ```
 
-<ParamField body="p_codneg" type="string" required>
-  The exact series code, e.g. `PETRH400`. Upper-cased and trimmed server-side. Get one from
-  `option_chain` — [`lookup`](/api-docs/lookup) does **not** resolve option codes, and
-  there is no endpoint that enumerates them, so you need the underlying's root (the
-  `p_prefix` argument) to find a series.
-</ParamField>
+#### `p_codneg`
 
-<ParamField body="p_from" type="date" default="CURRENT_DATE - 365">
-  Window start, inclusive.
-</ParamField>
+The exact series code, e.g. `PETRH400`. Upper-cased and trimmed server-side. Get one from
+`option_chain` — [`lookup`](/api-docs/lookup) does **not** resolve option codes, and
+there is no endpoint that enumerates them, so you need the underlying's root (the
+`p_prefix` argument) to find a series.
 
-<ParamField body="p_to" type="date" default="CURRENT_DATE">
-  Window end, inclusive.
-</ParamField>
+
+#### `p_from`
+
+Window start, inclusive.
+
+
+#### `p_to`
+
+Window end, inclusive.
+
 
 Returns [`quote_history`](/api-docs/quotes)'s column set with `side`, `strike` and `expiry`
 in place of `board` / `short_name`: `codneg`, `trade_date`, `side`, `strike`, `expiry`,
