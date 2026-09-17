@@ -75,8 +75,10 @@ order by avg_net_margin_pct desc
 # Financials — Consolidated Statements
 
 > Latest consolidated ITR/DFP per company (escopo `con`, exercise `ÚLTIMO`),
-> R$ millions. Net income uses conta 3.11 with 3.09 as the fallback used by
-> banks; equity is `Patrimônio Líquido Consolidado` (the code varies between
+> R$ millions. Net income uses conta 3.11 with 3.09 as a fallback for filings
+> that omit it — 3.09 is profit *before* statutory profit-sharing (3.10), not
+> net income, and banks do file 3.11 (Banco do Brasil, FY2024, does);
+> equity is `Patrimônio Líquido Consolidado` (the code varies between
 > 2.03 and 2.08 across chart layouts, so it is matched by name). Margins are
 > shown only where revenue is positive — quarterly figures, not annualized.
 

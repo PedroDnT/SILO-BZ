@@ -3295,8 +3295,24 @@ AS $$
                 -- several rows and summing them would double-count.
                 MAX(s.value) FILTER (WHERE s.account_code = '3.01') AS revenue,
                 MAX(s.value) FILTER (WHERE s.account_code = '3.03') AS gross_profit,
-                -- Banks file a different chart of accounts: 3.11 is absent and
-                -- net income lands on 3.09. Documented in docs/CIA_DATA_MAP.md.
+                -- The original rationale here was WRONG: banks do file a different
+                -- chart of accounts, but 3.11 is NOT generally absent from it and
+                -- 3.09 is NOT net income. Verified against Banco do Brasil
+                -- (cd_cvm 1023, FY2024, con, 12m): 3.09 = 29.17bn "Lucro ou Prejuizo
+                -- antes das Participacoes e Contribuicoes Estatutarias", 3.10 = 0.00
+                -- "Participacoes nos Lucros e Contribuicoes Estatutarias",
+                -- 3.11 = 29.17bn "Lucro ou Prejuizo Liquido Consolidado do Periodo".
+                -- So 3.11 is present and IS net income; 3.09 is profit BEFORE
+                -- statutory profit-sharing and only coincides with it because 3.10
+                -- is zero. Only one bank was checked, so some banks or periods may
+                -- still genuinely omit 3.11.
+                -- The COALESCE below is therefore harmless wherever 3.11 is filed,
+                -- but it would report profit-before-statutory-participations as net
+                -- income if 3.11 were ever null with a non-zero 3.10. Left as-is
+                -- deliberately: changing it is a behaviour change, not a doc fix.
+                -- Also note the same code means different things across charts, so
+                -- 3.01/3.03 above are not like-for-like between a bank and an
+                -- industrial filer. Documented in docs/CIA_DATA_MAP.md.
                 COALESCE(
                     MAX(s.value) FILTER (WHERE s.account_code = '3.11'),
                     MAX(s.value) FILTER (WHERE s.account_code = '3.09')
