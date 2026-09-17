@@ -1,0 +1,168 @@
+---
+title: "Your first screen"
+description: "From a publishable key to a real chart of Brazilian market data, in four calls."
+icon: "play"
+---
+
+A working path through the API in four calls: find out what exists, resolve an
+identifier, pull a series, then put two different things on one axis. Everything here
+runs anonymously with the shared testing key.
+
+```bash
+export SILO_URL="https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"
+export SILO_ANON_KEY="sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
+```
+
+<Note>
+  That key is shared by everyone reading these docs — it identifies the project, not
+  you. It goes on the `apikey` header only, never as `Authorization: Bearer`. See
+  [Quickstart](/api-docs/quickstart).
+</Note>
+
+## 1. Find out what is actually there
+
+Before anything else, ask what has landed. This is one call and it saves you from
+debugging an empty window that was never going to have data.
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/coverage" \
+  -H "apikey: $SILO_ANON_KEY" -H "Content-Type: application/json" -d '{}'
+```
+
+Read `as_of` (newest elapsed period that has landed) and `complete_through` (newest
+*complete* period, which is what default windows serve). If `complete_through` trails
+today by a month or two for a fund dataset, that is CVM's filing calendar, not an
+outage. [Market coverage](/api-docs/market-coverage) explains all four date columns.
+
+## 2. Resolve an identifier
+
+Do not guess identifiers. `lookup` takes a ticker, an ISIN, a CNPJ or a company name
+and tells you what the thing actually is.
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/lookup" \
+  -H "apikey: $SILO_ANON_KEY" -H "Content-Type: application/json" \
+  -d '{"p_query": "PETR4"}'
+```
+
+You get back `id`, `id_type`, `asset_class`, `name`, `isin`, `cnpj` and any B3
+`tickers` — the last from CVM's published FCA map, never from a guessed join between
+a ticker and a CNPJ.
+
+<Warning>
+  An unknown identifier returns an **empty array**, not an error and never a plausible
+  substitute. If `lookup` gives you nothing, the thing is not in the warehouse — stop
+  there rather than assuming the next call will work.
+</Warning>
+
+## 3. Pull a series
+
+`quote_history` gives you one ticker's daily unadjusted prices, oldest first.
+
+<CodeGroup>
+
+```bash curl
+curl -s -X POST "$SILO_URL/rpc/quote_history" \
+  -H "apikey: $SILO_ANON_KEY" -H "Content-Type: application/json" \
+  -d '{"p_ticker": "PETR4", "p_from": "2025-01-01", "p_to": "2025-12-31"}'
+```
+
+```python Python
+import os, requests
+
+URL = "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"
+H = {"apikey": os.environ["SILO_ANON_KEY"]}
+
+rows = requests.post(f"{URL}/rpc/quote_history", headers=H, json={
+    "p_ticker": "PETR4", "p_from": "2025-01-01", "p_to": "2025-12-31",
+}).json()
+print(len(rows), rows[0]["trade_date"], rows[-1]["close"])
+```
+
+```javascript JavaScript
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  'https://zcjbtpxuhdekpwcxmepn.supabase.co',
+  process.env.SILO_ANON_KEY,
+  { db: { schema: 'api' } },
+)
+
+const { data } = await supabase.rpc('quote_history', {
+  p_ticker: 'PETR4', p_from: '2025-01-01', p_to: '2025-12-31',
+})
+```
+
+</CodeGroup>
+
+One year of daily prices is roughly 250 rows, comfortably inside the 1000-row page. Ask
+for five years and the call **refuses** with SQLSTATE `22023` rather than silently
+handing you the oldest 1000 — page it with `p_after` instead. That is
+[the pagination guide](/api-docs/guides/pagination), and it is worth reading before
+you write a loop.
+
+<Note>
+  Prices are **unadjusted**: `adjusted` is `false` on every row. Splits and bonuses are
+  published in their own table, but no adjustment factor is derived here. A return
+  computed across a split date will be wrong unless you handle it yourself.
+</Note>
+
+## 4. Put two different things on one axis
+
+This is what the API is actually for. `panel` returns a long
+`(id, date, metric, value)` frame, so a listed company's price and a fund's NAV come
+back in the same shape and line up without a join.
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/panel" \
+  -H "apikey: $SILO_ANON_KEY" -H "Content-Type: application/json" \
+  -d '{
+        "p_ids": ["PETR4", "VALE3"],
+        "p_metrics": ["close"],
+        "p_from": "2025-01-01",
+        "p_freq": "month"
+      }'
+```
+
+Mix identifier kinds freely — tickers, option and termo codnegs, and fund CNPJs in one
+`p_ids` array. The fourteen available metrics are `close`, `volume`, `close_unit`,
+`close_return`, `nav`, `quota`, `delinquency`, `yield`, `inflows`, `redemptions`,
+`quotaholders`, `receivables`, `sacado_top1` and `sacado_top25`; `catalog()` documents
+what each one means and which asset classes file it.
+
+<Warning>
+  Anonymously, `panel` takes at most **3 ids per call** — a fourth raises `22023`
+  naming the limit rather than quietly dropping one. Signing in raises it to 50.
+</Warning>
+
+## Reading a null correctly
+
+The one habit worth forming early: on this API a null is information, and it has three
+distinct meanings.
+
+| You see | It means |
+| --- | --- |
+| `null` outside a family's applicable columns | **not applicable** — set by construction, e.g. `quota` for a FIDC |
+| `null` inside them | a blank in that month's filing |
+| an empty array | no rows in that window, or an unknown id |
+
+None of the three is ever filled in with a guess. There is no forward-fill, no last
+known close, no interpolation. `catalog().applicability` lists which columns each
+family files, and `metric_coverage()` gives the filed span per metric.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Paging without losing rows" icon="list-ol" href="/api-docs/guides/pagination">
+    Two cursors, one silent ceiling, and how to tell which cut you.
+  </Card>
+  <Card title="Reading a fundamental" icon="file-invoice-dollar" href="/api-docs/guides/fundamentals">
+    A company's financial statements end to end.
+  </Card>
+  <Card title="Market coverage" icon="calendar-range" href="/api-docs/market-coverage">
+    How far back each domain goes — and the one that is a ratchet.
+  </Card>
+  <Card title="For agents" icon="robot" href="/api-docs/agents">
+    The machine-readable contract, for tool-using models.
+  </Card>
+</CardGroup>
