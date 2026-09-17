@@ -4,6 +4,12 @@ description: "B3's securities-lending book: short interest and % of float, the s
 icon: "hand-holding-dollar"
 ---
 
+<Note>
+  **Parameters, response columns and types are generated** from the SQL catalog and
+  render under **Endpoints → Securities lending** in the sidebar. This page carries what a
+  schema cannot: the conventions, the nulls that are deliberate, and the traps.
+</Note>
+
 Four views over B3's securities-lending market — what is on loan, at what rate, and who
 traded it. Together they are the closest thing the Brazilian market publishes to a short
 interest report.
@@ -53,38 +59,36 @@ never double-counted.
 
 PostgREST filters on any returned column. The ones worth knowing:
 
-<ParamField query="ticker" type="string">
-  `eq.PETR4`. The B3 negotiation code.
-</ParamField>
+<Note>
+  **Sorting on a nullable column:** nulls sort **last** by default in PostgREST. `pct_float`
+  and `days_to_cover` are null whenever their denominator is missing, so `order=pct_float.desc`
+  silently buries those rows at the end rather than dropping them — add `.nullslast`
+  explicitly if you are relying on that placement.
+</Note>
 
-<ParamField query="trade_date" type="date">
-  `eq.2026-09-16`, or `gte.` / `lte.` for a window. Sessions only — B3 publishes no
-  weekend rows.
-</ParamField>
+#### `ticker`
 
-<ParamField query="float_basis" type="string">
-  `eq.index_free_float` or `eq.shares_outstanding`. **Required for any ranking** — see
-  below.
-</ParamField>
+`eq.PETR4`. The B3 negotiation code.
 
-<ParamField query="instrument_category" type="string">
-  `eq.SHARES`, `eq.UNIT`, `eq.ETF EQUITIES`, `eq.BDR`, `eq.FUNDS`. An unfiltered
-  days-to-cover screen is dominated by index ETFs, which are legitimately on loan against
-  small secondary volume but are not the crowded single-name shorts the screen is for.
-</ParamField>
 
-<ParamField query="select" type="string">
-  Column list, e.g. `ticker,trade_date,pct_float,float_basis`.
-</ParamField>
+#### `trade_date`
 
-<ParamField query="order" type="string">
-  e.g. `pct_float.desc`. Nulls sort last by default in PostgREST; add `.nullslast`
-  explicitly if you rely on it.
-</ParamField>
+`eq.2026-09-16`, or `gte.` / `lte.` for a window. Sessions only — B3 publishes no
+weekend rows.
 
-<ParamField query="limit" type="integer">
-  Page size, capped at 1,000 server-side. Pair with `offset` to page.
-</ParamField>
+
+#### `float_basis`
+
+`eq.index_free_float` or `eq.shares_outstanding`. **Required for any ranking** — see
+below.
+
+
+#### `instrument_category`
+
+`eq.SHARES`, `eq.UNIT`, `eq.ETF EQUITIES`, `eq.BDR`, `eq.FUNDS`. An unfiltered
+days-to-cover screen is dominated by index ETFs, which are legitimately on loan against
+small secondary volume but are not the crowded single-name shorts the screen is for.
+
 
 ### `pct_float` is two different metrics
 
@@ -120,71 +124,89 @@ PostgREST filters on any returned column. The ones worth knowing:
 
 ### Returns
 
-<ResponseField name="trade_date" type="date">
-  Session date. Part of the grain.
-</ResponseField>
-<ResponseField name="ticker" type="text">
-  B3 negotiation code. Part of the grain.
-</ResponseField>
-<ResponseField name="asset_name" type="text">
-  Instrument name, from the registry where available, else B3's `empresa` field.
-</ResponseField>
-<ResponseField name="isin" type="text">
-  ISIN as published.
-</ResponseField>
-<ResponseField name="sector" type="text">
-  B3's full `Setor / Subsetor` string, ~34 buckets.
-</ResponseField>
-<ResponseField name="sector_top" type="text">
-  The part before the slash — B3's own top-level sector, with the source's spelling
-  variants merged (`Bens Indls` and `Bens Industriais` are one sector). No ticker is moved
-  between sectors and no taxonomy is invented; a prefix the merge list does not recognise
-  passes through verbatim. `null` outside the index universe.
-</ResponseField>
-<ResponseField name="instrument_category" type="text">
-  `SHARES`, `UNIT`, `BDR`, `ETF EQUITIES`, `FUNDS` — from the instrument registry.
-</ResponseField>
-<ResponseField name="short_quantity" type="numeric">
-  Shares on loan, summed across specifications (a ticker can carry `ON` and `ON NM`).
-</ResponseField>
-<ResponseField name="short_value" type="numeric">
-  Balance on loan in **BRL**.
-</ResponseField>
-<ResponseField name="pct_float" type="numeric">
-  `short_quantity` as a percentage of `float_denominator`, in **percentage points**.
-  **Read with `float_basis`.** `null` when there is no denominator.
-</ResponseField>
-<ResponseField name="float_basis" type="text">
-  `index_free_float` | `shares_outstanding` | `null`. Which denominator produced
-  `pct_float`.
-</ResponseField>
-<ResponseField name="float_denominator" type="numeric">
-  The share count actually divided by.
-</ResponseField>
-<ResponseField name="days_to_cover" type="numeric">
-  Short interest ratio: sessions of average volume needed to buy the position back
-  (`short_quantity / adtv_qty_21`). `null` when the name did not trade.
-</ResponseField>
-<ResponseField name="adtv_value_21" type="numeric">
-  Trailing 21-session average traded value in BRL, computed per short-interest date — a
-  row dated three weeks ago is divided by the volume that actually preceded *it*.
-</ResponseField>
-<ResponseField name="adtv_sessions" type="integer">
-  How many sessions that average actually covers. Fewer than 21 (early in a listing, or
-  after a halt) means a shorter, noisier window — a usable estimate, but you are told
-  rather than left to assume.
-</ResponseField>
-<ResponseField name="lender_rate_pct" type="numeric">
-  Quantity-weighted average rate paid to the lender, **percentage points a.a.** Markets
-  with no registered quantity are excluded so a nominal rate on zero business cannot drag
-  the average.
-</ResponseField>
-<ResponseField name="borrower_rate_pct" type="numeric">
-  Quantity-weighted average rate charged to the borrower, percentage points a.a.
-</ResponseField>
-<ResponseField name="contracts" type="numeric">
-  Number of registered contracts for the session.
-</ResponseField>
+#### `trade_date`
+
+Session date. Part of the grain.
+
+#### `ticker`
+
+B3 negotiation code. Part of the grain.
+
+#### `asset_name`
+
+Instrument name, from the registry where available, else B3's `empresa` field.
+
+#### `isin`
+
+ISIN as published.
+
+#### `sector`
+
+B3's full `Setor / Subsetor` string, ~34 buckets.
+
+#### `sector_top`
+
+The part before the slash — B3's own top-level sector, with the source's spelling
+variants merged (`Bens Indls` and `Bens Industriais` are one sector). No ticker is moved
+between sectors and no taxonomy is invented; a prefix the merge list does not recognise
+passes through verbatim. `null` outside the index universe.
+
+#### `instrument_category`
+
+`SHARES`, `UNIT`, `BDR`, `ETF EQUITIES`, `FUNDS` — from the instrument registry.
+
+#### `short_quantity`
+
+Shares on loan, summed across specifications (a ticker can carry `ON` and `ON NM`).
+
+#### `short_value`
+
+Balance on loan in **BRL**.
+
+#### `pct_float`
+
+`short_quantity` as a percentage of `float_denominator`, in **percentage points**.
+**Read with `float_basis`.** `null` when there is no denominator.
+
+#### `float_basis`
+
+`index_free_float` | `shares_outstanding` | `null`. Which denominator produced
+`pct_float`.
+
+#### `float_denominator`
+
+The share count actually divided by.
+
+#### `days_to_cover`
+
+Short interest ratio: sessions of average volume needed to buy the position back
+(`short_quantity / adtv_qty_21`). `null` when the name did not trade.
+
+#### `adtv_value_21`
+
+Trailing 21-session average traded value in BRL, computed per short-interest date — a
+row dated three weeks ago is divided by the volume that actually preceded *it*.
+
+#### `adtv_sessions`
+
+How many sessions that average actually covers. Fewer than 21 (early in a listing, or
+after a halt) means a shorter, noisier window — a usable estimate, but you are told
+rather than left to assume.
+
+#### `lender_rate_pct`
+
+Quantity-weighted average rate paid to the lender, **percentage points a.a.** Markets
+with no registered quantity are excluded so a nominal rate on zero business cannot drag
+the average.
+
+#### `borrower_rate_pct`
+
+Quantity-weighted average rate charged to the borrower, percentage points a.a.
+
+#### `contracts`
+
+Number of registered contracts for the session.
+
 
 ### Example
 
@@ -260,24 +282,30 @@ The same book aggregated by B3 top-level sector, one row per `(sector, trade_dat
 
 ### Returns
 
-<ResponseField name="trade_date" type="date">
-  Session date.
-</ResponseField>
-<ResponseField name="sector" type="text">
-  B3 top-level sector, or **`Não classificado`**.
-</ResponseField>
-<ResponseField name="tickers" type="integer">
-  How many tickers went into the bucket.
-</ResponseField>
-<ResponseField name="short_value" type="numeric">
-  Total balance on loan for the sector, BRL.
-</ResponseField>
-<ResponseField name="short_value_equities" type="numeric">
-  The same total restricted to `SHARES` and `UNIT`.
-</ResponseField>
-<ResponseField name="short_quantity" type="numeric">
-  Total shares on loan for the sector.
-</ResponseField>
+#### `trade_date`
+
+Session date.
+
+#### `sector`
+
+B3 top-level sector, or **`Não classificado`**.
+
+#### `tickers`
+
+How many tickers went into the bucket.
+
+#### `short_value`
+
+Total balance on loan for the sector, BRL.
+
+#### `short_value_equities`
+
+The same total restricted to `SHARES` and `UNIT`.
+
+#### `short_quantity`
+
+Total shares on loan for the sector.
+
 
 <Note>
   **`Não classificado` is a real bucket, not a rounding bin.** Sector comes from the B3
@@ -301,37 +329,47 @@ The session's individual lending trades, aggregated per `(ticker, trade_date)`.
 
 ### Returns
 
-<ResponseField name="trade_date" type="date">
-  Session date. Part of the grain.
-</ResponseField>
-<ResponseField name="ticker" type="text">
-  B3 negotiation code. Part of the grain.
-</ResponseField>
-<ResponseField name="trades" type="integer">
-  Number of trades in the session.
-</ResponseField>
-<ResponseField name="quantity" type="numeric">
-  Total shares traded.
-</ResponseField>
-<ResponseField name="rate_pct" type="numeric">
-  **Quantity-weighted** average annualized rate, percentage points.
-</ResponseField>
-<ResponseField name="rate_min_pct" type="numeric">
-  Lowest rate printed in the session.
-</ResponseField>
-<ResponseField name="rate_max_pct" type="numeric">
-  Highest rate printed in the session.
-</ResponseField>
-<ResponseField name="borrower_brokers" type="integer">
-  Distinct **brokerages** on the borrowing leg — not distinct borrowers.
-</ResponseField>
-<ResponseField name="lender_brokers" type="integer">
-  Distinct brokerages on the lending leg.
-</ResponseField>
-<ResponseField name="internal_trades" type="integer">
-  Trades where the same broker code stood on both legs. See below — this is usually most
-  of them.
-</ResponseField>
+#### `trade_date`
+
+Session date. Part of the grain.
+
+#### `ticker`
+
+B3 negotiation code. Part of the grain.
+
+#### `trades`
+
+Number of trades in the session.
+
+#### `quantity`
+
+Total shares traded.
+
+#### `rate_pct`
+
+**Quantity-weighted** average annualized rate, percentage points.
+
+#### `rate_min_pct`
+
+Lowest rate printed in the session.
+
+#### `rate_max_pct`
+
+Highest rate printed in the session.
+
+#### `borrower_brokers`
+
+Distinct **brokerages** on the borrowing leg — not distinct borrowers.
+
+#### `lender_brokers`
+
+Distinct brokerages on the lending leg.
+
+#### `internal_trades`
+
+Trades where the same broker code stood on both legs. See below — this is usually most
+of them.
+
 
 <Note>
   **`rate_pct` and B3's own published average are both right, and they differ.** This view
@@ -378,42 +416,53 @@ One row per `(ticker, trade_date, broker_code)`: what each brokerage lent and bo
 
 ### Returns
 
-<ResponseField name="trade_date" type="date">
-  Session date. Part of the grain.
-</ResponseField>
-<ResponseField name="ticker" type="text">
-  B3 negotiation code. Part of the grain.
-</ResponseField>
-<ResponseField name="broker_code" type="text">
-  B3 participant code. Part of the grain. **The intermediary, never the owner.**
-</ResponseField>
-<ResponseField name="broker_name" type="text">
-  Participant name as B3 publishes it.
-</ResponseField>
-<ResponseField name="quantity_lent" type="numeric">
-  Shares this broker lent in the session.
-</ResponseField>
-<ResponseField name="quantity_borrowed" type="numeric">
-  Shares this broker borrowed.
-</ResponseField>
-<ResponseField name="quantity_net" type="numeric">
-  `quantity_lent - quantity_borrowed`. Positive means the broker's book lent more than it
-  borrowed. A trade crossed internally contributes to **both** sides, so it cancels here
-  rather than inflating either direction.
-</ResponseField>
-<ResponseField name="lender_rate_pct" type="numeric">
-  Quantity-weighted rate on the lending leg, percentage points a.a.
-</ResponseField>
-<ResponseField name="borrower_rate_pct" type="numeric">
-  Quantity-weighted rate on the borrowing leg.
-</ResponseField>
-<ResponseField name="internal_legs" type="integer">
-  Legs where this broker was on both sides of the trade.
-</ResponseField>
-<ResponseField name="internal_qty" type="numeric">
-  Quantity on those internal legs. Compare against
-  `quantity_lent + quantity_borrowed` to get the internal share.
-</ResponseField>
+#### `trade_date`
+
+Session date. Part of the grain.
+
+#### `ticker`
+
+B3 negotiation code. Part of the grain.
+
+#### `broker_code`
+
+B3 participant code. Part of the grain. **The intermediary, never the owner.**
+
+#### `broker_name`
+
+Participant name as B3 publishes it.
+
+#### `quantity_lent`
+
+Shares this broker lent in the session.
+
+#### `quantity_borrowed`
+
+Shares this broker borrowed.
+
+#### `quantity_net`
+
+`quantity_lent - quantity_borrowed`. Positive means the broker's book lent more than it
+borrowed. A trade crossed internally contributes to **both** sides, so it cancels here
+rather than inflating either direction.
+
+#### `lender_rate_pct`
+
+Quantity-weighted rate on the lending leg, percentage points a.a.
+
+#### `borrower_rate_pct`
+
+Quantity-weighted rate on the borrowing leg.
+
+#### `internal_legs`
+
+Legs where this broker was on both sides of the trade.
+
+#### `internal_qty`
+
+Quantity on those internal legs. Compare against
+`quantity_lent + quantity_borrowed` to get the internal share.
+
 
 ### Example
 

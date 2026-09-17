@@ -4,6 +4,12 @@ description: "The researcher endpoint — long (id, date, metric, value) observa
 icon: "table"
 ---
 
+<Note>
+  **Parameters, response columns and types are generated** from the SQL catalog and
+  render under **Endpoints → Panel** in the sidebar. This page carries what a
+  schema cannot: the conventions, the nulls that are deliberate, and the traps.
+</Note>
+
 `panel` is the primitive this API is built around. One row is an **observation**:
 
 ```
@@ -46,66 +52,75 @@ api.panel(p_ids         TEXT[],
 
 ## Parameters
 
-<ParamField body="p_ids" type="string[]" required>
-  Tickers, derivative codnegs, and/or CNPJs, mixed freely. Each id is classified by shape:
-  strip the non-digits, and **exactly 14 digits means CNPJ** — anything else is treated as a
-  B3 code and upper-cased. Whether that code resolves as a cash ticker, an option series, or
-  a termo contract is decided by which market segment it prints in, not by the string.
-  Blank entries are dropped. An empty array yields no rows.
+#### `p_ids`
 
-  **Capped by tier: 3 ids anonymously, 50 signed in.** Exceeding it raises `22023`
-  (surfacing as a `400`) naming the limit — the panel is never quietly truncated to fit,
-  because a short panel that looks complete is worse than an error.
-</ParamField>
+Tickers, derivative codnegs, and/or CNPJs, mixed freely. Each id is classified by shape:
+strip the non-digits, and **exactly 14 digits means CNPJ** — anything else is treated as a
+B3 code and upper-cased. Whether that code resolves as a cash ticker, an option series, or
+a termo contract is decided by which market segment it prints in, not by the string.
+Blank entries are dropped. An empty array yields no rows.
 
-<ParamField body="p_metrics" type="string[]" default='["close","nav"]'>
-  Which metrics to emit. Lower-cased and trimmed server-side. See the table below —
-  **a name that is not on it is silently ignored**, not an error, so a typo shows up as
-  missing rows rather than a `400`.
-</ParamField>
+**Capped by tier: 3 ids anonymously, 50 signed in.** Exceeding it raises `22023`
+(surfacing as a `400`) naming the limit — the panel is never quietly truncated to fit,
+because a short panel that looks complete is worse than an error.
 
-<ParamField body="p_from" type="date" default="CURRENT_DATE - 365">
-  Window start, inclusive. For fund metrics it is snapped **down** to the first of that
-  month; for quote metrics it is used as-is.
-</ParamField>
 
-<ParamField body="p_to" type="date" default="null (honest window)">
-  Window end, inclusive. **Omitted (null), fund metrics end at each family's latest
-  COMPLETE period** — a month CVM has only fractionally published is not served, so a
-  default panel never shows a fake trailing collapse. Quote/option/termo metrics still
-  run to today (a session print is complete by construction). Passing an explicit
-  `p_to` is the escape hatch: the window is served verbatim, partial months included.
-  [`coverage`](/api-docs/coverage) reports each family's bound as `complete_through`.
-</ParamField>
+#### `p_metrics`
 
-<ParamField body="p_freq" type="string" default="month">
-  `month` or `day`. `day`, `d`, and `daily` all mean daily; **every other value — including
-  a typo like `week` — falls back to `month`** rather than erroring.
-</ParamField>
+Which metrics to emit. Lower-cased and trimmed server-side. See the table below —
+**a name that is not on it is silently ignored**, not an error, so a typo shows up as
+missing rows rather than a `400`.
 
-<ParamField body="p_entity_type" type="string" default="null">
-  Restrict the fund arms to one family: `fi`, `fidc`, `fii`, `fip` or `fiagro`. Anything
-  else raises `22023` listing the five. With `p_ids` empty it selects **universe mode**
-  (below).
-</ParamField>
 
-<ParamField body="p_min_nav" type="numeric" default="null">
-  Universe mode only: keep funds whose **latest non-null net assets in the window** are at
-  least this many BRL. A filter on a published value, not a rank.
-</ParamField>
+#### `p_from`
 
-<ParamField body="p_min_months" type="integer" default="null">
-  Universe mode only: keep funds with at least this many **non-null observations of the
-  first requested metric** in the window — so a fund that filed two of twelve months cannot
-  be compared with one that filed all twelve.
-</ParamField>
+Window start, inclusive. For fund metrics it is snapped **down** to the first of that
+month; for quote metrics it is used as-is.
 
-<ParamField body="p_after" type="string" default="null">
-  The paging cursor. **`null` (omitted)** is whole-result mode: the call refuses above
-  1,000 rows. **`''`** asks for the first page. **`'<date>|<id>|<metric>|<asset_class>'`**,
-  copied from the last row you received, asks for the page after it. Every page is exactly
-  1,000 rows until the last, which is shorter. A malformed cursor raises `22023`.
-</ParamField>
+
+#### `p_to`
+
+Window end, inclusive. **Omitted (null), fund metrics end at each family's latest
+COMPLETE period** — a month CVM has only fractionally published is not served, so a
+default panel never shows a fake trailing collapse. Quote/option/termo metrics still
+run to today (a session print is complete by construction). Passing an explicit
+`p_to` is the escape hatch: the window is served verbatim, partial months included.
+[`coverage`](/api-docs/coverage) reports each family's bound as `complete_through`.
+
+
+#### `p_freq`
+
+`month` or `day`. `day`, `d`, and `daily` all mean daily; **every other value — including
+a typo like `week` — falls back to `month`** rather than erroring.
+
+
+#### `p_entity_type`
+
+Restrict the fund arms to one family: `fi`, `fidc`, `fii`, `fip` or `fiagro`. Anything
+else raises `22023` listing the five. With `p_ids` empty it selects **universe mode**
+(below).
+
+
+#### `p_min_nav`
+
+Universe mode only: keep funds whose **latest non-null net assets in the window** are at
+least this many BRL. A filter on a published value, not a rank.
+
+
+#### `p_min_months`
+
+Universe mode only: keep funds with at least this many **non-null observations of the
+first requested metric** in the window — so a fund that filed two of twelve months cannot
+be compared with one that filed all twelve.
+
+
+#### `p_after`
+
+The paging cursor. **`null` (omitted)** is whole-result mode: the call refuses above
+1,000 rows. **`''`** asks for the first page. **`'<date>|<id>|<metric>|<asset_class>'`**,
+copied from the last row you received, asks for the page after it. Every page is exactly
+1,000 rows until the last, which is shorter. A malformed cursor raises `22023`.
+
 
 ## Universe mode
 
@@ -161,39 +176,46 @@ know: FIDC `delinquency` is null on every row through 2024-12 and filed from 202
 
 ## Returns
 
-<ResponseField name="id" type="text">
-  The identifier as classified: an upper-cased B3 code (cash ticker, option series, or termo
-  contract), or a 14-digit CNPJ.
-</ResponseField>
-<ResponseField name="id_type" type="text">
-  `ticker`, `option`, `termo`, or `cnpj`.
-</ResponseField>
-<ResponseField name="asset_class" type="text">
-  For cash tickers, the conservative B3 type (`equity`, `unit`, `bdr`, `fund_quota`, or
-  `cash_security`) — `fund_quota` deliberately does not guess ETF versus FII. `derivative`
-  for option and termo codnegs. For funds, the vehicle's `entity_type` (`fi`, `fidc`,
-  `fii`, `fip`, `fiagro`).
-</ResponseField>
-<ResponseField name="date" type="date">
-  Observation date. At `freq=month` this is **always the first day of the month**, for every
-  id, so ids from different sources land on the same row. At `freq=day` it is the session
-  date.
+#### `id`
 
-  This is normalisation, not the stored value: CVM publishes FI/FII/FIAGRO at first-of-month,
-  FIDC at month-**end**, and FIP at year-**end**. The panel snaps all three to first-of-month
-  so they can be compared. [`funds`](/api-docs/funds) and `fund_nav` still serve the period
-  exactly as filed.
-</ResponseField>
-<ResponseField name="metric" type="text">
-  One of the metric names above.
-</ResponseField>
-<ResponseField name="value" type="numeric">
-  The observation. Nullable for `close` and `volume`; for every other metric a null is
-  emitted as **no row at all** (see below).
-</ResponseField>
-<ResponseField name="source" type="text">
-  `b3_cotahist` or `cvm` — provenance travels with the row.
-</ResponseField>
+The identifier as classified: an upper-cased B3 code (cash ticker, option series, or termo
+contract), or a 14-digit CNPJ.
+
+#### `id_type`
+
+`ticker`, `option`, `termo`, or `cnpj`.
+
+#### `asset_class`
+
+For cash tickers, the conservative B3 type (`equity`, `unit`, `bdr`, `fund_quota`, or
+`cash_security`) — `fund_quota` deliberately does not guess ETF versus FII. `derivative`
+for option and termo codnegs. For funds, the vehicle's `entity_type` (`fi`, `fidc`,
+`fii`, `fip`, `fiagro`).
+
+#### `date`
+
+Observation date. At `freq=month` this is **always the first day of the month**, for every
+id, so ids from different sources land on the same row. At `freq=day` it is the session
+date.
+
+This is normalisation, not the stored value: CVM publishes FI/FII/FIAGRO at first-of-month,
+FIDC at month-**end**, and FIP at year-**end**. The panel snaps all three to first-of-month
+so they can be compared. [`funds`](/api-docs/funds) and `fund_nav` still serve the period
+exactly as filed.
+
+#### `metric`
+
+One of the metric names above.
+
+#### `value`
+
+The observation. Nullable for `close` and `volume`; for every other metric a null is
+emitted as **no row at all** (see below).
+
+#### `source`
+
+`b3_cotahist` or `cvm` — provenance travels with the row.
+
 
 Rows are ordered by `date`, then `id`, then `metric`.
 

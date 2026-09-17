@@ -4,12 +4,6 @@ description: "Resolve a ticker, ISIN, CNPJ, fund name, or company name to the id
 icon: "magnifying-glass"
 ---
 
-> **Company rows now carry `tickers`** — an array of the company's active B3 tickers
-> from CVM's *published* FCA valores-mobiliários registry (the CNPJ and the ticker
-> arrive on the same CVM row, so nothing is name-matched). `null` when the company has
-> no active published listing. `lookup('petrobras')` returns the company with
-> `["PETR3","PETR4"]` attached.
-
 `lookup` turns something a human typed into something [`panel`](/api-docs/panel),
 [`quotes`](/api-docs/quotes), or [`funds`](/api-docs/funds) will accept. It searches three
 populations at once — B3 tickers, CVM funds, and listed companies — and returns whatever
@@ -19,6 +13,12 @@ matched, tagged with the key that matched it.
 api.lookup(p_query TEXT)
 ```
 
+<Note>
+  **Parameters, response columns and types are generated** from the SQL catalog and render
+  under **Endpoints → Lookup** in the sidebar. This page carries what a schema cannot: what
+  the matching actually does, and which columns are null on purpose.
+</Note>
+
 <Warning>
   **It does not invent identifier matches.** There is no ticker ↔ CNPJ join here. If a query
   matches both a ticker and a listed company, you get two rows and it is your call whether
@@ -26,59 +26,49 @@ api.lookup(p_query TEXT)
   the kind of fabrication this API refuses to make.
 </Warning>
 
-## Parameters
+## How `p_query` matches
 
-<ParamField body="p_query" type="string" required>
-  What to resolve. Matching differs by population:
+Matching differs by population, and the difference is the whole behaviour of the endpoint:
 
-  - **Ticker** — exact match, upper-cased and trimmed. No substring search.
-  - **ISIN** — exact match, upper-cased and trimmed.
-  - **CNPJ** — non-digits are stripped, then matched exactly. Works for both funds and
-    listed companies.
-  - **`cd_cvm`** — exact match against the CVM company code.
-  - **Fund name / company name** — case-insensitive **substring**.
-</ParamField>
+| Population | Matching |
+| --- | --- |
+| Ticker | **exact**, upper-cased and trimmed — no substring search |
+| ISIN | **exact**, upper-cased and trimmed |
+| CNPJ | non-digits stripped, then **exact**; works for funds and listed companies |
+| `cd_cvm` | **exact**, against the CVM company code |
+| Fund or company name | case-insensitive **substring** |
 
 <Note>
-  Because names are matched as substrings, an empty string or a single common letter matches
-  nearly every fund and company and you get an arbitrary 20 of them. Send something specific.
+  Because names match as substrings, an empty string or a single common letter matches nearly
+  every fund and company, and you get an arbitrary 20 of them. Send something specific.
 </Note>
 
-## Returns
+## Field notes
 
-<ResponseField name="id" type="text">
-  The identifier to use in other calls: a ticker, a 14-digit CNPJ, or a `cd_cvm`.
-</ResponseField>
-<ResponseField name="id_type" type="text">
-  `ticker`, `cnpj`, or `cd_cvm` — tells you which endpoint accepts this `id`.
-</ResponseField>
-<ResponseField name="asset_class" type="text">
-  For tickers, the conservative B3 cash type (`equity`, `unit`, `bdr`, `fund_quota`, or
-  `cash_security`); the fund's `entity_type` (`fi`, `fidc`, `fii`, `fip`, `fiagro`) for
-  funds; and `cia` for listed companies.
-</ResponseField>
-<ResponseField name="name" type="text">
-  Short name for a ticker, registered fund name, or company name. Nullable for funds whose
-  registry name we do not hold.
-</ResponseField>
-<ResponseField name="isin" type="text">
-  ISIN — populated for tickers only; null for funds and companies.
-</ResponseField>
-<ResponseField name="cnpj" type="text">
-  The entity's CNPJ, for funds and companies. **Always null on ticker rows** — again, no
-  invented ticker-to-issuer match.
-</ResponseField>
-<ResponseField name="tickers" type="text[]">
-  A listed company's active B3 trading codes, from CVM's **published** FCA
-  valores-mobiliários filing (`cia_ticker`) — never matched by name. Populated on
-  `cia` rows only; null on fund and ticker rows, and null for a company with no
-  active published listing.
+Only the columns that need explaining. The full list is in the generated endpoint page.
 
-  ```json
-  { "id_type": "cd_cvm", "id": "9512", "name": "PETROLEO BRASILEIRO SA PETROBRAS",
-    "cnpj": "33000167000101", "tickers": ["PETR3", "PETR4"], "isin": null }
-  ```
-</ResponseField>
+| Field | What to know |
+| --- | --- |
+| `id_type` | `ticker`, `cnpj`, or `cd_cvm` — this is what tells you *which endpoint* will accept the `id` beside it. |
+| `asset_class` | Three different vocabularies in one column: the conservative B3 cash type for tickers (`equity`, `unit`, `bdr`, `fund_quota`, `cash_security`), the fund's `entity_type` for funds (`fi`, `fidc`, `fii`, `fip`, `fiagro`), and `cia` for listed companies. |
+| `name` | Nullable for funds whose registry name we do not hold — a null name is a missing registry row, not a missing fund. |
+| `isin` | Tickers only. Null on fund and company rows by construction. |
+| `cnpj` | **Always null on ticker rows.** Again: no invented ticker-to-issuer match. Populated for funds and companies. |
+| `tickers` | A listed company's active B3 trading codes, from CVM's **published** FCA valores-mobiliários filing (`cia_ticker`) — never matched by name. Populated on `cia` rows only; null on fund and ticker rows, and null for a company with no active published listing. |
+
+The CNPJ and the ticker arrive on the same CVM row, so nothing in `tickers` is inferred:
+
+```json
+{ "id_type": "cd_cvm", "id": "9512", "name": "PETROLEO BRASILEIRO SA PETROBRAS",
+  "cnpj": "33000167000101", "tickers": ["PETR3", "PETR4"], "isin": null }
+```
+
+<Warning>
+  **Not every listed company has a published ticker map.** `lookup('ITUB4')` returns only a
+  ticker row, with `cnpj` and `tickers` both null — so `financials('ITUB4')` resolves nothing
+  and answers `200 []`. When a ticker gives you no company row, resolve by company name or
+  `cd_cvm` instead. See [Known limitations](/api-docs/known-limitations).
+</Warning>
 
 ## Example
 

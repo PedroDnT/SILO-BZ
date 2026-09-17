@@ -37,82 +37,29 @@ api.termo_history(p_codneg TEXT,
                   p_to     DATE DEFAULT CURRENT_DATE)
 ```
 
-<ParamField body="p_codneg" type="string" required>
-  The termo negotiation code, e.g. `PETR4T`. Upper-cased and trimmed server-side.
-  [`lookup`](/api-docs/lookup) does **not** resolve termo codes and no endpoint enumerates
-  them, so you must already know the code — it is the CODNEG exactly as B3 publishes it in
-  COTAHIST for TPMERC `030`. Probing is safe: a code with no prints returns `200 []`, never
-  a fabricated price.
-</ParamField>
+<Note>
+  **Parameters, response columns and types are generated** from the SQL catalog and render
+  under **Endpoints → Derivatives** in the sidebar. This page carries what a schema cannot.
+</Note>
 
-<ParamField body="p_from" type="date" default="CURRENT_DATE - 365">
-  Window start, inclusive.
-</ParamField>
+`p_from` and `p_to` are both **inclusive**.
 
-<ParamField body="p_to" type="date" default="CURRENT_DATE">
-  Window end, inclusive.
-</ParamField>
+### Field notes
 
-### Returns
+Only the columns that need explaining:
 
-<ResponseField name="codneg" type="text">
-  Negotiation code. Part of the grain.
-</ResponseField>
-<ResponseField name="trade_date" type="date">
-  Session date. Part of the grain.
-</ResponseField>
-<ResponseField name="term_days" type="text">
-  COTAHIST `prazot` — the contract's term in days. **Text**, as stored, same as
-  `quotes.term_days`. Part of the grain.
-</ResponseField>
-<ResponseField name="spec" type="text">
-  Paper specification (`especi`).
-</ResponseField>
-<ResponseField name="currency" type="text">
-  Currency, defaulting to `R$` when the source leaves it blank.
-</ResponseField>
-<ResponseField name="open" type="numeric">
-  Opening price.
-</ResponseField>
-<ResponseField name="high" type="numeric">
-  Session high.
-</ResponseField>
-<ResponseField name="low" type="numeric">
-  Session low.
-</ResponseField>
-<ResponseField name="average" type="numeric">
-  Session average price.
-</ResponseField>
-<ResponseField name="close" type="numeric">
-  Closing price. Unadjusted.
-</ResponseField>
-<ResponseField name="bid" type="numeric">
-  Best bid at close (`oferta_compra`).
-</ResponseField>
-<ResponseField name="ask" type="numeric">
-  Best ask at close (`oferta_venda`).
-</ResponseField>
-<ResponseField name="trades" type="integer">
-  Number of trades (`negocios`).
-</ResponseField>
-<ResponseField name="quantity" type="numeric">
-  Quantity traded (`quantidade`), exactly as COTAHIST publishes it.
-</ResponseField>
-<ResponseField name="volume" type="numeric">
-  Financial volume in BRL.
-</ResponseField>
-<ResponseField name="isin" type="text">
-  ISIN as published.
-</ResponseField>
-<ResponseField name="quotation_factor" type="integer">
-  COTAHIST `fator_cotacao`.
-</ResponseField>
-<ResponseField name="adjusted" type="boolean">
-  Always `false`.
-</ResponseField>
-<ResponseField name="source" type="text">
-  Provenance, `b3_cotahist`.
-</ResponseField>
+| Field | What to know |
+| --- | --- |
+| `p_codneg` | The CODNEG exactly as B3 publishes it in COTAHIST for TPMERC `030`, e.g. `PETR4T`. Upper-cased and trimmed server-side. [`lookup`](/api-docs/lookup) does **not** resolve termo codes and no endpoint enumerates them, so you must already know it. Probing is safe: a code with no prints returns `200 []`, never a fabricated price. |
+| `term_days` | COTAHIST `prazot`, the contract's term in days — **text**, as stored, not an integer. Part of the grain, same as `quotes.term_days`. |
+| `currency` | Defaults to `R$` when the source leaves it blank. The only column on this endpoint where a value is supplied rather than published. |
+| `quantity` | Exactly as COTAHIST publishes it — no lot normalisation. |
+| `adjusted` | Always `false`. There is no corporate-action adjustment anywhere in this warehouse. |
+
+Source-field provenance for the price columns, since the names differ from B3's:
+`spec` ← `especi`, `bid` ← `oferta_compra`, `ask` ← `oferta_venda`, `trades` ← `negocios`,
+`quantity` ← `quantidade`, `quotation_factor` ← `fator_cotacao`. Every COTAHIST field is
+defined on the [COTAHIST dictionary](/api-docs/cotahist-dictionary).
 
 Rows are ordered by `trade_date`, then `term_days` shortest-first — sorted by length and then
 as text, so `30` precedes `60` precedes `120` without a numeric cast that could fail on
