@@ -49,6 +49,8 @@
           "api-docs/instruments",
           "api-docs/options",
           "api-docs/termo",
+          "api-docs/lending",
+          "api-docs/flows",
           "api-docs/funds",
           "api-docs/financials",
           "api-docs/holdings",

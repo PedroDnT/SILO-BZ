@@ -26,6 +26,8 @@ Start with Conventions & limits: it is the single source of truth for auth tiers
 - [Cash instruments](https://octo-98895abd.mintlify.site/api-docs/instruments.md): One endpoint per B3 cash instrument type — equities, BDRs, units, fund quotas and other cash paper, each with both lot sizes.
 - [Options](https://octo-98895abd.mintlify.site/api-docs/options.md): B3 equity options as published — one session's chain for a codneg prefix, or one series' daily history.
 - [Termo](https://octo-98895abd.mintlify.site/api-docs/termo.md): B3 forward (termo) contracts as published — one code's daily history, term included in the grain.
+- [Securities lending](https://octo-98895abd.mintlify.site/api-docs/lending.md): B3's securities-lending book — short interest and % of float, the sector aggregate, the trade tape and the brokerage on each leg. A ratchet: ~21 business days at the source, no archive.
+- [Investor flow](https://octo-98895abd.mintlify.site/api-docs/flows.md): Daily buy/sell/net flow by investor type, differenced from B3's month-to-date participation snapshots and published T+2.
 - [COTAHIST Dictionary](https://octo-98895abd.mintlify.site/api-docs/cotahist-dictionary.md): Every field of B3's COTAHIST register-01 record, the TPMERC and CODBDI code tables, and how Silo maps them — verified against the rb3 reference layout.
 
 ## Funds and credit
