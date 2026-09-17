@@ -95,6 +95,69 @@ def test_free_float_prefers_the_least_capped_index():
     )
 
 
+
+def test_dim_ticker_float_is_one_row_per_ticker():
+    """Neither company source is keyed by what the join assumes.
+
+    vw_company_ticker is DISTINCT ON (cnpj_cia, codneg) — per (company,
+    ticker), not per ticker — and cia_company's primary key is cd_cvm, not
+    cnpj_cia. Joined raw, a ticker CVM published under two CNPJs, or a CNPJ
+    carrying two registration codes, multiplies dim_ticker_float. Because both
+    joins sit to the RIGHT of the aggregation in fact_short_interest_daily,
+    every duplicate carries the FULL position, so the short book is summed
+    twice and the ticker renders twice in the rankings (observed on /short
+    2026-09-16: ITUB3 at ranks 2 and 3 with identical figures).
+    """
+    dim = SQL_CODE.split("CREATE OR REPLACE VIEW dim_ticker_float")[1].split(
+        "COMMENT ON VIEW dim_ticker_float")[0]
+
+    assert "DISTINCT ON (ct.codneg)" in dim, (
+        "vw_company_ticker must be collapsed to one row per ticker before the join"
+    )
+    assert "DISTINCT ON (c.cnpj_cia)" in dim, (
+        "cia_company must be collapsed to one row per CNPJ before the join"
+    )
+    # The raw relations must not be reachable from the join list any more.
+    join_list = dim.split("FROM latest_instrument")[1]
+    assert "vw_company_ticker" not in join_list, (
+        "join vw_company_ticker through the collapsing CTE, not directly"
+    )
+    assert "cia_company" not in join_list, (
+        "join cia_company through the collapsing CTE, not directly"
+    )
+
+
+def test_company_tiebreak_does_not_let_a_null_situacao_outrank_ativo():
+    """`situacao = 'ATIVO'` is NULL when situacao is, and DESC sorts NULLs FIRST.
+
+    A bare `(c.situacao = 'ATIVO') DESC` would therefore prefer a company with
+    no published situacao over the active registration — picking the wrong
+    denom_cia deterministically, which is worse than picking it at random
+    because it would never look like a bug.
+    """
+    dim = SQL_CODE.split("CREATE OR REPLACE VIEW dim_ticker_float")[1].split(
+        "COMMENT ON VIEW dim_ticker_float")[0]
+    assert "COALESCE(c.situacao = 'ATIVO', false) DESC" in dim, (
+        "the ATIVO preference must be NULL-safe"
+    )
+
+
+def test_every_collapse_has_a_deterministic_final_tiebreak():
+    """Two rows that tie on every preference must still resolve the same way.
+
+    Without a final unique-ish key the winner depends on scan order, so the
+    published cnpj_cia / denom_cia for a ticker could change between two runs
+    over identical data — provenance that moves is not provenance.
+    """
+    dim = SQL_CODE.split("CREATE OR REPLACE VIEW dim_ticker_float")[1].split(
+        "COMMENT ON VIEW dim_ticker_float")[0]
+    # Slice to the CTE's own closing paren (a line starting with ')'), not the
+    # first ')' in the body — COALESCE(...) carries one.
+    ticker_order = dim.split("DISTINCT ON (ct.codneg)")[1].split("\n)")[0]
+    assert "ct.cnpj_cia" in ticker_order.split("ORDER BY")[1]
+    company_order = dim.split("DISTINCT ON (c.cnpj_cia)")[1].split("\n)")[0]
+    assert "c.cd_cvm" in company_order.split("ORDER BY")[1]
+
 # ── the month-boundary guard ──────────────────────────────────────────────
 
 

@@ -130,6 +130,44 @@ latest_instrument AS (
         r.reference_date
     FROM public.b3_instrument_registry r
     ORDER BY r.instrumento, r.reference_date DESC
+),
+-- WHY THESE TWO ARE COLLAPSED BEFORE THEY ARE JOINED. Neither source is keyed
+-- the way a naive join assumes, and joining them raw fans this view out — it
+-- stops being one row per ticker, and every short position downstream is
+-- counted once per duplicate.
+--
+--   * vw_company_ticker is DISTINCT ON (cnpj_cia, codneg) — one row per
+--     (company, ticker), NOT per ticker. A ticker CVM published under two
+--     CNPJs (a re-registration, a holding and its predecessor) yields two.
+--   * cia_company's primary key is cd_cvm, not cnpj_cia. One CNPJ carrying
+--     two CVM registration codes yields two more, multiplicatively.
+--
+-- Observed in production 2026-09-16: ITUB3 rendered twice in /short's
+-- days-to-cover table with identical figures, and its R$3.05bn position was
+-- summed twice into the headline short book. Both picks below are recorded
+-- rather than arbitrary: the live listing and the ATIVO registration win,
+-- then the newest filing, then the identifier itself so the choice is stable
+-- across runs instead of depending on scan order.
+company_ticker AS (
+    SELECT DISTINCT ON (ct.codneg)
+        ct.codneg,
+        ct.cnpj_cia
+    FROM public.vw_company_ticker ct
+    WHERE ct.cnpj_cia IS NOT NULL
+    ORDER BY ct.codneg, ct.is_active DESC, ct.data_refer DESC, ct.versao DESC,
+             ct.cnpj_cia
+),
+company AS (
+    -- COALESCE, not a bare DESC: `situacao = 'ATIVO'` is NULL when situacao is,
+    -- and Postgres sorts NULLs FIRST under DESC — which would prefer a company
+    -- with no published situacao over the active one.
+    SELECT DISTINCT ON (c.cnpj_cia)
+        c.cnpj_cia,
+        c.denom_cia,
+        c.setor
+    FROM public.cia_company c
+    WHERE c.cnpj_cia IS NOT NULL
+    ORDER BY c.cnpj_cia, COALESCE(c.situacao = 'ATIVO', false) DESC, c.cd_cvm
 )
 SELECT
     COALESCE(i.codneg, x.codneg)                       AS codneg,
@@ -192,9 +230,9 @@ SELECT
     GREATEST(COALESCE(x.reference_date, '0001-01-01'::date),
              COALESCE(i.reference_date, '0001-01-01'::date)) AS as_of
 FROM latest_instrument i
-FULL OUTER JOIN latest_index x       ON x.codneg = i.codneg
-LEFT  JOIN public.vw_company_ticker ct ON ct.codneg = COALESCE(i.codneg, x.codneg)
-LEFT  JOIN public.cia_company co       ON co.cnpj_cia = ct.cnpj_cia;
+FULL OUTER JOIN latest_index x   ON x.codneg = i.codneg
+LEFT  JOIN company_ticker ct     ON ct.codneg = COALESCE(i.codneg, x.codneg)
+LEFT  JOIN company co            ON co.cnpj_cia = ct.cnpj_cia;
 
 COMMENT ON VIEW dim_ticker_float IS
     'Per-ticker float denominator with its provenance: free_float_shares from the broadest B3 index portfolio that carries the ticker (IBRA > SMLL > IBXX > IBOV, because index weight caps only shrink the figure), shares_outstanding from the cash-market instrument registry, and float_basis naming which one float_denominator used. The two are different metrics — % of free float is always larger than % of shares outstanding for the same position.';
