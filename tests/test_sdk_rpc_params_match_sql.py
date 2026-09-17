@@ -91,6 +91,27 @@ def test_every_key_the_sdk_sends_is_a_declared_parameter(rpc, keys, lineno):
     )
 
 
+def test_search_funds_sends_the_family_filter_the_function_offers():
+    """The OTHER direction, which the subset rule above cannot see.
+
+    A key the SDK sends that the SQL does not declare is a 404 and is caught
+    above. A parameter the SQL declares and the SDK never sends is invisible
+    there — the call succeeds, just narrower than it needed to be. That is what
+    happened to `p_entity_type`: api.search_funds has taken it since it was
+    written and the Flask adapter exposes it as `?type=`, but the SDK wrapper
+    omitted it, so searching within one fund family meant over-fetching against
+    a tiered row cap that makes "no matches" and "matches past the cap" look
+    identical.
+    """
+    calls = {name: keys for name, keys, _ in _sdk_calls()}
+    assert "p_entity_type" in calls["search_funds"], (
+        "api.search_funds(p_query, p_entity_type, p_limit) offers a family "
+        "filter; a wrapper that cannot pass it forces a client-side filter "
+        "over a capped result"
+    )
+    assert "p_entity_type" in _sql_params()["search_funds"]
+
+
 def test_option_exercises_sends_the_prefix_it_requires():
     """Named explicitly so the original defect cannot silently return."""
     calls = {name: keys for name, keys, _ in _sdk_calls()}
