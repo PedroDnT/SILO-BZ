@@ -8642,7 +8642,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "Optional. A user JWT from Supabase Auth (GitHub, at https://silo-bz.vercel.app/signin.html), sent BESIDE `apikey`, not instead of it. It maps to the `authenticated` role, which raises the per-tier ceilings — it never widens the object set."
+        "description": "Optional. A user JWT from Supabase Auth (GitHub, at https://silo-bz-deloslabs.vercel.app/signin.html), sent BESIDE `apikey`, not instead of it. It maps to the `authenticated` role, which raises the per-tier ceilings — it never widens the object set."
       }
     },
     "parameters": {

@@ -591,7 +591,7 @@ def build_spec(conn) -> dict[str, Any]:
                     "bearerFormat": "JWT",
                     "description": (
                         "Optional. A user JWT from Supabase Auth (GitHub, at "
-                        "https://silo-bz.vercel.app/signin.html), sent BESIDE `apikey`, "
+                        "https://silo-bz-deloslabs.vercel.app/signin.html), sent BESIDE `apikey`, "
                         "not instead of it. It maps to the `authenticated` role, which "
                         "raises the per-tier ceilings — it never widens the object set."
                     ),

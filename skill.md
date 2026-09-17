@@ -49,7 +49,7 @@ Never `sb_secret_…` / `service_role`. Never `Accept-Profile: public`. You cann
 mint or forge a key, and there is no endpoint that issues one.
 
 Anonymous access is free and deliberately small. To raise the ceilings, send a
-human to https://silo-bz.vercel.app/signin.html (GitHub) and then send **both**
+human to https://silo-bz-deloslabs.vercel.app/signin.html (GitHub) and then send **both**
 headers:
 
 ```

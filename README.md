@@ -1,6 +1,6 @@
 # SILO — Brazilian fund-industry data, ingested daily and served for accountability
 
-> **Dashboard:** [https://silo-bz.vercel.app/](https://silo-bz.vercel.app/) — rebuilt
+> **Dashboard:** [https://silo-bz-deloslabs.vercel.app/](https://silo-bz-deloslabs.vercel.app/) — rebuilt
 > after every nightly ingest; the page header says when.
 > **Read API:** [https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/)
 > — schema `api`, anon key, open read.
@@ -142,7 +142,7 @@ Schema `api` is served by Supabase's PostgREST at the URL above: a catalog
 primitive (`api.panel` — one row per id, date, metric and value), and typed functions
 for funds, quotes, option chains and search. Row caps live inside the SQL, landing
 tables are revoked from `anon`, and `health.yml` asserts both on every run. Signing in
-(GitHub OAuth, at [`/signin.html`](https://silo-bz.vercel.app/signin.html)) raises the
+(GitHub OAuth, at [`/signin.html`](https://silo-bz-deloslabs.vercel.app/signin.html)) raises the
 caps and the query budget for a token holder.
 
 The contract and its edge cases are the **published site**, not this repository's
@@ -158,9 +158,12 @@ local Flask adapter, which is **not** the public API — is
 
 `dashboard/` is an Evidence.dev site: SQL in Markdown, extracted to parquet at build time
 and queried in the browser through DuckDB — a **static snapshot, not a live view**. It is
-rebuilt after every successful nightly ingest (the deploy hook above) and on every merge
-that touches it, and its header shows **Snapshot Built** so nobody has to guess how old
-the numbers are.
+rebuilt once a day, after every successful nightly ingest (the deploy hook above).
+A merge does NOT rebuild it: since 2026-09-17 `vercel.json` disables git-triggered
+production deployments on `main`, because six merges in fifteen minutes had queued
+fourteen concurrent builds against the same Postgres. Its header shows **Snapshot
+Built** so nobody has to guess how old the numbers are; to publish sooner, dispatch
+`daily_ingest` with `rebuild_dashboard=true`.
 
 | Route | Page | What it shows |
 | --- | --- | --- |
@@ -204,9 +207,10 @@ Relevante feed. The conventions that matter when reading it are in
 | `backfill.yml` | on dispatch | historical fills, one entity at a time; `fi_doc_type` repairs one FI source without re-fetching the others |
 
 Secrets: `POSTGRES_URL` (Supabase, `sslmode=require`); `VERCEL_DEPLOY_HOOK_URL` (a deploy
-hook of the Vercel project `silo` on `main` — the project in team `deloslabs` whose
-public URL is `silo-bz.vercel.app`; the auto alias `silo-deloslabs.vercel.app` is not the
-public URL); `APIFY_TOKEN` (optional). The dashboard build reads the
+hook of the Vercel project `silo-bz` on `main`, in team `deloslabs`. That hook is the
+ONLY thing that publishes the site — git-triggered production deployments are disabled,
+so if the hook stops firing the dashboard silently stops updating); `APIFY_TOKEN`
+(optional). The dashboard build reads the
 `EVIDENCE_SOURCE__supabase__*` variables set on the Vercel project.
 
 Schema changes are a commit: `src/store/schema.sql` plus a new

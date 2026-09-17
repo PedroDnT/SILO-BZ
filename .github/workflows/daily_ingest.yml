@@ -24,7 +24,7 @@ on:
         required: false
         default: "2026"
       rebuild_dashboard:
-        description: "Also fire the Vercel deploy hook after this manual run (every successful scheduled run fires it on its own). Publishes a PRODUCTION deployment of the dashboard at silo-bz.vercel.app — a 25–45 min Evidence build of SELECTs against the same Postgres — so leave it off for re-runs and experiments."
+        description: "Also fire the Vercel deploy hook after this manual run (every successful scheduled run fires it on its own). Publishes a PRODUCTION deployment of the dashboard at silo-bz-deloslabs.vercel.app — a 25–45 min Evidence build of SELECTs against the same Postgres — so leave it off for re-runs and experiments."
         type: boolean
         default: false
 
@@ -211,7 +211,7 @@ jobs:
           if [ -z "${VERCEL_DEPLOY_HOOK_URL:-}" ]; then
             echo "VERCEL_DEPLOY_HOOK_URL unset — skipping dashboard rebuild."
             echo "Create one at Vercel → Project silo → Settings → Git → Deploy Hooks"
-            echo "(public dashboard: https://silo-bz.vercel.app/)"
+            echo "(public dashboard: https://silo-bz-deloslabs.vercel.app/)"
             echo "and store it as the repository secret VERCEL_DEPLOY_HOOK_URL."
             exit 0
           fi

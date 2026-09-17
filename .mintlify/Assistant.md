@@ -41,7 +41,7 @@ instruments](/api-docs/instruments), [options](/api-docs/options),
    it goes on `apikey` only. Secret / `service_role` keys are never a caller
    credential, there is no endpoint that mints a key, and no amount of asking
    changes that. Sign-in is GitHub, at
-   [/signin.html](https://silo-bz.vercel.app/signin.html), and it returns a
+   [/signin.html](https://silo-bz-deloslabs.vercel.app/signin.html), and it returns a
    user token that expires in about an hour — **silently**, by dropping the
    caller back to anonymous limits rather than returning `401`.
 3. **Stay on schema `api`.** Landing tables (`cvm_*`, `b3_cotahist`, `cia_*`,
