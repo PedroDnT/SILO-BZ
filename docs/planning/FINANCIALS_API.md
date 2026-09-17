@@ -112,26 +112,44 @@ diagnosis Q2 in §7 answers it. If a single `setor` turns out to contain more th
 one chart of accounts, the discriminator has to be derived from the filed
 `ds_conta` instead, and this section changes.
 
-## 5. `escala_moeda` must be handled before any value is served
+## 5. ~~`escala_moeda` must be handled before any value is served~~ — WITHDRAWN
 
-`cia_account.escala_moeda` records the scale CVM filed the value in. It is **not
-exposed by `api.financials` today**, which means a caller cannot currently know
-whether a number is in units or thousands. Any wide endpoint has to normalise to
-units and publish `currency_scale` so the normalisation is auditable.
+**This section was built on a false premise and Q3 was never needed to settle
+it.** `cia_account.vl_conta` is *already* in absolute reais:
+`src/pipeline/ingest_cia.py:252` multiplies the filed value by the
+`ESCALA_MOEDA` factor (`MIL` → ×1000, `MILHÃO` → ×1e6) before the upsert, and
+keeps the scale string only for audit. There is no units-versus-thousands
+ambiguity for a caller to resolve.
 
-Diagnosis Q3 in §7 establishes which scales actually appear.
+So publishing `currency_scale` would not make anything auditable — it would hand
+a caller a factor they must **not** apply, and a plausible-looking 1000× error
+is the likeliest outcome. `escala_moeda` stays internal. `test_the_filed_currency_scale_is_not_republished`
+asserts it appears in none of the three statement functions, and the catalog
+states outright that every value is reais.
 
-## 6. No fallback
+What the endpoints owe the caller is the *statement* that values are absolute
+reais, not the factor. That is now in `api.catalog()` and the SDK docstrings.
 
-`api.company_financials` reads net income from `3.11` and falls back to `3.09`.
-Pedro's decision: **no fallback.** The new endpoints read the net-income level for
-the filer's chart and return **null** when it is absent — consistent with the
-warehouse rule that a null stays null and is never substituted.
+## 6. No fallback — DONE
+
+`api.company_financials` read net income from `3.11` and fell back to `3.09`.
+Pedro's decision: **no fallback.** Shipped in catalog v28: `net_income` is
+`MAX(value) FILTER (WHERE account_code = '3.11')` with nothing behind it, and a
+filing that omits `3.11` returns **null** — the warehouse rule that a null stays
+null, applied to a derived column.
 
 `3.09` is profit *before* statutory profit-sharing (`3.10`). Substituting it
 overstates net income by exactly the participations line whenever `3.10` is
-non-zero. Diagnosis Q1 in §7 sizes how many statements lose `net_income` when the
-fallback goes.
+non-zero.
+
+**Q1 answered, and it priced the decision rather than changing it:** of 50,439
+DRE statements, **282 (0.56%)** have no `3.11`, and for **zero** of those was the
+`3.09` substitution numerically wrong. So the fallback had never actually
+overstated net income — it was load-bearing for 282 statements and silently
+wrong for the first filer to report a non-zero `3.10` without a `3.11`. Removing
+it costs 282 nulls and buys that protection. The same removal was applied to the
+two `webapp/` Evidence pages that restated the convention by hand, so the two
+SILO surfaces cannot disagree on one company's net income.
 
 ## 7. Blocking diagnosis
 
@@ -139,18 +157,70 @@ Three read-only queries, to run against Supabase before any of this is built.
 `ordem_exerc = 'ÚLTIMO'` must carry the accent — the source is latin-1 and the
 unaccented form matches zero rows.
 
-| | Question | Decides |
-| --- | --- | --- |
-| **Q1** | How many DRE statements have no `3.11`, and of those how many have non-zero `3.10`? | blast radius of removing the fallback; whether it was ever actively wrong |
-| **Q2** | Does `cia_company.setor` partition the charts of accounts cleanly — is `ds_conta` for `3.01` unique within each `setor`? | whether `setor` is the discriminator (§4) or something derived has to be |
-| **Q3** | Which `escala_moeda` values appear, per `grupo`? | whether normalisation is a no-op or load-bearing (§5) |
+| | Question | Decides | Status |
+| --- | --- | --- | --- |
+| **Q1** | How many DRE statements have no `3.11`, and of those how many have non-zero `3.10`? | blast radius of removing the fallback; whether it was ever actively wrong | **answered** — 282 / 50,439 (0.56%), **0** ever wrong. §6 |
+| **Q2** | Does `cia_company.setor` partition the charts of accounts cleanly — is `ds_conta` for `3.01` unique within each `setor`? | whether `setor` is the discriminator (§4) or something derived has to be | **open** — timed out at the Supabase gateway; a lighter form is below |
+| **Q3** | Which `escala_moeda` values appear, per `grupo`? | ~~whether normalisation is a no-op or load-bearing~~ | **withdrawn** — the question was moot; values are already reais. §5 |
 
-Q2 is the one that can change the design. Q1 and Q3 size work that is going to
-happen either way.
+**Q2 is still the one that can change the design, and it is the only thing now
+blocking §8 step 2.** `setor` shipping as a column does not answer it: a
+partition key a caller can group by is useful whether or not it separates the
+charts *cleanly*, but a **named** field set (`revenue`, `operating_income`, …)
+is only safe if one `setor` implies one chart. If Q2 comes back dirty, the three
+endpoints keep the as-filed `account_name` and no named fields, which is a
+different interface — not a tweak.
+
+The first form of Q2 died at the gateway on the `array_agg(DISTINCT …)` across
+every year at once. This form drops the aggregate and scopes to one year:
+
+```sql
+-- Q2 (light): within one fiscal year, how many distinct labels does conta 3.01
+-- carry inside a single setor? 1 = that sector implies one chart.
+SELECT c.setor,
+       count(DISTINCT a.ds_conta) AS distinct_labels,
+       count(DISTINCT a.cd_cvm)   AS companies
+  FROM cia_account a
+  JOIN cia_company c ON c.cd_cvm = a.cd_cvm
+ WHERE a.cd_conta    = '3.01'
+   AND a.grupo       = 'DRE'
+   AND a.escopo      = 'con'
+   AND a.ordem_exerc = 'ÚLTIMO'
+   AND a.doc_type    = 'dfp'
+   AND a.dt_refer >= '2024-01-01' AND a.dt_refer < '2025-01-01'
+ GROUP BY 1
+ ORDER BY distinct_labels DESC, companies DESC;
+```
+
+Then, only for the sectors that came back above 1, the labels themselves:
+
+```sql
+-- Q2b: name the collisions. Run with the setor values Q2 flagged.
+SELECT c.setor, a.ds_conta, count(DISTINCT a.cd_cvm) AS companies
+  FROM cia_account a
+  JOIN cia_company c ON c.cd_cvm = a.cd_cvm
+ WHERE a.cd_conta    = '3.01'
+   AND a.grupo       = 'DRE'
+   AND a.escopo      = 'con'
+   AND a.ordem_exerc = 'ÚLTIMO'
+   AND a.doc_type    = 'dfp'
+   AND a.dt_refer >= '2024-01-01' AND a.dt_refer < '2025-01-01'
+   AND c.setor IN ('<paste the flagged sectors>')
+ GROUP BY 1, 2
+ ORDER BY 1, companies DESC;
+```
+
+A handful of distinct labels inside a sector is not automatically a failure —
+two wordings of the same concept are fine, two *concepts* are not. Q2b is what
+tells those apart, and it is a judgement call to be made on the output rather
+than in advance.
 
 ## 8. Build order, once the diagnosis lands
 
-1. Expose `setor` / `segmento` and `currency_scale` — additive, no breakage.
+1. ~~Expose `setor` / `segmento` and `currency_scale`~~ — **DONE** (catalog v28),
+   except `currency_scale`, which §5 withdraws. `setor` and `segmento` are
+   appended to `api.financials` and `api.company_financials` so nothing
+   positional moved, and the net-income fallback went in the same change.
 2. `api.income_statements`, then `balance_sheets`, then `cash_flow_statements`.
    Income statement first: it carries the sector problem, so it proves the design.
 3. Sector-scoped aggregates (peer median, percentile rank) as separate functions —

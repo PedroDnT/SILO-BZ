@@ -12,16 +12,21 @@ writes.
 
 Conventions baked into the queries (see `docs/` and migration `04_cia.sql`):
 `escopo = 'con'` (consolidated), `ordem_exerc = 'ÚLTIMO'` (accented), net income
-= conta `3.11` falling back to `3.09`, equity matched by
+= conta `3.11` **only**, equity matched by
 `ds_conta = 'Patrimônio Líquido Consolidado'` (its code varies 2.03/2.08).
 
-The `3.09` fallback is **not** because banks omit `3.11` — Banco do Brasil
-(`cd_cvm` 1023, FY2024, `con`) files `3.11` as `Lucro ou Prejuízo Líquido
-Consolidado do Período`. `3.09` is profit *before* the statutory profit-sharing
-on `3.10`, so it equals net income only where `3.10` is zero. Banks do use a
-different chart, but the difference is in what the codes *mean* (`3.01` is
-interest income, `3.05` is pre-tax profit) — so never compare a bank's `3.01`
-or `3.03` with an industrial company's.
+There used to be a `3.09` fallback behind net income, on the belief that banks
+omit `3.11`. Both halves were wrong: Banco do Brasil (`cd_cvm` 1023, FY2024,
+`con`) files `3.11` as `Lucro ou Prejuízo Líquido Consolidado do Período`, and
+`3.09` is profit *before* the statutory profit-sharing on `3.10`, so it equals
+net income only where `3.10` is zero. 282 of 50,439 income statements (0.56%)
+genuinely omit `3.11`; those are now blank rather than showing the
+pre-participations figure, matching `api.company_financials` (catalog v28).
+
+Banks do use a different chart, and that part is real — but the difference is in
+what the codes *mean* (`3.01` is interest income, `3.05` is pre-tax profit), so
+never compare a bank's `3.01` or `3.03` with an industrial company's. `setor` is
+the partition key for any peer comparison; `/growth` is built that way.
 
 ## Run locally
 

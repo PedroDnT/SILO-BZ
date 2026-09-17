@@ -28,7 +28,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 27
+KNOWN_CATALOG_VERSION = 28
 
 
 class SiloCatalogDrift(UserWarning):
@@ -661,6 +661,13 @@ class SiloClient:
         year-to-date, and only that span tells them apart — adding them
         double-counts the quarter. `version` carries the restatement: only the
         newest version of each statement is returned.
+
+        `setor` and `segmento` ride on every row because CVM's chart of
+        accounts is **sector-specific**: `3.01` is `Receita de Venda de Bens
+        e/ou Serviços` for PETR4 and `Receitas de Intermediação Financeira`
+        for Banco do Brasil. Treat the sector as the partition key for any
+        peer comparison, and read the as-filed `account_name` rather than
+        assuming a code means the same thing in another chart.
         """
         return self._rpc("financials", {
             "p_id": id, "p_statement": statement,
@@ -684,6 +691,21 @@ class SiloClient:
         says which span you are looking at. A balance sheet filed under a
         different version than the income statement reads NULL rather than
         being paired across filings.
+
+        Two things to hold onto before you rank anything:
+
+        * `net_income` is conta **3.11 only**. A filing that omits it reads
+          NULL — `3.09` is profit *before* the statutory profit-sharing on
+          `3.10` and is not substituted. 282 of 50,439 income statements
+          (0.56%) are affected. For the pre-participations figure, read
+          `3.09`/`3.10`/`3.11` from :meth:`financials` and subtract yourself.
+        * `revenue` and `gross_profit` are **not like-for-like across
+          sectors** — `3.01` is sales for an industrial filer and
+          intermediation income for a bank. `setor` and `segmento` are on
+          every row for that reason: partition by sector, never rank across.
+
+        Every value is in absolute reais; the filed currency scale is applied
+        at ingest, so do not scale by thousands again.
         """
         return self._rpc("company_financials", {
             "p_id": id, "p_from": _iso(start), "p_to": _iso(end),

@@ -37,8 +37,12 @@ API for PETR4 (industrial) and Banco do Brasil (`cd_cvm` 1023, bank):
   `3.05` is ranking two different quantities and will look plausible while doing it.
 </Warning>
 
-Three consequences, all visible in the response:
+Four consequences, all visible in the response:
 
+* **`setor` and `segmento` are on every `financials` and `company_financials` row.**
+  They are there to be used as a partition key, not read as a label: partition every
+  median, rank and percentile by `setor`, and the comparison above stops being a
+  cross-chart one. This is what makes the limitation *navigable* — it does not remove it.
 * **`api.financials` returns the as-filed Portuguese `account_name`.** It is the only
   label in the payload that is correct for every chart, because it is the one the
   company filed. Read it, not just the code.
@@ -50,8 +54,13 @@ Three consequences, all visible in the response:
   than as one of the two columns above.
 
 <Note>
-  **Planned.** Sector-aware statement labelling: which chart a filing uses, surfaced
-  as a column, with labels keyed on `(chart, code)` rather than on the code alone.
+  **Partly shipped.** The sector itself now rides on every statement row (`setor`,
+  `segmento`, catalog v28), so a caller can partition by it without a second call.
+
+  **Still planned.** Sector-aware statement *labelling*: which chart a filing uses,
+  surfaced as its own column, with labels keyed on `(chart, code)` rather than on the
+  code alone. `setor` is a good enough partition key to compute within; it is not yet
+  a statement that two filings share one chart of accounts.
 
   **Planned, and deliberately behind it.** A friendlier `financials` output shape —
   readable period labels, scaled values, year-over-year change. It is deferred
@@ -59,11 +68,14 @@ Three consequences, all visible in the response:
   built on today's codes would harden the mistake above into an interface.
 </Note>
 
-## Net income is not simply `3.11`
+## `net_income` is conta `3.11` only, and nulls where it is not filed
 
-`api.company_financials` reads `net_income` from `3.11` and falls back to `3.09`.
-The rationale previously given for that fallback — that banks do not file `3.11` —
-is wrong. For Banco do Brasil, FY2024, consolidated:
+`api.company_financials` reads `net_income` from `3.11` and **substitutes nothing**.
+A filing that does not report `3.11` returns `null` in that column.
+
+Until catalog v28 there was a fallback to `3.09` behind it, justified on the grounds
+that banks do not file `3.11`. That was wrong on both counts. For Banco do Brasil,
+FY2024, consolidated:
 
 | `account_code` | `account_name` | Value |
 | --- | --- | --- |
@@ -75,13 +87,18 @@ is wrong. For Banco do Brasil, FY2024, consolidated:
 profit-sharing and employee participations; the two coincide here only because
 `3.10` is zero.
 
-<Warning>
-  The fallback is harmless wherever `3.11` is filed. Where `3.11` were ever null
-  **and** `3.10` non-zero, `company_financials` would report profit-before-participations
-  as net income — too high by the participations line. If that distinction matters to
-  you, read `3.09`, `3.10` and `3.11` yourself from `api.financials` rather than taking
-  the wide column.
-</Warning>
+The fallback's reach was then measured rather than argued about: of **50,439** DRE
+statements, **282 (0.56%)** have no `3.11`, and in every one of those the `3.09`
+substitution happened to be numerically harmless. It had therefore never overstated
+net income — but it would have, for the first filer to report a non-zero `3.10`
+without a `3.11`. Those 282 statements now read `null`.
+
+<Note>
+  For the pre-participations figure, read `3.09`, `3.10` and `3.11` from
+  `api.financials` and do the subtraction where you can see it. A `null` here means
+  "the company did not file this line", which is a different fact from zero — and a
+  different fact from a number we inferred.
+</Note>
 
 This is verified for **one** bank. It is not a claim about every bank, and the
 non-bank charts have not been swept for the same pattern.

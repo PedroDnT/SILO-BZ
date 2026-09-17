@@ -33,16 +33,16 @@ select
   c.denom_cia as company,
   a.dt_refer as ref_date,
   max(a.vl_conta) filter (where a.cd_conta = '3.01') / 1e6 as receita_mm,
-  coalesce(
-    max(a.vl_conta) filter (where a.cd_conta = '3.11'),
-    max(a.vl_conta) filter (where a.cd_conta = '3.09')
-  ) / 1e6 as lucro_mm
+  -- 3.11 only. 3.09 is profit BEFORE statutory profit-sharing (3.10), so a
+  -- fallback to it reports the wrong quantity as net income. Null stays null,
+  -- matching api.company_financials (catalog v28).
+  max(a.vl_conta) filter (where a.cd_conta = '3.11') / 1e6 as lucro_mm
 from cia_account a
 join latest l on l.cd_cvm = a.cd_cvm and l.dt_refer = a.dt_refer
   and a.versao is not distinct from l.versao
 join cia_company c on c.cd_cvm = a.cd_cvm
 where a.grupo = 'DRE' and a.escopo = 'con' and a.ordem_exerc = 'ÚLTIMO'
-  and a.cd_conta in ('3.01', '3.09', '3.11')
+  and a.cd_conta in ('3.01', '3.11')
 group by c.denom_cia, a.dt_refer
 order by receita_mm desc nulls last
 limit 15
@@ -89,9 +89,9 @@ limit 15
 
 ## Largest Companies — Latest Quarter (Consolidated DRE)
 
-Revenue (conta 3.01) and net income (3.11, falling back to 3.09 where 3.11 is
-absent — 3.09 is pre-statutory-participations profit, and banks do generally
-file 3.11), R$ millions, latest reference date filed per company. Note that
+Revenue (conta 3.01) and net income (conta 3.11 only — a filing that omits it
+shows blank rather than borrowing 3.09, which is profit *before* statutory
+profit-sharing), R$ millions, latest reference date filed per company. Note that
 3.01 is sales for an industrial company but interest income for a bank, so the
 revenue column is not like-for-like across the two.
 

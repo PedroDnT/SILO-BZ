@@ -3059,8 +3059,20 @@ GRANT EXECUTE ON FUNCTION api.lookup(TEXT) TO anon, authenticated;
 -- ---------------------------------------------------------------------------
 
 -- Internal: resolve a caller id to one company. Never granted.
+--
+-- CREATE OR REPLACE cannot widen a RETURNS TABLE, so the four functions in this
+-- section are dropped in reverse dependency order first. Without this, adding a
+-- column to any of them fails on an already-deployed database with
+-- "cannot change return type of existing function" — green on a fresh CI
+-- cluster and red on Supabase, which is the worst way to find out.
+DROP FUNCTION IF EXISTS api.company_financials(TEXT, DATE, DATE, TEXT);
+DROP FUNCTION IF EXISTS api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT);
+DROP FUNCTION IF EXISTS api.cia_statement_rows(TEXT, DATE, DATE, TEXT, TEXT, TEXT);
+DROP FUNCTION IF EXISTS api.company_ref(TEXT);
+
 CREATE OR REPLACE FUNCTION api.company_ref(p_id TEXT)
-RETURNS TABLE (cd_cvm TEXT, cnpj TEXT, company TEXT, ticker TEXT)
+RETURNS TABLE (cd_cvm TEXT, cnpj TEXT, company TEXT, ticker TEXT,
+               setor TEXT, segmento TEXT)
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
@@ -3074,19 +3086,22 @@ AS $$
         -- A ticker resolves ONLY through CVM's published FCA map, active
         -- listings only: the CNPJ and the codneg arrive on the same filed row,
         -- so nothing here is name-matched or inferred.
-        SELECT c.cd_cvm, c.cnpj_cia, c.denom_cia, vt.codneg AS codneg, 0 AS rank
+        SELECT c.cd_cvm, c.cnpj_cia, c.denom_cia, vt.codneg AS codneg,
+               c.setor, c.segmento, 0 AS rank
         FROM q
         JOIN public.vw_company_ticker vt ON vt.codneg = q.raw AND vt.is_active
         JOIN public.cia_company c ON c.cnpj_cia = vt.cnpj_cia
         UNION ALL
-        SELECT c.cd_cvm, c.cnpj_cia, c.denom_cia, NULL::text, 1
+        SELECT c.cd_cvm, c.cnpj_cia, c.denom_cia, NULL::text,
+               c.setor, c.segmento, 1
         FROM q JOIN public.cia_company c
           ON length(q.digits) = 14 AND c.cnpj_cia = q.digits
         UNION ALL
-        SELECT c.cd_cvm, c.cnpj_cia, c.denom_cia, NULL::text, 2
+        SELECT c.cd_cvm, c.cnpj_cia, c.denom_cia, NULL::text,
+               c.setor, c.segmento, 2
         FROM q JOIN public.cia_company c ON c.cd_cvm = q.raw
     )
-    SELECT h.cd_cvm, h.cnpj_cia, h.denom_cia, h.codneg
+    SELECT h.cd_cvm, h.cnpj_cia, h.denom_cia, h.codneg, h.setor, h.segmento
     FROM hits h
     ORDER BY h.rank, h.cd_cvm
     LIMIT 1;
@@ -3111,6 +3126,8 @@ RETURNS TABLE (
     cnpj          TEXT,
     company       TEXT,
     ticker        TEXT,
+    setor         TEXT,
+    segmento      TEXT,
     doc_type      TEXT,
     statement     TEXT,
     scope         TEXT,
@@ -3129,7 +3146,13 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
     WITH ref AS (
-        SELECT r.cd_cvm, r.cnpj, r.company, r.ticker FROM api.company_ref(p_id) r
+        -- setor/segmento ride along from company_ref because CVM's chart of
+        -- accounts is sector-specific: the same cd_conta is a different
+        -- quantity for a bank and an industrial filer. A caller computing a
+        -- median, rank or percentile needs the partition key on the row, not
+        -- a second round trip. It is a partition key, not a display label.
+        SELECT r.cd_cvm, r.cnpj, r.company, r.ticker, r.setor, r.segmento
+        FROM api.company_ref(p_id) r
     ),
     win AS (
         SELECT COALESCE(p_from, CURRENT_DATE - 1825) AS d0,
@@ -3140,6 +3163,7 @@ AS $$
         SELECT
             r.cd_cvm AS r_cd_cvm, r.cnpj AS r_cnpj,
             r.company AS r_company, r.ticker AS r_ticker,
+            r.setor AS r_setor, r.segmento AS r_segmento,
             a.doc_type, a.grupo, a.escopo, a.dt_refer,
             a.dt_ini_exerc, a.dt_fim_exerc,
             a.cd_conta, a.ds_conta, a.vl_conta, a.versao,
@@ -3166,6 +3190,7 @@ AS $$
     )
     SELECT
         x.r_cd_cvm, x.r_cnpj, x.r_company, x.r_ticker,
+        x.r_setor, x.r_segmento,
         x.doc_type, x.grupo, x.escopo,
         x.dt_refer, x.dt_ini_exerc, x.dt_fim_exerc,
         -- An ITR prints the same account twice under one dt_refer: once for
@@ -3210,7 +3235,13 @@ RETURNS TABLE (
     account_name  TEXT,
     value         NUMERIC,
     version       INT,
-    source        TEXT
+    source        TEXT,
+    -- Appended, not inserted mid-row, so an existing positional consumer is
+    -- unaffected. CVM's chart is sector-specific, so these are the partition
+    -- key for any median/rank/percentile a caller computes over several
+    -- companies — never a display label. See docs/CIA_DATA_MAP.md.
+    setor         TEXT,
+    segmento      TEXT
 )
 LANGUAGE sql
 STABLE
@@ -3223,12 +3254,13 @@ AS $$
     -- cursor, so a caller over the page narrows the window instead.
     -- The explicit column list lets the outer ORDER BY name columns as
     -- declared, which also dodges OUT-parameter ambiguity.
-    WITH page (id, id_type, cnpj, company, ticker, doc_type, statement, scope, ref_date, period_start, period_end, period_months, account_code, account_name, value, version, source) AS (
+    WITH page (id, id_type, cnpj, company, ticker, doc_type, statement, scope, ref_date, period_start, period_end, period_months, account_code, account_name, value, version, source, setor, segmento) AS (
         SELECT
             s.cd_cvm, 'cd_cvm'::text, s.cnpj, s.company, s.ticker,
             s.doc_type, s.statement, s.scope,
             s.ref_date, s.period_start, s.period_end, s.period_months,
-            s.account_code, s.account_name, s.value, s.version, 'cvm'::text
+            s.account_code, s.account_name, s.value, s.version, 'cvm'::text,
+            s.setor, s.segmento
         FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, p_statement) s
         ORDER BY s.ref_date DESC, s.statement, s.period_months NULLS FIRST, s.account_code
         LIMIT 1001
@@ -3269,7 +3301,16 @@ RETURNS TABLE (
     net_margin_pct NUMERIC,
     roe_pct        NUMERIC,
     version        INT,
-    source         TEXT
+    source         TEXT,
+    -- Appended, not inserted mid-row, so an existing positional consumer is
+    -- unaffected. revenue and gross_profit below are NOT like-for-like across
+    -- sectors (3.01 is sales for an industrial filer and intermediation income
+    -- for a bank), which is exactly why the sector ships on the row: it is the
+    -- partition key for any median, rank or percentile computed over several
+    -- companies. Ranking these columns across sectors ranks two different
+    -- quantities. See docs/CIA_DATA_MAP.md.
+    setor          TEXT,
+    segmento       TEXT
 )
 LANGUAGE sql
 STABLE
@@ -3282,44 +3323,50 @@ AS $$
     -- cursor, so a caller over the page narrows the window instead.
     -- The explicit column list lets the outer ORDER BY name columns as
     -- declared, which also dodges OUT-parameter ambiguity.
-    WITH page (id, id_type, cnpj, company, ticker, doc_type, scope, ref_date, period_start, period_end, period_months, revenue, gross_profit, net_income, total_assets, equity, net_margin_pct, roe_pct, version, source) AS (
+    WITH page (id, id_type, cnpj, company, ticker, doc_type, scope, ref_date, period_start, period_end, period_months, revenue, gross_profit, net_income, total_assets, equity, net_margin_pct, roe_pct, version, source, setor, segmento) AS (
         WITH s AS (
             SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, NULL, NULL)
         ),
         income AS (
             SELECT
-                s.cd_cvm, s.cnpj, s.company, s.ticker,
+                s.cd_cvm, s.cnpj, s.company, s.ticker, s.setor, s.segmento,
                 s.doc_type, s.scope, s.ref_date,
                 s.period_start, s.period_end, s.period_months, s.version,
                 -- max(...) FILTER, not sum: one (document, account) group can hold
                 -- several rows and summing them would double-count.
                 MAX(s.value) FILTER (WHERE s.account_code = '3.01') AS revenue,
                 MAX(s.value) FILTER (WHERE s.account_code = '3.03') AS gross_profit,
-                -- The original rationale here was WRONG: banks do file a different
-                -- chart of accounts, but 3.11 is NOT generally absent from it and
-                -- 3.09 is NOT net income. Verified against Banco do Brasil
-                -- (cd_cvm 1023, FY2024, con, 12m): 3.09 = 29.17bn "Lucro ou Prejuizo
-                -- antes das Participacoes e Contribuicoes Estatutarias", 3.10 = 0.00
-                -- "Participacoes nos Lucros e Contribuicoes Estatutarias",
-                -- 3.11 = 29.17bn "Lucro ou Prejuizo Liquido Consolidado do Periodo".
-                -- So 3.11 is present and IS net income; 3.09 is profit BEFORE
-                -- statutory profit-sharing and only coincides with it because 3.10
-                -- is zero. Only one bank was checked, so some banks or periods may
-                -- still genuinely omit 3.11.
-                -- The COALESCE below is therefore harmless wherever 3.11 is filed,
-                -- but it would report profit-before-statutory-participations as net
-                -- income if 3.11 were ever null with a non-zero 3.10. Left as-is
-                -- deliberately: changing it is a behaviour change, not a doc fix.
+                -- NET INCOME IS 3.11 ONLY. There used to be a COALESCE to 3.09
+                -- behind it, on the belief that banks file a chart without 3.11.
+                -- That belief was wrong twice over. Verified against Banco do
+                -- Brasil (cd_cvm 1023, FY2024, con, 12m): 3.09 = 29.17bn "Lucro ou
+                -- Prejuizo antes das Participacoes e Contribuicoes Estatutarias",
+                -- 3.10 = 0.00 "Participacoes nos Lucros e Contribuicoes
+                -- Estatutarias", 3.11 = 29.17bn "Lucro ou Prejuizo Liquido
+                -- Consolidado do Periodo". So 3.11 is present and IS net income;
+                -- 3.09 is profit BEFORE statutory profit-sharing and coincides
+                -- with it only because 3.10 happens to be zero.
+                --
+                -- The fallback was then measured across the whole table rather
+                -- than argued about: of 50,439 DRE statements, 282 (0.56%) have no
+                -- 3.11, and for every one of those 282 the 3.09 substitution was
+                -- numerically identical to nothing (3.10 was zero or absent) — so
+                -- it has never actually overstated net income. It was load-bearing
+                -- for those 282 and silently wrong for the first filer to report a
+                -- non-zero 3.10 without a 3.11. Those 282 now return NULL, which
+                -- is the honest answer: a caller who wants the pre-participations
+                -- figure can read 3.09, 3.10 and 3.11 itself from api.financials.
+                -- Rule 1 of the integrity rules, applied to a derived column.
+                --
                 -- Also note the same code means different things across charts, so
                 -- 3.01/3.03 above are not like-for-like between a bank and an
-                -- industrial filer. Documented in docs/CIA_DATA_MAP.md.
-                COALESCE(
-                    MAX(s.value) FILTER (WHERE s.account_code = '3.11'),
-                    MAX(s.value) FILTER (WHERE s.account_code = '3.09')
-                ) AS net_income
+                -- industrial filer — which is why setor ships on the row.
+                -- Documented in docs/CIA_DATA_MAP.md.
+                MAX(s.value) FILTER (WHERE s.account_code = '3.11') AS net_income
             FROM s
             WHERE s.statement = 'DRE'
-            GROUP BY s.cd_cvm, s.cnpj, s.company, s.ticker, s.doc_type, s.scope,
+            GROUP BY s.cd_cvm, s.cnpj, s.company, s.ticker, s.setor, s.segmento,
+                     s.doc_type, s.scope,
                      s.ref_date, s.period_start, s.period_end, s.period_months, s.version
         ),
         balance AS (
@@ -3348,7 +3395,8 @@ AS $$
             -- The period's return on equity, NOT annualised: a three-month row
             -- divides a quarter's profit by equity. period_months says which.
             CASE WHEN b.equity  > 0 THEN round(100.0 * i.net_income / b.equity,  2) END,
-            i.version, 'cvm'::text
+            i.version, 'cvm'::text,
+            i.setor, i.segmento
         FROM income i
         -- Balance rows are joined on the SAME document version. A restatement that
         -- bumps only the balance sheet leaves assets/equity NULL rather than
@@ -3395,7 +3443,7 @@ AS $fn$
 SELECT $json$
 {
   "kind": "catalog",
-  "version": 27,
+  "version": 28,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, and the B3 securities-lending and investor-flow group). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -3681,6 +3729,8 @@ SELECT $json$
     "investor_flow IS A FIRST DIFFERENCE, NOT A PUBLISHED DAILY SERIES. B3 publishes investor participation as a MONTH-TO-DATE CUMULATIVE snapshot with a T+2 lag; the daily figures are consecutive snapshots subtracted WITHIN one month, and the difference never reaches across a month boundary (that would report a whole month as one day's flow). flow_basis says which kind of row you have: 'delta' is a real one-session difference, 'month_open' is the month's first session where MTD equals the day, and 'unknown_opening_snapshot' is a row whose predecessor SILO does not hold — those carry NULL flows ON PURPOSE and must never be read, filled or summed as zeros. mtd_buy_value_thousands / mtd_sell_value_thousands carry the cumulative figures as published, so the difference can be checked against the source rather than trusted. Values are R$ thousands. Sum a month only over rows whose flow_basis you have inspected.",
     "LISTED-COMPANY FINANCIALS ARE FILED, NOT DERIVED. api.financials returns one row per account line exactly as the company filed it; nothing is summed, annualised or restated. Read period_months before comparing two rows: an ITR publishes the SAME account twice under one reference date, once for the three months and once year-to-date, and they are distinguished only by the period span. Adding a 3-month row to a 6-month row double-counts the quarter.",
     "FINANCIALS DEFAULT TO CONSOLIDATED (scope=con) AND TO THE PERIOD THE DOCUMENT IS FOR (ordem_exerc ULTIMO). The prior-year comparative printed beside it is never returned. When a company re-files, only the newest version of each statement is served and `version` carries it; in company_financials a balance sheet from a different version than the income statement reads NULL rather than being paired across filings.",
+    "CVM'S CHART OF ACCOUNTS IS SECTOR-SPECIFIC, SO `setor` IS A PARTITION KEY, NOT A LABEL. financials and company_financials carry setor and segmento on every row for exactly one reason: the same account code is a different quantity in a different chart. Measured live, 3.01 is `Receita de Venda de Bens e/ou Serviços` for PETR4 and `Receitas de Intermediação Financeira` for Banco do Brasil (cd_cvm 1023), and 3.05 is EBIT for the first and pre-tax profit for the second. So company_financials.revenue and gross_profit are NOT like-for-like across sectors: PARTITION every median, rank, percentile and peer comparison BY setor, and read the as-filed Portuguese account_name rather than assuming a code carries one concept. There is deliberately no canonical English line-item mapping, because keying one on account_code would mislabel at least one sector.",
+    "company_financials.net_income IS CONTA 3.11 ONLY, WITH NO FALLBACK. A filing that does not report 3.11 reads NULL. Do not substitute 3.09: it is `Lucro ou Prejuízo antes das Participações e Contribuições Estatutárias`, i.e. profit BEFORE the statutory profit-sharing on 3.10, and it equals net income only where 3.10 is zero. This is measured, not assumed — 282 of 50,439 DRE statements (0.56%) have no 3.11. If you want the pre-participations figure, call api.financials and read 3.09, 3.10 and 3.11 yourself, then do the arithmetic where you can see it. Every value in both functions is in absolute reais: the filed ESCALA_MOEDA is applied at ingest, so never scale by thousands again.",
     "A TICKER RESOLVES TO A COMPANY ONLY THROUGH CVM'S PUBLISHED FCA MAP, active listings only — the CNPJ and the trading code arrive on the same filed row. financials('PETR4'), financials('33000167000101') and financials('9512') are the same company. A delisted code resolves to nothing rather than to a guess, and no company↔ticker edge is ever inferred from a name.",
     "PANEL GRAIN IS (id, asset_class, date, metric), NOT (id, date, metric). A CNPJ can file under two fund families in one month (385 do, fi + fidc), and the panel returns one row per family for it — pivoting on (id, date, metric) then either raises on the duplicate or silently averages two vehicles. Pass p_entity_type (fi|fidc|fii|fip|fiagro) to keep one family, or keep asset_class in your pivot key.",
     "Never invent a price, NAV, or identifier match.",
