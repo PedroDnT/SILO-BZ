@@ -219,6 +219,7 @@ REFUSING_FUNCTIONS = {
     "termo_history",
     "financials",
     "company_financials",
+    "income_statements",
     "anbima_classes",
 }
 PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav"}

@@ -181,6 +181,38 @@ pre-participations figure reads `3.09`/`3.10`/`3.11` from `api.financials`.
 `tests/test_company_financials_contract.py` asserts `'3.09'` appears nowhere in
 the function, so the fallback cannot return as a convenience.
 
+### There are FOUR DRE charts, and net income sits on three different codes
+
+Measured FY2024, consolidated, annual filings; company counts in brackets. This
+is the table `api.income_statements` is built on, and the reason it keys its
+fields on the filed **label** rather than on `cd_conta`:
+
+| Code | industrial [448] | bank A [10] | bank B [7] | insurer [2] |
+| --- | --- | --- | --- | --- |
+| `3.01` | Receita de Venda de Bens | Receitas **de** Intermediação | Receitas **da** Intermediação | Receitas Seguradoras |
+| `3.05` | EBIT | pre-tax result | pre-tax result | other operating result |
+| `3.07` | pre-tax result | continuing ops | continuing ops | EBIT |
+| `3.09` | continuing ops | pre-participations profit | **NET INCOME** | pre-tax result |
+| `3.11` | **NET INCOME** | **NET INCOME** | *absent* | continuing ops |
+| `3.13` | — | — | — | **NET INCOME** |
+
+Three consequences:
+
+1. **`de` versus `da` Intermediação is not a wording variant.** It separates two
+   charts with genuinely different layouts. Folding the preposition — which looks
+   like obvious cleanup — merges them and loses the 3.09/3.11 distinction.
+2. **Every statement in the warehouse with no `3.11` is the bank-B chart**, and
+   its `3.09` carries `Lucro/Prejuízo Consolidado do Período` — the net-income
+   label. Verified for all 31 of FY2024's. So the old `COALESCE(3.11, 3.09)` was
+   never *numerically* wrong (Q1 measured `fallback_is_wrong = 0`) for a reason:
+   it only ever fired on the one chart where `3.09` really is net income. It was
+   right by accident of mechanism, and would have broken on the first industrial
+   filer missing `3.11`.
+3. **`setor` under-partitions the charts.** `Bancos` contains both bank charts,
+   and `Emp. Adm. Part. - Sem Setor Principal` contains an industrial filer and a
+   bank filer. `setor` is the right unit for a peer median; it is not the chart
+   discriminator. The label is.
+
 What *does* differ by chart is the **meaning of a code**, and no fallback can
 repair that. PETR4 (industrial) against BBAS (bank):
 

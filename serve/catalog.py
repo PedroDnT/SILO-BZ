@@ -23,6 +23,20 @@ __all__ = [
     "tool_specs",
 ]
 
+# v29: api.income_statements — the income statement as a PERIOD (one row, named
+# fields) rather than as lines, the shape docs.financialdatasets.ai uses. The
+# fields are keyed on the AS-FILED LABEL, not on cd_conta and not on setor,
+# because CVM ships FOUR DRE charts and the same code is a different concept
+# across them. Measured (FY2024, con, annual): net income sits on 3.11 for the
+# industrial [448] and bank A [10] charts, on 3.09 for bank B [7] which files no
+# 3.11 at all, and on 3.13 for the insurer chart [2] whose 3.11 is the
+# continuing-operations line. Three codes, one pair of labels. So label-keying is
+# not merely safer than code-keying, it is strictly MORE COMPLETE: it resolves
+# net income for the 282 statements company_financials must return NULL for.
+# `de` vs `da` Intermediação is NOT normalised — it separates two charts with
+# different layouts. A concept a chart does not file reads NULL (operating_income
+# is industrial-only). `chart` names the layout; net_income_controlling /
+# _noncontrolling carry the attribution split that per-share figures are built on.
 # v28: two changes to the listed-company financials, one of them a BEHAVIOUR
 # change. (1) `setor` and `segmento` now ship on every financials and
 # company_financials row, appended so nothing positional moves. They are a
@@ -182,7 +196,7 @@ __all__ = [
 # stated as (id, asset_class, date, metric) and p_entity_type narrows the fund
 # arms to one family. Universe mode (p_ids empty + p_entity_type, optional
 # p_min_nav / p_min_months) walks a whole family for signed-in callers.
-CATALOG_VERSION = 28
+CATALOG_VERSION = 29
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -387,7 +401,8 @@ CONSTRAINTS = [
     "LISTED-COMPANY FINANCIALS ARE FILED, NOT DERIVED. api.financials returns one row per account line exactly as the company filed it; nothing is summed, annualised or restated. Read period_months before comparing two rows: an ITR publishes the SAME account twice under one reference date, once for the three months and once year-to-date, and they are distinguished only by the period span. Adding a 3-month row to a 6-month row double-counts the quarter.",
     "FINANCIALS DEFAULT TO CONSOLIDATED (scope=con) AND TO THE PERIOD THE DOCUMENT IS FOR (ordem_exerc ULTIMO). The prior-year comparative printed beside it is never returned. When a company re-files, only the newest version of each statement is served and `version` carries it; in company_financials a balance sheet from a different version than the income statement reads NULL rather than being paired across filings.",
     "CVM'S CHART OF ACCOUNTS IS SECTOR-SPECIFIC, SO `setor` IS A PARTITION KEY, NOT A LABEL. financials and company_financials carry setor and segmento on every row for exactly one reason: the same account code is a different quantity in a different chart. Measured live, 3.01 is `Receita de Venda de Bens e/ou Serviços` for PETR4 and `Receitas de Intermediação Financeira` for Banco do Brasil (cd_cvm 1023), and 3.05 is EBIT for the first and pre-tax profit for the second. So company_financials.revenue and gross_profit are NOT like-for-like across sectors: PARTITION every median, rank, percentile and peer comparison BY setor, and read the as-filed Portuguese account_name rather than assuming a code carries one concept. There is deliberately no canonical English line-item mapping, because keying one on account_code would mislabel at least one sector.",
-    "company_financials.net_income IS CONTA 3.11 ONLY, WITH NO FALLBACK. A filing that does not report 3.11 reads NULL. Do not substitute 3.09: it is `Lucro ou Prejuízo antes das Participações e Contribuições Estatutárias`, i.e. profit BEFORE the statutory profit-sharing on 3.10, and it equals net income only where 3.10 is zero. This is measured, not assumed — 282 of 50,439 DRE statements (0.56%) have no 3.11. If you want the pre-participations figure, call api.financials and read 3.09, 3.10 and 3.11 yourself, then do the arithmetic where you can see it. Every value in both functions is in absolute reais: the filed ESCALA_MOEDA is applied at ingest, so never scale by thousands again.",
+    "company_financials.net_income IS CONTA 3.11 ONLY, WITH NO FALLBACK. A filing that does not report 3.11 reads NULL. Do not substitute 3.09: it is `Lucro ou Prejuízo antes das Participações e Contribuições Estatutárias`, i.e. profit BEFORE the statutory profit-sharing on 3.10, and it equals net income only where 3.10 is zero. This is measured, not assumed — 282 of 50,439 DRE statements (0.56%) have no 3.11. If you want the pre-participations figure, call api.financials and read 3.09, 3.10 and 3.11 yourself, then do the arithmetic where you can see it. Every value in both functions is in absolute reais: the filed ESCALA_MOEDA is applied at ingest, so never scale by thousands again. api.income_statements DOES resolve those 282, because it keys on the filed LABEL rather than the code and bank B's 3.09 carries the net-income label — prefer it when you want net income to be as complete as the filings allow.",
+    "api.income_statements IS KEYED ON THE FILED LABEL, NOT THE ACCOUNT CODE. It returns the income statement as one row per filed period with named fields, and it resolves each field by matching the as-filed Portuguese account_name (case-folded, nothing else folded) rather than by cd_conta. This is measured: CVM ships FOUR DRE charts of accounts and net income sits on 3.11 for the industrial and bank-A charts, on 3.09 for the bank-B chart which files no 3.11, and on 3.13 for the insurer chart whose 3.11 is the continuing-operations line. `chart` tells you which layout a filing used. A concept a chart does not file reads NULL rather than borrowing a neighbouring line: operating_income (EBIT) is an industrial line only, and insurers get NULL operating_expenses because their filed line is the narrower `Despesas Administrativas`. Never read a NULL here as zero. net_income_controlling is the figure per-share numbers are built on, not net_income.",
     "A TICKER RESOLVES TO A COMPANY ONLY THROUGH CVM'S PUBLISHED FCA MAP, active listings only — the CNPJ and the trading code arrive on the same filed row. financials('PETR4'), financials('33000167000101') and financials('9512') are the same company. A delisted code resolves to nothing rather than to a guess, and no company↔ticker edge is ever inferred from a name.",
     "PANEL GRAIN IS (id, asset_class, date, metric), NOT (id, date, metric). A CNPJ can file under two fund families in one month (385 do, fi + fidc), and the panel returns one row per family for it — pivoting on (id, date, metric) then either raises on the duplicate or silently averages two vehicles. Pass p_entity_type (fi|fidc|fii|fip|fiagro) to keep one family, or keep asset_class in your pivot key.",
     "Never invent a price, NAV, or identifier match.",
@@ -416,7 +431,7 @@ CONSTRAINTS = [
     "would produce more than 1000 rows raises SQLSTATE 22023 naming the "
     "function, so a short result can no longer look complete. That is all "
     "eight — panel, quote_history, fund_nav, option_history, termo_history, "
-    "financials, company_financials, anbima_classes (`limits.page.all`). "
+    "financials, company_financials, income_statements, anbima_classes (`limits.page.all`). "
     "THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send "
     "p_after='' for the first page, then the key from the last row — for the "
     "panel 'date|id|metric|asset_class', for quote_history and fund_nav just "
@@ -668,7 +683,7 @@ LIMITS = {
         # Every set-returning function, split by what it offers ABOVE one page.
         "all": [
             "panel", "quote_history", "fund_nav", "option_history",
-            "termo_history", "financials", "company_financials",
+            "termo_history", "financials", "company_financials", "income_statements",
             "anbima_classes",
         ],
         # The protocol every cursor below shares.
@@ -704,7 +719,7 @@ LIMITS = {
             # refuse and ask you to narrow instead of handing you a cursor.
             "raise_only": [
                 "option_history", "termo_history", "financials",
-                "company_financials", "anbima_classes",
+                "company_financials", "income_statements", "anbima_classes",
             ],
         },
         "over_cap": (
@@ -899,6 +914,7 @@ def catalog_payload() -> Dict[str, Any]:
             "termo_history": "POST /rest/v1/rpc/termo_history",
             "financials": "POST /rest/v1/rpc/financials",
             "company_financials": "POST /rest/v1/rpc/company_financials",
+            "income_statements": "POST /rest/v1/rpc/income_statements",
             "anbima_classes": "POST /rest/v1/rpc/anbima_classes",
             "fund_debentures": "POST /rest/v1/rpc/fund_debentures",
             "fidc_cedentes": "POST /rest/v1/rpc/fidc_cedentes",

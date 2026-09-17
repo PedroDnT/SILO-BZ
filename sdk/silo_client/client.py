@@ -28,7 +28,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 28
+KNOWN_CATALOG_VERSION = 29
 
 
 class SiloCatalogDrift(UserWarning):
@@ -732,6 +732,39 @@ class SiloClient:
         return self._rpc("company_financials", {
             "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
             "p_scope": scope,
+        })
+
+    def income_statements(self, id: str, start: Datish = None,
+                          end: Datish = None, scope: str = "con",
+                          doc_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """The income statement as a period: one row each, with named fields.
+
+            silo.income_statements("PETR4")
+            silo.income_statements("PETR4", doc_type="dfp")   # annual only
+
+        Use this rather than :meth:`financials` when you want "the last four
+        income statements" instead of the individual filed lines.
+
+        **The fields are resolved from the as-filed account label, not from the
+        account code.** CVM ships four income-statement charts and the same code
+        is a different concept across them — net income sits on `3.11` for the
+        industrial and one bank chart, on `3.09` for the other bank chart (which
+        files no `3.11`), and on `3.13` for insurers (whose `3.11` is the
+        continuing-operations line). Three codes, one pair of labels. So this is
+        also **more complete than** :meth:`company_financials`, which reads
+        `3.11` alone and therefore returns null for those filings.
+
+        `chart` says which layout a filing used. A concept a chart does not file
+        reads **null, never zero**: `operating_income` (EBIT) is an industrial
+        line only, and insurers get a null `operating_expenses` because their
+        filed line is the narrower `Despesas Administrativas`.
+
+        `net_income_controlling` — not `net_income` — is the figure per-share
+        numbers are built on. Every value is in absolute reais.
+        """
+        return self._rpc("income_statements", {
+            "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
+            "p_scope": scope, "p_doc_type": doc_type,
         })
 
     # -- industry aggregates (ANBIMA) ----------------------------------------
