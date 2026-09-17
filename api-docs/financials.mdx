@@ -114,9 +114,15 @@ Carries `revenue`, `gross_profit`, `net_income`, `total_assets`, `equity`,
   different version of the document.
 </Warning>
 
-Banks file a different chart of accounts — net income lands on a different
-account code — and that fallback is applied for you, so `net_income` is
-populated for banks and non-banks alike.
+Banks file a different chart of accounts, but net income still lands on `3.11`:
+for Banco do Brasil (`cd_cvm` 1023, FY2024 consolidated) `3.11` is
+`Lucro ou Prejuízo Líquido Consolidado do Período`, exactly as it is for an
+industrial filer. What differs is the *meaning* of the other codes — `3.01` is
+interest income rather than sales, `3.05` is pre-tax profit rather than EBIT — so
+read the `account_name` beside a code rather than assuming it means the same
+thing across charts. `net_income` falls back to `3.09` for filings that omit
+`3.11`; note that `3.09` is profit *before* the statutory profit-sharing on
+`3.10` and so equals net income only where `3.10` is zero.
 
 <Warning>
   **One 1,000-row page, and it refuses above it.** A request whose result would pass
