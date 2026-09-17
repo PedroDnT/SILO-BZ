@@ -316,8 +316,26 @@ class B3Ingestor:
                 f"missing {', '.join(d.isoformat() for d in missing[:8])}"
                 f"{' …' if len(missing) > 8 else ''}"
             )
-            logger.warning("B3 BDI %s: %s", label, msg)
-            self._log_finish(run_id, n, error=msg)
+            # ...but a shortfall confined to the NEWEST session is B3 not having
+            # published yet, not a hole. These tables publish on their own lags:
+            # verified 2026-09-17 03:36 BRT, BTBTrade had 2026-09-16 (40,021
+            # rows) while BTBLendingOpenPosition for the same session did not
+            # exist yet. The daily cron runs at 03:03 BRT and always re-requests
+            # the newest two sessions, so filing that as an error made DB Health
+            # red EVERY morning over a gap the next run heals by itself — and a
+            # gate that cries missing-data at a healthy warehouse is the false
+            # alarm the health script exists to avoid.
+            #
+            # Only the newest session gets this benefit. A session missing from
+            # anywhere older is the silent clamp, or a real hole, and stays an
+            # error: it has had a full publication cycle and did not arrive.
+            not_published_yet = missing == [targets[-1]]
+            if not_published_yet:
+                logger.info("B3 BDI %s: %s — newest session, not published yet", label, msg)
+                self._log_finish(run_id, n, msg, skipped=True)
+            else:
+                logger.warning("B3 BDI %s: %s", label, msg)
+                self._log_finish(run_id, n, error=msg)
         else:
             self._log_finish(run_id, n)
         logger.info("B3 BDI %s upserted %d rows over %d sessions", label, n, len(delivered))

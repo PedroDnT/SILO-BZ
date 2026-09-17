@@ -241,6 +241,96 @@ def test_reconcile_span_reports_what_b3_actually_delivered():
     assert missing == [date(2026, 9, 1), date(2026, 9, 2)]
 
 
+
+# ── the publication-lag guard ─────────────────────────────────────────────
+
+
+def _span_ingestor(delivered_dates):
+    """A B3Ingestor whose BDI span fetch returns exactly `delivered_dates`."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    import src.pipeline.b3_pipeline as bp
+
+    with patch.object(bp, "get_pg_client", return_value=MagicMock()):
+        ing = bp.B3Ingestor(fetcher=MagicMock(), bdi_fetcher=MagicMock())
+    ing._bdi.fetch_table = AsyncMock(return_value="csv")
+    ing._log_start = MagicMock()
+    ing._log_finish = MagicMock()
+    parse = lambda _text: [{"trade_date": d} for d in delivered_dates]
+    return ing, parse
+
+
+def _run_span(ing, parse, targets):
+    import asyncio
+    return asyncio.run(ing._ingest_bdi_span(
+        doc_type="lending_open_position",
+        b3_table="BTBLendingOpenPosition",
+        parse=parse,
+        upsert=lambda _conn, rows: len(rows),
+        targets=targets,
+        date_field="trade_date",
+    ))
+
+
+def test_a_missing_newest_session_is_skipped_not_an_error():
+    """B3 publishes these tables on their own lags, and the cron runs at 03:03 BRT.
+
+    Verified 2026-09-17 03:36 BRT: BTBTrade had 2026-09-16 (40,021 rows) while
+    BTBLendingOpenPosition for the same session did not exist yet. The gap
+    calendar always re-requests the newest two sessions, so filing that as an
+    error made DB Health red EVERY morning over a gap the next run heals by
+    itself. The shortfall is still recorded on the audit row — only its status
+    changes, because a daily false alarm is an alarm nobody reads.
+    """
+    targets = [date(2026, 9, 15), date(2026, 9, 16)]
+    ing, parse = _span_ingestor([date(2026, 9, 15)])
+    _run_span(ing, parse, targets)
+
+    _args, kwargs = ing._log_finish.call_args
+    assert kwargs.get("skipped") is True, "a not-yet-published newest session is not an error"
+    # The fact must survive the downgrade: provenance, not silence.
+    assert "2026-09-16" in " ".join(str(a) for a in _args)
+
+
+def test_a_missing_older_session_is_still_an_error():
+    """The silent-clamp guard must not be weakened by the lag allowance.
+
+    An older session has had a full publication cycle. If it is absent, B3
+    truncated the window or the series has a real hole — and for these tables
+    a hole never fills in, so it has to stay loud.
+    """
+    targets = [date(2026, 9, 11), date(2026, 9, 15), date(2026, 9, 16)]
+    ing, parse = _span_ingestor([date(2026, 9, 15), date(2026, 9, 16)])
+    _run_span(ing, parse, targets)
+
+    _args, kwargs = ing._log_finish.call_args
+    assert not kwargs.get("skipped"), "an older missing session is a real shortfall"
+    assert "2026-09-11" in str(kwargs.get("error", ""))
+
+
+def test_newest_plus_older_missing_is_an_error():
+    """A shortfall is only forgiven when it is EXACTLY the newest session.
+
+    If the newest is missing AND something older is too, the older one decides:
+    that is a truncated window, not a publication lag.
+    """
+    targets = [date(2026, 9, 11), date(2026, 9, 15), date(2026, 9, 16)]
+    ing, parse = _span_ingestor([date(2026, 9, 15)])
+    _run_span(ing, parse, targets)
+
+    _args, kwargs = ing._log_finish.call_args
+    assert not kwargs.get("skipped")
+    assert "2026-09-11" in str(kwargs.get("error", ""))
+
+
+def test_a_complete_span_is_plain_ok():
+    targets = [date(2026, 9, 15), date(2026, 9, 16)]
+    ing, parse = _span_ingestor(targets)
+    _run_span(ing, parse, targets)
+
+    _args, kwargs = ing._log_finish.call_args
+    assert not kwargs.get("skipped")
+    assert not kwargs.get("error")
+
 # ── fetcher ───────────────────────────────────────────────────────────────
 
 
