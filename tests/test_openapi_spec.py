@@ -362,3 +362,96 @@ def test_pages_documenting_endpoints_point_at_the_generated_section(spec):
         "these pages no longer carry their own schema but do not point readers at "
         "the generated Endpoints section: " + ", ".join(missing)
     )
+
+
+# ---------------------------------------------------------------------------
+# Per-argument metadata: `default`, `enum`, `examples`.
+#
+# The request builder could not pre-fill a field or offer a dropdown, because
+# the spec carried defaults only as English inside `description` and had no
+# `enum` anywhere. The generator now emits all three — and the direction that
+# actually matters is the NEGATIVE one: an enum on an argument the SQL does not
+# refuse would promise a `400` the server never sends.
+# ---------------------------------------------------------------------------
+
+
+def _rpc_properties(spec, name):
+    schema = spec["paths"][f"/rpc/{name}"]["post"]["requestBody"]["content"]["application/json"]["schema"]
+    return schema.get("properties") or {}, set(schema.get("required") or [])
+
+
+#: (function, argument, allowed values) — every argument the SQL REFUSES, with
+#: the `22023` raise that makes it a refusal rather than a filter.
+ENFORCED_ENUMS = [
+    ("panel", "p_entity_type", ["fi", "fidc", "fii", "fip", "fiagro"]),
+    ("fund_holdings", "p_kind", ["equity", "fund"]),
+    ("fidc_portfolio", "p_kind", ["sector", "scr_debtor", "scr_operation", "tax_debt"]),
+    ("anbima_classes", "p_level", ["category", "type", "total"]),
+]
+
+
+@pytest.mark.parametrize("fn,arg,values", ENFORCED_ENUMS)
+def test_enforced_arguments_carry_their_enum(spec, fn, arg, values):
+    props, _ = _rpc_properties(spec, fn)
+    assert props[arg].get("enum") == values, f"{fn}.{arg} should enumerate exactly what the SQL accepts"
+
+
+@pytest.mark.parametrize("fn,arg,values", ENFORCED_ENUMS)
+def test_every_enum_is_actually_refused_by_the_sql(fn, arg, values):
+    """The enum must be backed by a `NOT IN (...)` guarded by a 22023 raise."""
+    sql = "\n".join(p.read_text() for p in sorted(ANALYTICAL.glob("*.sql")))
+    quoted = ", ".join(f"'{v}'" for v in values)
+    assert f"NOT IN ({quoted})" in sql, f"{fn}.{arg}: no NOT IN guard in the SQL for {values}"
+
+
+#: Canonical but NOT enforced — a filter or a silent fallback. `p_freq` is the
+#: load-bearing case: `CASE WHEN lower(COALESCE(p_freq,'month')) IN ('day','d',
+#: 'daily') THEN 'day' ELSE 'month' END` raises nothing, so `week` yields
+#: MONTHLY data and a 200. An enum here would be a lie the caller cannot detect.
+PERMISSIVE = [("panel", "p_freq"), ("financials", "p_scope"), ("financials", "p_doc_type")]
+
+
+@pytest.mark.parametrize("fn,arg", PERMISSIVE)
+def test_permissive_arguments_suggest_but_never_constrain(spec, fn, arg):
+    props, _ = _rpc_properties(spec, fn)
+    assert "enum" not in props[arg], (
+        f"{fn}.{arg} is not refused by the SQL — an enum would promise a 400 that never comes"
+    )
+    assert props[arg].get("examples"), f"{fn}.{arg} should still suggest its canonical values"
+
+
+def test_p_freq_fallback_is_still_silent_in_the_sql():
+    """If p_freq ever starts raising, the enum ban above stops being right."""
+    sql = (ANALYTICAL / "19_api_contract.sql").read_text()
+    assert "ELSE 'month' END AS freq" in sql, "p_freq no longer falls back — revisit the enum rule"
+
+
+def test_representable_defaults_are_machine_readable(spec):
+    """An optional argument whose default is a literal must carry `default`."""
+    missing = []
+    for path, item in spec["paths"].items():
+        if not path.startswith("/rpc/"):
+            continue
+        schema = item["post"]["requestBody"]["content"]["application/json"]["schema"]
+        required = set(schema.get("required") or [])
+        for name, sch in (schema.get("properties") or {}).items():
+            if name in required:
+                continue
+            desc = sch.get("description", "") or ""
+            m = re.match(r"^Defaults to `(.+)`\.$", desc, re.DOTALL)
+            if not m:
+                continue
+            expr = m.group(1)
+            # Literals only: CURRENT_DATE is computed per request, so a static
+            # default would freeze today's date into the spec.
+            if re.search(r"CURRENT_DATE|now\(\)", expr, re.IGNORECASE):
+                assert "default" not in sch, f"{path} {name}: computed default must stay prose-only"
+            elif "default" not in sch:
+                missing.append(f"{path} {name} ({expr})")
+    assert not missing, "literal defaults not exposed as JSON Schema `default`: " + ", ".join(missing)
+
+
+def test_panel_metrics_default_is_a_real_list(spec):
+    """ARRAY['close'::text,'nav'::text] must survive as ["close","nav"]."""
+    props, _ = _rpc_properties(spec, "panel")
+    assert props["p_metrics"]["default"] == ["close", "nav"]

@@ -209,6 +209,122 @@ def parse_arguments(args: str) -> list[dict[str, Any]]:
     return out
 
 
+def pg_default_to_json(expr: str) -> tuple[bool, Any]:
+    """A Postgres DEFAULT expression -> (representable, JSON value).
+
+    The prose `Defaults to \\`…\\`.` always carries the raw expression; this is
+    the machine-readable half, so a request builder can PRE-FILL the field
+    instead of making the reader parse English.
+
+    Only literals are representable. `CURRENT_DATE - 365` is a value the server
+    computes per request — emitting today's date as a static `default` would
+    freeze it into the spec and be wrong tomorrow — so it stays prose-only.
+    """
+    e = expr.strip()
+    e = re.sub(r"^\((.*)\)$", r"\1", e).strip()  # (CURRENT_DATE - 365) -> CURRENT_DATE - 365
+
+    # ARRAY[...] first: its elements carry their own casts, and stripping a
+    # trailing `::text]` off the whole expression would corrupt the literal.
+    arr = re.fullmatch(r"ARRAY\s*\[(?P<body>.*)\]", e, re.DOTALL | re.IGNORECASE)
+    if arr:
+        items: list[Any] = []
+        for part in split_top_level(arr.group("body")):
+            ok, val = pg_default_to_json(part)
+            if not ok:
+                return False, None
+            items.append(val)
+        return True, items
+
+    cast = re.match(r"^(?P<lit>.+?)::[A-Za-z_][\w \[\]\".]*$", e, re.DOTALL)
+    if cast:
+        e = cast.group("lit").strip()
+
+    if re.fullmatch(r"NULL", e, re.IGNORECASE):
+        return True, None
+    if re.fullmatch(r"true|false", e, re.IGNORECASE):
+        return True, e.lower() == "true"
+    if re.fullmatch(r"-?\d+", e):
+        return True, int(e)
+    if re.fullmatch(r"-?\d*\.\d+", e):
+        return True, float(e)
+    if re.fullmatch(r"'([^']*)'", e, re.DOTALL):
+        return True, e[1:-1]
+
+    return False, None
+
+
+#: `IF <ident> ... NOT IN ('a','b') THEN ... 22023 ... END IF;` — a REFUSAL.
+_NOT_IN_GUARD = re.compile(
+    r"IF\s+(?P<ident>[A-Za-z_]\w*)\b[^;]*?\bNOT\s+IN\s*\((?P<vals>[^)]*)\)\s*THEN"
+    r"(?P<body>.*?)END\s+IF\s*;",
+    re.IGNORECASE | re.DOTALL,
+)
+#: `    v_type  TEXT := NULLIF(lower(btrim(p_entity_type)), '');` -> v_type is p_entity_type.
+#: Single-line by construction: `\s` would swallow the newline after DECLARE and
+#: capture the keyword itself as the local.
+_LOCAL_FROM_ARG = re.compile(
+    r"^[ \t]*(?P<local>[A-Za-z_]\w*)[ \t]+[A-Za-z_][\w\[\] ]*?[ \t]*:=[^;\n]*?\b(?P<arg>p_[A-Za-z_]\w*)\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def argument_enums(src: str, args: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """Allowed values for the arguments the SQL actually REFUSES, read off `prosrc`.
+
+    Introspected, never asserted — same rule as `refuses` / `tier_rows`. The
+    `22023` requirement is the whole point: `p_freq` is matched by a bare
+    `CASE … IN ('day','d','daily') … ELSE 'month' END` and raises nothing, so
+    an unrecognised value silently yields MONTHLY data and a `200`. Publishing
+    an enum there would promise a `400` the server never sends — exactly the
+    confidently-wrong failure this contract exists to prevent. No raise, no enum.
+    """
+    names = {a["name"] for a in args}
+    locals_to_arg = {
+        m.group("local").lower(): m.group("arg").lower()
+        for m in _LOCAL_FROM_ARG.finditer(src)
+        if m.group("arg").lower() in names
+    }
+
+    found: dict[str, list[str]] = {}
+    for m in _NOT_IN_GUARD.finditer(src):
+        if "22023" not in m.group("body"):
+            continue  # a filter, not a refusal
+        ident = m.group("ident").lower()
+        arg = ident if ident in names else locals_to_arg.get(ident)
+        if not arg:
+            continue
+        vals = [v.strip()[1:-1] for v in split_top_level(m.group("vals")) if v.strip().startswith("'")]
+        if vals:
+            found.setdefault(arg, vals)
+    return found
+
+
+#: Values that are CANONICAL but not ENFORCED — suggestions, never constraints.
+#: Kept as `examples` rather than `enum` on purpose: each of these arguments is a
+#: filter or a fallback, so an unlisted value is accepted and simply matches
+#: nothing (or falls back). `tests/test_openapi_spec.py` pins each list to the
+#: values the SQL and the reference pages actually use.
+SUGGESTED_VALUES: dict[str, list[str]] = {
+    "p_freq": ["month", "day"],
+    "p_scope": ["con", "ind"],
+    "p_doc_type": ["itr", "dfp"],
+}
+
+
+def annotate_argument(schema: dict[str, Any], arg: dict[str, Any], enums: dict[str, list[str]]) -> dict[str, Any]:
+    """Attach `default` / `enum` / `examples` to one argument's schema, in place."""
+    name = arg["name"].lower()
+    if arg.get("default") is not None:
+        ok, value = pg_default_to_json(arg["default"])
+        if ok:
+            schema["default"] = value
+    if name in enums:
+        schema["enum"] = enums[name]
+    elif name in SUGGESTED_VALUES:
+        schema["examples"] = SUGGESTED_VALUES[name]
+    return schema
+
+
 def parse_result_columns(result: str) -> list[dict[str, str]] | None:
     """`TABLE(a text, b date)` -> [{name, type}]. None for a scalar return."""
     m = re.match(r"^\s*(?:SETOF\s+)?TABLE\s*\((?P<body>.*)\)\s*$", result, re.IGNORECASE | re.DOTALL)
@@ -346,14 +462,14 @@ def error_responses(has_22023: bool) -> dict[str, Any]:
 def build_function_path(fn: dict[str, Any]) -> dict[str, Any]:
     props: dict[str, Any] = {}
     required: list[str] = []
+    enums = fn.get("enums") or {}
     for arg in fn["arguments"]:
-        schema = pg_type_to_schema(arg["type"])
+        schema = dict(pg_type_to_schema(arg["type"]))
         if arg["default"] is None:
             required.append(arg["name"])
         else:
-            schema = dict(schema)
             schema["description"] = f"Defaults to `{arg['default']}`."
-        props[arg["name"]] = schema
+        props[arg["name"]] = annotate_argument(schema, arg, enums)
 
     body_schema: dict[str, Any] = {"type": "object", "properties": props}
     if required:
@@ -525,6 +641,9 @@ def build_spec(conn) -> dict[str, Any]:
                 "result_columns": parse_result_columns(result) if returns_set else None,
                 "comment": comment,
                 "refuses": "assert_row_cap" in src,
+                # src + helpers: `panel`'s p_entity_type guard lives in
+                # api.assert_panel_universe, not in panel's own body.
+                "enums": argument_enums(src + "\n" + helper_blob, parse_arguments(args or "")),
                 "paged": any(a["name"] == "p_after" for a in parse_arguments(args or "")),
                 "tier_rows": tier_ceilings(src),
                 "id_cap": id_cap,
