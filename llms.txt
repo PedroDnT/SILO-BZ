@@ -12,6 +12,13 @@ Start with Conventions & limits: it is the single source of truth for auth tiers
 - [Python SDK](https://octo-98895abd.mintlify.site/api-docs/sdk.md): silo-client — a thin, honest Python client over the read API: one method per endpoint, a capped response raises, views page, nothing is fabricated.
 - [For agents](https://octo-98895abd.mintlify.site/api-docs/agents.md): The operator guide for coding agents — what to read, how to get a token, the first live call, and how to screen a whole fund family.
 - [Data inventory](https://octo-98895abd.mintlify.site/api-docs/data-inventory.md): What we ingest, what we don't, and what we hold but don't serve.
+- [Market coverage](https://octo-98895abd.mintlify.site/api-docs/market-coverage.md): What exists, how far back it goes, how often it updates — and the one dataset that is a ratchet.
+
+## Guides
+
+- [Your first screen](https://octo-98895abd.mintlify.site/api-docs/guides/first-screen.md): From a publishable key to a real chart of Brazilian market data, in four calls.
+- [Paging without losing rows](https://octo-98895abd.mintlify.site/api-docs/guides/pagination.md): Three different ways a response gets cut, and only one of them tells you.
+- [Reading a fundamental](https://octo-98895abd.mintlify.site/api-docs/guides/fundamentals.md): A listed company's financial statements end to end — and the two conventions that will silently corrupt your numbers.
 
 ## Market data
 
@@ -44,6 +51,10 @@ Start with Conventions & limits: it is the single source of truth for auth tiers
 - [Docs MCP](https://octo-98895abd.mintlify.site/mcp): Search and read these pages over MCP. No login.
 - [catalog()](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/rpc/catalog): `POST` with `{}` and an `apikey` header. The contract as JSON — `limits`, `metrics`, `applicability`, `regime_breaks`, `constraints`, and a `version` saying what the server is actually serving.
 - [Data API](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/): The live base URL. Views are `GET /<view>`; functions are `POST /rpc/<function>`.
+
+## OpenAPI Spec
+
+- [openapi.json](https://octo-98895abd.mintlify.site/openapi.json): OpenAPI 3.1 covering every granted view and function, generated from the live Postgres catalog by `scripts/gen_openapi.py` and guarded against drift in both directions by `tests/test_openapi_spec.py`. Nothing in it is hand-maintained.
 
 ## Optional
 
