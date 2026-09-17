@@ -257,9 +257,10 @@ Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources 
 - **`webapp/`** — Evidence.dev instance for CIA Aberta (listed-company) analytics over the
   `cia_*` tables: Overview (`/`), Financials (`/financials`, consolidated ITR/DFP with
   margins/ROE), Events (`/events`, IPE + Fato Relevante feed). Mind the data conventions
-  in `webapp/README.md` (accented `ÚLTIMO`, net income 3.11 with a 3.09 fallback — not
-  because banks lack 3.11, they generally file it; 3.09 is pre-statutory-participations
-  profit — equity by name).
+  in `webapp/README.md` (accented `ÚLTIMO`, net income conta 3.11 **only** — no 3.09
+  fallback anywhere, because 3.09 is pre-statutory-participations profit, not net
+  income, and banks do generally file 3.11; equity by name). `setor` is the partition
+  key for peer comparisons — `/growth` ranks within sector for that reason.
 
 ## Deploy
 

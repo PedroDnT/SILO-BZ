@@ -34,12 +34,12 @@ curl -s -X POST "$SILO_URL/rpc/company_financials" \
   -d '{"p_id": "PETR4", "p_from": "2021-01-01", "p_scope": "con"}'
 ```
 
-Returns `revenue`, `gross_profit`, `net_income`, `total_assets`, `equity`, `net_margin_pct` and `roe_pct`, alongside `doc_type`, `scope`, `ref_date`, `period_start`, `period_end`, `period_months` and `version`.
+Returns `revenue`, `gross_profit`, `net_income`, `total_assets`, `equity`, `net_margin_pct` and `roe_pct`, alongside `doc_type`, `scope`, `ref_date`, `period_start`, `period_end`, `period_months`, `version`, `setor` and `segmento`.
 
 <Note>
   **Banks file a different chart of accounts — but `3.11` is still net income.** What differs is what each code *means*. For Banco do Brasil (`cd_cvm` 1023, FY2024 consolidated), `3.01` is `Receitas de Intermediação Financeira` rather than `Receita de Venda de Bens e/ou Serviços`, and `3.05` is already `Resultado antes dos Tributos sobre o Lucro` rather than EBIT. Net income is `3.11` just as it is for an industrial filer; `3.09` is profit *before* the statutory profit-sharing on `3.10`, so the two agree only where `3.10` is zero — as it happens to be there.
 
-  `company_financials` reads `3.11` and falls back to `3.09` for filings that omit it. If you pull raw accounts in step 3, read the `account_name` filed alongside the code rather than assuming a code carries the same concept across charts.
+  `company_financials` reads `3.11` only — a filing that omits it reads `null`, because substituting `3.09` would report profit before participations as net income. If you pull raw accounts in step 3, read the `account_name` filed alongside the code rather than assuming a code carries the same concept across charts, and use `setor` (on every row) as the partition key for any peer median or rank.
 </Note>
 
 If the summary answers your question, stop here.

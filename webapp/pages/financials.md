@@ -19,10 +19,10 @@ dre as (
     a.dt_refer,
     max(a.vl_conta) filter (where a.cd_conta = '3.01') / 1e6 as receita_mm,
     max(a.vl_conta) filter (where a.cd_conta = '3.03') / 1e6 as resultado_bruto_mm,
-    coalesce(
-      max(a.vl_conta) filter (where a.cd_conta = '3.11'),
-      max(a.vl_conta) filter (where a.cd_conta = '3.09')
-    ) / 1e6 as lucro_mm
+    -- 3.11 only. 3.09 is profit BEFORE statutory profit-sharing (3.10), so a
+    -- fallback to it reports the wrong quantity as net income. Null stays null,
+    -- matching api.company_financials (catalog v28).
+    max(a.vl_conta) filter (where a.cd_conta = '3.11') / 1e6 as lucro_mm
   from cia_account a
   join latest l on l.cd_cvm = a.cd_cvm and l.dt_refer = a.dt_refer
     and a.versao is not distinct from l.versao
@@ -75,9 +75,10 @@ order by avg_net_margin_pct desc
 # Financials — Consolidated Statements
 
 > Latest consolidated ITR/DFP per company (escopo `con`, exercise `ÚLTIMO`),
-> R$ millions. Net income uses conta 3.11 with 3.09 as a fallback for filings
-> that omit it — 3.09 is profit *before* statutory profit-sharing (3.10), not
-> net income, and banks do file 3.11 (Banco do Brasil, FY2024, does);
+> R$ millions. Net income is conta 3.11 **only** — a filing that omits it shows
+> blank rather than borrowing 3.09, which is profit *before* statutory
+> profit-sharing (3.10) and so is not net income. Banks do file 3.11 (Banco do
+> Brasil, FY2024, does), and 282 of 50,439 income statements genuinely omit it;
 > equity is `Patrimônio Líquido Consolidado` (the code varies between
 > 2.03 and 2.08 across chart layouts, so it is matched by name). Margins are
 > shown only where revenue is positive — quarterly figures, not annualized.

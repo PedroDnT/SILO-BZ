@@ -152,11 +152,11 @@ hit on 2026-08-28 when it tried to relate FIDC credit to listed-company equity
 `webapp/` has **no source SQL files**; every query is an inline block in three
 page files, and Evidence connects **directly to Postgres**, bypassing `api.*`
 entirely. It reads `cia_account` for revenue (`3.01`), net income (`3.11`
-falling back to `3.09`), total assets (BPA `1`) and equity (matched by
+only, no fallback), total assets (BPA `1`) and equity (matched by
 `ds_conta = 'Patrimônio Líquido Consolidado'`, because its code varies between
 2.03 and 2.08), then derives net margin and ROE, clipped to ±100%.
 
-**The `3.09` fallback is not a bank rule, and this document used to say it
+**The `3.09` fallback was not a bank rule, and this document used to say it
 was.** Banks file a different chart of accounts, but `3.11` is not generally
 missing from it and `3.09` is not net income. Measured against
 `api.financials` for Banco do Brasil (`cd_cvm` 1023, FY2024, `con`, 12-month
@@ -169,11 +169,17 @@ rows):
 | `3.11` | 29.17bn | Lucro ou Prejuízo Líquido Consolidado do Período |
 
 So `3.11` is present and is net income; `3.09` is profit *before* statutory
-profit-sharing, and the two match here only because `3.10` is zero. Only this
-one bank was verified, so some banks or periods may still genuinely omit
-`3.11` — the fallback stands for those, and is inert wherever `3.11` is filed.
-It would, however, report pre-participations profit as net income if `3.11`
-were ever null alongside a non-zero `3.10`.
+profit-sharing, and the two match here only because `3.10` is zero.
+
+**The fallback was then measured and removed from `api.*` (catalog v28).** Of
+50,439 DRE statements, 282 (0.56%) have no `3.11`, and in every one of those the
+`3.09` substitution was numerically harmless — so it had never actually
+overstated net income, but it would have for the first filer reporting a
+non-zero `3.10` without a `3.11`. `api.company_financials.net_income` now reads
+`3.11` alone and returns `NULL` for those 282; a caller wanting the
+pre-participations figure reads `3.09`/`3.10`/`3.11` from `api.financials`.
+`tests/test_company_financials_contract.py` asserts `'3.09'` appears nowhere in
+the function, so the fallback cannot return as a convenience.
 
 What *does* differ by chart is the **meaning of a code**, and no fallback can
 repair that. PETR4 (industrial) against BBAS (bank):
@@ -190,10 +196,14 @@ assuming a code carries one concept across filers. `revenue` and
 `gross_profit` are therefore not like-for-like between a bank and an
 industrial company, in `webapp/` or in `api.company_financials`.
 
-Those conventions — `escopo='con'`, `ordem_exerc='ÚLTIMO'` (accented), the
-3.11→3.09 fallback, equity-by-name — are **duplicated by hand** across
+Those conventions — `escopo='con'`, `ordem_exerc='ÚLTIMO'` (accented), net
+income as `3.11` alone, equity-by-name — are **duplicated by hand** across
 `index.md` and `financials.md` and documented only in prose. They exist in no
 database object, so nothing enforces them and no other consumer inherits them.
+That duplication is exactly why removing the `3.09` fallback in `api.*` meant
+editing four files by hand: the pages do not inherit the contract, they restate
+it. `webapp/sources/supabase/cia_growth_*.sql` (the `/growth` page) is the first
+part of this site to be written as a source query, and CI now compiles those.
 
 The funds `dashboard/` reads no `cia_*` table at all (its only `cia` strings are
 ingest-log entity labels).

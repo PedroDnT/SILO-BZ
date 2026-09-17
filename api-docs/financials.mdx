@@ -91,7 +91,9 @@ Carries `revenue`, `gross_profit`, `net_income`, `total_assets`, `equity`, `net_
 <Warning>
   **Banks file a different chart of accounts, but net income still lands on `3.11`.** For Banco do Brasil (`cd_cvm` 1023, FY2024 consolidated) `3.11` is `Lucro ou Prejuízo Líquido Consolidado do Período`, exactly as for an industrial filer.
 
-  What differs is the *meaning* of the other codes — `3.01` is interest income rather than sales, `3.05` is pre-tax profit rather than EBIT — so read the `account_name` beside a code rather than assuming it carries the same concept across charts. `net_income` falls back to `3.09` for filings that omit `3.11`; `3.09` is profit *before* the statutory profit-sharing on `3.10`, so the two agree only where `3.10` is zero.
+  What differs is the *meaning* of the other codes — `3.01` is interest income rather than sales, `3.05` is pre-tax profit rather than EBIT — so read the `account_name` beside a code rather than assuming it carries the same concept across charts. That is also why `setor` and `segmento` ride on every row: partition a peer comparison by sector rather than ranking `revenue` across charts.
+
+  `net_income` is `3.11` and **nothing else**. A filing that omits it reads `null` — `3.09` is profit *before* the statutory profit-sharing on `3.10` and is not substituted for it. 282 of 50,439 income statements (0.56%) are affected; for the pre-participations figure, read `3.09`, `3.10` and `3.11` from `api.financials` yourself.
 </Warning>
 
 **Note**: one 1,000-row page, and it refuses above it (`22023`). There is **no cursor** — narrow the window, pin a `p_statement`, or ask for one `p_doc_type`.

@@ -137,19 +137,97 @@ def test_public_functions_are_granted_to_both_tiers(name: str) -> None:
     assert re.search(rf"GRANT EXECUTE ON FUNCTION api\.{name}\([^)]*\)\s*TO silo_api;", SQL)
 
 
-def test_bank_net_income_falls_back_to_the_other_account_code() -> None:
-    """Net income reads 3.11 with 3.09 behind a COALESCE.
+def test_net_income_is_3_11_only_with_no_fallback() -> None:
+    """Net income reads conta 3.11 and NOTHING else.
 
-    Not because banks lack 3.11 — that rationale was wrong. Banco do Brasil
-    (cd_cvm 1023, FY2024, con, 12m) files 3.11 = 29.17bn "Lucro ou Prejuizo
-    Liquido Consolidado do Periodo", and 3.09 = 29.17bn is profit BEFORE the
-    statutory profit-sharing on 3.10 (zero there, which is why they match).
-    The fallback stands for filings that genuinely omit 3.11; this test only
-    pins that both codes are still wired into the contract.
+    There used to be a COALESCE to 3.09 behind it, on the belief that banks
+    file a chart without 3.11. That was wrong twice: Banco do Brasil (cd_cvm
+    1023, FY2024, con, 12m) files 3.11 = 29.17bn "Lucro ou Prejuizo Liquido
+    Consolidado do Periodo", and 3.09 = 29.17bn is profit BEFORE the statutory
+    profit-sharing on 3.10 — equal only because 3.10 is zero there.
+
+    Measured across the table, 282 of 50,439 DRE statements (0.56%) omit 3.11.
+    Those now read NULL rather than silently reporting a pre-participations
+    figure as net income. This test is the guard against the fallback being
+    reintroduced as a convenience: a null is the honest answer, and a caller
+    who wants the pre-participations number reads 3.09/3.10/3.11 itself.
     """
     wide = _body("company_financials")
-    assert "'3.11'" in wide and "'3.09'" in wide
-    assert "COALESCE(" in wide
+    assert "'3.11'" in wide, "net income must still read 3.11"
+    assert "'3.09'" not in wide, (
+        "3.09 is profit BEFORE statutory profit-sharing (3.10), not net income. "
+        "It must not appear in company_financials in any form — not as a "
+        "COALESCE fallback, not as a second FILTER."
+    )
+
+
+@pytest.mark.parametrize("name", ["financials", "company_financials"])
+def test_the_sector_ships_on_every_row(name: str) -> None:
+    """`setor` and `segmento` are on both public shapes, not fetched separately.
+
+    CVM's chart of accounts is sector-specific: 3.01 is `Receita de Venda de
+    Bens e/ou Serviços` for PETR4 and `Receitas de Intermediação Financeira`
+    for Banco do Brasil. So the sector is the PARTITION KEY for any median,
+    rank or percentile a caller computes over several companies — and a
+    partition key that requires a second round trip is one that gets skipped.
+    """
+    body = _body(name)
+    assert "setor" in body and "segmento" in body, (
+        f"api.{name} must carry setor/segmento: without them a caller cannot "
+        "partition a peer comparison, and CVM's account codes are not "
+        "comparable across sectors."
+    )
+
+
+def test_the_sector_is_resolved_through_company_ref_not_re_joined() -> None:
+    """One place resolves company identity, so the two shapes cannot disagree."""
+    assert "r.setor, r.segmento" in _body("cia_statement_rows"), (
+        "setor must ride along from api.company_ref; a second join to "
+        "cia_company would be a second source of truth for one company's sector"
+    )
+
+
+def test_the_widened_functions_are_dropped_before_being_replaced() -> None:
+    """CREATE OR REPLACE cannot widen a RETURNS TABLE.
+
+    Without an explicit DROP, adding a column to any of these is green on a
+    fresh CI cluster (nothing to replace) and red on an already-deployed
+    Supabase with "cannot change return type of existing function". That is
+    the worst possible place to find out, so the drops are pinned here.
+    """
+    for name, args in [
+        ("company_financials", "TEXT, DATE, DATE, TEXT"),
+        ("financials", "TEXT, TEXT, DATE, DATE, TEXT, TEXT"),
+        ("cia_statement_rows", "TEXT, DATE, DATE, TEXT, TEXT, TEXT"),
+        ("company_ref", "TEXT"),
+    ]:
+        stmt = f"DROP FUNCTION IF EXISTS api.{name}({args});"
+        assert stmt in SQL, f"missing: {stmt}"
+
+    # Reverse dependency order: a dependent function is dropped before the one
+    # it reads, so neither drop can be refused.
+    order = [
+        SQL.index("DROP FUNCTION IF EXISTS api.company_financials(TEXT, DATE, DATE, TEXT);"),
+        SQL.index("DROP FUNCTION IF EXISTS api.cia_statement_rows("),
+        SQL.index("DROP FUNCTION IF EXISTS api.company_ref(TEXT);"),
+    ]
+    assert order == sorted(order), "drops must run in reverse dependency order"
+
+
+def test_the_filed_currency_scale_is_not_republished() -> None:
+    """`vl_conta` is already absolute reais, so escala_moeda must stay internal.
+
+    src/pipeline/ingest_cia.py multiplies VL_CONTA by the filed ESCALA_MOEDA
+    (MIL → ×1000) before the upsert and keeps the string only for audit.
+    Publishing that scale on an API row would invite a caller to apply it a
+    second time and read thousands of reais as reais — a 1000× error that
+    looks entirely plausible.
+    """
+    for name in ("cia_statement_rows", "financials", "company_financials"):
+        assert "escala_moeda" not in _body(name), (
+            f"api.{name} exposes escala_moeda; vl_conta is already scaled to "
+            "absolute reais at ingest, so a caller applying it again is off by 1000×"
+        )
 
 
 def test_the_balance_sheet_is_never_paired_across_filing_versions() -> None:
