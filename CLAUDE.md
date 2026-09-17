@@ -250,8 +250,10 @@ Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources 
   Overview (`/`), FIDC Credit Monitor (`/fidc`), FII Market (`/fii`), Suspicious
   Screens (`/suspicious`), Performance (`/performance`), and ETF (`/etf`).
   Evidence static snapshot (parquet at build). The Vercel project in team
-  `deloslabs` is named `silo`; that is the GitHub/deploy-hook name, not the
-  public URL. Also buildable as a static site for any static host.
+  `deloslabs` is named `silo-bz` (renamed from `silo` on 2026-09-17, so older
+  planning docs and changelog rows still say `silo`); that is the
+  GitHub/deploy-hook name, not the public URL. Also buildable as a static site
+  for any static host.
 - **`webapp/`** — Evidence.dev instance for CIA Aberta (listed-company) analytics over the
   `cia_*` tables: Overview (`/`), Financials (`/financials`, consolidated ITR/DFP with
   margins/ROE), Events (`/events`, IPE + Fato Relevante feed). Mind the data conventions
@@ -262,7 +264,7 @@ Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources 
 Ingestion target: **GitHub Actions cron → Supabase Postgres** (SILO). Required GitHub
 secret: `POSTGRES_URL`. No container registry or Docker. The read-only dashboard is
 [https://silo-bz.vercel.app/](https://silo-bz.vercel.app/) (Vercel
-project `silo` in team `deloslabs`; any static host also works).
+project `silo-bz` in team `deloslabs`; any static host also works).
 
 - `.github/workflows/daily_ingest.yml` — 06:00 UTC daily (`run_daily`) + `workflow_dispatch`
   (`mode=daily|analytics-only|b3-backfill`). It bootstraps the schema
