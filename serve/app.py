@@ -34,6 +34,13 @@ _MAX_POINTS = 5000
 # total, _MAX_PANEL, and answers 400 above that rather than a cut panel.
 _PAGE = 1000
 _MAX_PANEL = 100_000
+# The ADAPTER's own envelope bound, not the server's ceiling. api.panel caps
+# ids per call by tier (3 anon, 50 signed in) and RAISES 22023 above it; this
+# process connects as `silo_api` with no JWT, so api.caller_tier() reads 'anon'
+# and 3 is what actually applies. parse_ids' message below is consequently
+# unreachable on a live database — the refusal comes from Postgres, and the
+# InvalidParameterValue handler at the foot of create_app turns it into the
+# 400 that carries the server's own wording.
 _MAX_IDS = 50
 _PANEL_METRICS = tuple(METRICS)
 
@@ -633,6 +640,31 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
             "detail": str(exc).strip().splitlines()[0],
             "hint": "run scripts/apply_analytical.sh against POSTGRES_URL",
         }), 503
+
+    @app.errorhandler(psycopg2.errors.InvalidParameterValue)
+    def _refused(exc):
+        # SQLSTATE 22023 — the contract REFUSING a request, which is a caller
+        # error, not a server fault. Without this it fell through to the
+        # psycopg2.Error handler below and came back as 502 "database error":
+        # the adapter reported the caller's own mistake as its own outage, and
+        # threw away the one thing that would have fixed it, the server's
+        # message naming the limit.
+        #
+        # The commonest case is the panel id ceiling. _MAX_IDS at the top of
+        # this module is 50, but
+        # this adapter connects as `silo_api` with NO JWT, so api.caller_tier()
+        # reads 'anon' and the real ceiling is 3 — parse_ids' own message is
+        # therefore unreachable and the 4th id is refused inside Postgres. Also
+        # arrives here: a window over the 1000-row page on a function with no
+        # cursor, a malformed p_after, fund_nav paging without an entity type,
+        # and anbima_classes' unknown category/metric/level.
+        #
+        # Postgres's message is the useful half (it names the limit and what to
+        # do), so it is passed through rather than replaced.
+        return jsonify({
+            "error": "the request was refused by the read contract",
+            "detail": str(exc).strip().splitlines()[0],
+        }), 400
 
     @app.errorhandler(psycopg2.Error)
     def _db_error(exc):

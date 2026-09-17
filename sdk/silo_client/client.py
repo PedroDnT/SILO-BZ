@@ -28,7 +28,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 26
+KNOWN_CATALOG_VERSION = 27
 
 
 class SiloCatalogDrift(UserWarning):
@@ -53,9 +53,16 @@ class SiloTruncated(SiloError):
     THIS IS THE DEFECT THE SDK EXISTS TO PREVENT. PostgREST caps every response
     at `db-max-rows` (1000) and answers HTTP 200 with the first page, oldest
     first. A caller asking for six years of daily quotes gets three and a half
-    years and no indication of it — the series just appears to end. Range paging
-    does not work on RPC calls, so the SDK cannot silently stitch the rest;
-    raising is the only honest answer.
+    years and no indication of it — the series just appears to end.
+
+    This is raised where the SDK cannot stitch the rest for you: a VIEW read
+    without an explicit `limit`/`offset`. Range paging genuinely does not work
+    on RPC, but that is not the same as RPC being unpageable — panel,
+    quote_history and fund_nav take the server's own `p_after` cursor, which
+    `iter_panel` / `iter_quote_history` / `iter_fund_nav` walk, and those
+    functions now REFUSE an over-page window (22023, `SiloOverCap`) instead of
+    truncating it. Use `view_all`/`iter_view` for views. Raising is the honest
+    answer only where no cursor exists.
     """
 
     def __init__(self, returned: int, total: Optional[int], url: str,
@@ -71,8 +78,11 @@ class SiloTruncated(SiloError):
             206,
             f"the server returned {returned:,} rows {of} and stopped at its "
             f"{SERVER_ROW_CAP}-row cap. Narrow the window (start/end), ask for "
-            f"fewer ids, or request one metric at a time. Paging does not work "
-            f"on this endpoint. The partial rows are on .rows.",
+            f"fewer ids, or request one metric at a time. On a view, page it "
+            f"with view_all()/iter_view() instead (they need an `order`); "
+            f"panel, quote_history and fund_nav page with "
+            f"iter_panel()/iter_quote_history()/iter_fund_nav(). The partial "
+            f"rows are on .rows, for inspection, not for use.",
             url,
         )
 
@@ -284,11 +294,17 @@ class SiloClient:
 
     def limits(self) -> Dict[str, Any]:
         """Every ceiling as numbers, from the catalog's `limits` block:
-        rows_per_response (the server-wide 1000 and how to detect it),
-        sql_sentinel (the functions' own unreachable LIMITs) and the per-tier
-        table (panel ids, search_funds/option_chain/option_exercises/
-        fund_holdings rows, statement timeout). Empty on a server older than
-        catalog v19, which had the same numbers only as prose."""
+        `rows_per_response` (the server-wide 1000 and how to detect it),
+        `page` (the page size, which functions page with `p_after` and which
+        only refuse, and what the 22023 means) and `tiers` (panel ids,
+        search_funds/option_chain/option_exercises/fund_holdings/
+        fund_debentures/fidc_* rows, statement timeout).
+
+        There is no `sql_sentinel` block: the cap+1 sentinels were removed in
+        catalog v24/v26 because PostgREST cut every response at 1000 rows long
+        before either was reached, so nobody could ever observe one. Functions
+        raise 22023 instead. Empty on a server older than catalog v19, which
+        had the same numbers only as prose."""
         return self.catalog().get("limits") or {}
 
     def coverage(self) -> List[Dict[str, Any]]:
@@ -465,17 +481,40 @@ class SiloClient:
         })
 
     def fund_profile(self, cnpj: str) -> List[Dict[str, Any]]:
-        """Registry facts for one fund: name, family, administrator, manager."""
+        """Registry and activity facts for one fund.
+
+        Returns `cnpj`, `entity_type`, `fund_name`, `status`, `first_period`,
+        `last_period`, `n_months_reported`, `peak_aum`, `latest_aum` and
+        `is_active` — what the fund filed and over what span.
+
+        It does NOT return administrator or manager, which this docstring
+        claimed for several versions: those columns live on `dim_fund` and were
+        never part of api.fund_profile's shape, so code written against the
+        promise got a KeyError rather than a name.
+        """
         return self._rpc("fund_profile", {"p_cnpj": cnpj})
 
-    def search_funds(self, query: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def search_funds(self, query: str, entity_type: Optional[str] = None,
+                     limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """Name search over the fund universe.
+
+            silo.search_funds("itau")
+            silo.search_funds("itau", entity_type="fidc")   # one family
+
+        `entity_type` (fi | fidc | fii | fip | fiagro) narrows to one family.
+        api.search_funds has taken it as its second argument since the function
+        was written — the Flask adapter exposes it as `?type=` — but this
+        wrapper omitted it, so the only way to search within a family through
+        the SDK was to over-fetch and filter client-side, against a row cap
+        that made "no results" and "results past the cap" look identical.
 
         The server clamps `limit` by tier — 25 anonymous, 200 signed in — so a
         larger value is silently reduced rather than refused. Check `.tier` if
         you need to know which ceiling you are under.
         """
-        return self._rpc("search_funds", {"p_query": query, "p_limit": limit})
+        return self._rpc("search_funds", {
+            "p_query": query, "p_entity_type": entity_type, "p_limit": limit,
+        })
 
     def fund_holdings(self, cnpj: Optional[str] = None, ticker: Optional[str] = None,
                       start: Datish = None, end: Datish = None,
@@ -679,12 +718,20 @@ class SiloClient:
 
     # -- typed views (GET resources, not functions) --------------------------
 
-    #: The eight published views. PostgREST serves these as filterable
+    #: The thirteen published views. PostgREST serves these as filterable
     #: resources, so they take horizontal filters (`cd_ativo=eq.PETR4`) and
     #: `select`/`order`/`limit` rather than positional arguments.
+    #:
+    #: The last five are the B3 securities-lending and investor-flow group.
+    #: They were granted to anon/authenticated and answering on the publishable
+    #: key well before they were listed here, which meant `view()` refused them
+    #: as unknown and nothing in this client could reach them. Each has a named
+    #: wrapper below carrying the caveat that makes it readable.
     VIEWS = (
         "quotes", "equities", "bdrs", "units", "fund_quotas",
         "cash_securities", "auctions", "funds",
+        "short_interest", "short_interest_by_sector", "lending_trades",
+        "lending_participants", "investor_flow",
     )
 
     def view(self, name: str, **filters: Any) -> List[Dict[str, Any]]:
@@ -727,6 +774,130 @@ class SiloClient:
         short, or when Content-Range says the total has been reached.
         """
         return list(self.iter_view(name, page_size=page_size, **filters))
+
+    # -- B3 securities lending and investor flow -----------------------------
+    #
+    # Five named wrappers over `view`, so these endpoints are reachable by name
+    # and their traps arrive with them. Filters stay PostgREST's own syntax,
+    # passed through verbatim like every other view — the SDK does not invent a
+    # query language over them. Each returns ONE page; `view_all(name,
+    # order=...)` walks every page.
+    #
+    # ALL FIVE ARE A RATCHET, and it is the only one in this warehouse. B3
+    # keeps about 21 BUSINESS DAYS of the underlying tables and publishes no
+    # archive, so the history begins at SILO's first capture and cannot be
+    # extended backwards at any price. A short window here is the source's
+    # retention, not a gap to go and fill; `coverage()` reports the real span
+    # per endpoint and says the same thing in `notes`.
+
+    def short_interest(self, **filters: Any) -> List[Dict[str, Any]]:
+        """Short interest per (ticker, trade_date) from B3's lending book.
+
+            silo.short_interest(ticker="eq.PETR4", order="trade_date.desc")
+            silo.short_interest(trade_date="eq.2026-09-16",
+                                float_basis="eq.index_free_float",
+                                order="pct_float.desc", limit=25)
+
+        **`pct_float` is two different metrics and `float_basis` says which one
+        you have.** `index_free_float` is B3's published free float and exists
+        for index constituents only; `shares_outstanding` is capital social, a
+        LARGER denominator that yields a SMALLER percentage for the same
+        position. They are not comparable, so any ranking or cross-section on
+        `pct_float` must filter to ONE basis first — otherwise it sorts index
+        members against non-members on an axis they do not share.
+        `float_denominator` carries the number actually used.
+
+        `pct_float` and `days_to_cover` are NULL — never 0 — when the
+        denominator is missing or the name did not trade in the window. A short
+        position in an untraded name is uncoverable, not instantly coverable.
+        Rates are percentage points a.a. See the ratchet note above.
+        """
+        return self.view("short_interest", **filters)
+
+    def short_interest_by_sector(self, **filters: Any) -> List[Dict[str, Any]]:
+        """The same short book aggregated by B3 top-level sector, per session.
+
+            silo.short_interest_by_sector(trade_date="eq.2026-09-16",
+                                          order="short_value.desc")
+
+        Tickers B3 publishes no sector for — ETFs, BDRs, anything outside the
+        index portfolios — are bucketed as ``Não classificado`` rather than
+        dropped, so the sectors sum to the whole book and the unclassified
+        share is visible instead of silently missing. `short_value_equities`
+        restricts to SHARES and UNIT for the single-name view, which is what
+        you want if the unclassified bucket would otherwise dominate.
+        See the ratchet note above.
+        """
+        return self.view("short_interest_by_sector", **filters)
+
+    def lending_trades(self, **filters: Any) -> List[Dict[str, Any]]:
+        """Daily lending activity per ticker, computed from the trade tape.
+
+            silo.lending_trades(ticker="eq.PETR4", order="trade_date.desc")
+
+        `rate_pct` is QUANTITY-weighted. B3's own published average weights by
+        the NUMBER OF TRADES, so the two diverge where one broker does many
+        small trades away from the size-weighted middle (measured 2026-09-10
+        across 569 tickers: mean absolute difference 0.037pp, max 3.81pp).
+        Neither is wrong and this one does not replace B3's — they answer
+        different questions.
+
+        `lender_brokers` / `borrower_brokers` count DISTINCT BROKERAGES, not
+        owners, and `internal_trades` counts trades one broker crossed with
+        itself — about three quarters of the tape. See
+        :meth:`lending_participants` and the ratchet note above.
+        """
+        return self.view("lending_trades", **filters)
+
+    def lending_participants(self, **filters: Any) -> List[Dict[str, Any]]:
+        """Per (ticker, session, brokerage) lending flow: lent, borrowed, net.
+
+            silo.lending_participants(ticker="eq.PETR4",
+                                      trade_date="eq.2026-09-16",
+                                      order="quantity_borrowed.desc")
+
+        **`broker_code` / `broker_name` identify the B3 PARTICIPANT
+        intermediating the trade, never the beneficial owner.** B3 names ~33
+        participants in a whole session and about three quarters of trades
+        carry the same code on both legs (32,197 of 43,165 on 2026-09-10) — a
+        broker crossing its own client book. A large `quantity_borrowed`
+        through a broker is its CLIENTS' position, not a view that broker took,
+        and "the biggest short" read off this view is a statement about order
+        routing.
+
+        `internal_legs` / `internal_qty` are what tell the two apart: a high
+        internal share is client churn, a low one is flow that actually crossed
+        the market. They sit beside the totals rather than being netted away,
+        because dropping them makes the remainder look like conviction and
+        keeping them silently makes churn look like demand. See the ratchet
+        note above.
+        """
+        return self.view("lending_participants", **filters)
+
+    def investor_flow(self, **filters: Any) -> List[Dict[str, Any]]:
+        """Daily buy/sell/net flow by investor type, in R$ THOUSANDS.
+
+            silo.investor_flow(investor_type="eq.Investidor Estrangeiro",
+                               reference_date="gte.2026-09-01",
+                               order="reference_date.asc")
+
+        **These are a FIRST DIFFERENCE, not a published daily series.** B3
+        publishes investor participation as a MONTH-TO-DATE CUMULATIVE snapshot
+        with a T+2 lag; the daily figures are consecutive snapshots subtracted
+        WITHIN one month, and the difference deliberately never reaches across
+        a month boundary — doing so would report a whole month as one day's
+        flow.
+
+        **Check `flow_basis` on every row before using it.** ``delta`` is a real
+        one-session difference; ``month_open`` is the month's first session,
+        where the MTD total IS the day; ``unknown_opening_snapshot`` is a row
+        whose predecessor SILO does not hold, and it carries NULL flows BY
+        CONSTRUCTION — never read, fill or sum those as zeros. The cumulative
+        figures stay on `mtd_buy_value_thousands` /
+        `mtd_sell_value_thousands`, so the difference can be checked against
+        the published snapshot rather than trusted. See the ratchet note above.
+        """
+        return self.view("investor_flow", **filters)
 
     def iter_view(self, name: str, page_size: int = SERVER_ROW_CAP,
                   **filters: Any) -> Iterator[Dict[str, Any]]:

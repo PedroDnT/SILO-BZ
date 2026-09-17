@@ -2222,6 +2222,29 @@ AS $$
         FROM public.cvm_ingest_log l
         WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
           AND l.entity IN ('fi', 'fidc', 'fii', 'fip', 'fiagro')
+        UNION ALL
+        -- The B3 BDI group logs under entity 'b3', the SAME entity as COTAHIST,
+        -- so the plain per-entity row above would report a cotahist run as the
+        -- lending group's freshness. For a RATCHET that matters more than
+        -- anywhere else in this function: these tables age out of the source in
+        -- ~21 business days, so "when did this specific ingest last succeed" is
+        -- the question, and a blended b3 timestamp answers a different one.
+        -- Split by doc_type, which is what each ingest actually writes.
+        SELECT '*b3_lending_balance*'::text, MAX(l.finished_at)
+        FROM public.cvm_ingest_log l
+        WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
+          AND l.entity = 'b3'
+          AND l.doc_type IN ('lending_open_position', 'lending_rate')
+        UNION ALL
+        SELECT '*b3_lending_trade*'::text, MAX(l.finished_at)
+        FROM public.cvm_ingest_log l
+        WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
+          AND l.entity = 'b3' AND l.doc_type = 'lending_trade'
+        UNION ALL
+        SELECT '*b3_investor_flow*'::text, MAX(l.finished_at)
+        FROM public.cvm_ingest_log l
+        WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
+          AND l.entity = 'b3' AND l.doc_type = 'investor_participation'
     ),
     base AS (
         -- Session data (quotes/derivatives) is complete by construction and a
@@ -2342,6 +2365,66 @@ AS $$
                'tab X exists from 2023-10 only: SCR grade ladders AA..H by debtor and by operation; a month before that has no rows, not zero-graded ones'::text,
                MAX(r2.period), 'fidc'::text
         FROM public.cvm_fidc_scr r2
+        UNION ALL
+        -- The B3 securities-lending and investor-flow group (#235, #240-#245),
+        -- published since but absent from this function until v27 — so the one
+        -- call an agent is told to make before claiming freshness said nothing
+        -- about five endpoints that were already answering.
+        --
+        -- THE RATCHET LIVES IN `notes`, not in the dates. B3 retains ~21
+        -- business days of these tables and publishes no archive, so as_of and
+        -- the FIRST date are both facts about what SILO captured, not about
+        -- what exists. A caller who reads a short window as a data problem
+        -- will go looking for a backfill that cannot be run. The note says so
+        -- on every row, because the dates cannot.
+        --
+        -- A session is complete by construction (B3 publishes the day's book
+        -- once), so complete_through = as_of, as it does for quotes. Each MAX
+        -- is an index probe on a date column over a table the retention window
+        -- already bounds.
+        SELECT 'short_interest'::text,
+               MAX(p.trade_date) FILTER (WHERE p.trade_date <= CURRENT_DATE),
+               MAX(p.trade_date) FILTER (WHERE p.trade_date <= CURRENT_DATE),
+               'b3'::text,
+               'RATCHET: B3 keeps ~21 business days of the lending book and publishes no archive, so this series starts at SILO''s first capture and cannot be backfilled at any price — a short window is the retention limit, not a gap. Read pct_float together with float_basis: index_free_float (index constituents only) and shares_outstanding (a larger denominator, so a smaller percentage) are different metrics, and any ranking must filter to one. pct_float and days_to_cover are NULL, never 0, when the denominator is missing or the name did not trade.'::text,
+               MAX(p.trade_date), '*b3_lending_balance*'::text
+        FROM public.b3_lending_open_position p
+        UNION ALL
+        SELECT 'short_interest_by_sector'::text,
+               MAX(p.trade_date) FILTER (WHERE p.trade_date <= CURRENT_DATE),
+               MAX(p.trade_date) FILTER (WHERE p.trade_date <= CURRENT_DATE),
+               'b3'::text,
+               'Same ratchet and same spine as short_interest. Sector is B3''s own top-level sector from the index portfolios; tickers B3 publishes no sector for (ETFs, BDRs, anything outside the index universe) are bucketed as Não classificado rather than dropped, so the bars sum to the whole book. short_value_equities restricts to SHARES and UNIT for the single-name view.'::text,
+               MAX(p.trade_date), '*b3_lending_balance*'::text
+        FROM public.b3_lending_open_position p
+        UNION ALL
+        SELECT 'lending_trades'::text,
+               MAX(t.trade_date) FILTER (WHERE t.trade_date <= CURRENT_DATE),
+               MAX(t.trade_date) FILTER (WHERE t.trade_date <= CURRENT_DATE),
+               'b3'::text,
+               'RATCHET: ~21 business days at the source, no archive, history starts at first capture. rate_pct is quantity-weighted, while B3''s own published average in the lending-rate table weights by NUMBER OF TRADES — the two answer different questions and neither overwrites the other (measured 2026-09-10 across 569 tickers: mean absolute difference 0.037pp). internal_trades counts trades a single broker crossed with itself; about three quarters of the tape is that.'::text,
+               MAX(t.trade_date), '*b3_lending_trade*'::text
+        FROM public.b3_lending_trade t
+        UNION ALL
+        SELECT 'lending_participants'::text,
+               MAX(t.trade_date) FILTER (WHERE t.trade_date <= CURRENT_DATE),
+               MAX(t.trade_date) FILTER (WHERE t.trade_date <= CURRENT_DATE),
+               'b3'::text,
+               'RATCHET: ~21 business days at the source, no archive, history starts at first capture. broker_code is the B3 PARTICIPANT intermediating, NEVER the beneficial owner: ~75% of trades carry the same code on both legs (32,197 of 43,165 on 2026-09-10), so a large borrow through a broker is its client book, not a position it holds. internal_legs / internal_qty are what separate client churn from directional flow — never read a broker''s quantity_borrowed as its own short.'::text,
+               MAX(t.trade_date), '*b3_lending_trade*'::text
+        FROM public.b3_lending_trade t
+        UNION ALL
+        -- as_of is the newest REFERENCE date held, which trails the calendar by
+        -- B3's T+2 publication lag even when ingest is perfectly healthy. That
+        -- is the source's cadence, not our staleness — exactly the distinction
+        -- CLAUDE.md draws between complete_through and landed_at.
+        SELECT 'investor_flow'::text,
+               MAX(i.reference_date) FILTER (WHERE i.reference_date <= CURRENT_DATE),
+               MAX(i.reference_date) FILTER (WHERE i.reference_date <= CURRENT_DATE),
+               'b3'::text,
+               'RATCHET: ~21 business days at the source, no archive, history starts at first capture. Published T+2, so as_of trails the calendar even when ingest is healthy. The daily figures are a FIRST DIFFERENCE of a month-to-date cumulative snapshot and never difference across a month boundary; flow_basis says which row you have — delta (a real one-session difference), month_open (the month''s first session), or unknown_opening_snapshot (no earlier snapshot held that month), whose flows are NULL BY CONSTRUCTION and must never be read or summed as zeros. Values are R$ thousands.'::text,
+               MAX(i.reference_date), '*b3_investor_flow*'::text
+        FROM public.b3_investor_participation i
     )
     SELECT b.dataset, b.as_of, b.complete_through, b.source, b.notes,
            b.newest_period, l.landed_at
@@ -2351,7 +2434,7 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION api.coverage() IS
-    'Freshness AND honesty per dataset. as_of = the newest period that has landed and has actually ELAPSED (bounded by today); complete_through = the newest COMPLETE period, which is what default windows serve; newest_period = the newest period KEY present, which can sit in the future when a family files forward-dated (FIP is keyed 31-December); landed_at = when ingest last SUCCEEDED for that source, from cvm_ingest_log (status ok with a finish time, so a later failed run never advances it). funds_<family> rows report each filing cadence separately. notes carries a caveat the dates cannot: the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); funds_fip states why its newest_period runs ahead; fund_nav points at catalog().applicability and api.metric_coverage().';
+    'Freshness AND honesty per dataset. as_of = the newest period that has landed and has actually ELAPSED (bounded by today); complete_through = the newest COMPLETE period, which is what default windows serve; newest_period = the newest period KEY present, which can sit in the future when a family files forward-dated (FIP is keyed 31-December); landed_at = when ingest last SUCCEEDED for that source, from cvm_ingest_log (status ok with a finish time, so a later failed run never advances it). funds_<family> rows report each filing cadence separately. notes carries a caveat the dates cannot: the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); funds_fip states why its newest_period runs ahead; fund_nav points at catalog().applicability and api.metric_coverage(); and the five B3 lending / flow rows (short_interest, short_interest_by_sector, lending_trades, lending_participants, investor_flow) state the RATCHET — B3 keeps ~21 business days and publishes no archive, so their span starts at first capture and no backfill exists — along with the float_basis, brokerage-not-owner and first-difference traps that make those series easy to read wrongly. Their landed_at is split by ingest doc_type, so a COTAHIST run never reports as the lending group''s freshness.';
 
 REVOKE ALL ON FUNCTION api.coverage() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.coverage() TO anon, authenticated;
@@ -3296,9 +3379,9 @@ AS $fn$
 SELECT $json$
 {
   "kind": "catalog",
-  "version": 26,
+  "version": 27,
   "primitive": "panel",
-  "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
+  "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, and the B3 securities-lending and investor-flow group). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
     "principle": "price by default; every other measure is opt-in",
     "panel": {
@@ -3576,6 +3659,10 @@ SELECT $json$
     "FIDC DELINQUENCY STARTS IN 2025-01. CVM's pre-2025 monthly FIDC file (tab II/III) carried no delinquency field, so `delinquency` is null on every fidc row through 2024-12-31 — not zero, not clean books, not a missing month. From 2025-01-31 the tab IV/VI format is ingested and delinquency is filed on every row. Never chain-link, difference or average a FIDC delinquency series across 2024-12 → 2025-01; the series begins there. Machine-readable in `regime_breaks`, and on the funds_fidc coverage row's `notes`.",
     "A FUND'S DEBENTURE HOLDINGS ARE A DIFFERENT SHAPE FROM ITS EQUITY HOLDINGS. api.fund_debentures (CDA block 6) is one row per (fund, month, issuer, maturity, rate structure, application type), as filed and never summed — two series of one issuer maturing the same day at different coupons are different securities. The issuer is its own filed CPF/CNPJ (issuer_id); p_issuer also takes a listed company's ticker or CVM code, resolved only through CVM's published FCA map, and issuer_tickers carries the issuer's active listed codes back (NULL when not listed — most debenture issuers are not). Nothing is matched by name.",
     "ANBIMA CLASS ROWS ARE INDUSTRY AGGREGATES, NOT FUNDS. api.anbima_classes serves the Boletim de Fundos de Investimento as published — R$ milhões (unit brl_mm) and percentage points (unit pct) — per class, ANBIMA type or industry total (`level`; class aggregates by default). No fund in this warehouse is mapped to an ANBIMA class: CVM's `classe` is CVM's taxonomy, so never join a fund to a class by name, and there is no panel arm because these rows carry no id. An unknown category, metric or level raises 22023 listing what exists rather than returning an empty array.",
+    "THE B3 LENDING AND FLOW GROUP IS A RATCHET, AND IT IS THE ONLY PART OF THIS WAREHOUSE THAT IS. short_interest, short_interest_by_sector, lending_trades, lending_participants and investor_flow read B3 tables that B3 keeps for about 21 BUSINESS DAYS and publishes no archive for. History therefore starts at SILO's first capture and cannot be extended backwards at any price — a missed session is gone, not late, and no backfill exists to ask for. coverage() reports the real span per endpoint; read it before describing any of these series as short, broken or anomalous, and never infer a level change from a window that simply begins where capture began. An over-wide request to the source returns HTTP 200 with a silently clamped window, which is why the ingest reconciles what it asked for against what it received.",
+    "pct_float IS TWO DIFFERENT METRICS AND float_basis SAYS WHICH ONE YOU HAVE. api.short_interest divides the balance on loan by whichever denominator exists for that ticker. float_basis = 'index_free_float' means B3's published free float (theoretical_qty from the broadest index portfolio carrying the ticker) and exists for index constituents only, ~149 tickers; float_basis = 'shares_outstanding' means capital social from the cash instrument registry, a LARGER denominator that yields a SMALLER percentage for the same position. They are not the same measure and are never comparable: ANY ranking, screen or cross-section on pct_float must filter to ONE basis first, or it sorts index members against non-members on an axis they do not share. float_denominator carries the number actually used. pct_float and days_to_cover are NULL — never 0 — when their denominator is missing or the name did not trade; 0 would sort an unknown to exactly the wrong end.",
+    "IN THE LENDING TAPE, doador AND tomador ARE BROKERAGES, NOT BENEFICIAL OWNERS. lending_participants' broker_code / broker_name and lending_trades' lender_brokers / borrower_brokers identify the B3 PARTICIPANT intermediating a trade, never who ends up long or short. B3 names ~33 participants in a whole session, and about three quarters of trades carry the SAME code on both legs (measured 2026-09-10: 32,197 of 43,165, 74.6%) — a broker crossing its own client book. So a large borrow through a broker is its clients' position, not the broker's view, and 'the biggest short' read off this tape is a statement about order flow routing. internal_legs / internal_qty (lending_participants) and internal_trades (lending_trades) are what tell the two apart: high internal share is client churn, low internal share is flow that actually crossed the market. They are published beside the totals rather than netted away, because dropping them makes the remainder look like conviction and keeping them silently makes churn look like demand.",
+    "investor_flow IS A FIRST DIFFERENCE, NOT A PUBLISHED DAILY SERIES. B3 publishes investor participation as a MONTH-TO-DATE CUMULATIVE snapshot with a T+2 lag; the daily figures are consecutive snapshots subtracted WITHIN one month, and the difference never reaches across a month boundary (that would report a whole month as one day's flow). flow_basis says which kind of row you have: 'delta' is a real one-session difference, 'month_open' is the month's first session where MTD equals the day, and 'unknown_opening_snapshot' is a row whose predecessor SILO does not hold — those carry NULL flows ON PURPOSE and must never be read, filled or summed as zeros. mtd_buy_value_thousands / mtd_sell_value_thousands carry the cumulative figures as published, so the difference can be checked against the source rather than trusted. Values are R$ thousands. Sum a month only over rows whose flow_basis you have inspected.",
     "LISTED-COMPANY FINANCIALS ARE FILED, NOT DERIVED. api.financials returns one row per account line exactly as the company filed it; nothing is summed, annualised or restated. Read period_months before comparing two rows: an ITR publishes the SAME account twice under one reference date, once for the three months and once year-to-date, and they are distinguished only by the period span. Adding a 3-month row to a 6-month row double-counts the quarter.",
     "FINANCIALS DEFAULT TO CONSOLIDATED (scope=con) AND TO THE PERIOD THE DOCUMENT IS FOR (ordem_exerc ULTIMO). The prior-year comparative printed beside it is never returned. When a company re-files, only the newest version of each statement is served and `version` carries it; in company_financials a balance sheet from a different version than the income statement reads NULL rather than being paired across filings.",
     "A TICKER RESOLVES TO A COMPANY ONLY THROUGH CVM'S PUBLISHED FCA MAP, active listings only — the CNPJ and the trading code arrive on the same filed row. financials('PETR4'), financials('33000167000101') and financials('9512') are the same company. A delisted code resolves to nothing rather than to a guess, and no company↔ticker edge is ever inferred from a name.",
@@ -3742,33 +3829,48 @@ SELECT $json$
   "examples": [
     {
       "ask": "How does PETR4 relate to delinquency in this FIDC?",
-      "call": "GET /v1/panel?ids=PETR4,<cnpj>&metrics=close_return,delinquency&freq=month&format=wide",
-      "then": "Pairwise-complete correlation in the notebook. Do not ffill."
+      "call": "POST /rest/v1/rpc/panel {\"p_ids\": [\"PETR4\", \"<cnpj>\"], \"p_metrics\": [\"close_return\", \"delinquency\"], \"p_freq\": \"month\"}",
+      "then": "Pivot the long rows on (date, id, metric), then a pairwise-complete correlation in the notebook. Do not ffill."
     },
     {
       "ask": "Rank these funds by latest NAV",
-      "call": "GET /v1/panel?ids=<cnpj>,<cnpj>&metrics=nav&freq=month&format=wide",
-      "then": "Take the last non-null NAV per id from the wide matrix."
+      "call": "POST /rest/v1/rpc/panel {\"p_ids\": [\"<cnpj>\", \"<cnpj>\"], \"p_metrics\": [\"nav\"], \"p_freq\": \"month\"}",
+      "then": "Take the last non-null NAV per id. Keep asset_class in the key: a CNPJ filing under two families returns one row per family."
     },
     {
       "ask": "Did inflows and quota move together for this FI?",
-      "call": "GET /v1/panel?ids=<cnpj>&metrics=inflows,quota&freq=month&format=wide",
-      "then": "Correlate the two columns; nulls stay null."
+      "call": "POST /rest/v1/rpc/panel {\"p_ids\": [\"<cnpj>\"], \"p_metrics\": [\"inflows\", \"quota\"], \"p_freq\": \"month\"}",
+      "then": "Correlate the two metrics' series; nulls stay null."
     },
     {
       "ask": "Spread of two equity closes at month end",
-      "call": "GET /v1/panel?ids=PETR4,VALE3&metrics=close&freq=month&format=wide",
-      "then": "Subtract aligned columns; a missing month is null, not interpolated."
+      "call": "POST /rest/v1/rpc/panel {\"p_ids\": [\"PETR4\", \"VALE3\"], \"p_metrics\": [\"close\"], \"p_freq\": \"month\"}",
+      "then": "Subtract the aligned series; a missing month is null, not interpolated."
     },
     {
       "ask": "Which of these FIDCs is most exposed to one debtor?",
-      "call": "GET /v1/panel?ids=<cnpj>,<cnpj>,<cnpj>&metrics=sacado_top1,receivables&freq=month&format=wide",
+      "call": "POST /rest/v1/rpc/panel {\"p_ids\": [\"<cnpj>\", \"<cnpj>\", \"<cnpj>\"], \"p_metrics\": [\"sacado_top1\", \"receivables\"], \"p_freq\": \"month\"}",
       "then": "Divide sacado_top1 by receivables per row; the debtor is anonymized, so this is a ratio, not a name."
     },
     {
       "ask": "Just give me the panel; I will run a factor model",
-      "call": "GET /v1/panel?ids=PETR4,VALE3,<cnpj>&metrics=close_return,nav&freq=month&format=wide",
-      "then": "Model in the notebook from the matrix."
+      "call": "POST /rest/v1/rpc/panel {\"p_ids\": [\"PETR4\", \"VALE3\", \"<cnpj>\"], \"p_metrics\": [\"close_return\", \"nav\"], \"p_freq\": \"month\"}",
+      "then": "Model in the notebook from the long rows. Anonymous callers are capped at 3 ids — a 4th raises 22023, it is not trimmed."
+    },
+    {
+      "ask": "Which names are most heavily shorted right now?",
+      "call": "GET /rest/v1/short_interest?trade_date=eq.<the trade_date coverage() reports>&float_basis=eq.index_free_float&order=pct_float.desc&limit=25",
+      "then": "A view, not an RPC: filter and page it with PostgREST syntax. The float_basis filter is REQUIRED for a ranking — index_free_float and shares_outstanding are different denominators and sorting them together is meaningless. Read the ratchet constraint before calling the window short."
+    },
+    {
+      "ask": "Who was borrowing PETR4 last session, and was it real demand?",
+      "call": "GET /rest/v1/lending_participants?ticker=eq.PETR4&trade_date=eq.<session>&order=quantity_borrowed.desc",
+      "then": "broker_code is the INTERMEDIARY, never the owner. Compare internal_qty against quantity_lent + quantity_borrowed per broker: a high internal share is that broker crossing its own clients, not a position it took."
+    },
+    {
+      "ask": "What did foreign investors do this month?",
+      "call": "GET /rest/v1/investor_flow?investor_type=eq.<type>&reference_date=gte.<month start>&order=reference_date.asc",
+      "then": "Check flow_basis on every row first. 'unknown_opening_snapshot' rows carry NULL flows by construction — drop them, never read them as zero. Values are R$ thousands, differenced from a month-to-date snapshot published T+2."
     }
   ],
   "id_types": [
@@ -3838,7 +3940,12 @@ SELECT $json$
     "fund_debentures": "POST /rest/v1/rpc/fund_debentures",
     "fidc_cedentes": "POST /rest/v1/rpc/fidc_cedentes",
     "fidc_sacados": "POST /rest/v1/rpc/fidc_sacados",
-    "fidc_portfolio": "POST /rest/v1/rpc/fidc_portfolio"
+    "fidc_portfolio": "POST /rest/v1/rpc/fidc_portfolio",
+    "short_interest": "GET /rest/v1/short_interest",
+    "short_interest_by_sector": "GET /rest/v1/short_interest_by_sector",
+    "lending_trades": "GET /rest/v1/lending_trades",
+    "lending_participants": "GET /rest/v1/lending_participants",
+    "investor_flow": "GET /rest/v1/investor_flow"
   }
 }
 $json$::jsonb;
@@ -3860,7 +3967,16 @@ GRANT EXECUTE ON FUNCTION api.catalog() TO anon, authenticated;
 -- ON_ERROR_STOP=1 — intentional; never wrap them in a silent conditional.
 --
 -- The bundle is schema api and nothing else: USAGE on the schema, SELECT on
--- the seven views, EXECUTE on the thirteen functions. It deliberately receives no
+-- the eight views, EXECUTE on the twenty-one functions. (It said "seven" and
+-- "thirteen" until v27, having stopped being counted somewhere around
+-- api.auctions and the FIDC concentration work; the grants below are the
+-- authority, and tests/test_api_contract_sql.py pins them to
+-- EXPECTED_FUNCTIONS.) The five B3 lending / flow views added to the contract
+-- in v27 are deliberately NOT here: serve/app.py serves no /v1 route for
+-- them, so the adapter role has no reason to hold the grant. They reach
+-- callers through PostgREST's anon / authenticated grants, which
+-- 20_short_interest.sql and 21_lending_participants.sql own.
+-- It deliberately receives no
 -- grant in schema public — the DEFINER functions and owner-privileged views
 -- above are the only path from silo_api to the data. serve/-only works with
 -- exactly this; exposing schema api on the Supabase Data API would be a

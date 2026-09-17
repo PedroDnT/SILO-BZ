@@ -17,11 +17,17 @@ Design rules (mirroring the API's own contract):
     panel — this client hands you the DataFrame and stops;
   * a capped response RAISES. PostgREST stops at 1,000 rows and answers 200
     with the first page; six years of daily quotes come back as three and a
-    half with nothing to say so. SiloTruncated is that missing signal — paging
-    does not work on RPC, so the SDK cannot stitch the rest and will not
-    pretend the short answer is the whole one (the partial page is on .rows,
-    for inspection, not for use). Views DO page: view() returns one explicit
-    page and view_all() walks them all, ordered.
+    half with nothing to say so. Nothing here returns a short answer as if it
+    were the whole one. Which signal you get depends on the surface:
+    the set-returning FUNCTIONS refuse an over-page window outright
+    (SQLSTATE 22023 -> SiloOverCap), and three of them page with the server's
+    own p_after cursor — iter_panel(), iter_quote_history() and
+    iter_fund_nav(); VIEWS page with limit/offset, so view() returns one
+    explicit page and view_all()/iter_view() walk them all, ordered.
+    SiloTruncated is the signal where neither applies: a view read with no
+    page bounds that landed on the cap (the partial page is on .rows, for
+    inspection, not for use). Range paging is the one thing that genuinely
+    does not work on RPC — p_after is the RPC cursor, Range is the view's.
   * the catalog carries the ceilings as numbers (limits()), and the client
     warns (SiloCatalogDrift) when the server's catalog version is not the one
     it was written against.
@@ -43,7 +49,10 @@ from .client import (
     SiloTruncated,
 )
 
-__version__ = "0.6.0"
+#: Kept equal to sdk/pyproject.toml's `version` by a test. 0.7.0 adds the five
+#: B3 securities-lending / investor-flow views and reconciles the two files,
+#: which had drifted to 0.6.0 here against 0.4.0 in the package metadata.
+__version__ = "0.7.0"
 
 __all__ = [
     "SiloClient",

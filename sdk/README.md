@@ -1,8 +1,8 @@
 # silo-client
 
 Thin Python client for the Silo read API — Brazilian public-markets data
-(CVM funds, B3 COTAHIST quotes/options/termo) served from schema `api` over
-the Supabase Data API.
+(CVM funds, B3 COTAHIST quotes/options/termo, B3 securities lending and
+investor flow) served from schema `api` over the Supabase Data API.
 
 ```bash
 pip install -e sdk/              # from the repo root, or copy sdk/silo_client/
@@ -35,11 +35,14 @@ HTTP 200 with the first page, oldest first. Six years of daily quotes come back
 as three and a half, and the series simply looks like it ended — which is
 indistinguishable from a company that stopped trading. The client asks the
 server for a true count and raises `SiloTruncated` rather than handing you the
-short answer. Range paging does not work on RPC calls, so for the series
-functions it cannot stitch the rest for you; narrow the window, ask for fewer
-ids, or take one metric at a time. `panel` is different since catalog v24: the
-server **refuses** a call over one 1,000-row page (`SiloOverCap`) and pages
-with its own `p_after` cursor — `iter_panel()` / `panel_all()` walk it, and
+short answer. Range paging does not work on RPC calls — but that is not the
+same as RPC being unpageable, and the difference matters: `p_after` is the RPC
+cursor, `Range`/`limit`/`offset` the view cursor. Since catalog v24/v26 every
+set-returning function **refuses** a call over one 1,000-row page
+(`SiloOverCap`) instead of trimming it, and three of them page with the
+server's own `p_after` cursor: `panel`, `quote_history` and `fund_nav`. The
+other five have no cursor — narrow the window, ask for fewer ids, or take one
+metric at a time. `iter_panel()` / `panel_all()` walk the panel, and
 `panel_all(None, [...], entity_type="fidc", min_nav=1e7, min_months=12)` walks
 a whole family for a signed-in caller.
 
@@ -82,6 +85,44 @@ page2 = silo.view("funds", order="cnpj.asc", limit=1000, offset=1000)
 
 A `view()` call with no `limit` that lands on the 1,000-row cap still raises:
 that is the silent cut, not a page.
+
+**The B3 lending views are a ratchet.** `short_interest`,
+`short_interest_by_sector`, `lending_trades`, `lending_participants` and
+`investor_flow` have named wrappers, and they take the same PostgREST filters
+as any other view:
+
+```python
+# Most heavily shorted names. The float_basis filter is NOT optional.
+silo.short_interest(trade_date="eq.2026-09-16",
+                    float_basis="eq.index_free_float",
+                    order="pct_float.desc", limit=25)
+
+silo.lending_participants(ticker="eq.PETR4", order="quantity_borrowed.desc")
+silo.investor_flow(reference_date="gte.2026-09-01", order="reference_date.asc")
+```
+
+Three things make these easy to read wrongly, and the docstrings repeat each
+one at the call site:
+
+- **History starts at first capture.** B3 keeps about **21 business days** of
+  the underlying tables and publishes no archive, so a short window is the
+  source's retention, not a gap — there is no backfill to run, at any price.
+  `coverage()` reports the real span per endpoint.
+- **`pct_float` is two metrics.** `float_basis` is `index_free_float` (true
+  free float, index constituents only) or `shares_outstanding` (a larger
+  denominator, so a smaller percentage). They are never comparable: filter to
+  one basis before ranking or you sort index members against non-members on an
+  axis they do not share. `pct_float` and `days_to_cover` are `None`, never 0,
+  when the denominator is missing or the name did not trade.
+- **`doador` / `tomador` are brokerages, not owners.** About three quarters of
+  trades carry the same broker on both legs (32,197 of 43,165 on 2026-09-10),
+  so a large borrow through a broker is its client book, not its position.
+  `internal_legs` / `internal_qty` are what separate churn from conviction.
+
+`investor_flow` is a **first difference** of a month-to-date cumulative
+snapshot published T+2, and it never differences across a month boundary.
+Check `flow_basis` on every row: `unknown_opening_snapshot` rows carry `None`
+flows by construction and must never be read or summed as zeros.
 
 **Signing in raises four ceilings, and not the fifth.** Pass a user JWT as
 `token=` (or set `SILO_TOKEN`) and the request moves from the anonymous role to
