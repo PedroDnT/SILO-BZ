@@ -19,7 +19,8 @@
         "icon": "database",
         "pages": [
           "api-docs/data-inventory",
-          "api-docs/market-coverage"
+          "api-docs/market-coverage",
+          "api-docs/known-limitations"
         ]
       },
       {

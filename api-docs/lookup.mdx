@@ -67,7 +67,7 @@ The CNPJ and the ticker arrive on the same CVM row, so nothing in `tickers` is i
   **Not every listed company has a published ticker map.** `lookup('ITUB4')` returns only a
   ticker row, with `cnpj` and `tickers` both null — so `financials('ITUB4')` resolves nothing
   and answers `200 []`. When a ticker gives you no company row, resolve by company name or
-  `cd_cvm` instead.
+  `cd_cvm` instead. See [Known limitations](/api-docs/known-limitations).
 </Warning>
 
 ## Example
