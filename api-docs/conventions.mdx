@@ -1,8 +1,18 @@
 ---
 title: "Conventions & limits"
-description: "Base URL, auth headers, filter syntax, row caps, null semantics, and error behavior shared by every endpoint."
+description: "The contract every endpoint shares: base URL, auth tiers, row caps, null semantics, freshness, and error behavior. This page is the single source of truth."
 icon: "ruler"
 ---
+
+<Note>
+  **This page is the contract.** The auth tiers, the 1,000-row cap, the
+  unadjusted-price rule, the no-fill rule and the FIDC regime break are written
+  **here and nowhere else**. [For agents](/api-docs/agents), the
+  [skill file](https://octo-98895abd.mintlify.site/skill.md) and the docs
+  assistant all point back to these anchors instead of restating them, so there
+  is one copy to keep true. The machine-readable twin is
+  `POST /rpc/catalog` — same numbers, same rules, parsed rather than read.
+</Note>
 
 ## Base URL
 
@@ -14,43 +24,16 @@ That is the live Supabase Data API for this project (schema `api`). Everything
 below is relative to that. Views are `GET /<view>`; functions are
 `POST /rpc/<function>`.
 
+The `/v1/*` routes you may see in older notes belong to `serve/app.py`, a
+**local** Flask adapter that is not necessarily running anywhere. It is not the
+public API. If a `/v1/` path appears in an example, it is the adapter's.
+
 ## Authentication
 
 <Warning>
   **The printed publishable key is shared.** Treat it as a project identifier,
   not as your identity — anyone reading these docs has the same one.
 </Warning>
-
-Landing tables are **not** reachable with it. `anon` and `authenticated` hold no
-grant on `cvm_*`, `b3_cotahist`, `cia_*` or any other landing table; the boundary
-is the grant, not row-level security, and schema `api` is the whole public
-surface. A request with `Accept-Profile: public` gets 401, not rows.
-
-**Signing in raises four ceilings.** Send a user JWT (GitHub sign-in) as `Authorization: Bearer <token>` *alongside* the `apikey`
-header, and the request moves from `anon` to `authenticated`:
-
-| | anonymous | signed in |
-| --- | ---: | ---: |
-| `panel` ids per call | 3 | 50 |
-| `search_funds` rows | 25 | 200 |
-| `option_chain` rows | 200 | 2,000 |
-| `option_exercises` rows | 500 | 5,000 |
-| `fund_holdings` rows | 500 | 5,000 |
-| statement timeout | 3s | 8s |
-| **rows per response** | **1,000** | **1,000** |
-
-This is the only copy of that table on the site; every other page links here.
-The same numbers are served as `POST /rpc/catalog` → `.limits`, and a test in
-the repository pins each one to the SQL that enforces it.
-
-Two things are worth being exact about, because guessing wrong wastes a call:
-
-- **Rows per response never change.** `db-max-rows` is a server-wide PostgREST
-  setting applied identically to every caller — no tier raises it. Page views;
-  narrow the window on functions ([row caps](#row-caps)).
-- **Exceeding an id ceiling is an error, not a trim.** You get `22023` (a `400`)
-  naming the limit. A panel is never silently shortened to fit, because a short
-  panel that looks complete is the one failure you cannot detect downstream.
 
 Send the project's **publishable** key (`sb_publishable_…`) — the 2026
 replacement for the legacy **anon** JWT — on the `apikey` header. Do not put the
@@ -62,10 +45,65 @@ the authenticated tier.
 apikey: sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437
 ```
 
-Never **Secret** / `service_role`. Stay on schema `api` — never
-`Accept-Profile: public`, never `cvm_*` / `b3_cotahist`. The documented surface is
-`USAGE` on `api`, `SELECT` on the eight `api` views, and `EXECUTE` on the
-fifteen `api` functions.
+Never **Secret** / `service_role`. There is no endpoint that mints a key, and
+no per-user key exists yet.
+
+**Signing in raises four ceilings.** Sign in with **GitHub** at
+[https://silo-bz.vercel.app/signin.html](https://silo-bz.vercel.app/signin.html);
+the page shows an access token, a live expiry countdown and a ready-to-run
+`curl`. Send the token as `Authorization: Bearer <token>` *alongside* the
+`apikey` header — the `apikey` header identifies the project, the
+`Authorization` header identifies you — and the request moves from `anon` to
+`authenticated`:
+
+| | anonymous | signed in |
+| --- | ---: | ---: |
+| `panel` ids per call | 3 | 50 |
+| `panel` universe mode (no ids + a family) | — | yes |
+| `search_funds` rows | 25 | 200 |
+| `option_chain` rows | 200 | 2,000 |
+| `option_exercises` rows | 500 | 5,000 |
+| `fund_holdings` rows | 500 | 5,000 |
+| `fund_debentures` rows | 500 | 5,000 |
+| `fidc_cedentes` / `fidc_sacados` / `fidc_portfolio` rows | 500 | 5,000 |
+| statement timeout | 3s | 8s |
+| **rows per response** | **1,000** | **1,000** |
+
+This is the only copy of that table on the site; every other page links here.
+The same numbers are served as `POST /rpc/catalog` → `.limits.tiers`, and a
+test in the repository pins each one to the SQL that enforces it
+(`api.caller_tier()` and its assertions in
+`src/store/analytical/19_api_contract.sql`).
+
+Two things are worth being exact about, because guessing wrong wastes a call:
+
+- **Rows per response never change.** `db-max-rows` is a server-wide PostgREST
+  setting applied identically to every caller — no tier raises it. Page views;
+  page or narrow functions ([row caps](#row-caps)).
+- **Exceeding an id ceiling is an error, not a trim.** You get `22023` (a `400`)
+  naming the limit. A panel is never silently shortened to fit, because a short
+  panel that looks complete is the one failure you cannot detect downstream.
+
+<Warning>
+  **The token lasts about an hour, and expiry is silent.** You do not get a
+  `401` — you drop back to the anonymous tier, so a four-id `panel` that worked
+  an hour ago starts raising `22023` on the id ceiling. Read that error on a
+  call that used to work as "my token died", not as "my request is malformed".
+</Warning>
+
+### What is not reachable
+
+Landing tables are **not** reachable with either credential. `anon` and
+`authenticated` hold no grant on `cvm_*`, `b3_cotahist`, `cia_*`, `bacen_*` or
+any other landing table; the boundary is the grant, not row-level security, and
+schema `api` is the whole public surface. A request with
+`Accept-Profile: public` gets `401`, not rows. Ingest (`run_daily`, the audit
+log) is not exposed at all.
+
+The documented surface is `USAGE` on schema `api`, `SELECT` on the `api` views
+and `EXECUTE` on the `api` functions. The authoritative list of both — for the
+server you are actually talking to — is `catalog().postgrest`; see
+[What is live](#what-is-live).
 
 <Note>
   If the project exposes more than one schema and `api` is not the default, add
@@ -78,11 +116,12 @@ fifteen `api` functions.
   <Card title="Views — GET" icon="table-cells">
     `quotes`, `equities`, `bdrs`, `units`, `fund_quotas`, `cash_securities`,
     `auctions`, `funds`. Read with PostgREST query syntax: `select=`, column
-    filters, `order=`, `limit=`, `offset=`.
+    filters, `order=`, `limit=`, `offset=`. **Views truncate** at the row cap.
   </Card>
   <Card title="Functions — POST /rpc" icon="function">
     Functions take named arguments in a JSON body, all prefixed `p_`. The result set can be
-    further shaped with the same query-string operators.
+    further shaped with the same query-string operators. **Functions refuse**
+    rather than truncate.
   </Card>
 </CardGroup>
 
@@ -118,6 +157,14 @@ function.
   The one deliberate exception is `p_board`: an explicit `null` there means "all boards".
 </Warning>
 
+<Warning>
+  **An unrecognised metric name in `panel` is ignored, not rejected.** The panel
+  comes back smaller and perfectly plausible, with no error to tell you a column
+  is missing. Take metric names from `catalog().metrics`, never from memory —
+  the Python SDK validates them against the live catalog for you and raises on a
+  typo.
+</Warning>
+
 ## Dates, ids, and case
 
 - Dates are ISO `YYYY-MM-DD`. Ranges use `BETWEEN` — **both ends inclusive**.
@@ -126,40 +173,27 @@ function.
   the same input.
 - In `panel`, an id is read as a **CNPJ if it has exactly 14 digits** after non-digits are
   stripped, and as a **ticker otherwise**. There is no separate parameter for the two.
-- Monthly grains are keyed on the **first day of the month** (`2026-06-01` means June 2026).
+- Monthly grains are keyed on the **first day of the month** (`2026-06-01` means June 2026)
+  in `panel`. `fund_nav` returns CVM's filed period, whose convention is per family
+  (`catalog().applicability.fund_nav.period_convention`: `fidc` files month-**end**, `fip`
+  files 31-December annually).
 
 ## Row caps
 
 <Warning>
   **The binding cap is 1,000 rows, and it is not in the SQL.** PostgREST is deployed with
-  `db-max-rows = 1000`, so *every* response over the hosted API is truncated to the first
-  1,000 rows — whatever the function's own `LIMIT` says. It keeps the **oldest** rows and
-  returns `200`, not an error.
+  `db-max-rows = 1000`. The two endpoint shapes handle that limit differently, and the
+  difference is the whole game:
 
-  **`panel` is the exception, since catalog v24: it refuses instead.** A `panel` call
-  whose window would produce more than 1,000 rows raises `22023` unless you page it with
-  `p_after` (`''` for the first page, then the last row's `date|id|metric|asset_class`).
-  A short panel can no longer look complete. See [Paging](/api-docs/panel#paging).
+  - **GET views truncate.** A response over the cap is cut to the first 1,000 rows —
+    the **oldest** ones — and returned as `200`. A cut series looks exactly like a
+    series that simply ended.
+  - **`POST /rpc` functions refuse.** Since catalog v26, *every* set-returning function
+    raises SQLSTATE `22023` rather than hand back a slice that looks whole.
 </Warning>
 
-The only truthful signal is the `Content-Range` response header:
-
-- `0-999/*` means you hit the platform cap; there is more data you did not receive.
-- `0-41/*` means you got everything the function returned.
-- Send `Prefer: count=exact` and the header becomes `0-999/1906` — the total after the
-  slash is what your query actually matched.
-
-<Warning>
-  **`Range` paging does not work on RPC.** Asking for rows 1000–1999 of an `/rpc/` call
-  re-runs the function and hands you the first page again. To get past 1,000 rows, use
-  the `p_after` cursor on `panel`, `quote_history` and `fund_nav`; on every other
-  function, narrow the request — fewer ids, fewer metrics, a shorter date window — and
-  call again. Do not stitch `Range` "pages" together; they are the same page.
-</Warning>
-
-Every set-returning function now behaves the same way above one page: it **refuses**
-with SQLSTATE `22023` rather than handing back a slice that looks whole. Three of them
-give you a cursor to walk instead; the rest ask you to narrow the window.
+Three functions give you a cursor to walk (`p_after`); the rest ask you to narrow the
+window.
 
 | Endpoint | Above one 1,000-row page |
 | --- | --- |
@@ -178,7 +212,21 @@ give you a cursor to walk instead; the rest ask you to narrow the window.
 | [`metric_coverage`](/api-docs/coverage) | one row per filed `(family, metric)` pair |
 | [`option_chain`](/api-docs/options) | **200** rows anonymous, 2,000 signed in (default 100) |
 | [`option_exercises`](/api-docs/options) | **500** rows anonymous, 5,000 signed in (`p_limit` is clamped, not refused) |
-| [`panel`](/api-docs/panel) | **3 ids** anonymous / 50 signed in; universe mode (no ids + a family) signed in only |
+| [`panel` ids](/api-docs/panel) | **3 ids** anonymous / 50 signed in; universe mode (no ids + a family) signed in only |
+
+### The cursor protocol
+
+`p_after` has three states, and the difference between the first two matters:
+
+| `p_after` | Meaning |
+| --- | --- |
+| absent / `null` | Whole result. **Refuses** above 1,000 rows. |
+| `''` (empty string) | First page. |
+| the key copied from the last row | The page after that key. |
+
+A page shorter than 1,000 rows is the last one. The key is the function's own:
+`'<date>\|<id>\|<metric>\|<asset_class>'` for `panel`, and the bare date
+(`'YYYY-MM-DD'`) for `quote_history` and `fund_nav`.
 
 <Note>
   **Why `fund_nav` asks for a family before it will page.** Its cursor is a bare period,
@@ -189,22 +237,24 @@ give you a cursor to walk instead; the rest ask you to narrow the window.
 </Note>
 
 <Warning>
-  **A capped response is not a valid dataset** — which is why no function returns one any
-  more. Before v26 the series functions kept the oldest rows and answered `200`, so a
-  truncated series was indistinguishable from one that simply ended. Now every one of
-  them pages or refuses. If you still read a `Content-Range` of `0-999/*`, you are on a
-  **GET view**, not an RPC: those do still cut, and the header is still the only signal.
+  **`Range` paging does not work on RPC.** Asking for rows 1000–1999 of an `/rpc/` call
+  re-runs the function and hands you the first page again. `p_after` is the RPC cursor;
+  `Range` / `limit` / `offset` are the **view** cursor. Do not stitch `Range` "pages"
+  together; they are the same page.
 </Warning>
 
-Requests are also bounded by the Supabase platform `statement_timeout` on the API
-roles — **3 seconds for `anon`** (the role the published key uses on its own) and
-**8 seconds for `authenticated`** (with a user token). A query that exceeds it
-fails with SQLSTATE `57014` and never returns a partial result.
+### Reading `Content-Range`
 
-Every one of these caps sits **under** PostgREST's server-wide 1,000-row
-`db-max-rows`, which no tier changes. On the GET views `Content-Range` is the only signal
-that you were cut; the Python SDK reads it and raises rather than hand back a short
-series. On the RPC functions there is nothing to read: they raise `22023` themselves.
+On the GET views, the response header is the only truthful signal:
+
+- `0-999/*` means you hit the platform cap; there is more data you did not receive.
+- `0-41/*` means you got everything.
+- Send `Prefer: count=exact` and the header becomes `0-999/1906` — the total after the
+  slash is what your query actually matched.
+
+On the RPC functions there is nothing to read: they raise `22023` themselves. So if you
+still see `Content-Range: 0-999/*`, you are on a **view**. The Python SDK reads the header
+and raises `SiloTruncated` rather than hand back a short series.
 
 <Note>
   **The old `5,001` cap is gone.** Each series function used to `LIMIT` at 5,001 rows so
@@ -214,12 +264,28 @@ series. On the RPC functions there is nothing to read: they raise `22023` themse
   signal at all. Nothing counts rows to detect truncation any more.
 </Note>
 
-## Nulls, gaps, and what "missing" looks like
+### Statement timeouts
+
+Requests are also bounded by the Supabase platform `statement_timeout` on the API
+roles — **3 seconds for `anon`** (the role the published key uses on its own) and
+**8 seconds for `authenticated`** (with a user token). A query that exceeds it
+fails with SQLSTATE `57014` and never returns a partial result. Narrow the window,
+ask for fewer ids, or request fewer metrics.
+
+The first call after the database has been idle can be much slower than a warm one —
+cold, it may exceed the ceiling and look like an outage. Retry once before concluding
+the API is down.
+
+## Nulls and gaps
 
 <Warning>
   Missing observations are **never** filled. No forward-fill, no interpolation, no
   last-observation-carried-forward, no synthesized month-end bar. If you need a dense
   matrix, densify it in your notebook where the choice is visible.
+
+  Never invent a price, a NAV, a fill, a ranking, or an identifier match. An unknown
+  id returns no row. A known id with an empty window returns an empty series — never
+  a guessed last close.
 </Warning>
 
 Missing data shows up in two distinct ways, and the difference matters:
@@ -239,35 +305,90 @@ Specific guarantees worth repeating:
   fits; a listing halt does not). A missing month never becomes a two-month return, and a
   **quotation-factor change also nulls the return** — a fatcot flip rescales the quote
   ±99.9% with no market move behind it (see the
-  [COTAHIST dictionary](/api-docs/cotahist-dictionary)). The ratio itself is of
-  **unadjusted** closes: a 2:1 split reports roughly −50 %. See [`panel`](/api-docs/panel).
+  [COTAHIST dictionary](/api-docs/cotahist-dictionary)).
+- **Prices are unadjusted.** Every quote row carries `adjusted: false`. There is no split or
+  dividend adjustment anywhere in this API, so `close_return` is a price change and not a
+  total return — a 2:1 split reports roughly −50 %. Do not compare a long price history
+  across a corporate action without handling it yourself. `close` is the price as published,
+  which for a paper quoted per lot refers to 1,000 shares; `close_unit` divides it by the
+  published `quotation_factor` so levels are comparable across papers. Neither is
+  corporate-action adjusted.
 - **Not applicable is not missing.** `fund_nav` returns the same eleven columns for every
   family, but each family files only some of them — `fi` quota / quotaholders / flows,
   `fidc` and `fiagro` delinquency, `fii` quotaholders / yield / assets, `fip` net assets
   alone. A null outside a family's list is set by construction and carries no information;
   a null inside it is a blank in that filing. The map is `catalog().applicability` and the
   table on [`fund_nav`](/api-docs/funds#which-columns-each-family-files).
-- **Regime boundaries are published, not smoothed.** Where a source format changed so
-  that one column means different things on either side of a date, the boundary is listed
-  in `catalog().regime_breaks` and on that dataset's [`coverage`](/api-docs/coverage) row
-  (`notes`). Today: FIDC `delinquency`, null on every row through 2024-12 and filed on
-  every row from 2025-01. Never chain-link through one.
-- **Default windows serve only complete periods.** With no explicit `to`, fund metrics
-  end at each family's latest COMPLETE period — a month CVM has only fractionally
-  published (its 1–2 month lag) is not served as if it were the industry, and FIP's
-  early-filed year-end row waits for its year to close. An explicit `to` serves the
-  window verbatim, partial months included. [`coverage`](/api-docs/coverage) reports
-  both dates (`as_of` = landed, `complete_through` = served).
+- **`delinquency` is a value, not a rate.** It is the delinquent portfolio in **BRL**.
+  A rate is `delinquency / nav`, divided in your notebook — the API does not serve the
+  ratio, so ask for both metrics in the same call.
 - **`freq=day` is quotes only.** No fund fundamental is daily; asking for `freq=day` with
   fund metrics returns the quote rows and nothing else. Mix asset classes on `freq=month`,
   where the equity value is the **last real session of the month**, not an invented month-end.
-- **Prices are unadjusted.** Every quote row carries `adjusted: false`. There is no split or
-  dividend adjustment anywhere in this API — do not compare a long price history across a
-  corporate action without handling it yourself.
+- **The `panel` grain is `(id, asset_class, date, metric)`** — four parts, not three. A CNPJ
+  that files under two families comes back once per family in the same month (385 do, `fi` +
+  `fidc`). Pass `p_entity_type` to keep one family, or keep `asset_class` in your pivot key;
+  pivoting on three parts either raises on the duplicate or silently averages two vehicles.
 - **Identifier matches are never invented.** Company rows in `lookup` carry a `tickers`
   array from CVM's *published* FCA registry (CNPJ and ticker on the same source row) —
   a published mapping, not a name match. Everything else still returns separately, by
   the key that actually matched.
+- **Exercises and auctions are events, not quotes.** `option_exercises` (tpmerc 012/013)
+  and the `auctions` view (017) carry one print per event and no return semantics. Never
+  compute a return over either.
+
+### Regime breaks
+
+**Where a source format changed so that one column means different things on either side
+of a date, the boundary is published, not smoothed.** It is listed in
+`catalog().regime_breaks` and on that dataset's [`coverage`](/api-docs/coverage) row
+(`notes`). Read it before differencing anything.
+
+<Warning>
+  **FIDC `delinquency` starts at 2025-01.** CVM's pre-2025 monthly FIDC file (tab II/III,
+  ingested for 2019-01…2024-12) carried no delinquency field, so `delinquency` is null on
+  every `fidc` row through **2024-12-31** — not zero, not clean books, not a missing month.
+  From **2025-01-31** the tab IV/VI format is ingested and delinquency is filed on every
+  row (a fund with no delinquent receivables files `0`).
+
+  Start the series at 2025-01. Never chain-link, difference or average a FIDC delinquency
+  series across 2024-12 → 2025-01.
+</Warning>
+
+### Default windows serve only complete periods
+
+With no explicit `to`, fund metrics end at each family's latest COMPLETE period — a month
+CVM has only fractionally published (its 1–2 month lag) is not served as if it were the
+industry, and FIP's early-filed year-end row waits for its year to close. An explicit `to`
+serves the window verbatim, partial months included.
+
+## Freshness
+
+**Call `coverage` before you claim anything is current.**
+`POST /rpc/coverage` returns one row per dataset (quotes, funds, fund_nav, derivatives,
+financials, anbima_classes) plus a `funds_<family>` row per fund family. Four of its date
+columns mean four different things, and only two of them are freshness:
+
+| Column | Means |
+| --- | --- |
+| `as_of` | The newest period that has landed **and has actually elapsed**. This is freshness. |
+| `complete_through` | The newest period classified COMPLETE — what the default windows serve. |
+| `newest_period` | The newest period **key** present. It can sit in the **future** when a family files forward-dated (FIP is keyed 31-December). Never read this as freshness. |
+| `landed_at` | When ingest last **succeeded** for that source. A later failed run never advances it. |
+
+`notes` carries a caveat the dates cannot — the `funds_fidc` row names the delinquency
+regime break. It is null on rows with none.
+
+`POST /rpc/metric_coverage` says which `(family, metric)` pairs are **actually filed** and
+over what span. **A pair absent from it is one the family never files** — not one whose
+data is late. Use it instead of inferring from nulls in a series, which is how a format
+change gets read as a credit event.
+
+<Note>
+  **Do not confuse our health with the source's.** `landed_at` says the pipeline ran and
+  succeeded. `complete_through` says how much CVM has published. A stale
+  `complete_through` with a fresh `landed_at` is Brazil's filing calendar, not an outage.
+</Note>
 
 ## Errors and empty results
 
@@ -280,10 +401,10 @@ PostgREST returns a JSON array on success. There is no envelope, no `count`, no 
 | `400` | `{"code":"42883",...}` / `PGRST` codes | Malformed filter, bad argument type, or an out-of-range date. |
 | `401` | `{"message":"Invalid API key"}` or `Invalid JWT` | Missing/wrong `apikey`, or a publishable/secret key sent as `Authorization: Bearer`. |
 | `404` | `PGRST202` | No function with that name **and argument set**. Check the `p_` names. |
-| `400` | `{"code":"22023",...}` | **A tier ceiling.** The message names the limit, what you sent, and how to get past it — e.g. *"panel accepts at most 3 ids per call for anonymous callers; 4 were given. Sign in to raise this to 50, or split the request."* Splitting the request always works; signing in raises the ceiling. |
+| `400` | `{"code":"22023",...}` | **A ceiling, or a window over one page.** The message names the limit, what you sent, and how to get past it — e.g. *"panel accepts at most 3 ids per call for anonymous callers; 4 were given. Sign in to raise this to 50, or split the request."* Splitting or paging always works. |
 | `401` | — | Landing tables are not reachable. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer this, by grant, for every caller. |
 | `406` | — | You asked for a single object (`Accept: application/vnd.pgrst.object+json`) and the result had zero or more than one row. |
-| `500` | `{"code":"57014",...}` | **Statement timeout**, not a server fault. You exceeded the 3s (anonymous) or 8s (signed-in) budget. Narrow the window, ask for fewer ids, or request fewer metrics. |
+| `500` | `{"code":"57014",...}` | **Statement timeout**, not a server fault. You exceeded the 3s (anonymous) or 8s (signed-in) budget. |
 
 <Note>
   An empty array carries no information about *why* it is empty. Use
@@ -297,11 +418,18 @@ PostgREST returns a JSON array on success. There is no envelope, no `count`, no 
 A page on this site can describe a function before the production database has it: SQL
 under `api` reaches production only when the analytical layer is applied (the nightly
 ingest, or an operator's `analytics-only` run), so a merge and a deploy are not the same
-moment. The truth is `POST /rpc/catalog` — its `version` is the contract the database is
-actually serving, and a function this site documents that answers `404 PGRST202` is one
-that has not been applied yet, not one that was removed. Compare against the version this
-site was written for (the Python SDK does it for you and warns `SiloCatalogDrift`), and
-read `catalog().postgrest` for the functions that exist on the server you are talking to.
+moment. The truth is `POST /rpc/catalog`:
+
+- `catalog().version` is the contract the database is actually serving. Compare it against
+  the version this site was written for — the Python SDK does it for you and warns
+  `SiloCatalogDrift`.
+- `catalog().postgrest` lists the functions and views that exist on the server you are
+  talking to.
+
+A function this site documents that answers `404 PGRST202` has not been applied yet; it was
+not removed. The reverse also happens — an object can be granted and live before the
+catalog names it — so treat `catalog().postgrest` as a floor, and a `200` from the server
+as the last word.
 
 ## Caching
 

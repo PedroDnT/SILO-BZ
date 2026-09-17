@@ -1,0 +1,53 @@
+# SILO
+
+> Public read API for Brazilian public financial data — CVM fund disclosures (FI, FIDC, FII, FIP, FIAGRO), listed-company financials, ANBIMA class aggregates, and B3 cash quotes, options and termo. Schema `api` over Supabase PostgREST. Read-only; ingest is not exposed.
+
+Start with Conventions & limits: it is the single source of truth for auth tiers, the 1,000-row page, null semantics and regime breaks, and every other page links back to it rather than restating them. The machine-readable twin is `POST /rest/v1/rpc/catalog`.
+
+## Start here
+
+- [SILO](https://octo-98895abd.mintlify.site/index.md): What the API serves, and the shortest path from nothing to an answer.
+- [Quickstart](https://octo-98895abd.mintlify.site/api-docs/quickstart.md): Get the publishable key, make your first request, and read the response — in under a minute.
+- [Conventions & limits](https://octo-98895abd.mintlify.site/api-docs/conventions.md): THE CONTRACT. Base URL, auth tiers and every ceiling, the 1,000-row cap and the p_after cursor protocol, null and not-applicable semantics, the FIDC 2025-01 regime break, freshness columns, and error behavior. Written here and nowhere else.
+- [Python SDK](https://octo-98895abd.mintlify.site/api-docs/sdk.md): silo-client — a thin, honest Python client over the read API: one method per endpoint, a capped response raises, views page, nothing is fabricated.
+- [For agents](https://octo-98895abd.mintlify.site/api-docs/agents.md): The operator guide for coding agents — what to read, how to get a token, the first live call, and how to screen a whole fund family.
+- [Data inventory](https://octo-98895abd.mintlify.site/api-docs/data-inventory.md): What we ingest, what we don't, and what we hold but don't serve.
+
+## Market data
+
+- [Quotes](https://octo-98895abd.mintlify.site/api-docs/quotes.md): Unadjusted B3 cash-market quotes — the api.quotes view plus the quote_history and quote_latest functions.
+- [Cash instruments](https://octo-98895abd.mintlify.site/api-docs/instruments.md): One endpoint per B3 cash instrument type — equities, BDRs, units, fund quotas and other cash paper, each with both lot sizes.
+- [Options](https://octo-98895abd.mintlify.site/api-docs/options.md): B3 equity options as published — one session's chain for a codneg prefix, or one series' daily history.
+- [Termo](https://octo-98895abd.mintlify.site/api-docs/termo.md): B3 forward (termo) contracts as published — one code's daily history, term included in the grain.
+- [COTAHIST Dictionary](https://octo-98895abd.mintlify.site/api-docs/cotahist-dictionary.md): Every field of B3's COTAHIST register-01 record, the TPMERC and CODBDI code tables, and how Silo maps them — verified against the rb3 reference layout.
+
+## Funds and credit
+
+- [Funds](https://octo-98895abd.mintlify.site/api-docs/funds.md): CVM fund registry and monthly fundamentals — the api.funds view plus search_funds, fund_profile, and fund_nav.
+- [Fund holdings](https://octo-98895abd.mintlify.site/api-docs/holdings.md): What a fund owns, and which funds own a ticker — the one edge joining the fund universe to the quote tape.
+- [FIDC concentration](https://octo-98895abd.mintlify.site/api-docs/fidc.md): Who a receivables fund buys from, who owes it, what sector the book is in and how BACEN grades it — informe tabs I, VIII, II and X, served as filed.
+- [ANBIMA classes](https://octo-98895abd.mintlify.site/api-docs/anbima.md): The industry's own benchmark series — AUM, net flows, returns and fund counts per ANBIMA class, as the Boletim de Fundos publishes them.
+
+## Companies
+
+- [Company financials](https://octo-98895abd.mintlify.site/api-docs/financials.md): Filed income statements, balance sheets and cash flows for Brazilian listed companies — resolved by ticker, CNPJ or CVM code.
+
+## Cross-cutting endpoints
+
+- [Panel](https://octo-98895abd.mintlify.site/api-docs/panel.md): The researcher endpoint — long (id, date, metric, value) observations mixing B3 tickers and CVM fund CNPJs in one call. The API's one primitive.
+- [Lookup](https://octo-98895abd.mintlify.site/api-docs/lookup.md): Resolve a ticker, ISIN, CNPJ, fund name, or company name to the identifiers this API accepts.
+- [Coverage](https://octo-98895abd.mintlify.site/api-docs/coverage.md): Latest loaded date per dataset — check it before you claim anything is current.
+
+## For machines
+
+- [skill.md](https://octo-98895abd.mintlify.site/skill.md): The agent loader — credentials, the first call, and the shape of an answer. Points at the contract rather than restating it.
+- [Docs MCP](https://octo-98895abd.mintlify.site/mcp): Search and read these pages over MCP. No login.
+- [catalog()](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/rpc/catalog): `POST` with `{}` and an `apikey` header. The contract as JSON — `limits`, `metrics`, `applicability`, `regime_breaks`, `constraints`, and a `version` saying what the server is actually serving.
+- [Data API](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/): The live base URL. Views are `GET /<view>`; functions are `POST /rpc/<function>`.
+
+## Optional
+
+- [Notebooks](https://github.com/PedroDnT/SILO-BZ/tree/main/notebooks): Nine runnable notebooks, `00_start_here` through `08_short_interest` — each one a real question answered end to end.
+- [Sign in](https://silo-bz.vercel.app/signin.html): GitHub OAuth. Returns a user token that raises the tier ceilings for about an hour.
+- [Dashboard](https://silo-bz.vercel.app/): The Evidence.dev fund-health site. A nightly static snapshot, not the API.
+- [Repository](https://github.com/PedroDnT/SILO-BZ): The ingestion pipeline that writes the warehouse these pages read.

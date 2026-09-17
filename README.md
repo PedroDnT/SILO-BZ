@@ -5,7 +5,12 @@
 > **Read API:** [https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/)
 > — schema `api`, anon key, open read.
 > **Caller docs:** [https://octo-98895abd.mintlify.site](https://octo-98895abd.mintlify.site)
-> (source: [`api-docs/`](api-docs/quickstart.mdx); for agents: [`api-docs/agents.mdx`](api-docs/agents.mdx)).
+> — the contract is
+> [Conventions & limits](https://octo-98895abd.mintlify.site/api-docs/conventions)
+> (source: [`api-docs/`](api-docs/quickstart.mdx); for agents:
+> [`api-docs/agents.mdx`](api-docs/agents.mdx) and [`skill.md`](skill.md);
+> page index: [`llms.txt`](llms.txt)).
+> **Notebooks:** [`notebooks/`](notebooks/) — nine runnable end-to-end examples.
 
 ## What SILO is
 
@@ -138,9 +143,16 @@ primitive (`api.panel` — one row per id, date, metric and value), and typed fu
 for funds, quotes, option chains and search. Row caps live inside the SQL, landing
 tables are revoked from `anon`, and `health.yml` asserts both on every run. Signing in
 (GitHub OAuth, at [`/signin.html`](https://silo-bz.vercel.app/signin.html)) raises the
-caps and the query budget for a token holder. The contract and its edge cases:
-[docs/API.md](docs/API.md); how "ingested" became "a researcher pulls a panel":
-[docs/planning/SERVING.md](docs/planning/SERVING.md).
+caps and the query budget for a token holder.
+
+The contract and its edge cases are the **published site**, not this repository's
+`docs/`: [Conventions & limits](https://octo-98895abd.mintlify.site/api-docs/conventions)
+is the single source of truth for auth tiers, row caps, null semantics and regime
+breaks, and `POST /rpc/catalog` is the same contract as JSON. Worked examples are
+[`notebooks/`](notebooks/). How "ingested" became "a researcher pulls a panel":
+[docs/planning/SERVING.md](docs/planning/SERVING.md). `serve/` — the read-only
+local Flask adapter, which is **not** the public API — is
+[docs/API.md](docs/API.md).
 
 ### The dashboard
 
@@ -273,7 +285,7 @@ same for everyone.
 
 ## What's intentionally not here
 
-- **No ingest REST API, and no PostgREST dump of landing tables.** The pipeline writes to Supabase via GitHub Actions and the CLI. Callers read schema `api` at `https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/` ([api-docs/quickstart.mdx](api-docs/quickstart.mdx), [docs/API.md](docs/API.md)). `serve/` is the local adapter. The old localhost ingest Flask (`app.py` / `src/api/`) is deleted.
+- **No ingest REST API, and no PostgREST dump of landing tables.** The pipeline writes to Supabase via GitHub Actions and the CLI. Callers read schema `api` at `https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/`, documented at [https://octo-98895abd.mintlify.site](https://octo-98895abd.mintlify.site) ([api-docs/quickstart.mdx](api-docs/quickstart.mdx)). `serve/` is a **local** read-only adapter over the same schema, not the public API, and is not necessarily deployed ([docs/API.md](docs/API.md)). The old localhost ingest Flask (`app.py` / `src/api/`) is deleted.
 - **No fabricated quotes.** The old `b3_calc_api` (non-B3 domain + hard-coded sample dicts) stays deleted. Historical quotations come from B3's public COTAHIST zips (`src/fetchers/b3_fetcher.py` → `b3_cotahist` → `api.quotes`). An unknown ticker returns an empty result, never a guessed last close — `404` from `serve/`, `200 []` from PostgREST, which has no adapter to shape the error. Same contract, different status code.
 - **No local Postgres / Docker / Alembic.** Supabase Postgres is the single source of truth. Use `scripts/seed_local_db.py`
   with a local Postgres for offline testing.
@@ -306,7 +318,7 @@ The essentials, folded away:
 │   │   ├── pg_client.py        # get_pg_client(), upsert_rows() — the ONLY DB door
 │   │   ├── schema.sql          # canonical schema (tables + audit log)
 │   │   ├── migrations/         # NNN_*.sql, append-only — never edit a historical one
-│   │   └── analytical/         # 01–19: dims, fact matviews, screens, rankings, schema api
+│   │   └── analytical/         # 01–21: dims, fact matviews, screens, rankings, schema api
 │   ├── pipeline/               # wires fetch→parse→store, writes cvm_ingest_log
 │   │   ├── cvm_pipeline.py     # CVMIngestor — the (entity, doc_type) orchestrator
 │   │   ├── bacen_pipeline.py   # BacenIngestor
@@ -329,13 +341,13 @@ The essentials, folded away:
 │   └── README.md               # Webapp-specific setup
 ├── tests/                      # offline pytest suite (DB + HTTP mocked)
 ├── scripts/                    # operator + dev tooling — see scripts/README.md
-│   ├── apply_analytical.sh     # build the analytical layer (01–19) after ingest
+│   ├── apply_analytical.sh     # build the analytical layer (01–21) after ingest
 │   ├── verify_pipeline.py      # quality gate against live Supabase
 │   ├── seed_local_db.py        # offline: real CVM data → local DuckDB
 │   ├── vercel_should_build.sh  # Vercel ignoreCommand (0 SKIPS, 1 BUILDS)
 │   └── queries/                # 13 numbered read-only SQL files
 ├── docs/                       # prose docs (NOT published; see .mintignore)
-│   ├── API.md                  # the read contract, and the Supabase-native decision
+│   ├── API.md                  # serve/, the LOCAL adapter — not the public read contract
 │   ├── DATABASE_MAINTENANCE.md # upkeep runbook: checks, cadence, partition rollover
 │   ├── DATA_MODELING.md        # read before adding a new CLASS of data
 │   ├── ETF_AND_PERFORMANCE.md  # why etf_daily is empty post-CVM-175
@@ -343,10 +355,13 @@ The essentials, folded away:
 │   └── planning/
 │       ├── CHANGELOG.md        # workstream history
 │       └── SERVING.md          # ingested → researcher pulls a panel (steps 0–7)
+├── notebooks/                  # 00–08: runnable end-to-end examples over the read API
 ├── api-docs/                   # PUBLISHED Mintlify pages (quickstart + reference)
 ├── index.mdx                   # published docs landing page
+├── skill.md                    # PUBLISHED agent loader (served at /skill.md; not in the nav)
+├── llms.txt                    # repo-controlled page index for agents
 ├── docs.json                   # Mintlify config: theme + navigation
-├── .mintignore                 # keeps Evidence template markdown out of the MDX parser
+├── .mintignore                 # keeps Evidence template markdown — and README/CLAUDE/AGENTS — out of the MDX parser
 ├── vercel.json                 # dashboard build config + ignoreCommand
 ├── .githooks/                  # pre-commit: blocks credentialed URLs, bad syntax
 ├── apify/                      # ETF market scrape actor (gated on APIFY_TOKEN)
@@ -425,8 +440,9 @@ asyncio.run(CVMIngestor().ingest_fidc_tranche(2024, 5))
 Failed fetches raise and write `cvm_ingest_log`; they are not auto-retried.
 Re-run the same command. Quality gate: `python scripts/verify_pipeline.py`.
 
-The read-only HTTP adapter is separate: `python -m serve.app` (see
-[docs/API.md](docs/API.md)).
+The read-only **local** HTTP adapter is separate: `python -m serve.app` (see
+[docs/API.md](docs/API.md)). It is not the public API — that is PostgREST, at the
+URL in the header of this file.
 
 </details>
 
