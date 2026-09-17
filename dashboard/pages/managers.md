@@ -98,12 +98,10 @@ select * from supabase.mgr_gestor_universe
 > of the industry — the percentages above say how large that slice is.
 >
 > Nothing here is estimated, imputed or bucketed into an "unknown" catch-all. A
-> fund with no name in the registry is simply not ranked, and a rank with no name
-> behind it renders as a **blank row**, which is what missing data honestly looks
-> like. If the two percentages above are low, treat these league tables as a
-> ranking of the named subset, not of the market. Coverage improves only when the
-> cadastral ingest runs — its status is on [Pipeline Ops](/ops) under the `cad`
-> doc types.
+> fund with no registry name is simply not ranked, and a rank with no name behind
+> it renders as a **blank row**. If the two percentages above are low, read these
+> league tables as a ranking of the named subset, not of the market. Coverage
+> improves only when the cadastral ingest runs ([Pipeline Ops](/ops), `cad`).
 
 <DataTable data={mgr_coverage}>
   <Column id=registry_rows title="Registry Rows" fmt=num0/>

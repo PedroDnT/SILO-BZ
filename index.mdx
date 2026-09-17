@@ -3,31 +3,21 @@ title: "SILO"
 description: "Public read API for Brazilian public financial data — CVM fund disclosures, BACEN series, and B3 cash quotes — served from Supabase Postgres."
 ---
 
-## What this is
+### What this is
 
-**SILO** is a warehouse of Brazilian public financial data — CVM fund disclosures
-(FI, FIDC, FII, FIP, FIAGRO, SECURIT) and listed-company filings, BACEN time series,
-and B3 COTAHIST cash quotes — ingested daily into Supabase Postgres for **financial
-accountability** of the fund industry: NAV, delinquency, flows, filed financials,
-and structural health.
+**SILO** is a warehouse of Brazilian public financial data — CVM fund disclosures (FI, FIDC, FII, FIP, FIAGRO, SECURIT) and listed-company filings, BACEN time series, and B3 COTAHIST cash quotes plus the BDI lending group — ingested daily into Supabase Postgres for **financial accountability** of the fund industry.
 
-This site documents the **read API**: schema `api` over PostgREST, with a shared
-publishable key. Anonymous access is free and deliberately small; signing in
-raises the ceilings. The one table of what each tier gets is on
-[Conventions & limits](/api-docs/conventions#authentication), and the same
-numbers are served machine-readably as `catalog().limits`. The human dashboard
-is [silo-bz-deloslabs.vercel.app](https://silo-bz-deloslabs.vercel.app/); the code is
-[PedroDnT/SILO-BZ](https://github.com/PedroDnT/SILO-BZ).
+This site documents the **read API**: schema `api` over PostgREST, with a shared publishable key. Anonymous access is free and deliberately small; signing in raises the ceilings ([Conventions & limits](/api-docs/conventions#authentication), or `catalog().limits` machine-readably).
 
-## Base URL
+The human dashboard is [silo-bz-deloslabs.vercel.app](https://silo-bz-deloslabs.vercel.app/); the code is [PedroDnT/SILO-BZ](https://github.com/PedroDnT/SILO-BZ).
+
+### Base URL
 
 ```
 https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/
 ```
 
-That is the only public HTTP surface. Views are `GET /<view>`; functions are
-`POST /rpc/<function>`. Send the publishable key on `apikey` only — not as
-`Authorization: Bearer`.
+The only public HTTP surface. Views are `GET /<view>`; functions are `POST /rpc/<function>`. Send the publishable key on `apikey` only — not as `Authorization: Bearer`.
 
 <CardGroup cols={2}>
   <Card title="Quickstart" icon="rocket" href="/api-docs/quickstart">
@@ -38,12 +28,9 @@ That is the only public HTTP surface. Views are `GET /<view>`; functions are
   </Card>
 </CardGroup>
 
-## The primitive is a panel
+### The primitive is a panel
 
-The main user is a researcher running correlation tests, factor models, and cross-asset
-comparisons. The core endpoint is `panel` — one row is `(id, date, metric, value)` — so a
-notebook can pull equity closes and fund fundamentals in a single call and reduce them
-locally.
+The core endpoint is `panel` — one row is `(id, date, metric, value)` — so a notebook can pull equity closes and fund fundamentals in a single call and reduce them locally.
 
 ```bash
 curl -s -X POST "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/rpc/panel" \
@@ -52,7 +39,7 @@ curl -s -X POST "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/rpc/panel" \
   -d '{"p_ids":["PETR4","VALE3"],"p_metrics":["close_return"],"p_freq":"month"}'
 ```
 
-## What is exposed
+### What is exposed
 
 | Resource | Kind | Read it for |
 | --- | --- | --- |
@@ -62,40 +49,32 @@ curl -s -X POST "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/rpc/panel" \
 | [`funds`](/api-docs/funds) | view + 3 functions | Fund registry, profile, and monthly NAV/flows by CNPJ |
 | [`holdings`](/api-docs/holdings) | function | What a fund owns, and which funds own a ticker |
 | [`financials`](/api-docs/financials) | 2 functions | Listed-company income statements, balance sheets and cash flows, by ticker, CNPJ or CVM code |
+| [`fidc`](/api-docs/fidc) | 3 functions | FIDC concentration — named originators, anonymized top-25 debtors, sector and SCR ladders |
 | [`anbima`](/api-docs/anbima) | function | ANBIMA class benchmarks — AUM, flows, returns and fund counts per class, as published |
+| [`lending`](/api-docs/lending) | 4 views | B3 securities lending — short interest, % of float, the trade tape, the brokerage on each leg |
+| [`flows`](/api-docs/flows) | view | Daily buy/sell/net flow by investor type |
 | [`panel`](/api-docs/panel) | function | Long `(id, date, metric, value)` observations across both |
 | [`lookup`](/api-docs/lookup) | function | Resolve a ticker, ISIN, CNPJ, or name to an id |
 | [`coverage`](/api-docs/coverage) | function | Latest date per dataset, before you claim freshness |
 | [`data inventory`](/api-docs/data-inventory) | map | What we ingest, what we don't, what we hold but don't serve |
 
-Landing tables (`cvm_*`, `b3_cotahist`, `cvm_ingest_log`) are **not** exposed. Schema `api`
-is the boundary: English column names, ticker/CNPJ keys, and an explicit `adjusted = false`
-flag so nobody mistakes these for split-adjusted prices.
+Landing tables (`cvm_*`, `b3_cotahist`, `cvm_ingest_log`) are **not** exposed. Schema `api` is the boundary: English column names, ticker/CNPJ keys, and an explicit `adjusted = false` flag.
 
-## Rules the data follows
+### Rules the data follows
 
 <Warning>
-  These are non-negotiable properties of the contract, not best-effort behavior.
+  Non-negotiable properties of the contract, not best-effort behavior.
 
-  - **Nothing is fabricated.** A ticker we have no row for returns no row — never a
-    plausible last close.
-  - **Missing observations stay missing.** No forward-fill, no interpolation, no
-    carry-last-observation.
-  - **`close_return` across a calendar gap is null**, not a two-month return.
-    The ratio is of unadjusted closes: a 2:1 split reports roughly −50 %.
+  - **Nothing is fabricated.** A ticker we have no row for returns no row — never a plausible last close.
+  - **Missing observations stay missing.** No forward-fill, no interpolation, no carry-last-observation.
+  - **`close_return` across a calendar gap is null**, not a two-month return. The ratio is of unadjusted closes: a 2:1 split reports roughly −50%.
   - **`freq=day` is quotes only.** Mix equity with fund fundamentals on `freq=month`.
-  - **A response stops at 1,000 rows**, server-wide. `panel` refuses a larger
-    window (`22023`) and pages with `p_after`; views and series functions are
-    cut and the `Content-Range` header says so — read it, narrow the ask, never
-    analyse a cut series. Details on [Conventions & limits](/api-docs/conventions#row-caps).
+  - **A response stops at 1,000 rows**, server-wide. RPC functions **refuse** above it (`22023`); GET views are **cut silently** and only `Content-Range` says so. Never analyse a cut series. See [Row caps](/api-docs/conventions#row-caps).
 </Warning>
 
-## Ingest
+### Ingest
 
-Ingestion runs on a GitHub Actions cron (`run_daily`) plus on-demand backfills
-(`run_backfill`). There is **no ingest HTTP API** — this documentation covers the read side
-only. The full operator guide lives in the repository:
+Ingestion runs on a GitHub Actions cron (`run_daily`) plus on-demand backfills (`run_backfill`). There is **no ingest HTTP API** — this documentation covers the read side only.
 
 - [README](https://github.com/PedroDnT/SILO-BZ/blob/main/README.md) — what SILO is and how it works
-- [docs/](https://github.com/PedroDnT/SILO-BZ/tree/main/docs) — architecture, data
-  modeling, and the serving roadmap
+- [docs/](https://github.com/PedroDnT/SILO-BZ/tree/main/docs) — architecture, data modeling, and the serving roadmap

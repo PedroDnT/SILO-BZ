@@ -44,19 +44,19 @@ so. Concretely, every change is held to five rules (`CLAUDE.md`):
 
 ## What it covers
 
-| Source | Family | What is read | Cadence | What it enables |
-| --- | --- | --- | --- | --- |
-| CVM | **FI** — investment funds | daily NAV and flows (`inf_diario`); portfolio composition and holdings — equities with their B3 ticker, fund-of-fund quotas, debentures with their issuer (`cda`); investor profile (`perfil`); balance sheet (`balancete`) | daily / monthly | AUM, flows, quotaholders, concentration; the fund → ticker → company join |
-| CVM | **FIDC** — receivables funds | monthly NAV and delinquency (`tab_IV`); tranches (`tab_X`) and their subscriptions/redemptions; aging buckets 30–1080+ days (`tab_VI`) | monthly | delinquency, subordination, tranche performance against promise |
-| CVM | **FII** — real-estate funds | monthly NAV, yield and distributions (`geral`, `ativo_passivo`, `complemento`); property-level detail | monthly / yearly | payout coverage, yield distribution, FII vs FIAGRO |
-| CVM | **FIP**, **FIAGRO** | quadrimestral patrimony (FIP); monthly NAV (FIAGRO, published from May 2025) | yearly / monthly | private equity and agribusiness inside the industry totals |
-| CVM | **SECURIT** — CRA / CRI / OTS securitisers | monthly emissions; per-series status, rating and yield; cash-flow waterfall; annual statements | monthly / yearly | outstanding by family, defaults, payments by priority, maturity wall |
-| CVM | **CIA Aberta** — listed companies | registry; ITR/DFP accounts; IPE events (Fatos Relevantes); FCA tickers | per filing | company financials and events; the only company ↔ ticker link, never name-matched |
-| BACEN | SGS, PTAX, Focus | SELIC, CDI, IPCA, IGP-M, INPC, poupança, PIB; PTAX buy/sell per currency; Focus consensus per indicator and horizon | daily / business days | the macro context every fund is measured against |
-| B3 | COTAHIST, corporate events | unadjusted OHLC, volume, ticker and ISIN per session; splits, groupings, bonuses and dividends per ISIN | daily (yearly zips for history) | quotes, monthly market and option activity; adjustment factors once verified against the tape |
-| B3 | **BDI** — securities lending (incl. trade-by-trade), investor flow, index float, instrument registry | short balance and borrow rates per ticker; buy/sell volume per investor type; free-float share counts and B3 sector; shares outstanding per ticker | daily — **~21 business days of retention, no archive** | the Short Monitor (% of float, days to cover, borrow cost), the investor-flow panel, and — from the trade tape — which brokerage lent and borrowed each name. **Not backfillable**: a session missed is lost, so the daily job is the only way this history exists |
-| ANBIMA | class boletim | monthly figures per ANBIMA class and type | monthly | class-level benchmarks, served by `api.anbima_classes` (an ETF-only view is kept for compatibility) |
-| Apify scrape | ETF market snapshot | NAV, price, yields, volatility, drawdown per listed ETF | daily, gated on `APIFY_TOKEN` | the market side of the ETF page; self-skips without the token |
+| Source       | Family                                                                                               | What is read                                                                                                                                                                                                                | Cadence                                                | What it enables                                                                                                                                                                                                                                                    |
+| ------------ | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| CVM          | **FI** — investment funds                                                                            | daily NAV and flows (`inf_diario`); portfolio composition and holdings — equities with their B3 ticker, fund-of-fund quotas, debentures with their issuer (`cda`); investor profile (`perfil`); balance sheet (`balancete`) | daily / monthly                                        | AUM, flows, quotaholders, concentration; the fund → ticker → company join                                                                                                                                                                                          |
+| CVM          | **FIDC** — receivables funds                                                                         | monthly NAV and delinquency (`tab_IV`); tranches (`tab_X`) and their subscriptions/redemptions; aging buckets 30–1080+ days (`tab_VI`)                                                                                      | monthly                                                | delinquency, subordination, tranche performance against promise                                                                                                                                                                                                    |
+| CVM          | **FII** — real-estate funds                                                                          | monthly NAV, yield and distributions (`geral`, `ativo_passivo`, `complemento`); property-level detail                                                                                                                       | monthly / yearly                                       | payout coverage, yield distribution, FII vs FIAGRO                                                                                                                                                                                                                 |
+| CVM          | **FIP**, **FIAGRO**                                                                                  | quadrimestral patrimony (FIP); monthly NAV (FIAGRO, published from May 2025)                                                                                                                                                | yearly / monthly                                       | private equity and agribusiness inside the industry totals                                                                                                                                                                                                         |
+| CVM          | **SECURIT** — CRA / CRI / OTS securitisers                                                           | monthly emissions; per-series status, rating and yield; cash-flow waterfall; annual statements                                                                                                                              | monthly / yearly                                       | outstanding by family, defaults, payments by priority, maturity wall                                                                                                                                                                                               |
+| CVM          | **CIA Aberta** — listed companies                                                                    | registry; ITR/DFP accounts; IPE events (Fatos Relevantes); FCA tickers                                                                                                                                                      | per filing                                             | company financials and events; the only company ↔ ticker link, never name-matched                                                                                                                                                                                  |
+| BACEN        | SGS, PTAX, Focus                                                                                     | SELIC, CDI, IPCA, IGP-M, INPC, poupança, PIB; PTAX buy/sell per currency; Focus consensus per indicator and horizon                                                                                                         | daily / business days                                  | the macro context every fund is measured against                                                                                                                                                                                                                   |
+| B3           | COTAHIST, corporate events                                                                           | unadjusted OHLC, volume, ticker and ISIN per session; splits, groupings, bonuses and dividends per ISIN                                                                                                                     | daily (yearly zips for history)                        | quotes, monthly market and option activity; adjustment factors once verified against the tape                                                                                                                                                                      |
+| B3           | **BDI** — securities lending (incl. trade-by-trade), investor flow, index float, instrument registry | short balance and borrow rates per ticker; buy/sell volume per investor type; free-float share counts and B3 sector; shares outstanding per ticker                                                                          | daily — **~21 business days of retention, no archive** | the Short Monitor (% of float, days to cover, borrow cost), the investor-flow panel, and — from the trade tape — which brokerage lent and borrowed each name. **Not backfillable**: a session missed is lost, so the daily job is the only way this history exists |
+| ANBIMA       | class boletim                                                                                        | monthly figures per ANBIMA class and type                                                                                                                                                                                   | monthly                                                | class-level benchmarks, served by `api.anbima_classes` (an ETF-only view is kept for compatibility)                                                                                                                                                                |
+| Apify scrape | ETF market snapshot                                                                                  | NAV, price, yields, volatility, drawdown per listed ETF                                                                                                                                                                     | daily, gated on `APIFY_TOKEN`                          | the market side of the ETF page; self-skips without the token                                                                                                                                                                                                      |
 
 Where each dataset lands, at what grain, and what is ingested but not yet served is in
 [docs/DATA_INVENTORY.md](docs/DATA_INVENTORY.md). The schema itself is
@@ -165,23 +165,23 @@ fourteen concurrent builds against the same Postgres. Its header shows **Snapsho
 Built** so nobody has to guess how old the numbers are; to publish sooner, dispatch
 `daily_ingest` with `rebuild_dashboard=true`.
 
-| Route | Page | What it shows |
-| --- | --- | --- |
-| `/` | Brazilian Fund Industry Data | entry point: headline figures, freshness signal, reading path |
-| `/industry` | Industry Structure | net assets by family and by asset class, quotaholders, new funds, FIP and FIAGRO |
-| `/fi` | FI Industry | AUM and flows, daily subscriptions vs redemptions, investor base, allocation by asset type |
-| `/fidc` | FIDC Credit Monitor | delinquency, aging, subordination, tranche flows and performance |
-| `/fii` | FII Market | FII vs FIAGRO, yield distribution, payout coverage |
-| `/fund` | Fund Explorer | per-fund NAV, flows, quotaholders and rebased returns |
-| `/performance` | Fund Performance | rankings by class, rebased cumulative return |
-| `/etf` | ETF Market | registry by provider and segment, exchange volume, scraped market snapshot |
-| `/markets` | B3 Markets | monthly traded volume, instrument mix, option activity |
-| `/macro` | Macro Context | SELIC and CDI, inflation, PTAX, Focus consensus |
-| `/managers` | Managers | administrator and gestor league tables |
-| `/securit` | Securitization | outstanding by family, defaults, payment waterfall, maturity wall |
-| `/suspicious` | Suspicious Deal Screens | zombie growth, captive vehicles and the other screens |
-| `/dormant` | Dormant Funds | vehicles that file every month and do nothing |
-| `/ops` | Pipeline Ops | audit log, freshness per entity, table freshness, when the snapshot was built |
+| Route          | Page                         | What it shows                                                                              |
+| -------------- | ---------------------------- | ------------------------------------------------------------------------------------------ |
+| `/`            | Brazilian Fund Industry Data | entry point: headline figures, freshness signal, reading path                              |
+| `/industry`    | Industry Structure           | net assets by family and by asset class, quotaholders, new funds, FIP and FIAGRO           |
+| `/fi`          | FI Industry                  | AUM and flows, daily subscriptions vs redemptions, investor base, allocation by asset type |
+| `/fidc`        | FIDC Credit Monitor          | delinquency, aging, subordination, tranche flows and performance                           |
+| `/fii`         | FII Market                   | FII vs FIAGRO, yield distribution, payout coverage                                         |
+| `/fund`        | Fund Explorer                | per-fund NAV, flows, quotaholders and rebased returns                                      |
+| `/performance` | Fund Performance             | rankings by class, rebased cumulative return                                               |
+| `/etf`         | ETF Market                   | registry by provider and segment, exchange volume, scraped market snapshot                 |
+| `/markets`     | B3 Markets                   | monthly traded volume, instrument mix, option activity                                     |
+| `/macro`       | Macro Context                | SELIC and CDI, inflation, PTAX, Focus consensus                                            |
+| `/managers`    | Managers                     | administrator and gestor league tables                                                     |
+| `/securit`     | Securitization               | outstanding by family, defaults, payment waterfall, maturity wall                          |
+| `/suspicious`  | Suspicious Deal Screens      | zombie growth, captive vehicles and the other screens                                      |
+| `/dormant`     | Dormant Funds                | vehicles that file every month and do nothing                                              |
+| `/ops`         | Pipeline Ops                 | audit log, freshness per entity, table freshness, when the snapshot was built              |
 
 Two rules shape every chart. **Blank is never zero**: a month the source did not publish
 renders as a gap, not a dip. And **the axis ends at the last month that has data** —
@@ -198,13 +198,13 @@ Relevante feed. The conventions that matter when reading it are in
 
 ## Operating it
 
-| Workflow | When | What |
-| --- | --- | --- |
-| `test.yml` | every PR and push | the offline pytest suite; on dispatch, a read-only `api.*` smoke against production |
+| Workflow           | When                       | What                                                                                                                                                                                                                                                                       |
+| ------------------ | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test.yml`         | every PR and push          | the offline pytest suite; on dispatch, a read-only `api.*` smoke against production                                                                                                                                                                                        |
 | `daily_ingest.yml` | 06:00 UTC, and on dispatch | the daily cycle above. `daily` is the scheduled run, ANALYZE and analytical refresh included; `analytics-only` is just those two; `b3-backfill` loads yearly COTAHIST zips for an exact year range. `rebuild_dashboard=true` also fires the deploy hook after a manual run |
-| `watchdog.yml` | 08:00 UTC | self-healing re-run of stale slices |
-| `health.yml` | scheduled | the gates above; files an issue on failure |
-| `backfill.yml` | on dispatch | historical fills, one entity at a time; `fi_doc_type` repairs one FI source without re-fetching the others |
+| `watchdog.yml`     | 08:00 UTC                  | self-healing re-run of stale slices                                                                                                                                                                                                                                        |
+| `health.yml`       | scheduled                  | the gates above; files an issue on failure                                                                                                                                                                                                                                 |
+| `backfill.yml`     | on dispatch                | historical fills, one entity at a time; `fi_doc_type` repairs one FI source without re-fetching the others                                                                                                                                                                 |
 
 Secrets: `POSTGRES_URL` (Supabase, `sslmode=require`); `VERCEL_DEPLOY_HOOK_URL` (a deploy
 hook of the Vercel project `silo-bz` on `main`, in team `deloslabs`. That hook is the
@@ -228,7 +228,7 @@ The pipeline runs unattended; **serving is the open front**. Everything below is
 operator action or a known defect, none of it speculative roadmap. The build-out history
 is in [docs/planning/CHANGELOG.md](docs/planning/CHANGELOG.md); the dashboard's ship
 checklist in
-[docs/planning/SHIP_DASHBOARD_2026-09-14.md](docs/planning/SHIP_DASHBOARD_2026-09-14.md).
+[docs/planning/archive/SHIP_DASHBOARD_2026-09-14.md](docs/planning/archive/SHIP_DASHBOARD_2026-09-14.md).
 
 ### The API is live
 

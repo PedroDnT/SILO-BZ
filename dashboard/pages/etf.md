@@ -69,14 +69,12 @@ select * from supabase.etf_market_series
 > industry — they are carved out of `dim_fund` and `fact_fund_monthly` upstream,
 > so no ETF appears anywhere else on this site.
 >
-> The honest headline is a gap. **Identity is complete; quantities are not.**
-> `cvm_etf_registry` knows who issues each ETF, what it tracks and whether it is
-> active, so the structure sections below are solid. But CVM's post-CVM-175
-> share-class split broke the CNPJ join that `etf_daily` depended on, so NAV,
-> price and return history are largely absent, and what remains comes from a
-> scraped snapshot that only runs when an API token is configured. Nothing has
-> been back-filled to close that gap. Fund performance on comparable measures is
-> on [Performance](/performance).
+> The honest headline is a gap: **identity is complete, quantities are not.**
+> The registry knows who issues each ETF, what it tracks and whether it is active,
+> so the structure sections are solid. But CVM's post-CVM-175 share-class split
+> broke the CNPJ join `etf_daily` depended on, so NAV, price and return history are
+> largely absent; what remains is a scraped snapshot that only runs when an API
+> token is configured. Nothing has been back-filled to close that gap.
 
 <BigValue data={etf_counts} value=total_etfs title="Total ETFs" fmt=num0/>
 <BigValue data={etf_counts} value=active_etfs title="Active" fmt=num0/>
@@ -162,16 +160,15 @@ select * from supabase.etf_market_series
 
 ## Exchange Price and Volume — B3 Tape
 
-> Monthly ETF activity from the B3 COTAHIST tape: total exchange volume and the
-> number of distinct ETF tickers that printed, plus the median close across all
-> ETF prints. This is **exchange price/volume, unadjusted, straight from
-> COTAHIST** — it fills the time axis that NAV-based ETF metrics cannot, since
-> those remain sparse post-CVM-175 (see below). The median close is a
-> cross-sectional "typical print", not an index: ETFs quote at very different
-> price points, and the mix shifts as ETFs list, so it says nothing about
-> returns. ETF rows are identified from B3's own board codes
-> (`vw_b3_instrument_typed`, CODBDI 14), never from ticker shape; the full
-> exchange tape is on [B3 Markets](/markets).
+> Monthly ETF activity from the COTAHIST tape: exchange volume, distinct tickers
+> that printed, and the median close. **Unadjusted exchange price/volume** — it
+> fills the time axis NAV-based ETF metrics cannot, since those stay sparse
+> post-CVM-175.
+>
+> The median close is a cross-sectional "typical print", **not an index**: ETFs
+> quote at very different price points and the mix shifts as ETFs list, so it says
+> nothing about returns. ETF rows come from B3's own board codes (CODBDI 14),
+> never from ticker shape.
 
 <LineChart
   data={etf_market_series}

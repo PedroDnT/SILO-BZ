@@ -4,18 +4,15 @@ description: "A listed company's financial statements end to end — and the two
 icon: "file-invoice-dollar"
 ---
 
-CVM's ITR/DFP filings are rich and unforgiving. This walk-through goes from a ticker to
-a clean revenue series, stopping at the two places where a reasonable assumption
-produces a wrong answer that looks right.
+### Overview
+
+From a ticker to a clean revenue series, stopping at the two places where a reasonable assumption produces a wrong answer that looks right.
 
 <Warning>
-  **Read step 3 before you sum anything.** A quarterly filing prints the same account
-  twice under one reference date — once for the quarter and once year-to-date. Adding
-  four quarters without filtering double-counts the year. Nothing about the row shape
-  tells you which is which except `period_months`.
+  **Read step 3 before you sum anything.** A quarterly filing prints the same account twice under one reference date — once for the quarter, once year-to-date. Nothing about the row shape tells you which is which except `period_months`.
 </Warning>
 
-## 1. Resolve the company
+### 1. Resolve the company
 
 ```bash
 curl -s -X POST "$SILO_URL/rpc/lookup" \
@@ -23,16 +20,13 @@ curl -s -X POST "$SILO_URL/rpc/lookup" \
   -d '{"p_query": "PETR4"}'
 ```
 
-Company rows carry their B3 `tickers` from CVM's **published** FCA
-`valores-mobiliários` map. There is no derived ticker-to-CNPJ join anywhere in this
-warehouse — the mapping is either published or absent.
+Company rows carry their B3 `tickers` from CVM's **published** FCA map. There is no derived ticker-to-CNPJ join anywhere — the mapping is either published or absent.
 
 Both financial endpoints accept a ticker, a CNPJ or a CVM code as `p_id`.
 
-## 2. Start with the summary
+### 2. Start with the summary
 
-`company_financials` is the pre-computed headline: one row per filing, with the figures
-most questions actually need.
+`company_financials` is the pre-computed headline: one row per filing.
 
 ```bash
 curl -s -X POST "$SILO_URL/rpc/company_financials" \
@@ -40,107 +34,67 @@ curl -s -X POST "$SILO_URL/rpc/company_financials" \
   -d '{"p_id": "PETR4", "p_from": "2021-01-01", "p_scope": "con"}'
 ```
 
-You get `revenue`, `gross_profit`, `net_income`, `total_assets`, `equity`,
-`net_margin_pct` and `roe_pct`, alongside `doc_type`, `scope`, `ref_date`,
-`period_start`, `period_end`, `period_months` and `version`.
+Returns `revenue`, `gross_profit`, `net_income`, `total_assets`, `equity`, `net_margin_pct` and `roe_pct`, alongside `doc_type`, `scope`, `ref_date`, `period_start`, `period_end`, `period_months` and `version`.
 
-<Note>
-  **Banks file a different chart of accounts.** Net income lands on account `3.09`
-  rather than `3.11`, and `company_financials` already falls back for you. If you pull
-  raw accounts yourself in step 3, you have to handle it — a bank's net income read
-  only from `3.11` comes back null.
-</Note>
+**Note**: banks file a different chart of accounts — net income lands on `3.09` rather than `3.11`, and `company_financials` already falls back for you. If you pull raw accounts in step 3, you have to handle it yourself.
 
-If the summary answers your question, stop here. Drop to `financials` only when you
-need a line item it does not expose.
+If the summary answers your question, stop here.
 
-## 3. The raw statements — and `period_months`
-
-`financials` serves the account lines as filed.
+### 3. The raw statements — and `period_months`
 
 ```bash
 curl -s -X POST "$SILO_URL/rpc/financials" \
   -H "apikey: $SILO_ANON_KEY" -H "Content-Type: application/json" \
-  -d '{
-        "p_id": "PETR4",
-        "p_statement": "DRE",
-        "p_from": "2024-01-01",
-        "p_scope": "con"
-      }'
+  -d '{"p_id": "PETR4", "p_statement": "DRE", "p_from": "2024-01-01", "p_scope": "con"}'
 ```
 
-`p_statement` selects the statement group — `DRE` (income statement), `BPA` (assets),
-`BPP` (liabilities and equity), and the others as filed. Omit it for all of them.
+`p_statement` selects the statement group — `DRE`, `BPA`, `BPP`, and the others as filed. Omit it for all.
 
-Now the trap. An ITR prints each account **twice** under one `ref_date`:
+An ITR prints each account **twice** under one `ref_date`:
 
 | `ref_date` | `account_code` | `period_start` | `period_end` | `period_months` | `value` |
 | --- | --- | --- | --- | --- | --- |
 | 2024-09-30 | 3.01 | 2024-07-01 | 2024-09-30 | **3** | Q3 alone |
 | 2024-09-30 | 3.01 | 2024-01-01 | 2024-09-30 | **9** | year to date |
 
-The two rows differ **only** by their period span. That is exactly why the span is
-published rather than collapsed: the API will not choose for you, because either choice
-is wrong for somebody.
+The rows differ **only** by their period span, which is why the span is published rather than collapsed — either choice is wrong for somebody.
 
 **Always filter on `period_months` before aggregating.**
 
 ```python
-q  = [r for r in rows if r["period_months"] == 3]   # discrete quarters
-ytd = [r for r in rows if r["period_months"] == 9]  # cumulative
+q   = [r for r in rows if r["period_months"] == 3]   # discrete quarters
+ytd = [r for r in rows if r["period_months"] == 9]   # cumulative
 ```
 
-Mixing them is the single most common way to produce a confidently wrong revenue
-series.
+### 4. Consolidated or individual
 
-## 4. Consolidated or individual — pick deliberately
+`p_scope` is `con` by default; `ind` is the parent company alone. For a group with subsidiaries they are different companies in every meaningful sense.
 
-`p_scope` is `con` (consolidated) by default; `ind` is the parent company alone. They
-are different companies in every meaningful sense for a group with subsidiaries.
+Do not compare across scopes, and do not switch scope mid-series — a break there looks exactly like a business event.
 
-Do not compare across scopes, and do not switch scope mid-series — a break there looks
-exactly like a business event.
+### 5. Restatements
 
-## 5. Restatements
+A re-filed statement is submitted under a higher `versao`. **Only the newest version of each statement is served**, so you never see one quarter twice with two different numbers.
 
-A company that re-files a statement submits it under a higher `versao`, and the old
-rows remain in the source as part of its natural key. **Only the newest version of each
-statement is served**, so you never see one quarter twice with two different numbers.
+`version` is published anyway, so you can see a restatement happened. In `company_financials`, balance-sheet rows are joined on the *same* document version — a restatement never mixes old assets with new equity.
 
-The `version` column is published anyway, so you can see that a restatement happened.
-In `company_financials`, balance-sheet rows are joined on the *same* document version —
-a restatement never produces a row mixing old assets with new equity.
+### 6. Comparatives are excluded
 
-## 6. Comparatives are excluded
+Each filing prints the prior-year figure beside the current one. The API serves only the period the document is **for** (CVM's `ÚLTIMO`), never the comparative (`PENÚLTIMO`). To read an earlier period, pull the earlier document.
 
-Each filing prints the prior-year figure beside the current one. The API serves only
-the period the document is **for** (CVM's `ÚLTIMO`), never the comparative
-(`PENÚLTIMO`). You will not get a duplicate prior year, and you cannot use this
-endpoint to read a comparative as filed — pull the earlier document instead.
+### 7. Windows
 
-## 7. Windows
+`financials` **refuses** rather than truncates: a window over 1,000 rows raises `22023`. It offers no cursor on purpose — a statement has tens of rows, so a window that wide is a mistake rather than a walk.
 
-`financials` **refuses** rather than truncates: a window producing more than 1000 rows
-raises SQLSTATE `22023`. It offers no cursor, on purpose — a statement has tens of
-rows, so a window that wide is a mistake rather than a walk.
+Narrow `p_from`/`p_to`, or pin `p_statement`. A full DRE for one company across five years is comfortable; every statement for five years is not.
 
-Narrow `p_from`/`p_to`, or pin `p_statement`. A full DRE for one company across five
-years is comfortable; every statement for five years is not.
+**Note**: `coverage()` reports `financials` with a `complete_through` of `null` on purpose — the completeness model describes fund filing cadence and says nothing about companies.
 
-<Note>
-  Filings arrive on Brazil's quarterly calendar. `coverage()` reports `financials` with
-  a `complete_through` of `null` on purpose — the completeness model describes fund
-  filing cadence and says nothing about companies, and a fabricated completeness date
-  is exactly the claim that function exists to prevent.
-</Note>
+### Putting it on one axis
 
-## Putting it on one axis
+Once you have a clean series, `panel` aligns it with market data in the same long `(id, date, metric, value)` shape. See [your first screen](/api-docs/guides/first-screen).
 
-Once you have a clean series, `panel` aligns it with market data in the same long
-`(id, date, metric, value)` shape — so a company's price and its fundamentals share an
-axis without a join. See [your first screen](/api-docs/guides/first-screen).
-
-## Next
+### Next
 
 <CardGroup cols={2}>
   <Card title="Financials reference" icon="table-list" href="/api-docs/financials">

@@ -4,42 +4,29 @@ description: "Filed income statements, balance sheets and cash flows for Brazili
 icon: "building-columns"
 ---
 
-Every ITR (quarterly) and DFP (annual) statement CVM publishes, as filed. Two
-endpoints over the same rows: `financials` returns the statement lines long,
-`company_financials` returns the headline lines wide.
+### Overview
 
-<Note>
-  The id you price with is the id you read fundamentals with.
-  `financials("PETR4")`, `financials("33000167000101")` and
-  `financials("9512")` are the same company — a ticker resolves through CVM's
-  published FCA valores-mobiliários map, where the trading code and the CNPJ
-  arrive on the same filed row. Nothing is matched by name. A delisted code
-  resolves to nothing rather than to a guess.
-</Note>
+Every ITR (quarterly) and DFP (annual) statement CVM publishes, as filed. Two endpoints over the same rows: `financials` returns the statement lines long, `company_financials` returns the headline lines wide.
 
-## Read this before comparing two rows
+`financials("PETR4")`, `financials("33000167000101")` and `financials("9512")` are the same company — a ticker resolves through CVM's published FCA map, where the trading code and the CNPJ arrive on the same filed row. Nothing is matched by name; a delisted code resolves to nothing rather than to a guess.
+
+### Read this before comparing two rows
 
 <Warning>
-  **A quarterly filing publishes the same account twice.** Under one
-  `ref_date`, an ITR carries the three-month figure *and* the year-to-date
-  figure, and only the period span tells them apart. Every row carries
-  `period_months` (3, 6, 9, 12 — `null` on a balance sheet, which is a point in
-  time). Adding a 3-month row to a 6-month row double-counts the quarter.
+  **A quarterly filing publishes the same account twice.** Under one `ref_date`, an ITR carries the three-month figure *and* the year-to-date figure, and only the period span tells them apart. Every row carries `period_months` (3, 6, 9, 12 — `null` on a balance sheet, a point in time). Adding a 3-month row to a 6-month row double-counts the quarter.
 
-  Nothing here is summed, annualised or reconstructed for you: a non-calendar
-  fiscal year and a restated earlier quarter both break naive quarter-subtraction,
-  so the spans are published and the arithmetic is yours.
+  Nothing is summed, annualised or reconstructed for you: a non-calendar fiscal year and a restated earlier quarter both break naive quarter-subtraction, so the spans are published and the arithmetic is yours.
 </Warning>
 
-Three more discriminators, all decided for you and all visible in the response:
+Three more discriminators, decided for you and visible in the response:
 
 | Behaviour | Default | Why |
 | --- | --- | --- |
-| `ordem_exerc` | the period the document is **for** | A filing prints the prior-year column beside the current one. Returning it would double every series and date last year's numbers to this year's `ref_date`. |
-| `scope` | `con` (consolidated) | Consolidated and individual are separate filings of the same period. Pass `p_scope: "ind"` for the individual one; they are never merged. |
-| `version` | newest only | A restatement re-files under a higher version and the original rows remain. Only the newest version of each statement is served, and `version` carries which. |
+| `ordem_exerc` | the period the document is **for** | A filing prints the prior-year column beside the current one. Returning it would double every series. |
+| `scope` | `con` (consolidated) | Consolidated and individual are separate filings of the same period. Pass `p_scope: "ind"`; they are never merged. |
+| `version` | newest only | A restatement re-files under a higher version and the originals remain. Only the newest is served; `version` carries which. |
 
-## `financials` — statement lines, long
+### `financials` — statement lines, long
 
 ```bash
 curl -s -X POST "$SILO_URL/rpc/financials" \
@@ -47,8 +34,6 @@ curl -s -X POST "$SILO_URL/rpc/financials" \
   -H "Content-Type: application/json" \
   -d '{"p_id":"PETR4","p_statement":"DRE"}'
 ```
-
-Arguments — all optional but `p_id`:
 
 | Argument | Default | Meaning |
 | --- | --- | --- |
@@ -72,13 +57,11 @@ One row per account line:
 ]
 ```
 
-`value` is absolute BRL — the publication scale (thousands, millions) is
-applied at ingest, so no caller has to know it.
+`value` is absolute BRL — the publication scale is applied at ingest, so no caller has to know it.
 
-## `company_financials` — headline lines, wide
+### `company_financials` — headline lines, wide
 
-One row per (document, reference date, period span), for when you want the
-shape rather than the ledger:
+One row per (document, reference date, period span), for when you want the shape rather than the ledger.
 
 <CodeGroup>
 
@@ -100,45 +83,19 @@ const { data } = await supabase.rpc('company_financials', { p_id: 'PETR4' })
 
 </CodeGroup>
 
-Carries `revenue`, `gross_profit`, `net_income`, `total_assets`, `equity`,
-`net_margin_pct` and `roe_pct` beside the same `period_months`, `scope` and
-`version` columns.
+Carries `revenue`, `gross_profit`, `net_income`, `total_assets`, `equity`, `net_margin_pct` and `roe_pct` beside the same `period_months`, `scope` and `version` columns.
 
-<Warning>
-  `roe_pct` is the **period's** return on equity and is not annualised: a
-  three-month row divides one quarter's profit by equity. `period_months` says
-  which span you are looking at.
+- **`roe_pct` is the period's return on equity and is not annualised** — a three-month row divides one quarter's profit by equity. `period_months` says which span you have.
+- **Where a company re-filed only its balance sheet**, `total_assets` and `equity` read `null` rather than being paired with an income statement from a different version.
+- **Banks file a different chart of accounts** — net income lands on a different code, and the fallback is applied for you.
 
-  Where a company re-filed only its balance sheet, `total_assets` and `equity`
-  read `null` rather than being paired with an income statement from a
-  different version of the document.
-</Warning>
+**Note**: one 1,000-row page, and it refuses above it (`22023`). There is **no cursor** — narrow the window, pin a `p_statement`, or ask for one `p_doc_type`.
 
-Banks file a different chart of accounts — net income lands on a different
-account code — and that fallback is applied for you, so `net_income` is
-populated for banks and non-banks alike.
+### Freshness
 
-<Warning>
-  **One 1,000-row page, and it refuses above it.** A request whose result would pass
-  1,000 rows raises SQLSTATE `22023` naming the function rather than handing back a
-  slice that looks complete. There is **no cursor** here: narrow the window, pin a `p_statement`, or ask for one `p_doc_type`,
-  and call again.
-</Warning>
+`coverage` carries a `financials` row whose `as_of` is the newest reference date any filing has reached. Its `complete_through` is deliberately `null`: the completeness model describes fund filing cadence and says nothing about companies.
 
-## Freshness
+### Not served here
 
-`coverage` carries a `financials` row whose `as_of` is the newest reference
-date any filing has reached. Its `complete_through` is deliberately `null`:
-the completeness model in this warehouse describes fund filing cadence and
-says nothing about companies, and a fabricated completeness date is exactly
-the claim `coverage` exists to prevent.
-
-## Not served here
-
-- **`panel` has no company arm yet.** The panel is one value per
-  `(id, date, metric)`, and a quarterly filing offers two spans under one date;
-  picking one silently is the kind of wrong number this API refuses to make.
-  Use these endpoints for fundamentals and `panel` for prices until the span is
-  settled in the contract.
-- **Per-share figures.** Share counts are a separate filing; nothing here
-  divides by a number it did not read.
+- **`panel` has no company arm yet.** The panel is one value per `(id, date, metric)`, and a quarterly filing offers two spans under one date. Use these endpoints for fundamentals and `panel` for prices until the span is settled in the contract.
+- **Per-share figures.** Share counts are a separate filing; nothing here divides by a number it did not read.

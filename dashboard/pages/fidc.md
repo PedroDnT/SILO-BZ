@@ -170,19 +170,16 @@ select * from supabase.fidc_cedentes_top
 
 # FIDC Credit Monitor
 
-> Receivables funds are where credit deterioration shows up first and in the most
-> detail: FIDCs file both an aging table for the loans they hold and a tranche
-> table for the investors who bear the losses. This page reads the asset side
-> first — the sector rate, the funds behind it, and which buckets the balance sits
-> in — then the liability side that absorbs it.
+> FIDCs file both an aging table for the loans they hold and a tranche table for
+> the investors who bear the losses. This page reads the asset side first, then
+> the liability side that absorbs it.
 >
-> The sector rate is an aggregate and **says nothing about distribution**: it can
-> sit flat while individual books fail. Every promised-versus-realised figure here
-> is a **median**, because CVM's raw percentage fields carry outliers up to 1.6e8
-> that would own any average, and the subordination ratios are built from **quota
-> counts, not value**. Screens that flag specific patterns are on
-> [Suspicious Deal Screens](/suspicious); the securitised-certificate market that
-> buys similar receivables is on [Securitization](/securit).
+> Three things to carry: the sector rate is an aggregate and **says nothing about
+> distribution**; every promised-versus-realised figure is a **median**, because
+> CVM's raw percentage fields carry outliers up to 1.6e8; subordination ratios are
+> built from **quota counts, not value**. Pattern screens are on
+> [Suspicious Deal Screens](/suspicious); the certificate market that buys similar
+> receivables is on [Securitization](/securit).
 
 ---
 
@@ -229,22 +226,21 @@ select * from supabase.fidc_cedentes_top
 
 ## Where Delinquency Worsened — and Why
 
-> Ranking FIDCs by the change in their delinquency **rate** alone misleads in the
-> middle of the table: the rate is `overdue (R$) ÷ net assets (R$)`, so it also
-> moves when net assets move. Each fund below is scored on **both** metrics over
-> the last twelve complete months — first observation against last — and the
-> move is classified by its motor. Thresholds are the function's arguments and
-> are printed here: "value moved" is **|Δ R$| ≥ R$1mm**, "rate moved" is
-> **|Δ| ≥ 1 p.p.**; a fund needs **≥ 6 observations** in the window and the
-> tables keep funds with **≥ R$10mm** of latest net assets. One definition,
-> `fidc_delinquency_drivers()`, reads the same series the API serves.
+> Ranking by the change in delinquency **rate** alone misleads: the rate is
+> `overdue (R$) ÷ net assets (R$)`, so it also moves when net assets move. Each
+> fund is scored on **both** metrics over the last twelve complete months — first
+> observation against last — and classified by its motor.
+>
+> Thresholds, the function's own arguments: "value moved" is **|Δ R$| ≥ R$1mm**,
+> "rate moved" is **|Δ| ≥ 1 p.p.**; a fund needs **≥ 6 observations**, and the
+> tables keep funds with **≥ R$10mm** of latest net assets.
 
-| Driver | What happened | Read it as |
-| --- | --- | --- |
-| **Consistent worsening** | overdue R$ **up** and rate **up** | credit deteriorated — the cleanest signal |
-| **Value up, rate masked** | overdue R$ up, rate flat or down | net assets grew with it: real deterioration the rate hides |
-| **Denominator only** | rate up, overdue R$ flat or down | net assets shrank — amortisation or outflow, not new delinquency |
-| Improvement / stable | — | — |
+| Driver                    | What happened                     | Read it as                                                       |
+| ------------------------- | --------------------------------- | ---------------------------------------------------------------- |
+| **Consistent worsening**  | overdue R$ **up** and rate **up** | credit deteriorated — the cleanest signal                        |
+| **Value up, rate masked** | overdue R$ up, rate flat or down  | net assets grew with it: real deterioration the rate hides       |
+| **Denominator only**      | rate up, overdue R$ flat or down  | net assets shrank — amortisation or outflow, not new delinquency |
+| Improvement / stable      | —                                 | —                                                                |
 
 <BigValue data={fidc_drivers_summary} value=n_active title="Funds Scored (≥ R$10mm)" fmt=num0/>
 <BigValue data={fidc_drivers_summary} value=n_consistent title="Consistent Worsening" fmt=num0/>
@@ -337,15 +333,13 @@ select * from supabase.fidc_cedentes_top
 </DataTable>
 
 > **What this cannot tell you.** CVM's monthly FIDC file carries no portfolio
-> composition — no sector, no debtor, no guarantee — so nothing here says *whose*
-> receivables went overdue, or whether a loss is absorbed by a subordinated
-> tranche or an insurer before it reaches `vl_inadimpl` (see the subordination
-> section below). `vl_inadimpl` is the **overdue** value, not a realised loss:
-> nothing is published on provisions or recovery, and a figure can sit unchanged
-> for months and then jump on the administrator's revaluation. The Δ in R$ is
-> nominal and does not separate new delinquency from an old balance that was
-> never written off. Delinquency is filed only from 2025-01 (the pre-2025 file
-> has no such field), so no window here reaches further back.
+> composition — no sector, no debtor, no guarantee — so nothing here says _whose_
+> receivables went overdue, or whether a
+> loss is absorbed by a subordinated tranche or an insurer first. `vl_inadimpl` is
+> the **overdue** value, not a realised loss — nothing is published on provisions
+> or recovery, and a figure can sit unchanged for months then jump on a
+> revaluation. The Δ in R$ is nominal and does not separate new delinquency from
+> an old balance never written off. Delinquency is filed only from **2025-01**.
 
 ---
 
@@ -376,12 +370,12 @@ yAxisTitle="R$mm"
 > present — an empty bar is a bucket with nothing in it, not a missing bucket.
 
 <BarChart
-  data={fidc_aging_profile}
-  x=bucket
-  y={['performing_mm', 'delinquent_mm']}
-  type=grouped
-  swapXY=true
-  xAxisTitle="R$mm"
+data={fidc_aging_profile}
+x=bucket
+y={['performing_mm', 'delinquent_mm']}
+type=grouped
+swapXY=true
+xAxisTitle="R$mm"
   title="Performing vs Delinquent Receivables by Bucket (R$mm)"
 />
 
@@ -427,14 +421,13 @@ yAxisTitle="R$mm"
 
 ## What the Receivables Are — Sector Mix, Latest Period
 
-> Informe tab II files each fund's receivables by sector (`cvm_fidc_setor`,
-> migration 38). Tab II is a **hierarchy** — eleven lettered sectors, some with
-> numbered members — and this chart sums the lettered level only, so nothing is
-> counted twice. The share is of the summed sector lines, **not of each fund's
-> filed TOTAL**: a fund's TOTAL can differ from the sum of its lines, and dividing
-> by it would present that gap as a phantom sector. The numbered detail
-> (consignado vs corporate inside *Financeiro*, precatórios inside *Setor
-> público*) is served per fund by `api.fidc_portfolio`.
+> Tab II files each fund's receivables by sector. It is a **hierarchy** — eleven
+> lettered sectors, some with numbered members — and this chart
+> sums the lettered level only, so nothing is counted twice.
+> The share is of the summed sector lines,
+> **not of each fund's filed TOTAL**: a TOTAL can differ from the sum of its lines,
+> and dividing by it would present that gap as a phantom sector. The numbered
+> detail is served per fund by `api.fidc_portfolio`.
 
 <BarChart
   data={fidc_sector_mix}
@@ -465,12 +458,12 @@ yAxisTitle="R$mm"
 > the period shown is the latest complete month that has it.
 
 <BarChart
-  data={fidc_scr_ladder}
-  x=grade
-  y={['by_debtor_bn', 'by_operation_bn']}
-  type=grouped
-  xAxisTitle="SCR grade"
-  yAxisTitle="R$bn"
+data={fidc_scr_ladder}
+x=grade
+y={['by_debtor_bn', 'by_operation_bn']}
+type=grouped
+xAxisTitle="SCR grade"
+yAxisTitle="R$bn"
   title="Receivables by SCR Grade — by Debtor vs by Operation (R$bn)"
 />
 
@@ -485,17 +478,16 @@ yAxisTitle="R$mm"
 
 ## Debtor Concentration — Books Most Exposed to One Sacado
 
-> Tab VIII publishes each fund's **25 largest debtors as anonymized ranks**
-> (`cvm_fidc_sacado`): a value per rank and nothing else — CVM's own dictionary
-> describes neither column, and this file has carried the series since 2013. So
-> this table can say *how concentrated* a book is, never *in whom*. The ratio is
-> the rank-1 value (and the sum of the filed ranks) over the tab II receivables
-> total of the same filing. **The two tabs do not share a base for every fund**:
-> in 2026-07 the rank-1 value alone exceeded the receivables total for 0.5% of
-> funds and the top-25 sum for 1.9% — face value versus book, or a debtor's whole
-> obligation versus the slice the fund holds. Those rows are shown as filed,
-> above 100%, **not capped**; a fund at the head of this table with `Ranks Filed`
-> = 1 is one that reported a single debtor. Floor: receivables ≥ R$10mm.
+> Tab VIII publishes each fund's **25 largest debtors as anonymized ranks** — a
+> value per rank and nothing else, carried since 2013 with a blank dictionary
+> entry. So this table says _how concentrated_ a book is, never _in whom_.
+>
+> The ratio is the rank-1 value (and the sum of filed ranks) over the tab II
+> receivables total of the same filing. **The two tabs do not share a base for
+> every fund**: in 2026-07 rank-1 alone exceeded the receivables total for 0.5% of
+> funds, the top-25 sum for 1.9% — face value versus book, or a debtor's whole
+> obligation versus the slice the fund holds. Shown as filed, **not capped**. A
+> fund with `Ranks Filed` = 1 reported a single debtor. Floor: receivables ≥ R$10mm.
 
 <DataTable data={fidc_concentration_top} rows=20 search=true>
   <Column id=fund_name title="Fund"/>
@@ -511,18 +503,17 @@ yAxisTitle="R$mm"
 
 ## Named Originators — Who Sells Receivables to the Most Funds
 
-> Tab I is the one concentration table CVM publishes **with identities**: each
-> fund names the nine largest cedentes of each block by CPF/CNPJ
-> (`cvm_fidc_cedente`), and those identifiers were checksum-verified at ingest.
-> Block A is receivables acquired *with* substantial retention of risks and
-> benefits by the originator, block B *without*. This table counts **funds per
-> originator**; it never adds shares across funds, because each share is a percent
-> of one fund's block and the block totals are not filed here. Names appear only
-> for listed companies (from `cia_company`, keyed by CNPJ) — an unlisted
-> originator is its CNPJ, never a name match. **The share field is dirty as
-> filed**: 9% of slots carry a "share" above 100 (one reads 19,771), the same
-> outlier class as the tranche percentage fields; `Max Share` reads only values
-> inside 0–100 and `Outlier Slots` counts the ones set aside.
+> Tab I is the one concentration table CVM publishes **with identities**: each fund
+> names the nine largest cedentes of each block by CPF/CNPJ, checksum-verified at
+> ingest. Block A is receivables acquired _with_ substantial retention of risks and
+> benefits by the originator, block B _without_.
+>
+> This counts **funds per originator** and never adds shares across funds — each
+> share is a percent of one fund's block, and block totals are not filed here.
+> Names appear only for listed companies, keyed by CNPJ; an unlisted originator is
+> its CNPJ, never a name match. **The share field is dirty as filed**: 9% of slots
+> carry a "share" above 100 (one reads 19,771). `Max Share` reads only values
+> inside 0–100; `Outlier Slots` counts the ones set aside.
 
 <DataTable data={fidc_cedentes_top} rows=20 search=true>
   <Column id=originator title="Originator (name if listed)"/>
@@ -590,11 +581,9 @@ title="Universe Median: Promised vs Realised Tranche Performance"
 ## Tranches Missing Their Target — Largest Funds
 
 > Individual series where realised fell short of promised at the latest period,
-> ordered by fund size rather than by gap. Sorting by worst gap would rank the
-> dirtiest surviving numbers first; sorting by net assets ranks the ones that
-> matter. `Rows Excluded` reports how many latest-period tranche filings fell
-> outside the plausibility band (|value| ≤ 1000%) applied for display — the
-> filter's cost is on screen, and nothing was rescaled to fit.
+> ordered by **fund size, not by gap** — sorting by worst gap ranks the dirtiest
+> surviving numbers first. `Rows Excluded` counts latest-period filings outside
+> the plausibility band (|value| ≤ 1000%) applied for display; nothing was rescaled.
 
 <DataTable data={fidc_tranche_underperformers} rows=15 search=true>
   <Column id=fund_name title="Fund"/>
@@ -613,10 +602,10 @@ title="Universe Median: Promised vs Realised Tranche Performance"
 ## Subordination Structure — Largest FIDCs
 
 > Senior versus subordinated quotas for the twelve largest FIDCs with tranche
-> filings, from `fidc_subordination_trend()`. **This is a quota-count ratio, not
-> a value-weighted one**: the function divides `qt_cota`, so it equals a true
-> subordination level only where senior and subordinated quotas share a unit
-> price. Read it as capital-structure shape, not as loss absorption in reais.
+> filings. **A quota-count ratio, not a value-weighted one** — it divides
+> `qt_cota`, so it equals a true subordination level only where senior and
+> subordinated quotas share a unit price. Read it as capital-structure shape,
+> not as loss absorption in reais.
 
 <DataTable data={fidc_subordination_top} rows=12>
   <Column id=fund_name title="Fund"/>
@@ -629,10 +618,10 @@ title="Universe Median: Promised vs Realised Tranche Performance"
   <Column id=inadimpl_num1 title="Delinquency (%)" fmt=num1/>
 </DataTable>
 
-> One fund tracked for 24 months below. A subordination ratio only means something
-> inside a single capital structure, so averaging it across funds of different
-> sizes would describe no actual deal. A ratio falling while delinquency rises is
-> the combination worth investigating: the cushion thinning as it is needed most.
+> One fund tracked for 24 months. A subordination ratio only means something inside
+> a single capital structure, so averaging across funds would describe no actual
+> deal. A ratio falling while delinquency rises is the combination worth
+> investigating: the cushion thinning as it is needed most.
 
 <LineChart
   data={fidc_subordination_trend}
@@ -657,12 +646,10 @@ title="Universe Median: Promised vs Realised Tranche Performance"
 
 ## Tranche Flows — Captação vs Resgate
 
-> Money into and out of FIDC tranches, from `cvm_fidc_tranche_flows` (tab X_4).
-> Both legs are plotted as filed, positive; `Net Flow` carries the sign. A month
-> with no filing is blank, never zero — "no data" and "no flow" are different
-> facts. Rising subscriptions into a book whose delinquency is also rising is the
-> pattern the zombie-growth screen on [Suspicious Deal Screens](/suspicious)
-> isolates fund by fund.
+> Money into and out of FIDC tranches (tab X_4). Both legs are plotted as filed,
+> positive; `Net Flow` carries the sign. A month with no filing is blank, never
+> zero. Rising subscriptions into a book whose delinquency is also rising is what
+> the zombie-growth screen on [Suspicious Deal Screens](/suspicious) isolates.
 
 <BarChart
 data={fidc_tranche_flows}
@@ -690,12 +677,10 @@ yAxisTitle="R$mm"
   <Column id=n_funds title="Funds" fmt=num0/>
 </DataTable>
 
-> The raw `tp_oper` values behind that split are below. Captação and resgate are
-> matched on the `CAPT` / `RESG` substrings — the same rule
-> `fidc_flow_vs_delinquency()` uses — and CVM's vocabulary has drifted across
-> years. Anything landing in `(não classificado)` is the signal that the rule has
-> stopped catching everything, which is exactly why the raw values are printed
-> instead of only the tidy two-way split.
+> The raw `tp_oper` values behind that split. Captação and resgate are matched on
+> the `CAPT` / `RESG` substrings, and CVM's vocabulary has drifted across years.
+> Anything in `(não classificado)` signals the rule has stopped catching
+> everything — which is why the raw values are printed, not just the tidy split.
 
 <DataTable data={fidc_flows_by_oper} rows=10>
   <Column id=tp_oper title="tp_oper (as filed)"/>

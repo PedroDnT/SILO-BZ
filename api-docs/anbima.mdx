@@ -4,21 +4,15 @@ description: "The industry's own benchmark series — AUM, net flows, returns an
 icon: "chart-column"
 ---
 
-ANBIMA's monthly *Boletim de Fundos de Investimento* is the reference every
-Brazilian fund manager is measured against: net assets, net flows, returns and
-fund counts per **class** (Renda Fixa, Ações, Multimercados, ETF, FIDC, FII, …),
-per **ANBIMA type** under each class, and for the industry as a whole. One
-function serves it, long, exactly as published.
+### Overview
+
+ANBIMA's monthly *Boletim de Fundos de Investimento* — net assets, net flows, returns and fund counts per **class** (Renda Fixa, Ações, Multimercados, ETF, FIDC, FII, …), per **ANBIMA type** under each class, and for the industry as a whole. One function serves it long, exactly as published.
 
 <Warning>
-  **These rows are industry aggregates, not funds.** No fund in this warehouse
-  is mapped to an ANBIMA class — CVM's `classe` is CVM's taxonomy, not
-  ANBIMA's — so nothing here joins to `fund_nav`, `funds` or `panel`, and
-  a class is never matched to a fund by name. Use them as the benchmark they
-  are: the series a fund, a family or a strategy is compared against.
+  **These rows are industry aggregates, not funds.** No fund in this warehouse is mapped to an ANBIMA class — CVM's `classe` is a different taxonomy — so nothing here joins to `fund_nav`, `funds` or `panel`, and a class is never matched to a fund by name. Use them as the benchmark they are.
 </Warning>
 
-## `anbima_classes`
+### `anbima_classes`
 
 ```bash
 curl -s -X POST "$SILO_URL/rpc/anbima_classes" \
@@ -36,9 +30,7 @@ Arguments — all optional:
 | `p_level` | `category` | `category` (class aggregate) · `type` (the ANBIMA types under a class) · `total` (the industry total) · `null` for every level |
 | `p_from` / `p_to` | 2019 → latest edition | window on `reference_date` |
 
-An unknown category, metric or level **raises `22023` listing what exists**,
-rather than returning an empty array — an empty array reads as "ANBIMA
-published nothing", which is a different claim from "you misspelt the class".
+An unknown category, metric or level **raises `22023` listing what exists** rather than returning an empty array — an empty array reads as "ANBIMA published nothing", a different claim from "you misspelt the class".
 
 One row per (reference date, class, type, level, metric):
 
@@ -67,39 +59,24 @@ says which, read off the metric name, never off the number:
 | `rentabilidade_12m_pct` | `pct` | return, trailing 12 months |
 | `fund_count` | `count` | number of funds |
 
-Class-level `pl_brl_mm`, `captacao_liquida_brl_mm` and `fund_count` carry the
-full published history (from 2006); the type-level and return series cover the
-trailing window each boletim edition prints (about 19 months). Ask for a
-longer type-level window and you get what was published, not a reconstruction.
+Class-level `pl_brl_mm`, `captacao_liquida_brl_mm` and `fund_count` carry the full published history (from 2006); the type-level and return series cover the trailing window each boletim edition prints (about 19 months). A longer type-level window returns what was published, not a reconstruction.
 
-### Why `level` is part of the grain
+#### Why `level` is part of the grain
 
-**Cambial**, **FIP** and **FIAGRO** each appear twice in the same boletim
-sheet — once as the class aggregate and once as an ANBIMA type of the identical
-name. `level` is what keeps them apart:
+**Cambial**, **FIP** and **FIAGRO** each appear twice in the same boletim sheet — once as the class aggregate, once as an ANBIMA type of the identical name. `level` keeps them apart:
 
 ```bash
 # both rows for FIP, side by side
 -d '{"p_category":"FIP","p_level":null}'
 ```
 
-<Warning>
-  **One 1,000-row page, and it refuses above it.** A request whose result would pass
-  1,000 rows raises SQLSTATE `22023` naming the function rather than handing back a
-  slice that looks complete. There is **no cursor** here: narrow the window, pin a `p_category` or a `p_metric`,
-  and call again.
-</Warning>
+**Note**: one 1,000-row page, and it refuses above it (`22023`). No cursor — narrow the window, or pin a `p_category` or `p_metric`.
 
-## Freshness
+### Freshness
 
-`coverage` carries an `anbima_classes` row. Its `complete_through` equals its
-`as_of`: a published edition is complete by construction — this is a monthly
-publication, not a filing cadence — so there is no partial trailing month to
-clamp.
+`coverage` carries an `anbima_classes` row whose `complete_through` equals its `as_of`: a published edition is complete by construction, so there is no partial trailing month to clamp.
 
-## Not served here
+### Not served here
 
 - **A fund's ANBIMA class.** Not held; see the warning above.
-- **A `panel` arm.** The panel is one value per `(id, date, metric)`, and
-  these rows carry no id. Fetch the class series with this function and align
-  it with a panel in the notebook.
+- **A `panel` arm.** These rows carry no id. Fetch the class series here and align it with a panel in the notebook.

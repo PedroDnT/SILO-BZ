@@ -4,8 +4,9 @@ description: "CVM fund registry and monthly fundamentals — the api.funds view 
 icon: "building-columns"
 ---
 
-Brazilian investment vehicles as disclosed to the CVM, keyed by **CNPJ**. The registry
-covers five `entity_type` values:
+### Overview
+
+Brazilian investment vehicles as disclosed to the CVM, keyed by **CNPJ**.
 
 | `entity_type` | Vehicle |
 | --- | --- |
@@ -15,67 +16,26 @@ covers five `entity_type` values:
 | `fip` | Fundos de Investimento em Participações (private equity) |
 | `fiagro` | Fundos de Investimento nas Cadeias Produtivas Agroindustriais |
 
-<Note>
-  **ETFs are carved out** of this universe and are not in `api.funds`. Post-CVM-175 share
-  classes make ETF NAV series structurally different from the rest of the fund population,
-  so they are ranked and served separately rather than blended in here.
-</Note>
+CNPJ input is stripped to its 14 digits, so `12.345.678/0001-90` and `12345678000190` are the same argument.
 
-CNPJ input is stripped to its 14 digits everywhere, so `12.345.678/0001-90` and
-`12345678000190` are the same argument. Monthly periods are keyed on the **first day of the
-month**.
+**Note**: ETFs are carved out of this universe and are not in `api.funds`. Post-CVM-175 share classes make their NAV series structurally different, so they are served separately.
 
----
+### `GET /funds`
 
-## `GET /funds`
+The registry view: one row per `(cnpj, entity_type)` — what we hold, not what the fund is worth.
 
-The registry view: one row per `(cnpj, entity_type)`, describing what we hold rather than
-what the fund is worth.
+Query params: `cnpj=eq.<digits>` (the view does no normalization), `entity_type`, `select`, `limit`. The view has no built-in cap — always set one.
 
-<ParamField query="cnpj" type="string">
-  e.g. `cnpj=eq.12345678000190`. Digits only — the view does no normalization.
-</ParamField>
-
-<ParamField query="entity_type" type="string">
-  One of `fi`, `fidc`, `fii`, `fip`, `fiagro`.
-</ParamField>
-
-<ParamField query="select" type="string">
-  Columns to project.
-</ParamField>
-
-<ParamField query="limit" type="integer">
-  Page size. The view has no built-in cap — always set one; the registry is large.
-</ParamField>
-
-### Columns
-
-<ResponseField name="cnpj" type="text">
-  14-digit CNPJ, unpunctuated. The natural key, straight from the source filing.
-</ResponseField>
-<ResponseField name="entity_type" type="text">
-  `fi` | `fidc` | `fii` | `fip` | `fiagro`.
-</ResponseField>
-<ResponseField name="fund_name" type="text">
-  Registered name. **Nullable** — it comes from the CVM registry feed, which does not cover
-  every CNPJ that appears in the periodic filings.
-</ResponseField>
-<ResponseField name="status" type="text">
-  Registry status as published (e.g. active / cancelled). Nullable, same reason.
-</ResponseField>
-<ResponseField name="fund_class" type="text">
-  The registry's `tp_fundo` classification, as published. Nullable.
-</ResponseField>
-<ResponseField name="first_period" type="date">
-  Earliest period we hold a filing for.
-</ResponseField>
-<ResponseField name="last_period" type="date">
-  Latest period we hold a filing for. For `fip`, periods are yearly and mapped to
-  January 1 / December 31 of the year.
-</ResponseField>
-<ResponseField name="n_reports" type="bigint">
-  Count of distinct periods held. Coverage, not a quality score.
-</ResponseField>
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `cnpj` | text | 14-digit CNPJ, unpunctuated. The natural key. |
+| `entity_type` | text | `fi` \| `fidc` \| `fii` \| `fip` \| `fiagro`. |
+| `fund_name` | text | Registered name. Nullable — the registry feed does not cover every CNPJ that appears in periodic filings. |
+| `status` | text | Registry status as published. Nullable, same reason. |
+| `fund_class` | text | The registry's `tp_fundo`, as published. Nullable. |
+| `first_period` | date | Earliest period held. |
+| `last_period` | date | Latest period held. `fip` periods are yearly, mapped to Jan 1 / Dec 31. |
+| `n_reports` | bigint | Count of distinct periods held. Coverage, not a quality score. |
 
 <CodeGroup>
 
@@ -109,19 +69,9 @@ const { data } = await supabase
 
 </CodeGroup>
 
-```json
-[
-  { "cnpj": "12345678000190", "fund_name": "EXAMPLE FIDC MULTISETORIAL",
-    "entity_type": "fidc", "first_period": "2019-01-01",
-    "last_period": "2026-06-01", "n_reports": 90 }
-]
-```
+### `POST /rpc/search_funds`
 
----
-
-## `POST /rpc/search_funds`
-
-Substring search over the registry, ordered by latest AUM.
+Substring search over the registry, ordered by `latest_aum` descending, nulls last.
 
 ```sql
 api.search_funds(p_query       TEXT DEFAULT '',
@@ -129,68 +79,22 @@ api.search_funds(p_query       TEXT DEFAULT '',
                  p_limit       INT  DEFAULT 50)
 ```
 
-<ParamField body="p_query" type="string" default="''">
-  Case-insensitive substring, matched against **either the CNPJ or the fund name**. The
-  default `''` matches everything. A fund whose `fund_name` is null can only be found by
-  CNPJ.
-</ParamField>
+| Param | Meaning |
+| --- | --- |
+| `p_query` | Case-insensitive substring, matched against **either the CNPJ or the fund name**. Default `''` matches everything. A fund with a null `fund_name` can only be found by CNPJ. |
+| `p_entity_type` | Restrict to one type. Null means all. |
+| `p_limit` | Clamped by tier: **25** anonymous, 200 signed in. A larger value is silently reduced, not refused. |
 
-<ParamField body="p_entity_type" type="string" default="null">
-  Restrict to one `entity_type`. `null` (or omitted) means all of them.
-</ParamField>
+Returns `cnpj`, `entity_type`, `fund_name`, `first_period`, `last_period`, and `latest_aum` — the most recent non-null net assets, nullable, sorting last rather than being zero-filled.
 
-<ParamField body="p_limit" type="integer" default="50">
-  Clamped by tier: **25** for anonymous callers, 200 signed in. A null is treated as 50. A larger value is silently reduced, not refused.
-</ParamField>
-
-<ResponseField name="cnpj" type="text">14-digit CNPJ.</ResponseField>
-<ResponseField name="entity_type" type="text">Vehicle type.</ResponseField>
-<ResponseField name="fund_name" type="text">Registered name; nullable.</ResponseField>
-<ResponseField name="first_period" type="date">Earliest period held.</ResponseField>
-<ResponseField name="last_period" type="date">Latest period held.</ResponseField>
-<ResponseField name="latest_aum" type="numeric">
-  Most recent non-null net assets for that `(cnpj, entity_type)`. **Nullable** — a fund with
-  no reported NAV sorts last rather than being dropped or zero-filled.
-</ResponseField>
-
-<CodeGroup>
-
-```bash curl
+```bash
 curl -s -X POST "$SILO_URL/rpc/search_funds" \
   -H "apikey: $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{"p_query":"multisetorial","p_entity_type":"fidc","p_limit":10}'
 ```
 
-```python Python
-body = {"p_query": "multisetorial", "p_entity_type": "fidc", "p_limit": 10}
-rows = requests.post(f"{URL}/rpc/search_funds", headers=H, json=body).json()
-```
-
-```javascript JavaScript
-const { data } = await supabase.rpc('search_funds', {
-  p_query: 'multisetorial',
-  p_entity_type: 'fidc',
-  p_limit: 10,
-})
-```
-
-</CodeGroup>
-
-```json
-[
-  { "cnpj": "12345678000190", "entity_type": "fidc",
-    "fund_name": "EXAMPLE FIDC MULTISETORIAL",
-    "first_period": "2019-01-01", "last_period": "2026-06-01",
-    "latest_aum": 412337900.55 }
-]
-```
-
-Results are ordered by `latest_aum` descending, nulls last. No match returns `[]`.
-
----
-
-## `POST /rpc/fund_profile`
+### `POST /rpc/fund_profile`
 
 One fund's summary card: coverage plus peak and latest AUM.
 
@@ -198,84 +102,27 @@ One fund's summary card: coverage plus peak and latest AUM.
 api.fund_profile(p_cnpj TEXT)
 ```
 
-<ParamField body="p_cnpj" type="string" required>
-  CNPJ, punctuated or not — non-digits are stripped before the lookup.
-</ParamField>
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `cnpj`, `entity_type`, `fund_name`, `status` | text | As in the registry view. |
+| `first_period` / `last_period` | date | Earliest and latest period held. |
+| `n_months_reported` | bigint | Distinct periods held — the view's `n_reports`. |
+| `peak_aum` | numeric | Maximum net assets ever reported. |
+| `latest_aum` | numeric | Net assets at the most recent non-null period. |
+| `is_active` | boolean | `last_period >= CURRENT_DATE - 90 days`. A **filing-recency** flag, not a legal status — CVM publishes on a 1–2 month lag. |
 
-<ResponseField name="cnpj" type="text">14-digit CNPJ.</ResponseField>
-<ResponseField name="entity_type" type="text">Vehicle type.</ResponseField>
-<ResponseField name="fund_name" type="text">Registered name; nullable.</ResponseField>
-<ResponseField name="status" type="text">Registry status; nullable.</ResponseField>
-<ResponseField name="first_period" type="date">Earliest period held.</ResponseField>
-<ResponseField name="last_period" type="date">Latest period held.</ResponseField>
-<ResponseField name="n_months_reported" type="bigint">
-  Distinct periods held — the same count as the view's `n_reports`.
-</ResponseField>
-<ResponseField name="peak_aum" type="numeric">
-  Maximum net assets ever reported.
-</ResponseField>
-<ResponseField name="latest_aum" type="numeric">
-  Net assets at the most recent period with a non-null value.
-</ResponseField>
-<ResponseField name="is_active" type="boolean">
-  `last_period >= CURRENT_DATE - 90 days`. A **filing-recency** flag, not a legal status —
-  CVM publishes with a one-to-two month lag, so read it alongside `status` and
-  [`coverage`](/api-docs/coverage).
-</ResponseField>
-
-<CodeGroup>
-
-```bash curl
+```bash
 curl -s -X POST "$SILO_URL/rpc/fund_profile" \
   -H "apikey: $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{"p_cnpj":"12.345.678/0001-90"}'
 ```
 
-```python Python
-rows = requests.post(
-    f"{URL}/rpc/fund_profile", headers=H, json={"p_cnpj": "12.345.678/0001-90"}
-).json()
-```
+**Note**: a CNPJ in the registry with no monthly fundamentals returns `[]` — the profile is built from the monthly facts. A CNPJ filing under more than one `entity_type` returns one row per type; do not assume a single row.
 
-```javascript JavaScript
-const { data } = await supabase.rpc('fund_profile', {
-  p_cnpj: '12.345.678/0001-90',
-})
-```
+### `POST /rpc/fund_nav`
 
-</CodeGroup>
-
-```json
-[
-  {
-    "cnpj": "12345678000190",
-    "entity_type": "fidc",
-    "fund_name": "EXAMPLE FIDC MULTISETORIAL",
-    "status": "EM FUNCIONAMENTO NORMAL",
-    "first_period": "2019-01-01",
-    "last_period": "2026-06-01",
-    "n_months_reported": 90,
-    "peak_aum": 501228100.0,
-    "latest_aum": 412337900.55,
-    "is_active": true
-  }
-]
-```
-
-<Note>
-  Two edge cases worth knowing. A CNPJ that is in the registry but has **no monthly
-  fundamentals** returns `[]` — the profile is built from the monthly facts, so there is
-  nothing to summarize. And a CNPJ that files under **more than one `entity_type`** returns
-  one row per type; do not assume a single row.
-</Note>
-
----
-
-## `POST /rpc/fund_nav`
-
-The monthly fundamentals series for one CNPJ. This is the fund-side equivalent of
-`quote_history`.
+The monthly fundamentals series for one CNPJ — the fund-side equivalent of `quote_history`.
 
 ```sql
 api.fund_nav(p_cnpj        TEXT,
@@ -284,70 +131,26 @@ api.fund_nav(p_cnpj        TEXT,
              p_entity_type TEXT DEFAULT NULL)
 ```
 
-<ParamField body="p_cnpj" type="string" required>
-  CNPJ, punctuated or not.
-</ParamField>
+`p_from`'s default is a **fixed date**, not a rolling window — omit it for the full stored history. `p_entity_type` is needed only for the rare CNPJ that reports under two.
 
-<ParamField body="p_from" type="date" default="2019-01-01">
-  Window start, inclusive. Note this default is a **fixed date**, not a rolling window —
-  omitting it gives you the full stored history.
-</ParamField>
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `cnpj` | text | 14-digit CNPJ. |
+| `period` | date | The filing period **as stored, per family** (see below). `date_trunc('month', period)` before aligning families. |
+| `entity_type` | text | Vehicle type for this row. |
+| `nav` | numeric | Net assets (`vl_patrim_liq`). The headline size figure. |
+| `quota` | numeric | Unit quota value (`vl_quota`). **`fi` only.** |
+| `quotaholders` | integer | Unit-holders (`nr_cotst`). **`fi` and `fii` only.** |
+| `delinquency` | numeric | Delinquent portfolio **value** (`vl_inadimpl`) in BRL — **`fidc` and `fiagro` only**. An amount, not a rate. |
+| `monthly_yield` | numeric | Monthly yield percentage (`pct_yield_mes`). **`fii` only.** |
+| `inflows` / `redemptions` | numeric | Gross monthly subscriptions / redemptions. **`fi` only.** |
+| `assets` | numeric | Total assets (`vl_ativo`), distinct from net assets. **`fii` only.** |
 
-<ParamField body="p_to" type="date" default="CURRENT_DATE">
-  Window end, inclusive.
-</ParamField>
+Ordered by `period`, then `entity_type`.
 
-<ParamField body="p_entity_type" type="string" default="null">
-  Restrict to one vehicle type. Needed only for the rare CNPJ that reports under two.
-</ParamField>
+#### Which columns each family files
 
-<ResponseField name="cnpj" type="text">14-digit CNPJ.</ResponseField>
-<ResponseField name="period" type="date">
-  The filing period **as stored, per family**: first day of the month for `fi`, `fii` and
-  `fiagro`; the month's **last** day for `fidc`; 31-Dec of the filing year for `fip`
-  (one row per year). `date_trunc('month', period)` before aligning families.
-</ResponseField>
-<ResponseField name="entity_type" type="text">Vehicle type for this row.</ResponseField>
-<ResponseField name="nav" type="numeric">
-  Net assets — CVM `vl_patrim_liq`. The headline "fund size" figure.
-</ResponseField>
-<ResponseField name="quota" type="numeric">
-  Unit quota value (`vl_quota`). **`fi` only** — null by construction for every other
-  family (see [which columns each family files](#which-columns-each-family-files)).
-</ResponseField>
-<ResponseField name="quotaholders" type="integer">
-  Number of unit-holders (`nr_cotst`). **`fi` and `fii` only**; null by construction for
-  `fidc`, `fiagro` and `fip`.
-</ResponseField>
-<ResponseField name="delinquency" type="numeric">
-  Delinquent portfolio **value** (`vl_inadimpl`), in BRL — **`fidc` and `fiagro` only**.
-  This is an amount, not a rate; divide by `nav` yourself if you want a ratio. For `fidc`
-  it is **null on every row through 2024-12 and filed on every row from 2025-01** — a
-  source-format boundary, not a credit event (warning below).
-</ResponseField>
-<ResponseField name="monthly_yield" type="numeric">
-  Monthly yield percentage as published (`pct_yield_mes`). **`fii` only.**
-</ResponseField>
-<ResponseField name="inflows" type="numeric">
-  Gross monthly subscriptions (`captc_mes`). **`fi` only.**
-</ResponseField>
-<ResponseField name="redemptions" type="numeric">
-  Gross monthly redemptions (`resg_mes`). **`fi` only.**
-</ResponseField>
-<ResponseField name="assets" type="numeric">
-  Total assets (`vl_ativo`), as distinct from net assets. **`fii` only.**
-</ResponseField>
-
-Rows are ordered by `period`, then `entity_type`.
-
-### Which columns each family files
-
-Every family comes back with the same eleven columns, but each family's arm of the fact
-table fills only some of them; the rest are `NULL` **by construction**. So a null has two
-meanings and the table decides which: outside a family's list it is *not applicable*
-(carries no information); inside it, it is a blank in that month's filing. The same map
-is machine-readable as `catalog().applicability.fund_nav.columns_by_family`, and it is
-what the [`panel`](/api-docs/panel) metric table's *Asset class* column is derived from.
+Every family returns the same eleven columns; each fills only some. Outside a family's list a null is *not applicable* and carries no information; inside it, it is a blank in that month's filing. Machine-readable as `catalog().applicability.fund_nav.columns_by_family`.
 
 | Family | `nav` | `quota` | `quotaholders` | `delinquency` | `monthly_yield` | `inflows` | `redemptions` | `assets` | `period` is |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -358,101 +161,38 @@ what the [`panel`](/api-docs/panel) metric table's *Asset class* column is deriv
 | `fip` | ✓ | — | — | — | — | — | — | — | 31-Dec, yearly |
 
 <Warning>
-  **FIDC `delinquency` starts in 2025-01 — a regime break, not a series.** CVM's monthly
-  FIDC file before 2025 (tab II/III) carries no delinquency field, so every `fidc` row
-  through `2024-12-31` has `delinquency: null` — not zero, not clean books, not a missing
-  month. From `2025-01-31` the tab IV/VI format is ingested and the field is filed on every
-  row (a fund with no delinquent receivables files `0`). Never chain-link, difference or
-  average a FIDC delinquency series across 2024-12 → 2025-01; start it at 2025-01. The
-  boundary is published in `catalog().regime_breaks` and on the `funds_fidc` row of
-  [`coverage`](/api-docs/coverage) (`notes`), so a program can check it rather than a
-  reader remembering it.
+  **FIDC `delinquency` starts in 2025-01 — a regime break, not a series.** Every `fidc` row through `2024-12-31` has `delinquency: null` — not zero, not clean books. From `2025-01-31` it is filed on every row (a fund with none files `0`). Never chain-link, difference or average across the boundary; start at 2025-01. Published in `catalog().regime_breaks` and on the `funds_fidc` [`coverage`](/api-docs/coverage) row.
 </Warning>
 
-<CodeGroup>
-
-```bash curl
+```bash
 curl -s -X POST "$SILO_URL/rpc/fund_nav" \
   -H "apikey: $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{"p_cnpj":"12345678000190","p_from":"2024-01-01","p_to":"2026-06-30"}'
 ```
 
-```python Python
-body = {"p_cnpj": "12345678000190", "p_from": "2024-01-01", "p_to": "2026-06-30"}
-rows = requests.post(f"{URL}/rpc/fund_nav", headers=H, json=body).json()
-```
-
-```javascript JavaScript
-const { data } = await supabase.rpc('fund_nav', {
-  p_cnpj: '12345678000190',
-  p_from: '2024-01-01',
-  p_to: '2026-06-30',
-})
-```
-
-</CodeGroup>
-
 ```json
 [
   {
-    "cnpj": "12345678000190",
-    "period": "2025-03-31",
-    "entity_type": "fidc",
-    "nav": 388120044.12,
-    "quota": null,
-    "quotaholders": null,
-    "delinquency": 9120044.7,
-    "monthly_yield": null,
-    "inflows": null,
-    "redemptions": null,
-    "assets": null
+    "cnpj": "12345678000190", "period": "2025-03-31", "entity_type": "fidc",
+    "nav": 388120044.12, "quota": null, "quotaholders": null,
+    "delinquency": 9120044.7, "monthly_yield": null,
+    "inflows": null, "redemptions": null, "assets": null
   }
 ]
 ```
 
-A `fidc` row: `nav` and `delinquency` are the two columns that family files; the other six
-are null by construction, and `period` is the month's last day.
+#### Notes
 
-<Warning>
-  **Nulls here are real.** A column is null because that family does not file that field
-  (null by construction — the table above), or because the filing left it blank — never
-  because a value was dropped or replaced. Nothing is forward-filled, and a month with no
-  filing is an **absent row**, not a repeated one. Check `period` continuity before
-  differencing.
-</Warning>
-
-<Warning>
-  **One 1,000-row page, and it refuses above it.** A window that would return more than
-  1,000 rows raises SQLSTATE `22023` rather than handing back a slice. At a monthly grain
-  1,000 rows is over 80 years of one fund, so reaching it usually means the request is
-  wrong rather than the fund.
-
-  **Paging requires `p_entity_type`.** The cursor is a bare `period`, and a period is
-  unique only *within* one family — 385 CNPJs file under two (`fi` and `fidc`) in the same
-  month, so a bare-date cursor would skip or repeat a row at a page edge. Pass the family
-  alongside `p_after`, or drop `p_after` and let the whole result come back with every row
-  labelled by `entity_type`:
+- **Nulls here are real.** A column is null because the family does not file it, or because the filing left it blank — never because a value was dropped. Nothing is forward-filled; a month with no filing is an **absent row**. Check `period` continuity before differencing.
+- **One 1,000-row page, and it refuses above it** (`22023`). At a monthly grain 1,000 rows is over 80 years of one fund, so reaching it usually means the request is wrong.
+- **Paging requires `p_entity_type`.** The cursor is a bare `period`, unique only within a family — 385 CNPJs file under two in the same month. Drop `p_after` to get the whole result with every row labelled.
 
   ```json
   { "p_cnpj": "05754060000113", "p_entity_type": "fi", "p_after": "" }
   { "p_cnpj": "05754060000113", "p_entity_type": "fi", "p_after": "2023-06-30" }
   ```
 
-  In the Python SDK: `silo.iter_fund_nav("05754060000113", "fi")`, which raises locally if
-  you leave the family out.
-</Warning>
-
-<Note>
-  **`period` and `period_month` are two conventions for the same month.** `period` is
-  CVM's filed month-**end** date (`2024-01-31`); the trailing `period_month` is the first
-  of that month (`2024-01-01`), which is how [`panel`](/api-docs/panel) keys fund
-  observations. Join a nav series to a panel on `period_month`, not on `period`.
-</Note>
-
-## Empty and error behavior
-
-- Unknown CNPJ, or a real CNPJ with no filings in the window → `200 []`.
-- A CNPJ that exists only as an ETF is absent from this universe by design.
-- Passing `"p_from": null` explicitly returns `[]` (see
-  [Conventions](/api-docs/conventions)); omit the key to get the default instead.
+  In the SDK: `silo.iter_fund_nav("05754060000113", "fi")`.
+- **`period` and `period_month` are two conventions for the same month.** `period` is CVM's filed month-end date; `period_month` is the first of that month, which is how [`panel`](/api-docs/panel) keys fund observations. Join a nav series to a panel on `period_month`.
+- **Empty results**: unknown CNPJ, or a real CNPJ with no filings in the window → `200 []`. A CNPJ that exists only as an ETF is absent by design. Passing `"p_from": null` explicitly returns `[]` — omit the key for the default.

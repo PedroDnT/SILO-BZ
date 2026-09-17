@@ -68,14 +68,15 @@ select * from supabase.fund_flow_series
 > Look a fund up by name or CNPJ, then follow the largest funds through time —
 > net assets, quota, rebased return and monthly flow.
 >
-> Two limits shape everything below. The site is **static**, so per-fund time
-> series exist only for a small driver set of the largest funds, not on demand for
-> any fund you search. And a fund's **return basis differs by family** — FI is a
-> true quota return, FII is compounded dividend yield, everything else is net-asset
-> growth that conflates flows with performance — so the lines in the return chart
-> are not directly comparable to one another. Ranked performance within an asset
-> class is on [Performance](/performance); the FI industry aggregate is on
-> [FI Industry](/fi).
+> Two limits shape everything below.
+>
+> - The site is **static**: per-fund time series exist only for a driver set of the
+>   largest funds, not on demand for any fund you search.
+> - A fund's **return basis differs by family** — FI is a true quota return, FII is
+>   compounded dividend yield, everything else is net-asset growth that conflates
+>   flows with performance — so the return lines are not comparable to one another.
+>
+> Ranked performance within an asset class is on [Performance](/performance).
 
 <BigValue data={fund_headline} value=funds_tracked title="Funds Tracked" fmt=num0/>
 <BigValue data={fund_headline} value=aum_bn title="Net Assets, Latest Obs. (R$bn)" fmt=num0/>

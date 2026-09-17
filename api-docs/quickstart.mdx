@@ -4,62 +4,36 @@ description: "Get the publishable key, make your first request, and read the res
 icon: "rocket"
 ---
 
-## 1. Testing key (not production)
+### 1. Testing key
 
 <Warning>
-  The publishable key below is **shared** — everyone reading these docs has the
-  same one. It identifies the project, not you.
+  The publishable key below is **shared** — everyone reading these docs has the same one. It identifies the project, not you.
 </Warning>
-
-Landing tables are not reachable with it: `anon` and `authenticated` hold no
-grant on `cvm_*`, `b3_cotahist` or `cia_*`, so schema `api` is the entire public
-surface and `Accept-Profile: public` answers 401 for every caller. The boundary
-is the grant, not row-level security.
-
-**Sign in for a bigger ceiling.** [The sign-in page](https://silo-bz-deloslabs.vercel.app/signin.html)
-(GitHub) hands you a user JWT to send as `Authorization: Bearer <token>`
-alongside the `apikey` header. What each tier gets is one table on
-[Conventions & limits](/api-docs/conventions#authentication). Never invent or mint a key.
-
-Every test caller uses the same **publishable** key (`sb_publishable_…`) — the 2026
-name for anon, same Postgres `anon` role. See [For agents](/api-docs/agents).
-
-<Note>
-  Ignore **Secret** (`sb_secret_…`) and legacy **`service_role`**. Those bypass
-  every boundary on these pages. Stay on schema `api`; never `Accept-Profile: public`.
-</Note>
-
-The Data API is:
-
-```
-https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/
-```
-
-Export it once so the examples below work as written. The env var **omits** the
-trailing slash so `"$SILO_URL/rpc/..."` joins cleanly.
 
 ```bash
 export SILO_URL="https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"
 export SILO_ANON_KEY="sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 ```
 
-## 2. Send it on every request
+The env var omits the trailing slash so `"$SILO_URL/rpc/..."` joins cleanly.
 
-The publishable key is **not** a JWT. Put it only on `apikey`. Do **not** send it as
-`Authorization: Bearer` — the platform tries to parse that as a user JWT and returns
-`Invalid JWT`.
+**Sign in for a bigger ceiling.** [The sign-in page](https://silo-bz-deloslabs.vercel.app/signin.html) (GitHub) hands you a user JWT to send as `Authorization: Bearer <token>` alongside `apikey`. What each tier gets is one table on [Conventions & limits](/api-docs/conventions#authentication). Never invent or mint a key.
+
+**Note**: ignore **Secret** (`sb_secret_…`) and legacy `service_role` — those bypass every boundary on these pages. Landing tables are unreachable with the publishable key: schema `api` is the entire public surface, and `Accept-Profile: public` answers 401 for every caller.
+
+### 2. Send it on every request
+
+The publishable key is **not** a JWT. Put it only on `apikey` — sending it as `Authorization: Bearer` returns `Invalid JWT`.
 
 ```
 apikey: sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437
 ```
 
-`Authorization` is only for a **user** session after Supabase Auth. The JS client
-(`createClient(url, publishableKey)`) sets `apikey` for you.
+`Authorization` is only for a **user** session. The JS client (`createClient(url, publishableKey)`) sets `apikey` for you.
 
-## 3. Your first call
+### 3. Your first call
 
-Ask what the warehouse currently holds. `coverage` takes no arguments and returns three
-rows — one per dataset:
+Ask what the warehouse holds. `coverage` takes no arguments:
 
 <CodeGroup>
 
@@ -73,7 +47,7 @@ curl -s -X POST "$SILO_URL/rpc/coverage" \
 ```python Python
 import os, requests
 
-URL = "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"  # no trailing slash; join with /rpc/...
+URL = "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"  # no trailing slash
 KEY = os.environ.get("SILO_ANON_KEY", "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437")
 H = {"apikey": KEY}
 
@@ -105,15 +79,11 @@ The response is a plain JSON array — PostgREST has no envelope:
 ]
 ```
 
-<Note>
-  Sample values throughout this documentation are **illustrative shapes**, not live prints.
-  Call `coverage` to see what is actually loaded.
-</Note>
+**Note**: sample values throughout this documentation are illustrative shapes, not live prints. Call `coverage` to see what is actually loaded.
 
-## 4. Read a view
+### 4. Read a view
 
-Views are read with `GET` and PostgREST filter syntax. Five most recent standard-lot
-sessions for one ticker:
+Views are read with `GET` and PostgREST filter syntax:
 
 <CodeGroup>
 
@@ -150,17 +120,9 @@ const { data } = await supabase
 
 </CodeGroup>
 
-```json
-[
-  { "ticker": "PETR4", "trade_date": "2026-08-26", "close": 41.2, "volume": 1204533210.0 },
-  { "ticker": "PETR4", "trade_date": "2026-08-25", "close": 40.87, "volume": 986221410.5 }
-]
-```
+### 5. Call a function
 
-## 5. Call a function
-
-Functions take **named arguments** in a JSON body, `POST /rpc/<name>`. Argument names are
-the SQL parameter names — they all start with `p_`. Omit an argument to take its default.
+Functions take **named arguments** in a JSON body, `POST /rpc/<name>`. Argument names are the SQL parameter names and all start with `p_`. Omit an argument to take its default.
 
 <CodeGroup>
 
@@ -209,22 +171,18 @@ const { data } = await supabase.rpc('panel', {
 ]
 ```
 
-That is the whole shape of the API: views you `GET` and functions you `POST`. The [instruments](/api-docs/instruments) page covers the typed cash views, and [options](/api-docs/options) the derivative functions.
+That is the whole shape of the API: views you `GET`, functions you `POST`.
 
-## 6. Know when a schema header is needed
+### 6. Schema headers
 
-Everything above assumes `api` is the **default** exposed schema on the project. If the
-project exposes more than one schema and `api` is not first in the list, name it explicitly:
+Everything above assumes `api` is the **default** exposed schema. If the project exposes more than one and `api` is not first, name it explicitly:
 
-- `Accept-Profile: api` on `GET` requests
-- `Content-Profile: api` on `POST` (including `/rpc/`) requests
+- `Accept-Profile: api` on `GET`
+- `Content-Profile: api` on `POST` (including `/rpc/`)
 
-In `supabase-js` this is `createClient(url, key, { db: { schema: 'api' } })` — as used in
-the examples — or `supabase.schema('api')` per call. A `PGRST106` error ("schema must be one
-of the following") means the schema is not exposed at all; that is fixed in the Supabase
-Dashboard → Settings → API → **Exposed schemas**.
+In `supabase-js` that is `createClient(url, key, { db: { schema: 'api' } })` or `supabase.schema('api')` per call. A `PGRST106` error means the schema is not exposed at all — fixed in Supabase Dashboard → Settings → API → **Exposed schemas**.
 
-## Next
+### Next
 
 <CardGroup cols={2}>
   <Card title="Conventions & limits" icon="ruler" href="/api-docs/conventions">

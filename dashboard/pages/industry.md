@@ -106,22 +106,17 @@ select * from supabase.industry_fiagro
 ## Industry Net Assets by Fund Family
 
 > Net assets summed per family per month. FIP contributes only in the month its
-> yearly filing maps to (December), so its line is a step, not a trend. FI is
-> an order of magnitude larger than the other four combined (see the lede
-> above); Evidence's AreaChart always stacks a multi-series area, so on one
-> linear scale FI's band fills the chart and the other four compress to
-> nothing even though their data is correct. Two views instead of one: share
-> of the total (computed in SQL — Evidence `type=stacked100` errors on a wide
-> list of y columns, live-verified) and absolute net assets with FI excluded
-> (where the other four are back on a comparable scale).
+> yearly filing maps to (December), so its line is a step, not a trend.
+>
+> FI is an order of magnitude larger than the other four combined, so on one
+> linear scale its band fills the chart. Hence two views: share of the total,
+> and absolute net assets with FI excluded.
 
 > **The step at 2025-05 is FIAGRO entering the data, not the industry growing.**
 > CVM's FIAGRO monthly file begins in May 2025 with **3 funds**, reaches 125 by
-> September and 202 by December. Every aggregate that includes FIAGRO — the
-> total line most of all — therefore steps up as that family is onboarded into
-> the dataset. The per-family lines are unaffected and are the honest read; the
-> total is a sum over whatever families the data covers in that month, which is
-> not the same thing as the market's size changing.
+> September and 202 by December, so every aggregate including FIAGRO steps up as
+> the family is onboarded. The per-family lines are unaffected and are the honest
+> read; the total is a sum over whatever families the data covers that month.
 
 <AreaChart
 data={industry_aum_trend}
@@ -143,7 +138,6 @@ title="Net Assets by Family — Last 36 Months (ex-FI and ex-FIP, absolute)"
 > FIP is left off the absolute stack: its yearly filing lands in one month of
 > twelve as a band larger than the other three families together, which turns a
 > monthly chart into a saw. Its yearly bars are further down this page.
-
 
 ---
 
