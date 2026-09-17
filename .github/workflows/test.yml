@@ -423,18 +423,26 @@ jobs:
           fi
           echo "openapi.json matches the catalog ($(python3 -c "import json;print(len(json.load(open('openapi.json'))['paths']))") paths)"
 
-      - name: Compile every dashboard source query
+      # Both Evidence sites, not just dashboard/. webapp/ was uncovered until
+      # 2026-09-17: its source queries run against this same Postgres at
+      # `evidence sources` time, so a typo in one failed the site build with
+      # nothing in CI having executed it. The glob is per-site rather than a
+      # recursive find so a new Evidence project has to be added here
+      # deliberately, with its connection reviewed.
+      - name: Compile every Evidence source query (dashboard + webapp)
         run: |
           set -uo pipefail
           failed=()
-          for f in dashboard/sources/supabase/*.sql; do
+          shopt -s nullglob
+          files=(dashboard/sources/supabase/*.sql webapp/sources/supabase/*.sql)
+          for f in "${files[@]}"; do
             if ! out=$(psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -q -f "$f" 2>&1 >/dev/null); then
               failed+=("$f")
               echo "FAIL $f"
               sed 's/^/       /' <<<"$out" | tail -4
             fi
           done
-          echo "checked $(ls dashboard/sources/supabase/*.sql | wc -l) sources, ${#failed[@]} failed"
+          echo "checked ${#files[@]} sources, ${#failed[@]} failed"
           [ ${#failed[@]} -eq 0 ]
 
   api-smoke:
