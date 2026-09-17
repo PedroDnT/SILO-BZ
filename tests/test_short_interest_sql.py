@@ -214,9 +214,56 @@ def test_api_views_are_owner_privileged_and_granted(view):
 
 def test_views_are_dropped_before_recreation():
     """CREATE OR REPLACE cannot insert a column mid-list; these views grow."""
-    for view in ("fact_short_interest_daily", "dim_ticker_float", "vw_b3_adtv_21",
+    for view in ("fact_short_interest_daily", "dim_ticker_float",
                  "vw_short_by_sector", "fact_investor_flow_daily"):
         assert f"DROP VIEW IF EXISTS {view}" in SQL_CODE, f"{view} has no guarded DROP"
+    assert "DROP MATERIALIZED VIEW IF EXISTS mv_b3_adtv_21" in SQL_CODE
+
+
+def test_the_old_adtv_view_name_is_still_dropped():
+    """The rename has to clean up after itself.
+
+    mv_b3_adtv_21 replaced a plain view called vw_b3_adtv_21. Without a DROP
+    for the old name, a database applied before 2026-09-17 keeps a stale copy
+    that still answers queries and still runs the window on every request.
+    """
+    assert "DROP VIEW IF EXISTS vw_b3_adtv_21" in SQL_CODE
+
+
+def test_the_adtv_is_materialized_because_the_api_timed_out_without_it():
+    """As a plain view this timed out api.short_interest at the anon 3s budget.
+
+    Measured against production 2026-09-17 — and note the second row, which is
+    why this is precomputed rather than predicate-gated:
+
+        ?limit=1                              3974 ms  57014 timeout
+        ?trade_date=eq.2026-09-16&limit=5     3579 ms  57014 timeout
+
+    PostgREST applies the filter AFTER the window is computed, so narrowing the
+    request bought nothing. A trailing 21-session average only moves when a
+    session lands, so this is the one relation in the file that loses no
+    freshness worth having.
+    """
+    assert "CREATE MATERIALIZED VIEW mv_b3_adtv_21" in SQL_CODE
+    assert "LEFT JOIN mv_b3_adtv_21" in SQL_CODE, "the fact must read the materialized copy"
+
+
+def test_the_adtv_can_be_refreshed_concurrently():
+    """REFRESH ... CONCURRENTLY requires a unique index, and the cron uses it.
+
+    Without the index the scheduled refresh fails every night and the matview
+    silently freezes at whatever the last apply built — the exact stale-copy
+    failure the file header warns about.
+    """
+    assert "CREATE UNIQUE INDEX ix_b3_adtv_21_pk ON mv_b3_adtv_21 (codneg, trade_date)" in SQL_CODE
+    cron = (ROOT / "src/store/analytical/08_cron_schedules.sql").read_text(encoding="utf-8")
+    assert "REFRESH MATERIALIZED VIEW CONCURRENTLY mv_b3_adtv_21" in cron
+
+
+def test_the_file_header_does_not_still_claim_everything_is_a_plain_view():
+    """A header that contradicts the file is how the next reader gets misled."""
+    header = SQL.split("=====", 2)[1] if "=====" in SQL else SQL[:2000]
+    assert "Everything here is a plain view, not a materialized one" not in header
 
 
 def test_migration_is_idempotent_and_keyed():

@@ -54,6 +54,21 @@ BEGIN
       'REFRESH MATERIALIZED VIEW CONCURRENTLY mv_b3_isin_subtype'
     );
 
+    -- mv_b3_adtv_21 — 06:14 UTC daily, after mv_b3_isin_subtype (06:12) and
+    -- before the fact refreshes that follow. It reads vw_b3_quote_vista, so it
+    -- only needs the night's COTAHIST to have landed, not any fund matview.
+    --
+    -- It exists as a matview at all because api.short_interest timed out
+    -- without it (57014 at the anon tier's 3s budget, measured 2026-09-17).
+    -- A stale copy means days_to_cover is divided by yesterday's ADTV — a
+    -- trailing 21-session average moves by about 1/21 of one session, which is
+    -- invisible next to the position it is dividing.
+    PERFORM cron.schedule(
+      'refresh-b3-adtv-21',
+      '14 6 * * *',
+      'REFRESH MATERIALIZED VIEW CONCURRENTLY mv_b3_adtv_21'
+    );
+
     -- mv_b3_monthly_activity — 06:18 UTC daily, AFTER mv_b3_isin_subtype (06:12)
     -- because it reads vw_b3_instrument_typed, which falls back to that matview
     -- for an instrument's subtype. Refreshing in the other order would bake a

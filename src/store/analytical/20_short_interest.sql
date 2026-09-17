@@ -22,10 +22,17 @@
 --    uncoverable, not instantly coverable, and 0 would sort it to exactly the
 --    wrong end of the screen.
 --
--- Everything here is a plain view, not a materialized one. B3 keeps ~21
--- business days of lending data, so the whole fact is bounded at roughly
--- 60k rows no matter how long the pipeline runs — small enough that freshness
--- beats a refresh schedule that could silently go stale.
+-- Everything here is a plain view EXCEPT mv_b3_adtv_21. B3 keeps ~21 business
+-- days of lending data, so the fact itself is bounded at roughly 60k rows no
+-- matter how long the pipeline runs — small enough that freshness beats a
+-- refresh schedule that could silently go stale.
+--
+-- The ADTV is the one exception, and it earned it: it reads the cash tape, not
+-- the lending tables, so it is ~7k tickers x ~124 sessions of window function
+-- on every request. That timed out api.short_interest at the anon tier's 3s
+-- budget (measured 2026-09-17; see the note above the matview). A trailing
+-- 21-session average only changes when a session lands, so materialising it
+-- costs a freshness nobody can observe.
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
@@ -47,6 +54,9 @@ DROP VIEW IF EXISTS vw_short_by_sector           CASCADE;
 DROP VIEW IF EXISTS fact_short_interest_daily    CASCADE;
 DROP VIEW IF EXISTS fact_investor_flow_daily     CASCADE;
 DROP VIEW IF EXISTS dim_ticker_float             CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS mv_b3_adtv_21 CASCADE;
+-- The pre-2026-09-17 name, when this was a plain view. Dropped so the
+-- rename is idempotent and no stale copy is left answering queries.
 DROP VIEW IF EXISTS vw_b3_adtv_21                CASCADE;
 
 -- -----------------------------------------------------------------------------
@@ -59,7 +69,24 @@ DROP VIEW IF EXISTS vw_b3_adtv_21                CASCADE;
 -- `adtv_sessions` is exposed on purpose: early in a listing, or after a long
 -- halt, the average is over fewer than 21 sessions. That is a usable estimate
 -- but a noisier one, and the consumer is told rather than left to assume.
-CREATE OR REPLACE VIEW vw_b3_adtv_21 AS
+-- MATERIALIZED, and this one is not a judgement call. As a plain view the
+-- window ran on every request: ~7k tickers x ~124 sessions, with nothing for
+-- a filter to prune, because PostgREST applies the predicate AFTER the window
+-- is computed. Measured against production on 2026-09-17, api.short_interest
+-- returned 57014 statement timeout at the anon tier's 3s budget:
+--
+--   ?limit=1                                 3974 ms  timeout
+--   ?trade_date=eq.2026-09-16&limit=5        3579 ms  timeout
+--
+-- Narrowing the request bought nothing, which is why this is precomputed
+-- rather than predicate-gated. The dashboard never saw it: Evidence runs at
+-- build time with a long budget, so the API was the only broken consumer.
+--
+-- Materialising THIS relation specifically costs no freshness that matters —
+-- a trailing 21-session average only changes when a new session lands, which
+-- is once a day, which is exactly the refresh cadence. Everything downstream
+-- stays a plain view.
+CREATE MATERIALIZED VIEW mv_b3_adtv_21 AS
 WITH recent AS (
     SELECT
         q.codneg,
@@ -86,7 +113,11 @@ WINDOW w AS (
     ROWS BETWEEN 20 PRECEDING AND CURRENT ROW
 );
 
-COMMENT ON VIEW vw_b3_adtv_21 IS
+-- (codneg, trade_date) is the grain, so this doubles as the CONCURRENTLY
+-- prerequisite and the index fact_short_interest_daily joins on.
+CREATE UNIQUE INDEX ix_b3_adtv_21_pk ON mv_b3_adtv_21 (codneg, trade_date);
+
+COMMENT ON MATERIALIZED VIEW mv_b3_adtv_21 IS
     'Trailing 21-session average traded value and quantity per (ticker, session), from the cash tape. adtv_sessions says how many sessions the average actually covers — fewer than 21 means a shorter, noisier window, not a gap.';
 
 -- -----------------------------------------------------------------------------
@@ -322,7 +353,7 @@ SELECT
     r.rate_valor_brl
 FROM position p
 LEFT JOIN dim_ticker_float f ON f.codneg = p.codneg
-LEFT JOIN vw_b3_adtv_21    a ON a.codneg = p.codneg AND a.trade_date = p.trade_date
+LEFT JOIN mv_b3_adtv_21    a ON a.codneg = p.codneg AND a.trade_date = p.trade_date
 LEFT JOIN rate             r ON r.codneg = p.codneg AND r.trade_date = p.trade_date;
 
 COMMENT ON VIEW fact_short_interest_daily IS
@@ -503,7 +534,7 @@ REVOKE ALL ON TABLE b3_investor_participation         FROM anon, authenticated;
 REVOKE ALL ON TABLE b3_investor_participation_monthly FROM anon, authenticated;
 REVOKE ALL ON TABLE b3_index_portfolio                FROM anon, authenticated;
 REVOKE ALL ON TABLE b3_instrument_registry            FROM anon, authenticated;
-REVOKE ALL ON TABLE vw_b3_adtv_21                     FROM anon, authenticated;
+REVOKE ALL ON TABLE mv_b3_adtv_21                     FROM anon, authenticated;
 
 GRANT SELECT ON dim_ticker_float            TO anon, authenticated;
 GRANT SELECT ON fact_short_interest_daily   TO anon, authenticated;
