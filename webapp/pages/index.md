@@ -89,8 +89,11 @@ limit 15
 
 ## Largest Companies — Latest Quarter (Consolidated DRE)
 
-Revenue (conta 3.01) and net income (3.11, falling back to 3.09 for banks),
-R$ millions, latest reference date filed per company.
+Revenue (conta 3.01) and net income (3.11, falling back to 3.09 where 3.11 is
+absent — 3.09 is pre-statutory-participations profit, and banks do generally
+file 3.11), R$ millions, latest reference date filed per company. Note that
+3.01 is sales for an industrial company but interest income for a bank, so the
+revenue column is not like-for-like across the two.
 
 <DataTable data={top_revenue} rows=15>
   <Column id=company title="Company"/>

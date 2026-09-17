@@ -138,7 +138,15 @@ def test_public_functions_are_granted_to_both_tiers(name: str) -> None:
 
 
 def test_bank_net_income_falls_back_to_the_other_account_code() -> None:
-    """Banks file a different chart: 3.11 is absent and 3.09 carries it."""
+    """Net income reads 3.11 with 3.09 behind a COALESCE.
+
+    Not because banks lack 3.11 — that rationale was wrong. Banco do Brasil
+    (cd_cvm 1023, FY2024, con, 12m) files 3.11 = 29.17bn "Lucro ou Prejuizo
+    Liquido Consolidado do Periodo", and 3.09 = 29.17bn is profit BEFORE the
+    statutory profit-sharing on 3.10 (zero there, which is why they match).
+    The fallback stands for filings that genuinely omit 3.11; this test only
+    pins that both codes are still wired into the contract.
+    """
     wide = _body("company_financials")
     assert "'3.11'" in wide and "'3.09'" in wide
     assert "COALESCE(" in wide

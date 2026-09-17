@@ -1,0 +1,186 @@
+---
+title: "Known limitations"
+description: "What this API does not do yet, written down before you hit it — sector charts of accounts, unresolvable tickers, duplicated ITR spans, unadjusted prices."
+icon: "triangle-exclamation"
+---
+
+Every item below is measured, not suspected. Where something is planned it says
+**planned** and says why it has not shipped; where the answer is "this cannot be
+fixed", it says that instead. [Conventions & limits](/api-docs/conventions) is the
+contract — caps, nulls, freshness, errors. This page is the list of places where the
+contract is correct and still not enough.
+
+<Note>
+  Nothing here is a bug report. A limitation that would be fixed by fabricating a
+  value — a guessed ticker↔CNPJ join, a derived split factor, an English label
+  keyed on a code that means two things — stays a limitation on purpose.
+</Note>
+
+## Account codes are not comparable across sectors
+
+CVM's chart of accounts is **sector-specific**. The same `account_code` carries a
+different line in a bank's filing than in an industrial company's, and nothing in
+the code itself tells you which chart you are reading. Measured against the live
+API for PETR4 (industrial) and Banco do Brasil (`cd_cvm` 1023, bank):
+
+| `account_code` | Industrial (PETR4) | Bank (Banco do Brasil) |
+| --- | --- | --- |
+| `3.01` | Receita de Venda de Bens e/ou Serviços | Receitas de Intermediação Financeira |
+| `3.03` | Resultado Bruto | Resultado Bruto de Intermediação Financeira |
+| `3.05` | Resultado Antes do Resultado Financeiro e dos Tributos (EBIT) | Resultado antes dos Tributos sobre o Lucro |
+| `3.07` | Resultado Antes dos Tributos sobre o Lucro | Lucro ou Prejuízo das Operações Continuadas |
+
+<Warning>
+  **Do not compare a ratio built on an account code across sectors.** `3.05` is
+  operating profit before financial result for an industrial and pre-tax profit for
+  a bank — two different levels of the income statement. A screen that ranks both on
+  `3.05` is ranking two different quantities and will look plausible while doing it.
+</Warning>
+
+Three consequences, all visible in the response:
+
+* **`api.financials` returns the as-filed Portuguese `account_name`.** It is the only
+  label in the payload that is correct for every chart, because it is the one the
+  company filed. Read it, not just the code.
+* **There is deliberately no canonical English line-item mapping.** Keying one on
+  `account_code` would mislabel one sector or the other — `3.03` cannot be both
+  "gross profit" and "gross financial intermediation result" under one name.
+* **Insurers and other regulated sectors are expected to differ too**, and have not
+  been characterised. Treat "not a bank and not an industrial" as unknown rather
+  than as one of the two columns above.
+
+<Note>
+  **Planned.** Sector-aware statement labelling: which chart a filing uses, surfaced
+  as a column, with labels keyed on `(chart, code)` rather than on the code alone.
+
+  **Planned, and deliberately behind it.** A friendlier `financials` output shape —
+  readable period labels, scaled values, year-over-year change. It is deferred
+  precisely because the sector separation has to land first: a convenient wide shape
+  built on today's codes would harden the mistake above into an interface.
+</Note>
+
+## Net income is not simply `3.11`
+
+`api.company_financials` reads `net_income` from `3.11` and falls back to `3.09`.
+The rationale previously given for that fallback — that banks do not file `3.11` —
+is wrong. For Banco do Brasil, FY2024, consolidated:
+
+| `account_code` | `account_name` | Value |
+| --- | --- | --- |
+| `3.09` | Lucro ou Prejuízo antes das Participações e Contribuições Estatutárias | R$ 29.17bn |
+| `3.10` | Participações nos Lucros e Contribuições Estatutárias | R$ 0.00 |
+| `3.11` | Lucro ou Prejuízo Líquido Consolidado do Período | R$ 29.17bn |
+
+`3.11` is present, and it is net income. `3.09` is profit **before** statutory
+profit-sharing and employee participations; the two coincide here only because
+`3.10` is zero.
+
+<Warning>
+  The fallback is harmless wherever `3.11` is filed. Where `3.11` were ever null
+  **and** `3.10` non-zero, `company_financials` would report profit-before-participations
+  as net income — too high by the participations line. If that distinction matters to
+  you, read `3.09`, `3.10` and `3.11` yourself from `api.financials` rather than taking
+  the wide column.
+</Warning>
+
+This is verified for **one** bank. It is not a claim about every bank, and the
+non-bank charts have not been swept for the same pattern.
+
+## Not every listed company resolves from its ticker
+
+A ticker resolves to a company only through CVM's published FCA
+valores-mobiliários map, and that map covers only the companies that published it.
+Nothing is name-matched — a guessed ticker↔CNPJ join is exactly what this API
+refuses to make.
+
+So a ticker can be real, traded, and still resolve to nothing. `ITUB4` does:
+
+<CodeGroup>
+
+```bash curl
+curl -s -X POST "$SILO_URL/rpc/lookup" \
+  -H "apikey: $SILO_ANON_KEY" -H "Content-Type: application/json" \
+  -d '{"p_query":"ITUB4"}'
+# One row, and it is a ticker row:
+# [{"id":"ITUB4","id_type":"ticker", ...,"cnpj":null,"tickers":null}]
+# No cd_cvm row, so there is no company to read fundamentals for.
+
+curl -s -X POST "$SILO_URL/rpc/financials" \
+  -H "apikey: $SILO_ANON_KEY" -H "Content-Type: application/json" \
+  -d '{"p_id":"ITUB4","p_statement":"DRE"}'
+# 200 []
+```
+
+```python Python
+silo.lookup("ITUB4")       # ticker row only: cnpj None, tickers None
+silo.financials("ITUB4")   # [] — nothing resolved, not an error
+```
+
+</CodeGroup>
+
+The quote row exists, so the ticker is found; the company arm is empty, so
+`financials` resolves nothing and returns `200 []`. An empty array here means
+"unresolvable", not "this company filed nothing".
+
+**Workaround:** resolve by company name or `cd_cvm` with `api.lookup`, then pass the
+id it returns. A company row carries `cnpj` and a `tickers` array; those ids read
+fundamentals reliably.
+
+## A quarterly filing publishes every account twice
+
+An ITR prints the same account under one `ref_date` twice — once for the three-month
+span, once year-to-date — distinguished **only** by `period_start` / `period_end`,
+surfaced as `period_months`. Nothing is collapsed for you, because collapsing means
+choosing, and either choice is wrong for someone.
+
+<Warning>
+  Filter on `period_months` before you aggregate, chart or average anything. Adding a
+  3-month row to a 6-month row double-counts the quarter, and the two rows are
+  otherwise identical in every field you would normally group by.
+</Warning>
+
+And you cannot reliably rebuild a cumulative figure by summing quarters:
+
+* A company with a **non-calendar fiscal year** breaks the arithmetic — São Martinho
+  (`cd_cvm` 20516) files April–March, so its nine-month period starts 1 April, not
+  1 January.
+* A **restated earlier quarter** breaks it too; only the newest `version` of each
+  statement is served, so the quarter you would subtract may no longer be the quarter
+  that was originally filed.
+
+## Quotes are unadjusted
+
+`adjusted` is `false` on every quote row, and that is a statement of fact rather
+than a default waiting to be flipped. Splits, reverse splits and bonuses are ingested
+and published in their own corporate-events table, but **no adjustment factor is
+derived from them**.
+
+A return computed across a split date is wrong — by the split ratio — unless the
+caller handles the event. Nothing is interpolated or forward-filled either; see
+[Market coverage](/api-docs/market-coverage#what-is-not-here).
+
+## The B3 lending and flow group is a ratchet
+
+Roughly 21 business days of retention at the source, no archive, and no backfill at
+any price. It affects `short_interest`, `short_interest_by_sector`, `investor_flow`,
+`lending_trades` and `lending_participants`: a session not captured on the day is
+gone, not expensive.
+
+This is the one limitation on this page that no amount of work here can fix, and it
+is documented in full — including the silently clamped HTTP 200 — under
+[the B3 BDI ratchet](/api-docs/market-coverage#the-b3-bdi-ratchet). Read it before you
+plan a long lending series.
+
+## Next
+
+<CardGroup cols={3}>
+  <Card title="Market coverage" icon="calendar-range" href="/api-docs/market-coverage">
+    How far back each domain goes, and the ratchet in full.
+  </Card>
+  <Card title="Conventions & limits" icon="ruler" href="/api-docs/conventions">
+    The contract: caps, null semantics, freshness, errors.
+  </Card>
+  <Card title="Paging without losing rows" icon="list-ol" href="/api-docs/guides/pagination">
+    Three ways a response gets cut, and only one tells you.
+  </Card>
+</CardGroup>

@@ -152,9 +152,43 @@ hit on 2026-08-28 when it tried to relate FIDC credit to listed-company equity
 `webapp/` has **no source SQL files**; every query is an inline block in three
 page files, and Evidence connects **directly to Postgres**, bypassing `api.*`
 entirely. It reads `cia_account` for revenue (`3.01`), net income (`3.11`
-falling back to `3.09` for banks), total assets (BPA `1`) and equity (matched by
+falling back to `3.09`), total assets (BPA `1`) and equity (matched by
 `ds_conta = 'Patrimônio Líquido Consolidado'`, because its code varies between
 2.03 and 2.08), then derives net margin and ROE, clipped to ±100%.
+
+**The `3.09` fallback is not a bank rule, and this document used to say it
+was.** Banks file a different chart of accounts, but `3.11` is not generally
+missing from it and `3.09` is not net income. Measured against
+`api.financials` for Banco do Brasil (`cd_cvm` 1023, FY2024, `con`, 12-month
+rows):
+
+| `account_code` | value | as-filed `account_name` |
+| --- | --- | --- |
+| `3.09` | 29.17bn | Lucro ou Prejuízo antes das Participações e Contribuições Estatutárias |
+| `3.10` | 0.00 | Participações nos Lucros e Contribuições Estatutárias |
+| `3.11` | 29.17bn | Lucro ou Prejuízo Líquido Consolidado do Período |
+
+So `3.11` is present and is net income; `3.09` is profit *before* statutory
+profit-sharing, and the two match here only because `3.10` is zero. Only this
+one bank was verified, so some banks or periods may still genuinely omit
+`3.11` — the fallback stands for those, and is inert wherever `3.11` is filed.
+It would, however, report pre-participations profit as net income if `3.11`
+were ever null alongside a non-zero `3.10`.
+
+What *does* differ by chart is the **meaning of a code**, and no fallback can
+repair that. PETR4 (industrial) against BBAS (bank):
+
+| Code | Industrial | Bank |
+| --- | --- | --- |
+| `3.01` | Receita de Venda de Bens e/ou Serviços | Receitas de Intermediação Financeira |
+| `3.03` | Resultado Bruto | Resultado Bruto de Intermediação Financeira |
+| `3.05` | Resultado Antes do Resultado Financeiro e dos Tributos (EBIT) | Resultado antes dos Tributos sobre o Lucro |
+| `3.07` | Resultado Antes dos Tributos sobre o Lucro | Lucro ou Prejuízo das Operações Continuadas |
+
+Read the as-filed `ds_conta` / `account_name` beside a code rather than
+assuming a code carries one concept across filers. `revenue` and
+`gross_profit` are therefore not like-for-like between a bank and an
+industrial company, in `webapp/` or in `api.company_financials`.
 
 Those conventions — `escopo='con'`, `ordem_exerc='ÚLTIMO'` (accented), the
 3.11→3.09 fallback, equity-by-name — are **duplicated by hand** across
