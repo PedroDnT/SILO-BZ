@@ -54,13 +54,20 @@ Four consequences, all visible in the response:
   than as one of the two columns above.
 
 <Note>
-  **Partly shipped.** The sector itself now rides on every statement row (`setor`,
-  `segmento`, catalog v28), so a caller can partition by it without a second call.
+  **Shipped (catalog v29).** `api.income_statements` returns the income statement as
+  one row per period with named fields, and it resolves each field from the **as-filed
+  label** rather than from the account code. `chart` names the layout the filing used
+  (`industrial`, `bank`, `insurer`). `setor` and `segmento` also ride on every
+  statement row (v28) for peer medians.
 
-  **Still planned.** Sector-aware statement *labelling*: which chart a filing uses,
-  surfaced as its own column, with labels keyed on `(chart, code)` rather than on the
-  code alone. `setor` is a good enough partition key to compute within; it is not yet
-  a statement that two filings share one chart of accounts.
+  Keying on the label turned out to be *more complete*, not just safer: net income
+  sits on `3.11` for two charts, on `3.09` for a third that files no `3.11`, and on
+  `3.13` for insurers — so `income_statements.net_income` resolves filings that
+  `company_financials` must return null for.
+
+  **Still not offered.** A canonical English mapping for *every* line. The named field
+  set above is a bounded, measured subset; a full mapping is not, and a code-keyed one
+  would still mislabel a chart.
 
   **Planned, and deliberately behind it.** A friendlier `financials` output shape —
   readable period labels, scaled values, year-over-year change. It is deferred
@@ -99,6 +106,14 @@ without a `3.11`. Those 282 statements now read `null`.
   "the company did not file this line", which is a different fact from zero — and a
   different fact from a number we inferred.
 </Note>
+
+<Tip>
+  **`api.income_statements` resolves all 282.** Those filings are not missing net
+  income — they report it on `3.09` under the label `Lucro/Prejuízo Consolidado do
+  Período`, because their chart has no `3.11`. `income_statements` keys on the label
+  rather than the code, so it returns the figure where `company_financials` returns
+  null. Prefer it when you want net income to be as complete as the filings allow.
+</Tip>
 
 This is verified for **one** bank. It is not a claim about every bank, and the
 non-bank charts have not been swept for the same pattern.

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SILO Data API",
-    "version": "28",
+    "version": "29",
     "summary": "Read-only Brazilian public financial data: CVM filings, BACEN series, B3 quotes and the B3 BDI group.",
     "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Eight set-returning functions raise SQLSTATE `22023`\n  when the window they were handed would produce more than 1000 rows. Nothing\n  is trimmed. Three of them (`panel`, `quote_history`, `fund_nav`) take a\n  `p_after` cursor so you can walk the series; the other five ask you to narrow\n  the window. `fund_nav` paging additionally REQUIRES `p_entity_type` — its\n  cursor is a bare period, which is unique only within one family, and CNPJs\n  that file under both `fi` and `fidc` in the same month would otherwise be\n  ambiguous.\n* **The tier ceiling clamps.** Eight other functions silently lower `p_limit`\n  to a per-tier maximum. No error is raised, so the only way to know the result\n  was cut is to know the ceiling. Signing in raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
     "license": {
@@ -45,6 +45,9 @@
     },
     {
       "name": "Lookup"
+    },
+    {
+      "name": "Other"
     },
     {
       "name": "Panel"
@@ -5767,6 +5770,297 @@
                       "is_active": {
                         "type": [
                           "boolean",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. Contract violations raise SQLSTATE `22023` with a message naming the limit or the argument at fault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rpc/income_statements": {
+      "post": {
+        "operationId": "rpc_income_statements",
+        "summary": "income_statements",
+        "description": "Income statement, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label, not on cd_conta and not on setor: CVM ships four DRE charts and the same code means different things across them. net_income therefore resolves for the filings that report it on 3.09 (the one bank chart with no 3.11) as well as those on 3.11. A concept a chart does not file reads NULL — operating_income is industrial-only. `chart` says which layout the filing used. Values are absolute reais.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "tags": [
+          "Other"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "p_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "p_from": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `(CURRENT_DATE - 1825)`."
+                  },
+                  "p_to": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `CURRENT_DATE`."
+                  },
+                  "p_scope": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Defaults to `'con'::text`.",
+                    "default": "con",
+                    "examples": [
+                      "con",
+                      "ind"
+                    ]
+                  },
+                  "p_doc_type": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null,
+                    "examples": [
+                      "itr",
+                      "dfp"
+                    ]
+                  }
+                },
+                "required": [
+                  "p_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result set, oldest first. An unknown id is an empty array, not a 404 and never a guessed value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "id_type": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cnpj": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "company": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "ticker": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "setor": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "segmento": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "doc_type": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "scope": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "ref_date": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "period_start": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "period_end": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "period_months": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "chart": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "revenue": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "cost_of_revenue": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "gross_profit": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "operating_expenses": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "operating_income": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "financial_result": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "pretax_income": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "income_tax": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "continuing_operations": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "net_income": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "net_income_controlling": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "net_income_noncontrolling": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "version": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "source": {
+                        "type": [
+                          "string",
                           "null"
                         ]
                       }

@@ -40,6 +40,7 @@ RAISE_ONLY_FUNCTIONS = (
     "api.termo_history",
     "api.financials",
     "api.company_financials",
+    "api.income_statements",
     "api.anbima_classes",
 )
 CAPPED_FUNCTIONS = PAGED_FUNCTIONS + RAISE_ONLY_FUNCTIONS
@@ -93,6 +94,7 @@ EXPECTED_FUNCTIONS = {
     "api.catalog",
     "api.financials",
     "api.company_financials",
+    "api.income_statements",
     "api.anbima_classes",
     "api.fund_debentures",
     "api.metric_coverage",

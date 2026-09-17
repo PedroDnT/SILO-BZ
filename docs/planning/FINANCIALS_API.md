@@ -107,10 +107,24 @@ computed *within* a sector:
 A cross-sector league table of `operating_revenue` is exactly the artefact this
 rule exists to prevent.
 
-**Whether `setor` alone is a sufficient discriminator is an open question** —
-diagnosis Q2 in §7 answers it. If a single `setor` turns out to contain more than
-one chart of accounts, the discriminator has to be derived from the filed
-`ds_conta` instead, and this section changes.
+**Q2 answered: `setor` is NOT a sufficient discriminator, and the section changed.**
+
+Measured FY2024 (consolidated, annual, 50 sectors): 46 sectors carry one label for
+`3.01`, four carry two. Naming them settled it — `Bancos` holds **two different
+chart layouts** (`Receitas de Intermediação` with net income on `3.11`, and
+`Receitas da Intermediação` with net income on `3.09` and no `3.11`), and
+`Emp. Adm. Part. - Sem Setor Principal` holds an industrial filer beside a bank
+filer. So `setor` under-partitions.
+
+The discriminator is the **filed label**, and there are only three distinct labels
+per account code across the whole 467-company universe — a bounded, auditable
+dictionary rather than the 50-entry one keying on `setor` would need. Better still,
+label-keying is strictly *more complete*: net income sits on `3.09`, `3.11` or
+`3.13` depending on chart, so it resolves filings a code-keyed read must null.
+
+`setor` keeps the job §4 gives it above — the partition key for peer medians,
+ranks and percentiles. It is simply not the chart key. `api.income_statements`
+(catalog v29) is built this way.
 
 ## 5. ~~`escala_moeda` must be handled before any value is served~~ — WITHDRAWN
 
@@ -160,7 +174,7 @@ unaccented form matches zero rows.
 | | Question | Decides | Status |
 | --- | --- | --- | --- |
 | **Q1** | How many DRE statements have no `3.11`, and of those how many have non-zero `3.10`? | blast radius of removing the fallback; whether it was ever actively wrong | **answered** — 282 / 50,439 (0.56%), **0** ever wrong. §6 |
-| **Q2** | Does `cia_company.setor` partition the charts of accounts cleanly — is `ds_conta` for `3.01` unique within each `setor`? | whether `setor` is the discriminator (§4) or something derived has to be | **open** — timed out at the Supabase gateway; a lighter form is below |
+| **Q2** | Does `cia_company.setor` partition the charts of accounts cleanly — is `ds_conta` for `3.01` unique within each `setor`? | whether `setor` is the discriminator (§4) or something derived has to be | **ANSWERED — and it changed the design.** No: `setor` under-partitions (see below). The discriminator is the filed **label**. |
 | **Q3** | Which `escala_moeda` values appear, per `grupo`? | ~~whether normalisation is a no-op or load-bearing~~ | **withdrawn** — the question was moot; values are already reais. §5 |
 
 **Q2 is still the one that can change the design, and it is the only thing now
@@ -221,7 +235,7 @@ than in advance.
    except `currency_scale`, which §5 withdraws. `setor` and `segmento` are
    appended to `api.financials` and `api.company_financials` so nothing
    positional moved, and the net-income fallback went in the same change.
-2. `api.income_statements`, then `balance_sheets`, then `cash_flow_statements`.
+2. ~~`api.income_statements`~~ **DONE** (catalog v29, label-keyed), then `balance_sheets`, then `cash_flow_statements`.
    Income statement first: it carries the sector problem, so it proves the design.
 3. Sector-scoped aggregates (peer median, percentile rank) as separate functions —
    the endpoints stay statement readers, the statistics stay reducers.
