@@ -569,7 +569,17 @@ def build_spec(conn) -> dict[str, Any]:
             "license": {"name": "See repository", "url": "https://github.com/PedroDnT/SILO-BZ"},
         },
         "servers": [{"url": SERVER_URL, "description": "Supabase PostgREST, schema `api`"}],
-        "security": [{"apikey": []}, {"apikey": [], "bearerAuth": []}],
+        # ONE option, not two. OpenAPI's `security` is a list of ALTERNATIVES, so
+        # [{apikey}, {apikey, bearerAuth}] is the idiomatic way to say "bearer is
+        # optional" — apikey appears in both, so it is always required. Accurate,
+        # and unreadable: a playground renders the two alternatives as a picker,
+        # which invites "maybe I can skip the apikey". You never can.
+        #
+        # So the contract states the mandatory half only. `bearerAuth` stays
+        # defined under securitySchemes (it is real, and it is what raises the
+        # tier ceilings) and is documented on api-docs/conventions.mdx; it is
+        # simply not offered as an alternative to the key.
+        "security": [{"apikey": []}],
         "tags": [{"name": t} for t in tags_used],
         "paths": dict(sorted(paths.items())),
         "components": {
