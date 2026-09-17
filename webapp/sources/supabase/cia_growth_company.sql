@@ -17,9 +17,17 @@
 WITH latest_ver AS (
     -- A reapresentação refiles a statement under a higher versao and the old rows
     -- remain, so without this a year can appear twice with two different numbers.
+    --
+    -- Bounded to the trailing 5 years and to doc_type='dfp' on purpose. Unbounded,
+    -- this CTE aggregated every DRE partition back to 2010 (~857k rows, planner
+    -- cost 1.33M) to find versions for years the page never displays, which is
+    -- why it timed out at the Supabase gateway. 5 years comfortably covers the
+    -- newest fiscal year plus the prior one it is compared against.
     SELECT cd_cvm, dt_refer, MAX(versao) AS versao
       FROM cia_account
      WHERE grupo = 'DRE' AND escopo = 'con'
+       AND doc_type = 'dfp'
+       AND dt_refer >= (CURRENT_DATE - INTERVAL '5 years')
      GROUP BY 1, 2
 ),
 annual AS (
@@ -39,6 +47,7 @@ annual AS (
        -- Accented, verbatim from the latin-1 source. 'ULTIMO' matches zero rows.
        AND a.ordem_exerc = 'ÚLTIMO'
        AND a.doc_type = 'dfp'
+       AND a.dt_refer >= (CURRENT_DATE - INTERVAL '5 years')
        AND a.dt_ini_exerc IS NOT NULL
        AND a.dt_fim_exerc IS NOT NULL
        AND (EXTRACT(YEAR  FROM AGE(a.dt_fim_exerc + 1, a.dt_ini_exerc)) * 12
@@ -80,7 +89,22 @@ scoped AS (
        AND p.revenue IS NOT NULL
 ),
 newest AS (
-    SELECT MAX(fy) AS fy FROM scoped
+    -- NOT MAX(fy). A fiscal year exists in this table the moment its first filer
+    -- reports, and CVM's filing calendar is not synchronised: companies with a
+    -- non-calendar fiscal year (the sugar and ethanol names file April-March)
+    -- land a whole year ahead of everyone else. Measured 2026-09-17: fiscal 2026
+    -- had 8 filers against fiscal 2025's 438. MAX(fy) therefore pinned this entire
+    -- page to those 8 -- 6 of which survived the floor, all in one sector -- so
+    -- the sector chart showed a single bar and every table showed one sector.
+    --
+    -- So: the newest fiscal year that is actually filed broadly enough to be a
+    -- cross-section. The threshold is not delicate; a filed year carries several
+    -- hundred comparable companies and a year in progress carries single digits,
+    -- two orders of magnitude apart. Companies whose newest filing is the excluded
+    -- year still appear, on their prior year, so nobody is dropped -- they are
+    -- just compared on the same basis as their peers.
+    SELECT MAX(fy) AS fy
+      FROM (SELECT fy FROM scoped GROUP BY fy HAVING COUNT(*) >= 50) filed
 ),
 current_fy AS (
     SELECT s.* FROM scoped s JOIN newest n ON s.fy = n.fy
