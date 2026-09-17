@@ -6,7 +6,6 @@ investor flow) served from schema `api` over the Supabase Data API.
 
 ```bash
 pip install -e sdk/              # from the repo root, or copy sdk/silo_client/
-pip install -e "sdk/[pandas]"    # adds the wide-DataFrame panel output
 ```
 
 ```python

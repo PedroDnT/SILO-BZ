@@ -12,9 +12,16 @@ version = "0.7.0"
 description = "Thin, honest Python client for the Silo read API (Brazilian public-markets warehouse: CVM funds, B3 COTAHIST, B3 securities lending)."
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["httpx>=0.27"]
+#: pandas is REQUIRED, not an extra. `panel()` defaults to `wide=True` and the
+#: docs, the README and fifteen notebook cells all lead with a DataFrame, so a
+#: bare `pip install silo-client` followed by the documented first call used to
+#: raise ImportError. The alternatives were worse: defaulting `wide=False` would
+#: silently change the return type under every one of those call sites.
+dependencies = ["httpx>=0.27", "pandas>=2.0"]
 
 [project.optional-dependencies]
+#: Retained so an existing `silo-client[pandas]` pin keeps resolving; it is now
+#: a no-op, because the base install already carries pandas.
 pandas = ["pandas>=2.0"]
 
 [tool.setuptools.packages.find]

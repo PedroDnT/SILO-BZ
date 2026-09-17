@@ -1,7 +1,7 @@
 # Python SDK — state
 
-`sdk/silo_client` today: **1,082 lines, v0.7.0, 50 tests, not published.**
-Wraps 22 `api` functions and all 13 views, built against catalog **v27**.
+`sdk/silo_client` today: **1,109 lines, v0.7.0, 53 tests, not published.**
+Wraps 22 `api` functions and all 13 views, built against catalog **v28**.
 
 The client is not a convenience layer. It is the last place the project's
 integrity rules can be enforced before data reaches a notebook.
@@ -13,7 +13,7 @@ integrity rules can be enforced before data reaches a notebook.
 | A truncated answer is never returned as a complete one | `Prefer: count=exact` on every call; `Content-Range` parsed; a short page raises `SiloTruncated` carrying `n`, `total` and the rows |
 | The 3-second `anon` budget is not an outage            | SQLSTATE `57014` → `SiloTimeout`, never retried                                                                                     |
 | Retries cannot change an answer                        | Transport failures only — never a 4xx, never `57014`                                                                                |
-| A stale deployment is visible                          | `KNOWN_CATALOG_VERSION = 27`; a server on an older catalog warns `SiloCatalogDrift` once                                            |
+| A stale deployment is visible                          | `KNOWN_CATALOG_VERSION = 28`; a server on an older catalog warns `SiloCatalogDrift` once                                            |
 | Nothing is cached but the catalog                      | A cached price is a fabricated price                                                                                                |
 
 ## Paging
@@ -25,16 +25,25 @@ Three shapes, because the server offers three:
 - `view_all(name, …)` — walks `offset` for the views.
 - `*_all` convenience wrappers that materialise the walk.
 
+## Closed
+
+- **`pandas` is a hard dependency** (2026-09-17). `panel()` defaults to
+  `wide=True` and the README, `api-docs/sdk.mdx` and fifteen notebook cells all
+  lead with a DataFrame, so a bare `pip install silo-client` followed by the
+  documented first call raised `ImportError`. Defaulting `wide=False` instead
+  would have silently changed the return type under every one of those call
+  sites — the worse failure. The `[pandas]` extra survives as a no-op so an
+  existing pin still resolves. Pinned by `tests/test_sdk_client.py`.
+
 ## What is still open
 
 | #   | Gap                                                              | Why it matters                                                                                                                                                                                            |
 | --- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `panel(wide=True)` is the default, `pandas` is an optional extra | `pip install silo-client` then `silo.panel([...])` raises `ImportError` on the happy path — the documented first call. Make pandas a hard dependency (the panel _is_ the product) or default `wide=False` |
-| 2   | Not published to PyPI                                            | Install is "clone the repo". `pip install silo-client` is the only install the docs can honestly promise                                                                                                  |
-| 3   | No wheel job in CI                                               | The 50 tests pass inside the repo; nothing proves the built wheel imports in a clean venv                                                                                                                 |
-| 4   | No `AsyncSiloClient`                                             | Deliberately last. An async client that silently truncates is worse than no async client — it ships only once it shares one `_check` / `_total_from_content_range` core with the sync client              |
+| 1   | Not published to PyPI                                            | Install is "clone the repo". `pip install silo-client` is the only install the docs can honestly promise                                                                                                  |
+| 2   | No wheel job in CI                                               | The 53 tests pass inside the repo; nothing proves the built wheel imports in a clean venv                                                                                                                 |
+| 3   | No `AsyncSiloClient`                                             | Deliberately last. An async client that silently truncates is worse than no async client — it ships only once it shares one `_check` / `_total_from_content_range` core with the sync client              |
 
-Items 1–3 are one release. Item 4 is its own.
+Items 1–2 are one release. Item 3 is its own.
 
 ## What this deliberately does not do
 
