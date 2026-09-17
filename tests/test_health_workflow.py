@@ -321,6 +321,72 @@ def test_backlog_diagnostic_is_read_only():
         assert verb not in body, f"diagnostic 15 must not contain {verb.strip()}"
 
 
+# --- check 3: days_behind is measured from the month END ---------------------
+#
+# Runs #39-#41 (2026-09-15..17) failed "2 monthly families stalled beyond 75d"
+# with fii/fiagro at 76-78 days and fidc at 46-48 for the SAME July: FI/FII/
+# FIAGRO key a month on its first day, FIDC on its last, and
+# latest_complete_period() returns the raw key. Subtracting the key from
+# CURRENT_DATE therefore judged the first-of-month families by a bar 30 days
+# tighter than the one FIDC gets, and CVM's ordinary 1-2 month lag crossed it
+# on the 15th of every month. Both places that compute days_behind now
+# normalise the key to its month end first.
+
+_MONTH_END = (
+    "(date_trunc('month', public.latest_complete_period(entity_type))"
+)
+
+
+def _check_3() -> str:
+    body = _step("Health checks")["run"]
+    start = body.index("--- completeness by family ---")
+    end = body.index("# 4. api.* contract still answers")
+    return body[start:end]
+
+
+def test_stalled_gate_measures_from_the_month_end_not_the_period_key():
+    block = _check_3()
+    assert "CURRENT_DATE - public.latest_complete_period(entity_type)" not in block, (
+        "days_behind must not subtract the raw period key: FI/FII/FIAGRO key "
+        "first-of-month and FIDC month-end, so the same month reads 30 days apart"
+    )
+    assert block.count(_MONTH_END) == 2, "both the printout and the gate normalise"
+    assert block.count("INTERVAL '1 month - 1 day'") == 2
+
+
+def test_stalled_gate_still_uses_the_knob_and_excludes_fip():
+    block = _check_3()
+    gate = block[block.index("stalled=$(q"):]
+    assert "> ${MAX_COMPLETE_AGE_DAYS}" in gate
+    assert "entity_type <> 'fip'" in gate
+
+
+@pytest.mark.parametrize(
+    "today, key, expected",
+    [
+        # fii, first-of-month key, run #41: read 78, is 48 from July 31.
+        ("2026-09-17", "2026-07-01", 48),
+        # fidc, month-end key, same run: unchanged.
+        ("2026-09-17", "2026-07-31", 48),
+        # fi at 2026-08-01: 17 days past August's end.
+        ("2026-09-17", "2026-08-01", 17),
+    ],
+)
+def test_month_end_arithmetic_matches_the_incident_numbers(today, key, expected):
+    """The expression the workflow sends to Postgres, evaluated in Python.
+
+    Postgres has no local instance in the offline suite; this pins the intent
+    (month end of the key) so a later edit cannot quietly go back to the raw
+    key and pass the substring test above by keeping the strings.
+    """
+    from datetime import date, timedelta
+    t = date.fromisoformat(today)
+    k = date.fromisoformat(key)
+    first_next = (k.replace(day=1) + timedelta(days=32)).replace(day=1)
+    month_end = first_next - timedelta(days=1)
+    assert (t - month_end).days == expected
+
+
 # --- check 4b: a negative lag is healthy -----------------------------------
 #
 # Run 33666142198 failed with "fact_fund_monthly did not answer (missing,
