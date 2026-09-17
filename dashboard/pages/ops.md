@@ -85,16 +85,15 @@ select * from supabase.ops_recent_runs
 
 # Pipeline Ops
 
-> Every ingest run writes exactly one `cvm_ingest_log` row, so this page is the
-> audit trail — and the answer to "has anything quietly stopped landing". Read it
-> before quoting any number on this site as current: a page that renders perfectly
-> from three-month-old data looks exactly like a page that renders from today's.
+> Every ingest run writes exactly one `cvm_ingest_log` row, so this page is the audit
+> trail — and the answer to "has anything quietly stopped landing". Read it before
+> quoting any number on this site as current: a page rendering perfectly from
+> three-month-old data looks exactly like one rendering from today's.
 >
-> The failure this page is built to catch is **not** the loud one. A run that
-> errors is visible everywhere; a cron that never fires logs nothing at all, and a
-> slice that reports `ok` while its table stops advancing looks healthy in the log.
-> That is why the log and the tables themselves are both shown, and why a
-> disagreement between them is the thing to look for.
+> The failure this page catches is **not** the loud one. An erroring run is visible
+> everywhere; a cron that never fires logs nothing at all, and a slice reporting `ok`
+> while its table stops advancing looks healthy in the log. So the log **and** the
+> tables are both shown — a disagreement between them is the thing to look for.
 
 <BigValue data={ops_health} value=hours_since_last_run title="Hours Since Last Run" fmt=num1/>
 <BigValue data={ops_health} value=runs_24h title="Runs (24h)" fmt=num0/>
@@ -103,12 +102,13 @@ select * from supabase.ops_recent_runs
 <BigValue data={ops_health} value=rows_7d title="Rows Upserted (7d)" fmt=num0/>
 <BigValue data={build_stamp} value=built_at_utc title="Snapshot Built"/>
 
-> **How to read the health strip.** The cron runs daily at 06:00 UTC, so
-> `Hours Since Last Run` above ~30 means the schedule itself has stopped — the
-> failure mode that produces a silent outage, because a pipeline that never runs
-> logs no errors at all. `Stuck 'running'` counts runs that began more than six
-> hours ago and never wrote a terminal status: a process that died mid-run.
-> `Errors (7d)` includes slices that fetched rows but upserted none.
+> **How to read the health strip.** The cron runs daily at 06:00 UTC.
+>
+> - `Hours Since Last Run` above ~30 — the schedule itself has stopped. The silent
+>   outage: a pipeline that never runs logs no errors at all.
+> - `Stuck 'running'` — began over six hours ago, never wrote a terminal status. A
+>   process that died mid-run.
+> - `Errors (7d)` — includes slices that fetched rows but upserted none.
 
 ---
 

@@ -36,12 +36,11 @@ select * from supabase.fund_perf_series
 > measured on the same basis.
 >
 > What this page does **not** support: a claim that one asset class out-performed
-> another. FI is measured on quota return while FII is measured on compounded
-> dividend yield. FIDC, FIAGRO and FIP are absent: their filings expose net
-> assets but no return series, and net-asset growth is dominated by flows and
-> capital calls. A single fund's trajectory through time is on
-> [Fund Explorer](/fund); the rates these returns should be judged against are
-> on [Macro Context](/macro).
+> another. FI is measured on quota return, FII on compounded dividend yield. FIDC,
+> FIAGRO and FIP are absent — their filings expose net assets but no return series,
+> and net-asset growth is dominated by flows and capital calls. One fund through
+> time is on [Fund Explorer](/fund); the rates to judge these against are on
+> [Macro Context](/macro).
 
 ---
 

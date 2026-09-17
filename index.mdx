@@ -5,7 +5,7 @@ description: "Public read API for Brazilian public financial data — CVM fund d
 
 ### What this is
 
-**SILO** is a warehouse of Brazilian public financial data — CVM fund disclosures (FI, FIDC, FII, FIP, FIAGRO, SECURIT) and listed-company filings, BACEN time series, and B3 COTAHIST cash quotes plus the BDI lending group — ingested daily into Supabase Postgres for **financial accountability** of the fund industry.
+**SILO** is a warehouse of Brazilian public financial data, ingested daily into Supabase Postgres for **financial accountability** — checking a claim against what was actually filed. Three populations: **funds** (CVM disclosures for FI, FIDC, FII, FIP, FIAGRO and securitisation vehicles), **listed companies** (ITR/DFP statements, events, the published ticker map), and **markets** (the B3 COTAHIST tape, the securities-lending book, investor-type flows, and BACEN macro series).
 
 This site documents the **read API**: schema `api` over PostgREST, with a shared publishable key. Anonymous access is free and deliberately small; signing in raises the ceilings ([Conventions & limits](/api-docs/conventions#authentication), or `catalog().limits` machine-readably).
 

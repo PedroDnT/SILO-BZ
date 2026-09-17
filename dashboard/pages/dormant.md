@@ -66,11 +66,11 @@ select * from supabase.dormant_admin_coverage
 > them apart.
 >
 > **Empty shells** have no investor at all — a registered, filing vehicle holding
-> nobody's money, a structure someone has already paid to stand up and is keeping
-> ready. **Parked capital** has investors but no money in or out: the
-> exclusive-fund and closed-structure profile, and also capital that has simply
-> stopped. Neither is wrongdoing. Both are worth counting, because a fund that
-> exists without doing anything is invisible to every metric built on flows.
+> nobody's money, already paid for and kept ready. **Parked capital** has investors
+> but no money moving: the exclusive-fund and closed-structure profile, and capital
+> that has simply stopped. Neither is wrongdoing, and both are worth counting,
+> because a fund that exists without doing anything is invisible to every metric
+> built on flows.
 >
 > This is a different condition from the FIDC **zombie growth** screen on
 > [Suspicious Deal Screens](/suspicious), which flags funds still _taking_ money

@@ -9,19 +9,19 @@ symptoms routinely surface one layer away from their cause.
 
 **Infrastructure** (three, and only three):
 
-| | Runs | Fails as |
-| --- | --- | --- |
-| **GitHub Actions** | ingestion + parse (`run_daily`, `run_backfill`, health, watchdog) | a red run, a slice in `cvm_ingest_log` |
-| **Supabase** | the Postgres store | disk pressure, a failing query, a missing grant |
-| **Vercel** | hosting for `dashboard/` and `webapp/` | a build error, a stale or mis-pointed domain |
+|                    | Runs                                                              | Fails as                                        |
+| ------------------ | ----------------------------------------------------------------- | ----------------------------------------------- |
+| **GitHub Actions** | ingestion + parse (`run_daily`, `run_backfill`, health, watchdog) | a red run, a slice in `cvm_ingest_log`          |
+| **Supabase**       | the Postgres store                                                | disk pressure, a failing query, a missing grant |
+| **Vercel**         | hosting for `dashboard/` and `webapp/`                            | a build error, a stale or mis-pointed domain    |
 
 **Products** (what anyone actually consumes):
 
-| | Is | Contract |
-| --- | --- | --- |
-| **the API** | schema `api` + `serve/` | `docs/API.md`, `api.catalog()`, `api.coverage()` |
-| **the dashboard** | the Evidence sites | parquet built at deploy time |
-| **the stored data** | the warehouse itself | the integrity rules above |
+|                     | Is                      | Contract                                         |
+| ------------------- | ----------------------- | ------------------------------------------------ |
+| **the API**         | schema `api` + `serve/` | `docs/API.md`, `api.catalog()`, `api.coverage()` |
+| **the dashboard**   | the Evidence sites      | parquet built at deploy time                     |
+| **the stored data** | the warehouse itself    | the integrity rules above                        |
 
 Two consequences worth stating, both learned the expensive way:
 
@@ -41,8 +41,11 @@ Two consequences worth stating, both learned the expensive way:
 ## What this is
 
 Headless ingestion pipeline for Brazilian public financial data, built for **financial
-accountability** of the fund industry (NAV, delinquency, tranche performance, structural
-health). It downloads, parses, validates, and upserts data from **CVM** (fund disclosures:
+accountability** across three populations: **funds** (NAV, delinquency, tranche
+performance, structural health), **listed companies** (ITR/DFP statements, events, the
+published ticker map), and **markets** (the B3 tape, the securities-lending book,
+investor-type flows, BACEN macro). It downloads, parses, validates, and upserts data
+from **CVM** (fund disclosures:
 FI, FIDC, FII, FIP, FIAGRO, SECURIT, plus listed-company CIA filings), **BACEN** (SGS
 time series, PTAX, Focus expectativas), and **B3** (public COTAHIST quotation zips →
 `b3_cotahist`) into a **Supabase Postgres** database via psycopg2.
@@ -245,10 +248,15 @@ Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources 
 → localhost:3000; `npm run build` → `build/`). They connect to the same Supabase Postgres via
 `@evidence-dev/postgres` and only read — never write.
 
-- **`dashboard/`** — fund-health analytics at
-  [https://silo-bz-deloslabs.vercel.app/](https://silo-bz-deloslabs.vercel.app/):
-  Overview (`/`), FIDC Credit Monitor (`/fidc`), FII Market (`/fii`), Suspicious
-  Screens (`/suspicious`), Performance (`/performance`), and ETF (`/etf`).
+- **`dashboard/`** — fund **and market** analytics at
+  [https://silo-bz-deloslabs.vercel.app/](https://silo-bz-deloslabs.vercel.app/), 17
+  pages. Industry and backdrop: Overview (`/`), Industry Structure (`/industry`),
+  Macro Context (`/macro`), B3 Markets (`/markets`), Short Monitor (`/short`),
+  Follow the Money (`/flows`). By asset class: FI (`/fi`), FIDC Credit Monitor
+  (`/fidc`), FII Market (`/fii`), Securitization (`/securit`), ETF (`/etf`).
+  Granular: Managers (`/managers`), Fund Explorer (`/fund`), Performance
+  (`/performance`), Suspicious Screens (`/suspicious`), Dormant Funds (`/dormant`).
+  Plus Pipeline Ops (`/ops`).
   Evidence static snapshot (parquet at build). The Vercel project in team
   `deloslabs` is named `silo-bz` (renamed from `silo` on 2026-09-17, so older
   planning docs and changelog rows still say `silo`); that is the

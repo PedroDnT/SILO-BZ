@@ -1,5 +1,5 @@
 ---
-title: Brazilian Fund Industry Data
+title: Brazilian Public Financial Data
 hide_title: true
 ---
 
@@ -53,10 +53,11 @@ select * from supabase.fidc_delinquency
 select * from supabase.row_counts
 ```
 
-# Brazilian Fund Industry Data
+# Brazilian Public Financial Data
 
-> A public-data record of the Brazilian fund industry — net assets, flows,
-> delinquency, tranche structure and payout behaviour — from CVM and BACEN open
+> A public-data record of Brazilian **funds**, **listed companies** and the **B3
+> market** — net assets, flows, delinquency, tranche structure, payout behaviour,
+> filed financials, short interest and investor flow — from CVM, BACEN and B3 open
 > data, refreshed daily. Built for checking claims against filings, not for
 > choosing investments: no advice, no rating, no recommendation.
 >
@@ -83,6 +84,8 @@ select * from supabase.row_counts
 
 ## Start Here
 
+**Funds**
+
 - **How big is the industry, and who controls it?** → [Industry Structure](/industry);
   [Managers](/managers) for the administrator and gestor league tables.
 - **Is any particular fund in trouble?** → [Fund Explorer](/fund) for its net assets,
@@ -91,6 +94,19 @@ select * from supabase.row_counts
   [Securitization](/securit) for CRI/CRA, [Suspicious Deal Screens](/suspicious).
 - **Which funds exist but do nothing?** → [Dormant Funds](/dormant) — vehicles filing
   every month with zero flow: empty shells, and parked capital that stopped moving.
+
+**Markets and macro**
+
+- **What is the exchange actually doing?** → [B3 Markets](/markets) for session volume
+  by board and instrument type.
+- **Who is short, and what does it cost to borrow?** → [Short Monitor](/short) — short
+  interest, % of free float, days to cover and borrow rates.
+- **Who is buying and selling?** → [Follow the Money](/flows) for net flow by investor
+  type; [Macro Context](/macro) for SELIC, CDI, inflation and the Focus consensus.
+
+Listed-company financials (ITR/DFP statements, margins, ROE, the IPE event feed) live on
+the companion CIA Aberta site, and every number on both is queryable through the
+[API](https://octo-98895abd.mintlify.site/).
 
 ---
 

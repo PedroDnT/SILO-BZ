@@ -80,11 +80,10 @@ select * from supabase.short_basis_split
 > began capturing it and grows one session per day. A gap here is permanent, not
 > late — which is the opposite of every CVM page on this dashboard.
 >
-> **Read `% do free float` with its basis.** B3 publishes a true free float only
-> for index constituents; for everything else the honest denominator is shares
-> outstanding, a larger number that yields a smaller percentage. The ranking
-> below is free-float-only so the rows are comparable. The split is charted at
-> the foot of the page.
+> **Read `% do free float` with its basis.** B3 publishes a true free float only for
+> index constituents; everything else falls back to shares outstanding, a larger
+> denominator and so a smaller percentage. The ranking below is free-float-only, so
+> its rows are comparable. The split is charted at the foot of the page.
 
 {#if headline[0].trade_date}
 
@@ -251,10 +250,10 @@ be recovered — the first `run_daily` after deploy fills it.
 {#if history[0].trade_date}
 
 <LineChart
-  data={history}
-  x=trade_date
-  y={['short_brl_equities','short_brl']}
-  yAxisTitle="Posição Short (R$)"
+data={history}
+x=trade_date
+y={['short_brl_equities','short_brl']}
+yAxisTitle="Posição Short (R$)"
   title="Short Balance per Session — Equities vs All Instruments (R$)"
 />
 
@@ -271,12 +270,12 @@ be recovered — the first `run_daily` after deploy fills it.
 
 ## Qual Denominador — Free Float ou Capital Social
 
-> How much of the short book can be stated as a percentage of true free float at
-> all. `index_free_float` rows are the ones the ranking table uses;
-> `shares_outstanding` rows are real positions measured against a larger
-> denominator, so their percentages are not comparable to the ranking above;
-> `sem denominador` is a ticker B3 published neither figure for, whose `% float`
-> is NULL rather than zero.
+> How much of the short book can be stated as a percentage of true free float at all.
+>
+> - `index_free_float` — what the ranking table uses.
+> - `shares_outstanding` — real positions against a larger denominator, so **not**
+>   comparable to the ranking above.
+> - `sem denominador` — B3 published neither figure; `% float` is NULL, not zero.
 
 {#if basis_split[0].float_basis}
 

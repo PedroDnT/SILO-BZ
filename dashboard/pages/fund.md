@@ -210,12 +210,11 @@ select * from supabase.fund_flow_series
 
 ## Rebased Return — Six Largest Funds
 
-> `fund_performance_series(cnpj, …)`, rebased to the start of the window. The
-> **basis differs by family and is shown as a column** — FI is a true quota
-> return, FII is compounded dividend yield, and everything else is net-asset
-> growth, which conflates flows with performance. Lines on different bases are not
-> directly comparable; that is a property of the source data, not of the chart.
-> The same basis rule, applied to cross-sectional rankings, is set out on
+> Rebased to the start of the window. The **basis differs by family and is shown as
+> a column** — FI is a true quota return, FII is compounded dividend yield, and
+> everything else is net-asset growth, which conflates flows with performance.
+> Lines on different bases are not comparable: a property of the source, not of the
+> chart. Cross-sectional rankings apply the same rule on
 > [Performance](/performance).
 
 <LineChart

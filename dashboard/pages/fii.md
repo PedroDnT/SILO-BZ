@@ -161,13 +161,11 @@ title="FII Monthly Dividend Yield Distribution"
 
 ## Payout Coverage
 
-> `rendimentos_distribuir` (income the fund has declared for distribution, from
-> the `ativo_passivo` filing) measured against the fund's own book: net assets,
-> quotas outstanding, and book value per quota. A fund distributing far more than
-> its book yields is paying out of capital or realised gains — the numbers are
-> shown, the verdict is not asserted. The `n_funds_*` columns track how many funds
-> reported each field, so a fall in the sector total can be told apart from a fall
-> in coverage.
+> `rendimentos_distribuir` — declared distributions — against the fund's own book:
+> net assets, quotas outstanding, book value per quota. A fund distributing far more
+> than its book yields is paying out of capital or realised gains; the numbers are
+> shown, the verdict is not. The `n_funds_*` columns track how many funds reported
+> each field, so a fall in the sector total can be told from a fall in coverage.
 
 <LineChart
   data={fii_payout_trend}
@@ -229,13 +227,12 @@ title="FII Monthly Dividend Yield Distribution"
 <BigValue data={fii_property_coverage} value=rows_with_vacancy title="…with Vacancy Reported" fmt=num0/>
 <BigValue data={fii_property_coverage} value=rows_single_asset_over_50pct title="Single Asset > 50% Invested" fmt=num0/>
 
-> **Coverage first.** These rows come from `cvm_fii_imovel`, the per-building
-> register CVM ships as its own member of the `INF_TRIMESTRAL` zip. Until
-> recently the fetcher was pulling the wrong member of that zip — the _alienação_
-> file, which lists buildings being **sold** — so this table previously described
+> **Coverage first.** From `cvm_fii_imovel`, the per-building register inside the
+> `INF_TRIMESTRAL` zip. Until recently the fetcher pulled the wrong member — the
+> _alienação_ file, listing buildings being **sold** — so this table described
 > disposals rather than holdings. CVM leaves vacancy and delinquency blank for a
-> large minority of buildings, which is why those tiles are shown as their own
-> denominator rather than folded into an average.
+> large minority of buildings, so those tiles carry their own denominator rather
+> than being folded into an average.
 >
 > **Single-asset concentration:** a fund where one property is more than half of
 > everything it has invested has no diversification left — one tenant, one lease,

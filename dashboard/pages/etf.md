@@ -198,14 +198,14 @@ select * from supabase.etf_market_series
 
 ## NAV, Price and Quotaholders
 
-> Per-ETF market snapshot scraped from etfsbrasil.com.br (`etf_market_latest`, most
-> recent snapshot per ticker). This feed exists because CVM open data no longer
-> exposes ETF NAV/quotaholders post-CVM-175 — `etf_daily` (registry ⋈ `cvm_fi_diario`)
-> stays empty because the registry's fund-level CNPJ no longer matches the daily
-> file's class-level CNPJ. Values shown straight from source; missing fields are
-> gaps, never estimates. The table is empty until the first scrape lands (the
-> `run_daily` scrape runs only when `APIFY_TOKEN` is configured — see
-> [Pipeline Ops](/ops) for whether it has run).
+> Per-ETF snapshot scraped from etfsbrasil.com.br. This feed exists because CVM open
+> data no longer exposes ETF NAV/quotaholders post-CVM-175: `etf_daily` stays empty
+> because the registry's fund-level CNPJ no longer matches the daily file's
+> class-level CNPJ.
+>
+> Values are straight from source; missing fields are gaps, never estimates. Empty
+> until the first scrape lands — it runs only when `APIFY_TOKEN` is configured
+> ([Pipeline Ops](/ops) says whether it has).
 
 <BigValue data={etf_market_coverage} value=etfs_with_snapshot title="ETFs w/ Snapshot" fmt=num0/>
 <BigValue data={etf_market_coverage} value=with_nav title="With NAV" fmt=num0/>
