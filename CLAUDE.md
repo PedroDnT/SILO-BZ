@@ -2,6 +2,42 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## The shape of the system: 3 infra, 3 products
+
+Reach for this before reporting a problem — it decides whose problem it is, and
+symptoms routinely surface one layer away from their cause.
+
+**Infrastructure** (three, and only three):
+
+| | Runs | Fails as |
+| --- | --- | --- |
+| **GitHub Actions** | ingestion + parse (`run_daily`, `run_backfill`, health, watchdog) | a red run, a slice in `cvm_ingest_log` |
+| **Supabase** | the Postgres store | disk pressure, a failing query, a missing grant |
+| **Vercel** | hosting for `dashboard/` and `webapp/` | a build error, a stale or mis-pointed domain |
+
+**Products** (what anyone actually consumes):
+
+| | Is | Contract |
+| --- | --- | --- |
+| **the API** | schema `api` + `serve/` | `docs/API.md`, `api.catalog()`, `api.coverage()` |
+| **the dashboard** | the Evidence sites | parquet built at deploy time |
+| **the stored data** | the warehouse itself | the integrity rules above |
+
+Two consequences worth stating, both learned the expensive way:
+
+1. **Diagnose at the right layer.** A dashboard showing no data has at least
+   four possible causes across three layers — the data never landed (GitHub),
+   the analytical view is stale or wrong (Supabase), the build read a fine
+   database but the domain serves an older deployment (Vercel), or the page
+   is guarding correctly against a source that is genuinely empty. Row counts
+   in a build log and pixels on the public URL are different observations;
+   on 2026-09-16 they disagreed, and only the second was true for users.
+2. **Do not confuse OUR health with the SOURCE's.** `landed_at` says the
+   pipeline ran and succeeded — that is ours to fix. `complete_through` says
+   how much CVM has published — that is Brazil's filing calendar, not an
+   outage. Gating red/green on the second is how DB Health taught itself to
+   cry wolf.
+
 ## What this is
 
 Headless ingestion pipeline for Brazilian public financial data, built for **financial
