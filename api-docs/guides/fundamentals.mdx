@@ -45,10 +45,17 @@ You get `revenue`, `gross_profit`, `net_income`, `total_assets`, `equity`,
 `period_start`, `period_end`, `period_months` and `version`.
 
 <Note>
-  **Banks file a different chart of accounts.** Net income lands on account `3.09`
-  rather than `3.11`, and `company_financials` already falls back for you. If you pull
-  raw accounts yourself in step 3, you have to handle it — a bank's net income read
-  only from `3.11` comes back null.
+  **Banks file a different chart of accounts — but `3.11` is still net income.** What
+  differs is what each code *means*. For Banco do Brasil (`cd_cvm` 1023, FY2024
+  consolidated), `3.01` is `Receitas de Intermediação Financeira` rather than
+  `Receita de Venda de Bens e/ou Serviços`, and `3.05` is already
+  `Resultado antes dos Tributos sobre o Lucro` rather than EBIT. Net income, though, is
+  `3.11` (`Lucro ou Prejuízo Líquido Consolidado do Período`, R$ 29.17bn) just as it is
+  for an industrial filer; `3.09` is profit *before* the statutory profit-sharing on
+  `3.10`, so the two agree only where `3.10` is zero — as it happens to be there.
+  `company_financials` reads `3.11` and falls back to `3.09` for filings that omit it. If
+  you pull raw accounts yourself in step 3, read the `account_name` filed alongside the
+  code rather than assuming a code carries the same concept across charts.
 </Note>
 
 If the summary answers your question, stop here. Drop to `financials` only when you
