@@ -131,8 +131,16 @@ def test_the_server_is_asked_to_count():
 # Truncation. THE defect this release exists to close: PostgREST caps every
 # response at db-max-rows (1000) and answers HTTP 200 with the first page,
 # oldest first. Six years of daily quotes come back as three and a half, and
-# the series simply appears to end. Range paging does not work on RPC, so the
-# SDK cannot stitch the rest — raising is the only honest answer.
+# the series simply appears to end. The SDK never returns that short answer as
+# if it were the series.
+#
+# What it offers INSTEAD has moved on, and the message has to keep up. RANGE
+# paging still does not work on RPC — but p_after does, and since catalog
+# v24/v26 panel, quote_history and fund_nav all carry that cursor while the
+# server refuses an over-page window outright (22023) rather than trimming it.
+# So "paging is not a workaround" is no longer true of the responses below;
+# it is true only where no cursor exists, which is a view read with no page
+# bounds. The message names the levers AND the right cursor for the surface.
 # ---------------------------------------------------------------------------
 
 def _rows(n):
@@ -154,7 +162,11 @@ def test_a_capped_response_raises_instead_of_returning_a_short_series():
     # The message must name what the caller can actually do about it.
     for lever in ("Narrow the window", "fewer ids", "one metric"):
         assert lever in str(exc.value)
-    assert "aging does not work" in str(exc.value), "paging is not a workaround here"
+    # And it must point at the cursor that actually exists for this surface.
+    # quote_history DOES page with p_after (iter_quote_history), so a message
+    # saying paging is impossible here would send the caller to narrow a window
+    # they could simply have walked.
+    assert "iter_quote_history()" in str(exc.value)
 
 
 def test_an_unconfirmable_full_page_also_raises():
@@ -370,6 +382,29 @@ def test_the_client_row_cap_matches_the_published_catalog():
     )
 
 
+def test_the_package_reports_one_version():
+    """`pip show silo-client` and `silo_client.__version__` must agree.
+
+    They had drifted to 0.4.0 in pyproject.toml against 0.6.0 in the package,
+    so the two ways of asking "which build is this?" named different releases
+    of the same code and neither could be trusted in a bug report.
+    """
+    import re
+    from pathlib import Path
+
+    import silo_client
+
+    pyproject = (
+        Path(__file__).resolve().parents[1] / "sdk" / "pyproject.toml"
+    ).read_text(encoding="utf-8")
+    m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.M)
+    assert m, "sdk/pyproject.toml has no version"
+    assert m.group(1) == silo_client.__version__, (
+        f"sdk/pyproject.toml says {m.group(1)}, silo_client.__version__ says "
+        f"{silo_client.__version__} — they describe the same build"
+    )
+
+
 def test_a_matching_catalog_version_is_silent():
     import warnings
 
@@ -405,9 +440,96 @@ def test_an_older_server_catalog_warns_too():
 
 def test_every_published_view_is_reachable():
     c = make_client(catalog_then(lambda r: httpx.Response(200, json=[])))
-    assert len(SiloClient.VIEWS) == 8
+    assert len(SiloClient.VIEWS) == 13
     with pytest.raises(ValueError, match="unknown view"):
         c.view("not_a_view")
+
+
+# ---------------------------------------------------------------------------
+# The B3 lending / investor-flow group (catalog v27).
+#
+# These five views were GRANTed to anon/authenticated and answering on the
+# publishable key for weeks before anything could discover them: absent from
+# api.catalog(), from serve/catalog.py, from every docs page, and not even
+# listed in SiloClient.VIEWS — so view() refused them as unknown. The tests
+# below pin the two halves of the fix together: the catalog publishes them,
+# and the client can reach them by name.
+# ---------------------------------------------------------------------------
+
+_LENDING_VIEWS = (
+    "short_interest",
+    "short_interest_by_sector",
+    "lending_trades",
+    "lending_participants",
+    "investor_flow",
+)
+
+
+@pytest.mark.parametrize("name", _LENDING_VIEWS)
+def test_lending_views_are_published_and_named(name):
+    """Each one is in VIEWS, has a wrapper, and hits its own REST resource."""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        return httpx.Response(200, json=[])
+
+    assert name in SiloClient.VIEWS
+    c = make_client(catalog_then(handler))
+    method = getattr(c, name)
+    assert callable(method), f"SiloClient.{name} is missing"
+    method(order="trade_date.desc")
+    assert seen["path"].endswith(f"/rest/v1/{name}")
+
+
+@pytest.mark.parametrize("name", _LENDING_VIEWS)
+def test_lending_view_filters_pass_through_verbatim(name):
+    """PostgREST's own filter syntax, not a query language invented here."""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["query"] = str(request.url.query, "utf-8")
+        return httpx.Response(200, json=[])
+
+    c = make_client(catalog_then(handler))
+    getattr(c, name)(ticker="eq.PETR4", limit=5)
+    assert "ticker=eq.PETR4" in seen["query"]
+
+
+def test_the_catalog_publishes_every_lending_endpoint():
+    """A named wrapper nobody can find in the catalog is still undiscoverable.
+
+    The whole defect this group fixes is that the endpoints existed and the
+    contract did not mention them, so an agent following the catalog-first
+    instruction could not reach them. Pin both halves together.
+    """
+    from serve.catalog import catalog_payload
+
+    postgrest = catalog_payload()["postgrest"]
+    for name in _LENDING_VIEWS:
+        assert name in postgrest, f"catalog does not publish {name}"
+        assert postgrest[name] == f"GET /rest/v1/{name}", (
+            f"{name} is a view, not an RPC: it filters and pages with "
+            "PostgREST syntax, and telling an agent to POST it is a 404"
+        )
+
+
+def test_the_lending_caveats_travel_with_the_endpoints():
+    """The four ways to be confidently wrong, stated where an agent reads.
+
+    These are not decoration. A pct_float ranking that mixes float bases, a
+    broker read as a beneficial owner, a first difference summed through its
+    null rows, or a 21-session window read as a data gap each produce a
+    confident, wrong answer — so the constraints must ship with the endpoints,
+    not in a docs page the agent never opens.
+    """
+    from serve.catalog import catalog_payload
+
+    joined = " ".join(catalog_payload()["constraints"]).lower()
+    assert "ratchet" in joined and "21 business days" in joined
+    assert "float_basis" in joined and "index_free_float" in joined
+    assert "brokerages, not beneficial owners" in joined
+    assert "first difference" in joined and "unknown_opening_snapshot" in joined
 
 
 def test_catalog_is_cached():

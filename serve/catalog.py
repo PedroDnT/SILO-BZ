@@ -141,6 +141,25 @@ __all__ = [
 # per-metric family list stays pinned to a source; coverage() gains
 # fidc_cedentes / fidc_sacados / fidc_sectors / fidc_scr rows whose notes
 # carry the start months (cedente slots from 2019-11, tab X from 2023-10).
+# v27: the B3 securities-lending and investor-flow group reaches the catalog.
+# Five views were GRANTed to anon/authenticated by the #235/#240-#245 work and
+# have been answering on the publishable key ever since, but they were in no
+# catalog, no docs page and no SDK method — so an agent following this
+# contract's own catalog-first instruction could not discover them, and the
+# only way to find them was to already know their names. Registered in
+# `postgrest` (short_interest, short_interest_by_sector, investor_flow,
+# lending_trades, lending_participants) with coverage() rows so freshness
+# reports them like every other dataset. Three constraints come with them,
+# because each one is a way to be confidently wrong: the RATCHET (B3 keeps ~21
+# business days and publishes no archive, so history starts at first capture
+# and cannot be bought), FLOAT_BASIS (pct_float is two different metrics and
+# they are never comparable), and BROKERAGES (doador/tomador are the
+# intermediary, not the owner — ~75% of trades are a broker crossing its own
+# clients). investor_flow's first-difference semantics join the same list.
+# Also: the `examples` were written as GET /v1/panel — the local Flask adapter
+# that this same catalog's `agent` string calls "not necessarily deployed" —
+# so an agent copying them verbatim against the hosted surface got a 404 from
+# the one section meant to be copyable. They are POST /rest/v1/rpc/panel now.
 # v24: the panel REFUSES instead of trimming. More than 1000 rows now raises
 # 22023 unless the caller pages with p_after ('' = first page, then the last
 # row's 'date|id|metric|asset_class'); the unreachable 100001 sentinel leaves
@@ -148,7 +167,7 @@ __all__ = [
 # stated as (id, asset_class, date, metric) and p_entity_type narrows the fund
 # arms to one family. Universe mode (p_ids empty + p_entity_type, optional
 # p_min_nav / p_min_months) walks a whole family for signed-in callers.
-CATALOG_VERSION = 26
+CATALOG_VERSION = 27
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -346,6 +365,10 @@ CONSTRAINTS = [
     "FIDC DELINQUENCY STARTS IN 2025-01. CVM's pre-2025 monthly FIDC file (tab II/III) carried no delinquency field, so `delinquency` is null on every fidc row through 2024-12-31 — not zero, not clean books, not a missing month. From 2025-01-31 the tab IV/VI format is ingested and delinquency is filed on every row. Never chain-link, difference or average a FIDC delinquency series across 2024-12 → 2025-01; the series begins there. Machine-readable in `regime_breaks`, and on the funds_fidc coverage row's `notes`.",
     "A FUND'S DEBENTURE HOLDINGS ARE A DIFFERENT SHAPE FROM ITS EQUITY HOLDINGS. api.fund_debentures (CDA block 6) is one row per (fund, month, issuer, maturity, rate structure, application type), as filed and never summed — two series of one issuer maturing the same day at different coupons are different securities. The issuer is its own filed CPF/CNPJ (issuer_id); p_issuer also takes a listed company's ticker or CVM code, resolved only through CVM's published FCA map, and issuer_tickers carries the issuer's active listed codes back (NULL when not listed — most debenture issuers are not). Nothing is matched by name.",
     "ANBIMA CLASS ROWS ARE INDUSTRY AGGREGATES, NOT FUNDS. api.anbima_classes serves the Boletim de Fundos de Investimento as published — R$ milhões (unit brl_mm) and percentage points (unit pct) — per class, ANBIMA type or industry total (`level`; class aggregates by default). No fund in this warehouse is mapped to an ANBIMA class: CVM's `classe` is CVM's taxonomy, so never join a fund to a class by name, and there is no panel arm because these rows carry no id. An unknown category, metric or level raises 22023 listing what exists rather than returning an empty array.",
+    "THE B3 LENDING AND FLOW GROUP IS A RATCHET, AND IT IS THE ONLY PART OF THIS WAREHOUSE THAT IS. short_interest, short_interest_by_sector, lending_trades, lending_participants and investor_flow read B3 tables that B3 keeps for about 21 BUSINESS DAYS and publishes no archive for. History therefore starts at SILO's first capture and cannot be extended backwards at any price — a missed session is gone, not late, and no backfill exists to ask for. coverage() reports the real span per endpoint; read it before describing any of these series as short, broken or anomalous, and never infer a level change from a window that simply begins where capture began. An over-wide request to the source returns HTTP 200 with a silently clamped window, which is why the ingest reconciles what it asked for against what it received.",
+    "pct_float IS TWO DIFFERENT METRICS AND float_basis SAYS WHICH ONE YOU HAVE. api.short_interest divides the balance on loan by whichever denominator exists for that ticker. float_basis = 'index_free_float' means B3's published free float (theoretical_qty from the broadest index portfolio carrying the ticker) and exists for index constituents only, ~149 tickers; float_basis = 'shares_outstanding' means capital social from the cash instrument registry, a LARGER denominator that yields a SMALLER percentage for the same position. They are not the same measure and are never comparable: ANY ranking, screen or cross-section on pct_float must filter to ONE basis first, or it sorts index members against non-members on an axis they do not share. float_denominator carries the number actually used. pct_float and days_to_cover are NULL — never 0 — when their denominator is missing or the name did not trade; 0 would sort an unknown to exactly the wrong end.",
+    "IN THE LENDING TAPE, doador AND tomador ARE BROKERAGES, NOT BENEFICIAL OWNERS. lending_participants' broker_code / broker_name and lending_trades' lender_brokers / borrower_brokers identify the B3 PARTICIPANT intermediating a trade, never who ends up long or short. B3 names ~33 participants in a whole session, and about three quarters of trades carry the SAME code on both legs (measured 2026-09-10: 32,197 of 43,165, 74.6%) — a broker crossing its own client book. So a large borrow through a broker is its clients' position, not the broker's view, and 'the biggest short' read off this tape is a statement about order flow routing. internal_legs / internal_qty (lending_participants) and internal_trades (lending_trades) are what tell the two apart: high internal share is client churn, low internal share is flow that actually crossed the market. They are published beside the totals rather than netted away, because dropping them makes the remainder look like conviction and keeping them silently makes churn look like demand.",
+    "investor_flow IS A FIRST DIFFERENCE, NOT A PUBLISHED DAILY SERIES. B3 publishes investor participation as a MONTH-TO-DATE CUMULATIVE snapshot with a T+2 lag; the daily figures are consecutive snapshots subtracted WITHIN one month, and the difference never reaches across a month boundary (that would report a whole month as one day's flow). flow_basis says which kind of row you have: 'delta' is a real one-session difference, 'month_open' is the month's first session where MTD equals the day, and 'unknown_opening_snapshot' is a row whose predecessor SILO does not hold — those carry NULL flows ON PURPOSE and must never be read, filled or summed as zeros. mtd_buy_value_thousands / mtd_sell_value_thousands carry the cumulative figures as published, so the difference can be checked against the source rather than trusted. Values are R$ thousands. Sum a month only over rows whose flow_basis you have inspected.",
     "LISTED-COMPANY FINANCIALS ARE FILED, NOT DERIVED. api.financials returns one row per account line exactly as the company filed it; nothing is summed, annualised or restated. Read period_months before comparing two rows: an ITR publishes the SAME account twice under one reference date, once for the three months and once year-to-date, and they are distinguished only by the period span. Adding a 3-month row to a 6-month row double-counts the quarter.",
     "FINANCIALS DEFAULT TO CONSOLIDATED (scope=con) AND TO THE PERIOD THE DOCUMENT IS FOR (ordem_exerc ULTIMO). The prior-year comparative printed beside it is never returned. When a company re-files, only the newest version of each statement is served and `version` carries it; in company_financials a balance sheet from a different version than the income statement reads NULL rather than being paired across filings.",
     "A TICKER RESOLVES TO A COMPANY ONLY THROUGH CVM'S PUBLISHED FCA MAP, active listings only — the CNPJ and the trading code arrive on the same filed row. financials('PETR4'), financials('33000167000101') and financials('9512') are the same company. A delisted code resolves to nothing rather than to a guess, and no company↔ticker edge is ever inferred from a name.",
@@ -433,51 +456,118 @@ CONSTRAINTS = [
     "quote_history works for any cash ticker without knowing its type first.",
 ]
 
+# Written against the DEPLOYED surface, which is PostgREST. These were /v1/*
+# query strings until v27 — the local Flask adapter's form, which the `agent`
+# instructions above themselves describe as "not necessarily deployed", so an
+# agent that copied the one section meant to be copyable got a 404 on the
+# hosted API. The `format=wide` envelope went with them: it exists only in
+# serve/app.py, so the RPC hands back long (id, date, metric, value) rows and
+# the pivot is the notebook's job, as `then` now says.
 EXAMPLES = [
     {
         "ask": "How does PETR4 relate to delinquency in this FIDC?",
         "call": (
-            "GET /v1/panel?ids=PETR4,<cnpj>"
-            "&metrics=close_return,delinquency&freq=month&format=wide"
+            "POST /rest/v1/rpc/panel "
+            '{"p_ids": ["PETR4", "<cnpj>"], '
+            '"p_metrics": ["close_return", "delinquency"], "p_freq": "month"}'
         ),
-        "then": "Pairwise-complete correlation in the notebook. Do not ffill.",
+        "then": "Pivot the long rows on (date, id, metric), then a pairwise-complete correlation in the notebook. Do not ffill.",
     },
     {
         "ask": "Rank these funds by latest NAV",
-        "call": "GET /v1/panel?ids=<cnpj>,<cnpj>&metrics=nav&freq=month&format=wide",
-        "then": "Take the last non-null NAV per id from the wide matrix.",
+        "call": (
+            "POST /rest/v1/rpc/panel "
+            '{"p_ids": ["<cnpj>", "<cnpj>"], "p_metrics": ["nav"], '
+            '"p_freq": "month"}'
+        ),
+        "then": "Take the last non-null NAV per id. Keep asset_class in the key: a CNPJ filing under two families returns one row per family.",
     },
     {
         "ask": "Did inflows and quota move together for this FI?",
-        "call": "GET /v1/panel?ids=<cnpj>&metrics=inflows,quota&freq=month&format=wide",
-        "then": "Correlate the two columns; nulls stay null.",
+        "call": (
+            "POST /rest/v1/rpc/panel "
+            '{"p_ids": ["<cnpj>"], "p_metrics": ["inflows", "quota"], '
+            '"p_freq": "month"}'
+        ),
+        "then": "Correlate the two metrics' series; nulls stay null.",
     },
     {
         "ask": "Spread of two equity closes at month end",
-        "call": "GET /v1/panel?ids=PETR4,VALE3&metrics=close&freq=month&format=wide",
-        "then": "Subtract aligned columns; a missing month is null, not interpolated.",
+        "call": (
+            "POST /rest/v1/rpc/panel "
+            '{"p_ids": ["PETR4", "VALE3"], "p_metrics": ["close"], '
+            '"p_freq": "month"}'
+        ),
+        "then": "Subtract the aligned series; a missing month is null, not interpolated.",
     },
     {
         "ask": "Which of these FIDCs is most exposed to one debtor?",
         "call": (
-            "GET /v1/panel?ids=<cnpj>,<cnpj>,<cnpj>"
-            "&metrics=sacado_top1,receivables&freq=month&format=wide"
+            "POST /rest/v1/rpc/panel "
+            '{"p_ids": ["<cnpj>", "<cnpj>", "<cnpj>"], '
+            '"p_metrics": ["sacado_top1", "receivables"], "p_freq": "month"}'
         ),
         "then": "Divide sacado_top1 by receivables per row; the debtor is anonymized, so this is a ratio, not a name.",
     },
     {
         "ask": "Just give me the panel; I will run a factor model",
         "call": (
-            "GET /v1/panel?ids=PETR4,VALE3,<cnpj>"
-            "&metrics=close_return,nav&freq=month&format=wide"
+            "POST /rest/v1/rpc/panel "
+            '{"p_ids": ["PETR4", "VALE3", "<cnpj>"], '
+            '"p_metrics": ["close_return", "nav"], "p_freq": "month"}'
         ),
-        "then": "Model in the notebook from the matrix.",
+        "then": "Model in the notebook from the long rows. Anonymous callers are capped at 3 ids — a 4th raises 22023, it is not trimmed.",
+    },
+    {
+        "ask": "Which names are most heavily shorted right now?",
+        "call": (
+            "GET /rest/v1/short_interest"
+            "?trade_date=eq.<the trade_date coverage() reports>"
+            "&float_basis=eq.index_free_float"
+            "&order=pct_float.desc&limit=25"
+        ),
+        "then": (
+            "A view, not an RPC: filter and page it with PostgREST syntax. "
+            "The float_basis filter is REQUIRED for a ranking — index_free_float "
+            "and shares_outstanding are different denominators and sorting them "
+            "together is meaningless. Read the ratchet constraint before calling "
+            "the window short."
+        ),
+    },
+    {
+        "ask": "Who was borrowing PETR4 last session, and was it real demand?",
+        "call": (
+            "GET /rest/v1/lending_participants"
+            "?ticker=eq.PETR4&trade_date=eq.<session>"
+            "&order=quantity_borrowed.desc"
+        ),
+        "then": (
+            "broker_code is the INTERMEDIARY, never the owner. Compare "
+            "internal_qty against quantity_lent + quantity_borrowed per broker: "
+            "a high internal share is that broker crossing its own clients, not "
+            "a position it took."
+        ),
+    },
+    {
+        "ask": "What did foreign investors do this month?",
+        "call": (
+            "GET /rest/v1/investor_flow"
+            "?investor_type=eq.<type>&reference_date=gte.<month start>"
+            "&order=reference_date.asc"
+        ),
+        "then": (
+            "Check flow_basis on every row first. 'unknown_opening_snapshot' "
+            "rows carry NULL flows by construction — drop them, never read them "
+            "as zero. Values are R$ thousands, differenced from a month-to-date "
+            "snapshot published T+2."
+        ),
     },
 ]
 
 AGENT_INSTRUCTIONS = (
     "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, "
-    "B3 COTAHIST cash quotes, options and termo). Call catalog once and cache "
+    "B3 COTAHIST cash quotes, options and termo, and the B3 securities-lending "
+    "and investor-flow group). Call catalog once and cache "
     "it. Resolve names with lookup, then fetch a panel. The primitive "
     "is a panel (id, date, metric, value). Correlation, ranking, spreads, "
     "regressions and other relations are reductions of that panel — compute "
@@ -797,6 +887,17 @@ def catalog_payload() -> Dict[str, Any]:
             "fidc_cedentes": "POST /rest/v1/rpc/fidc_cedentes",
             "fidc_sacados": "POST /rest/v1/rpc/fidc_sacados",
             "fidc_portfolio": "POST /rest/v1/rpc/fidc_portfolio",
+            # B3 securities lending and investor flow (v27). VIEWS, not
+            # functions: filter them with PostgREST's own syntax
+            # (?ticker=eq.PETR4&trade_date=gte.2026-09-01) and page with
+            # limit/offset, which works here because they are GET resources.
+            # All five are a RATCHET — see the constraint: history begins at
+            # first capture and B3 publishes no archive.
+            "short_interest": "GET /rest/v1/short_interest",
+            "short_interest_by_sector": "GET /rest/v1/short_interest_by_sector",
+            "lending_trades": "GET /rest/v1/lending_trades",
+            "lending_participants": "GET /rest/v1/lending_participants",
+            "investor_flow": "GET /rest/v1/investor_flow",
         },
     }
 

@@ -4,8 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "silo-client"
-version = "0.4.0"
-description = "Thin, honest Python client for the Silo read API (Brazilian public-markets warehouse: CVM funds, B3 COTAHIST)."
+# Kept in lockstep with silo_client.__version__ — tests/test_sdk_client.py
+# pins them equal. They had drifted to 0.4.0 here against 0.6.0 in the package,
+# so `pip show silo-client` and `silo_client.__version__` named two different
+# releases of the same code and neither could be trusted to identify a build.
+version = "0.7.0"
+description = "Thin, honest Python client for the Silo read API (Brazilian public-markets warehouse: CVM funds, B3 COTAHIST, B3 securities lending)."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["httpx>=0.27"]
