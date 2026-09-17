@@ -80,6 +80,39 @@ def test_llms_txt_never_points_at_a_page_that_does_not_exist():
     )
 
 
+def test_no_published_page_is_unreachable_from_the_navigation():
+    """A page under api-docs/ that is not in docs.json's nav is orphaned.
+
+    Mintlify serves a page that is absent from the navigation — `/skill.md`
+    proves it — so an orphaned page's URL resolves and nothing 404s. That is
+    exactly what makes it easy to miss: nothing links to it, it is absent from
+    the sidebar, and a reader only finds it by already knowing the path.
+
+    `test_mintlify_nav.py` guards the other direction (a nav entry whose file
+    does not exist). This one closes the pair, so a page cannot ship written
+    but unreachable — the same defect shape as an endpoint shipping granted
+    but undocumented.
+
+    Root-level Markdown is deliberately excluded: `skill.md` is published for
+    agents and stays out of the sidebar on purpose (see the test below), and
+    the rest is repository documentation that `.mintignore` excludes.
+    """
+    nav = set(_nav_pages())
+    # docs.json names pages repo-relative and without an extension.
+    on_disk = {
+        p.relative_to(ROOT).with_suffix("").as_posix()
+        for p in (ROOT / "api-docs").rglob("*.mdx")
+    }
+    on_disk.add("index")
+
+    orphaned = sorted(on_disk - nav)
+    assert not orphaned, (
+        "published pages missing from docs.json navigation — the URL resolves "
+        "but nothing links to them and they are absent from the sidebar: "
+        + ", ".join(orphaned)
+    )
+
+
 def test_skill_md_is_listed_and_is_not_mintignored():
     """skill.md is published deliberately, though it is not in the navigation.
 
