@@ -10,9 +10,9 @@ icon: "hand-holding-dollar"
   schema cannot: the conventions, the nulls that are deliberate, and the traps.
 </Note>
 
-Four views over B3's securities-lending market — what is on loan, at what rate, and who
-traded it. Together they are the closest thing the Brazilian market publishes to a short
-interest report.
+### Overview
+
+Four views over B3's securities-lending market — what is on loan, at what rate, and who traded it. Together they are the closest thing the Brazilian market publishes to a short interest report.
 
 | Endpoint | Grain | What it holds |
 |---|---|---|
@@ -21,197 +21,57 @@ interest report.
 | `GET /lending_trades` | `(ticker, trade_date)` | The session's trade tape per ticker: count, quantity, quantity-weighted rate |
 | `GET /lending_participants` | `(ticker, trade_date, broker_code)` | What each **brokerage** lent and borrowed |
 
-These are **views**, not RPCs: read them with `GET`, filter them with PostgREST syntax
-(`?ticker=eq.PETR4`), and page them with `limit`/`offset`. Investor-type flow lives on its
-own page, [Investor flow](/api-docs/flows).
+These are **views**, not RPCs: `GET`, PostgREST filters (`?ticker=eq.PETR4`), `limit`/`offset` paging. Investor-type flow is on [Investor flow](/api-docs/flows).
 
 <Warning>
-  **History starts when SILO started capturing, and it can never be extended backwards.**
+  **History starts when SILO started capturing, and can never be extended backwards.** B3 keeps roughly **21 business days** of these tables and publishes no archive — no paid tier, no vendor feed, no request that returns an earlier session. This is the only part of the warehouse that behaves this way.
 
-  B3 keeps roughly **21 business days** of these tables and publishes no archive. There is
-  no paid tier, no vendor feed and no request that returns an earlier session — a day
-  nobody captured is gone. This is the only part of this warehouse that behaves this way;
-  everywhere else a gap is a backfill waiting to be run.
+  - **A short window is the source's retention, not a data problem.** Do not read the first date as a market event, a listing date, or a bug.
+  - **You cannot compute a long-run average, a 52-week range, or a year-over-year change** until SILO has held them that long. A ratio against a "historical norm" with three weeks behind it describes the capture window, not the market.
 
-  Two consequences worth stating plainly:
-
-  - **A short window is the source's retention, not a data problem.** Do not read the
-    first date in these views as a market event, a listing date, or a bug. Call
-    [`coverage`](/api-docs/coverage) and read `as_of` together with the ratchet note it
-    carries on every one of these rows.
-  - **You cannot compute a long-run average, a 52-week range, or a year-over-year change**
-    from these endpoints until SILO has held them that long. A ratio against a "historical
-    norm" that only has three weeks behind it is a number about the capture window, not
-    about the market.
-
-  An over-wide request to B3 returns HTTP 200 with a silently clamped window, which is why
-  the ingest reconciles the sessions it asked for against the ones it received.
+  An over-wide request to B3 returns HTTP 200 with a silently clamped window, which is why every ingest reconciles the sessions it received against the ones it asked for.
 </Warning>
 
----
-
-## `GET /short_interest`
-
-Short interest per `(ticker, trade_date)`, built from B3's own `Total` rows so balances are
-never double-counted.
-
-### Parameters
-
-PostgREST filters on any returned column. The ones worth knowing:
-
 <Note>
-  **Sorting on a nullable column:** nulls sort **last** by default in PostgREST. `pct_float`
-  and `days_to_cover` are null whenever their denominator is missing, so `order=pct_float.desc`
-  silently buries those rows at the end rather than dropping them — add `.nullslast`
-  explicitly if you are relying on that placement.
+  **Sorting on a nullable column:** nulls sort **last** by default in PostgREST. `pct_float` and `days_to_cover` are null whenever their denominator is missing, so `order=pct_float.desc` silently buries those rows at the end rather than dropping them — add `.nullslast` explicitly if you are relying on that placement.
 </Note>
 
-#### `ticker`
+### `GET /short_interest`
 
-`eq.PETR4`. The B3 negotiation code.
+Short interest per `(ticker, trade_date)`, built from B3's own `Total` rows so balances are never double-counted.
 
+Filters worth knowing: `ticker`, `trade_date` (sessions only — no weekend rows), `float_basis` (**required for any ranking**), `instrument_category` (`SHARES`, `UNIT`, `ETF EQUITIES`, `BDR`, `FUNDS`).
 
-#### `trade_date`
+An unfiltered days-to-cover screen is dominated by index ETFs, which are legitimately on loan against small secondary volume but are not the crowded single-name shorts the screen is for.
 
-`eq.2026-09-16`, or `gte.` / `lte.` for a window. Sessions only — B3 publishes no
-weekend rows.
-
-
-#### `float_basis`
-
-`eq.index_free_float` or `eq.shares_outstanding`. **Required for any ranking** — see
-below.
-
-
-#### `instrument_category`
-
-`eq.SHARES`, `eq.UNIT`, `eq.ETF EQUITIES`, `eq.BDR`, `eq.FUNDS`. An unfiltered
-days-to-cover screen is dominated by index ETFs, which are legitimately on loan against
-small secondary volume but are not the crowded single-name shorts the screen is for.
-
-
-### `pct_float` is two different metrics
+#### `pct_float` is two different metrics
 
 <Warning>
-  **`pct_float` is not one number, and `float_basis` is the column that says which one you
-  are holding.** Reading it without the basis is the single easiest way to produce a
-  confident, wrong ranking.
+  **Reading `pct_float` without `float_basis` is the easiest way to produce a confident, wrong ranking.**
 
   | `float_basis` | Denominator | Coverage | Reads |
   |---|---|---|---|
   | `index_free_float` | B3's published free float (`theoretical_qty`) from the broadest index portfolio carrying the ticker | Index constituents only, ~149 tickers | The free-float percentage the market quotes |
-  | `shares_outstanding` | Capital social from the cash instrument registry | Everything else with a registry entry | A **smaller** percentage for the same position — the denominator is larger |
+  | `shares_outstanding` | Capital social from the cash instrument registry | Everything else with a registry entry | A **smaller** percentage for the same position |
 
-  They are not the same measure, and they are never comparable. **Any ranking, screen or
-  cross-section on `pct_float` must filter to one basis first**, or it sorts index members
-  against non-members on an axis they do not share — and because the free-float basis
-  produces systematically larger percentages, an unfiltered "most shorted" list is really a
-  list of index constituents.
+  They are never comparable. **Any ranking, screen or cross-section must filter to one basis first**, or it sorts index members against non-members on an axis they do not share — and because the free-float basis produces systematically larger percentages, an unfiltered "most shorted" list is really a list of index constituents.
 
-  `float_denominator` carries the number actually used, and `float_source_index` (on the
-  underlying `dim_ticker_float`) records which portfolio it came from. The index priority
-  is IBRA → SMLL → IBXX → IBOV, because index weight caps can only shrink the quantity
-  below the real float, so the broadest index is the closest published estimate.
+  `float_denominator` carries the number actually used. The index priority is IBRA → SMLL → IBXX → IBOV: index weight caps can only shrink the quantity below the real float, so the broadest index is the closest published estimate.
 </Warning>
 
-<Note>
-  **`pct_float` and `days_to_cover` are `null`, never `0`, when their denominator is
-  missing.** An unknown float is unknown; `0%` would read as "nobody is short". A short
-  position in a name that has not traded is *uncoverable*, not instantly coverable, and a
-  `0` would sort it to exactly the wrong end of a screen. Filter nulls out deliberately —
-  do not let them fall to the bottom by accident.
-</Note>
+| Field | What to know |
+| --- | --- |
+| `pct_float` / `days_to_cover` | `null`, never `0`, when their denominator is missing. An unknown float is unknown; `0%` would read as "nobody is short", and a short in a name that has not traded is *uncoverable*, not instantly coverable. Filter nulls out deliberately. |
+| `sector_top` | B3's own top-level sector with the source's spelling variants merged (`Bens Indls` and `Bens Industriais` are one). No ticker is moved between sectors and no taxonomy is invented; an unrecognised prefix passes through verbatim. Null outside the index universe. |
+| `short_quantity` | Shares on loan, summed across specifications — a ticker can carry `ON` and `ON NM`. |
+| `days_to_cover` | `short_quantity / adtv_qty_21` — sessions of average volume needed to buy the position back. |
+| `adtv_value_21` | Trailing 21-session average traded value in BRL, computed per short-interest date: a row dated three weeks ago is divided by the volume that actually preceded *it*. |
+| `adtv_sessions` | How many sessions that average covers. Fewer than 21 (early in a listing, or after a halt) means a shorter, noisier window — you are told rather than left to assume. |
+| `lender_rate_pct` / `borrower_rate_pct` | Quantity-weighted rates, percentage points a.a. Markets with no registered quantity are excluded so a nominal rate on zero business cannot drag the average. |
 
-### Returns
+#### Example
 
-#### `trade_date`
-
-Session date. Part of the grain.
-
-#### `ticker`
-
-B3 negotiation code. Part of the grain.
-
-#### `asset_name`
-
-Instrument name, from the registry where available, else B3's `empresa` field.
-
-#### `isin`
-
-ISIN as published.
-
-#### `sector`
-
-B3's full `Setor / Subsetor` string, ~34 buckets.
-
-#### `sector_top`
-
-The part before the slash — B3's own top-level sector, with the source's spelling
-variants merged (`Bens Indls` and `Bens Industriais` are one sector). No ticker is moved
-between sectors and no taxonomy is invented; a prefix the merge list does not recognise
-passes through verbatim. `null` outside the index universe.
-
-#### `instrument_category`
-
-`SHARES`, `UNIT`, `BDR`, `ETF EQUITIES`, `FUNDS` — from the instrument registry.
-
-#### `short_quantity`
-
-Shares on loan, summed across specifications (a ticker can carry `ON` and `ON NM`).
-
-#### `short_value`
-
-Balance on loan in **BRL**.
-
-#### `pct_float`
-
-`short_quantity` as a percentage of `float_denominator`, in **percentage points**.
-**Read with `float_basis`.** `null` when there is no denominator.
-
-#### `float_basis`
-
-`index_free_float` | `shares_outstanding` | `null`. Which denominator produced
-`pct_float`.
-
-#### `float_denominator`
-
-The share count actually divided by.
-
-#### `days_to_cover`
-
-Short interest ratio: sessions of average volume needed to buy the position back
-(`short_quantity / adtv_qty_21`). `null` when the name did not trade.
-
-#### `adtv_value_21`
-
-Trailing 21-session average traded value in BRL, computed per short-interest date — a
-row dated three weeks ago is divided by the volume that actually preceded *it*.
-
-#### `adtv_sessions`
-
-How many sessions that average actually covers. Fewer than 21 (early in a listing, or
-after a halt) means a shorter, noisier window — a usable estimate, but you are told
-rather than left to assume.
-
-#### `lender_rate_pct`
-
-Quantity-weighted average rate paid to the lender, **percentage points a.a.** Markets
-with no registered quantity are excluded so a nominal rate on zero business cannot drag
-the average.
-
-#### `borrower_rate_pct`
-
-Quantity-weighted average rate charged to the borrower, percentage points a.a.
-
-#### `contracts`
-
-Number of registered contracts for the session.
-
-
-### Example
-
-The most heavily shorted index names in a session. Note the `float_basis` filter — without
-it this ranking is meaningless:
+The most heavily shorted index names in a session. Without the `float_basis` filter this ranking is meaningless:
 
 <CodeGroup>
 
@@ -230,8 +90,7 @@ curl -s -G "$SILO_URL/short_interest" \
 params = {
     "select": "ticker,trade_date,pct_float,float_basis,days_to_cover,short_value",
     "trade_date": "eq.2026-09-16",
-    # Not optional: index_free_float and shares_outstanding are different
-    # denominators, and ranking across both compares nothing.
+    # Not optional: the two bases are different denominators.
     "float_basis": "eq.index_free_float",
     "instrument_category": "eq.SHARES",
     "order": "pct_float.desc",
@@ -264,209 +123,47 @@ const { data } = await supabase
 ]
 ```
 
-<Note>
-  The figures above are shaped like real rows but are **illustrative** — call the endpoint
-  for live values, and check `coverage` for the newest session before pinning a
-  `trade_date`.
-</Note>
+Those figures are illustrative. Check `coverage` for the newest session before pinning a `trade_date`.
 
----
+### `GET /short_interest_by_sector`
 
-## `GET /short_interest_by_sector`
+The same book aggregated by B3 top-level sector, one row per `(sector, trade_date)`. Filters: `trade_date`, `sector`.
 
-The same book aggregated by B3 top-level sector, one row per `(sector, trade_date)`.
+`short_value` is the sector total; `short_value_equities` restricts it to `SHARES` and `UNIT`; `tickers` counts what went into the bucket.
 
-### Parameters
+**Note**: `Não classificado` is a real bucket, not a rounding bin. Sector comes from the B3 index portfolios, which cover the index universe and nothing else, so ETFs, BDRs and every off-index name land there — bucketed rather than dropped, because a sector chart that quietly omits a third of the short book is worse than one that shows the gap. For single-name risk read `short_value_equities`; the unclassified bucket is almost entirely ETFs and BDRs and would otherwise dominate the bar.
 
-`trade_date` and `sector` filters, plus the usual `select` / `order` / `limit`.
-
-### Returns
-
-#### `trade_date`
-
-Session date.
-
-#### `sector`
-
-B3 top-level sector, or **`Não classificado`**.
-
-#### `tickers`
-
-How many tickers went into the bucket.
-
-#### `short_value`
-
-Total balance on loan for the sector, BRL.
-
-#### `short_value_equities`
-
-The same total restricted to `SHARES` and `UNIT`.
-
-#### `short_quantity`
-
-Total shares on loan for the sector.
-
-
-<Note>
-  **`Não classificado` is a real bucket, not a rounding bin.** Sector comes from the B3
-  index portfolios, which cover the index universe and nothing else — so ETFs, BDRs and
-  every off-index name land there. They are bucketed rather than dropped, because a sector
-  chart that quietly omits a third of the short book is worse than one that shows the gap.
-  If you want single-name risk, read `short_value_equities`, which restricts to `SHARES`
-  and `UNIT`; the unclassified bucket is almost entirely ETFs and BDRs and would otherwise
-  dominate the bar.
-</Note>
-
----
-
-## `GET /lending_trades`
+### `GET /lending_trades`
 
 The session's individual lending trades, aggregated per `(ticker, trade_date)`.
 
-### Parameters
+| Field | What to know |
+| --- | --- |
+| `rate_pct` | **Quantity-weighted** average annualized rate, percentage points. |
+| `borrower_brokers` / `lender_brokers` | Distinct **brokerages** on each leg — not distinct borrowers or lenders. |
+| `internal_trades` | Trades where the same broker code stood on both legs. Usually most of them. |
 
-`ticker`, `trade_date`, plus `select` / `order` / `limit`.
+**Note**: `rate_pct` and B3's own published average are both right, and they differ — this view weights by **quantity**, B3's glossary weights by the **number of trades**. They diverge exactly where one broker does many small trades at a rate far from the size-weighted middle. Measured 2026-09-10 across the 569 tickers both cover: mean absolute difference **0.037 percentage points**, 561 of 569 within 0.5pp, largest gap 3.81pp. The residual is method, not error — keeping both is what lets you check one against the other.
 
-### Returns
-
-#### `trade_date`
-
-Session date. Part of the grain.
-
-#### `ticker`
-
-B3 negotiation code. Part of the grain.
-
-#### `trades`
-
-Number of trades in the session.
-
-#### `quantity`
-
-Total shares traded.
-
-#### `rate_pct`
-
-**Quantity-weighted** average annualized rate, percentage points.
-
-#### `rate_min_pct`
-
-Lowest rate printed in the session.
-
-#### `rate_max_pct`
-
-Highest rate printed in the session.
-
-#### `borrower_brokers`
-
-Distinct **brokerages** on the borrowing leg — not distinct borrowers.
-
-#### `lender_brokers`
-
-Distinct brokerages on the lending leg.
-
-#### `internal_trades`
-
-Trades where the same broker code stood on both legs. See below — this is usually most
-of them.
-
-
-<Note>
-  **`rate_pct` and B3's own published average are both right, and they differ.** This view
-  weights by **quantity**; B3's glossary defines its published average as weighted by the
-  **number of trades**. They diverge exactly where one broker does many small trades at a
-  rate far from the size-weighted middle.
-
-  Measured 2026-09-10 across the 569 tickers both cover: mean absolute difference **0.037
-  percentage points**, 561 of 569 within 0.5pp, largest gap 3.81pp. The residual is method,
-  not error. This view does not overwrite B3's figure — keeping both is what lets you check
-  one against the other.
-</Note>
-
----
-
-## `GET /lending_participants`
+### `GET /lending_participants`
 
 One row per `(ticker, trade_date, broker_code)`: what each brokerage lent and borrowed.
 
 <Warning>
-  **`doador` and `tomador` are BROKERAGES. They are not beneficial owners, and reading them
-  as owners will produce a confident, wrong story about who is short.**
+  **`doador` and `tomador` are BROKERAGES. They are not beneficial owners, and reading them as owners will produce a confident, wrong story about who is short.**
 
-  B3 names about **33 participants** in a whole session, and on 2026-09-10 **32,197 of
-  43,165 trades (74.6%)** carried the **same code on both legs** — a broker crossing its
-  own client book. So a large `quantity_borrowed` through a broker is that broker's
-  *clients'* position, not a view the broker took. "The biggest short in the market" read
-  off this view is a statement about order routing.
+  B3 names about **33 participants** in a whole session, and on 2026-09-10 **32,197 of 43,165 trades (74.6%)** carried the **same code on both legs** — a broker crossing its own client book. So a large `quantity_borrowed` through a broker is that broker's *clients'* position, not a view the broker took. "The biggest short in the market" read off this view is a statement about order routing.
 
-  **`internal_legs` and `internal_qty` are what tell the two apart.** A high internal share
-  is client churn; a low one is flow that actually crossed the market. In the source
-  session, J.P. Morgan sat at ~6% internal — directional flow — while Morgan Stanley was at
-  ~78%, which is client churn. Same tape, opposite readings.
+  **`internal_legs` and `internal_qty` are what tell the two apart.** A high internal share is client churn; a low one is flow that actually crossed the market. In that session J.P. Morgan sat at ~6% internal — directional flow — while Morgan Stanley was at ~78%, which is client churn. Same tape, opposite readings.
 
-  They sit beside the totals rather than being netted away on purpose: dropping the
-  self-crossed trades makes the remainder look like inter-broker conviction, and keeping
-  them silently makes internal churn look like directional demand. Both are misreadings, so
-  the split is published and the choice is yours.
+  They sit beside the totals rather than being netted away on purpose: dropping the self-crossed trades makes the remainder look like inter-broker conviction, and keeping them silently makes internal churn look like directional demand. Both are misreadings, so the split is published and the choice is yours.
 </Warning>
 
-### Parameters
-
-`ticker`, `trade_date`, `broker_code`, plus `select` / `order` / `limit`.
-
-### Returns
-
-#### `trade_date`
-
-Session date. Part of the grain.
-
-#### `ticker`
-
-B3 negotiation code. Part of the grain.
-
-#### `broker_code`
-
-B3 participant code. Part of the grain. **The intermediary, never the owner.**
-
-#### `broker_name`
-
-Participant name as B3 publishes it.
-
-#### `quantity_lent`
-
-Shares this broker lent in the session.
-
-#### `quantity_borrowed`
-
-Shares this broker borrowed.
-
-#### `quantity_net`
-
-`quantity_lent - quantity_borrowed`. Positive means the broker's book lent more than it
-borrowed. A trade crossed internally contributes to **both** sides, so it cancels here
-rather than inflating either direction.
-
-#### `lender_rate_pct`
-
-Quantity-weighted rate on the lending leg, percentage points a.a.
-
-#### `borrower_rate_pct`
-
-Quantity-weighted rate on the borrowing leg.
-
-#### `internal_legs`
-
-Legs where this broker was on both sides of the trade.
-
-#### `internal_qty`
-
-Quantity on those internal legs. Compare against
-`quantity_lent + quantity_borrowed` to get the internal share.
-
-
-### Example
-
-Who was borrowing one ticker, and how much of it was real:
+| Field | What to know |
+| --- | --- |
+| `broker_code` | B3 participant code, part of the grain. **The intermediary, never the owner.** |
+| `quantity_net` | `quantity_lent - quantity_borrowed`. A trade crossed internally contributes to **both** sides, so it cancels here rather than inflating either direction. |
+| `internal_qty` | Quantity on the legs where this broker was on both sides. Compare against `quantity_lent + quantity_borrowed` for the internal share. |
 
 <CodeGroup>
 
@@ -488,7 +185,7 @@ params = {
 }
 rows = requests.get(f"{URL}/lending_participants", headers=H, params=params).json()
 
-# The column that separates a directional borrow from a broker's own client churn.
+# Separates a directional borrow from a broker's own client churn.
 for r in rows:
     gross = (r["quantity_lent"] or 0) + (r["quantity_borrowed"] or 0)
     internal_share = (r["internal_qty"] or 0) / gross if gross else None
@@ -507,33 +204,13 @@ const { data } = await supabase
 
 </CodeGroup>
 
----
+### Paging and empty results
 
-## Row caps and paging
+These are views, so the 1,000-row page is PostgREST's `db-max-rows` and it **cuts silently with a `200`**, keeping the oldest rows — it does not raise the way the RPC functions do.
 
-These are views, so the 1,000-row page is PostgREST's `db-max-rows` and it **cuts silently
-with a 200**, keeping the oldest rows — it does not raise the way the RPC functions do. Two
-ways to stay honest about it:
+- Send `Prefer: count=exact` and read `Content-Range`. `0-999/*` means the response was cut; `0-999/4382` gives the true total.
+- Page with `limit` / `offset` and an explicit `order`. Offset paging without a total order can duplicate one row and drop another at a page boundary with nothing to say so.
+- The [SDK](/api-docs/sdk) wraps both: `silo.short_interest(...)` returns one page and raises `SiloTruncated` on an unbounded cut; `silo.view_all("short_interest", order="trade_date.desc")` walks every page.
+- A whole session of `lending_participants` is comfortably over one page — it is one row per `(ticker, broker)` — so filter by `ticker` or page it.
 
-- Send `Prefer: count=exact` and read the `Content-Range` response header. `0-999/*` means
-  the response was cut; `0-999/4382` tells you the true total.
-- Page with `limit` / `offset` and an explicit `order`. Offset paging without a total order
-  can duplicate one row and drop another at a page boundary with nothing to say so.
-
-The [Python SDK](/api-docs/sdk) wraps both: `silo.short_interest(...)` returns one page and
-raises `SiloTruncated` on an unbounded cut, and `silo.view_all("short_interest",
-order="trade_date.desc")` walks every page.
-
-A whole session of `lending_participants` is comfortably over one page — it is one row per
-`(ticker, broker)` — so filter by `ticker` or page it.
-
-## Empty and error behavior
-
-- **Unknown ticker → `200 []`.** Never a fabricated balance.
-- **Known ticker, no rows in the window → `200 []`.** With a ~21-business-day retention
-  this is the common case, not the exceptional one. Check
-  [`coverage`](/api-docs/coverage)'s `short_interest` / `lending_trades` rows before
-  concluding anything from an empty result.
-- The landing tables (`b3_lending_open_position`, `b3_lending_rate`, `b3_lending_trade`)
-  are **not** readable by client roles. These views are owner-privileged, so the columns
-  they select are the whole boundary.
+Unknown ticker, or a known ticker with no rows in the window → `200 []`, never a fabricated balance. With ~21 business days of retention the empty window is the common case, not the exceptional one — check [`coverage`](/api-docs/coverage) first. The landing tables are not readable by client roles; these views are owner-privileged, so the columns they select are the whole boundary.
