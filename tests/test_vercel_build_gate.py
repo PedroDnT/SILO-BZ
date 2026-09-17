@@ -253,6 +253,43 @@ def test_vercel_json_wires_the_gate():
     assert "npm run sources" in cfg["buildCommand"]
 
 
+def test_merging_to_main_does_not_create_a_production_deployment():
+    """The site rebuilds once a day, from the ingest hook — not once per merge.
+
+    The gate above cannot prevent this and should not try: it decides whether a
+    deployment that ALREADY EXISTS builds, and production must always build (see
+    test_production_always_builds_even_with_nothing_to_diff — that rule is what
+    lets the nightly hook refresh the snapshot at all). The waste is a layer
+    higher, in deployments Vercel creates from git pushes.
+
+    Measured 2026-09-17: six merges to main landed inside fifteen minutes and
+    queued fourteen deployments at once. Each production build runs ~90 queries
+    against production Supabase for 18-45 minutes, and the merges included a
+    five-line CLAUDE.md edit. The 2026-08-26 incident is the same shape one
+    layer down: concurrent builds slowed shared queries 5x and blocked an
+    ALTER TABLE until the server killed it.
+
+    Deployments from a push to main are therefore disabled in vercel.json.
+    Nothing else changes: the 06:00 UTC deploy hook still POSTs and still
+    produces a production deployment (a hook is an API trigger, not a git
+    event), and the gate still builds it. To publish a dashboard change before
+    the next nightly run, dispatch daily_ingest with rebuild_dashboard=true, or
+    `vercel redeploy` the current production deployment.
+    """
+    cfg = json.loads(VERCEL_JSON.read_text())
+    enabled = cfg.get("git", {}).get("deploymentEnabled")
+    assert enabled is not None, (
+        "vercel.json must disable git-triggered deployments on main, or every "
+        "merge pays a full Evidence build against production Supabase"
+    )
+    assert enabled.get("main") is False, f"main must not auto-deploy: {enabled}"
+    # Only main. Previews are how a dashboard change is reviewed before it
+    # ships, and they are already path-filtered by the gate.
+    assert [b for b, on in enabled.items() if on is False] == ["main"], (
+        f"only main should be disabled, got {enabled}"
+    )
+
+
 def test_daily_ingest_rebuilds_dashboard_after_scheduled_runs():
     """The snapshot refreshes after every successful scheduled ingest (2026-09-14).
 

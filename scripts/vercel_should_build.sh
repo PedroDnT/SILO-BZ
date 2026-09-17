@@ -56,6 +56,16 @@
 # in with rebuild_dashboard=true), which is better timed than a human push — it
 # runs when no other build is competing for the database.
 #
+# NOTE, since 2026-09-17: a merge to main no longer produces a production
+# deployment at all — vercel.json sets git.deploymentEnabled.main = false. That
+# is a DIFFERENT layer from this script, which only decides whether a
+# deployment that already exists should build. Both are needed and neither
+# replaces the other: without the config the hook competes with one full build
+# per merge (six merges in fifteen minutes queued fourteen deployments on
+# 2026-09-17), and without the rule below the hook's own deployment would be
+# skipped for having nothing to diff. So production still always builds here —
+# the only production deployments left are the ones the hook creates.
+#
 # A deploy hook fires on a COMMIT THAT DID NOT CHANGE. That is the entire point
 # of it, and it is why a pure path-diff rule can never let one through:
 # measured 2026-08-29 01:40 UTC, the hook returned 201, created deployment
