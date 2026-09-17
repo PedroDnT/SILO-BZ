@@ -284,35 +284,15 @@ jobs:
 
           # 3. Completeness drift: every MONTHLY family must have a complete period
           #    inside MAX_COMPLETE_AGE_DAYS. fip files yearly and is excluded by design.
-          #
-          #    Age is measured from the END of the complete period's month, never
-          #    from its key. The families do not agree on where in the month the
-          #    key sits — fii and fiagro key the FIRST (2026-07-01), fidc the LAST
-          #    (2026-07-31) — so the raw difference charges a month-start family
-          #    ~30 extra days for the very same filing state.
-          #
-          #    That is what failed run #41 on 2026-09-17. All three had July
-          #    complete and August about a fifth filed:
-          #
-          #      fidc    664/4253 = 0.156   complete_through 2026-07-31 -> 48d  PASS
-          #      fii     247/1292 = 0.191   complete_through 2026-07-01 -> 78d  FAIL
-          #      fiagro   75/ 254 = 0.295   complete_through 2026-07-01 -> 78d  FAIL
-          #
-          #    fidc was the WORST filed of the three and passed; the two that
-          #    failed did so purely on key convention. Normalised to month-end
-          #    all three read 48d, which is the truth they share.
-          #
-          #    The gate keeps its teeth: a family that really stalls a month
-          #    still breaches 75d (a May close read against 2026-09-17 is 109d).
           echo "--- completeness by family ---"
           psql "$POSTGRES_URL" -c "SET default_transaction_read_only = on" -c \
             "SELECT entity_type, public.latest_complete_period(entity_type) AS complete_through,
-                    (CURRENT_DATE - (date_trunc('month', public.latest_complete_period(entity_type))::date + INTERVAL '1 month - 1 day')::date) AS days_behind
+                    (CURRENT_DATE - public.latest_complete_period(entity_type)) AS days_behind
                FROM (SELECT DISTINCT entity_type FROM mv_period_completeness) f
               ORDER BY entity_type"
           stalled=$(q "SELECT count(*) FROM (SELECT DISTINCT entity_type FROM mv_period_completeness) f
                         WHERE entity_type <> 'fip'
-                          AND (CURRENT_DATE - (date_trunc('month', public.latest_complete_period(entity_type))::date + INTERVAL '1 month - 1 day')::date) > ${MAX_COMPLETE_AGE_DAYS}")
+                          AND (CURRENT_DATE - public.latest_complete_period(entity_type)) > ${MAX_COMPLETE_AGE_DAYS}")
           if [ "${stalled:-0}" -gt 0 ]; then
             echo "FAIL: $stalled monthly families stalled beyond ${MAX_COMPLETE_AGE_DAYS}d" >&2
             echo "- ❌ $stalled stalled families" >> "$GITHUB_STEP_SUMMARY"
