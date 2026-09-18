@@ -4,14 +4,19 @@ Written 2026-09-18, closing the session that shipped catalog v28 and v29.
 Everything here is **deliberately not done**, not forgotten. Nothing in this
 list is broken in production — see "Known good" below.
 
+This is the **single** register of open work. Items 7–11 were merged the same day
+as a second list, in `README.md` of this directory, written by another session
+that could not see this one; they are folded in here and that list is now a
+pointer. Anything provisional or missing goes in this file.
+
 ## Known good as of 2026-09-18
 
-| Surface | State |
-| --- | --- |
-| Data API (PostgREST) | catalog **v29** live; `income_statements` serving |
-| Docs site | `octo-98895abd.mintlify.site` — 200, including `known-limitations` |
-| Dashboard | `silo-bz.vercel.app` and `silo-bz-deloslabs.vercel.app` — 200 |
-| Test suite | 1455+ offline tests green on `main` |
+| Surface              | State                                                                                                                              |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Data API (PostgREST) | catalog **v29** live; `income_statements` serving                                                                                  |
+| Docs site            | `octo-98895abd.mintlify.site` — 200, including `known-limitations`                                                                 |
+| Dashboard            | `silo-bz-deloslabs.vercel.app` — 200, serving the current build. **Not** `silo-bz.vercel.app`: it also answers 200, but see item 8 |
+| Test suite           | 1463 offline tests green on `main`                                                                                                 |
 
 Verified live, not inferred: `income_statements('PETR4')` returns
 `chart=industrial`, net income R$37.01bn; `income_statements('19348')`
@@ -45,14 +50,14 @@ charts. For the DRE that was net income on `3.09` / `3.11` / `3.13`.
 Copy the structure of `api.income_statements` in
 `src/store/analytical/19_api_contract.sql`, including:
 
-* match on `lower(btrim(account_name))` — **never** fold accents or
+- match on `lower(btrim(account_name))` — **never** fold accents or
   prepositions, `de` vs `da` separates two real bank charts;
-* a `chart` column, informational, never consulted by the field mapping;
-* NULL for a concept a chart does not file, never a borrowed neighbouring line;
-* `DROP FUNCTION IF EXISTS` before `CREATE OR REPLACE` (a widened `RETURNS
-  TABLE` cannot be replaced in place on a deployed cluster);
-* grants to `anon, authenticated` **and** `silo_api`;
-* a contract test modelled on `tests/test_income_statements_contract.py`,
+- a `chart` column, informational, never consulted by the field mapping;
+- NULL for a concept a chart does not file, never a borrowed neighbouring line;
+- `DROP FUNCTION IF EXISTS` before `CREATE OR REPLACE` (a widened `RETURNS
+TABLE` cannot be replaced in place on a deployed cluster);
+- grants to `anon, authenticated` **and** `silo_api`;
+- a contract test modelled on `tests/test_income_statements_contract.py`,
   fault-injected before it is trusted.
 
 Bump `CATALOG_VERSION`, regenerate `openapi.json`, bump
@@ -126,3 +131,76 @@ minutes, most of it rebuilding materialized views before it reaches the contract
 Merging to `main` does **not** deploy. On 2026-09-17 the live catalog sat two
 versions behind `main` for several hours for exactly this reason. Worth a line in
 the release checklist, or an on-merge trigger.
+
+The same is true of the dashboard, for a different reason: since 2026-09-17
+`vercel.json` sets `git.deploymentEnabled.main = false`, so a merge creates no
+production deployment at all. The site rebuilds once a day, from the deploy hook
+the `daily_ingest` run POSTs at the end. Verified 2026-09-18: run #241 logged
+`deploy hook responded 201` at 06:56:44 and `dpl_2SD7pSab…` was created one
+second later with `deployHookName: nightly-ingest`, while ~13 merges overnight
+created none. So a documentation change to `dashboard/pages/` is live on GitHub
+immediately and on the public site the next morning, unless someone dispatches
+`daily_ingest` with `rebuild_dashboard=true`.
+
+## 7. The docs site is on Mintlify's generated subdomain
+
+`octo-98895abd.mintlify.site` works and is linked correctly from everywhere. But
+a hex-string hostname reads as provisional to a first-time visitor, which is the
+wrong signal for the one surface a stranger is most likely to open.
+
+A custom domain needs a DNS record and a Mintlify plan that allows one — an
+account change, not a repo change, so it cannot be done from here.
+
+## 8. `silo-bz.vercel.app` is frozen on the 2026-09-17 build
+
+The old hostname is a hand-bound deployment alias, not a project domain: it is
+pinned to `dpl_3Fj7S96H` (the #255 merge) and does not follow production. It
+answers **200 with a stale page**, which is worse than a 404 — anyone holding the
+old link sees a site that looks fine and is a day behind, and will be further
+behind every day.
+
+The live host is `silo-bz-deloslabs.vercel.app`, which Vercel generated from the
+project rename and which appears in each production deployment's `alias` list, so
+it follows production by itself and needs no maintenance.
+
+Re-assigning the old alias was attempted five times on 2026-09-17 and does not
+hold (`400: already assigned to another project`; `--scope 0xpedro` fails with
+"You cannot set your Personal Account as the scope"). It is therefore left alone
+deliberately. Every reference in the repo already points at the live host — the
+audit on 2026-09-18 found zero outside `docs/planning/`, which is historical by
+design. If the old hostname is ever wanted back, it is a Vercel-side alias
+removal first, not another assignment attempt.
+
+## 9. `coverage().landed_at` reads a day stale for the B3 lending group
+
+`landed_at` is documented as "when ingest last SUCCEEDED for that source", and
+counts only `cvm_ingest_log` rows with status `ok`. But when B3 has not yet
+published the newest session — most days at 06:00 UTC, since the open-position
+book lags the trade tape by one session — `_log_finish(..., skipped=True)`
+(`src/pipeline/b3_pipeline.py`) marks the slice skipped, even though the run
+fetched and upserted the sessions that _were_ delivered.
+
+Measured 2026-09-18: the run upserted 2,962 `b3_lending_open_position` rows at
+06:32 UTC and logged `B3 delivered 1/2 requested sessions; missing 2026-09-17 —
+newest session, not published yet`, while `coverage()` still reported
+`short_interest.landed_at = 2026-09-17T08:55`. Our pipeline reported as stale
+because of the source's calendar: the exact confusion `CLAUDE.md` names in "Do
+not confuse OUR health with the SOURCE's", landing in the one field that is
+supposed to be ours.
+
+The fix is to log `ok` when rows landed and only the newest session is missing,
+keeping `skipped` for the zero-row case. It is not a drive-by: the `skipped`
+status is what PR #242 introduced to stop DB Health crying wolf, so any change
+has to be read together with that gate and its tests.
+
+## 10. Supabase storage near the plan allowance
+
+Reported at 81% of the 135 GB allowance on 2026-09-17 and **not re-measured
+since**. Ingest stops when it fills, and the largest tables (`cvm_fi_diario`,
+`cia_account`, `b3_lending_trade`) grow every day. Worth a real measurement and
+a retention decision before it is urgent rather than after.
+
+## 11. `sdk/silo_client` is not published
+
+`pip install silo-client` does not resolve; callers vendor the directory. See
+[SDK.md](SDK.md) for what else the client is missing (PyPI, wheel CI, async).
