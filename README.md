@@ -1,4 +1,4 @@
-# SILO — Brazilian public financial data, ingested daily and served for accountability
+# SILO — Brazilian public financial data, ingested daily and served to people and AI agents
 
 > **Dashboard:** [https://silo-bz-deloslabs.vercel.app/](https://silo-bz-deloslabs.vercel.app/) — rebuilt
 > after every nightly ingest; the page header says when.
@@ -14,9 +14,13 @@
 
 ## What SILO is
 
-SILO keeps a continuous, verifiable record of Brazilian public financial data, assembled
-every day from the filings of **CVM**, **BACEN** and **B3** and stored in one Postgres
-warehouse (Supabase). Three populations, not one:
+SILO is a production system, not a notebook. A GitHub Actions cron runs unattended every
+morning: it pulls the day's filings from **CVM**, **BACEN** and **B3**, validates them,
+upserts them into one Supabase Postgres warehouse — 6,009,412 rows on 2026-09-18 —
+rebuilds the analytical layer, gates itself on a health check, and republishes the public
+site. Nobody presses anything.
+
+It keeps a continuous, verifiable record of three populations, not one:
 
 - **Funds** — FI, FIDC, FII, FIP, FIAGRO and securitisation vehicles: net assets, flows,
   delinquency, tranche structure, payout behaviour, portfolio composition.
@@ -32,16 +36,21 @@ is not built for choosing investments; there is no advice, rating or recommendat
 anywhere in it.
 
 Three things read the warehouse: a **read API** (schema `api` over PostgREST, with a
-machine-readable catalog so an LLM can discover and query it without a human in the
-loop), the **dashboard** (an Evidence.dev site, snapshotted nightly), and a second
+machine-readable catalog so an LLM agent can discover the endpoints, read each one's
+limits and be refused in a form it can act on, without a human in the loop), the
+**dashboard** (an Evidence.dev site, snapshotted nightly), and a second
 Evidence site for listed companies. SILO — this repository — is the part that writes:
 fetch, parse, validate, store, and the SQL that turns landing tables into something
 worth reading.
 
-What it refuses to do is the point. A failed fetch raises; a field the source did not
-publish stays blank; an unknown identifier returns nothing rather than a plausible
-number; a partly filed period is withheld until it is complete; an unadjusted price says
-so. Concretely, every change is held to five rules (`CLAUDE.md`):
+What it refuses to do is the point, and it is what makes the warehouse safe to put a
+model in front of. A failed fetch raises; a field the source did not publish stays blank;
+an unknown identifier returns nothing rather than a plausible number; a partly filed
+period is withheld until it is complete; an unadjusted price says so. A retrieval layer
+that answers confidently when it does not know is the failure mode that makes model
+output unusable in regulated work — so this one is built to say it does not have the
+answer, in a shape an agent can detect. Concretely, every change is held to five rules
+(`CLAUDE.md`), and 1,463 offline tests hold it there:
 
 1. **Never fabricate.** No fallback values, no fills, no inferred joins.
 2. **Never swallow a failure.** It raises, or it is written to `cvm_ingest_log`.

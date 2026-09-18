@@ -58,11 +58,14 @@ select * from supabase.row_counts
 > A public-data record of Brazilian **funds**, **listed companies** and the **B3
 > market** — net assets, flows, delinquency, tranche structure, payout behaviour,
 > filed financials, short interest and investor flow — from CVM, BACEN and B3 open
-> data, refreshed daily. Built for checking claims against filings, not for
-> choosing investments: no advice, no rating, no recommendation.
+> data, ingested and republished unattended every morning. Built for checking
+> claims against filings, not for choosing investments: no advice, no rating, no
+> recommendation.
 >
 > Everything shown is what the filings say. Unpublished, uningested or ambiguous
-> fields are left blank, never estimated.
+> fields are left **blank, never estimated** — the same rule the API enforces for
+> the agents that query it, which is why a question this warehouse cannot answer
+> returns nothing rather than a plausible number.
 
 <BigValue data={fund_headline} value=funds_tracked title="Funds Tracked" fmt=num0/>
 <BigValue data={fund_headline} value=aum_bn title="Net Assets (R$bn)" fmt=num0/>
