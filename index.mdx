@@ -9,6 +9,8 @@ description: "Public read API for Brazilian public financial data — CVM fund d
 
 This site documents the **read API**: schema `api` over PostgREST, with a shared publishable key. Anonymous access is free and deliberately small; signing in raises the ceilings ([Conventions & limits](/api-docs/conventions#authentication), or `catalog().limits` machine-readably).
 
+It is built to be read by software as much as by people: `catalog()` returns every endpoint, argument, limit and refusal code as JSON, `llms.txt` indexes this site for retrieval, and [`skill.md`](https://github.com/PedroDnT/SILO-BZ/blob/main/skill.md) is a drop-in agent skill. An endpoint that cannot answer refuses with a code — it never returns a plausible substitute.
+
 The human dashboard is [silo-bz-deloslabs.vercel.app](https://silo-bz-deloslabs.vercel.app/); the code is [PedroDnT/SILO-BZ](https://github.com/PedroDnT/SILO-BZ).
 
 ### Base URL
