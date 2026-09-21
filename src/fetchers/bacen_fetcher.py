@@ -13,7 +13,7 @@ import asyncio
 import json
 import logging
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import quote, urlencode
 
@@ -283,6 +283,46 @@ def _sgs_value(raw: Any, *, label: str, code: int, when: str) -> Optional[float]
 
 _SGS_NOT_FOUND_MARKERS = ("Value(s) not found", "SGSNegocioException")
 
+# SGS refuses a window longer than ten years on a daily series — verified
+# 2026-09-21: series 11 (SELIC diária) asked for 1980-01-01..2026-12-31 answers
+# HTTP 406 "O sistema aceita uma janela de consulta de, no máximo, 10 anos em
+# séries de periodicidade diária". Monthly series (IPCA 433 and the whole
+# inflation set) accept the full window, but the fetcher does not know a
+# series' periodicity, so every window is cut into slices of at most this
+# many years and the slices are concatenated. The upsert key makes overlap
+# harmless; there is none anyway (each slice starts the day after the last).
+_SGS_MAX_WINDOW_YEARS = 10
+
+
+def _sgs_windows(start: Optional[str], end: Optional[str]) -> List[Tuple[Optional[str], Optional[str]]]:
+    """Split ``start..end`` (ISO) into consecutive slices of ≤ 10 years.
+
+    An open-ended window (no start or no end) is returned as-is: without both
+    bounds there is nothing to measure, and BACEN's own rule only bites when
+    a daily series is asked for more than ten years explicitly.
+    """
+    if not start or not end:
+        return [(start, end)]
+    lo = date.fromisoformat(start[:10])
+    hi = date.fromisoformat(end[:10])
+    if hi < lo:
+        return [(start, end)]
+    windows: List[Tuple[Optional[str], Optional[str]]] = []
+    cursor = lo
+    while True:
+        try:
+            cut = cursor.replace(year=cursor.year + _SGS_MAX_WINDOW_YEARS)
+        except ValueError:  # 29 February
+            cut = cursor.replace(year=cursor.year + _SGS_MAX_WINDOW_YEARS, day=28)
+        # The slice is [cursor, cut - 1 day]; a ten-year window that lands
+        # exactly on the same calendar day is over the limit by one day.
+        slice_end = cut - timedelta(days=1)
+        if slice_end >= hi:
+            windows.append((cursor.isoformat(), hi.isoformat()))
+            return windows
+        windows.append((cursor.isoformat(), slice_end.isoformat()))
+        cursor = cut
+
 
 async def _sgs_request(
     client: httpx.AsyncClient,
@@ -414,12 +454,15 @@ class BacenClient:
         """
         attempts, delay = _olinda_retry_config()
         by_date: Dict[str, Dict[str, Any]] = {}
+        windows = [(None, None)] if last is not None else _sgs_windows(start, end)
         async with httpx.AsyncClient(timeout=120.0) as client:
             for label, code in codes.items():
-                points = await _sgs_request(
-                    client, label, int(code), start, end, last,
-                    attempts=attempts, delay=delay,
-                )
+                points: List[Dict[str, Any]] = []
+                for w_start, w_end in windows:
+                    points.extend(await _sgs_request(
+                        client, label, int(code), w_start, w_end, last,
+                        attempts=attempts, delay=delay,
+                    ))
                 if not points:
                     logger.warning(
                         "SGS %s (%s): no observation for %s..%s (BACEN 404 or empty)",

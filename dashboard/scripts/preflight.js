@@ -94,6 +94,16 @@ const REQUIRED_AFTER_MIGRATION = [
     source: 'src/store/analytical/20_short_interest.sql',
     fix: 'bash scripts/apply_analytical.sh',
   },
+  // The IPCA item tree with weights (IBGE SIDRA). /macro's contribution-by-
+  // group source reads it. Preview build BASpTdk1HuEDQVxH7vhgbvQx5k53 on
+  // 2026-09-21 hit precisely the race described above: the PR added migration
+  // 41 and a source against it, the deploy won, and the only symptom was the
+  // opaque "reading 'rows'" line on macro_inflation_groups_latest.
+  {
+    relation: 'ibge_ipca_item_monthly', column: null,
+    source: 'src/store/migrations/41_ibge_ipca_item_monthly.sql',
+    fix: 'python scripts/apply_schema.py',
+  },
 ];
 
 const missingVars = ['host', 'database', 'user', 'password'].filter((v) => !env(v));

@@ -2162,6 +2162,292 @@ COMMENT ON FUNCTION api.anbima_classes(TEXT, TEXT, TEXT, DATE, DATE) IS
     'ANBIMA Boletim de Fundos class series as published: AUM, net flows (month / YTD / 12m), returns (month / YTD / 12m) and fund counts per class, ANBIMA type or industry total (p_level). Industry aggregates — no fund is mapped to a class here, and there is no panel arm. Unknown category/metric/level raises 22023 listing what exists. Row cap: more than 1000 rows RAISES 22023 (never trimmed); narrow p_from/p_to or p_category.';
 
 -- ---------------------------------------------------------------------------
+-- inflation — IPCA headline, IPCA-15, the BCB cores, BCB's classifications
+-- and IBGE's nine expenditure groups, from BACEN's SGS (bacen_sgs)
+-- ---------------------------------------------------------------------------
+-- Long: one row per (month, series). The registry of series is the VALUES
+-- driver below and is the SAME list as INFLATION_SERIES in
+-- src/pipeline/bacen_pipeline.py and the /macro dashboard sources;
+-- tests/test_inflation_contract.py pins the three code sets to each other.
+-- Only codes in the registry are served — bacen_sgs.series_name is an ingest
+-- label, never trusted for naming here.
+--
+-- `value` is BACEN's number AS PUBLISHED, in percent: the change in the
+-- month for everything except IPCA_12M (BACEN's own 12-month accumulation,
+-- code 13522) and IPCA_DIFUSAO (the share of items that rose). `unit` says
+-- which. Nothing is annualised or rebased.
+--
+-- `acc_12m` IS DERIVED, and is the one derived number in this function: the
+-- trailing twelve monthly changes chained, ((Π(1 + v/100)) − 1) × 100,
+-- rounded to BACEN's two decimals. It is NULL unless all twelve months are
+-- present and consecutive — a gap yields NULL, never a shorter chain — and
+-- NULL on the two series that are not monthly changes. The chain is the
+-- index identity, not a model: measured 2026-09-21, chaining 433 reproduces
+-- 13522 exactly (4.22 for 2026-08), and 13522 is still served as published
+-- so a caller can reconcile the two.
+--
+-- THE GROUP CODES ARE NOT IN IBGE'S ORDER. 1640 is Comunicação (IBGE group
+-- 9), 1641 Saúde (6), 1642 Despesas pessoais (7), 1643 Educação (8) —
+-- matched value for value against IBGE SIDRA 7060 on 2026-06, -07 and -08.
+-- Group rows are VARIATIONS; the weights, and therefore contributions, are
+-- api.inflation_items (IBGE), never a sum of these.
+--
+-- Default window: the last 36 months (26 series × 36 = 936 rows, under the
+-- page). p_from before that must come with p_series or p_family, or the row
+-- cap refuses. IPCA runs from 1980-01, the cores and groups from 1991-01,
+-- IPCA-15 from 2000-05; earlier dates return what exists.
+
+CREATE OR REPLACE FUNCTION api.inflation(
+    p_series TEXT DEFAULT NULL,   -- one series label (IPCA, IPCA_CORE_EX0, IPCA_G_HABITACAO, …); NULL = all
+    p_family TEXT DEFAULT NULL,   -- headline | core | classification | diffusion | group; NULL = all
+    p_from   DATE DEFAULT NULL,   -- NULL = 36 months before the current month
+    p_to     DATE DEFAULT NULL    -- NULL = today
+)
+RETURNS TABLE (
+    reference_date DATE,
+    series         TEXT,
+    family         TEXT,
+    sgs_code       INT,
+    value          NUMERIC,
+    acc_12m        NUMERIC,
+    unit           TEXT,
+    source         TEXT
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+DECLARE
+    v_series TEXT := upper(btrim(p_series));
+    v_from   DATE := COALESCE(p_from, (date_trunc('month', CURRENT_DATE) - interval '36 months')::date);
+    v_known  TEXT;
+BEGIN
+    IF p_family IS NOT NULL AND p_family NOT IN ('headline', 'core', 'classification', 'diffusion', 'group') THEN
+        RAISE EXCEPTION
+            'p_family must be headline, core, classification, diffusion or group; got %',
+            p_family
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF v_series IS NOT NULL AND v_series NOT IN (
+        SELECT reg.series FROM api.inflation_registry() reg
+    ) THEN
+        SELECT string_agg(reg.series, ', ' ORDER BY reg.family, reg.series)
+          INTO v_known FROM api.inflation_registry() reg;
+        RAISE EXCEPTION
+            'unknown inflation series %; inflation serves: %', p_series, v_known
+            USING ERRCODE = '22023';
+    END IF;
+
+    RETURN QUERY
+    -- One page + one, then assert_row_cap REFUSES (22023) rather than
+    -- trimming. No cursor: narrow p_from/p_to, or pin p_series / p_family.
+    WITH obs AS (
+        -- The 12-month chain is computed over the WHOLE history of each
+        -- series, before the window filter, so a window that starts today
+        -- still sees its trailing year.
+        SELECT reg.series, reg.family, reg.sgs_code, reg.unit,
+               b.reference_date, b.value,
+               CASE
+                   WHEN reg.unit = 'pct_month'
+                    AND count(b.value) OVER w = 12
+                    AND min(b.reference_date) OVER w = (b.reference_date - interval '11 months')::date
+                    AND min(1 + b.value / 100) OVER w > 0
+                   THEN round((exp(sum(ln(1 + b.value / 100)) OVER w) - 1) * 100, 2)
+               END AS acc_12m
+        FROM api.inflation_registry() reg
+        JOIN public.bacen_sgs b ON b.series_code = reg.sgs_code
+        WINDOW w AS (PARTITION BY reg.sgs_code ORDER BY b.reference_date
+                     ROWS BETWEEN 11 PRECEDING AND CURRENT ROW)
+    ),
+    page (reference_date, series, family, sgs_code, value, acc_12m, unit, source) AS (
+        SELECT o.reference_date, o.series, o.family, o.sgs_code, o.value, o.acc_12m, o.unit,
+               'bacen_sgs'::text
+        FROM obs o
+        WHERE (v_series IS NULL OR o.series = v_series)
+          AND (p_family IS NULL OR o.family = p_family)
+          AND o.reference_date >= v_from
+          AND o.reference_date <= COALESCE(p_to, CURRENT_DATE)
+        ORDER BY 1, 3, 2
+        LIMIT 1001
+    )
+    SELECT g.* FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'inflation')
+    ORDER BY g.reference_date, g.family, g.series
+    LIMIT 1000;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION api.inflation(TEXT, TEXT, DATE, DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.inflation(TEXT, TEXT, DATE, DATE) TO anon, authenticated;
+
+COMMENT ON FUNCTION api.inflation(TEXT, TEXT, DATE, DATE) IS
+    'IPCA as BACEN publishes it, long, one row per (month, series): headline (IPCA, IPCA_12M = BACEN''s own 12-month accumulation, IPCA15), the BCB cores (MS, MA, EX0, EX2, DP), BCB''s classifications (monitorados / livres, comercializáveis / não, duráveis / semi / não / serviços), the diffusion index and IBGE''s nine expenditure groups. value is the change in the month in percent (unit pct_month) except IPCA_12M (pct_12m) and IPCA_DIFUSAO (pct_items). acc_12m is DERIVED — the trailing twelve monthly changes chained, NULL unless all twelve are present and consecutive; it reproduces 13522 exactly for the headline. Group rows are variations, not contributions — weights are api.inflation_items. Unknown series/family raises 22023 listing what exists. Default window 36 months; more than 1000 rows RAISES 22023 (never trimmed): narrow the window or pin p_series / p_family.';
+
+-- The registry, as a function so api.inflation and its validation read ONE
+-- list. Internal (no client grant): it carries no data, only labels.
+CREATE OR REPLACE FUNCTION api.inflation_registry()
+RETURNS TABLE (series TEXT, family TEXT, sgs_code INT, unit TEXT)
+LANGUAGE sql
+IMMUTABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+    SELECT * FROM (VALUES
+        ('IPCA',                      'headline',       433,   'pct_month'),
+        ('IPCA_12M',                  'headline',       13522, 'pct_12m'),
+        ('IPCA15',                    'headline',       7478,  'pct_month'),
+        ('IPCA_CORE_MS',              'core',           4466,  'pct_month'),
+        ('IPCA_CORE_MA',              'core',           11426, 'pct_month'),
+        ('IPCA_CORE_EX0',             'core',           11427, 'pct_month'),
+        ('IPCA_CORE_EX2',             'core',           16121, 'pct_month'),
+        ('IPCA_CORE_DP',              'core',           16122, 'pct_month'),
+        ('IPCA_MONITORADOS',          'classification', 4449,  'pct_month'),
+        ('IPCA_LIVRES',               'classification', 11428, 'pct_month'),
+        ('IPCA_COMERCIALIZAVEIS',     'classification', 4447,  'pct_month'),
+        ('IPCA_NAO_COMERCIALIZAVEIS', 'classification', 4448,  'pct_month'),
+        ('IPCA_NAO_DURAVEIS',         'classification', 10841, 'pct_month'),
+        ('IPCA_SEMI_DURAVEIS',        'classification', 10842, 'pct_month'),
+        ('IPCA_DURAVEIS',             'classification', 10843, 'pct_month'),
+        ('IPCA_SERVICOS',             'classification', 10844, 'pct_month'),
+        ('IPCA_DIFUSAO',              'diffusion',      21379, 'pct_items'),
+        ('IPCA_G_ALIMENTACAO',        'group',          1635,  'pct_month'),
+        ('IPCA_G_HABITACAO',          'group',          1636,  'pct_month'),
+        ('IPCA_G_ARTIGOS_RESIDENCIA', 'group',          1637,  'pct_month'),
+        ('IPCA_G_VESTUARIO',          'group',          1638,  'pct_month'),
+        ('IPCA_G_TRANSPORTES',        'group',          1639,  'pct_month'),
+        ('IPCA_G_COMUNICACAO',        'group',          1640,  'pct_month'),
+        ('IPCA_G_SAUDE',              'group',          1641,  'pct_month'),
+        ('IPCA_G_DESPESAS_PESSOAIS',  'group',          1642,  'pct_month'),
+        ('IPCA_G_EDUCACAO',           'group',          1643,  'pct_month')
+    ) AS r(series, family, sgs_code, unit);
+$$;
+
+REVOKE ALL ON FUNCTION api.inflation_registry() FROM PUBLIC;
+
+COMMENT ON FUNCTION api.inflation_registry() IS
+    'Internal. The series api.inflation serves — label, family, SGS code, unit — as one list, mirrored from INFLATION_SERIES in src/pipeline/bacen_pipeline.py. Group codes 1640..1643 are Comunicação, Saúde, Despesas pessoais, Educação (measured against IBGE SIDRA, not IBGE''s order).';
+
+-- ---------------------------------------------------------------------------
+-- inflation_items — the IPCA item tree with weights and contributions,
+-- from IBGE SIDRA (ibge_ipca_item_monthly)
+-- ---------------------------------------------------------------------------
+-- What moves the index. IBGE publishes, per month and per node of the IPCA
+-- tree (general index; 9 groups; 19 subgroups; 51 items; ~377 subitems),
+-- the change in the month, the WEIGHT in the basket, the year-to-date and
+-- the 12-month change — all four as published, in percent.
+--
+-- `contribution` is the one derived column: weight × change_month / 100,
+-- in percentage points of the headline, rounded to four decimals, NULL when
+-- either input is NULL. Summing the nine level-1 contributions reproduces
+-- the headline to rounding (the groups partition the basket). Sum ONE level
+-- at a time: a group and its subgroups are the same money twice.
+--
+-- `parent_number` is read off IBGE's own structure number ('1101002' sits
+-- under item '1101', subgroup '11', group '1') — deterministic, not
+-- inferred. `item_code` is SIDRA's c315 code and CHANGED with the 2020-01
+-- structure (table 7060 replaced 1419); `item_number` and names are IBGE's
+-- continuity, and sidra_table says which structure a row came from.
+--
+-- Default: level 1 (the nine groups plus nothing else), last 36 months
+-- (9 × 36 = 324 rows). Deeper levels are larger — level 4 is ~377 rows a
+-- month — so pin p_item or narrow the window; the row cap refuses above a
+-- page rather than trimming. History starts 2012-01 (SIDRA 1419); for the
+-- group VARIATIONS before that, api.inflation (BACEN) goes back to 1991.
+
+CREATE OR REPLACE FUNCTION api.inflation_items(
+    p_level INT  DEFAULT 1,      -- 0 general index | 1 group | 2 subgroup | 3 item | 4 subitem; NULL = every level
+    p_item  TEXT DEFAULT NULL,   -- IBGE structure number ('1', '11', '1101', '1101002') or SIDRA item code ('7170'); NULL = all
+    p_from  DATE DEFAULT NULL,   -- NULL = 36 months before the current month
+    p_to    DATE DEFAULT NULL    -- NULL = today
+)
+RETURNS TABLE (
+    reference_month DATE,
+    item_code       INT,
+    item_number     TEXT,
+    item_name       TEXT,
+    level           SMALLINT,
+    parent_number   TEXT,
+    weight          NUMERIC,
+    change_month    NUMERIC,
+    contribution    NUMERIC,
+    change_ytd      NUMERIC,
+    change_12m      NUMERIC,
+    sidra_table     INT,
+    source          TEXT
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+DECLARE
+    v_item TEXT := btrim(p_item);
+    v_from DATE := COALESCE(p_from, (date_trunc('month', CURRENT_DATE) - interval '36 months')::date);
+BEGIN
+    IF p_level IS NOT NULL AND p_level NOT BETWEEN 0 AND 4 THEN
+        RAISE EXCEPTION
+            'p_level must be 0 (general index), 1 (group), 2 (subgroup), 3 (item) or 4 (subitem); got %',
+            p_level
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF v_item IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM public.ibge_ipca_item_monthly i
+        WHERE i.item_number = v_item OR i.item_code::text = v_item
+    ) THEN
+        RAISE EXCEPTION
+            'unknown IPCA item %; p_item is IBGE''s structure number (1..9 for the groups, e.g. 1101002 for a subitem) or SIDRA''s item code — list a level with p_level to see them',
+            p_item
+            USING ERRCODE = '22023';
+    END IF;
+
+    RETURN QUERY
+    -- One page + one, then assert_row_cap REFUSES (22023). No cursor.
+    WITH page (reference_month, item_code, item_number, item_name, level, parent_number,
+               weight, change_month, contribution, change_ytd, change_12m, sidra_table, source) AS (
+        SELECT i.reference_month,
+               i.item_code,
+               i.item_number,
+               i.item_name,
+               i.level,
+               CASE i.level
+                   WHEN 2 THEN left(i.item_number, 1)
+                   WHEN 3 THEN left(i.item_number, 2)
+                   WHEN 4 THEN left(i.item_number, 4)
+               END,
+               i.peso_mensal,
+               i.variacao_mensal,
+               CASE WHEN i.peso_mensal IS NOT NULL AND i.variacao_mensal IS NOT NULL
+                    THEN round(i.peso_mensal * i.variacao_mensal / 100, 4)
+               END,
+               i.variacao_acum_ano,
+               i.variacao_acum_12m,
+               i.sidra_table,
+               'ibge_sidra'::text
+        FROM public.ibge_ipca_item_monthly i
+        WHERE (p_level IS NULL OR i.level = p_level)
+          AND (v_item IS NULL OR i.item_number = v_item OR i.item_code::text = v_item)
+          AND i.reference_month >= v_from
+          AND i.reference_month <= COALESCE(p_to, CURRENT_DATE)
+        ORDER BY 1, 5, 3 NULLS FIRST, 2
+        LIMIT 1001
+    )
+    SELECT g.* FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'inflation_items')
+    ORDER BY g.reference_month, g.level, g.item_number NULLS FIRST, g.item_code
+    LIMIT 1000;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION api.inflation_items(INT, TEXT, DATE, DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.inflation_items(INT, TEXT, DATE, DATE) TO anon, authenticated;
+
+COMMENT ON FUNCTION api.inflation_items(INT, TEXT, DATE, DATE) IS
+    'The IPCA item tree from IBGE SIDRA (tables 1419 from 2012-01, 7060 from 2020-01), one row per (month, node): weight in the basket, change in the month, year-to-date and 12-month change AS PUBLISHED (percent), plus contribution = weight × change_month / 100 in percentage points of the headline (the one derived column; NULL when either input is NULL). Levels: 0 general index, 1 the nine groups (default), 2 subgroups, 3 items, 4 subitems. Sum contributions within ONE level only — a group and its subgroups are the same money twice. parent_number is read off IBGE''s structure number. item_code changed with the 2020-01 structure (sidra_table says which); item_number is the continuity. Unknown level/item raises 22023. Default window 36 months; more than 1000 rows RAISES 22023 (never trimmed): narrow the window or pin p_item.';
+
+-- ---------------------------------------------------------------------------
 -- Coverage — freshness without exposing cvm_ingest_log
 -- ---------------------------------------------------------------------------
 
@@ -2245,6 +2531,14 @@ AS $$
         FROM public.cvm_ingest_log l
         WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
           AND l.entity = 'b3' AND l.doc_type = 'investor_participation'
+        UNION ALL
+        -- BACEN logs three doc_types under one entity (sgs, ptax,
+        -- expectativas); the inflation row must not report a PTAX success as
+        -- the SGS series' freshness.
+        SELECT '*bacen_sgs*'::text, MAX(l.finished_at)
+        FROM public.cvm_ingest_log l
+        WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
+          AND l.entity = 'bacen' AND l.doc_type = 'sgs'
     ),
     base AS (
         -- Session data (quotes/derivatives) is complete by construction and a
@@ -2425,6 +2719,27 @@ AS $$
                'RATCHET: ~21 business days at the source, no archive, history starts at first capture. Published T+2, so as_of trails the calendar even when ingest is healthy. The daily figures are a FIRST DIFFERENCE of a month-to-date cumulative snapshot and never difference across a month boundary; flow_basis says which row you have — delta (a real one-session difference), month_open (the month''s first session), or unknown_opening_snapshot (no earlier snapshot held that month), whose flows are NULL BY CONSTRUCTION and must never be read or summed as zeros. Values are R$ thousands.'::text,
                MAX(i.reference_date), '*b3_investor_flow*'::text
         FROM public.b3_investor_participation i
+        UNION ALL
+        -- Inflation (BACEN SGS). The headline month is the honest as_of: the
+        -- cores, classifications and groups publish on the same day as 433.
+        -- A published month is complete by construction (a statistical
+        -- release, not a filing cadence), so both dates coincide.
+        SELECT 'inflation'::text,
+               MAX(s.reference_date) FILTER (WHERE s.reference_date <= CURRENT_DATE),
+               MAX(s.reference_date) FILTER (WHERE s.reference_date <= CURRENT_DATE),
+               'bacen'::text,
+               'Monthly changes in percent AS PUBLISHED; acc_12m is DERIVED (the trailing twelve monthly changes chained, NULL unless all twelve are present and consecutive) and reproduces BACEN''s own IPCA_12M (13522) exactly for the headline. IPCA15 is the mid-month preview, not a revision. Group rows are variations, never contributions — weights are inflation_items. Group codes 1640..1643 are Comunicação, Saúde, Despesas pessoais, Educação (measured, not IBGE''s order). IPCA runs from 1980-01, cores and groups from 1991-01, IPCA-15 from 2000-05.'::text,
+               MAX(s.reference_date), '*bacen_sgs*'::text
+        FROM public.bacen_sgs s
+        WHERE s.series_code = 433
+        UNION ALL
+        SELECT 'inflation_items'::text,
+               MAX(i.reference_month) FILTER (WHERE i.reference_month <= CURRENT_DATE),
+               MAX(i.reference_month) FILTER (WHERE i.reference_month <= CURRENT_DATE),
+               'ibge'::text,
+               'Weights, monthly / YTD / 12-month changes AS PUBLISHED by IBGE SIDRA (table 1419 for 2012-01..2019-12, 7060 from 2020-01); contribution = weight × change_month / 100 is the one derived column. SIDRA item codes CHANGED with the 2020-01 structure — item_number and names are the continuity, sidra_table says which structure a row came from. Sum contributions within one level only. No item tree exists before 2012-01; the group variations before that are inflation (BACEN).'::text,
+               MAX(i.reference_month), 'ibge'::text
+        FROM public.ibge_ipca_item_monthly i
     )
     SELECT b.dataset, b.as_of, b.complete_through, b.source, b.notes,
            b.newest_period, l.landed_at
@@ -3618,9 +3933,9 @@ AS $fn$
 SELECT $json$
 {
   "kind": "catalog",
-  "version": 29,
+  "version": 30,
   "primitive": "panel",
-  "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, and the B3 securities-lending and investor-flow group). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
+  "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, the B3 securities-lending and investor-flow group, and Brazilian inflation — BACEN's IPCA series and IBGE's item tree with weights). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
     "principle": "price by default; every other measure is opt-in",
     "panel": {
@@ -3898,6 +4213,7 @@ SELECT $json$
     "FIDC DELINQUENCY STARTS IN 2025-01. CVM's pre-2025 monthly FIDC file (tab II/III) carried no delinquency field, so `delinquency` is null on every fidc row through 2024-12-31 — not zero, not clean books, not a missing month. From 2025-01-31 the tab IV/VI format is ingested and delinquency is filed on every row. Never chain-link, difference or average a FIDC delinquency series across 2024-12 → 2025-01; the series begins there. Machine-readable in `regime_breaks`, and on the funds_fidc coverage row's `notes`.",
     "A FUND'S DEBENTURE HOLDINGS ARE A DIFFERENT SHAPE FROM ITS EQUITY HOLDINGS. api.fund_debentures (CDA block 6) is one row per (fund, month, issuer, maturity, rate structure, application type), as filed and never summed — two series of one issuer maturing the same day at different coupons are different securities. The issuer is its own filed CPF/CNPJ (issuer_id); p_issuer also takes a listed company's ticker or CVM code, resolved only through CVM's published FCA map, and issuer_tickers carries the issuer's active listed codes back (NULL when not listed — most debenture issuers are not). Nothing is matched by name.",
     "ANBIMA CLASS ROWS ARE INDUSTRY AGGREGATES, NOT FUNDS. api.anbima_classes serves the Boletim de Fundos de Investimento as published — R$ milhões (unit brl_mm) and percentage points (unit pct) — per class, ANBIMA type or industry total (`level`; class aggregates by default). No fund in this warehouse is mapped to an ANBIMA class: CVM's `classe` is CVM's taxonomy, so never join a fund to a class by name, and there is no panel arm because these rows carry no id. An unknown category, metric or level raises 22023 listing what exists rather than returning an empty array.",
+    "INFLATION IS SERVED AS PUBLISHED, IN PERCENT, WITH ONE DERIVED COLUMN PER FUNCTION. api.inflation is BACEN's SGS, long: value is the change in the month (unit pct_month) except IPCA_12M — BACEN's own 12-month accumulation, code 13522 (pct_12m) — and IPCA_DIFUSAO, the share of items that rose (pct_items). acc_12m is DERIVED: the trailing twelve monthly changes chained, ((Π(1+v/100))−1)×100, NULL unless all twelve months are present and consecutive — never a shorter chain, never filled; it reproduces IPCA_12M exactly for the headline, which is served beside it so you can check. IPCA15 is the mid-month preview, not a revision of IPCA. Group rows (family = group) are VARIATIONS, not contributions: the weights live only in api.inflation_items, whose contribution column is weight × change_month / 100 in percentage points of the headline — sum contributions within ONE level only (a group and its subgroups are the same money twice). BACEN's group codes are NOT in IBGE's order (1640 is Comunicação, 1641 Saúde, 1642 Despesas pessoais, 1643 Educação; measured against IBGE SIDRA, do not reorder by intuition). SIDRA's item codes changed with the 2020-01 structure; item_number is the continuity and sidra_table says which. Neither function has a panel arm — the rows carry no id — and an unknown series, family, level or item raises 22023 rather than returning an empty array.",
     "THE B3 LENDING AND FLOW GROUP IS A RATCHET, AND IT IS THE ONLY PART OF THIS WAREHOUSE THAT IS. short_interest, short_interest_by_sector, lending_trades, lending_participants and investor_flow read B3 tables that B3 keeps for about 21 BUSINESS DAYS and publishes no archive for. History therefore starts at SILO's first capture and cannot be extended backwards at any price — a missed session is gone, not late, and no backfill exists to ask for. coverage() reports the real span per endpoint; read it before describing any of these series as short, broken or anomalous, and never infer a level change from a window that simply begins where capture began. An over-wide request to the source returns HTTP 200 with a silently clamped window, which is why the ingest reconciles what it asked for against what it received.",
     "pct_float IS TWO DIFFERENT METRICS AND float_basis SAYS WHICH ONE YOU HAVE. api.short_interest divides the balance on loan by whichever denominator exists for that ticker. float_basis = 'index_free_float' means B3's published free float (theoretical_qty from the broadest index portfolio carrying the ticker) and exists for index constituents only, ~149 tickers; float_basis = 'shares_outstanding' means capital social from the cash instrument registry, a LARGER denominator that yields a SMALLER percentage for the same position. They are not the same measure and are never comparable: ANY ranking, screen or cross-section on pct_float must filter to ONE basis first, or it sorts index members against non-members on an axis they do not share. float_denominator carries the number actually used. pct_float and days_to_cover are NULL — never 0 — when their denominator is missing or the name did not trade; 0 would sort an unknown to exactly the wrong end.",
     "IN THE LENDING TAPE, doador AND tomador ARE BROKERAGES, NOT BENEFICIAL OWNERS. lending_participants' broker_code / broker_name and lending_trades' lender_brokers / borrower_brokers identify the B3 PARTICIPANT intermediating a trade, never who ends up long or short. B3 names ~33 participants in a whole session, and about three quarters of trades carry the SAME code on both legs (measured 2026-09-10: 32,197 of 43,165, 74.6%) — a broker crossing its own client book. So a large borrow through a broker is its clients' position, not the broker's view, and 'the biggest short' read off this tape is a statement about order flow routing. internal_legs / internal_qty (lending_participants) and internal_trades (lending_trades) are what tell the two apart: high internal share is client churn, low internal share is flow that actually crossed the market. They are published beside the totals rather than netted away, because dropping them makes the remainder look like conviction and keeping them silently makes churn look like demand.",
@@ -3919,7 +4235,7 @@ SELECT $json$
     "Default windows are honest: with no explicit `to`, fund metrics end at each family's latest COMPLETE period (coverage() reports it as complete_through) — a partially-filed trailing month is not served. An explicit `to` serves the window verbatim, partial months included.",
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
-    "Row caps — getting this wrong means silently analysing a TRUNCATED series, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY set-returning function now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short result can no longer look complete. That is all eight — panel, quote_history, fund_nav, option_history, termo_history, financials, company_financials, income_statements, anbima_classes (`limits.page.all`). THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send p_after='' for the first page, then the key from the last row — for the panel 'date|id|metric|asset_class', for quote_history and fund_nav just that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when paging, because its cursor is a bare period and one CNPJ can file under two families in the same month. The other five do not page: narrow p_from/p_to instead. The old sentinels (5001 on the series functions, 100001 on the panel) are GONE and were never observable anyway — PostgREST cut the response at 1000 first (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. The RPC functions no longer need it — they raise instead. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
+    "Row caps — getting this wrong means silently analysing a TRUNCATED series, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY set-returning function now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short result can no longer look complete. That is all eleven — panel, quote_history, fund_nav, option_history, termo_history, financials, company_financials, income_statements, anbima_classes, inflation, inflation_items (`limits.page.all`). THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send p_after='' for the first page, then the key from the last row — for the panel 'date|id|metric|asset_class', for quote_history and fund_nav just that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when paging, because its cursor is a bare period and one CNPJ can file under two families in the same month. The other eight do not page: narrow p_from/p_to instead (inflation and inflation_items default to the last 36 months for that reason). The old sentinels (5001 on the series functions, 100001 on the panel) are GONE and were never observable anyway — PostgREST cut the response at 1000 first (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. The RPC functions no longer need it — they raise instead. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
     "An unrecognised metric name is IGNORED, not rejected: the panel comes back smaller and perfectly plausible. Take metric names from this catalog's `metrics` map, never from memory.",
     "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
     "CALLER TIERS. Anonymous access is free but deliberately small: panel accepts at most 3 ids per call, search_funds returns at most 25 rows, and option_chain pages at most 200. Signing in (GitHub) raises those to 50 ids, 200 rows and 2000 respectively, and the query timeout from 3s to 8s, and unlocks panel universe mode (p_ids empty + p_entity_type: a whole family, paged with p_after). Exceeding the id ceiling raises SQLSTATE 22023 naming the limit — the panel is never silently truncated to fit.",
@@ -3952,7 +4268,9 @@ SELECT $json$
         "financials",
         "company_financials",
         "income_statements",
-        "anbima_classes"
+        "anbima_classes",
+        "inflation",
+        "inflation_items"
       ],
       "cursor_protocol": "p_after: null = whole result (refused above 1000 rows); '' = first page; the function's key copied from the last row = the next page; a page shorter than 1000 is the last",
       "functions": {
@@ -3967,7 +4285,9 @@ SELECT $json$
           "financials",
           "company_financials",
           "income_statements",
-          "anbima_classes"
+          "anbima_classes",
+          "inflation",
+          "inflation_items"
         ]
       },
       "over_cap": "SQLSTATE 22023 naming the function — nothing is trimmed to fit; the message says to page or narrow",
@@ -4102,6 +4422,16 @@ SELECT $json$
       "then": "Model in the notebook from the long rows. Anonymous callers are capped at 3 ids — a 4th raises 22023, it is not trimmed."
     },
     {
+      "ask": "Is core inflation running above the headline?",
+      "call": "POST /rest/v1/rpc/inflation {\"p_family\": \"core\"}",
+      "then": "Rows are monthly changes in percent as published, one per (month, series); acc_12m is the trailing twelve chained and NULL until a series has twelve consecutive months. Put IPCA (p_series='IPCA', or family headline) beside them; never annualise a single month."
+    },
+    {
+      "ask": "What moved the IPCA last month?",
+      "call": "POST /rest/v1/rpc/inflation_items {\"p_level\": 1, \"p_from\": \"<month start>\"}",
+      "then": "contribution is weight × change_month / 100 in percentage points; the nine level-1 rows sum to the headline to rounding. Drill with p_level=2..4 and p_item=<structure number> — but sum ONE level at a time, a group and its subgroups are the same money twice."
+    },
+    {
       "ask": "Which names are most heavily shorted right now?",
       "call": "GET /rest/v1/short_interest?trade_date=eq.<the trade_date coverage() reports>&float_basis=eq.index_free_float&order=pct_float.desc&limit=25",
       "then": "A view, not an RPC: filter and page it with PostgREST syntax. The float_basis filter is REQUIRED for a ranking — index_free_float and shares_outstanding are different denominators and sorting them together is meaningless. Read the ratchet constraint before calling the window short."
@@ -4182,6 +4512,8 @@ SELECT $json$
     "company_financials": "POST /rest/v1/rpc/company_financials",
     "income_statements": "POST /rest/v1/rpc/income_statements",
     "anbima_classes": "POST /rest/v1/rpc/anbima_classes",
+    "inflation": "POST /rest/v1/rpc/inflation",
+    "inflation_items": "POST /rest/v1/rpc/inflation_items",
     "fund_debentures": "POST /rest/v1/rpc/fund_debentures",
     "fidc_cedentes": "POST /rest/v1/rpc/fidc_cedentes",
     "fidc_sacados": "POST /rest/v1/rpc/fidc_sacados",
@@ -4255,6 +4587,8 @@ GRANT EXECUTE ON FUNCTION api.fund_debentures(TEXT, TEXT, DATE, DATE, INT) TO si
 GRANT EXECUTE ON FUNCTION api.fidc_cedentes(TEXT, TEXT, DATE, DATE, INT)   TO silo_api;
 GRANT EXECUTE ON FUNCTION api.fidc_sacados(TEXT, DATE, DATE, INT)          TO silo_api;
 GRANT EXECUTE ON FUNCTION api.fidc_portfolio(TEXT, TEXT, DATE, DATE, INT)  TO silo_api;
+GRANT EXECUTE ON FUNCTION api.inflation(TEXT, TEXT, DATE, DATE)            TO silo_api;
+GRANT EXECUTE ON FUNCTION api.inflation_items(INT, TEXT, DATE, DATE)       TO silo_api;
 GRANT EXECUTE ON FUNCTION api.catalog()                               TO silo_api;
 
 -- Defensive, idempotent no-ops today (silo_api is never directly granted

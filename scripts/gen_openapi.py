@@ -600,6 +600,7 @@ _TAGS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^fidc_"), "FIDC"),
     (re.compile(r"^(financials|company_financials)$"), "Financials"),
     (re.compile(r"^anbima_"), "ANBIMA"),
+    (re.compile(r"^inflation"), "Inflation"),
     (re.compile(r"^(short_interest|short_interest_by_sector|investor_flow)$"), "Short interest & flows"),
     (re.compile(r"^lending_"), "Securities lending"),
     (re.compile(r"^panel$"), "Panel"),

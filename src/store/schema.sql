@@ -1075,6 +1075,36 @@ CREATE INDEX IF NOT EXISTS idx_sgs_code_date ON bacen_sgs (series_code, referenc
 CREATE INDEX IF NOT EXISTS idx_sgs_name_date ON bacen_sgs (series_name, reference_date DESC);
 
 -- ---------------------------------------------------------------------------
+-- IBGE: the IPCA item tree with weights (SIDRA tables 1419 + 7060)
+-- ---------------------------------------------------------------------------
+-- BACEN's SGS has the group VARIATIONS; IBGE alone publishes the WEIGHTS, and
+-- contribution = weight × variation. Grain (reference_month, item_code) where
+-- item_code is SIDRA's c315 code (7169 = Índice geral); item_number is IBGE's
+-- structure number ('1', '11', '1101', '1101002'; NULL for the general index)
+-- and level its depth (0 geral … 4 subitem). Values as published, in percent;
+-- "..." / "-" / "X" are NULL. See migration 41 for the verified contract.
+CREATE TABLE IF NOT EXISTS ibge_ipca_item_monthly (
+    id                 BIGSERIAL     PRIMARY KEY,
+    reference_month    DATE          NOT NULL,
+    item_code          INT           NOT NULL,
+    item_number        TEXT,
+    item_name          TEXT          NOT NULL,
+    level              SMALLINT      NOT NULL,
+    variacao_mensal    NUMERIC(12,4),
+    peso_mensal        NUMERIC(12,4),
+    variacao_acum_ano  NUMERIC(12,4),
+    variacao_acum_12m  NUMERIC(12,4),
+    sidra_table        INT           NOT NULL,
+    fetched_at         TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_ibge_ipca_item_monthly UNIQUE (reference_month, item_code),
+    CONSTRAINT ck_ibge_ipca_item_level CHECK (level BETWEEN 0 AND 4)
+);
+CREATE INDEX IF NOT EXISTS idx_ibge_ipca_item_level_month
+    ON ibge_ipca_item_monthly (level, reference_month DESC);
+CREATE INDEX IF NOT EXISTS idx_ibge_ipca_item_number_month
+    ON ibge_ipca_item_monthly (item_number, reference_month DESC);
+
+-- ---------------------------------------------------------------------------
 -- BACEN: PTAX exchange rates
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS bacen_ptax (

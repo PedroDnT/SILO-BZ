@@ -42,10 +42,12 @@ Reading one for another is the most common coverage mistake.
 - **`financials`** — the newest reference date any ITR/DFP filing has reached, read from the filing index, not the 31M-row account table.
 - **`anbima_classes`** — the newest boletim reference month.
 - **`fidc_cedentes` / `fidc_sacados` / `fidc_sectors` / `fidc_scr`** — the newest month landed per [FIDC concentration](/api-docs/fidc) tab; `notes` states where each starts (tab I's cedente slots 2019-11, tab X 2023-10).
+- **`inflation`** — the newest month of headline IPCA (SGS 433) held; the cores, classifications and groups publish the same day. `landed_at` is the SGS ingest alone, never a PTAX or Focus run.
+- **`inflation_items`** — the newest month of IBGE's item tree held; `notes` states the 2020-01 structure change (SIDRA 7060 replaced 1419, item codes changed, `item_number` is the continuity).
 
 **Not covered**: `fund_holdings` and `fund_debentures` have no row yet — read the newest `period` off the rows themselves.
 
-`notes` carries a caveat the dates cannot, and is null on rows that have none. Three rows carry one today: `funds_fidc` (the 2025-01 delinquency regime break), `funds_fip` (why `newest_period` runs ahead of the calendar), and `fund_nav` (pointing at `catalog().applicability`).
+`notes` carries a caveat the dates cannot, and is null on rows that have none. Rows carrying one today: `funds_fidc` (the 2025-01 delinquency regime break), `funds_fip` (why `newest_period` runs ahead of the calendar), `fund_nav` (pointing at `catalog().applicability`), the four FIDC concentration rows, the five B3 lending / flow rows (the ratchet), and the two inflation rows (which column is derived, and the 2020-01 SIDRA structure change).
 
 ### Example
 
@@ -79,6 +81,10 @@ const { data } = await supabase.rpc('coverage')
   { "dataset": "derivatives",    "as_of": "2026-08-26", "complete_through": "2026-08-26", "source": "b3_cotahist", "notes": null },
   { "dataset": "financials",     "as_of": "2026-06-30", "complete_through": null,         "source": "cvm",         "notes": null },
   { "dataset": "anbima_classes", "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "anbima",      "notes": null },
+  { "dataset": "inflation",      "as_of": "2026-08-01", "complete_through": "2026-08-01", "source": "bacen",
+    "notes": "Monthly changes in percent AS PUBLISHED; acc_12m is DERIVED (the trailing twelve monthly changes chained, NULL unless all twelve are present and consecutive) …" },
+  { "dataset": "inflation_items", "as_of": "2026-08-01", "complete_through": "2026-08-01", "source": "ibge",
+    "notes": "Weights, monthly / YTD / 12-month changes AS PUBLISHED by IBGE SIDRA (table 1419 for 2012-01..2019-12, 7060 from 2020-01); contribution = weight × change_month / 100 …" },
   { "dataset": "funds_fi",       "as_of": "2026-07-01", "complete_through": "2026-07-01", "source": "cvm",         "notes": null },
   { "dataset": "funds_fidc",     "as_of": "2026-07-31", "complete_through": "2026-07-31", "source": "cvm",
     "notes": "regime break at 2025-01-31: delinquency is null on every row through 2024-12-31 and filed on every row from 2025-01-31. Never chain-link across 2024-12 → 2025-01." },

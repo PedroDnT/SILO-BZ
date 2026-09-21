@@ -24,6 +24,12 @@ Usage:
     # BACEN only
     python -m src.pipeline.run_backfill --bacen-only --bacen-start 2020-01-01
 
+    # The SGS history (IPCA from 1980, cores and groups from 1991), nothing else
+    python -m src.pipeline.run_backfill --bacen-only --bacen-sources sgs --bacen-start 1980-01-01
+
+    # IBGE IPCA item tree with weights (SIDRA 1419 + 7060, from 2012)
+    python -m src.pipeline.run_backfill --ibge-only
+
     # B3 COTAHIST yearly zips (opt-in — large)
     python -m src.pipeline.run_backfill --b3-only --b3-start-year 2019
 
@@ -46,6 +52,7 @@ from src.pipeline.cvm_pipeline import CVMIngestor
 from src.pipeline.gaps import missing_fi_months
 from src.pipeline.bacen_pipeline import BacenIngestor
 from src.pipeline.b3_pipeline import B3Ingestor
+from src.pipeline.ibge_pipeline import IbgeIngestor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,7 +74,7 @@ async def main(args: argparse.Namespace) -> None:
     if (getattr(args, "months", None) or getattr(args, "repair_gaps", False)) and not doc_type:
         raise SystemExit("--months / --repair-gaps require --entity fi --doc-type <t>")
 
-    if not args.bacen_only and not args.b3_only:
+    if not args.bacen_only and not args.b3_only and not args.ibge_only:
         logger.info(
             "Starting CVM backfill: start_year=%d entity=%s doc_type=%s",
             args.start_year,
@@ -107,11 +114,26 @@ async def main(args: argparse.Namespace) -> None:
         cvm_failures = list(ingestor.failures)
         cvm_skips = list(ingestor.skips)
 
-    if not args.cvm_only and not args.b3_only:
-        logger.info("Starting BACEN backfill: start=%s", args.bacen_start)
+    if not args.cvm_only and not args.b3_only and not args.ibge_only:
+        bacen_sources = parse_bacen_sources(getattr(args, "bacen_sources", None))
+        logger.info(
+            "Starting BACEN backfill: start=%s sources=%s",
+            args.bacen_start, bacen_sources or "all",
+        )
         bacen_ingestor = BacenIngestor()
-        bacen_totals = await bacen_ingestor.backfill(start=args.bacen_start)
+        bacen_totals = await bacen_ingestor.backfill(
+            start=args.bacen_start, sources=bacen_sources,
+        )
         totals.update(bacen_totals)
+
+    # IBGE SIDRA: the IPCA item tree with weights (tables 1419 + 7060). Runs
+    # with the default everything-backfill and with --ibge-only; a
+    # --bacen-only run stays BACEN-only so the workflow's BACEN job is
+    # unchanged.
+    if args.ibge_only or not (args.cvm_only or args.b3_only or args.bacen_only):
+        logger.info("Starting IBGE IPCA backfill: start=%s", args.ibge_start)
+        ibge_totals = await IbgeIngestor().backfill(start=args.ibge_start)
+        totals.update(ibge_totals)
 
     # Yearly COTAHIST zips are large (options + cash). Opt-in only so a default
     # CVM+BACEN backfill does not stall on millions of B3 rows.
@@ -190,6 +212,20 @@ def ensure_rows_landed(
         "availability, and that the requested filters match any slice)"
     )
     sys.exit(1)
+
+
+def parse_bacen_sources(raw: Optional[str]) -> Optional[List[str]]:
+    """Parse "sgs,ptax" into ["sgs", "ptax"]; None when nothing was requested.
+
+    Validation of the names is BacenIngestor._sources' job (it owns the
+    list); this only splits. An empty string is a mistake, not "all".
+    """
+    if raw is None:
+        return None
+    names = [part.strip() for part in raw.split(",") if part.strip()]
+    if not names:
+        raise SystemExit("--bacen-sources: expected sgs, ptax and/or expectativas")
+    return names
 
 
 def parse_months(raw: Optional[str]) -> Optional[List[Tuple[int, int]]]:
@@ -282,6 +318,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--bacen-start", type=str, default="2019-01-01",
         help="Start date for BACEN data (ISO format, default: 2019-01-01)"
+    )
+    parser.add_argument(
+        "--bacen-sources", type=str, default=None,
+        help=(
+            "Comma-separated BACEN sources to run: sgs, ptax, expectativas "
+            "(default: all three). The SGS history load is "
+            "--bacen-only --bacen-sources sgs --bacen-start 1980-01-01."
+        ),
+    )
+    parser.add_argument(
+        "--ibge-start", type=str, default="2012-01-01",
+        help=(
+            "First month of the IBGE IPCA item tree (ISO date, default: "
+            "2012-01-01 — where SIDRA table 1419 begins; 7060 takes over at 2020-01)"
+        ),
+    )
+    parser.add_argument(
+        "--ibge-only", action="store_true",
+        help="Skip CVM, BACEN and B3; backfill only the IBGE IPCA item tree"
     )
     parser.add_argument(
         "--cvm-only", action="store_true",

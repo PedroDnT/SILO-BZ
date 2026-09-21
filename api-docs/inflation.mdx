@@ -1,0 +1,172 @@
+---
+title: "Inflation"
+description: "IPCA as BACEN and IBGE publish it — headline, IPCA-15, the BCB cores, monitored and free prices, the nine expenditure groups, and IBGE's whole item tree with the weights that say what moved the index."
+icon: "chart-line-up"
+---
+
+<Note>
+  **Parameters, response columns and types are generated** from the SQL catalog and
+  render under **Endpoints → Inflation** in the sidebar. This page carries what a
+  schema cannot: the units, the two derived columns, and the traps.
+</Note>
+
+### Overview
+
+Two functions, two official sources, one derived column each.
+
+- **`inflation`** — BACEN's SGS, served long: IPCA and IPCA-15, BACEN's own 12-month
+  accumulation, the five BCB core measures, BACEN's classifications (monitored vs
+  free prices, tradables vs non-tradables, durables / semi-durables / non-durables /
+  services), the diffusion index, and IBGE's nine expenditure groups. Every value is
+  the number BACEN publishes, in percent.
+- **`inflation_items`** — IBGE's SIDRA, the IPCA tree itself: the general index, 9
+  groups, 19 subgroups, 51 items and ~377 subitems, each with its **weight** in the
+  basket and its monthly, year-to-date and 12-month change, as published. This is
+  where "what moved the index" lives: contribution = weight × monthly change.
+
+<Warning>
+  **Group rows in `inflation` are variations, not contributions.** A group that
+  rose 1.3% with a 6% weight moved the headline by 0.08 pp; one that fell 0.86%
+  with a 20% weight moved it by −0.17 pp. Never rank or sum the group series from
+  `inflation` as if they were shares of the headline — the weights are only in
+  `inflation_items`, and its `contribution` column is the share.
+</Warning>
+
+### `inflation`
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/inflation" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_family":"core"}'
+```
+
+Arguments — all optional:
+
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `p_series` | every series | one label from the table below (case-insensitive) |
+| `p_family` | every family | `headline` · `core` · `classification` · `diffusion` · `group` |
+| `p_from` / `p_to` | last 36 months → today | window on `reference_date` (first of the month) |
+
+One row per (month, series):
+
+```json
+[
+  { "reference_date": "2026-08-01", "series": "IPCA", "family": "headline", "sgs_code": 433,
+    "value": -0.32, "acc_12m": 4.22, "unit": "pct_month", "source": "bacen_sgs" },
+  { "reference_date": "2026-08-01", "series": "IPCA_12M", "family": "headline", "sgs_code": 13522,
+    "value": 4.22, "acc_12m": null, "unit": "pct_12m", "source": "bacen_sgs" }
+]
+```
+
+An unknown series or family **raises `22023` listing what exists** rather than returning an empty array.
+
+#### Series
+
+| `series` | `family` | SGS | `unit` | BACEN's name | From |
+| --- | --- | --- | --- | --- | --- |
+| `IPCA` | headline | 433 | pct_month | IPCA - Variação mensal | 1980-01 |
+| `IPCA_12M` | headline | 13522 | pct_12m | IPCA - Variação acumulada em 12 meses | 1980-12 |
+| `IPCA15` | headline | 7478 | pct_month | IPCA-15 - Variação mensal (the mid-month preview, not a revision) | 2000-05 |
+| `IPCA_CORE_MS` | core | 4466 | pct_month | Núcleo médias aparadas com suavização | 1991-12 |
+| `IPCA_CORE_MA` | core | 11426 | pct_month | Núcleo médias aparadas sem suavização | 1991-01 |
+| `IPCA_CORE_EX0` | core | 11427 | pct_month | Núcleo por exclusão — sem monitorados e alimentos no domicílio | 1991-01 |
+| `IPCA_CORE_EX2` | core | 16121 | pct_month | Núcleo por exclusão — ex2 | 1991-01 |
+| `IPCA_CORE_DP` | core | 16122 | pct_month | Núcleo de dupla ponderação | 1995-01 |
+| `IPCA_MONITORADOS` | classification | 4449 | pct_month | Preços monitorados — total | 1991-01 |
+| `IPCA_LIVRES` | classification | 11428 | pct_month | Itens livres | |
+| `IPCA_COMERCIALIZAVEIS` | classification | 4447 | pct_month | Comercializáveis | 1991-01 |
+| `IPCA_NAO_COMERCIALIZAVEIS` | classification | 4448 | pct_month | Não comercializáveis | |
+| `IPCA_NAO_DURAVEIS` | classification | 10841 | pct_month | Bens não-duráveis | 1991-01 |
+| `IPCA_SEMI_DURAVEIS` | classification | 10842 | pct_month | Bens semi-duráveis | 1991-01 |
+| `IPCA_DURAVEIS` | classification | 10843 | pct_month | Duráveis | 1991-01 |
+| `IPCA_SERVICOS` | classification | 10844 | pct_month | Serviços | |
+| `IPCA_DIFUSAO` | diffusion | 21379 | pct_items | Índice de difusão — share of items that rose | |
+| `IPCA_G_ALIMENTACAO` | group | 1635 | pct_month | 1. Alimentação e bebidas | 1991-01 |
+| `IPCA_G_HABITACAO` | group | 1636 | pct_month | 2. Habitação | 1991-01 |
+| `IPCA_G_ARTIGOS_RESIDENCIA` | group | 1637 | pct_month | 3. Artigos de residência | 1991-01 |
+| `IPCA_G_VESTUARIO` | group | 1638 | pct_month | 4. Vestuário | 1991-01 |
+| `IPCA_G_TRANSPORTES` | group | 1639 | pct_month | 5. Transportes | 1999-08 |
+| `IPCA_G_COMUNICACAO` | group | 1640 | pct_month | 9. Comunicação | 1999-08 |
+| `IPCA_G_SAUDE` | group | 1641 | pct_month | 6. Saúde e cuidados pessoais | 1991-01 |
+| `IPCA_G_DESPESAS_PESSOAIS` | group | 1642 | pct_month | 7. Despesas pessoais | 1991-01 |
+| `IPCA_G_EDUCACAO` | group | 1643 | pct_month | 8. Educação | 1999-08 |
+
+**The group codes are not in IBGE's order.** 1640 is Comunicação, 1641 Saúde, 1642 Despesas
+pessoais, 1643 Educação. That was established by matching every value on three months
+against IBGE's own table 7060, not by reading the numbering; the labels above are the
+measured mapping. Not served: the EX1, EX3 and P55 cores, because BACEN's open-data
+catalogue does not name their codes and a guessed label is worse than an absent one.
+
+#### `acc_12m` is derived; `IPCA_12M` is not
+
+`value` is always BACEN's number. `acc_12m` is the trailing twelve monthly changes
+chained, `((Π (1 + v/100)) − 1) × 100`, rounded to BACEN's two decimals. It is **null
+unless all twelve months are present and consecutive** — a gap yields null, never a
+shorter chain — and null on the two series that are not monthly changes. The chain is
+the index identity, not an estimate: it reproduces BACEN's own `IPCA_12M` exactly for
+the headline (4.22 for 2026-08, both ways), and `IPCA_12M` is served beside it so you
+can check. Do not annualise a single month; the API never does.
+
+### `inflation_items`
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/inflation_items" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_level":1,"p_from":"2026-08-01"}'
+```
+
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `p_level` | `1` | `0` general index · `1` group · `2` subgroup · `3` item · `4` subitem · `null` every level |
+| `p_item` | every node | IBGE's structure number (`1`, `11`, `1101`, `1101002`) or SIDRA's item code (`7170`) |
+| `p_from` / `p_to` | last 36 months → today | window on `reference_month` |
+
+One row per (month, node):
+
+```json
+[
+  { "reference_month": "2026-08-01", "item_code": 7170, "item_number": "1",
+    "item_name": "Alimentação e bebidas", "level": 1, "parent_number": null,
+    "weight": 21.5115, "change_month": -0.34, "contribution": -0.0731,
+    "change_ytd": 3.52, "change_12m": 3.53, "sidra_table": 7060, "source": "ibge_sidra" }
+]
+```
+
+| Column | Meaning |
+| --- | --- |
+| `weight` | the node's share of the basket that month, percent (the general index is 100) — as published |
+| `change_month` / `change_ytd` / `change_12m` | IBGE's own monthly, year-to-date and 12-month changes, percent — as published, not chained here |
+| `contribution` | **derived**: `weight × change_month / 100`, in percentage points of the headline; null when either input is null |
+| `parent_number` | read off IBGE's structure number: subitem `1101002` sits under item `1101`, subgroup `11`, group `1` |
+| `sidra_table` | `1419` for 2012-01..2019-12, `7060` from 2020-01 — see below |
+
+**Sum contributions within one level only.** The nine level-1 rows sum to the headline to
+rounding, because the groups partition the basket. A group and its subgroups are the same
+money twice.
+
+**SIDRA's `item_code` changed with the 2020-01 structure** (table 7060 replaced 1419).
+`item_number` and the names are IBGE's continuity; `sidra_table` says which structure a
+row came from. Nothing before 2012-01 exists at item level anywhere on SIDRA; for the
+group *variations* before that, `inflation` (BACEN) goes back to 1991.
+
+**Note**: one 1,000-row page, and both functions refuse above it (`22023`). No cursor — the
+default 36-month window fits every series at once; for deep history pin `p_series` or
+`p_family`, and for the item tree pin `p_item` or one month at level 3–4.
+
+### Freshness
+
+`coverage` carries an `inflation` row (BACEN, `landed_at` from the SGS ingest only, so a
+PTAX run never reads as inflation freshness) and an `inflation_items` row (IBGE). IBGE
+releases month M around the 10th of M+1 and BACEN mirrors it the same day, so `as_of`
+trails the calendar by about six weeks at worst; `complete_through` equals `as_of`
+because a statistical release is complete by construction.
+
+### Not served here
+
+- **A `panel` arm.** These rows carry no id. Fetch the series here and align them in the notebook.
+- **Weights for the BCB cores or classifications.** BACEN publishes none; only IBGE's tree carries weights.
+- **The EX1, EX3 and P55 cores** — see above.
+- **Seasonally adjusted anything.** Neither source publishes it for these series, and the API does not adjust.

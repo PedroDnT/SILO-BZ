@@ -28,7 +28,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 29
+KNOWN_CATALOG_VERSION = 30
 
 
 class SiloCatalogDrift(UserWarning):
@@ -96,7 +96,8 @@ class SiloOverCap(SiloError):
     (`iter_quote_history`/`quote_history_all`) and fund_nav
     (`iter_fund_nav`/`fund_nav_all`, which need an `entity_type`). The rest —
     option_history, termo_history, financials, company_financials,
-    anbima_classes — have no cursor: narrow the window instead."""
+    anbima_classes, inflation, inflation_items — have no cursor: narrow the
+    window instead."""
 
     def __init__(self, body: str, url: str) -> None:
         super().__init__(400, body, url)
@@ -790,6 +791,54 @@ class SiloClient:
         """
         return self._rpc("anbima_classes", {
             "p_category": category, "p_metric": metric, "p_level": level,
+            "p_from": _iso(start), "p_to": _iso(end),
+        })
+
+    # -- inflation (BACEN SGS + IBGE SIDRA) ----------------------------------
+
+    def inflation(self, series: Optional[str] = None,
+                  family: Optional[str] = None,
+                  start: Datish = None,
+                  end: Datish = None) -> List[Dict[str, Any]]:
+        """IPCA as BACEN publishes it, long: one row per (month, series).
+
+            silo.inflation()                          # every series, last 36 months
+            silo.inflation("IPCA", start="1980-01-01")   # the headline, whole history
+            silo.inflation(family="core")             # the five BCB cores
+            silo.inflation(family="group")            # IBGE's nine groups (variations)
+
+        `value` is the change in the month in percent as published (`unit`
+        pct_month), except IPCA_12M — BACEN's own 12-month accumulation —
+        and IPCA_DIFUSAO. `acc_12m` is DERIVED: the trailing twelve monthly
+        changes chained, None unless all twelve are present and consecutive.
+        Group rows are variations, not contributions — see `inflation_items`
+        for the weights. An unknown series or family is a `SiloError`
+        (22023) listing what exists. No cursor: narrow the window.
+        """
+        return self._rpc("inflation", {
+            "p_series": series, "p_family": family,
+            "p_from": _iso(start), "p_to": _iso(end),
+        })
+
+    def inflation_items(self, level: Optional[int] = 1,
+                        item: Optional[str] = None,
+                        start: Datish = None,
+                        end: Datish = None) -> List[Dict[str, Any]]:
+        """IBGE's IPCA item tree with weights and contributions (SIDRA).
+
+            silo.inflation_items()                    # the nine groups, last 36 months
+            silo.inflation_items(level=4, start="2026-08-01")   # every subitem, one month
+            silo.inflation_items(level=None, item="1101002")     # one subitem (Arroz)
+
+        One row per (month, node): `weight` (% of the basket), `change_month`,
+        `change_ytd`, `change_12m` as published, and `contribution` = weight
+        × change_month / 100 in percentage points of the headline. Sum
+        contributions within ONE level only. History from 2012-01; SIDRA's
+        `item_code` changed with the 2020-01 structure, `item_number` is the
+        continuity. Unknown level/item is a `SiloError` (22023). No cursor.
+        """
+        return self._rpc("inflation_items", {
+            "p_level": level, "p_item": item,
             "p_from": _iso(start), "p_to": _iso(end),
         })
 

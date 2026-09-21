@@ -47,8 +47,13 @@ published ticker map), and **markets** (the B3 tape, the securities-lending book
 investor-type flows, BACEN macro). It downloads, parses, validates, and upserts data
 from **CVM** (fund disclosures:
 FI, FIDC, FII, FIP, FIAGRO, SECURIT, plus listed-company CIA filings), **BACEN** (SGS
-time series, PTAX, Focus expectativas), and **B3** (public COTAHIST quotation zips →
-`b3_cotahist`) into a **Supabase Postgres** database via psycopg2.
+time series including the 26-code IPCA set behind `api.inflation`, PTAX, Focus
+expectativas), **IBGE** (SIDRA tables 1419/7060, the IPCA item tree with weights →
+`ibge_ipca_item_monthly`, served by `api.inflation_items`), and **B3** (public
+COTAHIST quotation zips → `b3_cotahist`) into a **Supabase Postgres** database via
+psycopg2. BACEN's IPCA group codes 1640–1643 are Comunicação / Saúde / Despesas
+pessoais / Educação — measured against SIDRA, not IBGE's order; never reorder them
+by intuition.
 
 There is **no public ingest API** and no localhost ingest HTTP server. Downstream
 dashboards (`dashboard/`, `webapp/`) query Supabase directly. The **read contract**

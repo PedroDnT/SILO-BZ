@@ -74,6 +74,7 @@ answer, in a shape an agent can detect. Concretely, every change is held to five
 | B3           | COTAHIST, corporate events                                                                           | unadjusted OHLC, volume, ticker and ISIN per session; splits, groupings, bonuses and dividends per ISIN                                                                                                                     | daily (yearly zips for history)                        | quotes, monthly market and option activity; adjustment factors once verified against the tape                                                                                                                                                                      |
 | B3           | **BDI** — securities lending (incl. trade-by-trade), investor flow, index float, instrument registry | short balance and borrow rates per ticker; buy/sell volume per investor type; free-float share counts and B3 sector; shares outstanding per ticker                                                                          | daily — **~21 business days of retention, no archive** | the Short Monitor (% of float, days to cover, borrow cost), the investor-flow panel, and — from the trade tape — which brokerage lent and borrowed each name. **Not backfillable**: a session missed is lost, so the daily job is the only way this history exists |
 | ANBIMA       | class boletim                                                                                        | monthly figures per ANBIMA class and type                                                                                                                                                                                   | monthly                                                | class-level benchmarks, served by `api.anbima_classes` (an ETF-only view is kept for compatibility)                                                                                                                                                                |
+| IBGE         | SIDRA — the IPCA item tree                                                                           | weight, monthly / YTD / 12-month change per node (general index, 9 groups, 19 subgroups, 51 items, ~377 subitems)                                                                                                           | monthly, on release                                    | what moved the index — `api.inflation_items` (contribution = weight × change); BACEN's IPCA set (headline, cores, groups) is `api.inflation`                                                                                                                       |
 | Apify scrape | ETF market snapshot                                                                                  | NAV, price, yields, volatility, drawdown per listed ETF                                                                                                                                                                     | daily, gated on `APIFY_TOKEN`                          | the market side of the ETF page; self-skips without the token                                                                                                                                                                                                      |
 
 Where each dataset lands, at what grain, and what is ingested but not yet served is in
@@ -183,25 +184,25 @@ fourteen concurrent builds against the same Postgres. Its header shows **Snapsho
 Built** so nobody has to guess how old the numbers are; to publish sooner, dispatch
 `daily_ingest` with `rebuild_dashboard=true`.
 
-| Route          | Page                         | What it shows                                                                              |
-| -------------- | ---------------------------- | ------------------------------------------------------------------------------------------ |
-| `/`            | Brazilian Public Financial Data | entry point: headline figures, freshness signal, reading path                            |
-| `/industry`    | Industry Structure           | net assets by family and by asset class, quotaholders, new funds, FIP and FIAGRO           |
-| `/fi`          | FI Industry                  | AUM and flows, daily subscriptions vs redemptions, investor base, allocation by asset type |
-| `/fidc`        | FIDC Credit Monitor          | delinquency, aging, subordination, tranche flows and performance                           |
-| `/fii`         | FII Market                   | FII vs FIAGRO, yield distribution, payout coverage                                         |
-| `/fund`        | Fund Explorer                | per-fund NAV, flows, quotaholders and rebased returns                                      |
-| `/performance` | Fund Performance             | rankings by class, rebased cumulative return                                               |
-| `/etf`         | ETF Market                   | registry by provider and segment, exchange volume, scraped market snapshot                 |
-| `/markets`     | B3 Markets                   | monthly traded volume, instrument mix, option activity                                     |
-| `/macro`       | Macro Context                | SELIC and CDI, inflation, PTAX, Focus consensus                                            |
-| `/short`       | Short Monitor                | short interest by ticker, % of free float, days to cover, borrow rates, sector mix          |
-| `/flows`       | Follow the Money             | net flow by investor type (foreign, institutional, retail) and B3 cash-market ADTV          |
-| `/managers`    | Managers                     | administrator and gestor league tables                                                     |
-| `/securit`     | Securitization               | outstanding by family, defaults, payment waterfall, maturity wall                          |
-| `/suspicious`  | Suspicious Deal Screens      | zombie growth, captive vehicles and the other screens                                      |
-| `/dormant`     | Dormant Funds                | vehicles that file every month and do nothing                                              |
-| `/ops`         | Pipeline Ops                 | audit log, freshness per entity, table freshness, when the snapshot was built              |
+| Route          | Page                            | What it shows                                                                              |
+| -------------- | ------------------------------- | ------------------------------------------------------------------------------------------ |
+| `/`            | Brazilian Public Financial Data | entry point: headline figures, freshness signal, reading path                              |
+| `/industry`    | Industry Structure              | net assets by family and by asset class, quotaholders, new funds, FIP and FIAGRO           |
+| `/fi`          | FI Industry                     | AUM and flows, daily subscriptions vs redemptions, investor base, allocation by asset type |
+| `/fidc`        | FIDC Credit Monitor             | delinquency, aging, subordination, tranche flows and performance                           |
+| `/fii`         | FII Market                      | FII vs FIAGRO, yield distribution, payout coverage                                         |
+| `/fund`        | Fund Explorer                   | per-fund NAV, flows, quotaholders and rebased returns                                      |
+| `/performance` | Fund Performance                | rankings by class, rebased cumulative return                                               |
+| `/etf`         | ETF Market                      | registry by provider and segment, exchange volume, scraped market snapshot                 |
+| `/markets`     | B3 Markets                      | monthly traded volume, instrument mix, option activity                                     |
+| `/macro`       | Macro Context                   | SELIC and CDI, inflation, PTAX, Focus consensus                                            |
+| `/short`       | Short Monitor                   | short interest by ticker, % of free float, days to cover, borrow rates, sector mix         |
+| `/flows`       | Follow the Money                | net flow by investor type (foreign, institutional, retail) and B3 cash-market ADTV         |
+| `/managers`    | Managers                        | administrator and gestor league tables                                                     |
+| `/securit`     | Securitization                  | outstanding by family, defaults, payment waterfall, maturity wall                          |
+| `/suspicious`  | Suspicious Deal Screens         | zombie growth, captive vehicles and the other screens                                      |
+| `/dormant`     | Dormant Funds                   | vehicles that file every month and do nothing                                              |
+| `/ops`         | Pipeline Ops                    | audit log, freshness per entity, table freshness, when the snapshot was built              |
 
 Two rules shape every chart. **Blank is never zero**: a month the source did not publish
 renders as a gap, not a dip. And **the axis ends at the last month that has data** —

@@ -44,6 +44,7 @@ Four date columns meaning four different things. Reading one for another is the 
 | **FIP** | `fund_nav` | 2010, keyed 31-December | yearly |
 | **Listed companies** | `financials`, `company_financials`, `lookup` | 2019 for ITR/DFP; 2010 for IPE events and the published ticker map | quarterly |
 | **ANBIMA classes** | `anbima_classes` | 2019 | monthly, on publication |
+| **Inflation** | `inflation`, `inflation_items` | IPCA 1980; BCB cores and IBGE groups 1991; IPCA-15 2000; the item tree with weights 2012 | monthly, on IBGE's release (~10th of the following month) |
 | **B3 BDI — lending & flows** | `short_interest`, `short_interest_by_sector`, `investor_flow`, `lending_trades`, `lending_participants` | **first capture only — see below** | daily, T+2 for `investor_flow` |
 
 Ingest runs once a day at 06:00 UTC. A slice CVM publishes late is healed on a later run — the daily job re-probes a trailing window and re-fetches any month with no successful ingest.
