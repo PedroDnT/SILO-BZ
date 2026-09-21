@@ -13,10 +13,10 @@ pointer. Anything provisional or missing goes in this file.
 
 | Surface              | State                                                                                                                              |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Data API (PostgREST) | catalog **v29** live; v30 (`inflation`, `inflation_items`) is in the repo and lands with the next analytical apply                                                                                  |
+| Data API (PostgREST) | catalog **v29** live; v30 (`inflation`, `inflation_items`) is in the repo and lands with the next analytical apply                 |
 | Docs site            | `octo-98895abd.mintlify.site` — 200, including `known-limitations`                                                                 |
 | Dashboard            | `silo-bz-deloslabs.vercel.app` — 200, serving the current build. **Not** `silo-bz.vercel.app`: it also answers 200, but see item 8 |
-| Test suite           | 1520 offline tests green on `main` (1463 before catalog v30)                                                                                                 |
+| Test suite           | 1520 offline tests green on `main` (1463 before catalog v30)                                                                       |
 
 Verified live, not inferred: `income_statements('PETR4')` returns
 `chart=industrial`, net income R$37.01bn; `income_statements('19348')`
@@ -217,6 +217,10 @@ python -m src.pipeline.run_backfill --bacen-only --bacen-sources sgs --bacen-sta
 python -m src.pipeline.run_backfill --ibge-only          # SIDRA 1419 + 7060, from 2012-01
 ```
 
+or, the same thing from Actions in one dispatch of **CVM Historical
+Backfill**: `bacen_only = true`, `bacen_sources = sgs`,
+`bacen_start = 1980-01-01`, `ibge = true` (inputs added 2026-09-21).
+
 `api.inflation` serves 2019→ for IPCA 433 and only the trailing month for
 the 25 new codes (so `acc_12m` reads NULL everywhere: the twelve-month guard
 is doing its job), and `api.inflation_items` — and the contribution bar on
@@ -229,4 +233,3 @@ Olinda's page cap.
 Verify after: `SELECT value, acc_12m FROM api.inflation('IPCA', NULL,
 '2026-08-01', '2026-08-01')` reads `-0.32, 4.22` and `api.inflation_items()`
 returns nine rows a month.
-
