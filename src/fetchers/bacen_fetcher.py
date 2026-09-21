@@ -286,16 +286,21 @@ _SGS_NOT_FOUND_MARKERS = ("Value(s) not found", "SGSNegocioException")
 # SGS refuses a window longer than ten years on a daily series — verified
 # 2026-09-21: series 11 (SELIC diária) asked for 1980-01-01..2026-12-31 answers
 # HTTP 406 "O sistema aceita uma janela de consulta de, no máximo, 10 anos em
-# séries de periodicidade diária". Monthly series (IPCA 433 and the whole
-# inflation set) accept the full window, but the fetcher does not know a
-# series' periodicity, so every window is cut into slices of at most this
-# many years and the slices are concatenated. The upsert key makes overlap
-# harmless; there is none anyway (each slice starts the day after the last).
-_SGS_MAX_WINDOW_YEARS = 10
+# séries de periodicidade diária". Ten years is not safe either: the same day,
+# series 432 (SELIC meta, one row per CALENDAR day) answered
+# 2010-01-01..2019-12-31 with HTTP 200 and the bare envelope {"erro":{}} on
+# three consecutive tries (Backfill run 35651030075 died on it), while both
+# five-year halves returned their rows. Five-year slices are the measured
+# safe size. Monthly series (IPCA 433 and the whole inflation set) accept any
+# window, but the fetcher does not know a series' periodicity, so every
+# window is cut into slices of at most this many years and the slices are
+# concatenated. The upsert key makes overlap harmless; there is none anyway
+# (each slice starts the day after the last).
+_SGS_MAX_WINDOW_YEARS = 5
 
 
 def _sgs_windows(start: Optional[str], end: Optional[str]) -> List[Tuple[Optional[str], Optional[str]]]:
-    """Split ``start..end`` (ISO) into consecutive slices of ≤ 10 years.
+    """Split ``start..end`` (ISO) into consecutive slices of ≤ 5 years.
 
     An open-ended window (no start or no end) is returned as-is: without both
     bounds there is nothing to measure, and BACEN's own rule only bites when
@@ -314,8 +319,8 @@ def _sgs_windows(start: Optional[str], end: Optional[str]) -> List[Tuple[Optiona
             cut = cursor.replace(year=cursor.year + _SGS_MAX_WINDOW_YEARS)
         except ValueError:  # 29 February
             cut = cursor.replace(year=cursor.year + _SGS_MAX_WINDOW_YEARS, day=28)
-        # The slice is [cursor, cut - 1 day]; a ten-year window that lands
-        # exactly on the same calendar day is over the limit by one day.
+        # The slice is [cursor, cut - 1 day]; a window that lands exactly on
+        # the same calendar day N years later is N years plus one day.
         slice_end = cut - timedelta(days=1)
         if slice_end >= hi:
             windows.append((cursor.isoformat(), hi.isoformat()))
@@ -396,7 +401,13 @@ async def _sgs_request(
                 await asyncio.sleep(delay * attempt)
             continue
         if not isinstance(payload, list):
-            raise BacenFetchError(f"{where}: expected a JSON list, got {type(payload).__name__}")
+            # A JSON object on a 200 is BACEN's error envelope — {"erro":{}}
+            # with no message for a window it will not serve (series 432,
+            # 2010..2019, measured 2026-09-21), or {"error","message"} for a
+            # rule it names. Carry the body: the type name alone said nothing.
+            raise BacenFetchError(
+                f"{where}: expected a JSON list, got {type(payload).__name__}: {resp.text[:200]}"
+            )
         return payload
 
     raise BacenFetchError(f"{where}: failed after {attempts} attempts: {last_exc}")

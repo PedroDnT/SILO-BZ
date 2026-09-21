@@ -224,7 +224,7 @@ Backfill**: `bacen_only = true`, `bacen_sources = sgs`,
 `api.inflation` serves 2019→ for IPCA 433 and only the trailing month for
 the 25 new codes (so `acc_12m` reads NULL everywhere: the twelve-month guard
 is doing its job), and `api.inflation_items` — and the contribution bar on
-`/macro` — are empty. The SGS load is ~35 series × 5 ten-year slices, a few
+`/macro` — are empty. The SGS load is ~35 series × 10 five-year slices, a few
 minutes; the IBGE load is ~15 requests of ≤12 months each (4.6 MB per
 request), also minutes. Both are idempotent. `backfill.yml`'s BACEN job is
 unchanged (2019, all three sources) on purpose: Focus from 1980 would walk

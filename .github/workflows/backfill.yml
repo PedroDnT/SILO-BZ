@@ -14,7 +14,7 @@ on:
         type: boolean
         default: false
       bacen_start:
-        description: "BACEN only: first day of the window (ISO). 1980-01-01 loads the whole IPCA history; SGS windows over ten years are sliced by the fetcher."
+        description: "BACEN only: first day of the window (ISO). 1980-01-01 loads the whole IPCA history; the fetcher slices the window into five-year requests (BACEN's own limit is ten on daily series, and SELIC meta fails below it)."
         type: string
         default: "2019-01-01"
       bacen_sources:
