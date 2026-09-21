@@ -42,6 +42,8 @@ RAISE_ONLY_FUNCTIONS = (
     "api.company_financials",
     "api.income_statements",
     "api.anbima_classes",
+    "api.inflation",
+    "api.inflation_items",
 )
 CAPPED_FUNCTIONS = PAGED_FUNCTIONS + RAISE_ONLY_FUNCTIONS
 
@@ -101,6 +103,8 @@ EXPECTED_FUNCTIONS = {
     "api.fidc_cedentes",
     "api.fidc_sacados",
     "api.fidc_portfolio",
+    "api.inflation",
+    "api.inflation_items",
 }
 
 # Internal helpers: called only from inside SECURITY DEFINER functions, which
@@ -117,6 +121,7 @@ INTERNAL_FUNCTIONS = {
     "api.assert_panel_universe",
     "api.company_ref",
     "api.cia_statement_rows",
+    "api.inflation_registry",
 }
 
 
@@ -1324,7 +1329,11 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
         "skip or repeat a row at a page edge, so the requirement is part of "
         "the contract, not an implementation detail"
     )
-    assert "eight" in c.lower(), "all eight capped functions refuse"
+    # The count moves with the surface: eleven since v30 (inflation,
+    # inflation_items). The prose said "eight" for two versions while listing
+    # nine — pin the word to the tuple so it cannot drift again.
+    assert "eleven" in c.lower().split(), "all eleven capped functions refuse"
+    assert len(CAPPED_FUNCTIONS) == 11
 
 
 def test_cap_constraint_warns_that_rpc_paging_does_not_work():

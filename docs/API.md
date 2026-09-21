@@ -30,7 +30,7 @@ The design premise, which the public API inherited: the main user is a
 **researcher** doing correlation tests, factor models and cross-asset
 relationships, mixing market prints with CVM fundamentals. They need a **panel**
 — `(id, date, metric, value)` — not a quote widget. Analysis (corr, OLS, event
-studies) is a *reduction* of a panel, computed in a notebook. There is no
+studies) is a _reduction_ of a panel, computed in a notebook. There is no
 `POST /query` and no server-side `corr` on either surface; `api.catalog()` lists
 those as `notebook_reducers`.
 
@@ -230,14 +230,15 @@ series and statement functions in v25/v26.
 set-returning function now fetches one page plus one row and **raises `22023`**
 rather than returning a trimmed result. This file previously stated that "a panel
 cannot be paged" — that stopped being true two catalog versions ago. **`panel`,
-`quote_history` and `fund_nav` page with a `p_after` cursor**; the other five
+`quote_history` and `fund_nav` page with a `p_after` cursor**; the others
 (`option_history`, `termo_history`, `financials`, `company_financials`,
-`anbima_classes`) have no cursor and ask you to narrow the window. `fund_nav` also
+`anbima_classes`, `inflation`, `inflation_items`) have no cursor and ask you to
+narrow the window. `fund_nav` also
 requires `p_entity_type` to page, because its cursor is a bare period and 385
 CNPJs file under two families in the same month.
 
 `Range` paging genuinely does not work on RPC — `Range: 1000-1999` on
-`/rest/v1/rpc/panel` returns the *same first page*, verified, same
+`/rest/v1/rpc/panel` returns the _same first page_, verified, same
 `Content-Range: 0-999/1906`. `Range` / `limit` / `offset` remain the **view**
 cursor, and `GET` views on schema `api` still truncate silently, so
 `Content-Range` is still the only signal there.

@@ -1,6 +1,6 @@
 # SILO
 
-> Public read API for Brazilian public financial data — CVM fund disclosures (FI, FIDC, FII, FIP, FIAGRO), listed-company financials, ANBIMA class aggregates, and B3 cash quotes, options and termo. Schema `api` over Supabase PostgREST. Read-only; ingest is not exposed.
+> Public read API for Brazilian public financial data — CVM fund disclosures (FI, FIDC, FII, FIP, FIAGRO), listed-company financials, ANBIMA class aggregates, B3 cash quotes, options and termo, and Brazilian inflation (BACEN's IPCA series and IBGE's item tree with weights). Schema `api` over Supabase PostgREST. Read-only; ingest is not exposed.
 
 Start with Conventions & limits: it is the single source of truth for auth tiers, the 1,000-row page, null semantics and regime breaks, and every other page links back to it rather than restating them. The machine-readable twin is `POST /rest/v1/rpc/catalog`.
 
@@ -37,6 +37,10 @@ Start with Conventions & limits: it is the single source of truth for auth tiers
 - [Fund holdings](https://octo-98895abd.mintlify.site/api-docs/holdings.md): What a fund owns, and which funds own a ticker — the one edge joining the fund universe to the quote tape.
 - [FIDC concentration](https://octo-98895abd.mintlify.site/api-docs/fidc.md): Who a receivables fund buys from, who owes it, what sector the book is in and how BACEN grades it — informe tabs I, VIII, II and X, served as filed.
 - [ANBIMA classes](https://octo-98895abd.mintlify.site/api-docs/anbima.md): The industry's own benchmark series — AUM, net flows, returns and fund counts per ANBIMA class, as the Boletim de Fundos publishes them.
+
+## Macro
+
+- [Inflation](https://octo-98895abd.mintlify.site/api-docs/inflation.md): IPCA as BACEN and IBGE publish it — headline, IPCA-15, the BCB cores, monitored and free prices, the nine expenditure groups, and IBGE's whole item tree with the weights that say what moved the index.
 
 ## Companies
 

@@ -76,6 +76,12 @@ Four upstream publishers. Everything is public; nothing is licensed, scraped fro
 | `bacen_ptax`         | currency × date                   |
 | `bacen_expectativas` | indicator × survey date × horizon |
 
+#### IBGE — the IPCA item tree (`apisidra.ibge.gov.br`)
+
+| Table                    | Grain            | Notes                                                                                                                                                 |
+| ------------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ibge_ipca_item_monthly` | node × **month** | general index, 9 groups, 19 subgroups, 51 items, ~377 subitems: weight, monthly / YTD / 12-month change, as published; SIDRA 1419 (2012-01..2019-12) then 7060 (2020-01→) |
+
 #### ANBIMA / commercial
 
 | Table                      | Grain                | Notes                                     |
@@ -154,6 +160,8 @@ The warehouse is wider than the API. Checked against `19_api_contract.sql` on 20
 | `cvm_fi_cda_acoes` / `_cotas` | **Yes**, via `fund_holdings` — both directions. |
 | `cvm_fi_cda_debentures` | **Yes**, via `fund_debentures`: issuer, maturity, rate structure, by holder CNPJ or by issuer. |
 | `anbima_class_monthly` | **Yes**, via `anbima_classes`: AUM, flows, returns, fund counts per class / type / total. |
+| `bacen_sgs` — the IPCA set (26 codes) | **Yes**, via [`inflation`](/api-docs/inflation): headline, IPCA-15, the BCB cores, classifications, diffusion and the nine groups, as published, plus a derived `acc_12m`. |
+| `ibge_ipca_item_monthly` | **Yes**, via [`inflation_items`](/api-docs/inflation): the IPCA tree with weights and a derived `contribution`. |
 | `cvm_fidc_cedente`, `cvm_fidc_sacado`, `cvm_fidc_setor`, `cvm_fidc_scr` | **Yes**: `fidc_cedentes`, `fidc_sacados`, `fidc_portfolio`, the panel metrics `receivables` / `sacado_top1` / `sacado_top25`, four `coverage()` rows. See [FIDC concentration](/api-docs/fidc). |
 
 #### Held and not served — candidates
@@ -162,7 +170,7 @@ Each is a real gap a caller could want; none has an endpoint.
 
 | Held | What it is | What serving it would take |
 | --- | --- | --- |
-| `bacen_sgs`, `bacen_ptax`, `bacen_expectativas` | SELIC, CDI, IPCA and the other SGS series; PTAX; the Focus survey | Nothing in schema `api` reads a `bacen_*` table — `panel` has no macro arm. A `macro_series(p_code, p_from, p_to)` over `bacen_sgs`, PTAX as a second function; the Focus survey needs its own shape (indicator × horizon × statistic). |
+| `bacen_sgs` (the non-inflation series), `bacen_ptax`, `bacen_expectativas` | SELIC, CDI, IGP-M, INPC, poupança, PIB, FX; PTAX; the Focus survey | The IPCA set is served by [`inflation`](/api-docs/inflation) since v30; the rest of `bacen_sgs` still is not. A `macro_series(p_code, p_from, p_to)` for the policy / FX series, PTAX as a second function; the Focus survey needs its own shape (indicator × horizon × statistic). |
 | `cvm_fidc_tranche`, `cvm_fidc_tranche_flows` | per-tranche promised vs realised performance; subscriptions / redemptions | `fidc_tranches(p_cnpj, p_from, p_to)` in the `fund_nav` style — the CNPJ is already an id the API resolves. |
 | `cvm_fidc_aging` | receivables by aging bucket | `fidc_aging(p_cnpj, …)`. `panel`'s `delinquency` is the total only. |
 | `cvm_fiagro_mensal.vl_quota` / `nr_cotst` / `vl_total`; `cvm_fidc_mensal.vl_total` | FIAGRO quota, quotaholders, total assets; FIDC total assets pre-2025 (~82% of rows) | `fact_fund_monthly`'s fiagro arm copies the fidc arm and sets all three `NULL`. Pass them through; the applicability block and its lockstep test follow. |

@@ -4,6 +4,7 @@ Daily incremental update — run by GitHub Actions cron at 06:00 UTC.
 Fetches:
   - CVM: current month + previous month for all entities
   - BACEN: last ~30 days
+  - IBGE: IPCA item tree with weights, previous + current month
   - ANBIMA: latest monthly boletim, all classes (idempotent — upserts full history)
   - B3 COTAHIST: last 7 calendar days of daily quotation zips (404 → skipped)
 
@@ -22,6 +23,7 @@ from src.pipeline.cvm_pipeline import CVMIngestor
 from src.pipeline.bacen_pipeline import BacenIngestor
 from src.pipeline.anbima_pipeline import AnbimaIngestor
 from src.pipeline.b3_pipeline import B3Ingestor
+from src.pipeline.ibge_pipeline import IbgeIngestor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,6 +75,16 @@ async def main() -> None:
     except Exception as exc:
         logger.error("BACEN daily refresh failed: %s", exc, exc_info=True)
         failures.append(("bacen", exc))
+
+    # IBGE: the IPCA item tree with weights, previous + current month. IBGE
+    # releases month M around the 10th of M+1; an unreleased month answers
+    # header-only and lands 0 rows, which is not a failure.
+    try:
+        ibge_totals = await IbgeIngestor().daily_update()
+        totals.update(ibge_totals)
+    except Exception as exc:
+        logger.error("IBGE IPCA daily refresh failed: %s", exc, exc_info=True)
+        failures.append(("ibge", exc))
 
     # ANBIMA: fetch latest monthly boletim (every ANBIMA class + type);
     # idempotent upsert.

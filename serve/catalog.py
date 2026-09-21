@@ -23,6 +23,21 @@ __all__ = [
     "tool_specs",
 ]
 
+# v30: inflation. Two functions, two sources, one derived number each.
+# api.inflation serves BACEN's SGS long — IPCA, IPCA-15, BACEN's own 12-month
+# accumulation (13522), the five BCB cores (MS, MA, EX0, EX2, DP), the
+# monitorados / livres, comercializáveis / não, duráveis / semi / não / serviços
+# splits, the diffusion index and IBGE's nine expenditure groups — as monthly
+# changes in percent AS PUBLISHED, plus acc_12m: the trailing twelve chained,
+# NULL unless all twelve are present and consecutive (measured: it reproduces
+# 13522 exactly, 4.22 for 2026-08). api.inflation_items serves IBGE SIDRA's
+# item tree (1419 from 2012-01, 7060 from 2020-01): weight, monthly / YTD /
+# 12-month change per node as published, plus contribution = weight × change
+# / 100 in percentage points. THE SGS GROUP CODES ARE NOT IN IBGE'S ORDER
+# (1640 Comunicação, 1641 Saúde, 1642 Despesas pessoais, 1643 Educação),
+# matched value for value against SIDRA on three months; the EX1/EX3/P55
+# cores are absent because BACEN's catalogue does not name their codes. No
+# panel arm: these rows carry no id.
 # v29: api.income_statements — the income statement as a PERIOD (one row, named
 # fields) rather than as lines, the shape docs.financialdatasets.ai uses. The
 # fields are keyed on the AS-FILED LABEL, not on cd_conta and not on setor,
@@ -196,7 +211,7 @@ __all__ = [
 # stated as (id, asset_class, date, metric) and p_entity_type narrows the fund
 # arms to one family. Universe mode (p_ids empty + p_entity_type, optional
 # p_min_nav / p_min_months) walks a whole family for signed-in callers.
-CATALOG_VERSION = 29
+CATALOG_VERSION = 30
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -394,6 +409,7 @@ CONSTRAINTS = [
     "FIDC DELINQUENCY STARTS IN 2025-01. CVM's pre-2025 monthly FIDC file (tab II/III) carried no delinquency field, so `delinquency` is null on every fidc row through 2024-12-31 — not zero, not clean books, not a missing month. From 2025-01-31 the tab IV/VI format is ingested and delinquency is filed on every row. Never chain-link, difference or average a FIDC delinquency series across 2024-12 → 2025-01; the series begins there. Machine-readable in `regime_breaks`, and on the funds_fidc coverage row's `notes`.",
     "A FUND'S DEBENTURE HOLDINGS ARE A DIFFERENT SHAPE FROM ITS EQUITY HOLDINGS. api.fund_debentures (CDA block 6) is one row per (fund, month, issuer, maturity, rate structure, application type), as filed and never summed — two series of one issuer maturing the same day at different coupons are different securities. The issuer is its own filed CPF/CNPJ (issuer_id); p_issuer also takes a listed company's ticker or CVM code, resolved only through CVM's published FCA map, and issuer_tickers carries the issuer's active listed codes back (NULL when not listed — most debenture issuers are not). Nothing is matched by name.",
     "ANBIMA CLASS ROWS ARE INDUSTRY AGGREGATES, NOT FUNDS. api.anbima_classes serves the Boletim de Fundos de Investimento as published — R$ milhões (unit brl_mm) and percentage points (unit pct) — per class, ANBIMA type or industry total (`level`; class aggregates by default). No fund in this warehouse is mapped to an ANBIMA class: CVM's `classe` is CVM's taxonomy, so never join a fund to a class by name, and there is no panel arm because these rows carry no id. An unknown category, metric or level raises 22023 listing what exists rather than returning an empty array.",
+    "INFLATION IS SERVED AS PUBLISHED, IN PERCENT, WITH ONE DERIVED COLUMN PER FUNCTION. api.inflation is BACEN's SGS, long: value is the change in the month (unit pct_month) except IPCA_12M — BACEN's own 12-month accumulation, code 13522 (pct_12m) — and IPCA_DIFUSAO, the share of items that rose (pct_items). acc_12m is DERIVED: the trailing twelve monthly changes chained, ((Π(1+v/100))−1)×100, NULL unless all twelve months are present and consecutive — never a shorter chain, never filled; it reproduces IPCA_12M exactly for the headline, which is served beside it so you can check. IPCA15 is the mid-month preview, not a revision of IPCA. Group rows (family = group) are VARIATIONS, not contributions: the weights live only in api.inflation_items, whose contribution column is weight × change_month / 100 in percentage points of the headline — sum contributions within ONE level only (a group and its subgroups are the same money twice). BACEN's group codes are NOT in IBGE's order (1640 is Comunicação, 1641 Saúde, 1642 Despesas pessoais, 1643 Educação; measured against IBGE SIDRA, do not reorder by intuition). SIDRA's item codes changed with the 2020-01 structure; item_number is the continuity and sidra_table says which. Neither function has a panel arm — the rows carry no id — and an unknown series, family, level or item raises 22023 rather than returning an empty array.",
     "THE B3 LENDING AND FLOW GROUP IS A RATCHET, AND IT IS THE ONLY PART OF THIS WAREHOUSE THAT IS. short_interest, short_interest_by_sector, lending_trades, lending_participants and investor_flow read B3 tables that B3 keeps for about 21 BUSINESS DAYS and publishes no archive for. History therefore starts at SILO's first capture and cannot be extended backwards at any price — a missed session is gone, not late, and no backfill exists to ask for. coverage() reports the real span per endpoint; read it before describing any of these series as short, broken or anomalous, and never infer a level change from a window that simply begins where capture began. An over-wide request to the source returns HTTP 200 with a silently clamped window, which is why the ingest reconciles what it asked for against what it received.",
     "pct_float IS TWO DIFFERENT METRICS AND float_basis SAYS WHICH ONE YOU HAVE. api.short_interest divides the balance on loan by whichever denominator exists for that ticker. float_basis = 'index_free_float' means B3's published free float (theoretical_qty from the broadest index portfolio carrying the ticker) and exists for index constituents only, ~149 tickers; float_basis = 'shares_outstanding' means capital social from the cash instrument registry, a LARGER denominator that yields a SMALLER percentage for the same position. They are not the same measure and are never comparable: ANY ranking, screen or cross-section on pct_float must filter to ONE basis first, or it sorts index members against non-members on an axis they do not share. float_denominator carries the number actually used. pct_float and days_to_cover are NULL — never 0 — when their denominator is missing or the name did not trade; 0 would sort an unknown to exactly the wrong end.",
     "IN THE LENDING TAPE, doador AND tomador ARE BROKERAGES, NOT BENEFICIAL OWNERS. lending_participants' broker_code / broker_name and lending_trades' lender_brokers / borrower_brokers identify the B3 PARTICIPANT intermediating a trade, never who ends up long or short. B3 names ~33 participants in a whole session, and about three quarters of trades carry the SAME code on both legs (measured 2026-09-10: 32,197 of 43,165, 74.6%) — a broker crossing its own client book. So a large borrow through a broker is its clients' position, not the broker's view, and 'the biggest short' read off this tape is a statement about order flow routing. internal_legs / internal_qty (lending_participants) and internal_trades (lending_trades) are what tell the two apart: high internal share is client churn, low internal share is flow that actually crossed the market. They are published beside the totals rather than netted away, because dropping them makes the remainder look like conviction and keeping them silently makes churn look like demand.",
@@ -430,16 +446,18 @@ CONSTRAINTS = [
     "set-returning function now REFUSES rather than trims: a window that "
     "would produce more than 1000 rows raises SQLSTATE 22023 naming the "
     "function, so a short result can no longer look complete. That is all "
-    "eight — panel, quote_history, fund_nav, option_history, termo_history, "
-    "financials, company_financials, income_statements, anbima_classes (`limits.page.all`). "
+    "eleven — panel, quote_history, fund_nav, option_history, termo_history, "
+    "financials, company_financials, income_statements, anbima_classes, "
+    "inflation, inflation_items (`limits.page.all`). "
     "THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send "
     "p_after='' for the first page, then the key from the last row — for the "
     "panel 'date|id|metric|asset_class', for quote_history and fund_nav just "
     "that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until "
     "the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when "
     "paging, because its cursor is a bare period and one CNPJ can file under "
-    "two families in the same month. The other five do not page: narrow "
-    "p_from/p_to instead. The old sentinels (5001 on the series functions, "
+    "two families in the same month. The other eight do not page: narrow "
+    "p_from/p_to instead (inflation and inflation_items default to the last "
+    "36 months for that reason). The old sentinels (5001 on the series functions, "
     "100001 on the panel) are GONE and were never observable anyway — "
     "PostgREST cut the response at 1000 first (measured 2026-08-28: "
     "quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows "
@@ -551,6 +569,33 @@ EXAMPLES = [
         "then": "Model in the notebook from the long rows. Anonymous callers are capped at 3 ids — a 4th raises 22023, it is not trimmed.",
     },
     {
+        "ask": "Is core inflation running above the headline?",
+        "call": (
+            "POST /rest/v1/rpc/inflation "
+            '{"p_family": "core"}'
+        ),
+        "then": (
+            "Rows are monthly changes in percent as published, one per "
+            "(month, series); acc_12m is the trailing twelve chained and NULL "
+            "until a series has twelve consecutive months. Put IPCA "
+            "(p_series='IPCA', or family headline) beside them; never annualise "
+            "a single month."
+        ),
+    },
+    {
+        "ask": "What moved the IPCA last month?",
+        "call": (
+            "POST /rest/v1/rpc/inflation_items "
+            '{"p_level": 1, "p_from": "<month start>"}'
+        ),
+        "then": (
+            "contribution is weight × change_month / 100 in percentage points; "
+            "the nine level-1 rows sum to the headline to rounding. Drill with "
+            "p_level=2..4 and p_item=<structure number> — but sum ONE level at "
+            "a time, a group and its subgroups are the same money twice."
+        ),
+    },
+    {
         "ask": "Which names are most heavily shorted right now?",
         "call": (
             "GET /rest/v1/short_interest"
@@ -598,8 +643,9 @@ EXAMPLES = [
 
 AGENT_INSTRUCTIONS = (
     "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, "
-    "B3 COTAHIST cash quotes, options and termo, and the B3 securities-lending "
-    "and investor-flow group). Call catalog once and cache "
+    "B3 COTAHIST cash quotes, options and termo, the B3 securities-lending "
+    "and investor-flow group, and Brazilian inflation — BACEN's IPCA series "
+    "and IBGE's item tree with weights). Call catalog once and cache "
     "it. Resolve names with lookup, then fetch a panel. The primitive "
     "is a panel (id, date, metric, value). Correlation, ranking, spreads, "
     "regressions and other relations are reductions of that panel — compute "
@@ -684,7 +730,7 @@ LIMITS = {
         "all": [
             "panel", "quote_history", "fund_nav", "option_history",
             "termo_history", "financials", "company_financials", "income_statements",
-            "anbima_classes",
+            "anbima_classes", "inflation", "inflation_items",
         ],
         # The protocol every cursor below shares.
         "cursor_protocol": (
@@ -720,6 +766,7 @@ LIMITS = {
             "raise_only": [
                 "option_history", "termo_history", "financials",
                 "company_financials", "income_statements", "anbima_classes",
+                "inflation", "inflation_items",
             ],
         },
         "over_cap": (
@@ -916,6 +963,10 @@ def catalog_payload() -> Dict[str, Any]:
             "company_financials": "POST /rest/v1/rpc/company_financials",
             "income_statements": "POST /rest/v1/rpc/income_statements",
             "anbima_classes": "POST /rest/v1/rpc/anbima_classes",
+            # Inflation (v30). BACEN's SGS series long, and IBGE's item tree
+            # with weights and contributions. No id, no panel arm.
+            "inflation": "POST /rest/v1/rpc/inflation",
+            "inflation_items": "POST /rest/v1/rpc/inflation_items",
             "fund_debentures": "POST /rest/v1/rpc/fund_debentures",
             "fidc_cedentes": "POST /rest/v1/rpc/fidc_cedentes",
             "fidc_sacados": "POST /rest/v1/rpc/fidc_sacados",

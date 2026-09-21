@@ -9,8 +9,15 @@ sidebar_position: 2
   tables ingested every day by src/pipeline/bacen_pipeline.py and read by
   nothing.
 
-    bacen_sgs           grain (series_code, reference_date) — 10 configured SGS
-                        series (SGS_SERIES in bacen_pipeline.py)
+    bacen_sgs           grain (series_code, reference_date) — 35 configured SGS
+                        series (SGS_SERIES in bacen_pipeline.py: the ten
+                        policy / price / FX series plus the 25-code IPCA set
+                        of INFLATION_SERIES — cores, classifications,
+                        diffusion, IBGE groups — served by api.inflation)
+    ibge_ipca_item_monthly  grain (reference_month, item_code) — IBGE SIDRA's
+                        IPCA tree with WEIGHTS (api.inflation_items). BACEN
+                        has the group variations; only IBGE has the weights,
+                        so contribution-by-group is read from here.
     bacen_ptax          grain (currency, reference_date) — USD/EUR/GBP/JPY/ARS,
                         buy_rate + sell_rate
     bacen_expectativas  grain (endpoint_name, indicador, reference_date,
@@ -32,6 +39,10 @@ sidebar_position: 2
     433  IPCA / 189 IGP-M / 188 INPC / 25 poupança   % change in the month
     1    USDBRL              BRL per USD
     4380 PIB                 R$ million, monthly, current prices
+    The IPCA set is % change in the month too, except 13522 (BACEN's own
+    12-month accumulation, %) and 21379 (diffusion: % of items that rose).
+    IBGE group codes are NOT in IBGE's order: 1640 Comunicação, 1641 Saúde,
+    1642 Despesas pessoais, 1643 Educação — value-matched against SIDRA.
   The unit travels with the row in the series inventory table so the reader can
   always check which one they are looking at.
 
@@ -76,6 +87,23 @@ where period <= (
      or poupanca_mes_num2 is not null
 )
 order by period
+```
+
+```sql inflation_series
+-- Same clamp as cpi_series: stop at the last month with a headline reading,
+-- so the chart does not draw the unpublished trailing month as a gap.
+select *
+from supabase.macro_inflation_series
+where period <= (
+  select max(period)
+  from supabase.macro_inflation_series
+  where ipca_mes_num2 is not null
+)
+order by period
+```
+
+```sql inflation_groups_latest
+select * from supabase.macro_inflation_groups_latest
 ```
 
 ```sql macro_fx_series
@@ -158,6 +186,73 @@ y={['ipca_mes_num2','igpm_mes_num2','inpc_mes_num2','poupanca_mes_num2']}
 yAxisTitle="% Change in Month"
 title="IPCA · IGP-M · INPC · Poupança"
 />
+
+### Inside the IPCA
+
+> BACEN's IPCA set, straight from `bacen_sgs` and served by `api.inflation`.
+> Headline against the three BCB cores the Copom reads most (EX0 excludes
+> monitored prices and food at home; MS is the smoothed trimmed mean; DP the
+> double-weighted core). Every line is the **change in that month** as
+> published; the 12-month line is BACEN's own accumulation (SGS 13522),
+> not chained here. Blank months are not yet published, never zero.
+
+<LineChart
+data={inflation_series}
+x=period
+y={['ipca_mes_num2','core_ex0_num2','core_ms_num2','core_dp_num2']}
+yAxisTitle="% Change in Month"
+title="IPCA Headline vs BCB Cores — Last 36 Months"
+/>
+
+<LineChart
+  data={inflation_series}
+  x=period
+  y=ipca_12m_num2
+  yAxisTitle="% Accumulated 12 Months"
+  title="IPCA — 12-Month Accumulation (BACEN 13522)"
+/>
+
+> Monitored (administered) prices — fuel, electricity, transit fares, health
+> plans — move on regulatory calendars; free prices are the demand-sensitive
+> part. Reading them apart is how a single month's print is separated into
+> policy shock and underlying pressure.
+
+<LineChart
+data={inflation_series}
+x=period
+y={['monitorados_num2','livres_num2']}
+yAxisTitle="% Change in Month"
+title="Monitored vs Free Prices (% per Month)"
+/>
+
+### What Moved the IPCA
+
+> IBGE's nine expenditure groups for the latest month held, from
+> `ibge_ipca_item_monthly` (SIDRA 7060) and served by `api.inflation_items`.
+> **Contribution = weight × change ÷ 100**, in percentage points of the
+> headline — the one derived number on this page — and the nine bars sum to
+> the month's IPCA to rounding, because the groups partition the basket. A
+> group's _variation_ alone says nothing about its pull: Educação's 6 %
+> weight and Transportes' 20 % are not the same lever. Weights are IBGE's;
+> BACEN publishes none.
+
+<BarChart
+  data={inflation_groups_latest}
+  x=group_name
+  y=contribution_num2
+  swapXY=true
+  yAxisTitle="p.p. of headline"
+  title="Contribution to the Month's IPCA by Group"
+/>
+
+<DataTable data={inflation_groups_latest} rows=9>
+  <Column id=group_name title="Group"/>
+  <Column id=reference_month title="Month"/>
+  <Column id=weight_num2 title="Weight (%)" fmt=num2/>
+  <Column id=change_month_num2 title="Change in Month (%)" fmt=num2/>
+  <Column id=contribution_num2 title="Contribution (p.p.)" fmt=num2/>
+  <Column id=change_12m_num2 title="12-Month (%)" fmt=num2/>
+</DataTable>
 
 ---
 
@@ -260,12 +355,13 @@ title="PTAX Month-End — USD, EUR, GBP"
 
 ## SGS Series Coverage
 
-> All ten series the ingestor is configured to fetch, each with its own unit.
-> This is the honest inventory: a series with no observations shows blank counts
-> rather than being dropped from the list. `Last Value` is in the unit named on
-> its own row and the column must not be read down the page.
+> All 35 series the ingestor is configured to fetch — the ten policy / price /
+> FX series and the 25-code IPCA set — each with its own unit. This is the
+> honest inventory: a series with no observations shows blank counts rather
+> than being dropped from the list. `Last Value` is in the unit named on its
+> own row and the column must not be read down the page.
 
-<DataTable data={macro_series_inventory} rows=10>
+<DataTable data={macro_series_inventory} rows=35>
   <Column id=series_code title="SGS Code"/>
   <Column id=series_name title="Series"/>
   <Column id=unit title="Unit (as published)"/>

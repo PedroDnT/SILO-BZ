@@ -69,9 +69,9 @@ except SiloTruncated as e:
     print(e.rows[-1]["cnpj"])            # where the cut fell — inspect, never use
 ```
 
-`option_history`, `termo_history`, `financials`, `company_financials` and
-`anbima_classes` have no cursor: `SiloOverCap` there means narrow the window
-and call again.
+`option_history`, `termo_history`, `financials`, `company_financials`,
+`anbima_classes`, `inflation` and `inflation_items` have no cursor:
+`SiloOverCap` there means narrow the window and call again.
 
 **Views are the one surface that pages**, and the client knows it. `view()`
 with an explicit `limit`/`offset` returns that page whatever the total;

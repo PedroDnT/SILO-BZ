@@ -13,40 +13,40 @@ frontmatter (1–14 below; Evidence sorts alphabetically without it), and
 
 **Industry and backdrop** — the market as a whole and what it is read against.
 
-| # | Page               | Path        | What it shows                                                                                                                                                                       |
-| - | ------------------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-|   | Overview           | `/`         | Headline scale + freshness tiles, net assets by monthly family (12mo) + FIP tile, FIDC sector delinquency (12mo), grouped page index                                                |
-| 1 | Industry Structure | `/industry` | Net assets by family, concentration (HHI, top-N share), asset-class composition, FI flow, formation, investors, FIP, FIAGRO                                                          |
-| 2 | Macro Context      | `/macro`    | SELIC / CDI / IPCA / IGP-M series, PTAX FX and spreads, BACEN Focus consensus + dispersion, SGS inventory                                                                            |
-| 3 | B3 Markets         | `/markets`  | B3 tape as a market: monthly traded volume (standard vs odd lot), volume by instrument type, most traded tickers over 90 days, options activity — all from `b3_cotahist`, unadjusted |
-| 4 | Short Monitor      | `/short`    | B3's securities-lending book: short interest per ticker, % of free float (basis labelled), days to cover vs 21-session ADTV, borrow rates, sector concentration. **No backfill exists** — B3 retains ~21 business days |
-| 5 | Follow the Money   | `/flows`    | Net flow by investor type, derived from B3's month-to-date participation snapshots (T+2), plus cash-market ADTV from the tape. ANBIMA fund flows stay on `/industry` |
+| #   | Page               | Path        | What it shows                                                                                                                                                                                                          |
+| --- | ------------------ | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|     | Overview           | `/`         | Headline scale + freshness tiles, net assets by monthly family (12mo) + FIP tile, FIDC sector delinquency (12mo), grouped page index                                                                                   |
+| 1   | Industry Structure | `/industry` | Net assets by family, concentration (HHI, top-N share), asset-class composition, FI flow, formation, investors, FIP, FIAGRO                                                                                            |
+| 2   | Macro Context      | `/macro`    | SELIC / CDI / IPCA / IGP-M series, IPCA headline vs cores, 12-month, monitored vs free, what moved the IPCA (IBGE contribution by group), PTAX FX and spreads, BACEN Focus consensus + dispersion, SGS inventory       |
+| 3   | B3 Markets         | `/markets`  | B3 tape as a market: monthly traded volume (standard vs odd lot), volume by instrument type, most traded tickers over 90 days, options activity — all from `b3_cotahist`, unadjusted                                   |
+| 4   | Short Monitor      | `/short`    | B3's securities-lending book: short interest per ticker, % of free float (basis labelled), days to cover vs 21-session ADTV, borrow rates, sector concentration. **No backfill exists** — B3 retains ~21 business days |
+| 5   | Follow the Money   | `/flows`    | Net flow by investor type, derived from B3's month-to-date participation snapshots (T+2), plus cash-market ADTV from the tape. ANBIMA fund flows stay on `/industry`                                                   |
 
 **By asset class** — one page per CVM family, plus the securitisation market.
 
-| # | Page                | Path       | What it shows                                                                                                                                 |
-| - | ------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| 6 | FI Industry         | `/fi`      | Net assets, daily flow, quotaholder base, investor mix (`cvm_fi_perfil`), single-holder screen, allocation (`cvm_fi_cda`)                     |
-| 7 | FIDC Credit Monitor | `/fidc`    | Sector delinquency, worst funds, delinquency drivers (Δ R$ vs Δ rate), both aging bands, tranche promised-vs-realised, subordination, flows   |
-| 8 | FII Market          | `/fii`     | FII vs FIAGRO net assets, yield distribution, top payers, filing coverage, payout coverage, property explorer                                 |
-| 9 | Securitização       | `/securit` | CRI/CRA/OTS reported value, maturity wall, payment waterfall, ratings, subordination, distressed series                                       |
-| 10 | ETF                 | `/etf`     | ETF universe by provider / segment / index from `cvm_etf_registry`, plus the scraped market snapshot (NAV/return largely absent post-CVM-175) |
+| #   | Page                | Path       | What it shows                                                                                                                                 |
+| --- | ------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 6   | FI Industry         | `/fi`      | Net assets, daily flow, quotaholder base, investor mix (`cvm_fi_perfil`), single-holder screen, allocation (`cvm_fi_cda`)                     |
+| 7   | FIDC Credit Monitor | `/fidc`    | Sector delinquency, worst funds, delinquency drivers (Δ R$ vs Δ rate), both aging bands, tranche promised-vs-realised, subordination, flows   |
+| 8   | FII Market          | `/fii`     | FII vs FIAGRO net assets, yield distribution, top payers, filing coverage, payout coverage, property explorer                                 |
+| 9   | Securitização       | `/securit` | CRI/CRA/OTS reported value, maturity wall, payment waterfall, ratings, subordination, distressed series                                       |
+| 10  | ETF                 | `/etf`     | ETF universe by provider / segment / index from `cvm_etf_registry`, plus the scraped market snapshot (NAV/return largely absent post-CVM-175) |
 
 **Houses, funds, rankings and screens** — the granular views.
 
-| #  | Page               | Path           | What it shows                                                                                                                           |
-| -- | ------------------ | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| 9  | Managers           | `/managers`    | Administrator and gestor league tables by net assets and net flow, led by the registry-name coverage disclosure                         |
-| 12 | Fund Explorer      | `/fund`        | Searchable fund universe first, then net assets / quota / return / flow series for the largest funds                                    |
-| 13 | Performance        | `/performance` | Per-asset-class ranking (who beat their peers), with the per-class return basis and the coverage caveat                                 |
-| 14 | Suspicious Screens | `/suspicious`  | Zombie growth, evergreen aging, overdue securit series, captive vehicles — with thresholds stated                                       |
-| 15 | Dormant Funds      | `/dormant`     | Funds with capital parked for 36 months (definition stated first), where the money stands still, by administrator, and the empty shells |
+| #   | Page               | Path           | What it shows                                                                                                                           |
+| --- | ------------------ | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 9   | Managers           | `/managers`    | Administrator and gestor league tables by net assets and net flow, led by the registry-name coverage disclosure                         |
+| 12  | Fund Explorer      | `/fund`        | Searchable fund universe first, then net assets / quota / return / flow series for the largest funds                                    |
+| 13  | Performance        | `/performance` | Per-asset-class ranking (who beat their peers), with the per-class return basis and the coverage caveat                                 |
+| 14  | Suspicious Screens | `/suspicious`  | Zombie growth, evergreen aging, overdue securit series, captive vehicles — with thresholds stated                                       |
+| 15  | Dormant Funds      | `/dormant`     | Funds with capital parked for 36 months (definition stated first), where the money stands still, by administrator, and the empty shells |
 
 **Operations** — whether the numbers landed.
 
-| #  | Page            | Path   | What it shows                                                                                        |
-| -- | --------------- | ------ | ---------------------------------------------------------------------------------------------------- |
-| 16 | Pipeline Health | `/ops` | Ingest freshness per entity, rows/day, status breakdown, table freshness, coverage, audit-log triage |
+| #   | Page            | Path   | What it shows                                                                                        |
+| --- | --------------- | ------ | ---------------------------------------------------------------------------------------------------- |
+| 16  | Pipeline Health | `/ops` | Ingest freshness per entity, rows/day, status breakdown, table freshness, coverage, audit-log triage |
 
 ### Page conventions
 

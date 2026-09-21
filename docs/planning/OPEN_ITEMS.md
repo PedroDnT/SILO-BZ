@@ -13,10 +13,10 @@ pointer. Anything provisional or missing goes in this file.
 
 | Surface              | State                                                                                                                              |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Data API (PostgREST) | catalog **v29** live; `income_statements` serving                                                                                  |
+| Data API (PostgREST) | catalog **v29** live; v30 (`inflation`, `inflation_items`) is in the repo and lands with the next analytical apply                                                                                  |
 | Docs site            | `octo-98895abd.mintlify.site` — 200, including `known-limitations`                                                                 |
 | Dashboard            | `silo-bz-deloslabs.vercel.app` — 200, serving the current build. **Not** `silo-bz.vercel.app`: it also answers 200, but see item 8 |
-| Test suite           | 1463 offline tests green on `main`                                                                                                 |
+| Test suite           | 1520 offline tests green on `main` (1463 before catalog v30)                                                                                                 |
 
 Verified live, not inferred: `income_statements('PETR4')` returns
 `chart=industrial`, net income R$37.01bn; `income_statements('19348')`
@@ -204,3 +204,29 @@ a retention decision before it is urgent rather than after.
 
 `pip install silo-client` does not resolve; callers vendor the directory. See
 [SDK.md](SDK.md) for what else the client is missing (PyPI, wheel CI, async).
+
+## 12. The inflation history is two one-off loads that have not run
+
+Catalog v30 (`api.inflation`, `api.inflation_items`, `/macro` "Inside the
+IPCA") ships with the code but not the history. The daily run only refreshes
+a 30-day SGS window and the previous + current IBGE month, so until an
+operator runs these two commands once:
+
+```bash
+python -m src.pipeline.run_backfill --bacen-only --bacen-sources sgs --bacen-start 1980-01-01
+python -m src.pipeline.run_backfill --ibge-only          # SIDRA 1419 + 7060, from 2012-01
+```
+
+`api.inflation` serves 2019→ for IPCA 433 and only the trailing month for
+the 25 new codes (so `acc_12m` reads NULL everywhere: the twelve-month guard
+is doing its job), and `api.inflation_items` — and the contribution bar on
+`/macro` — are empty. The SGS load is ~35 series × 5 ten-year slices, a few
+minutes; the IBGE load is ~15 requests of ≤12 months each (4.6 MB per
+request), also minutes. Both are idempotent. `backfill.yml`'s BACEN job is
+unchanged (2019, all three sources) on purpose: Focus from 1980 would walk
+Olinda's page cap.
+
+Verify after: `SELECT value, acc_12m FROM api.inflation('IPCA', NULL,
+'2026-08-01', '2026-08-01')` reads `-0.32, 4.22` and `api.inflation_items()`
+returns nine rows a month.
+

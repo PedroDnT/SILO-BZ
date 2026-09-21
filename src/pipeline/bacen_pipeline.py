@@ -11,7 +11,7 @@ import logging
 import os
 import sys
 from datetime import date, datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -25,6 +25,56 @@ logger = logging.getLogger(__name__)
 # Series / currency / endpoint configuration
 # ---------------------------------------------------------------------------
 
+# The IPCA set behind api.inflation and the /macro inflation charts:
+# label → (SGS code, family, unit, BACEN's series name).
+#
+# Every code was verified live on 2026-09-21 against api.bcb.gov.br (values
+# for 2026-06..08) and named from BACEN's open-data catalogue
+# (dadosabertos.bcb.gov.br, exact bcdata.sgs.<code> resource match) or, for
+# the nine IBGE groups, matched value-for-value on three months against IBGE
+# SIDRA table 7060. THE GROUP CODES ARE NOT IN IBGE'S ORDER: 1640 is
+# Comunicação (IBGE group 9), 1641 Saúde (6), 1642 Despesas pessoais (7) and
+# 1643 Educação (8). Do not "fix" the order by intuition — it is measured.
+# 13522 is BACEN's own 12-month accumulation and chains exactly from 433
+# (4.22 for 2026-08, both ways). The EX1/EX3/P55 cores (27838/27839/28750 by
+# convention) are deliberately absent: the catalogue does not name them.
+#
+# The same list is mirrored, as a VALUES driver, in api.inflation
+# (19_api_contract.sql) and in dashboard/sources/supabase/macro_inflation_*.sql;
+# tests/test_inflation_contract.py pins the three code sets to each other.
+INFLATION_SERIES: Dict[str, tuple] = {
+    # headline
+    "IPCA":                     (433,   "headline",       "pct_month",  "IPCA - Variação mensal"),
+    "IPCA_12M":                 (13522, "headline",       "pct_12m",    "IPCA - Variação acumulada em 12 meses"),
+    "IPCA15":                   (7478,  "headline",       "pct_month",  "IPCA-15 - Variação mensal"),
+    # BCB core measures
+    "IPCA_CORE_MS":             (4466,  "core",           "pct_month",  "IPCA - Núcleo médias aparadas com suavização"),
+    "IPCA_CORE_MA":             (11426, "core",           "pct_month",  "IPCA - Núcleo médias aparadas sem suavização"),
+    "IPCA_CORE_EX0":            (11427, "core",           "pct_month",  "IPCA - Núcleo por exclusão - sem monitorados e alimentos no domicílio"),
+    "IPCA_CORE_EX2":            (16121, "core",           "pct_month",  "IPCA - Núcleo por exclusão - ex2"),
+    "IPCA_CORE_DP":             (16122, "core",           "pct_month",  "IPCA - Núcleo de dupla ponderação"),
+    # BCB classifications
+    "IPCA_MONITORADOS":         (4449,  "classification", "pct_month",  "IPCA - Preços monitorados - Total"),
+    "IPCA_LIVRES":              (11428, "classification", "pct_month",  "IPCA - Itens livres"),
+    "IPCA_COMERCIALIZAVEIS":    (4447,  "classification", "pct_month",  "IPCA - Comercializáveis"),
+    "IPCA_NAO_COMERCIALIZAVEIS": (4448, "classification", "pct_month",  "IPCA - Não comercializáveis"),
+    "IPCA_NAO_DURAVEIS":        (10841, "classification", "pct_month",  "IPCA - Bens não-duráveis"),
+    "IPCA_SEMI_DURAVEIS":       (10842, "classification", "pct_month",  "IPCA - Bens semi-duráveis"),
+    "IPCA_DURAVEIS":            (10843, "classification", "pct_month",  "IPCA - Duráveis"),
+    "IPCA_SERVICOS":            (10844, "classification", "pct_month",  "IPCA - Serviços"),
+    "IPCA_DIFUSAO":             (21379, "diffusion",      "pct_items",  "IPCA - Índice de difusão"),
+    # IBGE expenditure groups (codes value-matched to SIDRA 7060, 2026-06..08)
+    "IPCA_G_ALIMENTACAO":       (1635,  "group",          "pct_month",  "IPCA - 1. Alimentação e bebidas"),
+    "IPCA_G_HABITACAO":         (1636,  "group",          "pct_month",  "IPCA - 2. Habitação"),
+    "IPCA_G_ARTIGOS_RESIDENCIA": (1637, "group",          "pct_month",  "IPCA - 3. Artigos de residência"),
+    "IPCA_G_VESTUARIO":         (1638,  "group",          "pct_month",  "IPCA - 4. Vestuário"),
+    "IPCA_G_TRANSPORTES":       (1639,  "group",          "pct_month",  "IPCA - 5. Transportes"),
+    "IPCA_G_COMUNICACAO":       (1640,  "group",          "pct_month",  "IPCA - 9. Comunicação"),
+    "IPCA_G_SAUDE":             (1641,  "group",          "pct_month",  "IPCA - 6. Saúde e cuidados pessoais"),
+    "IPCA_G_DESPESAS_PESSOAIS": (1642,  "group",          "pct_month",  "IPCA - 7. Despesas pessoais"),
+    "IPCA_G_EDUCACAO":          (1643,  "group",          "pct_month",  "IPCA - 8. Educação"),
+}
+
 SGS_SERIES: Dict[str, int] = {
     "SELIC_META":   432,
     "SELIC_DIARIA": 11,
@@ -36,7 +86,11 @@ SGS_SERIES: Dict[str, int] = {
     "EURBRL":       21619,
     "POUPANCA":     25,
     "PIB":          4380,
+    # The inflation set. IPCA (433) is in both and must agree.
+    **{label: spec[0] for label, spec in INFLATION_SERIES.items()},
 }
+assert SGS_SERIES["IPCA"] == INFLATION_SERIES["IPCA"][0] == 433
+assert len(set(SGS_SERIES.values())) == len(SGS_SERIES), "one code per label"
 
 PTAX_CURRENCIES: List[str] = ["USD", "EUR", "GBP", "JPY", "ARS"]
 
@@ -320,15 +374,35 @@ class BacenIngestor:
     # Orchestrated run
     # ------------------------------------------------------------------
 
-    def _sources(self, start: str, end: str):
-        """(doc_type, landing table, factory) — the only enumeration of the three."""
-        return (
+    def _sources(self, start: str, end: str, only: Optional[Sequence[str]] = None):
+        """(doc_type, landing table, factory) — the only enumeration of the three.
+
+        ``only`` narrows the run to the named doc_types (``sgs`` / ``ptax`` /
+        ``expectativas``). An unknown name raises rather than silently running
+        nothing: a history load that "succeeded" with zero sources is the kind
+        of green run this repo has been burned by.
+        """
+        all_sources = (
             ("sgs",          "bacen_sgs",          lambda: self.ingest_sgs(start, end)),
             ("ptax",         "bacen_ptax",         lambda: self.ingest_ptax(start, end)),
             ("expectativas", "bacen_expectativas", lambda: self.ingest_expectativas(start)),
         )
+        if only is None:
+            return all_sources
+        wanted = [s.strip() for s in only if s and s.strip()]
+        known = {doc_type for doc_type, _, _ in all_sources}
+        unknown = sorted(set(wanted) - known)
+        if unknown or not wanted:
+            raise ValueError(
+                f"unknown BACEN source(s) {unknown or '(none given)'}; "
+                f"choose from {sorted(known)}"
+            )
+        return tuple(src for src in all_sources if src[0] in wanted)
 
-    async def _run_all(self, start: str, end: str, label: str) -> Dict[str, int]:
+    async def _run_all(
+        self, start: str, end: str, label: str,
+        only: Optional[Sequence[str]] = None,
+    ) -> Dict[str, int]:
         """Run the three sources under audit rows; raise if any failed.
 
         ``return_exceptions=True`` so every source finishes and records
@@ -339,7 +413,7 @@ class BacenIngestor:
         failure message.
         """
         window_start = date.fromisoformat(start[:10])
-        sources = self._sources(start, end)
+        sources = self._sources(start, end, only)
         results = await asyncio.gather(
             *(
                 audited(
@@ -372,13 +446,23 @@ class BacenIngestor:
             )
         return totals
 
-    async def backfill(self, start: str = "2019-01-01") -> Dict[str, int]:
+    async def backfill(
+        self,
+        start: str = "2019-01-01",
+        sources: Optional[Sequence[str]] = None,
+    ) -> Dict[str, int]:
         """Fetch every BACEN source from ``start`` to today and upsert.
 
         This is the one orchestrated entry point: run_daily calls it with a
         30-day window, run_backfill with the historical start. The audit
         rows tell the two apart by the window's start month.
+
+        ``sources`` (``run_backfill --bacen-sources sgs``) restricts the run,
+        which is how the SGS history is loaded from 1980 without dragging
+        the Focus survey through the same 46-year window (Olinda pages that
+        at 10k rows and caps the pages, so a too-wide Expectativas fetch can
+        truncate with only a warning).
         """
         end = date.today().isoformat()
-        logger.info("BACEN backfill: start=%s end=%s", start, end)
-        return await self._run_all(start, end, "backfill")
+        logger.info("BACEN backfill: start=%s end=%s sources=%s", start, end, sources or "all")
+        return await self._run_all(start, end, "backfill", only=sources)
