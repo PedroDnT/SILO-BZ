@@ -13,6 +13,23 @@ on:
         description: "Skip CVM entities (FI/FIDC/FII/.../ETF), backfill only BACEN — fast, for re-fetching a full-history SGS/PTAX/Expectativas window"
         type: boolean
         default: false
+      bacen_start:
+        description: "BACEN only: first day of the window (ISO). 1980-01-01 loads the whole IPCA history; the fetcher slices the window into five-year requests (BACEN's own limit is ten on daily series, and SELIC meta fails below it)."
+        type: string
+        default: "2019-01-01"
+      bacen_sources:
+        description: "BACEN only: which sources to run. sgs alone is the inflation history load — Focus from 1980 would walk Olinda's page cap, so do not widen bacen_start with all."
+        type: choice
+        default: all
+        options:
+          - all
+          - sgs
+          - ptax
+          - expectativas
+      ibge:
+        description: "Also backfill the IBGE IPCA item tree with weights (SIDRA 1419 + 7060, from 2012-01) behind api.inflation_items and /macro's contribution bar. Runs after BACEN; a few minutes."
+        type: boolean
+        default: false
       entity:
         description: "Which CVM entity to fill. Default fi (do not pick all while Postgres is recovering). Years in the form are now used."
         type: choice
@@ -556,10 +573,44 @@ jobs:
         env:
           POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
           LOG_LEVEL: INFO
+          BACEN_START: ${{ inputs.bacen_start || '2019-01-01' }}
+          BACEN_SOURCES: ${{ inputs.bacen_sources || 'all' }}
         run: |
+          extra=()
+          if [ "$BACEN_SOURCES" != "all" ]; then
+            extra+=(--bacen-sources "$BACEN_SOURCES")
+          fi
           python -m src.pipeline.run_backfill \
             --bacen-only \
-            --bacen-start 2019-01-01
+            --bacen-start "$BACEN_START" \
+            "${extra[@]}"
+
+  # IBGE: the IPCA item tree with weights (SIDRA 1419 from 2012-01, 7060 from
+  # 2020-01). Opt-in: it is a one-off history load, ~15 requests of at most
+  # twelve months each, and the daily run keeps it current afterwards.
+  backfill-ibge:
+    name: "IBGE IPCA item tree"
+    needs: [apply-schema, backfill-bacen]
+    if: ${{ always() && needs.apply-schema.result == 'success' && inputs.ibge == true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run IBGE backfill
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          LOG_LEVEL: INFO
+        run: |
+          python -m src.pipeline.run_backfill --ibge-only
 
   # Build the analytical layer (dims, fact matviews, rankings, fraud screens)
   # once the full backfill has populated the base tables — several analytical
@@ -570,8 +621,9 @@ jobs:
   # partial-but-useful dataset still gets its analytics.
   apply-analytical:
     name: "Apply analytical layer"
-    needs: [backfill-fi, backfill-other, backfill-etf, backfill-bacen]
-    if: ${{ always() && (inputs.bacen_only == true || inputs.entity == 'all') }}
+    needs:
+      [backfill-fi, backfill-other, backfill-etf, backfill-bacen, backfill-ibge]
+    if: ${{ always() && (inputs.bacen_only == true || inputs.entity == 'all' || inputs.ibge == true) }}
     continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 60

@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from src.fetchers.bacen_fetcher import BacenClient, _sgs_windows
+from src.fetchers.bacen_fetcher import BacenClient, BacenFetchError, _sgs_windows
 from src.pipeline.bacen_pipeline import (
     INFLATION_SERIES, SGS_SERIES, BacenIngestor,
 )
@@ -30,18 +30,28 @@ from src.pipeline.run_backfill import parse_bacen_sources
 # Window slicing
 # ---------------------------------------------------------------------------
 
-def test_a_window_inside_ten_years_is_one_request():
-    assert _sgs_windows("2019-01-01", "2026-09-21") == [("2019-01-01", "2026-09-21")]
+def test_a_window_inside_five_years_is_one_request():
+    assert _sgs_windows("2022-01-01", "2026-09-21") == [("2022-01-01", "2026-09-21")]
+    assert _sgs_windows("2026-08-22", "2026-09-21") == [("2026-08-22", "2026-09-21")], "the daily window"
 
 
-def test_the_1980_history_is_cut_into_ten_year_slices_that_do_not_overlap():
+def test_the_1980_history_is_cut_into_five_year_slices_that_do_not_overlap():
+    """Five, not ten: series 432 (SELIC meta, one row per calendar day)
+    answered 2010-01-01..2019-12-31 with HTTP 200 {"erro":{}} three times
+    running on 2026-09-21 (Backfill run 35651030075), and both five-year
+    halves with their rows."""
     windows = _sgs_windows("1980-01-01", "2026-09-21")
     assert windows == [
-        ("1980-01-01", "1989-12-31"),
-        ("1990-01-01", "1999-12-31"),
-        ("2000-01-01", "2009-12-31"),
-        ("2010-01-01", "2019-12-31"),
-        ("2020-01-01", "2026-09-21"),
+        ("1980-01-01", "1984-12-31"),
+        ("1985-01-01", "1989-12-31"),
+        ("1990-01-01", "1994-12-31"),
+        ("1995-01-01", "1999-12-31"),
+        ("2000-01-01", "2004-12-31"),
+        ("2005-01-01", "2009-12-31"),
+        ("2010-01-01", "2014-12-31"),
+        ("2015-01-01", "2019-12-31"),
+        ("2020-01-01", "2024-12-31"),
+        ("2025-01-01", "2026-09-21"),
     ]
     # Contiguous and non-overlapping: every slice starts the day after the last.
     from datetime import date, timedelta
@@ -49,10 +59,11 @@ def test_the_1980_history_is_cut_into_ten_year_slices_that_do_not_overlap():
         assert date.fromisoformat(next_start) == date.fromisoformat(prev_end) + timedelta(days=1)
 
 
-def test_exactly_ten_years_is_over_the_limit_by_one_day():
-    """BACEN counts 2010-01-01..2020-01-01 as more than ten years."""
-    assert _sgs_windows("2010-01-01", "2020-01-01") == [
-        ("2010-01-01", "2019-12-31"), ("2020-01-01", "2020-01-01"),
+def test_a_slice_never_reaches_the_same_calendar_day_n_years_later():
+    """The ten-year rule counts 2010-01-01..2020-01-01 as over the limit; the
+    same off-by-one applies to the five-year slices."""
+    assert _sgs_windows("2010-01-01", "2015-01-01") == [
+        ("2010-01-01", "2014-12-31"), ("2015-01-01", "2015-01-01"),
     ]
 
 
@@ -90,14 +101,25 @@ async def test_a_long_window_issues_one_request_per_slice_and_unions_them(monkey
             {"IPCA": 433}, start="1980-01-01", end="2026-09-21",
         )
     assert [c["dataInicial"] for c in calls] == [
-        "01/01/1980", "01/01/1990", "01/01/2000", "01/01/2010", "01/01/2020",
+        "01/01/1980", "01/01/1985", "01/01/1990", "01/01/1995", "01/01/2000",
+        "01/01/2005", "01/01/2010", "01/01/2015", "01/01/2020", "01/01/2025",
     ]
-    assert [c["dataFinal"] for c in calls] == [
-        "31/12/1989", "31/12/1999", "31/12/2009", "31/12/2019", "21/09/2026",
-    ]
+    assert calls[-1]["dataFinal"] == "21/09/2026" and calls[0]["dataFinal"] == "31/12/1984"
     assert [r["date"] for r in rows] == [
-        "1980-01-01", "1990-01-01", "2000-01-01", "2010-01-01", "2020-01-01",
+        f"{y}-01-01" for y in (1980, 1985, 1990, 1995, 2000, 2005, 2010, 2015, 2020, 2025)
     ]
+
+
+@pytest.mark.asyncio
+async def test_a_200_with_bacens_empty_error_envelope_raises_with_the_body(monkeypatch):
+    """Measured 2026-09-21 on series 432, 2010-01-01..2019-12-31: HTTP 200,
+    body {"erro":{}}, every time. Not a list, so never rows; the message must
+    carry the body, because 'got dict' alone cost a run to decode."""
+    monkeypatch.setenv("BACEN_OLINDA_MAX_RETRIES", "1")
+    monkeypatch.setenv("BACEN_OLINDA_RETRY_DELAY", "0")
+    with patch("httpx.AsyncClient", _client_factory(lambda r: httpx.Response(200, json={"erro": {}}))):
+        with pytest.raises(BacenFetchError, match=r'expected a JSON list, got dict: \{"erro"'):
+            await BacenClient().get_sgs_series({"SELIC_META": 432}, start="2010-01-01", end="2014-12-31")
 
 
 @pytest.mark.asyncio
