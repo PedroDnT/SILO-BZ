@@ -13,10 +13,10 @@ pointer. Anything provisional or missing goes in this file.
 
 | Surface              | State                                                                                                                              |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Data API (PostgREST) | catalog **v29** live; v30 (`inflation`, `inflation_items`) is in the repo and lands with the next analytical apply                 |
-| Docs site            | `octo-98895abd.mintlify.site` — 200, including `known-limitations`                                                                 |
-| Dashboard            | `silo-bz-deloslabs.vercel.app` — 200, serving the current build. **Not** `silo-bz.vercel.app`: it also answers 200, but see item 8 |
-| Test suite           | 1520 offline tests green on `main` (1463 before catalog v30)                                                                       |
+| Data API (PostgREST) | catalog **v30** live (`inflation`, `inflation_items`), applied 2026-09-21                                                          |
+| Docs site            | `octo-98895abd.mintlify.site` — 200, including `known-limitations` and `api-docs/inflation`                                        |
+| Dashboard            | `silo-bz-deloslabs.vercel.app` and `silo-bz.vercel.app` — both 200 on the current build **only since a manual promote**; see item 8 |
+| Test suite           | 1521 offline tests green on `main` (1463 before catalog v30)                                                                       |
 
 Verified live, not inferred: `income_statements('PETR4')` returns
 `chart=industrial`, net income R$37.01bn; `income_statements('19348')`
@@ -151,25 +151,59 @@ wrong signal for the one surface a stranger is most likely to open.
 A custom domain needs a DNS record and a Mintlify plan that allows one — an
 account change, not a repo change, so it cannot be done from here.
 
-## 8. `silo-bz.vercel.app` is frozen on the 2026-09-17 build
+## 8. Production deployments stopped taking the public hostnames
 
-The old hostname is a hand-bound deployment alias, not a project domain: it is
-pinned to `dpl_3Fj7S96H` (the #255 merge) and does not follow production. It
-answers **200 with a stale page**, which is worse than a 404 — anyone holding the
-old link sees a site that looks fine and is a day behind, and will be further
-behind every day.
+This is the one that bit. Between 2026-09-18 and 2026-09-22 the published site
+did not move at all, while four production deployments went READY on top of it.
+On 2026-09-22 Pedro reported not seeing the inflation section on `/macro`; it
+had been built correctly and published nowhere.
 
-The live host is `silo-bz-deloslabs.vercel.app`, which Vercel generated from the
-project rename and which appears in each production deployment's `alias` list, so
-it follows production by itself and needs no maintenance.
+Measured 2026-09-22, in this order:
 
-Re-assigning the old alias was attempted five times on 2026-09-17 and does not
-hold (`400: already assigned to another project`; `--scope 0xpedro` fails with
-"You cannot set your Personal Account as the scope"). It is therefore left alone
-deliberately. Every reference in the repo already points at the live host — the
-audit on 2026-09-18 found zero outside `docs/planning/`, which is historical by
-design. If the old hostname is ever wanted back, it is a Vercel-side alias
-removal first, not another assignment attempt.
+| Observation                                                            | Result                                                                                        |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `GET silo-bz-deloslabs.vercel.app/macro`                               | 200, 31,867 bytes, **0** occurrences of "Inside the IPCA"                                     |
+| `GET silo-bz-git-main-deloslabs.vercel.app/macro`                      | 200, 39,505 bytes, the section present                                                        |
+| aliases on `dpl_f9YsSJ…` (f85e9f3, the newest production deployment)   | `silo-bz-git-main-deloslabs.vercel.app` **only**                                              |
+| aliases on the project                                                 | both `vercel.app` hostnames bound to `dpl_54vMGARv4w1DAhyxD9ivfg7yCVXc` (6646c0c, PR #275)    |
+| that binding's `updatedAt`                                             | 1789743476015 = **2026-09-18T00:17:56Z**, and never since                                     |
+| `list_promote_aliases`                                                 | both hostnames `status: completed` — a **promote** was the last thing that moved them         |
+
+So both hostnames are project domains (`gitBranch: null`, verified) that a
+manual promote pinned on 2026-09-18, and nothing has reassigned them since. A
+new production deployment now only takes the branch alias. The daily deploy
+hook still builds, and the build is still correct — it is simply not published.
+
+Fixed on 2026-09-22 by promoting `dpl_f9YsSJYKCx1LaQDbhGuDig6wzPt2`; both
+hostnames now serve it, verified by fetching `/macro` on each and by pulling
+the two inflation parquet files (9 group rows, 36 series rows) off the public
+host.
+
+**Still open, and it will recur.** Why a production deployment no longer
+auto-assigns the project domains is not established — a promote fixing the
+symptom is not a diagnosis. Until it is, every 06:00 UTC deploy-hook rebuild
+lands on the branch alias only and the public site freezes again at whatever
+was last promoted. Two candidate remedies, neither attempted:
+
+1. A post-deploy step in `daily_ingest.yml` that promotes the deployment the
+   hook created, or fails the run if the public host and
+   `silo-bz-git-main-deloslabs.vercel.app` disagree.
+2. Find and undo whatever the 2026-09-17/18 alias attempts left behind. Those
+   attempts are recorded below because they are probably the cause.
+
+What those attempts were: the old `silo-bz.vercel.app` hostname was
+reassigned five times on 2026-09-17 (`400: already assigned to another
+project`; `--scope 0xpedro` fails with "You cannot set your Personal Account as
+the scope"). The 2026-09-18 promote that pinned both hostnames came out of that
+sequence. Note the old hostname is **no longer** frozen separately — the
+2026-09-22 promote moved it too, so both now track the same deployment.
+
+**The method lesson, again.** The session that shipped the inflation feature
+reported it live on the strength of row counts in a build log and a deployment
+reaching READY. Both were true. Neither was the site. `CLAUDE.md` already says
+"row counts in a build log and pixels on the public URL are different
+observations"; this is the second time that has cost a day. Fetch the public
+URL and grep it for the thing you claim to have shipped.
 
 ## 9. `coverage().landed_at` reads a day stale for the B3 lending group
 
@@ -205,31 +239,17 @@ a retention decision before it is urgent rather than after.
 `pip install silo-client` does not resolve; callers vendor the directory. See
 [SDK.md](SDK.md) for what else the client is missing (PyPI, wheel CI, async).
 
-## 12. The inflation history is two one-off loads that have not run
+## 12. ~~The inflation history is two one-off loads that have not run~~ (done)
 
-Catalog v30 (`api.inflation`, `api.inflation_items`, `/macro` "Inside the
-IPCA") ships with the code but not the history. The daily run only refreshes
-a 30-day SGS window and the previous + current IBGE month, so until an
-operator runs these two commands once:
+Both ran on 2026-09-21 from **CVM Historical Backfill**. Run 35651030075
+landed 81,104 `ibge_ipca_item_monthly` rows (2012-01 → 2026-08); run
+35656620365 landed 72,060 `bacen_sgs` rows after `_SGS_MAX_WINDOW_YEARS`
+dropped to 5. Verified on the published dashboard 2026-09-22:
+`macro_inflation_series` carries 36 months ending 2026-08 with
+`ipca_mes = -0.32` and `ipca_12m = 4.22`, and `macro_inflation_groups_latest`
+carries all nine groups, whose contributions sum to -0.31 against a headline
+of -0.32.
 
-```bash
-python -m src.pipeline.run_backfill --bacen-only --bacen-sources sgs --bacen-start 1980-01-01
-python -m src.pipeline.run_backfill --ibge-only          # SIDRA 1419 + 7060, from 2012-01
-```
-
-or, the same thing from Actions in one dispatch of **CVM Historical
-Backfill**: `bacen_only = true`, `bacen_sources = sgs`,
-`bacen_start = 1980-01-01`, `ibge = true` (inputs added 2026-09-21).
-
-`api.inflation` serves 2019→ for IPCA 433 and only the trailing month for
-the 25 new codes (so `acc_12m` reads NULL everywhere: the twelve-month guard
-is doing its job), and `api.inflation_items` — and the contribution bar on
-`/macro` — are empty. The SGS load is ~35 series × 10 five-year slices, a few
-minutes; the IBGE load is ~15 requests of ≤12 months each (4.6 MB per
-request), also minutes. Both are idempotent. `backfill.yml`'s BACEN job is
-unchanged (2019, all three sources) on purpose: Focus from 1980 would walk
-Olinda's page cap.
-
-Verify after: `SELECT value, acc_12m FROM api.inflation('IPCA', NULL,
-'2026-08-01', '2026-08-01')` reads `-0.32, 4.22` and `api.inflation_items()`
-returns nine rows a month.
+The inputs added to `backfill.yml` stay, so the loads are repeatable:
+`bacen_only = true`, `bacen_sources = sgs`, `bacen_start = 1980-01-01`,
+`ibge = true`.
