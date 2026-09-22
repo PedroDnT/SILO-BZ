@@ -1,0 +1,36 @@
+name: Dashboard Publish Check
+
+# Confirms the dashboard build the deploy hook made is the one the public host
+# actually serves, and promotes it when it is not.
+#
+# WHY IT EXISTS: on 2026-09-22 Pedro reported the inflation section missing from
+# /macro. It had shipped four days earlier and built correctly every night; the
+# public hostnames had simply stopped taking production deployments, so four
+# READY builds published nothing. Nobody noticed because the only things checked
+# were build-log row counts and deployment state — both true, neither the site.
+# See docs/planning/OPEN_ITEMS.md item 8 for the measurements, including the
+# part that is still undiagnosed: WHY auto-assignment stopped.
+#
+# TIMING: daily_ingest fires the deploy hook at the end of ingest (~06:56 UTC
+# measured) and the Evidence build runs 17-45 min, so 08:00 UTC sits after the
+# slowest observed finish. A long ingest that pushes the build past 08:00 makes
+# this run red rather than falsely green — which is the point of it.
+#
+# Read-only against Postgres (it never touches it), so it may overlap anything.
+
+on:
+  schedule:
+    - cron: "0 8 * * *" # 08:00 UTC — after the 06:00 ingest's deploy-hook build
+  workflow_dispatch:
+
+jobs:
+  publish-check:
+    name: Confirm the public host serves the newest build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Promote and verify
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: bash scripts/promote_dashboard.sh

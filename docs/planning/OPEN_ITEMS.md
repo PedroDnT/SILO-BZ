@@ -179,17 +179,32 @@ hostnames now serve it, verified by fetching `/macro` on each and by pulling
 the two inflation parquet files (9 group rows, 36 series rows) off the public
 host.
 
-**Still open, and it will recur.** Why a production deployment no longer
-auto-assigns the project domains is not established — a promote fixing the
-symptom is not a diagnosis. Until it is, every 06:00 UTC deploy-hook rebuild
-lands on the branch alias only and the public site freezes again at whatever
-was last promoted. Two candidate remedies, neither attempted:
+**Guarded 2026-09-22, not diagnosed.** Why a production deployment no longer
+auto-assigns the project domains is still unestablished — build logs do not
+record aliasing and the API does not expose the decision, so there was nothing
+to read. What exists now is a guard that makes the question moot rather than
+answered:
 
-1. A post-deploy step in `daily_ingest.yml` that promotes the deployment the
-   hook created, or fails the run if the public host and
-   `silo-bz-git-main-deloslabs.vercel.app` disagree.
-2. Find and undo whatever the 2026-09-17/18 alias attempts left behind. Those
-   attempts are recorded below because they are probably the cause.
+`scripts/promote_dashboard.sh`, run daily at 08:00 UTC by
+`.github/workflows/publish_check.yml`, promotes the newest READY production
+deployment and then **verifies the public host actually serves it** by
+comparing `/data/manifest.json` against the branch alias. An explicit promote
+of a deployment that already holds the domains is a no-op, so the guard is
+safe whether or not auto-assignment comes back. Verified 2026-09-22 against
+the live hosts both ways: green when they match, and red when `PUBLIC_HOST` is
+pointed at `silo-j01uw6fds-deloslabs.vercel.app` (the #275 build that was
+actually being served during the freeze).
+
+Two things remain open:
+
+1. **`VERCEL_TOKEN` is not set**, so the guard can detect but not fix. Until
+   Pedro adds it (Vercel → Account Settings → Tokens, scope team `deloslabs`,
+   stored as the repository secret), a freeze produces a red run at 08:00 UTC
+   instead of a silent four-day stall — better, but still manual to clear.
+2. **The cause.** Find and undo whatever the 2026-09-17/18 alias attempts left
+   behind; they are recorded below because they are the likeliest culprit.
+   Pedro does not remember making the change, so there is no memory to rely on
+   here — it needs reading the Vercel project's audit log or support.
 
 What those attempts were: the old `silo-bz.vercel.app` hostname was
 reassigned five times on 2026-09-17 (`400: already assigned to another
