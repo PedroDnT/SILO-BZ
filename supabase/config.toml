@@ -1,0 +1,17 @@
+# Minimal Supabase CLI config for SILO's Edge Functions. It exists only to
+# configure `supabase/functions/*`; the database is managed by
+# scripts/apply_schema.py and scripts/apply_analytical.sh, not by the CLI.
+#
+# DO NOT run `supabase config push` or `supabase db push` with this file: every
+# section it omits (auth, storage, api, ...) would be pushed as the CLI's
+# defaults over the production project's settings. Deploy functions only:
+#
+#   supabase functions deploy silo-mcp --project-ref zcjbtpxuhdekpwcxmepn --no-verify-jwt
+
+project_id = "SILO-BZ"
+
+# The remote MCP server (docs: api-docs/mcp.mdx). Public and read-only: it has
+# no JWT to verify, so the gateway check is off for this function only.
+[functions.silo-mcp]
+enabled = true
+verify_jwt = false
