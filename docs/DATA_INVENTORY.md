@@ -42,6 +42,7 @@ from behind a login, or purchased — except the one ETF market feed noted below
 | FIDC    | `cvm_fidc_sacado`        | fund × month × **rank** (1–25)       | tab VIII, monthly 2025+, HIST ≤2024  | 2013                     |
 | FIDC    | `cvm_fidc_cedente`       | fund × month × block × slot (1–9)    | tab I cedente slots, unpivoted       | 2019-11 (slots appear)   |
 | FIDC    | `cvm_fidc_scr`           | fund × month                         | tab X, monthly 2025+, HIST ≤2024     | 2023-10 (member appears) |
+| FIDC    | `cvm_fidc_garantia`      | fund × month                         | tab X_7, monthly 2025+, HIST ≤2024   | 2019-11 (member appears) |
 | FII     | `cvm_fii_mensal`         | fund × month                         | yearly ZIP                           | 2021                     |
 | FII     | `cvm_fii_periodic`       | fund × quarter/year × doc            | yearly ZIP, 4 members                | 2019                     |
 | FII     | `cvm_fii_imovel`         | fund × quarter × **property**        | yearly ZIP                           | 2019                     |
@@ -143,12 +144,13 @@ download is already happening — these are members of a zip we fetch anyway.
 
 ### FIDC informe mensal — the tabs still unread
 
-The monthly FIDC ZIP has 18 members. Ten are ingested: `IV` (PL), `VI` (aging),
-`X_2`/`X_3`/`X_6` (tranche), `X_4` (tranche flows), and since migration 38 `I`
-(cedente slots only), `II` (sector), `VIII` (25 largest sacados), `X` (SCR ladder).
-Every HIST archive 2013–2024 was opened member by member for that migration; the
-same members exist there, with `tab_I`'s cedente slots from 2019-11 and `tab_X`
-from 2023-10 only.
+The monthly FIDC ZIP has 18 members. Eleven are ingested: `IV` (PL), `VI` (aging),
+`X_2`/`X_3`/`X_6` (tranche), `X_4` (tranche flows), since migration 38 `I`
+(cedente slots only), `II` (sector), `VIII` (25 largest sacados), `X` (SCR ladder),
+and since migration 45 `X_7` (guarantees on the credit rights, `cvm_fidc_garantia`).
+Every HIST archive 2013–2024 was opened member by member for those migrations; the
+same members exist there, with `tab_I`'s cedente slots and `tab_X_7` from 2019-11
+and `tab_X` from 2023-10 only.
 
 Not read, with what each carries:
 
@@ -161,7 +163,6 @@ Not read, with what each carries:
 | `tab_IX`                       | assignment prices: min / mean / max buy and sell across six credit categories                                                                                                 |                                                                                                                                   |
 | `tab_X_1`, `tab_X_1_1`         | quotaholders per tranche, and by investor type × senior/subordinated                                                                                                          |                                                                                                                                   |
 | `tab_X_5`                      | liquidity ladder (0 / 30 / 60 / 90 / 180 / 360 / >360 days)                                                                                                                   |                                                                                                                                   |
-| `tab_X_7`                      | collateral coverage of the receivables (value and %)                                                                                                                          |                                                                                                                                   |
 
 ### B3 — the three genuinely new sources
 
@@ -314,6 +315,7 @@ endpoint. Listed with what serving it would take.
 | `b3_corporate_event`                                                                           | splits, bonuses, groupings                                                                                                                       | **No.** Held as published; `adjusted` stays `FALSE` everywhere. The convention was measured on 2026-08-31 (705 events with a print on both sides): `DESDOBRAMENTO`/`BONIFICACAO` fit `1 + factor/100` to within 0.4% at the median; consecutive-session pairs hit ±5% only 82.6%/86.3% of the time, and `GRUPAMENTO` never exceeds 42%. Below the 90% bar, so no adjusted series. See `docs/planning/INSTRUMENTS.md`. Candidate: serve the events themselves (`corporate_events(p_ticker)`) without applying them.                |
 | `fnet_document`, `fnet_document_filter` | the FNET register: versions, restatements, delivery timestamps, fund links | **No**, not yet (B1 ships the register; serving is the next step). Candidate: `fund_documents(p_cnpj, p_from, p_to)` over the cnpjFundo links, and a restatements view (groups with more than one version, by `modalidade`). |
 | `cvm_fi_balancete`                                                                             | ~111M rows, fund accounting                                                                                                                      | **No.** Largest table in the warehouse; nothing reads it, including the dashboard. Deliberate until a question needs it.                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `cvm_fidc_garantia` | FIDC tab X_7 (migration 45): value of guarantees on the credit rights and a percentage, per fund × month, from 2019-11 | **No.** New; nothing reads it yet. CVM's dictionary leaves both columns undescribed and the percentage's denominator does not reconcile to one sibling total, so it is stored as filed. Most funds file zeros (28 of 4,383 non-zero in 2026-08). Candidate: a `kind = 'guarantees'` arm in `fidc_portfolio`, with the unstated denominator in its note, plus a `coverage()` row. |
 | `cvm_fi_cda`                                                                                   | CDA header block (portfolio totals per fund-month)                                                                                               | **No.** Blocks 4, 2 and 6 are served; the header is read by nothing.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ### Not served by design

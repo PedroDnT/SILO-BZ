@@ -168,6 +168,7 @@ REVOKE ALL ON TABLE cvm_fidc_setor         FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_fidc_scr           FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_fidc_sacado        FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_fidc_cedente       FROM anon, authenticated;
+REVOKE ALL ON TABLE cvm_fidc_garantia      FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_fiagro_mensal      FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_fip_periodic       FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_fii_mensal         FROM anon, authenticated;
