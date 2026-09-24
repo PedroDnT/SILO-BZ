@@ -556,6 +556,26 @@ CREATE INDEX IF NOT EXISTS idx_fidc_cedente_period  ON cvm_fidc_cedente (period 
 CREATE INDEX IF NOT EXISTS idx_fidc_cedente_cedente ON cvm_fidc_cedente (cpf_cnpj_cedente);
 
 -- ---------------------------------------------------------------------------
+-- FIDC — guarantees on the credit rights  (tab_X_7: value and %, as filed)
+-- Migration 45. From 2019-11; key audit and the unstated denominator are in
+-- the migration header.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS cvm_fidc_garantia (
+    id           BIGSERIAL    PRIMARY KEY,
+    cnpj         TEXT         NOT NULL CHECK (char_length(cnpj) = 14),
+    period       DATE         NOT NULL,
+    -- TAB_X_VL_GARANTIA_DIRCRED, as filed.
+    vl_garantia  NUMERIC(20,6),
+    -- TAB_X_PR_GARANTIA_DIRCRED, as filed; the denominator is CVM's, unstated.
+    pr_garantia  NUMERIC(20,6),
+    raw          JSONB,
+    fetched_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fidc_garantia UNIQUE (cnpj, period)
+);
+CREATE INDEX IF NOT EXISTS idx_fidc_garantia_cnpj   ON cvm_fidc_garantia (cnpj);
+CREATE INDEX IF NOT EXISTS idx_fidc_garantia_period ON cvm_fidc_garantia (period DESC);
+
+-- ---------------------------------------------------------------------------
 -- FIAGRO — monthly snapshot  (INF_MENSAL, monthly ZIP, from 2025-05)
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS cvm_fiagro_mensal (
