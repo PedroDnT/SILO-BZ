@@ -460,6 +460,8 @@ Nothing here is scheduled until Pedro picks it; the picked items then go to
 
 ### B1. FNET register, Stage 1: one row per document version (**recommended first**)
 
+**Status 2026-09-24: built** (migration 42, `src/pipeline/fnet_pipeline.py`). Serving it through `api` is the next step.
+
 - **Serves:** S2, S4, S1.
 - **Cost:** a new fetcher, one table, one migration, wiring into `run_daily`
   through the gap-aware window, and offline tests with a JSON fixture.
