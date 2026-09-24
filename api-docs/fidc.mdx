@@ -31,7 +31,7 @@ Give **exactly one** of `p_cnpj` or `p_cedente`:
 | `p_cnpj` | text | The **fund**. Which originators it buys receivables from. |
 | `p_cedente` | text | The **originator**. Any CPF/CNPJ, or a listed company's ticker / CVM code resolved only through CVM's published FCA map (active listings). Most originators are not listed; their CNPJ is the only way to reach them. |
 | `p_from` / `p_to` | date | Competency-month window. |
-| `p_limit` | int | Clamped by tier: **500** anonymous, 5,000 signed in. |
+| `p_limit` | int | Optional, **1..1000**: the newest N rows, because you asked. `null` = the whole window. |
 
 ```bash
 # Who does this FIDC buy from?
@@ -39,6 +39,16 @@ Give **exactly one** of `p_cnpj` or `p_cedente`:
 # Which FIDCs buy from this originator?
 -d '{"p_cedente":"61064911000177","p_from":"2025-01-01"}'
 ```
+
+<Warning>
+  **More than 1,000 rows is refused, never trimmed** (`22023`, as on every
+  other function; see [row caps](/api-docs/conventions#row-caps)). Until
+  catalog v34 all three functions on this page trimmed **silently** at 500 rows
+  anonymous / 5,000 signed in, so a busy originator's fund list came back
+  short with a `200`. Now the error says why and how: narrow `p_from`/`p_to`
+  (a `p_cedente` lookup spans many funds, so it needs fewer months than one
+  fund's 18 slots a month), or pass `p_limit` for the newest N rows.
+</Warning>
 
 ```python
 silo.fidc_cedentes(cnpj="05754060000113")       # who it buys from
@@ -74,7 +84,7 @@ block structure with placeholder values and is not ingested.
 | --- | --- | --- |
 | `p_cnpj` | text | The fund. **Required** — there is no debtor-side lookup, because the source carries no debtor identity. |
 | `p_from` / `p_to` | date | Competency-month window. |
-| `p_limit` | int | **500** anonymous, 5,000 signed in. 25 rows per month at most. |
+| `p_limit` | int | Optional, 1..1000: the newest N rows. 25 rows per month at most, so a whole window refuses (`22023`) past 40 months — narrow it. |
 
 ```python
 silo.fidc_sacados("11003181000126", start="2026-01-01")
@@ -94,7 +104,7 @@ the ranks it did not file. From 2013-01.
 | --- | --- | --- |
 | `p_cnpj` | text | The fund. Required. |
 | `p_kind` | text | `sector`, `scr_debtor`, `scr_operation`, `tax_debt`, or `null` for all. An unknown kind raises `22023`. |
-| `p_from` / `p_to` / `p_limit` | | As above; **500** / 5,000. |
+| `p_from` / `p_to` / `p_limit` | | As above. Up to 52 rows per month across all kinds; more than 1,000 rows refuses (`22023`) — narrow the window or pin `p_kind`. |
 
 ```python
 silo.fidc_portfolio("05754060000113", kind="sector", start="2026-01-01")

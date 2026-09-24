@@ -191,6 +191,45 @@ The operator half, which is what a reviewer needs to check:
   `fnet_documents` row (as_of = newest delivery day, complete_through the day
   before; landed_at from `cvm_ingest_log` entity `fnet`, doc_type `register`).
 
+### Row caps refuse, and say why (catalog v34)
+
+`fidc_cedentes`, `fidc_sacados` and `fidc_portfolio` used to trim **silently**
+at a tier ceiling (500 rows anonymous, 5,000 signed in): a result over the
+ceiling came back short with a 200. Since v34 they are raise-only on the one
+1000-row page like every other capped function (twenty-five in all,
+`catalog().limits.page.all`): the page CTE fetches 1001 rows and
+`api.assert_row_cap` raises `22023` above 1000. Their `*_rows` entries left
+`limits.tiers`; the tier time budget (3 s / 8 s) is unchanged. `p_limit` stays
+in the signature as an **explicit** newest-first head: 1..1000 is served as
+asked, `NULL` or anything above one page means the whole window (served whole
+or refused), and `< 1` is `22023` rather than a silent clamp to 1. Nothing in
+`dashboard/` or `webapp/` calls these functions (the Evidence sources read the
+landing tables directly), so no page relied on the trim.
+
+`api.assert_row_cap` now builds its message centrally from the function name:
+`<fn>: refused, this request would return more than 1000 rows.`, then the
+**why** (one 1000-row page; SILO never returns a silently truncated result),
+then `To fix:` and the **how** for that function (the cursor for `panel` /
+`quote_history` / `fund_nav`, thresholds for a `screen_*`, the window or
+`p_limit` for the FIDC trio, the window otherwise). The same two halves go out
+as `DETAIL` and `HINT`, which PostgREST returns as `details` / `hint`; the SDK's
+`SiloOverCap.server_hint` carries the latter. "more than 1000 rows" is
+load-bearing: `SiloOverCap` matches on it.
+
+### Lineage: which code produced this data (catalog v34)
+
+Migration `44_ingest_lineage.sql` adds `git_sha` and `parser_version` to
+`cvm_ingest_log`. `git_sha` is `GITHUB_SHA` (set on every Actions run), `NULL`
+when unset — never invented and never read off the working tree.
+`parser_version` is `src.pipeline.ingest_log.PARSER_VERSION`, bumped only when
+a parser or field map changes what a stored value means. Every audit writer
+stamps both: the shared `src/pipeline/ingest_log.py` (ANBIMA, B3, BACEN, IBGE,
+FNET) on start and finish, and CVM's own writer in `cvm_pipeline.py` on its
+start upsert and finish `UPDATE`. `api.coverage()` gains a trailing typed
+column `landed_git_sha`: the `git_sha` of the very run that set `landed_at`
+(newest finished `ok` row, `id` breaking a tie). A `NULL` there is served as
+`NULL`, never borrowed from an older run. `/v1/coverage` forwards it.
+
 ### The B3 lending and investor-flow views
 
 Five public views — `short_interest`, `short_interest_by_sector`,

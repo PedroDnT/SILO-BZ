@@ -45,7 +45,6 @@ Sign in with GitHub at [silo-bz-deloslabs.vercel.app/signin.html](https://silo-b
 | `option_exercises` rows | 500 | 5,000 |
 | `fund_holdings` rows | 500 | 5,000 |
 | `fund_debentures` rows | 500 | 5,000 |
-| `fidc_cedentes` / `fidc_sacados` / `fidc_portfolio` rows | 500 | 5,000 |
 | statement timeout | 3s | 8s |
 | **rows per response** | **1,000** | **1,000** |
 
@@ -109,6 +108,19 @@ Argument names are the SQL parameter names (`p_ticker`, `p_from`, `p_metrics`). 
   - **`POST /rpc` functions refuse** — every set-returning function raises `22023` rather than hand back a slice that looks whole.
 </Warning>
 
+The refusal says **why and how**. The message reads `<function>: refused, this request would return more than 1000 rows.`, then the reason (one 1,000-row page, and SILO never returns a silently truncated result), then `To fix:` with the remedy for that function. PostgREST also returns the two halves separately, as `details` (why) and `hint` (how):
+
+```json
+{
+  "code": "22023",
+  "message": "fidc_sacados: refused, this request would return more than 1000 rows. Every response is one page of at most 1000 rows (PostgREST db-max-rows), and a result cut to fit that page looks exactly like a complete one. SILO never returns a silently truncated result, so it refuses instead. To fix: This function has no cursor. Narrow the window with p_from/p_to, or ask explicitly for the newest N rows with p_limit (1..1000).",
+  "details": "Every response is one page of at most 1000 rows (PostgREST db-max-rows), and a result cut to fit that page looks exactly like a complete one. SILO never returns a silently truncated result, so it refuses instead.",
+  "hint": "This function has no cursor. Narrow the window with p_from/p_to, or ask explicitly for the newest N rows with p_limit (1..1000)."
+}
+```
+
+**Note**: until catalog v34, `fidc_cedentes`, `fidc_sacados` and `fidc_portfolio` trimmed **silently** at 500 rows anonymous / 5,000 signed in. They now refuse like the rest. Their `p_limit` is an explicit newest-first head: 1..1000 returns exactly the newest N rows you asked for; `null` (or anything above one page) is the whole window, served whole or refused; below 1 is `22023`.
+
 | Endpoint | Above one 1,000-row page |
 | --- | --- |
 | [`panel`](/api-docs/panel) | refuses; pages with `p_after` = `'<date>\|<id>\|<metric>\|<asset_class>'` |
@@ -121,6 +133,9 @@ Argument names are the SQL parameter names (`p_ticker`, `p_from`, `p_metrics`). 
 | [`anbima_classes`](/api-docs/anbima) | refuses; no cursor — narrow the window or pin a category |
 | [`inflation`](/api-docs/inflation) | refuses; no cursor — defaults to 36 months; pin `p_series` or `p_family` for deeper history |
 | [`inflation_items`](/api-docs/inflation) | refuses; no cursor — defaults to the nine groups over 36 months; pin `p_item` or one month for deeper levels |
+| [`fidc_cedentes`](/api-docs/fidc) | refuses; no cursor — narrow `p_from`/`p_to` (a `p_cedente` lookup spans many funds), or ask for the newest N rows with `p_limit` (1..1000) |
+| [`fidc_sacados`](/api-docs/fidc) | refuses; no cursor — narrow the window (25 rows per month), or `p_limit` (1..1000) for the newest N |
+| [`fidc_portfolio`](/api-docs/fidc) | refuses; no cursor — narrow the window or pin `p_kind`, or `p_limit` (1..1000) for the newest N |
 | [`fidc_tranches`](/api-docs/fidc-structure) | refuses; no cursor — narrow the window or pin `p_series` |
 | [`fidc_aging`](/api-docs/fidc-structure) | refuses; no cursor — narrow the window (21 rows per month) |
 | [`fund_documents`](/api-docs/fnet-documents) | refuses; no cursor — defaults to 12 months of deliveries; narrow the window or pin `p_tipo` |
@@ -208,6 +223,7 @@ Call `coverage` before you claim anything is current. Four of its date columns m
 | `complete_through` | The newest period classified COMPLETE — what the default windows serve. |
 | `newest_period` | The newest period **key** present. Can sit in the **future** (FIP is keyed 31-December). Never read as freshness. |
 | `landed_at` | When ingest last **succeeded**. A later failed run never advances it. |
+| `landed_git_sha` | The git commit of **that same run**, meaning the code that produced the newest data. `null` when the run recorded none (before v34, or a run outside GitHub Actions), and never borrowed from an older run. |
 
 `metric_coverage` says which `(family, metric)` pairs are actually filed and over what span. **A pair absent from it is one the family never files** — not one whose data is late.
 

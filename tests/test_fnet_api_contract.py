@@ -276,7 +276,9 @@ def test_coverage_reports_the_register_with_its_limits():
     assert "first capture / backfill" in seg
     assert "fortnightly" in seg and "may have no cnpj yet" in seg
     landed = cov[cov.index("SELECT '*fnet_register*'::text"):]
-    landed = landed[: landed.index("),")]
+    # The fnet arm is the last in the landed CTE, so it ends where base begins
+    # (not at the first "),": v34's landed_git_sha pick contains one).
+    landed = landed[: landed.index("base AS (")]
     assert "l.entity = 'fnet' AND l.doc_type = 'register'" in landed
     assert "l.status = 'ok'" in landed
     from src.pipeline.fnet_pipeline import DOC_REGISTER, LOG_ENTITY

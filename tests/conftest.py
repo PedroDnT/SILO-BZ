@@ -200,6 +200,8 @@ def event_loop():
 INGEST_LOG_COLUMNS = frozenset({
     "id", "run_id", "entity", "doc_type", "period_year", "period_month",
     "rows_upserted", "status", "error_msg", "started_at", "finished_at",
+    # Lineage, migration 44: which code produced the slice.
+    "git_sha", "parser_version",
 })
 
 
