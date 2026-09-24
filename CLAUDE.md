@@ -175,7 +175,8 @@ The **analytical layer** (`src/store/analytical/`, applied by `scripts/apply_ana
 after ingest) is the read side the dashboards query: `dim_fund` (a **materialized view**,
 refreshed daily by cron + the apply re-create) plus `dim_fund_category` / `dim_administrator`
 / `dim_gestor`; the `fact_fund_monthly` / `fact_security_monthly` matviews; the
-`fraud_screen_*` suspicious-deal screens (15); and the `fund_performance_*` / `etf_*` ranking
+`fraud_screen_*` suspicious-deal screens (15; served to API callers only as the
+`api.screen_*` wrappers in 23 — the public functions hold no client grant); and the `fund_performance_*` / `etf_*` ranking
 functions (16–17). ETFs are carved out of the fund universe and ranked separately —
 `etf_daily` is empty for post-CVM-175 share classes (see the ETF doc).
 `mv_savings_flow_monthly` / `api.mv_savings_flow_monthly` (18) is reproduced as-found so

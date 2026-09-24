@@ -173,6 +173,23 @@ methods since catalog v27.
 They were parked in this file while nothing else covered them. That is no longer
 true, so the caveats live with the pages that own them rather than here.
 
+### The forensic screens
+
+The seven `api.screen_*` functions (catalog v31, `23_api_screens.sql`) have no
+`/v1` twin and `silo_api` holds no grant on them — the same decision as the
+lending views. They wrap the public `fraud_screen_*` / `fidc_delinquency_drivers`
+functions the dashboard reads (`15_fraud_screens.sql`), so there is one
+definition of each screen. Caller documentation, including the "signals, not
+verdicts" contract and what each screen cannot tell apart, is
+[Forensic screens](https://octo-98895abd.mintlify.site/api-docs/screens).
+
+Operator half: the public functions were `GRANT EXECUTE … TO anon,
+authenticated` until v31 and reachable only because `public` is not an exposed
+schema. They are now revoked from `PUBLIC`, `anon` and `authenticated`, and
+`23_api_screens.sql` fails the apply if either client role can still execute
+one. The Evidence build is unaffected: it connects as the `postgres` login
+(`EVIDENCE_SOURCE__supabase__user`), which owns them.
+
 ## Run
 
 ```bash

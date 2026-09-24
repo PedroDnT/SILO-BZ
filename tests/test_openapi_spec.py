@@ -221,6 +221,14 @@ REFUSING_FUNCTIONS = {
     "company_financials",
     "income_statements",
     "anbima_classes",
+    # v31: the forensic screens (23_api_screens.sql) — raise-only.
+    "screen_zombie_growth",
+    "screen_captive_vehicles",
+    "screen_evergreen_aging",
+    "screen_overdue_securit",
+    "screen_dormant_funds",
+    "screen_dormant_trend",
+    "screen_delinquency_drivers",
 }
 PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav"}
 
@@ -388,6 +396,9 @@ ENFORCED_ENUMS = [
     ("fund_holdings", "p_kind", ["equity", "fund"]),
     ("fidc_portfolio", "p_kind", ["sector", "scr_debtor", "scr_operation", "tax_debt"]),
     ("anbima_classes", "p_level", ["category", "type", "total"]),
+    ("screen_dormant_funds", "p_dormancy", ["empty_shell", "parked_capital"]),
+    ("screen_delinquency_drivers", "p_driver",
+     ["consistent_worsening", "value_up_rate_masked", "denominator_only", "improvement", "stable"]),
 ]
 
 
