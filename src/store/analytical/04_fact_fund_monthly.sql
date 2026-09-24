@@ -252,7 +252,7 @@ fi_monthly AS (
     NULL::numeric               AS resg_mes,
     vl_ativo,
     NULL::text                  AS quota_subclass_id
-  FROM cvm_fii_mensal
+  FROM vw_fii_mensal_latest
   WHERE doc_subtype = 'complemento'
     AND cnpj IS NOT NULL
 

@@ -11,11 +11,12 @@ properly-typed table.
 
 TABLE = "cvm_fii_mensal"
 DOC_SUBTYPE = "ativo_passivo"
-CONFLICT = ("cnpj", "period", "doc_subtype")
+CONFLICT = ("cnpj", "period", "doc_subtype", "versao")
 
 FIELD_MAP = {
     "cnpj":                   (["CNPJ_Fundo_Classe", "CNPJ_FUNDO_CLASSE", "CNPJ_Fundo"],  "cnpj"),
     "period":                 (["Data_Referencia", "DT_COMPTC"],             "date"),
+    "versao":                 (["Versao"], "text"),  # CVM restatement counter; validated in ingest_fii
     # Total_Investido is the asset total for this subtype.
     "vl_ativo":               (["Total_Investido"],                          "numeric"),
     "rendimentos_distribuir": (["Rendimentos_Distribuir"],                   "numeric"),
