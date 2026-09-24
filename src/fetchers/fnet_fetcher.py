@@ -142,7 +142,7 @@ class FnetFetcher:
                         return body
             if attempt < attempts:
                 await asyncio.sleep(self.retry_delay * attempt)
-        raise FnetFetchError(f"FNET {label} failed after {attempts} attempts: {last_exc}")
+        raise FnetFetchError(f"FNET {label} failed after {attempts} attempts: {last_exc!r}")
 
     async def search(
         self,
