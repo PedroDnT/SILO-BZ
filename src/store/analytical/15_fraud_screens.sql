@@ -96,7 +96,7 @@ AS $$
         MAX(m.period)                       AS latest_period,
         MAX(m.vl_patrim_liq) / 1e6          AS pl_mm,
         MIN(m.nr_cotst)                     AS min_investors
-    FROM cvm_fii_mensal m
+    FROM vw_fii_mensal_latest m
     LEFT JOIN cvm_fund_registry r ON r.cnpj = m.cnpj AND r.entity_type = 'fii'
     WHERE m.doc_subtype = 'complemento'
       AND m.period >= CURRENT_DATE - make_interval(months => p_lookback_months)

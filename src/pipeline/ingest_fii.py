@@ -4,6 +4,11 @@ Handles three subtypes that all target cvm_fii_mensal (discriminated by
 doc_subtype), the periodic reports (cvm_fii_periodic), and the INF_TRIMESTRAL
 property register (cvm_fii_imovel, its own grain).
 
+cvm_fii_mensal and cvm_fii_periodic keep EVERY CVM version of a filing
+(migration 43): ``Versao`` is in both conflict keys, so a restatement lands as a
+new row instead of overwriting the original. Readers that want one row per
+filing go through vw_fii_mensal_latest / vw_fii_periodic_latest.
+
 Each public function is called by CVMIngestor and returns the number of rows
 upserted.
 """
@@ -14,6 +19,7 @@ import logging
 from typing import Any, Dict, List, Mapping
 
 from src.parsers.mapping import apply_map, assert_map_matches
+from src.parsers.validation import parse_versao
 from src.parsers.field_maps import fii_geral as _geral
 from src.parsers.field_maps import fii_ativo_passivo as _ap
 from src.parsers.field_maps import fii_complemento as _comp
@@ -39,6 +45,19 @@ def _row_hash(row: Mapping[str, Any]) -> str:
         f"{k}={'' if row.get(k) is None else row.get(k)}" for k in sorted(row)
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+def _apply_versao(typed: Dict[str, Any]) -> bool:
+    """Replace typed["versao"] (the source text) with a validated int in place.
+
+    Returns False when the row must be dropped: CVM's ``Versao`` is present but
+    is not an integer >= 1. An absent/empty version stays NULL — the unique keys
+    are NULLS NOT DISTINCT, so such a row keys exactly as it did before versions
+    were kept (migration 43). See src/parsers/validation.parse_versao.
+    """
+    ok, versao = parse_versao(typed.get("versao"))
+    typed["versao"] = versao
+    return ok
+
 
 # Map doc_type string -> (subtype label, field_map module)
 _SUBTYPE_MAP = {
@@ -68,6 +87,7 @@ def ingest_fii_mensal(conn: Any, raw_rows: List[Dict[str, Any]], doc_type: str) 
         required=("cnpj",),
     )
     records: List[Dict[str, Any]] = []
+    bad_versao = 0
 
     for row in raw_rows:
         typed, residual = apply_map(row, field_map)
@@ -78,9 +98,21 @@ def ingest_fii_mensal(conn: Any, raw_rows: List[Dict[str, Any]], doc_type: str) 
         if not typed.get("cnpj"):
             continue
 
+        # Versao is part of the key (migration 43): every CVM version of a
+        # filing is its own row. A malformed one is dropped and counted.
+        if not _apply_versao(typed):
+            bad_versao += 1
+            continue
+
         # period: apply_map coerces to date object; if None fall back gracefully
         # (the ingest module is called with year context so the caller can patch)
         records.append(typed)
+
+    if bad_versao:
+        logger.warning(
+            "fii/%s: dropped %d row(s) with a malformed Versao (not an integer >= 1)",
+            doc_type, bad_versao,
+        )
 
     if not records:
         return 0
@@ -123,6 +155,7 @@ def ingest_fii_periodic(conn: Any, raw_rows: List[Dict[str, Any]], doc_type: str
         )
 
     records: List[Dict[str, Any]] = []
+    bad_versao = 0
 
     for row in raw_rows:
         typed, residual = apply_map(row, field_map)
@@ -133,7 +166,18 @@ def ingest_fii_periodic(conn: Any, raw_rows: List[Dict[str, Any]], doc_type: str
         if not typed.get("cnpj"):
             typed["cnpj"] = None  # allow NULL per table constraint
 
+        # Versao is part of the key (migration 43); malformed -> drop + count.
+        if not _apply_versao(typed):
+            bad_versao += 1
+            continue
+
         records.append(typed)
+
+    if bad_versao:
+        logger.warning(
+            "fii/%s %d: dropped %d row(s) with a malformed Versao (not an integer >= 1)",
+            doc_type, year, bad_versao,
+        )
 
     if not records:
         return 0

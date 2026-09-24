@@ -305,7 +305,8 @@ Liqi's operating model, the agents that update themselves, is in §4.5.
 
 - `cvm_fii_mensal` and `cvm_fii_periodic` receive CVM's `Versao` but keep it
   out of the natural key, so a restatement overwrites the original. The same
-  applies to `cvm_securit_fluxo` and `cvm_fi_perfil`.
+  applies to `cvm_securit_fluxo` and `cvm_fi_perfil`. **FII fixed 2026-09-24**
+  (migration 43, see B4): both FII keys now include `versao`.
 - CVM's FIDC CSVs carry no version field at all (all 18 metadata files were
   checked). **FNET is the only public source of FIDC restatement history.**
 - `cia_event.link_download` already points at versioned CVM RAD PDFs
@@ -528,9 +529,15 @@ Nothing here is scheduled until Pedro picks it; the picked items then go to
 - **What it does.** Fetch the XML for every group with more than one
   version, parse it with the existing FIDC and FII field maps, and store the
   diffs field by field.
-- **A separate decision.** Putting `versao` into the keys of
-  `cvm_fii_mensal` and `cvm_fii_periodic` changes their grain. That is Pedro's
-  call, flagged here as it was in `DATA_INVENTORY.md` §2.
+- **Our own version loss: decided and done for FII (2026-09-24).** Pedro
+  approved putting `versao` into the keys of `cvm_fii_mensal` and
+  `cvm_fii_periodic`. Migration 43 does it (`NULLS NOT DISTINCT`, backfilled
+  from `raw`), and every reader moved to `vw_fii_mensal_latest` /
+  `vw_fii_periodic_latest`, one row per former key at the highest version, so
+  no downstream number changed meaning. Rows stored before the change hold
+  only the version CVM shipped at our last fetch. From now on every version
+  CVM's files carry is kept, which gives Stage 2 an FII diff source of our
+  own. `cvm_securit_fluxo` and `cvm_fi_perfil` are still open.
 - **Hypothesis.** "What did the fund first declare, and what did it change?"
   is answerable for FIDCs only through FNET, and only SILO would serve it as
   data.

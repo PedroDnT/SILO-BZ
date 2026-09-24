@@ -25,12 +25,12 @@ docs/DATA_MODELING.md), and nothing queries it yet.
 
 TABLE = "cvm_fii_periodic"
 DOC_TYPE = "trimestral_complemento"
-CONFLICT = ("cnpj", "doc_type", "period_year", "data_referencia")
+CONFLICT = ("cnpj", "doc_type", "period_year", "data_referencia", "versao")
 
 FIELD_MAP = {
     "cnpj":            (["CNPJ_Fundo_Classe", "CNPJ_FUNDO_CLASSE", "CNPJ_Fundo"], "cnpj"),
     "data_referencia": (["Data_Referencia", "DT_COMPTC"], "date"),
-    "versao":          (["Versao"],                        "int"),
+    "versao":          (["Versao"],                        "text"),  # validated in ingest_fii
 
     # Inflation-indexer exposure, as a share of total contract value
     "pr_indexador_igpm": (["Percentual_Indexador_Valor_Total_IGPM"], "pct"),
