@@ -559,8 +559,8 @@ Nothing here is scheduled until Pedro picks it; the picked items then go to
 
 - **Serves:** how the backlog gets done, not a segment.
 - **Design:** the registry, prompts versioned in the repo, one PR per run, a
-  3-PR budget, and retirement if fewer than half its PRs merge. The design is
-  was proposed on 2026-09-23 and gets written up as `docs/planning/AGENTS.md` if this item is picked.
+  3-PR budget, and retirement if fewer than half its PRs merge. Picked, and
+  written up as [`AGENTS.md`](AGENTS.md) on 2026-09-24.
 - **Smallest test:** one manual Builder run on FIDC `tab_X_7`. **Reject if**
   the PR needs rework comparable to writing it by hand.
 
