@@ -16,6 +16,21 @@
 -- These are signals, not verdicts — always confirm against primary sources.
 -- Delinquency-acceleration is already covered by fidc_delinquency_screen() in
 -- 10_analytical_functions_advanced.sql.
+--
+-- Served to API callers ONLY through the api.screen_* wrappers in
+-- 23_api_screens.sql (SECURITY DEFINER, one definition — they call these).
+-- These public functions are therefore NOT granted to any client role: until
+-- 2026-09-24 they carried GRANT EXECUTE ... TO anon, authenticated and were
+-- unreachable only because schema public is not in Supabase's exposed-schemas
+-- list (DATA_INVENTORY.md §3). The grants below are now REVOKEs, from PUBLIC
+-- too (Postgres grants EXECUTE to PUBLIC on every new function). The Evidence
+-- dashboard is unaffected: it reads them at build time through the postgres
+-- login (EVIDENCE_SOURCE__supabase__user, dashboard/README.md), which owns them.
+--
+-- Each function pins search_path = public, pg_temp: an api.* DEFINER caller
+-- runs with search_path = '' and that propagates down the call stack, so an
+-- unpinned body's unqualified table names would not resolve from the API (the
+-- same reason latest_complete_period() pins its own in 04).
 -- =============================================================================
 
 BEGIN;
@@ -37,6 +52,7 @@ RETURNS TABLE (
     inad_pct  NUMERIC
 )
 LANGUAGE sql STABLE SECURITY INVOKER
+SET search_path = public, pg_temp
 AS $$
     WITH rp AS (
         SELECT COALESCE(p_period, (SELECT MAX(period) FROM cvm_fidc_aging)) AS eff_period
@@ -72,6 +88,7 @@ RETURNS TABLE (
     min_investors INT
 )
 LANGUAGE sql STABLE SECURITY INVOKER
+SET search_path = public, pg_temp
 AS $$
     SELECT
         m.cnpj,
@@ -105,6 +122,7 @@ RETURNS TABLE (
     max_longtail_pct NUMERIC
 )
 LANGUAGE sql STABLE SECURITY INVOKER
+SET search_path = public, pg_temp
 AS $$
     SELECT
         a.cnpj,
@@ -139,6 +157,7 @@ RETURNS TABLE (
     rating               TEXT
 )
 LANGUAGE sql STABLE SECURITY INVOKER
+SET search_path = public, pg_temp
 AS $$
     -- cvm_securit_serie holds one row per series PER MONTHLY FILING
     -- (data_referencia is in the key), so a series past maturity appeared once
@@ -210,6 +229,7 @@ RETURNS TABLE (
     dormancy        TEXT
 )
 LANGUAGE sql STABLE SECURITY INVOKER
+SET search_path = public, pg_temp
 AS $$
     WITH bounds AS (
         SELECT latest_complete_period('fi')                                                   AS win_to,
@@ -272,6 +292,7 @@ RETURNS TABLE (
     parked_pl       NUMERIC
 )
 LANGUAGE sql STABLE SECURITY INVOKER
+SET search_path = public, pg_temp
 AS $$
     WITH bounds AS (
         SELECT latest_complete_period('fi')                                                     AS win_to,
@@ -328,12 +349,14 @@ AS $$
     ORDER BY c.period
 $$;
 
-GRANT EXECUTE ON FUNCTION fraud_screen_dormant_funds(INT)                          TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION fraud_screen_dormant_trend(INT, INT)                     TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION fraud_screen_zombie_growth(DATE, NUMERIC, NUMERIC)      TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION fraud_screen_captive_vehicles(INT, INT, NUMERIC)        TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION fraud_screen_evergreen_aging(INT, NUMERIC, NUMERIC)     TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION fraud_screen_overdue_securit(NUMERIC)                   TO anon, authenticated;
+-- Client roles reach these through api.screen_* (23_api_screens.sql) only.
+-- REVOKE is idempotent, so every apply restores the boundary; 23 asserts it.
+REVOKE ALL ON FUNCTION fraud_screen_dormant_funds(INT)                      FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION fraud_screen_dormant_trend(INT, INT)                 FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION fraud_screen_zombie_growth(DATE, NUMERIC, NUMERIC)  FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION fraud_screen_captive_vehicles(INT, INT, NUMERIC)    FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION fraud_screen_evergreen_aging(INT, NUMERIC, NUMERIC) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION fraud_screen_overdue_securit(NUMERIC)               FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Delinquency drivers — rank FIDCs by how much their delinquency worsened,
@@ -402,6 +425,7 @@ RETURNS TABLE (
     driver            TEXT
 )
 LANGUAGE plpgsql STABLE SECURITY INVOKER
+SET search_path = public, pg_temp
 AS $$
 #variable_conflict use_column
 DECLARE
@@ -488,6 +512,7 @@ $$;
 COMMENT ON FUNCTION fidc_delinquency_drivers(DATE, INT, INT, NUMERIC, NUMERIC) IS
     'FIDC delinquency deterioration over a window, both metrics side by side: delta in BRL (vl_inadimpl) and in percentage points (100*vl_inadimpl/vl_patrim_liq), first vs last observation, with the driver classified (consistent_worsening | value_up_rate_masked | denominator_only | improvement | stable) from the two thresholds. Reads fact_fund_monthly, the series the API serves. Refuses a window that starts before 2025-01 (no delinquency field before the tab IV/VI regime). stopped_reporting flags a fund whose last filing is two or more months behind the window end.';
 
-GRANT EXECUTE ON FUNCTION fidc_delinquency_drivers(DATE, INT, INT, NUMERIC, NUMERIC) TO anon, authenticated;
+-- Served as api.screen_delinquency_drivers (23); not a client grant here.
+REVOKE ALL ON FUNCTION fidc_delinquency_drivers(DATE, INT, INT, NUMERIC, NUMERIC) FROM PUBLIC, anon, authenticated;
 
 COMMIT;

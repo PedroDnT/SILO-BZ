@@ -1,0 +1,137 @@
+---
+title: "Forensic screens"
+description: "Seven public-filing screens — FIDC zombie growth, evergreen aging and delinquency drivers, captive FIIs, overdue CRI/CRA, dormant funds. Signals, not verdicts: every row says which thresholds it crossed."
+icon: "magnifying-glass"
+---
+
+<Note>
+  **Parameters, response columns and types are generated** from the SQL catalog and
+  render under **Endpoints → Screens** in the sidebar. This page carries what a
+  schema cannot: what each screen measures, what else looks the same, and how to
+  narrow one that is too wide.
+</Note>
+
+<Warning>
+  **These are signals, not verdicts.** A row is a fund or a series whose public
+  filings crossed a stated threshold. It is not a score, a rating, a rank of
+  suspicion or a finding, and none of those is served. Every pattern below has an
+  innocent explanation that produces exactly the same row. Confirm against the
+  fund's own filings before repeating anything a screen returns.
+</Warning>
+
+### Overview
+
+The same screens the dashboard runs on [/suspicious](https://silo-bz-deloslabs.vercel.app/suspicious),
+[/dormant](https://silo-bz-deloslabs.vercel.app/dormant) and
+[/fidc](https://silo-bz-deloslabs.vercel.app/fidc), served from **one definition**:
+each `screen_*` function calls the screen the dashboard reads, so the page and
+the API cannot disagree about who crossed a line.
+
+| Function | Family | Crosses the line when… | Dashboard |
+| --- | --- | --- | --- |
+| `screen_zombie_growth` | FIDC | delinquency > `p_min_delinq_pct` of NAV while NAV > `p_min_aum`, one aging month | /suspicious |
+| `screen_evergreen_aging` | FIDC | the > 1080-day bucket peaks above `p_min_longtail_pct` of delinquency and moves < `p_max_variation_pp` over the window | /suspicious |
+| `screen_delinquency_drivers` | FIDC | every FIDC, first vs last month, the move classified into five drivers | /fidc |
+| `screen_captive_vehicles` | FII | NAV peaked above `p_min_aum` while quotaholders stayed below `p_max_investors` | /suspicious |
+| `screen_overdue_securit` | CRI / CRA | past filed maturity, newest filing not terminal, volume > `p_min_volume` | /suspicious |
+| `screen_dormant_funds` | FI | every month of the window filed, zero subscriptions and zero redemptions | /dormant |
+| `screen_dormant_trend` | FI | the dormant screen counted at every month-end | /dormant |
+
+The machine-readable twin is `screens` in [`catalog()`](/api-docs/conventions):
+per screen, the defaults, the allowed ranges, the output filters and a `meaning`
+that says what else produces the same pattern.
+
+### Every row says how it got there
+
+Two columns close every row, whatever the screen:
+
+| Column | Meaning |
+| --- | --- |
+| `screen` | which screen produced the row — `zombie_growth`, `evergreen_aging`, … |
+| `params` | the exact arguments it was evaluated with, keyed by argument name — replay the call with them |
+
+```json
+{ "cnpj": "11111111000191", "fund_name": "…", "period": "2026-06-30",
+  "nav_mm": 2.0, "delinquency_pct": 15.0,
+  "screen": "zombie_growth",
+  "params": { "p_period": null, "p_min_delinq_pct": 5, "p_min_aum": 1000000 } }
+```
+
+A row read without its `params` is a claim without its premise. Keep them
+together when you pass a result on.
+
+### Calling one
+
+With no arguments, every screen reproduces its dashboard page.
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/screen_evergreen_aging" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+```bash
+# The same screen, stricter: 18 months, an 80% long tail that moved under 5 p.p.
+-d '{"p_lookback_months":18,"p_min_longtail_pct":80,"p_max_variation_pp":5}'
+```
+
+| Screen | Defaults (the dashboard's) | Allowed |
+| --- | --- | --- |
+| `zombie_growth` | latest aging month, 5%, R$1mm | `p_min_delinq_pct` 0..100 · `p_min_aum` ≥ 0 |
+| `captive_vehicles` | 3 months, fewer than 10, R$50mm | `p_lookback_months` 1..36 · `p_max_investors` 1..1000 · `p_min_aum` ≥ 0 |
+| `evergreen_aging` | 12 months, 70%, 10 p.p. | `p_lookback_months` 3..36 · both percentages 0..100 |
+| `overdue_securit` | R$100k | `p_min_volume` ≥ 0 |
+| `dormant_funds` | 3 months | `p_lookback_months` 2..12 |
+| `dormant_trend` | 3 months, 36 months of history | `p_lookback_months` 2..12 · `p_history_months` 1..60 |
+| `delinquency_drivers` | latest complete month, 12 months, 6 observations, R$1mm, 1 p.p. | `p_months` 2..24 · `p_min_months` 2..`p_months` · both deltas ≥ 0 |
+
+A threshold outside its range, or `null`, raises `22023` naming the range. It is
+**never clamped**: a screen evaluated at a threshold you did not ask for is a
+different screen with your label on it.
+
+### Too many rows: narrow, don't page
+
+Screens do not page. Above one 1,000-row page they raise `22023`
+([Conventions → Row caps](/api-docs/conventions#row-caps)) — a screen is a short
+list or it is the wrong screen. Two of them exceed a page at their defaults, and
+take **output filters** that narrow the result without changing the screen
+(echoed in `params` like the thresholds):
+
+- **`screen_dormant_funds`** — `p_dormancy` (`empty_shell` or `parked_capital`)
+  and `p_min_nav` (keep classes whose last NAV is at least this). The
+  parked-capital population alone was 8,257 classes in September 2026: pin
+  `p_dormancy` and walk `p_min_nav` bands.
+- **`screen_delinquency_drivers`** — `p_driver`, one of the five classes. Every
+  FIDC with enough observations gets a row, `stable` included.
+
+An unknown filter value raises `22023`; it is not ignored.
+
+### What each screen cannot tell apart
+
+| Screen | The same row also comes from… |
+| --- | --- |
+| `zombie_growth` | a distressed-credit mandate; a fund in orderly wind-down; one late payer in a small book. `delinquency_pct` is delinquency / NAV and can exceed 100. |
+| `evergreen_aging` | a slow judicial recovery; a policy of not writing off. `months_observed` counts the aging months actually filed. |
+| `delinquency_drivers` | anything that moves two numbers: no sector, no debtor, no guarantee. `value_up_rate_masked` is NAV growing with delinquency; `denominator_only` is NAV shrinking, not new delinquency. |
+| `captive_vehicles` | exclusive and family-office FIIs, which are legal and look exactly like this. |
+| `overdue_securit` | a series that was extended, renegotiated or simply not yet re-filed. The **filing** is stale; the screen cannot say why. `status` is served as filed. The series number is not a column, so two series under one `instrument_code` read as two rows with the same identity. |
+| `dormant_funds` | exclusive and closed structures (`parked_capital`); a vehicle registered ahead of its launch (`empty_shell`). A month with unreported flows or quotaholders disqualifies a fund rather than counting as zero. FI only — the other families file no monthly flows. |
+
+### Windows and freshness
+
+- `dormant_funds`, `dormant_trend` and `delinquency_drivers` anchor on the
+  family's latest **complete** period (`coverage().complete_through`), never on
+  today, so a partially-filed month cannot read as "no flow".
+- `captive_vehicles` and `evergreen_aging` look back from today; a month CVM has
+  not published yet is simply absent.
+- `delinquency_drivers` refuses a window that starts before **2025-01**: FIDC
+  delinquency is not filed before then (the [regime break](/api-docs/conventions)).
+  Shorten `p_months` or move `p_end`.
+
+### Limits
+
+No tier ceiling: the page is the ceiling, identically for every caller. The
+binding limit is the query budget — **3 s** anonymous, 8 s signed in.
+`dormant_trend` over its full 60-month range is the heaviest call here; if it
+times out anonymously, sign in or shorten `p_history_months`.
