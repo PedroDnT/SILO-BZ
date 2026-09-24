@@ -460,7 +460,7 @@ Nothing here is scheduled until Pedro picks it; the picked items then go to
 
 ### B1. FNET register, Stage 1: one row per document version (**recommended first**)
 
-**Status 2026-09-24: built** (migration 42, `src/pipeline/fnet_pipeline.py`). Serving it through `api` is the next step.
+**Status 2026-09-24: built, and the smallest test passed** (migration 42, `src/pipeline/fnet_pipeline.py`). A live backfill of delivery days 2026-09-01..23 counts **608 restated FIDC monthly informes (603 voluntary, 5 CVM-required)**; Tomé's "reapresentações do mês" page, updated 23/09, shows 598 with ~1% CVM-required. Within 2% (the rejection bar was ±5%); the gap is plausibly the 23rd's late filings. August 2026 in full: 26,440 documents, 3,483 of them versions ≥ 2. Serving it through `api` is the next step.
 
 - **Serves:** S2, S4, S1.
 - **Cost:** a new fetcher, one table, one migration, wiring into `run_daily`
