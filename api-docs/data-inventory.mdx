@@ -163,6 +163,7 @@ The warehouse is wider than the API. Checked against `19_api_contract.sql` on 20
 | `bacen_sgs` — the IPCA set (26 codes) | **Yes**, via [`inflation`](/api-docs/inflation): headline, IPCA-15, the BCB cores, classifications, diffusion and the nine groups, as published, plus a derived `acc_12m`. |
 | `ibge_ipca_item_monthly` | **Yes**, via [`inflation_items`](/api-docs/inflation): the IPCA tree with weights and a derived `contribution`. |
 | `cvm_fidc_cedente`, `cvm_fidc_sacado`, `cvm_fidc_setor`, `cvm_fidc_scr` | **Yes**: `fidc_cedentes`, `fidc_sacados`, `fidc_portfolio`, the panel metrics `receivables` / `sacado_top1` / `sacado_top25`, four `coverage()` rows. See [FIDC concentration](/api-docs/fidc). |
+| The forensic screens over `cvm_fidc_aging`, `cvm_fidc_mensal`, `cvm_fii_mensal`, `cvm_securit_serie`, `fact_fund_monthly` | **Yes**, as signals: seven `screen_*` functions — FIDC zombie growth, evergreen aging and delinquency drivers, captive FIIs, overdue CRI/CRA, dormant FI funds. Every row carries `screen` and `params`; no score. See [Forensic screens](/api-docs/screens). |
 
 #### Held and not served — candidates
 
