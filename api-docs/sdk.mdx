@@ -71,6 +71,7 @@ One per published endpoint. Dates accept `date` objects or ISO strings; `None` m
 | `fund_holdings(cnpj \| ticker, start, end, kind, limit)` | `fund_holdings` | exactly one of holder / held ticker |
 | `fund_debentures(cnpj \| issuer, start, end, limit)` | `fund_debentures` | issuer = ticker, CVM code or any CPF/CNPJ |
 | `fidc_cedentes(cnpj \| cedente, …)` · `fidc_sacados(cnpj, …)` · `fidc_portfolio(cnpj, kind, …)` | [FIDC](/api-docs/fidc) | `kind` = sector / scr_debtor / scr_operation / tax_debt |
+| `fidc_tranches(cnpj, start, end, series)` · `fidc_aging(cnpj, start, end)` | [FIDC tranches and aging](/api-docs/fidc-structure) | as filed, from 2025-01; `flows` keeps CVM's labels |
 | `financials(id, statement, start, end, scope, doc_type)` · `company_financials(id, …)` | financials | read `period_months` before comparing rows |
 | `anbima_classes(category, metric, level, start, end)` | `anbima_classes` | industry aggregates, no fund join |
 | `inflation(series, family, start, end)` · `inflation_items(level, item, start, end)` | [inflation](/api-docs/inflation) | as published, in percent; `acc_12m` and `contribution` are the derived columns |
@@ -114,7 +115,7 @@ fidcs = silo.panel_all(None, ["delinquency", "nav"], entity_type="fidc",
                        min_nav=1e7, min_months=12, wide=True)
 ```
 
-For `option_history`, `termo_history`, `financials`, `company_financials`, `anbima_classes`, `inflation` and `inflation_items` there is no cursor: `SiloOverCap` means narrow the window.
+For `option_history`, `termo_history`, `financials`, `company_financials`, `anbima_classes`, `inflation`, `inflation_items`, `fidc_tranches` and `fidc_aging` there is no cursor: `SiloOverCap` means narrow the window.
 
 `panel(wide=True)` refuses to pivot a CNPJ that files under two families in the same month — pass `entity_type=`, or take `wide=False` and keep `asset_class` in your own key.
 

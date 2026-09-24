@@ -2034,6 +2034,229 @@ COMMENT ON FUNCTION api.fidc_portfolio(TEXT, TEXT, DATE, DATE, INT) IS
     'One FIDC''s receivables book, long: kind=sector is informe tab II (TOTAL, the lettered sectors A..K, and their numbered members — `parent` names the letter a numbered code belongs to; sum leaves or parents, never both); kind=scr_debtor / scr_operation are tab X''s BACEN SCR grade ladders AA..H for the same receivables graded two ways; kind=tax_debt is TAB_X_DEBITO_TRIBUT. Values as filed. tab II from 2013-01; tab X from 2023-10 (earlier months have no scr rows, not zero-graded ones). An unknown p_kind raises 22023.';
 
 -- ---------------------------------------------------------------------------
+-- FIDC structure — tranches (tabs X_2/X_3/X_6 + X_4) and aging (tab VI)
+-- ---------------------------------------------------------------------------
+-- Two more members of the same monthly informe, read by /fidc since the start
+-- and reachable by no caller until v31 (DATA_INVENTORY.md §3, backlog B3).
+--
+--   fidc_tranches  one row per (fund, month, tranche): quota count and value,
+--                  the month's return, and the PROMISED vs REALISED
+--                  performance CVM asks each series to file — all as filed.
+--                  The tranche's subscriptions / redemptions / amortizations
+--                  (tab X_4) ride along as a `flows` array keyed by CVM's own
+--                  TAB_X_TP_OPER label. That label is free text whose
+--                  vocabulary has drifted, so nothing here buckets it into
+--                  "subscription" or "redemption": a label this file did not
+--                  anticipate would silently vanish from a fixed column, and
+--                  an array cannot lose one. A series that files flows but no
+--                  tranche row still appears (tranche_filed = FALSE), so the
+--                  two tabs are never inner-joined away.
+--   fidc_aging     tab VI long: one row per (fund, month, bucket) —
+--                  to_maturity (credits not yet due, by days to maturity),
+--                  overdue (by days past due), and overdue_total, which is
+--                  CVM's FILED total, never a sum of the buckets here.
+--
+-- HISTORY BEGINS IN 2025. These tabs are ingested from the current-format
+-- informe only; CVM's pre-2025 HIST archive publishes no equivalent member for
+-- X_2 / X_4 / VI, so an earlier month has no rows — an upstream limit, not a
+-- gap to backfill. coverage()'s fidc_tranches / fidc_aging rows say so.
+--
+-- Neither function derives anything: no performance gap, no subordination
+-- ratio, no bucket sums. vw_fidc_tranche_detail / fidc_tranche_performance
+-- (the dashboard's read) compute those on the same rows; a caller does the
+-- arithmetic in the notebook, where it can see it. Percent fields are dirty
+-- the way CVM's percentage fields are (schema.sql: raw values up to 1.6e8) —
+-- served as filed, never clipped, never nulled.
+--
+-- Row cap: one page + one, then api.assert_row_cap REFUSES (22023). No
+-- cursor: a fund's whole post-2025 history is tens of rows, so a window over
+-- 1000 is a mistake to narrow, not a series to walk. Default window verbatim,
+-- like the other fidc_* functions.
+
+CREATE OR REPLACE FUNCTION api.fidc_tranches(
+    p_cnpj   TEXT,
+    p_from   DATE DEFAULT NULL,
+    p_to     DATE DEFAULT NULL,
+    p_series TEXT DEFAULT NULL    -- one TAB_X_CLASSE_SERIE, matched exactly as filed; NULL = every tranche
+)
+RETURNS TABLE (
+    cnpj                 TEXT,
+    period               DATE,
+    classe_serie         TEXT,     -- CVM's tranche label, as filed (e.g. 'Subclasse Senior 1')
+    quotas               NUMERIC,  -- TAB_X_QT_COTA
+    quota_value          NUMERIC,  -- TAB_X_VL_COTA
+    return_month         NUMERIC,  -- TAB_X_VL_RENTAB_MES, percent, as filed
+    performance_expected NUMERIC,  -- TAB_X_PR_DESEMP_ESPERADO: what the series promised, percent
+    performance_realised NUMERIC,  -- TAB_X_PR_DESEMP_REAL: what it delivered, percent
+    tranche_filed        BOOLEAN,  -- FALSE = only tab X_4 flows exist for this series and month
+    flows                JSONB     -- [{tp_oper, value, quotas}] from tab X_4, labels as filed; NULL = none filed
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+DECLARE
+    v_cnpj   TEXT := NULLIF(regexp_replace(COALESCE(p_cnpj, ''), '\D', '', 'g'), '');
+    v_series TEXT := NULLIF(btrim(COALESCE(p_series, '')), '');
+BEGIN
+    IF v_cnpj IS NULL THEN
+        RAISE EXCEPTION
+            'fidc_tranches needs p_cnpj: tranches are filed per fund (find one with search_funds or lookup)'
+            USING ERRCODE = '22023';
+    END IF;
+
+    RETURN QUERY
+    -- The key set is the UNION of both tabs, so a series filed in only one of
+    -- them is still served rather than lost to an inner join.
+    WITH keys AS (
+        SELECT t.period, t.classe_serie
+        FROM public.cvm_fidc_tranche t
+        WHERE t.cnpj = v_cnpj
+          AND (v_series IS NULL OR t.classe_serie = v_series)
+          AND (p_from IS NULL OR t.period >= p_from)
+          AND (p_to   IS NULL OR t.period <= p_to)
+        UNION
+        SELECT f.period, f.classe_serie
+        FROM public.cvm_fidc_tranche_flows f
+        WHERE f.cnpj = v_cnpj
+          AND (v_series IS NULL OR f.classe_serie = v_series)
+          AND (p_from IS NULL OR f.period >= p_from)
+          AND (p_to   IS NULL OR f.period <= p_to)
+    ),
+    -- One page + one, then assert_row_cap REFUSES (22023). No cursor.
+    page (cnpj, period, classe_serie, quotas, quota_value, return_month,
+          performance_expected, performance_realised, tranche_filed, flows) AS (
+        SELECT v_cnpj,
+               k.period,
+               k.classe_serie,
+               t.qt_cota,
+               t.vl_cota,
+               t.vl_rentab_mes,
+               t.pr_desemp_esperado,
+               t.pr_desemp_real,
+               (t.cnpj IS NOT NULL),
+               fl.flows
+        FROM keys k
+        LEFT JOIN public.cvm_fidc_tranche t
+               ON t.cnpj = v_cnpj
+              AND t.period = k.period
+              AND t.classe_serie = k.classe_serie
+        LEFT JOIN LATERAL (
+            -- jsonb_agg over zero rows is NULL: a tranche with no filed flows
+            -- reads null, never an invented empty operation.
+            SELECT jsonb_agg(
+                       jsonb_build_object(
+                           -- ingest stores a blank label as ''; served as null
+                           'tp_oper', NULLIF(f.tp_oper, ''),
+                           'value',   f.vl_total,
+                           'quotas',  f.qt_cota
+                       )
+                       ORDER BY f.tp_oper
+                   ) AS flows
+            FROM public.cvm_fidc_tranche_flows f
+            WHERE f.cnpj = v_cnpj
+              AND f.period = k.period
+              AND f.classe_serie = k.classe_serie
+        ) fl ON TRUE
+        ORDER BY 2, 3
+        LIMIT 1001
+    )
+    SELECT g.* FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'fidc_tranches')
+    ORDER BY g.period, g.classe_serie
+    LIMIT 1000;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION api.fidc_tranches(TEXT, DATE, DATE, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.fidc_tranches(TEXT, DATE, DATE, TEXT)
+    TO anon, authenticated;
+
+COMMENT ON FUNCTION api.fidc_tranches(TEXT, DATE, DATE, TEXT) IS
+    'One FIDC''s tranches, month by month, oldest first: one row per (fund, month, classe_serie) from informe tabs X_2 / X_3 / X_6 — quotas, quota_value, return_month, and performance_expected vs performance_realised (what the series promised vs delivered, percent) — all AS FILED, with the dirty outliers CVM''s percentage fields carry (never clipped; range-check in the notebook). flows is the tranche''s tab X_4 operations as a JSON array [{tp_oper, value, quotas}], labels verbatim (e.g. Captações no Mês, Resgates no Mês, Amortizações) and never bucketed; NULL when none were filed. tranche_filed = FALSE marks a series with flows but no X_2 row. Nothing is derived: no performance gap, no subordination ratio. HISTORY BEGINS IN 2025 — CVM''s HIST archive has no equivalent member, so an earlier month has no rows (an upstream limit, not a gap). p_series pins one tranche label exactly. More than 1000 rows RAISES 22023 (never trimmed): narrow the window.';
+
+CREATE OR REPLACE FUNCTION api.fidc_aging(
+    p_cnpj TEXT,
+    p_from DATE DEFAULT NULL,
+    p_to   DATE DEFAULT NULL
+)
+RETURNS TABLE (
+    cnpj      TEXT,
+    period    DATE,
+    kind      TEXT,     -- to_maturity | overdue | overdue_total
+    bucket    TEXT,     -- '1-30' .. '721-1080', '>1080'; 'TOTAL' on overdue_total
+    days_from INT,      -- lower bound of the band, in days; NULL on overdue_total
+    days_to   INT,      -- upper bound; NULL on '>1080' and on overdue_total
+    item      TEXT,     -- the source column's own name, e.g. vl_inad_90
+    value     NUMERIC   -- BRL, as filed
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+DECLARE
+    v_cnpj TEXT := NULLIF(regexp_replace(COALESCE(p_cnpj, ''), '\D', '', 'g'), '');
+BEGIN
+    IF v_cnpj IS NULL THEN
+        RAISE EXCEPTION
+            'fidc_aging needs p_cnpj: the aging ladder is filed per fund (find one with search_funds or lookup)'
+            USING ERRCODE = '22023';
+    END IF;
+
+    RETURN QUERY
+    -- One page + one, then assert_row_cap REFUSES (22023). No cursor.
+    WITH page (cnpj, period, kind, bucket, days_from, days_to, item, value, ord) AS (
+        SELECT a.cnpj, a.period, v.kind, v.bucket, v.days_from, v.days_to, v.item, v.value, v.ord
+        FROM public.cvm_fidc_aging a
+        CROSS JOIN LATERAL (VALUES
+            ( 1, 'to_maturity',   '1-30',      1,    30,   'vl_prazo_30',         a.vl_prazo_30),
+            ( 2, 'to_maturity',   '31-60',     31,   60,   'vl_prazo_60',         a.vl_prazo_60),
+            ( 3, 'to_maturity',   '61-90',     61,   90,   'vl_prazo_90',         a.vl_prazo_90),
+            ( 4, 'to_maturity',   '91-120',    91,   120,  'vl_prazo_120',        a.vl_prazo_120),
+            ( 5, 'to_maturity',   '121-150',   121,  150,  'vl_prazo_150',        a.vl_prazo_150),
+            ( 6, 'to_maturity',   '151-180',   151,  180,  'vl_prazo_180',        a.vl_prazo_180),
+            ( 7, 'to_maturity',   '181-360',   181,  360,  'vl_prazo_360',        a.vl_prazo_360),
+            ( 8, 'to_maturity',   '361-720',   361,  720,  'vl_prazo_720',        a.vl_prazo_720),
+            ( 9, 'to_maturity',   '721-1080',  721,  1080, 'vl_prazo_1080',       a.vl_prazo_1080),
+            (10, 'to_maturity',   '>1080',     1081, NULL, 'vl_prazo_maior_1080', a.vl_prazo_maior_1080),
+            (11, 'overdue',       '1-30',      1,    30,   'vl_inad_30',          a.vl_inad_30),
+            (12, 'overdue',       '31-60',     31,   60,   'vl_inad_60',          a.vl_inad_60),
+            (13, 'overdue',       '61-90',     61,   90,   'vl_inad_90',          a.vl_inad_90),
+            (14, 'overdue',       '91-120',    91,   120,  'vl_inad_120',         a.vl_inad_120),
+            (15, 'overdue',       '121-150',   121,  150,  'vl_inad_150',         a.vl_inad_150),
+            (16, 'overdue',       '151-180',   151,  180,  'vl_inad_180',         a.vl_inad_180),
+            (17, 'overdue',       '181-360',   181,  360,  'vl_inad_360',         a.vl_inad_360),
+            (18, 'overdue',       '361-720',   361,  720,  'vl_inad_720',         a.vl_inad_720),
+            (19, 'overdue',       '721-1080',  721,  1080, 'vl_inad_1080',        a.vl_inad_1080),
+            (20, 'overdue',       '>1080',     1081, NULL, 'vl_inad_maior_1080',  a.vl_inad_maior_1080),
+            -- CVM's own filed total (TAB_VI_B_VL_DIRCRED_INAD), NOT a sum of
+            -- the ten overdue buckets above; the two can disagree as filed.
+            (21, 'overdue_total', 'TOTAL',     NULL, NULL, 'vl_total_inad',       a.vl_total_inad)
+        ) AS v(ord, kind, bucket, days_from, days_to, item, value)
+        WHERE a.cnpj = v_cnpj
+          AND (p_from IS NULL OR a.period >= p_from)
+          AND (p_to   IS NULL OR a.period <= p_to)
+        ORDER BY 2, 9
+        LIMIT 1001
+    )
+    SELECT g.cnpj, g.period, g.kind, g.bucket, g.days_from, g.days_to, g.item, g.value
+    FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'fidc_aging')
+    ORDER BY g.period, g.ord
+    LIMIT 1000;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION api.fidc_aging(TEXT, DATE, DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.fidc_aging(TEXT, DATE, DATE)
+    TO anon, authenticated;
+
+COMMENT ON FUNCTION api.fidc_aging(TEXT, DATE, DATE) IS
+    'One FIDC''s receivables aging ladder from informe tab VI, long, oldest first: 21 rows per month — kind=to_maturity (credits not yet due, by days to maturity, ten bands 1-30 .. >1080), kind=overdue (by days past due, the same ten bands), and kind=overdue_total, CVM''s FILED total of overdue credits, which is not a sum of the buckets and can disagree with one. Values in BRL as filed; a blank in the filing is NULL, never 0. item names the source column. Tab VI covers the credits acquired WITHOUT substantial retention of risk by the originator (tab V, the with-risk twin, is not ingested). HISTORY BEGINS IN 2025 — CVM''s HIST archive has no equivalent member, so an earlier month has no rows (an upstream limit, not a gap). The panel''s delinquency metric is the fund-level total; this is the ladder under it. More than 1000 rows RAISES 22023 (never trimmed): narrow the window.';
+
+-- ---------------------------------------------------------------------------
 -- ANBIMA class aggregates — the industry benchmark series, as published
 -- ---------------------------------------------------------------------------
 -- anbima_class_monthly is the "Boletim de Fundos de Investimento" read long:
@@ -2660,6 +2883,25 @@ AS $$
                MAX(r2.period), 'fidc'::text
         FROM public.cvm_fidc_scr r2
         UNION ALL
+        -- FIDC structure tabs (v31): tranches (X_2/X_3/X_6 + X_4) and the
+        -- tab VI aging ladder. Same informe, same fidc completeness clamp.
+        -- The note carries the one thing a short span invites a caller to
+        -- misread: it starts in 2025 because CVM publishes no archive of
+        -- these members, not because ingest missed anything.
+        SELECT 'fidc_tranches'::text,
+               MAX(t2.period) FILTER (WHERE t2.period <= CURRENT_DATE),
+               public.latest_complete_period('fidc'), 'cvm'::text,
+               'tabs X_2/X_3/X_6 (+ X_4 flows) exist from 2025-01 only: CVM''s pre-2025 HIST archive publishes no equivalent member, so an earlier month has no rows — an upstream limit, not a gap to backfill. Quotas, quota value, return and promised vs realised performance are as filed (percent fields carry CVM''s outliers); flows keep CVM''s TP_OPER labels verbatim'::text,
+               MAX(t2.period), 'fidc'::text
+        FROM public.cvm_fidc_tranche t2
+        UNION ALL
+        SELECT 'fidc_aging'::text,
+               MAX(a2.period) FILTER (WHERE a2.period <= CURRENT_DATE),
+               public.latest_complete_period('fidc'), 'cvm'::text,
+               'tab VI exists from 2025-01 only: CVM''s pre-2025 HIST archive publishes no equivalent member, so an earlier month has no rows — an upstream limit, not a gap to backfill. to_maturity and overdue ladders in ten day-bands each, BRL as filed; overdue_total is CVM''s filed total, not a sum of the bands'::text,
+               MAX(a2.period), 'fidc'::text
+        FROM public.cvm_fidc_aging a2
+        UNION ALL
         -- The B3 securities-lending and investor-flow group (#235, #240-#245),
         -- published since but absent from this function until v27 — so the one
         -- call an agent is told to make before claiming freshness said nothing
@@ -2749,7 +2991,7 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION api.coverage() IS
-    'Freshness AND honesty per dataset. as_of = the newest period that has landed and has actually ELAPSED (bounded by today); complete_through = the newest COMPLETE period, which is what default windows serve; newest_period = the newest period KEY present, which can sit in the future when a family files forward-dated (FIP is keyed 31-December); landed_at = when ingest last SUCCEEDED for that source, from cvm_ingest_log (status ok with a finish time, so a later failed run never advances it). funds_<family> rows report each filing cadence separately. notes carries a caveat the dates cannot: the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); funds_fip states why its newest_period runs ahead; fund_nav points at catalog().applicability and api.metric_coverage(); and the five B3 lending / flow rows (short_interest, short_interest_by_sector, lending_trades, lending_participants, investor_flow) state the RATCHET — B3 keeps ~21 business days and publishes no archive, so their span starts at first capture and no backfill exists — along with the float_basis, brokerage-not-owner and first-difference traps that make those series easy to read wrongly. Their landed_at is split by ingest doc_type, so a COTAHIST run never reports as the lending group''s freshness.';
+    'Freshness AND honesty per dataset. as_of = the newest period that has landed and has actually ELAPSED (bounded by today); complete_through = the newest COMPLETE period, which is what default windows serve; newest_period = the newest period KEY present, which can sit in the future when a family files forward-dated (FIP is keyed 31-December); landed_at = when ingest last SUCCEEDED for that source, from cvm_ingest_log (status ok with a finish time, so a later failed run never advances it). funds_<family> rows report each filing cadence separately. notes carries a caveat the dates cannot: the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); funds_fip states why its newest_period runs ahead; fund_nav points at catalog().applicability and api.metric_coverage(); the fidc_tranches and fidc_aging rows state that those informe tabs begin in 2025-01 because CVM publishes no archive of them (an upstream limit, not a gap); and the five B3 lending / flow rows (short_interest, short_interest_by_sector, lending_trades, lending_participants, investor_flow) state the RATCHET — B3 keeps ~21 business days and publishes no archive, so their span starts at first capture and no backfill exists — along with the float_basis, brokerage-not-owner and first-difference traps that make those series easy to read wrongly. Their landed_at is split by ingest doc_type, so a COTAHIST run never reports as the lending group''s freshness.';
 
 REVOKE ALL ON FUNCTION api.coverage() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.coverage() TO anon, authenticated;
@@ -3933,7 +4175,7 @@ AS $fn$
 SELECT $json$
 {
   "kind": "catalog",
-  "version": 30,
+  "version": 31,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, the B3 securities-lending and investor-flow group, and Brazilian inflation — BACEN's IPCA series and IBGE's item tree with weights). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -4210,6 +4452,7 @@ SELECT $json$
     "A FIDC CEDENTE SHARE IS A PERCENT OF ITS BLOCK, NOT OF THE FUND. fidc_cedentes serves tab I's nine slots per block: bloco A is the receivables acquired WITH substantial retention of risks and benefits by the originator, B WITHOUT, and share_pct is the cedente's share of that block. The block totals are not served (tab I's asset lines are not ingested), so a share cannot be turned into reais here. cedente_id is the originator's own filed CPF/CNPJ, kept only when its check digits verify — placeholders (all-zero, all-nine) and unrecoverable identifiers were dropped at ingest, never coerced — and cedente_tickers is the FCA map's active listings for it, NULL when not listed. share_pct is AS FILED and dirty in the way CVM's percentage fields are: 9% of slots carry a value above 100 (max 19,771 in 2026-07); validate the range in the notebook, never read it as a fraction. Slots exist from 2019-11; nothing is matched by name.",
     "FIDC SACADOS ARE ANONYMIZED RANKS. fidc_sacados and the sacado_top1 / sacado_top25 metrics come from tab VIII, which publishes the 25 largest debtors as (rank, value) with no identity — CVM's dictionary describes neither column. seq is CVM's rank as filed and is never recomputed from valor (65 of 3,043 funds filed a non-descending series in 2026-07; they are served as filed). sacado_top25 sums the ranks the fund filed, which may be fewer than 25. Concentration = sacado_top1 / receivables (or top25 / receivables) is a notebook division, not a served number — and it can exceed 1: tab VIII and tab II do not share a base for every fund (2026-07: the top-25 sum exceeds the receivables total for 1.9% of funds, rank 1 alone for 0.5%), served as filed and never capped.",
     "FIDC PORTFOLIO ROWS ARE A HIERARCHY. fidc_portfolio kind=sector serves tab II as one row per code: TOTAL is the whole receivables book, a lettered code (A..K) a sector, and a code with a digit (C1, F3) a member of its lettered parent (`parent`). Sum leaves or sum parents, never both. kind=scr_debtor and kind=scr_operation are the BACEN SCR grade ladders AA..H for the same receivables, graded by debtor and by operation respectively — two views of one book, not two books. tab X exists from 2023-10 only; earlier months have no scr rows, not zero-graded ones.",
+    "FIDC TRANCHES AND AGING BEGIN IN 2025, AND ARE SERVED AS FILED. fidc_tranches (informe tabs X_2/X_3/X_6 + X_4) and fidc_aging (tab VI) exist from 2025-01 only: CVM's pre-2025 HIST archive publishes no equivalent member, so an earlier month has no rows — an upstream limit, not a gap and not a backfill to ask for. fidc_tranches is one row per (fund, month, classe_serie): quotas, quota_value, return_month, and performance_expected vs performance_realised (what the series promised vs delivered, percent), dirty the way CVM's percentage fields are — never clipped, range-check in the notebook. Its `flows` array carries tab X_4's operations with CVM's TP_OPER label verbatim (e.g. Captações no Mês, Resgates no Mês, Amortizações); the vocabulary has drifted, so match labels yourself and never read a label you did not find as zero. tranche_filed = FALSE marks a series with flows but no X_2 row. fidc_aging is long: kind=to_maturity (not yet due, by days to maturity) and kind=overdue (by days past due), ten day-bands each, plus kind=overdue_total — CVM's FILED total, not a sum of the bands, and the two can disagree. Nothing is derived by either function: no performance gap, no subordination ratio, no band sums.",
     "FIDC DELINQUENCY STARTS IN 2025-01. CVM's pre-2025 monthly FIDC file (tab II/III) carried no delinquency field, so `delinquency` is null on every fidc row through 2024-12-31 — not zero, not clean books, not a missing month. From 2025-01-31 the tab IV/VI format is ingested and delinquency is filed on every row. Never chain-link, difference or average a FIDC delinquency series across 2024-12 → 2025-01; the series begins there. Machine-readable in `regime_breaks`, and on the funds_fidc coverage row's `notes`.",
     "A FUND'S DEBENTURE HOLDINGS ARE A DIFFERENT SHAPE FROM ITS EQUITY HOLDINGS. api.fund_debentures (CDA block 6) is one row per (fund, month, issuer, maturity, rate structure, application type), as filed and never summed — two series of one issuer maturing the same day at different coupons are different securities. The issuer is its own filed CPF/CNPJ (issuer_id); p_issuer also takes a listed company's ticker or CVM code, resolved only through CVM's published FCA map, and issuer_tickers carries the issuer's active listed codes back (NULL when not listed — most debenture issuers are not). Nothing is matched by name.",
     "ANBIMA CLASS ROWS ARE INDUSTRY AGGREGATES, NOT FUNDS. api.anbima_classes serves the Boletim de Fundos de Investimento as published — R$ milhões (unit brl_mm) and percentage points (unit pct) — per class, ANBIMA type or industry total (`level`; class aggregates by default). No fund in this warehouse is mapped to an ANBIMA class: CVM's `classe` is CVM's taxonomy, so never join a fund to a class by name, and there is no panel arm because these rows carry no id. An unknown category, metric or level raises 22023 listing what exists rather than returning an empty array.",
@@ -4235,7 +4478,7 @@ SELECT $json$
     "Default windows are honest: with no explicit `to`, fund metrics end at each family's latest COMPLETE period (coverage() reports it as complete_through) — a partially-filed trailing month is not served. An explicit `to` serves the window verbatim, partial months included.",
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
-    "Row caps — getting this wrong means silently analysing a TRUNCATED series, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY set-returning function now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short result can no longer look complete. That is all eleven — panel, quote_history, fund_nav, option_history, termo_history, financials, company_financials, income_statements, anbima_classes, inflation, inflation_items (`limits.page.all`). THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send p_after='' for the first page, then the key from the last row — for the panel 'date|id|metric|asset_class', for quote_history and fund_nav just that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when paging, because its cursor is a bare period and one CNPJ can file under two families in the same month. The other eight do not page: narrow p_from/p_to instead (inflation and inflation_items default to the last 36 months for that reason). The old sentinels (5001 on the series functions, 100001 on the panel) are GONE and were never observable anyway — PostgREST cut the response at 1000 first (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. The RPC functions no longer need it — they raise instead. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
+    "Row caps — getting this wrong means silently analysing a TRUNCATED series, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY set-returning function now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short result can no longer look complete. That is all thirteen — panel, quote_history, fund_nav, option_history, termo_history, financials, company_financials, income_statements, anbima_classes, inflation, inflation_items, fidc_tranches, fidc_aging (`limits.page.all`). THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send p_after='' for the first page, then the key from the last row — for the panel 'date|id|metric|asset_class', for quote_history and fund_nav just that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when paging, because its cursor is a bare period and one CNPJ can file under two families in the same month. The other ten do not page: narrow p_from/p_to instead (inflation and inflation_items default to the last 36 months for that reason). The old sentinels (5001 on the series functions, 100001 on the panel) are GONE and were never observable anyway — PostgREST cut the response at 1000 first (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. The RPC functions no longer need it — they raise instead. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
     "An unrecognised metric name is IGNORED, not rejected: the panel comes back smaller and perfectly plausible. Take metric names from this catalog's `metrics` map, never from memory.",
     "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
     "CALLER TIERS. Anonymous access is free but deliberately small: panel accepts at most 3 ids per call, search_funds returns at most 25 rows, and option_chain pages at most 200. Signing in (GitHub) raises those to 50 ids, 200 rows and 2000 respectively, and the query timeout from 3s to 8s, and unlocks panel universe mode (p_ids empty + p_entity_type: a whole family, paged with p_after). Exceeding the id ceiling raises SQLSTATE 22023 naming the limit — the panel is never silently truncated to fit.",
@@ -4270,7 +4513,9 @@ SELECT $json$
         "income_statements",
         "anbima_classes",
         "inflation",
-        "inflation_items"
+        "inflation_items",
+        "fidc_tranches",
+        "fidc_aging"
       ],
       "cursor_protocol": "p_after: null = whole result (refused above 1000 rows); '' = first page; the function's key copied from the last row = the next page; a page shorter than 1000 is the last",
       "functions": {
@@ -4287,7 +4532,9 @@ SELECT $json$
           "income_statements",
           "anbima_classes",
           "inflation",
-          "inflation_items"
+          "inflation_items",
+          "fidc_tranches",
+          "fidc_aging"
         ]
       },
       "over_cap": "SQLSTATE 22023 naming the function — nothing is trimmed to fit; the message says to page or narrow",
@@ -4417,6 +4664,11 @@ SELECT $json$
       "then": "Divide sacado_top1 by receivables per row; the debtor is anonymized, so this is a ratio, not a name."
     },
     {
+      "ask": "Did this FIDC's senior tranche deliver what it promised?",
+      "call": "POST /rest/v1/rpc/fidc_tranches {\"p_cnpj\": \"<cnpj>\", \"p_from\": \"2025-01-01\"}",
+      "then": "Compare performance_realised with performance_expected per classe_serie in the notebook; both are as filed and can carry CVM's outliers. History starts 2025-01 — there is no earlier tranche data anywhere. Read the aging ladder under it with fidc_aging; overdue_total is CVM's filed total, not a sum."
+    },
+    {
       "ask": "Just give me the panel; I will run a factor model",
       "call": "POST /rest/v1/rpc/panel {\"p_ids\": [\"PETR4\", \"VALE3\", \"<cnpj>\"], \"p_metrics\": [\"close_return\", \"nav\"], \"p_freq\": \"month\"}",
       "then": "Model in the notebook from the long rows. Anonymous callers are capped at 3 ids — a 4th raises 22023, it is not trimmed."
@@ -4518,6 +4770,8 @@ SELECT $json$
     "fidc_cedentes": "POST /rest/v1/rpc/fidc_cedentes",
     "fidc_sacados": "POST /rest/v1/rpc/fidc_sacados",
     "fidc_portfolio": "POST /rest/v1/rpc/fidc_portfolio",
+    "fidc_tranches": "POST /rest/v1/rpc/fidc_tranches",
+    "fidc_aging": "POST /rest/v1/rpc/fidc_aging",
     "short_interest": "GET /rest/v1/short_interest",
     "short_interest_by_sector": "GET /rest/v1/short_interest_by_sector",
     "lending_trades": "GET /rest/v1/lending_trades",
@@ -4587,6 +4841,8 @@ GRANT EXECUTE ON FUNCTION api.fund_debentures(TEXT, TEXT, DATE, DATE, INT) TO si
 GRANT EXECUTE ON FUNCTION api.fidc_cedentes(TEXT, TEXT, DATE, DATE, INT)   TO silo_api;
 GRANT EXECUTE ON FUNCTION api.fidc_sacados(TEXT, DATE, DATE, INT)          TO silo_api;
 GRANT EXECUTE ON FUNCTION api.fidc_portfolio(TEXT, TEXT, DATE, DATE, INT)  TO silo_api;
+GRANT EXECUTE ON FUNCTION api.fidc_tranches(TEXT, DATE, DATE, TEXT)        TO silo_api;
+GRANT EXECUTE ON FUNCTION api.fidc_aging(TEXT, DATE, DATE)                 TO silo_api;
 GRANT EXECUTE ON FUNCTION api.inflation(TEXT, TEXT, DATE, DATE)            TO silo_api;
 GRANT EXECUTE ON FUNCTION api.inflation_items(INT, TEXT, DATE, DATE)       TO silo_api;
 GRANT EXECUTE ON FUNCTION api.catalog()                               TO silo_api;

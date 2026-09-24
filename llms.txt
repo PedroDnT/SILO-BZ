@@ -36,6 +36,7 @@ Start with Conventions & limits: it is the single source of truth for auth tiers
 - [Funds](https://octo-98895abd.mintlify.site/api-docs/funds.md): CVM fund registry and monthly fundamentals — the api.funds view plus search_funds, fund_profile, and fund_nav.
 - [Fund holdings](https://octo-98895abd.mintlify.site/api-docs/holdings.md): What a fund owns, and which funds own a ticker — the one edge joining the fund universe to the quote tape.
 - [FIDC concentration](https://octo-98895abd.mintlify.site/api-docs/fidc.md): Who a receivables fund buys from, who owes it, what sector the book is in and how BACEN grades it — informe tabs I, VIII, II and X, served as filed.
+- [FIDC tranches and aging](https://octo-98895abd.mintlify.site/api-docs/fidc-structure.md): Inside a receivables fund's capital structure and credit book — each tranche's quotas, return and promised vs realised performance with its subscriptions and redemptions, and the aging ladder of what is owed. Informe tabs X and VI, as filed, from 2025.
 - [ANBIMA classes](https://octo-98895abd.mintlify.site/api-docs/anbima.md): The industry's own benchmark series — AUM, net flows, returns and fund counts per ANBIMA class, as the Boletim de Fundos publishes them.
 
 ## Macro
