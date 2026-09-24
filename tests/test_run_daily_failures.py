@@ -59,6 +59,10 @@ def _patches(cvm_totals=None, bacen=None, anbima=None, b3=None):
     ibge_ing = MagicMock()
     ibge_ing.daily_update = AsyncMock(return_value={"ibge_ipca_item_monthly": 457})
 
+    # FNET (the Fundos.NET document register) is its own guarded block too.
+    fnet_ing = MagicMock()
+    fnet_ing.daily_update = AsyncMock(return_value={"fnet_document": 649})
+
     return (
         patch.object(rd, "CVMIngestor", return_value=cvm),
         patch.object(rd, "BacenIngestor", return_value=bacen_ing),
@@ -66,6 +70,7 @@ def _patches(cvm_totals=None, bacen=None, anbima=None, b3=None):
         _MultiPatch(
             patch.object(rd, "B3Ingestor", return_value=b3_ing),
             patch.object(rd, "IbgeIngestor", return_value=ibge_ing),
+            patch.object(rd, "FnetIngestor", return_value=fnet_ing),
         ),
         cvm, bacen_ing, anbima_ing, b3_ing,
     )

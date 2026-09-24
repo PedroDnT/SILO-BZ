@@ -24,6 +24,7 @@ from src.pipeline.bacen_pipeline import BacenIngestor
 from src.pipeline.anbima_pipeline import AnbimaIngestor
 from src.pipeline.b3_pipeline import B3Ingestor
 from src.pipeline.ibge_pipeline import IbgeIngestor
+from src.pipeline.fnet_pipeline import FnetIngestor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -85,6 +86,17 @@ async def main() -> None:
     except Exception as exc:
         logger.error("IBGE IPCA daily refresh failed: %s", exc, exc_info=True)
         failures.append(("ibge", exc))
+
+    # FNET: the B3 Fundos.NET document register (versions + delivery dates)
+    # for the trailing delivery days, plus a rotating slice of the fund sweep.
+    # The only public record of FIDC restatements (docs/planning/
+    # COMPETITIVE_GAPS.md §4.3). A failure here fails the run like any other.
+    try:
+        fnet_totals = await FnetIngestor().daily_update()
+        totals.update(fnet_totals)
+    except Exception as exc:
+        logger.error("FNET register refresh failed: %s", exc, exc_info=True)
+        failures.append(("fnet", exc))
 
     # ANBIMA: fetch latest monthly boletim (every ANBIMA class + type);
     # idempotent upsert.
