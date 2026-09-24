@@ -95,7 +95,9 @@ any public URL** — `/growth` is 404 on both dashboard hosts, which are the
 
 So: no user ever saw the broken version, and no user sees the fixed one either.
 Whoever owns the `webapp/` Vercel project needs to deploy it; this session could
-not determine which project that is. Evidence builds its parquet at deploy time,
+not determine which project that is. (`webapp/README.md` records why none can
+exist yet: `vercel.json` builds `dashboard/` only, so `webapp/` needs a second
+Vercel project or another static host.) Evidence builds its parquet at deploy time,
 so the source-query fix only takes effect on a rebuild.
 
 ## 4. Two changelog rows render with phantom columns
@@ -277,3 +279,63 @@ routine is scheduled, one manual Builder run on FIDC informe `tab_X_7`
 it by hand. Until then the prompt files under `.claude/agents/`, the
 `agent-ok` / `agent:<name>` labels and the routines stay uncreated, and the
 Sentinel's read-only database credential is Pedro's open call.
+
+## 14. The gaps backlog: resolution plan (2026-09-24)
+
+Sequences the [COMPETITIVE_GAPS.md](COMPETITIVE_GAPS.md) §7 backlog (B1 to B11).
+B1, the FNET register, is built (migration 42) and is not yet served. Waves
+run in order; within a wave, items are independent unless marked.
+
+### Wave 1: no decisions needed
+
+| #   | Item                                                                                                                                                              | Catalog |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 1a  | FNET backfill option in `backfill.yml`, so the `run_backfill --fnet-only --fnet-start … [--fnet-sweep]` load can be dispatched from Actions                       | none    |
+| 1b  | Serve FNET: `api.fund_documents` and `api.fund_restatements`, following `19_api_contract.sql` (grants, catalog entry, contract test, OpenAPI, SDK version)        | v33     |
+| 1c  | Lineage (B6): `git_sha` and `parser_version` on every `cvm_ingest_log` row, exposed through `coverage()`. After 1b, so the two catalog bumps do not collide       | v34     |
+| 1d  | Housekeeping: the B3 BDI tables in `DATA_INVENTORY.md` §1 and §3, and `webapp/README.md` stating the site is built but not deployed (item 3). Done on this branch | none    |
+
+Then run the FNET history backfill, **one year per dispatch, newest first**, so
+a throttled or failed run costs one year and the most useful history lands
+first.
+
+### Decision gate 1: Pedro
+
+Nothing in wave 2 that depends on these starts until each has an answer.
+
+1. The older `fidc_*` endpoints trim silently at 500 / 5000 rows. Switch them
+   to raise-only (SQLSTATE `22023`), like the newer ones?
+2. Put `versao` into the keys of `cvm_fii_mensal` and `cvm_fii_periodic`? This
+   changes their grain, and it is what stops a restatement overwriting the
+   original (`DATA_INVENTORY.md` §2, `COMPETITIVE_GAPS.md` B4).
+3. Where to host the read-only MCP (B2)? A new runtime; a Vercel function is
+   the obvious candidate.
+4. A read-only database role for the Sentinel agent ([AGENTS.md](AGENTS.md),
+   item 13)?
+
+### Wave 2
+
+| #   | Item                                                                                                            | Needs              |
+| --- | --------------------------------------------------------------------------------------------------------------- | ------------------ |
+| 2a  | `api.screen_restatements`: funds and months with restated filings, by `modalidade`                              | 1b                 |
+| 2b  | Filing punctuality and silent funds, from FNET delivery timestamps                                              | 1b                 |
+| 2c  | B4, field-level restatement diffs (`fnet_document_diff`): fetch the XML of each multi-version group and diff it | 1b                 |
+| 2d  | FII keys carry `versao`                                                                                         | gate 1, yes to (2) |
+| 2e  | `fidc_*` caps raise instead of trimming                                                                         | gate 1, yes to (1) |
+
+### Wave 3
+
+| #   | Item                                                                                                      |
+| --- | --------------------------------------------------------------------------------------------------------- |
+| 3a  | B2, the read-only MCP over schema `api` (needs gate 1, question 3)                                        |
+| 3b  | B3 remainder: `company_events`, `macro_series`, `ptax`; CRI/CRA last, because it needs a third kind of id |
+| 3c  | B5, Sheets and Excel recipes: `api-docs/spreadsheets.mdx`, shipped with 1d                                |
+
+### Wave 4: later, in order
+
+- **B7.** One manual Builder run on FIDC `tab_X_7` (item 13), then Scout and
+  Sentinel only if it passes.
+- **B8.** DI curve and futures (`INSTRUMENTS.md` Phases B and C).
+- **B9.** Alerts, only on signals from waves 1 and 2 once they exist.
+- **B10.** Document text (Stage 3), priority categories only.
+- **B11.** Per-event adjusted prices, where verified.
