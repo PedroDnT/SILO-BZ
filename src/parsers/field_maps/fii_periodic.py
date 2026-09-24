@@ -18,10 +18,13 @@ one to be upserted.
 """
 
 TABLE = "cvm_fii_periodic"
-CONFLICT = ("cnpj", "doc_type", "period_year", "data_referencia")
+CONFLICT = ("cnpj", "doc_type", "period_year", "data_referencia", "versao")
 
 FIELD_MAP = {
     "cnpj":      (["CNPJ_Fundo_Classe", "CNPJ_FUNDO_CLASSE", "CNPJ_FUNDO"], "cnpj"),
     # data_referencia is present in some periodic subtypes
     "data_referencia": (["Data_Referencia", "DT_COMPTC"],                    "date"),
+    # CVM's restatement counter; part of the key since migration 43. Absent
+    # from a file -> NULL (NULLS NOT DISTINCT). Validated in ingest_fii.
+    "versao":          (["Versao"],                                          "text"),
 }
