@@ -163,6 +163,7 @@ The warehouse is wider than the API. Checked against `19_api_contract.sql` on 20
 | `bacen_sgs` — the IPCA set (26 codes) | **Yes**, via [`inflation`](/api-docs/inflation): headline, IPCA-15, the BCB cores, classifications, diffusion and the nine groups, as published, plus a derived `acc_12m`. |
 | `ibge_ipca_item_monthly` | **Yes**, via [`inflation_items`](/api-docs/inflation): the IPCA tree with weights and a derived `contribution`. |
 | `cvm_fidc_cedente`, `cvm_fidc_sacado`, `cvm_fidc_setor`, `cvm_fidc_scr` | **Yes**: `fidc_cedentes`, `fidc_sacados`, `fidc_portfolio`, the panel metrics `receivables` / `sacado_top1` / `sacado_top25`, four `coverage()` rows. See [FIDC concentration](/api-docs/fidc). |
+| `cvm_fidc_tranche`, `cvm_fidc_tranche_flows`, `cvm_fidc_aging` | **Yes**, since v32: `fidc_tranches` (per tranche per month, promised vs realised performance as filed, tab X_4 flows with CVM's labels verbatim) and `fidc_aging` (tab VI long, to-maturity and overdue ladders plus the filed total), two `coverage()` rows. From 2025-01 only — CVM publishes no archive. See [FIDC tranches and aging](/api-docs/fidc-structure). |
 | The forensic screens over `cvm_fidc_aging`, `cvm_fidc_mensal`, `cvm_fii_mensal`, `cvm_securit_serie`, `fact_fund_monthly` | **Yes**, as signals: seven `screen_*` functions — FIDC zombie growth, evergreen aging and delinquency drivers, captive FIIs, overdue CRI/CRA, dormant FI funds. Every row carries `screen` and `params`; no score. See [Forensic screens](/api-docs/screens). |
 
 #### Held and not served — candidates
@@ -172,8 +173,6 @@ Each is a real gap a caller could want; none has an endpoint.
 | Held | What it is | What serving it would take |
 | --- | --- | --- |
 | `bacen_sgs` (the non-inflation series), `bacen_ptax`, `bacen_expectativas` | SELIC, CDI, IGP-M, INPC, poupança, PIB, FX; PTAX; the Focus survey | The IPCA set is served by [`inflation`](/api-docs/inflation) since v30; the rest of `bacen_sgs` still is not. A `macro_series(p_code, p_from, p_to)` for the policy / FX series, PTAX as a second function; the Focus survey needs its own shape (indicator × horizon × statistic). |
-| `cvm_fidc_tranche`, `cvm_fidc_tranche_flows` | per-tranche promised vs realised performance; subscriptions / redemptions | `fidc_tranches(p_cnpj, p_from, p_to)` in the `fund_nav` style — the CNPJ is already an id the API resolves. |
-| `cvm_fidc_aging` | receivables by aging bucket | `fidc_aging(p_cnpj, …)`. `panel`'s `delinquency` is the total only. |
 | `cvm_fiagro_mensal.vl_quota` / `nr_cotst` / `vl_total`; `cvm_fidc_mensal.vl_total` | FIAGRO quota, quotaholders, total assets; FIDC total assets pre-2025 (~82% of rows) | `fact_fund_monthly`'s fiagro arm copies the fidc arm and sets all three `NULL`. Pass them through; the applicability block and its lockstep test follow. |
 | `cvm_fi_perfil` | FI investor mix and single-holder concentration | `fund_investors(p_cnpj, …)`. |
 | `cvm_fii_periodic`, `cvm_fii_imovel` | FII quarterly/annual filings; the property register | `fii_properties(p_cnpj)` — the register is the one FII fact with no monthly counterpart. |

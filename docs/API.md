@@ -157,9 +157,11 @@ CNPJ in the path may include punctuation (`12.345.678/0001-90`); it is stripped 
 14 digits. Tickers are uppercased.
 
 The adapter wraps a **subset** of schema `api`. Everything else — the typed cash
-views, options, termo, holdings, debentures, FIDC concentration, ANBIMA classes,
-company financials, and the B3 lending and investor-flow views — has no `/v1`
-twin and is reachable only over PostgREST. Read those on the published site.
+views, options, termo, holdings, debentures, FIDC concentration, FIDC tranches
+and aging (`fidc_tranches`, `fidc_aging`, catalog v32 — history from 2025-01, as
+CVM publishes no archive of those tabs), ANBIMA classes, inflation, company
+financials, and the B3 lending and investor-flow views — has no `/v1` twin and
+is reachable only over PostgREST. Read those on the published site.
 
 ### The B3 lending and investor-flow views
 
@@ -249,8 +251,8 @@ rather than returning a trimmed result. This file previously stated that "a pane
 cannot be paged" — that stopped being true two catalog versions ago. **`panel`,
 `quote_history` and `fund_nav` page with a `p_after` cursor**; the others
 (`option_history`, `termo_history`, `financials`, `company_financials`,
-`anbima_classes`, `inflation`, `inflation_items`) have no cursor and ask you to
-narrow the window. `fund_nav` also
+`anbima_classes`, `inflation`, `inflation_items`, `fidc_tranches`, `fidc_aging`)
+have no cursor and ask you to narrow the window. `fund_nav` also
 requires `p_entity_type` to page, because its cursor is a bare period and 385
 CNPJs file under two families in the same month.
 

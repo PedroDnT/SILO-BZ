@@ -70,7 +70,8 @@ except SiloTruncated as e:
 ```
 
 `option_history`, `termo_history`, `financials`, `company_financials`,
-`anbima_classes`, `inflation` and `inflation_items` have no cursor:
+`anbima_classes`, `inflation`, `inflation_items`, `fidc_tranches` and
+`fidc_aging` have no cursor:
 `SiloOverCap` there means narrow the window and call again.
 
 **Views are the one surface that pages**, and the client knows it. `view()`

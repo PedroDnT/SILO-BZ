@@ -28,7 +28,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 31
+KNOWN_CATALOG_VERSION = 32
 
 
 class SiloCatalogDrift(UserWarning):
@@ -96,8 +96,8 @@ class SiloOverCap(SiloError):
     (`iter_quote_history`/`quote_history_all`) and fund_nav
     (`iter_fund_nav`/`fund_nav_all`, which need an `entity_type`). The rest —
     option_history, termo_history, financials, company_financials,
-    anbima_classes, inflation, inflation_items — have no cursor: narrow the
-    window instead."""
+    anbima_classes, inflation, inflation_items, fidc_tranches, fidc_aging —
+    have no cursor: narrow the window instead."""
 
     def __init__(self, body: str, url: str) -> None:
         super().__init__(400, body, url)
@@ -659,6 +659,42 @@ class SiloClient:
         return self._rpc("fidc_portfolio", {
             "p_cnpj": cnpj, "p_kind": kind,
             "p_from": _iso(start), "p_to": _iso(end), "p_limit": limit,
+        })
+
+    def fidc_tranches(self, cnpj: str, start: Datish = None, end: Datish = None,
+                      series: Optional[str] = None) -> List[Dict[str, Any]]:
+        """One FIDC's tranches, month by month (informe tabs X_2/X_3/X_6 + X_4).
+
+            silo.fidc_tranches("05754060000113")
+            silo.fidc_tranches("05754060000113", series="Subclasse Senior 1")
+
+        One row per (month, classe_serie): `quotas`, `quota_value`,
+        `return_month`, and `performance_expected` vs `performance_realised`
+        (what the series promised vs delivered, percent) — all as filed,
+        CVM's outliers included. `flows` is the tranche's tab X_4 operations
+        as a list of {tp_oper, value, quotas}, labels verbatim and never
+        bucketed; None when none were filed. History begins in 2025: CVM
+        publishes no archive of these tabs. No cursor: narrow the window.
+        """
+        return self._rpc("fidc_tranches", {
+            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
+            "p_series": series,
+        })
+
+    def fidc_aging(self, cnpj: str, start: Datish = None,
+                   end: Datish = None) -> List[Dict[str, Any]]:
+        """One FIDC's receivables aging ladder from informe tab VI, long.
+
+            silo.fidc_aging("05754060000113", start="2025-01-01")
+
+        21 rows per month: kind='to_maturity' (not yet due, by days to
+        maturity) and kind='overdue' (by days past due), ten day-bands each
+        (`bucket`, `days_from`, `days_to`), plus kind='overdue_total' —
+        CVM's FILED total, not a sum of the bands. BRL as filed; a blank is
+        None, never 0. History begins in 2025. No cursor: narrow the window.
+        """
+        return self._rpc("fidc_aging", {
+            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
         })
 
     # -- listed companies (CIA Aberta) ---------------------------------------

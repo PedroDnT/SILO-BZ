@@ -36,6 +36,19 @@ __all__ = [
 # one page raises 22023 (raise_only). The public screens lost their
 # GRANT EXECUTE to anon/authenticated in the same change — the wrappers are
 # the only client door.
+# v32: the FIDC structure tabs reach the API (backlog B3). Two functions over
+# tables /fidc has read since the start and no caller could reach:
+# api.fidc_tranches — one row per (fund, month, tranche) from informe tabs
+# X_2/X_3/X_6, quotas, quota value, the month's return and PROMISED vs
+# REALISED performance as filed, with the tranche's tab X_4 operations as a
+# `flows` array keyed by CVM's own TP_OPER label (free text whose vocabulary
+# has drifted, so it is never bucketed into subscription / redemption
+# columns that could silently drop a label); and api.fidc_aging — tab VI
+# long, to_maturity and overdue ladders in ten day-bands plus CVM's FILED
+# overdue total, which is not a sum of the bands. Both refuse over one page
+# (limits.page.raise_only), derive nothing, and carry the honest limit on
+# their coverage() rows: HISTORY BEGINS IN 2025, because CVM's HIST archive
+# publishes no equivalent member — an upstream limit, not a backfill gap.
 # v30: inflation. Two functions, two sources, one derived number each.
 # api.inflation serves BACEN's SGS long — IPCA, IPCA-15, BACEN's own 12-month
 # accumulation (13522), the five BCB cores (MS, MA, EX0, EX2, DP), the
@@ -224,7 +237,7 @@ __all__ = [
 # stated as (id, asset_class, date, metric) and p_entity_type narrows the fund
 # arms to one family. Universe mode (p_ids empty + p_entity_type, optional
 # p_min_nav / p_min_months) walks a whole family for signed-in callers.
-CATALOG_VERSION = 31
+CATALOG_VERSION = 32
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -419,6 +432,7 @@ CONSTRAINTS = [
     "A FIDC CEDENTE SHARE IS A PERCENT OF ITS BLOCK, NOT OF THE FUND. fidc_cedentes serves tab I''s nine slots per block: bloco A is the receivables acquired WITH substantial retention of risks and benefits by the originator, B WITHOUT, and share_pct is the cedente''s share of that block. The block totals are not served (tab I''s asset lines are not ingested), so a share cannot be turned into reais here. cedente_id is the originator''s own filed CPF/CNPJ, kept only when its check digits verify — placeholders (all-zero, all-nine) and unrecoverable identifiers were dropped at ingest, never coerced — and cedente_tickers is the FCA map''s active listings for it, NULL when not listed. share_pct is AS FILED and dirty in the way CVM''s percentage fields are: 9% of slots carry a value above 100 (max 19,771 in 2026-07); validate the range in the notebook, never read it as a fraction. Slots exist from 2019-11; nothing is matched by name.".replace("''", "'"),
     "FIDC SACADOS ARE ANONYMIZED RANKS. fidc_sacados and the sacado_top1 / sacado_top25 metrics come from tab VIII, which publishes the 25 largest debtors as (rank, value) with no identity — CVM''s dictionary describes neither column. seq is CVM''s rank as filed and is never recomputed from valor (65 of 3,043 funds filed a non-descending series in 2026-07; they are served as filed). sacado_top25 sums the ranks the fund filed, which may be fewer than 25. Concentration = sacado_top1 / receivables (or top25 / receivables) is a notebook division, not a served number — and it can exceed 1: tab VIII and tab II do not share a base for every fund (2026-07: the top-25 sum exceeds the receivables total for 1.9% of funds, rank 1 alone for 0.5%), served as filed and never capped.".replace("''", "'"),
     "FIDC PORTFOLIO ROWS ARE A HIERARCHY. fidc_portfolio kind=sector serves tab II as one row per code: TOTAL is the whole receivables book, a lettered code (A..K) a sector, and a code with a digit (C1, F3) a member of its lettered parent (`parent`). Sum leaves or sum parents, never both. kind=scr_debtor and kind=scr_operation are the BACEN SCR grade ladders AA..H for the same receivables, graded by debtor and by operation respectively — two views of one book, not two books. tab X exists from 2023-10 only; earlier months have no scr rows, not zero-graded ones.",
+    "FIDC TRANCHES AND AGING BEGIN IN 2025, AND ARE SERVED AS FILED. fidc_tranches (informe tabs X_2/X_3/X_6 + X_4) and fidc_aging (tab VI) exist from 2025-01 only: CVM's pre-2025 HIST archive publishes no equivalent member, so an earlier month has no rows — an upstream limit, not a gap and not a backfill to ask for. fidc_tranches is one row per (fund, month, classe_serie): quotas, quota_value, return_month, and performance_expected vs performance_realised (what the series promised vs delivered, percent), dirty the way CVM's percentage fields are — never clipped, range-check in the notebook. Its `flows` array carries tab X_4's operations with CVM's TP_OPER label verbatim (e.g. Captações no Mês, Resgates no Mês, Amortizações); the vocabulary has drifted, so match labels yourself and never read a label you did not find as zero. tranche_filed = FALSE marks a series with flows but no X_2 row. fidc_aging is long: kind=to_maturity (not yet due, by days to maturity) and kind=overdue (by days past due), ten day-bands each, plus kind=overdue_total — CVM's FILED total, not a sum of the bands, and the two can disagree. Nothing is derived by either function: no performance gap, no subordination ratio, no band sums.",
     "FIDC DELINQUENCY STARTS IN 2025-01. CVM's pre-2025 monthly FIDC file (tab II/III) carried no delinquency field, so `delinquency` is null on every fidc row through 2024-12-31 — not zero, not clean books, not a missing month. From 2025-01-31 the tab IV/VI format is ingested and delinquency is filed on every row. Never chain-link, difference or average a FIDC delinquency series across 2024-12 → 2025-01; the series begins there. Machine-readable in `regime_breaks`, and on the funds_fidc coverage row's `notes`.",
     "A FUND'S DEBENTURE HOLDINGS ARE A DIFFERENT SHAPE FROM ITS EQUITY HOLDINGS. api.fund_debentures (CDA block 6) is one row per (fund, month, issuer, maturity, rate structure, application type), as filed and never summed — two series of one issuer maturing the same day at different coupons are different securities. The issuer is its own filed CPF/CNPJ (issuer_id); p_issuer also takes a listed company's ticker or CVM code, resolved only through CVM's published FCA map, and issuer_tickers carries the issuer's active listed codes back (NULL when not listed — most debenture issuers are not). Nothing is matched by name.",
     "ANBIMA CLASS ROWS ARE INDUSTRY AGGREGATES, NOT FUNDS. api.anbima_classes serves the Boletim de Fundos de Investimento as published — R$ milhões (unit brl_mm) and percentage points (unit pct) — per class, ANBIMA type or industry total (`level`; class aggregates by default). No fund in this warehouse is mapped to an ANBIMA class: CVM's `classe` is CVM's taxonomy, so never join a fund to a class by name, and there is no panel arm because these rows carry no id. An unknown category, metric or level raises 22023 listing what exists rather than returning an empty array.",
@@ -460,9 +474,9 @@ CONSTRAINTS = [
     "set-returning function now REFUSES rather than trims: a window that "
     "would produce more than 1000 rows raises SQLSTATE 22023 naming the "
     "function, so a short result can no longer look complete. That is all "
-    "eighteen — panel, quote_history, fund_nav, option_history, termo_history, "
+    "twenty — panel, quote_history, fund_nav, option_history, termo_history, "
     "financials, company_financials, income_statements, anbima_classes, "
-    "inflation, inflation_items and the seven screen_* functions "
+    "inflation, inflation_items, fidc_tranches, fidc_aging and the seven screen_* functions "
     "(`limits.page.all`). "
     "THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send "
     "p_after='' for the first page, then the key from the last row — for the "
@@ -574,6 +588,20 @@ EXAMPLES = [
             '"p_metrics": ["sacado_top1", "receivables"], "p_freq": "month"}'
         ),
         "then": "Divide sacado_top1 by receivables per row; the debtor is anonymized, so this is a ratio, not a name.",
+    },
+    {
+        "ask": "Did this FIDC's senior tranche deliver what it promised?",
+        "call": (
+            "POST /rest/v1/rpc/fidc_tranches "
+            '{"p_cnpj": "<cnpj>", "p_from": "2025-01-01"}'
+        ),
+        "then": (
+            "Compare performance_realised with performance_expected per "
+            "classe_serie in the notebook; both are as filed and can carry "
+            "CVM's outliers. History starts 2025-01 — there is no earlier "
+            "tranche data anywhere. Read the aging ladder under it with "
+            "fidc_aging; overdue_total is CVM's filed total, not a sum."
+        ),
     },
     {
         "ask": "Just give me the panel; I will run a factor model",
@@ -758,6 +786,7 @@ LIMITS = {
             "panel", "quote_history", "fund_nav", "option_history",
             "termo_history", "financials", "company_financials", "income_statements",
             "anbima_classes", "inflation", "inflation_items",
+            "fidc_tranches", "fidc_aging",
             "screen_zombie_growth", "screen_captive_vehicles",
             "screen_evergreen_aging", "screen_overdue_securit",
             "screen_dormant_funds", "screen_dormant_trend",
@@ -798,6 +827,8 @@ LIMITS = {
                 "option_history", "termo_history", "financials",
                 "company_financials", "income_statements", "anbima_classes",
                 "inflation", "inflation_items",
+                # v32: the FIDC structure tabs.
+                "fidc_tranches", "fidc_aging",
                 # v31: a screen is a short list or the wrong screen — raise
                 # its thresholds or pin its output filter, never walk it.
                 "screen_zombie_growth", "screen_captive_vehicles",
@@ -1181,6 +1212,9 @@ def catalog_payload() -> Dict[str, Any]:
             "screen_dormant_funds": "POST /rest/v1/rpc/screen_dormant_funds",
             "screen_dormant_trend": "POST /rest/v1/rpc/screen_dormant_trend",
             "screen_delinquency_drivers": "POST /rest/v1/rpc/screen_delinquency_drivers",
+            # FIDC structure (v32): tranches and the aging ladder, 2025-01 on.
+            "fidc_tranches": "POST /rest/v1/rpc/fidc_tranches",
+            "fidc_aging": "POST /rest/v1/rpc/fidc_aging",
             # B3 securities lending and investor flow (v27). VIEWS, not
             # functions: filter them with PostgREST's own syntax
             # (?ticker=eq.PETR4&trade_date=gte.2026-09-01) and page with

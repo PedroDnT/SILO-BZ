@@ -121,6 +121,8 @@ Argument names are the SQL parameter names (`p_ticker`, `p_from`, `p_metrics`). 
 | [`anbima_classes`](/api-docs/anbima) | refuses; no cursor — narrow the window or pin a category |
 | [`inflation`](/api-docs/inflation) | refuses; no cursor — defaults to 36 months; pin `p_series` or `p_family` for deeper history |
 | [`inflation_items`](/api-docs/inflation) | refuses; no cursor — defaults to the nine groups over 36 months; pin `p_item` or one month for deeper levels |
+| [`fidc_tranches`](/api-docs/fidc-structure) | refuses; no cursor — narrow the window or pin `p_series` |
+| [`fidc_aging`](/api-docs/fidc-structure) | refuses; no cursor — narrow the window (21 rows per month) |
 | [`screen_*`](/api-docs/screens) (seven) | refuses; no cursor — raise the thresholds, or pin `p_dormancy` / `p_min_nav` (dormant funds) or `p_driver` (delinquency drivers) |
 | [`search_funds`](/api-docs/funds) | **25** rows anonymous, 200 signed in (`p_limit` clamped, not refused) |
 | [`lookup`](/api-docs/lookup) | 20 rows |

@@ -44,6 +44,8 @@ RAISE_ONLY_FUNCTIONS = (
     "api.anbima_classes",
     "api.inflation",
     "api.inflation_items",
+    "api.fidc_tranches",
+    "api.fidc_aging",
 )
 CAPPED_FUNCTIONS = PAGED_FUNCTIONS + RAISE_ONLY_FUNCTIONS
 
@@ -119,6 +121,8 @@ EXPECTED_FUNCTIONS = {
     "api.fidc_portfolio",
     "api.inflation",
     "api.inflation_items",
+    "api.fidc_tranches",
+    "api.fidc_aging",
 }
 
 # Internal helpers: called only from inside SECURITY DEFINER functions, which
@@ -1346,11 +1350,12 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
         "the contract, not an implementation detail"
     )
     # The count moves with the surface: eleven at v30 (inflation,
-    # inflation_items), eighteen since v31 (the seven screen_* functions). The
-    # prose said "eight" for two versions while listing nine — pin the word to
-    # the tuples so it cannot drift again.
-    assert "eighteen" in c.lower().split(), "all eighteen capped functions refuse"
-    assert len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) == 18
+    # inflation_items), eighteen at v31 (the seven screen_* functions), twenty
+    # since v32 (fidc_tranches, fidc_aging). The prose said "eight" for two
+    # versions while listing nine — pin the word to the tuples so it cannot
+    # drift again.
+    assert "twenty" in c.lower().split(), "all twenty capped functions refuse"
+    assert len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) == 20
 
 
 def test_cap_constraint_warns_that_rpc_paging_does_not_work():
