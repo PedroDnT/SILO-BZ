@@ -6,6 +6,7 @@ TABLES = [
     "cvm_ingest_log", "cvm_fi_diario", "cvm_fidc_mensal",
     "cvm_fidc_tranche", "cvm_fidc_tranche_flows", "cvm_fidc_aging",
     "cvm_fidc_setor", "cvm_fidc_scr", "cvm_fidc_sacado", "cvm_fidc_cedente",
+    "cvm_fidc_garantia",
     "cvm_fii_mensal", "cvm_securit_mensal",
     "cvm_securit_serie", "cvm_securit_fluxo",
 ]
