@@ -295,6 +295,15 @@ class DatasetConfig:
             "csv_name_pattern": "inf_mensal_fidc_tab_X_{year}{month:02d}.csv",
             "description": "FIDC historical tab X (2013-2024) — SCR risk-rating ladder",
         },
+        # tab_X_7 exists from 2019-11 (every HIST archive 2013-2024 opened;
+        # 2013-01..2019-10 ship tab_X_1..X_6 only). `tab_X_7_` cannot match
+        # `tab_X_` members or any other tab_X_n member in _select_zip_member.
+        "hist_mensal_tab_x7": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/HIST/inf_mensal_fidc_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_X_7_{year}{month:02d}.csv",
+            "description": "FIDC historical tab X_7 (2019-11..2024) — collateral backing the receivables",
+        },
         "mensal": {
             "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
             "is_zip": True,
@@ -354,6 +363,12 @@ class DatasetConfig:
             "is_zip": True,
             "csv_name_pattern": "inf_mensal_fidc_tab_X_6_{year}{month:02d}.csv",
             "description": "FIDC tab_X_6 — expected vs actual performance % per tranche/series",
+        },
+        "mensal_tab_x7": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_X_7_{year}{month:02d}.csv",
+            "description": "FIDC tab_X_7 — collateral backing the receivables, value and % as filed",
         },
     }
 
