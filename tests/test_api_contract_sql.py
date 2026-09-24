@@ -561,6 +561,20 @@ def test_row_cap_helper_page_size_is_the_one_constant():
     helper = _strip_comments(FUNCS["api.assert_row_cap"])
     assert f"p_n > {PANEL_PAGE}" in helper
     assert "ERRCODE = '22023'" in helper
+    from serve.catalog import catalog_payload
+    from sdk.silo_client.client import SERVER_ROW_CAP
+    limits = catalog_payload()["limits"]
+    assert limits["page"]["size"] == PANEL_PAGE == SERVER_ROW_CAP == limits["rows_per_response"]["value"]
+    # Every capped function is published, split by whether it hands back a
+    # cursor or asks the caller to narrow.
+    page = limits["page"]
+    assert set(page["all"]) == {
+        f.split(".", 1)[1] for f in CAPPED_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS
+    }
+    assert set(page["functions"]["paged"]) == {f.split(".", 1)[1] for f in PAGED_FUNCTIONS}
+    assert set(page["functions"]["raise_only"]) == {
+        f.split(".", 1)[1] for f in RAISE_ONLY_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS
+    }
 
 
 
@@ -604,20 +618,6 @@ def test_fidc_head_functions_take_p_limit_as_an_explicit_head(fn):
     assert "IF p_limit IS NOT NULL AND p_limit < 1 THEN" in body
     assert "GREATEST(" not in body and "LEAST(" not in body, "nothing is clamped any more"
     assert f"api.assert_row_cap((SELECT count(*) FROM page), FALSE, '{name}')" in body
-    from serve.catalog import catalog_payload
-    from sdk.silo_client.client import SERVER_ROW_CAP
-    limits = catalog_payload()["limits"]
-    assert limits["page"]["size"] == PANEL_PAGE == SERVER_ROW_CAP == limits["rows_per_response"]["value"]
-    # Every capped function is published, split by whether it hands back a
-    # cursor or asks the caller to narrow.
-    page = limits["page"]
-    assert set(page["all"]) == {
-        f.split(".", 1)[1] for f in CAPPED_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS
-    }
-    assert set(page["functions"]["paged"]) == {f.split(".", 1)[1] for f in PAGED_FUNCTIONS}
-    assert set(page["functions"]["raise_only"]) == {
-        f.split(".", 1)[1] for f in RAISE_ONLY_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS
-    }
 
 
 def test_panel_cursor_is_transparent_and_keyed_on_the_full_grain():
