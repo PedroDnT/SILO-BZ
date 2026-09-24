@@ -106,6 +106,9 @@ def test_page_declares_every_source_and_the_caveats():
     assert "absent, never zero" in page
 
 
-def test_function_is_granted_like_the_other_screens():
+def test_function_is_revoked_like_the_other_screens():
+    """Served as api.screen_delinquency_drivers (23_api_screens.sql) since v31;
+    the public function is closed to client roles like every other screen."""
     body = SCREENS.read_text(encoding="utf-8")
-    assert "GRANT EXECUTE ON FUNCTION fidc_delinquency_drivers(DATE, INT, INT, NUMERIC, NUMERIC) TO anon, authenticated;" in body
+    assert "GRANT EXECUTE ON FUNCTION fidc_delinquency_drivers" not in body
+    assert "REVOKE ALL ON FUNCTION fidc_delinquency_drivers(DATE, INT, INT, NUMERIC, NUMERIC) FROM PUBLIC, anon, authenticated;" in body

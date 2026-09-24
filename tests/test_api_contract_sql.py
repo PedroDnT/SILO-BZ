@@ -49,6 +49,20 @@ RAISE_ONLY_FUNCTIONS = (
 )
 CAPPED_FUNCTIONS = PAGED_FUNCTIONS + RAISE_ONLY_FUNCTIONS
 
+# The forensic screens (v31) live in 23_api_screens.sql, not in 19, so FUNCS
+# (parsed from 19 alone) does not carry them; tests/test_api_screens_contract.py
+# owns their bodies. They are raise-only: published in limits.page.all and
+# limits.page.functions.raise_only beside the 19 functions.
+SCREEN_FUNCTIONS = (
+    "api.screen_zombie_growth",
+    "api.screen_captive_vehicles",
+    "api.screen_evergreen_aging",
+    "api.screen_overdue_securit",
+    "api.screen_dormant_funds",
+    "api.screen_dormant_trend",
+    "api.screen_delinquency_drivers",
+)
+
 LANDING_PATTERN = re.compile(
     r"\b(?:public\.)?(?:cvm_\w+|b3_cotahist\w*|vw_b3_(?:quote_vista|instrument_typed))\b",
     re.I,
@@ -533,9 +547,11 @@ def test_row_cap_helper_page_size_is_the_one_constant():
     # Every capped function is published, split by whether it hands back a
     # cursor or asks the caller to narrow.
     page = limits["page"]
-    assert set(page["all"]) == {f.split(".", 1)[1] for f in CAPPED_FUNCTIONS}
+    assert set(page["all"]) == {f.split(".", 1)[1] for f in CAPPED_FUNCTIONS + SCREEN_FUNCTIONS}
     assert set(page["functions"]["paged"]) == {f.split(".", 1)[1] for f in PAGED_FUNCTIONS}
-    assert set(page["functions"]["raise_only"]) == {f.split(".", 1)[1] for f in RAISE_ONLY_FUNCTIONS}
+    assert set(page["functions"]["raise_only"]) == {
+        f.split(".", 1)[1] for f in RAISE_ONLY_FUNCTIONS + SCREEN_FUNCTIONS
+    }
 
 
 def test_panel_cursor_is_transparent_and_keyed_on_the_full_grain():
@@ -1333,12 +1349,13 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
         "skip or repeat a row at a page edge, so the requirement is part of "
         "the contract, not an implementation detail"
     )
-    # The count moves with the surface: eleven since v30 (inflation,
-    # inflation_items), thirteen since v31 (fidc_tranches, fidc_aging). The
-    # prose said "eight" for two versions while listing nine — pin the word
-    # to the tuple so it cannot drift again.
-    assert "thirteen" in c.lower().split(), "all thirteen capped functions refuse"
-    assert len(CAPPED_FUNCTIONS) == 13
+    # The count moves with the surface: eleven at v30 (inflation,
+    # inflation_items), eighteen at v31 (the seven screen_* functions), twenty
+    # since v32 (fidc_tranches, fidc_aging). The prose said "eight" for two
+    # versions while listing nine — pin the word to the tuples so it cannot
+    # drift again.
+    assert "twenty" in c.lower().split(), "all twenty capped functions refuse"
+    assert len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) == 20
 
 
 def test_cap_constraint_warns_that_rpc_paging_does_not_work():

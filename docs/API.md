@@ -158,7 +158,7 @@ CNPJ in the path may include punctuation (`12.345.678/0001-90`); it is stripped 
 
 The adapter wraps a **subset** of schema `api`. Everything else — the typed cash
 views, options, termo, holdings, debentures, FIDC concentration, FIDC tranches
-and aging (`fidc_tranches`, `fidc_aging`, catalog v31 — history from 2025-01, as
+and aging (`fidc_tranches`, `fidc_aging`, catalog v32 — history from 2025-01, as
 CVM publishes no archive of those tabs), ANBIMA classes, inflation, company
 financials, and the B3 lending and investor-flow views — has no `/v1` twin and
 is reachable only over PostgREST. Read those on the published site.
@@ -174,6 +174,23 @@ methods since catalog v27.
 
 They were parked in this file while nothing else covered them. That is no longer
 true, so the caveats live with the pages that own them rather than here.
+
+### The forensic screens
+
+The seven `api.screen_*` functions (catalog v31, `23_api_screens.sql`) have no
+`/v1` twin and `silo_api` holds no grant on them — the same decision as the
+lending views. They wrap the public `fraud_screen_*` / `fidc_delinquency_drivers`
+functions the dashboard reads (`15_fraud_screens.sql`), so there is one
+definition of each screen. Caller documentation, including the "signals, not
+verdicts" contract and what each screen cannot tell apart, is
+[Forensic screens](https://octo-98895abd.mintlify.site/api-docs/screens).
+
+Operator half: the public functions were `GRANT EXECUTE … TO anon,
+authenticated` until v31 and reachable only because `public` is not an exposed
+schema. They are now revoked from `PUBLIC`, `anon` and `authenticated`, and
+`23_api_screens.sql` fails the apply if either client role can still execute
+one. The Evidence build is unaffected: it connects as the `postgres` login
+(`EVIDENCE_SOURCE__supabase__user`), which owns them.
 
 ## Run
 
