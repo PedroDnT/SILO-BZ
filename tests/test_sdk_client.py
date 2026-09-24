@@ -652,6 +652,28 @@ def test_a_refused_panel_is_its_own_error_and_names_the_way_out():
     assert isinstance(exc.value, SiloError)
 
 
+def test_a_v34_refusal_carries_the_servers_own_why_and_how():
+    """Since catalog v34 api.assert_row_cap says why and how in the message and
+    again as DETAIL / HINT (PostgREST's `details` / `hint`). The SDK keeps the
+    server's hint and leads with it, so a fidc_cedentes refusal tells the
+    caller to narrow the window rather than to call an iterator that does not
+    exist."""
+    body = json.dumps({
+        "code": "22023",
+        "message": "fidc_cedentes: refused, this request would return more than 1000 rows. "
+                   "Every response is one page of at most 1000 rows ...",
+        "details": "SILO never returns a silently truncated result, so it refuses instead.",
+        "hint": "This function has no cursor. Narrow the window with p_from/p_to, "
+                "or ask explicitly for the newest N rows "
+                "with p_limit (1..1000).",
+    })
+    c = make_client(catalog_then(lambda r: httpx.Response(400, text=body)))
+    with pytest.raises(SiloOverCap) as exc:
+        c.fidc_cedentes(cedente="61064911000177")
+    assert exc.value.server_hint.startswith("This function has no cursor.")
+    assert exc.value.hint.startswith(exc.value.server_hint)
+
+
 def test_other_22023s_stay_plain_errors():
     body = '{"code":"22023","message":"panel accepts at most 3 ids per call"}'
     c = make_client(catalog_then(lambda r: httpx.Response(400, text=body)))

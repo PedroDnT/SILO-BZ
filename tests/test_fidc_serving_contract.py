@@ -5,7 +5,8 @@ cedente; fidc_sacados the anonymized rank series (tab VIII), by fund only;
 fidc_portfolio the sector hierarchy and SCR ladders (tabs II, X), long. These
 pin the shapes, the resolution rules (an originator by its own filed
 CPF/CNPJ or through the published FCA map, never by name), the never-reranked
-rule, the hierarchy column, the tiered caps, the panel arms and the catalog.
+rule, the hierarchy column, the raise-only row cap (v34; tiered and silently
+trimming before), the panel arms and the catalog.
 """
 from __future__ import annotations
 
@@ -138,19 +139,35 @@ def test_definer_hygiene_grants_and_caps():
                     ("fidc_portfolio", "TEXT, TEXT, DATE, DATE, INT")):
         head = _body(fn)[: _body(fn).index("AS $fn$")]
         assert "SECURITY DEFINER" in head and "SET search_path = ''" in head
-        assert "WHEN 'authenticated' THEN 5000 ELSE 500" in _body(fn)
+        # v34 (plan 2e): raise-only on the 1000-row page. The old tier clamp
+        # (500 anonymous / 5000 signed in) trimmed SILENTLY; it must not
+        # come back.
+        body = _stripped(_body(fn))
+        assert "caller_tier" not in body and "THEN 5000 ELSE 500" not in body
+        assert "LIMIT COALESCE(v_head, 1001)" in body
+        assert f"api.assert_row_cap((SELECT count(*) FROM page), FALSE, '{fn}')" in body
+        assert re.search(r"\bLIMIT 1000;", body)
         assert f"GRANT EXECUTE ON FUNCTION api.{fn}({sig})\n    TO anon, authenticated;" in SQL
+        comment = SQL[SQL.index(f"COMMENT ON FUNCTION api.{fn}("):]
+        comment = comment[: comment.index("';")]
+        assert "More than 1000 rows RAISES 22023, never trimmed" in comment
 
 
 def test_the_catalog_names_the_endpoints_metrics_and_rules():
     from serve.catalog import CATALOG_VERSION, catalog_payload
 
     cat = catalog_payload()
-    assert CATALOG_VERSION >= 25
+    assert CATALOG_VERSION >= 34
     for fn in ("fidc_cedentes", "fidc_sacados", "fidc_portfolio"):
         assert cat["postgrest"][fn] == f"POST /rest/v1/rpc/{fn}"
-        assert cat["limits"]["tiers"]["anon"][f"{fn}_rows"] == 500
-        assert cat["limits"]["tiers"]["authenticated"][f"{fn}_rows"] == 5000
+        # No tier row ceiling any more: they refuse instead of trimming.
+        assert f"{fn}_rows" not in cat["limits"]["tiers"]["anon"]
+        assert f"{fn}_rows" not in cat["limits"]["tiers"]["authenticated"]
+        assert fn in cat["limits"]["page"]["all"]
+        assert fn in cat["limits"]["page"]["functions"]["raise_only"]
+    # The per-tier time budget is unchanged.
+    assert cat["limits"]["tiers"]["anon"]["statement_timeout_seconds"] == 3
+    assert cat["limits"]["tiers"]["authenticated"]["statement_timeout_seconds"] == 8
     for metric in ("receivables", "sacado_top1", "sacado_top25"):
         assert cat["metrics"][metric]["asset_class"] == ["fidc"]
         assert cat["metrics"][metric]["id_type"] == ["cnpj"]

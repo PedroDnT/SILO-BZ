@@ -25,6 +25,7 @@ Four date columns meaning four different things. Reading one for another is the 
 | `complete_through` | the newest **complete** period for that filing cadence | what a default window serves |
 | `newest_period` | the newest period **key** present — can sit in the future | spotting forward-dated keys (FIP is keyed 31-December) |
 | `landed_at` | when ingest last **succeeded** for that source | whether *we* are broken |
+| `landed_git_sha` | the git commit of that same run; `null` when it recorded none | which code produced the newest data |
 
 **Note**: a stale `landed_at` is a pipeline failure. A `complete_through` that trails today is Brazil's filing calendar — CVM publishes one to two months in arrears, and that is not an outage.
 
