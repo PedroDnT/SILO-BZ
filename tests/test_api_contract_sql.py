@@ -63,6 +63,14 @@ SCREEN_FUNCTIONS = (
     "api.screen_delinquency_drivers",
 )
 
+# The FNET register (v33) lives in 24_api_fnet.sql, for the same reason: FUNCS
+# does not carry it, tests/test_fnet_api_contract.py owns the bodies. Both are
+# raise-only.
+FNET_FUNCTIONS = (
+    "api.fund_documents",
+    "api.fund_restatements",
+)
+
 LANDING_PATTERN = re.compile(
     r"\b(?:public\.)?(?:cvm_\w+|b3_cotahist\w*|vw_b3_(?:quote_vista|instrument_typed))\b",
     re.I,
@@ -547,10 +555,12 @@ def test_row_cap_helper_page_size_is_the_one_constant():
     # Every capped function is published, split by whether it hands back a
     # cursor or asks the caller to narrow.
     page = limits["page"]
-    assert set(page["all"]) == {f.split(".", 1)[1] for f in CAPPED_FUNCTIONS + SCREEN_FUNCTIONS}
+    assert set(page["all"]) == {
+        f.split(".", 1)[1] for f in CAPPED_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS
+    }
     assert set(page["functions"]["paged"]) == {f.split(".", 1)[1] for f in PAGED_FUNCTIONS}
     assert set(page["functions"]["raise_only"]) == {
-        f.split(".", 1)[1] for f in RAISE_ONLY_FUNCTIONS + SCREEN_FUNCTIONS
+        f.split(".", 1)[1] for f in RAISE_ONLY_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS
     }
 
 
@@ -1351,11 +1361,14 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
     )
     # The count moves with the surface: eleven at v30 (inflation,
     # inflation_items), eighteen at v31 (the seven screen_* functions), twenty
-    # since v32 (fidc_tranches, fidc_aging). The prose said "eight" for two
+    # since v32 (fidc_tranches, fidc_aging), twenty-two since v33
+    # (fund_documents, fund_restatements). The prose said "eight" for two
     # versions while listing nine — pin the word to the tuples so it cannot
     # drift again.
-    assert "twenty" in c.lower().split(), "all twenty capped functions refuse"
-    assert len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) == 20
+    assert "twenty-two" in c.lower().split(), "all twenty-two capped functions refuse"
+    assert len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) + len(FNET_FUNCTIONS) == 22
+    for fn in FNET_FUNCTIONS:
+        assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
 
 
 def test_cap_constraint_warns_that_rpc_paging_does_not_work():

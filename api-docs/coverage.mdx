@@ -43,6 +43,7 @@ Reading one for another is the most common coverage mistake.
 - **`anbima_classes`** — the newest boletim reference month.
 - **`fidc_cedentes` / `fidc_sacados` / `fidc_sectors` / `fidc_scr`** — the newest month landed per [FIDC concentration](/api-docs/fidc) tab; `notes` states where each starts (tab I's cedente slots 2019-11, tab X 2023-10).
 - **`fidc_tranches` / `fidc_aging`** — the newest month landed for the [FIDC tranche and aging](/api-docs/fidc-structure) tabs; `notes` states that both begin in **2025-01** because CVM publishes no archive of them — an upstream limit, not a gap.
+- **`fnet_documents`** — the [FNET document register](/api-docs/fnet-documents) behind `fund_documents` and `fund_restatements`, keyed on the **delivery day**: `as_of` is the newest delivery day held, `complete_through` the day before it. `notes` states that history begins at Silo's first crawl or backfill, and that fund links come from a fortnightly sweep, so the newest documents may have no cnpj yet. `landed_at` is the register crawl alone.
 - **`inflation`** — the newest month of headline IPCA (SGS 433) held; the cores, classifications and groups publish the same day. `landed_at` is the SGS ingest alone, never a PTAX or Focus run.
 - **`inflation_items`** — the newest month of IBGE's item tree held; `notes` states the 2020-01 structure change (SIDRA 7060 replaced 1419, item codes changed, `item_number` is the continuity).
 

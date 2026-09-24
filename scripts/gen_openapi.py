@@ -459,6 +459,15 @@ def error_responses(has_22023: bool) -> dict[str, Any]:
     return out
 
 
+# Functions whose rows are NOT oldest first. A register of documents is read
+# newest delivery first (24_api_fnet.sql orders by delivered_at DESC), and the
+# 200 description must not claim otherwise.
+_ORDER: dict[str, str] = {
+    "fund_documents": "newest delivery first",
+    "fund_restatements": "newest delivery first",
+}
+
+
 def build_function_path(fn: dict[str, Any]) -> dict[str, Any]:
     props: dict[str, Any] = {}
     required: list[str] = []
@@ -499,8 +508,8 @@ def build_function_path(fn: dict[str, Any]) -> dict[str, Any]:
         "responses": {
             "200": {
                 "description": (
-                    "The result set, oldest first. An unknown id is an empty array, "
-                    "not a 404 and never a guessed value."
+                    f"The result set, {_ORDER.get(fn['name'], 'oldest first')}. "
+                    "An unknown id is an empty array, not a 404 and never a guessed value."
                     if cols is not None
                     else "The result."
                 ),
@@ -598,6 +607,7 @@ _TAGS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^(funds|fund_nav|fund_profile|search_funds)$"), "Funds"),
     (re.compile(r"^(fund_holdings|fund_debentures)$"), "Holdings"),
     (re.compile(r"^fidc_"), "FIDC"),
+    (re.compile(r"^(fund_documents|fund_restatements)$"), "FNET documents"),
     (re.compile(r"^(financials|company_financials)$"), "Financials"),
     (re.compile(r"^anbima_"), "ANBIMA"),
     (re.compile(r"^inflation"), "Inflation"),

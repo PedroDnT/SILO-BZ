@@ -28,7 +28,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 32
+KNOWN_CATALOG_VERSION = 33
 
 
 class SiloCatalogDrift(UserWarning):
@@ -96,8 +96,9 @@ class SiloOverCap(SiloError):
     (`iter_quote_history`/`quote_history_all`) and fund_nav
     (`iter_fund_nav`/`fund_nav_all`, which need an `entity_type`). The rest —
     option_history, termo_history, financials, company_financials,
-    anbima_classes, inflation, inflation_items, fidc_tranches, fidc_aging —
-    have no cursor: narrow the window instead."""
+    anbima_classes, inflation, inflation_items, fidc_tranches, fidc_aging,
+    fund_documents, fund_restatements and the screen_* functions — have no
+    cursor: narrow the window instead."""
 
     def __init__(self, body: str, url: str) -> None:
         super().__init__(400, body, url)
@@ -695,6 +696,49 @@ class SiloClient:
         """
         return self._rpc("fidc_aging", {
             "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
+        })
+
+    # -- the FNET document register (B3 Fundos.NET) --------------------------
+
+    def fund_documents(self, cnpj: str, start: Datish = None, end: Datish = None,
+                       tipo: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Every FNET document linked to one fund, newest delivery first.
+
+            silo.fund_documents("07727002000126")
+            silo.fund_documents("07727002000126", tipo="Informe Mensal Estruturado")
+
+        One row per document (each version is its own `fnet_id`): categoria,
+        tipo_documento, especie, reference, `delivered_at`, `versao`,
+        `modalidade` (AP original, RE voluntary restatement, RC CVM-required),
+        `status` (AC / IC superseded / CC — as of `fetched_at`) and
+        `source_url`, FNET's download link. FNET rows carry no CNPJ: a document
+        is this fund's because FNET returned it for that CNPJ in a fortnightly
+        sweep, so the newest deliveries may not be listed yet. Window is the
+        delivery date, default the last 12 months. No cursor: narrow it.
+        """
+        return self._rpc("fund_documents", {
+            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
+            "p_tipo": tipo,
+        })
+
+    def fund_restatements(self, cnpj: Optional[str] = None, start: Datish = None,
+                          end: Datish = None,
+                          tipo_fundo: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Re-filed FNET documents (versao > 1), each paired with its predecessor.
+
+            silo.fund_restatements("07727002000126")          # one fund, all history
+            silo.fund_restatements(tipo_fundo="FIDC")         # last 30 days, FIDCs
+
+        `previous_fnet_id` / `previous_delivered_at` / `lag_days` come from a
+        STATED group key — (cnpj link, categoria, tipo_documento, especie,
+        reference_raw), highest lower versao, greatest fnet_id on a tie —
+        because FNET links no versions. `cnpj` is None when the fund sweep has
+        not linked the document yet; such rows are never paired. `tipo_fundo`
+        is 'FII', 'FIDC' or 'ETF'. No cursor: narrow the window.
+        """
+        return self._rpc("fund_restatements", {
+            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
+            "p_tipo_fundo": tipo_fundo,
         })
 
     # -- listed companies (CIA Aberta) ---------------------------------------

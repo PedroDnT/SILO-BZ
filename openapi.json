@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SILO Data API",
-    "version": "32",
+    "version": "33",
     "summary": "Read-only Brazilian public financial data: CVM filings, BACEN series, B3 quotes and the B3 BDI group.",
     "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Eight set-returning functions raise SQLSTATE `22023`\n  when the window they were handed would produce more than 1000 rows. Nothing\n  is trimmed. Three of them (`panel`, `quote_history`, `fund_nav`) take a\n  `p_after` cursor so you can walk the series; the other five ask you to narrow\n  the window. `fund_nav` paging additionally REQUIRES `p_entity_type` — its\n  cursor is a bare period, which is unique only within one family, and CNPJs\n  that file under both `fi` and `fidc` in the same month would otherwise be\n  ambiguous.\n* **The tier ceiling clamps.** Eight other functions silently lower `p_limit`\n  to a per-tier maximum. No error is raised, so the only way to know the result\n  was cut is to know the ceiling. Signing in raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
     "license": {
@@ -33,6 +33,9 @@
     },
     {
       "name": "FIDC"
+    },
+    {
+      "name": "FNET documents"
     },
     {
       "name": "Financials"
@@ -4260,7 +4263,7 @@
       "post": {
         "operationId": "rpc_coverage",
         "summary": "coverage",
-        "description": "Freshness AND honesty per dataset. as_of = the newest period that has landed and has actually ELAPSED (bounded by today); complete_through = the newest COMPLETE period, which is what default windows serve; newest_period = the newest period KEY present, which can sit in the future when a family files forward-dated (FIP is keyed 31-December); landed_at = when ingest last SUCCEEDED for that source, from cvm_ingest_log (status ok with a finish time, so a later failed run never advances it). funds_<family> rows report each filing cadence separately. notes carries a caveat the dates cannot: the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); funds_fip states why its newest_period runs ahead; fund_nav points at catalog().applicability and api.metric_coverage(); the fidc_tranches and fidc_aging rows state that those informe tabs begin in 2025-01 because CVM publishes no archive of them (an upstream limit, not a gap); and the five B3 lending / flow rows (short_interest, short_interest_by_sector, lending_trades, lending_participants, investor_flow) state the RATCHET — B3 keeps ~21 business days and publishes no archive, so their span starts at first capture and no backfill exists — along with the float_basis, brokerage-not-owner and first-difference traps that make those series easy to read wrongly. Their landed_at is split by ingest doc_type, so a COTAHIST run never reports as the lending group's freshness.",
+        "description": "Freshness AND honesty per dataset. as_of = the newest period that has landed and has actually ELAPSED (bounded by today); complete_through = the newest COMPLETE period, which is what default windows serve; newest_period = the newest period KEY present, which can sit in the future when a family files forward-dated (FIP is keyed 31-December); landed_at = when ingest last SUCCEEDED for that source, from cvm_ingest_log (status ok with a finish time, so a later failed run never advances it). funds_<family> rows report each filing cadence separately. notes carries a caveat the dates cannot: the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); funds_fip states why its newest_period runs ahead; fund_nav points at catalog().applicability and api.metric_coverage(); the fidc_tranches and fidc_aging rows state that those informe tabs begin in 2025-01 because CVM publishes no archive of them (an upstream limit, not a gap); the fnet_documents row (the FNET register behind fund_documents and fund_restatements) is keyed on the DELIVERY day, with complete_through the day before as_of, and states that its history begins at first capture / backfill and that fund links come from a fortnightly sweep, so recent documents may have no cnpj yet; and the five B3 lending / flow rows (short_interest, short_interest_by_sector, lending_trades, lending_participants, investor_flow) state the RATCHET — B3 keeps ~21 business days and publishes no archive, so their span starts at first capture and no backfill exists — along with the float_basis, brokerage-not-owner and first-difference traps that make those series easy to read wrongly. Their landed_at is split by ingest doc_type, so a COTAHIST run never reports as the lending group's freshness.",
         "tags": [
           "Coverage & catalog"
         ],
@@ -5617,6 +5620,193 @@
         }
       }
     },
+    "/rpc/fund_documents": {
+      "post": {
+        "operationId": "rpc_fund_documents",
+        "summary": "fund_documents",
+        "description": "Every B3 Fundos.NET (FNET) document LINKED to one fund, newest delivery first: fnet_id, fund_name (FNET's label, never a join key), categoria, tipo_documento, especie, reference_raw / reference_date, delivered_at (São Paulo time, as printed), versao, modalidade (AP original, RE voluntary restatement, RC CVM-required), status (AC active, IC superseded, CC cancelled — AS OF fetched_at) and source_url, FNET's public download link for the id. Metadata only. FNET rows carry NO CNPJ: a document belongs to this fund because FNET returned it for cnpjFundo = p_cnpj in SILO's fortnightly per-fund sweep, never because of its name — so a document delivered since that fund's last sweep is not listed yet (coverage() fnet_documents). Each version is its own fnet_id; restatement pairs are api.fund_restatements. Window = delivery date, default the 12 months before p_to (or today); p_tipo matches tipo_documento exactly. A CNPJ that is not 14 digits raises 22023. More than 1000 rows RAISES 22023 (never trimmed): narrow the window or pin p_tipo.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "tags": [
+          "FNET documents"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "p_cnpj": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "p_from": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
+                  },
+                  "p_to": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
+                  },
+                  "p_tipo": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
+                  }
+                },
+                "required": [
+                  "p_cnpj"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result set, newest delivery first. An unknown id is an empty array, not a 404 and never a guessed value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "fnet_id": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int64"
+                      },
+                      "fund_name": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "categoria": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "tipo_documento": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "especie": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "reference_raw": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "reference_date": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "delivered_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
+                      },
+                      "versao": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "modalidade": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "fetched_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
+                      },
+                      "source_url": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. Contract violations raise SQLSTATE `22023` with a message naming the limit or the argument at fault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/rpc/fund_holdings": {
       "post": {
         "operationId": "rpc_fund_holdings",
@@ -6090,6 +6280,194 @@
                           "boolean",
                           "null"
                         ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. Contract violations raise SQLSTATE `22023` with a message naming the limit or the argument at fault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rpc/fund_restatements": {
+      "post": {
+        "operationId": "rpc_fund_restatements",
+        "summary": "fund_restatements",
+        "description": "Restatement events from the B3 Fundos.NET (FNET) register: one row per document with versao > 1 (modalidade RE voluntary or RC CVM-required, as published), newest delivery first, with cnpj from its cnpjFundo link (NULL when SILO's fortnightly sweep has not linked it yet — served, never dropped), tipo_fundo from its tipoFundo link (FII / FIDC / ETF; NULL when none), and previous_fnet_id / previous_delivered_at / lag_days for the version it most plausibly replaced. FNET DOES NOT LINK VERSIONS, so the pairing is by a stated group key — (cnpj link, categoria, tipo_documento, especie, reference_raw) — never by fund_name: previous is the group's document with the highest versao below this one, the greatest fnet_id winning a tie, because a group can legitimately hold several v1 documents (assemblies). Unlinked documents and documents with no reference text are never paired (previous_* NULL). lag_days = delivery date minus the previous delivery date. Filter by p_cnpj (window verbatim, NULL = whole history) or by a delivery window (default the 30 days before p_to or today); p_tipo_fundo takes FII, FIDC or ETF and anything else raises 22023. More than 1000 rows RAISES 22023 (never trimmed): narrow the window or pin p_cnpj / p_tipo_fundo.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "tags": [
+          "FNET documents"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "p_cnpj": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
+                  },
+                  "p_from": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
+                  },
+                  "p_to": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
+                  },
+                  "p_tipo_fundo": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result set, newest delivery first. An unknown id is an empty array, not a 404 and never a guessed value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "fnet_id": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int64"
+                      },
+                      "cnpj": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "tipo_fundo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "fund_name": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "tipo_documento": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "reference_raw": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "reference_date": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "versao": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "modalidade": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "delivered_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
+                      },
+                      "previous_fnet_id": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int64"
+                      },
+                      "previous_delivered_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
+                      },
+                      "lag_days": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
                       }
                     }
                   }

@@ -229,6 +229,9 @@ REFUSING_FUNCTIONS = {
     "screen_dormant_funds",
     "screen_dormant_trend",
     "screen_delinquency_drivers",
+    # v33: the FNET register (24_api_fnet.sql) — raise-only.
+    "fund_documents",
+    "fund_restatements",
 }
 PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav"}
 
