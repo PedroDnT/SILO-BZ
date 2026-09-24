@@ -104,6 +104,13 @@ const REQUIRED_AFTER_MIGRATION = [
     source: 'src/store/migrations/41_ibge_ipca_item_monthly.sql',
     fix: 'python scripts/apply_schema.py',
   },
+  // Every /fii and /suspicious FII source reads the latest-version view, not
+  // cvm_fii_mensal, since the table keeps every CVM version of a filing.
+  {
+    relation: 'vw_fii_mensal_latest', column: null,
+    source: 'src/store/migrations/43_fii_versions.sql',
+    fix: 'python scripts/apply_schema.py',
+  },
 ];
 
 const missingVars = ['host', 'database', 'user', 'password'].filter((v) => !env(v));

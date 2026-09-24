@@ -13,7 +13,7 @@ existing table; columns not present in cvm_fii_mensal fall through to residual
 
 TABLE = "cvm_fii_mensal"
 DOC_SUBTYPE = "geral"
-CONFLICT = ("cnpj", "period", "doc_subtype")
+CONFLICT = ("cnpj", "period", "doc_subtype", "versao")
 
 FIELD_MAP = {
     # CNPJ_Fundo is the pre-2021 header; CVM renamed it to CNPJ_Fundo_Classe
@@ -21,6 +21,7 @@ FIELD_MAP = {
     # files match the current name first.
     "cnpj":           (["CNPJ_Fundo_Classe", "CNPJ_FUNDO_CLASSE", "CNPJ_Fundo"], "cnpj"),
     "period":         (["Data_Referencia", "DT_COMPTC"],            "date"),
+    "versao":                 (["Versao"], "text"),  # CVM restatement counter; validated in ingest_fii
     "tp_fundo":       (["Tipo_Fundo_Classe", "TP_FUNDO_CLASSE"],    "text"),
     "cotas_emitidas": (["Quantidade_Cotas_Emitidas"],               "numeric"),
     # Remaining geral fields (Nome_Fundo_Classe, Codigo_ISIN, Segmento_Atuacao,
