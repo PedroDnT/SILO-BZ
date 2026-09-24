@@ -1,0 +1,93 @@
+---
+title: "MCP server"
+description: "Connect Claude, ChatGPT or Cursor to SILO over MCP: one read-only tool per API endpoint, no key, no signup, errors passed through verbatim."
+icon: "plug"
+---
+
+<Warning>
+  **Built, not deployed yet.** The URL below goes live after the function is deployed. Until then, use the [Data API](/api-docs/quickstart) directly.
+</Warning>
+
+### Overview
+
+SILO's remote MCP server gives an agent the read API as tools. There is one tool per published function or view, and each one sends exactly one request to the [Data API](/api-docs/quickstart) with the shared publishable key. There is nothing to sign up for and no key to paste.
+
+| What | Value |
+| --- | --- |
+| URL (after deploy) | `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp` |
+| Transport | Streamable HTTP, stateless |
+| Auth | None (anonymous tier) |
+| Tools | 47 — every `catalog()` endpoint plus `catalog` itself |
+| Hints | every tool `readOnlyHint: true`, `openWorldHint: false` |
+
+The server does not restate the contract. Each tool's description is generated from the same `openapi.json` as the Endpoints reference, and the rules live on [Conventions & limits](/api-docs/conventions). The `catalog` tool returns the full contract as JSON.
+
+### Connect
+
+<Tabs>
+  <Tab title="Claude">
+    **claude.ai / Claude Desktop:** Settings → Connectors → *Add custom connector*. Paste the URL, leave authentication empty.
+
+    **Claude Code:**
+
+    ```bash
+    claude mcp add --transport http silo https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp
+    ```
+  </Tab>
+  <Tab title="ChatGPT">
+    Turn on developer mode in ChatGPT's connector settings, then create a connector with the URL above and **No authentication**. Every SILO tool is marked read-only, so ChatGPT should not ask you to confirm each call as a write.
+  </Tab>
+  <Tab title="Cursor">
+    Add to `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project):
+
+    ```json
+    {
+      "mcpServers": {
+        "silo": {
+          "url": "https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp"
+        }
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+Any other MCP client that supports streamable HTTP connects the same way: give it the URL and no credentials.
+
+### What a result looks like
+
+On success, every tool returns one text block. It starts with the row count and a provenance line, followed by the rows exactly as PostgREST returned them:
+
+```
+rows: 1
+provenance: POST /rest/v1/rpc/lookup · schema api · params {"p_query":"PETR4"}
+[{"id":"PETR4","id_type":"ticker","asset_class":"equity","name":"PETROBRAS", ...}]
+```
+
+The server never trims rows. View tools (`short_interest`, `investor_flow`, `quotes`, …) also report `Content-Range`. If PostgREST cut the page, the result says **PARTIAL PAGE** and how many rows matched, so a cut page can't pass as the whole series. Page with `order` + `offset`.
+
+View tools take `filters` (column → PostgREST operator, e.g. `{"ticker": "eq.PETR4", "trade_date": "gte.2026-09-01"}`), `select`, `order`, `limit` and `offset`. They take nothing else. There are no `or=` trees, no SQL and no write path.
+
+### Errors are information
+
+A PostgREST error comes back as a tool error (`isError: true`). The response body is included verbatim, with the endpoint and parameters that caused it. The server makes one request per call and never retries.
+
+```
+PostgREST error HTTP 400 from POST /rest/v1/rpc/panel
+provenance: POST /rest/v1/rpc/panel · schema api · params {"p_ids":["A","B","C","D"]}
+SILO refused rather than trimmed (22023): ...
+--- verbatim response body ---
+{"code":"22023","message":"panel accepts at most 3 ids per call for anonymous callers; 4 were given. ..."}
+```
+
+- **`22023`** means the request crossed a stated ceiling: the 1,000-row page, the anonymous id ceiling, or a screen's threshold range. Narrow the query, or page with `p_after` where the function offers it. Retrying the same call will not produce a different answer.
+- **`NULL`** means the source did not declare the value, or the field does not apply to that fund family. Never fill it or read it as zero. See [null semantics](/api-docs/conventions).
+- **`as_of` vs `complete_through`** (from `coverage`): `as_of` is the newest period that has elapsed; `complete_through` is how much the source has published in full. A gap between them reflects Brazil's filing calendar, not an outage.
+
+### Limits
+
+The server always calls the API at the **anonymous tier**. It never forwards your credentials, so the anonymous ceilings apply: 3 panel ids, 25 `search_funds` rows, 200 option-chain rows, and no panel universe mode. For the signed-in ceilings, call the [Data API](/api-docs/agents#2-auth) directly with a user token. Rows per response are 1,000 at every tier.
+
+### Suggested first prompt
+
+> Using the SILO tools: call `catalog` and `coverage`, then tell me which FIDCs match the evergreen-aging screen and how their senior tranches performed. Treat every screen row as a signal, not a finding.
