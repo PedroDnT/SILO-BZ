@@ -10,14 +10,17 @@ Handles:
   - fidc_scr     (tab_X, SCR grade ladder — both eras)
   - fidc_sacado  (tab_VIII, 25 largest sacados — both eras)
   - fidc_cedente (tab_I cedente slots, unpivoted — both eras)
+  - fidc_garantia (tab_X_7, guarantees on the credit rights — both eras)
   - fund_registry seed from HIST tab_II DENOM_SOCIAL
 """
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from typing import Any, Dict, List
 
-from src.parsers.mapping import apply_map, assert_map_matches
+from src.parsers.mapping import _norm, apply_map, assert_map_matches, coerce
+from src.parsers.field_maps import fidc_garantia as _garantia
 from src.parsers.field_maps import fidc_mensal as _mensal
 from src.parsers.field_maps import fidc_tranche as _tranche
 from src.parsers.field_maps import fidc_tranche_flows as _flows
@@ -308,6 +311,93 @@ def ingest_fidc_scr(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
         number of rows upserted
     """
     return _ingest_fidc_wide(conn, raw_rows, _scr, "fidc/scr", keep_raw=True)
+
+
+def _source_cell(row: Dict[str, Any], candidates: List[str]) -> str | None:
+    """The raw source string apply_map would read for `candidates`, uncoerced.
+
+    Same lookup as apply_map (case-insensitive header, first candidate with a
+    non-empty value; "", NULL and NA count as absent), so validation sees the
+    exact cell the typed column is built from, before `cnpj` zero-pads it or
+    `numeric` turns an unparseable string into None.
+    """
+    index = {_norm(k): k for k in row.keys()}
+    for cand in candidates:
+        real = index.get(_norm(cand))
+        if real is None:
+            continue
+        value = row.get(real)
+        if value is not None and str(value).strip() not in ("", "NULL", "NA"):
+            return str(value).strip()
+    return None
+
+
+def garantia_row_error(row: Dict[str, Any]) -> str | None:
+    """Why a tab_X_7 row fails validation, or None when it passes.
+
+    DataValidator on the source cells: the fund CNPJ must be 14 digits with
+    valid check digits (a short one is NOT zero-padded into a guess), the
+    competence date must parse, and each value must be blank (stored NULL) or
+    a non-negative number. Measured on 2019-11..2026-08: 4 of 188,476 rows fail,
+    all on a negative value.
+    """
+    fmap = _garantia.FIELD_MAP
+    ok, msg = _validator._validate_cnpj(_source_cell(row, fmap["cnpj"][0]))
+    if not ok:
+        return f"cnpj: {msg}"
+    ok, msg = _validator._validate_date(_source_cell(row, fmap["period"][0]))
+    if not ok:
+        return f"period: {msg}"
+    for col in ("vl_garantia", "pr_garantia"):
+        cell = _source_cell(row, fmap[col][0])
+        if cell is None:
+            continue
+        ok, msg = _validator._validate_numeric(cell)
+        value = coerce(cell, "numeric") if ok else None
+        if value is None:
+            return f"{col}: {msg or 'not a number'}"
+        if value < 0:
+            return f"{col}: negative ({cell})"
+    return None
+
+
+def ingest_fidc_garantia(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
+    """Parse, validate and upsert guarantees on the credit rights (tab_X_7).
+
+    One row per (fund, month), values as filed. A row that fails
+    garantia_row_error is dropped and counted, never coerced. The source repeats
+    (cnpj, period) on 0.11% of rows, always with the same values (a 'Fundo'
+    and a 'Classe' line of one CNPJ); upsert_rows collapses them.
+
+    Returns:
+        number of rows upserted
+    """
+    assert_map_matches(
+        raw_rows, _garantia.FIELD_MAP, dataset="fidc/garantia",
+        required=("cnpj", "period", "vl_garantia", "pr_garantia"),
+    )
+    records: List[Dict[str, Any]] = []
+    dropped: Counter = Counter()
+    for row in raw_rows:
+        error = garantia_row_error(row)
+        if error is not None:
+            dropped[error.split(":", 1)[0]] += 1
+            continue
+        typed, residual = apply_map(row, _garantia.FIELD_MAP)
+        typed["raw"] = residual
+        records.append(typed)
+    if dropped:
+        logger.info(
+            "fidc/garantia: %d row(s) dropped by validation %s",
+            sum(dropped.values()), dict(dropped),
+        )
+
+    if not records:
+        return 0
+
+    return upsert_rows(
+        conn, _garantia.TABLE, records, conflict_columns=",".join(_garantia.CONFLICT),
+    )
 
 
 def ingest_fidc_sacado(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:

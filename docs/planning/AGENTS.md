@@ -72,6 +72,20 @@ run. So the Sentinel needs a read-only credential with
 `default_transaction_read_only = on`, the same posture as `health.yml`. Which
 credential, and whether it is a new Postgres role, is Pedro's call (§6).
 
+### Sentinel credential
+
+[`docs/security/sentinel_readonly_role.sql`](../security/sentinel_readonly_role.sql)
+is the proposed answer, for Pedro to run by hand with psql: a LOGIN role
+`silo_sentinel` whose password comes from a psql variable
+(`-v sentinel_password=…`), never a literal in the file. It holds CONNECT,
+USAGE on `public` and `api`, SELECT on `cvm_ingest_log` and `fnet_document`,
+EXECUTE on `api.coverage()` and `api.metric_coverage()`, and a 30s
+`statement_timeout`; nothing else. It does not set
+`default_transaction_read_only` (the grants are the boundary); the script's
+header carries the one-line `ALTER ROLE` if the posture above is wanted too.
+The connection string goes in the Sentinel routine's environment secret, never
+in the repo.
+
 ## 3. Lineage
 
 The rules that keep "which agents are running" answerable.
