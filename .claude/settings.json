@@ -23,7 +23,12 @@
       "mcp__github__list_pull_requests",
       "mcp__github__get_job_logs",
       "mcp__Vercel__get_deployment",
-      "mcp__Vercel__get_deployment_build_logs"
+      "mcp__Vercel__get_deployment_build_logs",
+      "WebSearch",
+      "WebFetch",
+      "mcp__Parallel_Search__web_fetch",
+      "mcp__Parallel_Search__web_search",
+      "mcp__Exa__web_fetch_exa"
     ]
   },
   "hooks": {
