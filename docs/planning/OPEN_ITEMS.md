@@ -11,12 +11,12 @@ pointer. Anything provisional or missing goes in this file.
 
 ## Known good as of 2026-09-18
 
-| Surface              | State                                                                                                                              |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Data API (PostgREST) | catalog **v30** live (`inflation`, `inflation_items`), applied 2026-09-21                                                          |
-| Docs site            | `octo-98895abd.mintlify.site` — 200, including `known-limitations` and `api-docs/inflation`                                        |
+| Surface              | State                                                                                                                               |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Data API (PostgREST) | catalog **v30** live (`inflation`, `inflation_items`), applied 2026-09-21                                                           |
+| Docs site            | `octo-98895abd.mintlify.site` — 200, including `known-limitations` and `api-docs/inflation`                                         |
 | Dashboard            | `silo-bz-deloslabs.vercel.app` and `silo-bz.vercel.app` — both 200 on the current build **only since a manual promote**; see item 8 |
-| Test suite           | 1521 offline tests green on `main` (1463 before catalog v30)                                                                       |
+| Test suite           | 1521 offline tests green on `main` (1463 before catalog v30)                                                                        |
 
 Verified live, not inferred: `income_statements('PETR4')` returns
 `chart=industrial`, net income R$37.01bn; `income_statements('19348')`
@@ -160,14 +160,14 @@ had been built correctly and published nowhere.
 
 Measured 2026-09-22, in this order:
 
-| Observation                                                            | Result                                                                                        |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `GET silo-bz-deloslabs.vercel.app/macro`                               | 200, 31,867 bytes, **0** occurrences of "Inside the IPCA"                                     |
-| `GET silo-bz-git-main-deloslabs.vercel.app/macro`                      | 200, 39,505 bytes, the section present                                                        |
-| aliases on `dpl_f9YsSJ…` (f85e9f3, the newest production deployment)   | `silo-bz-git-main-deloslabs.vercel.app` **only**                                              |
-| aliases on the project                                                 | both `vercel.app` hostnames bound to `dpl_54vMGARv4w1DAhyxD9ivfg7yCVXc` (6646c0c, PR #275)    |
-| that binding's `updatedAt`                                             | 1789743476015 = **2026-09-18T00:17:56Z**, and never since                                     |
-| `list_promote_aliases`                                                 | both hostnames `status: completed` — a **promote** was the last thing that moved them         |
+| Observation                                                          | Result                                                                                     |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `GET silo-bz-deloslabs.vercel.app/macro`                             | 200, 31,867 bytes, **0** occurrences of "Inside the IPCA"                                  |
+| `GET silo-bz-git-main-deloslabs.vercel.app/macro`                    | 200, 39,505 bytes, the section present                                                     |
+| aliases on `dpl_f9YsSJ…` (f85e9f3, the newest production deployment) | `silo-bz-git-main-deloslabs.vercel.app` **only**                                           |
+| aliases on the project                                               | both `vercel.app` hostnames bound to `dpl_54vMGARv4w1DAhyxD9ivfg7yCVXc` (6646c0c, PR #275) |
+| that binding's `updatedAt`                                           | 1789743476015 = **2026-09-18T00:17:56Z**, and never since                                  |
+| `list_promote_aliases`                                               | both hostnames `status: completed` — a **promote** was the last thing that moved them      |
 
 So both hostnames are project domains (`gitBranch: null`, verified) that a
 manual promote pinned on 2026-09-18, and nothing has reassigned them since. A
@@ -268,3 +268,12 @@ of -0.32.
 The inputs added to `backfill.yml` stay, so the loads are repeatable:
 `bacen_only = true`, `bacen_sources = sgs`, `bacen_start = 1980-01-01`,
 `ibge = true`.
+
+## 13. B7 agent loop: designed, smallest test pending
+
+[AGENTS.md](AGENTS.md) is approved (2026-09-24) and nothing runs. Before any
+routine is scheduled, one manual Builder run on FIDC informe `tab_X_7`
+(AGENTS.md §5) has to show that its PR needs clearly less rework than writing
+it by hand. Until then the prompt files under `.claude/agents/`, the
+`agent-ok` / `agent:<name>` labels and the routines stay uncreated, and the
+Sentinel's read-only database credential is Pedro's open call.
