@@ -661,6 +661,9 @@ CREATE INDEX IF NOT EXISTS idx_fip_periodic_period    ON cvm_fip_periodic (perio
 
 -- ---------------------------------------------------------------------------
 -- FII — monthly general summary  (mensal_geral, yearly ZIP)
+--   The key gains versao (migration 43, mirrored in the ALTER block near the
+--   end of this file): every CVM version of a filing is kept. Read one row per
+--   (cnpj, period, doc_subtype) through vw_fii_mensal_latest.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS cvm_fii_mensal (
     id            BIGSERIAL    PRIMARY KEY,
@@ -692,7 +695,9 @@ ALTER TABLE cvm_fii_mensal
 --   ('trimestral' is retired — see migration 15: it ingested the wrong ZIP member)
 --   The uniqueness key is widened to include data_referencia by migration 15
 --   (mirrored in the ALTER block at the end of this file) because trimestral_*
---   is quarterly and dfin ships several filings per fund per year.
+--   is quarterly and dfin ships several filings per fund per year. Migration
+--   43 then adds versao, so every CVM version is kept. Read one row per former
+--   key through vw_fii_periodic_latest.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS cvm_fii_periodic (
     id            BIGSERIAL    PRIMARY KEY,
@@ -1072,12 +1077,49 @@ CREATE INDEX IF NOT EXISTS idx_fii_periodic_segmento
 -- cvm_fii_periodic (migration 15): the uniqueness key must include
 -- data_referencia — trimestral_* is quarterly and dfin files several times a
 -- year, so the year-grain key silently overwrote all but the last filing.
--- DROP IF EXISTS + ADD keeps this idempotent across re-applies.
-ALTER TABLE cvm_fii_periodic DROP CONSTRAINT IF EXISTS uq_fii_periodic;
+--
+-- cvm_fii_mensal / cvm_fii_periodic (migration 43): versao — CVM's `Versao` —
+-- is in both keys, so every restatement of a filing is kept as its own row
+-- instead of overwriting the original. NULLS NOT DISTINCT keeps rows that
+-- carry no version deduping exactly as before. The swaps are catalog-guarded
+-- (a no-op once the key names versao). An unconditional re-ADD of a narrower
+-- key would fail as soon as two versions of one filing are stored.
+-- Readers go through vw_fii_mensal_latest / vw_fii_periodic_latest (one row
+-- per former key, highest versao), created by migration 43 and deliberately
+-- not here: on a fresh database migration 01 retypes cvm_fii_mensal columns
+-- after this file, and a view over the table would block that ALTER.
+-- The versao backfill from raw and its column comments also live only in 43
+-- (the comment is the backfill's run-once marker).
+ALTER TABLE cvm_fii_mensal
+    ADD COLUMN IF NOT EXISTS versao INT;
 
-ALTER TABLE cvm_fii_periodic
-    ADD CONSTRAINT uq_fii_periodic UNIQUE NULLS NOT DISTINCT
-        (cnpj, doc_type, period_year, data_referencia);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'cvm_fii_mensal'::regclass
+          AND conname  = 'uq_fii_mensal'
+          AND pg_get_constraintdef(oid) ILIKE '%versao%'
+    ) THEN
+        ALTER TABLE cvm_fii_mensal DROP CONSTRAINT IF EXISTS uq_fii_mensal;
+        ALTER TABLE cvm_fii_mensal ADD CONSTRAINT uq_fii_mensal
+            UNIQUE NULLS NOT DISTINCT (cnpj, period, doc_subtype, versao);
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'cvm_fii_periodic'::regclass
+          AND conname  = 'uq_fii_periodic'
+          AND pg_get_constraintdef(oid) ILIKE '%versao%'
+    ) THEN
+        ALTER TABLE cvm_fii_periodic DROP CONSTRAINT IF EXISTS uq_fii_periodic;
+        ALTER TABLE cvm_fii_periodic ADD CONSTRAINT uq_fii_periodic
+            UNIQUE NULLS NOT DISTINCT (cnpj, doc_type, period_year, data_referencia, versao);
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- BACEN: SGS time series  (SELIC, IPCA, CDI, IGP-M, USD/BRL, …)

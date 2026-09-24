@@ -43,8 +43,8 @@ from behind a login, or purchased — except the one ETF market feed noted below
 | FIDC    | `cvm_fidc_cedente`       | fund × month × block × slot (1–9)    | tab I cedente slots, unpivoted       | 2019-11 (slots appear)   |
 | FIDC    | `cvm_fidc_scr`           | fund × month                         | tab X, monthly 2025+, HIST ≤2024     | 2023-10 (member appears) |
 | FIDC    | `cvm_fidc_garantia`      | fund × month                         | tab X_7, monthly 2025+, HIST ≤2024   | 2019-11 (member appears) |
-| FII     | `cvm_fii_mensal`         | fund × month                         | yearly ZIP                           | 2021                     |
-| FII     | `cvm_fii_periodic`       | fund × quarter/year × doc            | yearly ZIP, 4 members                | 2019                     |
+| FII     | `cvm_fii_mensal`         | fund × month × subtype × **version** | yearly ZIP                           | 2021                     |
+| FII     | `cvm_fii_periodic`       | fund × quarter/year × doc × **version** | yearly ZIP, 4 members             | 2019                     |
 | FII     | `cvm_fii_imovel`         | fund × quarter × **property**        | yearly ZIP                           | 2019                     |
 | FIAGRO  | `cvm_fiagro_mensal`      | fund × month                         | monthly ZIP                          | **2025-05**              |
 | FIP     | `cvm_fip_periodic`       | fund × **filing date** × share class | yearly CSV                           | 2010                     |
@@ -278,6 +278,27 @@ link_download)` and a unique key that admits it for protocol-less rows — the
 pattern `cvm_fii_imovel` and `cvm_fi_cda_debentures` already use. It changes
 `cia_event`'s grain for the protocol-less era, so it is written up here for the
 owner's call and not proposed as a migration in this release.
+
+### FII filings keep every CVM version — fixed 2026-09-24 (migration 43)
+
+`cvm_fii_mensal` and `cvm_fii_periodic` receive CVM's `Versao` (a filer that
+corrects a report re-submits it and CVM bumps the number) but keyed without
+it, so `ON CONFLICT DO UPDATE` overwrote the original with the restatement
+(`COMPETITIVE_GAPS.md` §4.3). Owner decision 2026-09-24: keep every version.
+`versao` is now a typed column in both unique keys (`NULLS NOT DISTINCT`),
+backfilled from `raw ->> 'Versao'`. A malformed `Versao` is dropped and
+counted at ingest, and an absent one stays NULL.
+
+- **Readers see no change.** Every analytical object and dashboard source reads
+  `vw_fii_mensal_latest` / `vw_fii_periodic_latest`: one row per former key,
+  highest `versao`. `instrument_activity` is re-created over the view.
+- **History before the change holds only one version.** Each stored filing is
+  the version CVM was shipping when we last fetched it. Earlier versions were
+  overwritten in our copy and cannot be recovered from it. A re-ingest
+  (`run_backfill --entity fii`) keeps whatever versions CVM's files still
+  carry. FNET (`fnet_document`) is the register of which versions exist.
+- **Still open, same shape:** `cvm_securit_fluxo` and `cvm_fi_perfil` also
+  receive a version and key without it.
 
 ### Periods no wired source reaches
 

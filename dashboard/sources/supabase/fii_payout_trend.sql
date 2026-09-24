@@ -19,7 +19,7 @@ with anchor as (
            latest_complete_period('fii'),
            date_trunc('month', max(period))::date
          ) as p_end
-  from cvm_fii_mensal
+  from vw_fii_mensal_latest
   where doc_subtype = 'ativo_passivo'
     and rendimentos_distribuir is not null
 ),
@@ -46,7 +46,7 @@ per_fund as (
       max(m.cotas_emitidas) filter (where m.doc_subtype = 'complemento'),
       max(m.cotas_emitidas) filter (where m.doc_subtype = 'geral')
     )                                                                          as cotas_emitidas
-  from cvm_fii_mensal m
+  from vw_fii_mensal_latest m
   cross join anchor a
   where m.period >= (date_trunc('month', a.p_end) - interval '23 months')::date
     and m.period <  (date_trunc('month', a.p_end) + interval '1 month')::date
