@@ -1,0 +1,251 @@
+---
+title: "Sheets and Excel"
+description: "Pull SILO data into Google Sheets and Excel as CSV. What the server does was measured live; the spreadsheet snippets are marked where they were not run."
+icon: "table-cells"
+---
+
+### Overview
+
+The API speaks CSV. Ask for it with `Accept: text/csv` and every view and every function answers with a header row and comma-separated values, straight into a spreadsheet.
+
+The catch is headers. A spreadsheet formula like Google Sheets' `IMPORTDATA` cannot set any, and without `Accept: text/csv` the server answers JSON. So the working recipes are the ones that can set a header: **Apps Script** in Sheets, **Power Query** in Excel.
+
+<Note>
+  Everything under "What the server does" was observed on 2026-09-24 against the
+  live API with the curl commands shown. The Apps Script and Power Query
+  snippets were **not executed**: they are written against those observations,
+  and are marked as such.
+</Note>
+
+### What the server does
+
+Base URL and key are the ones on [Quickstart](/api-docs/quickstart):
+
+```bash
+export SILO_URL="https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"
+export SILO_ANON_KEY="sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
+```
+
+| Request                                                               | Observed                                               |
+| --------------------------------------------------------------------- | ------------------------------------------------------ |
+| View, `Accept: text/csv`                                              | `200`, `text/csv; charset=utf-8`, header row then data |
+| Function via `POST /rpc/…`, `Accept: text/csv`                        | `200`, `text/csv`                                      |
+| Function via `GET /rpc/…?p_…=…`, `Accept: text/csv`                   | `200`, `text/csv`                                      |
+| Key as `?apikey=` in the URL, no `apikey` header                      | `200`: the gateway accepts it                          |
+| No `Accept-Profile` header                                            | `200`: `api` is the default schema                     |
+| No `Accept` header, or `Accept: */*`                                  | `200`, **`application/json`**                          |
+| No key anywhere                                                       | `401`, `No API key found in request`                   |
+| A function over its row cap, CSV requested                            | `400`, **JSON** error body (`22023`)                   |
+| A view with `limit=5000`, CSV requested                               | 1,000 rows; `Content-Range: 0-999/*`                   |
+| `equities?ticker=eq.PETR4&limit=5000` plus `Prefer: count=exact`, CSV | `206`, `Content-Range: 0-999/1925`                     |
+
+A view, as CSV:
+
+```bash
+curl -s "$SILO_URL/equities?ticker=eq.PETR4&select=ticker,trade_date,close,volume&order=trade_date.desc&limit=5" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Accept: text/csv"
+```
+
+```
+ticker,trade_date,close,volume
+PETR4,2026-09-23,49.600000,2157789085.00
+PETR4,2026-09-22,48.350000,2350910695.00
+PETR4,2026-09-21,48.000000,1383164736.00
+PETR4,2026-09-18,48.500000,2554613048.00
+PETR4,2026-09-17,48.610000,1574576494.00
+```
+
+A function, as CSV. `POST` with a JSON body, or `GET` with the arguments in the query string; both returned the same CSV:
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/quote_history" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/csv" \
+  -d '{"p_ticker":"PETR4","p_from":"2026-09-15","p_to":"2026-09-23"}'
+
+curl -s "$SILO_URL/rpc/quote_history?p_ticker=PETR4&p_from=2026-09-21&p_to=2026-09-23&apikey=$SILO_ANON_KEY" \
+  -H "Accept: text/csv"
+```
+
+The key in the URL, with no headers at all, returns JSON:
+
+```bash
+curl -s "$SILO_URL/equities?ticker=eq.PETR4&select=ticker,trade_date,close&limit=2&apikey=$SILO_ANON_KEY"
+# [{"ticker":"PETR4","trade_date":"2019-01-02","close":24.060000}, ...]
+```
+
+<Warning>
+  **The 1,000-row cut is invisible in a spreadsheet.** A view asked for 5,000
+  rows returned 1,000, and the only sign was the `Content-Range` response
+  header, which no spreadsheet shows. The sheet simply ends. Filter to fewer
+  than 1,000 rows, or check the count as the Apps Script below does. Functions
+  refuse instead of cutting (the `400` above), which is safer, but the refusal
+  arrives as JSON. See [Paging without losing
+  rows](/api-docs/guides/pagination).
+</Warning>
+
+### Google Sheets: `IMPORTDATA` does not work
+
+`IMPORTDATA(url)` fetches a URL and splits it as CSV. It cannot set headers, so:
+
+- the key can go in the URL (`?apikey=…` worked, above);
+- the schema needs no header (`api` is the default);
+- but the format **cannot be chosen**, and without `Accept: text/csv` the server returned JSON in every request we made.
+
+What Accept header Google's fetcher actually sends was not observed. Unless it sends `text/csv`, `IMPORTDATA` gets JSON and splits it on commas into cells like `[{"ticker":"PETR4"`. We found no way to request CSV from the URL alone, so `IMPORTDATA` is **not a supported recipe**.
+
+### Google Sheets: Apps Script custom function
+
+<Warning>
+  **Not executed.** Written against the server behaviour above, not run inside
+  Google Sheets. `UrlFetchApp.fetch`, `Utilities.parseCsv` and custom functions
+  are standard Apps Script; the details (header casing, number handling in your
+  locale) are exactly where an untested snippet can be wrong.
+</Warning>
+
+Extensions → Apps Script, paste, save:
+
+```javascript
+const SILO_URL = "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/";
+const SILO_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437";
+
+/**
+ * A view as a table. =SILO("equities?ticker=eq.PETR4&select=ticker,trade_date,close&order=trade_date.desc&limit=30")
+ * @customfunction
+ */
+function SILO(path) {
+  const res = UrlFetchApp.fetch(SILO_URL + path, {
+    headers: { apikey: SILO_KEY, Accept: "text/csv", Prefer: "count=exact" },
+    muteHttpExceptions: true,
+  });
+  return siloTable_(res);
+}
+
+/**
+ * A function as a table. =SILO_RPC("quote_history", "{""p_ticker"":""PETR4"",""p_from"":""2026-09-01""}")
+ * @customfunction
+ */
+function SILO_RPC(name, jsonArgs) {
+  const res = UrlFetchApp.fetch(SILO_URL + "rpc/" + name, {
+    method: "post",
+    contentType: "application/json",
+    payload: jsonArgs || "{}",
+    headers: { apikey: SILO_KEY, Accept: "text/csv" },
+    muteHttpExceptions: true,
+  });
+  return siloTable_(res);
+}
+
+function siloTable_(res) {
+  const code = res.getResponseCode();
+  if (code !== 200 && code !== 206) {
+    throw new Error("SILO " + code + ": " + res.getContentText());
+  }
+  // A view cut by the server's 1,000-row cap says so only here: "0-999/5321".
+  // A smaller page you asked for with limit= is not an error.
+  const headers = res.getHeaders();
+  const range = headers["Content-Range"] || headers["content-range"];
+  if (range) {
+    const m = String(range).match(/^(\d+)-(\d+)\/(\d+)$/);
+    const got = m ? Number(m[2]) - Number(m[1]) + 1 : 0;
+    if (m && got === 1000 && Number(m[2]) + 1 < Number(m[3])) {
+      throw new Error(
+        "SILO cut the result at 1,000 of " +
+          m[3] +
+          " rows. Narrow the filter or page with offset.",
+      );
+    }
+  }
+  const rows = Utilities.parseCsv(res.getContentText());
+  // Values arrive as text; turn plain numbers into numbers.
+  return rows.map((r, i) =>
+    i === 0 ? r : r.map((v) => (/^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v)),
+  );
+}
+```
+
+The key sits in the script, not in the sheet's cells. It is the shared publishable key printed on [Quickstart](/api-docs/quickstart), so this hides nothing, but anyone with edit access to the sheet can read it.
+
+### Excel: Power Query
+
+<Warning>
+  **Not executed.** Written against the server behaviour above, not run in
+  Excel. `Web.Contents` with `Headers`, `Csv.Document` and
+  `Table.PromoteHeaders` are standard Power Query M.
+</Warning>
+
+Data → Get Data → From Other Sources → Blank Query → Advanced Editor:
+
+```
+let
+    Source = Web.Contents(
+        "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/",
+        [
+            RelativePath = "equities",
+            Query = [
+                ticker = "eq.PETR4",
+                select = "ticker,trade_date,close,volume",
+                order  = "trade_date.desc",
+                limit  = "250"
+            ],
+            Headers = [
+                apikey = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437",
+                Accept = "text/csv"
+            ]
+        ]
+    ),
+    Csv      = Csv.Document(Source, [Delimiter = ",", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]),
+    Promoted = Table.PromoteHeaders(Csv, [PromoteAllScalars = true]),
+    Typed    = Table.TransformColumnTypes(
+        Promoted,
+        {{"trade_date", type date}, {"close", type number}, {"volume", type number}},
+        "en-US"
+    )
+in
+    Typed
+```
+
+For a function, pass a body; `Web.Contents` sends a `POST` when `Content` is set:
+
+```
+Source = Web.Contents(
+    "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/",
+    [
+        RelativePath = "rpc/quote_history",
+        Headers = [
+            apikey = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437",
+            Accept = "text/csv",
+            #"Content-Type" = "application/json"
+        ],
+        Content = Text.ToBinary("{""p_ticker"":""PETR4"",""p_from"":""2026-09-01""}")
+    ]
+)
+```
+
+If Excel asks how to authenticate, choose **Anonymous**: the key travels in the header.
+
+The `"en-US"` culture on the type step matters. The server writes decimals with a dot (`49.600000`), and a workbook in a Brazilian locale reads a dot as a thousands separator. We did not test this in a pt-BR Excel; typing the columns with an explicit culture is the safe default either way.
+
+### Key in the URL: the trade-off
+
+It works (`?apikey=…`, observed above), and it is the only way to authenticate from a tool that cannot set headers. Two honest caveats:
+
+- The key then appears in the sheet, the query, the browser history and any proxy log. It is the **shared publishable key**, already printed on these docs, so nothing secret leaks. A **user token** from sign-in is different: never put one in a URL.
+- It does not solve the format. A tool that cannot set `Accept` gets JSON, so the URL-key route is useful only to tools that parse JSON.
+
+### Related
+
+<CardGroup cols={2}>
+  <Card title="Conventions & limits" icon="ruler" href="/api-docs/conventions">
+    Auth tiers, the 1,000-row cap, nulls.
+  </Card>
+  <Card
+    title="Paging without losing rows"
+    icon="list-ol"
+    href="/api-docs/guides/pagination"
+  >
+    Three ways a response gets cut, and only one tells you.
+  </Card>
+</CardGroup>
