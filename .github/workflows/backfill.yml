@@ -65,6 +65,18 @@ on:
         description: "FI only: fetch ONLY these competency months, comma-separated YYYY-MM (e.g. 2019-04,2023-01). Requires a specific fi_doc_type. Each year job takes the months belonging to its own year."
         type: string
         default: ""
+      fnet_start:
+        description: "FNET document register: first delivery day (YYYY-MM-DD). Empty = no FNET. Setting it (or fnet_sweep) makes this an FNET-ONLY dispatch: every CVM/BACEN/IBGE job is skipped. Paced at 1 req/s, ~15-25 s a delivery day, so a year is 2-3 h against a 355-min cap: backfill ONE YEAR per dispatch, newest year first."
+        type: string
+        default: ""
+      fnet_end:
+        description: "FNET only: last delivery day (YYYY-MM-DD). Empty = today. Needs fnet_start."
+        type: string
+        default: ""
+      fnet_sweep:
+        description: "FNET only: link every FII/FIDC in cvm_fund_registry to its documents (~7.3k funds x ~1.5 s, about 3 h). Dispatch it on its own, not with a year of fnet_start."
+        type: boolean
+        default: false
 
 # Shares the writer group with daily_ingest.yml so a backfill and the daily
 # cron never write to the same tables at once. Jobs inside this workflow also
@@ -115,7 +127,7 @@ jobs:
   # fetches. bacen_only runs skip this job — they never touch CVM.
   cvm-preflight:
     name: "Can this runner reach CVM?"
-    if: ${{ inputs.bacen_only != true }}
+    if: ${{ inputs.bacen_only != true && !(inputs.fnet_start != '' || inputs.fnet_sweep == true) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -198,7 +210,7 @@ jobs:
   backfill-fi:
     name: "FI ${{ matrix.year }}"
     needs: [apply-schema, inspect-coverage, cvm-preflight]
-    if: ${{ inputs.bacen_only != true && (inputs.entity == 'all' || inputs.entity == 'fi') }}
+    if: ${{ inputs.bacen_only != true && (inputs.entity == 'all' || inputs.entity == 'fi') && !(inputs.fnet_start != '' || inputs.fnet_sweep == true) }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
@@ -444,7 +456,7 @@ jobs:
   backfill-other:
     name: "${{ matrix.entity }} ${{ inputs.start_year }}-${{ inputs.end_year }}"
     needs: [apply-schema, inspect-coverage, cvm-preflight]
-    if: ${{ inputs.bacen_only != true && (inputs.entity == 'all' || contains(fromJSON('["fidc","fii","fiagro","fip","securit","cia_aberta"]'), inputs.entity)) }}
+    if: ${{ inputs.bacen_only != true && (inputs.entity == 'all' || contains(fromJSON('["fidc","fii","fiagro","fip","securit","cia_aberta"]'), inputs.entity)) && !(inputs.fnet_start != '' || inputs.fnet_sweep == true) }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
@@ -492,7 +504,7 @@ jobs:
   backfill-etf:
     name: "ETF registry"
     needs: [apply-schema, inspect-coverage, cvm-preflight]
-    if: ${{ inputs.bacen_only != true && (inputs.entity == 'all' || inputs.entity == 'etf') }}
+    if: ${{ inputs.bacen_only != true && (inputs.entity == 'all' || inputs.entity == 'etf') && !(inputs.fnet_start != '' || inputs.fnet_sweep == true) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -531,7 +543,7 @@ jobs:
   refresh-etf:
     name: "Refresh ETF metrics"
     needs: [apply-schema, backfill-fi, backfill-other, backfill-etf]
-    if: ${{ always() && !cancelled() && needs.apply-schema.result == 'success' && inputs.bacen_only != true && (inputs.entity == 'all' || inputs.entity == 'fi' || inputs.entity == 'etf') }}
+    if: ${{ always() && !cancelled() && needs.apply-schema.result == 'success' && inputs.bacen_only != true && (inputs.entity == 'all' || inputs.entity == 'fi' || inputs.entity == 'etf') && !(inputs.fnet_start != '' || inputs.fnet_sweep == true) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -555,7 +567,7 @@ jobs:
   backfill-bacen:
     name: "BACEN"
     needs: apply-schema
-    if: ${{ inputs.bacen_only == true || inputs.entity == 'all' }}
+    if: ${{ (inputs.bacen_only == true || inputs.entity == 'all') && !(inputs.fnet_start != '' || inputs.fnet_sweep == true) }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -591,7 +603,7 @@ jobs:
   backfill-ibge:
     name: "IBGE IPCA item tree"
     needs: [apply-schema, backfill-bacen]
-    if: ${{ always() && needs.apply-schema.result == 'success' && inputs.ibge == true }}
+    if: ${{ always() && needs.apply-schema.result == 'success' && inputs.ibge == true && !(inputs.fnet_start != '' || inputs.fnet_sweep == true) }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -612,6 +624,94 @@ jobs:
         run: |
           python -m src.pipeline.run_backfill --ibge-only
 
+  # FNET document register (B3 Fundos.NET, backlog B1). Opt-in and alone:
+  # run_backfill --fnet-only never rides along with anything else, and every
+  # other ingest job above is skipped when fnet_start or fnet_sweep is set, so
+  # the default entity=fi does not quietly start an FI 2019-2026 fill beside
+  # it. FNET is paced at one request a second (~10 requests a delivery day,
+  # 15-25 s a day): a year is 2-3 h and the full fund sweep ~3 h, so one year
+  # per dispatch fits under 355 min, just short of GitHub's 360-min job cap.
+  # The daily run keeps the trailing days current afterwards.
+  backfill-fnet:
+    name: "FNET document register"
+    needs: apply-schema
+    if: ${{ inputs.fnet_start != '' || inputs.fnet_sweep == true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    # One FNET crawl at a time even across dispatches: two would halve each
+    # other's 1 req/s budget against an undocumented endpoint.
+    concurrency:
+      group: fnet-register
+      cancel-in-progress: false
+    steps:
+      # Inputs reach the shell only through env, never through ${{ }} in the
+      # script body, and are checked before anything is installed.
+      - name: Validate FNET inputs
+        env:
+          FNET_START: ${{ inputs.fnet_start }}
+          FNET_END: ${{ inputs.fnet_end }}
+          FNET_SWEEP: ${{ inputs.fnet_sweep }}
+        run: |
+          set -euo pipefail
+          iso='^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+          check_date() {
+            local name="$1" value="$2"
+            if [[ ! "$value" =~ $iso ]] || [[ "$(date -u -d "$value" +%F 2>/dev/null || true)" != "$value" ]]; then
+              echo "::error::$name must be a real calendar date as YYYY-MM-DD (got: '$value')"
+              exit 1
+            fi
+          }
+          if [[ -z "$FNET_START" && "$FNET_SWEEP" != "true" ]]; then
+            echo "::error::Nothing to do: set fnet_start (a delivery-day range) and/or fnet_sweep"
+            exit 1
+          fi
+          if [[ -n "$FNET_END" && -z "$FNET_START" ]]; then
+            echo "::error::fnet_end needs fnet_start"
+            exit 1
+          fi
+          if [[ -n "$FNET_START" ]]; then
+            check_date fnet_start "$FNET_START"
+            end="${FNET_END:-$(date -u +%F)}"
+            [[ -z "$FNET_END" ]] || check_date fnet_end "$FNET_END"
+            if [[ "$FNET_START" > "$end" ]]; then
+              echo "::error::fnet_start ($FNET_START) is after fnet_end ($end)"
+              exit 1
+            fi
+            echo "FNET register: $FNET_START..$end"
+          fi
+          echo "FNET fund sweep: $FNET_SWEEP"
+
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run FNET backfill
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          LOG_LEVEL: INFO
+          FNET_START: ${{ inputs.fnet_start }}
+          FNET_END: ${{ inputs.fnet_end }}
+          FNET_SWEEP: ${{ inputs.fnet_sweep }}
+        run: |
+          set -euo pipefail
+          args=(--fnet-only)
+          if [[ -n "$FNET_START" ]]; then
+            args+=(--fnet-start "$FNET_START")
+            if [[ -n "$FNET_END" ]]; then
+              args+=(--fnet-end "$FNET_END")
+            fi
+          fi
+          if [[ "$FNET_SWEEP" == "true" ]]; then
+            args+=(--fnet-sweep)
+          fi
+          python -m src.pipeline.run_backfill "${args[@]}"
+
   # Build the analytical layer (dims, fact matviews, rankings, fraud screens)
   # once the full backfill has populated the base tables — several analytical
   # files smoke-check for data and RAISE on an empty DB, so this must run AFTER
@@ -623,7 +723,7 @@ jobs:
     name: "Apply analytical layer"
     needs:
       [backfill-fi, backfill-other, backfill-etf, backfill-bacen, backfill-ibge]
-    if: ${{ always() && (inputs.bacen_only == true || inputs.entity == 'all' || inputs.ibge == true) }}
+    if: ${{ always() && (inputs.bacen_only == true || inputs.entity == 'all' || inputs.ibge == true) && !(inputs.fnet_start != '' || inputs.fnet_sweep == true) }}
     continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 60
