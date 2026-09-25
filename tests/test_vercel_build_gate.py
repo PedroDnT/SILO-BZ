@@ -356,6 +356,114 @@ def test_refresh_etf_does_not_run_when_schema_apply_failed():
     assert "needs.apply-schema.result == 'success'" in refresh["if"]
 
 
+# --- FNET register backfill (plan item 1a) ---------------------------------
+# The FNET crawl is paced at 1 req/s against an undocumented endpoint, so it
+# is opt-in, runs alone, and must never change what an ordinary dispatch does.
+
+_FNET_ON = "inputs.fnet_start != '' || inputs.fnet_sweep == true"
+
+
+def _backfill_wf() -> dict:
+    return yaml.safe_load((ROOT / ".github/workflows/backfill.yml").read_text())
+
+
+def _dispatch_inputs(wf: dict) -> dict:
+    # PyYAML reads the bare key `on` as boolean True.
+    on = wf.get("on", wf.get(True))
+    return on["workflow_dispatch"]["inputs"]
+
+
+def test_fnet_inputs_default_to_off():
+    inputs = _dispatch_inputs(_backfill_wf())
+    assert inputs["fnet_start"]["default"] == ""
+    assert inputs["fnet_end"]["default"] == ""
+    assert inputs["fnet_sweep"]["type"] == "boolean"
+    assert inputs["fnet_sweep"]["default"] is False
+    assert "ONE YEAR" in inputs["fnet_start"]["description"]
+    # GitHub caps workflow_dispatch at 25 inputs.
+    assert len(inputs) <= 25
+
+
+def test_fnet_job_is_gated_serial_and_runs_fnet_only():
+    job = _backfill_wf()["jobs"]["backfill-fnet"]
+    assert job["if"] == "${{ " + _FNET_ON + " }}"
+    needs = job["needs"]
+    needs = [needs] if isinstance(needs, str) else needs
+    assert "apply-schema" in needs
+    # FNET is not CVM: blocking it on dados.cvm.gov.br would invent an outage.
+    assert "cvm-preflight" not in needs
+    assert job["concurrency"]["cancel-in-progress"] is False
+    assert "strategy" not in job or job["strategy"].get("max-parallel") == 1
+    assert 300 <= job["timeout-minutes"] <= 355
+
+    steps = job["steps"]
+    names = [s.get("name") for s in steps]
+    validate_i = names.index("Validate FNET inputs")
+    run_i = names.index("Run FNET backfill")
+    install_i = names.index("Install dependencies")
+    assert validate_i < install_i < run_i, "validate before paying for pip"
+
+    run = steps[run_i]
+    assert run["env"]["POSTGRES_URL"] == "${{ secrets.POSTGRES_URL }}"
+    assert "python -m src.pipeline.run_backfill" in run["run"]
+    assert "--fnet-only" in run["run"]
+    for flag in ("--fnet-start", "--fnet-end", "--fnet-sweep"):
+        assert flag in run["run"]
+    # Raw inputs reach the shell only through env, never interpolated.
+    for step in (steps[validate_i], run):
+        assert "${{" not in step["run"], step["name"]
+        assert step["env"]["FNET_START"] == "${{ inputs.fnet_start }}"
+        assert step["env"]["FNET_END"] == "${{ inputs.fnet_end }}"
+        assert step["env"]["FNET_SWEEP"] == "${{ inputs.fnet_sweep }}"
+
+
+def test_fnet_dispatch_skips_every_other_ingest_job():
+    """The default entity=fi would otherwise start an FI 2019-2026 fill beside it.
+
+    Each other job only gains `&& !(fnet)`, so with the FNET inputs empty its
+    condition is exactly what it was.
+    """
+    jobs = _backfill_wf()["jobs"]
+    for name in (
+        "cvm-preflight", "backfill-fi", "backfill-other", "backfill-etf",
+        "refresh-etf", "backfill-bacen", "backfill-ibge", "apply-analytical",
+    ):
+        cond = jobs[name]["if"]
+        assert cond.endswith("&& !(" + _FNET_ON + ") }}"), name
+
+
+def _validate_script() -> str:
+    job = _backfill_wf()["jobs"]["backfill-fnet"]
+    return next(s for s in job["steps"] if s.get("name") == "Validate FNET inputs")["run"]
+
+
+@pytest.mark.parametrize(
+    "start,end,sweep,ok",
+    [
+        ("2025-01-01", "2025-12-31", "false", True),
+        ("2025-01-01", "", "false", True),
+        ("", "", "true", True),
+        ("", "", "false", False),               # nothing to do
+        ("", "2025-12-31", "false", False),     # end without start
+        ("2025-1-01", "", "false", False),      # not ISO
+        ("2025-02-30", "", "false", False),     # not a real day
+        ("2025-12-31", "2025-01-01", "false", False),  # reversed
+        ("2025-01-01; rm -rf /", "", "false", False),  # injection is just a bad date
+    ],
+)
+def test_fnet_input_validation(start, end, sweep, ok):
+    if shutil.which("bash") is None or shutil.which("date") is None:
+        pytest.skip("needs bash + GNU date")
+    env = {**os.environ, "FNET_START": start, "FNET_END": end, "FNET_SWEEP": sweep}
+    r = subprocess.run(
+        ["bash", "-c", _validate_script()], env=env,
+        capture_output=True, text=True, timeout=30,
+    )
+    assert (r.returncode == 0) is ok, r.stdout + r.stderr
+    if not ok:
+        assert "::error::" in r.stdout
+
+
 def test_every_fi_doc_type_is_dispatchable_and_repairable():
     """A doc type wired into backfill but absent from the dropdown is unreachable.
 
