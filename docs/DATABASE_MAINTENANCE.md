@@ -87,6 +87,12 @@ Exactly one row per ingest run, written by `_log_start` / `_log_finish` in
 | `error`   | Fetch/parse/write failed, **or** rows were fetched and none survived parsing                           | investigate — see §11 |
 | `running` | Never finalized: the process died mid-slice                                                            | re-run that slice     |
 
+Each row also carries `git_sha` (the commit the run executed, from `GITHUB_SHA`; NULL
+for local runs) and `parser_version` (`PARSER_VERSION` in `src/pipeline/ingest_log.py`),
+so a stored number can be traced to the code that parsed it. The FNET register logs
+under `entity = 'fnet'`: `doc_type = 'register'` (one row per delivery-day window, or
+per backfill month) and `doc_type = 'fund_link'` (one row per fund sweep).
+
 Triage query:
 
 ```sql
@@ -400,8 +406,8 @@ aggregates without a separate cron.
 
 **The boundary is the grant, not RLS — and it is closed.** `anon` and
 `authenticated` hold no privilege on any landing table: `12_grants_and_rls.sql`
-revokes them and grants only `USAGE` on schema `api`, `SELECT` on its eight
-views and `EXECUTE` on its thirteen functions. A request with
+revokes them and grants only `USAGE` on schema `api`, `SELECT` on its views
+and `EXECUTE` on its functions (the list is `api.catalog()`). A request with
 `Accept-Profile: public`, or any path naming `cvm_*` / `b3_cotahist` / `cia_*`,
 answers **401 for every caller**. `.github/workflows/health.yml` probes exactly
 that on every run and fails the job if a landing table ever answers 200.
@@ -431,6 +437,13 @@ running it:
   the pipeline connects as keeps bypassing RLS and ingestion is unaffected.
 
 Verify afterwards with the query in the file's footer.
+
+**The Sentinel login.** `docs/security/sentinel_readonly_role.sql` creates
+`silo_sentinel`, the read-only credential for the scheduled monitoring agent
+(`docs/planning/AGENTS.md`): `EXECUTE` on `api.coverage()` / `api.metric_coverage()`,
+`SELECT` on `cvm_ingest_log` and `fnet_document`, nothing else. The owner runs it by
+hand; the password comes in as a psql variable (instructions in the file header) and
+never appears in the repo or in a shell history line. Re-running rotates the password.
 
 ---
 

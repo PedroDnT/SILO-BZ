@@ -38,6 +38,8 @@ Grouped by when you would reach for them.
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `promote_dashboard.sh` | Promotes the newest READY production deployment and then **proves** the public host serves it, by comparing `/data/manifest.json` against the branch alias. Run daily at 08:00 UTC by `publish_check.yml`. Exit 1 = the dashboard is serving a stale build. Needs `VERCEL_TOKEN` to promote; without it, still checks and fails loudly. |
 | `vercel_should_build.sh` | Vercel `ignoreCommand`. Builds only when `dashboard/`, `vercel.json` or itself changed. **Exit codes are inverted per Vercel's contract: 0 SKIPS, 1 BUILDS.** Fails open. |
+| `gen_openapi.py`         | Regenerates `openapi.json` from a Postgres with the analytical layer applied; CI fails when it is stale.                                                                  |
+| `gen_mcp_contract.py`    | Regenerates `supabase/functions/silo-mcp/contract.generated.ts` from `openapi.json` (`--check` exits 1 when stale). Run after `gen_openapi.py`.                          |
 | `install_hooks.sh`       | Points git at `.githooks/` (pre-commit secret + syntax checks).                                                                                                           |
 | `build_etf_seed.py`      | Regenerates the curated B3 ETF seed at `src/store/seeds/etf_registry_seed.csv`.                                                                                           |
 
