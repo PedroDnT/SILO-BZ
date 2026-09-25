@@ -314,8 +314,9 @@ Sentinel's read-only database credential is Pedro's open call.
 ## 14. The gaps backlog: resolution plan (2026-09-24)
 
 Sequences the [COMPETITIVE_GAPS.md](COMPETITIVE_GAPS.md) §7 backlog (B1 to B11).
-B1, the FNET register, is built (migration 42) and is not yet served. Waves
-run in order; within a wave, items are independent unless marked.
+B1, the FNET register, is built (migration 42) and served since catalog v33
+(`api.fund_documents`, `api.fund_restatements`, #286). Waves run in order;
+within a wave, items are independent unless marked.
 
 ### Wave 1: no decisions needed
 
