@@ -142,7 +142,13 @@ That makes two independent instances of one mistake, which is enough to justify
 sweeping for others rather than waiting for the third. Candidates are anywhere a
 "latest period" is derived from the data instead of from coverage.
 
-## 6. Deploying the API is manual, and that is easy to forget
+## 6. ~~Deploying the API is manual, and that is easy to forget~~ (done)
+
+**Done 2026-09-25** (`fix/deploy-checklist`): the release-checklist route. The
+`iliquid_nightly` skill, loaded for any `19_*.sql` / catalog / dashboard change,
+now has a "Shipping: merging to `main` deploys nothing" section with both
+manual steps and how to confirm each. An on-merge trigger was not added: it
+would start a ~28 min matview rebuild on every merge.
 
 `scripts/apply_analytical.sh` is what makes a merged catalog change live. It runs
 on the 06:00 UTC `daily_ingest` schedule or a `workflow_dispatch` with
