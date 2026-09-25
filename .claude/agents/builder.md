@@ -130,7 +130,9 @@ ON_ERROR_STOP=1` on an ephemeral Postgres) and idempotent
    your environment specifies for commits. Never commit a credential, a
    `.env`, or a connection string.
 3. Push and open **one draft PR** against `main`, labelled `agent:builder`,
-   titled like a normal SILO PR. Body:
+   titled like a normal SILO PR. It stays a draft on purpose: it is the one exception to
+   CLAUDE.md's ready-for-review rule, so agent output can never auto-merge.
+   Never mark it ready yourself; only the owner does. Body:
 
    ```
    Closes #<issue>

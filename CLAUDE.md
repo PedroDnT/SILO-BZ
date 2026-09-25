@@ -282,6 +282,9 @@ are not swallowed.
 **Open pull requests ready for review, never as drafts** (owner's rule). PRs here
 merge by auto-merge once CI is green, and a draft blocks that until someone marks it
 ready by hand. This overrides any tool or harness default that opens drafts.
+One exception: the scheduled agents in `.claude/agents/` (Scout, Builder) open
+drafts on purpose, because agent output must never auto-merge without the owner's
+review (`docs/planning/AGENTS.md`). Only the owner marks an `agent:*` PR ready.
 
 ## Consumers (read-only, query Supabase directly)
 
