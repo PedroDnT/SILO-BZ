@@ -1,0 +1,87 @@
+---
+title: "Macro series and PTAX"
+description: "BACEN's policy rate, CDI, IGP-M, INPC, poupança, the SGS dollar and euro, monthly GDP and the PTAX exchange rates — as published, with the unit on every row."
+icon: "landmark"
+---
+
+<Note>
+  **Parameters, response columns and types are generated** from the SQL catalog and
+  render under **Endpoints → Macro** in the sidebar. This page carries what a schema
+  cannot: what each unit means and the three series that are easy to misread.
+</Note>
+
+### Overview
+
+Two functions over BACEN data Silo already ingests daily. Nothing is derived —
+no annualisation, compounding, averaging, mid rate or fill. IPCA is not here: it
+is [`inflation`](/api-docs/inflation), with its own units and caveats.
+
+- **`macro_series(p_series, p_from, p_to)`** — one SGS series, oldest first.
+- **`ptax(p_currency, p_from, p_to)`** — PTAX buy and sell for one currency.
+
+```python
+silo.macro_series("CDI")                 # last 12 months
+silo.macro_series("SELIC_META", start="2020-01-01")
+silo.ptax("USD")
+```
+
+### The series
+
+`p_series` takes the label or the SGS code. Read `unit` on every row before doing
+arithmetic.
+
+| Label | SGS | `unit` | `frequency` | Is |
+| --- | --- | --- | --- | --- |
+| `SELIC_META` | 432 | `pct_year` | daily | the Copom target, % a.a. |
+| `SELIC_DIARIA` | 11 | `pct_day` | daily | the Selic rate, % per business day |
+| `CDI` | 12 | `pct_day` | daily | the CDI, % per business day |
+| `IGPM` | 189 | `pct_month` | monthly | IGP-M, % change in the month |
+| `INPC` | 188 | `pct_month` | monthly | INPC, % change in the month |
+| `POUPANCA` | 25 | `pct_period` | daily | old-rule savings return (see below) |
+| `USDBRL` | 1 | `brl_per_usd` | daily | SGS's BRL/USD selling rate |
+| `EURBRL` | 21619 | `brl_per_eur` | daily | SGS's BRL/EUR selling rate |
+| `PIB` | 4380 | `brl_million` | monthly | monthly GDP, R$ millions, current prices |
+
+An IPCA label or code is refused with a pointer to `inflation`; anything else
+unknown raises `22023` listing the nine. Default window: 12 months for the daily
+series, 120 for the monthly ones.
+
+### Three series that are easy to misread
+
+- **`SELIC_META` is published ahead.** BACEN dates the target per calendar day
+  and carries it forward to the next Copom meeting (on 2026-09-25 the series
+  already ran to 2026-11-04). The default window ends today; an explicit `p_to`
+  after today can return those forward-dated rows.
+- **`CDI` and `SELIC_DIARIA` are per business day.** `0.050788` is % per day,
+  not per year. Compounding it to an annual rate is your calculation — do it in
+  the notebook and say so.
+- **`POUPANCA` is the old-rule return, per anniversary day.** SGS 25 is BACEN's
+  _Depósitos de poupança até 03.05.2012 – Rentabilidade no período_: one value
+  per anniversary day, each the return over the month that starts on that date.
+  It is not a calendar-month figure and not the return of deposits made after
+  2012-05-03.
+
+### PTAX
+
+One row per currency and business day: `buy_rate` (compra) and `sell_rate`
+(venda), **BRL per one unit** of the currency — JPY and ARS included. The
+currencies are the ones Silo ingests (USD, EUR, GBP, JPY, ARS); an unknown code
+raises `22023` listing the ones held.
+
+BACEN prints up to five bulletins a day (opening, three intermediate, closing).
+Silo keeps the last one it received, which for a completed day is the closing
+**PTAX** — measured on 2026-09-22/23, the stored USD sell rate equals SGS 1 and
+BACEN's _Fechamento_ bulletin to four decimals. The bulletin type is not stored.
+A holiday has no row; nothing is filled.
+
+### Freshness
+
+[`coverage()`](/api-docs/coverage) has a `macro_series` row (the newest elapsed
+observation of any of the nine — their cadences differ, so read a monthly
+series' own last row before calling it late) and a `ptax` row. Each `landed_at`
+is its own ingest: an SGS run never reports as PTAX freshness, or the reverse.
+
+### Limits
+
+Both refuse above one 1,000-row page (`22023`); narrow `p_from` / `p_to`. A daily
+series fits about three years per call.

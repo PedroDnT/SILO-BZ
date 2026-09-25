@@ -161,7 +161,8 @@ views, options, termo, holdings, debentures, FIDC concentration, FIDC tranches
 and aging (`fidc_tranches`, `fidc_aging`, catalog v32 — history from 2025-01, as
 CVM publishes no archive of those tabs), the FNET document register
 (`fund_documents`, `fund_restatements`, catalog v33), ANBIMA classes, inflation,
-company financials, and the B3 lending and investor-flow views — has no `/v1`
+company financials, company events, macro series and PTAX (catalog v38), and the
+B3 lending and investor-flow views — has no `/v1`
 twin and is reachable only over PostgREST. Read those on the published site.
 
 ### The FNET document register
@@ -190,6 +191,35 @@ The operator half, which is what a reviewer needs to check:
   route yet). Both are raise-only above one page. `coverage()` gains an
   `fnet_documents` row (as_of = newest delivery day, complete_through the day
   before; landed_at from `cvm_ingest_log` entity `fnet`, doc_type `register`).
+
+### Company events, macro series and PTAX (catalog v38)
+
+`api.company_events`, `api.macro_series` and `api.ptax` (`26_api_events_macro.sql`)
+serve three tables that were held and read only by the dashboards (`cia_event`,
+the non-inflation `bacen_sgs` series, `bacen_ptax`). Caller documentation:
+[Company events](https://octo-98895abd.mintlify.site/api-docs/company-events) and
+[Macro series and PTAX](https://octo-98895abd.mintlify.site/api-docs/macro). The
+operator half:
+
+- **`company_events`** resolves `p_id` through `api.company_ref` — the resolver
+  `financials` uses (FCA ticker map, CNPJ, CVM code; never a name) — and serves
+  one row per `protocolo` at its newest `versao`, with `link_download` as
+  `source_url`. History starts in 2015 because CVM's pre-2015 IPE rows (and a
+  minority since) carry no protocol and `cia_event`'s key drops them
+  (`DATA_INVENTORY.md` §2); the `coverage()` row says so.
+- **`macro_series`** reads only the codes in `api.macro_registry()`, which
+  `tests/test_wave3_contract.py` pins to `SGS_SERIES` minus `INFLATION_SERIES`
+  in `src/pipeline/bacen_pipeline.py`. Add a series there and the test fails
+  until the registry and the `coverage()` row's code list follow. IPCA codes
+  are refused with a pointer to `api.inflation`.
+- **`ptax`** serves `bacen_ptax` as stored. The ingest keeps the last bulletin
+  Olinda returns per day (upsert last-write-wins), which for a completed day is
+  the Fechamento PTAX; the bulletin type is not stored.
+- Grants follow `fund_documents`: DEFINER with an empty `search_path`, revoked
+  from `PUBLIC`, granted to `anon` / `authenticated` / `silo_api`. All three are
+  raise-only above one page. `coverage()` gains `company_events` (landed_at from
+  `cia_aberta` / `ipe`), `macro_series` (`bacen` / `sgs`) and `ptax` (`bacen` /
+  `ptax`).
 
 ### Row caps refuse, and say why (catalog v34)
 
@@ -259,6 +289,22 @@ schema. They are now revoked from `PUBLIC`, `anon` and `authenticated`, and
 one. The Evidence build is unaffected: it connects as the `postgres` login
 (`EVIDENCE_SOURCE__supabase__user`), which owns them.
 
+### The filing-behaviour screens
+
+`api.screen_restatements`, `api.screen_late_filers` and `api.screen_silent_filers`
+(catalog v37, `25_api_filing_screens.sql`) follow the same contract as the seven
+above — signals, `screen` + `params` on every row, raise-only above one page, no
+`/v1` twin, no `silo_api` grant — but are native functions, not wrappers: no
+dashboard page runs them, so the API function is the one definition. The two
+FNET screens know a fund only by its `cnpjFundo` link. `screen_late_filers`
+measures the first FNET delivery of the monthly informe against the deadline
+Resolução CVM 175 states (FIDC: Anexo Normativo II, art. 27, III; FII: Anexo
+Normativo III, art. 36, I — 15 days after month end; text read 2026-09-25) and
+only from the first full month after each family's adaptation deadline (2024-12
+FIDC, 2025-07 FII); the citation is on every row. `screen_silent_filers` reads
+`dim_fund` against `latest_complete_period`, not FNET. Caller documentation:
+[Filing-behaviour screens](https://octo-98895abd.mintlify.site/api-docs/filing-screens).
+
 ## Run
 
 ```bash
@@ -319,7 +365,8 @@ cannot be paged" — that stopped being true two catalog versions ago. **`panel`
 `quote_history` and `fund_nav` page with a `p_after` cursor**; the others
 (`option_history`, `termo_history`, `financials`, `company_financials`,
 `anbima_classes`, `inflation`, `inflation_items`, `fidc_tranches`, `fidc_aging`,
-`fund_documents`, `fund_restatements` and the seven `screen_*` functions)
+`fund_documents`, `fund_restatements`, `company_events`, `macro_series`,
+`ptax` and the ten `screen_*` functions)
 have no cursor and ask you to narrow the window. `fund_nav` also
 requires `p_entity_type` to page, because its cursor is a bare period and 385
 CNPJs file under two families in the same month.

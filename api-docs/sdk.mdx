@@ -73,9 +73,12 @@ One per published endpoint. Dates accept `date` objects or ISO strings; `None` m
 | `fidc_cedentes(cnpj \| cedente, …)` · `fidc_sacados(cnpj, …)` · `fidc_portfolio(cnpj, kind, …)` | [FIDC](/api-docs/fidc) | `kind` = sector / scr_debtor / scr_operation / tax_debt |
 | `fidc_tranches(cnpj, start, end, series)` · `fidc_aging(cnpj, start, end)` | [FIDC tranches and aging](/api-docs/fidc-structure) | as filed, from 2025-01; `flows` keeps CVM's labels |
 | `fund_documents(cnpj, start, end, tipo)` · `fund_restatements(cnpj, start, end, tipo_fundo)` | [Fund documents and restatements](/api-docs/fnet-documents) | fund by FNET link only; versions paired by a stated key |
+| `screen_restatements(months, end, …)` · `screen_late_filers(months, end, …, family)` · `screen_silent_filers(min_silent_months, max_silent_months, family)` | [Filing-behaviour screens](/api-docs/filing-screens) | signals, not verdicts; `late_filers` cites its rule on every row |
 | `financials(id, statement, start, end, scope, doc_type)` · `company_financials(id, …)` | financials | read `period_months` before comparing rows |
+| `company_events(id, start, end, category)` | [Company events](/api-docs/company-events) | id resolved like `financials`; newest version per protocol; from 2015 |
 | `anbima_classes(category, metric, level, start, end)` | `anbima_classes` | industry aggregates, no fund join |
 | `inflation(series, family, start, end)` · `inflation_items(level, item, start, end)` | [inflation](/api-docs/inflation) | as published, in percent; `acc_12m` and `contribution` are the derived columns |
+| `macro_series(series, start, end)` · `ptax(currency, start, end)` | [Macro series and PTAX](/api-docs/macro) | as published; read `unit` on every row |
 | `short_interest(...)` · `short_interest_by_sector(...)` · `lending_trades(...)` · `lending_participants(...)` · `investor_flow(...)` | [lending](/api-docs/lending) · [flows](/api-docs/flows) | view readers, PostgREST filters passed through |
 | `view(name, **filters)` · `view_all(name, **filters)` · `iter_view(...)` | the 13 views | filter syntax passed through verbatim |
 
@@ -116,7 +119,7 @@ fidcs = silo.panel_all(None, ["delinquency", "nav"], entity_type="fidc",
                        min_nav=1e7, min_months=12, wide=True)
 ```
 
-For `option_history`, `termo_history`, `financials`, `company_financials`, `anbima_classes`, `inflation`, `inflation_items`, `fidc_tranches`, `fidc_aging`, `fund_documents`, `fund_restatements` and the `screen_*` functions there is no cursor: `SiloOverCap` means narrow the window.
+For `option_history`, `termo_history`, `financials`, `company_financials`, `anbima_classes`, `inflation`, `inflation_items`, `fidc_tranches`, `fidc_aging`, `fund_documents`, `fund_restatements`, `company_events`, `macro_series`, `ptax` and the `screen_*` functions there is no cursor: `SiloOverCap` means narrow the window.
 
 `panel(wide=True)` refuses to pivot a CNPJ that files under two families in the same month — pass `entity_type=`, or take `wide=False` and keep `asset_class` in your own key.
 
