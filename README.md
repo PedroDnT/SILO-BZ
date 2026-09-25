@@ -10,6 +10,7 @@
 > (source: [`api-docs/`](api-docs/quickstart.mdx); for agents:
 > [`api-docs/agents.mdx`](api-docs/agents.mdx) and [`skill.md`](skill.md);
 > page index: [`llms.txt`](llms.txt)).
+> **MCP server:** [`supabase/functions/silo-mcp/`](supabase/functions/silo-mcp/) — read-only remote MCP, one tool per `api` endpoint, built but not yet deployed ([`api-docs/mcp.mdx`](api-docs/mcp.mdx)).
 > **Notebooks:** [`notebooks/`](notebooks/) — nine runnable end-to-end examples.
 
 ## What SILO is

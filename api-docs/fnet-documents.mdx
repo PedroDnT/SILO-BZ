@@ -1,0 +1,139 @@
+---
+title: "Fund documents and restatements"
+description: "B3 Fundos.NET's document register — every document filed for a fund, each version with its own id, and the restatements (RE voluntary, RC CVM-required) paired with the version they replaced. Metadata with a source link, as published."
+icon: "file-lines"
+---
+
+<Note>
+  **Parameters, response columns and types are generated** from the SQL catalog and
+  render under **Endpoints → FNET documents** in the sidebar. This page carries what a
+  schema cannot: how a document is tied to a fund, how versions are paired, and where
+  the history starts.
+</Note>
+
+### Overview
+
+CVM's open-data CSVs are republished in place: when a fund restates an informe, the new
+figures overwrite the old ones and the fact that anything changed is gone. B3's
+**Fundos.NET (FNET)** keeps every version as its own document, says whether it is the
+original or a restatement, and keeps the superseded version listed. Silo crawls that
+register (metadata only — no document bodies) and serves it two ways:
+
+| Endpoint | Returns |
+| --- | --- |
+| `fund_documents` | every FNET document linked to one fund, newest delivery first, with a link to the original |
+| `fund_restatements` | every re-filed document (`versao` > 1), paired with the version it most plausibly replaced and the lag between them |
+
+The FNET vocabulary, served as published:
+
+| Field | Values |
+| --- | --- |
+| `versao` | `1` for the first filing, `2`, `3`… for each re-filing. **Each version is a new `fnet_id`.** |
+| `modalidade` | `AP` original (Apresentação) · `RE` voluntary restatement (Reapresentação Espontânea) · `RC` restatement **required by CVM** (Reapresentação por Exigência) |
+| `status` | `AC` active · `IC` inactive (superseded) · `CC` cancelled — **as of `fetched_at`**, not live: a document read while active says `AC` until a later crawl sees it superseded |
+| `delivered_at` | FNET's delivery timestamp, São Paulo local time, as printed |
+| `reference_raw` / `reference_date` | the reference period as FNET prints it; `reference_date` is parsed only from `dd/mm/yyyy` or `mm/yyyy` and is `null` otherwise |
+
+<Warning>
+  **A document's fund is known only by link.** FNET's rows carry **no CNPJ** — not even
+  when the query filters on one. Silo knows a document belongs to a fund because FNET
+  returned it when Silo asked for that CNPJ, in a sweep that reaches every FII and FIDC
+  **once a fortnight**. So a document delivered since its fund was last swept is in the
+  register but not yet in `fund_documents`, and `fund_restatements` serves it with
+  `cnpj: null`. `fund_name` is FNET's label; it is never used to match a fund, and you
+  should not use it to either.
+</Warning>
+
+### `fund_documents`
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/fund_documents" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_cnpj":"07727002000126","p_from":"2024-01-01"}'
+```
+
+```python
+silo.fund_documents("07727002000126", start="2024-01-01")
+silo.fund_documents("07727002000126", tipo="Informe Mensal Estruturado")
+```
+
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `p_cnpj` | **required** | the fund; punctuation is stripped; anything but 14 digits raises `22023` |
+| `p_from` | 12 months before `p_to` (or today) | first **delivery** day |
+| `p_to` | open | last delivery day, inclusive |
+| `p_tipo` | every type | one `tipo_documento`, matched exactly as FNET labels it |
+
+One row per document, newest delivery first. `source_url` is FNET's own public download
+link for the id (`…/fnet/publico/downloadDocumento?id=<fnet_id>`), so every row carries
+provenance you can open.
+
+### `fund_restatements`
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/fund_restatements" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_tipo_fundo":"FIDC"}'
+```
+
+```python
+silo.fund_restatements("07727002000126")      # one fund, whole history
+silo.fund_restatements(tipo_fundo="FIDC")     # every FIDC, last 30 days
+```
+
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `p_cnpj` | every fund | one fund's restatements (its cnpjFundo links) |
+| `p_from` | with `p_cnpj`: open · without: 30 days before `p_to` (or today) | first delivery day of the **restated** document |
+| `p_to` | open | last delivery day, inclusive |
+| `p_tipo_fundo` | any | `FII`, `FIDC` or `ETF` (FNET's own fund-type filter); anything else raises `22023` |
+
+A three-version group, with illustrative values:
+
+```json
+[
+  { "fnet_id": 857292, "cnpj": "07727002000126", "tipo_fundo": "FIDC",
+    "tipo_documento": "Informe Mensal Estruturado", "reference_raw": "12/2024",
+    "versao": 3, "modalidade": "RE", "delivered_at": "2025-03-10T17:02:11",
+    "previous_fnet_id": 828381, "previous_delivered_at": "2025-02-05T09:41:00", "lag_days": 33 },
+  { "fnet_id": 828381, "cnpj": "07727002000126", "tipo_fundo": "FIDC",
+    "tipo_documento": "Informe Mensal Estruturado", "reference_raw": "12/2024",
+    "versao": 2, "modalidade": "RE", "delivered_at": "2025-02-05T09:41:00",
+    "previous_fnet_id": 820655, "previous_delivered_at": "2025-01-27T18:15:42", "lag_days": 9 }
+]
+```
+
+<Warning>
+  **FNET does not link versions, so the pairing is by a stated key.** Nothing in a FNET
+  row says which document a re-filing replaces. `previous_fnet_id` is the document in
+  the same group — **(cnpj link, categoria, tipo_documento, especie, reference_raw)** —
+  with the highest `versao` below this one. A group can legitimately hold several `v1`
+  documents (a general assembly convened twice for one reference, for instance), so on a
+  tie the **greatest `fnet_id`** wins — the most recently assigned id. A document with no
+  cnpj link, or with no reference text, is never paired: its `previous_*` and `lag_days`
+  are `null`, which means "not pairable", not "no predecessor".
+</Warning>
+
+- `tipo_fundo` is the label of FNET's `tipoFundo` filter the document was returned under
+  (`1` FII, `2` FIDC, `3` ETF), `null` when it was not returned under any — some
+  documents belong to no queryable type.
+- `lag_days` is the delivery **date** of the restatement minus that of the version it
+  replaced. It measures how long after the earlier filing the correction came, not how
+  late either one was against a deadline.
+- A document FNET returned for two fund queries would appear once per fund; nothing is
+  collapsed silently.
+
+### Limits and freshness
+
+- **One 1,000-row page, and both refuse above it** (`22023`). No cursor: narrow the
+  window, pin `p_tipo`, or pin `p_cnpj` / `p_tipo_fundo`. See
+  [Conventions](/api-docs/conventions).
+- **`coverage()`** carries an `fnet_documents` row keyed on the **delivery day**:
+  `as_of` is the newest delivery day held, and `complete_through` the day before it —
+  the crawl that saw `as_of` may have run while FNET was still receiving that day's
+  documents. `notes` states that history begins at Silo's first crawl or backfill (an
+  earlier day with no rows was not crawled, not empty) and that fund links come from the
+  fortnightly sweep.
+- An unknown CNPJ is an empty array, never a guessed row.

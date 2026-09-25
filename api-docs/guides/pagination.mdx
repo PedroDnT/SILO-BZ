@@ -78,15 +78,15 @@ while True:
 
 ### 3. RPCs that refuse and do not page
 
-Five functions raise `22023` above one page and offer no cursor, on purpose — a window that wide is a mistake rather than a walk. An option series lives months; a financial statement has tens of rows.
+Every other set-returning function raises `22023` above one page and offers no cursor, on purpose — a window that wide is a mistake rather than a walk. An option series lives months; a financial statement has tens of rows.
 
-`option_history` · `termo_history` · `financials` · `company_financials` · `anbima_classes`
+`option_history` · `termo_history` · `financials` · `company_financials` · `income_statements` · `anbima_classes` · `inflation` · `inflation_items` · `fidc_cedentes` · `fidc_sacados` · `fidc_portfolio` · `fidc_tranches` · `fidc_aging` · `fund_documents` · `fund_restatements` · the seven `screen_*`
 
-Narrow `p_from`/`p_to`, the ids, or the metrics. The error message names the function and says what to do.
+The authoritative list is `catalog().limits.page.functions.raise_only`. Narrow `p_from`/`p_to`, the ids, or the metrics. The error says **why** it refused and **how** to fix it for that function — in the message, and again as PostgREST's `details` and `hint`. `fidc_cedentes`, `fidc_sacados` and `fidc_portfolio` also take `p_limit` (1..1000) as an explicit request for the newest N rows; until catalog v34 they trimmed silently at 500 / 5,000 instead.
 
 ### 4. The silent one — tier ceilings
 
-Eight functions **clamp**: a `p_limit` above the ceiling is quietly lowered to it. No error, no header, no signal.
+Five functions **clamp**: a `p_limit` above the ceiling is quietly lowered to it. No error, no header, no signal.
 
 | Function | Anonymous | Signed in |
 | --- | --- | --- |
@@ -95,9 +95,6 @@ Eight functions **clamp**: a `p_limit` above the ceiling is quietly lowered to i
 | `option_exercises` | 500 | 5 000 |
 | `fund_holdings` | 500 | 5 000 |
 | `fund_debentures` | 500 | 5 000 |
-| `fidc_cedentes` | 500 | 5 000 |
-| `fidc_sacados` | 500 | 5 000 |
-| `fidc_portfolio` | 500 | 5 000 |
 
 The only defence is arithmetic: **a result of exactly 500 rows is probably truncated.** If the count equals your tier's ceiling, assume there is more and narrow the window.
 

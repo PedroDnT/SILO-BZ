@@ -28,6 +28,7 @@
           "api-docs/quickstart",
           "api-docs/sdk",
           "api-docs/agents",
+          "api-docs/mcp",
           "api-docs/conventions"
         ]
       },
@@ -55,6 +56,7 @@
           "api-docs/holdings",
           "api-docs/fidc",
           "api-docs/fidc-structure",
+          "api-docs/fnet-documents",
           "api-docs/screens",
           "api-docs/anbima",
           "api-docs/inflation",

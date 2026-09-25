@@ -178,6 +178,17 @@ REVOKE ALL ON FUNCTION api.assert_panel_ids(TEXT[]) FROM PUBLIC;
 -- 1000 is the ONE page size: PostgREST db-max-rows, the SDK's
 -- SERVER_ROW_CAP and catalog().limits.page.size — tests/test_api_contract_sql.py
 -- pins them to each other.
+--
+-- "Error with error why" (v34, owner decision 2026-09-24): the refusal is the
+-- only thing a caller sees, so it carries both the WHY and the HOW. The
+-- MESSAGE alone says both (a client that surfaces only `message` still learns
+-- what to do); DETAIL restates the why and HINT the fix, which PostgREST
+-- returns as `details` / `hint`. The fix differs by function — three take a
+-- p_after cursor, the FIDC concentration trio narrow months and take an
+-- explicit p_limit head, a screen narrows by its thresholds — so the hint is chosen
+-- here, centrally, from p_fn, and every raise-only function inherits it. The
+-- phrase "more than 1000 rows" is load-bearing: the SDK's SiloOverCap matches
+-- on it (sdk/silo_client/client.py).
 CREATE OR REPLACE FUNCTION api.assert_row_cap(p_n BIGINT, p_paging BOOLEAN, p_fn TEXT)
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -185,19 +196,57 @@ STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
+DECLARE
+    v_why TEXT;
+    v_how TEXT;
 BEGIN
     IF NOT COALESCE(p_paging, FALSE) AND p_n > 1000 THEN
+        v_why := 'Every response is one page of at most 1000 rows (PostgREST db-max-rows), '
+              || 'and a result cut to fit that page looks exactly like a complete one. '
+              || 'SILO never returns a silently truncated result, so it refuses instead.';
+        v_how := CASE
+            WHEN p_fn = 'panel' THEN
+                'Page with the cursor: send p_after = '''' for the first page, then the last row''s '
+                || 'date|id|metric|asset_class; a page shorter than 1000 rows is the last. '
+                || 'Or narrow p_from/p_to, p_ids or p_metrics.'
+            WHEN p_fn = 'quote_history' THEN
+                'Page with the cursor: send p_after = '''' for the first page, then the last row''s '
+                || 'trade_date as YYYY-MM-DD; a page shorter than 1000 rows is the last. '
+                || 'Or narrow p_from/p_to.'
+            WHEN p_fn = 'fund_nav' THEN
+                'Page with the cursor: send p_after = '''' for the first page, then the last row''s '
+                || 'period as YYYY-MM-DD, and pass p_entity_type (paging requires one family); '
+                || 'a page shorter than 1000 rows is the last. Or narrow p_from/p_to.'
+            WHEN p_fn = 'fidc_cedentes' THEN
+                -- p_cnpj and p_cedente are exclusive, so "pin a fund" is not
+                -- advice a p_cedente caller can take: the window is the lever.
+                'This function has no cursor. Narrow the window with p_from/p_to (one fund files at most '
+                || '18 slots a month; an originator looked up by p_cedente can span many funds, so it needs '
+                || 'fewer months), or ask explicitly for the newest N rows with p_limit (1..1000).'
+            WHEN p_fn IN ('fidc_sacados', 'fidc_portfolio') THEN
+                'This function has no cursor. Narrow the window with p_from/p_to'
+                || CASE WHEN p_fn = 'fidc_portfolio' THEN ', pin one p_kind' ELSE '' END
+                || ', or ask explicitly for the newest N rows with p_limit (1..1000).'
+            WHEN left(p_fn, 7) = 'screen_' THEN
+                'Screens do not page. Raise the screen''s thresholds or pin its output filter '
+                || '(see catalog().screens) so the list fits one page.'
+            ELSE
+                'This function has no cursor. Narrow the window with p_from/p_to, or pin the '
+                || 'function''s own filters, until the result fits one page.'
+        END;
         RAISE EXCEPTION
-            '%: your window produces more than 1000 rows, which the server would silently cut at 1000. Narrow p_from/p_to, ids or metrics, or page with p_after (start with p_after = '''' and pass the last row''s key back).',
-            p_fn
-            USING ERRCODE = '22023';
+            '%: refused, this request would return more than 1000 rows. % To fix: %',
+            p_fn, v_why, v_how
+            USING ERRCODE = '22023',
+                  DETAIL  = v_why,
+                  HINT    = v_how;
     END IF;
     RETURN TRUE;
 END;
 $$;
 
 COMMENT ON FUNCTION api.assert_row_cap(BIGINT, BOOLEAN, TEXT) IS
-    'Internal. Raises 22023 when a capped function would return more than the 1000-row page and the caller is not paging with p_after. The page size is PostgREST db-max-rows; nothing is ever trimmed to fit.';
+    'Internal. Raises 22023 when a capped function would return more than the 1000-row page and the caller is not paging with p_after. The message says WHY (one 1000-row page; SILO never returns a silently truncated result) and HOW to fix it for that function (page with p_after, narrow p_from/p_to, take an explicit p_limit head, raise a screen''s thresholds); DETAIL and HINT carry the two halves separately. Nothing is ever trimmed to fit.';
 
 REVOKE ALL ON FUNCTION api.assert_row_cap(BIGINT, BOOLEAN, TEXT) FROM PUBLIC;
 
@@ -1765,9 +1814,18 @@ COMMENT ON FUNCTION api.fund_debentures(TEXT, TEXT, DATE, DATE, INT) IS
 --                   are the ingest shape; the long form is what a notebook
 --                   pivots. `parent` is what keeps a caller from summing C
 --                   and C1 together.
--- Tiered 500 / 5000 like fund_holdings. Default windows are verbatim (an
--- explicit range); these tabs are members of the same monthly informe as
--- cvm_fidc_mensal, so coverage()'s fidc_* rows report their completeness.
+-- Row cap (v34, plan 2e): raise-only on the one 1000-row page, like
+-- fidc_tranches. Until v33 these three were tiered 500 / 5000 like
+-- fund_holdings and TRIMMED SILENTLY at the tier ceiling — a fund with more
+-- rows than the ceiling came back short with a 200 and nothing to say so.
+-- Now the page CTE fetches 1001 and api.assert_row_cap refuses above 1000
+-- with a message that says why and how to narrow. p_limit survives as an
+-- EXPLICIT newest-first head (1..1000): a caller who asks for the newest N
+-- rows gets exactly that, because they asked; NULL (or anything above one
+-- page) is the whole window, served whole or refused. p_limit < 1 is 22023,
+-- no longer clamped to 1. Default windows are verbatim (an explicit range);
+-- these tabs are members of the same monthly informe as cvm_fidc_mensal, so
+-- coverage()'s fidc_* rows report their completeness.
 
 CREATE OR REPLACE FUNCTION api.fidc_cedentes(
     p_cnpj    TEXT DEFAULT NULL,   -- the FUND: who it buys receivables from
@@ -1794,9 +1852,7 @@ DECLARE
     v_cnpj   TEXT := NULLIF(regexp_replace(COALESCE(p_cnpj, ''), '\D', '', 'g'), '');
     v_raw    TEXT := NULLIF(btrim(COALESCE(p_cedente, '')), '');
     v_digits TEXT;
-    v_cap    INT  := CASE api.caller_tier()
-                         WHEN 'authenticated' THEN 5000 ELSE 500 END;
-    v_limit  INT;
+    v_head   INT;   -- explicit newest-first head; NULL = the whole window
 BEGIN
     IF (v_cnpj IS NULL) = (v_raw IS NULL) THEN
         RAISE EXCEPTION
@@ -1826,9 +1882,21 @@ BEGIN
         END IF;
     END IF;
 
-    v_limit := LEAST(GREATEST(COALESCE(p_limit, v_cap), 1), v_cap);
+    -- p_limit 1..1000 is an explicit head the caller asked for. Above one
+    -- page it cannot be served as a head, so it means the whole window and
+    -- the page cap decides. Below 1 is a mistake, refused rather than clamped.
+    IF p_limit IS NOT NULL AND p_limit < 1 THEN
+        RAISE EXCEPTION
+            '%: p_limit must be 1..1000 (the newest N rows, as an explicit request) or NULL for the whole window; got %',
+            'fidc_cedentes', p_limit
+            USING ERRCODE = '22023';
+    END IF;
+    v_head := CASE WHEN p_limit <= 1000 THEN p_limit END;
 
     RETURN QUERY
+    -- One page + one (or the caller's explicit head), then assert_row_cap
+    -- REFUSES (22023) instead of trimming. No cursor.
+    WITH page (cnpj, period, bloco, seq, cedente_id, cedente_tickers, share_pct) AS (
     SELECT c.cnpj,
            c.period,
            c.bloco,
@@ -1848,7 +1916,12 @@ BEGIN
       AND (p_from IS NULL OR c.period >= p_from)
       AND (p_to   IS NULL OR c.period <= p_to)
     ORDER BY c.period DESC, c.cnpj, c.bloco, c.seq
-    LIMIT v_limit;
+    LIMIT COALESCE(v_head, 1001)
+    )
+    SELECT g.* FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'fidc_cedentes')
+    ORDER BY g.period DESC, g.cnpj, g.bloco, g.seq
+    LIMIT 1000;
 END;
 $fn$;
 
@@ -1857,7 +1930,7 @@ GRANT EXECUTE ON FUNCTION api.fidc_cedentes(TEXT, TEXT, DATE, DATE, INT)
     TO anon, authenticated;
 
 COMMENT ON FUNCTION api.fidc_cedentes(TEXT, TEXT, DATE, DATE, INT) IS
-    'FIDC named-originator concentration from informe tab I. Give exactly one of p_cnpj (which originators this fund buys from) or p_cedente (which funds buy from this originator: any CPF/CNPJ, or a listed ticker/CVM code via the published FCA map). One row per (fund, month, block, slot) as filed; share_pct is a percent of the BLOCK (A = risks retained by the cedente, B = not), never of the fund. cedente_id was checksum-verified at ingest; cedente_tickers = its active listed codes, NULL when not listed. share_pct is as filed and carries CVM''s percentage-field outliers (9% of slots above 100 in 2026-07) — range-check it, never read it as a fraction. Slots exist from 2019-11.';
+    'FIDC named-originator concentration from informe tab I. Give exactly one of p_cnpj (which originators this fund buys from) or p_cedente (which funds buy from this originator: any CPF/CNPJ, or a listed ticker/CVM code via the published FCA map). One row per (fund, month, block, slot) as filed; share_pct is a percent of the BLOCK (A = risks retained by the cedente, B = not), never of the fund. cedente_id was checksum-verified at ingest; cedente_tickers = its active listed codes, NULL when not listed. share_pct is as filed and carries CVM''s percentage-field outliers (9% of slots above 100 in 2026-07) — range-check it, never read it as a fraction. Slots exist from 2019-11. More than 1000 rows RAISES 22023, never trimmed: narrow p_from/p_to (a p_cedente lookup spans many funds, so it needs fewer months than one fund) or ask for the newest N rows with p_limit (1..1000).';
 
 CREATE OR REPLACE FUNCTION api.fidc_sacados(
     p_cnpj  TEXT,
@@ -1878,9 +1951,7 @@ SET search_path = ''
 AS $fn$
 DECLARE
     v_cnpj  TEXT := NULLIF(regexp_replace(COALESCE(p_cnpj, ''), '\D', '', 'g'), '');
-    v_cap   INT  := CASE api.caller_tier()
-                        WHEN 'authenticated' THEN 5000 ELSE 500 END;
-    v_limit INT;
+    v_head  INT;   -- explicit newest-first head; NULL = the whole window
 BEGIN
     IF v_cnpj IS NULL THEN
         RAISE EXCEPTION
@@ -1888,16 +1959,33 @@ BEGIN
             USING ERRCODE = '22023';
     END IF;
 
-    v_limit := LEAST(GREATEST(COALESCE(p_limit, v_cap), 1), v_cap);
+    -- p_limit 1..1000 is an explicit head the caller asked for. Above one
+    -- page it cannot be served as a head, so it means the whole window and
+    -- the page cap decides. Below 1 is a mistake, refused rather than clamped.
+    IF p_limit IS NOT NULL AND p_limit < 1 THEN
+        RAISE EXCEPTION
+            '%: p_limit must be 1..1000 (the newest N rows, as an explicit request) or NULL for the whole window; got %',
+            'fidc_sacados', p_limit
+            USING ERRCODE = '22023';
+    END IF;
+    v_head := CASE WHEN p_limit <= 1000 THEN p_limit END;
 
     RETURN QUERY
-    SELECT k.cnpj, k.period, k.seq, k.valor
-    FROM public.cvm_fidc_sacado k
-    WHERE k.cnpj = v_cnpj
-      AND (p_from IS NULL OR k.period >= p_from)
-      AND (p_to   IS NULL OR k.period <= p_to)
-    ORDER BY k.period DESC, k.seq
-    LIMIT v_limit;
+    -- One page + one (or the caller's explicit head), then assert_row_cap
+    -- REFUSES (22023) instead of trimming. No cursor.
+    WITH page (cnpj, period, seq, valor) AS (
+        SELECT k.cnpj, k.period, k.seq, k.valor
+        FROM public.cvm_fidc_sacado k
+        WHERE k.cnpj = v_cnpj
+          AND (p_from IS NULL OR k.period >= p_from)
+          AND (p_to   IS NULL OR k.period <= p_to)
+        ORDER BY k.period DESC, k.seq
+        LIMIT COALESCE(v_head, 1001)
+    )
+    SELECT g.* FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'fidc_sacados')
+    ORDER BY g.period DESC, g.seq
+    LIMIT 1000;
 END;
 $fn$;
 
@@ -1906,7 +1994,7 @@ GRANT EXECUTE ON FUNCTION api.fidc_sacados(TEXT, DATE, DATE, INT)
     TO anon, authenticated;
 
 COMMENT ON FUNCTION api.fidc_sacados(TEXT, DATE, DATE, INT) IS
-    'The 25 largest debtors of one FIDC from informe tab VIII, as filed: (rank, value), no identity — CVM publishes the concentration anonymized and its dictionary describes neither column. seq is CVM''s rank and is never recomputed from valor; a fund that files fewer than 25 ranks has fewer rows. A concentration ratio is valor / receivables (panel metric) in the notebook. From 2013-01.';
+    'The 25 largest debtors of one FIDC from informe tab VIII, as filed: (rank, value), no identity — CVM publishes the concentration anonymized and its dictionary describes neither column. seq is CVM''s rank and is never recomputed from valor; a fund that files fewer than 25 ranks has fewer rows. A concentration ratio is valor / receivables (panel metric) in the notebook. From 2013-01. More than 1000 rows RAISES 22023, never trimmed: narrow p_from/p_to or ask for the newest N rows with p_limit (1..1000).';
 
 CREATE OR REPLACE FUNCTION api.fidc_portfolio(
     p_cnpj  TEXT,
@@ -1932,9 +2020,7 @@ AS $fn$
 DECLARE
     v_cnpj  TEXT := NULLIF(regexp_replace(COALESCE(p_cnpj, ''), '\D', '', 'g'), '');
     v_kind  TEXT := NULLIF(lower(btrim(COALESCE(p_kind, ''))), '');
-    v_cap   INT  := CASE api.caller_tier()
-                        WHEN 'authenticated' THEN 5000 ELSE 500 END;
-    v_limit INT;
+    v_head  INT;   -- explicit newest-first head; NULL = the whole window
 BEGIN
     IF v_cnpj IS NULL THEN
         RAISE EXCEPTION 'fidc_portfolio needs p_cnpj' USING ERRCODE = '22023';
@@ -1946,9 +2032,21 @@ BEGIN
             USING ERRCODE = '22023';
     END IF;
 
-    v_limit := LEAST(GREATEST(COALESCE(p_limit, v_cap), 1), v_cap);
+    -- p_limit 1..1000 is an explicit head the caller asked for. Above one
+    -- page it cannot be served as a head, so it means the whole window and
+    -- the page cap decides. Below 1 is a mistake, refused rather than clamped.
+    IF p_limit IS NOT NULL AND p_limit < 1 THEN
+        RAISE EXCEPTION
+            '%: p_limit must be 1..1000 (the newest N rows, as an explicit request) or NULL for the whole window; got %',
+            'fidc_portfolio', p_limit
+            USING ERRCODE = '22023';
+    END IF;
+    v_head := CASE WHEN p_limit <= 1000 THEN p_limit END;
 
     RETURN QUERY
+    -- One page + one (or the caller's explicit head), then assert_row_cap
+    -- REFUSES (22023) instead of trimming. No cursor.
+    WITH page (cnpj, period, kind, code, parent, item, value) AS (
     SELECT u.cnpj, u.period, u.kind, u.code, u.parent, u.item, u.value
     FROM (
         SELECT s.cnpj, s.period, 'sector'::text AS kind, v.code, v.parent, v.item, v.value
@@ -2022,7 +2120,12 @@ BEGIN
           AND (p_to   IS NULL OR r.period <= p_to)
     ) u
     ORDER BY u.period DESC, u.kind, u.code
-    LIMIT v_limit;
+    LIMIT COALESCE(v_head, 1001)
+    )
+    SELECT g.* FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'fidc_portfolio')
+    ORDER BY g.period DESC, g.kind, g.code
+    LIMIT 1000;
 END;
 $fn$;
 
@@ -2031,7 +2134,7 @@ GRANT EXECUTE ON FUNCTION api.fidc_portfolio(TEXT, TEXT, DATE, DATE, INT)
     TO anon, authenticated;
 
 COMMENT ON FUNCTION api.fidc_portfolio(TEXT, TEXT, DATE, DATE, INT) IS
-    'One FIDC''s receivables book, long: kind=sector is informe tab II (TOTAL, the lettered sectors A..K, and their numbered members — `parent` names the letter a numbered code belongs to; sum leaves or parents, never both); kind=scr_debtor / scr_operation are tab X''s BACEN SCR grade ladders AA..H for the same receivables graded two ways; kind=tax_debt is TAB_X_DEBITO_TRIBUT. Values as filed. tab II from 2013-01; tab X from 2023-10 (earlier months have no scr rows, not zero-graded ones). An unknown p_kind raises 22023.';
+    'One FIDC''s receivables book, long: kind=sector is informe tab II (TOTAL, the lettered sectors A..K, and their numbered members — `parent` names the letter a numbered code belongs to; sum leaves or parents, never both); kind=scr_debtor / scr_operation are tab X''s BACEN SCR grade ladders AA..H for the same receivables graded two ways; kind=tax_debt is TAB_X_DEBITO_TRIBUT. Values as filed. tab II from 2013-01; tab X from 2023-10 (earlier months have no scr rows, not zero-graded ones). An unknown p_kind raises 22023. More than 1000 rows RAISES 22023, never trimmed: narrow p_from/p_to, pin one p_kind, or ask for the newest N rows with p_limit (1..1000).';
 
 -- ---------------------------------------------------------------------------
 -- FIDC structure — tranches (tabs X_2/X_3/X_6 + X_4) and aging (tab VI)
@@ -2688,7 +2791,8 @@ RETURNS TABLE (
     source           TEXT,
     notes            TEXT,
     newest_period    DATE,
-    landed_at        TIMESTAMPTZ
+    landed_at        TIMESTAMPTZ,
+    landed_git_sha   TEXT
 )
 LANGUAGE sql
 STABLE
@@ -2717,17 +2821,27 @@ AS $$
     -- finished_at: a run still in flight has not landed, and a later FAILED
     -- run must not advance the date (that would report a failure as freshness).
     --
+    -- landed_git_sha (v34, lineage, migration 44) is the git_sha OF THAT SAME
+    -- RUN — the commit whose code produced the newest landed data, read off
+    -- the row that sets landed_at (newest finished_at, id breaking a tie), not
+    -- the newest non-null sha. NULL when that run recorded none: a run from
+    -- before migration 44, or one started outside GitHub Actions with no
+    -- GITHUB_SHA. It is never borrowed from an older run, because an older
+    -- run's commit did not produce the newest data.
+    --
     -- notes = a caveat the dates cannot carry: a regime boundary where the
     -- series changes meaning mid-stream, or where the columns are per family.
     -- NULL on every row that has none.
     WITH landed AS (
-        SELECT l.entity, MAX(l.finished_at) AS landed_at
+        SELECT l.entity, MAX(l.finished_at) AS landed_at,
+               (array_agg(l.git_sha ORDER BY l.finished_at DESC, l.id DESC))[1] AS landed_git_sha
         FROM public.cvm_ingest_log l
         WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
         GROUP BY l.entity
         UNION ALL
         -- The blended fund rows below span the five families.
-        SELECT '*funds*'::text, MAX(l.finished_at)
+        SELECT '*funds*'::text, MAX(l.finished_at),
+               (array_agg(l.git_sha ORDER BY l.finished_at DESC, l.id DESC))[1]
         FROM public.cvm_ingest_log l
         WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
           AND l.entity IN ('fi', 'fidc', 'fii', 'fip', 'fiagro')
@@ -2739,18 +2853,21 @@ AS $$
         -- ~21 business days, so "when did this specific ingest last succeed" is
         -- the question, and a blended b3 timestamp answers a different one.
         -- Split by doc_type, which is what each ingest actually writes.
-        SELECT '*b3_lending_balance*'::text, MAX(l.finished_at)
+        SELECT '*b3_lending_balance*'::text, MAX(l.finished_at),
+               (array_agg(l.git_sha ORDER BY l.finished_at DESC, l.id DESC))[1]
         FROM public.cvm_ingest_log l
         WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
           AND l.entity = 'b3'
           AND l.doc_type IN ('lending_open_position', 'lending_rate')
         UNION ALL
-        SELECT '*b3_lending_trade*'::text, MAX(l.finished_at)
+        SELECT '*b3_lending_trade*'::text, MAX(l.finished_at),
+               (array_agg(l.git_sha ORDER BY l.finished_at DESC, l.id DESC))[1]
         FROM public.cvm_ingest_log l
         WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
           AND l.entity = 'b3' AND l.doc_type = 'lending_trade'
         UNION ALL
-        SELECT '*b3_investor_flow*'::text, MAX(l.finished_at)
+        SELECT '*b3_investor_flow*'::text, MAX(l.finished_at),
+               (array_agg(l.git_sha ORDER BY l.finished_at DESC, l.id DESC))[1]
         FROM public.cvm_ingest_log l
         WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
           AND l.entity = 'b3' AND l.doc_type = 'investor_participation'
@@ -2758,10 +2875,20 @@ AS $$
         -- BACEN logs three doc_types under one entity (sgs, ptax,
         -- expectativas); the inflation row must not report a PTAX success as
         -- the SGS series' freshness.
-        SELECT '*bacen_sgs*'::text, MAX(l.finished_at)
+        SELECT '*bacen_sgs*'::text, MAX(l.finished_at),
+               (array_agg(l.git_sha ORDER BY l.finished_at DESC, l.id DESC))[1]
         FROM public.cvm_ingest_log l
         WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
           AND l.entity = 'bacen' AND l.doc_type = 'sgs'
+        UNION ALL
+        -- FNET logs two doc_types under entity 'fnet': 'register' (the
+        -- delivery-day crawl that fills fnet_document) and 'fund_link' (the
+        -- fortnightly per-fund sweep). The register row reports the crawl.
+        SELECT '*fnet_register*'::text, MAX(l.finished_at),
+               (array_agg(l.git_sha ORDER BY l.finished_at DESC, l.id DESC))[1]
+        FROM public.cvm_ingest_log l
+        WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
+          AND l.entity = 'fnet' AND l.doc_type = 'register'
     ),
     base AS (
         -- Session data (quotes/derivatives) is complete by construction and a
@@ -2982,16 +3109,36 @@ AS $$
                'Weights, monthly / YTD / 12-month changes AS PUBLISHED by IBGE SIDRA (table 1419 for 2012-01..2019-12, 7060 from 2020-01); contribution = weight × change_month / 100 is the one derived column. SIDRA item codes CHANGED with the 2020-01 structure — item_number and names are the continuity, sidra_table says which structure a row came from. Sum contributions within one level only. No item tree exists before 2012-01; the group variations before that are inflation (BACEN).'::text,
                MAX(i.reference_month), 'ibge'::text
         FROM public.ibge_ipca_item_monthly i
+        UNION ALL
+        -- The FNET document register (v33; api.fund_documents and
+        -- api.fund_restatements in 24_api_fnet.sql). The period is the
+        -- DELIVERY day. complete_through is the day before as_of: the crawl
+        -- that saw a document delivered on as_of ran on or after that day,
+        -- possibly while FNET was still receiving that day's documents, but
+        -- the day before had already ended — so it is the newest delivery day
+        -- the register can claim in full. Two index probes on
+        -- idx_fnet_document_delivered, not a scan.
+        SELECT 'fnet_documents'::text,
+               x.as_of_ts::date,
+               (x.as_of_ts::date - 1),
+               'fnet'::text,
+               'B3 Fundos.NET document register, metadata only: each version is its own fnet_id (versao, modalidade AP/RE/RC), status (AC/IC/CC) is as of fetched_at, and FNET links no versions (fund_restatements pairs them by a stated group key). The period is the DELIVERY day; complete_through is the day before as_of, the newest day the crawl had seen end. History begins at first capture / backfill (run_backfill --fnet-only), not at FNET''s own start: a delivery day before the first crawled one is not empty, it was not crawled. Fund links come from a fortnightly per-fund sweep, so recent documents may have no cnpj yet — they are in the register and reach fund_documents after the next sweep of their fund (fund_restatements serves them with cnpj NULL).'::text,
+               x.newest_ts::date, '*fnet_register*'::text
+        FROM (
+            SELECT (SELECT MAX(d.delivered_at) FROM public.fnet_document d
+                     WHERE d.delivered_at < (CURRENT_DATE + 1)::timestamp) AS as_of_ts,
+                   (SELECT MAX(d.delivered_at) FROM public.fnet_document d) AS newest_ts
+        ) x
     )
     SELECT b.dataset, b.as_of, b.complete_through, b.source, b.notes,
-           b.newest_period, l.landed_at
+           b.newest_period, l.landed_at, l.landed_git_sha
     FROM base b
     LEFT JOIN landed l ON l.entity = b.log_entity
     ORDER BY 1;
 $$;
 
 COMMENT ON FUNCTION api.coverage() IS
-    'Freshness AND honesty per dataset. as_of = the newest period that has landed and has actually ELAPSED (bounded by today); complete_through = the newest COMPLETE period, which is what default windows serve; newest_period = the newest period KEY present, which can sit in the future when a family files forward-dated (FIP is keyed 31-December); landed_at = when ingest last SUCCEEDED for that source, from cvm_ingest_log (status ok with a finish time, so a later failed run never advances it). funds_<family> rows report each filing cadence separately. notes carries a caveat the dates cannot: the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); funds_fip states why its newest_period runs ahead; fund_nav points at catalog().applicability and api.metric_coverage(); the fidc_tranches and fidc_aging rows state that those informe tabs begin in 2025-01 because CVM publishes no archive of them (an upstream limit, not a gap); and the five B3 lending / flow rows (short_interest, short_interest_by_sector, lending_trades, lending_participants, investor_flow) state the RATCHET — B3 keeps ~21 business days and publishes no archive, so their span starts at first capture and no backfill exists — along with the float_basis, brokerage-not-owner and first-difference traps that make those series easy to read wrongly. Their landed_at is split by ingest doc_type, so a COTAHIST run never reports as the lending group''s freshness.';
+    'Freshness AND honesty per dataset. as_of = the newest period that has landed and has actually ELAPSED (bounded by today); complete_through = the newest COMPLETE period, which is what default windows serve; newest_period = the newest period KEY present, which can sit in the future when a family files forward-dated (FIP is keyed 31-December); landed_at = when ingest last SUCCEEDED for that source, from cvm_ingest_log (status ok with a finish time, so a later failed run never advances it); landed_git_sha = the git commit of THAT run — which code produced this data — NULL when the run recorded none (before migration 44, or run outside GitHub Actions), never borrowed from an older run. funds_<family> rows report each filing cadence separately. notes carries a caveat the dates cannot: the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); funds_fip states why its newest_period runs ahead; fund_nav points at catalog().applicability and api.metric_coverage(); the fidc_tranches and fidc_aging rows state that those informe tabs begin in 2025-01 because CVM publishes no archive of them (an upstream limit, not a gap); the fnet_documents row (the FNET register behind fund_documents and fund_restatements) is keyed on the DELIVERY day, with complete_through the day before as_of, and states that its history begins at first capture / backfill and that fund links come from a fortnightly sweep, so recent documents may have no cnpj yet; and the five B3 lending / flow rows (short_interest, short_interest_by_sector, lending_trades, lending_participants, investor_flow) state the RATCHET — B3 keeps ~21 business days and publishes no archive, so their span starts at first capture and no backfill exists — along with the float_basis, brokerage-not-owner and first-difference traps that make those series easy to read wrongly. Their landed_at is split by ingest doc_type, so a COTAHIST run never reports as the lending group''s freshness.';
 
 REVOKE ALL ON FUNCTION api.coverage() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.coverage() TO anon, authenticated;
@@ -4174,7 +4321,7 @@ STABLE
 AS $fn$
 SELECT $json${
   "kind": "catalog",
-  "version": 32,
+  "version": 34,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, the B3 securities-lending and investor-flow group, and Brazilian inflation — BACEN's IPCA series and IBGE's item tree with weights). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -4451,7 +4598,9 @@ SELECT $json${
     "A FIDC CEDENTE SHARE IS A PERCENT OF ITS BLOCK, NOT OF THE FUND. fidc_cedentes serves tab I's nine slots per block: bloco A is the receivables acquired WITH substantial retention of risks and benefits by the originator, B WITHOUT, and share_pct is the cedente's share of that block. The block totals are not served (tab I's asset lines are not ingested), so a share cannot be turned into reais here. cedente_id is the originator's own filed CPF/CNPJ, kept only when its check digits verify — placeholders (all-zero, all-nine) and unrecoverable identifiers were dropped at ingest, never coerced — and cedente_tickers is the FCA map's active listings for it, NULL when not listed. share_pct is AS FILED and dirty in the way CVM's percentage fields are: 9% of slots carry a value above 100 (max 19,771 in 2026-07); validate the range in the notebook, never read it as a fraction. Slots exist from 2019-11; nothing is matched by name.",
     "FIDC SACADOS ARE ANONYMIZED RANKS. fidc_sacados and the sacado_top1 / sacado_top25 metrics come from tab VIII, which publishes the 25 largest debtors as (rank, value) with no identity — CVM's dictionary describes neither column. seq is CVM's rank as filed and is never recomputed from valor (65 of 3,043 funds filed a non-descending series in 2026-07; they are served as filed). sacado_top25 sums the ranks the fund filed, which may be fewer than 25. Concentration = sacado_top1 / receivables (or top25 / receivables) is a notebook division, not a served number — and it can exceed 1: tab VIII and tab II do not share a base for every fund (2026-07: the top-25 sum exceeds the receivables total for 1.9% of funds, rank 1 alone for 0.5%), served as filed and never capped.",
     "FIDC PORTFOLIO ROWS ARE A HIERARCHY. fidc_portfolio kind=sector serves tab II as one row per code: TOTAL is the whole receivables book, a lettered code (A..K) a sector, and a code with a digit (C1, F3) a member of its lettered parent (`parent`). Sum leaves or sum parents, never both. kind=scr_debtor and kind=scr_operation are the BACEN SCR grade ladders AA..H for the same receivables, graded by debtor and by operation respectively — two views of one book, not two books. tab X exists from 2023-10 only; earlier months have no scr rows, not zero-graded ones.",
+    "WHICH CODE PRODUCED THIS DATA. coverage().landed_git_sha is the git commit of the very ingest run that set landed_at — the code that parsed and stored the newest data for that dataset — read from GITHUB_SHA on the run. It is NULL when that run recorded none (a run from before lineage existed, 2026-09-24, or one started outside GitHub Actions), and it is never borrowed from an older run, because an older run's code did not produce the newest rows. The audit log behind it also records parser_version, bumped only when a parser or field map changes what a stored value means; neither is a property of the SOURCE, so neither says anything about how much CVM, B3 or BACEN have published (that is complete_through).",
     "FIDC TRANCHES AND AGING BEGIN IN 2025, AND ARE SERVED AS FILED. fidc_tranches (informe tabs X_2/X_3/X_6 + X_4) and fidc_aging (tab VI) exist from 2025-01 only: CVM's pre-2025 HIST archive publishes no equivalent member, so an earlier month has no rows — an upstream limit, not a gap and not a backfill to ask for. fidc_tranches is one row per (fund, month, classe_serie): quotas, quota_value, return_month, and performance_expected vs performance_realised (what the series promised vs delivered, percent), dirty the way CVM's percentage fields are — never clipped, range-check in the notebook. Its `flows` array carries tab X_4's operations with CVM's TP_OPER label verbatim (e.g. Captações no Mês, Resgates no Mês, Amortizações); the vocabulary has drifted, so match labels yourself and never read a label you did not find as zero. tranche_filed = FALSE marks a series with flows but no X_2 row. fidc_aging is long: kind=to_maturity (not yet due, by days to maturity) and kind=overdue (by days past due), ten day-bands each, plus kind=overdue_total — CVM's FILED total, not a sum of the bands, and the two can disagree. Nothing is derived by either function: no performance gap, no subordination ratio, no band sums.",
+    "THE FNET REGISTER KNOWS A DOCUMENT'S FUND ONLY BY LINK, AND LINKS NO VERSIONS. fund_documents and fund_restatements serve B3 Fundos.NET's document register as published, metadata only: each version is its own fnet_id, versao counts the filings, modalidade is AP (original), RE (voluntary restatement) or RC (a restatement CVM required), and status is AC / IC (superseded) / CC (cancelled) AS OF fetched_at, not live. FNET rows carry NO CNPJ: a document belongs to a fund because FNET returned it when SILO queried cnpjFundo = that CNPJ, in a sweep that reaches every FII/FIDC once a fortnight — so a document delivered since the fund's last sweep is not in fund_documents yet, and fund_restatements serves it with cnpj NULL rather than dropping it. fund_name is FNET's label and is never joined on. Because FNET does not say which document a re-filing replaces, fund_restatements PAIRS each versao > 1 with the document in the same group — (cnpj link, categoria, tipo_documento, especie, reference_raw) — carrying the highest lower versao, the greatest fnet_id winning a tie (a group can legitimately hold several v1 documents, e.g. assemblies); an unlinked document or one with no reference text is never paired, so its previous_fnet_id and lag_days are NULL — not 'no predecessor', just not pairable. lag_days is days between deliveries. source_url is FNET's own download link for the id. History starts at SILO's first crawl or backfill, not at FNET's; coverage() reports the fnet_documents span.",
     "FIDC DELINQUENCY STARTS IN 2025-01. CVM's pre-2025 monthly FIDC file (tab II/III) carried no delinquency field, so `delinquency` is null on every fidc row through 2024-12-31 — not zero, not clean books, not a missing month. From 2025-01-31 the tab IV/VI format is ingested and delinquency is filed on every row. Never chain-link, difference or average a FIDC delinquency series across 2024-12 → 2025-01; the series begins there. Machine-readable in `regime_breaks`, and on the funds_fidc coverage row's `notes`.",
     "A FUND'S DEBENTURE HOLDINGS ARE A DIFFERENT SHAPE FROM ITS EQUITY HOLDINGS. api.fund_debentures (CDA block 6) is one row per (fund, month, issuer, maturity, rate structure, application type), as filed and never summed — two series of one issuer maturing the same day at different coupons are different securities. The issuer is its own filed CPF/CNPJ (issuer_id); p_issuer also takes a listed company's ticker or CVM code, resolved only through CVM's published FCA map, and issuer_tickers carries the issuer's active listed codes back (NULL when not listed — most debenture issuers are not). Nothing is matched by name.",
     "ANBIMA CLASS ROWS ARE INDUSTRY AGGREGATES, NOT FUNDS. api.anbima_classes serves the Boletim de Fundos de Investimento as published — R$ milhões (unit brl_mm) and percentage points (unit pct) — per class, ANBIMA type or industry total (`level`; class aggregates by default). No fund in this warehouse is mapped to an ANBIMA class: CVM's `classe` is CVM's taxonomy, so never join a fund to a class by name, and there is no panel arm because these rows carry no id. An unknown category, metric or level raises 22023 listing what exists rather than returning an empty array.",
@@ -4478,7 +4627,7 @@ SELECT $json${
     "Default windows are honest: with no explicit `to`, fund metrics end at each family's latest COMPLETE period (coverage() reports it as complete_through) — a partially-filed trailing month is not served. An explicit `to` serves the window verbatim, partial months included.",
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
-    "Row caps — getting this wrong means silently analysing a TRUNCATED series, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY set-returning function now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short result can no longer look complete. That is all twenty — panel, quote_history, fund_nav, option_history, termo_history, financials, company_financials, income_statements, anbima_classes, inflation, inflation_items, fidc_tranches, fidc_aging and the seven screen_* functions (`limits.page.all`). THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send p_after='' for the first page, then the key from the last row — for the panel 'date|id|metric|asset_class', for quote_history and fund_nav just that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when paging, because its cursor is a bare period and one CNPJ can file under two families in the same month. The rest do not page: narrow p_from/p_to instead (inflation and inflation_items default to the last 36 months for that reason), or for a screen raise its thresholds or pin its output filter (p_dormancy / p_min_nav, p_driver). The old sentinels (5001 on the series functions, 100001 on the panel) are GONE and were never observable anyway — PostgREST cut the response at 1000 first (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. The RPC functions no longer need it — they raise instead. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
+    "Row caps — getting this wrong means silently analysing a TRUNCATED series, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY set-returning function now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short result can no longer look complete. The error says WHY (the response is one 1000-row page and SILO never returns a silently truncated result) and HOW to fix it for that function, in the message and again as PostgREST's `details` / `hint`. That is all twenty-five — panel, quote_history, fund_nav, option_history, termo_history, financials, company_financials, income_statements, anbima_classes, inflation, inflation_items, fidc_cedentes, fidc_sacados, fidc_portfolio, fidc_tranches, fidc_aging, fund_documents, fund_restatements and the seven screen_* functions (`limits.page.all`). THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send p_after='' for the first page, then the key from the last row — for the panel 'date|id|metric|asset_class', for quote_history and fund_nav just that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when paging, because its cursor is a bare period and one CNPJ can file under two families in the same month. The rest do not page: narrow p_from/p_to instead (inflation and inflation_items default to the last 36 months for that reason), for fidc_cedentes / fidc_sacados / fidc_portfolio narrow the months (a p_cedente lookup spans many funds), pin one p_kind on fidc_portfolio, or ask for the newest N rows with an explicit p_limit (1..1000 — until v34 these three trimmed SILENTLY at 500 anonymous / 5,000 signed in; they no longer do), or for a screen raise its thresholds or pin its output filter (p_dormancy / p_min_nav, p_driver). The old sentinels (5001 on the series functions, 100001 on the panel) are GONE and were never observable anyway — PostgREST cut the response at 1000 first (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. The RPC functions no longer need it — they raise instead. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
     "An unrecognised metric name is IGNORED, not rejected: the panel comes back smaller and perfectly plausible. Take metric names from this catalog's `metrics` map, never from memory.",
     "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
     "CALLER TIERS. Anonymous access is free but deliberately small: panel accepts at most 3 ids per call, search_funds returns at most 25 rows, and option_chain pages at most 200. Signing in (GitHub) raises those to 50 ids, 200 rows and 2000 respectively, and the query timeout from 3s to 8s, and unlocks panel universe mode (p_ids empty + p_entity_type: a whole family, paged with p_after). Exceeding the id ceiling raises SQLSTATE 22023 naming the limit — the panel is never silently truncated to fit.",
@@ -4514,8 +4663,13 @@ SELECT $json${
         "anbima_classes",
         "inflation",
         "inflation_items",
+        "fidc_cedentes",
+        "fidc_sacados",
+        "fidc_portfolio",
         "fidc_tranches",
         "fidc_aging",
+        "fund_documents",
+        "fund_restatements",
         "screen_zombie_growth",
         "screen_captive_vehicles",
         "screen_evergreen_aging",
@@ -4540,8 +4694,13 @@ SELECT $json${
           "anbima_classes",
           "inflation",
           "inflation_items",
+          "fidc_cedentes",
+          "fidc_sacados",
+          "fidc_portfolio",
           "fidc_tranches",
           "fidc_aging",
+          "fund_documents",
+          "fund_restatements",
           "screen_zombie_growth",
           "screen_captive_vehicles",
           "screen_evergreen_aging",
@@ -4551,7 +4710,7 @@ SELECT $json${
           "screen_delinquency_drivers"
         ]
       },
-      "over_cap": "SQLSTATE 22023 naming the function — nothing is trimmed to fit; the message says to page or narrow",
+      "over_cap": "SQLSTATE 22023 naming the function — nothing is trimmed to fit. The message says WHY (one 1000-row page; SILO never returns a silently truncated result) and HOW for that function (page with p_after, narrow p_from/p_to, take an explicit p_limit head, raise a screen's thresholds); PostgREST also returns the two halves as `details` and `hint`",
       "no_sentinel": "there is no cap+1 row to count any more. The old 5001 (series) and 100001 (panel) sentinels were unobservable on the hosted API, because PostgREST cuts every response at 1000 rows long before either is reached; they are gone, and the 22023 replaces them"
     },
     "tiers": {
@@ -4563,9 +4722,6 @@ SELECT $json${
         "option_exercises_rows": 500,
         "fund_holdings_rows": 500,
         "fund_debentures_rows": 500,
-        "fidc_cedentes_rows": 500,
-        "fidc_sacados_rows": 500,
-        "fidc_portfolio_rows": 500,
         "statement_timeout_seconds": 3
       },
       "authenticated": {
@@ -4576,9 +4732,6 @@ SELECT $json${
         "option_exercises_rows": 5000,
         "fund_holdings_rows": 5000,
         "fund_debentures_rows": 5000,
-        "fidc_cedentes_rows": 5000,
-        "fidc_sacados_rows": 5000,
-        "fidc_portfolio_rows": 5000,
         "statement_timeout_seconds": 8
       },
       "exceeding_an_id_ceiling": "SQLSTATE 22023 naming the limit — a panel is never silently trimmed to fit",
@@ -4815,6 +4968,11 @@ SELECT $json${
       "then": "Compare performance_realised with performance_expected per classe_serie in the notebook; both are as filed and can carry CVM's outliers. History starts 2025-01 — there is no earlier tranche data anywhere. Read the aging ladder under it with fidc_aging; overdue_total is CVM's filed total, not a sum."
     },
     {
+      "ask": "Which FIDCs restated a filing this month, and how late?",
+      "call": "POST /rest/v1/rpc/fund_restatements {\"p_tipo_fundo\": \"FIDC\", \"p_from\": \"<month start>\"}",
+      "then": "Each row is a re-filed document (versao > 1; modalidade RE is voluntary, RC was required by CVM) with lag_days since the version it replaced. The pairing is by a stated group key because FNET links no versions; cnpj NULL means the fortnightly fund sweep has not linked it yet — never match it to a fund by fund_name. Open the versions with fund_documents' source_url."
+    },
+    {
       "ask": "Just give me the panel; I will run a factor model",
       "call": "POST /rest/v1/rpc/panel {\"p_ids\": [\"PETR4\", \"VALE3\", \"<cnpj>\"], \"p_metrics\": [\"close_return\", \"nav\"], \"p_freq\": \"month\"}",
       "then": "Model in the notebook from the long rows. Anonymous callers are capped at 3 ids — a 4th raises 22023, it is not trimmed."
@@ -4930,6 +5088,8 @@ SELECT $json${
     "screen_delinquency_drivers": "POST /rest/v1/rpc/screen_delinquency_drivers",
     "fidc_tranches": "POST /rest/v1/rpc/fidc_tranches",
     "fidc_aging": "POST /rest/v1/rpc/fidc_aging",
+    "fund_documents": "POST /rest/v1/rpc/fund_documents",
+    "fund_restatements": "POST /rest/v1/rpc/fund_restatements",
     "short_interest": "GET /rest/v1/short_interest",
     "short_interest_by_sector": "GET /rest/v1/short_interest_by_sector",
     "lending_trades": "GET /rest/v1/lending_trades",

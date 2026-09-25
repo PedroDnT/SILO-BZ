@@ -26,6 +26,7 @@ from src.pipeline.anbima_pipeline import TABLE, AnbimaIngestor
 INGEST_LOG_COLUMNS = {
     "id", "run_id", "entity", "doc_type", "period_year", "period_month",
     "rows_upserted", "status", "error_msg", "started_at", "finished_at",
+    "git_sha", "parser_version",  # lineage, migration 44
 }
 
 

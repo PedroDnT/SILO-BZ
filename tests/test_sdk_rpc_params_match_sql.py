@@ -26,12 +26,15 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SQL = ROOT / "src/store/analytical/19_api_contract.sql"
+# Schema `api` functions defined outside 19 (v33: the FNET register). Applied
+# after 19 by the same glob, so a later definition is the shipped one.
+SQL_EXTRA = (ROOT / "src/store/analytical/24_api_fnet.sql",)
 CLIENT = ROOT / "sdk/silo_client/client.py"
 
 
 def _sql_params() -> dict[str, set[str]]:
     """{function name: {declared parameter names}} from the shipped contract."""
-    text = SQL.read_text()
+    text = "\n".join(p.read_text() for p in (SQL, *SQL_EXTRA))
     out: dict[str, set[str]] = {}
     for m in re.finditer(
         r"CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+api\.(\w+)\s*\((.*?)\)\s*\n\s*RETURNS",

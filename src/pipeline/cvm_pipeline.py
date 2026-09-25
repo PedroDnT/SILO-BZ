@@ -35,7 +35,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.fetchers.cvm_fetcher import CVMFetcher
 from src.store.pg_client import get_pg_client, upsert_rows
-from src.pipeline.ingest_log import describe
+from src.pipeline.ingest_log import describe, lineage
 
 # Per-entity ingest modules (parsing logic lives there)
 from src.pipeline.ingest_fi import (
@@ -603,6 +603,9 @@ class CVMIngestor:
                 "period_month": month,
                 "status":       "running",
                 "started_at":   datetime.now(timezone.utc).isoformat(),
+                # Which code produced this slice (migration 44): the same
+                # lineage() every other audit writer stamps, never invented.
+                **lineage(),
             }])
         except Exception as e:
             logger.warning("ingest_log start failed: %s", _describe(e))
@@ -641,17 +644,21 @@ class CVMIngestor:
         # hangs of 15+ min killed it in the 2026-06-10 backfill, leaving every
         # slice stuck 'running'). Reconnect once and retry so the audit log
         # reflects what actually happened; still best-effort after that.
+        lin = lineage()
         for attempt in (1, 2):
             try:
                 with self._supabase.cursor() as cur:
                     cur.execute(
                         "UPDATE cvm_ingest_log SET rows_upserted=%s, status=%s,"
-                        " error_msg=%s, finished_at=%s WHERE run_id=%s",
+                        " error_msg=%s, finished_at=%s, git_sha=%s, parser_version=%s"
+                        " WHERE run_id=%s",
                         (
                             rows,
                             status,
                             error,
                             datetime.now(timezone.utc).isoformat(),
+                            lin["git_sha"],
+                            lin["parser_version"],
                             run_id,
                         ),
                     )

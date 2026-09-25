@@ -24,8 +24,17 @@ CREATE TABLE IF NOT EXISTS cvm_ingest_log (
     status        TEXT         NOT NULL DEFAULT 'ok',  -- ok | error | skipped
     error_msg     TEXT,
     started_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    finished_at   TIMESTAMPTZ
+    finished_at   TIMESTAMPTZ,
+    -- Lineage (migration 44): which code produced the slice. git_sha is
+    -- GITHUB_SHA, NULL when unset — never invented. parser_version is
+    -- src.pipeline.ingest_log.PARSER_VERSION, bumped when a parser or field
+    -- map changes what a stored value means.
+    git_sha        TEXT,
+    parser_version TEXT
 );
+-- An existing database never re-runs the CREATE TABLE above, so the lineage
+-- columns are also reachable from schema.sql alone (tests/test_schema_upgrade_path.py).
+ALTER TABLE cvm_ingest_log ADD COLUMN IF NOT EXISTS git_sha TEXT, ADD COLUMN IF NOT EXISTS parser_version TEXT;
 CREATE INDEX IF NOT EXISTS idx_ingest_log_entity_doc
     ON cvm_ingest_log (entity, doc_type, period_year DESC, period_month DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ingest_log_run
