@@ -458,7 +458,12 @@ BEGIN
     END IF;
 
     RETURN QUERY
-    WITH fam AS (
+    -- MATERIALIZED: without it the planner inlines this CTE and re-evaluates
+    -- latest_complete_period(fam) (a STABLE query over mv_period_completeness)
+    -- for EVERY dim_fund row of the family, twice, inside the filter: on
+    -- production (v38) the fi family was 41k rows, 454k buffer hits and 7.1 s,
+    -- past anon's 3 s statement timeout. Materialized, it runs once per family.
+    WITH fam AS MATERIALIZED (
         SELECT f.fam, public.latest_complete_period(f.fam) AS ct
         FROM (VALUES ('fi'), ('fidc'), ('fii'), ('fiagro')) AS f(fam)
         WHERE p_family IS NULL OR f.fam = p_family
