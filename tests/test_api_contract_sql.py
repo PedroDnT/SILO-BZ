@@ -41,6 +41,8 @@ RAISE_ONLY_FUNCTIONS = (
     "api.financials",
     "api.company_financials",
     "api.income_statements",
+    "api.balance_sheets",
+    "api.cash_flow_statements",
     "api.anbima_classes",
     "api.inflation",
     "api.inflation_items",
@@ -71,6 +73,19 @@ SCREEN_FUNCTIONS = (
     "api.screen_dormant_funds",
     "api.screen_dormant_trend",
     "api.screen_delinquency_drivers",
+    # v37: the filing-behaviour screens live in 25_api_filing_screens.sql
+    # (tests/test_filing_screens_contract.py owns their bodies). Raise-only.
+    "api.screen_restatements",
+    "api.screen_late_filers",
+    "api.screen_silent_filers",
+)
+
+# v38: held-but-unserved datasets in 26_api_events_macro.sql
+# (tests/test_wave3_contract.py owns the bodies). Raise-only.
+WAVE3_FUNCTIONS = (
+    "api.company_events",
+    "api.macro_series",
+    "api.ptax",
 )
 
 # The FNET register (v33) lives in 24_api_fnet.sql, for the same reason: FUNCS
@@ -131,6 +146,8 @@ EXPECTED_FUNCTIONS = {
     "api.financials",
     "api.company_financials",
     "api.income_statements",
+    "api.balance_sheets",
+    "api.cash_flow_statements",
     "api.anbima_classes",
     "api.fund_debentures",
     "api.metric_coverage",
@@ -569,11 +586,13 @@ def test_row_cap_helper_page_size_is_the_one_constant():
     # cursor or asks the caller to narrow.
     page = limits["page"]
     assert set(page["all"]) == {
-        f.split(".", 1)[1] for f in CAPPED_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS
+        f.split(".", 1)[1]
+        for f in CAPPED_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS + WAVE3_FUNCTIONS
     }
     assert set(page["functions"]["paged"]) == {f.split(".", 1)[1] for f in PAGED_FUNCTIONS}
     assert set(page["functions"]["raise_only"]) == {
-        f.split(".", 1)[1] for f in RAISE_ONLY_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS
+        f.split(".", 1)[1]
+        for f in RAISE_ONLY_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS + WAVE3_FUNCTIONS
     }
 
 
@@ -1425,11 +1444,19 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
     # inflation_items), eighteen at v31 (the seven screen_* functions), twenty
     # since v32 (fidc_tranches, fidc_aging), twenty-two since v33
     # (fund_documents, fund_restatements), twenty-five since v34
-    # (fidc_cedentes, fidc_sacados, fidc_portfolio stopped trimming). The
+    # (fidc_cedentes, fidc_sacados, fidc_portfolio stopped trimming),
+    # twenty-seven since v35 (balance_sheets, cash_flow_statements), thirty since
+    # v37 (the three filing-behaviour screens), thirty-three since v38
+    # (company_events, macro_series, ptax). The
     # prose said "eight" for two versions while listing nine — pin the word
     # to the tuples so it cannot drift again.
-    assert "twenty-five" in c.lower().split(), "all twenty-five capped functions refuse"
-    assert len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) + len(FNET_FUNCTIONS) == 25
+    assert "thirty-three" in c.lower().split(), "all thirty-three capped functions refuse"
+    assert (
+        len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) + len(FNET_FUNCTIONS)
+        + len(WAVE3_FUNCTIONS)
+    ) == 33
+    for fn in WAVE3_FUNCTIONS:
+        assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
     for fn in HEAD_FUNCTIONS:
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
     for fn in FNET_FUNCTIONS:

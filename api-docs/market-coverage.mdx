@@ -44,8 +44,9 @@ Four date columns meaning four different things. Reading one for another is the 
 | **FII** | `fund_nav` | 2021 monthly, 2019 for the periodic documents | monthly / quarterly |
 | **FIAGRO** | `fund_nav` | **2025-05** — the family is new, not missing | monthly |
 | **FIP** | `fund_nav` | 2010, keyed 31-December | yearly |
-| **Listed companies** | `financials`, `company_financials`, `lookup` | 2019 for ITR/DFP; 2010 for IPE events and the published ticker map | quarterly |
+| **Listed companies** | `financials`, `company_financials`, `lookup`, `company_events` | 2019 for ITR/DFP; 2010 for the published ticker map; **2015** for IPE events (earlier filings carry no protocol number and are not held) | quarterly; IPE daily |
 | **ANBIMA classes** | `anbima_classes` | 2019 | monthly, on publication |
+| **Macro & FX** | `macro_series`, `ptax` | as far back as each SGS series / PTAX history has been loaded — read `coverage()` | daily (monthly for IGP-M, INPC, GDP) |
 | **Inflation** | `inflation`, `inflation_items` | IPCA 1980; BCB cores and IBGE groups 1991; IPCA-15 2000; the item tree with weights 2012 | monthly, on IBGE's release (~10th of the following month) |
 | **B3 BDI — lending & flows** | `short_interest`, `short_interest_by_sector`, `investor_flow`, `lending_trades`, `lending_participants` | **first capture only — see below** | daily, T+2 for `investor_flow` |
 

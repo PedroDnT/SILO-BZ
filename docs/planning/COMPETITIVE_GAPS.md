@@ -44,7 +44,8 @@ notebooks, and a Python SDK that is not on PyPI.
 
 Absent throughout:
 
-- no LLM, chat or MCP server of our own
+- no LLM or chat of our own (the read-only MCP server, B2, went live on
+  2026-09-25, after this snapshot)
 - no user alerts or watchlists
 - no Excel add-in or exports
 - no per-user API keys
@@ -167,7 +168,7 @@ unknown, not absent.
 | Fund risk statistics (Sharpe, drawdown)                                        | N                                                                         | Mais Retorno, Dados de Mercado                                                                                              |
 | Excel / Sheets                                                                 | **N**                                                                     | Economatica, Quantum, CR Data, FactSet, Tomé (Sheets), brapi (recipes)                                                      |
 | REST API                                                                       | **Y, free, no signup**                                                    | every S3 vendor, with signup; incumbents by contract                                                                        |
-| Own remote MCP                                                                 | **N**                                                                     | brapi, Mais Retorno, bolsai, Economatica, TradeMap, Tomé, Financial Datasets                                                |
+| Own remote MCP                                                                 | **Y, free, no signup** (since 2026-09-25, B2)                             | brapi, Mais Retorno, bolsai, Economatica, TradeMap, Tomé, Financial Datasets                                                |
 | NL chat                                                                        | N (by design so far)                                                      | Tomé, Economatica Kento, Comdinheiro, Clube FIDC, Painel FIDC, Investidor10                                                 |
 | Coverage / freshness contract                                                  | **Y** (`coverage()`, `as_of` ≠ `complete_through`)                        | Tomé (manifest; worst-case reporting); no API vendor                                                                        |
 | Explicit no-fabrication stance                                                 | Y                                                                         | Tomé, Painel FIDC ("ausente, nunca como zero")                                                                              |
@@ -482,7 +483,7 @@ Nothing here is scheduled until Pedro picks it; the picked items then go to
 
 ### B2. A read-only remote MCP over schema `api`
 
-**Status 2026-09-24: built, not deployed.** `supabase/functions/silo-mcp/` is a Supabase Edge Function (the owner chose Supabase over Vercel for hosting). It speaks stateless streamable HTTP and exposes 49 tools, one for each `catalog().postgrest` endpoint plus `catalog` itself. Every tool is `readOnlyHint`, makes one PostgREST call with the public key, and returns PostgREST errors verbatim as `isError`. `tests/test_mcp_contract.py` pins the tool list to the catalog and to `openapi.json`. The function goes live after merge, with `supabase functions deploy silo-mcp --project-ref zcjbtpxuhdekpwcxmepn --no-verify-jwt`. The smallest test below is still to run. Docs: `api-docs/mcp.mdx`.
+**Status 2026-09-25: deployed** at `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp`, `verify_jwt` off. `supabase/functions/silo-mcp/` is a Supabase Edge Function (the owner chose Supabase over Vercel for hosting). It speaks stateless streamable HTTP and exposes 49 tools, one for each `catalog().postgrest` endpoint plus `catalog` itself. Every tool is `readOnlyHint`, makes one PostgREST call with the public key, and returns PostgREST errors verbatim as `isError`. `tests/test_mcp_contract.py` pins the tool list to the catalog and to `openapi.json`. A merge does not redeploy it; `supabase functions deploy silo-mcp --project-ref zcjbtpxuhdekpwcxmepn --no-verify-jwt` does. The smallest test below is still to run. Docs: `api-docs/mcp.mdx`.
 
 - **Serves:** S3, S1.
 - **Cost:** a thin server. It calls PostgREST, with one tool per `api`
@@ -573,7 +574,9 @@ Nothing here is scheduled until Pedro picks it; the picked items then go to
   3-PR budget, and retirement if fewer than half its PRs merge. Picked, and
   written up as [`AGENTS.md`](AGENTS.md) on 2026-09-24.
 - **Smallest test:** one manual Builder run on FIDC `tab_X_7`. **Reject if**
-  the PR needs rework comparable to writing it by hand.
+  the PR needs rework comparable to writing it by hand. **Passed 2026-09-24**:
+  PR #291, 0 human-edited lines, green first CI (`AGENTS.md` §5). The three
+  prompt files exist; labels and routines are the owner's next step.
 
 ### Later, in order
 

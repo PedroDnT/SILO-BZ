@@ -235,7 +235,7 @@ than in advance.
    except `currency_scale`, which §5 withdraws. `setor` and `segmento` are
    appended to `api.financials` and `api.company_financials` so nothing
    positional moved, and the net-income fallback went in the same change.
-2. ~~`api.income_statements`~~ **DONE** (catalog v29, label-keyed), then `balance_sheets`, then `cash_flow_statements`.
+2. ~~`api.income_statements`~~ **DONE** (catalog v29, label-keyed); ~~`balance_sheets`~~ and ~~`cash_flow_statements`~~ **DONE** (catalog v35, label- and parent-label-keyed; cash flow totals only).
    Income statement first: it carries the sector problem, so it proves the design.
 3. Sector-scoped aggregates (peer median, percentile rank) as separate functions —
    the endpoints stay statement readers, the statistics stay reducers.

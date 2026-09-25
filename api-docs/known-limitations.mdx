@@ -62,8 +62,16 @@ Four consequences, all visible in the response:
 
   Keying on the label turned out to be *more complete*, not just safer: net income
   sits on `3.11` for two charts, on `3.09` for a third that files no `3.11`, and on
-  `3.13` for insurers — so `income_statements.net_income` resolves filings that
-  `company_financials` must return null for.
+  `3.13` for insurers. Since v36 `company_financials.net_income` is keyed the same
+  way, so the two surfaces agree.
+
+  **Shipped (catalog v35).** `api.balance_sheets` and `api.cash_flow_statements`
+  follow the same design. On the balance sheet, equity sits on `2.03`, `2.07` or `2.08`
+  depending on the chart, and where one label is filed twice (current and non-current
+  `Empréstimos e Financiamentos`) the parent line's label tells them apart. Banks file
+  no current/non-current split and no debt line, so those fields are null for them.
+  The cash flow maps only the section totals and the cash reconciliation: capex and
+  dividends are free text per filer, so read those lines with `financials`.
 
   **Still not offered.** A canonical English mapping for *every* line. The named field
   set above is a bounded, measured subset; a full mapping is not, and a code-keyed one
@@ -75,14 +83,24 @@ Four consequences, all visible in the response:
   built on today's codes would harden the mistake above into an interface.
 </Note>
 
-## `net_income` is conta `3.11` only, and nulls where it is not filed
+## `net_income` is keyed on the filed label, never on a code
 
-`api.company_financials` reads `net_income` from `3.11` and **substitutes nothing**.
-A filing that does not report `3.11` returns `null` in that column.
+Since catalog v36, `api.company_financials` resolves `net_income` the same way as
+`api.income_statements`: from the filed label `Lucro/Prejuízo Consolidado do
+Período` (or `Lucro ou Prejuízo Líquido Consolidado do Período`), wherever the
+chart puts it.
 
-Until catalog v28 there was a fallback to `3.09` behind it, justified on the grounds
-that banks do not file `3.11`. That was wrong on both counts. For Banco do Brasil,
-FY2024, consolidated:
+| Chart | Net income on | `3.11` is |
+| --- | --- | --- |
+| industrial, bank A | `3.11` | net income |
+| bank B | `3.09` | not filed |
+| insurer | `3.13` | continuing operations |
+
+Until v35 it read `3.11` alone. That returned `null` for the 282 bank-B statements
+(Itaú Unibanco and BTG Pactual among them) and, for insurers, returned the
+continuing-operations line under the name `net_income`.
+
+No code is substituted for another. For Banco do Brasil, FY2024, consolidated:
 
 | `account_code` | `account_name` | Value |
 | --- | --- | --- |
@@ -90,30 +108,9 @@ FY2024, consolidated:
 | `3.10` | Participações nos Lucros e Contribuições Estatutárias | R$ 0.00 |
 | `3.11` | Lucro ou Prejuízo Líquido Consolidado do Período | R$ 29.17bn |
 
-`3.11` is present, and it is net income. `3.09` is profit **before** statutory
-profit-sharing and employee participations; the two coincide here only because
-`3.10` is zero.
-
-The fallback's reach was then measured rather than argued about: of **50,439** DRE
-statements, **282 (0.56%)** have no `3.11`, and in every one of those the `3.09`
-substitution happened to be numerically harmless. It had therefore never overstated
-net income — but it would have, for the first filer to report a non-zero `3.10`
-without a `3.11`. Those 282 statements now read `null`.
-
-<Note>
-  For the pre-participations figure, read `3.09`, `3.10` and `3.11` from
-  `api.financials` and do the subtraction where you can see it. A `null` here means
-  "the company did not file this line", which is a different fact from zero — and a
-  different fact from a number we inferred.
-</Note>
-
-<Tip>
-  **`api.income_statements` resolves all 282.** Those filings are not missing net
-  income — they report it on `3.09` under the label `Lucro/Prejuízo Consolidado do
-  Período`, because their chart has no `3.11`. `income_statements` keys on the label
-  rather than the code, so it returns the figure where `company_financials` returns
-  null. Prefer it when you want net income to be as complete as the filings allow.
-</Tip>
+`3.09` is profit **before** statutory profit-sharing on this chart, and matches `3.11`
+only because `3.10` is zero. A `COALESCE(3.11, 3.09)` would be wrong for the first
+filer with a non-zero `3.10`; the label match never reads it.
 
 This is verified for **one** bank. It is not a claim about every bank, and the
 non-bank charts have not been swept for the same pattern.
