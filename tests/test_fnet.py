@@ -301,6 +301,30 @@ async def test_backfill_audits_one_row_per_calendar_month():
     assert len({c[0] for c in fake.calls}) == 35   # every delivery day, once
 
 
+async def test_backfill_continues_past_a_failed_month_then_raises():
+    """One slow FNET month must not abandon the rest of the range, and must
+    not be swallowed either: every month is attempted, the run still fails."""
+    fake = _FakeFetcher({})
+    ing, _, up = _ingestor(fake)
+    attempted: List[tuple] = []
+
+    async def fake_audited(client, entity, doc_type, fn, *, period_year=None, period_month=None, **kw):
+        attempted.append((period_year, period_month))
+        if (period_year, period_month) == (2026, 8):
+            raise FnetFetchError("FNET dataInicial=01/08/2026 failed after 5 attempts: ReadTimeout('')")
+        return await fn()
+
+    with up, patch.object(fp, "audited", side_effect=fake_audited):
+        with pytest.raises(fp.FnetBackfillIncomplete, match="2026-08"):
+            await ing.backfill(date(2026, 7, 30), date(2026, 9, 2))
+    assert attempted == [(2026, 7), (2026, 8), (2026, 9)]
+
+
+def test_fetcher_default_timeout_covers_fnets_slow_answers(monkeypatch):
+    monkeypatch.delenv("FNET_REQUEST_TIMEOUT", raising=False)
+    assert FnetFetcher().timeout >= 150
+
+
 # ---------------------------------------------------------------------------
 # Schema: the migration is mirrored into schema.sql and locked from clients
 # ---------------------------------------------------------------------------

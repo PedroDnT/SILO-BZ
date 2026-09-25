@@ -49,6 +49,10 @@ DOC_FUND_LINK = "fund_link"
 _TIPO_BY_ENTITY = {"fii": 1, "fidc": 2}
 
 
+class FnetBackfillIncomplete(RuntimeError):
+    """One or more backfill months failed; each has an ``error`` audit row."""
+
+
 def _env_int(name: str, default: int, minimum: int = 1) -> int:
     raw = os.getenv(name, str(default)).strip()
     try:
@@ -174,19 +178,36 @@ class FnetIngestor:
         return {TABLE: docs, FILTER_TABLE: links}
 
     async def backfill(self, start: date, end: Optional[date] = None) -> Dict[str, int]:
-        """Delivery days ``start..end``, audited one calendar month at a time."""
+        """Delivery days ``start..end``, audited one calendar month at a time.
+
+        A month that fails is already recorded as an ``error`` audit row by
+        ``audited``; the backfill moves on to the next month instead of
+        abandoning the rest of the range, then raises at the end naming every
+        failed month, so the run is still red and nothing is swallowed.
+        """
         end = end or date.today()
         total = 0
+        failed: List[str] = []
         month_start = start
         while month_start <= end:
             nxt = (month_start.replace(day=1) + timedelta(days=32)).replace(day=1)
             month_days = _days(month_start, min(end, nxt - timedelta(days=1)))
-            total += await audited(
-                self._pg, LOG_ENTITY, DOC_REGISTER,
-                lambda md=month_days: self.ingest_days(md),
-                period_year=month_start.year, period_month=month_start.month, upsert=upsert_rows,
-            )
+            label = f"{month_start.year:04d}-{month_start.month:02d}"
+            try:
+                total += await audited(
+                    self._pg, LOG_ENTITY, DOC_REGISTER,
+                    lambda md=month_days: self.ingest_days(md),
+                    period_year=month_start.year, period_month=month_start.month, upsert=upsert_rows,
+                )
+            except Exception as exc:  # recorded by audited(); re-raised below
+                logger.error("FNET backfill %s failed: %r; continuing with the next month", label, exc)
+                failed.append(f"{label}: {exc!r}")
             month_start = nxt
+        if failed:
+            raise FnetBackfillIncomplete(
+                f"FNET backfill {start}..{end}: {len(failed)} month(s) failed "
+                f"({total} documents stored from the rest); re-run the same range. " + "; ".join(failed)
+            )
         return {TABLE: total}
 
     async def sweep_all(self) -> Dict[str, int]:

@@ -98,7 +98,11 @@ class FnetFetcher:
         min_interval: Optional[float] = None,
     ) -> None:
         self.base_url = (base_url or os.getenv("FNET_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
-        self.timeout = float(timeout if timeout is not None else os.getenv("FNET_REQUEST_TIMEOUT", "60"))
+        # 180 s: FNET answers most day windows in under 2 s but some (even
+        # empty ones, e.g. 2025-01-01 tipoFundo=2) take 60-122 s; a 60 s
+        # timeout turned those into five identical ReadTimeouts and a failed
+        # backfill (run 36134582309).
+        self.timeout = float(timeout if timeout is not None else os.getenv("FNET_REQUEST_TIMEOUT", "180"))
         self.max_retries = int(max_retries if max_retries is not None else os.getenv("FNET_MAX_RETRIES", "5"))
         self.retry_delay = float(retry_delay if retry_delay is not None else os.getenv("FNET_RETRY_DELAY", "5"))
         # Politeness: FNET has no published terms and sits behind a firewall
