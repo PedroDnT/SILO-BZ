@@ -21,9 +21,8 @@ import { CONTRACT, CONTRACT_VERSION, type ContractEntry } from "./contract.gener
 // come from contract.generated.ts (openapi.json, itself generated from the
 // SQL). tests/test_mcp_contract.py pins this list to serve/catalog.py's
 // `postgrest` section, so adding an endpoint there without adding it here (or
-// the reverse) fails CI. When catalog v33 publishes fund_documents /
-// fund_restatements: regenerate openapi.json + contract.generated.ts, then add
-// `t("fund_documents")` / `t("fund_restatements")` below.
+// the reverse) fails CI. A new endpoint: regenerate openapi.json +
+// contract.generated.ts (scripts/gen_mcp_contract.py), then add its t() line.
 // ---------------------------------------------------------------------------
 
 export interface ToolSpec {
@@ -64,6 +63,9 @@ export const TOOL_SPECS: ToolSpec[] = [
   t("fidc_portfolio", "FIDC portfolio ladders"),
   t("fidc_tranches", "FIDC tranches"),
   t("fidc_aging", "FIDC aging ladder"),
+  // FNET document register — metadata and versions, no document bodies.
+  t("fund_documents", "Fund documents (FNET)"),
+  t("fund_restatements", "Restated filings (FNET)"),
   // Forensic screens — signals, not verdicts.
   t("screen_zombie_growth", "Screen: zombie growth", SCREEN_LEAD()),
   t("screen_captive_vehicles", "Screen: captive vehicles", SCREEN_LEAD()),

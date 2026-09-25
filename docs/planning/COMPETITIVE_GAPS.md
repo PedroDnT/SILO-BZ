@@ -482,7 +482,7 @@ Nothing here is scheduled until Pedro picks it; the picked items then go to
 
 ### B2. A read-only remote MCP over schema `api`
 
-**Status 2026-09-24: built, not deployed.** `supabase/functions/silo-mcp/` is a Supabase Edge Function (the owner chose Supabase over Vercel for hosting). It speaks stateless streamable HTTP and exposes 47 tools, one for each `catalog().postgrest` endpoint plus `catalog` itself. Every tool is `readOnlyHint`, makes one PostgREST call with the public key, and returns PostgREST errors verbatim as `isError`. `tests/test_mcp_contract.py` pins the tool list to the catalog and to `openapi.json`. The function goes live after merge, with `supabase functions deploy silo-mcp --project-ref zcjbtpxuhdekpwcxmepn --no-verify-jwt`. The smallest test below is still to run. Docs: `api-docs/mcp.mdx`.
+**Status 2026-09-24: built, not deployed.** `supabase/functions/silo-mcp/` is a Supabase Edge Function (the owner chose Supabase over Vercel for hosting). It speaks stateless streamable HTTP and exposes 49 tools, one for each `catalog().postgrest` endpoint plus `catalog` itself. Every tool is `readOnlyHint`, makes one PostgREST call with the public key, and returns PostgREST errors verbatim as `isError`. `tests/test_mcp_contract.py` pins the tool list to the catalog and to `openapi.json`. The function goes live after merge, with `supabase functions deploy silo-mcp --project-ref zcjbtpxuhdekpwcxmepn --no-verify-jwt`. The smallest test below is still to run. Docs: `api-docs/mcp.mdx`.
 
 - **Serves:** S3, S1.
 - **Cost:** a thin server. It calls PostgREST, with one tool per `api`
