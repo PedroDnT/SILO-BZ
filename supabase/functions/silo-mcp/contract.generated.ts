@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "32";
+export const CONTRACT_VERSION = "34";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -1417,7 +1417,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "coverage": {
     "kind": "rpc",
     "path": "/rpc/coverage",
-    "description": "Freshness AND honesty per dataset. as_of = the newest period that has landed and has actually ELAPSED (bounded by today); complete_through = the newest COMPLETE period, which is what default windows serve; newest_period = the newest period KEY present, which can sit in the future when a family files forward-dated (FIP is keyed 31-December); landed_at = when ingest last SUCCEEDED for that source, from cvm_ingest_log (status ok with a finish time, so a later failed run never advances it). funds_<family> rows report each filing cadence separately. notes carries a caveat the dates cannot: the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); funds_fip states why its newest_period runs ahead; fund_nav points at catalog().applicability and api.metric_coverage(); the fidc_tranches and fidc_aging rows state that those informe tabs begin in 2025-01 because CVM publishes no archive of them (an upstream limit, not a gap); and the five B3 lending / flow rows (short_interest, short_interest_by_sector, lending_trades, lending_participants, investor_flow) state the RATCHET — B3 keeps ~21 business days and publishes no archive, so their span starts at first capture and no backfill exists — along with the float_basis, brokerage-not-owner and first-difference traps that make those series easy to read wrongly. Their landed_at is split by ingest doc_type, so a COTAHIST run never reports as the lending group's freshness.",
+    "description": "Freshness AND honesty per dataset. as_of = the newest period that has landed and has actually ELAPSED (bounded by today); complete_through = the newest COMPLETE period, which is what default windows serve; newest_period = the newest period KEY present, which can sit in the future when a family files forward-dated (FIP is keyed 31-December); landed_at = when ingest last SUCCEEDED for that source, from cvm_ingest_log (status ok with a finish time, so a later failed run never advances it); landed_git_sha = the git commit of THAT run — which code produced this data — NULL when the run recorded none (before migration 44, or run outside GitHub Actions), never borrowed from an older run. funds_<family> rows report each filing cadence separately. notes carries a caveat the dates cannot: the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); funds_fip states why its newest_period runs ahead; fund_nav points at catalog().applicability and api.metric_coverage(); the fidc_tranches and fidc_aging rows state that those informe tabs begin in 2025-01 because CVM publishes no archive of them (an upstream limit, not a gap); the fnet_documents row (the FNET register behind fund_documents and fund_restatements) is keyed on the DELIVERY day, with complete_through the day before as_of, and states that its history begins at first capture / backfill and that fund links come from a fortnightly sweep, so recent documents may have no cnpj yet; and the five B3 lending / flow rows (short_interest, short_interest_by_sector, lending_trades, lending_participants, investor_flow) state the RATCHET — B3 keeps ~21 business days and publishes no archive, so their span starts at first capture and no backfill exists — along with the float_basis, brokerage-not-owner and first-difference traps that make those series easy to read wrongly. Their landed_at is split by ingest doc_type, so a COTAHIST run never reports as the lending group's freshness.",
     "inputSchema": {
       "type": "object",
       "properties": {},
@@ -1465,7 +1465,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "fidc_cedentes": {
     "kind": "rpc",
     "path": "/rpc/fidc_cedentes",
-    "description": "FIDC named-originator concentration from informe tab I. Give exactly one of p_cnpj (which originators this fund buys from) or p_cedente (which funds buy from this originator: any CPF/CNPJ, or a listed ticker/CVM code via the published FCA map). One row per (fund, month, block, slot) as filed; share_pct is a percent of the BLOCK (A = risks retained by the cedente, B = not), never of the fund. cedente_id was checksum-verified at ingest; cedente_tickers = its active listed codes, NULL when not listed. share_pct is as filed and carries CVM's percentage-field outliers (9% of slots above 100 in 2026-07) — range-check it, never read it as a fraction. Slots exist from 2019-11.",
+    "description": "FIDC named-originator concentration from informe tab I. Give exactly one of p_cnpj (which originators this fund buys from) or p_cedente (which funds buy from this originator: any CPF/CNPJ, or a listed ticker/CVM code via the published FCA map). One row per (fund, month, block, slot) as filed; share_pct is a percent of the BLOCK (A = risks retained by the cedente, B = not), never of the fund. cedente_id was checksum-verified at ingest; cedente_tickers = its active listed codes, NULL when not listed. share_pct is as filed and carries CVM's percentage-field outliers (9% of slots above 100 in 2026-07) — range-check it, never read it as a fraction. Slots exist from 2019-11. More than 1000 rows RAISES 22023, never trimmed: narrow p_from/p_to (a p_cedente lookup spans many funds, so it needs fewer months than one fund) or ask for the newest N rows with p_limit (1..1000).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1519,7 +1519,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "fidc_portfolio": {
     "kind": "rpc",
     "path": "/rpc/fidc_portfolio",
-    "description": "One FIDC's receivables book, long: kind=sector is informe tab II (TOTAL, the lettered sectors A..K, and their numbered members — `parent` names the letter a numbered code belongs to; sum leaves or parents, never both); kind=scr_debtor / scr_operation are tab X's BACEN SCR grade ladders AA..H for the same receivables graded two ways; kind=tax_debt is TAB_X_DEBITO_TRIBUT. Values as filed. tab II from 2013-01; tab X from 2023-10 (earlier months have no scr rows, not zero-graded ones). An unknown p_kind raises 22023.",
+    "description": "One FIDC's receivables book, long: kind=sector is informe tab II (TOTAL, the lettered sectors A..K, and their numbered members — `parent` names the letter a numbered code belongs to; sum leaves or parents, never both); kind=scr_debtor / scr_operation are tab X's BACEN SCR grade ladders AA..H for the same receivables graded two ways; kind=tax_debt is TAB_X_DEBITO_TRIBUT. Values as filed. tab II from 2013-01; tab X from 2023-10 (earlier months have no scr rows, not zero-graded ones). An unknown p_kind raises 22023. More than 1000 rows RAISES 22023, never trimmed: narrow p_from/p_to, pin one p_kind, or ask for the newest N rows with p_limit (1..1000).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1581,7 +1581,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "fidc_sacados": {
     "kind": "rpc",
     "path": "/rpc/fidc_sacados",
-    "description": "The 25 largest debtors of one FIDC from informe tab VIII, as filed: (rank, value), no identity — CVM publishes the concentration anonymized and its dictionary describes neither column. seq is CVM's rank and is never recomputed from valor; a fund that files fewer than 25 ranks has fewer rows. A concentration ratio is valor / receivables (panel metric) in the notebook. From 2013-01.",
+    "description": "The 25 largest debtors of one FIDC from informe tab VIII, as filed: (rank, value), no identity — CVM publishes the concentration anonymized and its dictionary describes neither column. seq is CVM's rank and is never recomputed from valor; a fund that files fewer than 25 ranks has fewer rows. A concentration ratio is valor / receivables (panel metric) in the notebook. From 2013-01. More than 1000 rows RAISES 22023, never trimmed: narrow p_from/p_to or ask for the newest N rows with p_limit (1..1000).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1793,6 +1793,52 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "additionalProperties": false
     }
   },
+  "fund_documents": {
+    "kind": "rpc",
+    "path": "/rpc/fund_documents",
+    "description": "Every B3 Fundos.NET (FNET) document LINKED to one fund, newest delivery first: fnet_id, fund_name (FNET's label, never a join key), categoria, tipo_documento, especie, reference_raw / reference_date, delivered_at (São Paulo time, as printed), versao, modalidade (AP original, RE voluntary restatement, RC CVM-required), status (AC active, IC superseded, CC cancelled — AS OF fetched_at) and source_url, FNET's public download link for the id. Metadata only. FNET rows carry NO CNPJ: a document belongs to this fund because FNET returned it for cnpjFundo = p_cnpj in SILO's fortnightly per-fund sweep, never because of its name — so a document delivered since that fund's last sweep is not listed yet (coverage() fnet_documents). Each version is its own fnet_id; restatement pairs are api.fund_restatements. Window = delivery date, default the 12 months before p_to (or today); p_tipo matches tipo_documento exactly. A CNPJ that is not 14 digits raises 22023. More than 1000 rows RAISES 22023 (never trimmed): narrow the window or pin p_tipo.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_cnpj": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_tipo": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_cnpj"
+      ],
+      "additionalProperties": false
+    }
+  },
   "fund_holdings": {
     "kind": "rpc",
     "path": "/rpc/fund_holdings",
@@ -1931,6 +1977,51 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "required": [
         "p_cnpj"
       ],
+      "additionalProperties": false
+    }
+  },
+  "fund_restatements": {
+    "kind": "rpc",
+    "path": "/rpc/fund_restatements",
+    "description": "Restatement events from the B3 Fundos.NET (FNET) register: one row per document with versao > 1 (modalidade RE voluntary or RC CVM-required, as published), newest delivery first, with cnpj from its cnpjFundo link (NULL when SILO's fortnightly sweep has not linked it yet — served, never dropped), tipo_fundo from its tipoFundo link (FII / FIDC / ETF; NULL when none), and previous_fnet_id / previous_delivered_at / lag_days for the version it most plausibly replaced. FNET DOES NOT LINK VERSIONS, so the pairing is by a stated group key — (cnpj link, categoria, tipo_documento, especie, reference_raw) — never by fund_name: previous is the group's document with the highest versao below this one, the greatest fnet_id winning a tie, because a group can legitimately hold several v1 documents (assemblies). Unlinked documents and documents with no reference text are never paired (previous_* NULL). lag_days = delivery date minus the previous delivery date. Filter by p_cnpj (window verbatim, NULL = whole history) or by a delivery window (default the 30 days before p_to or today); p_tipo_fundo takes FII, FIDC or ETF and anything else raises 22023. More than 1000 rows RAISES 22023 (never trimmed): narrow the window or pin p_cnpj / p_tipo_fundo.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_cnpj": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_tipo_fundo": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null
+        }
+      },
       "additionalProperties": false
     }
   },
