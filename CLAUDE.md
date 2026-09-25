@@ -300,6 +300,19 @@ One exception: the scheduled agents in `.claude/agents/` (Scout, Builder) open
 drafts on purpose, because agent output must never auto-merge without the owner's
 review (`docs/planning/AGENTS.md`). Only the owner marks an `agent:*` PR ready.
 
+## Database (Supabase)
+
+- Never run unbounded queries on large tables (e.g. `cvm_fi_diario`, `cia_account`,
+  `b3_lending_trade`, `cvm_fi_balancete`). Always add a `LIMIT` or a filtered `WHERE`;
+  prefer `pg_class.reltuples` over a bare `COUNT(*)`, and filter any `COUNT(*)`.
+- For bulk rewrites (e.g. re-keying), work in batches and check the row count after each batch.
+- Before any destructive change (trim, delete, re-key), stop and confirm the plan with the owner.
+
+## Environment
+
+- Never run `npm install` from the home directory. `cd` into `dashboard/` or `webapp/`
+  first (the repo root has no `package.json`) and confirm that is the intended target.
+
 ## Consumers (read-only, query Supabase directly)
 
 Both are **Evidence.dev** projects (Node-based: `npm install && npm run sources && npm run dev`
