@@ -21,6 +21,7 @@ Start with Conventions & limits: it is the single source of truth for auth tiers
 - [Your first screen](https://octo-98895abd.mintlify.site/api-docs/guides/first-screen.md): From a publishable key to a real chart of Brazilian market data, in four calls.
 - [Paging without losing rows](https://octo-98895abd.mintlify.site/api-docs/guides/pagination.md): Three different ways a response gets cut, and only one of them tells you.
 - [Reading a fundamental](https://octo-98895abd.mintlify.site/api-docs/guides/fundamentals.md): A listed company's financial statements end to end — and the two conventions that will silently corrupt your numbers.
+- [Sheets and Excel](https://octo-98895abd.mintlify.site/api-docs/spreadsheets.md): CSV into Google Sheets (Apps Script) and Excel (Power Query). `IMPORTDATA` does not work: it cannot ask for CSV. Server behaviour measured live; snippets marked where not run.
 
 ## Market data
 

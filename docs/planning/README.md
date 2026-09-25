@@ -2,15 +2,15 @@
 
 ## Live
 
-| Doc                                        | Is                                                                                 | Open                                                                     |
-| ------------------------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [SERVING.md](SERVING.md)                   | The serving roadmap, step by step                                                  | Step 8 (widen the panel) — everything else done or obsoleted             |
-| [INSTRUMENTS.md](INSTRUMENTS.md)           | How each B3 instrument class is ingested and served                                | Design reference, no queue                                               |
-| [SDK.md](SDK.md)                           | What `sdk/silo_client` is today and what is missing                                | pandas dependency, PyPI, wheel CI, async                                 |
-| [OPEN_ITEMS.md](OPEN_ITEMS.md)             | **The** register of what is deliberately not done                                  | Thirteen items; read this before starting anything                       |
-| [CHANGELOG.md](CHANGELOG.md)               | Append-only log, one row per merged branch                                         | —                                                                        |
-| [COMPETITIVE_GAPS.md](COMPETITIVE_GAPS.md) | Who else does this, what they have that we don't, and what nobody has (2026-09-23) | Snapshot; its §7 backlog waits for Pedro's pick → `OPEN_ITEMS.md`        |
-| [AGENTS.md](AGENTS.md)                     | The governed agent loop (B7): principle, roster, lineage rules, and the registry   | Nothing scheduled; the smallest test (one manual Builder run) is pending |
+| Doc                                        | Is                                                                                 | Open                                                                             |
+| ------------------------------------------ | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| [SERVING.md](SERVING.md)                   | The serving roadmap, step by step                                                  | Step 8 (widen the panel) — everything else done or obsoleted                     |
+| [INSTRUMENTS.md](INSTRUMENTS.md)           | How each B3 instrument class is ingested and served                                | Design reference, no queue                                                       |
+| [SDK.md](SDK.md)                           | What `sdk/silo_client` is today and what is missing                                | pandas dependency, PyPI, wheel CI, async                                         |
+| [OPEN_ITEMS.md](OPEN_ITEMS.md)             | **The** register of what is deliberately not done                                  | Fourteen items (14 sequences the §7 backlog); read this before starting anything |
+| [CHANGELOG.md](CHANGELOG.md)               | Append-only log, one row per merged branch                                         | —                                                                                |
+| [COMPETITIVE_GAPS.md](COMPETITIVE_GAPS.md) | Who else does this, what they have that we don't, and what nobody has (2026-09-23) | Snapshot; its §7 backlog is sequenced in `OPEN_ITEMS.md` item 14                 |
+| [AGENTS.md](AGENTS.md)                     | The governed agent loop (B7): principle, roster, lineage rules, and the registry   | Nothing scheduled; the smallest test (one manual Builder run) is pending         |
 
 There is **one** list of open work, and it is `OPEN_ITEMS.md`. On 2026-09-18 two
 were merged within minutes of each other, from different sessions, neither

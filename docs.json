@@ -38,7 +38,8 @@
         "pages": [
           "api-docs/guides/first-screen",
           "api-docs/guides/pagination",
-          "api-docs/guides/fundamentals"
+          "api-docs/guides/fundamentals",
+          "api-docs/spreadsheets"
         ]
       },
       {
