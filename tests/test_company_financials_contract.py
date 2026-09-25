@@ -18,6 +18,7 @@ discriminators, so a later edit cannot quietly drop one.
 """
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -291,6 +292,23 @@ def test_fii_property_history_keeps_nulls_and_refuses_over_cap() -> None:
     assert "i.row_hash" in body
     assert "api.assert_row_cap" in body
     assert "LIMIT 1001" in body and "LIMIT 1000" in body
+
+
+def test_fii_property_openapi_keys_match_the_declared_sql_result() -> None:
+    body = _body("fii_property_history")
+    result = re.search(r"RETURNS TABLE\s*\((.*?)\)\s*LANGUAGE", body, re.S)
+    assert result, "fii_property_history must declare its response columns"
+    sql_columns = re.findall(
+        r"\b([a-z_][a-z0-9_]*)\s+(?:TEXT|DATE|INT|NUMERIC)\b",
+        result.group(1),
+        re.I,
+    )
+    spec = json.loads((ROOT / "openapi.json").read_text(encoding="utf-8"))
+    spec_columns = list(
+        spec["paths"]["/rpc/fii_property_history"]["post"]["responses"]
+        ["200"]["content"]["application/json"]["schema"]["items"]["properties"]
+    )
+    assert spec_columns == sql_columns
 
 
 def test_the_catalog_tells_an_agent_the_endpoints_exist() -> None:

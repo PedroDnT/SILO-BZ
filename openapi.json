@@ -4887,11 +4887,12 @@
                           "null"
                         ]
                       },
-                      "data_referencia": {
+                      "reference_date": {
                         "type": [
                           "string",
                           "null"
-                        ]
+                        ],
+                        "format": "date"
                       },
                       "period_year": {
                         "type": [
@@ -4900,11 +4901,12 @@
                         ],
                         "format": "int32"
                       },
-                      "versao": {
+                      "version": {
                         "type": [
-                          "string",
+                          "integer",
                           "null"
-                        ]
+                        ],
+                        "format": "int32"
                       },
                       "row_hash": {
                         "type": [
@@ -4912,19 +4914,19 @@
                           "null"
                         ]
                       },
-                      "classe": {
+                      "property_class": {
                         "type": [
                           "string",
                           "null"
                         ]
                       },
-                      "nome_imovel": {
+                      "property_name": {
                         "type": [
                           "string",
                           "null"
                         ]
                       },
-                      "endereco": {
+                      "address": {
                         "type": [
                           "string",
                           "null"
@@ -4936,75 +4938,76 @@
                           "null"
                         ]
                       },
-                      "numero_unidades": {
+                      "units": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "other_characteristics": {
                         "type": [
                           "string",
                           "null"
                         ]
                       },
-                      "outras_caracteristicas": {
+                      "vacancy_pct": {
                         "type": [
-                          "string",
+                          "number",
                           "null"
                         ]
                       },
-                      "pr_vacancia": {
+                      "delinquency_pct": {
                         "type": [
-                          "string",
+                          "number",
                           "null"
                         ]
                       },
-                      "pr_inadimplencia": {
+                      "revenue_pct": {
                         "type": [
-                          "string",
+                          "number",
                           "null"
                         ]
                       },
-                      "pr_receitas_fii": {
+                      "rented_pct": {
                         "type": [
-                          "string",
+                          "number",
                           "null"
                         ]
                       },
-                      "pr_locado": {
+                      "sold_pct": {
                         "type": [
-                          "string",
+                          "number",
                           "null"
                         ]
                       },
-                      "pr_vendido": {
+                      "development_completed_pct": {
                         "type": [
-                          "string",
+                          "number",
                           "null"
                         ]
                       },
-                      "pr_conclusao_obras_realizado": {
+                      "development_expected_pct": {
                         "type": [
-                          "string",
+                          "number",
                           "null"
                         ]
                       },
-                      "pr_conclusao_obras_previsto": {
+                      "construction_cost_completed": {
                         "type": [
-                          "string",
+                          "number",
                           "null"
                         ]
                       },
-                      "custo_construcao_realizado": {
+                      "construction_cost_expected": {
                         "type": [
-                          "string",
+                          "number",
                           "null"
                         ]
                       },
-                      "custo_construcao_previsto": {
+                      "property_total_invested_pct": {
                         "type": [
-                          "string",
-                          "null"
-                        ]
-                      },
-                      "pr_imovel_total_investido": {
-                        "type": [
-                          "string",
+                          "number",
                           "null"
                         ]
                       },

@@ -67,11 +67,12 @@ snapshot is needed to validate rendered charts and build output.
 
 The three research examples are runnable calculations with explicit source,
 join, and limitation notes; they are reference demonstrations rather than live
-agent tool-call recordings. The 12-case benchmark remains **unverified** because
-the OpenAI Platform rejected key creation and no existing key was available.
-No OpenAI API calls, paid evaluations, production database writes, migrations,
-deployments, historical backfills, or data publication were performed. Thus no
-agent accuracy, latency, or spend result is claimed against the US$20 cap.
+agent tool-call recordings. Secure key setup has since completed in the ignored
+local `.env`, and the agent-evaluation workstream has resumed its API preflight.
+The 12-case benchmark is still **unverified**; this implementation commit does
+not claim agent accuracy, latency, or spend against the US$20 cap. No production
+database writes, migrations, deployments, historical backfills, or data
+publication were performed.
 
 ## Remaining release evidence
 
