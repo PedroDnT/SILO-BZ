@@ -224,6 +224,20 @@ jobs:
                      "keep serving the previous build until the next trigger." ;;
           esac
 
+      # The FNET document register (fnet_document / fnet_document_filter) runs
+      # LAST, on its own. FNET answers GitHub runners slowly and sometimes not at
+      # all; when it lived inside run_daily, one fund's ReadTimeout (run
+      # 36101156388, 2026-09-25) failed that step and so skipped ANALYZE, the
+      # analytical layer and the deploy hook, for CVM/BACEN/B3 data that had all
+      # landed. Here it runs even if an earlier step failed (!cancelled()), but a
+      # failure still fails the job (no continue-on-error), writes its `error`
+      # audit row, and files the tracking issue below. The dashboard does not
+      # read FNET, and the api functions over it need no rebuild.
+      - name: Refresh FNET document register
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
+        timeout-minutes: 60
+        run: python -m src.pipeline.fnet_pipeline
+
   # Alerting: a scheduled-run failure files (or bumps) a single tracking issue,
   # so a broken credential or CVM outage emails the repo owner instead of
   # failing silently for weeks (the 2026-07/08 PAM-auth outage went a month
