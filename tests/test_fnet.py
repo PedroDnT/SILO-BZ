@@ -257,6 +257,38 @@ async def test_sweep_links_documents_to_the_cnpj_that_was_queried_not_a_name():
     assert fake.calls == [(None, None, "07727002000126"), (None, None, "11728688000147")]
 
 
+async def test_sweep_continues_past_a_failed_fund_then_raises():
+    """Run 36101156388: one fund's ReadTimeout must not abandon the rest of the
+    slice, and must not be swallowed: the sweep stores the others, then raises."""
+
+    class _Flaky(_FakeFetcher):
+        async def search(self, *, day=None, tipo_fundo=None, cnpj=None):
+            if cnpj == "18347309000118":
+                self.calls.append((day, tipo_fundo, cnpj))
+                raise FnetFetchError("FNET cnpjFundo=18347309000118 failed after 5 attempts: ReadTimeout('')")
+            return await super().search(day=day, tipo_fundo=tipo_fundo, cnpj=cnpj)
+
+    fake = _Flaky({(None, None, "07727002000126"): [_row(10)], (None, None, "11728688000147"): [_row(11)]})
+    ing, captured, up = _ingestor(fake)
+    with up:
+        with pytest.raises(fp.FnetSweepIncomplete, match="1 of 3 fund.*18347309000118"):
+            await ing.sweep_funds(["07727002000126", "18347309000118", "11728688000147"])
+    assert [c[2] for c in fake.calls] == ["07727002000126", "18347309000118", "11728688000147"]
+    assert {r["filter_value"] for r in captured[fp.FILTER_TABLE]} == {"07727002000126", "11728688000147"}
+
+
+def test_fnet_is_its_own_daily_step_after_the_deploy_hook():
+    """FNET must not gate ANALYZE / analytics / deploy, and must not be silent."""
+    run_daily = (ROOT / "src/pipeline/run_daily.py").read_text(encoding="utf-8")
+    assert "FnetIngestor" not in run_daily
+    wf = (ROOT / ".github/workflows/daily_ingest.yml").read_text(encoding="utf-8")
+    step = wf.index("- name: Refresh FNET document register")
+    assert step > wf.index("- name: Trigger dashboard rebuild")
+    block = wf[step:wf.index("notify-failure:")]
+    assert "python -m src.pipeline.fnet_pipeline" in block
+    assert "!cancelled()" in block and "continue-on-error" not in block
+
+
 def test_sweep_slices_partition_the_universe_and_are_stable():
     cnpjs = [f"{i:014d}" for i in range(1, 500)]
     day0 = date(2026, 9, 1)

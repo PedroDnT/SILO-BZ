@@ -25,6 +25,7 @@ also refreshes the ``status`` of its older documents when they get superseded).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import zlib
@@ -51,6 +52,10 @@ _TIPO_BY_ENTITY = {"fii": 1, "fidc": 2}
 
 class FnetBackfillIncomplete(RuntimeError):
     """One or more backfill months failed; each has an ``error`` audit row."""
+
+
+class FnetSweepIncomplete(RuntimeError):
+    """One or more funds in a sweep failed; the sweep's audit row is ``error``."""
 
 
 def _env_int(name: str, default: int, minimum: int = 1) -> int:
@@ -146,15 +151,32 @@ class FnetIngestor:
             return [r[0] for r in cur.fetchall()]
 
     async def sweep_funds(self, cnpjs: Sequence[str]) -> int:
-        """Every document FNET lists for each fund; records the cnpjFundo link. Returns links stored."""
+        """Every document FNET lists for each fund; records the cnpjFundo link. Returns links stored.
+
+        A fund whose query fails does not abandon the rest of the slice (run
+        36101156388 lost ~500 funds to one ReadTimeout): the sweep moves on,
+        then raises ``FnetSweepIncomplete`` naming every failed fund, so the
+        enclosing ``audited`` still writes an ``error`` row and the run is red.
+        """
         links = 0
+        failed: List[str] = []
         for cnpj in cnpjs:
-            raw = await self._fetcher.search(cnpj=cnpj)
+            try:
+                raw = await self._fetcher.search(cnpj=cnpj)
+            except Exception as exc:  # re-raised below, after the other funds
+                logger.error("FNET sweep cnpjFundo=%s failed: %r; continuing with the next fund", cnpj, exc)
+                failed.append(f"{cnpj}: {exc!r}")
+                continue
             if not raw:
                 continue
             self._store(raw, f"cnpj {cnpj}")
             links += self._store_filters(_filter_rows(
                 (int(r["id"]) for r in raw if r.get("id") is not None), "cnpjFundo", cnpj))
+        if failed:
+            raise FnetSweepIncomplete(
+                f"FNET sweep: {len(failed)} of {len(cnpjs)} fund(s) failed "
+                f"({links} links stored from the rest). " + "; ".join(failed)
+            )
         return links
 
     # ── orchestration ────────────────────────────────────────────────────
@@ -219,3 +241,14 @@ class FnetIngestor:
             period_year=today.year, period_month=today.month, upsert=upsert_rows,
         )
         return {FILTER_TABLE: links}
+
+
+async def _main() -> None:
+    """The daily FNET refresh, run by daily_ingest.yml as its own step."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    totals = await FnetIngestor().daily_update()
+    logger.info("FNET daily update done: %s", totals)
+
+
+if __name__ == "__main__":
+    asyncio.run(_main())
