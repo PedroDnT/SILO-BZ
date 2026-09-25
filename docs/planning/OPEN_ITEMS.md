@@ -116,7 +116,11 @@ exist yet: `vercel.json` builds `dashboard/` only, so `webapp/` needs a second
 Vercel project or another static host.) Evidence builds its parquet at deploy time,
 so the source-query fix only takes effect on a rebuild.
 
-## 4. Two changelog rows render with phantom columns
+## 4. ~~Two changelog rows render with phantom columns~~ (done)
+
+**Done 2026-09-25** (`fix/changelog-pipes`): the pipes inside the two rows'
+code spans are escaped as `\|`, and `test_every_row_has_exactly_three_cells`
+now pins the cell count (fails on the unescaped file, passes on the fixed one).
 
 `docs/planning/CHANGELOG.md` has two historical rows containing an unescaped
 `|` inside their prose — one of them is literally the panel cursor format
