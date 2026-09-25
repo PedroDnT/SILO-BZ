@@ -65,6 +65,9 @@ Bump `CATALOG_VERSION`, regenerate `openapi.json`, bump
 
 ## 2. `company_financials` and `income_statements` disagree on net income
 
+**Blocked 2026-09-25 on a decision:** option 1 (leave) vs option 2 (re-key on
+the label, catalog bump). A product call, not a code fix.
+
 Not a bug; a deliberate asymmetry, recorded so nobody "fixes" it by accident.
 
 `company_financials.net_income` reads conta `3.11` alone and returns NULL for
@@ -87,6 +90,12 @@ a different quantity. `tests/test_company_financials_contract.py` asserts
 `'3.09'` appears nowhere in that function.
 
 ## 3. `/growth` is fixed in the repo but not published anywhere
+
+**Blocked 2026-09-25, cause established:** root `vercel.json` builds only
+`dashboard/` (`cd dashboard && npm run build`), so `webapp/` is deployed by **no**
+project; `CLAUDE.md`'s "both hosted under `silo-bz`" is wrong for `webapp/`.
+Needs a decision: a new Vercel project rooted at `webapp/` (an account change),
+or moving `/growth` and its sources into `dashboard/`.
 
 `webapp/pages/growth.md` + `webapp/sources/supabase/cia_growth_*.sql`. The
 fiscal-year bug is fixed on `main` (PR #270), but the page is **not reachable on
@@ -146,6 +155,8 @@ immediately and on the public site the next morning, unless someone dispatches
 
 ## 7. The docs site is on Mintlify's generated subdomain
 
+**Blocked 2026-09-25:** DNS record plus Mintlify plan; account action, no repo change.
+
 `octo-98895abd.mintlify.site` works and is linked correctly from everywhere. But
 a hex-string hostname reads as provisional to a first-time visitor, which is the
 wrong signal for the one surface a stranger is most likely to open.
@@ -196,6 +207,9 @@ safe whether or not auto-assignment comes back. Verified 2026-09-22 against
 the live hosts both ways: green when they match, and red when `PUBLIC_HOST` is
 pointed at `silo-j01uw6fds-deloslabs.vercel.app` (the #275 build that was
 actually being served during the freeze).
+
+**Blocked 2026-09-25:** both remaining points need Pedro: the `VERCEL_TOKEN`
+repository secret, and the Vercel audit log or support for the cause.
 
 Two things remain open:
 
@@ -252,6 +266,9 @@ since**. Ingest stops when it fills, and the largest tables (`cvm_fi_diario`,
 a retention decision before it is urgent rather than after.
 
 ## 11. `sdk/silo_client` is not published
+
+**Blocked 2026-09-25:** needs a PyPI account/project name and a token secret;
+no repo change unblocks it.
 
 `pip install silo-client` does not resolve; callers vendor the directory. See
 [SDK.md](SDK.md) for what else the client is missing (PyPI, wheel CI, async).
