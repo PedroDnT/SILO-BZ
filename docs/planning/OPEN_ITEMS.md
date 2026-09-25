@@ -70,28 +70,12 @@ TABLE` cannot be replaced in place on a deployed cluster);
 Bump `CATALOG_VERSION`, regenerate `openapi.json`, bump
 `KNOWN_CATALOG_VERSION` in the SDK.
 
-## 2. `company_financials` and `income_statements` disagree on net income
+## 2. ~~`company_financials` and `income_statements` disagree on net income~~ (done)
 
-Not a bug; a deliberate asymmetry, recorded so nobody "fixes" it by accident.
-
-`company_financials.net_income` reads conta `3.11` alone and returns NULL for
-the ~282 statements filed under the chart that has no `3.11`. That set is small
-by row count (0.56%) but **large by substance — it includes Itaú Unibanco and
-BTG Pactual**. `income_statements` resolves them, because it keys on the filed
-label rather than the code.
-
-Options, in preference order:
-
-1. Leave it, and point callers at `income_statements` (current state; the
-   `api-docs/known-limitations.mdx` note and the SDK docstring both do this).
-2. Re-key `company_financials.net_income` on the label too, so both surfaces
-   agree. Cheap, and arguably what a caller expects. Needs a catalog bump and a
-   changelog row explaining that NULLs became numbers.
-
-Do **not** reinstate a `COALESCE(3.11, 3.09)`: that is code-keyed and unsound —
-`3.09` is `Resultado Líquido das Operações Continuadas` on the industrial chart,
-a different quantity. `tests/test_company_financials_contract.py` asserts
-`'3.09'` appears nowhere in that function.
+**Done 2026-09-25** (`feat/company-financials-label`, catalog v36): option 2,
+Pedro's call. `net_income` now matches the same two filed labels as
+`income_statements`; bank B resolves from 3.09's net-income label and insurers
+from 3.13. No code fallback. Live after `apply_analytical.sh`.
 
 ## 3. `/growth` is fixed in the repo but not published anywhere
 

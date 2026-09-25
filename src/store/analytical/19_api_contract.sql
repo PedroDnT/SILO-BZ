@@ -4040,33 +4040,26 @@ AS $$
                 -- several rows and summing them would double-count.
                 MAX(s.value) FILTER (WHERE s.account_code = '3.01') AS revenue,
                 MAX(s.value) FILTER (WHERE s.account_code = '3.03') AS gross_profit,
-                -- NET INCOME IS 3.11 ONLY. There used to be a COALESCE to 3.09
-                -- behind it, on the belief that banks file a chart without 3.11.
-                -- That belief was wrong twice over. Verified against Banco do
-                -- Brasil (cd_cvm 1023, FY2024, con, 12m): 3.09 = 29.17bn "Lucro ou
-                -- Prejuizo antes das Participacoes e Contribuicoes Estatutarias",
-                -- 3.10 = 0.00 "Participacoes nos Lucros e Contribuicoes
-                -- Estatutarias", 3.11 = 29.17bn "Lucro ou Prejuizo Liquido
-                -- Consolidado do Periodo". So 3.11 is present and IS net income;
-                -- 3.09 is profit BEFORE statutory profit-sharing and coincides
-                -- with it only because 3.10 happens to be zero.
+                -- NET INCOME IS KEYED ON THE FILED LABEL (v36), exactly as in
+                -- api.income_statements, so the two surfaces agree. Until v35 it
+                -- read conta 3.11 alone, which is wrong in two directions:
+                --   * bank B files NO 3.11 — its net income is on 3.09 under the
+                --     label below — so 282 statements (0.56% of 50,439, Itaú
+                --     Unibanco and BTG Pactual among them) read NULL;
+                --   * the insurer chart's 3.11 is CONTINUING OPERATIONS; its net
+                --     income is 3.13. The code read served the wrong quantity.
+                -- The label match fixes both without a code fallback. Never
+                -- COALESCE a code in: 3.09 is pre-participations profit on the
+                -- industrial and bank-A charts (Banco do Brasil FY2024: 3.09 and
+                -- 3.11 both 29.17bn only because 3.10 is zero).
                 --
-                -- The fallback was then measured across the whole table rather
-                -- than argued about: of 50,439 DRE statements, 282 (0.56%) have no
-                -- 3.11, and for every one of those 282 the 3.09 substitution was
-                -- numerically identical to nothing (3.10 was zero or absent) — so
-                -- it has never actually overstated net income. It was load-bearing
-                -- for those 282 and silently wrong for the first filer to report a
-                -- non-zero 3.10 without a 3.11. Those 282 now return NULL, which
-                -- is the honest answer: a caller who wants the pre-participations
-                -- figure can read 3.09, 3.10 and 3.11 itself from api.financials.
-                -- Rule 1 of the integrity rules, applied to a derived column.
-                --
-                -- Also note the same code means different things across charts, so
-                -- 3.01/3.03 above are not like-for-like between a bank and an
-                -- industrial filer — which is why setor ships on the row.
-                -- Documented in docs/CIA_DATA_MAP.md.
-                MAX(s.value) FILTER (WHERE s.account_code = '3.11') AS net_income
+                -- 3.01/3.03 above stay code-keyed and are not like-for-like
+                -- between a bank and an industrial filer — which is why setor
+                -- ships on the row. Use api.income_statements for label-keyed
+                -- revenue. Documented in docs/CIA_DATA_MAP.md.
+                MAX(s.value) FILTER (WHERE lower(btrim(s.account_name)) IN (
+                    'lucro/prejuízo consolidado do período',
+                    'lucro ou prejuízo líquido consolidado do período')) AS net_income
             FROM s
             WHERE s.statement = 'DRE'
             GROUP BY s.cd_cvm, s.cnpj, s.company, s.ticker, s.setor, s.segmento,
@@ -4604,7 +4597,7 @@ STABLE
 AS $fn$
 SELECT $json${
   "kind": "catalog",
-  "version": 35,
+  "version": 36,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, the B3 securities-lending and investor-flow group, and Brazilian inflation — BACEN's IPCA series and IBGE's item tree with weights). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -4896,7 +4889,7 @@ SELECT $json${
     "LISTED-COMPANY FINANCIALS ARE FILED, NOT DERIVED. api.financials returns one row per account line exactly as the company filed it; nothing is summed, annualised or restated. Read period_months before comparing two rows: an ITR publishes the SAME account twice under one reference date, once for the three months and once year-to-date, and they are distinguished only by the period span. Adding a 3-month row to a 6-month row double-counts the quarter.",
     "FINANCIALS DEFAULT TO CONSOLIDATED (scope=con) AND TO THE PERIOD THE DOCUMENT IS FOR (ordem_exerc ULTIMO). The prior-year comparative printed beside it is never returned. When a company re-files, only the newest version of each statement is served and `version` carries it; in company_financials a balance sheet from a different version than the income statement reads NULL rather than being paired across filings.",
     "CVM'S CHART OF ACCOUNTS IS SECTOR-SPECIFIC, SO `setor` IS A PARTITION KEY, NOT A LABEL. financials and company_financials carry setor and segmento on every row for exactly one reason: the same account code is a different quantity in a different chart. Measured live, 3.01 is `Receita de Venda de Bens e/ou Serviços` for PETR4 and `Receitas de Intermediação Financeira` for Banco do Brasil (cd_cvm 1023), and 3.05 is EBIT for the first and pre-tax profit for the second. So company_financials.revenue and gross_profit are NOT like-for-like across sectors: PARTITION every median, rank, percentile and peer comparison BY setor, and read the as-filed Portuguese account_name rather than assuming a code carries one concept. There is deliberately no canonical English line-item mapping, because keying one on account_code would mislabel at least one sector.",
-    "company_financials.net_income IS CONTA 3.11 ONLY, WITH NO FALLBACK. A filing that does not report 3.11 reads NULL. Do not substitute 3.09: it is `Lucro ou Prejuízo antes das Participações e Contribuições Estatutárias`, i.e. profit BEFORE the statutory profit-sharing on 3.10, and it equals net income only where 3.10 is zero. This is measured, not assumed — 282 of 50,439 DRE statements (0.56%) have no 3.11. If you want the pre-participations figure, call api.financials and read 3.09, 3.10 and 3.11 yourself, then do the arithmetic where you can see it. Every value in both functions is in absolute reais: the filed ESCALA_MOEDA is applied at ingest, so never scale by thousands again. api.income_statements DOES resolve those 282, because it keys on the filed LABEL rather than the code and bank B's 3.09 carries the net-income label — prefer it when you want net income to be as complete as the filings allow.",
+    "company_financials.net_income IS KEYED ON THE FILED LABEL (since v36), exactly as in api.income_statements, so the two surfaces agree. It matches `Lucro/Prejuízo Consolidado do Período` / `Lucro ou Prejuízo Líquido Consolidado do Período`, which sits on 3.11 for the industrial and bank-A charts, on 3.09 for bank B (which files no 3.11) and on 3.13 for insurers (whose 3.11 is continuing operations). Until v35 it read 3.11 alone, so 282 bank-B statements (Itaú and BTG among them) read NULL and insurers got their continuing-operations line. No code is ever substituted: 3.09 is pre-participations profit on the other charts. revenue and gross_profit remain code-keyed (3.01 / 3.03) and are not like-for-like across sectors — use api.income_statements for label-keyed revenue. Every value in both functions is in absolute reais: the filed ESCALA_MOEDA is applied at ingest, so never scale by thousands again.",
     "api.income_statements IS KEYED ON THE FILED LABEL, NOT THE ACCOUNT CODE. It returns the income statement as one row per filed period with named fields, and it resolves each field by matching the as-filed Portuguese account_name (case-folded, nothing else folded) rather than by cd_conta. This is measured: CVM ships FOUR DRE charts of accounts and net income sits on 3.11 for the industrial and bank-A charts, on 3.09 for the bank-B chart which files no 3.11, and on 3.13 for the insurer chart whose 3.11 is the continuing-operations line. `chart` tells you which layout a filing used. A concept a chart does not file reads NULL rather than borrowing a neighbouring line: operating_income (EBIT) is an industrial line only, and insurers get NULL operating_expenses because their filed line is the narrower `Despesas Administrativas`. Never read a NULL here as zero. net_income_controlling is the figure per-share numbers are built on, not net_income.",
     "api.balance_sheets AND api.cash_flow_statements FOLLOW THE SAME LABEL-KEYED DESIGN. balance_sheets returns one row per filed period with named fields matched on the as-filed account_name (case-folded only); where a filing files one label twice (industrial `Empréstimos e Financiamentos` under both current and non-current liabilities) the PARENT's label disambiguates, and no code is ever consulted. Equity sits on 2.03, 2.07 or 2.08 depending on the chart; `chart` says which. Banks file no current/non-current split and no debt line, so current_assets, current_liabilities, noncurrent_*, short_term_debt and long_term_debt read NULL for them — never zero, and never a deposits line standing in for debt. cash_flow_statements maps ONLY the section totals and the cash reconciliation (operating / investing / financing, fx_effect, net_change_in_cash, cash_start, cash_end), which are uniform across charts; `method` is direct or indirect. There is no capex or dividends field on purpose: those lines are free text per filer (capex alone has 20+ spellings), so read those lines with api.financials, where the filed label is on the row. operating_cash_generated and working_capital_changes are indirect-method lines and read NULL on a direct-method filing.",
     "A TICKER RESOLVES TO A COMPANY ONLY THROUGH CVM'S PUBLISHED FCA MAP, active listings only — the CNPJ and the trading code arrive on the same filed row. financials('PETR4'), financials('33000167000101') and financials('9512') are the same company. A delisted code resolves to nothing rather than to a guess, and no company↔ticker edge is ever inferred from a name.",
