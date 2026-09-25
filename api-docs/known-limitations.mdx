@@ -65,6 +65,14 @@ Four consequences, all visible in the response:
   `3.13` for insurers — so `income_statements.net_income` resolves filings that
   `company_financials` must return null for.
 
+  **Shipped (catalog v35).** `api.balance_sheets` and `api.cash_flow_statements`
+  follow the same design. On the balance sheet, equity sits on `2.03`, `2.07` or `2.08`
+  depending on the chart, and where one label is filed twice (current and non-current
+  `Empréstimos e Financiamentos`) the parent line's label tells them apart. Banks file
+  no current/non-current split and no debt line, so those fields are null for them.
+  The cash flow maps only the section totals and the cash reconciliation: capex and
+  dividends are free text per filer, so read those lines with `financials`.
+
   **Still not offered.** A canonical English mapping for *every* line. The named field
   set above is a bounded, measured subset; a full mapping is not, and a code-keyed one
   would still mislabel a chart.
