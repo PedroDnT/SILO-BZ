@@ -1,6 +1,6 @@
 -- =============================================================================
 -- 26_api_events_macro.sql
--- Three datasets SILO already holds, served through schema `api` (catalog v36,
+-- Three datasets SILO already holds, served through schema `api` (catalog v37,
 -- DATA_INVENTORY.md §3 "Held and not served"):
 --
 --   api.company_events  a listed company's IPE filings (fatos relevantes,

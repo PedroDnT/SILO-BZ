@@ -40,7 +40,8 @@ MINIMUM = {
     "fidc_portfolio", "fidc_tranches", "fidc_aging", "screen_zombie_growth",
     "screen_captive_vehicles", "screen_evergreen_aging", "screen_overdue_securit",
     "screen_dormant_funds", "screen_dormant_trend", "screen_delinquency_drivers",
-    "financials", "company_financials", "income_statements", "anbima_classes",
+    "financials", "company_financials", "income_statements", "balance_sheets",
+    "cash_flow_statements", "anbima_classes",
     "inflation", "inflation_items", "short_interest", "investor_flow",
 }
 

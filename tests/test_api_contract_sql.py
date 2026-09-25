@@ -41,6 +41,8 @@ RAISE_ONLY_FUNCTIONS = (
     "api.financials",
     "api.company_financials",
     "api.income_statements",
+    "api.balance_sheets",
+    "api.cash_flow_statements",
     "api.anbima_classes",
     "api.inflation",
     "api.inflation_items",
@@ -71,14 +73,14 @@ SCREEN_FUNCTIONS = (
     "api.screen_dormant_funds",
     "api.screen_dormant_trend",
     "api.screen_delinquency_drivers",
-    # v35: the filing-behaviour screens live in 25_api_filing_screens.sql
+    # v36: the filing-behaviour screens live in 25_api_filing_screens.sql
     # (tests/test_filing_screens_contract.py owns their bodies). Raise-only.
     "api.screen_restatements",
     "api.screen_late_filers",
     "api.screen_silent_filers",
 )
 
-# v36: held-but-unserved datasets in 26_api_events_macro.sql
+# v37: held-but-unserved datasets in 26_api_events_macro.sql
 # (tests/test_wave3_contract.py owns the bodies). Raise-only.
 WAVE3_FUNCTIONS = (
     "api.company_events",
@@ -144,6 +146,8 @@ EXPECTED_FUNCTIONS = {
     "api.financials",
     "api.company_financials",
     "api.income_statements",
+    "api.balance_sheets",
+    "api.cash_flow_statements",
     "api.anbima_classes",
     "api.fund_debentures",
     "api.metric_coverage",
@@ -1441,15 +1445,16 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
     # since v32 (fidc_tranches, fidc_aging), twenty-two since v33
     # (fund_documents, fund_restatements), twenty-five since v34
     # (fidc_cedentes, fidc_sacados, fidc_portfolio stopped trimming),
-    # twenty-eight since v35 (the three filing-behaviour screens),
-    # thirty-one since v36 (company_events, macro_series, ptax). The
+    # twenty-seven since v35 (balance_sheets, cash_flow_statements), thirty since
+    # v36 (the three filing-behaviour screens), thirty-three since v37
+    # (company_events, macro_series, ptax). The
     # prose said "eight" for two versions while listing nine — pin the word
     # to the tuples so it cannot drift again.
-    assert "thirty-one" in c.lower().split(), "all thirty-one capped functions refuse"
+    assert "thirty-three" in c.lower().split(), "all thirty-three capped functions refuse"
     assert (
         len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) + len(FNET_FUNCTIONS)
         + len(WAVE3_FUNCTIONS)
-    ) == 31
+    ) == 33
     for fn in WAVE3_FUNCTIONS:
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
     for fn in HEAD_FUNCTIONS:

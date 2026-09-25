@@ -29,7 +29,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 36
+KNOWN_CATALOG_VERSION = 37
 
 
 class SiloCatalogDrift(UserWarning):
@@ -773,7 +773,7 @@ class SiloClient:
             "p_tipo_fundo": tipo_fundo,
         })
 
-    # -- filing-behaviour screens (v35) --------------------------------------
+    # -- filing-behaviour screens (v36) --------------------------------------
     # SIGNALS, NOT VERDICTS: every row carries `screen` and `params`; read
     # catalog()["screens"][<name>]["meaning"] for what else looks the same.
     # None leaves the server's default in place.
@@ -942,9 +942,52 @@ class SiloClient:
             "p_scope": scope, "p_doc_type": doc_type,
         })
 
+    def balance_sheets(self, id: str, start: Datish = None,
+                       end: Datish = None, scope: str = "con",
+                       doc_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """The balance sheet as a period: one row each, with named fields.
+
+            silo.balance_sheets("PETR4")
+            silo.balance_sheets("ITUB4", doc_type="dfp")   # annual only
+
+        Resolved from the as-filed label like :meth:`income_statements`:
+        equity alone sits on `2.03`, `2.07` or `2.08` depending on the chart.
+        Where a filing files one label twice (industrial `Empréstimos e
+        Financiamentos` under both current and non-current liabilities), the
+        parent line's label tells them apart.
+
+        Banks file no current/non-current split and no debt line, so those
+        fields read **null, never zero** for them. `chart` says which layout
+        a filing used. Every value is in absolute reais.
+        """
+        return self._rpc("balance_sheets", {
+            "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
+            "p_scope": scope, "p_doc_type": doc_type,
+        })
+
+    def cash_flow_statements(self, id: str, start: Datish = None,
+                             end: Datish = None, scope: str = "con",
+                             doc_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """The cash flow statement as a period: section totals, one row each.
+
+            silo.cash_flow_statements("PETR4")
+
+        Only the totals are fields — operating, investing, financing, the FX
+        effect and the cash reconciliation — because those carry the same
+        labels on every chart. Capex and dividends are free text per filer, so
+        there is no field for them: read the filed lines from
+        :meth:`financials`. `method` is `direct` or `indirect`;
+        `operating_cash_generated` and `working_capital_changes` exist only on
+        the indirect method and read null otherwise. Absolute reais.
+        """
+        return self._rpc("cash_flow_statements", {
+            "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
+            "p_scope": scope, "p_doc_type": doc_type,
+        })
+
     def company_events(self, id: str, start: Datish = None, end: Datish = None,
                        category: Optional[str] = None) -> List[Dict[str, Any]]:
-        """A listed company's IPE filings to CVM, newest delivery first (v36).
+        """A listed company's IPE filings to CVM, newest delivery first (v37).
 
             silo.company_events("PETR4")                             # last 12 months
             silo.company_events("PETR4", category="Fato Relevante")
@@ -1035,7 +1078,7 @@ class SiloClient:
             "p_from": _iso(start), "p_to": _iso(end),
         })
 
-    # -- BACEN macro and PTAX (v36) -------------------------------------------
+    # -- BACEN macro and PTAX (v37) -------------------------------------------
 
     def macro_series(self, series: str, start: Datish = None,
                      end: Datish = None) -> List[Dict[str, Any]]:

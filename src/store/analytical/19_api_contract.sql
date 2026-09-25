@@ -2890,7 +2890,7 @@ AS $$
         WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
           AND l.entity = 'fnet' AND l.doc_type = 'register'
         UNION ALL
-        -- v36: cia_aberta logs cad, ipe, fca and the statements under one
+        -- v37: cia_aberta logs cad, ipe, fca and the statements under one
         -- entity; the company_events row reports the IPE ingest alone.
         SELECT '*cia_ipe*'::text, MAX(l.finished_at),
                (array_agg(l.git_sha ORDER BY l.finished_at DESC, l.id DESC))[1]
@@ -2898,7 +2898,7 @@ AS $$
         WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
           AND l.entity = 'cia_aberta' AND l.doc_type = 'ipe'
         UNION ALL
-        -- v36: the ptax row must not report an SGS success as PTAX freshness
+        -- v37: the ptax row must not report an SGS success as PTAX freshness
         -- (nor the reverse — macro_series reads '*bacen_sgs*').
         SELECT '*bacen_ptax*'::text, MAX(l.finished_at),
                (array_agg(l.git_sha ORDER BY l.finished_at DESC, l.id DESC))[1]
@@ -3146,7 +3146,7 @@ AS $$
                    (SELECT MAX(d.delivered_at) FROM public.fnet_document d) AS newest_ts
         ) x
         UNION ALL
-        -- v36 (26_api_events_macro.sql). IPE filings, keyed on the DELIVERY
+        -- v37 (26_api_events_macro.sql). IPE filings, keyed on the DELIVERY
         -- day. complete_through is NULL for the reason it is NULL on the
         -- financials row: no completeness model covers company filings, and a
         -- guessed one is the claim this function exists to prevent. The note
@@ -4349,6 +4349,289 @@ REVOKE ALL ON FUNCTION api.income_statements(TEXT, DATE, DATE, TEXT, TEXT) FROM 
 GRANT EXECUTE ON FUNCTION api.income_statements(TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
+-- Listed companies — the balance sheet, one row per filed period
+-- ---------------------------------------------------------------------------
+--
+-- Same design as api.income_statements: fields keyed on the AS-FILED label
+-- (lower(btrim()) only — never accent- or preposition-folded), never on cd_conta
+-- and never on setor. The census (FY2024, consolidated, annual; BPA + BPP) finds
+-- three charts, and the codes disagree exactly as they do on the DRE:
+--
+--   concept          | industrial [450] | bank A [10] | bank B [7]
+--   -----------------+------------------+-------------+-----------
+--   cash & equiv.    | 1.01.01          | 1.01        | 1.01
+--   PP&E             | 1.02.03          | 1.06        | 1.06
+--   equity (consol.) | 2.03             | 2.07        | 2.08
+--
+-- ONE LABEL IS NOT ALWAYS ONE CONCEPT WITHIN A FILING. The industrial chart
+-- files `Empréstimos e Financiamentos` twice — 2.01.04 under `Passivo
+-- Circulante` and 2.02.01 under `Passivo Não Circulante` — so a line is matched
+-- on its own label AND its parent's label (the parent is the row whose code is
+-- this code minus its last segment, in the same document). Still label-keyed:
+-- the parent's code is never consulted, only its filed name.
+--
+-- A concept a chart does not file reads NULL. Banks publish no current /
+-- non-current split and no `Empréstimos e Financiamentos` line, so current_*,
+-- noncurrent_* and both debt fields read NULL for them rather than borrowing a
+-- deposits or funding line that looks like debt. `chart` is informational and
+-- the field mapping never consults it.
+DROP FUNCTION IF EXISTS api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT);
+CREATE OR REPLACE FUNCTION api.balance_sheets(
+    p_id       TEXT,
+    p_from     DATE DEFAULT (CURRENT_DATE - 1825),
+    p_to       DATE DEFAULT CURRENT_DATE,
+    p_scope    TEXT DEFAULT 'con',
+    p_doc_type TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+    id                        TEXT,
+    id_type                   TEXT,
+    cnpj                      TEXT,
+    company                   TEXT,
+    ticker                    TEXT,
+    setor                     TEXT,
+    segmento                  TEXT,
+    doc_type                  TEXT,
+    scope                     TEXT,
+    ref_date                  DATE,
+    chart                     TEXT,
+    total_assets              NUMERIC,
+    current_assets            NUMERIC,
+    cash_and_equivalents      NUMERIC,
+    short_term_investments    NUMERIC,
+    receivables               NUMERIC,
+    inventories               NUMERIC,
+    noncurrent_assets         NUMERIC,
+    property_plant_equipment  NUMERIC,
+    intangible_assets         NUMERIC,
+    total_liabilities_and_equity NUMERIC,
+    current_liabilities       NUMERIC,
+    noncurrent_liabilities    NUMERIC,
+    short_term_debt           NUMERIC,
+    long_term_debt            NUMERIC,
+    equity                    NUMERIC,
+    share_capital             NUMERIC,
+    noncontrolling_interests  NUMERIC,
+    version                   INT,
+    source                    TEXT
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+    WITH page (id, id_type, cnpj, company, ticker, setor, segmento, doc_type, scope, ref_date, chart, total_assets, current_assets, cash_and_equivalents, short_term_investments, receivables, inventories, noncurrent_assets, property_plant_equipment, intangible_assets, total_liabilities_and_equity, current_liabilities, noncurrent_liabilities, short_term_debt, long_term_debt, equity, share_capital, noncontrolling_interests, version, source) AS (
+        WITH s AS (
+            SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'BPA')
+            UNION ALL
+            SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'BPP')
+        ),
+        lab AS (
+            SELECT s.*, lower(btrim(s.account_name)) AS lbl,
+                   lower(btrim(p.account_name))       AS parent_lbl
+            FROM s
+            LEFT JOIN s p
+                   ON p.cd_cvm   = s.cd_cvm
+                  AND p.doc_type = s.doc_type
+                  AND p.ref_date = s.ref_date
+                  AND p.version IS NOT DISTINCT FROM s.version
+                  AND p.account_code = regexp_replace(s.account_code, '\.[^.]+$', '')
+        )
+        SELECT
+            x.cd_cvm, 'cd_cvm'::text, x.cnpj, x.company, x.ticker,
+            x.setor, x.segmento, x.doc_type, x.scope, x.ref_date,
+            CASE
+                WHEN bool_or(x.lbl = 'ativo circulante')          THEN 'industrial'
+                WHEN bool_or(x.lbl LIKE 'ativos financeiros%')    THEN 'bank'
+            END,
+            -- max(...) FILTER, not sum: see api.income_statements.
+            MAX(x.value) FILTER (WHERE x.lbl = 'ativo total'),
+            MAX(x.value) FILTER (WHERE x.lbl = 'ativo circulante'),
+            MAX(x.value) FILTER (WHERE x.lbl = 'caixa e equivalentes de caixa'
+                                   AND x.parent_lbl IN ('ativo circulante', 'ativo total')),
+            MAX(x.value) FILTER (WHERE x.lbl = 'aplicações financeiras'
+                                   AND x.parent_lbl = 'ativo circulante'),
+            MAX(x.value) FILTER (WHERE x.lbl = 'contas a receber'
+                                   AND x.parent_lbl = 'ativo circulante'),
+            MAX(x.value) FILTER (WHERE x.lbl = 'estoques'
+                                   AND x.parent_lbl = 'ativo circulante'),
+            MAX(x.value) FILTER (WHERE x.lbl = 'ativo não circulante'),
+            MAX(x.value) FILTER (WHERE x.lbl = 'imobilizado'
+                                   AND x.parent_lbl IN ('ativo não circulante', 'ativo total')),
+            MAX(x.value) FILTER (WHERE x.lbl = 'intangível'
+                                   AND x.parent_lbl IN ('ativo não circulante', 'ativo total')),
+            MAX(x.value) FILTER (WHERE x.lbl = 'passivo total'),
+            MAX(x.value) FILTER (WHERE x.lbl = 'passivo circulante'),
+            MAX(x.value) FILTER (WHERE x.lbl = 'passivo não circulante'),
+            MAX(x.value) FILTER (WHERE x.lbl = 'empréstimos e financiamentos'
+                                   AND x.parent_lbl = 'passivo circulante'),
+            MAX(x.value) FILTER (WHERE x.lbl = 'empréstimos e financiamentos'
+                                   AND x.parent_lbl = 'passivo não circulante'),
+            MAX(x.value) FILTER (WHERE x.lbl = 'patrimônio líquido consolidado'),
+            -- Bank A files capital one level lower, under the controlling
+            -- shareholders' equity line (2.07.01.xx).
+            MAX(x.value) FILTER (WHERE x.lbl = 'capital social realizado'
+                                   AND x.parent_lbl IN ('patrimônio líquido consolidado',
+                                                        'patrimônio líquido atribuído ao controlador')),
+            -- Industrial and bank B file `Participação dos Acionistas Não
+            -- Controladores`; bank A files the attribution line instead.
+            MAX(x.value) FILTER (WHERE x.lbl IN (
+                'participação dos acionistas não controladores',
+                'patrimônio líquido atribuído aos não controladores')
+                                   AND x.parent_lbl = 'patrimônio líquido consolidado'),
+            x.version, 'cvm'::text
+        FROM lab x
+        GROUP BY x.cd_cvm, x.cnpj, x.company, x.ticker, x.setor, x.segmento,
+                 x.doc_type, x.scope, x.ref_date, x.version
+        ORDER BY x.ref_date DESC, x.doc_type
+        LIMIT 1001
+    )
+    SELECT g.* FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'balance_sheets')
+    ORDER BY g.ref_date DESC, g.doc_type
+    LIMIT 1000;
+$$;
+
+COMMENT ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT) IS
+    'Balance sheet, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label (and, where one label is filed twice, its parent''s label), not on cd_conta and not on setor: CVM ships three balance-sheet charts and equity alone sits on 2.03, 2.07 or 2.08. A concept a chart does not file reads NULL — banks file no current/non-current split and no `Empréstimos e Financiamentos`, so those fields are NULL for them, never zero. `chart` says which layout the filing used. Values are absolute reais.';
+
+REVOKE ALL ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Listed companies — the cash flow statement, one row per filed period
+-- ---------------------------------------------------------------------------
+--
+-- CVM files the DFC under one of two methods — `DFC_MD` (direct, 16 companies
+-- in FY2024) or `DFC_MI` (indirect, ~450) — and `method` says which. Only the
+-- TOTALS are mapped: 6.01 – 6.05.02 carry the same labels across every chart
+-- (with a `das` variant on seven filers), so they key cleanly. The detail lines
+-- beneath them do not: capex alone is filed under 20+ free-text labels
+-- (`Aquisição de imobilizado`, `Adições ao imobilizado e intangível`, ...) at
+-- whatever code the company chose. Mapping those would be a guess, so there is
+-- no capex or dividends field; read them from api.financials, where the filed
+-- label is on the row. operating_cash_generated and working_capital_changes are
+-- indirect-method lines and read NULL on a direct-method filing.
+DROP FUNCTION IF EXISTS api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT);
+CREATE OR REPLACE FUNCTION api.cash_flow_statements(
+    p_id       TEXT,
+    p_from     DATE DEFAULT (CURRENT_DATE - 1825),
+    p_to       DATE DEFAULT CURRENT_DATE,
+    p_scope    TEXT DEFAULT 'con',
+    p_doc_type TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+    id                       TEXT,
+    id_type                  TEXT,
+    cnpj                     TEXT,
+    company                  TEXT,
+    ticker                   TEXT,
+    setor                    TEXT,
+    segmento                 TEXT,
+    doc_type                 TEXT,
+    scope                    TEXT,
+    ref_date                 DATE,
+    period_start             DATE,
+    period_end               DATE,
+    period_months            INT,
+    method                   TEXT,
+    operating_cash_flow      NUMERIC,
+    operating_cash_generated NUMERIC,
+    working_capital_changes  NUMERIC,
+    investing_cash_flow      NUMERIC,
+    financing_cash_flow      NUMERIC,
+    fx_effect                NUMERIC,
+    net_change_in_cash       NUMERIC,
+    cash_start               NUMERIC,
+    cash_end                 NUMERIC,
+    version                  INT,
+    source                   TEXT
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+    WITH page (id, id_type, cnpj, company, ticker, setor, segmento, doc_type, scope, ref_date, period_start, period_end, period_months, method, operating_cash_flow, operating_cash_generated, working_capital_changes, investing_cash_flow, financing_cash_flow, fx_effect, net_change_in_cash, cash_start, cash_end, version, source) AS (
+        WITH s AS (
+            SELECT *, 'direct'::text AS method
+            FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'DFC_MD')
+            UNION ALL
+            SELECT *, 'indirect'::text
+            FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'DFC_MI')
+        ),
+        lab AS (
+            -- The parent's label anchors the two indirect-method lines: one
+            -- filer (cd_cvm 25950, FY2024) repeats `Caixa Gerado nas Operações`
+            -- as its own child at 0.00, and MAX over both would return the 0
+            -- whenever the real figure is negative.
+            SELECT s.*, lower(btrim(s.account_name)) AS lbl,
+                   lower(btrim(p.account_name))       AS parent_lbl
+            FROM s
+            LEFT JOIN s p
+                   ON p.cd_cvm   = s.cd_cvm
+                  AND p.doc_type = s.doc_type
+                  AND p.ref_date = s.ref_date
+                  AND p.method   = s.method
+                  AND p.period_start IS NOT DISTINCT FROM s.period_start
+                  AND p.version IS NOT DISTINCT FROM s.version
+                  AND p.account_code = regexp_replace(s.account_code, '\.[^.]+$', '')
+        )
+        SELECT
+            x.cd_cvm, 'cd_cvm'::text, x.cnpj, x.company, x.ticker,
+            x.setor, x.segmento, x.doc_type, x.scope,
+            x.ref_date, x.period_start, x.period_end, x.period_months,
+            x.method,
+            -- Insurers (2 filers) label the operating total by their activity.
+            MAX(x.value) FILTER (WHERE x.lbl IN (
+                'caixa líquido atividades operacionais',
+                'caixa líquido das atividades operacionais',
+                'caixa líquido atividades seguradora/resseguradora')),
+            MAX(x.value) FILTER (WHERE x.lbl IN (
+                'caixa gerado nas operações',
+                'caixa gerado pelas operações')
+                AND x.parent_lbl IN (
+                'caixa líquido atividades operacionais',
+                'caixa líquido das atividades operacionais',
+                'caixa líquido atividades seguradora/resseguradora')),
+            MAX(x.value) FILTER (WHERE x.lbl = 'variações nos ativos e passivos'
+                AND x.parent_lbl IN (
+                'caixa líquido atividades operacionais',
+                'caixa líquido das atividades operacionais',
+                'caixa líquido atividades seguradora/resseguradora')),
+            MAX(x.value) FILTER (WHERE x.lbl IN (
+                'caixa líquido atividades de investimento',
+                'caixa líquido das atividades de investimento')),
+            MAX(x.value) FILTER (WHERE x.lbl IN (
+                'caixa líquido atividades de financiamento',
+                'caixa líquido das atividades de financiamento')),
+            MAX(x.value) FILTER (WHERE x.lbl IN (
+                'variação cambial s/ caixa e equivalentes',
+                'efeitos de variação cambial s/ caixa e equivalentes')),
+            MAX(x.value) FILTER (WHERE x.lbl = 'aumento (redução) de caixa e equivalentes'),
+            MAX(x.value) FILTER (WHERE x.lbl = 'saldo inicial de caixa e equivalentes'),
+            MAX(x.value) FILTER (WHERE x.lbl = 'saldo final de caixa e equivalentes'),
+            x.version, 'cvm'::text
+        FROM lab x
+        GROUP BY x.cd_cvm, x.cnpj, x.company, x.ticker, x.setor, x.segmento,
+                 x.doc_type, x.scope, x.ref_date, x.period_start, x.period_end,
+                 x.period_months, x.method, x.version
+        ORDER BY x.ref_date DESC, x.doc_type, x.period_months NULLS FIRST
+        LIMIT 1001
+    )
+    SELECT g.* FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'cash_flow_statements')
+    ORDER BY g.ref_date DESC, g.doc_type, g.period_months NULLS FIRST
+    LIMIT 1000;
+$$;
+
+COMMENT ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT) IS
+    'Cash flow statement, one row per filed period, with named TOTALS keyed on the as-filed label. `method` is direct (DFC_MD) or indirect (DFC_MI). Only the section totals and the cash reconciliation are mapped: detail lines such as capex and dividends are free-text per company and are NOT fields — read them from api.financials. operating_cash_generated and working_capital_changes are indirect-method lines and read NULL on a direct-method filing, never zero. Values are absolute reais.';
+
+REVOKE ALL ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
+
+-- ---------------------------------------------------------------------------
 -- Catalog — the metric map, public (INSTRUMENTS.md: discovery is contract)
 -- ---------------------------------------------------------------------------
 -- The same JSON serve/catalog.py's catalog_payload() serves at /v1/catalog,
@@ -4373,7 +4656,7 @@ STABLE
 AS $fn$
 SELECT $json${
   "kind": "catalog",
-  "version": 36,
+  "version": 37,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, the B3 securities-lending and investor-flow group, and Brazilian inflation — BACEN's IPCA series and IBGE's item tree with weights). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -4670,6 +4953,7 @@ SELECT $json${
     "CVM'S CHART OF ACCOUNTS IS SECTOR-SPECIFIC, SO `setor` IS A PARTITION KEY, NOT A LABEL. financials and company_financials carry setor and segmento on every row for exactly one reason: the same account code is a different quantity in a different chart. Measured live, 3.01 is `Receita de Venda de Bens e/ou Serviços` for PETR4 and `Receitas de Intermediação Financeira` for Banco do Brasil (cd_cvm 1023), and 3.05 is EBIT for the first and pre-tax profit for the second. So company_financials.revenue and gross_profit are NOT like-for-like across sectors: PARTITION every median, rank, percentile and peer comparison BY setor, and read the as-filed Portuguese account_name rather than assuming a code carries one concept. There is deliberately no canonical English line-item mapping, because keying one on account_code would mislabel at least one sector.",
     "company_financials.net_income IS CONTA 3.11 ONLY, WITH NO FALLBACK. A filing that does not report 3.11 reads NULL. Do not substitute 3.09: it is `Lucro ou Prejuízo antes das Participações e Contribuições Estatutárias`, i.e. profit BEFORE the statutory profit-sharing on 3.10, and it equals net income only where 3.10 is zero. This is measured, not assumed — 282 of 50,439 DRE statements (0.56%) have no 3.11. If you want the pre-participations figure, call api.financials and read 3.09, 3.10 and 3.11 yourself, then do the arithmetic where you can see it. Every value in both functions is in absolute reais: the filed ESCALA_MOEDA is applied at ingest, so never scale by thousands again. api.income_statements DOES resolve those 282, because it keys on the filed LABEL rather than the code and bank B's 3.09 carries the net-income label — prefer it when you want net income to be as complete as the filings allow.",
     "api.income_statements IS KEYED ON THE FILED LABEL, NOT THE ACCOUNT CODE. It returns the income statement as one row per filed period with named fields, and it resolves each field by matching the as-filed Portuguese account_name (case-folded, nothing else folded) rather than by cd_conta. This is measured: CVM ships FOUR DRE charts of accounts and net income sits on 3.11 for the industrial and bank-A charts, on 3.09 for the bank-B chart which files no 3.11, and on 3.13 for the insurer chart whose 3.11 is the continuing-operations line. `chart` tells you which layout a filing used. A concept a chart does not file reads NULL rather than borrowing a neighbouring line: operating_income (EBIT) is an industrial line only, and insurers get NULL operating_expenses because their filed line is the narrower `Despesas Administrativas`. Never read a NULL here as zero. net_income_controlling is the figure per-share numbers are built on, not net_income.",
+    "api.balance_sheets AND api.cash_flow_statements FOLLOW THE SAME LABEL-KEYED DESIGN. balance_sheets returns one row per filed period with named fields matched on the as-filed account_name (case-folded only); where a filing files one label twice (industrial `Empréstimos e Financiamentos` under both current and non-current liabilities) the PARENT's label disambiguates, and no code is ever consulted. Equity sits on 2.03, 2.07 or 2.08 depending on the chart; `chart` says which. Banks file no current/non-current split and no debt line, so current_assets, current_liabilities, noncurrent_*, short_term_debt and long_term_debt read NULL for them — never zero, and never a deposits line standing in for debt. cash_flow_statements maps ONLY the section totals and the cash reconciliation (operating / investing / financing, fx_effect, net_change_in_cash, cash_start, cash_end), which are uniform across charts; `method` is direct or indirect. There is no capex or dividends field on purpose: those lines are free text per filer (capex alone has 20+ spellings), so read those lines with api.financials, where the filed label is on the row. operating_cash_generated and working_capital_changes are indirect-method lines and read NULL on a direct-method filing.",
     "A TICKER RESOLVES TO A COMPANY ONLY THROUGH CVM'S PUBLISHED FCA MAP, active listings only — the CNPJ and the trading code arrive on the same filed row. financials('PETR4'), financials('33000167000101') and financials('9512') are the same company. A delisted code resolves to nothing rather than to a guess, and no company↔ticker edge is ever inferred from a name.",
     "PANEL GRAIN IS (id, asset_class, date, metric), NOT (id, date, metric). A CNPJ can file under two fund families in one month (385 do, fi + fidc), and the panel returns one row per family for it — pivoting on (id, date, metric) then either raises on the duplicate or silently averages two vehicles. Pass p_entity_type (fi|fidc|fii|fip|fiagro) to keep one family, or keep asset_class in your pivot key.",
     "Never invent a price, NAV, or identifier match.",
@@ -4682,7 +4966,7 @@ SELECT $json${
     "Default windows are honest: with no explicit `to`, fund metrics end at each family's latest COMPLETE period (coverage() reports it as complete_through) — a partially-filed trailing month is not served. An explicit `to` serves the window verbatim, partial months included.",
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
-    "Row caps — getting this wrong means silently analysing a TRUNCATED series, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY set-returning function now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short result can no longer look complete. The error says WHY (the response is one 1000-row page and SILO never returns a silently truncated result) and HOW to fix it for that function, in the message and again as PostgREST's `details` / `hint`. That is all thirty-one — panel, quote_history, fund_nav, option_history, termo_history, financials, company_financials, income_statements, anbima_classes, inflation, inflation_items, fidc_cedentes, fidc_sacados, fidc_portfolio, fidc_tranches, fidc_aging, fund_documents, fund_restatements, company_events, macro_series, ptax and the ten screen_* functions (`limits.page.all`). THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send p_after='' for the first page, then the key from the last row — for the panel 'date|id|metric|asset_class', for quote_history and fund_nav just that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when paging, because its cursor is a bare period and one CNPJ can file under two families in the same month. The rest do not page: narrow p_from/p_to instead (inflation and inflation_items default to the last 36 months for that reason), for fidc_cedentes / fidc_sacados / fidc_portfolio narrow the months (a p_cedente lookup spans many funds), pin one p_kind on fidc_portfolio, or ask for the newest N rows with an explicit p_limit (1..1000 — until v34 these three trimmed SILENTLY at 500 anonymous / 5,000 signed in; they no longer do), or for a screen raise its thresholds or pin its output filter (p_dormancy / p_min_nav, p_driver, p_family, p_modalidade). The old sentinels (5001 on the series functions, 100001 on the panel) are GONE and were never observable anyway — PostgREST cut the response at 1000 first (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. The RPC functions no longer need it — they raise instead. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
+    "Row caps — getting this wrong means silently analysing a TRUNCATED series, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY set-returning function now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short result can no longer look complete. The error says WHY (the response is one 1000-row page and SILO never returns a silently truncated result) and HOW to fix it for that function, in the message and again as PostgREST's `details` / `hint`. That is all thirty-three — panel, quote_history, fund_nav, option_history, termo_history, financials, company_financials, income_statements, balance_sheets, cash_flow_statements, anbima_classes, inflation, inflation_items, fidc_cedentes, fidc_sacados, fidc_portfolio, fidc_tranches, fidc_aging, fund_documents, fund_restatements, company_events, macro_series, ptax and the ten screen_* functions (`limits.page.all`). THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send p_after='' for the first page, then the key from the last row — for the panel 'date|id|metric|asset_class', for quote_history and fund_nav just that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when paging, because its cursor is a bare period and one CNPJ can file under two families in the same month. The rest do not page: narrow p_from/p_to instead (inflation and inflation_items default to the last 36 months for that reason), for fidc_cedentes / fidc_sacados / fidc_portfolio narrow the months (a p_cedente lookup spans many funds), pin one p_kind on fidc_portfolio, or ask for the newest N rows with an explicit p_limit (1..1000 — until v34 these three trimmed SILENTLY at 500 anonymous / 5,000 signed in; they no longer do), or for a screen raise its thresholds or pin its output filter (p_dormancy / p_min_nav, p_driver, p_family, p_modalidade). The old sentinels (5001 on the series functions, 100001 on the panel) are GONE and were never observable anyway — PostgREST cut the response at 1000 first (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. The RPC functions no longer need it — they raise instead. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
     "An unrecognised metric name is IGNORED, not rejected: the panel comes back smaller and perfectly plausible. Take metric names from this catalog's `metrics` map, never from memory.",
     "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
     "CALLER TIERS. Anonymous access is free but deliberately small: panel accepts at most 3 ids per call, search_funds returns at most 25 rows, and option_chain pages at most 200. Signing in (GitHub) raises those to 50 ids, 200 rows and 2000 respectively, and the query timeout from 3s to 8s, and unlocks panel universe mode (p_ids empty + p_entity_type: a whole family, paged with p_after). Exceeding the id ceiling raises SQLSTATE 22023 naming the limit — the panel is never silently truncated to fit.",
@@ -4715,6 +4999,8 @@ SELECT $json${
         "financials",
         "company_financials",
         "income_statements",
+        "balance_sheets",
+        "cash_flow_statements",
         "anbima_classes",
         "inflation",
         "inflation_items",
@@ -4752,6 +5038,8 @@ SELECT $json${
           "financials",
           "company_financials",
           "income_statements",
+          "balance_sheets",
+          "cash_flow_statements",
           "anbima_classes",
           "inflation",
           "inflation_items",
@@ -5228,6 +5516,8 @@ SELECT $json${
     "financials": "POST /rest/v1/rpc/financials",
     "company_financials": "POST /rest/v1/rpc/company_financials",
     "income_statements": "POST /rest/v1/rpc/income_statements",
+    "balance_sheets": "POST /rest/v1/rpc/balance_sheets",
+    "cash_flow_statements": "POST /rest/v1/rpc/cash_flow_statements",
     "anbima_classes": "POST /rest/v1/rpc/anbima_classes",
     "inflation": "POST /rest/v1/rpc/inflation",
     "inflation_items": "POST /rest/v1/rpc/inflation_items",
@@ -5315,6 +5605,8 @@ GRANT EXECUTE ON FUNCTION api.fund_holdings(TEXT, TEXT, DATE, DATE, TEXT, INT) T
 GRANT EXECUTE ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.income_statements(TEXT, DATE, DATE, TEXT, TEXT) TO silo_api;
+GRANT EXECUTE ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT) TO silo_api;
+GRANT EXECUTE ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.anbima_classes(TEXT, TEXT, TEXT, DATE, DATE) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.fund_debentures(TEXT, TEXT, DATE, DATE, INT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.fidc_cedentes(TEXT, TEXT, DATE, DATE, INT)   TO silo_api;
