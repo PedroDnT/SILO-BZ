@@ -1,134 +1,144 @@
 ---
 name: run-silo-bz
-description: Build, run, and drive SILO-BZ locally. Use when asked to start or smoke the serve/ read API, run the pipeline verification, launch or screenshot the Evidence dashboard, or run the test suite.
+description: Build, run, and drive SILO-BZ locally. Use when asked to start, run or smoke the serve/ read API, exercise an api.* SQL function, launch, click through or screenshot the Evidence dashboard, or run the test suite.
 ---
 
-SILO-BZ is a headless ingestion pipeline plus a read-only Flask API
-(`serve/`) and an Evidence.dev dashboard (`dashboard/`). There is no
-runnable "app" without a database, so the driver is
-`.claude/skills/run-silo-bz/smoke.sh`: it boots an **ephemeral local
-Postgres** (Unix socket, no TCP), applies the full schema + analytical
-layer, launches `serve/` against it, and asserts the HTTP contract with
-curl. The dashboard is driven with `npm run dev` +
-`.claude/skills/run-silo-bz/screenshot.mjs` (pre-installed Chromium).
+SILO-BZ is an ingest pipeline plus two read surfaces: the `serve/` Flask API
+over schema `api`, and the Evidence dashboard in `dashboard/`. Nothing runs
+without a database, so every driver here uses an **ephemeral local Postgres**
+that `smoke.sh` creates. It **never touches production Supabase**.
 
-All paths are relative to the repo root. Never point any of this at
-production Supabase — the ephemeral instance is the point.
+| Driver | Does |
+|---|---|
+| `.claude/skills/run-silo-bz/smoke.sh` | boots Postgres, applies schema + migrations + analytical layer, launches `serve/`, asserts the HTTP contract with curl |
+| `.claude/skills/run-silo-bz/dashboard.sh` | `up` / `shot` / `down` for the Evidence dev server against that DB |
+| `.claude/skills/run-silo-bz/screenshot.mjs` | Playwright page load, optional `--click`, prints `TITLE:` / `H1:`, saves a PNG |
 
-## Prerequisites
+All paths are relative to the repo root. Verified 2026-09-25 on macOS
+(Apple Silicon, Homebrew `postgresql@16`, Node 26, Python 3.12 `.venv`). The
+scripts also carry the Linux-container branches (`su postgres`,
+`/opt/node22`, `/opt/pw-browsers/chromium`) from the 2026-09-23 run there;
+those were not re-run this time.
 
-Already present in the standard container: Python 3.12 venv at `.venv/`
-(else `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`),
-PostgreSQL 16 server binaries at `/usr/lib/postgresql/16/bin` with a
-`postgres` system user, Node 22 at `/opt/node22/bin`, global
-`playwright@1.56` under `/opt/node22/lib/node_modules`, and Chromium at
-`/opt/pw-browsers/chromium`. Nothing needed `apt-get` in this container.
+## Prerequisites (macOS)
 
-## Run (agent path): API smoke
+`initdb`/`pg_ctl`/`psql` on `PATH` (Homebrew `postgresql@16`), `.venv/` with
+`requirements.txt` installed. Playwright is **not** a repo dependency;
+install it once into its own folder:
+
+```bash
+mkdir -p ~/.cache/silo-pw && cd ~/.cache/silo-pw && printf '{"private":true}\n' > package.json
+npm install --no-audit --no-fund playwright
+npx playwright install chromium
+```
+
+The `package.json` line is not optional; see Gotchas.
+
+## Run (agent path): API
 
 ```bash
 bash .claude/skills/run-silo-bz/smoke.sh
 ```
 
-First run takes ~2 min (initdb + schema + 25 migrations + analytical
-layer); re-runs skip all of that and finish in seconds. Ends with
-`SMOKE PASS` after asserting: `/v1/catalog` 200 (with the agent
-preamble), `/v1/tools` 200, `/v1/coverage` 200, `/v1/quotes/NOPE9` 404
-(unknown ticker is an honest 404, never a fabricated close).
+Ends in `SMOKE PASS` after asserting `/v1/catalog` 200 (with the agent
+preamble), `/v1/tools` 200, `/v1/coverage` 200 and `/v1/quotes/NOPE9` 404.
+It takes seconds: the data dir in `/var/tmp/silopg_run` persists, and the
+schema is re-applied only when `api.catalog()`'s version differs from
+`CATALOG_VERSION` in this checkout. Keep the API up for manual curls with
+`KEEP_SERVER=1`. Overrides: `SILO_PG_DIR`, `SILO_PG_PORT` (55433),
+`SILO_API_PORT` (8080).
 
-To keep the API up for manual curls:
+## Run (agent path): SQL functions directly
 
-```bash
-KEEP_SERVER=1 bash .claude/skills/run-silo-bz/smoke.sh
-curl -s http://127.0.0.1:8080/v1/lookup?q=petro   # 404 on an empty DB — correct
-```
-
-Defaults: Postgres data+socket in `/var/tmp/silopg_run` port 55433, API
-on 8080. Override with `SILO_PG_DIR` / `SILO_PG_PORT` / `SILO_API_PORT`.
-The Postgres stays running between invocations (server log:
-`$SILO_PG_DIR/serve.log`). Connection string for direct psql:
+Most PRs change `src/store/analytical/19_api_contract.sql`, not HTTP. After
+`smoke.sh`, call the function as PostgREST would:
 
 ```bash
-psql "postgresql://postgres@/silo_run?host=/var/tmp/silopg_run&port=55433"
+psql "postgresql://$(id -un)@/silo_run?host=/var/tmp/silopg_run&port=55433" -c "select count(*) as rows from api.balance_sheets('PETR4')" -c "select api.catalog()->>'version' as catalog"
 ```
 
-## Run (agent path): Evidence dashboard
+On an empty DB that returns 0 rows and the repo's catalog version. To check
+the logic, insert a few rows into `cia_company` / `cia_account` (natural
+keys only) and call the function. To iterate on one file, re-apply it with
+`psql "$URL" -v ON_ERROR_STOP=1 -f src/store/analytical/19_api_contract.sql`.
 
-Uses the same ephemeral Postgres (run smoke.sh once first). `sslmode=disable`
-is mandatory — Evidence's postgres connector defaults to SSL and the
-socket server has none.
+## Run (agent path): dashboard
 
 ```bash
-cd dashboard   # node_modules already present; else: npm install --no-audit --no-fund
-EVIDENCE_SOURCE__supabase__connectionString="postgresql://postgres@/silo_run?host=/var/tmp/silopg_run&port=55433&sslmode=disable" npm run sources
-npm run dev -- --port 3000 --host 127.0.0.1 &   # ready in ~10 s (curl / until 200)
-node ../.claude/skills/run-silo-bz/screenshot.mjs http://127.0.0.1:3000/ /tmp/dash_home.png
-node ../.claude/skills/run-silo-bz/screenshot.mjs http://127.0.0.1:3000/markets /tmp/dash_markets.png
+bash .claude/skills/run-silo-bz/dashboard.sh up
+bash .claude/skills/run-silo-bz/dashboard.sh shot / /tmp/dash_click.png --click "FIDC Credit Monitor"
+bash .claude/skills/run-silo-bz/dashboard.sh shot /markets /tmp/dash_markets.png
+bash .claude/skills/run-silo-bz/dashboard.sh down
 ```
 
-`screenshot.mjs` prints the page `<title>` and first `<h1>` (assert on
-those) and saves a PNG. **On an empty DB the pages render structure but
-chart queries error** ("null function or function signature mismatch") —
-sources with a zero-row spine guard write ≥1 row, but genuinely empty
-sources write 0-row parquets whose columns degrade to null-typed. That is
-expected locally; real rendering needs real data. `npm run build` will
-_fail outright_ on 0-byte parquets — only run a production build against
-a populated database.
+`up` runs `npm ci` if needed, `npm run sources` against the local DB (129
+sources, ~3 s), prunes empty sources, and starts `npm run dev` on
+127.0.0.1:3000. `shot` prints `CLICKED: … -> /fidc/`, `TITLE:` and `H1:` to
+assert on, and exits 1 if the dev server crashed. **Open the PNG.** On an
+empty DB, pages render their headings and query panels. Sources that
+returned 0 rows show `Catalog Error: Table with name … does not exist`,
+which is expected locally.
 
 ## Run (human path)
 
-`python -m serve.app` with `POSTGRES_URL` (or `SILO_API_DATABASE_URL`)
-exported → Flask dev server on 127.0.0.1:8080, Ctrl-C to stop.
-`cd dashboard && npm run dev` → localhost:3000. Useless headless without
-the ephemeral DB above or Supabase credentials.
+`python -m serve.app` with `SILO_API_DATABASE_URL` exported, or
+`cd dashboard && npm run dev`. Both need a database, so use the drivers above.
 
 ## Test
 
 ```bash
-.venv/bin/pytest tests/ -v    # all offline (DB + HTTP mocked); 629 pass, ~2 min
+.venv/bin/pytest tests/ -q
 ```
 
-Offline pipeline verification (DuckDB at `.local_db/`, separate from the
-Postgres above) is `scripts/seed_local_db.py --skip-fi` followed by
-`scripts/run_analysis_local.py`. **Warning, measured in this container:**
-the seed downloads real CVM fixtures and through the egress proxy it was
-still downloading after 20+ minutes (silent — it prints nothing until a
-dataset finishes; progress is visible as `.local_db/*.duckdb.wal`
-growing). Budget accordingly or prefer the pytest suite; the README's
-"~2min" assumes fast egress.
+~1,866 tests, ~20 s, all offline. **On macOS, 2 fail and that is expected:**
+`test_vercel_build_gate.py::test_fnet_input_validation[2025-01-01-…]` runs
+the `backfill.yml` date check, which uses GNU `date -d`. BSD `date` rejects
+it. They pass on Linux CI.
 
 ## Gotchas
 
-- **Postgres refuses to run as root** — every `initdb`/`pg_ctl` goes
-  through `su postgres -c '…'`, and the data dir parent must be
-  `chown postgres` first. smoke.sh does both.
-- **The analytical layer RAISEs on an empty DB by design** — apply it
-  with `PGOPTIONS="-c silo.ci_smoke_bypass=on"` (smoke.sh does). That
-  GUC only downgrades the empty-DB smoke checks to WARNINGs; never set
-  it against production.
-- **ESM ignores `NODE_PATH`** — `import 'playwright'` fails even though
-  it is globally installed. `screenshot.mjs` imports
-  `/opt/node22/lib/node_modules/playwright/index.mjs` by absolute path.
-- **Flask exits 1 instantly if the port is taken** ("Port 8080 is in
-  use…"). A previous `serve.app` may still be running; kill it with
-  `pkill -f "serve[.]app"` — the brackets matter, a plain
-  `pkill -f serve.app` matches _your own shell's command line_ and kills
-  it (observed: exit code 144, no output).
-- **Evidence + local socket Postgres needs `sslmode=disable`** in the
-  connection string or sources fail with "The server does not support
-  SSL connections".
-- **Order matters for the dashboard**: `npm run sources` before
-  `npm run dev`; dev serves whatever parquet snapshot sources last wrote.
+- **`npm run dev` dies on a 0-byte parquet.** A 0-row source can leave an
+  empty `aum_by_entity.parquet` that `manifest.json` still lists. The first
+  page load makes DuckDB fail with `too small to be a Parquet file`, esbuild
+  deadlocks, and the server exits. Deleting the file is not enough: the dev
+  server recreates it from the manifest. `dashboard.sh up` removes both the
+  file and the manifest entry. The older note that only `npm run build`
+  fails is out of date.
+- **A dead dev server can look alive.** A previous server still holding
+  :3000 answers curl with 200 while the new one has already died, and the
+  browser then gets `ERR_CONNECTION_REFUSED`. `dashboard.sh` kills old
+  servers first.
+- **`npm install` in a folder with no `package.json` walks up.** On this
+  Mac it installed Playwright into `~/package.json` / `~/node_modules`,
+  editing an unrelated project. Always create the `package.json` first.
+- **Playwright version and browser build must match.** Playwright 1.63
+  wants `chromium-1243`; an older cached `chromium-1234` isn't picked up,
+  so run `npx playwright install chromium`.
+- **The data dir outlives branches.** Before the version check,
+  `smoke.sh` served the api functions from whatever branch first
+  bootstrapped `/var/tmp/silopg_run`: a v35 checkout passed smoke against
+  v32 SQL.
+- **Unix socket paths are capped at 103 bytes on macOS.** A long
+  `SILO_PG_DIR` (for example under the Claude scratchpad) fails with `could
+  not create any Unix-domain sockets`. Keep it short, like the default.
+- **Evidence needs `sslmode=disable`** for the local socket server;
+  `dashboard.sh` sets it.
+- **The analytical layer RAISEs on an empty DB by design**; `smoke.sh`
+  applies it with `PGOPTIONS="-c silo.ci_smoke_bypass=on"`. Never set that
+  against production.
+- **`pkill -f serve.app` kills your own shell** (it matches its own command
+  line). Use `pkill -f "serve[.]app"`.
 
 ## Troubleshooting
 
-- **`connection to server on socket … failed: Connection refused`** —
-  the ephemeral Postgres died (container restarts don't preserve
-  processes, only `/var/tmp`). Re-run smoke.sh; it restarts the existing
-  data dir without re-applying schema.
-- **`null function or function signature mismatch` on dashboard pages** —
-  empty-DB artifact (see Gotchas), not a bug in the page. Populate the
-  DB or point sources at real data to see charts.
-- **`server never became ready` from smoke.sh** — read
-  `$SILO_PG_DIR/serve.log`; the usual cause is a stale process on the
-  API port (see the pkill gotcha).
+- **`su: Authentication failed` from smoke.sh on macOS**: you have the
+  pre-macOS `smoke.sh`. This version runs `pg_ctl` as the current user on
+  Darwin.
+- **`page.goto: net::ERR_CONNECTION_REFUSED`**: the dev server crashed.
+  Check `/var/tmp/silopg_run/evidence-dev.log` for `too small to be a
+  Parquet file`, then `dashboard.sh down && dashboard.sh up`.
+- **`playwright not found in: …`**: run the Prerequisites install, or point
+  `SILO_PLAYWRIGHT` at a `node_modules` dir that contains `playwright/`.
+- **`bootstrap incomplete: db catalog '…', repo vN`**: a migration or
+  analytical file failed partway through. Re-run `smoke.sh` to see the
+  error; it re-applies idempotently.

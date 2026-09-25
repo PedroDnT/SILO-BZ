@@ -84,10 +84,22 @@ pg_run "$PGBIN/psql" -d postgres -h "$PGDIR" -p "$PGPORT" -Atc "SELECT 1 FROM pg
 # the directory was deleted by hand. api.catalog() is created by the last
 # analytical file, so its absence means "not fully applied" and the whole
 # idempotent bootstrap runs again.
-bootstrapped=$("$PGBIN/psql" "$URL" -Atc \
-  "SELECT to_regprocedure('api.catalog()') IS NOT NULL" 2>/dev/null | tr -d '[:space:]')
-if [ "$bootstrapped" != "t" ]; then
-  say "applying schema.sql + migrations (idempotent; re-runs after a partial apply)"
+#
+# It must also match THIS checkout. The data dir outlives branches, so a DB
+# bootstrapped on one branch kept serving that branch's api.* functions after
+# a checkout that changed 19_api_contract.sql (observed: a v35 worktree
+# smoked green against v32 functions). api.catalog()->>'version' is
+# CATALOG_VERSION baked into the SQL, so a mismatch re-applies everything.
+want_version=$(sed -n 's/^CATALOG_VERSION = \([0-9]*\).*/\1/p' "$REPO/serve/catalog.py")
+# Two queries, not one CASE: on a fresh DB "api.catalog()" fails to parse
+# (schema api does not exist) even inside a CASE branch that never runs.
+have_version=
+if [ "$("$PGBIN/psql" "$URL" -Atc "SELECT to_regprocedure('api.catalog()') IS NOT NULL" \
+      | tr -d '[:space:]')" = t ]; then
+  have_version=$("$PGBIN/psql" "$URL" -Atc "SELECT api.catalog()->>'version'" | tr -d '[:space:]')
+fi
+if [ "$have_version" != "$want_version" ]; then
+  say "applying schema.sql + migrations (db catalog '${have_version:-none}', repo v$want_version)"
   "$PGBIN/psql" "$URL" -v ON_ERROR_STOP=1 -q -f "$REPO/src/store/schema.sql"
   for f in "$REPO"/src/store/migrations/*.sql; do
     "$PGBIN/psql" "$URL" -v ON_ERROR_STOP=1 -q -f "$f" || { echo "FAIL $f"; exit 1; }
@@ -97,8 +109,9 @@ if [ "$bootstrapped" != "t" ]; then
       bash scripts/apply_analytical.sh ) >/dev/null
   # Prove it: if the sentinel is still missing the bootstrap did not finish,
   # and failing here is far better than a green smoke over a half-built DB.
-  "$PGBIN/psql" "$URL" -Atc "SELECT to_regprocedure('api.catalog()') IS NOT NULL" \
-    | grep -q t || { echo "bootstrap incomplete: api.catalog() missing" >&2; exit 1; }
+  have_version=$("$PGBIN/psql" "$URL" -Atc "SELECT api.catalog()->>'version'" 2>/dev/null | tr -d '[:space:]')
+  [ "$have_version" = "$want_version" ] || {
+    echo "bootstrap incomplete: db catalog '${have_version:-none}', repo v$want_version" >&2; exit 1; }
 fi
 
 # --- 3. Launch serve/ and wait for readiness --------------------------------
