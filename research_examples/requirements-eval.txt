@@ -1,0 +1,2 @@
+-e ../sdk
+openai-agents==0.22.3
