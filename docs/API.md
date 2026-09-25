@@ -262,7 +262,7 @@ one. The Evidence build is unaffected: it connects as the `postgres` login
 ### The filing-behaviour screens
 
 `api.screen_restatements`, `api.screen_late_filers` and `api.screen_silent_filers`
-(catalog v35, `25_api_filing_screens.sql`) follow the same contract as the seven
+(catalog v36, `25_api_filing_screens.sql`) follow the same contract as the seven
 above — signals, `screen` + `params` on every row, raise-only above one page, no
 `/v1` twin, no `silo_api` grant — but are native functions, not wrappers: no
 dashboard page runs them, so the API function is the one definition. The two

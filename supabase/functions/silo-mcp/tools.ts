@@ -81,6 +81,8 @@ export const TOOL_SPECS: ToolSpec[] = [
   t("financials", "Financial statement lines"),
   t("company_financials", "Company headline financials"),
   t("income_statements", "Income statements"),
+  t("balance_sheets", "Balance sheets"),
+  t("cash_flow_statements", "Cash flow statements"),
   // Industry and macro.
   t("anbima_classes", "ANBIMA class aggregates"),
   t("inflation", "Inflation (BACEN SGS)"),

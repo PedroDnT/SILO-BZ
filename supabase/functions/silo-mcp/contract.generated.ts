@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "35";
+export const CONTRACT_VERSION = "36";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -1353,6 +1353,126 @@ export const CONTRACT: Record<string, ContractEntry> = {
           "default": null
         }
       },
+      "additionalProperties": false
+    }
+  },
+  "balance_sheets": {
+    "kind": "rpc",
+    "path": "/rpc/balance_sheets",
+    "description": "Balance sheet, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label (and, where one label is filed twice, its parent's label), not on cd_conta and not on setor: CVM ships three balance-sheet charts and equity alone sits on 2.03, 2.07 or 2.08. A concept a chart does not file reads NULL — banks file no current/non-current split and no `Empréstimos e Financiamentos`, so those fields are NULL for them, never zero. `chart` says which layout the filing used. Values are absolute reais.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `(CURRENT_DATE - 1825)`."
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `CURRENT_DATE`."
+        },
+        "p_scope": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `'con'::text`.",
+          "default": "con",
+          "examples": [
+            "con",
+            "ind"
+          ]
+        },
+        "p_doc_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null,
+          "examples": [
+            "itr",
+            "dfp"
+          ]
+        }
+      },
+      "required": [
+        "p_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "cash_flow_statements": {
+    "kind": "rpc",
+    "path": "/rpc/cash_flow_statements",
+    "description": "Cash flow statement, one row per filed period, with named TOTALS keyed on the as-filed label. `method` is direct (DFC_MD) or indirect (DFC_MI). Only the section totals and the cash reconciliation are mapped: detail lines such as capex and dividends are free-text per company and are NOT fields — read them from api.financials. operating_cash_generated and working_capital_changes are indirect-method lines and read NULL on a direct-method filing, never zero. Values are absolute reais.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `(CURRENT_DATE - 1825)`."
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `CURRENT_DATE`."
+        },
+        "p_scope": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `'con'::text`.",
+          "default": "con",
+          "examples": [
+            "con",
+            "ind"
+          ]
+        },
+        "p_doc_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null,
+          "examples": [
+            "itr",
+            "dfp"
+          ]
+        }
+      },
+      "required": [
+        "p_id"
+      ],
       "additionalProperties": false
     }
   },

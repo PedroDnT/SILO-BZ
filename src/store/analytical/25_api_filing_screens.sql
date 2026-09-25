@@ -1,6 +1,6 @@
 -- =============================================================================
 -- 25_api_filing_screens.sql
--- Three FILING-BEHAVIOUR screens, served through schema `api` (catalog v35):
+-- Three FILING-BEHAVIOUR screens, served through schema `api` (catalog v36):
 --
 --   api.screen_restatements   funds with an unusual count / rate of FNET
 --                             re-filings (versao > 1, RE voluntary vs RC

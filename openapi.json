@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SILO Data API",
-    "version": "35",
+    "version": "36",
     "summary": "Read-only Brazilian public financial data: CVM filings, BACEN series, B3 quotes and the B3 BDI group.",
-    "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Twenty-five set-returning functions raise SQLSTATE\n  `22023` when the window they were handed would produce more than 1000 rows.\n  Nothing is trimmed, and the error says why and how to fix it (the message,\n  plus PostgREST's `details` and `hint`). Three of them (`panel`,\n  `quote_history`, `fund_nav`) take a `p_after` cursor so you can walk the\n  series; the other twenty-two ask you to narrow the window. `fund_nav` paging\n  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which\n  is unique only within one family, and CNPJs that file under both `fi` and\n  `fidc` in the same month would otherwise be ambiguous.\n* **The tier ceiling clamps.** Five other functions (`search_funds`,\n  `option_chain`, `option_exercises`, `fund_holdings`, `fund_debentures`)\n  silently lower `p_limit` to a per-tier maximum. No error is raised, so the\n  only way to know the result was cut is to know the ceiling. Signing in\n  raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
+    "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Thirty set-returning functions raise SQLSTATE\n  `22023` when the window they were handed would produce more than 1000 rows.\n  Nothing is trimmed, and the error says why and how to fix it (the message,\n  plus PostgREST's `details` and `hint`). Three of them (`panel`,\n  `quote_history`, `fund_nav`) take a `p_after` cursor so you can walk the\n  series; the other twenty-seven ask you to narrow the window. `fund_nav` paging\n  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which\n  is unique only within one family, and CNPJs that file under both `fi` and\n  `fidc` in the same month would otherwise be ambiguous.\n* **The tier ceiling clamps.** Five other functions (`search_funds`,\n  `option_chain`, `option_exercises`, `fund_holdings`, `fund_debentures`)\n  silently lower `p_limit` to a per-tier maximum. No error is raised, so the\n  only way to know the result was cut is to know the ceiling. Signing in\n  raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
     "license": {
       "name": "See repository",
       "url": "https://github.com/PedroDnT/SILO-BZ"
@@ -3903,6 +3903,579 @@
                           "string",
                           "null"
                         ]
+                      },
+                      "source": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. Contract violations raise SQLSTATE `22023` with a message naming the limit or the argument at fault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rpc/balance_sheets": {
+      "post": {
+        "operationId": "rpc_balance_sheets",
+        "summary": "balance_sheets",
+        "description": "Balance sheet, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label (and, where one label is filed twice, its parent's label), not on cd_conta and not on setor: CVM ships three balance-sheet charts and equity alone sits on 2.03, 2.07 or 2.08. A concept a chart does not file reads NULL — banks file no current/non-current split and no `Empréstimos e Financiamentos`, so those fields are NULL for them, never zero. `chart` says which layout the filing used. Values are absolute reais.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "tags": [
+          "Other"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "p_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "p_from": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `(CURRENT_DATE - 1825)`."
+                  },
+                  "p_to": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `CURRENT_DATE`."
+                  },
+                  "p_scope": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Defaults to `'con'::text`.",
+                    "default": "con",
+                    "examples": [
+                      "con",
+                      "ind"
+                    ]
+                  },
+                  "p_doc_type": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null,
+                    "examples": [
+                      "itr",
+                      "dfp"
+                    ]
+                  }
+                },
+                "required": [
+                  "p_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result set, oldest first. An unknown id is an empty array, not a 404 and never a guessed value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "id_type": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cnpj": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "company": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "ticker": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "setor": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "segmento": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "doc_type": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "scope": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "ref_date": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "chart": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "total_assets": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "current_assets": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "cash_and_equivalents": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "short_term_investments": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "receivables": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "inventories": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "noncurrent_assets": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "property_plant_equipment": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "intangible_assets": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "total_liabilities_and_equity": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "current_liabilities": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "noncurrent_liabilities": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "short_term_debt": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "long_term_debt": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "equity": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "share_capital": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "noncontrolling_interests": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "version": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "source": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. Contract violations raise SQLSTATE `22023` with a message naming the limit or the argument at fault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rpc/cash_flow_statements": {
+      "post": {
+        "operationId": "rpc_cash_flow_statements",
+        "summary": "cash_flow_statements",
+        "description": "Cash flow statement, one row per filed period, with named TOTALS keyed on the as-filed label. `method` is direct (DFC_MD) or indirect (DFC_MI). Only the section totals and the cash reconciliation are mapped: detail lines such as capex and dividends are free-text per company and are NOT fields — read them from api.financials. operating_cash_generated and working_capital_changes are indirect-method lines and read NULL on a direct-method filing, never zero. Values are absolute reais.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "tags": [
+          "Other"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "p_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "p_from": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `(CURRENT_DATE - 1825)`."
+                  },
+                  "p_to": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `CURRENT_DATE`."
+                  },
+                  "p_scope": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Defaults to `'con'::text`.",
+                    "default": "con",
+                    "examples": [
+                      "con",
+                      "ind"
+                    ]
+                  },
+                  "p_doc_type": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null,
+                    "examples": [
+                      "itr",
+                      "dfp"
+                    ]
+                  }
+                },
+                "required": [
+                  "p_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result set, oldest first. An unknown id is an empty array, not a 404 and never a guessed value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "id_type": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "cnpj": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "company": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "ticker": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "setor": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "segmento": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "doc_type": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "scope": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "ref_date": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "period_start": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "period_end": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "period_months": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "method": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "operating_cash_flow": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "operating_cash_generated": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "working_capital_changes": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "investing_cash_flow": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "financing_cash_flow": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "fx_effect": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "net_change_in_cash": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "cash_start": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "cash_end": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "version": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
                       },
                       "source": {
                         "type": [

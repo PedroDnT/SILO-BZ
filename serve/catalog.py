@@ -24,7 +24,7 @@ __all__ = [
     "tool_specs",
 ]
 
-# v35: three FILING-BEHAVIOUR screens (25_api_filing_screens.sql), signals
+# v36: three FILING-BEHAVIOUR screens (25_api_filing_screens.sql), signals
 # not verdicts like the seven in 23, but native functions rather than wrappers
 # because no dashboard page runs them. api.screen_restatements — funds whose
 # FNET re-filings (versao > 1; RE voluntary vs RC CVM-required) in a trailing
@@ -40,7 +40,19 @@ __all__ = [
 # tables (dim_fund) is N complete months behind latest_complete_period, with
 # the newest FNET delivery as context. Late and silent are two screens, not
 # one: different sources (FNET vs CVM's deep history), grains and failure
-# modes. Capped count twenty-five -> twenty-eight.
+# modes. Capped count twenty-seven -> thirty.
+# v35: api.balance_sheets and api.cash_flow_statements — the other two
+# statements as PERIODS, on the income_statements design (FINANCIALS_API.md §8
+# step 2). Fields keyed on the as-filed label, measured first (FY2024, con,
+# annual): equity sits on 2.03 / 2.07 / 2.08 across the industrial [450], bank A
+# [10] and bank B [7] charts. Where one label is filed twice in a filing —
+# `Empréstimos e Financiamentos` under both current and non-current liabilities —
+# the parent's LABEL disambiguates; no code is consulted. Banks file no
+# current/non-current split and no debt line, so those fields are NULL for them.
+# Cash flows map only the section totals and the cash reconciliation (6.01 –
+# 6.05.02, uniform across charts); capex and dividends are free text per filer
+# (20+ spellings of capex alone) and are deliberately NOT fields. `method` says
+# direct (DFC_MD) or indirect (DFC_MI).
 # v34: two owner-approved changes (plans 2e and 1c). (a) fidc_cedentes,
 # fidc_sacados and fidc_portfolio stop TRIMMING SILENTLY at the tier ceiling
 # (500 anonymous / 5,000 signed in) and become raise-only on the one 1000-row
@@ -280,7 +292,7 @@ __all__ = [
 # stated as (id, asset_class, date, metric) and p_entity_type narrows the fund
 # arms to one family. Universe mode (p_ids empty + p_entity_type, optional
 # p_min_nav / p_min_months) walks a whole family for signed-in callers.
-CATALOG_VERSION = 35
+CATALOG_VERSION = 36
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -493,6 +505,7 @@ CONSTRAINTS = [
     "CVM'S CHART OF ACCOUNTS IS SECTOR-SPECIFIC, SO `setor` IS A PARTITION KEY, NOT A LABEL. financials and company_financials carry setor and segmento on every row for exactly one reason: the same account code is a different quantity in a different chart. Measured live, 3.01 is `Receita de Venda de Bens e/ou Serviços` for PETR4 and `Receitas de Intermediação Financeira` for Banco do Brasil (cd_cvm 1023), and 3.05 is EBIT for the first and pre-tax profit for the second. So company_financials.revenue and gross_profit are NOT like-for-like across sectors: PARTITION every median, rank, percentile and peer comparison BY setor, and read the as-filed Portuguese account_name rather than assuming a code carries one concept. There is deliberately no canonical English line-item mapping, because keying one on account_code would mislabel at least one sector.",
     "company_financials.net_income IS CONTA 3.11 ONLY, WITH NO FALLBACK. A filing that does not report 3.11 reads NULL. Do not substitute 3.09: it is `Lucro ou Prejuízo antes das Participações e Contribuições Estatutárias`, i.e. profit BEFORE the statutory profit-sharing on 3.10, and it equals net income only where 3.10 is zero. This is measured, not assumed — 282 of 50,439 DRE statements (0.56%) have no 3.11. If you want the pre-participations figure, call api.financials and read 3.09, 3.10 and 3.11 yourself, then do the arithmetic where you can see it. Every value in both functions is in absolute reais: the filed ESCALA_MOEDA is applied at ingest, so never scale by thousands again. api.income_statements DOES resolve those 282, because it keys on the filed LABEL rather than the code and bank B's 3.09 carries the net-income label — prefer it when you want net income to be as complete as the filings allow.",
     "api.income_statements IS KEYED ON THE FILED LABEL, NOT THE ACCOUNT CODE. It returns the income statement as one row per filed period with named fields, and it resolves each field by matching the as-filed Portuguese account_name (case-folded, nothing else folded) rather than by cd_conta. This is measured: CVM ships FOUR DRE charts of accounts and net income sits on 3.11 for the industrial and bank-A charts, on 3.09 for the bank-B chart which files no 3.11, and on 3.13 for the insurer chart whose 3.11 is the continuing-operations line. `chart` tells you which layout a filing used. A concept a chart does not file reads NULL rather than borrowing a neighbouring line: operating_income (EBIT) is an industrial line only, and insurers get NULL operating_expenses because their filed line is the narrower `Despesas Administrativas`. Never read a NULL here as zero. net_income_controlling is the figure per-share numbers are built on, not net_income.",
+    "api.balance_sheets AND api.cash_flow_statements FOLLOW THE SAME LABEL-KEYED DESIGN. balance_sheets returns one row per filed period with named fields matched on the as-filed account_name (case-folded only); where a filing files one label twice (industrial `Empréstimos e Financiamentos` under both current and non-current liabilities) the PARENT's label disambiguates, and no code is ever consulted. Equity sits on 2.03, 2.07 or 2.08 depending on the chart; `chart` says which. Banks file no current/non-current split and no debt line, so current_assets, current_liabilities, noncurrent_*, short_term_debt and long_term_debt read NULL for them — never zero, and never a deposits line standing in for debt. cash_flow_statements maps ONLY the section totals and the cash reconciliation (operating / investing / financing, fx_effect, net_change_in_cash, cash_start, cash_end), which are uniform across charts; `method` is direct or indirect. There is no capex or dividends field on purpose: those lines are free text per filer (capex alone has 20+ spellings), so read those lines with api.financials, where the filed label is on the row. operating_cash_generated and working_capital_changes are indirect-method lines and read NULL on a direct-method filing.",
     "A TICKER RESOLVES TO A COMPANY ONLY THROUGH CVM'S PUBLISHED FCA MAP, active listings only — the CNPJ and the trading code arrive on the same filed row. financials('PETR4'), financials('33000167000101') and financials('9512') are the same company. A delisted code resolves to nothing rather than to a guess, and no company↔ticker edge is ever inferred from a name.",
     "PANEL GRAIN IS (id, asset_class, date, metric), NOT (id, date, metric). A CNPJ can file under two fund families in one month (385 do, fi + fidc), and the panel returns one row per family for it — pivoting on (id, date, metric) then either raises on the duplicate or silently averages two vehicles. Pass p_entity_type (fi|fidc|fii|fip|fiagro) to keep one family, or keep asset_class in your pivot key.",
     "Never invent a price, NAV, or identifier match.",
@@ -523,8 +536,9 @@ CONSTRAINTS = [
     "WHY (the response is one 1000-row page and SILO never returns a silently "
     "truncated result) and HOW to fix it for that function, in the message and "
     "again as PostgREST's `details` / `hint`. That is all "
-    "twenty-eight — panel, quote_history, fund_nav, option_history, termo_history, "
-    "financials, company_financials, income_statements, anbima_classes, "
+    "thirty — panel, quote_history, fund_nav, option_history, termo_history, "
+    "financials, company_financials, income_statements, balance_sheets, "
+    "cash_flow_statements, anbima_classes, "
     "inflation, inflation_items, fidc_cedentes, fidc_sacados, fidc_portfolio, "
     "fidc_tranches, fidc_aging, fund_documents, "
     "fund_restatements and the ten screen_* functions "
@@ -873,6 +887,7 @@ LIMITS = {
         "all": [
             "panel", "quote_history", "fund_nav", "option_history",
             "termo_history", "financials", "company_financials", "income_statements",
+            "balance_sheets", "cash_flow_statements",
             "anbima_classes", "inflation", "inflation_items",
             "fidc_cedentes", "fidc_sacados", "fidc_portfolio",
             "fidc_tranches", "fidc_aging",
@@ -916,7 +931,8 @@ LIMITS = {
             # refuse and ask you to narrow instead of handing you a cursor.
             "raise_only": [
                 "option_history", "termo_history", "financials",
-                "company_financials", "income_statements", "anbima_classes",
+                "company_financials", "income_statements",
+                "balance_sheets", "cash_flow_statements", "anbima_classes",
                 "inflation", "inflation_items",
                 # v34: the FIDC concentration tabs, which until v33 trimmed
                 # silently at the tier ceiling. p_limit (1..1000) is an
@@ -933,7 +949,7 @@ LIMITS = {
                 "screen_evergreen_aging", "screen_overdue_securit",
                 "screen_dormant_funds", "screen_dormant_trend",
                 "screen_delinquency_drivers",
-                # v35: the filing-behaviour screens (25_api_filing_screens.sql).
+                # v36: the filing-behaviour screens (25_api_filing_screens.sql).
                 "screen_restatements", "screen_late_filers", "screen_silent_filers",
             ],
         },
@@ -1224,7 +1240,7 @@ SCREENS: Dict[str, Dict[str, Any]] = {
             "unfiltered set exceeds one page; pin p_driver."
         ),
     },
-    # v35: the filing-behaviour screens (25_api_filing_screens.sql). No
+    # v36: the filing-behaviour screens (25_api_filing_screens.sql). No
     # dashboard page runs them, so `dashboard` is None and the api function is
     # the one definition; the defaults below are pinned to its SQL DEFAULTs.
     "restatements": {
@@ -1416,6 +1432,8 @@ def catalog_payload() -> Dict[str, Any]:
             "financials": "POST /rest/v1/rpc/financials",
             "company_financials": "POST /rest/v1/rpc/company_financials",
             "income_statements": "POST /rest/v1/rpc/income_statements",
+            "balance_sheets": "POST /rest/v1/rpc/balance_sheets",
+            "cash_flow_statements": "POST /rest/v1/rpc/cash_flow_statements",
             "anbima_classes": "POST /rest/v1/rpc/anbima_classes",
             # Inflation (v30). BACEN's SGS series long, and IBGE's item tree
             # with weights and contributions. No id, no panel arm.
@@ -1434,7 +1452,7 @@ def catalog_payload() -> Dict[str, Any]:
             "screen_dormant_funds": "POST /rest/v1/rpc/screen_dormant_funds",
             "screen_dormant_trend": "POST /rest/v1/rpc/screen_dormant_trend",
             "screen_delinquency_drivers": "POST /rest/v1/rpc/screen_delinquency_drivers",
-            # The filing-behaviour screens (v35): restatements, late and
+            # The filing-behaviour screens (v36): restatements, late and
             # silent filers. No dashboard page; same signal-not-verdict rules.
             "screen_restatements": "POST /rest/v1/rpc/screen_restatements",
             "screen_late_filers": "POST /rest/v1/rpc/screen_late_filers",
