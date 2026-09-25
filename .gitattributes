@@ -1,0 +1,10 @@
+# docs/planning/CHANGELOG.md is a table every branch prepends one row to, so any
+# two open branches conflict on it. `union` keeps both sides' lines when a merge
+# runs locally (git merge / pull), instead of leaving a hand resolution that can
+# drop a row: f7aa909 dropped #288's, and nothing tests for a missing row.
+# What union can get wrong (a duplicate row, a second header, rows out of date
+# order) is what tests/test_changelog_integrity.py already fails on.
+# A branch cut before this file existed still conflicts once, on the merge that
+# brings it in. GitHub's merge button has not honoured this attribute, so a PR
+# can still show a conflict until main is merged into it locally.
+docs/planning/CHANGELOG.md merge=union
