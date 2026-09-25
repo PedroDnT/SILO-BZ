@@ -28,6 +28,7 @@
           "api-docs/quickstart",
           "api-docs/sdk",
           "api-docs/agents",
+          "api-docs/mcp",
           "api-docs/conventions"
         ]
       },
