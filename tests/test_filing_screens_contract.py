@@ -1,4 +1,4 @@
-"""The filing-behaviour screens in schema `api` (25_api_filing_screens.sql, v36).
+"""The filing-behaviour screens in schema `api` (25_api_filing_screens.sql, v37).
 
 Offline, like the rest of the suite: the SQL text, the catalog and the SDK are
 read from the repository and pinned to each other. What this file keeps true:
@@ -347,7 +347,7 @@ def test_catalog_version_and_sdk_agree():
     from sdk.silo_client.client import KNOWN_CATALOG_VERSION
     from serve.catalog import CATALOG_VERSION
 
-    assert CATALOG_VERSION >= 36
+    assert CATALOG_VERSION >= 37
     assert KNOWN_CATALOG_VERSION == CATALOG_VERSION
 
 

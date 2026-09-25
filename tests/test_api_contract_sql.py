@@ -73,7 +73,7 @@ SCREEN_FUNCTIONS = (
     "api.screen_dormant_funds",
     "api.screen_dormant_trend",
     "api.screen_delinquency_drivers",
-    # v36: the filing-behaviour screens live in 25_api_filing_screens.sql
+    # v37: the filing-behaviour screens live in 25_api_filing_screens.sql
     # (tests/test_filing_screens_contract.py owns their bodies). Raise-only.
     "api.screen_restatements",
     "api.screen_late_filers",
@@ -1436,7 +1436,7 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
     # (fund_documents, fund_restatements), twenty-five since v34
     # (fidc_cedentes, fidc_sacados, fidc_portfolio stopped trimming),
     # twenty-seven since v35 (balance_sheets, cash_flow_statements), thirty since
-    # v36 (the three filing-behaviour screens). The
+    # v37 (the three filing-behaviour screens). The
     # prose said "eight" for two versions while listing nine — pin the word
     # to the tuples so it cannot drift again.
     assert "thirty" in c.lower().split(), "all thirty capped functions refuse"

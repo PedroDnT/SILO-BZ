@@ -175,11 +175,12 @@ profit-sharing, and the two match here only because `3.10` is zero.
 50,439 DRE statements, 282 (0.56%) have no `3.11`, and in every one of those the
 `3.09` substitution was numerically harmless — so it had never actually
 overstated net income, but it would have for the first filer reporting a
-non-zero `3.10` without a `3.11`. `api.company_financials.net_income` now reads
-`3.11` alone and returns `NULL` for those 282; a caller wanting the
-pre-participations figure reads `3.09`/`3.10`/`3.11` from `api.financials`.
+non-zero `3.10` without a `3.11`. Since catalog v36
+`api.company_financials.net_income` is keyed on the filed net-income label, as
+`api.income_statements` is, so those 282 resolve and insurers get `3.13` rather
+than their continuing-operations `3.11`.
 `tests/test_company_financials_contract.py` asserts `'3.09'` appears nowhere in
-the function, so the fallback cannot return as a convenience.
+the function and net income is not code-keyed, so no fallback can return.
 
 ### There are FOUR DRE charts, and net income sits on three different codes
 

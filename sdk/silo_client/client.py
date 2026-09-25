@@ -29,7 +29,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 36
+KNOWN_CATALOG_VERSION = 37
 
 
 class SiloCatalogDrift(UserWarning):
@@ -772,7 +772,7 @@ class SiloClient:
             "p_tipo_fundo": tipo_fundo,
         })
 
-    # -- filing-behaviour screens (v36) --------------------------------------
+    # -- filing-behaviour screens (v37) --------------------------------------
     # SIGNALS, NOT VERDICTS: every row carries `screen` and `params`; read
     # catalog()["screens"][<name>]["meaning"] for what else looks the same.
     # None leaves the server's default in place.
@@ -890,11 +890,10 @@ class SiloClient:
 
         Two things to hold onto before you rank anything:
 
-        * `net_income` is conta **3.11 only**. A filing that omits it reads
-          NULL — `3.09` is profit *before* the statutory profit-sharing on
-          `3.10` and is not substituted. 282 of 50,439 income statements
-          (0.56%) are affected. For the pre-participations figure, read
-          `3.09`/`3.10`/`3.11` from :meth:`financials` and subtract yourself.
+        * `net_income` is resolved from the **filed label**, as in
+          :meth:`income_statements`, so it is on `3.11` for most filers, on
+          `3.09` for the bank chart that files no `3.11`, and on `3.13` for
+          insurers. No code is ever substituted for another.
         * `revenue` and `gross_profit` are **not like-for-like across
           sectors** — `3.01` is sales for an industrial filer and
           intermediation income for a bank. `setor` and `segmento` are on
@@ -924,9 +923,8 @@ class SiloClient:
         is a different concept across them — net income sits on `3.11` for the
         industrial and one bank chart, on `3.09` for the other bank chart (which
         files no `3.11`), and on `3.13` for insurers (whose `3.11` is the
-        continuing-operations line). Three codes, one pair of labels. So this is
-        also **more complete than** :meth:`company_financials`, which reads
-        `3.11` alone and therefore returns null for those filings.
+        continuing-operations line). Three codes, one pair of labels.
+        :meth:`company_financials` resolves `net_income` the same way.
 
         `chart` says which layout a filing used. A concept a chart does not file
         reads **null, never zero**: `operating_income` (EBIT) is an industrial
