@@ -25,6 +25,7 @@ the damage they look like they prevent:
 from __future__ import annotations
 
 import collections
+import re
 from pathlib import Path
 
 import pytest
@@ -81,19 +82,32 @@ def test_rows_are_newest_first() -> None:
 
 
 def test_every_row_has_a_date_a_branch_and_a_change() -> None:
-    """A row must carry all three cells filled in.
-
-    Cell COUNT is not pinned: two historical rows contain an unescaped `|`
-    inside their prose, which splits them into extra cells. That is a rendering
-    bug in those rows, not a reason to reject new ones — so this checks the
-    first three cells are present and non-empty and leaves the tail alone.
-    """
+    """A row must carry all three cells filled in."""
     thin = []
     for row in _rows():
         cells = [c.strip() for c in row.strip().strip("|").split("|")]
         if len(cells) < 3 or not all(cells[:3]):
             thin.append(row[:120])
     assert not thin, f"row(s) missing a date, branch or change: {thin}"
+
+
+def test_every_row_has_exactly_three_cells() -> None:
+    """An unescaped `|` in prose splits a row into phantom columns.
+
+    Markdown splits on every `|` not written as `\\|`, including inside code
+    spans, so `date|id|metric` in a row renders as extra cells. Two historical
+    rows did exactly that until they were escaped; this keeps a third from
+    landing.
+    """
+    wide = []
+    for row in _rows():
+        cells = re.split(r"(?<!\\)\|", row.strip().strip("|"))
+        if len(cells) != 3:
+            wide.append((len(cells), row[:120]))
+    assert not wide, (
+        "changelog row(s) split into the wrong number of cells; escape any "
+        f"`|` inside the prose as `\\|`: {wide[:3]}"
+    )
 
 
 @pytest.mark.parametrize("cell", [1, 2])

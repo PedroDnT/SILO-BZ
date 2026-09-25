@@ -875,7 +875,10 @@ $$;
 -- -----------------------------------------------------------------------------
 -- distressed_securities(p_instrument_type, as_of_period)
 -- All fact_security_monthly rows in distressed status for a given period.
--- as_of_period NULL → MAX(period) in fact_security_monthly.
+-- as_of_period NULL → the newest period holding at least half the previous
+-- period's rows. NOT MAX(period): early filers open the next month days before
+-- the rest (measured 2026-09-25: 2026-08 had 24 rows against 2026-07's 3,260,
+-- so the default showed 10 distressed series instead of 173).
 -- Distressed statuses: Inadimplente, Em atraso, Cancelado.
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION distressed_securities(
@@ -902,10 +905,18 @@ RETURNS TABLE (
 )
 LANGUAGE sql STABLE SECURITY INVOKER
 AS $$
-    WITH resolved_period AS (
+    WITH per_period AS (
+        SELECT period, count(*) AS n,
+               lag(count(*)) OVER (ORDER BY period) AS prev_n
+        FROM fact_security_monthly
+        GROUP BY period
+    ),
+    resolved_period AS (
         SELECT COALESCE(
             as_of_period,
-            (SELECT MAX(period) FROM fact_security_monthly)
+            (SELECT period FROM per_period
+              WHERE prev_n IS NULL OR n >= 0.5 * prev_n
+              ORDER BY period DESC LIMIT 1)
         ) AS eff_period
     )
     SELECT

@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "35";
+export const CONTRACT_VERSION = "39";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -1356,6 +1356,126 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "additionalProperties": false
     }
   },
+  "balance_sheets": {
+    "kind": "rpc",
+    "path": "/rpc/balance_sheets",
+    "description": "Balance sheet, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label (and, where one label is filed twice, its parent's label), not on cd_conta and not on setor: CVM ships three balance-sheet charts and equity alone sits on 2.03, 2.07 or 2.08. A concept a chart does not file reads NULL — banks file no current/non-current split and no `Empréstimos e Financiamentos`, so those fields are NULL for them, never zero. `chart` says which layout the filing used. Values are absolute reais.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `(CURRENT_DATE - 1825)`."
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `CURRENT_DATE`."
+        },
+        "p_scope": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `'con'::text`.",
+          "default": "con",
+          "examples": [
+            "con",
+            "ind"
+          ]
+        },
+        "p_doc_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null,
+          "examples": [
+            "itr",
+            "dfp"
+          ]
+        }
+      },
+      "required": [
+        "p_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "cash_flow_statements": {
+    "kind": "rpc",
+    "path": "/rpc/cash_flow_statements",
+    "description": "Cash flow statement, one row per filed period, with named TOTALS keyed on the as-filed label. `method` is direct (DFC_MD) or indirect (DFC_MI). Only the section totals and the cash reconciliation are mapped: detail lines such as capex and dividends are free-text per company and are NOT fields — read them from api.financials. operating_cash_generated and working_capital_changes are indirect-method lines and read NULL on a direct-method filing, never zero. Values are absolute reais.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `(CURRENT_DATE - 1825)`."
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `CURRENT_DATE`."
+        },
+        "p_scope": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `'con'::text`.",
+          "default": "con",
+          "examples": [
+            "con",
+            "ind"
+          ]
+        },
+        "p_doc_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null,
+          "examples": [
+            "itr",
+            "dfp"
+          ]
+        }
+      },
+      "required": [
+        "p_id"
+      ],
+      "additionalProperties": false
+    }
+  },
   "catalog": {
     "kind": "rpc",
     "path": "/rpc/catalog",
@@ -1363,6 +1483,52 @@ export const CONTRACT: Record<string, ContractEntry> = {
     "inputSchema": {
       "type": "object",
       "properties": {},
+      "additionalProperties": false
+    }
+  },
+  "company_events": {
+    "kind": "rpc",
+    "path": "/rpc/company_events",
+    "description": "A listed company's IPE filings to CVM (cia_event) — fatos relevantes, comunicados ao mercado, assembly material and the rest — newest delivery first, one row per protocol (its newest version; version says which), every text field as filed: category, event_type, species, subject, plus delivery_date, reference_date, protocol and source_url, the document's link on CVM's RAD. p_id is resolved exactly as api.financials resolves it: a ticker only through CVM's published FCA map (active listings), a 14-digit CNPJ or a CVM code — never a name; an id that resolves to nothing returns no rows. Window = delivery date (the reference date for a row published without one), default the 12 months before p_to or today. p_category matches CVM's label exactly and an unknown one raises 22023 listing the categories held. History starts in 2015: CVM assigned no protocol number before then (and omits it on a minority of later filings), and a filing without one is not held, because cia_event's key is (protocolo, versao) and a key is never synthesized — coverage() company_events says so. More than 1000 rows RAISES 22023 (never trimmed): narrow the window or pin p_category.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_category": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_id"
+      ],
       "additionalProperties": false
     }
   },
@@ -1417,7 +1583,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "coverage": {
     "kind": "rpc",
     "path": "/rpc/coverage",
-    "description": "Freshness AND honesty per dataset. as_of = the newest period that has landed and has actually ELAPSED (bounded by today); complete_through = the newest COMPLETE period, which is what default windows serve; newest_period = the newest period KEY present, which can sit in the future when a family files forward-dated (FIP is keyed 31-December); landed_at = when ingest last SUCCEEDED for that source, from cvm_ingest_log (status ok with a finish time, so a later failed run never advances it); landed_git_sha = the git commit of THAT run — which code produced this data — NULL when the run recorded none (before migration 44, or run outside GitHub Actions), never borrowed from an older run. funds_<family> rows report each filing cadence separately. notes carries a caveat the dates cannot: the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); funds_fip states why its newest_period runs ahead; fund_nav points at catalog().applicability and api.metric_coverage(); the fidc_tranches and fidc_aging rows state that those informe tabs begin in 2025-01 because CVM publishes no archive of them (an upstream limit, not a gap); the fnet_documents row (the FNET register behind fund_documents and fund_restatements) is keyed on the DELIVERY day, with complete_through the day before as_of, and states that its history begins at first capture / backfill and that fund links come from a fortnightly sweep, so recent documents may have no cnpj yet; and the five B3 lending / flow rows (short_interest, short_interest_by_sector, lending_trades, lending_participants, investor_flow) state the RATCHET — B3 keeps ~21 business days and publishes no archive, so their span starts at first capture and no backfill exists — along with the float_basis, brokerage-not-owner and first-difference traps that make those series easy to read wrongly. Their landed_at is split by ingest doc_type, so a COTAHIST run never reports as the lending group's freshness.",
+    "description": "Freshness AND honesty per dataset. as_of = the newest period that has landed and has actually ELAPSED (bounded by today); complete_through = the newest COMPLETE period, which is what default windows serve; newest_period = the newest period KEY present, which can sit in the future when a family files forward-dated (FIP is keyed 31-December); landed_at = when ingest last SUCCEEDED for that source, from cvm_ingest_log (status ok with a finish time, so a later failed run never advances it); landed_git_sha = the git commit of THAT run — which code produced this data — NULL when the run recorded none (before migration 44, or run outside GitHub Actions), never borrowed from an older run. funds_<family> rows report each filing cadence separately. notes carries a caveat the dates cannot: the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); funds_fip states why its newest_period runs ahead; fund_nav points at catalog().applicability and api.metric_coverage(); the fidc_tranches and fidc_aging rows state that those informe tabs begin in 2025-01 because CVM publishes no archive of them (an upstream limit, not a gap); the fnet_documents row (the FNET register behind fund_documents and fund_restatements) is keyed on the DELIVERY day, with complete_through the day before as_of, and states that its history begins at first capture / backfill and that fund links come from a fortnightly sweep, so recent documents may have no cnpj yet; the company_events row (IPE filings, keyed on the delivery date, complete_through NULL as on financials) states that history starts in 2015 and that filings CVM published without a protocol number are not held; the macro_series and ptax rows carry their units and cadences (SELIC_META is published ahead, so its newest_period can sit in the future); and the five B3 lending / flow rows (short_interest, short_interest_by_sector, lending_trades, lending_participants, investor_flow) state the RATCHET — B3 keeps ~21 business days and publishes no archive, so their span starts at first capture and no backfill exists — along with the float_basis, brokerage-not-owner and first-difference traps that make those series easy to read wrongly. Their landed_at is split by ingest doc_type, so a COTAHIST run never reports as the lending group's freshness.",
     "inputSchema": {
       "type": "object",
       "properties": {},
@@ -2369,6 +2535,44 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "additionalProperties": false
     }
   },
+  "macro_series": {
+    "kind": "rpc",
+    "path": "/rpc/macro_series",
+    "description": "One non-inflation BACEN SGS series as published, oldest first, the unit on every row: SELIC_META (432, % a.a., the Copom target — dated per calendar day and published AHEAD to the next meeting, so an explicit p_to after today can return forward-dated rows), SELIC_DIARIA (11) and CDI (12, % per business day), IGPM (189) and INPC (188, % change in the month), POUPANCA (25, the OLD-RULE deposit return for deposits until 2012-05-03: one value per anniversary day, each the return over the month starting that day — not a calendar-month figure), USDBRL (1) and EURBRL (21619, BRL per unit, SGS's selling rates; PTAX buy and sell per currency are api.ptax), PIB (4380, monthly GDP, R$ millions, current prices). p_series takes the label or the SGS code; an IPCA code is refused with a pointer to api.inflation, and an unknown series raises 22023 listing what exists. Nothing is derived, annualised or filled; a missing day stays missing. Default window 12 months for the daily series, 120 for the monthly ones. More than 1000 rows RAISES 22023 (never trimmed): narrow p_from/p_to.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_series": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_series"
+      ],
+      "additionalProperties": false
+    }
+  },
   "metric_coverage": {
     "kind": "rpc",
     "path": "/rpc/metric_coverage",
@@ -2615,6 +2819,44 @@ export const CONTRACT: Record<string, ContractEntry> = {
       },
       "required": [
         "p_ids"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "ptax": {
+    "kind": "rpc",
+    "path": "/rpc/ptax",
+    "description": "BACEN's PTAX rate for one currency, oldest first: buy_rate (compra) and sell_rate (venda) as published, BRL per ONE unit of the currency (JPY and ARS included; unit says so), one row per business day. BACEN prints up to five bulletins a day and the ingest keeps the last one received, which for a completed day is the Fechamento PTAX (measured 2026-09-22/23: USD venda equals SGS 1 and Olinda's Fechamento to four decimals); the bulletin type is not stored. p_currency is an ISO code held in bacen_ptax; an unknown one raises 22023 listing the currencies held. Nothing is derived or filled — no mid rate, no cross rate, a holiday has no row. Default window the 12 months before p_to or today. More than 1000 rows RAISES 22023 (never trimmed): narrow p_from/p_to.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_currency": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_currency"
       ],
       "additionalProperties": false
     }
@@ -2912,6 +3154,66 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "additionalProperties": false
     }
   },
+  "screen_late_filers": {
+    "kind": "rpc",
+    "path": "/rpc/screen_late_filers",
+    "description": "SIGNAL, NOT A VERDICT. FIIs and FIDCs whose monthly informe (FNET 'Informe Mensal Estruturado', first delivery of a versao 1 document) reached B3 Fundos.NET at least p_min_days_late days after the deadline Resolução CVM 175 states for it, in at least p_min_late of the p_months reference months ending at p_end. The deadline is cited, not assumed: FIDC — Anexo Normativo II, art. 27, III; FII — Anexo Normativo III, art. 36, I; both 15 days after the end of the reference month, counted here as calendar days (the text says dias, not dias úteis). A month is measured only from the first full month after the family's adaptation deadline (2024-12 FIDC, 2025-07 FII); a window ending earlier raises 22023. SILO applies no holiday calendar, so a deadline on a weekend or holiday may legitimately roll forward — p_min_days_late (default 5) absorbs that. informes counts the months measured, informes_late those past the threshold, max_days_late the worst, median_lag_days the fund's median delivery lag after month end, deadline_rule the citation. A late delivery is a timestamp compared with a rule, not a finding: the same row comes from an extension CVM granted, an upload that FNET timestamped after a delivery made by other means, or an administrator transfer that delayed one month for a whole book; a fund with several classes is measured on its earliest filing. A month with no informe in the register is NOT counted (FNET history is partial; absence is screen_silent_filers). Fund identity is the cnpjFundo link only, never fund_name. Defaults 12 months, 5 days, 2 late months. Every row carries screen and params. More than 1000 rows RAISES 22023 (never trimmed): raise p_min_late or p_min_days_late, or pin p_family.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_months": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "description": "Defaults to `12`.",
+          "default": 12
+        },
+        "p_end": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_min_days_late": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "description": "Defaults to `5`.",
+          "default": 5
+        },
+        "p_min_late": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "description": "Defaults to `2`.",
+          "default": 2
+        },
+        "p_family": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null,
+          "enum": [
+            "fii",
+            "fidc",
+            null
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
   "screen_overdue_securit": {
     "kind": "rpc",
     "path": "/rpc/screen_overdue_securit",
@@ -2926,6 +3228,109 @@ export const CONTRACT: Record<string, ContractEntry> = {
           ],
           "description": "Defaults to `100000`.",
           "default": 100000
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "screen_restatements": {
+    "kind": "rpc",
+    "path": "/rpc/screen_restatements",
+    "description": "SIGNAL, NOT A VERDICT. Funds whose B3 Fundos.NET (FNET) re-filings — documents with versao > 1 — in the trailing p_months of delivery days (ending p_end, default today) number at least p_min_restatements AND make up at least p_min_rate_pct of the fund's documents in the window. restatements_re (voluntary, Reapresentação Espontânea) and restatements_rc (required by CVM, Reapresentação por Exigência) split them as FNET publishes modalidade; p_modalidade counts only one kind. A fund is known ONLY by its cnpjFundo link (the CNPJ SILO queried FNET with) — never by fund_name, which is FNET's label, served for reading. The same pattern comes from routine corrections of typos, an administrator or custodian migration that re-submits a whole book, the resolution-175 adaptation, a FNET template change forcing re-submission, one error cascading through consecutive informes, or a CVM supervision sweep that required re-filings across an administrator's funds; an RC says CVM asked, not what was wrong. Documents not yet linked by the fortnightly sweep and history before SILO's first crawl are not counted (coverage() fnet_documents). Defaults 12 months, 3 re-filings, 20%. Every row carries screen and params. More than 1000 rows RAISES 22023 (never trimmed): raise the thresholds or pin p_modalidade.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_months": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "description": "Defaults to `12`.",
+          "default": 12
+        },
+        "p_end": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_min_restatements": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "description": "Defaults to `3`.",
+          "default": 3
+        },
+        "p_min_rate_pct": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Defaults to `20`.",
+          "default": 20
+        },
+        "p_modalidade": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null,
+          "enum": [
+            "RE",
+            "RC",
+            null
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "screen_silent_filers": {
+    "kind": "rpc",
+    "path": "/rpc/screen_silent_filers",
+    "description": "SIGNAL, NOT A VERDICT. Funds that CVM's registry (cvm_fund_registry) still lists as active (is_active, derived from the filed status; registry_status is served as filed) whose last periodic informe in CVM's own dataset — the informe diário for FI, the monthly informe for FIDC, FII and FIAGRO (dim_fund) — is between p_min_silent_months and p_max_silent_months COMPLETE months behind the family's latest complete period (latest_complete_period, never today), so an unpublished month never reads as silence. reports_filed is the fund's filed periods; registry_nav / registry_nav_date are the NAV the registry itself carries, with its own date; fnet_last_delivered_at is the newest B3 Fundos.NET document linked to the CNPJ (FII / FIDC only; NULL = none linked) — a fund silent at CVM but still delivering to FNET is the \"still filing elsewhere\" case. The same row comes from a fund merged, incorporated or liquidated whose registry status CVM has not updated yet; a resolution-175 adaptation that moved reporting to a class CNPJ other than the fund's; CVM's dataset lagging the filing itself; or a SILO ingest gap (check coverage() landed_at before reading a family-wide silence). FIP files annually and is not screened. Defaults 3..24 months, every family. Every row carries screen and params. More than 1000 rows RAISES 22023 (never trimmed): pin p_family or narrow p_min_silent_months / p_max_silent_months.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_min_silent_months": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "description": "Defaults to `3`.",
+          "default": 3
+        },
+        "p_max_silent_months": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "description": "Defaults to `24`.",
+          "default": 24
+        },
+        "p_family": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null,
+          "enum": [
+            "fi",
+            "fidc",
+            "fii",
+            "fiagro",
+            null
+          ]
         }
       },
       "additionalProperties": false
