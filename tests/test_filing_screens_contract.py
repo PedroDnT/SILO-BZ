@@ -126,6 +126,16 @@ def test_exactly_the_three_screens_are_created():
 # ---------------------------------------------------------------------------
 
 
+def test_restatements_has_no_per_fund_lateral_over_the_window():
+    """Production, v38: a LATERAL that rescanned `docs` once per flagged fund
+    ran past anon's 3 s statement timeout at the defaults. The tipoFundo
+    labels come from one grouped join (`tipo`) instead."""
+    body = _strip(_chunk("screen_restatements"))
+    assert "LATERAL" not in body.upper()
+    assert re.search(r"\btipo\s+AS\s*\(", body)
+    assert re.search(r"LEFT\s+JOIN\s+tipo\s+tf\s+ON\s+tf\.cnpj\s*=\s*fl\.cnpj", body)
+
+
 @pytest.mark.parametrize("name", sorted(SCREENS))
 def test_definer_with_an_empty_pinned_search_path(name):
     head = _chunk(name)
@@ -142,7 +152,7 @@ def test_every_relation_is_schema_qualified(name):
     body = re.sub(r"extract\(\s*(year|month)\s+FROM", "extract(", body, flags=re.I)
     for rel in re.findall(r"\b(?:FROM|JOIN)\s+([a-z_][\w.]*)", body, re.I):
         if rel.lower() in {"lateral", "docs", "per_fund", "flagged", "page", "informes",
-                           "months", "measured", "reg", "fam", "silent"}:
+                           "months", "measured", "reg", "fam", "silent", "tipo"}:
             continue
         assert rel.startswith(("public.", "api.")), f"{name}: unqualified relation {rel}"
 
