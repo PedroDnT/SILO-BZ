@@ -8,6 +8,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      run_api_smoke:
+        description: Run the read-only smoke against the configured production API database
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
@@ -447,7 +453,7 @@ jobs:
 
   api-smoke:
     name: api.* smoke (read-only)
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.run_api_smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
