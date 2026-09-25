@@ -13,7 +13,7 @@ SILO's remote MCP server gives an agent the read API as tools. There is one tool
 | URL | `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp` |
 | Transport | Streamable HTTP, stateless |
 | Auth | None (anonymous tier) |
-| Tools | 49 — every `catalog()` endpoint plus `catalog` itself |
+| Tools | one per `catalog()` endpoint, plus `catalog` itself (the deployed function lists the endpoints of the catalog version it was deployed with; a merge does not redeploy it) |
 | Hints | every tool `readOnlyHint: true`, `openWorldHint: false` |
 
 The server does not restate the contract. Each tool's description is generated from the same `openapi.json` as the Endpoints reference, and the rules live on [Conventions & limits](/api-docs/conventions). The `catalog` tool returns the full contract as JSON.
