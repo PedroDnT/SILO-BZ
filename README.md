@@ -123,10 +123,11 @@ Everything runs in GitHub Actions against Supabase; there is no server to keep u
    month of every monthly CVM dataset plus any month in a trailing four-month window
    with no successful audit row (CVM publishes with a 1–2 month lag; a month not yet
    published is logged `skipped`, not `error`), the last seven sessions of B3 quotes,
-   the BACEN series, and the FNET register (the last three delivery days, plus a
+   and the BACEN series. Then `ANALYZE`, then the analytical layer is rebuilt, then —
+   on a successful scheduled run — the dashboard's deploy hook fires. The FNET
+   register runs last, as its own step (the last three delivery days, plus a
    rotating slice of the FII/FIDC registry so each fund's documents are re-linked
-   every fortnight). Then `ANALYZE`, then the analytical layer is rebuilt, then —
-   on a successful scheduled run — the dashboard's deploy hook fires.
+   every fortnight): a slow FNET fails the run but can no longer block the rest.
 2. **08:00 UTC — `watchdog.yml`.** Re-runs any slice whose data stopped advancing, so a
    silent outage heals itself instead of waiting for a person to notice.
 3. **`health.yml`.** Reads the audit log and the tables themselves and fails loudly when
@@ -479,6 +480,9 @@ python -m src.pipeline.run_backfill --cvm-only --entity fidc --start-year 2019
 # Repair only the months missing from one FI document's table (not the audit log)
 python -m src.pipeline.run_backfill --cvm-only --entity fi --doc-type balancete --repair-gaps
 python -m src.pipeline.run_daily
+
+# FNET register, daily window (a separate step of daily_ingest.yml)
+python -m src.pipeline.fnet_pipeline
 
 # FNET register: one delivery-date range, then the full per-fund link sweep
 python -m src.pipeline.run_backfill --fnet-only --fnet-start 2025-01-01 --fnet-end 2025-12-31

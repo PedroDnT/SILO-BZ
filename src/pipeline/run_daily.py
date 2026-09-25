@@ -24,7 +24,6 @@ from src.pipeline.bacen_pipeline import BacenIngestor
 from src.pipeline.anbima_pipeline import AnbimaIngestor
 from src.pipeline.b3_pipeline import B3Ingestor
 from src.pipeline.ibge_pipeline import IbgeIngestor
-from src.pipeline.fnet_pipeline import FnetIngestor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -87,16 +86,13 @@ async def main() -> None:
         logger.error("IBGE IPCA daily refresh failed: %s", exc, exc_info=True)
         failures.append(("ibge", exc))
 
-    # FNET: the B3 Fundos.NET document register (versions + delivery dates)
-    # for the trailing delivery days, plus a rotating slice of the fund sweep.
-    # The only public record of FIDC restatements (docs/planning/
-    # COMPETITIVE_GAPS.md §4.3). A failure here fails the run like any other.
-    try:
-        fnet_totals = await FnetIngestor().daily_update()
-        totals.update(fnet_totals)
-    except Exception as exc:
-        logger.error("FNET register refresh failed: %s", exc, exc_info=True)
-        failures.append(("fnet", exc))
+    # FNET (the B3 Fundos.NET document register) is NOT run here. It is its
+    # own step in daily_ingest.yml, after the analytical layer and the
+    # dashboard hook: FNET answers GitHub runners slowly, and on 2026-09-25
+    # (run 36101156388) one fund's ReadTimeout failed this process, which
+    # skipped ANALYZE, the analytics apply and the deploy for data that had
+    # all landed. `python -m src.pipeline.fnet_pipeline`; it still fails the run.
+
 
     # ANBIMA: fetch latest monthly boletim (every ANBIMA class + type);
     # idempotent upsert.
