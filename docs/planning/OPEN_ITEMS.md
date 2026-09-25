@@ -70,31 +70,12 @@ TABLE` cannot be replaced in place on a deployed cluster);
 Bump `CATALOG_VERSION`, regenerate `openapi.json`, bump
 `KNOWN_CATALOG_VERSION` in the SDK.
 
-## 2. `company_financials` and `income_statements` disagree on net income
+## 2. ~~`company_financials` and `income_statements` disagree on net income~~ (done)
 
-**Blocked 2026-09-25 on a decision:** option 1 (leave) vs option 2 (re-key on
-the label, catalog bump). A product call, not a code fix.
-
-Not a bug; a deliberate asymmetry, recorded so nobody "fixes" it by accident.
-
-`company_financials.net_income` reads conta `3.11` alone and returns NULL for
-the ~282 statements filed under the chart that has no `3.11`. That set is small
-by row count (0.56%) but **large by substance — it includes Itaú Unibanco and
-BTG Pactual**. `income_statements` resolves them, because it keys on the filed
-label rather than the code.
-
-Options, in preference order:
-
-1. Leave it, and point callers at `income_statements` (current state; the
-   `api-docs/known-limitations.mdx` note and the SDK docstring both do this).
-2. Re-key `company_financials.net_income` on the label too, so both surfaces
-   agree. Cheap, and arguably what a caller expects. Needs a catalog bump and a
-   changelog row explaining that NULLs became numbers.
-
-Do **not** reinstate a `COALESCE(3.11, 3.09)`: that is code-keyed and unsound —
-`3.09` is `Resultado Líquido das Operações Continuadas` on the industrial chart,
-a different quantity. `tests/test_company_financials_contract.py` asserts
-`'3.09'` appears nowhere in that function.
+**Done 2026-09-25** (`feat/company-financials-label`, catalog v36): option 2,
+Pedro's call. `net_income` now matches the same two filed labels as
+`income_statements`; bank B resolves from 3.09's net-income label and insurers
+from 3.13. No code fallback. Live after `apply_analytical.sh`.
 
 ## 3. `/growth` is fixed in the repo but not published anywhere
 
@@ -116,7 +97,11 @@ exist yet: `vercel.json` builds `dashboard/` only, so `webapp/` needs a second
 Vercel project or another static host.) Evidence builds its parquet at deploy time,
 so the source-query fix only takes effect on a rebuild.
 
-## 4. Two changelog rows render with phantom columns
+## 4. ~~Two changelog rows render with phantom columns~~ (done)
+
+**Done 2026-09-25** (`fix/changelog-pipes`): the pipes inside the two rows'
+code spans are escaped as `\|`, and `test_every_row_has_exactly_three_cells`
+now pins the cell count (fails on the unescaped file, passes on the fixed one).
 
 `docs/planning/CHANGELOG.md` has two historical rows containing an unescaped
 `|` inside their prose — one of them is literally the panel cursor format
@@ -127,7 +112,19 @@ Two-character fix (escape the pipes). Left as found rather than silently
 rewriting historical entries. `tests/test_changelog_integrity.py` deliberately
 does **not** pin cell count because of them.
 
-## 5. A `MAX()` over a filing date is not a period — check for more of these
+## 5. ~~A `MAX()` over a filing date is not a period — check for more of these~~ (done)
+
+**Done 2026-09-25** (`fix/max-period-sweep`). Swept by measurement, not by
+reading: row counts at the latest vs previous period for every table a dashboard
+source reads with a bare `max()`. One live instance: `distressed_securities()`
+defaulted to `MAX(period)` of `fact_security_monthly`, which held **24** rows at
+2026-08 against **3,260** at 2026-07, so `/securit` showed **10** distressed
+series instead of **173**. It now defaults to the newest period with at least
+half the previous period's rows; guarded by
+`tests/test_distressed_period_resolution.py`. Clean at measurement:
+`cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_fidc_tranche_flows`, `cvm_fii_imovel`
+(latest periods fully populated), FIP (31-Dec key, already guarded per class).
+Live after the next `apply_analytical.sh` run and dashboard rebuild.
 
 PR #270 fixed one instance: `/growth` selected its comparison year with
 `MAX(fy)`, which pinned the whole page to the 8 companies that had filed fiscal
@@ -138,7 +135,13 @@ That makes two independent instances of one mistake, which is enough to justify
 sweeping for others rather than waiting for the third. Candidates are anywhere a
 "latest period" is derived from the data instead of from coverage.
 
-## 6. Deploying the API is manual, and that is easy to forget
+## 6. ~~Deploying the API is manual, and that is easy to forget~~ (done)
+
+**Done 2026-09-25** (`fix/deploy-checklist`): the release-checklist route. The
+`iliquid_nightly` skill, loaded for any `19_*.sql` / catalog / dashboard change,
+now has a "Shipping: merging to `main` deploys nothing" section with both
+manual steps and how to confirm each. An on-merge trigger was not added: it
+would start a ~28 min matview rebuild on every merge.
 
 `scripts/apply_analytical.sh` is what makes a merged catalog change live. It runs
 on the 06:00 UTC `daily_ingest` schedule or a `workflow_dispatch` with
