@@ -34,7 +34,7 @@ def _body(name: str) -> str:
     return SQL[start:end]
 
 
-COMPANY_FUNCTIONS = ["company_ref", "cia_statement_rows", "financials", "company_financials"]
+COMPANY_FUNCTIONS = ["company_ref", "cia_statement_rows", "financials", "company_financials", "financial_statement_history"]
 
 
 @pytest.mark.parametrize("name", COMPANY_FUNCTIONS)
@@ -258,8 +258,39 @@ def test_coverage_reports_financials_without_scanning_the_account_table() -> Non
     # freshness); complete_through stays NULL because no completeness model
     # exists for companies and claiming one would be a lie.
     assert "SELECT 'financials'::text," in cov
-    assert "MAX(f.dt_refer) FILTER (WHERE f.dt_refer <= CURRENT_DATE)" in cov
-    assert "NULL::date" in cov
+    assert "SELECT 'fii_property_history'::text," in cov
+    assert "public.cvm_fii_imovel" in cov
+    assert "CVM publishes no stable property id" in cov
+
+
+def test_version_history_requires_statement_and_keeps_filed_period_and_scale() -> None:
+    body = _body("financial_statement_history")
+    assert "p_statement IS NULL" in body and "p_statement is required" in body
+    for col in ("period_start", "period_end", "period_months", "filed_currency", "filed_scale"):
+        assert col in body
+    assert "a.versao" in body
+    assert "MAX(a.versao)" not in body
+    assert "ROW_NUMBER()" not in body
+    assert "a.ordem_exerc = 'ÚLTIMO'" in body
+    assert "f.versao = a.versao" in body
+    assert "f.id IS NOT NULL AS filing_metadata_found" in body
+    assert "LIMIT 1001" in body and "LIMIT 1000" in body
+
+
+def test_filing_history_key_regression_is_pinned_to_migration_29() -> None:
+    migration = (ROOT / "src/store/migrations/29_cia_account_dt_ini_exerc.sql").read_text()
+    field_map = (ROOT / "tests/test_cia_field_maps.py").read_text()
+    assert "dt_ini_exerc" in migration
+    assert "migration 29" in field_map.lower()
+
+
+def test_fii_property_history_keeps_nulls_and_refuses_over_cap() -> None:
+    body = _body("fii_property_history")
+    assert "i.cnpj = p_cnpj" in body
+    assert "i.data_referencia BETWEEN" in body
+    assert "i.row_hash" in body
+    assert "api.assert_row_cap" in body
+    assert "LIMIT 1001" in body and "LIMIT 1000" in body
 
 
 def test_the_catalog_tells_an_agent_the_endpoints_exist() -> None:
@@ -268,6 +299,9 @@ def test_the_catalog_tells_an_agent_the_endpoints_exist() -> None:
     pg = catalog_payload()["postgrest"]
     assert pg["financials"] == "POST /rest/v1/rpc/financials"
     assert pg["company_financials"] == "POST /rest/v1/rpc/company_financials"
+    assert pg["financial_statement_history"] == "POST /rest/v1/rpc/financial_statement_history"
+    assert pg["fii_property_history"] == "POST /rest/v1/rpc/fii_property_history"
+    assert pg["focus_expectations"] == "POST /rest/v1/rpc/focus_expectations"
 
 
 def test_the_catalog_warns_about_the_period_span() -> None:

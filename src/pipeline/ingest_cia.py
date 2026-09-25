@@ -84,8 +84,9 @@ def ingest_cia_event(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     """Parse and upsert IPE rows into cia_event.
 
     cia_event NOT NULL columns: cd_cvm. The natural key is
-    (protocolo, versao); rows missing either are dropped because they cannot
-    be upserted idempotently.
+    (protocolo, versao); rows missing any key component are dropped because
+    they cannot be upserted idempotently. The number dropped is logged so
+    protocol-less source eras cannot hide inside a partially successful slice.
 
     Note: cia_event does NOT have a ``raw`` JSONB column in the DDL, so we
     only emit typed columns here (no residual storage).
@@ -98,16 +99,28 @@ def ingest_cia_event(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
         number of rows upserted
     """
     records: List[Dict[str, Any]] = []
+    unkeyable_rows = 0
 
     for row in raw_rows:
         typed, _residual = apply_map(row, _event.FIELD_MAP)
 
         if not typed.get("cd_cvm"):
+            unkeyable_rows += 1
             continue
         if not typed.get("protocolo") or typed.get("versao") is None:
+            unkeyable_rows += 1
             continue
 
         records.append(typed)
+
+    if unkeyable_rows:
+        logger.warning(
+            "cia_event: dropped %d of %d IPE source row(s) without a complete "
+            "natural key (cd_cvm, protocolo, versao); these filings remain "
+            "unkeyable",
+            unkeyable_rows,
+            len(raw_rows),
+        )
 
     if not records:
         return 0

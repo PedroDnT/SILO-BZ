@@ -62,7 +62,30 @@ Read `as_of` for freshness, `complete_through` for what the default windows serv
 
 A `401` is missing or wrong headers. An empty or error body is a failed fetch — **raise**, do not invent a last date.
 
-### 4. Broad finance questions
+### 4. Discover the data for the question
+
+Start with the research question, without a preselected dataset or endpoint. Read
+the machine-readable catalog before choosing tools:
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/catalog" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Content-Profile: api" \
+  -d '{}'
+```
+
+Use its endpoint and metric descriptions to find candidate data, then search
+the relevant pages through the docs MCP for grain, identifiers, date meaning,
+units, limits and caveats. Check `coverage` for the actual observation window.
+Resolve fund and company identifiers with `lookup` or `search_funds`; join only
+on published keys. Record why each source was selected. If the available data
+cannot support the question or the periods do not align, say so explicitly.
+
+The workflows below are examples of decisions an agent can make **after**
+discovery. They are not a fixed dataset list for every research question.
+
+### 5. Broad finance questions
 
 *Does Brazilian equity stress show up in FIDC credit?*
 
@@ -75,7 +98,7 @@ A `401` is missing or wrong headers. An empty or error body is a failed fetch �
 
 There is no server-side `corr` — the catalog lists those as `notebook_reducers`. No RPC hands you a truncated result: functions page or refuse.
 
-### 5. Screening a whole family
+### 6. Screening a whole family
 
 *Rank every FIDC by how much its delinquency worsened* is one paged `panel` call for a signed-in caller. Anonymous callers cannot use universe mode — enumerate from the `funds` **view** instead and batch ids within the ceiling.
 
@@ -114,7 +137,7 @@ Notebook [`04_fidc_credit`](https://github.com/PedroDnT/SILO-BZ/blob/main/notebo
 
 **Note**: a fund's **name** is never a taxonomy. For "FIDCs exposed to sector X" use `fidc_portfolio` (sector and SCR ladders), `fidc_cedentes` (named originators) or `fidc_sacados` (anonymized top-25 debtors) — see [FIDC concentration](/api-docs/fidc).
 
-### 6. Integrity
+### 7. Integrity
 
 <Warning>
   Never fabricate a price, NAV, fill, ranking, or ticker↔CNPJ match. Null stays null. Unknown id → no row. Known id, empty window → empty series, not a guessed last close.

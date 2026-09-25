@@ -24,6 +24,33 @@
 `api.catalog()` says the same thing in its `agent` field: prefer the `postgrest`
 section; the `/v1/*` routes in `endpoints` are this adapter's.
 
+## Newly served held-data RPCs
+
+These endpoints are available on the public PostgREST surface above, not as
+additional `/v1` routes. Discover them through `POST /rest/v1/rpc/catalog`.
+
+- `financial_statement_history(p_id, p_statement, p_from, p_to, p_scope,
+  p_doc_type)` returns raw CIA account lines for one required statement across
+  every stored version. Its grain is a filed account line and filed period;
+  `period_start`/`period_end` distinguish quarterly from year-to-date rows.
+  Filing metadata appears only on an exact header-key match. Values are already
+  scaled at ingest and remain in the filed currency. It refuses above 1,000 rows.
+- `fii_property_history(p_cnpj, p_from, p_to)` returns CVM property-register
+  source rows for one exact fund CNPJ and reference-date window. CVM provides no
+  stable property id, so `row_hash` identifies a source row, not a durable
+  property. Missing measures remain `NULL`; percentages retain their filed
+  meaning. It refuses above 1,000 rows.
+
+- `focus_expectations(p_endpoint, p_horizon, p_indicator, p_from, p_to)` returns
+  the Focus path across survey dates for one exact endpoint and target horizon.
+  Each survey date is a published observation; successive dates form the
+  weekly expectation revision path. It serves `baseCalculo=0` (the trailing
+  30-day respondent sample), with 12-month inflation unsmoothed. It refuses
+  above 1,000 rows. This is not a vintage archive of later corrections to an
+  old survey date. The daily pipeline refreshes the trailing 30 days; older
+  corrections are not guaranteed to be captured, and some pre-migration-16
+  history may lack horizons lost to the earlier natural key.
+
 ## Why the adapter exists
 
 The design premise, which the public API inherited: the main user is a

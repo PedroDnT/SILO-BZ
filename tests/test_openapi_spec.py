@@ -218,15 +218,18 @@ REFUSING_FUNCTIONS = {
     "option_history",
     "termo_history",
     "financials",
+    "financial_statement_history",
     "company_financials",
     "income_statements",
     "anbima_classes",
+    "fii_property_history",
+    "focus_expectations",
 }
 PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav"}
 
 
 def test_refusing_functions_say_they_refuse(spec):
-    """The eight capped functions must state the 22023, not imply trimming."""
+    """Every capped function must state 22023, not imply trimming."""
     silent = []
     for name in sorted(REFUSING_FUNCTIONS):
         desc = spec["paths"][f"/rpc/{name}"]["post"]["description"]

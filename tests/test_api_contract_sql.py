@@ -39,11 +39,14 @@ RAISE_ONLY_FUNCTIONS = (
     "api.option_history",
     "api.termo_history",
     "api.financials",
+    "api.financial_statement_history",
     "api.company_financials",
     "api.income_statements",
     "api.anbima_classes",
     "api.inflation",
     "api.inflation_items",
+    "api.fii_property_history",
+    "api.focus_expectations",
 )
 CAPPED_FUNCTIONS = PAGED_FUNCTIONS + RAISE_ONLY_FUNCTIONS
 
@@ -95,6 +98,7 @@ EXPECTED_FUNCTIONS = {
     "api.lookup",
     "api.catalog",
     "api.financials",
+    "api.financial_statement_history",
     "api.company_financials",
     "api.income_statements",
     "api.anbima_classes",
@@ -105,6 +109,8 @@ EXPECTED_FUNCTIONS = {
     "api.fidc_portfolio",
     "api.inflation",
     "api.inflation_items",
+    "api.fii_property_history",
+    "api.focus_expectations",
 }
 
 # Internal helpers: called only from inside SECURITY DEFINER functions, which
@@ -474,10 +480,16 @@ def test_every_capped_function_fetches_one_page_plus_one_and_refuses(fn):
         f"{fn} must return at most one page"
     )
     name = fn.split(".", 1)[1]
-    assert f"api.assert_row_cap((SELECT count(*) FROM page)" in page, (
+    assert re.search(
+        r"api\.assert_row_cap\s*\(\s*\(SELECT count\(\*\) FROM page\)",
+        page,
+        re.I,
+    ), (
         f"{fn} must count its own page and refuse over it"
     )
-    assert f"'{name}')" in page, f"{fn} must name itself in the 22023"
+    assert re.search(rf"'{re.escape(name)}'\s*\)", page), (
+        f"{fn} must name itself in the 22023"
+    )
 
 
 @pytest.mark.parametrize("fn", CAPPED_FUNCTIONS)
@@ -1329,11 +1341,10 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
         "skip or repeat a row at a page edge, so the requirement is part of "
         "the contract, not an implementation detail"
     )
-    # The count moves with the surface: eleven since v30 (inflation,
-    # inflation_items). The prose said "eight" for two versions while listing
-    # nine — pin the word to the tuple so it cannot drift again.
-    assert "eleven" in c.lower().split(), "all eleven capped functions refuse"
-    assert len(CAPPED_FUNCTIONS) == 11
+    # The count moves with the surface; pin the current catalog wording to the
+    # SQL contract so newly capped endpoints cannot silently drift.
+    assert "fourteen" in c.lower().split(), "all fourteen capped functions refuse"
+    assert len(CAPPED_FUNCTIONS) == 14
 
 
 def test_cap_constraint_warns_that_rpc_paging_does_not_work():

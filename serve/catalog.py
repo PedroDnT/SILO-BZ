@@ -1,9 +1,9 @@
 """Machine-readable map of the Silo read API for agents.
 
 The primitive is a panel: (id, date, metric, value). An agent should:
-  1. GET /v1/catalog (once, cache it)
-  2. GET /v1/lookup to resolve ids
-  3. GET /v1/panel with those ids and a subset of catalog metrics
+  1. POST /rest/v1/rpc/catalog (once, cache it)
+  2. POST /rest/v1/rpc/lookup to resolve ids
+  3. POST /rest/v1/rpc/panel with those ids and a subset of catalog metrics
   4. reduce in the notebook (corr, rank, OLS, …) — not over HTTP
 
 reduce_panel / pearson stay in this module for tests and notebooks.
@@ -211,7 +211,7 @@ __all__ = [
 # stated as (id, asset_class, date, metric) and p_entity_type narrows the fund
 # arms to one family. Universe mode (p_ids empty + p_entity_type, optional
 # p_min_nav / p_min_months) walks a whole family for signed-in callers.
-CATALOG_VERSION = 30
+CATALOG_VERSION = 32
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -440,22 +440,24 @@ CONSTRAINTS = [
     "explicit `to` serves the window verbatim, partial months included.",
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
+    "CIA, FII AND FOCUS HELD DATA. api.financial_statement_history returns raw CIA account lines across all stored filing versions for one required statement and company id; `financials` remains latest-version only. Filing header metadata is present only on an exact key match. Values are already scaled at ingest and remain in filed currency. api.fii_property_history filters one exact fund CNPJ and reference-date window; CVM publishes no stable property id, so row_hash identifies a source row, not a durable asset. Nullable measurements remain NULL. api.focus_expectations returns the weekly path across BCB survey dates for one exact endpoint and required forecast horizon, with an optional indicator. The stored key retains each date/horizon; `baseCalculo=0` is the trailing 30-day respondent sample and 12-month inflation is unsmoothed. It is not a vintage archive of corrected old reports, and migration 16-era missing horizons may await re-fetch. All three endpoints refuse above 1,000 rows.",
     "Row caps — getting this wrong means silently analysing a TRUNCATED "
     "series, the exact fabrication this API exists to prevent. THE PAGE IS "
     "1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY "
     "set-returning function now REFUSES rather than trims: a window that "
     "would produce more than 1000 rows raises SQLSTATE 22023 naming the "
     "function, so a short result can no longer look complete. That is all "
-    "eleven — panel, quote_history, fund_nav, option_history, termo_history, "
-    "financials, company_financials, income_statements, anbima_classes, "
-    "inflation, inflation_items (`limits.page.all`). "
+    "fourteen — panel, quote_history, fund_nav, option_history, termo_history, "
+    "financials, company_financials, financial_statement_history, "
+    "income_statements, anbima_classes, inflation, inflation_items, "
+    "fii_property_history, focus_expectations (`limits.page.all`). "
     "THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send "
     "p_after='' for the first page, then the key from the last row — for the "
     "panel 'date|id|metric|asset_class', for quote_history and fund_nav just "
     "that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until "
     "the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when "
     "paging, because its cursor is a bare period and one CNPJ can file under "
-    "two families in the same month. The other eight do not page: narrow "
+    "two families in the same month. The other eleven do not page: narrow "
     "p_from/p_to instead (inflation and inflation_items default to the last "
     "36 months for that reason). The old sentinels (5001 on the series functions, "
     "100001 on the panel) are GONE and were never observable anyway — "
@@ -729,8 +731,10 @@ LIMITS = {
         # Every set-returning function, split by what it offers ABOVE one page.
         "all": [
             "panel", "quote_history", "fund_nav", "option_history",
-            "termo_history", "financials", "company_financials", "income_statements",
-            "anbima_classes", "inflation", "inflation_items",
+            "termo_history", "financials", "company_financials",
+            "financial_statement_history", "income_statements", "anbima_classes",
+            "inflation", "inflation_items", "fii_property_history",
+            "focus_expectations",
         ],
         # The protocol every cursor below shares.
         "cursor_protocol": (
@@ -765,8 +769,9 @@ LIMITS = {
             # refuse and ask you to narrow instead of handing you a cursor.
             "raise_only": [
                 "option_history", "termo_history", "financials",
-                "company_financials", "income_statements", "anbima_classes",
-                "inflation", "inflation_items",
+                "company_financials", "financial_statement_history",
+                "income_statements", "anbima_classes", "inflation",
+                "inflation_items", "fii_property_history", "focus_expectations",
             ],
         },
         "over_cap": (
@@ -960,6 +965,7 @@ def catalog_payload() -> Dict[str, Any]:
             "option_exercises": "POST /rest/v1/rpc/option_exercises",
             "termo_history": "POST /rest/v1/rpc/termo_history",
             "financials": "POST /rest/v1/rpc/financials",
+            "financial_statement_history": "POST /rest/v1/rpc/financial_statement_history",
             "company_financials": "POST /rest/v1/rpc/company_financials",
             "income_statements": "POST /rest/v1/rpc/income_statements",
             "anbima_classes": "POST /rest/v1/rpc/anbima_classes",
@@ -967,6 +973,8 @@ def catalog_payload() -> Dict[str, Any]:
             # with weights and contributions. No id, no panel arm.
             "inflation": "POST /rest/v1/rpc/inflation",
             "inflation_items": "POST /rest/v1/rpc/inflation_items",
+            "fii_property_history": "POST /rest/v1/rpc/fii_property_history",
+            "focus_expectations": "POST /rest/v1/rpc/focus_expectations",
             "fund_debentures": "POST /rest/v1/rpc/fund_debentures",
             "fidc_cedentes": "POST /rest/v1/rpc/fidc_cedentes",
             "fidc_sacados": "POST /rest/v1/rpc/fidc_sacados",

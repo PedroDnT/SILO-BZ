@@ -5,10 +5,10 @@ Mapped 2026-08-28 by reading the code, not the docs. Companion to
 (the read contract).
 
 **Short version:** CVM's financial statements are structured CSVs, not PDFs, and
-we ingest them in bulk. Almost none of it is served. The API exposes company
-_identity_ and nothing else — no revenue, no balance sheet, no cash flow — and
-the analytical layer models companies not at all. The only consumer of the
-numbers is the `webapp/` Evidence site, which queries Postgres directly.
+we ingest them in bulk. `api.financials` serves latest-version account lines;
+`api.financial_statement_history` serves all stored versions for one required
+statement. `api.company_financials` and `api.income_statements` provide derived
+income summaries. The exploratory webapp also queries selected data directly.
 
 ---
 
@@ -242,22 +242,18 @@ ingest-log entity labels).
 
 ## 7. Landed but unserved
 
-Everything below is ingested, stored, and read by nothing:
+The following details remain unserved or are not represented as a historical
+revision series:
 
-- **`cia_filing` entirely.** Every column. The webapp's only reference is
-  `count(*)`, which reads no column. Filing versions, receipt dates and the
-  document links are all landed and never used.
-- **Five of eight statement families.** `DFC_MD` and `DFC_MI` (cash flow, both
-  methods), `DMPL` (changes in equity), `DRA` (comprehensive income) and `DVA`
-  (value added) are ingested for every company and every period and queried by
-  nothing. Only DRE, BPA and BPP are read.
+- **Exact filing metadata may be absent.** History joins `cia_filing` only on
+  `(cd_cvm, doc_type, dt_refer, versao)` and reports whether a matching header
+  exists; it does not infer missing document ids or links.
 - **Every individual-scope row** (`escopo = 'ind'`). All queries filter to
   consolidated.
 - **Every comparative period** (`ordem_exerc = 'PENÚLTIMO'`).
-- **All history.** Every consumer takes `distinct on (cd_cvm) … order by
-dt_refer desc` — the latest filing only. No time series over `cia_account`
-  exists anywhere, despite the table being partitioned by year for exactly that
-  purpose.
+- **Earlier row versions outside the requested statement/date/scope.** The
+  history RPC is deliberately bounded to one company, one statement, and a
+  date window; callers must narrow the window when more than 1,000 lines match.
 - **The ITR/DFP distinction.** No consumer separates quarterly from annual; the
   webapp mixes them by taking the max `dt_refer` regardless of `doc_type`.
 - **Most of `cia_ticker`.** `vw_company_ticker` carries seven columns; its only

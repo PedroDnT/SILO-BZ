@@ -17,7 +17,8 @@ Coverage figures are as of 2026-08-31. The full audit, with the measurements beh
 
 ### 1. What we ingest
 
-Four upstream publishers. Everything is public; nothing is licensed, scraped from behind a login, or purchased — except the one ETF market feed noted below.
+CVM, B3, BACEN, IBGE and ANBIMA supply the main public datasets. The ETF
+market feed noted below is the exception to the public-source path.
 
 #### CVM — funds (`dados.cvm.gov.br`)
 
@@ -41,7 +42,7 @@ Four upstream publishers. Everything is public; nothing is licensed, scraped fro
 | FIDC    | `cvm_fidc_scr`           | fund × month                         | tab X, monthly 2025+, HIST ≤2024     | 2023-10 (member appears) |
 | FII     | `cvm_fii_mensal`         | fund × month                         | yearly ZIP                           | 2021                   |
 | FII     | `cvm_fii_periodic`       | fund × quarter/year × doc            | yearly ZIP, 4 members                | 2019                   |
-| FII     | `cvm_fii_imovel`         | fund × quarter × **property**        | yearly ZIP                           | 2019                   |
+| FII     | `cvm_fii_imovel`         | fund × quarter × **source row**      | yearly ZIP                           | 2019                   |
 | FIAGRO  | `cvm_fiagro_mensal`      | fund × month                         | monthly ZIP                          | **2025-05**            |
 | FIP     | `cvm_fip_periodic`       | fund × **filing date** × share class | yearly CSV                           | 2010                   |
 | SECURIT | `cvm_securit_mensal`     | vehicle × month                      | yearly ZIP                           | 2019                   |
@@ -115,15 +116,18 @@ The monthly CDA archive holds eight blocks; we read four. Adding one costs a fie
 
 Ten of the ZIP's 18 members are ingested. Still unread: tab I's other ~70 columns (asset composition, admin, condomínio), `III` (2025+), `V` (maturity ladder), `VII` (custody split, repurchases), `IX` (assignment prices), `X_1` / `X_1_1` (quotaholders per tranche and by investor type), `X_5` (liquidity ladder), `X_7` (collateral coverage).
 
-#### B3 — the three genuinely new sources
+#### B3 — possible additions
 
-Separate files with separate shapes, not variations on COTAHIST. Each is a new fetcher.
+These require source and access checks before they become implementation work.
+`b3_index_portfolio` already captures B3's current constituent portfolio and
+feeds short-interest analytics; a historical effective-vintage series would be
+a distinct addition, subject to archive and layout verification.
 
-| Source                      | What it gives                       | Why it matters                                                                          |
-| --------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------- |
-| Futures settlement (DI1)    | daily settlement per contract       | the real term structure of Brazilian rates, currently proxied by BACEN SGS policy rates |
-| Reference-rate curves (PRE) | the published yield curve           | discounting, and FIDC/CRI spread analysis that has no curve to spread against           |
-| Index composition           | IBOV/IBRX/SMLL membership + weights | benchmark-relative performance |
+| Source | What it could give | Gate before adding |
+| --- | --- | --- |
+| Futures settlement (DI1) | Daily settlement per contract | Verify a maintainable public file and its historical coverage |
+| Reference-rate curves (PRE) | A published yield curve | Confirm no-cost access, terms and history |
+| Historical index composition | Point-in-time membership and weights beyond the current portfolio SILO captures | Verify the archive, effective dates and each CIND layout version |
 
 #### Known defects in what is ingested
 
