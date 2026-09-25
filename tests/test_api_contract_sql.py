@@ -71,6 +71,11 @@ SCREEN_FUNCTIONS = (
     "api.screen_dormant_funds",
     "api.screen_dormant_trend",
     "api.screen_delinquency_drivers",
+    # v35: the filing-behaviour screens live in 25_api_filing_screens.sql
+    # (tests/test_filing_screens_contract.py owns their bodies). Raise-only.
+    "api.screen_restatements",
+    "api.screen_late_filers",
+    "api.screen_silent_filers",
 )
 
 # The FNET register (v33) lives in 24_api_fnet.sql, for the same reason: FUNCS
@@ -1425,11 +1430,12 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
     # inflation_items), eighteen at v31 (the seven screen_* functions), twenty
     # since v32 (fidc_tranches, fidc_aging), twenty-two since v33
     # (fund_documents, fund_restatements), twenty-five since v34
-    # (fidc_cedentes, fidc_sacados, fidc_portfolio stopped trimming). The
+    # (fidc_cedentes, fidc_sacados, fidc_portfolio stopped trimming),
+    # twenty-eight since v35 (the three filing-behaviour screens). The
     # prose said "eight" for two versions while listing nine — pin the word
     # to the tuples so it cannot drift again.
-    assert "twenty-five" in c.lower().split(), "all twenty-five capped functions refuse"
-    assert len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) + len(FNET_FUNCTIONS) == 25
+    assert "twenty-eight" in c.lower().split(), "all twenty-eight capped functions refuse"
+    assert len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) + len(FNET_FUNCTIONS) == 28
     for fn in HEAD_FUNCTIONS:
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
     for fn in FNET_FUNCTIONS:

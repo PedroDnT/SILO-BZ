@@ -74,6 +74,9 @@ export const TOOL_SPECS: ToolSpec[] = [
   t("screen_dormant_funds", "Screen: dormant funds", SCREEN_LEAD()),
   t("screen_dormant_trend", "Screen: dormant trend", SCREEN_LEAD()),
   t("screen_delinquency_drivers", "Screen: delinquency drivers", SCREEN_LEAD()),
+  t("screen_restatements", "Screen: restatements (FNET)", SCREEN_LEAD()),
+  t("screen_late_filers", "Screen: late filers (FNET)", SCREEN_LEAD()),
+  t("screen_silent_filers", "Screen: silent filers", SCREEN_LEAD()),
   // Listed companies.
   t("financials", "Financial statement lines"),
   t("company_financials", "Company headline financials"),

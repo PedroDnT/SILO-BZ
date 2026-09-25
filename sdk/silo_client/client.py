@@ -29,7 +29,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 34
+KNOWN_CATALOG_VERSION = 35
 
 
 class SiloCatalogDrift(UserWarning):
@@ -770,6 +770,68 @@ class SiloClient:
         return self._rpc("fund_restatements", {
             "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
             "p_tipo_fundo": tipo_fundo,
+        })
+
+    # -- filing-behaviour screens (v35) --------------------------------------
+    # SIGNALS, NOT VERDICTS: every row carries `screen` and `params`; read
+    # catalog()["screens"][<name>]["meaning"] for what else looks the same.
+    # None leaves the server's default in place.
+
+    def screen_restatements(self, months: Optional[int] = None, end: Datish = None,
+                            min_restatements: Optional[int] = None,
+                            min_rate_pct: Optional[float] = None,
+                            modalidade: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Funds with an unusual count AND rate of FNET re-filings (versao > 1).
+
+            silo.screen_restatements()                                  # 12 months, >= 3, >= 20%
+            silo.screen_restatements(modalidade="RC", min_restatements=1, min_rate_pct=0)
+
+        `restatements_re` (voluntary) and `restatements_rc` (required by CVM)
+        split the count as FNET publishes modalidade. Fund identity is the
+        cnpjFundo link only, never the name. No cursor: raise the thresholds.
+        """
+        return self._rpc("screen_restatements", {
+            "p_months": months, "p_end": _iso(end),
+            "p_min_restatements": min_restatements, "p_min_rate_pct": min_rate_pct,
+            "p_modalidade": modalidade,
+        })
+
+    def screen_late_filers(self, months: Optional[int] = None, end: Datish = None,
+                           min_days_late: Optional[int] = None,
+                           min_late: Optional[int] = None,
+                           family: Optional[str] = None) -> List[Dict[str, Any]]:
+        """FIIs / FIDCs whose monthly informe reached FNET past the deadline
+        Resolução CVM 175 states for it (15 days after month end).
+
+            silo.screen_late_filers(family="fidc")
+
+        Every row carries `deadline_rule`, the article it was measured against
+        (FIDC: Anexo II art. 27, III; FII: Anexo III art. 36, I). Months before
+        each family's adaptation deadline are not measured, and a month with no
+        informe in the register is not counted. A timestamp compared with a
+        rule — not a finding. No cursor: raise the thresholds or pin family.
+        """
+        return self._rpc("screen_late_filers", {
+            "p_months": months, "p_end": _iso(end),
+            "p_min_days_late": min_days_late, "p_min_late": min_late,
+            "p_family": family,
+        })
+
+    def screen_silent_filers(self, min_silent_months: Optional[int] = None,
+                             max_silent_months: Optional[int] = None,
+                             family: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Funds the CVM registry lists as active with no periodic informe for
+        N complete months (CVM's own tables, anchored on complete_through).
+
+            silo.screen_silent_filers(family="fidc")
+
+        `fnet_last_delivered_at` shows a fund still delivering to FNET. No
+        cursor: pin family or narrow the month band.
+        """
+        return self._rpc("screen_silent_filers", {
+            "p_min_silent_months": min_silent_months,
+            "p_max_silent_months": max_silent_months,
+            "p_family": family,
         })
 
     # -- listed companies (CIA Aberta) ---------------------------------------

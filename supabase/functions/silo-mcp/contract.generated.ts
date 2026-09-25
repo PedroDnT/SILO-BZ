@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "34";
+export const CONTRACT_VERSION = "35";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -2747,6 +2747,66 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "additionalProperties": false
     }
   },
+  "screen_late_filers": {
+    "kind": "rpc",
+    "path": "/rpc/screen_late_filers",
+    "description": "SIGNAL, NOT A VERDICT. FIIs and FIDCs whose monthly informe (FNET 'Informe Mensal Estruturado', first delivery of a versao 1 document) reached B3 Fundos.NET at least p_min_days_late days after the deadline Resolução CVM 175 states for it, in at least p_min_late of the p_months reference months ending at p_end. The deadline is cited, not assumed: FIDC — Anexo Normativo II, art. 27, III; FII — Anexo Normativo III, art. 36, I; both 15 days after the end of the reference month, counted here as calendar days (the text says dias, not dias úteis). A month is measured only from the first full month after the family's adaptation deadline (2024-12 FIDC, 2025-07 FII); a window ending earlier raises 22023. SILO applies no holiday calendar, so a deadline on a weekend or holiday may legitimately roll forward — p_min_days_late (default 5) absorbs that. informes counts the months measured, informes_late those past the threshold, max_days_late the worst, median_lag_days the fund's median delivery lag after month end, deadline_rule the citation. A late delivery is a timestamp compared with a rule, not a finding: the same row comes from an extension CVM granted, an upload that FNET timestamped after a delivery made by other means, or an administrator transfer that delayed one month for a whole book; a fund with several classes is measured on its earliest filing. A month with no informe in the register is NOT counted (FNET history is partial; absence is screen_silent_filers). Fund identity is the cnpjFundo link only, never fund_name. Defaults 12 months, 5 days, 2 late months. Every row carries screen and params. More than 1000 rows RAISES 22023 (never trimmed): raise p_min_late or p_min_days_late, or pin p_family.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_months": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "description": "Defaults to `12`.",
+          "default": 12
+        },
+        "p_end": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_min_days_late": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "description": "Defaults to `5`.",
+          "default": 5
+        },
+        "p_min_late": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "description": "Defaults to `2`.",
+          "default": 2
+        },
+        "p_family": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null,
+          "enum": [
+            "fii",
+            "fidc",
+            null
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
   "screen_overdue_securit": {
     "kind": "rpc",
     "path": "/rpc/screen_overdue_securit",
@@ -2761,6 +2821,109 @@ export const CONTRACT: Record<string, ContractEntry> = {
           ],
           "description": "Defaults to `100000`.",
           "default": 100000
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "screen_restatements": {
+    "kind": "rpc",
+    "path": "/rpc/screen_restatements",
+    "description": "SIGNAL, NOT A VERDICT. Funds whose B3 Fundos.NET (FNET) re-filings — documents with versao > 1 — in the trailing p_months of delivery days (ending p_end, default today) number at least p_min_restatements AND make up at least p_min_rate_pct of the fund's documents in the window. restatements_re (voluntary, Reapresentação Espontânea) and restatements_rc (required by CVM, Reapresentação por Exigência) split them as FNET publishes modalidade; p_modalidade counts only one kind. A fund is known ONLY by its cnpjFundo link (the CNPJ SILO queried FNET with) — never by fund_name, which is FNET's label, served for reading. The same pattern comes from routine corrections of typos, an administrator or custodian migration that re-submits a whole book, the resolution-175 adaptation, a FNET template change forcing re-submission, one error cascading through consecutive informes, or a CVM supervision sweep that required re-filings across an administrator's funds; an RC says CVM asked, not what was wrong. Documents not yet linked by the fortnightly sweep and history before SILO's first crawl are not counted (coverage() fnet_documents). Defaults 12 months, 3 re-filings, 20%. Every row carries screen and params. More than 1000 rows RAISES 22023 (never trimmed): raise the thresholds or pin p_modalidade.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_months": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "description": "Defaults to `12`.",
+          "default": 12
+        },
+        "p_end": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_min_restatements": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "description": "Defaults to `3`.",
+          "default": 3
+        },
+        "p_min_rate_pct": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Defaults to `20`.",
+          "default": 20
+        },
+        "p_modalidade": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null,
+          "enum": [
+            "RE",
+            "RC",
+            null
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "screen_silent_filers": {
+    "kind": "rpc",
+    "path": "/rpc/screen_silent_filers",
+    "description": "SIGNAL, NOT A VERDICT. Funds that CVM's registry (cvm_fund_registry) still lists as active (is_active, derived from the filed status; registry_status is served as filed) whose last periodic informe in CVM's own dataset — the informe diário for FI, the monthly informe for FIDC, FII and FIAGRO (dim_fund) — is between p_min_silent_months and p_max_silent_months COMPLETE months behind the family's latest complete period (latest_complete_period, never today), so an unpublished month never reads as silence. reports_filed is the fund's filed periods; registry_nav / registry_nav_date are the NAV the registry itself carries, with its own date; fnet_last_delivered_at is the newest B3 Fundos.NET document linked to the CNPJ (FII / FIDC only; NULL = none linked) — a fund silent at CVM but still delivering to FNET is the \"still filing elsewhere\" case. The same row comes from a fund merged, incorporated or liquidated whose registry status CVM has not updated yet; a resolution-175 adaptation that moved reporting to a class CNPJ other than the fund's; CVM's dataset lagging the filing itself; or a SILO ingest gap (check coverage() landed_at before reading a family-wide silence). FIP files annually and is not screened. Defaults 3..24 months, every family. Every row carries screen and params. More than 1000 rows RAISES 22023 (never trimmed): pin p_family or narrow p_min_silent_months / p_max_silent_months.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_min_silent_months": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "description": "Defaults to `3`.",
+          "default": 3
+        },
+        "p_max_silent_months": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "description": "Defaults to `24`.",
+          "default": 24
+        },
+        "p_family": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null,
+          "enum": [
+            "fi",
+            "fidc",
+            "fii",
+            "fiagro",
+            null
+          ]
         }
       },
       "additionalProperties": false

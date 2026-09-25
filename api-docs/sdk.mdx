@@ -73,6 +73,7 @@ One per published endpoint. Dates accept `date` objects or ISO strings; `None` m
 | `fidc_cedentes(cnpj \| cedente, …)` · `fidc_sacados(cnpj, …)` · `fidc_portfolio(cnpj, kind, …)` | [FIDC](/api-docs/fidc) | `kind` = sector / scr_debtor / scr_operation / tax_debt |
 | `fidc_tranches(cnpj, start, end, series)` · `fidc_aging(cnpj, start, end)` | [FIDC tranches and aging](/api-docs/fidc-structure) | as filed, from 2025-01; `flows` keeps CVM's labels |
 | `fund_documents(cnpj, start, end, tipo)` · `fund_restatements(cnpj, start, end, tipo_fundo)` | [Fund documents and restatements](/api-docs/fnet-documents) | fund by FNET link only; versions paired by a stated key |
+| `screen_restatements(months, end, …)` · `screen_late_filers(months, end, …, family)` · `screen_silent_filers(min_silent_months, max_silent_months, family)` | [Filing-behaviour screens](/api-docs/filing-screens) | signals, not verdicts; `late_filers` cites its rule on every row |
 | `financials(id, statement, start, end, scope, doc_type)` · `company_financials(id, …)` | financials | read `period_months` before comparing rows |
 | `anbima_classes(category, metric, level, start, end)` | `anbima_classes` | industry aggregates, no fund join |
 | `inflation(series, family, start, end)` · `inflation_items(level, item, start, end)` | [inflation](/api-docs/inflation) | as published, in percent; `acc_12m` and `contribution` are the derived columns |

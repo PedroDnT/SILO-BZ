@@ -24,6 +24,23 @@ __all__ = [
     "tool_specs",
 ]
 
+# v35: three FILING-BEHAVIOUR screens (25_api_filing_screens.sql), signals
+# not verdicts like the seven in 23, but native functions rather than wrappers
+# because no dashboard page runs them. api.screen_restatements — funds whose
+# FNET re-filings (versao > 1; RE voluntary vs RC CVM-required) in a trailing
+# delivery window cross a count AND a rate threshold, fund identity by
+# cnpjFundo link only. api.screen_late_filers — FII / FIDC monthly informes
+# whose first FNET delivery came p_min_days_late or more days after the
+# deadline RESOLUÇÃO CVM 175 states (Anexo Normativo II art. 27, III for FIDC;
+# Anexo Normativo III art. 36, I for FII: 15 days after month end), measured
+# only from the first full month after each family's adaptation deadline
+# (2024-12 FIDC, 2025-07 FII); lag and days past the cited deadline are served,
+# the citation rides on every row. api.screen_silent_filers — funds the CVM
+# registry still lists as active whose last periodic informe in CVM's own
+# tables (dim_fund) is N complete months behind latest_complete_period, with
+# the newest FNET delivery as context. Late and silent are two screens, not
+# one: different sources (FNET vs CVM's deep history), grains and failure
+# modes. Capped count twenty-five -> twenty-eight.
 # v34: two owner-approved changes (plans 2e and 1c). (a) fidc_cedentes,
 # fidc_sacados and fidc_portfolio stop TRIMMING SILENTLY at the tier ceiling
 # (500 anonymous / 5,000 signed in) and become raise-only on the one 1000-row
@@ -263,7 +280,7 @@ __all__ = [
 # stated as (id, asset_class, date, metric) and p_entity_type narrows the fund
 # arms to one family. Universe mode (p_ids empty + p_entity_type, optional
 # p_min_nav / p_min_months) walks a whole family for signed-in callers.
-CATALOG_VERSION = 34
+CATALOG_VERSION = 35
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -465,7 +482,8 @@ CONSTRAINTS = [
     "A FUND'S DEBENTURE HOLDINGS ARE A DIFFERENT SHAPE FROM ITS EQUITY HOLDINGS. api.fund_debentures (CDA block 6) is one row per (fund, month, issuer, maturity, rate structure, application type), as filed and never summed — two series of one issuer maturing the same day at different coupons are different securities. The issuer is its own filed CPF/CNPJ (issuer_id); p_issuer also takes a listed company's ticker or CVM code, resolved only through CVM's published FCA map, and issuer_tickers carries the issuer's active listed codes back (NULL when not listed — most debenture issuers are not). Nothing is matched by name.",
     "ANBIMA CLASS ROWS ARE INDUSTRY AGGREGATES, NOT FUNDS. api.anbima_classes serves the Boletim de Fundos de Investimento as published — R$ milhões (unit brl_mm) and percentage points (unit pct) — per class, ANBIMA type or industry total (`level`; class aggregates by default). No fund in this warehouse is mapped to an ANBIMA class: CVM's `classe` is CVM's taxonomy, so never join a fund to a class by name, and there is no panel arm because these rows carry no id. An unknown category, metric or level raises 22023 listing what exists rather than returning an empty array.",
     "INFLATION IS SERVED AS PUBLISHED, IN PERCENT, WITH ONE DERIVED COLUMN PER FUNCTION. api.inflation is BACEN's SGS, long: value is the change in the month (unit pct_month) except IPCA_12M — BACEN's own 12-month accumulation, code 13522 (pct_12m) — and IPCA_DIFUSAO, the share of items that rose (pct_items). acc_12m is DERIVED: the trailing twelve monthly changes chained, ((Π(1+v/100))−1)×100, NULL unless all twelve months are present and consecutive — never a shorter chain, never filled; it reproduces IPCA_12M exactly for the headline, which is served beside it so you can check. IPCA15 is the mid-month preview, not a revision of IPCA. Group rows (family = group) are VARIATIONS, not contributions: the weights live only in api.inflation_items, whose contribution column is weight × change_month / 100 in percentage points of the headline — sum contributions within ONE level only (a group and its subgroups are the same money twice). BACEN's group codes are NOT in IBGE's order (1640 is Comunicação, 1641 Saúde, 1642 Despesas pessoais, 1643 Educação; measured against IBGE SIDRA, do not reorder by intuition). SIDRA's item codes changed with the 2020-01 structure; item_number is the continuity and sidra_table says which. Neither function has a panel arm — the rows carry no id — and an unknown series, family, level or item raises 22023 rather than returning an empty array.",
-    "THE SCREENS ARE SIGNALS, NOT VERDICTS. api.screen_zombie_growth, screen_captive_vehicles, screen_evergreen_aging, screen_overdue_securit, screen_dormant_funds, screen_dormant_trend and screen_delinquency_drivers return the funds or series that crossed a stated threshold in public filings — never a score, a rating, a rank of suspicion or a finding. Every row carries `screen` (which one produced it) and `params` (the exact arguments, keyed by argument name, so the call can be replayed); `screens` in this catalog says what each measures and what else produces the same pattern (an exclusive FII is legal and looks captive; a distressed-credit mandate looks like zombie growth; an extended CRA looks overdue until it is re-filed). Defaults reproduce the dashboard pages (/suspicious, /dormant, /fidc). A threshold out of its range or NULL raises 22023 — it is never clamped, because a screen evaluated at a threshold you did not ask for is a different screen. Confirm any row against the fund's own filings before repeating it.",
+    "THE SCREENS ARE SIGNALS, NOT VERDICTS. api.screen_zombie_growth, screen_captive_vehicles, screen_evergreen_aging, screen_overdue_securit, screen_dormant_funds, screen_dormant_trend, screen_delinquency_drivers, screen_restatements, screen_late_filers and screen_silent_filers return the funds or series that crossed a stated threshold in public filings — never a score, a rating, a rank of suspicion or a finding. Every row carries `screen` (which one produced it) and `params` (the exact arguments, keyed by argument name, so the call can be replayed); `screens` in this catalog says what each measures and what else produces the same pattern (an exclusive FII is legal and looks captive; a distressed-credit mandate looks like zombie growth; an extended CRA looks overdue until it is re-filed). Defaults reproduce the dashboard pages (/suspicious, /dormant, /fidc) for the seven that have one; the three filing screens have no page and their defaults are stated in `screens`. A threshold out of its range or NULL raises 22023 — it is never clamped, because a screen evaluated at a threshold you did not ask for is a different screen. Confirm any row against the fund's own filings before repeating it.",
+    "A LATE FILING IS A TIMESTAMP COMPARED WITH A CITED RULE, AND A SILENT ONE IS READ FROM CVM, NOT FNET. screen_late_filers measures the FIRST FNET delivery of a fund's monthly informe (Informe Mensal Estruturado, versao 1) against the deadline Resolução CVM 175 states — FIDC: Anexo Normativo II, art. 27, III; FII: Anexo Normativo III, art. 36, I; both 15 days after the end of the reference month, counted as calendar days because the text says dias — and every row carries that citation in deadline_rule. It measures only months after each family's adaptation deadline (from 2024-12 for FIDC, 2025-07 for FII) and refuses a window ending earlier, because the predecessor instructions' deadlines are not cited here. No holiday calendar is applied, so p_min_days_late (default 5) absorbs a deadline that rolled over a weekend or holiday; CVM extensions are invisible to it. A month with no informe in the register is NOT counted late — FNET history is partial. screen_silent_filers answers absence from CVM's own deep tables (dim_fund: the informe diário for FI, the monthly informe for FIDC / FII / FIAGRO) against latest_complete_period, for funds whose registry row is active; a merged or liquidated fund whose status CVM has not updated, reporting moved to a new class CNPJ, or a SILO ingest gap produce the same row. screen_restatements counts re-filings (versao > 1) by modalidade — RE voluntary, RC required by CVM — per cnpjFundo link. None of the three ever identifies a fund by fund_name.",
     "THE B3 LENDING AND FLOW GROUP IS A RATCHET, AND IT IS THE ONLY PART OF THIS WAREHOUSE THAT IS. short_interest, short_interest_by_sector, lending_trades, lending_participants and investor_flow read B3 tables that B3 keeps for about 21 BUSINESS DAYS and publishes no archive for. History therefore starts at SILO's first capture and cannot be extended backwards at any price — a missed session is gone, not late, and no backfill exists to ask for. coverage() reports the real span per endpoint; read it before describing any of these series as short, broken or anomalous, and never infer a level change from a window that simply begins where capture began. An over-wide request to the source returns HTTP 200 with a silently clamped window, which is why the ingest reconciles what it asked for against what it received.",
     "pct_float IS TWO DIFFERENT METRICS AND float_basis SAYS WHICH ONE YOU HAVE. api.short_interest divides the balance on loan by whichever denominator exists for that ticker. float_basis = 'index_free_float' means B3's published free float (theoretical_qty from the broadest index portfolio carrying the ticker) and exists for index constituents only, ~149 tickers; float_basis = 'shares_outstanding' means capital social from the cash instrument registry, a LARGER denominator that yields a SMALLER percentage for the same position. They are not the same measure and are never comparable: ANY ranking, screen or cross-section on pct_float must filter to ONE basis first, or it sorts index members against non-members on an axis they do not share. float_denominator carries the number actually used. pct_float and days_to_cover are NULL — never 0 — when their denominator is missing or the name did not trade; 0 would sort an unknown to exactly the wrong end.",
     "IN THE LENDING TAPE, doador AND tomador ARE BROKERAGES, NOT BENEFICIAL OWNERS. lending_participants' broker_code / broker_name and lending_trades' lender_brokers / borrower_brokers identify the B3 PARTICIPANT intermediating a trade, never who ends up long or short. B3 names ~33 participants in a whole session, and about three quarters of trades carry the SAME code on both legs (measured 2026-09-10: 32,197 of 43,165, 74.6%) — a broker crossing its own client book. So a large borrow through a broker is its clients' position, not the broker's view, and 'the biggest short' read off this tape is a statement about order flow routing. internal_legs / internal_qty (lending_participants) and internal_trades (lending_trades) are what tell the two apart: high internal share is client churn, low internal share is flow that actually crossed the market. They are published beside the totals rather than netted away, because dropping them makes the remainder look like conviction and keeping them silently makes churn look like demand.",
@@ -505,11 +523,11 @@ CONSTRAINTS = [
     "WHY (the response is one 1000-row page and SILO never returns a silently "
     "truncated result) and HOW to fix it for that function, in the message and "
     "again as PostgREST's `details` / `hint`. That is all "
-    "twenty-five — panel, quote_history, fund_nav, option_history, termo_history, "
+    "twenty-eight — panel, quote_history, fund_nav, option_history, termo_history, "
     "financials, company_financials, income_statements, anbima_classes, "
     "inflation, inflation_items, fidc_cedentes, fidc_sacados, fidc_portfolio, "
     "fidc_tranches, fidc_aging, fund_documents, "
-    "fund_restatements and the seven screen_* functions "
+    "fund_restatements and the ten screen_* functions "
     "(`limits.page.all`). "
     "THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send "
     "p_after='' for the first page, then the key from the last row — for the "
@@ -525,7 +543,7 @@ CONSTRAINTS = [
     "newest N rows with an explicit p_limit (1..1000 — until v34 these three "
     "trimmed SILENTLY at 500 anonymous / 5,000 signed in; they no longer do), "
     "or for a screen raise its thresholds or pin "
-    "its output filter (p_dormancy / p_min_nav, p_driver). The old sentinels (5001 on the series functions, "
+    "its output filter (p_dormancy / p_min_nav, p_driver, p_family, p_modalidade). The old sentinels (5001 on the series functions, "
     "100001 on the panel) are GONE and were never observable anyway — "
     "PostgREST cut the response at 1000 first (measured 2026-08-28: "
     "quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows "
@@ -654,6 +672,23 @@ EXAMPLES = [
             "links no versions; cnpj NULL means the fortnightly fund sweep has "
             "not linked it yet — never match it to a fund by fund_name. Open "
             "the versions with fund_documents' source_url."
+        ),
+    },
+    {
+        "ask": "Which FIDCs keep filing their monthly informe late?",
+        "call": (
+            "POST /rest/v1/rpc/screen_late_filers "
+            '{"p_family": "fidc"}'
+        ),
+        "then": (
+            "Each row is a SIGNAL: a fund whose first FNET delivery of the "
+            "informe mensal came at least p_min_days_late days after the "
+            "deadline in deadline_rule (Resolução CVM 175, cited on the row) in "
+            "at least p_min_late of the last 12 measured months. It says nothing "
+            "about extensions CVM may have granted, and a month missing from "
+            "the register is not counted. Open the filings with "
+            "fund_documents(cnpj) and check screen_silent_filers for funds "
+            "that stopped filing altogether."
         ),
     },
     {
@@ -846,6 +881,7 @@ LIMITS = {
             "screen_evergreen_aging", "screen_overdue_securit",
             "screen_dormant_funds", "screen_dormant_trend",
             "screen_delinquency_drivers",
+            "screen_restatements", "screen_late_filers", "screen_silent_filers",
         ],
         # The protocol every cursor below shares.
         "cursor_protocol": (
@@ -897,6 +933,8 @@ LIMITS = {
                 "screen_evergreen_aging", "screen_overdue_securit",
                 "screen_dormant_funds", "screen_dormant_trend",
                 "screen_delinquency_drivers",
+                # v35: the filing-behaviour screens (25_api_filing_screens.sql).
+                "screen_restatements", "screen_late_filers", "screen_silent_filers",
             ],
         },
         "over_cap": (
@@ -1186,6 +1224,129 @@ SCREENS: Dict[str, Dict[str, Any]] = {
             "unfiltered set exceeds one page; pin p_driver."
         ),
     },
+    # v35: the filing-behaviour screens (25_api_filing_screens.sql). No
+    # dashboard page runs them, so `dashboard` is None and the api function is
+    # the one definition; the defaults below are pinned to its SQL DEFAULTs.
+    "restatements": {
+        "function": "screen_restatements",
+        "family": "fii, fidc, etf (FNET)",
+        "source": "fnet_document + fnet_document_filter (cnpjFundo links), trailing delivery window",
+        "grain": "one row per fund CNPJ (cnpjFundo link)",
+        "params": {
+            "p_months": 12, "p_end": None, "p_min_restatements": 3,
+            "p_min_rate_pct": 20, "p_modalidade": None,
+        },
+        "bounds": {
+            "p_months": "1..36, trailing months of delivery days",
+            "p_end": "last delivery day of the window; null = today",
+            "p_min_restatements": "1..1000 re-filings (versao > 1) in the window",
+            "p_min_rate_pct": "0..100, re-filings as percent of the fund's documents in the window",
+        },
+        "filters": {
+            "p_modalidade": "RE | RC: count only voluntary or only CVM-required re-filings; null = every versao > 1",
+        },
+        "dashboard": None,
+        "meaning": (
+            "A fund whose FNET re-filings (versao > 1) in the window number at "
+            "least p_min_restatements AND are at least p_min_rate_pct of its "
+            "documents. restatements_re (voluntary) and restatements_rc "
+            "(required by CVM) split them as FNET publishes modalidade. The "
+            "same pattern comes from routine typo corrections, an "
+            "administrator or custodian migration re-submitting a whole book, "
+            "the resolution-175 adaptation, a FNET template change forcing "
+            "re-submission, one error cascading through consecutive informes, "
+            "or a CVM supervision sweep across an administrator's funds; an RC "
+            "says CVM asked, not what was wrong. Fund identity is the "
+            "cnpjFundo link only; unlinked documents and history before "
+            "SILO's first crawl are not counted."
+        ),
+    },
+    "late_filers": {
+        "function": "screen_late_filers",
+        "family": "fii, fidc (FNET)",
+        "source": (
+            "fnet_document 'Informe Mensal Estruturado', versao 1, first "
+            "delivery per (cnpjFundo link, reference month)"
+        ),
+        "grain": "one row per fund CNPJ with at least p_min_late late months",
+        "params": {
+            "p_months": 12, "p_end": None, "p_min_days_late": 5,
+            "p_min_late": 2, "p_family": None,
+        },
+        "bounds": {
+            "p_months": "1..36 reference months ending at p_end",
+            "p_end": (
+                "any day in the last reference month; null = the newest month "
+                "whose deadline has passed; a window ending before 2024-12 "
+                "raises 22023"
+            ),
+            "p_min_days_late": "1..90 days past the cited deadline",
+            "p_min_late": "1..p_months late months",
+        },
+        "filters": {"p_family": "fii | fidc; null = both (output filter)"},
+        "deadline_rule": {
+            "fidc": (
+                "Resolução CVM 175, Anexo Normativo II, art. 27, III — informe "
+                "mensal within 15 days after the end of the reference month; "
+                "measured from reference month 2024-12 (FIDC adaptation "
+                "deadline 2024-11-29)"
+            ),
+            "fii": (
+                "Resolução CVM 175, Anexo Normativo III, art. 36, I — monthly "
+                "form (Suplemento I) within 15 days after the end of the "
+                "reference month; measured from reference month 2025-07 "
+                "(adaptation deadline 2025-06-30)"
+            ),
+            "counting": (
+                "calendar days (the text says dias); no holiday calendar is "
+                "applied — p_min_days_late absorbs a weekend or holiday rollover"
+            ),
+            "text_read": "conteudo.cvm.gov.br consolidated annexes, 2026-09-25",
+        },
+        "dashboard": None,
+        "meaning": (
+            "A FII or FIDC whose monthly informe first reached FNET at least "
+            "p_min_days_late days after the cited deadline, in at least "
+            "p_min_late measured months. informes counts the months measured, "
+            "informes_late the late ones, max_days_late the worst, "
+            "median_lag_days the fund's median delivery lag after month end. "
+            "A timestamp compared with a rule, not a finding: CVM can grant "
+            "extensions, delivered_at is FNET's upload time, an administrator "
+            "transfer can delay one month for a whole book, and a fund with "
+            "several classes is measured on its earliest filing. A month with "
+            "no informe in the register is not counted (the register is "
+            "partial) — absence is silent_filers."
+        ),
+    },
+    "silent_filers": {
+        "function": "screen_silent_filers",
+        "family": "fi, fidc, fii, fiagro (CVM)",
+        "source": (
+            "dim_fund (last period filed in CVM's datasets) against "
+            "latest_complete_period(family), cvm_fund_registry.is_active"
+        ),
+        "grain": "one row per (fund CNPJ, family)",
+        "params": {"p_min_silent_months": 3, "p_max_silent_months": 24, "p_family": None},
+        "bounds": {
+            "p_min_silent_months": "1..120 complete months with no filing",
+            "p_max_silent_months": "p_min_silent_months..240",
+        },
+        "filters": {"p_family": "fi | fidc | fii | fiagro; null = all four (output filter)"},
+        "dashboard": None,
+        "meaning": (
+            "A fund CVM's registry still lists as active whose last periodic "
+            "informe in CVM's own dataset (informe diário for FI, the monthly "
+            "informe for FIDC / FII / FIAGRO) is N complete months behind the "
+            "family's latest complete period — never today, so an unpublished "
+            "month is not silence. fnet_last_delivered_at (FII / FIDC) shows a "
+            "fund still delivering to FNET. The same row comes from a fund "
+            "merged, incorporated or liquidated whose status CVM has not "
+            "updated, reporting moved to a class CNPJ other than the fund's "
+            "by the resolution-175 adaptation, CVM's dataset lagging the "
+            "filing, or a SILO ingest gap (check coverage() first). FIP files "
+            "annually and is not screened."
+        ),
+    },
 }
 
 
@@ -1273,6 +1434,11 @@ def catalog_payload() -> Dict[str, Any]:
             "screen_dormant_funds": "POST /rest/v1/rpc/screen_dormant_funds",
             "screen_dormant_trend": "POST /rest/v1/rpc/screen_dormant_trend",
             "screen_delinquency_drivers": "POST /rest/v1/rpc/screen_delinquency_drivers",
+            # The filing-behaviour screens (v35): restatements, late and
+            # silent filers. No dashboard page; same signal-not-verdict rules.
+            "screen_restatements": "POST /rest/v1/rpc/screen_restatements",
+            "screen_late_filers": "POST /rest/v1/rpc/screen_late_filers",
+            "screen_silent_filers": "POST /rest/v1/rpc/screen_silent_filers",
             # FIDC structure (v32): tranches and the aging ladder, 2025-01 on.
             "fidc_tranches": "POST /rest/v1/rpc/fidc_tranches",
             "fidc_aging": "POST /rest/v1/rpc/fidc_aging",

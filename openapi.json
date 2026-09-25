@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SILO Data API",
-    "version": "34",
+    "version": "35",
     "summary": "Read-only Brazilian public financial data: CVM filings, BACEN series, B3 quotes and the B3 BDI group.",
     "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Twenty-five set-returning functions raise SQLSTATE\n  `22023` when the window they were handed would produce more than 1000 rows.\n  Nothing is trimmed, and the error says why and how to fix it (the message,\n  plus PostgREST's `details` and `hint`). Three of them (`panel`,\n  `quote_history`, `fund_nav`) take a `p_after` cursor so you can walk the\n  series; the other twenty-two ask you to narrow the window. `fund_nav` paging\n  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which\n  is unique only within one family, and CNPJs that file under both `fi` and\n  `fidc` in the same month would otherwise be ambiguous.\n* **The tier ceiling clamps.** Five other functions (`search_funds`,\n  `option_chain`, `option_exercises`, `fund_holdings`, `fund_debentures`)\n  silently lower `p_limit` to a per-tier maximum. No error is raised, so the\n  only way to know the result was cut is to know the ceiling. Signing in\n  raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
     "license": {
@@ -9542,6 +9542,207 @@
         }
       }
     },
+    "/rpc/screen_late_filers": {
+      "post": {
+        "operationId": "rpc_screen_late_filers",
+        "summary": "screen_late_filers",
+        "description": "SIGNAL, NOT A VERDICT. FIIs and FIDCs whose monthly informe (FNET 'Informe Mensal Estruturado', first delivery of a versao 1 document) reached B3 Fundos.NET at least p_min_days_late days after the deadline Resolução CVM 175 states for it, in at least p_min_late of the p_months reference months ending at p_end. The deadline is cited, not assumed: FIDC — Anexo Normativo II, art. 27, III; FII — Anexo Normativo III, art. 36, I; both 15 days after the end of the reference month, counted here as calendar days (the text says dias, not dias úteis). A month is measured only from the first full month after the family's adaptation deadline (2024-12 FIDC, 2025-07 FII); a window ending earlier raises 22023. SILO applies no holiday calendar, so a deadline on a weekend or holiday may legitimately roll forward — p_min_days_late (default 5) absorbs that. informes counts the months measured, informes_late those past the threshold, max_days_late the worst, median_lag_days the fund's median delivery lag after month end, deadline_rule the citation. A late delivery is a timestamp compared with a rule, not a finding: the same row comes from an extension CVM granted, an upload that FNET timestamped after a delivery made by other means, or an administrator transfer that delayed one month for a whole book; a fund with several classes is measured on its earliest filing. A month with no informe in the register is NOT counted (FNET history is partial; absence is screen_silent_filers). Fund identity is the cnpjFundo link only, never fund_name. Defaults 12 months, 5 days, 2 late months. Every row carries screen and params. More than 1000 rows RAISES 22023 (never trimmed): raise p_min_late or p_min_days_late, or pin p_family.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "tags": [
+          "Screens"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "p_months": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "int32",
+                    "description": "Defaults to `12`.",
+                    "default": 12
+                  },
+                  "p_end": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
+                  },
+                  "p_min_days_late": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "int32",
+                    "description": "Defaults to `5`.",
+                    "default": 5
+                  },
+                  "p_min_late": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "int32",
+                    "description": "Defaults to `2`.",
+                    "default": 2
+                  },
+                  "p_family": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null,
+                    "enum": [
+                      "fii",
+                      "fidc"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result set, oldest first. An unknown id is an empty array, not a 404 and never a guessed value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "cnpj": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "fund_family": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "fund_name": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "window_from": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "window_to": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "informes": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int64"
+                      },
+                      "informes_late": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int64"
+                      },
+                      "max_days_late": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "median_lag_days": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "last_late_reference": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "deadline_rule": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "screen": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "params": {
+                        "type": [
+                          "object",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. Contract violations raise SQLSTATE `22023` with a message naming the limit or the argument at fault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/rpc/screen_overdue_securit": {
       "post": {
         "operationId": "rpc_screen_overdue_securit",
@@ -9622,6 +9823,392 @@
                           "string",
                           "null"
                         ]
+                      },
+                      "screen": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "params": {
+                        "type": [
+                          "object",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. Contract violations raise SQLSTATE `22023` with a message naming the limit or the argument at fault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rpc/screen_restatements": {
+      "post": {
+        "operationId": "rpc_screen_restatements",
+        "summary": "screen_restatements",
+        "description": "SIGNAL, NOT A VERDICT. Funds whose B3 Fundos.NET (FNET) re-filings — documents with versao > 1 — in the trailing p_months of delivery days (ending p_end, default today) number at least p_min_restatements AND make up at least p_min_rate_pct of the fund's documents in the window. restatements_re (voluntary, Reapresentação Espontânea) and restatements_rc (required by CVM, Reapresentação por Exigência) split them as FNET publishes modalidade; p_modalidade counts only one kind. A fund is known ONLY by its cnpjFundo link (the CNPJ SILO queried FNET with) — never by fund_name, which is FNET's label, served for reading. The same pattern comes from routine corrections of typos, an administrator or custodian migration that re-submits a whole book, the resolution-175 adaptation, a FNET template change forcing re-submission, one error cascading through consecutive informes, or a CVM supervision sweep that required re-filings across an administrator's funds; an RC says CVM asked, not what was wrong. Documents not yet linked by the fortnightly sweep and history before SILO's first crawl are not counted (coverage() fnet_documents). Defaults 12 months, 3 re-filings, 20%. Every row carries screen and params. More than 1000 rows RAISES 22023 (never trimmed): raise the thresholds or pin p_modalidade.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "tags": [
+          "Screens"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "p_months": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "int32",
+                    "description": "Defaults to `12`.",
+                    "default": 12
+                  },
+                  "p_end": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
+                  },
+                  "p_min_restatements": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "int32",
+                    "description": "Defaults to `3`.",
+                    "default": 3
+                  },
+                  "p_min_rate_pct": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "description": "Defaults to `20`.",
+                    "default": 20
+                  },
+                  "p_modalidade": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null,
+                    "enum": [
+                      "RE",
+                      "RC"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result set, oldest first. An unknown id is an empty array, not a 404 and never a guessed value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "cnpj": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "tipo_fundo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "fund_name": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "window_from": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "window_to": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "documents": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int64"
+                      },
+                      "restatements": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int64"
+                      },
+                      "restatements_re": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int64"
+                      },
+                      "restatements_rc": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int64"
+                      },
+                      "restatement_pct": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "last_restated_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
+                      },
+                      "screen": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "params": {
+                        "type": [
+                          "object",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. Contract violations raise SQLSTATE `22023` with a message naming the limit or the argument at fault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rpc/screen_silent_filers": {
+      "post": {
+        "operationId": "rpc_screen_silent_filers",
+        "summary": "screen_silent_filers",
+        "description": "SIGNAL, NOT A VERDICT. Funds that CVM's registry (cvm_fund_registry) still lists as active (is_active, derived from the filed status; registry_status is served as filed) whose last periodic informe in CVM's own dataset — the informe diário for FI, the monthly informe for FIDC, FII and FIAGRO (dim_fund) — is between p_min_silent_months and p_max_silent_months COMPLETE months behind the family's latest complete period (latest_complete_period, never today), so an unpublished month never reads as silence. reports_filed is the fund's filed periods; registry_nav / registry_nav_date are the NAV the registry itself carries, with its own date; fnet_last_delivered_at is the newest B3 Fundos.NET document linked to the CNPJ (FII / FIDC only; NULL = none linked) — a fund silent at CVM but still delivering to FNET is the \"still filing elsewhere\" case. The same row comes from a fund merged, incorporated or liquidated whose registry status CVM has not updated yet; a resolution-175 adaptation that moved reporting to a class CNPJ other than the fund's; CVM's dataset lagging the filing itself; or a SILO ingest gap (check coverage() landed_at before reading a family-wide silence). FIP files annually and is not screened. Defaults 3..24 months, every family. Every row carries screen and params. More than 1000 rows RAISES 22023 (never trimmed): pin p_family or narrow p_min_silent_months / p_max_silent_months.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "tags": [
+          "Screens"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "p_min_silent_months": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "int32",
+                    "description": "Defaults to `3`.",
+                    "default": 3
+                  },
+                  "p_max_silent_months": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "int32",
+                    "description": "Defaults to `24`.",
+                    "default": 24
+                  },
+                  "p_family": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Defaults to `NULL::text`.",
+                    "default": null,
+                    "enum": [
+                      "fi",
+                      "fidc",
+                      "fii",
+                      "fiagro"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result set, oldest first. An unknown id is an empty array, not a 404 and never a guessed value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "cnpj": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "fund_family": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "fund_name": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "registry_status": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "last_filed_period": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "complete_through": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "months_silent": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "reports_filed": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int64"
+                      },
+                      "registry_nav": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "registry_nav_date": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "fnet_last_delivered_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date-time"
                       },
                       "screen": {
                         "type": [

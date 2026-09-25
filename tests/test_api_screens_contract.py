@@ -364,12 +364,18 @@ def test_dashboard_reads_through_a_build_time_login_not_a_client_role():
 # ---------------------------------------------------------------------------
 
 
+# v35: the filing-behaviour screens (25_api_filing_screens.sql) share the
+# catalog's `screens` block but are not wrappers — no dashboard page runs them.
+# tests/test_filing_screens_contract.py owns them.
+FILING_SCREENS = {"restatements", "late_filers", "silent_filers"}
+
+
 def test_catalog_publishes_every_screen():
     from serve.catalog import CATALOG_VERSION, CONSTRAINTS, catalog_payload
 
     assert CATALOG_VERSION >= 31
     payload = catalog_payload()
-    assert set(payload["screens"]) == {key for _, key in WRAPPERS.values()}
+    assert set(payload["screens"]) == {key for _, key in WRAPPERS.values()} | FILING_SCREENS
     for name, (_, key) in WRAPPERS.items():
         entry = payload["screens"][key]
         assert entry["function"] == name

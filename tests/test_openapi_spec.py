@@ -236,6 +236,10 @@ REFUSING_FUNCTIONS = {
     "fidc_cedentes",
     "fidc_sacados",
     "fidc_portfolio",
+    # v35: the filing-behaviour screens (25_api_filing_screens.sql).
+    "screen_restatements",
+    "screen_late_filers",
+    "screen_silent_filers",
 }
 PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav"}
 
