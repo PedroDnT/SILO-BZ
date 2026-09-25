@@ -24,7 +24,14 @@ Verified live, not inferred: `income_statements('PETR4')` returns
 
 ---
 
-## 1. `balance_sheets` and `cash_flow_statements` — the other two endpoints
+## 1. ~~`balance_sheets` and `cash_flow_statements` — the other two endpoints~~ (done)
+
+**Done 2026-09-25** (`feat/balance-sheets-cash-flows`, catalog v35). Census
+run first; equity sits on 2.03 / 2.07 / 2.08, and `Empréstimos e
+Financiamentos` is filed twice per industrial filing, so the balance sheet
+matches label + parent label. Cash flows map totals only; capex and dividends
+are free text per filer and stay in `api.financials`. Not live until
+`apply_analytical.sh` runs (see item 6).
 
 `docs/planning/FINANCIALS_API.md` §8 step 2. `income_statements` shipped first
 because it carries the sector problem and proves the design; the other two
@@ -311,8 +318,9 @@ public API only.
 ## 14. The gaps backlog: resolution plan (2026-09-24)
 
 Sequences the [COMPETITIVE_GAPS.md](COMPETITIVE_GAPS.md) §7 backlog (B1 to B11).
-B1, the FNET register, is built (migration 42) and is not yet served. Waves
-run in order; within a wave, items are independent unless marked.
+B1, the FNET register, is built (migration 42) and served since catalog v33
+(`api.fund_documents`, `api.fund_restatements`, #286). Waves run in order;
+within a wave, items are independent unless marked.
 
 ### Wave 1: no decisions needed
 

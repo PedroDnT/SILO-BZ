@@ -220,6 +220,8 @@ REFUSING_FUNCTIONS = {
     "financials",
     "company_financials",
     "income_statements",
+    "balance_sheets",
+    "cash_flow_statements",
     "anbima_classes",
     # v31: the forensic screens (23_api_screens.sql) — raise-only.
     "screen_zombie_growth",

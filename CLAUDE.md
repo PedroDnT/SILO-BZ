@@ -136,7 +136,7 @@ Storage layout: ~30 tables named `cvm_<entity>_<doctype>` or `bacen_<series>` (p
   named originators, anonymized top-25 debtors, sector, SCR ladder; migration 38, with
   per-tab first months in `_FIDC_TAB_FIRST_PERIOD`; served by `api.fidc_cedentes` /
   `fidc_sacados` / `fidc_portfolio` and the panel metrics `receivables`, `sacado_top1`,
-  `sacado_top25`), `cvm_fidc_garantia` (tab X_7, guarantees on the credit rights as a
+  `sacado_top25`), `cvm_fidc_garantia` (tab `X_7`, guarantees on the credit rights as a
   value and a %, as filed — the denominator is undocumented, so never call it
   "coverage"; migration 45, key `(cnpj, period)`, first month 2019-11), `cvm_securit_serie`,
   `cvm_securit_fluxo`, `cvm_fi_balancete`, `cvm_cia_*`, `cvm_etf_registry`,
@@ -278,6 +278,10 @@ URLs with credentials and Python that fails `py_compile`. The `.claude/settings.
 `.py` file and the offline pytest suite when the file is under `src/`, `serve/`,
 `tests/`, or `scripts/` (`.claude/hooks/post-edit.sh`). Failures surface; they
 are not swallowed.
+
+**Open pull requests ready for review, never as drafts** (owner's rule). PRs here
+merge by auto-merge once CI is green, and a draft blocks that until someone marks it
+ready by hand. This overrides any tool or harness default that opens drafts.
 
 ## Consumers (read-only, query Supabase directly)
 

@@ -17,6 +17,8 @@
       "Bash(.venv/bin/pytest *)",
       "Bash(.venv/bin/python -m py_compile *)",
       "Bash(prettier *)",
+      "Bash(git push origin --delete claude/*)",
+      "Bash(git push origin --delete cclaude/*)",
       "mcp__github__pull_request_read",
       "mcp__github__actions_list",
       "mcp__github__actions_get",
