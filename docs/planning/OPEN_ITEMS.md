@@ -222,7 +222,14 @@ reaching READY. Both were true. Neither was the site. `CLAUDE.md` already says
 observations"; this is the second time that has cost a day. Fetch the public
 URL and grep it for the thing you claim to have shipped.
 
-## 9. `coverage().landed_at` reads a day stale for the B3 lending group
+## 9. ~~`coverage().landed_at` reads a day stale for the B3 lending group~~ (done)
+
+**Done 2026-09-25** (`fix/b3-landed-at`): `_ingest_bdi_span` now logs `ok` when
+older sessions landed and only the newest is missing, with the shortfall kept in
+`error_msg` as a note (`_log_finish(..., note=)`). A span where nothing landed
+stays `skipped`; any older gap stays `error`. The PR #242 gate is unaffected:
+`check_staleness.py` and diagnostic 15 treat `ok` and `skipped` alike. Live
+`landed_at` moves on the first daily run after merge.
 
 `landed_at` is documented as "when ingest last SUCCEEDED for that source", and
 counts only `cvm_ingest_log` rows with status `ok`. But when B3 has not yet
