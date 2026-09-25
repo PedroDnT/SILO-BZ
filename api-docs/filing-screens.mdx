@@ -1,0 +1,131 @@
+---
+title: "Filing-behaviour screens"
+description: "Three screens on how funds file, not what they hold — unusual restatements, monthly informes delivered past the deadline Resolução CVM 175 states, and registered funds that stopped filing. Signals, not verdicts."
+icon: "clock"
+---
+
+<Note>
+  **Parameters, response columns and types are generated** from the SQL catalog and
+  render under **Endpoints → Screens** in the sidebar. This page carries what a
+  schema cannot: what each screen measures, what it was measured against, and what
+  else looks the same.
+</Note>
+
+<Warning>
+  **These are signals, not verdicts** — the same contract as the
+  [forensic screens](/api-docs/screens). A row is a fund whose public filing
+  record crossed a stated threshold. It is not a score, a rating or a finding that
+  a rule was broken. Every row carries `screen` and `params`; confirm against the
+  fund's own filings before repeating anything.
+</Warning>
+
+### Overview
+
+| Function | Reads | Crosses the line when… |
+| --- | --- | --- |
+| `screen_restatements` | the [FNET register](/api-docs/fnet-documents) | a fund's re-filings (`versao` > 1) in the window reach `p_min_restatements` **and** `p_min_rate_pct` of its documents |
+| `screen_late_filers` | the FNET register | the monthly informe's first delivery came `p_min_days_late`+ days after the cited deadline in `p_min_late`+ months |
+| `screen_silent_filers` | CVM's own fund tables | a fund the registry lists as active has filed no periodic informe for `p_min_silent_months`..`p_max_silent_months` complete months |
+
+No dashboard page runs these three, so the API function is the only definition.
+Their defaults are published in `screens` in [`catalog()`](/api-docs/conventions),
+with the allowed ranges and a `meaning` that says what else produces the row.
+
+### A fund is its CNPJ, never its name
+
+FNET rows carry no CNPJ. A document belongs to a fund only because FNET returned
+it when Silo queried `cnpjFundo` = that CNPJ, in a sweep that reaches every FII
+and FIDC once a fortnight. `screen_restatements` and `screen_late_filers` read
+**only** those links. `fund_name` is FNET's label, served so you can read it and
+never compared with anything. A document the sweep has not linked yet is not in
+either screen.
+
+### Restatements
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/screen_restatements" \
+  -H "apikey: $SILO_ANON_KEY" -H "Content-Type: application/json" -d '{}'
+```
+
+Defaults: the last **12 months** of delivery days, at least **3** re-filings, at
+least **20%** of the fund's documents. `restatements_re` (Reapresentação
+Espontânea, voluntary) and `restatements_rc` (Reapresentação por Exigência,
+required by CVM) split the count as FNET publishes `modalidade`.
+
+```bash
+# Every fund with a restatement CVM required, in the last year.
+-d '{"p_modalidade":"RC","p_min_restatements":1,"p_min_rate_pct":0}'
+```
+
+The same row also comes from routine typo corrections, an administrator or
+custodian migration that re-submits a whole book, the resolution-175 adaptation,
+a FNET template change that forced a re-submission, one error carried through
+consecutive informes, or a CVM supervision sweep across one administrator's funds.
+An RC says CVM asked; it does not say what was wrong. Pair a row with
+[`fund_restatements`](/api-docs/fnet-documents) to see each re-filing and the
+version it replaced.
+
+### Late filers: measured against a cited rule
+
+"Late" here is a delivery timestamp compared with a deadline Silo can cite:
+
+| Family | Rule | Deadline | Measured from |
+| --- | --- | --- | --- |
+| FIDC | Resolução CVM 175, **Anexo Normativo II, art. 27, III** — the informe mensal | 15 days after the end of the reference month | reference month **2024-12** (FIDC adaptation deadline 2024-11-29) |
+| FII | Resolução CVM 175, **Anexo Normativo III, art. 36, I** — the monthly form (Suplemento I) | 15 days after the end of the reference month | reference month **2025-07** (adaptation deadline 2025-06-30) |
+
+The citation rides on every row as `deadline_rule`. Months before a family's
+adaptation deadline are not measured, because the predecessor instructions'
+deadlines are not cited here; a window that ends before 2024-12 raises `22023`.
+
+What a row measures:
+
+- the **first** delivery of an original (`versao` 1) `Informe Mensal Estruturado`
+  for each reference month — a restatement never makes a month late;
+- a month is late when its delivery day minus (the month's last day + 15) is at
+  least `p_min_days_late`; the lag is delivery day minus the month's last day;
+- `informes` is the months measured, `informes_late` the late ones,
+  `max_days_late` the worst, `median_lag_days` the fund's typical lag.
+
+What it cannot see:
+
+- **Calendar days, no holiday calendar.** The text says _dias_, not _dias úteis_.
+  A deadline on a weekend or holiday may legitimately roll forward, which is what
+  the default `p_min_days_late` of **5** absorbs.
+- **Extensions.** CVM can grant them; the register does not say so.
+- **Missing months.** A month with no informe in the register is **not** counted
+  late. FNET history is still being backfilled, and absence is the next screen's
+  question.
+- A fund with several classes is measured on its earliest filing for the month.
+
+```bash
+-d '{"p_family":"fidc"}'               # FIDCs only
+-d '{"p_min_days_late":15,"p_min_late":3}'  # stricter
+```
+
+### Silent filers: read from CVM, not FNET
+
+`screen_silent_filers` answers absence from CVM's own tables, which have deep
+history: the last period each fund filed — the informe diário for FI, the
+monthly informe for FIDC, FII and FIAGRO — against that family's newest
+**complete** period (`coverage().complete_through`), never today, so a month
+CVM has not published yet is not silence. Only funds whose registry row is
+active are listed; `registry_status` is served as filed.
+
+Context columns, not criteria: `registry_nav` / `registry_nav_date` (the NAV the
+registry itself carries, with its date) and `fnet_last_delivered_at`, the newest
+FNET document linked to the CNPJ (FII and FIDC only) — a fund silent at CVM but
+still delivering to FNET.
+
+The same row also comes from a fund merged, incorporated or liquidated whose
+status CVM has not updated yet; reporting moved to a class CNPJ other than the
+fund's by the resolution-175 adaptation; CVM's dataset lagging the filing; or a
+Silo ingest gap — check [`coverage()`](/api-docs/coverage) `landed_at` before
+reading a family-wide silence. FIP files annually and is not screened.
+
+### Too many rows
+
+Screens do not page. Above one 1,000-row page they raise `22023`
+([Conventions → Row caps](/api-docs/conventions#row-caps)). Narrow with the
+output filter (`p_family`, `p_modalidade`) or the thresholds; the silent screen
+over every family at once is the likeliest to need `p_family`.

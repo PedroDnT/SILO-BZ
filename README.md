@@ -10,7 +10,7 @@
 > (source: [`api-docs/`](api-docs/quickstart.mdx); for agents:
 > [`api-docs/agents.mdx`](api-docs/agents.mdx) and [`skill.md`](skill.md);
 > page index: [`llms.txt`](llms.txt)).
-> **MCP server:** [`supabase/functions/silo-mcp/`](supabase/functions/silo-mcp/) — read-only remote MCP, one tool per `api` endpoint (49), merged but not yet deployed ([`api-docs/mcp.mdx`](api-docs/mcp.mdx)).
+> **MCP server:** [`supabase/functions/silo-mcp/`](supabase/functions/silo-mcp/) — read-only remote MCP, one tool per `api` endpoint (49), live at `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp` since 2026-09-25 ([`api-docs/mcp.mdx`](api-docs/mcp.mdx)).
 > **Notebooks:** [`notebooks/`](notebooks/) — nine runnable end-to-end examples.
 
 ## What SILO is
@@ -175,7 +175,7 @@ a message that says why and how to narrow it; nothing is ever silently truncated
 `rpc/coverage` also says, per dataset, when it last landed and the git commit of the
 run that landed it (`landed_git_sha`), so a number can be traced to the code that
 produced it. The same contract is exposed as a read-only MCP server
-([`api-docs/mcp.mdx`](api-docs/mcp.mdx)) once deployed. Signing in
+([`api-docs/mcp.mdx`](api-docs/mcp.mdx)), live since 2026-09-25. Signing in
 (GitHub OAuth, at [`/signin.html`](https://silo-bz-deloslabs.vercel.app/signin.html)) raises the
 caps and the query budget for a token holder.
 
@@ -290,8 +290,6 @@ same for everyone.
   from now on; the past comes from `backfill.yml` with `fnet_start` / `fnet_end`, one
   year per dispatch, newest first, then one `fnet_sweep` dispatch to link documents to
   funds. Until then `api.fund_restatements` only sees recent filings.
-- **The MCP server is not deployed.** `supabase functions deploy silo-mcp --project-ref
-  zcjbtpxuhdekpwcxmepn --no-verify-jwt` (never `supabase config push`).
 - **The Sentinel read-only role** is a script the owner runs once:
   [`docs/security/sentinel_readonly_role.sql`](docs/security/sentinel_readonly_role.sql)
   (password via a psql variable, never in the repo).

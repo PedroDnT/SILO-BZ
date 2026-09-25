@@ -37,6 +37,10 @@ the API cannot disagree about who crossed a line.
 | `screen_dormant_funds` | FI | every month of the window filed, zero subscriptions and zero redemptions | /dormant |
 | `screen_dormant_trend` | FI | the dormant screen counted at every month-end | /dormant |
 
+Three more screens look at how funds **file** rather than what they hold —
+restatements, late and silent filers — and have no dashboard page. They follow
+the same contract and live on [Filing-behaviour screens](/api-docs/filing-screens).
+
 The machine-readable twin is `screens` in [`catalog()`](/api-docs/conventions):
 per screen, the defaults, the allowed ranges, the output filters and a `meaning`
 that says what else produces the same pattern.

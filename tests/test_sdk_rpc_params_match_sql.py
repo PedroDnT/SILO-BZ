@@ -28,7 +28,13 @@ ROOT = Path(__file__).resolve().parents[1]
 SQL = ROOT / "src/store/analytical/19_api_contract.sql"
 # Schema `api` functions defined outside 19 (v33: the FNET register). Applied
 # after 19 by the same glob, so a later definition is the shipped one.
-SQL_EXTRA = (ROOT / "src/store/analytical/24_api_fnet.sql",)
+SQL_EXTRA = (
+    ROOT / "src/store/analytical/24_api_fnet.sql",
+    # v37: the filing-behaviour screens.
+    ROOT / "src/store/analytical/25_api_filing_screens.sql",
+    # v38: company events, macro series, PTAX.
+    ROOT / "src/store/analytical/26_api_events_macro.sql",
+)
 CLIENT = ROOT / "sdk/silo_client/client.py"
 
 
