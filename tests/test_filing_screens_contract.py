@@ -136,6 +136,14 @@ def test_restatements_has_no_per_fund_lateral_over_the_window():
     assert re.search(r"LEFT\s+JOIN\s+tipo\s+tf\s+ON\s+tf\.cnpj\s*=\s*fl\.cnpj", body)
 
 
+def test_silent_filers_materializes_the_family_bounds():
+    """Production, v38: inlined, latest_complete_period(fam) was re-evaluated
+    for every dim_fund row (41k rows, 7.1 s for fi alone). MATERIALIZED runs
+    it once per family: all four families answer in 0.3 s."""
+    body = _strip(_chunk("screen_silent_filers"))
+    assert re.search(r"WITH\s+fam\s+AS\s+MATERIALIZED\s*\(", body)
+
+
 @pytest.mark.parametrize("name", sorted(SCREENS))
 def test_definer_with_an_empty_pinned_search_path(name):
     head = _chunk(name)
