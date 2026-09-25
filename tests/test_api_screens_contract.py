@@ -364,7 +364,7 @@ def test_dashboard_reads_through_a_build_time_login_not_a_client_role():
 # ---------------------------------------------------------------------------
 
 
-# v36: the filing-behaviour screens (25_api_filing_screens.sql) share the
+# v37: the filing-behaviour screens (25_api_filing_screens.sql) share the
 # catalog's `screens` block but are not wrappers — no dashboard page runs them.
 # tests/test_filing_screens_contract.py owns them.
 FILING_SCREENS = {"restatements", "late_filers", "silent_filers"}

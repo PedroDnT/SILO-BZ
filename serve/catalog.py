@@ -24,7 +24,7 @@ __all__ = [
     "tool_specs",
 ]
 
-# v37: three held-but-unserved datasets reach the API (DATA_INVENTORY.md §3,
+# v38: three held-but-unserved datasets reach the API (DATA_INVENTORY.md §3,
 # wave 3), in 26_api_events_macro.sql. api.company_events — a listed
 # company's IPE filings (cia_event), one row per protocol at its newest
 # version, text as filed, source_url = CVM's RAD link, the company resolved by
@@ -38,7 +38,7 @@ __all__ = [
 # venda per currency and day as published (the Fechamento bulletin for a
 # completed day, measured). Nothing derived. coverage() gains company_events,
 # macro_series and ptax rows; capped count thirty -> thirty-three.
-# v36: three FILING-BEHAVIOUR screens (25_api_filing_screens.sql), signals
+# v37: three FILING-BEHAVIOUR screens (25_api_filing_screens.sql), signals
 # not verdicts like the seven in 23, but native functions rather than wrappers
 # because no dashboard page runs them. api.screen_restatements — funds whose
 # FNET re-filings (versao > 1; RE voluntary vs RC CVM-required) in a trailing
@@ -55,6 +55,11 @@ __all__ = [
 # the newest FNET delivery as context. Late and silent are two screens, not
 # one: different sources (FNET vs CVM's deep history), grains and failure
 # modes. Capped count twenty-seven -> thirty.
+# v36: company_financials.net_income is keyed on the FILED LABEL, like
+# income_statements (register item 2, option 2, owner's call 2026-09-25). A
+# behaviour change: 282 bank-B statements that read NULL (no 3.11) now carry
+# net income from 3.09's net-income label, and insurers get 3.13 (net income)
+# instead of 3.11 (continuing operations). No code fallback is added.
 # v35: api.balance_sheets and api.cash_flow_statements — the other two
 # statements as PERIODS, on the income_statements design (FINANCIALS_API.md §8
 # step 2). Fields keyed on the as-filed label, measured first (FY2024, con,
@@ -306,7 +311,7 @@ __all__ = [
 # stated as (id, asset_class, date, metric) and p_entity_type narrows the fund
 # arms to one family. Universe mode (p_ids empty + p_entity_type, optional
 # p_min_nav / p_min_months) walks a whole family for signed-in callers.
-CATALOG_VERSION = 37
+CATALOG_VERSION = 38
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -519,7 +524,7 @@ CONSTRAINTS = [
     "LISTED-COMPANY FINANCIALS ARE FILED, NOT DERIVED. api.financials returns one row per account line exactly as the company filed it; nothing is summed, annualised or restated. Read period_months before comparing two rows: an ITR publishes the SAME account twice under one reference date, once for the three months and once year-to-date, and they are distinguished only by the period span. Adding a 3-month row to a 6-month row double-counts the quarter.",
     "FINANCIALS DEFAULT TO CONSOLIDATED (scope=con) AND TO THE PERIOD THE DOCUMENT IS FOR (ordem_exerc ULTIMO). The prior-year comparative printed beside it is never returned. When a company re-files, only the newest version of each statement is served and `version` carries it; in company_financials a balance sheet from a different version than the income statement reads NULL rather than being paired across filings.",
     "CVM'S CHART OF ACCOUNTS IS SECTOR-SPECIFIC, SO `setor` IS A PARTITION KEY, NOT A LABEL. financials and company_financials carry setor and segmento on every row for exactly one reason: the same account code is a different quantity in a different chart. Measured live, 3.01 is `Receita de Venda de Bens e/ou Serviços` for PETR4 and `Receitas de Intermediação Financeira` for Banco do Brasil (cd_cvm 1023), and 3.05 is EBIT for the first and pre-tax profit for the second. So company_financials.revenue and gross_profit are NOT like-for-like across sectors: PARTITION every median, rank, percentile and peer comparison BY setor, and read the as-filed Portuguese account_name rather than assuming a code carries one concept. There is deliberately no canonical English line-item mapping, because keying one on account_code would mislabel at least one sector.",
-    "company_financials.net_income IS CONTA 3.11 ONLY, WITH NO FALLBACK. A filing that does not report 3.11 reads NULL. Do not substitute 3.09: it is `Lucro ou Prejuízo antes das Participações e Contribuições Estatutárias`, i.e. profit BEFORE the statutory profit-sharing on 3.10, and it equals net income only where 3.10 is zero. This is measured, not assumed — 282 of 50,439 DRE statements (0.56%) have no 3.11. If you want the pre-participations figure, call api.financials and read 3.09, 3.10 and 3.11 yourself, then do the arithmetic where you can see it. Every value in both functions is in absolute reais: the filed ESCALA_MOEDA is applied at ingest, so never scale by thousands again. api.income_statements DOES resolve those 282, because it keys on the filed LABEL rather than the code and bank B's 3.09 carries the net-income label — prefer it when you want net income to be as complete as the filings allow.",
+    "company_financials.net_income IS KEYED ON THE FILED LABEL (since v36), exactly as in api.income_statements, so the two surfaces agree. It matches `Lucro/Prejuízo Consolidado do Período` / `Lucro ou Prejuízo Líquido Consolidado do Período`, which sits on 3.11 for the industrial and bank-A charts, on 3.09 for bank B (which files no 3.11) and on 3.13 for insurers (whose 3.11 is continuing operations). Until v35 it read 3.11 alone, so 282 bank-B statements (Itaú and BTG among them) read NULL and insurers got their continuing-operations line. No code is ever substituted: 3.09 is pre-participations profit on the other charts. revenue and gross_profit remain code-keyed (3.01 / 3.03) and are not like-for-like across sectors — use api.income_statements for label-keyed revenue. Every value in both functions is in absolute reais: the filed ESCALA_MOEDA is applied at ingest, so never scale by thousands again.",
     "api.income_statements IS KEYED ON THE FILED LABEL, NOT THE ACCOUNT CODE. It returns the income statement as one row per filed period with named fields, and it resolves each field by matching the as-filed Portuguese account_name (case-folded, nothing else folded) rather than by cd_conta. This is measured: CVM ships FOUR DRE charts of accounts and net income sits on 3.11 for the industrial and bank-A charts, on 3.09 for the bank-B chart which files no 3.11, and on 3.13 for the insurer chart whose 3.11 is the continuing-operations line. `chart` tells you which layout a filing used. A concept a chart does not file reads NULL rather than borrowing a neighbouring line: operating_income (EBIT) is an industrial line only, and insurers get NULL operating_expenses because their filed line is the narrower `Despesas Administrativas`. Never read a NULL here as zero. net_income_controlling is the figure per-share numbers are built on, not net_income.",
     "api.balance_sheets AND api.cash_flow_statements FOLLOW THE SAME LABEL-KEYED DESIGN. balance_sheets returns one row per filed period with named fields matched on the as-filed account_name (case-folded only); where a filing files one label twice (industrial `Empréstimos e Financiamentos` under both current and non-current liabilities) the PARENT's label disambiguates, and no code is ever consulted. Equity sits on 2.03, 2.07 or 2.08 depending on the chart; `chart` says which. Banks file no current/non-current split and no debt line, so current_assets, current_liabilities, noncurrent_*, short_term_debt and long_term_debt read NULL for them — never zero, and never a deposits line standing in for debt. cash_flow_statements maps ONLY the section totals and the cash reconciliation (operating / investing / financing, fx_effect, net_change_in_cash, cash_start, cash_end), which are uniform across charts; `method` is direct or indirect. There is no capex or dividends field on purpose: those lines are free text per filer (capex alone has 20+ spellings), so read those lines with api.financials, where the filed label is on the row. operating_cash_generated and working_capital_changes are indirect-method lines and read NULL on a direct-method filing.",
     "A TICKER RESOLVES TO A COMPANY ONLY THROUGH CVM'S PUBLISHED FCA MAP, active listings only — the CNPJ and the trading code arrive on the same filed row. financials('PETR4'), financials('33000167000101') and financials('9512') are the same company. A delisted code resolves to nothing rather than to a guess, and no company↔ticker edge is ever inferred from a name.",
@@ -992,9 +997,9 @@ LIMITS = {
                 "screen_evergreen_aging", "screen_overdue_securit",
                 "screen_dormant_funds", "screen_dormant_trend",
                 "screen_delinquency_drivers",
-                # v36: the filing-behaviour screens (25_api_filing_screens.sql).
+                # v37: the filing-behaviour screens (25_api_filing_screens.sql).
                 "screen_restatements", "screen_late_filers", "screen_silent_filers",
-                # v37: held-but-unserved datasets (26_api_events_macro.sql) —
+                # v38: held-but-unserved datasets (26_api_events_macro.sql) —
                 # a window to narrow, never a series to walk.
                 "company_events", "macro_series", "ptax",
             ],
@@ -1286,7 +1291,7 @@ SCREENS: Dict[str, Dict[str, Any]] = {
             "unfiltered set exceeds one page; pin p_driver."
         ),
     },
-    # v36: the filing-behaviour screens (25_api_filing_screens.sql). No
+    # v37: the filing-behaviour screens (25_api_filing_screens.sql). No
     # dashboard page runs them, so `dashboard` is None and the api function is
     # the one definition; the defaults below are pinned to its SQL DEFAULTs.
     "restatements": {
@@ -1498,7 +1503,7 @@ def catalog_payload() -> Dict[str, Any]:
             "screen_dormant_funds": "POST /rest/v1/rpc/screen_dormant_funds",
             "screen_dormant_trend": "POST /rest/v1/rpc/screen_dormant_trend",
             "screen_delinquency_drivers": "POST /rest/v1/rpc/screen_delinquency_drivers",
-            # The filing-behaviour screens (v36): restatements, late and
+            # The filing-behaviour screens (v37): restatements, late and
             # silent filers. No dashboard page; same signal-not-verdict rules.
             "screen_restatements": "POST /rest/v1/rpc/screen_restatements",
             "screen_late_filers": "POST /rest/v1/rpc/screen_late_filers",
@@ -1510,7 +1515,7 @@ def catalog_payload() -> Dict[str, Any]:
             # restatement events paired by a stated group key.
             "fund_documents": "POST /rest/v1/rpc/fund_documents",
             "fund_restatements": "POST /rest/v1/rpc/fund_restatements",
-            # Held-but-unserved datasets (v37): a company's IPE filings, the
+            # Held-but-unserved datasets (v38): a company's IPE filings, the
             # non-inflation SGS series and PTAX, all as published.
             "company_events": "POST /rest/v1/rpc/company_events",
             "macro_series": "POST /rest/v1/rpc/macro_series",

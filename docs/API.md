@@ -161,7 +161,7 @@ views, options, termo, holdings, debentures, FIDC concentration, FIDC tranches
 and aging (`fidc_tranches`, `fidc_aging`, catalog v32 — history from 2025-01, as
 CVM publishes no archive of those tabs), the FNET document register
 (`fund_documents`, `fund_restatements`, catalog v33), ANBIMA classes, inflation,
-company financials, company events, macro series and PTAX (catalog v37), and the
+company financials, company events, macro series and PTAX (catalog v38), and the
 B3 lending and investor-flow views — has no `/v1`
 twin and is reachable only over PostgREST. Read those on the published site.
 
@@ -192,7 +192,7 @@ The operator half, which is what a reviewer needs to check:
   `fnet_documents` row (as_of = newest delivery day, complete_through the day
   before; landed_at from `cvm_ingest_log` entity `fnet`, doc_type `register`).
 
-### Company events, macro series and PTAX (catalog v37)
+### Company events, macro series and PTAX (catalog v38)
 
 `api.company_events`, `api.macro_series` and `api.ptax` (`26_api_events_macro.sql`)
 serve three tables that were held and read only by the dashboards (`cia_event`,
@@ -292,7 +292,7 @@ one. The Evidence build is unaffected: it connects as the `postgres` login
 ### The filing-behaviour screens
 
 `api.screen_restatements`, `api.screen_late_filers` and `api.screen_silent_filers`
-(catalog v36, `25_api_filing_screens.sql`) follow the same contract as the seven
+(catalog v37, `25_api_filing_screens.sql`) follow the same contract as the seven
 above — signals, `screen` + `params` on every row, raise-only above one page, no
 `/v1` twin, no `silo_api` grant — but are native functions, not wrappers: no
 dashboard page runs them, so the API function is the one definition. The two

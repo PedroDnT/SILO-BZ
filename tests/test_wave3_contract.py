@@ -1,4 +1,4 @@
-"""Company events, macro series and PTAX in schema `api` (26_api_events_macro.sql, v37).
+"""Company events, macro series and PTAX in schema `api` (26_api_events_macro.sql, v38).
 
 Offline: the SQL text, the pipeline's series registry, the catalog and the SDK
 are pinned to each other. What this file keeps true:
@@ -245,7 +245,7 @@ def test_coverage_reports_all_three_with_their_own_landed_source():
 def test_catalog_publishes_the_three():
     from serve.catalog import CATALOG_VERSION, CONSTRAINTS, catalog_payload
 
-    assert CATALOG_VERSION >= 37
+    assert CATALOG_VERSION >= 38
     payload = catalog_payload()
     for name in SERVED:
         assert payload["postgrest"][name] == f"POST /rest/v1/rpc/{name}"

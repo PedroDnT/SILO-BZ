@@ -4,20 +4,16 @@ description: "Connect Claude, ChatGPT or Cursor to SILO over MCP: one read-only 
 icon: "plug"
 ---
 
-<Warning>
-  **Built, not deployed yet.** The URL below goes live after the function is deployed. Until then, use the [Data API](/api-docs/quickstart) directly.
-</Warning>
-
 ### Overview
 
 SILO's remote MCP server gives an agent the read API as tools. There is one tool per published function or view, and each one sends exactly one request to the [Data API](/api-docs/quickstart) with the shared publishable key. There is nothing to sign up for and no key to paste.
 
 | What | Value |
 | --- | --- |
-| URL (after deploy) | `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp` |
+| URL | `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp` |
 | Transport | Streamable HTTP, stateless |
 | Auth | None (anonymous tier) |
-| Tools | 49 — every `catalog()` endpoint plus `catalog` itself |
+| Tools | one per `catalog()` endpoint, plus `catalog` itself (the deployed function lists the endpoints of the catalog version it was deployed with; a merge does not redeploy it) |
 | Hints | every tool `readOnlyHint: true`, `openWorldHint: false` |
 
 The server does not restate the contract. Each tool's description is generated from the same `openapi.json` as the Endpoints reference, and the rules live on [Conventions & limits](/api-docs/conventions). The `catalog` tool returns the full contract as JSON.
@@ -53,6 +49,15 @@ The server does not restate the contract. Each tool's description is generated f
 </Tabs>
 
 Any other MCP client that supports streamable HTTP connects the same way: give it the URL and no credentials.
+
+To check the server from a shell, list its tools:
+
+```bash
+curl -s -X POST https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
 
 ### What a result looks like
 
