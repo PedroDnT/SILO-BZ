@@ -39,8 +39,9 @@ Four upstream publishers. Everything is public; nothing is licensed, scraped fro
 | FIDC    | `cvm_fidc_sacado`        | fund × month × **rank** (1–25)       | tab VIII, monthly 2025+, HIST ≤2024  | 2013                   |
 | FIDC    | `cvm_fidc_cedente`       | fund × month × block × slot (1–9)    | tab I cedente slots, unpivoted       | 2019-11 (slots appear) |
 | FIDC    | `cvm_fidc_scr`           | fund × month                         | tab X, monthly 2025+, HIST ≤2024     | 2023-10 (member appears) |
-| FII     | `cvm_fii_mensal`         | fund × month                         | yearly ZIP                           | 2021                   |
-| FII     | `cvm_fii_periodic`       | fund × quarter/year × doc            | yearly ZIP, 4 members                | 2019                   |
+| FIDC    | `cvm_fidc_garantia`      | fund × month                         | tab X_7, monthly 2025+, HIST ≤2024   | 2019-11 (member appears) |
+| FII     | `cvm_fii_mensal`         | fund × month × subtype × **version** | yearly ZIP                           | 2021                     |
+| FII     | `cvm_fii_periodic`       | fund × quarter/year × doc × **version** | yearly ZIP, 4 members             | 2019                     |
 | FII     | `cvm_fii_imovel`         | fund × quarter × **property**        | yearly ZIP                           | 2019                   |
 | FIAGRO  | `cvm_fiagro_mensal`      | fund × month                         | monthly ZIP                          | **2025-05**            |
 | FIP     | `cvm_fip_periodic`       | fund × **filing date** × share class | yearly CSV                           | 2010                   |
@@ -183,6 +184,7 @@ Each is a real gap a caller could want; none has an endpoint.
 | `b3_corporate_event` | splits, bonuses, groupings | Held as published; `adjusted` stays `FALSE`. The convention was measured on 705 events and fell below the 90% bar, so no adjusted series. Candidate: serve the events without applying them. |
 | `cvm_fi_balancete` | ~111M rows, fund accounting | Largest table in the warehouse; nothing reads it. Deliberate until a question needs it. |
 | `cvm_fi_cda` | CDA header block (portfolio totals per fund-month) | Blocks 4, 2 and 6 are served; the header is read by nothing. |
+| `cvm_fidc_garantia` | FIDC tab X_7 (migration 45): guarantees on the credit rights, as a value and a percentage, per fund × month from 2019-11 | CVM's dictionary leaves both columns undescribed and the percentage's denominator does not reconcile to one sibling total, so it is stored as filed. A `kind = 'guarantees'` arm in `fidc_portfolio` with that caveat in its note, plus a `coverage()` row |
 
 #### Not served by design
 

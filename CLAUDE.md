@@ -136,7 +136,9 @@ Storage layout: ~30 tables named `cvm_<entity>_<doctype>` or `bacen_<series>` (p
   named originators, anonymized top-25 debtors, sector, SCR ladder; migration 38, with
   per-tab first months in `_FIDC_TAB_FIRST_PERIOD`; served by `api.fidc_cedentes` /
   `fidc_sacados` / `fidc_portfolio` and the panel metrics `receivables`, `sacado_top1`,
-  `sacado_top25`), `cvm_securit_serie`,
+  `sacado_top25`), `cvm_fidc_garantia` (tab X_7, guarantees on the credit rights as a
+  value and a %, as filed — the denominator is undocumented, so never call it
+  "coverage"; migration 45, key `(cnpj, period)`, first month 2019-11), `cvm_securit_serie`,
   `cvm_securit_fluxo`, `cvm_fi_balancete`, `cvm_cia_*`, `cvm_etf_registry`,
   `cvm_fi_cda_acoes`, `cvm_fi_cda_cotas` and `cvm_fi_cda_debentures` (fund holdings —
   CDA blocks 4, 2 and 6, members of the archive `cda` already downloads. Block 4
@@ -158,6 +160,28 @@ Storage layout: ~30 tables named `cvm_<entity>_<doctype>` or `bacen_<series>` (p
   including the trade-by-trade tape with the brokerage on each leg, investor-type
   flow, index free float and the cash instrument registry; `src/fetchers/b3_bdi_fetcher.py`
   carries the verified endpoint contract).
+
+**FII filings keep every version** (migration 43): `versao` is part of the key of
+`cvm_fii_mensal` and `cvm_fii_periodic` (`UNIQUE NULLS NOT DISTINCT`), so a restatement
+lands beside the original instead of overwriting it. Read the current filing through
+`vw_fii_mensal_latest` / `vw_fii_periodic_latest`, never by picking a version yourself.
+
+**The FNET register** (`fnet_document`, `fnet_document_filter`; migration 42,
+`src/fetchers/fnet_fetcher.py` → `src/pipeline/fnet_pipeline.py`, audit entity `fnet`) is
+B3 Fundos.NET's document list: metadata only, one row per FNET id, and every version is a
+new id with `versao` and `modalidade` (AP original, RE voluntary restatement, RC
+CVM-required). It is the only public record of FIDC restatements — CVM's FIDC CSVs carry
+no version. FNET rows carry **no CNPJ**: a document's fund is a `cnpjFundo` row in
+`fnet_document_filter` (the CNPJ we queried with) or it is unknown — never inferred from
+`fund_name`. The daily run crawls the last 3 delivery days (day windows; a month-wide
+query times out) and sweeps a rotating 1/14 of the FII/FIDC registry; history is
+`backfill.yml` with `fnet_start` / `fnet_end` (one year per dispatch) and `fnet_sweep`.
+Served by `api.fund_documents` / `api.fund_restatements` (analytical file 24).
+
+**Lineage.** `cvm_ingest_log` carries `git_sha` (from `GITHUB_SHA`, NULL when unset —
+never guessed) and `parser_version` (`PARSER_VERSION` in `src/pipeline/ingest_log.py`;
+bump it only when a parser or field map changes what a stored value means).
+`api.coverage()` exposes `landed_git_sha`, the commit of the run that set `landed_at`.
 
 **The BDI group is a ratchet, and the only part of this warehouse that is.** B3 keeps
 ~21 business days of those tables and publishes no archive, and an over-wide request
@@ -181,6 +205,13 @@ functions (16–17). ETFs are carved out of the fund universe and ranked separat
 `etf_daily` is empty for post-CVM-175 share classes (see the ETF doc).
 `mv_savings_flow_monthly` / `api.mv_savings_flow_monthly` (18) is reproduced as-found so
 CASCADE recreates of `fact_fund_monthly` cannot destroy it; nothing in this repo reads it.
+Schema `api` is 19 (the contract, `catalog()` / `coverage()`, `api.assert_row_cap`),
+20–21 (short interest, lending participants), 23 (screens) and 24 (FNET). Every capped
+function **refuses** above one 1,000-row page (`22023`, with a why/how message built by
+`assert_row_cap`) — none trims silently. A new endpoint also needs a catalog entry, a
+regenerated `openapi.json` (`scripts/gen_openapi.py`) and a regenerated MCP contract
+(`scripts/gen_mcp_contract.py` + a `t()` line in `supabase/functions/silo-mcp/tools.ts`);
+`tests/test_mcp_contract.py` fails until all three agree.
 
 ### Adding a dataset (the `(entity, doc_type)` matrix)
 
@@ -290,7 +321,16 @@ project `silo-bz` in team `deloslabs`; any static host also works).
   other entity jobs use `max-parallel: 1`, inspect coverage first, and are gated on a
   one-time `apply-schema` job. `fi_doc_type` can repair one FI source (for example
   `balancete`) without re-fetching the others. Default to one entity; `all` is deliberately
-  expensive.
+  expensive. `fnet_start` / `fnet_end` / `fnet_sweep` make an FNET-only dispatch (every
+  other job skips).
+- **A merge deploys nothing to the database.** Analytical SQL (and so schema `api`) goes
+  live on the next 06:00 run, or at once via `daily_ingest` `mode=analytics-only`
+  (`rebuild_dashboard=true` also republishes the site). The dashboard build's preflight
+  refuses to build while a view it reads is missing, so a PR that adds a view its pages
+  use fails its Vercel preview until the migration is applied — expected, not a bug.
+- `supabase/functions/silo-mcp/` — the read-only remote MCP (Supabase Edge Function, public
+  anon key only). Deploy with `supabase functions deploy silo-mcp --project-ref
+  zcjbtpxuhdekpwcxmepn --no-verify-jwt`; never `supabase config push`.
 
 Schema rollout = commit `schema.sql` + a new `migrations/NNN_*.sql`, then either let CI apply it
 or run `scripts/apply_schema.py` against Supabase. Idempotent via `CREATE TABLE IF NOT EXISTS` +
