@@ -284,6 +284,16 @@ has to be read together with that gate and its tests.
 
 ## 10. Supabase storage near the plan allowance
 
+**Re-measured 2026-09-25, BLOCKED on a retention decision (Pedro's call).**
+`pg_database_size` = **118.1 GB, 87% of 135 GB**, up from 81% (~109 GB) on
+2026-09-17: ~1.1 GB/day, which fills the allowance around **2026-10-10**.
+Largest relations (incl. partitions and indexes): `cvm_fi_balancete` 33.6 GB,
+`cia_account` 29.6 GB, `cvm_fi_cda_acoes` 12.6 GB, `cvm_fi_cda_cotas` 11.0 GB,
+`cvm_fi_diario` 8.6 GB, `b3_cotahist` 8.2 GB. Options: a plan upgrade, or
+retention on `cvm_fi_balancete` (the largest, and backfillable from CVM, so
+dropping old years loses nothing unrecoverable). The daily growth rate is
+inferred from two points, not a series; re-measure before acting on the date.
+
 Reported at 81% of the 135 GB allowance on 2026-09-17 and **not re-measured
 since**. Ingest stops when it fills, and the largest tables (`cvm_fi_diario`,
 `cia_account`, `b3_lending_trade`) grow every day. Worth a real measurement and
