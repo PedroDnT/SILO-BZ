@@ -41,6 +41,44 @@ class _FakeClient:
         return self.cursor_obj
 
 
+def test_cvm_ingestor_accepts_explicit_dependencies_without_opening_database():
+    from src.pipeline.cvm_pipeline import CVMIngestor
+
+    service = object()
+    cia_fetcher = object()
+    client = _FakeClient()
+    with patch("src.pipeline.cvm_pipeline.CVMFetcher") as default_service, patch(
+        "src.pipeline.cvm_pipeline.CIAFetcher"
+    ) as default_cia, patch(
+        "src.pipeline.cvm_pipeline.get_pg_client"
+    ) as default_client:
+        ingestor = CVMIngestor(
+            service=service, cia_fetcher=cia_fetcher, client=client
+        )
+
+    default_service.assert_not_called()
+    default_cia.assert_not_called()
+    default_client.assert_not_called()
+    assert ingestor.failures == []
+    assert ingestor.skips == []
+
+
+def test_daily_annual_plan_keeps_fip_and_cia_slices_separate_from_execution():
+    from src.pipeline.cvm_pipeline import CVMIngestor, FIP_PERIODIC_CONFIGS
+
+    ingestor = CVMIngestor(service=object(), cia_fetcher=object(), client=_FakeClient())
+    tasks = ingestor._plan_daily_annual_tasks({"fip", "cia_aberta"}, 2026)
+    try:
+        descriptions = {task.description for task in tasks}
+        assert {f"fip/{doc_type} 2026" for _, doc_type in FIP_PERIODIC_CONFIGS} <= descriptions
+        assert {"cia_aberta/ipe 2026", "cia_aberta/fca_valor_mobiliario 2026",
+                "cia_aberta/itr 2026", "cia_aberta/dfp 2026"} <= descriptions
+        assert len(tasks) == len(FIP_PERIODIC_CONFIGS) + 4
+    finally:
+        for task in tasks:
+            task.operation.close()
+
+
 # ---------------------------------------------------------------------------
 # supabase_client helpers
 # ---------------------------------------------------------------------------

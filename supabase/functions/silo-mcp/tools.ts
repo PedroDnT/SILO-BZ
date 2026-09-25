@@ -80,7 +80,10 @@ export const TOOL_SPECS: ToolSpec[] = [
   // Listed companies.
   t("financials", "Financial statement lines"),
   t("company_financials", "Company headline financials"),
+  t("financial_statement_history", "Company statement history"),
   t("income_statements", "Income statements"),
+  t("fii_property_history", "FII property snapshots"),
+  t("focus_expectations", "Focus expectations"),
   t("balance_sheets", "Balance sheets"),
   t("cash_flow_statements", "Cash flow statements"),
   t("company_events", "Company IPE filings (fatos relevantes)"),

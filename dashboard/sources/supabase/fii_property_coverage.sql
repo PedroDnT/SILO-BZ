@@ -16,6 +16,5 @@ select
   count(*) filter (where i.pr_imovel_total_investido is not null)
                                                                as rows_with_invested_share,
   count(*) filter (where i.pr_vacancia is not null)            as rows_with_vacancy,
-  count(*) filter (where i.pr_inadimplencia is not null)       as rows_with_delinquency,
-  count(*) filter (where i.pr_imovel_total_investido > 50)     as rows_single_asset_over_50pct
+  count(*) filter (where i.pr_inadimplencia is not null)       as rows_with_delinquency
 from cvm_fii_imovel i

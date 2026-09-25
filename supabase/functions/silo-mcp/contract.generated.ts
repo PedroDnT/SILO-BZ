@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "38";
+export const CONTRACT_VERSION = "39";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -1837,6 +1837,109 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "additionalProperties": false
     }
   },
+  "fii_property_history": {
+    "kind": "rpc",
+    "path": "/rpc/fii_property_history",
+    "description": "CVM FII property-register snapshots, one row per stored source row and reference date. p_cnpj is the exact fund CNPJ. CVM publishes no stable property identifier; row_hash identifies the exact source row only. area and financial/progress fields preserve CVM nulls, not zero. Vacancy, delinquency and other pr_* fields are published percentages; source is cvm. Default date window is five years; more than 1,000 rows raises SQLSTATE 22023 rather than truncating.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_cnpj": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `(CURRENT_DATE - 1825)`."
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `CURRENT_DATE`."
+        }
+      },
+      "required": [
+        "p_cnpj"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "financial_statement_history": {
+    "kind": "rpc",
+    "path": "/rpc/financial_statement_history",
+    "description": "Filed account lines for one company and one statement, retaining every stored version. `financials` remains the latest-version surface. period_start/period_end preserve the filed span; `filed_currency` and `filed_scale` are source provenance, while `value` already has the filed scale applied at ingest. Filing-header fields are joined only on (cd_cvm, doc_type, dt_refer, versao); `filing_metadata_found=false` means no exact header match and the metadata fields remain NULL. Refuses above 1,000 rows with SQLSTATE 22023; narrow dates or statement. Values are in the filed currency, not converted.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_statement": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `(CURRENT_DATE - 1825)`."
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `CURRENT_DATE`."
+        },
+        "p_scope": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `'con'::text`.",
+          "default": "con",
+          "examples": [
+            "con",
+            "ind"
+          ]
+        },
+        "p_doc_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null,
+          "examples": [
+            "itr",
+            "dfp"
+          ]
+        }
+      },
+      "required": [
+        "p_id",
+        "p_statement"
+      ],
+      "additionalProperties": false
+    }
+  },
   "financials": {
     "kind": "rpc",
     "path": "/rpc/financials",
@@ -1901,6 +2004,68 @@ export const CONTRACT: Record<string, ContractEntry> = {
       },
       "required": [
         "p_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "focus_expectations": {
+    "kind": "rpc",
+    "path": "/rpc/focus_expectations",
+    "description": "BCB Focus expectations across survey dates for one required endpoint and horizon, optionally filtered by indicator. Each survey_date is one published survey observation; successive dates form the weekly revision path. Returns median, mean and standard deviation for baseCalculo=0 (trailing 30-day respondent sample); the 12-month inflation endpoint is unsmoothed (Suavizada=N). Horizon preserves DataReferencia exactly (annual year or monthly month/year). source identifies bacen_expectativas. Default date window is five years; more than 1,000 rows raises SQLSTATE 22023. This is not a vintage archive of later corrections to an old survey date. Migration 16 repaired the key but earlier collapsed horizons are not recovered until re-fetched.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_endpoint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "ExpectativasMercadoAnuais",
+            "ExpectativaMercadoMensais",
+            "ExpectativasMercadoSelic",
+            "ExpectativasMercadoInflacao12Meses",
+            null
+          ]
+        },
+        "p_horizon": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "examples": [
+            "2027",
+            "09/2026"
+          ]
+        },
+        "p_indicator": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `(CURRENT_DATE - 1825)`."
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `CURRENT_DATE`."
+        }
+      },
+      "required": [
+        "p_endpoint",
+        "p_horizon"
       ],
       "additionalProperties": false
     }

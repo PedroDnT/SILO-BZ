@@ -1,14 +1,15 @@
 # Listed-company data: what we ingest, what we transform, what we serve
 
-Mapped 2026-08-28 by reading the code, not the docs. Companion to
+Originally mapped 2026-08-28 by reading the code, not the docs; updated
+2026-09-24 for the served history and coverage endpoints. Companion to
 `docs/DATA_MODELING.md` (which covers the fund star schema) and `docs/API.md`
 (the read contract).
 
 **Short version:** CVM's financial statements are structured CSVs, not PDFs, and
-we ingest them in bulk. Almost none of it is served. The API exposes company
-_identity_ and nothing else — no revenue, no balance sheet, no cash flow — and
-the analytical layer models companies not at all. The only consumer of the
-numbers is the `webapp/` Evidence site, which queries Postgres directly.
+we ingest them in bulk. `api.financials` serves latest-version account lines;
+`api.financial_statement_history` serves all stored versions for one required
+statement. `api.company_financials` and `api.income_statements` provide derived
+income summaries. The exploratory webapp also queries selected data directly.
 
 ---
 
@@ -116,36 +117,37 @@ cumulative by summing quarters when the company has a non-calendar fiscal year
 **Widening the key stops future loss; it does not restore what was overwritten.
 The ITR backfill must be re-run.** DFP is unaffected and does not need it.
 
-## 4. Transformed — nothing
+## 4. Transformed — no company star schema
 
-`src/store/analytical/` contains **no company modelling at all**. A grep of all
-20 analytical files for `cia_account|cia_filing|cia_company|cia_event` hits
-exactly one file, `19_api_contract.sql`, and only inside `api.lookup`.
+There is still no `dim_company`, `fact_company_quarterly`, or materialized
+company statement model. The API reads the validated `cia_company`,
+`cia_filing`, and partitioned `cia_account` tables directly through
+`api.company_ref` and `api.cia_statement_rows`; it does not copy the company
+history into a second warehouse model. These functions centralize identifier
+resolution, filing scope, period/version policy, and bounded result access.
 
-There is no `dim_company`, no `fact_company_quarterly`, no `vw_cia_*`, no
-company function. `cia_account`, `cia_filing` and `cia_event` are read by
-**zero** analytical objects, have **zero** analytical indexes, **zero** grants,
-**zero** cron refreshes and **zero** smoke assertions. The star schema is
-funds-only.
-
-## 5. Served — API: identity only
+## 5. Served — company identity and statement history
 
 `api.lookup` returns a company row: `id` = `cd_cvm`, `id_type` = `cd_cvm`,
 `asset_class` = `cia`, `name` = `denom_cia`, `cnpj`, and `tickers` (active
 codes from the published FCA map). `setor`, `segmento` and `situacao` are not
 exposed.
 
-**And that is the end of the road.** `api.panel` has four arms — cash quotes,
-options, termo, and funds — and no company arm. All 11 catalog metrics take
-`ticker` or `cnpj` ids. `api.coverage()` reports no cia dataset, so there is no
-served freshness signal for any of it.
+The company id resolves to bounded statement functions: `api.financials`
+returns the latest stored versions, `api.financial_statement_history` retains
+all stored filing versions for one required statement, and
+`api.company_financials` / `api.income_statements` provide summary shapes.
+`cd_cvm` from `lookup` is accepted by these company functions. Statement
+functions distinguish filed period start/end, scope, statement type and filing
+version; callers can use `p_doc_type` to separate ITR and DFP and `p_scope` to
+request individual statements.
 
-The catalog advertises `cd_cvm` as an id type and `cia` as an asset class
-(`serve/catalog.py:317-321`) while defining **no metric for either** — so an
-agent that resolves a company through `lookup` receives an id it cannot pass to
-`panel` for anything. This is precisely the dead end the docs-only field test
-hit on 2026-08-28 when it tried to relate FIDC credit to listed-company equity
-(`docs/planning/archive/API_FIELD_TEST_2026-08-28.md`).
+`api.panel` still has no company-fundamental arm. Company account lines are
+queried through the dedicated statement RPCs and combined with other datasets
+by the researcher after resolving identifiers and dates. `api.coverage()` now
+reports the CIA filing-header watermark, but `complete_through` is `NULL`
+because no company filing-completeness model exists. A latest filing watermark
+does not prove all companies have filed.
 
 ## 6. Served — dashboards: the `webapp/` site only
 
@@ -243,24 +245,21 @@ ingest-log entity labels).
 
 ## 7. Landed but unserved
 
-Everything below is ingested, stored, and read by nothing:
+The following details remain unserved or are not represented as a historical
+revision series:
 
-- **`cia_filing` entirely.** Every column. The webapp's only reference is
-  `count(*)`, which reads no column. Filing versions, receipt dates and the
-  document links are all landed and never used.
-- **Five of eight statement families.** `DFC_MD` and `DFC_MI` (cash flow, both
-  methods), `DMPL` (changes in equity), `DRA` (comprehensive income) and `DVA`
-  (value added) are ingested for every company and every period and queried by
-  nothing. Only DRE, BPA and BPP are read.
-- **Every individual-scope row** (`escopo = 'ind'`). All queries filter to
-  consolidated.
+- **Exact filing metadata may be absent.** History joins `cia_filing` only on
+  `(cd_cvm, doc_type, dt_refer, versao)` and reports whether a matching header
+  exists; it does not infer missing document ids or links.
+- **Consolidated is the default**, not the only scope. Pass `p_scope = 'ind'`
+  to the statement functions for individual-scope rows.
 - **Every comparative period** (`ordem_exerc = 'PENÚLTIMO'`).
-- **All history.** Every consumer takes `distinct on (cd_cvm) … order by
-dt_refer desc` — the latest filing only. No time series over `cia_account`
-  exists anywhere, despite the table being partitioned by year for exactly that
-  purpose.
-- **The ITR/DFP distinction.** No consumer separates quarterly from annual; the
-  webapp mixes them by taking the max `dt_refer` regardless of `doc_type`.
+- **Earlier row versions outside the requested statement/date/scope.** The
+  history RPC is deliberately bounded to one company, one statement, and a
+  date window; callers must narrow the window when more than 1,000 lines match.
+- **The webapp's ITR/DFP distinction.** Statement RPCs accept `p_doc_type`, but
+  the exploratory webapp still mixes annual and quarterly filings when it takes
+  the max `dt_refer` regardless of document type.
 - **Most of `cia_ticker`.** `vw_company_ticker` carries seven columns; its only
   consumer selects one (`codneg`).
 
@@ -286,7 +285,8 @@ The `cia_aberta` 2019–2026 backfill dispatched 2026-08-28 09:55Z finished at
 partitions are declared and empty because the backfill is wired from 2019, not
 because those years failed.
 
-This is the single largest thing in the warehouse after `cvm_fi_balancete`, and
-sections 4–7 above still apply to all of it: an eight-year, 31M-row financial
-history that the API exposes nothing of and the analytical layer does not model.
-The `webapp/` site reads the latest filing per company and nothing else.
+This is the single largest thing in the warehouse after `cvm_fi_balancete`.
+The API exposes bounded per-company statement reads, not a whole-universe
+31-million-row response or a company fundamentals arm in `panel`; each capped
+call refuses above 1,000 rows. The `webapp/` site still reads only the latest
+filing per company and does not use the version-history endpoint.

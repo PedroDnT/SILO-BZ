@@ -8,6 +8,17 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      sql_compile_only:
+        description: Run only the ephemeral PostgreSQL SQL compile job
+        required: false
+        type: boolean
+        default: false
+      run_api_smoke:
+        description: Run the read-only smoke against the configured production API database
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
@@ -16,6 +27,7 @@ concurrency:
 jobs:
   pytest:
     name: pytest (offline)
+    if: github.event_name != 'workflow_dispatch' || !inputs.sql_compile_only
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -38,6 +50,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Install research evaluation test dependency
+        run: pip install "openai-agents==0.22.3"
+
       - name: Run tests
         run: python -m pytest tests/ -q --tb=short
 
@@ -52,6 +67,7 @@ jobs:
   # silo.ci_smoke_bypass GUC (production applies never set it).
   sql-compile:
     name: SQL compile (ephemeral Postgres)
+    if: github.event_name != 'workflow_dispatch' || inputs.sql_compile_only
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -502,7 +518,7 @@ jobs:
 
   api-smoke:
     name: api.* smoke (read-only)
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.run_api_smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:

@@ -39,6 +39,7 @@ RAISE_ONLY_FUNCTIONS = (
     "api.option_history",
     "api.termo_history",
     "api.financials",
+    "api.financial_statement_history",
     "api.company_financials",
     "api.income_statements",
     "api.balance_sheets",
@@ -46,6 +47,8 @@ RAISE_ONLY_FUNCTIONS = (
     "api.anbima_classes",
     "api.inflation",
     "api.inflation_items",
+    "api.fii_property_history",
+    "api.focus_expectations",
     # v34 (plan 2e): until v33 these three trimmed SILENTLY at the tier
     # ceiling (500 / 5000). They now refuse like the rest; p_limit survives
     # as an explicit newest-first head, so their page CTE reads
@@ -144,6 +147,7 @@ EXPECTED_FUNCTIONS = {
     "api.lookup",
     "api.catalog",
     "api.financials",
+    "api.financial_statement_history",
     "api.company_financials",
     "api.income_statements",
     "api.balance_sheets",
@@ -156,6 +160,8 @@ EXPECTED_FUNCTIONS = {
     "api.fidc_portfolio",
     "api.inflation",
     "api.inflation_items",
+    "api.fii_property_history",
+    "api.focus_expectations",
     "api.fidc_tranches",
     "api.fidc_aging",
 }
@@ -530,10 +536,16 @@ def test_every_capped_function_fetches_one_page_plus_one_and_refuses(fn):
         f"{fn} must return at most one page"
     )
     name = fn.split(".", 1)[1]
-    assert f"api.assert_row_cap((SELECT count(*) FROM page)" in page, (
+    assert re.search(
+        r"api\.assert_row_cap\s*\(\s*\(SELECT count\(\*\) FROM page\)",
+        page,
+        re.I,
+    ), (
         f"{fn} must count its own page and refuse over it"
     )
-    assert f"'{name}')" in page, f"{fn} must name itself in the 22023"
+    assert re.search(rf"'{re.escape(name)}'\s*\)", page), (
+        f"{fn} must name itself in the 22023"
+    )
 
 
 @pytest.mark.parametrize("fn", CAPPED_FUNCTIONS)
@@ -1447,14 +1459,15 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
     # (fidc_cedentes, fidc_sacados, fidc_portfolio stopped trimming),
     # twenty-seven since v35 (balance_sheets, cash_flow_statements), thirty since
     # v37 (the three filing-behaviour screens), thirty-three since v38
-    # (company_events, macro_series, ptax). The
+    # (company_events, macro_series, ptax), thirty-six since v39
+    # (financial_statement_history, fii_property_history, focus_expectations). The
     # prose said "eight" for two versions while listing nine — pin the word
     # to the tuples so it cannot drift again.
-    assert "thirty-three" in c.lower().split(), "all thirty-three capped functions refuse"
+    assert "thirty-six" in c.lower().split(), "all thirty-six capped functions refuse"
     assert (
         len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) + len(FNET_FUNCTIONS)
         + len(WAVE3_FUNCTIONS)
-    ) == 33
+    ) == 36
     for fn in WAVE3_FUNCTIONS:
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
     for fn in HEAD_FUNCTIONS:

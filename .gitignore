@@ -67,5 +67,9 @@ evi/
 # .claude/ stays tracked: it carries the shared settings.json, the post-edit
 # hook and the SILO skill that CI and every contributor rely on.
 .agents/
-.codex/
+.codex/*
+!.codex/coordination/
 .vscode/
+
+.codex/coordination/*
+!.codex/coordination/project.yaml

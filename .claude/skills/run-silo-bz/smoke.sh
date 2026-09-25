@@ -8,6 +8,7 @@
 #   KEEP_SERVER=1 bash .claude/skills/run-silo-bz/smoke.sh   # leave API running
 #
 # Env overrides:
+#   SILO_PG_BIN   directory containing initdb, pg_ctl, psql, createdb
 #   SILO_PG_DIR   socket+data parent dir  (default /var/tmp/silopg_run)
 #   SILO_PG_PORT  postgres port           (default 55433)
 #   SILO_API_PORT serve/ HTTP port        (default 8080)
@@ -23,32 +24,57 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-PGBIN=/usr/lib/postgresql/16/bin
+PGBIN="${SILO_PG_BIN:-}"
+if [ -z "$PGBIN" ]; then
+  if command -v initdb >/dev/null 2>&1; then
+    PGBIN="$(dirname "$(command -v initdb)")"
+  elif [ -x /usr/lib/postgresql/16/bin/initdb ]; then
+    PGBIN=/usr/lib/postgresql/16/bin
+  elif command -v brew >/dev/null 2>&1; then
+    BREW_PGBIN="$(brew --prefix postgresql@16 2>/dev/null || true)/bin"
+    [ -x "$BREW_PGBIN/initdb" ] && PGBIN="$BREW_PGBIN"
+  fi
+fi
+if [ -z "$PGBIN" ] || [ ! -x "$PGBIN/initdb" ]; then
+  echo "PostgreSQL server binaries missing. Install PostgreSQL 16 or set SILO_PG_BIN." >&2
+  exit 1
+fi
+
+# Linux CI uses the postgres OS account; Homebrew Postgres uses the current
+# macOS account. initdb refuses to run as root.
+if [ "$(uname -s)" = Darwin ]; then
+  PGUSER="$(id -un)"
+  pg_run() { "$@"; }
+else
+  PGUSER=postgres
+  pg_run() { su postgres -c "$(printf '%q ' "$@")"; }
+fi
 PGDIR="${SILO_PG_DIR:-/var/tmp/silopg_run}"
 PGPORT="${SILO_PG_PORT:-55433}"
 APIPORT="${SILO_API_PORT:-8080}"
 DB=silo_run
-URL="postgresql://postgres@/${DB}?host=${PGDIR}&port=${PGPORT}"
+URL="postgresql://${PGUSER}@/${DB}?host=${PGDIR}&port=${PGPORT}"
 
 say() { printf '\n== %s ==\n' "$*"; }
 
 # --- 1. Postgres: init once, start if stopped -------------------------------
 if [ ! -d "$PGDIR/data" ]; then
   say "initdb $PGDIR/data"
-  mkdir -p "$PGDIR" && chown postgres "$PGDIR"
-  su postgres -c "$PGBIN/initdb -D '$PGDIR/data' -A trust" >/dev/null
+  mkdir -p "$PGDIR"
+  if [ "$(uname -s)" != Darwin ]; then chown postgres "$PGDIR"; fi
+  pg_run "$PGBIN/initdb" -D "$PGDIR/data" -A trust >/dev/null
 fi
-if ! su postgres -c "$PGBIN/pg_ctl -D '$PGDIR/data' status" >/dev/null 2>&1; then
+if ! pg_run "$PGBIN/pg_ctl" -D "$PGDIR/data" status >/dev/null 2>&1; then
   say "starting postgres on $PGDIR:$PGPORT"
-  su postgres -c "$PGBIN/pg_ctl -D '$PGDIR/data' -l '$PGDIR/log' \
-    -o '-p $PGPORT -k $PGDIR -c listen_addresses=' start" >/dev/null
+  pg_run "$PGBIN/pg_ctl" -D "$PGDIR/data" -l "$PGDIR/log" \
+    -o "-p $PGPORT -k $PGDIR -c listen_addresses=" start >/dev/null
 fi
 
 # --- 2. Database + roles + schema (idempotent) ------------------------------
-su postgres -c "psql -h '$PGDIR' -p $PGPORT -Atc \"SELECT 1 FROM pg_database WHERE datname='$DB'\"" \
-  | grep -q 1 || su postgres -c "createdb -h '$PGDIR' -p $PGPORT $DB"
-psql "$URL" -Atc "SELECT 1 FROM pg_roles WHERE rolname='anon'" | grep -q 1 || \
-  psql "$URL" -v ON_ERROR_STOP=1 -q \
+pg_run "$PGBIN/psql" -d postgres -h "$PGDIR" -p "$PGPORT" -Atc "SELECT 1 FROM pg_database WHERE datname='$DB'" \
+  | grep -q 1 || pg_run "$PGBIN/createdb" -h "$PGDIR" -p "$PGPORT" "$DB"
+"$PGBIN/psql" "$URL" -Atc "SELECT 1 FROM pg_roles WHERE rolname='anon'" | grep -q 1 || \
+  "$PGBIN/psql" "$URL" -v ON_ERROR_STOP=1 -q \
     -c "CREATE ROLE anon NOLOGIN;" -c "CREATE ROLE authenticated NOLOGIN;"
 
 # The skip sentinel must be the LAST thing a full bootstrap creates, not the
@@ -58,20 +84,20 @@ psql "$URL" -Atc "SELECT 1 FROM pg_roles WHERE rolname='anon'" | grep -q 1 || \
 # the directory was deleted by hand. api.catalog() is created by the last
 # analytical file, so its absence means "not fully applied" and the whole
 # idempotent bootstrap runs again.
-bootstrapped=$(psql "$URL" -Atc \
+bootstrapped=$("$PGBIN/psql" "$URL" -Atc \
   "SELECT to_regprocedure('api.catalog()') IS NOT NULL" 2>/dev/null | tr -d '[:space:]')
 if [ "$bootstrapped" != "t" ]; then
   say "applying schema.sql + migrations (idempotent; re-runs after a partial apply)"
-  psql "$URL" -v ON_ERROR_STOP=1 -q -f "$REPO/src/store/schema.sql"
+  "$PGBIN/psql" "$URL" -v ON_ERROR_STOP=1 -q -f "$REPO/src/store/schema.sql"
   for f in "$REPO"/src/store/migrations/*.sql; do
-    psql "$URL" -v ON_ERROR_STOP=1 -q -f "$f" || { echo "FAIL $f"; exit 1; }
+    "$PGBIN/psql" "$URL" -v ON_ERROR_STOP=1 -q -f "$f" || { echo "FAIL $f"; exit 1; }
   done
   say "applying analytical layer (empty-DB bypass)"
-  ( cd "$REPO" && POSTGRES_URL="$URL" PGOPTIONS="-c silo.ci_smoke_bypass=on" \
+  ( cd "$REPO" && PATH="$PGBIN:$PATH" POSTGRES_URL="$URL" PGOPTIONS="-c silo.ci_smoke_bypass=on" \
       bash scripts/apply_analytical.sh ) >/dev/null
   # Prove it: if the sentinel is still missing the bootstrap did not finish,
   # and failing here is far better than a green smoke over a half-built DB.
-  psql "$URL" -Atc "SELECT to_regprocedure('api.catalog()') IS NOT NULL" \
+  "$PGBIN/psql" "$URL" -Atc "SELECT to_regprocedure('api.catalog()') IS NOT NULL" \
     | grep -q t || { echo "bootstrap incomplete: api.catalog() missing" >&2; exit 1; }
 fi
 

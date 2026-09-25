@@ -191,6 +191,31 @@ class TestIngestCiaEvent:
         assert n == 0
         assert captured_upserts == []
 
+    @pytest.mark.parametrize(("total", "protocolless"), [(100, 100), (100, 12)])
+    def test_protocolless_source_rows_are_counted_in_a_warning(
+        self, captured_upserts, caplog, total, protocolless
+    ):
+        """Pin the measured IPE gap: 2012 is 100% unkeyable; 2015 is 12%.
+
+        The source does not provide a protocol/version for these filings. Keep
+        dropping them until a second key era is approved, but do not let a
+        partial loss hide behind an otherwise successful slice.
+        """
+        valid_count = total - protocolless
+        raw_rows = [dict(IPE_ROW) for _ in range(valid_count)] + [
+            {**IPE_ROW, "Protocolo_Entrega": "", "Versao": ""}
+            for _ in range(protocolless)
+        ]
+
+        n = ingest_cia_event(MagicMock(), raw_rows)
+
+        assert n == valid_count
+        assert sum(len(call["rows"]) for call in captured_upserts) == valid_count
+        assert (
+            f"dropped {protocolless} of {total} IPE source row(s)"
+            in caplog.text
+        )
+
     def test_drops_rows_without_versao(self, captured_upserts):
         bad = {**IPE_ROW, "Versao": ""}
         n = ingest_cia_event(MagicMock(), [bad])

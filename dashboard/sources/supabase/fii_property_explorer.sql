@@ -26,8 +26,7 @@ select
   x.numero_unidades    as numero_unidades,
   x.pct_invested       as pct_invested,
   x.vacancia           as vacancia,
-  x.inadimplencia      as inadimplencia,
-  x.concentration_flag as concentration_flag
+  x.inadimplencia      as inadimplencia
 from (values (1)) as g(one)
 left join lateral (
   select
@@ -41,12 +40,7 @@ left join lateral (
     i.numero_unidades              as numero_unidades,
     i.pr_imovel_total_investido    as pct_invested,
     i.pr_vacancia                  as vacancia,
-    i.pr_inadimplencia             as inadimplencia,
-    case
-      when i.pr_imovel_total_investido is null then null
-      when i.pr_imovel_total_investido > 50    then 'single asset > 50% of invested'
-      else 'diversified'
-    end                            as concentration_flag
+    i.pr_inadimplencia             as inadimplencia
   from cvm_fii_imovel i
   left join dim_fund d
     on d.cnpj = i.cnpj and d.entity_type = 'fii'

@@ -2773,6 +2773,119 @@ GRANT EXECUTE ON FUNCTION api.inflation_items(INT, TEXT, DATE, DATE) TO anon, au
 COMMENT ON FUNCTION api.inflation_items(INT, TEXT, DATE, DATE) IS
     'The IPCA item tree from IBGE SIDRA (tables 1419 from 2012-01, 7060 from 2020-01), one row per (month, node): weight in the basket, change in the month, year-to-date and 12-month change AS PUBLISHED (percent), plus contribution = weight × change_month / 100 in percentage points of the headline (the one derived column; NULL when either input is NULL). Levels: 0 general index, 1 the nine groups (default), 2 subgroups, 3 items, 4 subitems. Sum contributions within ONE level only — a group and its subgroups are the same money twice. parent_number is read off IBGE''s structure number. item_code changed with the 2020-01 structure (sidra_table says which); item_number is the continuity. Unknown level/item raises 22023. Default window 36 months; more than 1000 rows RAISES 22023 (never trimmed): narrow the window or pin p_item.';
 
+-- FII property register snapshots. CVM publishes no stable property identifier;
+-- id is the stored source-row hash and duplicates at the same filing date are
+-- retained. Nullable measurements remain NULL (never converted to zero).
+CREATE OR REPLACE FUNCTION api.fii_property_history(
+    p_cnpj TEXT,
+    p_from DATE DEFAULT (CURRENT_DATE - 1825),
+    p_to DATE DEFAULT CURRENT_DATE
+)
+RETURNS TABLE (
+    cnpj TEXT, reference_date DATE, period_year INT, version INT,
+    row_hash TEXT, property_class TEXT, property_name TEXT, address TEXT,
+    area NUMERIC, units INT, other_characteristics TEXT,
+    vacancy_pct NUMERIC, delinquency_pct NUMERIC, revenue_pct NUMERIC,
+    rented_pct NUMERIC, sold_pct NUMERIC,
+    development_completed_pct NUMERIC, development_expected_pct NUMERIC,
+    construction_cost_completed NUMERIC, construction_cost_expected NUMERIC,
+    property_total_invested_pct NUMERIC, source TEXT
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $fn$
+BEGIN
+    IF p_cnpj IS NULL OR p_cnpj !~ '^[0-9]{14}$' THEN
+        RAISE EXCEPTION 'p_cnpj must be a 14-digit FII CNPJ' USING ERRCODE = '22023';
+    END IF;
+    RETURN QUERY
+    WITH page AS (
+        SELECT i.cnpj, i.data_referencia, i.period_year, i.versao, i.row_hash,
+               i.classe, i.nome_imovel, i.endereco, i.area, i.numero_unidades,
+               i.outras_caracteristicas, i.pr_vacancia, i.pr_inadimplencia,
+               i.pr_receitas_fii, i.pr_locado, i.pr_vendido,
+               i.pr_conclusao_obras_realizado, i.pr_conclusao_obras_previsto,
+               i.custo_construcao_realizado, i.custo_construcao_previsto,
+               i.pr_imovel_total_investido, 'cvm'::text
+        FROM public.cvm_fii_imovel i
+        WHERE i.cnpj = p_cnpj
+          AND i.data_referencia BETWEEN COALESCE(p_from, CURRENT_DATE - 1825)
+                                    AND COALESCE(p_to, CURRENT_DATE)
+        ORDER BY i.data_referencia DESC, i.versao DESC NULLS LAST, i.row_hash
+        LIMIT 1001
+    )
+    SELECT page.* FROM page
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'fii_property_history')
+    ORDER BY page.data_referencia DESC, page.versao DESC NULLS LAST, page.row_hash
+    LIMIT 1000;
+END;
+$fn$;
+REVOKE ALL ON FUNCTION api.fii_property_history(TEXT, DATE, DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.fii_property_history(TEXT, DATE, DATE) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION api.fii_property_history(TEXT, DATE, DATE) TO silo_api;
+COMMENT ON FUNCTION api.fii_property_history(TEXT, DATE, DATE) IS
+    'CVM FII property-register snapshots, one row per stored source row and reference date. p_cnpj is the exact fund CNPJ. CVM publishes no stable property identifier; row_hash identifies the exact source row only. area and financial/progress fields preserve CVM nulls, not zero. Vacancy, delinquency and other pr_* fields are published percentages; source is cvm. Default date window is five years; more than 1,000 rows raises SQLSTATE 22023 rather than truncating.';
+
+-- Weekly Focus expectation path: successive survey dates are the revisions
+-- analysts compare. This does not claim to preserve corrected vintages of an
+-- old survey date; the landing table upserts those on its natural key.
+CREATE OR REPLACE FUNCTION api.focus_expectations(
+    p_endpoint  TEXT,
+    p_horizon   TEXT,
+    p_indicator TEXT DEFAULT NULL,
+    p_from      DATE DEFAULT (CURRENT_DATE - 1825),
+    p_to        DATE DEFAULT CURRENT_DATE
+)
+RETURNS TABLE (
+    endpoint_name TEXT, indicator TEXT, survey_date DATE, horizon TEXT,
+    median NUMERIC, mean_value NUMERIC, std_dev NUMERIC,
+    sample_basis TEXT, smoothing TEXT, source TEXT
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $fn$
+BEGIN
+    IF p_endpoint IS NULL OR p_endpoint NOT IN (
+        'ExpectativasMercadoAnuais', 'ExpectativaMercadoMensais',
+        'ExpectativasMercadoSelic', 'ExpectativasMercadoInflacao12Meses'
+    ) THEN
+        RAISE EXCEPTION 'unsupported Focus endpoint: %', p_endpoint USING ERRCODE = '22023';
+    END IF;
+    IF p_horizon IS NULL OR btrim(p_horizon) = '' THEN
+        RAISE EXCEPTION 'p_horizon is required and uses CVM/BACEN DataReferencia format' USING ERRCODE = '22023';
+    END IF;
+
+    RETURN QUERY
+    WITH page AS (
+        SELECT e.endpoint_name, e.indicador, e.reference_date, e.horizon,
+               e.median, e.mean_val,
+               e.std_dev,
+               'baseCalculo=0 (trailing 30-day sample)'::text,
+               CASE WHEN e.endpoint_name = 'ExpectativasMercadoInflacao12Meses'
+                    THEN 'N'::text END,
+               'bacen_expectativas'::text
+        FROM public.bacen_expectativas e
+        WHERE e.endpoint_name = p_endpoint
+          AND e.horizon = btrim(p_horizon)
+          AND (p_indicator IS NULL OR e.indicador = btrim(p_indicator))
+          AND e.reference_date BETWEEN COALESCE(p_from, CURRENT_DATE - 1825)
+                                   AND COALESCE(p_to, CURRENT_DATE)
+          AND e.raw ->> 'baseCalculo' = '0'
+          AND (e.endpoint_name <> 'ExpectativasMercadoInflacao12Meses'
+               OR e.raw ->> 'Suavizada' = 'N')
+        ORDER BY e.reference_date DESC, e.indicador NULLS FIRST
+        LIMIT 1001
+    )
+    SELECT page.* FROM page
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'focus_expectations')
+    ORDER BY page.reference_date, page.indicador NULLS FIRST
+    LIMIT 1000;
+END;
+$fn$;
+REVOKE ALL ON FUNCTION api.focus_expectations(TEXT, TEXT, TEXT, DATE, DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.focus_expectations(TEXT, TEXT, TEXT, DATE, DATE) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION api.focus_expectations(TEXT, TEXT, TEXT, DATE, DATE) TO silo_api;
+COMMENT ON FUNCTION api.focus_expectations(TEXT, TEXT, TEXT, DATE, DATE) IS
+    'BCB Focus expectations across survey dates for one required endpoint and horizon, optionally filtered by indicator. Each survey_date is one published survey observation; successive dates form the weekly revision path. Returns median, mean and standard deviation for baseCalculo=0 (trailing 30-day respondent sample); the 12-month inflation endpoint is unsmoothed (Suavizada=N). Horizon preserves DataReferencia exactly (annual year or monthly month/year). source identifies bacen_expectativas. Default date window is five years; more than 1,000 rows raises SQLSTATE 22023. This is not a vintage archive of later corrections to an old survey date. Migration 16 repaired the key but earlier collapsed horizons are not recovered until re-fetched.';
+
 -- ---------------------------------------------------------------------------
 -- Coverage — freshness without exposing cvm_ingest_log
 -- ---------------------------------------------------------------------------
@@ -2979,9 +3092,27 @@ AS $$
         -- exactly the claim this function exists to prevent.
         SELECT 'financials'::text,
                MAX(f.dt_refer) FILTER (WHERE f.dt_refer <= CURRENT_DATE),
-               NULL::date, 'cvm'::text, NULL::text,
+               NULL::date, 'cvm'::text,
+               'api.financials serves latest stored statement versions; api.financial_statement_history exposes every stored version for one company and required statement. Exact document metadata may be unavailable; coverage reads filing headers and does not scan partitioned account rows.'::text,
                MAX(f.dt_refer), 'cia_aberta'::text
         FROM public.cia_filing f
+        UNION ALL
+        -- FII property-register snapshots. The source has no stable property
+        -- identifier: row_hash identifies source-row content within a filing,
+        -- not the physical asset across reports.
+        SELECT 'fii_property_history'::text,
+               MAX(i.data_referencia) FILTER (WHERE i.data_referencia <= CURRENT_DATE),
+               NULL::date, 'cvm'::text,
+               'One exact fund CNPJ; one source row per filing snapshot. CVM publishes no stable property id; row_hash is source-row identity only. NULL measurements remain missing, never zero.'::text,
+               MAX(i.data_referencia), 'fii'::text
+        FROM public.cvm_fii_imovel i
+        UNION ALL
+        SELECT 'focus_expectations'::text,
+               MAX(e.reference_date) FILTER (WHERE e.reference_date <= CURRENT_DATE),
+               NULL::date, 'bacen'::text,
+               'Weekly Focus observations by report date and exact horizon. The API pins baseCalculo=0 and unsmoothed 12-month inflation; migration 16 fixed horizon collisions, but older lost horizon rows require re-fetch. Later corrections to survey dates outside the daily 30-day refresh are not a vintage archive.'::text,
+               MAX(e.reference_date), 'bacen'::text
+        FROM public.bacen_expectativas e
         UNION ALL
         -- ANBIMA boletim: a published edition is complete by construction (a
         -- monthly publication, not a filing cadence), so both dates coincide.
@@ -3816,11 +3947,12 @@ GRANT EXECUTE ON FUNCTION api.lookup(TEXT) TO anon, authenticated;
 
 -- Internal: resolve a caller id to one company. Never granted.
 --
--- CREATE OR REPLACE cannot widen a RETURNS TABLE, so the four functions in this
+-- CREATE OR REPLACE cannot widen a RETURNS TABLE, so the functions in this
 -- section are dropped in reverse dependency order first. Without this, adding a
 -- column to any of them fails on an already-deployed database with
 -- "cannot change return type of existing function" — green on a fresh CI
 -- cluster and red on Supabase, which is the worst way to find out.
+DROP FUNCTION IF EXISTS api.financial_statement_history(TEXT, TEXT, DATE, DATE, TEXT, TEXT);
 DROP FUNCTION IF EXISTS api.company_financials(TEXT, DATE, DATE, TEXT);
 DROP FUNCTION IF EXISTS api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT);
 DROP FUNCTION IF EXISTS api.cia_statement_rows(TEXT, DATE, DATE, TEXT, TEXT, TEXT);
@@ -4029,6 +4161,119 @@ $$;
 
 REVOKE ALL ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
+
+-- Raw statement lines across every stored filing version. `financials` above
+-- remains the latest-version view; this narrower, explicit history endpoint
+-- lets a researcher inspect restatements without mixing them into a current
+-- series. The statement is required and every response refuses above 1,000.
+CREATE OR REPLACE FUNCTION api.financial_statement_history(
+    p_id        TEXT,
+    p_statement TEXT,
+    p_from      DATE DEFAULT (CURRENT_DATE - 1825),
+    p_to        DATE DEFAULT CURRENT_DATE,
+    p_scope     TEXT DEFAULT 'con',
+    p_doc_type  TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+    id                      TEXT,
+    id_type                 TEXT,
+    cnpj                    TEXT,
+    company                 TEXT,
+    ticker                  TEXT,
+    doc_type                TEXT,
+    statement               TEXT,
+    scope                   TEXT,
+    ref_date                DATE,
+    period_start            DATE,
+    period_end              DATE,
+    period_months           INT,
+    account_code            TEXT,
+    account_name            TEXT,
+    value                   NUMERIC,
+    version                 INT,
+    source                  TEXT,
+    filed_currency          TEXT,
+    filed_scale             TEXT,
+    filing_metadata_found   BOOLEAN,
+    filing_document_id      TEXT,
+    filing_received_date    DATE,
+    filing_link             TEXT
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+    IF p_statement IS NULL OR btrim(p_statement) = '' THEN
+        RAISE EXCEPTION 'p_statement is required'
+            USING ERRCODE = '22023';
+    END IF;
+
+    RETURN QUERY
+    WITH page AS (
+        SELECT
+            r.cd_cvm AS id,
+            'cd_cvm'::text AS id_type,
+            r.cnpj,
+            r.company,
+            r.ticker,
+            a.doc_type,
+            a.grupo AS statement,
+            a.escopo AS scope,
+            a.dt_refer AS ref_date,
+            a.dt_ini_exerc AS period_start,
+            a.dt_fim_exerc AS period_end,
+            CASE
+                WHEN a.dt_ini_exerc IS NOT NULL AND a.dt_fim_exerc IS NOT NULL
+                THEN (EXTRACT(YEAR FROM AGE(a.dt_fim_exerc + 1, a.dt_ini_exerc)) * 12
+                    + EXTRACT(MONTH FROM AGE(a.dt_fim_exerc + 1, a.dt_ini_exerc)))::int
+            END AS period_months,
+            a.cd_conta AS account_code,
+            a.ds_conta AS account_name,
+            a.vl_conta AS value,
+            a.versao AS version,
+            'cvm'::text AS source,
+            NULLIF(a.raw ->> 'MOEDA', '') AS filed_currency,
+            a.escala_moeda AS filed_scale,
+            f.id IS NOT NULL AS filing_metadata_found,
+            f.id_doc AS filing_document_id,
+            f.dt_receb AS filing_received_date,
+            f.link_doc AS filing_link
+        FROM public.cia_account a
+        JOIN api.company_ref(p_id) r ON r.cd_cvm = a.cd_cvm
+        LEFT JOIN public.cia_filing f
+          ON f.cd_cvm = a.cd_cvm
+         AND f.doc_type = a.doc_type
+         AND f.dt_refer = a.dt_refer
+         AND f.versao = a.versao
+        WHERE a.dt_refer BETWEEN COALESCE(p_from, CURRENT_DATE - 1825)
+                             AND COALESCE(p_to, CURRENT_DATE)
+          AND a.grupo = upper(btrim(p_statement))
+          AND a.escopo = lower(btrim(COALESCE(p_scope, 'con')))
+          AND (p_doc_type IS NULL OR a.doc_type = lower(btrim(p_doc_type)))
+          AND a.ordem_exerc = 'ÚLTIMO'
+        ORDER BY a.dt_refer DESC, a.versao DESC NULLS LAST,
+                 a.dt_ini_exerc, a.cd_conta
+        LIMIT 1001
+    )
+    SELECT page.*
+    FROM page
+    WHERE api.assert_row_cap(
+        (SELECT count(*) FROM page), FALSE, 'financial_statement_history'
+    )
+    ORDER BY page.ref_date DESC, page.version DESC NULLS LAST,
+             page.period_start, page.account_code
+    LIMIT 1000;
+END;
+$$;
+
+COMMENT ON FUNCTION api.financial_statement_history(TEXT, TEXT, DATE, DATE, TEXT, TEXT) IS
+    'Filed account lines for one company and one statement, retaining every stored version. `financials` remains the latest-version surface. period_start/period_end preserve the filed span; `filed_currency` and `filed_scale` are source provenance, while `value` already has the filed scale applied at ingest. Filing-header fields are joined only on (cd_cvm, doc_type, dt_refer, versao); `filing_metadata_found=false` means no exact header match and the metadata fields remain NULL. Refuses above 1,000 rows with SQLSTATE 22023; narrow dates or statement. Values are in the filed currency, not converted.';
+
+REVOKE ALL ON FUNCTION api.financial_statement_history(TEXT, TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.financial_statement_history(TEXT, TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION api.financial_statement_history(TEXT, TEXT, DATE, DATE, TEXT, TEXT) TO silo_api;
 
 DROP FUNCTION IF EXISTS api.company_financials(TEXT, DATE, DATE, TEXT);
 CREATE OR REPLACE FUNCTION api.company_financials(
@@ -4649,7 +4894,7 @@ STABLE
 AS $fn$
 SELECT $json${
   "kind": "catalog",
-  "version": 38,
+  "version": 39,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, the B3 securities-lending and investor-flow group, and Brazilian inflation — BACEN's IPCA series and IBGE's item tree with weights). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -4959,7 +5204,8 @@ SELECT $json${
     "Default windows are honest: with no explicit `to`, fund metrics end at each family's latest COMPLETE period (coverage() reports it as complete_through) — a partially-filed trailing month is not served. An explicit `to` serves the window verbatim, partial months included.",
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
-    "Row caps — getting this wrong means silently analysing a TRUNCATED series, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY set-returning function now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short result can no longer look complete. The error says WHY (the response is one 1000-row page and SILO never returns a silently truncated result) and HOW to fix it for that function, in the message and again as PostgREST's `details` / `hint`. That is all thirty-three — panel, quote_history, fund_nav, option_history, termo_history, financials, company_financials, income_statements, balance_sheets, cash_flow_statements, anbima_classes, inflation, inflation_items, fidc_cedentes, fidc_sacados, fidc_portfolio, fidc_tranches, fidc_aging, fund_documents, fund_restatements, company_events, macro_series, ptax and the ten screen_* functions (`limits.page.all`). THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send p_after='' for the first page, then the key from the last row — for the panel 'date|id|metric|asset_class', for quote_history and fund_nav just that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when paging, because its cursor is a bare period and one CNPJ can file under two families in the same month. The rest do not page: narrow p_from/p_to instead (inflation and inflation_items default to the last 36 months for that reason), for fidc_cedentes / fidc_sacados / fidc_portfolio narrow the months (a p_cedente lookup spans many funds), pin one p_kind on fidc_portfolio, or ask for the newest N rows with an explicit p_limit (1..1000 — until v34 these three trimmed SILENTLY at 500 anonymous / 5,000 signed in; they no longer do), or for a screen raise its thresholds or pin its output filter (p_dormancy / p_min_nav, p_driver, p_family, p_modalidade). The old sentinels (5001 on the series functions, 100001 on the panel) are GONE and were never observable anyway — PostgREST cut the response at 1000 first (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. The RPC functions no longer need it — they raise instead. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
+    "CIA, FII AND FOCUS HELD DATA. api.financial_statement_history returns raw CIA account lines across all stored filing versions for one required statement and company id; `financials` remains latest-version only. Filing header metadata is present only on an exact key match. Values are already scaled at ingest and remain in filed currency. api.fii_property_history filters one exact fund CNPJ and reference-date window; CVM publishes no stable property id, so row_hash identifies a source row, not a durable asset. Nullable measurements remain NULL. api.focus_expectations returns the weekly path across BCB survey dates for one exact endpoint and required forecast horizon, with an optional indicator. The stored key retains each date/horizon; `baseCalculo=0` is the trailing 30-day respondent sample and 12-month inflation is unsmoothed. It is not a vintage archive of corrected old reports, and migration 16-era missing horizons may await re-fetch. All three endpoints refuse above 1,000 rows.",
+    "Row caps — getting this wrong means silently analysing a TRUNCATED series, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY set-returning function now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short result can no longer look complete. The error says WHY (the response is one 1000-row page and SILO never returns a silently truncated result) and HOW to fix it for that function, in the message and again as PostgREST's `details` / `hint`. That is all thirty-six — panel, quote_history, fund_nav, option_history, termo_history, financials, financial_statement_history, company_financials, income_statements, balance_sheets, cash_flow_statements, anbima_classes, inflation, inflation_items, fii_property_history, focus_expectations, fidc_cedentes, fidc_sacados, fidc_portfolio, fidc_tranches, fidc_aging, fund_documents, fund_restatements, company_events, macro_series, ptax and the ten screen_* functions (`limits.page.all`). THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send p_after='' for the first page, then the key from the last row — for the panel 'date|id|metric|asset_class', for quote_history and fund_nav just that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when paging, because its cursor is a bare period and one CNPJ can file under two families in the same month. The rest do not page: narrow p_from/p_to instead (inflation and inflation_items default to the last 36 months for that reason), for fidc_cedentes / fidc_sacados / fidc_portfolio narrow the months (a p_cedente lookup spans many funds), pin one p_kind on fidc_portfolio, or ask for the newest N rows with an explicit p_limit (1..1000 — until v34 these three trimmed SILENTLY at 500 anonymous / 5,000 signed in; they no longer do), or for a screen raise its thresholds or pin its output filter (p_dormancy / p_min_nav, p_driver, p_family, p_modalidade). The old sentinels (5001 on the series functions, 100001 on the panel) are GONE and were never observable anyway — PostgREST cut the response at 1000 first (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. The RPC functions no longer need it — they raise instead. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
     "An unrecognised metric name is IGNORED, not rejected: the panel comes back smaller and perfectly plausible. Take metric names from this catalog's `metrics` map, never from memory.",
     "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
     "CALLER TIERS. Anonymous access is free but deliberately small: panel accepts at most 3 ids per call, search_funds returns at most 25 rows, and option_chain pages at most 200. Signing in (GitHub) raises those to 50 ids, 200 rows and 2000 respectively, and the query timeout from 3s to 8s, and unlocks panel universe mode (p_ids empty + p_entity_type: a whole family, paged with p_after). Exceeding the id ceiling raises SQLSTATE 22023 naming the limit — the panel is never silently truncated to fit.",
@@ -4997,6 +5243,9 @@ SELECT $json${
         "anbima_classes",
         "inflation",
         "inflation_items",
+        "financial_statement_history",
+        "fii_property_history",
+        "focus_expectations",
         "fidc_cedentes",
         "fidc_sacados",
         "fidc_portfolio",
@@ -5036,6 +5285,9 @@ SELECT $json${
           "anbima_classes",
           "inflation",
           "inflation_items",
+          "financial_statement_history",
+          "fii_property_history",
+          "focus_expectations",
           "fidc_cedentes",
           "fidc_sacados",
           "fidc_portfolio",
@@ -5507,6 +5759,7 @@ SELECT $json${
     "option_exercises": "POST /rest/v1/rpc/option_exercises",
     "termo_history": "POST /rest/v1/rpc/termo_history",
     "financials": "POST /rest/v1/rpc/financials",
+    "financial_statement_history": "POST /rest/v1/rpc/financial_statement_history",
     "company_financials": "POST /rest/v1/rpc/company_financials",
     "income_statements": "POST /rest/v1/rpc/income_statements",
     "balance_sheets": "POST /rest/v1/rpc/balance_sheets",
@@ -5514,6 +5767,8 @@ SELECT $json${
     "anbima_classes": "POST /rest/v1/rpc/anbima_classes",
     "inflation": "POST /rest/v1/rpc/inflation",
     "inflation_items": "POST /rest/v1/rpc/inflation_items",
+    "fii_property_history": "POST /rest/v1/rpc/fii_property_history",
+    "focus_expectations": "POST /rest/v1/rpc/focus_expectations",
     "fund_debentures": "POST /rest/v1/rpc/fund_debentures",
     "fidc_cedentes": "POST /rest/v1/rpc/fidc_cedentes",
     "fidc_sacados": "POST /rest/v1/rpc/fidc_sacados",
@@ -5619,4 +5874,3 @@ REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM silo_api;
 REVOKE CREATE ON SCHEMA public FROM silo_api;
 
 COMMIT;
-

@@ -308,6 +308,13 @@ SUGGESTED_VALUES: dict[str, list[str]] = {
     "p_freq": ["month", "day"],
     "p_scope": ["con", "ind"],
     "p_doc_type": ["itr", "dfp"],
+    "p_endpoint": [
+        "ExpectativasMercadoAnuais",
+        "ExpectativaMercadoMensais",
+        "ExpectativasMercadoSelic",
+        "ExpectativasMercadoInflacao12Meses",
+    ],
+    "p_horizon": ["2027", "09/2026"],
 }
 
 
@@ -610,7 +617,9 @@ _TAGS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^(fund_holdings|fund_debentures)$"), "Holdings"),
     (re.compile(r"^fidc_"), "FIDC"),
     (re.compile(r"^(fund_documents|fund_restatements)$"), "FNET documents"),
-    (re.compile(r"^(financials|company_financials)$"), "Financials"),
+    (re.compile(r"^(financials|company_financials|financial_statement_history)$"), "Financials"),
+    (re.compile(r"^fii_property_history$"), "Funds"),
+    (re.compile(r"^focus_expectations$"), "Macro expectations"),
     (re.compile(r"^anbima_"), "ANBIMA"),
     (re.compile(r"^inflation"), "Inflation"),
     (re.compile(r"^(macro_series|ptax)$"), "Macro"),
@@ -789,12 +798,12 @@ privilege set for which objects exist at all. It is not hand-maintained, and
 
 Reading one for the other is the most expensive mistake on this API.
 
-* **The row cap refuses.** Thirty-three set-returning functions raise SQLSTATE
+* **The row cap refuses.** Thirty-six set-returning functions raise SQLSTATE
   `22023` when the window they were handed would produce more than 1000 rows.
   Nothing is trimmed, and the error says why and how to fix it (the message,
   plus PostgREST's `details` and `hint`). Three of them (`panel`,
   `quote_history`, `fund_nav`) take a `p_after` cursor so you can walk the
-  series; the other thirty ask you to narrow the window. `fund_nav` paging
+  series; the other thirty-three ask you to narrow the window. `fund_nav` paging
   additionally REQUIRES `p_entity_type` — its cursor is a bare period, which
   is unique only within one family, and CNPJs that file under both `fi` and
   `fidc` in the same month would otherwise be ambiguous.

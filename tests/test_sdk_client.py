@@ -90,6 +90,32 @@ def test_anonymous_sends_the_key_and_no_bearer():
     assert "authorization" not in seen
 
 
+def test_new_held_data_sdk_methods_send_bounded_rpc_arguments():
+    requests = []
+
+    def responder(request):
+        requests.append((request.url.path, json.loads(request.content)))
+        return httpx.Response(200, json=[])
+
+    c = make_client(catalog_then(responder))
+    c.financial_statement_history("PETR4", "DFC_MD", start="2024-01-01")
+    c.fii_property_history("12.345.678/0001-90", start="2024-01-01")
+    c.focus_expectations("ExpectativasMercadoAnuais", "2027", "IPCA", start="2024-01-01")
+    assert requests == [
+        ("/rest/v1/rpc/financial_statement_history", {
+            "p_id": "PETR4", "p_statement": "DFC_MD", "p_from": "2024-01-01",
+            "p_scope": "con",
+        }),
+        ("/rest/v1/rpc/fii_property_history", {
+            "p_cnpj": "12345678000190", "p_from": "2024-01-01",
+        }),
+        ("/rest/v1/rpc/focus_expectations", {
+            "p_endpoint": "ExpectativasMercadoAnuais", "p_horizon": "2027",
+            "p_indicator": "IPCA", "p_from": "2024-01-01",
+        }),
+    ]
+
+
 def test_a_token_moves_the_caller_to_the_authenticated_tier():
     """The publishable key identifies the PROJECT; the bearer identifies the CALLER.
 

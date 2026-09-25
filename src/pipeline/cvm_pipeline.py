@@ -441,10 +441,16 @@ def _classify_finish(
 class CVMIngestor:
     """Downloads CVM data via CVMFetcher and persists to Supabase Postgres."""
 
-    def __init__(self) -> None:
-        self._service = CVMFetcher()
-        self._cia_fetcher = CIAFetcher()
-        self._supabase = get_pg_client()
+    def __init__(
+        self,
+        *,
+        service: Optional[CVMFetcher] = None,
+        cia_fetcher: Optional[CIAFetcher] = None,
+        client: Optional[Any] = None,
+    ) -> None:
+        self._service = service if service is not None else CVMFetcher()
+        self._cia_fetcher = cia_fetcher if cia_fetcher is not None else CIAFetcher()
+        self._supabase = client if client is not None else get_pg_client()
 
     # Lazily created rather than set in __init__: tests build the ingestor with
     # CVMIngestor.__new__(CVMIngestor) to skip the DB connection, and the audit
@@ -2021,27 +2027,11 @@ class CVMIngestor:
         logger.info("Backfill complete: %s", totals)
         return totals
 
-    async def daily_update(self) -> Dict[str, int]:
-        """Incremental update: current month (and previous month for monthly files)."""
-        today = date.today()
-        year = today.year
-        totals = _new_totals()
+    def _plan_daily_monthly_tasks(
+        self, daily_entities: Set[str], today: date
+    ) -> List[IngestTask]:
+        """Plan monthly slices; execution and audit happen later."""
         tasks: List[IngestTask] = []
-        daily_entities = _resolve_daily_entities()
-
-        # Fund registry refresh
-        # FII omitted on purpose — CVM retired FII/CAD/; registro_fundo covers it.
-        if "fi" in daily_entities:
-            totals["cvm_fund_registry"] += await self.ingest_fund_registry("fi")
-
-        # CVM-175 unified registry refresh (active universe, all fund families)
-        if "fi" in daily_entities:
-            totals["cvm_fund_registry"] += await self.ingest_fund_registry_cvm175()
-
-        # ETF registry refresh (distinct entity: curated seed, self-fetches cad_fi)
-        if "etf" in daily_entities:
-            totals["cvm_etf_registry"] += await self.ingest_etf_registry()
-
         # FI / FIDC / FIAGRO monthly datasets — gap-aware trailing window.
         # Each spec is (table, log_entity, log_doc_type, label, method). log_entity
         # and log_doc_type MUST match the strings the method passes to _log_start,
@@ -2094,6 +2084,13 @@ class CVMIngestor:
                     method(task_year, task_month),
                 ))
 
+        return tasks
+
+    def _plan_daily_annual_tasks(
+        self, daily_entities: Set[str], year: int
+    ) -> List[IngestTask]:
+        """Plan current-year slices without executing or auditing them."""
+        tasks: List[IngestTask] = []
         # FIP — refresh current year
         if "fip" in daily_entities:
             for _, doc_type in FIP_PERIODIC_CONFIGS:
@@ -2123,10 +2120,8 @@ class CVMIngestor:
                 self.ingest_fii_imovel(year),
             ))
 
-        # CIA_ABERTA — refresh registry (once), current year IPE feed, and the
-        # current-year ITR + DFP financial statements.
+        # CIA_ABERTA — current-year IPE, FCA, ITR, and DFP slices.
         if "cia_aberta" in daily_entities:
-            await self.ingest_cia_cad()
             tasks.append(IngestTask(
                 "cia_event",
                 f"cia_aberta/ipe {year}",
@@ -2173,6 +2168,37 @@ class CVMIngestor:
                     f"securit/{t} {year}",
                     self.ingest_securit_dfin(t, year),
                 ))
+
+        return tasks
+
+    async def daily_update(self) -> Dict[str, int]:
+        """Incremental update: current month (and previous month for monthly files)."""
+        today = date.today()
+        year = today.year
+        totals = _new_totals()
+        tasks: List[IngestTask] = []
+        daily_entities = _resolve_daily_entities()
+
+        # Fund registry refresh
+        # FII omitted on purpose — CVM retired FII/CAD/; registro_fundo covers it.
+        if "fi" in daily_entities:
+            totals["cvm_fund_registry"] += await self.ingest_fund_registry("fi")
+
+        # CVM-175 unified registry refresh (active universe, all fund families)
+        if "fi" in daily_entities:
+            totals["cvm_fund_registry"] += await self.ingest_fund_registry_cvm175()
+
+        # ETF registry refresh (distinct entity: curated seed, self-fetches cad_fi)
+        if "etf" in daily_entities:
+            totals["cvm_etf_registry"] += await self.ingest_etf_registry()
+
+        tasks.extend(self._plan_daily_monthly_tasks(daily_entities, today))
+
+        # Registry refresh is a sequential prerequisite for CIA slices.
+        if "cia_aberta" in daily_entities:
+            await self.ingest_cia_cad()
+
+        tasks.extend(self._plan_daily_annual_tasks(daily_entities, year))
 
         await self._run_task_batches(
             tasks,

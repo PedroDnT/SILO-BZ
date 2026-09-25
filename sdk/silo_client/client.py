@@ -29,7 +29,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 38
+KNOWN_CATALOG_VERSION = 39
 
 
 class SiloCatalogDrift(UserWarning):
@@ -906,6 +906,65 @@ class SiloClient:
         return self._rpc("company_financials", {
             "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
             "p_scope": scope,
+        })
+
+    def financial_statement_history(self, id: str, statement: str,
+                                    start: Datish = None, end: Datish = None,
+                                    scope: str = "con",
+                                    doc_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Raw CIA statement lines retaining every stored filing version.
+
+        Unlike :meth:`financials`, this returns restated versions as separate
+        rows. `statement` is required; `version` and exact filing-header
+        metadata identify the filing when a matching header exists. Values
+        already include CVM's filed scale and remain in filed currency.
+        """
+        if not statement or not statement.strip():
+            raise ValueError("statement is required")
+        return self._rpc("financial_statement_history", {
+            "p_id": id, "p_statement": statement,
+            "p_from": _iso(start), "p_to": _iso(end),
+            "p_scope": scope, "p_doc_type": doc_type,
+        })
+
+    def fii_property_history(self, cnpj: str, start: Datish = None,
+                             end: Datish = None) -> List[Dict[str, Any]]:
+        """CVM FII property snapshots for an exact 14-digit CNPJ.
+
+        CVM has no stable property id; `row_hash` identifies the source row
+        within a filing. Missing measurements stay ``None``; pr_* fields are
+        filed percentages. Results above 1,000 rows are refused.
+        """
+        if not cnpj or any(not (ch.isdigit() or ch in "./-") for ch in cnpj):
+            raise ValueError("cnpj must be 14 digits, optionally punctuated")
+        digits = "".join(ch for ch in cnpj if ch.isdigit())
+        if len(digits) != 14:
+            raise ValueError("cnpj must contain 14 digits")
+        return self._rpc("fii_property_history", {
+            "p_cnpj": digits, "p_from": _iso(start), "p_to": _iso(end),
+        })
+
+    def focus_expectations(self, endpoint: str, horizon: str,
+                           indicator: Optional[str] = None,
+                           start: Datish = None,
+                           end: Datish = None) -> List[Dict[str, Any]]:
+        """BCB Focus expectation path across survey dates for one horizon.
+
+        Each ``survey_date`` is one survey observation; successive dates form
+        the reported weekly revision path. The endpoint and horizon are
+        required because annual and monthly target periods are different
+        series. Rows use BACEN's 30-day sample (baseCalculo=0); 12-month
+        inflation is unsmoothed. This is not an archive of corrected vintages
+        for the same survey date. Results above 1,000 rows are refused.
+        """
+        if not endpoint or not endpoint.strip():
+            raise ValueError("endpoint is required")
+        if not horizon or not horizon.strip():
+            raise ValueError("horizon is required")
+        return self._rpc("focus_expectations", {
+            "p_endpoint": endpoint, "p_horizon": horizon,
+            "p_indicator": indicator,
+            "p_from": _iso(start), "p_to": _iso(end),
         })
 
     def income_statements(self, id: str, start: Datish = None,

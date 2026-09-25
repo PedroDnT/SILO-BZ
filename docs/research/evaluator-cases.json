@@ -1,0 +1,30 @@
+{
+  "purpose": "Evaluator-private references. Never paste expected_data, joins, or reference_result into agent prompts or tool hints.",
+  "prompt_rule": "Agent-visible prompt is only the professional_question string.",
+  "cases": [
+    {
+      "case_id": "cia_chart_semantics",
+      "professional_question": "How reliable is one CVM income-statement account code as a cross-company net-income measure, and what exceptions should an analyst account for?",
+      "expected_data": ["CVM financial statement account rows", "company/chart context", "official issuer-to-ticker mapping if securities are mentioned"],
+      "join_and_date_rules": ["Join statements to company on CVM issuer code", "Keep statement scope, period and filing version visible", "Use filed account labels alongside account codes"],
+      "reference_result": {"statement_rows": 50439, "without_3_11": 282, "share_without_3_11_pct": 0.5591, "interpretation": "All observed missing-3.11 statements are bank-B chart; code semantics differ by chart, 3.09 is net income by filed label in this chart, and 3.09 fallback was numerically harmless in the measured census."},
+      "evidence_status": "Project-documented census; not rerun from raw archive in this task"
+    },
+    {
+      "case_id": "fii_property_snapshot",
+      "professional_question": "What property-level operating risk signals stand out in this FII filing, and what can an analyst infer from them?",
+      "expected_data": ["CVM FII quarterly fund report", "CVM FII quarterly property report"],
+      "join_and_date_rules": ["Match fund/class CNPJ, reference date and filing version", "Treat vacancy and other Percentual fields as fractions", "Do not form longitudinal property identity without a stable source identifier"],
+      "reference_result": {"fund_cnpj": "00.332.266/0001-31", "date": "2025-03-31", "version": "1", "area_m2": 56508.93, "vacancy_fraction": 0.124, "calculated_vacant_area_m2": 7007.11, "delinquency_fraction": 0.231726, "property_revenue_share_fraction": 0.979772},
+      "evidence_status": "Parser-test fixture from a real-shaped CVM source row; single property snapshot"
+    },
+    {
+      "case_id": "focus_ipca_forecast_error",
+      "professional_question": "How did the market's year-ahead inflation expectation compare with the inflation outcome, and what does this observation establish?",
+      "expected_data": ["BCB Focus expectation vintage", "IBGE realized annual IPCA"],
+      "join_and_date_rules": ["Match forecast target year to realized calendar-year IPCA", "Identify the forecast survey/report date", "Report forecast minus actual in percentage points"],
+      "reference_result": {"target_year": 2025, "focus_report_date": "2024-12-06", "forecast_median_pct": 4.59, "realized_ipca_pct": 4.26, "forecast_error_pp": 0.33, "interpretation": "This one vintage overestimated the outcome by 0.33 percentage points and is not a forecast-skill benchmark."},
+      "evidence_status": "Primary-source values checked; static single vintage/outcome pair"
+    }
+  ]
+}
