@@ -271,8 +271,9 @@ async def test_sweep_continues_past_a_failed_fund_then_raises():
     fake = _Flaky({(None, None, "07727002000126"): [_row(10)], (None, None, "11728688000147"): [_row(11)]})
     ing, captured, up = _ingestor(fake)
     with up:
-        with pytest.raises(fp.FnetSweepIncomplete, match="1 of 3 fund.*18347309000118"):
+        with pytest.raises(fp.FnetSweepIncomplete, match="1 of 3 fund.*18347309000118") as err:
             await ing.sweep_funds(["07727002000126", "18347309000118", "11728688000147"])
+    assert err.value.rows == 2  # audited() records this as rows_upserted on the error row
     assert [c[2] for c in fake.calls] == ["07727002000126", "18347309000118", "11728688000147"]
     assert {r["filter_value"] for r in captured[fp.FILTER_TABLE]} == {"07727002000126", "11728688000147"}
 

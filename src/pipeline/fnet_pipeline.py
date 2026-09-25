@@ -55,7 +55,15 @@ class FnetBackfillIncomplete(RuntimeError):
 
 
 class FnetSweepIncomplete(RuntimeError):
-    """One or more funds in a sweep failed; the sweep's audit row is ``error``."""
+    """One or more funds in a sweep failed; the sweep's audit row is ``error``.
+
+    ``rows`` is the links stored from the other funds: ``audited`` records it
+    as ``rows_upserted`` so the error row does not claim nothing landed.
+    """
+
+    def __init__(self, message: str, rows: int = 0):
+        super().__init__(message)
+        self.rows = rows
 
 
 def _env_int(name: str, default: int, minimum: int = 1) -> int:
@@ -175,7 +183,8 @@ class FnetIngestor:
         if failed:
             raise FnetSweepIncomplete(
                 f"FNET sweep: {len(failed)} of {len(cnpjs)} fund(s) failed "
-                f"({links} links stored from the rest). " + "; ".join(failed)
+                f"({links} links stored from the rest). " + "; ".join(failed),
+                rows=links,
             )
         return links
 
