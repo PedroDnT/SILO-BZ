@@ -312,14 +312,18 @@ The inputs added to `backfill.yml` stay, so the loads are repeatable:
 `bacen_only = true`, `bacen_sources = sgs`, `bacen_start = 1980-01-01`,
 `ibge = true`.
 
-## 13. B7 agent loop: designed, smallest test pending
+## 13. B7 agent loop: test passed, prompts written, nothing scheduled
 
-[AGENTS.md](AGENTS.md) is approved (2026-09-24) and nothing runs. Before any
-routine is scheduled, one manual Builder run on FIDC informe `tab_X_7`
-(AGENTS.md §5) has to show that its PR needs clearly less rework than writing
-it by hand. Until then the prompt files under `.claude/agents/`, the
-`agent-ok` / `agent:<name>` labels and the routines stay uncreated, and the
-Sentinel's read-only database credential is Pedro's open call.
+[AGENTS.md](AGENTS.md) is approved (2026-09-24). The manual Builder run on FIDC
+informe `tab_X_7` (AGENTS.md §5) passed: PR #291 merged on 2026-09-24 with 0
+human-edited lines after the agent's commit and a green first CI. The prompt
+files `.claude/agents/scout.md`, `builder.md` and `sentinel.md` exist
+(2026-09-25). Still the owner's: create the `agent-ok` / `agent:<name>`
+labels, schedule the routines one at a time and fill in their ids in the
+AGENTS.md §3a registry, and (optionally) run
+`docs/security/sentinel_readonly_role.sql` so the Sentinel can read
+`cvm_ingest_log` and `fnet_document`; without it the Sentinel runs on the
+public API only.
 
 ## 14. The gaps backlog: resolution plan (2026-09-24)
 
@@ -351,7 +355,8 @@ Nothing in wave 2 that depends on these starts until each has an answer.
    changes their grain, and it is what stops a restatement overwriting the
    original (`DATA_INVENTORY.md` §2, `COMPETITIVE_GAPS.md` B4).
 3. Where to host the read-only MCP (B2)? A new runtime; a Vercel function is
-   the obvious candidate.
+   the obvious candidate. **Answered:** a Supabase Edge Function, deployed
+   2026-09-25 at `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp`.
 4. A read-only database role for the Sentinel agent ([AGENTS.md](AGENTS.md),
    item 13)?
 
@@ -369,14 +374,15 @@ Nothing in wave 2 that depends on these starts until each has an answer.
 
 | #   | Item                                                                                                      |
 | --- | --------------------------------------------------------------------------------------------------------- |
-| 3a  | B2, the read-only MCP over schema `api` (needs gate 1, question 3)                                        |
+| 3a  | B2, the read-only MCP over schema `api`: **deployed 2026-09-25** (49 tools)                               |
 | 3b  | B3 remainder: `company_events`, `macro_series`, `ptax`; CRI/CRA last, because it needs a third kind of id |
 | 3c  | B5, Sheets and Excel recipes: `api-docs/spreadsheets.mdx`, shipped with 1d                                |
 
 ### Wave 4: later, in order
 
 - **B7.** One manual Builder run on FIDC `tab_X_7` (item 13), then Scout and
-  Sentinel only if it passes.
+  Sentinel only if it passes. **Passed 2026-09-24 (PR #291); prompts written
+  2026-09-25; labels and routines pending.**
 - **B8.** DI curve and futures (`INSTRUMENTS.md` Phases B and C).
 - **B9.** Alerts, only on signals from waves 1 and 2 once they exist.
 - **B10.** Document text (Stage 3), priority categories only.
