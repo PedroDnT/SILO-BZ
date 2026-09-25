@@ -4,8 +4,11 @@ Run: 2026-09-25T01:20:53.529359+00:00 · Model: `gpt-5-mini` · Cases: 12/12
 
 Estimated model spend: **$0.4416** of $19.80 cap.
 
-This is a live-agent process record. Numeric and analytical correctness requires
-manual review against the evaluator-private references and source rows.
+Cumulative observed estimate including earlier runs: **$0.6047**.
+
+This is a live-agent process record. A completed run is not an answer-quality pass.
+See [independent grading](agent-evaluation-grade.md) for baseline classifications,
+API availability, and answer-quality findings.
 
 | Case | Run status | Discovery before data | Data calls | Latency | Est. spend |
 | --- | --- | --- | ---: | ---: | ---: |

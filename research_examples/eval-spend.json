@@ -1,0 +1,81 @@
+{
+  "note": "Model-usage estimate from observed runs. Three smoke costs are rounded from earlier run outputs; actual OpenAI billing has not been reconciled.",
+  "estimated_usd": 0.604687,
+  "entries": [
+    {
+      "run": "earlier-smoke-1",
+      "case": "L1",
+      "estimated_usd": 0.0375
+    },
+    {
+      "run": "earlier-smoke-2",
+      "case": "L1",
+      "estimated_usd": 0.0589
+    },
+    {
+      "run": "earlier-smoke-3",
+      "case": "L1",
+      "estimated_usd": 0.0667
+    },
+    {
+      "run": "2026-09-25T01:20:53.529359+00:00",
+      "case": "Q1",
+      "estimated_usd": 0.043098
+    },
+    {
+      "run": "2026-09-25T01:20:53.529359+00:00",
+      "case": "Q2",
+      "estimated_usd": 0.020015
+    },
+    {
+      "run": "2026-09-25T01:20:53.529359+00:00",
+      "case": "Q3",
+      "estimated_usd": 0.038233
+    },
+    {
+      "run": "2026-09-25T01:20:53.529359+00:00",
+      "case": "Q4",
+      "estimated_usd": 0.042282
+    },
+    {
+      "run": "2026-09-25T01:20:53.529359+00:00",
+      "case": "Q5",
+      "estimated_usd": 0.024512
+    },
+    {
+      "run": "2026-09-25T01:20:53.529359+00:00",
+      "case": "Q6",
+      "estimated_usd": 0.043754
+    },
+    {
+      "run": "2026-09-25T01:20:53.529359+00:00",
+      "case": "Q7",
+      "estimated_usd": 0.044713
+    },
+    {
+      "run": "2026-09-25T01:20:53.529359+00:00",
+      "case": "Q8",
+      "estimated_usd": 0.052087
+    },
+    {
+      "run": "2026-09-25T01:20:53.529359+00:00",
+      "case": "Q9",
+      "estimated_usd": 0.009839
+    },
+    {
+      "run": "2026-09-25T01:20:53.529359+00:00",
+      "case": "L1",
+      "estimated_usd": 0.04853
+    },
+    {
+      "run": "2026-09-25T01:20:53.529359+00:00",
+      "case": "L2",
+      "estimated_usd": 0.025068
+    },
+    {
+      "run": "2026-09-25T01:20:53.529359+00:00",
+      "case": "L3",
+      "estimated_usd": 0.049456
+    }
+  ]
+}

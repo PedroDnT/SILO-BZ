@@ -9,13 +9,14 @@ SDK methods, and writes a Markdown summary plus a machine-readable record.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import inspect
 import json
 import os
 import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -25,7 +26,7 @@ sys.path.insert(0, str(ROOT / "sdk"))
 from agents import Agent, ModelSettings, RunConfig, RunHooks, Runner, function_tool, set_default_openai_client
 from dotenv import dotenv_values
 from openai import AsyncOpenAI
-from silo_client import SiloClient
+from silo_client import SiloClient, SiloError
 
 
 MODEL = "gpt-5-mini"
@@ -35,11 +36,13 @@ MAX_CONTEXT_TOKENS = 400_000
 USD_PER_M_INPUT = 0.25
 USD_PER_M_OUTPUT = 2.00
 DEFAULT_BUDGET_USD = 20.00
+REQUIRED_RESEARCH_RPCS = ("financial_statement_history", "fii_property_history", "focus_expectations")
 MAX_DATA_ROWS = 100
 MAX_DATA_CALLS = 5
 MAX_TOOL_CHARS = 80_000
 CASE_FILE = Path(__file__).with_name("eval_cases.json")
 JSON_RESULT = Path(__file__).with_name("eval-results.json")
+SPEND_LEDGER = Path(__file__).with_name("eval-spend.json")
 MARKDOWN_RESULT = ROOT / "docs" / "research" / "agent-evaluation-results.md"
 
 # Pricing and context are fixed to this model and were checked against the
@@ -75,6 +78,11 @@ def load_cases(path: Path = CASE_FILE) -> list[dict[str, str]]:
     return cases
 
 
+def runtime_question(case: dict[str, str]) -> str:
+    """Keep every evaluator-only field out of the model input."""
+    return case["question"]
+
+
 def worst_case_cost_usd(turns: int = MAX_TURNS) -> float:
     """Reserve whole-context charges plus 25% for unobserved failure cost."""
     return 1.25 * turns * (
@@ -88,10 +96,125 @@ def actual_cost_usd(input_tokens: int, output_tokens: int) -> float:
     return (input_tokens * USD_PER_M_INPUT + output_tokens * USD_PER_M_OUTPUT) / 1_000_000
 
 
+def load_spend_ledger() -> dict[str, Any]:
+    return json.loads(SPEND_LEDGER.read_text()) if SPEND_LEDGER.exists() else {"estimated_usd": 0.0, "entries": []}
+
+
+def validate_preflight_report(path: Path, base_url: str, now: datetime | None = None) -> None:
+    """Require fresh, read-only live proof for all research RPCs before billing."""
+    try:
+        report = json.loads(path.read_text())
+        if not isinstance(report, dict):
+            raise ValueError("preflight report must be a JSON object")
+        checked_at = datetime.fromisoformat(report["checked_at"].replace("Z", "+00:00"))
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise ValueError("a readable live preflight report with checked_at is required") from exc
+    clock = now or datetime.now(timezone.utc)
+    age_seconds = (clock - checked_at).total_seconds() if checked_at.tzinfo else float("inf")
+    if not 0 <= age_seconds <= 6 * 3600:
+        raise ValueError("live preflight report must be no more than six hours old")
+    if report.get("base_url", "").rstrip("/") != base_url.rstrip("/") or report.get("read_only") is not True:
+        raise ValueError("live preflight must match this read-only SILO API")
+    endpoints = report.get("endpoints", {})
+    if not isinstance(endpoints, dict):
+        endpoints = {}
+    if report.get("status") != "passed" or any(
+        not isinstance(endpoints.get(name), dict) or endpoints[name].get("status") != "passed"
+        for name in REQUIRED_RESEARCH_RPCS
+    ):
+        raise ValueError("all three research RPCs must pass live preflight before paid evaluation")
+
+
 def _json(value: Any) -> str:
     if hasattr(value, "to_dict") and hasattr(value, "columns"):
         value = value.to_dict(orient="records")
     return json.dumps(value, ensure_ascii=False, default=str, separators=(",", ":"))
+
+
+class ArgumentValidationError(ValueError):
+    """A model argument did not match the published endpoint contract."""
+
+
+def _sdk_arg(api_name: str) -> str:
+    return {"p_from": "start", "p_to": "end"}.get(api_name, api_name.removeprefix("p_"))
+
+
+def endpoint_arguments(openapi: dict[str, Any], endpoint: str) -> list[dict[str, Any]]:
+    """Expose callable SDK argument names with types from the published OpenAPI."""
+    path = f"/rpc/{endpoint}"
+    if path in openapi["paths"]:
+        operation = openapi["paths"][path]["post"]
+        schema = operation.get("requestBody", {}).get("content", {}).get("application/json", {}).get("schema", {})
+        method = getattr(SiloClient, endpoint, None)
+        supported = set(inspect.signature(method).parameters) - {"self"} if callable(method) else set()
+        return [{
+            "name": name, "type": spec.get("type", "string"),
+            "required": api_name in schema.get("required", []),
+            **({"format": spec["format"]} if "format" in spec else {}),
+            **({"examples": spec["examples"]} if "examples" in spec else {}),
+            **({"description": spec["description"][:160]} if "description" in spec else {}),
+        } for api_name, spec in schema.get("properties", {}).items()
+            if (name := _sdk_arg(api_name)) in supported]
+    operation = openapi["paths"].get(f"/{endpoint}", {}).get("get", {})
+    return [{
+        "name": item["name"], "type": item.get("schema", {}).get("type", "string"),
+        "required": item["name"] == "limit", "description": item.get("description", "")[:160],
+    } for item in operation.get("parameters", []) if item.get("in") == "query"]
+
+
+def validate_arguments(specs: list[dict[str, Any]], arguments: Any) -> dict[str, Any]:
+    if not isinstance(arguments, dict):
+        raise ArgumentValidationError("arguments_json must be a JSON object")
+    known = {spec["name"]: spec for spec in specs}
+    unknown = sorted(set(arguments) - set(known))
+    missing = sorted(name for name, spec in known.items() if spec["required"] and name not in arguments)
+    if unknown:
+        raise ArgumentValidationError(f"Unknown argument(s): {', '.join(unknown)}. Allowed: {', '.join(known)}")
+    if missing:
+        raise ArgumentValidationError(f"Missing required argument(s): {', '.join(missing)}")
+    for name, value in arguments.items():
+        types = known[name]["type"]
+        if isinstance(types, str):
+            types = [types]
+        if value is None and "null" in types:
+            continue
+        matches = any((kind == "string" and isinstance(value, str)) or
+                      (kind == "integer" and type(value) is int) or
+                      (kind == "number" and type(value) in (int, float)) or
+                      (kind == "boolean" and type(value) is bool) or
+                      (kind == "array" and isinstance(value, list))
+                      for kind in types)
+        if not matches:
+            raise ArgumentValidationError(f"{name} must be {' or '.join(types)}")
+        if known[name].get("format") == "date" and value is not None:
+            try:
+                date.fromisoformat(value)
+            except ValueError as exc:
+                raise ArgumentValidationError(f"{name} must be an ISO date (YYYY-MM-DD)") from exc
+    return arguments
+
+
+def safe_tool_error(exc: Exception, secrets: tuple[str | None, ...] = ()) -> dict[str, Any]:
+    if isinstance(exc, ArgumentValidationError):
+        return {"error": "InvalidArguments", "message": str(exc)[:300]}
+    if isinstance(exc, SiloError):
+        try:
+            body = json.loads(exc.body)
+        except (ValueError, TypeError):
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        message = str(body.get("message") or "API request failed")
+        for secret in (*secrets, os.environ.get("OPENAI_API_KEY"), os.environ.get("SILO_ANON_KEY")):
+            if secret:
+                message = message.replace(secret, "[redacted]")
+        message = re.sub(r"sk-[A-Za-z0-9_-]+", "[redacted]", message)
+        message = re.sub(r"(?i)Bearer\s+\S+", "Bearer [redacted]", message)
+        message = re.sub(r"(?i)(?:apikey|authorization|token)\s*[:=]\s*\S+", "[redacted credential]", message)
+        message = re.sub(r"https?://\S+", "[redacted URL]", message)
+        return {"error": type(exc).__name__, "status": exc.status,
+                "code": str(body.get("code") or "")[:40], "message": message[:300]}
+    return {"error": type(exc).__name__, "message": "The request failed; inspect the endpoint arguments or availability."}
 
 
 class SiloTools:
@@ -111,17 +234,83 @@ class SiloTools:
         try:
             result = call()
             event["result_characters"] = len(result)
+            event["result_sha256"] = hashlib.sha256(result.encode()).hexdigest()
+            if name == "silo_call":
+                # Public read-only response rows are required for independent
+                # numeric review; each result is already capped above.
+                event["result_json"] = result
             if result.startswith('{"error"'):
                 event["tool_error"] = True
             return result
         except Exception as exc:
-            # Tool errors are returned to the agent. Never include headers,
-            # request objects, environment variables, or a secret value.
+            # Only a bounded, redacted API status/code/message reaches the model.
             event["error_type"] = type(exc).__name__
-            return _json({"error": type(exc).__name__, "advice": "Narrow the request or explain the unavailable source."})
+            error = safe_tool_error(exc, (getattr(self.client, "_key", None),))
+            event["error"] = error
+            return _json(error)
         finally:
             event["duration_seconds"] = round(time.monotonic() - started, 3)
             self.events.append(event)
+
+    def discover_tools(self, query: str) -> str:
+        if not self.catalog_seen:
+            return _json({"error": "Call silo_catalog first."})
+        term = query.strip().lower()
+        matches = []
+        for path, operations in self.paths.items():
+            operation = operations.get("post") or operations.get("get") or {}
+            name = path.rsplit("/", 1)[-1]
+            description = operation.get("description") or ""
+            if term and term not in (name + " " + description).lower():
+                continue
+            method = getattr(self.client, name, None)
+            if path.startswith("/rpc/") and not callable(method):
+                continue
+            matches.append({
+                "endpoint": name,
+                "kind": "rpc" if path.startswith("/rpc/") else "view",
+                "description": description[:1_200 if term else 150],
+                "arguments": endpoint_arguments({"paths": self.paths}, name),
+            })
+        self.tools_seen = True
+        return _json(matches[:41])
+
+    def invoke_endpoint(self, endpoint: str, arguments_json: str) -> str:
+        if not (self.catalog_seen and self.tools_seen):
+            return _json({"error": "Call silo_catalog and silo_tools before querying data."})
+        rpc_path = f"/rpc/{endpoint}"
+        if rpc_path not in self.paths and f"/{endpoint}" not in self.paths:
+            raise ArgumentValidationError("endpoint is not in the published API; call silo_tools")
+        try:
+            arguments = json.loads(arguments_json)
+        except json.JSONDecodeError as exc:
+            raise ArgumentValidationError("arguments_json must contain valid JSON") from exc
+        specs = endpoint_arguments({"paths": self.paths}, endpoint)
+        arguments = validate_arguments(specs, arguments)
+        if f"/{endpoint}" in self.paths:
+            limit = arguments.get("limit")
+            if not isinstance(limit, int) or not 1 <= limit <= MAX_DATA_ROWS:
+                raise ArgumentValidationError("view limit must be between 1 and 100")
+        if endpoint not in {"coverage", "metric_coverage"}:
+            if self.data_calls >= MAX_DATA_CALLS:
+                return _json({"error": "Data-call limit reached. Answer from the evidence already collected or explain the limitation."})
+            self.data_calls += 1
+        if rpc_path in self.paths and endpoint != "catalog":
+            method = getattr(self.client, endpoint, None)
+            if not callable(method):
+                raise ArgumentValidationError("endpoint is not wrapped by the public SDK")
+            inspect.signature(method).bind(**arguments)
+            value = method(**arguments)
+        elif f"/{endpoint}" in self.paths:
+            value = self.client.view(endpoint, **arguments)
+        else:
+            raise ArgumentValidationError("endpoint is not callable")
+        if isinstance(value, list) and len(value) > MAX_DATA_ROWS:
+            raise ValueError("more than 100 rows; narrow the source query")
+        result = _json(value)
+        if len(result) > MAX_TOOL_CHARS:
+            raise ValueError("result too large; narrow the source query")
+        return result
 
     def as_agent_tools(self) -> list[Any]:
         @function_tool
@@ -140,68 +329,13 @@ class SiloTools:
         @function_tool
         def silo_tools(query: str) -> str:
             """Search the published API tool list by topic or endpoint name; an empty query lists all."""
-
-            def search() -> str:
-                if not self.catalog_seen:
-                    return _json({"error": "Call silo_catalog first."})
-                term = query.strip().lower()
-                matches = []
-                for path, operations in self.paths.items():
-                    operation = operations.get("post") or operations.get("get") or {}
-                    name = path.rsplit("/", 1)[-1]
-                    description = operation.get("description") or ""
-                    if term and term not in (name + " " + description).lower():
-                        continue
-                    method = getattr(self.client, name, None)
-                    if path.startswith("/rpc/") and not callable(method):
-                        continue
-                    matches.append({
-                        "endpoint": name,
-                        "kind": "rpc" if path.startswith("/rpc/") else "view",
-                        "description": description[:1_200 if term else 150],
-                        "sdk_signature": str(inspect.signature(method)) if callable(method) else "view(name, limit, filters)",
-                    })
-                self.tools_seen = True
-                return _json(matches[:41])
-
-            return self._record("silo_tools", {"query": query}, search)
+            return self._record("silo_tools", {"query": query}, lambda: self.discover_tools(query))
 
         @function_tool
         def silo_call(endpoint: str, arguments_json: str) -> str:
             """Call one published read-only SILO endpoint with JSON keyword arguments."""
-
-            def invoke() -> str:
-                if not (self.catalog_seen and self.tools_seen):
-                    return _json({"error": "Call silo_catalog and silo_tools before querying data."})
-                if endpoint not in {"coverage", "metric_coverage"}:
-                    if self.data_calls >= MAX_DATA_CALLS:
-                        return _json({"error": "Data-call limit reached. Answer from the evidence already collected or explain the limitation."})
-                    self.data_calls += 1
-                arguments = json.loads(arguments_json)
-                if not isinstance(arguments, dict):
-                    raise ValueError("arguments_json must be a JSON object")
-                rpc_path = f"/rpc/{endpoint}"
-                if rpc_path in self.paths and endpoint != "catalog":
-                    method = getattr(self.client, endpoint, None)
-                    if not callable(method):
-                        raise ValueError("endpoint is not wrapped by the public SDK")
-                    inspect.signature(method).bind(**arguments)
-                    value = method(**arguments)
-                elif f"/{endpoint}" in self.paths:
-                    limit = arguments.pop("limit", None)
-                    if not isinstance(limit, int) or not 1 <= limit <= MAX_DATA_ROWS:
-                        raise ValueError("view reads require 1 <= limit <= 100")
-                    value = self.client.view(endpoint, limit=limit, **arguments)
-                else:
-                    raise ValueError("endpoint is not in the published API")
-                if isinstance(value, list) and len(value) > MAX_DATA_ROWS:
-                    raise ValueError("more than 100 rows; narrow the source query")
-                result = _json(value)
-                if len(result) > MAX_TOOL_CHARS:
-                    raise ValueError("result too large; narrow the source query")
-                return result
-
-            return self._record("silo_call", {"endpoint": endpoint, "arguments_json": arguments_json}, invoke)
+            return self._record("silo_call", {"endpoint": endpoint, "arguments_json": arguments_json},
+                                lambda: self.invoke_endpoint(endpoint, arguments_json))
 
         return [silo_catalog, silo_tools, silo_call]
 
@@ -239,6 +373,29 @@ def process_checks(events: list[dict[str, Any]], expected: str) -> dict[str, Any
         "expected_disposition": expected,
         "substantive_accuracy": "manual_review_required",
     }
+
+
+def technical_classification(item: dict[str, Any]) -> str:
+    """Classify execution separately from the answer's research quality."""
+    if item.get("status") == "error":
+        return "turn_exhaustion" if item.get("error_type") == "MaxTurnsExceeded" else "technical_error"
+    events = item.get("tool_events", [])
+    if any(event.get("error", {}).get("code") == "PGRST202" for event in events):
+        return "api_unavailable"
+    if any(event.get("error_type") in {"TypeError", "ArgumentValidationError", "InvalidArguments"}
+           for event in events):
+        return "tool_contract_failure"
+    if any(event.get("error_type") == "SiloError" for event in events):
+        return "api_error_unclassified"
+    return "no_recorded_technical_failure"
+
+
+def full_rubric_pass(item: dict[str, Any], manual: dict[str, Any]) -> bool:
+    """The evaluator supplies independent checks; run status cannot pass a case."""
+    required = ("disposition", "identifiers_and_periods", "calculation_or_limitation",
+                "source_citation", "material_caveats")
+    return (item.get("status") == "completed" and all(manual.get(name) is True for name in required)
+            and not manual.get("hard_failures"))
 
 
 def _published_demo_access() -> tuple[str, str]:
@@ -283,8 +440,10 @@ def _summary_md(record: dict[str, Any]) -> str:
         "# SILO research agent evaluation results", "",
         f"Run: {record['started_at']} · Model: `{record['model']}` · Cases: {len(record['cases'])}/12", "",
         f"Estimated model spend: **${record['estimated_usd']:.4f}** of ${record['budget_usd']:.2f} cap.", "",
-        "This is a live-agent process record. Numeric and analytical correctness requires",
-        "manual review against the evaluator-private references and source rows.", "",
+        f"Cumulative observed estimate including earlier runs: **${record.get('cumulative_estimated_usd', record['estimated_usd']):.4f}**.", "",
+        "This is a live-agent process record. A completed run is not an answer-quality pass.",
+        "See [independent grading](agent-evaluation-grade.md) for baseline classifications,",
+        "API availability, and answer-quality findings.", "",
         "| Case | Run status | Discovery before data | Data calls | Latency | Est. spend |",
         "| --- | --- | --- | ---: | ---: | ---: |", *rows, "",
         "## Case notes", "",
@@ -312,34 +471,45 @@ def main() -> int:
     parser.add_argument("--run", action="store_true", help="Make paid OpenAI requests; default validates configuration only")
     parser.add_argument("--public-demo", action="store_true", help="Use the read-only publishable testing access documented in api-docs/agents.mdx")
     parser.add_argument("--case-id", action="append", help="Run only the specified case ID; may be repeated")
+    parser.add_argument("--preflight-report", type=Path, help="Fresh read-only live contract report required with --run")
     parser.add_argument("--budget-usd", type=float, default=DEFAULT_BUDGET_USD)
     args = parser.parse_args()
 
     all_cases = load_cases()
+    ledger = load_spend_ledger()
     selected = [case for case in all_cases if not args.case_id or case["id"] in args.case_id]
     if not selected or args.budget_usd <= 0:
         parser.error("select valid cases and a positive budget")
     reserved = len(selected) * worst_case_cost_usd()
-    if reserved > args.budget_usd:
-        parser.error(f"worst-case reserve ${reserved:.2f} exceeds budget ${args.budget_usd:.2f}")
+    if ledger["estimated_usd"] + reserved > args.budget_usd:
+        parser.error(f"prior estimated spend ${ledger['estimated_usd']:.4f} plus reserve ${reserved:.2f} exceeds total budget ${args.budget_usd:.2f}")
     if not args.run:
-        print(f"Validated {len(selected)} cases; conservative maximum ${reserved:.2f} < ${args.budget_usd:.2f}. Use --run for live calls.")
+        print(f"Validated {len(selected)} cases; prior estimate ${ledger['estimated_usd']:.4f} + "
+              f"conservative reserve ${reserved:.2f} < ${args.budget_usd:.2f} total cap. "
+              "Use --run only after live API preflight passes.")
         return 0
 
-    if not load_local_openai_key():
-        parser.error("OPENAI_API_KEY is required in the environment or ignored .env")
-    # A failed request is never silently retried: retries could bill again
-    # without contributing usage to the local spend ledger.
-    set_default_openai_client(AsyncOpenAI(max_retries=0, timeout=60), use_for_tracing=False)
     silo_url, silo_key = _published_demo_access() if args.public_demo else (
         os.environ.get("SILO_URL", ""), os.environ.get("SILO_ANON_KEY", "")
     )
     if not silo_url or not silo_key:
         parser.error("set SILO_URL and SILO_ANON_KEY or pass --public-demo")
+    try:
+        if args.preflight_report is None:
+            raise ValueError("--preflight-report is required with --run")
+        validate_preflight_report(args.preflight_report, silo_url)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if not load_local_openai_key():
+        parser.error("OPENAI_API_KEY is required in the environment or ignored .env")
+    # A failed request is never silently retried: retries could bill again
+    # without contributing usage to the local spend ledger.
+    set_default_openai_client(AsyncOpenAI(max_retries=0, timeout=60), use_for_tracing=False)
 
     record: dict[str, Any] = {
         "started_at": datetime.now(timezone.utc).isoformat(),
         "model": MODEL, "budget_usd": args.budget_usd, "estimated_usd": 0.0,
+        "prior_estimated_usd": ledger["estimated_usd"],
         "price_basis_usd_per_million": {"input": USD_PER_M_INPUT, "output": USD_PER_M_OUTPUT},
         "cases": [], "run_note": "",
     }
@@ -349,7 +519,7 @@ def main() -> int:
             # A failed catalog is a hard preflight failure: no paid calls follow.
             client.catalog()
             for case in selected:
-                if record["estimated_usd"] + worst_case_cost_usd() > args.budget_usd:
+                if ledger["estimated_usd"] + worst_case_cost_usd() > args.budget_usd:
                     record["run_note"] = "Stopped before the next case to preserve the spend cap."
                     break
                 tools = SiloTools(client, openapi)
@@ -363,7 +533,7 @@ def main() -> int:
                 item: dict[str, Any] = {"id": case["id"], "question": case["question"], "status": "error"}
                 try:
                     result = Runner.run_sync(
-                        agent, case["question"], max_turns=MAX_TURNS,
+                        agent, runtime_question(case), max_turns=MAX_TURNS,
                         hooks=hooks, run_config=RunConfig(tracing_disabled=True),
                     )
                     item["answer"] = str(result.final_output or "")
@@ -379,6 +549,11 @@ def main() -> int:
                 item["checks"] = process_checks(tools.events, case["expected_disposition"])
                 record["cases"].append(item)
                 record["estimated_usd"] = round(sum(c["estimated_usd"] for c in record["cases"]), 6)
+                ledger["entries"].append({"run": record["started_at"], "case": case["id"],
+                                          "estimated_usd": item["estimated_usd"]})
+                ledger["estimated_usd"] = round(sum(entry["estimated_usd"] for entry in ledger["entries"]), 6)
+                SPEND_LEDGER.write_text(json.dumps(ledger, indent=2) + "\n")
+                record["cumulative_estimated_usd"] = ledger["estimated_usd"]
                 write_results(record)
                 print(f"{case['id']}: {item['status']}, discovery={item['checks']['discovery_before_data']}, cost=${item['estimated_usd']:.4f}")
                 if hooks.requests and not (hooks.input_tokens or hooks.output_tokens):

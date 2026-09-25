@@ -15,9 +15,12 @@ The runtime prompt for each case is only the professional question. It must
 not name sources, tables, fields, join keys, dates or expected values. The agent
 must discover available data using the SILO catalog and select bounded tools.
 Store expected sources, joins, date rules and reference calculations only in
-the evaluator's case specification. A future evaluation log should record
-catalog discovery and selected tool calls, but no agent run or discovery log
-was produced in this research pass.
+the evaluator's case specification. A 12-case live baseline now records catalog
+discovery and selected tool calls; see the [independent grading](agent-evaluation-grade.md).
+The baseline is not a passed benchmark: production research RPCs were not
+available, several tool arguments were invalid, and response rows were not
+retained for independent numeric review. The next paid run waits for a
+deterministic live API preflight.
 
 ## Ingestion gates still open
 
