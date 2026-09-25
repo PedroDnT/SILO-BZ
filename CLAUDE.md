@@ -329,8 +329,11 @@ project `silo-bz` in team `deloslabs`; any static host also works).
   refuses to build while a view it reads is missing, so a PR that adds a view its pages
   use fails its Vercel preview until the migration is applied — expected, not a bug.
 - `supabase/functions/silo-mcp/` — the read-only remote MCP (Supabase Edge Function, public
-  anon key only). Deploy with `supabase functions deploy silo-mcp --project-ref
-  zcjbtpxuhdekpwcxmepn --no-verify-jwt`; never `supabase config push`.
+  anon key only), live since 2026-09-25 at
+  `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp` (49 tools, `verify_jwt`
+  off). Like analytical SQL, a merge does not redeploy it. Deploy with
+  `supabase functions deploy silo-mcp --project-ref zcjbtpxuhdekpwcxmepn --no-verify-jwt`;
+  never `supabase config push`.
 
 Schema rollout = commit `schema.sql` + a new `migrations/NNN_*.sql`, then either let CI apply it
 or run `scripts/apply_schema.py` against Supabase. Idempotent via `CREATE TABLE IF NOT EXISTS` +

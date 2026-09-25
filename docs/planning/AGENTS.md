@@ -2,7 +2,8 @@
 
 The design of SILO's governed agent loop, backlog item B7 in
 [COMPETITIVE_GAPS.md](COMPETITIVE_GAPS.md) §7. Approved by Pedro on
-2026-09-24. **Nothing is scheduled yet**: see §6.
+2026-09-24. The §5 test passed on 2026-09-24 and the three prompt files exist;
+**nothing is scheduled yet**: see §6.
 
 The contrast this is written against is Liqi (COMPETITIVE_GAPS §4.5), whose
 agent count reads 13 to 20+ depending on the source, and whose CEO, as Pedro
@@ -101,6 +102,10 @@ schedule or a permission, and retiring an agent are all PRs to this file.
 | Builder  | `.claude/agents/builder.md`  | Wednesdays 10:00         | TBD        | own branch; no schema apply, deploy or DB | 1 draft PR | disable the routine |
 | Sentinel | `.claude/agents/sentinel.md` | daily 09:00              | TBD        | read-only                                 | 1 issue    | disable the routine |
 
+All three prompt files exist (written 2026-09-25). A routine id is filled in
+by the owner's session when that routine is created, one at a time, after
+the labels exist; until a row has one, that agent does not run.
+
 The Sentinel's 09:00 sits after the 06:00 ingest, 07:30 DB Health and the
 08:00 watchdog and publish check, so it reads a day whose own-side state has
 settled.
@@ -185,17 +190,46 @@ Measure:
 **Reject if** the rework is about the same as writing it by hand. Then the
 loop is not worth scheduling, and B7 closes with the numbers recorded here.
 
-## 6. Status (2026-09-24)
+### Result: PASS (2026-09-24)
 
-| Piece                              | State                               |
-| ---------------------------------- | ----------------------------------- |
-| This design                        | approved by Pedro                   |
-| Prompt files `.claude/agents/*.md` | **do not exist yet**; TBD           |
-| Labels `agent-ok`, `agent:<name>`  | not created                         |
-| Routines                           | none; every routine id above is TBD |
-| Sentinel's read-only DB credential | open; Pedro's call                  |
-| Smallest test (§5)                 | pending                             |
+The run became [PR #291](https://github.com/PedroDnT/SILO-BZ/pull/291),
+merged by Pedro on 2026-09-24 (merge commit `dc07115`).
 
-Order: the §5 test first. Only if it passes, write the three prompts, create
-the labels, and schedule the routines one at a time, filling in the registry
-row as each one is created.
+| Measure                    | Result                                                                                                                                                    |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Agent output               | 1 commit (`20a13af`), 22 files, +663 / -13: migration 45 (`cvm_fidc_garantia`, key `(cnpj, period)`), field map, config, ingest, wiring, 20 offline tests |
+| Human-edited lines         | **0** after the agent's last commit (the merge is byte-identical to `20a13af` on every file the PR touched)                                               |
+| First-pass CI              | **green** on the first run (pytest offline, SQL compile); 0 fix rounds                                                                                    |
+| Read the real header first | yes: all 82 published months (188,476 rows) and CVM's dictionary; found the `CNPJ_FUNDO` → `CNPJ_FUNDO_CLASSE` switch after 2020-10                       |
+
+Where the agent deviated from this section's wording, each deviation was
+stated in the PR body:
+
+- The table is `cvm_fidc_garantia`, not a `fidc_tab_x7` name, and the value is
+  not called "coverage": the denominator of the filed percentage is
+  undocumented (value ÷ % matched the tab II portfolio for only 6 of 28 filers
+  in 2026-08), so the docs say "as filed".
+- Validation is stricter than the minimum: CNPJ check digits, not just 14
+  digits (4 rows dropped in the whole history, all for negative values).
+- It left the `ANALYZE` list in `.github/workflows/daily_ingest.yml` and
+  `scripts/verify_pipeline.py` untouched because they are gate files (§1),
+  and the `api-docs/data-inventory.mdx` mirror untouched as out of scope.
+
+The rework was nil against 663 written lines, so the reject condition does
+not hold and the prompts were written (§6).
+
+## 6. Status (2026-09-25)
+
+| Piece                              | State                                                                                                                                                       |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| This design                        | approved by Pedro                                                                                                                                           |
+| Smallest test (§5)                 | **passed** 2026-09-24: PR #291, 0 human-edited lines, green first CI                                                                                        |
+| Prompt files `.claude/agents/*.md` | **written** 2026-09-25: `scout.md`, `builder.md`, `sentinel.md`                                                                                             |
+| Labels `agent-ok`, `agent:<name>`  | not created; the owner creates them (each prompt no-ops while its label is missing)                                                                         |
+| Routines                           | none; every routine id above is TBD, filled by the owner's session after merge                                                                              |
+| Sentinel's read-only DB credential | script ready (`docs/security/sentinel_readonly_role.sql`), run by the owner by hand; until `SENTINEL_DATABASE_URL` is set, the Sentinel runs in public mode |
+
+Order from here: create the labels, then schedule the routines one at a
+time (Builder first, since it is the one tested; then Sentinel; then Scout),
+filling in the registry row as each one is created. Each routine's prompt is
+one line: "Read `.claude/agents/<name>.md` in full and follow it exactly."
