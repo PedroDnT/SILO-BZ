@@ -29,7 +29,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 34
+KNOWN_CATALOG_VERSION = 35
 
 
 class SiloCatalogDrift(UserWarning):
@@ -875,6 +875,49 @@ class SiloClient:
         numbers are built on. Every value is in absolute reais.
         """
         return self._rpc("income_statements", {
+            "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
+            "p_scope": scope, "p_doc_type": doc_type,
+        })
+
+    def balance_sheets(self, id: str, start: Datish = None,
+                       end: Datish = None, scope: str = "con",
+                       doc_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """The balance sheet as a period: one row each, with named fields.
+
+            silo.balance_sheets("PETR4")
+            silo.balance_sheets("ITUB4", doc_type="dfp")   # annual only
+
+        Resolved from the as-filed label like :meth:`income_statements`:
+        equity alone sits on `2.03`, `2.07` or `2.08` depending on the chart.
+        Where a filing files one label twice (industrial `Empréstimos e
+        Financiamentos` under both current and non-current liabilities), the
+        parent line's label tells them apart.
+
+        Banks file no current/non-current split and no debt line, so those
+        fields read **null, never zero** for them. `chart` says which layout
+        a filing used. Every value is in absolute reais.
+        """
+        return self._rpc("balance_sheets", {
+            "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
+            "p_scope": scope, "p_doc_type": doc_type,
+        })
+
+    def cash_flow_statements(self, id: str, start: Datish = None,
+                             end: Datish = None, scope: str = "con",
+                             doc_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """The cash flow statement as a period: section totals, one row each.
+
+            silo.cash_flow_statements("PETR4")
+
+        Only the totals are fields — operating, investing, financing, the FX
+        effect and the cash reconciliation — because those carry the same
+        labels on every chart. Capex and dividends are free text per filer, so
+        there is no field for them: read the filed lines from
+        :meth:`financials`. `method` is `direct` or `indirect`;
+        `operating_cash_generated` and `working_capital_changes` exist only on
+        the indirect method and read null otherwise. Absolute reais.
+        """
+        return self._rpc("cash_flow_statements", {
             "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
             "p_scope": scope, "p_doc_type": doc_type,
         })
