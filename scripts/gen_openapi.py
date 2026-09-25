@@ -465,6 +465,8 @@ def error_responses(has_22023: bool) -> dict[str, Any]:
 _ORDER: dict[str, str] = {
     "fund_documents": "newest delivery first",
     "fund_restatements": "newest delivery first",
+    # 26_api_events_macro.sql orders a company's IPE filings newest first.
+    "company_events": "newest delivery first",
 }
 
 
@@ -611,6 +613,8 @@ _TAGS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^(financials|company_financials)$"), "Financials"),
     (re.compile(r"^anbima_"), "ANBIMA"),
     (re.compile(r"^inflation"), "Inflation"),
+    (re.compile(r"^(macro_series|ptax)$"), "Macro"),
+    (re.compile(r"^company_events$"), "Company events"),
     (re.compile(r"^screen_"), "Screens"),
     (re.compile(r"^(short_interest|short_interest_by_sector|investor_flow)$"), "Short interest & flows"),
     (re.compile(r"^lending_"), "Securities lending"),
@@ -785,12 +789,12 @@ privilege set for which objects exist at all. It is not hand-maintained, and
 
 Reading one for the other is the most expensive mistake on this API.
 
-* **The row cap refuses.** Thirty set-returning functions raise SQLSTATE
+* **The row cap refuses.** Thirty-three set-returning functions raise SQLSTATE
   `22023` when the window they were handed would produce more than 1000 rows.
   Nothing is trimmed, and the error says why and how to fix it (the message,
   plus PostgREST's `details` and `hint`). Three of them (`panel`,
   `quote_history`, `fund_nav`) take a `p_after` cursor so you can walk the
-  series; the other twenty-seven ask you to narrow the window. `fund_nav` paging
+  series; the other thirty ask you to narrow the window. `fund_nav` paging
   additionally REQUIRES `p_entity_type` — its cursor is a bare period, which
   is unique only within one family, and CNPJs that file under both `fi` and
   `fidc` in the same month would otherwise be ambiguous.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Apply the analytical layer (every src/store/analytical/NN_*.sql, in order —
-# 01_dim_fund through 25_api_filing_screens today) to Supabase.
+# 01_dim_fund through 26_api_events_macro today) to Supabase.
 #
 #   bash scripts/apply_analytical.sh
 #

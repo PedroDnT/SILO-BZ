@@ -83,10 +83,13 @@ export const TOOL_SPECS: ToolSpec[] = [
   t("income_statements", "Income statements"),
   t("balance_sheets", "Balance sheets"),
   t("cash_flow_statements", "Cash flow statements"),
+  t("company_events", "Company IPE filings (fatos relevantes)"),
   // Industry and macro.
   t("anbima_classes", "ANBIMA class aggregates"),
   t("inflation", "Inflation (BACEN SGS)"),
   t("inflation_items", "IPCA item tree (IBGE SIDRA)"),
+  t("macro_series", "Macro series (BACEN SGS)"),
+  t("ptax", "PTAX exchange rates (BACEN)"),
   // Views (GET, PostgREST filters). The B3 lending / flow group is a RATCHET.
   t("funds", "Fund registry (view)"),
   t("quotes", "Cash quotes (view)"),
