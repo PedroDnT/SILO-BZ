@@ -131,7 +131,19 @@ Two-character fix (escape the pipes). Left as found rather than silently
 rewriting historical entries. `tests/test_changelog_integrity.py` deliberately
 does **not** pin cell count because of them.
 
-## 5. A `MAX()` over a filing date is not a period — check for more of these
+## 5. ~~A `MAX()` over a filing date is not a period — check for more of these~~ (done)
+
+**Done 2026-09-25** (`fix/max-period-sweep`). Swept by measurement, not by
+reading: row counts at the latest vs previous period for every table a dashboard
+source reads with a bare `max()`. One live instance: `distressed_securities()`
+defaulted to `MAX(period)` of `fact_security_monthly`, which held **24** rows at
+2026-08 against **3,260** at 2026-07, so `/securit` showed **10** distressed
+series instead of **173**. It now defaults to the newest period with at least
+half the previous period's rows; guarded by
+`tests/test_distressed_period_resolution.py`. Clean at measurement:
+`cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_fidc_tranche_flows`, `cvm_fii_imovel`
+(latest periods fully populated), FIP (31-Dec key, already guarded per class).
+Live after the next `apply_analytical.sh` run and dashboard rebuild.
 
 PR #270 fixed one instance: `/growth` selected its comparison year with
 `MAX(fy)`, which pinned the whole page to the 8 companies that had filed fiscal
