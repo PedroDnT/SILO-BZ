@@ -32,6 +32,8 @@ SQL_EXTRA = (
     ROOT / "src/store/analytical/24_api_fnet.sql",
     # v35: the filing-behaviour screens.
     ROOT / "src/store/analytical/25_api_filing_screens.sql",
+    # v36: company events, macro series, PTAX.
+    ROOT / "src/store/analytical/26_api_events_macro.sql",
 )
 CLIENT = ROOT / "sdk/silo_client/client.py"
 

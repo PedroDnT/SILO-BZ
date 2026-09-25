@@ -29,7 +29,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 35
+KNOWN_CATALOG_VERSION = 36
 
 
 class SiloCatalogDrift(UserWarning):
@@ -99,7 +99,8 @@ class SiloOverCap(SiloError):
     option_history, termo_history, financials, company_financials,
     anbima_classes, inflation, inflation_items, fidc_cedentes, fidc_sacados,
     fidc_portfolio, fidc_tranches, fidc_aging, fund_documents,
-    fund_restatements and the screen_* functions — have no cursor: narrow the
+    fund_restatements, company_events, macro_series, ptax and the screen_*
+    functions — have no cursor: narrow the
     window instead (the fidc concentration trio also take an explicit
     `limit` for the newest N rows).
 
@@ -941,6 +942,25 @@ class SiloClient:
             "p_scope": scope, "p_doc_type": doc_type,
         })
 
+    def company_events(self, id: str, start: Datish = None, end: Datish = None,
+                       category: Optional[str] = None) -> List[Dict[str, Any]]:
+        """A listed company's IPE filings to CVM, newest delivery first (v36).
+
+            silo.company_events("PETR4")                             # last 12 months
+            silo.company_events("PETR4", category="Fato Relevante")
+
+        `id` resolves exactly as in `financials` (ticker via CVM's FCA map,
+        CNPJ or CVM code — never a name). One row per protocol at its newest
+        version, text as filed, `source_url` on CVM's RAD. History starts in
+        2015 and filings CVM published without a protocol number are not
+        held. An unknown category is a `SiloError` (22023) listing the
+        categories held. No cursor: narrow the window.
+        """
+        return self._rpc("company_events", {
+            "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
+            "p_category": category,
+        })
+
     # -- industry aggregates (ANBIMA) ----------------------------------------
 
     def anbima_classes(self, category: Optional[str] = None,
@@ -1013,6 +1033,44 @@ class SiloClient:
         return self._rpc("inflation_items", {
             "p_level": level, "p_item": item,
             "p_from": _iso(start), "p_to": _iso(end),
+        })
+
+    # -- BACEN macro and PTAX (v36) -------------------------------------------
+
+    def macro_series(self, series: str, start: Datish = None,
+                     end: Datish = None) -> List[Dict[str, Any]]:
+        """One non-inflation BACEN SGS series as published, oldest first.
+
+            silo.macro_series("CDI")                       # % per business day, last 12 months
+            silo.macro_series("SELIC_META", start="2020-01-01")
+            silo.macro_series("4380")                      # monthly GDP by SGS code
+
+        Read `unit` on every row: SELIC_META is % a.a. (published ahead to the
+        next Copom date), SELIC_DIARIA / CDI % per business day, IGPM / INPC %
+        change in the month, POUPANCA the old-rule return over the month
+        starting that anniversary day, USDBRL / EURBRL BRL per unit, PIB R$
+        millions. An IPCA code is refused (use `inflation`); an unknown series
+        is a `SiloError` (22023) listing what exists. Default window 12 months
+        (daily series) or 120 (monthly). No cursor: narrow the window.
+        """
+        return self._rpc("macro_series", {
+            "p_series": series, "p_from": _iso(start), "p_to": _iso(end),
+        })
+
+    def ptax(self, currency: str, start: Datish = None,
+             end: Datish = None) -> List[Dict[str, Any]]:
+        """BACEN's PTAX buy / sell for one currency, oldest first.
+
+            silo.ptax("USD")
+            silo.ptax("JPY", start="2025-01-01")
+
+        BRL per ONE unit of the currency, as published — the Fechamento
+        bulletin for a completed day. No mid or cross rate is computed; a
+        holiday has no row. An unknown currency is a `SiloError` (22023)
+        listing the currencies held. Default window 12 months.
+        """
+        return self._rpc("ptax", {
+            "p_currency": currency, "p_from": _iso(start), "p_to": _iso(end),
         })
 
     # -- typed views (GET resources, not functions) --------------------------

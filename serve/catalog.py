@@ -24,6 +24,20 @@ __all__ = [
     "tool_specs",
 ]
 
+# v36: three held-but-unserved datasets reach the API (DATA_INVENTORY.md §3,
+# wave 3), in 26_api_events_macro.sql. api.company_events — a listed
+# company's IPE filings (cia_event), one row per protocol at its newest
+# version, text as filed, source_url = CVM's RAD link, the company resolved by
+# api.company_ref exactly as api.financials resolves p_id (FCA map / CNPJ /
+# CVM code, never a name); history from 2015 and incomplete, because filings
+# CVM published without a protocol number are not held. api.macro_series —
+# the nine non-inflation SGS series (SELIC target and daily, CDI, IGP-M, INPC,
+# old-rule poupança, SGS BRL/USD and BRL/EUR, monthly GDP), registry mirrored
+# from SGS_SERIES minus INFLATION_SERIES, unit and frequency on every row, the
+# IPCA codes refused with a pointer to api.inflation. api.ptax — PTAX compra /
+# venda per currency and day as published (the Fechamento bulletin for a
+# completed day, measured). Nothing derived. coverage() gains company_events,
+# macro_series and ptax rows; capped count twenty-eight -> thirty-one.
 # v35: three FILING-BEHAVIOUR screens (25_api_filing_screens.sql), signals
 # not verdicts like the seven in 23, but native functions rather than wrappers
 # because no dashboard page runs them. api.screen_restatements — funds whose
@@ -280,7 +294,7 @@ __all__ = [
 # stated as (id, asset_class, date, metric) and p_entity_type narrows the fund
 # arms to one family. Universe mode (p_ids empty + p_entity_type, optional
 # p_min_nav / p_min_months) walks a whole family for signed-in callers.
-CATALOG_VERSION = 35
+CATALOG_VERSION = 36
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -484,6 +498,8 @@ CONSTRAINTS = [
     "INFLATION IS SERVED AS PUBLISHED, IN PERCENT, WITH ONE DERIVED COLUMN PER FUNCTION. api.inflation is BACEN's SGS, long: value is the change in the month (unit pct_month) except IPCA_12M — BACEN's own 12-month accumulation, code 13522 (pct_12m) — and IPCA_DIFUSAO, the share of items that rose (pct_items). acc_12m is DERIVED: the trailing twelve monthly changes chained, ((Π(1+v/100))−1)×100, NULL unless all twelve months are present and consecutive — never a shorter chain, never filled; it reproduces IPCA_12M exactly for the headline, which is served beside it so you can check. IPCA15 is the mid-month preview, not a revision of IPCA. Group rows (family = group) are VARIATIONS, not contributions: the weights live only in api.inflation_items, whose contribution column is weight × change_month / 100 in percentage points of the headline — sum contributions within ONE level only (a group and its subgroups are the same money twice). BACEN's group codes are NOT in IBGE's order (1640 is Comunicação, 1641 Saúde, 1642 Despesas pessoais, 1643 Educação; measured against IBGE SIDRA, do not reorder by intuition). SIDRA's item codes changed with the 2020-01 structure; item_number is the continuity and sidra_table says which. Neither function has a panel arm — the rows carry no id — and an unknown series, family, level or item raises 22023 rather than returning an empty array.",
     "THE SCREENS ARE SIGNALS, NOT VERDICTS. api.screen_zombie_growth, screen_captive_vehicles, screen_evergreen_aging, screen_overdue_securit, screen_dormant_funds, screen_dormant_trend, screen_delinquency_drivers, screen_restatements, screen_late_filers and screen_silent_filers return the funds or series that crossed a stated threshold in public filings — never a score, a rating, a rank of suspicion or a finding. Every row carries `screen` (which one produced it) and `params` (the exact arguments, keyed by argument name, so the call can be replayed); `screens` in this catalog says what each measures and what else produces the same pattern (an exclusive FII is legal and looks captive; a distressed-credit mandate looks like zombie growth; an extended CRA looks overdue until it is re-filed). Defaults reproduce the dashboard pages (/suspicious, /dormant, /fidc) for the seven that have one; the three filing screens have no page and their defaults are stated in `screens`. A threshold out of its range or NULL raises 22023 — it is never clamped, because a screen evaluated at a threshold you did not ask for is a different screen. Confirm any row against the fund's own filings before repeating it.",
     "A LATE FILING IS A TIMESTAMP COMPARED WITH A CITED RULE, AND A SILENT ONE IS READ FROM CVM, NOT FNET. screen_late_filers measures the FIRST FNET delivery of a fund's monthly informe (Informe Mensal Estruturado, versao 1) against the deadline Resolução CVM 175 states — FIDC: Anexo Normativo II, art. 27, III; FII: Anexo Normativo III, art. 36, I; both 15 days after the end of the reference month, counted as calendar days because the text says dias — and every row carries that citation in deadline_rule. It measures only months after each family's adaptation deadline (from 2024-12 for FIDC, 2025-07 for FII) and refuses a window ending earlier, because the predecessor instructions' deadlines are not cited here. No holiday calendar is applied, so p_min_days_late (default 5) absorbs a deadline that rolled over a weekend or holiday; CVM extensions are invisible to it. A month with no informe in the register is NOT counted late — FNET history is partial. screen_silent_filers answers absence from CVM's own deep tables (dim_fund: the informe diário for FI, the monthly informe for FIDC / FII / FIAGRO) against latest_complete_period, for funds whose registry row is active; a merged or liquidated fund whose status CVM has not updated, reporting moved to a new class CNPJ, or a SILO ingest gap produce the same row. screen_restatements counts re-filings (versao > 1) by modalidade — RE voluntary, RC required by CVM — per cnpjFundo link. None of the three ever identifies a fund by fund_name.",
+    "COMPANY EVENTS ARE IPE FILINGS AS FILED, FROM 2015, AND NOT EVERY FILING IS HELD. api.company_events serves cia_event — CVM's IPE feed: fatos relevantes, comunicados ao mercado, assembly material and the rest — one row per protocol at its NEWEST version (version says which), every text field (category, event_type, species, subject) exactly as filed, and source_url, the document's link on CVM's RAD. The company is resolved exactly as financials resolves p_id: a ticker only through CVM's published FCA map (active listings), a 14-digit CNPJ or a CVM code, never a name. CVM assigned no protocol number to IPE filings before 2015 and still omits it on a minority (12% of 2015); cia_event is keyed on (protocolo, versao) and a key is never synthesized, so those filings are NOT held — an empty window before 2015, or a filing you know exists and cannot find, is that limit, not an absence of events. p_category matches CVM's label exactly; an unknown one raises 22023 listing the categories held.",
+    "MACRO SERIES AND PTAX ARE SERVED AS BACEN PUBLISHES THEM, UNIT ON EVERY ROW, NOTHING DERIVED. api.macro_series serves nine non-inflation SGS series by label or code: SELIC_META (432, % a.a.; dated per calendar day and published AHEAD to the next Copom date, so a p_to after today can return forward-dated targets), SELIC_DIARIA (11) and CDI (12) in % PER BUSINESS DAY (never annualise one yourself without saying so), IGPM (189) and INPC (188) as % change in the month, POUPANCA (25) — the OLD-RULE deposit return (deposits until 2012-05-03), one value per anniversary day, each the return over the month starting that day, not a calendar-month figure — USDBRL (1) and EURBRL (21619) in BRL per unit, and PIB (4380) monthly in R$ millions at current prices. The IPCA set is api.inflation's; asking macro_series for it raises 22023 with that pointer. api.ptax serves PTAX compra and venda per currency and business day in BRL per ONE unit of the currency (JPY and ARS included): the last bulletin of the day the ingest received, which for a completed day is the Fechamento PTAX (measured against SGS 1 and Olinda on 2026-09-22/23); the bulletin type is not stored. No mid rate, cross rate, fill or holiday row is invented.",
     "THE B3 LENDING AND FLOW GROUP IS A RATCHET, AND IT IS THE ONLY PART OF THIS WAREHOUSE THAT IS. short_interest, short_interest_by_sector, lending_trades, lending_participants and investor_flow read B3 tables that B3 keeps for about 21 BUSINESS DAYS and publishes no archive for. History therefore starts at SILO's first capture and cannot be extended backwards at any price — a missed session is gone, not late, and no backfill exists to ask for. coverage() reports the real span per endpoint; read it before describing any of these series as short, broken or anomalous, and never infer a level change from a window that simply begins where capture began. An over-wide request to the source returns HTTP 200 with a silently clamped window, which is why the ingest reconciles what it asked for against what it received.",
     "pct_float IS TWO DIFFERENT METRICS AND float_basis SAYS WHICH ONE YOU HAVE. api.short_interest divides the balance on loan by whichever denominator exists for that ticker. float_basis = 'index_free_float' means B3's published free float (theoretical_qty from the broadest index portfolio carrying the ticker) and exists for index constituents only, ~149 tickers; float_basis = 'shares_outstanding' means capital social from the cash instrument registry, a LARGER denominator that yields a SMALLER percentage for the same position. They are not the same measure and are never comparable: ANY ranking, screen or cross-section on pct_float must filter to ONE basis first, or it sorts index members against non-members on an axis they do not share. float_denominator carries the number actually used. pct_float and days_to_cover are NULL — never 0 — when their denominator is missing or the name did not trade; 0 would sort an unknown to exactly the wrong end.",
     "IN THE LENDING TAPE, doador AND tomador ARE BROKERAGES, NOT BENEFICIAL OWNERS. lending_participants' broker_code / broker_name and lending_trades' lender_brokers / borrower_brokers identify the B3 PARTICIPANT intermediating a trade, never who ends up long or short. B3 names ~33 participants in a whole session, and about three quarters of trades carry the SAME code on both legs (measured 2026-09-10: 32,197 of 43,165, 74.6%) — a broker crossing its own client book. So a large borrow through a broker is its clients' position, not the broker's view, and 'the biggest short' read off this tape is a statement about order flow routing. internal_legs / internal_qty (lending_participants) and internal_trades (lending_trades) are what tell the two apart: high internal share is client churn, low internal share is flow that actually crossed the market. They are published beside the totals rather than netted away, because dropping them makes the remainder look like conviction and keeping them silently makes churn look like demand.",
@@ -523,11 +539,12 @@ CONSTRAINTS = [
     "WHY (the response is one 1000-row page and SILO never returns a silently "
     "truncated result) and HOW to fix it for that function, in the message and "
     "again as PostgREST's `details` / `hint`. That is all "
-    "twenty-eight — panel, quote_history, fund_nav, option_history, termo_history, "
+    "thirty-one — panel, quote_history, fund_nav, option_history, termo_history, "
     "financials, company_financials, income_statements, anbima_classes, "
     "inflation, inflation_items, fidc_cedentes, fidc_sacados, fidc_portfolio, "
     "fidc_tranches, fidc_aging, fund_documents, "
-    "fund_restatements and the ten screen_* functions "
+    "fund_restatements, company_events, macro_series, ptax and the ten "
+    "screen_* functions "
     "(`limits.page.all`). "
     "THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send "
     "p_after='' for the first page, then the key from the last row — for the "
@@ -689,6 +706,31 @@ EXAMPLES = [
             "the register is not counted. Open the filings with "
             "fund_documents(cnpj) and check screen_silent_filers for funds "
             "that stopped filing altogether."
+        ),
+    },
+    {
+        "ask": "What material facts has PETR4 published this year?",
+        "call": (
+            "POST /rest/v1/rpc/company_events "
+            '{"p_id": "PETR4", "p_category": "Fato Relevante", "p_from": "<year start>"}'
+        ),
+        "then": (
+            "One row per protocol at its newest version, text as filed; open "
+            "source_url for the document on CVM's RAD. Filings CVM published "
+            "without a protocol number (all before 2015) are not held, so an "
+            "empty early window is that limit, not a quiet company."
+        ),
+    },
+    {
+        "ask": "How did CDI and the Selic target move over the last year?",
+        "call": (
+            "POST /rest/v1/rpc/macro_series "
+            '{"p_series": "CDI"}  then  {"p_series": "SELIC_META"}'
+        ),
+        "then": (
+            "Read `unit` first: CDI is % per business day, SELIC_META % a.a. "
+            "Compound or annualise in the notebook and say so. For PTAX buy "
+            "and sell per currency call ptax; for IPCA call inflation."
         ),
     },
     {
@@ -882,6 +924,7 @@ LIMITS = {
             "screen_dormant_funds", "screen_dormant_trend",
             "screen_delinquency_drivers",
             "screen_restatements", "screen_late_filers", "screen_silent_filers",
+            "company_events", "macro_series", "ptax",
         ],
         # The protocol every cursor below shares.
         "cursor_protocol": (
@@ -935,6 +978,9 @@ LIMITS = {
                 "screen_delinquency_drivers",
                 # v35: the filing-behaviour screens (25_api_filing_screens.sql).
                 "screen_restatements", "screen_late_filers", "screen_silent_filers",
+                # v36: held-but-unserved datasets (26_api_events_macro.sql) —
+                # a window to narrow, never a series to walk.
+                "company_events", "macro_series", "ptax",
             ],
         },
         "over_cap": (
@@ -1446,6 +1492,11 @@ def catalog_payload() -> Dict[str, Any]:
             # restatement events paired by a stated group key.
             "fund_documents": "POST /rest/v1/rpc/fund_documents",
             "fund_restatements": "POST /rest/v1/rpc/fund_restatements",
+            # Held-but-unserved datasets (v36): a company's IPE filings, the
+            # non-inflation SGS series and PTAX, all as published.
+            "company_events": "POST /rest/v1/rpc/company_events",
+            "macro_series": "POST /rest/v1/rpc/macro_series",
+            "ptax": "POST /rest/v1/rpc/ptax",
             # B3 securities lending and investor flow (v27). VIEWS, not
             # functions: filter them with PostgREST's own syntax
             # (?ticker=eq.PETR4&trade_date=gte.2026-09-01) and page with
