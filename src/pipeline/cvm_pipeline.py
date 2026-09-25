@@ -35,7 +35,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.fetchers.cvm_fetcher import CVMFetcher
 from src.store.pg_client import get_pg_client, upsert_rows
-from src.pipeline.ingest_log import describe
+from src.pipeline.ingest_log import describe, lineage
 
 # Per-entity ingest modules (parsing logic lives there)
 from src.pipeline.ingest_fi import (
@@ -57,6 +57,7 @@ from src.pipeline.ingest_fidc import (
     ingest_fidc_scr,
     ingest_fidc_sacado,
     ingest_fidc_cedente,
+    ingest_fidc_garantia,
     seed_fund_registry_from_hist,
 )
 from src.pipeline.ingest_fii import (
@@ -179,6 +180,7 @@ _ALL_TABLES: List[str] = [
     "cvm_fi_perfil", "cvm_fi_balancete",
     "cvm_fidc_mensal", "cvm_fidc_tranche", "cvm_fidc_tranche_flows", "cvm_fidc_aging",
     "cvm_fidc_setor", "cvm_fidc_scr", "cvm_fidc_sacado", "cvm_fidc_cedente",
+    "cvm_fidc_garantia",
     "cvm_fiagro_mensal",
     "cvm_fip_periodic", "cvm_fii_mensal", "cvm_fii_periodic", "cvm_fii_imovel",
     "cvm_securit_mensal", "cvm_securit_serie", "cvm_securit_fluxo", "cvm_securit_dfin",
@@ -344,7 +346,7 @@ def _trailing_months(today: date, lookback: int) -> List[Tuple[int, int]]:
     return list(reversed(months))
 
 
-# FIDC tabs I, II, VIII and X: HIST/ yearly ZIPs cover 2013-2024 and the
+# FIDC tabs I, II, VIII, X and X_7: HIST/ yearly ZIPs cover 2013-2024 and the
 # monthly ZIPs start 2025-01 — the same boundary backfill() splits
 # cvm_fidc_mensal on. The header is identical across that boundary, but not
 # across the whole HIST range (measured member-by-member, 2013-2026):
@@ -354,6 +356,8 @@ def _trailing_months(today: date, lookback: int) -> List[Tuple[int, int]]:
 #                       2013-01..2019-10 is a 67-column form with one
 #                       TAB_I2B1_* block whose meaning is not the same
 #   tab_X    2023-10 →  the member does not exist before this month
+#   tab_X_7  2019-11 →  the member does not exist before this month (migration
+#                       45); key column is CNPJ_FUNDO through 2020-10
 # Asking for a month before a tab exists is not a gap to heal, it is a
 # member that was never published, so backfill bounds each tab here.
 _FIDC_HIST_LAST_YEAR = 2024
@@ -362,11 +366,12 @@ _FIDC_TAB_FIRST_PERIOD: Dict[str, date] = {
     "ii":   date(2013, 1, 1),
     "viii": date(2013, 1, 1),
     "x":    date(2023, 10, 1),
+    "x7":   date(2019, 11, 1),
 }
 
 
 def _fidc_tab_doc_type(tab: str, year: int) -> str:
-    """The cvm_config key for one of the two-era FIDC tabs (i, ii, viii, x)."""
+    """The cvm_config key for one of the two-era FIDC tabs (i, ii, viii, x, x7)."""
     return f"hist_mensal_tab_{tab}" if year <= _FIDC_HIST_LAST_YEAR else f"mensal_tab_{tab}"
 
 
@@ -604,6 +609,9 @@ class CVMIngestor:
                 "period_month": month,
                 "status":       "running",
                 "started_at":   datetime.now(timezone.utc).isoformat(),
+                # Which code produced this slice (migration 44): the same
+                # lineage() every other audit writer stamps, never invented.
+                **lineage(),
             }])
         except Exception as e:
             logger.warning("ingest_log start failed: %s", _describe(e))
@@ -642,17 +650,21 @@ class CVMIngestor:
         # hangs of 15+ min killed it in the 2026-06-10 backfill, leaving every
         # slice stuck 'running'). Reconnect once and retry so the audit log
         # reflects what actually happened; still best-effort after that.
+        lin = lineage()
         for attempt in (1, 2):
             try:
                 with self._supabase.cursor() as cur:
                     cur.execute(
                         "UPDATE cvm_ingest_log SET rows_upserted=%s, status=%s,"
-                        " error_msg=%s, finished_at=%s WHERE run_id=%s",
+                        " error_msg=%s, finished_at=%s, git_sha=%s, parser_version=%s"
+                        " WHERE run_id=%s",
                         (
                             rows,
                             status,
                             error,
                             datetime.now(timezone.utc).isoformat(),
+                            lin["git_sha"],
+                            lin["parser_version"],
                             run_id,
                         ),
                     )
@@ -1187,7 +1199,7 @@ class CVMIngestor:
         return rows_inserted
 
     # ------------------------------------------------------------------
-    # FIDC — concentration and credit quality (tabs I, II, VIII, X; both eras)
+    # FIDC — concentration and credit quality (tabs I, II, VIII, X, X_7; both eras)
     # ------------------------------------------------------------------
     # One method per tab, each its own cvm_ingest_log row so the daily
     # gap-aware window heals each slice on its own. The log doc_type is the
@@ -1225,6 +1237,9 @@ class CVMIngestor:
 
     async def ingest_fidc_cedente(self, year: int, month: int) -> int:
         return await self._ingest_fidc_tab("i", "cedente", ingest_fidc_cedente, year, month)
+
+    async def ingest_fidc_garantia(self, year: int, month: int) -> int:
+        return await self._ingest_fidc_tab("x7", "garantia", ingest_fidc_garantia, year, month)
 
     # ------------------------------------------------------------------
     # FIAGRO — monthly snapshot
@@ -1821,7 +1836,7 @@ class CVMIngestor:
                     "FIDC tranche backfill",
                 )
 
-            # Tabs I, II, VIII, X exist in both eras, so these run for every
+            # Tabs I, II, VIII, X, X_7 exist in both eras, so these run for every
             # requested year from each tab's first published month
             # (_FIDC_TAB_FIRST_PERIOD); the method picks the archive by year.
             # HIST months after the first hit the fetcher's on-disk ZIP cache.
@@ -1831,6 +1846,7 @@ class CVMIngestor:
                 ("x",    "cvm_fidc_scr",     "scr",     self.ingest_fidc_scr),
                 ("viii", "cvm_fidc_sacado",  "sacado",  self.ingest_fidc_sacado),
                 ("i",    "cvm_fidc_cedente", "cedente", self.ingest_fidc_cedente),
+                ("x7",   "cvm_fidc_garantia", "garantia", self.ingest_fidc_garantia),
             ):
                 for year, month in _iter_month_pairs(
                     years, today, available_from=_FIDC_TAB_FIRST_PERIOD[tab],
@@ -2051,6 +2067,7 @@ class CVMIngestor:
                 ("cvm_fidc_scr", "fidc", "mensal_tab_x", "scr", self.ingest_fidc_scr),
                 ("cvm_fidc_sacado", "fidc", "mensal_tab_viii", "sacado", self.ingest_fidc_sacado),
                 ("cvm_fidc_cedente", "fidc", "mensal_tab_i", "cedente", self.ingest_fidc_cedente),
+                ("cvm_fidc_garantia", "fidc", "mensal_tab_x7", "garantia", self.ingest_fidc_garantia),
             ]
         if "fiagro" in daily_entities:
             monthly_specs.append(

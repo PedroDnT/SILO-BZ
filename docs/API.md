@@ -184,9 +184,78 @@ CNPJ in the path may include punctuation (`12.345.678/0001-90`); it is stripped 
 14 digits. Tickers are uppercased.
 
 The adapter wraps a **subset** of schema `api`. Everything else — the typed cash
-views, options, termo, holdings, debentures, FIDC concentration, ANBIMA classes,
+views, options, termo, holdings, debentures, FIDC concentration, FIDC tranches
+and aging (`fidc_tranches`, `fidc_aging`, catalog v32 — history from 2025-01, as
+CVM publishes no archive of those tabs), the FNET document register
+(`fund_documents`, `fund_restatements`, catalog v33), ANBIMA classes, inflation,
 company financials, and the B3 lending and investor-flow views — has no `/v1`
 twin and is reachable only over PostgREST. Read those on the published site.
+
+### The FNET document register
+
+`api.fund_documents` and `api.fund_restatements` (catalog v33,
+`24_api_fnet.sql`) serve B3 Fundos.NET's register (migration 42,
+`src/fetchers/fnet_fetcher.py`) — metadata only, one row per document id, and
+**each version is a new id**. Caller documentation is [Fund documents and
+restatements](https://octo-98895abd.mintlify.site/api-docs/fnet-documents).
+The operator half, which is what a reviewer needs to check:
+
+- **Fund by link, never by name.** FNET rows carry no CNPJ. `fund_documents`
+  joins through `fnet_document_filter` rows with `filter_name = 'cnpjFundo'`,
+  written by the fortnightly per-fund sweep (`FNET_SWEEP_SLICES`, default 14),
+  so a document delivered since its fund's last sweep is not listed yet.
+  `fund_restatements` serves such a document with `cnpj` NULL rather than
+  dropping it. `fund_name` is never a join key.
+- **Versions are paired by a stated key**, because FNET links none:
+  `(cnpj link, categoria, tipo_documento, especie, reference_raw)`, the highest
+  lower `versao`, the greatest `fnet_id` on a tie (a group can hold several v1
+  documents — assemblies). No cnpj link or no reference text → never paired.
+- `source_url` is FNET's public `downloadDocumento?id=<fnet_id>` link, built
+  from the id; nothing is fetched at read time.
+- Grants follow `fidc_tranches`: DEFINER with an empty `search_path`, revoked
+  from `PUBLIC`, granted to `anon` / `authenticated` and to `silo_api` (no `/v1`
+  route yet). Both are raise-only above one page. `coverage()` gains an
+  `fnet_documents` row (as_of = newest delivery day, complete_through the day
+  before; landed_at from `cvm_ingest_log` entity `fnet`, doc_type `register`).
+
+### Row caps refuse, and say why (catalog v34)
+
+`fidc_cedentes`, `fidc_sacados` and `fidc_portfolio` used to trim **silently**
+at a tier ceiling (500 rows anonymous, 5,000 signed in): a result over the
+ceiling came back short with a 200. Since v34 they are raise-only on the one
+1000-row page like every other capped function (twenty-five in all,
+`catalog().limits.page.all`): the page CTE fetches 1001 rows and
+`api.assert_row_cap` raises `22023` above 1000. Their `*_rows` entries left
+`limits.tiers`; the tier time budget (3 s / 8 s) is unchanged. `p_limit` stays
+in the signature as an **explicit** newest-first head: 1..1000 is served as
+asked, `NULL` or anything above one page means the whole window (served whole
+or refused), and `< 1` is `22023` rather than a silent clamp to 1. Nothing in
+`dashboard/` or `webapp/` calls these functions (the Evidence sources read the
+landing tables directly), so no page relied on the trim.
+
+`api.assert_row_cap` now builds its message centrally from the function name:
+`<fn>: refused, this request would return more than 1000 rows.`, then the
+**why** (one 1000-row page; SILO never returns a silently truncated result),
+then `To fix:` and the **how** for that function (the cursor for `panel` /
+`quote_history` / `fund_nav`, thresholds for a `screen_*`, the window or
+`p_limit` for the FIDC trio, the window otherwise). The same two halves go out
+as `DETAIL` and `HINT`, which PostgREST returns as `details` / `hint`; the SDK's
+`SiloOverCap.server_hint` carries the latter. "more than 1000 rows" is
+load-bearing: `SiloOverCap` matches on it.
+
+### Lineage: which code produced this data (catalog v34)
+
+Migration `44_ingest_lineage.sql` adds `git_sha` and `parser_version` to
+`cvm_ingest_log`. `git_sha` is `GITHUB_SHA` (set on every Actions run), `NULL`
+when unset — never invented and never read off the working tree.
+`parser_version` is `src.pipeline.ingest_log.PARSER_VERSION`, bumped only when
+a parser or field map changes what a stored value means. Every audit writer
+stamps both: the shared `src/pipeline/ingest_log.py` (ANBIMA, B3, BACEN, IBGE,
+FNET) on start and finish, and CVM's own writer in `cvm_pipeline.py` on its
+start upsert and finish `UPDATE`. `api.coverage()` gains a trailing typed
+column `landed_git_sha`: the `git_sha` of the very run that set `landed_at`
+(newest finished `ok` row, `id` breaking a tie). A `NULL` there is served as
+`NULL`, never borrowed from an older run. `/v1/coverage` forwards it.
 
 ### The B3 lending and investor-flow views
 
@@ -199,6 +268,23 @@ methods since catalog v27.
 
 They were parked in this file while nothing else covered them. That is no longer
 true, so the caveats live with the pages that own them rather than here.
+
+### The forensic screens
+
+The seven `api.screen_*` functions (catalog v31, `23_api_screens.sql`) have no
+`/v1` twin and `silo_api` holds no grant on them — the same decision as the
+lending views. They wrap the public `fraud_screen_*` / `fidc_delinquency_drivers`
+functions the dashboard reads (`15_fraud_screens.sql`), so there is one
+definition of each screen. Caller documentation, including the "signals, not
+verdicts" contract and what each screen cannot tell apart, is
+[Forensic screens](https://octo-98895abd.mintlify.site/api-docs/screens).
+
+Operator half: the public functions were `GRANT EXECUTE … TO anon,
+authenticated` until v31 and reachable only because `public` is not an exposed
+schema. They are now revoked from `PUBLIC`, `anon` and `authenticated`, and
+`23_api_screens.sql` fails the apply if either client role can still execute
+one. The Evidence build is unaffected: it connects as the `postgres` login
+(`EVIDENCE_SOURCE__supabase__user`), which owns them.
 
 ## Run
 
@@ -259,8 +345,9 @@ rather than returning a trimmed result. This file previously stated that "a pane
 cannot be paged" — that stopped being true two catalog versions ago. **`panel`,
 `quote_history` and `fund_nav` page with a `p_after` cursor**; the others
 (`option_history`, `termo_history`, `financials`, `company_financials`,
-`anbima_classes`, `inflation`, `inflation_items`) have no cursor and ask you to
-narrow the window. `fund_nav` also
+`anbima_classes`, `inflation`, `inflation_items`, `fidc_tranches`, `fidc_aging`,
+`fund_documents`, `fund_restatements` and the seven `screen_*` functions)
+have no cursor and ask you to narrow the window. `fund_nav` also
 requires `p_entity_type` to page, because its cursor is a bare period and 385
 CNPJs file under two families in the same month.
 

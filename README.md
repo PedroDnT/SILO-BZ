@@ -10,6 +10,7 @@
 > (source: [`api-docs/`](api-docs/quickstart.mdx); for agents:
 > [`api-docs/agents.mdx`](api-docs/agents.mdx) and [`skill.md`](skill.md);
 > page index: [`llms.txt`](llms.txt)).
+> **MCP server:** [`supabase/functions/silo-mcp/`](supabase/functions/silo-mcp/) — read-only remote MCP, one tool per `api` endpoint (49), merged but not yet deployed ([`api-docs/mcp.mdx`](api-docs/mcp.mdx)).
 > **Notebooks:** [`notebooks/`](notebooks/) — nine runnable end-to-end examples.
 
 ## What SILO is
@@ -50,7 +51,7 @@ period is withheld until it is complete; an unadjusted price says so. A retrieva
 that answers confidently when it does not know is the failure mode that makes model
 output unusable in regulated work — so this one is built to say it does not have the
 answer, in a shape an agent can detect. Concretely, every change is held to five rules
-(`CLAUDE.md`), and 1,463 offline tests hold it there:
+(`CLAUDE.md`), and 1,839 offline tests hold it there:
 
 1. **Never fabricate.** No fallback values, no fills, no inferred joins.
 2. **Never swallow a failure.** It raises, or it is written to `cvm_ingest_log`.
@@ -65,14 +66,15 @@ answer, in a shape an agent can detect. Concretely, every change is held to five
 | Source       | Family                                                                                               | What is read                                                                                                                                                                                                                | Cadence                                                | What it enables                                                                                                                                                                                                                                                    |
 | ------------ | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | CVM          | **FI** — investment funds                                                                            | daily NAV and flows (`inf_diario`); portfolio composition and holdings — equities with their B3 ticker, fund-of-fund quotas, debentures with their issuer (`cda`); investor profile (`perfil`); balance sheet (`balancete`) | daily / monthly                                        | AUM, flows, quotaholders, concentration; the fund → ticker → company join                                                                                                                                                                                          |
-| CVM          | **FIDC** — receivables funds                                                                         | monthly NAV and delinquency (`tab_IV`); tranches (`tab_X`) and their subscriptions/redemptions; aging buckets 30–1080+ days (`tab_VI`)                                                                                      | monthly                                                | delinquency, subordination, tranche performance against promise                                                                                                                                                                                                    |
-| CVM          | **FII** — real-estate funds                                                                          | monthly NAV, yield and distributions (`geral`, `ativo_passivo`, `complemento`); property-level detail                                                                                                                       | monthly / yearly                                       | payout coverage, yield distribution, FII vs FIAGRO                                                                                                                                                                                                                 |
+| CVM          | **FIDC** — receivables funds                                                                         | monthly NAV and delinquency (`tab_IV`); tranches (`tab_X`) and their subscriptions/redemptions; aging buckets 30–1080+ days (`tab_VI`); named originators, anonymized top debtors, sector and SCR ladders; guarantees on the credit rights (`tab_X_7`)                                                                                      | monthly                                                | delinquency, subordination, tranche performance against promise                                                                                                                                                                                                    |
+| CVM          | **FII** — real-estate funds                                                                          | monthly NAV, yield and distributions (`geral`, `ativo_passivo`, `complemento`); property-level detail; every filed version kept (`versao` is in the key; `vw_fii_mensal_latest` / `vw_fii_periodic_latest` read the current one)                                                                                                                       | monthly / yearly                                       | payout coverage, yield distribution, FII vs FIAGRO                                                                                                                                                                                                                 |
 | CVM          | **FIP**, **FIAGRO**                                                                                  | quadrimestral patrimony (FIP); monthly NAV (FIAGRO, published from May 2025)                                                                                                                                                | yearly / monthly                                       | private equity and agribusiness inside the industry totals                                                                                                                                                                                                         |
 | CVM          | **SECURIT** — CRA / CRI / OTS securitisers                                                           | monthly emissions; per-series status, rating and yield; cash-flow waterfall; annual statements                                                                                                                              | monthly / yearly                                       | outstanding by family, defaults, payments by priority, maturity wall                                                                                                                                                                                               |
 | CVM          | **CIA Aberta** — listed companies                                                                    | registry; ITR/DFP accounts; IPE events (Fatos Relevantes); FCA tickers                                                                                                                                                      | per filing                                             | company financials and events; the only company ↔ ticker link, never name-matched                                                                                                                                                                                  |
 | BACEN        | SGS, PTAX, Focus                                                                                     | SELIC, CDI, IPCA, IGP-M, INPC, poupança, PIB; PTAX buy/sell per currency; Focus consensus per indicator and horizon                                                                                                         | daily / business days                                  | the macro context every fund is measured against                                                                                                                                                                                                                   |
 | B3           | COTAHIST, corporate events                                                                           | unadjusted OHLC, volume, ticker and ISIN per session; splits, groupings, bonuses and dividends per ISIN                                                                                                                     | daily (yearly zips for history)                        | quotes, monthly market and option activity; adjustment factors once verified against the tape                                                                                                                                                                      |
 | B3           | **BDI** — securities lending (incl. trade-by-trade), investor flow, index float, instrument registry | short balance and borrow rates per ticker; buy/sell volume per investor type; free-float share counts and B3 sector; shares outstanding per ticker                                                                          | daily — **~21 business days of retention, no archive** | the Short Monitor (% of float, days to cover, borrow cost), the investor-flow panel, and — from the trade tape — which brokerage lent and borrowed each name. **Not backfillable**: a session missed is lost, so the daily job is the only way this history exists |
+| B3 **FNET**  | Fundos.NET document register (FII, FIDC, ETF) | metadata for every document version: type, reference date, delivery timestamp, `versao`, and whether it is the original (AP), a voluntary restatement (RE) or one CVM required (RC). No document bodies | daily (last 3 delivery days + a fortnightly per-fund sweep); history via `backfill.yml` | FIDC restatement history, which CVM's CSVs overwrite in place; filing punctuality; `api.fund_documents` / `api.fund_restatements`. A document's fund is known only from the CNPJ FNET was queried with, never from its name |
 | ANBIMA       | class boletim                                                                                        | monthly figures per ANBIMA class and type                                                                                                                                                                                   | monthly                                                | class-level benchmarks, served by `api.anbima_classes` (an ETF-only view is kept for compatibility)                                                                                                                                                                |
 | IBGE         | SIDRA — the IPCA item tree                                                                           | weight, monthly / YTD / 12-month change per node (general index, 9 groups, 19 subgroups, 51 items, ~377 subitems)                                                                                                           | monthly, on release                                    | what moved the index — `api.inflation_items` (contribution = weight × change); BACEN's IPCA set (headline, cores, groups) is `api.inflation`                                                                                                                       |
 | Apify scrape | ETF market snapshot                                                                                  | NAV, price, yields, volatility, drawdown per listed ETF                                                                                                                                                                     | daily, gated on `APIFY_TOKEN`                          | the market side of the ETF page; self-skips without the token                                                                                                                                                                                                      |
@@ -121,7 +123,9 @@ Everything runs in GitHub Actions against Supabase; there is no server to keep u
    month of every monthly CVM dataset plus any month in a trailing four-month window
    with no successful audit row (CVM publishes with a 1–2 month lag; a month not yet
    published is logged `skipped`, not `error`), the last seven sessions of B3 quotes,
-   and the BACEN series. Then `ANALYZE`, then the analytical layer is rebuilt, then —
+   the BACEN series, and the FNET register (the last three delivery days, plus a
+   rotating slice of the FII/FIDC registry so each fund's documents are re-linked
+   every fortnight). Then `ANALYZE`, then the analytical layer is rebuilt, then —
    on a successful scheduled run — the dashboard's deploy hook fires.
 2. **08:00 UTC — `watchdog.yml`.** Re-runs any slice whose data stopped advancing, so a
    silent outage heals itself instead of waiting for a person to notice.
@@ -152,15 +156,25 @@ administrator and gestor), the monthly fact matviews (`fact_fund_monthly`,
 `fact_security_monthly`), a completeness view that says which months are fully filed
 (`mv_period_completeness`, read through `latest_complete_period()`), the suspicious-deal
 screens, per-class and ETF performance rankings, and finally schema `api` — the only
-surface exposed to callers.
+surface exposed to callers (files 19–24: the contract, short interest, lending
+participants, the `api.screen_*` wrappers over the screens, and the FNET functions).
 
 ### The read API
 
 Schema `api` is served by Supabase's PostgREST at the URL above: a catalog
 (`rpc/catalog`) and a coverage map (`rpc/coverage`) that an agent reads first, a panel
 primitive (`api.panel` — one row per id, date, metric and value), and typed functions
-for funds, quotes, option chains and search. Row caps live inside the SQL, landing
-tables are revoked from `anon`, and `health.yml` asserts both on every run. Signing in
+for funds, quotes, option chains, FIDC structure (tranches, aging, originators,
+debtors), the forensic screens (signals, not verdicts), the FNET document register and
+search. Row caps live inside the SQL, landing tables are revoked from `anon`, and
+`health.yml` asserts both on every run.
+
+A request that would return more than one 1,000-row page is refused with `22023` and
+a message that says why and how to narrow it; nothing is ever silently truncated.
+`rpc/coverage` also says, per dataset, when it last landed and the git commit of the
+run that landed it (`landed_git_sha`), so a number can be traced to the code that
+produced it. The same contract is exposed as a read-only MCP server
+([`api-docs/mcp.mdx`](api-docs/mcp.mdx)) once deployed. Signing in
 (GitHub OAuth, at [`/signin.html`](https://silo-bz-deloslabs.vercel.app/signin.html)) raises the
 caps and the query budget for a token holder.
 
@@ -225,7 +239,7 @@ Relevante feed. The conventions that matter when reading it are in
 | `daily_ingest.yml` | 06:00 UTC, and on dispatch | the daily cycle above. `daily` is the scheduled run, ANALYZE and analytical refresh included; `analytics-only` is just those two; `b3-backfill` loads yearly COTAHIST zips for an exact year range. `rebuild_dashboard=true` also fires the deploy hook after a manual run |
 | `watchdog.yml`     | 08:00 UTC                  | self-healing re-run of stale slices                                                                                                                                                                                                                                        |
 | `health.yml`       | scheduled                  | the gates above; files an issue on failure                                                                                                                                                                                                                                 |
-| `backfill.yml`     | on dispatch                | historical fills, one entity at a time; `fi_doc_type` repairs one FI source without re-fetching the others                                                                                                                                                                 |
+| `backfill.yml`     | on dispatch                | historical fills, one entity at a time; `fi_doc_type` repairs one FI source without re-fetching the others; `fnet_start` / `fnet_end` / `fnet_sweep` make an FNET-only dispatch (every other job skips) — one year per dispatch, newest first                              |
 
 Secrets: `POSTGRES_URL` (Supabase, `sslmode=require`); `VERCEL_DEPLOY_HOOK_URL` (a deploy
 hook of the Vercel project `silo-bz` on `main`, in team `deloslabs`. That hook is the
@@ -269,6 +283,18 @@ Sign-in is live too: GitHub OAuth, with the page at
 3s → 8s. It does not raise PostgREST's server-wide 1,000-row cap, which is the
 same for everyone.
 
+### Pending operator actions
+
+- **FNET history is empty until backfilled.** The daily run captures new documents
+  from now on; the past comes from `backfill.yml` with `fnet_start` / `fnet_end`, one
+  year per dispatch, newest first, then one `fnet_sweep` dispatch to link documents to
+  funds. Until then `api.fund_restatements` only sees recent filings.
+- **The MCP server is not deployed.** `supabase functions deploy silo-mcp --project-ref
+  zcjbtpxuhdekpwcxmepn --no-verify-jwt` (never `supabase config push`).
+- **The Sentinel read-only role** is a script the owner runs once:
+  [`docs/security/sentinel_readonly_role.sql`](docs/security/sentinel_readonly_role.sql)
+  (password via a psql variable, never in the repo).
+
 ### Known defects
 
 - **`etf_daily` / `etf_latest` can be absent from production.** Migration 06
@@ -290,7 +316,7 @@ same for everyone.
   trailing months, so deep history for the recently-fixed field maps needs `backfill.yml`.
 - **`VERCEL_DEPLOY_HOOK_URL`** — set. Fired after every successful scheduled Daily
   Ingest, and after a manual dispatch that sets `rebuild_dashboard=true`; fills never
-  touch Vercel. Must be a deploy hook of the `silo` project on `main`.
+  touch Vercel. Must be a deploy hook of the `silo-bz` project on `main`.
 - **`APIFY_TOKEN`** — set. The ETF market scrape self-skips without it, and also
   skips (does not fail the daily run) when Apify returns
   `full-permission-actor-not-approved` or HTTP 408 `run-timeout-exceeded`.
@@ -334,6 +360,8 @@ The essentials, folded away:
 │   │   ├── bacen_fetcher.py    # BacenClient (SGS/PTAX/Expectativas/TaxaJuros)
 │   │   ├── b3_fetcher.py       # public COTAHIST daily/yearly quotation zips
 │   │   ├── cia_fetcher.py      # listed-company (CIA Aberta) filings
+│   │   ├── b3_bdi_fetcher.py   # B3 BDI: lending, investor flow, index float, registry
+│   │   ├── fnet_fetcher.py     # B3 Fundos.NET document register (metadata only)
 │   │   └── apify_etf_fetcher.py# ETF market scrape (gated on APIFY_TOKEN)
 │   ├── parsers/
 │   │   ├── mapping.py          # the declarative FIELD_MAP engine + coercions
@@ -343,12 +371,13 @@ The essentials, folded away:
 │   │   ├── pg_client.py        # get_pg_client(), upsert_rows() — the ONLY DB door
 │   │   ├── schema.sql          # canonical schema (tables + audit log)
 │   │   ├── migrations/         # NNN_*.sql, append-only — never edit a historical one
-│   │   └── analytical/         # 01–21: dims, fact matviews, screens, rankings, schema api
+│   │   └── analytical/         # 01–24: dims, fact matviews, screens, rankings, schema api
 │   ├── pipeline/               # wires fetch→parse→store, writes cvm_ingest_log
 │   │   ├── cvm_pipeline.py     # CVMIngestor — the (entity, doc_type) orchestrator
 │   │   ├── bacen_pipeline.py   # BacenIngestor
 │   │   ├── b3_pipeline.py      # B3Ingestor (COTAHIST)
 │   │   ├── anbima_pipeline.py  # ANBIMA boletim
+│   │   ├── fnet_pipeline.py    # FnetIngestor (register + per-fund sweep)
 │   │   ├── ingest_<entity>.py  # per-entity ingest_* methods (fi, fidc, fii, securit, cia…)
 │   │   ├── run_daily.py        # CLI: incremental daily update
 │   │   └── run_backfill.py     # CLI: full historical backfill
@@ -366,7 +395,7 @@ The essentials, folded away:
 │   └── README.md               # Webapp-specific setup
 ├── tests/                      # offline pytest suite (DB + HTTP mocked)
 ├── scripts/                    # operator + dev tooling — see scripts/README.md
-│   ├── apply_analytical.sh     # build the analytical layer (01–21) after ingest
+│   ├── apply_analytical.sh     # build the analytical layer (01–24) after ingest
 │   ├── verify_pipeline.py      # quality gate against live Supabase
 │   ├── seed_local_db.py        # offline: real CVM data → local DuckDB
 │   ├── vercel_should_build.sh  # Vercel ignoreCommand (0 SKIPS, 1 BUILDS)
@@ -380,6 +409,7 @@ The essentials, folded away:
 │   └── planning/
 │       ├── CHANGELOG.md        # workstream history
 │       └── SERVING.md          # ingested → researcher pulls a panel (steps 0–7)
+├── supabase/functions/silo-mcp/ # read-only remote MCP over schema api (Edge Function)
 ├── notebooks/                  # 00–08: runnable end-to-end examples over the read API
 ├── api-docs/                   # PUBLISHED Mintlify pages (quickstart + reference)
 ├── index.mdx                   # published docs landing page
@@ -451,6 +481,10 @@ python -m src.pipeline.run_backfill --cvm-only --entity fidc --start-year 2019
 # Repair only the months missing from one FI document's table (not the audit log)
 python -m src.pipeline.run_backfill --cvm-only --entity fi --doc-type balancete --repair-gaps
 python -m src.pipeline.run_daily
+
+# FNET register: one delivery-date range, then the full per-fund link sweep
+python -m src.pipeline.run_backfill --fnet-only --fnet-start 2025-01-01 --fnet-end 2025-12-31
+python -m src.pipeline.run_backfill --fnet-only --fnet-sweep
 ```
 
 One month of one dataset — call the ingestor method (needs `POSTGRES_URL`):

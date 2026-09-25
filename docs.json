@@ -28,6 +28,7 @@
           "api-docs/quickstart",
           "api-docs/sdk",
           "api-docs/agents",
+          "api-docs/mcp",
           "api-docs/conventions"
         ]
       },
@@ -37,7 +38,8 @@
         "pages": [
           "api-docs/guides/first-screen",
           "api-docs/guides/pagination",
-          "api-docs/guides/fundamentals"
+          "api-docs/guides/fundamentals",
+          "api-docs/spreadsheets"
         ]
       },
       {
@@ -54,6 +56,9 @@
           "api-docs/financials",
           "api-docs/holdings",
           "api-docs/fidc",
+          "api-docs/fidc-structure",
+          "api-docs/fnet-documents",
+          "api-docs/screens",
           "api-docs/anbima",
           "api-docs/inflation",
           "api-docs/panel",

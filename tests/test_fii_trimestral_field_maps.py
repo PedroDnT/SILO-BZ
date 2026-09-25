@@ -119,7 +119,10 @@ class TestGeralMap:
         typed, raw = apply_map(GERAL_ROW, fii_trimestral_geral.FIELD_MAP)
         assert typed["cnpj"] == "00332266000131"
         assert str(typed["data_referencia"]) == "2025-03-31"
-        assert typed["versao"] == 1
+        # versao is carried as the source text and validated to an int by
+        # ingest_fii (parse_versao) — the generic int coercion would read
+        # "1.5" as 15.
+        assert typed["versao"] == "1"
         assert typed["nome_fundo"].startswith("FUNDO DE INVESTIMENTO IMOBILI")
         assert typed["segmento_atuacao"] == "Shoppings"
         assert typed["tipo_gestao"] == "Passiva"
@@ -137,7 +140,9 @@ class TestGeralMap:
         call = captured[0]
         assert call["table"] == "cvm_fii_periodic"
         # data_referencia in the conflict key is what keeps all four quarters
-        assert call["conflict"] == "cnpj,doc_type,period_year,data_referencia"
+        # versao (migration 43) keeps every CVM version of the filing
+        assert call["conflict"] == "cnpj,doc_type,period_year,data_referencia,versao"
+        assert call["rows"][0]["versao"] == 1
         assert call["rows"][0]["doc_type"] == "trimestral_geral"
         assert call["rows"][0]["period_year"] == 2025
 

@@ -224,8 +224,33 @@ REFUSING_FUNCTIONS = {
     "anbima_classes",
     "fii_property_history",
     "focus_expectations",
+    # v31: the forensic screens (23_api_screens.sql) — raise-only.
+    "screen_zombie_growth",
+    "screen_captive_vehicles",
+    "screen_evergreen_aging",
+    "screen_overdue_securit",
+    "screen_dormant_funds",
+    "screen_dormant_trend",
+    "screen_delinquency_drivers",
+    # v33: the FNET register (24_api_fnet.sql) — raise-only.
+    "fund_documents",
+    "fund_restatements",
+    # v34: the FIDC concentration trio stopped trimming at a tier ceiling.
+    "fidc_cedentes",
+    "fidc_sacados",
+    "fidc_portfolio",
 }
 PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav"}
+
+
+def test_fidc_concentration_is_no_longer_described_as_silently_clamped(spec):
+    """Until v34 these three trimmed to 500 / 5000 with no signal and the spec
+    said so under **Tier ceiling**. They refuse now; a leftover clamp note
+    would tell a caller to treat a complete result as probably truncated."""
+    for name in ("fidc_cedentes", "fidc_sacados", "fidc_portfolio"):
+        desc = spec["paths"][f"/rpc/{name}"]["post"]["description"]
+        assert "Tier ceiling" not in desc, name
+        assert "22023" in desc and "does not page" in desc, name
 
 
 def test_refusing_functions_say_they_refuse(spec):
@@ -391,6 +416,9 @@ ENFORCED_ENUMS = [
     ("fund_holdings", "p_kind", ["equity", "fund"]),
     ("fidc_portfolio", "p_kind", ["sector", "scr_debtor", "scr_operation", "tax_debt"]),
     ("anbima_classes", "p_level", ["category", "type", "total"]),
+    ("screen_dormant_funds", "p_dormancy", ["empty_shell", "parked_capital"]),
+    ("screen_delinquency_drivers", "p_driver",
+     ["consistent_worsening", "value_up_rate_masked", "denominator_only", "improvement", "stable"]),
 ]
 
 

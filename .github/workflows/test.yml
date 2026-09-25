@@ -9,6 +9,11 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      sql_compile_only:
+        description: Run only the ephemeral PostgreSQL SQL compile job
+        required: false
+        type: boolean
+        default: false
       run_api_smoke:
         description: Run the read-only smoke against the configured production API database
         required: false
@@ -22,6 +27,7 @@ concurrency:
 jobs:
   pytest:
     name: pytest (offline)
+    if: github.event_name != 'workflow_dispatch' || !inputs.sql_compile_only
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -44,6 +50,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Install research evaluation test dependency
+        run: pip install "openai-agents==0.22.3"
+
       - name: Run tests
         run: python -m pytest tests/ -q --tb=short
 
@@ -58,6 +67,7 @@ jobs:
   # silo.ci_smoke_bypass GUC (production applies never set it).
   sql-compile:
     name: SQL compile (ephemeral Postgres)
+    if: github.event_name != 'workflow_dispatch' || inputs.sql_compile_only
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -153,6 +163,21 @@ jobs:
               DROP COLUMN IF EXISTS tp_negoc;
           ALTER TABLE cvm_fi_cda_cotas
               ADD CONSTRAINT uq_fi_cda_cotas UNIQUE (cnpj, period, cnpj_cota);
+
+          -- FII before migration 43: no versao on cvm_fii_mensal, neither key
+          -- names it, and the backfill marker (the column comment) is unset.
+          -- CASCADE takes instrument_activity, which 07 + 43 re-create.
+          DROP VIEW IF EXISTS vw_fii_mensal_latest CASCADE;
+          DROP VIEW IF EXISTS vw_fii_periodic_latest;
+          ALTER TABLE cvm_fii_mensal DROP CONSTRAINT IF EXISTS uq_fii_mensal;
+          ALTER TABLE cvm_fii_mensal DROP COLUMN IF EXISTS versao;
+          ALTER TABLE cvm_fii_mensal
+              ADD CONSTRAINT uq_fii_mensal UNIQUE (cnpj, period, doc_subtype);
+          ALTER TABLE cvm_fii_periodic DROP CONSTRAINT IF EXISTS uq_fii_periodic;
+          ALTER TABLE cvm_fii_periodic
+              ADD CONSTRAINT uq_fii_periodic UNIQUE NULLS NOT DISTINCT
+              (cnpj, doc_type, period_year, data_referencia);
+          COMMENT ON COLUMN cvm_fii_periodic.versao IS NULL;
           REWIND
 
           echo "--- rows in that shape (this is what production holds) ---"
@@ -180,6 +205,19 @@ jobs:
               (cnpj, period, cnpj_cota, tp_aplic, raw)
           VALUES ('00068305000135','2022-03-01','01165780000192','Cotas de Fundos',
                   '{"TP_FUNDO":"FI"}'::jsonb);
+
+          -- FII as production holds it: one version per filing, Versao still
+          -- in raw. One row has none (must stay NULL) and one a malformed
+          -- value (must stay NULL, left in raw — never guessed).
+          INSERT INTO cvm_fii_mensal (cnpj, period, doc_subtype, vl_patrim_liq, raw)
+          VALUES ('33333333000191','2024-01-01','complemento',100,
+                  '{"Versao":"2","Outro":"x"}'::jsonb),
+                 ('33333333000191','2024-01-01','geral',NULL,
+                  '{"Nome_Fundo_Classe":"LEGACY"}'::jsonb),
+                 ('33333333000191','2024-02-01','complemento',110,
+                  '{"Versao":"abc"}'::jsonb);
+          INSERT INTO cvm_fii_periodic (cnpj, doc_type, period_year, data_referencia, raw)
+          VALUES ('33333333000191','dfin',2024,'2024-12-31','{"Versao":"3"}'::jsonb);
           SEED
 
           echo "--- the upgrade: current schema.sql, every migration, then again ---"
@@ -201,6 +239,33 @@ jobs:
           test "$recovered" = "2022-06-30/A" || { echo "FAIL: recovery did not read raw"; exit 1; }
           test "$acoes" = "FI" || { echo "FAIL: cda tp_fundo not recovered from raw"; exit 1; }
           test "$cotas" = "FI" || { echo "FAIL: cda cotas tp_fundo not recovered from raw"; exit 1; }
+
+          echo "--- FII: versao backfilled from raw, then a restatement is KEPT (migration 43) ---"
+          fii=$(psql "$OLD_URL" -tAc "SELECT string_agg(doc_subtype||'@'||period||'='||coalesce(versao::text,'-')||'/'||(raw ? 'Versao')::text, ',' ORDER BY period, doc_subtype) FROM cvm_fii_mensal WHERE cnpj='33333333000191';")
+          per=$(psql "$OLD_URL" -tAc "SELECT coalesce(versao::text,'-') FROM cvm_fii_periodic WHERE cnpj='33333333000191';")
+          echo "fii mensal=$fii periodic=$per"
+          test "$fii" = "complemento@2024-01-01=2/false,geral@2024-01-01=-/false,complemento@2024-02-01=-/true" \
+            || { echo "FAIL: cvm_fii_mensal versao backfill"; exit 1; }
+          test "$per" = "3" || { echo "FAIL: cvm_fii_periodic versao backfill"; exit 1; }
+          # The pipeline's upsert, twice (idempotent), for a restatement (v3)
+          # and for the first versioned write of a legacy NULL-versao filing.
+          for _ in 1 2; do
+            psql "$OLD_URL" -v ON_ERROR_STOP=1 -q <<'UPSERT'
+          INSERT INTO cvm_fii_mensal (cnpj, period, doc_subtype, versao, vl_patrim_liq, raw)
+          VALUES ('33333333000191','2024-01-01','complemento',3,120,'{}'::jsonb),
+                 ('33333333000191','2024-01-01','geral',1,NULL,'{}'::jsonb)
+          ON CONFLICT (cnpj, period, doc_subtype, versao)
+          DO UPDATE SET vl_patrim_liq = EXCLUDED.vl_patrim_liq, raw = EXCLUDED.raw;
+          UPSERT
+          done
+          stored=$(psql "$OLD_URL" -tAc "SELECT count(*) FROM cvm_fii_mensal WHERE cnpj='33333333000191';")
+          latest=$(psql "$OLD_URL" -tAc "SELECT string_agg(doc_subtype||'@'||period||'='||coalesce(versao::text,'-'), ',' ORDER BY period, doc_subtype) FROM vw_fii_mensal_latest WHERE cnpj='33333333000191';")
+          nobs=$(psql "$OLD_URL" -tAc "SELECT n_obs FROM instrument_activity WHERE entity_type='fii' AND cnpj='33333333000191';")
+          echo "fii stored=$stored latest=$latest instrument_activity.n_obs=$nobs"
+          test "$stored" = "5" || { echo "FAIL: a version was overwritten or duplicated"; exit 1; }
+          test "$latest" = "complemento@2024-01-01=3,geral@2024-01-01=1,complemento@2024-02-01=-" \
+            || { echo "FAIL: vw_fii_mensal_latest is not one row per filing, latest version"; exit 1; }
+          test "$nobs" = "3" || { echo "FAIL: instrument_activity counts versions, not filings"; exit 1; }
 
           echo "--- re-apply 33 on the live-shaped unique (Backfill #24) ---"
           # Two rows unique under the wide key: one already has tp_fundo='FI'

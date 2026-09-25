@@ -33,6 +33,11 @@ Usage:
     # B3 COTAHIST yearly zips (opt-in — large)
     python -m src.pipeline.run_backfill --b3-only --b3-start-year 2019
 
+    # FNET document register (opt-in, and alone: one delivery day per request)
+    python -m src.pipeline.run_backfill --fnet-only --fnet-start 2026-08-01 --fnet-end 2026-08-31
+    # ... and link every FII/FIDC in the registry to its documents (~1.5 s a fund)
+    python -m src.pipeline.run_backfill --fnet-only --fnet-sweep
+
 Required env vars: POSTGRES_URL
 """
 
@@ -53,12 +58,33 @@ from src.pipeline.gaps import missing_fi_months
 from src.pipeline.bacen_pipeline import BacenIngestor
 from src.pipeline.b3_pipeline import B3Ingestor
 from src.pipeline.ibge_pipeline import IbgeIngestor
+from src.pipeline.fnet_pipeline import FnetIngestor
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
 )
 logger = logging.getLogger("run_backfill")
+
+
+async def run_fnet(args: argparse.Namespace) -> dict:
+    """The FNET register for a delivery-date range and/or the full fund sweep."""
+    from datetime import date as _date
+
+    if not (args.fnet_start or args.fnet_sweep):
+        raise SystemExit("--fnet-only needs --fnet-start and/or --fnet-sweep")
+    ingestor = FnetIngestor()
+    totals: dict = {}
+    if args.fnet_start:
+        start = _date.fromisoformat(args.fnet_start)
+        end = _date.fromisoformat(args.fnet_end) if args.fnet_end else None
+        logger.info("Starting FNET register backfill: %s..%s", start, end or "today")
+        totals.update(await ingestor.backfill(start, end))
+    if args.fnet_sweep:
+        logger.info("Starting FNET fund sweep over the FII/FIDC registry")
+        totals.update(await ingestor.sweep_all())
+    logger.info("FNET backfill done: %s", totals)
+    return totals
 
 
 async def main(args: argparse.Namespace) -> None:
@@ -73,6 +99,12 @@ async def main(args: argparse.Namespace) -> None:
         raise SystemExit("--doc-type requires --entity fi")
     if (getattr(args, "months", None) or getattr(args, "repair_gaps", False)) and not doc_type:
         raise SystemExit("--months / --repair-gaps require --entity fi --doc-type <t>")
+
+    # FNET runs alone: it is paced at one request a second against an
+    # undocumented endpoint, so it never rides along with a default backfill.
+    if getattr(args, "fnet_only", False):
+        await run_fnet(args)
+        return
 
     if not args.bacen_only and not args.b3_only and not args.ibge_only:
         logger.info(
@@ -353,6 +385,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--b3-only", action="store_true",
         help="Skip CVM and BACEN; backfill only B3 COTAHIST yearly zips"
+    )
+    parser.add_argument(
+        "--fnet-only", action="store_true",
+        help="Skip everything else; backfill only the FNET document register (B3 Fundos.NET)"
+    )
+    parser.add_argument(
+        "--fnet-start", type=str, default=None,
+        help="First FNET delivery day (ISO date). One request-set per day, paced at 1/s."
+    )
+    parser.add_argument(
+        "--fnet-end", type=str, default=None,
+        help="Last FNET delivery day (ISO date, default: today)"
+    )
+    parser.add_argument(
+        "--fnet-sweep", action="store_true",
+        help="Link every FII/FIDC in cvm_fund_registry to its FNET documents (cnpjFundo queries)"
     )
     parser.add_argument(
         "--b3-start-year", type=int, default=2019,

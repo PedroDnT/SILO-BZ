@@ -19,10 +19,62 @@ __all__ = [
     "CONSTRAINTS",
     "LIMITS",
     "METRICS",
+    "SCREENS",
     "catalog_payload",
     "tool_specs",
 ]
 
+# v34: two owner-approved changes (plans 2e and 1c). (a) fidc_cedentes,
+# fidc_sacados and fidc_portfolio stop TRIMMING SILENTLY at the tier ceiling
+# (500 anonymous / 5,000 signed in) and become raise-only on the one 1000-row
+# page like fidc_tranches: their `*_rows` tier ceilings leave limits.tiers,
+# they join limits.page.raise_only, and the capped count goes twenty-two ->
+# twenty-five. p_limit stays, as an EXPLICIT newest-first head (1..1000). The
+# 22023 from api.assert_row_cap now says WHY (one 1000-row page; SILO never
+# returns a silently truncated result) and HOW for that function, in the
+# message and again as DETAIL / HINT. (b) Lineage: cvm_ingest_log gains
+# git_sha (GITHUB_SHA, NULL when unset — never invented) and parser_version
+# (src.pipeline.ingest_log.PARSER_VERSION), migration 44; coverage() gains a
+# typed landed_git_sha column — the commit of the very run that set landed_at,
+# i.e. which code produced this data.
+# v33: the FNET document register reaches the API (backlog B1, plan item 1b).
+# Two functions in 24_api_fnet.sql over fnet_document / fnet_document_filter
+# (migration 42): api.fund_documents — every B3 Fundos.NET document LINKED to
+# one fund (FNET rows carry no CNPJ; the link is "FNET returned this id for
+# cnpjFundo = X" from the fortnightly sweep, never the fund name), newest
+# delivery first, with FNET's own download link as source_url; and
+# api.fund_restatements — every document with versao > 1 (modalidade RE / RC as
+# published), paired with the version it most plausibly replaced by a STATED
+# group key (cnpj link, categoria, tipo_documento, especie, reference_raw),
+# because FNET links no versions: highest lower versao, greatest fnet_id on a
+# tie (a group can hold several v1 assemblies). Unlinked documents are served
+# with cnpj NULL and never paired. Both raise_only. coverage() gains an
+# fnet_documents row keyed on the delivery day.
+# v31: the forensic screens reach the API (COMPETITIVE_GAPS.md §7 B3). Seven
+# api.screen_* functions (23_api_screens.sql) wrap the public screens the
+# dashboard already reads (15_fraud_screens.sql) — zombie_growth,
+# captive_vehicles, evergreen_aging, overdue_securit, dormant_funds,
+# dormant_trend, delinquency_drivers — one definition, called, never restated.
+# SIGNALS, NOT VERDICTS: every row carries `screen` and `params` (the arguments
+# it was evaluated with), `screens` below says what each one measures and what
+# else produces the same pattern, and nothing is scored or rated. Defaults are
+# the dashboard's own calls; out-of-range thresholds raise 22023; more than
+# one page raises 22023 (raise_only). The public screens lost their
+# GRANT EXECUTE to anon/authenticated in the same change — the wrappers are
+# the only client door.
+# v32: the FIDC structure tabs reach the API (backlog B3). Two functions over
+# tables /fidc has read since the start and no caller could reach:
+# api.fidc_tranches — one row per (fund, month, tranche) from informe tabs
+# X_2/X_3/X_6, quotas, quota value, the month's return and PROMISED vs
+# REALISED performance as filed, with the tranche's tab X_4 operations as a
+# `flows` array keyed by CVM's own TP_OPER label (free text whose vocabulary
+# has drifted, so it is never bucketed into subscription / redemption
+# columns that could silently drop a label); and api.fidc_aging — tab VI
+# long, to_maturity and overdue ladders in ten day-bands plus CVM's FILED
+# overdue total, which is not a sum of the bands. Both refuse over one page
+# (limits.page.raise_only), derive nothing, and carry the honest limit on
+# their coverage() rows: HISTORY BEGINS IN 2025, because CVM's HIST archive
+# publishes no equivalent member — an upstream limit, not a backfill gap.
 # v30: inflation. Two functions, two sources, one derived number each.
 # api.inflation serves BACEN's SGS long — IPCA, IPCA-15, BACEN's own 12-month
 # accumulation (13522), the five BCB cores (MS, MA, EX0, EX2, DP), the
@@ -211,7 +263,7 @@ __all__ = [
 # stated as (id, asset_class, date, metric) and p_entity_type narrows the fund
 # arms to one family. Universe mode (p_ids empty + p_entity_type, optional
 # p_min_nav / p_min_months) walks a whole family for signed-in callers.
-CATALOG_VERSION = 32
+CATALOG_VERSION = 35
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -406,10 +458,14 @@ CONSTRAINTS = [
     "A FIDC CEDENTE SHARE IS A PERCENT OF ITS BLOCK, NOT OF THE FUND. fidc_cedentes serves tab I''s nine slots per block: bloco A is the receivables acquired WITH substantial retention of risks and benefits by the originator, B WITHOUT, and share_pct is the cedente''s share of that block. The block totals are not served (tab I''s asset lines are not ingested), so a share cannot be turned into reais here. cedente_id is the originator''s own filed CPF/CNPJ, kept only when its check digits verify — placeholders (all-zero, all-nine) and unrecoverable identifiers were dropped at ingest, never coerced — and cedente_tickers is the FCA map''s active listings for it, NULL when not listed. share_pct is AS FILED and dirty in the way CVM''s percentage fields are: 9% of slots carry a value above 100 (max 19,771 in 2026-07); validate the range in the notebook, never read it as a fraction. Slots exist from 2019-11; nothing is matched by name.".replace("''", "'"),
     "FIDC SACADOS ARE ANONYMIZED RANKS. fidc_sacados and the sacado_top1 / sacado_top25 metrics come from tab VIII, which publishes the 25 largest debtors as (rank, value) with no identity — CVM''s dictionary describes neither column. seq is CVM''s rank as filed and is never recomputed from valor (65 of 3,043 funds filed a non-descending series in 2026-07; they are served as filed). sacado_top25 sums the ranks the fund filed, which may be fewer than 25. Concentration = sacado_top1 / receivables (or top25 / receivables) is a notebook division, not a served number — and it can exceed 1: tab VIII and tab II do not share a base for every fund (2026-07: the top-25 sum exceeds the receivables total for 1.9% of funds, rank 1 alone for 0.5%), served as filed and never capped.".replace("''", "'"),
     "FIDC PORTFOLIO ROWS ARE A HIERARCHY. fidc_portfolio kind=sector serves tab II as one row per code: TOTAL is the whole receivables book, a lettered code (A..K) a sector, and a code with a digit (C1, F3) a member of its lettered parent (`parent`). Sum leaves or sum parents, never both. kind=scr_debtor and kind=scr_operation are the BACEN SCR grade ladders AA..H for the same receivables, graded by debtor and by operation respectively — two views of one book, not two books. tab X exists from 2023-10 only; earlier months have no scr rows, not zero-graded ones.",
+    "WHICH CODE PRODUCED THIS DATA. coverage().landed_git_sha is the git commit of the very ingest run that set landed_at — the code that parsed and stored the newest data for that dataset — read from GITHUB_SHA on the run. It is NULL when that run recorded none (a run from before lineage existed, 2026-09-24, or one started outside GitHub Actions), and it is never borrowed from an older run, because an older run's code did not produce the newest rows. The audit log behind it also records parser_version, bumped only when a parser or field map changes what a stored value means; neither is a property of the SOURCE, so neither says anything about how much CVM, B3 or BACEN have published (that is complete_through).",
+    "FIDC TRANCHES AND AGING BEGIN IN 2025, AND ARE SERVED AS FILED. fidc_tranches (informe tabs X_2/X_3/X_6 + X_4) and fidc_aging (tab VI) exist from 2025-01 only: CVM's pre-2025 HIST archive publishes no equivalent member, so an earlier month has no rows — an upstream limit, not a gap and not a backfill to ask for. fidc_tranches is one row per (fund, month, classe_serie): quotas, quota_value, return_month, and performance_expected vs performance_realised (what the series promised vs delivered, percent), dirty the way CVM's percentage fields are — never clipped, range-check in the notebook. Its `flows` array carries tab X_4's operations with CVM's TP_OPER label verbatim (e.g. Captações no Mês, Resgates no Mês, Amortizações); the vocabulary has drifted, so match labels yourself and never read a label you did not find as zero. tranche_filed = FALSE marks a series with flows but no X_2 row. fidc_aging is long: kind=to_maturity (not yet due, by days to maturity) and kind=overdue (by days past due), ten day-bands each, plus kind=overdue_total — CVM's FILED total, not a sum of the bands, and the two can disagree. Nothing is derived by either function: no performance gap, no subordination ratio, no band sums.",
+    "THE FNET REGISTER KNOWS A DOCUMENT'S FUND ONLY BY LINK, AND LINKS NO VERSIONS. fund_documents and fund_restatements serve B3 Fundos.NET's document register as published, metadata only: each version is its own fnet_id, versao counts the filings, modalidade is AP (original), RE (voluntary restatement) or RC (a restatement CVM required), and status is AC / IC (superseded) / CC (cancelled) AS OF fetched_at, not live. FNET rows carry NO CNPJ: a document belongs to a fund because FNET returned it when SILO queried cnpjFundo = that CNPJ, in a sweep that reaches every FII/FIDC once a fortnight — so a document delivered since the fund's last sweep is not in fund_documents yet, and fund_restatements serves it with cnpj NULL rather than dropping it. fund_name is FNET's label and is never joined on. Because FNET does not say which document a re-filing replaces, fund_restatements PAIRS each versao > 1 with the document in the same group — (cnpj link, categoria, tipo_documento, especie, reference_raw) — carrying the highest lower versao, the greatest fnet_id winning a tie (a group can legitimately hold several v1 documents, e.g. assemblies); an unlinked document or one with no reference text is never paired, so its previous_fnet_id and lag_days are NULL — not 'no predecessor', just not pairable. lag_days is days between deliveries. source_url is FNET's own download link for the id. History starts at SILO's first crawl or backfill, not at FNET's; coverage() reports the fnet_documents span.",
     "FIDC DELINQUENCY STARTS IN 2025-01. CVM's pre-2025 monthly FIDC file (tab II/III) carried no delinquency field, so `delinquency` is null on every fidc row through 2024-12-31 — not zero, not clean books, not a missing month. From 2025-01-31 the tab IV/VI format is ingested and delinquency is filed on every row. Never chain-link, difference or average a FIDC delinquency series across 2024-12 → 2025-01; the series begins there. Machine-readable in `regime_breaks`, and on the funds_fidc coverage row's `notes`.",
     "A FUND'S DEBENTURE HOLDINGS ARE A DIFFERENT SHAPE FROM ITS EQUITY HOLDINGS. api.fund_debentures (CDA block 6) is one row per (fund, month, issuer, maturity, rate structure, application type), as filed and never summed — two series of one issuer maturing the same day at different coupons are different securities. The issuer is its own filed CPF/CNPJ (issuer_id); p_issuer also takes a listed company's ticker or CVM code, resolved only through CVM's published FCA map, and issuer_tickers carries the issuer's active listed codes back (NULL when not listed — most debenture issuers are not). Nothing is matched by name.",
     "ANBIMA CLASS ROWS ARE INDUSTRY AGGREGATES, NOT FUNDS. api.anbima_classes serves the Boletim de Fundos de Investimento as published — R$ milhões (unit brl_mm) and percentage points (unit pct) — per class, ANBIMA type or industry total (`level`; class aggregates by default). No fund in this warehouse is mapped to an ANBIMA class: CVM's `classe` is CVM's taxonomy, so never join a fund to a class by name, and there is no panel arm because these rows carry no id. An unknown category, metric or level raises 22023 listing what exists rather than returning an empty array.",
     "INFLATION IS SERVED AS PUBLISHED, IN PERCENT, WITH ONE DERIVED COLUMN PER FUNCTION. api.inflation is BACEN's SGS, long: value is the change in the month (unit pct_month) except IPCA_12M — BACEN's own 12-month accumulation, code 13522 (pct_12m) — and IPCA_DIFUSAO, the share of items that rose (pct_items). acc_12m is DERIVED: the trailing twelve monthly changes chained, ((Π(1+v/100))−1)×100, NULL unless all twelve months are present and consecutive — never a shorter chain, never filled; it reproduces IPCA_12M exactly for the headline, which is served beside it so you can check. IPCA15 is the mid-month preview, not a revision of IPCA. Group rows (family = group) are VARIATIONS, not contributions: the weights live only in api.inflation_items, whose contribution column is weight × change_month / 100 in percentage points of the headline — sum contributions within ONE level only (a group and its subgroups are the same money twice). BACEN's group codes are NOT in IBGE's order (1640 is Comunicação, 1641 Saúde, 1642 Despesas pessoais, 1643 Educação; measured against IBGE SIDRA, do not reorder by intuition). SIDRA's item codes changed with the 2020-01 structure; item_number is the continuity and sidra_table says which. Neither function has a panel arm — the rows carry no id — and an unknown series, family, level or item raises 22023 rather than returning an empty array.",
+    "THE SCREENS ARE SIGNALS, NOT VERDICTS. api.screen_zombie_growth, screen_captive_vehicles, screen_evergreen_aging, screen_overdue_securit, screen_dormant_funds, screen_dormant_trend and screen_delinquency_drivers return the funds or series that crossed a stated threshold in public filings — never a score, a rating, a rank of suspicion or a finding. Every row carries `screen` (which one produced it) and `params` (the exact arguments, keyed by argument name, so the call can be replayed); `screens` in this catalog says what each measures and what else produces the same pattern (an exclusive FII is legal and looks captive; a distressed-credit mandate looks like zombie growth; an extended CRA looks overdue until it is re-filed). Defaults reproduce the dashboard pages (/suspicious, /dormant, /fidc). A threshold out of its range or NULL raises 22023 — it is never clamped, because a screen evaluated at a threshold you did not ask for is a different screen. Confirm any row against the fund's own filings before repeating it.",
     "THE B3 LENDING AND FLOW GROUP IS A RATCHET, AND IT IS THE ONLY PART OF THIS WAREHOUSE THAT IS. short_interest, short_interest_by_sector, lending_trades, lending_participants and investor_flow read B3 tables that B3 keeps for about 21 BUSINESS DAYS and publishes no archive for. History therefore starts at SILO's first capture and cannot be extended backwards at any price — a missed session is gone, not late, and no backfill exists to ask for. coverage() reports the real span per endpoint; read it before describing any of these series as short, broken or anomalous, and never infer a level change from a window that simply begins where capture began. An over-wide request to the source returns HTTP 200 with a silently clamped window, which is why the ingest reconciles what it asked for against what it received.",
     "pct_float IS TWO DIFFERENT METRICS AND float_basis SAYS WHICH ONE YOU HAVE. api.short_interest divides the balance on loan by whichever denominator exists for that ticker. float_basis = 'index_free_float' means B3's published free float (theoretical_qty from the broadest index portfolio carrying the ticker) and exists for index constituents only, ~149 tickers; float_basis = 'shares_outstanding' means capital social from the cash instrument registry, a LARGER denominator that yields a SMALLER percentage for the same position. They are not the same measure and are never comparable: ANY ranking, screen or cross-section on pct_float must filter to ONE basis first, or it sorts index members against non-members on an axis they do not share. float_denominator carries the number actually used. pct_float and days_to_cover are NULL — never 0 — when their denominator is missing or the name did not trade; 0 would sort an unknown to exactly the wrong end.",
     "IN THE LENDING TAPE, doador AND tomador ARE BROKERAGES, NOT BENEFICIAL OWNERS. lending_participants' broker_code / broker_name and lending_trades' lender_brokers / borrower_brokers identify the B3 PARTICIPANT intermediating a trade, never who ends up long or short. B3 names ~33 participants in a whole session, and about three quarters of trades carry the SAME code on both legs (measured 2026-09-10: 32,197 of 43,165, 74.6%) — a broker crossing its own client book. So a large borrow through a broker is its clients' position, not the broker's view, and 'the biggest short' read off this tape is a statement about order flow routing. internal_legs / internal_qty (lending_participants) and internal_trades (lending_trades) are what tell the two apart: high internal share is client churn, low internal share is flow that actually crossed the market. They are published beside the totals rather than netted away, because dropping them makes the remainder look like conviction and keeping them silently makes churn look like demand.",
@@ -441,36 +497,23 @@ CONSTRAINTS = [
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
     "CIA, FII AND FOCUS HELD DATA. api.financial_statement_history returns raw CIA account lines across all stored filing versions for one required statement and company id; `financials` remains latest-version only. Filing header metadata is present only on an exact key match. Values are already scaled at ingest and remain in filed currency. api.fii_property_history filters one exact fund CNPJ and reference-date window; CVM publishes no stable property id, so row_hash identifies a source row, not a durable asset. Nullable measurements remain NULL. api.focus_expectations returns the weekly path across BCB survey dates for one exact endpoint and required forecast horizon, with an optional indicator. The stored key retains each date/horizon; `baseCalculo=0` is the trailing 30-day respondent sample and 12-month inflation is unsmoothed. It is not a vintage archive of corrected old reports, and migration 16-era missing horizons may await re-fetch. All three endpoints refuse above 1,000 rows.",
-    "Row caps — getting this wrong means silently analysing a TRUNCATED "
-    "series, the exact fabrication this API exists to prevent. THE PAGE IS "
-    "1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY "
-    "set-returning function now REFUSES rather than trims: a window that "
-    "would produce more than 1000 rows raises SQLSTATE 22023 naming the "
-    "function, so a short result can no longer look complete. That is all "
-    "fourteen — panel, quote_history, fund_nav, option_history, termo_history, "
-    "financials, company_financials, financial_statement_history, "
-    "income_statements, anbima_classes, inflation, inflation_items, "
-    "fii_property_history, focus_expectations (`limits.page.all`). "
-    "THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send "
-    "p_after='' for the first page, then the key from the last row — for the "
-    "panel 'date|id|metric|asset_class', for quote_history and fund_nav just "
-    "that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until "
-    "the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when "
-    "paging, because its cursor is a bare period and one CNPJ can file under "
-    "two families in the same month. The other eleven do not page: narrow "
-    "p_from/p_to instead (inflation and inflation_items default to the last "
-    "36 months for that reason). The old sentinels (5001 on the series functions, "
-    "100001 on the panel) are GONE and were never observable anyway — "
-    "PostgREST cut the response at 1000 first (measured 2026-08-28: "
-    "quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows "
-    "kept). On GET views the Content-Range RESPONSE HEADER is still the "
-    "signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true "
-    "total. The RPC functions no longer need it — they raise instead. "
-    "RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel "
-    "returns the same first page again); p_after is the RPC cursor, Range/"
-    "limit/offset are the view cursor. The local /v1 Flask adapter pages the "
-    "SQL itself and answers 400 above its own total; do not carry its rules "
-    "over.",
+    "Row caps — all twenty-eight set-returning endpoints in limits.page.all "
+    "refuse with SQLSTATE 22023 when a query would exceed 1000 rows; the error "
+    "explains why and how to narrow it. They are panel, quote_history, fund_nav, "
+    "option_history, termo_history, financials, company_financials, "
+    "financial_statement_history, income_statements, anbima_classes, inflation, "
+    "inflation_items, fii_property_history, focus_expectations, fidc_cedentes, "
+    "fidc_sacados, fidc_portfolio, fidc_tranches, fidc_aging, fund_documents, "
+    "fund_restatements, and the seven screen_* functions. Three page with "
+    "p_after: panel, quote_history and fund_nav. For fund_nav, paging also "
+    "requires p_entity_type because the cursor is only a period. The other "
+    "twenty-five require narrower windows or filters. For fidc_cedentes, "
+    "fidc_sacados and fidc_portfolio, use p_limit as an explicit newest-first "
+    "head when useful; they do not provide a cursor. Screens need higher "
+    "thresholds or pinned output filters. The former 5001/100001 sentinels are "
+    "GONE. PostgREST still cuts GET views at 1000 rows and keeps the OLDEST "
+    "rows; read Content-Range to detect that. RANGE PAGING DOES NOT WORK ON "
+    "RPC — use p_after only where listed.",
     "An unrecognised metric name is IGNORED, not rejected: the panel comes "
     "back smaller and perfectly plausible. Take metric names from this "
     "catalog's `metrics` map, never from memory.",
@@ -562,6 +605,35 @@ EXAMPLES = [
         "then": "Divide sacado_top1 by receivables per row; the debtor is anonymized, so this is a ratio, not a name.",
     },
     {
+        "ask": "Did this FIDC's senior tranche deliver what it promised?",
+        "call": (
+            "POST /rest/v1/rpc/fidc_tranches "
+            '{"p_cnpj": "<cnpj>", "p_from": "2025-01-01"}'
+        ),
+        "then": (
+            "Compare performance_realised with performance_expected per "
+            "classe_serie in the notebook; both are as filed and can carry "
+            "CVM's outliers. History starts 2025-01 — there is no earlier "
+            "tranche data anywhere. Read the aging ladder under it with "
+            "fidc_aging; overdue_total is CVM's filed total, not a sum."
+        ),
+    },
+    {
+        "ask": "Which FIDCs restated a filing this month, and how late?",
+        "call": (
+            "POST /rest/v1/rpc/fund_restatements "
+            '{"p_tipo_fundo": "FIDC", "p_from": "<month start>"}'
+        ),
+        "then": (
+            "Each row is a re-filed document (versao > 1; modalidade RE is "
+            "voluntary, RC was required by CVM) with lag_days since the version "
+            "it replaced. The pairing is by a stated group key because FNET "
+            "links no versions; cnpj NULL means the fortnightly fund sweep has "
+            "not linked it yet — never match it to a fund by fund_name. Open "
+            "the versions with fund_documents' source_url."
+        ),
+    },
+    {
         "ask": "Just give me the panel; I will run a factor model",
         "call": (
             "POST /rest/v1/rpc/panel "
@@ -595,6 +667,17 @@ EXAMPLES = [
             "the nine level-1 rows sum to the headline to rounding. Drill with "
             "p_level=2..4 and p_item=<structure number> — but sum ONE level at "
             "a time, a group and its subgroups are the same money twice."
+        ),
+    },
+    {
+        "ask": "Which FIDCs match the evergreen-aging screen?",
+        "call": "POST /rest/v1/rpc/screen_evergreen_aging {}",
+        "then": (
+            "Each row is a SIGNAL, not a finding: it carries `screen` and "
+            "`params` (the thresholds it crossed). Read `screens.evergreen_aging."
+            "meaning` for what else looks the same, then take the cnpjs to "
+            "fund_nav or panel and the fund's own filings before saying "
+            "anything about it."
         ),
     },
     {
@@ -731,10 +814,17 @@ LIMITS = {
         # Every set-returning function, split by what it offers ABOVE one page.
         "all": [
             "panel", "quote_history", "fund_nav", "option_history",
-            "termo_history", "financials", "company_financials",
-            "financial_statement_history", "income_statements", "anbima_classes",
-            "inflation", "inflation_items", "fii_property_history",
+            "termo_history", "financials", "company_financials", "income_statements",
+            "anbima_classes", "inflation", "inflation_items",
+            "financial_statement_history", "fii_property_history",
             "focus_expectations",
+            "fidc_cedentes", "fidc_sacados", "fidc_portfolio",
+            "fidc_tranches", "fidc_aging",
+            "fund_documents", "fund_restatements",
+            "screen_zombie_growth", "screen_captive_vehicles",
+            "screen_evergreen_aging", "screen_overdue_securit",
+            "screen_dormant_funds", "screen_dormant_trend",
+            "screen_delinquency_drivers",
         ],
         # The protocol every cursor below shares.
         "cursor_protocol": (
@@ -769,14 +859,35 @@ LIMITS = {
             # refuse and ask you to narrow instead of handing you a cursor.
             "raise_only": [
                 "option_history", "termo_history", "financials",
-                "company_financials", "financial_statement_history",
-                "income_statements", "anbima_classes", "inflation",
-                "inflation_items", "fii_property_history", "focus_expectations",
+                "company_financials", "income_statements", "anbima_classes",
+                "inflation", "inflation_items",
+                "financial_statement_history", "fii_property_history",
+                "focus_expectations",
+                # v34: the FIDC concentration tabs, which until v33 trimmed
+                # silently at the tier ceiling. p_limit (1..1000) is an
+                # explicit newest-first head, not a cursor.
+                "fidc_cedentes", "fidc_sacados", "fidc_portfolio",
+                # v32: the FIDC structure tabs.
+                "fidc_tranches", "fidc_aging",
+                # v33: the FNET register — a year of one fund's documents,
+                # or a month of restatements, is a window to narrow.
+                "fund_documents", "fund_restatements",
+                # v31: a screen is a short list or the wrong screen — raise
+                # its thresholds or pin its output filter, never walk it.
+                "screen_zombie_growth", "screen_captive_vehicles",
+                "screen_evergreen_aging", "screen_overdue_securit",
+                "screen_dormant_funds", "screen_dormant_trend",
+                "screen_delinquency_drivers",
             ],
         },
         "over_cap": (
-            "SQLSTATE 22023 naming the function — nothing is trimmed to fit; "
-            "the message says to page or narrow"
+            "SQLSTATE 22023 naming the function — nothing is trimmed to fit. "
+            "The message says WHY (one 1000-row page; SILO never returns a "
+            "silently truncated result) and HOW for that function (page with "
+            "p_after, narrow p_from/p_to, take an explicit p_limit head, "
+            "raise a screen's "
+            "thresholds); PostgREST also returns the two halves as `details` "
+            "and `hint`"
         ),
         "no_sentinel": (
             "there is no cap+1 row to count any more. The old 5001 (series) "
@@ -794,9 +905,6 @@ LIMITS = {
             "option_exercises_rows": 500,
             "fund_holdings_rows": 500,
             "fund_debentures_rows": 500,
-            "fidc_cedentes_rows": 500,
-            "fidc_sacados_rows": 500,
-            "fidc_portfolio_rows": 500,
             "statement_timeout_seconds": 3,
         },
         "authenticated": {
@@ -807,9 +915,6 @@ LIMITS = {
             "option_exercises_rows": 5000,
             "fund_holdings_rows": 5000,
             "fund_debentures_rows": 5000,
-            "fidc_cedentes_rows": 5000,
-            "fidc_sacados_rows": 5000,
-            "fidc_portfolio_rows": 5000,
             "statement_timeout_seconds": 8,
         },
         "exceeding_an_id_ceiling": (
@@ -902,6 +1007,169 @@ REGIME_BREAKS = [
 ]
 
 
+# The forensic screens (v31), served by 23_api_screens.sql. SIGNALS, NOT
+# VERDICTS: `meaning` says what crossing the threshold measures AND what else
+# produces the same pattern, because a screen that only says the first half is
+# an accusation. `params` are the defaults — the dashboard's own calls — and
+# `bounds` the ranges outside which the SQL raises 22023. `filters` narrow the
+# output without changing the screen. tests/test_api_screens_contract.py pins
+# params to the SQL DEFAULTs and to the dashboard sources, and every row the
+# function returns carries `screen` and `params` beside its own columns.
+SCREENS: Dict[str, Dict[str, Any]] = {
+    "zombie_growth": {
+        "function": "screen_zombie_growth",
+        "family": "fidc",
+        "source": "cvm_fidc_aging (tab VI total) and cvm_fidc_mensal, one aging month",
+        "grain": "one row per FIDC in the chosen aging month",
+        "params": {"p_period": None, "p_min_delinq_pct": 5, "p_min_aum": 1000000},
+        "bounds": {
+            "p_period": "an aging month-end; null = the latest aging period",
+            "p_min_delinq_pct": "0..100, percent of NAV",
+            "p_min_aum": ">= 0, BRL",
+        },
+        "dashboard": "/suspicious",
+        "meaning": (
+            "Delinquent receivables above p_min_delinq_pct of NAV while NAV stays "
+            "above p_min_aum: credit going bad inside a fund that still carries "
+            "meaningful money. The same pattern comes from a distressed-credit "
+            "mandate, a fund in orderly wind-down, or one late payer in a small "
+            "book. delinquency_pct is delinquency / NAV, and can exceed 100."
+        ),
+    },
+    "captive_vehicles": {
+        "function": "screen_captive_vehicles",
+        "family": "fii",
+        "source": "cvm_fii_mensal (complemento), trailing window from today",
+        "grain": "one row per FII",
+        "params": {"p_lookback_months": 3, "p_max_investors": 10, "p_min_aum": 50000000},
+        "bounds": {
+            "p_lookback_months": "1..36",
+            "p_max_investors": "1..1000; flagged when the window minimum is below it",
+            "p_min_aum": ">= 0, BRL, against the window maximum NAV",
+        },
+        "dashboard": "/suspicious",
+        "meaning": (
+            "An FII whose NAV peaked above p_min_aum while its quotaholder count "
+            "never reached p_max_investors in the window: a large vehicle held by "
+            "a handful of investors. Exclusive and family-office FIIs are legal "
+            "and look exactly like this."
+        ),
+    },
+    "evergreen_aging": {
+        "function": "screen_evergreen_aging",
+        "family": "fidc",
+        "source": "cvm_fidc_aging, trailing window from today, funds with > R$100k delinquent",
+        "grain": "one row per FIDC",
+        "params": {"p_lookback_months": 12, "p_min_longtail_pct": 70, "p_max_variation_pp": 10},
+        "bounds": {
+            "p_lookback_months": "3..36",
+            "p_min_longtail_pct": "0..100, share of delinquency overdue > 1080 days",
+            "p_max_variation_pp": "0..100 percentage points across the window",
+        },
+        "dashboard": "/suspicious",
+        "meaning": (
+            "Receivables overdue more than 1080 days stay a large and nearly "
+            "constant share of delinquency: old credit neither written off nor "
+            "recovered, the pattern of rolled rather than resolved receivables. "
+            "A slow judicial recovery, or a policy of not writing off, looks the "
+            "same. months_observed counts the aging months actually filed."
+        ),
+    },
+    "overdue_securit": {
+        "function": "screen_overdue_securit",
+        "family": "securit",
+        "source": "cvm_securit_serie, each series' newest monthly filing",
+        "grain": "one row per series (instrument_type, securitizer, code, series number)",
+        "params": {"p_min_volume": 100000},
+        "bounds": {"p_min_volume": ">= 0, BRL paid in"},
+        "dashboard": "/suspicious",
+        "meaning": (
+            "A CRI/CRA/other series past its filed maturity whose newest filing "
+            "still reports a non-terminal status (not Cancelado, Vencido, "
+            "Liquidado or Encerrado). The FILING is stale; the screen cannot say "
+            "whether the series was extended, renegotiated, not yet re-filed or "
+            "is in silent default. status is served as filed. The series number "
+            "is not a column, so two series under one instrument_code read as "
+            "two rows with the same identity."
+        ),
+    },
+    "dormant_funds": {
+        "function": "screen_dormant_funds",
+        "family": "fi",
+        "source": "fact_fund_monthly (fi), anchored on latest_complete_period('fi')",
+        "grain": "one row per FI class",
+        "params": {"p_lookback_months": 3, "p_dormancy": None, "p_min_nav": None},
+        "bounds": {"p_lookback_months": "2..12"},
+        "filters": {
+            "p_dormancy": "empty_shell | parked_capital; null = both (output filter)",
+            "p_min_nav": "keep last_nav >= this, BRL; null = no floor (output filter)",
+        },
+        "dashboard": "/dormant",
+        "meaning": (
+            "An FI class that filed every month of the window with zero "
+            "subscriptions and zero redemptions. empty_shell: no quotaholder at "
+            "all — a registered, filing vehicle holding nobody's money. "
+            "parked_capital: quotaholders present, no money in or out — "
+            "exclusive and closed structures look exactly like this. A month "
+            "with unreported flows or quotaholders disqualifies the fund rather "
+            "than counting as zero. FI only: the other families file no monthly "
+            "flows. parked_capital alone exceeds one page; pin p_dormancy and "
+            "walk p_min_nav bands."
+        ),
+    },
+    "dormant_trend": {
+        "function": "screen_dormant_trend",
+        "family": "fi",
+        "source": "fact_fund_monthly (fi), the dormant_funds screen at every month-end",
+        "grain": "one row per month",
+        "params": {"p_lookback_months": 3, "p_history_months": 36},
+        "bounds": {"p_lookback_months": "2..12", "p_history_months": "1..60"},
+        "dashboard": "/dormant",
+        "meaning": (
+            "dormant_funds evaluated at every month-end: funds_filing, "
+            "empty_shells and parked_capital counts, and parked_nav (NAV sitting "
+            "in parked_capital classes). Counts of a screen, not of misconduct."
+        ),
+    },
+    "delinquency_drivers": {
+        "function": "screen_delinquency_drivers",
+        "family": "fidc",
+        "source": "fact_fund_monthly (fidc) — the series fund_nav and panel serve",
+        "grain": "one row per FIDC with >= p_min_months observations in the window",
+        "params": {
+            "p_end": None, "p_months": 12, "p_min_months": 6,
+            "p_min_delta_brl": 1000000, "p_min_delta_pp": 1.0, "p_driver": None,
+        },
+        "bounds": {
+            "p_end": "window end; null = latest_complete_period('fidc'); the window may not start before 2025-01",
+            "p_months": "2..24",
+            "p_min_months": "2..p_months",
+            "p_min_delta_brl": ">= 0, BRL",
+            "p_min_delta_pp": ">= 0, percentage points",
+        },
+        "filters": {
+            "p_driver": (
+                "consistent_worsening | value_up_rate_masked | denominator_only | "
+                "improvement | stable; null = all (output filter)"
+            ),
+        },
+        "dashboard": "/fidc",
+        "meaning": (
+            "First vs last observation of FIDC delinquency in BRL and in "
+            "percentage points of NAV, the move classified by the two "
+            "thresholds: consistent_worsening (value up and rate up), "
+            "value_up_rate_masked (value up, rate flat or down — NAV grew with "
+            "it), denominator_only (rate up, value flat or down — NAV shrank, "
+            "not new delinquency), improvement (both down), stable. No sector, "
+            "no debtor, no guarantee: a classification of two numbers, not a "
+            "finding about the fund. stopped_reporting flags a last filing two "
+            "or more months behind the window end. Every FIDC gets a row, so the "
+            "unfiltered set exceeds one page; pin p_driver."
+        ),
+    },
+}
+
+
 def catalog_payload() -> Dict[str, Any]:
     return {
         "kind": "catalog",
@@ -915,6 +1183,7 @@ def catalog_payload() -> Dict[str, Any]:
         "limits": LIMITS,
         "applicability": APPLICABILITY,
         "regime_breaks": REGIME_BREAKS,
+        "screens": SCREENS,
         "examples": EXAMPLES,
         "id_types": ["ticker", "cnpj", "cd_cvm", "option", "termo"],
         "asset_classes": [
@@ -979,6 +1248,22 @@ def catalog_payload() -> Dict[str, Any]:
             "fidc_cedentes": "POST /rest/v1/rpc/fidc_cedentes",
             "fidc_sacados": "POST /rest/v1/rpc/fidc_sacados",
             "fidc_portfolio": "POST /rest/v1/rpc/fidc_portfolio",
+            # The forensic screens (v31). Signals, not verdicts: every row
+            # carries screen + params; `screens` says what each one means.
+            "screen_zombie_growth": "POST /rest/v1/rpc/screen_zombie_growth",
+            "screen_captive_vehicles": "POST /rest/v1/rpc/screen_captive_vehicles",
+            "screen_evergreen_aging": "POST /rest/v1/rpc/screen_evergreen_aging",
+            "screen_overdue_securit": "POST /rest/v1/rpc/screen_overdue_securit",
+            "screen_dormant_funds": "POST /rest/v1/rpc/screen_dormant_funds",
+            "screen_dormant_trend": "POST /rest/v1/rpc/screen_dormant_trend",
+            "screen_delinquency_drivers": "POST /rest/v1/rpc/screen_delinquency_drivers",
+            # FIDC structure (v32): tranches and the aging ladder, 2025-01 on.
+            "fidc_tranches": "POST /rest/v1/rpc/fidc_tranches",
+            "fidc_aging": "POST /rest/v1/rpc/fidc_aging",
+            # The FNET document register (v33): one fund's documents, and
+            # restatement events paired by a stated group key.
+            "fund_documents": "POST /rest/v1/rpc/fund_documents",
+            "fund_restatements": "POST /rest/v1/rpc/fund_restatements",
             # B3 securities lending and investor flow (v27). VIEWS, not
             # functions: filter them with PostgREST's own syntax
             # (?ticker=eq.PETR4&trade_date=gte.2026-09-01) and page with

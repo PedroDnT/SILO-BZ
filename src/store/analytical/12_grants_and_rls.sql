@@ -141,7 +141,7 @@ BEGIN
           -- new naming family appears, or the sweep quietly stops covering it.
           AND (
                 NOT c.relrowsecurity
-                OR c.relname ~ '^(cvm_|bacen_|ibge_|b3_|anbima_|cia_|etf_|dim_|fact_|mv_|vw_)'
+                OR c.relname ~ '^(cvm_|bacen_|ibge_|fnet_|b3_|anbima_|cia_|etf_|dim_|fact_|mv_|vw_)'
                 OR c.relname = 'instrument_activity'
               )
     LOOP
@@ -168,10 +168,17 @@ REVOKE ALL ON TABLE cvm_fidc_setor         FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_fidc_scr           FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_fidc_sacado        FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_fidc_cedente       FROM anon, authenticated;
+REVOKE ALL ON TABLE cvm_fidc_garantia      FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_fiagro_mensal      FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_fip_periodic       FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_fii_mensal         FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_fii_periodic       FROM anon, authenticated;
+-- The latest-version views over those two (migration 43) are the same landing
+-- data at the pre-43 grain, so they are exactly as client-invisible.
+REVOKE ALL ON TABLE vw_fii_mensal_latest   FROM anon, authenticated;
+REVOKE ALL ON TABLE vw_fii_periodic_latest FROM anon, authenticated;
+REVOKE ALL ON TABLE fnet_document          FROM anon, authenticated;
+REVOKE ALL ON TABLE fnet_document_filter   FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_securit_mensal     FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_securit_serie      FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_securit_fluxo      FROM anon, authenticated;

@@ -24,8 +24,17 @@ CREATE TABLE IF NOT EXISTS cvm_ingest_log (
     status        TEXT         NOT NULL DEFAULT 'ok',  -- ok | error | skipped
     error_msg     TEXT,
     started_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    finished_at   TIMESTAMPTZ
+    finished_at   TIMESTAMPTZ,
+    -- Lineage (migration 44): which code produced the slice. git_sha is
+    -- GITHUB_SHA, NULL when unset — never invented. parser_version is
+    -- src.pipeline.ingest_log.PARSER_VERSION, bumped when a parser or field
+    -- map changes what a stored value means.
+    git_sha        TEXT,
+    parser_version TEXT
 );
+-- An existing database never re-runs the CREATE TABLE above, so the lineage
+-- columns are also reachable from schema.sql alone (tests/test_schema_upgrade_path.py).
+ALTER TABLE cvm_ingest_log ADD COLUMN IF NOT EXISTS git_sha TEXT, ADD COLUMN IF NOT EXISTS parser_version TEXT;
 CREATE INDEX IF NOT EXISTS idx_ingest_log_entity_doc
     ON cvm_ingest_log (entity, doc_type, period_year DESC, period_month DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ingest_log_run
@@ -547,6 +556,26 @@ CREATE INDEX IF NOT EXISTS idx_fidc_cedente_period  ON cvm_fidc_cedente (period 
 CREATE INDEX IF NOT EXISTS idx_fidc_cedente_cedente ON cvm_fidc_cedente (cpf_cnpj_cedente);
 
 -- ---------------------------------------------------------------------------
+-- FIDC — guarantees on the credit rights  (tab_X_7: value and %, as filed)
+-- Migration 45. From 2019-11; key audit and the unstated denominator are in
+-- the migration header.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS cvm_fidc_garantia (
+    id           BIGSERIAL    PRIMARY KEY,
+    cnpj         TEXT         NOT NULL CHECK (char_length(cnpj) = 14),
+    period       DATE         NOT NULL,
+    -- TAB_X_VL_GARANTIA_DIRCRED, as filed.
+    vl_garantia  NUMERIC(20,6),
+    -- TAB_X_PR_GARANTIA_DIRCRED, as filed; the denominator is CVM's, unstated.
+    pr_garantia  NUMERIC(20,6),
+    raw          JSONB,
+    fetched_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fidc_garantia UNIQUE (cnpj, period)
+);
+CREATE INDEX IF NOT EXISTS idx_fidc_garantia_cnpj   ON cvm_fidc_garantia (cnpj);
+CREATE INDEX IF NOT EXISTS idx_fidc_garantia_period ON cvm_fidc_garantia (period DESC);
+
+-- ---------------------------------------------------------------------------
 -- FIAGRO — monthly snapshot  (INF_MENSAL, monthly ZIP, from 2025-05)
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS cvm_fiagro_mensal (
@@ -641,6 +670,9 @@ CREATE INDEX IF NOT EXISTS idx_fip_periodic_period    ON cvm_fip_periodic (perio
 
 -- ---------------------------------------------------------------------------
 -- FII — monthly general summary  (mensal_geral, yearly ZIP)
+--   The key gains versao (migration 43, mirrored in the ALTER block near the
+--   end of this file): every CVM version of a filing is kept. Read one row per
+--   (cnpj, period, doc_subtype) through vw_fii_mensal_latest.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS cvm_fii_mensal (
     id            BIGSERIAL    PRIMARY KEY,
@@ -672,7 +704,9 @@ ALTER TABLE cvm_fii_mensal
 --   ('trimestral' is retired — see migration 15: it ingested the wrong ZIP member)
 --   The uniqueness key is widened to include data_referencia by migration 15
 --   (mirrored in the ALTER block at the end of this file) because trimestral_*
---   is quarterly and dfin ships several filings per fund per year.
+--   is quarterly and dfin ships several filings per fund per year. Migration
+--   43 then adds versao, so every CVM version is kept. Read one row per former
+--   key through vw_fii_periodic_latest.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS cvm_fii_periodic (
     id            BIGSERIAL    PRIMARY KEY,
@@ -1052,12 +1086,49 @@ CREATE INDEX IF NOT EXISTS idx_fii_periodic_segmento
 -- cvm_fii_periodic (migration 15): the uniqueness key must include
 -- data_referencia — trimestral_* is quarterly and dfin files several times a
 -- year, so the year-grain key silently overwrote all but the last filing.
--- DROP IF EXISTS + ADD keeps this idempotent across re-applies.
-ALTER TABLE cvm_fii_periodic DROP CONSTRAINT IF EXISTS uq_fii_periodic;
+--
+-- cvm_fii_mensal / cvm_fii_periodic (migration 43): versao — CVM's `Versao` —
+-- is in both keys, so every restatement of a filing is kept as its own row
+-- instead of overwriting the original. NULLS NOT DISTINCT keeps rows that
+-- carry no version deduping exactly as before. The swaps are catalog-guarded
+-- (a no-op once the key names versao). An unconditional re-ADD of a narrower
+-- key would fail as soon as two versions of one filing are stored.
+-- Readers go through vw_fii_mensal_latest / vw_fii_periodic_latest (one row
+-- per former key, highest versao), created by migration 43 and deliberately
+-- not here: on a fresh database migration 01 retypes cvm_fii_mensal columns
+-- after this file, and a view over the table would block that ALTER.
+-- The versao backfill from raw and its column comments also live only in 43
+-- (the comment is the backfill's run-once marker).
+ALTER TABLE cvm_fii_mensal
+    ADD COLUMN IF NOT EXISTS versao INT;
 
-ALTER TABLE cvm_fii_periodic
-    ADD CONSTRAINT uq_fii_periodic UNIQUE NULLS NOT DISTINCT
-        (cnpj, doc_type, period_year, data_referencia);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'cvm_fii_mensal'::regclass
+          AND conname  = 'uq_fii_mensal'
+          AND pg_get_constraintdef(oid) ILIKE '%versao%'
+    ) THEN
+        ALTER TABLE cvm_fii_mensal DROP CONSTRAINT IF EXISTS uq_fii_mensal;
+        ALTER TABLE cvm_fii_mensal ADD CONSTRAINT uq_fii_mensal
+            UNIQUE NULLS NOT DISTINCT (cnpj, period, doc_subtype, versao);
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'cvm_fii_periodic'::regclass
+          AND conname  = 'uq_fii_periodic'
+          AND pg_get_constraintdef(oid) ILIKE '%versao%'
+    ) THEN
+        ALTER TABLE cvm_fii_periodic DROP CONSTRAINT IF EXISTS uq_fii_periodic;
+        ALTER TABLE cvm_fii_periodic ADD CONSTRAINT uq_fii_periodic
+            UNIQUE NULLS NOT DISTINCT (cnpj, doc_type, period_year, data_referencia, versao);
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- BACEN: SGS time series  (SELIC, IPCA, CDI, IGP-M, USD/BRL, …)
@@ -1103,6 +1174,60 @@ CREATE INDEX IF NOT EXISTS idx_ibge_ipca_item_level_month
     ON ibge_ipca_item_monthly (level, reference_month DESC);
 CREATE INDEX IF NOT EXISTS idx_ibge_ipca_item_number_month
     ON ibge_ipca_item_monthly (item_number, reference_month DESC);
+
+-- B3 Fundos.NET document register with versions (migration 42; contract in
+-- src/fetchers/fnet_fetcher.py).
+-- fnet_document — one row per FNET document id (each version is a new id).
+--   Grain: fnet_id. Values as FNET publishes them. reference_date is parsed
+--   only from dd/mm/yyyy (that day) or mm/yyyy (first of the month);
+--   anything else stays NULL beside reference_raw. delivered_at is FNET's
+--   dataEntrega, São Paulo local time, stored as printed (no zone).
+--   status is AS OF fetched_at: a document fetched while active reads AC
+--   until a later fetch sees it superseded (IC).
+--   fund_name is FNET's label and is NEVER joined on — see the next table.
+CREATE TABLE IF NOT EXISTS fnet_document (
+    id               BIGSERIAL    PRIMARY KEY,
+    fnet_id          BIGINT       NOT NULL CHECK (fnet_id > 0),
+    fund_name        TEXT,
+    fundo_ou_classe  TEXT,
+    categoria        TEXT,
+    tipo_documento   TEXT,
+    especie          TEXT,
+    reference_raw    TEXT,
+    reference_format TEXT,
+    reference_date   DATE,
+    delivered_at     TIMESTAMP    NOT NULL,
+    versao           INT          NOT NULL CHECK (versao >= 1),
+    modalidade       TEXT,
+    status           TEXT,
+    situacao         TEXT,
+    alta_prioridade  BOOLEAN,
+    raw              JSONB,
+    fetched_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fnet_document UNIQUE (fnet_id)
+);
+CREATE INDEX IF NOT EXISTS idx_fnet_document_delivered ON fnet_document (delivered_at DESC);
+CREATE INDEX IF NOT EXISTS idx_fnet_document_modalidade ON fnet_document (modalidade, delivered_at DESC);
+CREATE INDEX IF NOT EXISTS idx_fnet_document_type_ref ON fnet_document (tipo_documento, reference_date);
+
+-- fnet_document_filter — "FNET returned this document for this query filter".
+--   FNET's search rows carry NO fund CNPJ (cnpjFundo is null on every row,
+--   even when the query filters on it) and no fund type. Both are known only
+--   because the ingest ASKED for them, so that is what is recorded:
+--     filter_name = 'tipoFundo', filter_value = '1' (FII) | '2' (FIDC) | '3' (ETF)
+--     filter_name = 'cnpjFundo', filter_value = the 14-digit CNPJ queried
+--   A document's fund CNPJ is a row here or it is unknown. It is never
+--   inferred from fund_name (CLAUDE.md: no name matching, ever).
+CREATE TABLE IF NOT EXISTS fnet_document_filter (
+    id            BIGSERIAL    PRIMARY KEY,
+    fnet_id       BIGINT       NOT NULL,
+    filter_name   TEXT         NOT NULL CHECK (filter_name IN ('tipoFundo', 'cnpjFundo')),
+    filter_value  TEXT         NOT NULL,
+    fetched_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fnet_document_filter UNIQUE (fnet_id, filter_name, filter_value),
+    CONSTRAINT ck_fnet_filter_cnpj CHECK (filter_name <> 'cnpjFundo' OR filter_value ~ '^[0-9]{14}$')
+);
+CREATE INDEX IF NOT EXISTS idx_fnet_filter_value ON fnet_document_filter (filter_name, filter_value);
 
 -- ---------------------------------------------------------------------------
 -- BACEN: PTAX exchange rates

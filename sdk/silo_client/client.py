@@ -7,6 +7,7 @@ catalog is fetched once per client and drives metric validation.
 
 from __future__ import annotations
 
+import json
 import os
 import warnings
 from datetime import date
@@ -28,7 +29,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 32
+KNOWN_CATALOG_VERSION = 35
 
 
 class SiloCatalogDrift(UserWarning):
@@ -96,16 +97,31 @@ class SiloOverCap(SiloError):
     (`iter_quote_history`/`quote_history_all`) and fund_nav
     (`iter_fund_nav`/`fund_nav_all`, which need an `entity_type`). The rest —
     option_history, termo_history, financials, company_financials,
-    anbima_classes, inflation, inflation_items — have no cursor: narrow the
-    window instead."""
+    anbima_classes, inflation, inflation_items, fidc_cedentes, fidc_sacados,
+    fidc_portfolio, fidc_tranches, fidc_aging, fund_documents,
+    fund_restatements and the screen_* functions — have no cursor: narrow the
+    window instead (the fidc concentration trio also take an explicit
+    `limit` for the newest N rows).
+
+    Since catalog v34 the server says WHY and HOW itself: its fix for the
+    function that refused is on `.server_hint` (PostgREST's `hint`), and
+    `.hint` leads with it."""
 
     def __init__(self, body: str, url: str) -> None:
         super().__init__(400, body, url)
-        self.hint = (
+        self.server_hint: Optional[str] = None
+        try:
+            parsed = json.loads(body)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict) and isinstance(parsed.get("hint"), str):
+            self.server_hint = parsed["hint"]
+        sdk_hint = (
             "the result is larger than one 1000-row page; page it with "
             "p_after via iter_panel()/iter_quote_history()/iter_fund_nav(), "
             "or narrow the request"
         )
+        self.hint = f"{self.server_hint} ({sdk_hint})" if self.server_hint else sdk_hint
 
 
 class SiloTimeout(SiloError):
@@ -339,8 +355,12 @@ class SiloClient:
         present, which can sit in the FUTURE when a family files forward-dated
         (FIP is keyed 31-December) — never read it as freshness; `landed_at` is
         when ingest last SUCCEEDED for that source, so a later failed run never
-        advances it. `notes` carries a caveat the dates cannot (the
-        `funds_fidc` row: delinquency starts 2025-01), null on rows with none.
+        advances it. `landed_git_sha` is the commit of that same run — which
+        code produced the newest data — None when the run recorded none
+        (before catalog v34, or run outside GitHub Actions); it is never
+        borrowed from an older run. `notes` carries a caveat the dates cannot
+        (the `funds_fidc` row: delinquency starts 2025-01), null on rows with
+        none.
         """
         return self._rpc("coverage", {})
 
@@ -617,8 +637,13 @@ class SiloClient:
 
         `share_pct` is a percent of the block, never of the fund. `cedente_id`
         was checksum-verified at ingest; `cedente_tickers` is its active listed
-        codes, None when not listed. Slots exist from 2019-11. Rows are clamped
-        to 500 anonymous / 5000 signed in.
+        codes, None when not listed. Slots exist from 2019-11.
+
+        More than 1000 rows raises `SiloOverCap` (22023) — never a silently
+        trimmed result (until catalog v34 this clamped at 500 / 5000 without
+        saying so). Narrow `start`/`end` (a `cedente` lookup spans many
+        funds, so it needs fewer months than one fund), or pass `limit`
+        (1..1000) to ask explicitly for the newest N rows.
         """
         if (cnpj is None) == (cedente is None):
             raise ValueError(
@@ -639,6 +664,9 @@ class SiloClient:
         `seq` is CVM's rank as filed and is never recomputed; a fund that files
         fewer than 25 ranks has fewer rows. A concentration ratio is
         `valor / receivables` (the panel metric) in the notebook.
+
+        More than 1000 rows raises `SiloOverCap` (22023), never trims: narrow
+        `start`/`end` or pass `limit` (1..1000) for the newest N rows.
         """
         return self._rpc("fidc_sacados", {
             "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end), "p_limit": limit,
@@ -655,10 +683,93 @@ class SiloClient:
         'scr_operation' (tab X — BACEN SCR grades AA..H for the same
         receivables graded two ways), 'tax_debt', or None for all. tab X
         exists from 2023-10 only; earlier months have no scr rows.
+
+        More than 1000 rows raises `SiloOverCap` (22023), never trims: narrow
+        `start`/`end`, pin one `kind`, or pass `limit` (1..1000) for the
+        newest N rows.
         """
         return self._rpc("fidc_portfolio", {
             "p_cnpj": cnpj, "p_kind": kind,
             "p_from": _iso(start), "p_to": _iso(end), "p_limit": limit,
+        })
+
+    def fidc_tranches(self, cnpj: str, start: Datish = None, end: Datish = None,
+                      series: Optional[str] = None) -> List[Dict[str, Any]]:
+        """One FIDC's tranches, month by month (informe tabs X_2/X_3/X_6 + X_4).
+
+            silo.fidc_tranches("05754060000113")
+            silo.fidc_tranches("05754060000113", series="Subclasse Senior 1")
+
+        One row per (month, classe_serie): `quotas`, `quota_value`,
+        `return_month`, and `performance_expected` vs `performance_realised`
+        (what the series promised vs delivered, percent) — all as filed,
+        CVM's outliers included. `flows` is the tranche's tab X_4 operations
+        as a list of {tp_oper, value, quotas}, labels verbatim and never
+        bucketed; None when none were filed. History begins in 2025: CVM
+        publishes no archive of these tabs. No cursor: narrow the window.
+        """
+        return self._rpc("fidc_tranches", {
+            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
+            "p_series": series,
+        })
+
+    def fidc_aging(self, cnpj: str, start: Datish = None,
+                   end: Datish = None) -> List[Dict[str, Any]]:
+        """One FIDC's receivables aging ladder from informe tab VI, long.
+
+            silo.fidc_aging("05754060000113", start="2025-01-01")
+
+        21 rows per month: kind='to_maturity' (not yet due, by days to
+        maturity) and kind='overdue' (by days past due), ten day-bands each
+        (`bucket`, `days_from`, `days_to`), plus kind='overdue_total' —
+        CVM's FILED total, not a sum of the bands. BRL as filed; a blank is
+        None, never 0. History begins in 2025. No cursor: narrow the window.
+        """
+        return self._rpc("fidc_aging", {
+            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
+        })
+
+    # -- the FNET document register (B3 Fundos.NET) --------------------------
+
+    def fund_documents(self, cnpj: str, start: Datish = None, end: Datish = None,
+                       tipo: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Every FNET document linked to one fund, newest delivery first.
+
+            silo.fund_documents("07727002000126")
+            silo.fund_documents("07727002000126", tipo="Informe Mensal Estruturado")
+
+        One row per document (each version is its own `fnet_id`): categoria,
+        tipo_documento, especie, reference, `delivered_at`, `versao`,
+        `modalidade` (AP original, RE voluntary restatement, RC CVM-required),
+        `status` (AC / IC superseded / CC — as of `fetched_at`) and
+        `source_url`, FNET's download link. FNET rows carry no CNPJ: a document
+        is this fund's because FNET returned it for that CNPJ in a fortnightly
+        sweep, so the newest deliveries may not be listed yet. Window is the
+        delivery date, default the last 12 months. No cursor: narrow it.
+        """
+        return self._rpc("fund_documents", {
+            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
+            "p_tipo": tipo,
+        })
+
+    def fund_restatements(self, cnpj: Optional[str] = None, start: Datish = None,
+                          end: Datish = None,
+                          tipo_fundo: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Re-filed FNET documents (versao > 1), each paired with its predecessor.
+
+            silo.fund_restatements("07727002000126")          # one fund, all history
+            silo.fund_restatements(tipo_fundo="FIDC")         # last 30 days, FIDCs
+
+        `previous_fnet_id` / `previous_delivered_at` / `lag_days` come from a
+        STATED group key — (cnpj link, categoria, tipo_documento, especie,
+        reference_raw), highest lower versao, greatest fnet_id on a tie —
+        because FNET links no versions. `cnpj` is None when the fund sweep has
+        not linked the document yet; such rows are never paired. `tipo_fundo`
+        is 'FII', 'FIDC' or 'ETF'. No cursor: narrow the window.
+        """
+        return self._rpc("fund_restatements", {
+            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
+            "p_tipo_fundo": tipo_fundo,
         })
 
     # -- listed companies (CIA Aberta) ---------------------------------------

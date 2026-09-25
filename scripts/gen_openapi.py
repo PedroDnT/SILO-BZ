@@ -466,6 +466,15 @@ def error_responses(has_22023: bool) -> dict[str, Any]:
     return out
 
 
+# Functions whose rows are NOT oldest first. A register of documents is read
+# newest delivery first (24_api_fnet.sql orders by delivered_at DESC), and the
+# 200 description must not claim otherwise.
+_ORDER: dict[str, str] = {
+    "fund_documents": "newest delivery first",
+    "fund_restatements": "newest delivery first",
+}
+
+
 def build_function_path(fn: dict[str, Any]) -> dict[str, Any]:
     props: dict[str, Any] = {}
     required: list[str] = []
@@ -506,8 +515,8 @@ def build_function_path(fn: dict[str, Any]) -> dict[str, Any]:
         "responses": {
             "200": {
                 "description": (
-                    "The result set, oldest first. An unknown id is an empty array, "
-                    "not a 404 and never a guessed value."
+                    f"The result set, {_ORDER.get(fn['name'], 'oldest first')}. "
+                    "An unknown id is an empty array, not a 404 and never a guessed value."
                     if cols is not None
                     else "The result."
                 ),
@@ -605,11 +614,13 @@ _TAGS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^(funds|fund_nav|fund_profile|search_funds)$"), "Funds"),
     (re.compile(r"^(fund_holdings|fund_debentures)$"), "Holdings"),
     (re.compile(r"^fidc_"), "FIDC"),
+    (re.compile(r"^(fund_documents|fund_restatements)$"), "FNET documents"),
     (re.compile(r"^(financials|company_financials|financial_statement_history)$"), "Financials"),
     (re.compile(r"^fii_property_history$"), "Funds"),
     (re.compile(r"^focus_expectations$"), "Macro expectations"),
     (re.compile(r"^anbima_"), "ANBIMA"),
     (re.compile(r"^inflation"), "Inflation"),
+    (re.compile(r"^screen_"), "Screens"),
     (re.compile(r"^(short_interest|short_interest_by_sector|investor_flow)$"), "Short interest & flows"),
     (re.compile(r"^lending_"), "Securities lending"),
     (re.compile(r"^panel$"), "Panel"),
@@ -783,17 +794,20 @@ privilege set for which objects exist at all. It is not hand-maintained, and
 
 Reading one for the other is the most expensive mistake on this API.
 
-* **The row cap refuses.** Fourteen set-returning functions raise SQLSTATE `22023`
-  when the window they were handed would produce more than 1000 rows. Nothing
-  is trimmed. Three of them (`panel`, `quote_history`, `fund_nav`) take a
-  `p_after` cursor so you can walk the series; the other eleven ask you to narrow
-  the window. `fund_nav` paging additionally REQUIRES `p_entity_type` — its
-  cursor is a bare period, which is unique only within one family, and CNPJs
-  that file under both `fi` and `fidc` in the same month would otherwise be
-  ambiguous.
-* **The tier ceiling clamps.** Eight other functions silently lower `p_limit`
-  to a per-tier maximum. No error is raised, so the only way to know the result
-  was cut is to know the ceiling. Signing in raises it.
+* **The row cap refuses.** Twenty-eight set-returning functions raise SQLSTATE `22023`
+  when the window they were handed would produce more than 1000 rows.
+  Nothing is trimmed, and the error says why and how to fix it (the message,
+  plus PostgREST's `details` and `hint`). Three of them (`panel`,
+  `quote_history`, `fund_nav`) take a `p_after` cursor so you can walk the
+  series; the other twenty-five ask you to narrow the window. `fund_nav` paging
+  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which
+  is unique only within one family, and CNPJs that file under both `fi` and
+  `fidc` in the same month would otherwise be ambiguous.
+* **The tier ceiling clamps.** Five other functions (`search_funds`,
+  `option_chain`, `option_exercises`, `fund_holdings`, `fund_debentures`)
+  silently lower `p_limit` to a per-tier maximum. No error is raised, so the
+  only way to know the result was cut is to know the ceiling. Signing in
+  raises it.
 
 Separately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every
 response, on every endpoint, for every tier. On the GET views `Content-Range`
