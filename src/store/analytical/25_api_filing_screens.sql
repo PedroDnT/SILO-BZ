@@ -187,6 +187,24 @@ BEGIN
         WHERE f.n_restated >= p_min_restatements
           AND 100.0 * f.n_restated / f.n_docs >= p_min_rate_pct
     ),
+    -- tipoFundo links of each flagged fund's documents in the window ('1' FII,
+    -- '2' FIDC, '3' ETF); no row when none of them came from a per-type crawl.
+    -- One grouped join, not a per-fund LATERAL over `docs`: that rescanned
+    -- the whole window once per flagged fund and ran past anon's 3 s
+    -- statement timeout at the defaults (measured on production, v38).
+    tipo AS (
+        SELECT d2.cnpj,
+               string_agg(DISTINCT
+                   CASE t.filter_value WHEN '1' THEN 'FII' WHEN '2' THEN 'FIDC' WHEN '3' THEN 'ETF' END,
+                   ',') AS tipo_fundo
+        FROM docs d2
+        JOIN public.fnet_document_filter t
+          ON t.fnet_id = d2.fnet_id
+         AND t.filter_name = 'tipoFundo'
+         AND t.filter_value IN ('1', '2', '3')
+        WHERE d2.cnpj IN (SELECT fl.cnpj FROM flagged fl)
+        GROUP BY d2.cnpj
+    ),
     -- One page + one, then assert_row_cap REFUSES (22023). No cursor.
     page AS (
         SELECT fl.cnpj, tf.tipo_fundo, fl.label, fl.n_docs, fl.n_restated,
@@ -194,19 +212,7 @@ BEGIN
                round(100.0 * fl.n_restated / fl.n_docs, 1) AS pct,
                fl.last_at
         FROM flagged fl
-        -- tipoFundo links of the fund's documents in the window ('1' FII,
-        -- '2' FIDC, '3' ETF); NULL when none of them came from a per-type crawl.
-        LEFT JOIN LATERAL (
-            SELECT string_agg(DISTINCT
-                       CASE t.filter_value WHEN '1' THEN 'FII' WHEN '2' THEN 'FIDC' WHEN '3' THEN 'ETF' END,
-                       ',') AS tipo_fundo
-            FROM docs d2
-            JOIN public.fnet_document_filter t
-              ON t.fnet_id = d2.fnet_id
-             AND t.filter_name = 'tipoFundo'
-             AND t.filter_value IN ('1', '2', '3')
-            WHERE d2.cnpj = fl.cnpj
-        ) tf ON TRUE
+        LEFT JOIN tipo tf ON tf.cnpj = fl.cnpj
         ORDER BY fl.n_restated DESC, fl.cnpj
         LIMIT 1001
     )
