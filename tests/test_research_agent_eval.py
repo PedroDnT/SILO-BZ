@@ -146,10 +146,11 @@ def test_technical_failure_and_full_rubric_pass_are_separate():
     assert not agent_eval.full_rubric_pass(item, {**checks, "source_citation": False})
     assert not agent_eval.full_rubric_pass({"status": "error"}, checks)
     assert agent_eval.technical_classification({"status": "error", "error_type": "MaxTurnsExceeded"}) == "turn_exhaustion"
+    assert agent_eval.technical_classification({"status": "completed", "tool_events": [{"error_type": "SiloOverCap"}]}) == "query_data_failure"
 
 
 def test_baseline_review_is_complete_and_does_not_confuse_completion_with_pass():
-    run = json.loads((agent_eval.ROOT / "research_examples/eval-results.json").read_text())
+    run = json.loads((agent_eval.ROOT / "research_examples/baseline-results.json").read_text())
     review = json.loads((agent_eval.ROOT / "research_examples/baseline-review.json").read_text())
     assert review["run_started_at"] == run["started_at"]
     assert set(review["cases"]) == {case["id"] for case in run["cases"]}
@@ -179,3 +180,41 @@ def test_paid_run_requires_fresh_matching_passed_live_preflight(tmp_path):
     path.write_text(json.dumps(report))
     with pytest.raises(ValueError, match="six hours"):
         agent_eval.validate_preflight_report(path, "https://example.invalid", now)
+
+
+def test_discovery_does_not_silently_trim_more_than_41_tools():
+    paths = {f"/view_{i}": {"get": {"description": "Public view", "parameters": []}} for i in range(55)}
+    adapter = agent_eval.SiloTools(object(), {"paths": paths})
+    adapter.catalog_seen = True
+    tools = json.loads(adapter.discover_tools(""))
+    assert len(tools) == 55
+    assert tools[-1]["endpoint"] == "view_54"
+
+
+def test_published_nested_types_and_numeric_limits_are_checked():
+    specs = [{"name": "ids", "type": "array", "items": {"type": "string"}, "required": True},
+             {"name": "limit", "type": "integer", "maximum": 1000, "required": False}]
+    assert agent_eval.validate_arguments(specs, {"ids": ["PETR4"], "limit": 10})
+    with pytest.raises(agent_eval.ArgumentValidationError, match="ids item must be string"):
+        agent_eval.validate_arguments(specs, {"ids": [42]})
+    with pytest.raises(agent_eval.ArgumentValidationError, match="at most 1000"):
+        agent_eval.validate_arguments(specs, {"ids": [], "limit": 1001})
+    with pytest.raises(agent_eval.ArgumentValidationError, match="ISO date"):
+        agent_eval.validate_arguments([{"name": "start", "type": "string", "format": "date", "required": True}], {"start": "20240901"})
+
+
+def test_safe_server_hint_and_local_result_limit_remain_actionable():
+    error = agent_eval.SiloError(400, json.dumps({"code": "22023", "message": "too many rows",
+        "hint": "narrow start/end; token=synthetic-secret"}), "https://example.invalid")
+    safe = agent_eval.safe_tool_error(error)
+    assert safe["hint"].startswith("narrow start/end")
+    assert "synthetic-secret" not in json.dumps(safe)
+    assert agent_eval.safe_tool_error(agent_eval.ToolResultLimitError("More than 100 rows; narrow the window"))["message"].startswith("More than 100 rows")
+
+
+def test_spend_ledger_fails_closed_on_inconsistent_estimate(monkeypatch, tmp_path):
+    path = tmp_path / "ledger.json"
+    monkeypatch.setattr(agent_eval, "SPEND_LEDGER", path)
+    path.write_text(json.dumps({"estimated_usd": 0.1, "entries": [{"estimated_usd": 0.5}]}))
+    with pytest.raises(ValueError, match="consistent nonnegative"):
+        agent_eval.load_spend_ledger()

@@ -45,3 +45,6 @@ cumulative model-cost estimate across runs, and
 grading. Discovery checks are automatic; substantive accuracy still requires
 comparison with source rows and private references. Run paid cases only after
 the separate live API preflight passes for the required research RPCs.
+`research_examples/baseline-results.json` preserves the graded baseline;
+future latest-result updates do not change that evidence. The spend ledger
+must exist, reconcile with its entries, and stay within the US$20 total cap.

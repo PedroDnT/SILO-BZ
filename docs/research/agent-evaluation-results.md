@@ -10,20 +10,20 @@ This is a live-agent process record. A completed run is not an answer-quality pa
 See [independent grading](agent-evaluation-grade.md) for baseline classifications,
 API availability, and answer-quality findings.
 
-| Case | Run status | Discovery before data | Data calls | Latency | Est. spend |
-| --- | --- | --- | ---: | ---: | ---: |
-| Q1 | completed | yes | 6 | 48.9s | $0.0431 |
-| Q2 | completed | yes | 2 | 37.8s | $0.0200 |
-| Q3 | completed | yes | 6 | 27.5s | $0.0382 |
-| Q4 | completed | yes | 6 | 35.4s | $0.0423 |
-| Q5 | completed | yes | 4 | 22.3s | $0.0245 |
-| Q6 | error | yes | 6 | 25.5s | $0.0438 |
-| Q7 | completed | yes | 6 | 43.2s | $0.0447 |
-| Q8 | completed | yes | 6 | 52.9s | $0.0521 |
-| Q9 | completed | yes | 0 | 13.2s | $0.0098 |
-| L1 | completed | yes | 6 | 45.6s | $0.0485 |
-| L2 | completed | yes | 4 | 21.3s | $0.0251 |
-| L3 | completed | yes | 6 | 31.7s | $0.0495 |
+| Case | Run status | Technical classification | Discovery before data | Data calls | Latency | Est. spend |
+| --- | --- | --- | --- | ---: | ---: | ---: |
+| Q1 | completed | query_data_failure | yes | 6 | 48.9s | $0.0431 |
+| Q2 | completed | no_recorded_technical_failure | yes | 2 | 37.8s | $0.0200 |
+| Q3 | completed | tool_contract_failure | yes | 6 | 27.5s | $0.0382 |
+| Q4 | completed | tool_contract_failure | yes | 6 | 35.4s | $0.0423 |
+| Q5 | completed | tool_contract_failure | yes | 4 | 22.3s | $0.0245 |
+| Q6 | error | turn_exhaustion | yes | 6 | 25.5s | $0.0438 |
+| Q7 | completed | tool_contract_failure | yes | 6 | 43.2s | $0.0447 |
+| Q8 | completed | tool_contract_failure | yes | 6 | 52.9s | $0.0521 |
+| Q9 | completed | no_recorded_technical_failure | yes | 0 | 13.2s | $0.0098 |
+| L1 | completed | query_data_failure | yes | 6 | 45.6s | $0.0485 |
+| L2 | completed | tool_contract_failure | yes | 4 | 21.3s | $0.0251 |
+| L3 | completed | api_error_unclassified | yes | 6 | 31.7s | $0.0495 |
 
 ## Case notes
 

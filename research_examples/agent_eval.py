@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import inspect
 import json
+import math
 import os
 import re
 import sys
@@ -97,7 +98,14 @@ def actual_cost_usd(input_tokens: int, output_tokens: int) -> float:
 
 
 def load_spend_ledger() -> dict[str, Any]:
-    return json.loads(SPEND_LEDGER.read_text()) if SPEND_LEDGER.exists() else {"estimated_usd": 0.0, "entries": []}
+    ledger = json.loads(SPEND_LEDGER.read_text())
+    costs = [entry["estimated_usd"] for entry in ledger["entries"]]
+    total = ledger["estimated_usd"]
+    if (any(type(cost) not in (int, float) or not math.isfinite(cost) or cost < 0 for cost in costs)
+            or type(total) not in (int, float) or not math.isfinite(total) or total < 0
+            or not math.isclose(total, sum(costs), abs_tol=0.000001)):
+        raise ValueError("spend ledger must contain consistent nonnegative observed estimates")
+    return ledger
 
 
 def validate_preflight_report(path: Path, base_url: str, now: datetime | None = None) -> None:
@@ -135,6 +143,10 @@ class ArgumentValidationError(ValueError):
     """A model argument did not match the published endpoint contract."""
 
 
+class ToolResultLimitError(ValueError):
+    """A public result exceeded the evaluator's explicit tool-size bound."""
+
+
 def _sdk_arg(api_name: str) -> str:
     return {"p_from": "start", "p_to": "end"}.get(api_name, api_name.removeprefix("p_"))
 
@@ -150,7 +162,7 @@ def endpoint_arguments(openapi: dict[str, Any], endpoint: str) -> list[dict[str,
         return [{
             "name": name, "type": spec.get("type", "string"),
             "required": api_name in schema.get("required", []),
-            **({"format": spec["format"]} if "format" in spec else {}),
+            **{key: spec[key] for key in ("format", "items", "enum", "minimum", "maximum", "minItems", "maxItems") if key in spec},
             **({"examples": spec["examples"]} if "examples" in spec else {}),
             **({"description": spec["description"][:160]} if "description" in spec else {}),
         } for api_name, spec in schema.get("properties", {}).items()
@@ -159,7 +171,45 @@ def endpoint_arguments(openapi: dict[str, Any], endpoint: str) -> list[dict[str,
     return [{
         "name": item["name"], "type": item.get("schema", {}).get("type", "string"),
         "required": item["name"] == "limit", "description": item.get("description", "")[:160],
+        **{key: item["schema"][key] for key in ("format", "items", "enum", "minimum", "maximum") if key in item.get("schema", {})},
     } for item in operation.get("parameters", []) if item.get("in") == "query"]
+
+
+def _validate_value(name: str, spec: dict[str, Any], value: Any) -> None:
+    types = spec.get("type", "string")
+    if isinstance(types, str):
+        types = [types]
+    if value is None and "null" in types:
+        return
+    matches = any((kind == "string" and isinstance(value, str)) or
+                  (kind == "integer" and type(value) is int) or
+                  (kind == "number" and type(value) in (int, float) and math.isfinite(value)) or
+                  (kind == "boolean" and type(value) is bool) or
+                  (kind == "array" and isinstance(value, list)) for kind in types)
+    if not matches:
+        raise ArgumentValidationError(f"{name} must be {' or '.join(types)}")
+    if "enum" in spec and value not in spec["enum"]:
+        raise ArgumentValidationError(f"{name} must be one of the published enum values")
+    if type(value) in (int, float):
+        if "minimum" in spec and value < spec["minimum"]:
+            raise ArgumentValidationError(f"{name} must be at least {spec['minimum']}")
+        if "maximum" in spec and value > spec["maximum"]:
+            raise ArgumentValidationError(f"{name} must be at most {spec['maximum']}")
+    if isinstance(value, list):
+        if "minItems" in spec and len(value) < spec["minItems"]:
+            raise ArgumentValidationError(f"{name} has fewer items than the published minimum")
+        if "maxItems" in spec and len(value) > spec["maxItems"]:
+            raise ArgumentValidationError(f"{name} exceeds the published item limit")
+        if "items" in spec:
+            for item in value:
+                _validate_value(f"{name} item", spec["items"], item)
+    if spec.get("format") == "date":
+        try:
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+                raise ValueError("date shape")
+            date.fromisoformat(value)
+        except (ValueError, TypeError) as exc:
+            raise ArgumentValidationError(f"{name} must be an ISO date (YYYY-MM-DD)") from exc
 
 
 def validate_arguments(specs: list[dict[str, Any]], arguments: Any) -> dict[str, Any]:
@@ -173,30 +223,15 @@ def validate_arguments(specs: list[dict[str, Any]], arguments: Any) -> dict[str,
     if missing:
         raise ArgumentValidationError(f"Missing required argument(s): {', '.join(missing)}")
     for name, value in arguments.items():
-        types = known[name]["type"]
-        if isinstance(types, str):
-            types = [types]
-        if value is None and "null" in types:
-            continue
-        matches = any((kind == "string" and isinstance(value, str)) or
-                      (kind == "integer" and type(value) is int) or
-                      (kind == "number" and type(value) in (int, float)) or
-                      (kind == "boolean" and type(value) is bool) or
-                      (kind == "array" and isinstance(value, list))
-                      for kind in types)
-        if not matches:
-            raise ArgumentValidationError(f"{name} must be {' or '.join(types)}")
-        if known[name].get("format") == "date" and value is not None:
-            try:
-                date.fromisoformat(value)
-            except ValueError as exc:
-                raise ArgumentValidationError(f"{name} must be an ISO date (YYYY-MM-DD)") from exc
+        _validate_value(name, known[name], value)
     return arguments
 
 
 def safe_tool_error(exc: Exception, secrets: tuple[str | None, ...] = ()) -> dict[str, Any]:
     if isinstance(exc, ArgumentValidationError):
         return {"error": "InvalidArguments", "message": str(exc)[:300]}
+    if isinstance(exc, ToolResultLimitError):
+        return {"error": "ToolResultLimit", "message": str(exc)[:300]}
     if isinstance(exc, SiloError):
         try:
             body = json.loads(exc.body)
@@ -204,16 +239,21 @@ def safe_tool_error(exc: Exception, secrets: tuple[str | None, ...] = ()) -> dic
             body = {}
         if not isinstance(body, dict):
             body = {}
-        message = str(body.get("message") or "API request failed")
-        for secret in (*secrets, os.environ.get("OPENAI_API_KEY"), os.environ.get("SILO_ANON_KEY")):
-            if secret:
-                message = message.replace(secret, "[redacted]")
-        message = re.sub(r"sk-[A-Za-z0-9_-]+", "[redacted]", message)
-        message = re.sub(r"(?i)Bearer\s+\S+", "Bearer [redacted]", message)
-        message = re.sub(r"(?i)(?:apikey|authorization|token)\s*[:=]\s*\S+", "[redacted credential]", message)
-        message = re.sub(r"https?://\S+", "[redacted URL]", message)
+        def redact(value: Any) -> str:
+            message = str(value)
+            for secret in (*secrets, os.environ.get("OPENAI_API_KEY"), os.environ.get("SILO_ANON_KEY")):
+                if secret:
+                    message = message.replace(secret, "[redacted]")
+            message = re.sub(r"sk-[A-Za-z0-9_-]+", "[redacted]", message)
+            message = re.sub(r"(?i)Bearer\s+\S+", "Bearer [redacted]", message)
+            message = re.sub(r"(?i)(?:apikey|authorization|token)\s*[:=]\s*\S+", "[redacted credential]", message)
+            return re.sub(r"https?://\S+", "[redacted URL]", message)[:300]
+
+        code = str(body.get("code") or "")
         return {"error": type(exc).__name__, "status": exc.status,
-                "code": str(body.get("code") or "")[:40], "message": message[:300]}
+                "code": code if re.fullmatch(r"[A-Z0-9_]{1,40}", code) else "",
+                "message": redact(body.get("message") or "API request failed"),
+                **({"hint": redact(body["hint"])} if body.get("hint") else {})}
     return {"error": type(exc).__name__, "message": "The request failed; inspect the endpoint arguments or availability."}
 
 
@@ -239,6 +279,9 @@ class SiloTools:
                 # Public read-only response rows are required for independent
                 # numeric review; each result is already capped above.
                 event["result_json"] = result
+                parsed = json.loads(result)
+                if isinstance(parsed, list):
+                    event["returned_rows"] = len(parsed)
             if result.startswith('{"error"'):
                 event["tool_error"] = True
             return result
@@ -272,8 +315,11 @@ class SiloTools:
                 "description": description[:1_200 if term else 150],
                 "arguments": endpoint_arguments({"paths": self.paths}, name),
             })
+        result = _json(matches)
+        if len(result) > MAX_TOOL_CHARS:
+            raise ToolResultLimitError("The complete tool list is too large; search a topic or endpoint name with silo_tools.")
         self.tools_seen = True
-        return _json(matches[:41])
+        return result
 
     def invoke_endpoint(self, endpoint: str, arguments_json: str) -> str:
         if not (self.catalog_seen and self.tools_seen):
@@ -306,10 +352,10 @@ class SiloTools:
         else:
             raise ArgumentValidationError("endpoint is not callable")
         if isinstance(value, list) and len(value) > MAX_DATA_ROWS:
-            raise ValueError("more than 100 rows; narrow the source query")
+            raise ToolResultLimitError("More than 100 rows; narrow the date window, identifiers, or requested metrics.")
         result = _json(value)
         if len(result) > MAX_TOOL_CHARS:
-            raise ValueError("result too large; narrow the source query")
+            raise ToolResultLimitError("Result too large; narrow the date window, identifiers, or requested metrics.")
         return result
 
     def as_agent_tools(self) -> list[Any]:
@@ -320,7 +366,7 @@ class SiloTools:
             def fetch() -> str:
                 result = _json(self.client.catalog())
                 if len(result) > MAX_TOOL_CHARS:
-                    raise ValueError("catalog exceeds evaluation tool size limit")
+                    raise ToolResultLimitError("Catalog exceeds the evaluation tool-size limit; catalog discovery remains unverified.")
                 self.catalog_seen = True
                 return result
 
@@ -385,6 +431,9 @@ def technical_classification(item: dict[str, Any]) -> str:
     if any(event.get("error_type") in {"TypeError", "ArgumentValidationError", "InvalidArguments"}
            for event in events):
         return "tool_contract_failure"
+    if any(event.get("error_type") in {"SiloOverCap", "SiloTimeout", "ToolResultLimitError"}
+           or event.get("error", {}).get("code") in {"22023", "57014"} for event in events):
+        return "query_data_failure"
     if any(event.get("error_type") == "SiloError" for event in events):
         return "api_error_unclassified"
     return "no_recorded_technical_failure"
@@ -430,7 +479,7 @@ def _summary_md(record: dict[str, Any]) -> str:
     for case in record["cases"]:
         checks = case.get("checks", {})
         rows.append(
-            f"| {case['id']} | {case['status']} | "
+            f"| {case['id']} | {case['status']} | {technical_classification(case)} | "
             f"{'yes' if checks.get('discovery_before_data') else 'no'} | "
             f"{checks.get('data_calls', 0)} | "
             f"{case.get('duration_seconds', 0):.1f}s | "
@@ -444,8 +493,8 @@ def _summary_md(record: dict[str, Any]) -> str:
         "This is a live-agent process record. A completed run is not an answer-quality pass.",
         "See [independent grading](agent-evaluation-grade.md) for baseline classifications,",
         "API availability, and answer-quality findings.", "",
-        "| Case | Run status | Discovery before data | Data calls | Latency | Est. spend |",
-        "| --- | --- | --- | ---: | ---: | ---: |", *rows, "",
+        "| Case | Run status | Technical classification | Discovery before data | Data calls | Latency | Est. spend |",
+        "| --- | --- | --- | --- | ---: | ---: | ---: |", *rows, "",
         "## Case notes", "",
     ]
     for case in record["cases"]:
@@ -476,10 +525,13 @@ def main() -> int:
     args = parser.parse_args()
 
     all_cases = load_cases()
-    ledger = load_spend_ledger()
+    try:
+        ledger = load_spend_ledger()
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        parser.error(f"a valid cumulative spend ledger is required: {type(exc).__name__}")
     selected = [case for case in all_cases if not args.case_id or case["id"] in args.case_id]
-    if not selected or args.budget_usd <= 0:
-        parser.error("select valid cases and a positive budget")
+    if not selected or not 0 < args.budget_usd <= DEFAULT_BUDGET_USD:
+        parser.error("select valid cases and a positive total budget no greater than US$20")
     reserved = len(selected) * worst_case_cost_usd()
     if ledger["estimated_usd"] + reserved > args.budget_usd:
         parser.error(f"prior estimated spend ${ledger['estimated_usd']:.4f} plus reserve ${reserved:.2f} exceeds total budget ${args.budget_usd:.2f}")
@@ -546,6 +598,7 @@ def main() -> int:
                                  "output_tokens": hooks.output_tokens}
                 item["estimated_usd"] = round(actual_cost_usd(hooks.input_tokens, hooks.output_tokens), 6)
                 item["tool_events"] = tools.events
+                item["technical_classification"] = technical_classification(item)
                 item["checks"] = process_checks(tools.events, case["expected_disposition"])
                 record["cases"].append(item)
                 record["estimated_usd"] = round(sum(c["estimated_usd"] for c in record["cases"]), 6)

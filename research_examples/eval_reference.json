@@ -4,7 +4,7 @@
   "scoring": {
     "full_pass": "Correct disposition, valid identifier and period, reproducible calculation or justified limitation, source endpoint and as-of citation, and all material caveats; any hard failure overrides a partial score.",
     "hard_failures": ["invented_join", "materially_wrong_value", "incompatible_periods", "unsupported_causality", "missing_material_caveat"],
-    "categories": ["substantive_answer", "successful_limitation", "api_unavailable", "tool_contract_failure", "turn_exhaustion", "numeric_rubric_failure", "unverified"],
+    "categories": ["substantive_answer", "successful_limitation", "api_unavailable", "tool_contract_failure", "query_data_failure", "technical_error", "api_error_unclassified", "turn_exhaustion", "numeric_rubric_failure", "unverified"],
     "technical_rule": "A run status of completed means only that the model returned text. API failures and tool errors are scored independently of answer quality."
   },
   "cases": {

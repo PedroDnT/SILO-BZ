@@ -5,6 +5,8 @@ Run: 2026-09-25 01:20 UTC, `gpt-5-mini`. This grades the saved 12-case
 [`eval_reference.json`](../../research_examples/eval_reference.json) and
 [`baseline-review.json`](../../research_examples/baseline-review.json).
 Only the professional question was passed as case-specific model input.
+The [immutable baseline JSON](../../research_examples/baseline-results.json)
+preserves this run independently of later updates to the latest result file.
 
 ## Result
 

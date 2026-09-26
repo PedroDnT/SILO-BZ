@@ -7,9 +7,13 @@ public SQL grants with OpenAPI in both directions; the SQL/SDK parameter tests
 guard RPC argument compatibility. This table distinguishes the full direct
 PostgREST contract from the smaller Flask adapter.
 
+This is the historical 28-RPC snapshot used by the baseline. The read-only
+2026-09-26 reconciliation of newer `origin/main` found 41 callable RPCs plus
+13 views. See [reconciliation results](agent-reconciliation-results.md).
+
 ## Surface coverage
 
-| Surface | Current coverage | Shape and limits | Evidence |
+| Surface | Snapshot coverage | Shape and limits | Evidence |
 | --- | --- | --- | --- |
 | SQL grants → PostgREST/OpenAPI | 28 RPC functions + 13 views; all 41 granted objects appear in OpenAPI | RPC arguments and result schemas are documented from database introspection; row caps and permissions are applied in SQL | `tests/test_openapi_spec.py`; local isolated Postgres smoke |
 | Discovery catalog | 14 panel metrics, 40 constraints, 11 examples; `catalog`, `coverage`, and `metric_coverage` are RPCs | Catalog explains grains, IDs, date/units caveats, caps and examples. It is not an exhaustive endpoint directory; OpenAPI and API docs enumerate the broader contract. | catalog payload tests and exact SQL `$json$` parity test |
