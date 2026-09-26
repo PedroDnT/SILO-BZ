@@ -34,6 +34,20 @@
     ]
   },
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git push *)",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/pre-push-docs.sh\"",
+            "timeout": 30,
+            "statusMessage": "docs check…"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
@@ -46,7 +60,7 @@
           },
           {
             "type": "command",
-            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; case \"$f\" in *.md|*.json|*.yaml|*.yml) command -v prettier >/dev/null && prettier --write --log-level silent \"$f\";; esac; } 2>/dev/null || true",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; case \"$f\" in */docs/planning/CHANGELOG.md|docs/planning/CHANGELOG.md) ;; *.md|*.json|*.yaml|*.yml) command -v prettier >/dev/null && prettier --write --log-level silent \"$f\";; esac; } 2>/dev/null || true",
             "timeout": 30,
             "statusMessage": "prettier…"
           }
