@@ -362,6 +362,9 @@ Nothing in wave 2 that depends on these starts until each has an answer.
    2026-09-25 at `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp`.
 4. A read-only database role for the Sentinel agent ([AGENTS.md](AGENTS.md),
    item 13)?
+   **Answered 2026-09-26: yes.** `docs/security/sentinel_readonly_role.sql` plus
+   `default_transaction_read_only = on`; the owner runs it by hand. Role not yet
+   present (checked `pg_roles` 2026-09-26).
 
 ### Wave 2
 
