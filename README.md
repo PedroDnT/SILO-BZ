@@ -418,6 +418,7 @@ The essentials, folded away:
 ├── .mintignore                 # keeps Evidence template markdown — and README/CLAUDE/AGENTS — out of the MDX parser
 ├── vercel.json                 # dashboard build config + ignoreCommand
 ├── .githooks/                  # pre-commit: blocks credentialed URLs, bad syntax
+├── .claude/hooks/              # Claude Code: pytest after edits; CHANGELOG + README check before git push
 ├── apify/                      # ETF market scrape actor (gated on APIFY_TOKEN)
 ├── .github/
 │   ├── actions/apply-schema/   # composite action: schema + migrations, lock-guarded

@@ -302,7 +302,11 @@ offline suite and blocks the push on failure; the pre-commit hook blocks committ
 URLs with credentials and Python that fails `py_compile`. The `.claude/settings.json` PostToolUse hook runs `py_compile` on every edited
 `.py` file and the offline pytest suite when the file is under `src/`, `serve/`,
 `tests/`, or `scripts/` (`.claude/hooks/post-edit.sh`). Failures surface; they
-are not swallowed.
+are not swallowed. The PreToolUse hook on `git push` (`.claude/hooks/pre-push-docs.sh`)
+holds a push until the branch adds its `docs/planning/CHANGELOG.md` row (or a
+`No-changelog: <reason>` commit trailer), and once per branch, unless it edits
+`README.md`, asks for a README / planning-index / `OPEN_ITEMS.md` staleness check
+before publishing. PRs auto-merge on green, so each branch carries its own docs.
 
 **Open pull requests ready for review, never as drafts** (owner's rule). PRs here
 merge by auto-merge once CI is green, and a draft blocks that until someone marks it
