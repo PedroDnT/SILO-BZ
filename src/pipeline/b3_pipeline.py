@@ -256,6 +256,113 @@ class B3Ingestor:
             self._log_finish(run_id, 0, error=ingest_log.describe(exc))
             raise
 
+    async def ingest_cash_dividends(
+        self,
+        issuers: Optional[List[str]] = None,
+        lookback_days: int = 400,
+        since: Optional[date] = None,
+        full_history: bool = False,
+    ) -> int:
+        """Fetch B3's full cash-distribution history for the traded universe.
+
+        b3_corporate_event's cash rows come from a ~12-month window; this is
+        the complete history (migration 48). Every page is fetched for every
+        issuer each time, because B3 orders the endpoint by share class before
+        date (see the fetcher). What gets upserted is narrowed instead: the
+        daily run keeps distributions whose entitlement date is within
+        `lookback_days`, unless `since` is given; `full_history` upserts all.
+
+        Failure semantics mirror ingest_corporate_events: one issuer failing
+        is counted and fails the slice, but does not abandon the sweep. An
+        issuing code with no tradingName in B3's catalog is skipped and
+        reported (it has nothing to query by), not guessed.
+        """
+        from src.fetchers.b3_corporate_events_fetcher import B3CorporateEventsFetcher
+        from src.pipeline.ingest_b3_cash_dividends import (
+            ingest_b3_cash_dividends,
+            parse_cash_dividends,
+        )
+
+        run_id = str(uuid4())
+        self._log_start(run_id, "cash_dividends", None, None)
+        try:
+            codes = issuers if issuers is not None else self._traded_issuers(lookback_days)
+            if not codes:
+                self._log_finish(run_id, 0, skipped=True)
+                logger.info("B3 cash dividends: no traded issuers found, skipped")
+                return 0
+
+            if full_history:
+                cutoff: Optional[date] = None
+            elif since is not None:
+                cutoff = since
+            else:
+                cutoff = date.today() - timedelta(days=lookback_days)
+
+            fetcher = B3CorporateEventsFetcher()
+            names = fetcher.trading_names()
+            records: List[Dict[str, Any]] = []
+            failures: List[str] = []
+            missing: List[str] = []
+            fetched = 0
+            seen: set = set()
+            for code in codes:
+                entries = names.get(code)
+                if not entries:
+                    # Renamed or delisted: B3's catalog only lists active
+                    # companies under their current code. A renamed company's
+                    # history comes in under its new code (AXIA carries ELET's);
+                    # a delisted one has no name to query by.
+                    missing.append(code)
+                    continue
+                for entry in entries:
+                    name = entry["trading_name"]
+                    if name in seen:
+                        continue
+                    seen.add(name)
+                    try:
+                        raw = fetcher.fetch_cash_dividends(name)
+                        records.extend(parse_cash_dividends(
+                            code, name, raw, since=cutoff, cnpj=entry.get("cnpj") or None,
+                        ))
+                        fetched += 1
+                    except Exception as exc:  # noqa: BLE001 - counted, then reported
+                        failures.append(f"{code}/{name}: {exc}")
+
+            total = ingest_b3_cash_dividends(self._supabase, records) if records else 0
+
+            if missing:
+                logger.warning(
+                    "B3 cash dividends: %d/%d issuers have no tradingName in "
+                    "B3's catalog (first: %s)",
+                    len(missing), len(codes), ", ".join(missing[:8]),
+                )
+            if failures:
+                msg = (
+                    f"{len(failures)} company fetches failed; "
+                    f"first: {failures[0][:200]}"
+                )
+                self._log_finish(run_id, total, error=msg)
+                logger.warning("B3 cash dividends partial: %s", msg)
+            elif fetched == 0:
+                msg = (
+                    f"no company in {len(codes)} issuers could be fetched "
+                    f"(no tradingName for {len(missing)})"
+                )
+                self._log_finish(run_id, total, error=msg)
+                logger.error("B3 cash dividends: %s", msg)
+            else:
+                self._log_finish(run_id, total)
+            logger.info(
+                "B3 cash dividends: %d rows from %d companies "
+                "(%d failed, %d without tradingName, cutoff %s)",
+                total, fetched, len(failures), len(missing), cutoff or "none",
+            )
+            return total
+        except Exception as exc:
+            self._log_finish(run_id, 0, error=ingest_log.describe(exc))
+            raise
+
 
     # ── B3 BDI: securities lending, investor flow, free float, instruments ──
     #

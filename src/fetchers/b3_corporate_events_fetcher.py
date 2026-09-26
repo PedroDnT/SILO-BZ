@@ -201,6 +201,82 @@ class B3CorporateEventsFetcher:
             page += 1
             time.sleep(self.sleep_between)
 
+    def trading_names(self, page_size: int = 120) -> Dict[str, List[Dict[str, str]]]:
+        """issuingCompany -> [{trading_name, cnpj}] as B3's catalog lists them.
+
+        GetListedCashDividends is keyed by tradingName, matched exactly (ITAU
+        returns nothing; ITAUSA and ITAUUNIBANCO are different companies), so
+        the name must come from B3's own catalog, never be derived from a
+        ticker. The catalog lists ACTIVE companies under their CURRENT code
+        (Eletrobras is AXIA, not ELET); the CNPJ is kept because it is what
+        links a renamed company back to its old tickers (cia_ticker). A code
+        listed under more than one name keeps all of them.
+        """
+        names: Dict[str, List[Dict[str, str]]] = {}
+        for row in self.list_companies(page_size=page_size):
+            code = (row.get("issuingCompany") or "").strip().upper()
+            name = (row.get("tradingName") or "").strip()
+            if not code or not name:
+                continue
+            entries = names.setdefault(code, [])
+            if all(e["trading_name"] != name for e in entries):
+                # B3 serves the CNPJ as a number in places, dropping leading
+                # zeros (Banco do Brasil 00000000000191 arrives as "191").
+                # Restoring them is formatting, not inference: a CNPJ is 14
+                # digits by definition. Anything longer is left empty.
+                digits = "".join(ch for ch in str(row.get("cnpj") or "") if ch.isdigit())
+                cnpj = digits.zfill(14) if 0 < len(digits) <= 14 else ""
+                entries.append({"trading_name": name, "cnpj": cnpj})
+        return names
+
+    def fetch_cash_dividends(
+        self, trading_name: str, page_size: int = 120
+    ) -> List[Dict[str, Any]]:
+        """Every published cash distribution for one tradingName, all pages.
+
+        B3 sorts this endpoint by typeStock and THEN by date, so page one of a
+        multi-class issuer is typically all ON (PETR: page one ON back to
+        2007, PN only from page two). Stopping early would drop whole share
+        classes, so this always pages to totalPages; callers narrow by date
+        after the fetch, not by fetching less.
+
+        Unlike the supplement's ~12-month cashDividends array, this history
+        is complete (PETR: 343 rows back to 1996, verified 2026-09-26).
+        """
+        rows: List[Dict[str, Any]] = []
+        page = 1
+        while True:
+            data = self._call(
+                "GetListedCashDividends",
+                {
+                    "language": "pt-br",
+                    "pageNumber": page,
+                    "pageSize": page_size,
+                    "tradingName": trading_name,
+                },
+            )
+            if not isinstance(data, dict):
+                raise ValueError(
+                    f"unexpected cash-dividend payload for {trading_name!r}: "
+                    f"{type(data).__name__}"
+                )
+            results = data.get("results") or []
+            rows.extend(r for r in results if isinstance(r, dict))
+            page_info = data.get("page") or {}
+            total_pages = int(page_info.get("totalPages") or 0)
+            if page >= total_pages or not results:
+                # A short read would publish "no dividends before X" for a
+                # company that has them; count against B3's own total.
+                total_records = int(page_info.get("totalRecords") or 0)
+                if len(rows) != total_records:
+                    raise ValueError(
+                        f"GetListedCashDividends for {trading_name!r} returned "
+                        f"{len(rows)} rows but reports totalRecords={total_records}"
+                    )
+                return rows
+            page += 1
+            time.sleep(self.sleep_between)
+
     def fetch_company_events(self, issuing_company: str) -> Dict[str, Any]:
         """All published events for one issuing company code (e.g. 'PETR').
 
