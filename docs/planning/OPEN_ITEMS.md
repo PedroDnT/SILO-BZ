@@ -357,6 +357,7 @@ Nothing in wave 2 that depends on these starts until each has an answer.
 2. Put `versao` into the keys of `cvm_fii_mensal` and `cvm_fii_periodic`? This
    changes their grain, and it is what stops a restatement overwriting the
    original (`DATA_INVENTORY.md` §2, `COMPETITIVE_GAPS.md` B4).
+   **Answered 2026-09-26: yes.** Wave 2d is unblocked.
 3. Where to host the read-only MCP (B2)? A new runtime; a Vercel function is
    the obvious candidate. **Answered:** a Supabase Edge Function, deployed
    2026-09-25 at `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp`.
