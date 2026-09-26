@@ -58,21 +58,25 @@ fi
 # does that silently: on 2026-09-26 the update of #322 from main kept its row,
 # dropped #324's and #325's, and CI stayed green. Compared with the merge base,
 # not origin/main's tip, so a branch that is merely behind main is not blamed
-# for rows it never had. .github/workflows/test.yml repeats this for pull
-# requests, which also covers merges made outside Claude Code.
+# for rows it never had. Every merge base: in a criss-cross history (main merged
+# the branch while the branch merged an older main) there are two, and
+# `git merge-base` names only one. The trailer counts only on commits main does
+# not have. .github/workflows/test.yml repeats this for pull requests, which
+# also covers merges made outside Claude Code.
 rows() { git show "$1:docs/planning/CHANGELOG.md" 2>/dev/null | grep '^| 20'; }
-if grep -qx 'docs/planning/CHANGELOG.md' <<<"$changed" &&
-  ! git log --format=%B "$base..HEAD" | grep -qiE '^Changelog-removes:[[:space:]]*[^[:space:]]'; then
-  dropped=$(grep -vxFf <(rows HEAD) <(rows "$base"))
+bases=$(git merge-base --all HEAD origin/main)
+base_rows() { for b in $bases; do rows "$b"; done | awk '!seen[$0]++'; }
+if ! git log --format=%B origin/main..HEAD | grep -qiE '^Changelog-removes:[[:space:]]*[^[:space:]]'; then
+  dropped=$(grep -vxFf <(rows HEAD) <(base_rows))
   if [ -n "$dropped" ]; then
     n=$(grep -c . <<<"$dropped")
-    at=$(git rev-parse --short "$base")
-    shown=$(head -n 5 <<<"$dropped" | jq -Rr 'if length > 160 then .[:160] + "…" else . end')
+    at=$(git rev-parse --short $bases | paste -sd ' ' -)
+    shown=$(head -n 5 <<<"$dropped" | jq -Rr 'if length > 200 then .[:200] + "…" else . end')
     [ "$n" -le 5 ] || shown="$shown
 …and $((n - 5)) more"
     add "CHANGELOG rows dropped. docs/planning/CHANGELOG.md on \`$branch\` no longer has $n row(s) that main had at this branch's merge base with origin/main ($at), word for word:
 $shown
-A merge that keeps one side of the CHANGELOG conflict does this (on 2026-09-26 it took #324's and #325's rows out of main), and so does a formatter run over the file. Put each row back exactly as \`git show $at:docs/planning/CHANGELOG.md\` has it, newest first, commit, and push again. If this branch removes or rewrites them on purpose (as #318 removed a stale duplicate), put a \`Changelog-removes: <reason>\` trailer in one of this branch's commit messages instead."
+A merge that keeps one side of the CHANGELOG conflict does this (on 2026-09-26 it took #324's and #325's rows out of main), and so does a formatter run over the file. Put each row back exactly as \`git show origin/main:docs/planning/CHANGELOG.md\` has it, newest first, commit, and push again. If this branch removes or rewrites them on purpose (as #318 removed a stale duplicate), put a \`Changelog-removes: <reason>\` trailer in one of this branch's commit messages instead."
   fi
 fi
 
