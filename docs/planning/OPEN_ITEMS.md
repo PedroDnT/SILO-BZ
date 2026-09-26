@@ -218,16 +218,15 @@ the live hosts both ways: green when they match, and red when `PUBLIC_HOST` is
 pointed at `silo-j01uw6fds-deloslabs.vercel.app` (the #275 build that was
 actually being served during the freeze).
 
-**Blocked 2026-09-25:** both remaining points need Pedro: the `VERCEL_TOKEN`
-repository secret, and the Vercel audit log or support for the cause.
+**Blocked 2026-09-25:** the cause needs Pedro: the Vercel audit log or support.
 
-Two things remain open:
-
-1. **`VERCEL_TOKEN` is not set**, so the guard can detect but not fix. Until
-   Pedro adds it (Vercel → Account Settings → Tokens, scope team `deloslabs`,
-   stored as the repository secret), a freeze produces a red run at 08:00 UTC
-   instead of a silent four-day stall — better, but still manual to clear.
-2. **The cause.** Find and undo whatever the 2026-09-17/18 alias attempts left
+1. ~~**`VERCEL_TOKEN` is not set**~~ (done 2026-09-26). Pedro added the
+   repository secret; a dispatched Publish Check (run 36212626171) promoted
+   `dpl_Ei4YqaQyKpQNQ7zYL4X2oCKDB8Ws` after three red days (09-23 to 09-25)
+   and verified it. Checked independently the same hour: `/data/manifest.json`
+   is byte-identical on `silo-bz-deloslabs.vercel.app`, `silo-bz.vercel.app`
+   and the `git-main` alias. The guard now fixes a freeze, not just detects it.
+2. **The cause** (still open). Find and undo whatever the 2026-09-17/18 alias attempts left
    behind; they are recorded below because they are the likeliest culprit.
    Pedro does not remember making the change, so there is no memory to rely on
    here — it needs reading the Vercel project's audit log or support.
