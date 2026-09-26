@@ -13,7 +13,6 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-import shutil
 import subprocess
 from datetime import date
 from decimal import Decimal
@@ -506,10 +505,9 @@ def test_the_backfill_diff_runs_uncapped_inside_the_job_timeout():
     ("2026-01-01", "true", "true", False),   # and runs alone
     ("2026-01-01", "false", "false", True),  # the register crawl is unchanged
 ])
+@pytest.mark.usefixtures("gnu_date")
 def test_fnet_diff_input_validation(start, sweep, diff, ok):
-    if shutil.which("bash") is None or shutil.which("date") is None:
-        pytest.skip("needs bash + GNU date")
-    script = next(s for s in _fnet_job()["steps"] if s.get("name") == "Validate FNET inputs")["run"]
+    script =next(s for s in _fnet_job()["steps"] if s.get("name") == "Validate FNET inputs")["run"]
     env = {**os.environ, "FNET_START": start, "FNET_END": "", "FNET_SWEEP": sweep, "FNET_DIFF": diff}
     r = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True, timeout=30)
     assert (r.returncode == 0) is ok, r.stdout + r.stderr
