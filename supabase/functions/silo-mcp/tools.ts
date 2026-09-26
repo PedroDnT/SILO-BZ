@@ -66,6 +66,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   // FNET document register — metadata and versions, no document bodies.
   t("fund_documents", "Fund documents (FNET)"),
   t("fund_restatements", "Restated filings (FNET)"),
+  t("fund_restatement_diff", "What a restatement changed (FNET)"),
   // Forensic screens — signals, not verdicts.
   t("screen_zombie_growth", "Screen: zombie growth", SCREEN_LEAD()),
   t("screen_captive_vehicles", "Screen: captive vehicles", SCREEN_LEAD()),

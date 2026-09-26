@@ -6,7 +6,8 @@ src/parsers/fnet_xml.py; the tables are migration 46.
 
 The queue is derived, never stored: every FIDC informe mensal in the register
 (``fnet_document``, tipoFundo link 2) with ``versao`` > 1, delivered in the
-window, that has no terminal pair row at the current ``DIFF_VERSION``. Each is
+window, that has no terminal pair row at the current ``DIFF_VERSION`` against
+the predecessor it pairs with today. Each is
 paired with its predecessor by ``api.fund_restatements``' own group key
 (analytical 24: same cnpjFundo link, categoria, tipo_documento, especie and
 reference_raw; highest lower versao, greatest fnet_id on a tie), so a diff pair
@@ -104,34 +105,43 @@ WITH cand AS (
       AND d.tipo_documento = %(tipo_documento)s
       AND d.delivered_at >= %(start)s
       AND d.delivered_at < %(stop)s
-      AND NOT EXISTS (
-          SELECT 1 FROM fnet_document_pair p
-          WHERE p.fnet_id = d.fnet_id
-            AND p.diff_version = %(diff_version)s
-            AND p.status = ANY(%(terminal)s))
+),
+paired AS (
+    SELECT c.fnet_id, c.cnpj, c.categoria, c.especie, c.reference_raw, c.versao,
+           c.delivered_at, pv.fnet_id AS prev_fnet_id
+    FROM cand c
+    -- api.fund_restatements' pairing, verbatim (analytical 24): an unlinked
+    -- document (cnpj NULL) makes the join empty rather than being grouped by name.
+    LEFT JOIN LATERAL (
+        SELECT p.fnet_id
+        FROM fnet_document_filter pl
+        JOIN fnet_document p ON p.fnet_id = pl.fnet_id
+        WHERE pl.filter_name = 'cnpjFundo'
+          AND pl.filter_value = c.cnpj
+          AND p.versao < c.versao
+          AND p.categoria      IS NOT DISTINCT FROM c.categoria
+          AND p.tipo_documento IS NOT DISTINCT FROM c.tipo_documento
+          AND p.especie        IS NOT DISTINCT FROM c.especie
+          AND p.reference_raw = c.reference_raw
+        ORDER BY p.versao DESC, p.fnet_id DESC
+        LIMIT 1
+    ) pv ON TRUE
 )
-SELECT c.fnet_id, c.cnpj, c.reference_raw, c.versao, c.delivered_at,
-       pv.fnet_id AS prev_fnet_id
-FROM cand c
--- api.fund_restatements' pairing, verbatim (analytical 24): an unlinked
--- document (cnpj NULL) makes the join empty rather than being grouped by name.
-LEFT JOIN LATERAL (
-    SELECT p.fnet_id
-    FROM fnet_document_filter pl
-    JOIN fnet_document p ON p.fnet_id = pl.fnet_id
-    WHERE pl.filter_name = 'cnpjFundo'
-      AND pl.filter_value = c.cnpj
-      AND p.versao < c.versao
-      AND p.categoria      IS NOT DISTINCT FROM c.categoria
-      AND p.tipo_documento IS NOT DISTINCT FROM c.tipo_documento
-      AND p.especie        IS NOT DISTINCT FROM c.especie
-      AND p.reference_raw = c.reference_raw
-    ORDER BY p.versao DESC, p.fnet_id DESC
-    LIMIT 1
-) pv ON TRUE
-ORDER BY max(c.delivered_at) OVER (
-             PARTITION BY c.cnpj, c.categoria, c.especie, c.reference_raw) DESC,
-         c.cnpj, c.reference_raw, c.versao DESC, c.fnet_id DESC
+SELECT x.fnet_id, x.cnpj, x.reference_raw, x.versao, x.delivered_at, x.prev_fnet_id
+FROM paired x
+-- Done = a terminal outcome against the predecessor it pairs with TODAY. A
+-- lower version that reached the register after the diff (a later backfill or
+-- sweep) changes the predecessor, and the document is diffed again, so a
+-- served diff is always fund_restatements' pair.
+WHERE NOT EXISTS (
+    SELECT 1 FROM fnet_document_pair p
+    WHERE p.fnet_id = x.fnet_id
+      AND p.prev_fnet_id IS NOT DISTINCT FROM x.prev_fnet_id
+      AND p.diff_version = %(diff_version)s
+      AND p.status = ANY(%(terminal)s))
+ORDER BY max(x.delivered_at) OVER (
+             PARTITION BY x.cnpj, x.categoria, x.especie, x.reference_raw) DESC,
+         x.cnpj, x.reference_raw, x.versao DESC, x.fnet_id DESC
 """
 
 

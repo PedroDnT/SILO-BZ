@@ -1,4 +1,5 @@
-"""The FNET document register served through schema `api` (catalog v33, backlog B1).
+"""The FNET document register served through schema `api` (catalog v33, backlog B1),
+and what a restatement changed (catalog v40, backlog B4).
 
 fund_documents and fund_restatements (24_api_fnet.sql) read fnet_document and
 fnet_document_filter (migration 42). These pin what makes them honest rather
@@ -24,7 +25,13 @@ SQL = (ANALYTICAL / "24_api_fnet.sql").read_text(encoding="utf-8")
 SQL19 = (ANALYTICAL / "19_api_contract.sql").read_text(encoding="utf-8")
 MIGRATION = (ROOT / "src/store/migrations/42_fnet_document.sql").read_text(encoding="utf-8")
 
-SIGS = {"fund_documents": "TEXT, DATE, DATE, TEXT", "fund_restatements": "TEXT, DATE, DATE, TEXT"}
+SIGS = {
+    "fund_documents": "TEXT, DATE, DATE, TEXT",
+    "fund_restatements": "TEXT, DATE, DATE, TEXT",
+    "fund_restatement_diff": "TEXT, DATE, DATE, TEXT, BIGINT",
+}
+# The two functions over the register itself; the diff reads migration 46.
+REGISTER = ("fund_documents", "fund_restatements")
 
 
 def _stripped(text: str) -> str:
@@ -67,9 +74,11 @@ def test_one_transaction_that_guards_its_dependencies():
     assert "to_regprocedure('api.assert_row_cap(bigint, boolean, text)') IS NULL" in body
     assert "to_regclass('public.fnet_document') IS NULL" in body
     assert "to_regclass('public.fnet_document_filter') IS NULL" in body
+    assert "to_regclass('public.fnet_document_pair') IS NULL" in body
+    assert "to_regclass('public.fnet_document_diff') IS NULL" in body
 
 
-def test_exactly_the_two_functions_are_created():
+def test_exactly_the_three_functions_are_created():
     created = set(re.findall(r"CREATE\s+OR\s+REPLACE\s+FUNCTION\s+api\.(\w+)\(", _stripped(SQL)))
     assert created == set(SIGS)
 
@@ -118,14 +127,14 @@ def test_row_cap_refuses_and_does_not_tier():
 
 def test_the_filter_vocabulary_matches_migration_42():
     assert "filter_name IN ('tipoFundo', 'cnpjFundo')" in MIGRATION
-    for fn in SIGS:
+    for fn in REGISTER:
         body = _stripped(_body(fn))
         assert "'cnpjFundo'" in body
     assert "'tipoFundo'" in _stripped(_body("fund_restatements"))
 
 
 def test_fund_name_is_served_but_never_joined_or_filtered_on():
-    for fn in SIGS:
+    for fn in REGISTER:
         body = _stripped(_body(fn))
         assert not re.search(r"fund_name\s*(=|IS NOT DISTINCT|ILIKE|LIKE|~)", body, re.I), (
             f"{fn} compares fund_name — FNET's label is never a join key"
@@ -194,7 +203,7 @@ def test_fund_restatements_return_shape():
     assert _returns("fund_restatements") == [
         "fnet_id", "cnpj", "tipo_fundo", "fund_name", "tipo_documento", "reference_raw",
         "reference_date", "versao", "modalidade", "delivered_at", "previous_fnet_id",
-        "previous_delivered_at", "lag_days",
+        "previous_delivered_at", "lag_days", "n_fields_changed", "diff_status",
     ]
     assert _args("fund_restatements") == ["p_cnpj", "p_from", "p_to", "p_tipo_fundo"]
     for arg in _args("fund_restatements"):
@@ -255,6 +264,81 @@ def test_restatements_window_defaults_to_thirty_days_only_without_a_fund():
     assert "IF v_cnpj IS NULL AND v_from IS NULL THEN" in body
     assert "v_from := COALESCE(p_to, CURRENT_DATE) - 30;" in body
     assert "p_cnpj must be a fund''s 14-digit CNPJ" in _body("fund_restatements")
+
+
+# ---------------------------------------------------------------------------
+# fund_restatement_diff and the diff columns (v40)
+# ---------------------------------------------------------------------------
+
+def test_fund_restatements_changed_shape_so_it_is_dropped_first():
+    drop = "DROP FUNCTION IF EXISTS api.fund_restatements(TEXT, DATE, DATE, TEXT);"
+    assert drop in SQL
+    assert SQL.index(drop) < SQL.index("CREATE OR REPLACE FUNCTION api.fund_restatements(")
+
+
+def test_diff_columns_come_from_the_pair_row_of_this_exact_pair():
+    body = _stripped(_body("fund_restatements"))
+    assert "LEFT JOIN public.fnet_document_pair dp" in body
+    assert "dp.fnet_id = r.fnet_id" in body
+    assert "dp.prev_fnet_id IS NOT DISTINCT FROM pv.fnet_id" in body, (
+        "a diff made against another predecessor is not this pair's diff"
+    )
+    assert "CASE WHEN dp.status = 'compared'" in body
+    assert "THEN dp.n_changed + dp.n_added + dp.n_removed END" in body, (
+        "n_fields_changed counts the diff rows: added and removed fields are changes too"
+    )
+
+
+def test_fund_restatement_diff_return_shape_and_arguments():
+    assert _returns("fund_restatement_diff") == [
+        "fnet_id", "previous_fnet_id", "cnpj", "tipo_documento", "reference_raw", "versao",
+        "modalidade", "delivered_at", "previous_delivered_at", "lag_days", "field_path",
+        "block", "leaf", "change_kind", "old_value", "new_value", "old_num", "new_num",
+        "delta", "match_basis", "cvm_column", "diff_version", "source_url",
+        "previous_source_url",
+    ]
+    assert _args("fund_restatement_diff") == ["p_cnpj", "p_from", "p_to", "p_tipo", "p_fnet_id"]
+    for arg in _args("fund_restatement_diff"):
+        assert re.search(rf"{arg}\s+\w+\s+DEFAULT NULL", _body("fund_restatement_diff")), arg
+
+
+def test_fund_restatement_diff_needs_a_fund_or_a_document():
+    body = _body("fund_restatement_diff")
+    assert "IF v_cnpj IS NULL AND p_fnet_id IS NULL THEN" in body
+    assert "fund_restatement_diff needs p_cnpj (one fund) or p_fnet_id" in body
+    assert "p_cnpj must be a fund''s 14-digit CNPJ" in body
+    assert "p_from (%) is after p_to (%)" in body
+    assert body.count("USING ERRCODE = '22023'") == 3
+
+
+def test_fund_restatement_diff_serves_only_compared_pairs_with_their_link():
+    body = _stripped(_body("fund_restatement_diff"))
+    assert "FROM public.fnet_document_pair pr" in body
+    assert "JOIN public.fnet_document_diff x" in body
+    assert "x.fnet_id = pr.fnet_id" in body and "x.prev_fnet_id = pr.prev_fnet_id" in body
+    assert "pr.status = 'compared'" in body
+    assert "(v_cnpj IS NULL OR pr.cnpj = v_cnpj)" in body, "the fund is the pair's link, never a name"
+    assert "fund_name" not in body
+    assert "(x.new_num - x.old_num)" in body, "delta is NULL unless both sides are numbers"
+    assert "d.delivered_at < (p_to + 1)::timestamp" in body
+    for url in ("x.fnet_id::text", "x.prev_fnet_id::text"):
+        assert f"'https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=' || {url}" in body
+
+
+def test_the_diff_vocabulary_matches_migration_46():
+    mig = (ROOT / "src/store/migrations/46_fnet_document_diff.sql").read_text(encoding="utf-8")
+    comment = SQL[SQL.index("COMMENT ON FUNCTION api.fund_restatement_diff"):]
+    for kind in ("changed", "added", "removed", "nil_to_value", "value_to_nil"):
+        assert f"'{kind}'" in mig and kind in comment, kind
+    for basis in ("path", "key", "position"):
+        assert f"'{basis}'" in mig, basis
+    from src.pipeline.fnet_diff import TERMINAL, WAITING
+    served = SQL[SQL.index("COMMENT ON FUNCTION api.fund_restatements"):]
+    for status in WAITING + TERMINAL:
+        assert status in served, f"fund_restatements' comment must name diff_status {status}"
+    for phrase in ("approximate by construction", "as printed", "not diffed",
+                   "tab VIII", "p_cnpj", "p_fnet_id"):
+        assert phrase in comment, phrase
 
 
 # ---------------------------------------------------------------------------
@@ -322,15 +406,18 @@ def test_the_sdk_wraps_both_with_the_sql_argument_names():
     c = _Probe()
     c.fund_documents("07.727.002/0001-26", start="2024-01-01", tipo="Informe Mensal Estruturado")
     c.fund_restatements(tipo_fundo="FIDC", end="2026-09-24")
+    c.fund_restatement_diff(fnet_id=857292)
     assert sent["fund_documents"]["p_tipo"] == "Informe Mensal Estruturado"
     assert sent["fund_restatements"]["p_tipo_fundo"] == "FIDC"
+    assert sent["fund_restatement_diff"]["p_fnet_id"] == 857292
     for fn in SIGS:
         assert set(_args(fn)) == set(sent[fn]), f"SDK and SQL disagree on {fn}'s arguments"
 
 
 def test_openapi_publishes_both():
     spec = json.loads((ROOT / "openapi.json").read_text(encoding="utf-8"))
-    required = {"fund_documents": ["p_cnpj"], "fund_restatements": None}
+    required = {"fund_documents": ["p_cnpj"], "fund_restatements": None,
+                "fund_restatement_diff": None}
     for fn in SIGS:
         op = spec["paths"][f"/rpc/{fn}"]["post"]
         body = op["requestBody"]["content"]["application/json"]["schema"]

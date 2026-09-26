@@ -237,6 +237,8 @@ REFUSING_FUNCTIONS = {
     # v33: the FNET register (24_api_fnet.sql) — raise-only.
     "fund_documents",
     "fund_restatements",
+    # v40: what a restatement changed (24_api_fnet.sql).
+    "fund_restatement_diff",
     # v34: the FIDC concentration trio stopped trimming at a tier ceiling.
     "fidc_cedentes",
     "fidc_sacados",

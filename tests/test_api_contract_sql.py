@@ -91,12 +91,13 @@ WAVE3_FUNCTIONS = (
     "api.ptax",
 )
 
-# The FNET register (v33) lives in 24_api_fnet.sql, for the same reason: FUNCS
-# does not carry it, tests/test_fnet_api_contract.py owns the bodies. Both are
-# raise-only.
+# The FNET register (v33) and its restatement diff (v40) live in
+# 24_api_fnet.sql, for the same reason: FUNCS does not carry them,
+# tests/test_fnet_api_contract.py owns the bodies. All three are raise-only.
 FNET_FUNCTIONS = (
     "api.fund_documents",
     "api.fund_restatements",
+    "api.fund_restatement_diff",
 )
 
 LANDING_PATTERN = re.compile(
@@ -1460,14 +1461,15 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
     # twenty-seven since v35 (balance_sheets, cash_flow_statements), thirty since
     # v37 (the three filing-behaviour screens), thirty-three since v38
     # (company_events, macro_series, ptax), thirty-six since v39
-    # (financial_statement_history, fii_property_history, focus_expectations). The
+    # (financial_statement_history, fii_property_history, focus_expectations),
+    # thirty-seven since v40 (fund_restatement_diff). The
     # prose said "eight" for two versions while listing nine — pin the word
     # to the tuples so it cannot drift again.
-    assert "thirty-six" in c.lower().split(), "all thirty-six capped functions refuse"
+    assert "thirty-seven" in c.lower().split(), "all thirty-seven capped functions refuse"
     assert (
         len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) + len(FNET_FUNCTIONS)
         + len(WAVE3_FUNCTIONS)
-    ) == 36
+    ) == 37
     for fn in WAVE3_FUNCTIONS:
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
     for fn in HEAD_FUNCTIONS:
