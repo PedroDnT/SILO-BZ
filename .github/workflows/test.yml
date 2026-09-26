@@ -33,6 +33,42 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # The pre-push hook's dropped-row check (.claude/hooks/pre-push-docs.sh),
+      # for the merges it never sees. On 2026-09-26 an update of #322's branch
+      # from main in GitHub's web UI (be050dd) kept #322's CHANGELOG row, dropped
+      # #324's and #325's that main had just added, and the PR merged green;
+      # #327 put them back.
+      # GitHub's merges ignore .gitattributes' merge=union, which covers local
+      # ones only. HEAD is GitHub's merge of the PR into its base, fetched one
+      # commit deep, so fetch the history the merge base and the PR's commit
+      # messages need. This holds a merge only while this job is a required
+      # check, or if it fails before someone merges.
+      - name: No CHANGELOG row dropped against the base branch
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --quiet --unshallow origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+          base=$(git merge-base HEAD "origin/$BASE_REF")
+          at=$(git rev-parse --short "$base")
+          messages=$(git log --format=%B "$base..HEAD")
+          if grep -qiE '^Changelog-removes:[[:space:]]*[^[:space:]]' <<<"$messages"; then
+            echo "A Changelog-removes: trailer lets this PR remove or rewrite CHANGELOG rows."
+            exit 0
+          fi
+          rows() { git show "$1:docs/planning/CHANGELOG.md" 2>/dev/null | grep '^| 20'; }
+          rc=0
+          dropped=$(grep -vxFf <(rows HEAD) <(rows "$base")) || rc=$?
+          if [ "$rc" -eq 1 ]; then
+            echo "Every CHANGELOG row $BASE_REF had at $at is still here, word for word."
+            exit 0
+          fi
+          [ "$rc" -eq 0 ] || exit "$rc"
+          echo "::error file=docs/planning/CHANGELOG.md::$(grep -c . <<<"$dropped") CHANGELOG row(s) that $BASE_REF had at $at are gone or changed. Restore them word for word from 'git show $at:docs/planning/CHANGELOG.md', or put a 'Changelog-removes: <reason>' trailer in a commit if that is deliberate."
+          printf '%s\n' "$dropped" | cut -c1-200
+          exit 1
+
       - name: Set up Python 3.12
         uses: actions/setup-python@v6
         with:

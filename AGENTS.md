@@ -25,10 +25,13 @@ This file only adds context for Cursor Cloud agent VMs.
   offline pytest when the file is under `src/`, `serve/`, `tests/`, or `scripts/`.
   Failures surface (not swallowed).
 - Claude PreToolUse (`.claude/hooks/pre-push-docs.sh`) on `git push`: holds the push
-  until the branch adds its `docs/planning/CHANGELOG.md` row, and once per branch asks
-  for a README / planning staleness check. Cursor and Codex are not hooked: before
-  pushing, add the row and update `README.md` / `docs/planning/` where the branch
-  made them stale.
+  until the branch adds its `docs/planning/CHANGELOG.md` row, holds it while a row
+  main already had is missing or reworded (a `Changelog-removes: <reason>` commit
+  trailer declares a deliberate removal), and once per branch asks for a README /
+  planning staleness check. Cursor and Codex are not hooked: before pushing, add the
+  row, keep every existing row word for word, and update `README.md` /
+  `docs/planning/` where the branch made them stale. The `pytest` job in `test.yml`
+  fails a pull request that drops a row, whoever made the merge.
 
 There is **no ingest Flask**. Do not run `flask --app app` or revive `app.py` /
 `src/api/`. Ingest is GitHub Actions plus:
