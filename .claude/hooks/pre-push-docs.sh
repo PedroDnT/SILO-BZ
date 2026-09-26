@@ -46,8 +46,10 @@ add() {
 }$1"
 }
 
+# A trailer counts only on this branch's own commits, the ones origin/main does
+# not have: in a criss-cross history `$base..HEAD` also holds main commits.
 if ! grep -qx 'docs/planning/CHANGELOG.md' <<<"$changed" &&
-  ! git log --format=%B "$base..HEAD" | grep -qiE '^No-changelog:[[:space:]]*[^[:space:]]'; then
+  ! git log --format=%B origin/main..HEAD | grep -qiE '^No-changelog:[[:space:]]*[^[:space:]]'; then
   add "No CHANGELOG row. \`$branch\` changes $(grep -c . <<<"$changed") file(s) against origin/main, and every merged branch adds one row to docs/planning/CHANGELOG.md. Insert it as the first row under the table header (newest first):
 | $(date -u +%Y-%m-%d) | $branch | **<what changed, in one bold sentence>.** <why, and what a reader needs to know> |
 Escape any | inside the prose as \\|, and never run a formatter over that file (tests/test_changelog_integrity.py guards it). Commit, then push again. If your instructions forbid editing CHANGELOG.md (the Scout's do), put a \`No-changelog: <reason>\` trailer in one of this branch's commit messages instead."
@@ -60,9 +62,8 @@ fi
 # not origin/main's tip, so a branch that is merely behind main is not blamed
 # for rows it never had. Every merge base: in a criss-cross history (main merged
 # the branch while the branch merged an older main) there are two, and
-# `git merge-base` names only one. The trailer counts only on commits main does
-# not have. .github/workflows/test.yml repeats this for pull requests, which
-# also covers merges made outside Claude Code.
+# `git merge-base` names only one. .github/workflows/test.yml repeats this for
+# pull requests, which also covers merges made outside Claude Code.
 rows() { git show "$1:docs/planning/CHANGELOG.md" 2>/dev/null | grep '^| 20'; }
 bases=$(git merge-base --all HEAD origin/main)
 base_rows() { for b in $bases; do rows "$b"; done | awk '!seen[$0]++'; }

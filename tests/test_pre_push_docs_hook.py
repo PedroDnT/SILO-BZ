@@ -260,7 +260,29 @@ def test_every_merge_base_counts_in_a_criss_cross_history(repo):
     assert "CHANGELOG rows dropped" in reason and mains.strip() in reason
 
 
-COMPARISON = "dropped=$(grep -vxFf <(rows HEAD) <(base_rows))"
+def test_a_no_changelog_trailer_on_a_main_commit_does_not_excuse_this_branch(repo):
+    """The same criss-cross shape: the branch's first PR merged, then the branch
+    merged an older main whose commit carries `No-changelog:`. With the named
+    merge base, `$base..HEAD` holds that main commit; its trailer is main's."""
+    git(repo, "checkout", "-q", "main")
+    commit(repo, {"src/other.py": "y = 1\n"}, "main's work\n\nNo-changelog: main's own reason",
+           date="2026-09-25T10:00:00")
+    old_main = git(repo, "rev-parse", "HEAD").strip()
+    git(repo, "checkout", "-q", BRANCH)
+    commit(repo, {"src/app.py": "x = 2\n", "docs/planning/CHANGELOG.md": ROW, **README},
+           "the branch's first PR", date="2026-09-25T11:00:00")
+    pr_head = git(repo, "rev-parse", "HEAD").strip()
+    git(repo, "checkout", "-q", "main")  # the first PR merges
+    git(repo, "merge", "-q", "--no-edit", pr_head)
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(repo, "checkout", "-q", BRANCH)  # the branch merges the older main and keeps working
+    git(repo, "merge", "-q", "--no-edit", old_main)
+    commit(repo, {"src/app.py": "x = 3\n", "README.md": "# SILO\nAnother fact.\n"})
+    assert git(repo, "merge-base", "HEAD", "origin/main").strip() == pr_head
+    assert "No CHANGELOG row" in denied(run_hook(repo))
+
+
+COMPARISON ="dropped=$(grep -vxFf <(rows HEAD) <(base_rows))"
 
 
 def test_the_dropped_row_test_fails_without_the_comparison(repo, tmp_path_factory):
