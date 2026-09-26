@@ -255,8 +255,23 @@ class FnetIngestor:
 async def _main() -> None:
     """The daily FNET refresh, run by daily_ingest.yml as its own step."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    totals = await FnetIngestor().daily_update()
+    totals: Dict[str, int] = {}
+    first_error: Optional[BaseException] = None
+    try:
+        totals.update(await FnetIngestor().daily_update())
+    except Exception as exc:  # the diff queue still runs; re-raised below
+        logger.error("FNET register refresh failed: %r", exc)
+        first_error = exc
+    # B4 slice 1: the restatement-diff queue (its own audit row, fnet / diff).
+    from src.pipeline.fnet_diff_pipeline import FnetDiffIngestor
+    try:
+        totals.update(await FnetDiffIngestor().run())
+    except Exception as exc:
+        logger.error("FNET diff queue failed: %r", exc)
+        first_error = first_error or exc
     logger.info("FNET daily update done: %s", totals)
+    if first_error is not None:
+        raise first_error
 
 
 if __name__ == "__main__":

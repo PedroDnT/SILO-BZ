@@ -17,12 +17,13 @@ CVM's open-data CSVs are republished in place: when a fund restates an informe, 
 figures overwrite the old ones and the fact that anything changed is gone. B3's
 **Fundos.NET (FNET)** keeps every version as its own document, says whether it is the
 original or a restatement, and keeps the superseded version listed. Silo crawls that
-register (metadata only — no document bodies) and serves it two ways:
+register (metadata only) and serves it three ways. Since v40 it also downloads the bodies of re-filed **FIDC informe mensal** documents, diffs each against the version it replaced, and keeps the diff — never the body:
 
 | Endpoint | Returns |
 | --- | --- |
 | `fund_documents` | every FNET document linked to one fund, newest delivery first, with a link to the original |
-| `fund_restatements` | every re-filed document (`versao` > 1), paired with the version it most plausibly replaced and the lag between them |
+| `fund_restatements` | every re-filed document (`versao` > 1), paired with the version it most plausibly replaced and the lag between them; since v40, `diff_status` and `n_fields_changed` say whether the pair has been diffed |
+| `fund_restatement_diff` | **v40:** one row per field that differs between a re-filed FIDC informe mensal and the version it replaced, values as printed |
 
 The FNET vocabulary, served as published:
 
@@ -89,6 +90,54 @@ silo.fund_restatements(tipo_fundo="FIDC")     # every FIDC, last 30 days
 | `p_from` | with `p_cnpj`: open · without: 30 days before `p_to` (or today) | first delivery day of the **restated** document |
 | `p_to` | open | last delivery day, inclusive |
 | `p_tipo_fundo` | any | `FII`, `FIDC` or `ETF` (FNET's own fund-type filter); anything else raises `22023` |
+
+### `fund_restatement_diff`
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/fund_restatement_diff" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_fnet_id": 857292}'
+```
+
+```python
+silo.fund_restatement_diff(fnet_id=857292)        # one restatement, field by field
+silo.fund_restatement_diff("07727002000126")      # one fund's diffed restatements
+```
+
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `p_cnpj` | — | one fund (its cnpjFundo link); required unless `p_fnet_id` |
+| `p_fnet_id` | — | one restated document, from `fund_restatements`; required unless `p_cnpj` |
+| `p_from` / `p_to` | open | delivery window of the **restated** document |
+| `p_tipo` | any in scope | `tipo_documento`, exact FNET text |
+
+One row per field that differs. What a row means, and what it does not:
+
+- **`old_value` / `new_value` are the XML leaf text as printed.** FIDC informes mix
+  comma and dot decimals inside one document; nothing is normalised. `delta` is
+  `new − old` only when both sides parse under the number rule (digits with one
+  separator); otherwise it is null and the text is what you have.
+- **`field_path` addresses repeated blocks by their declared keys** (a tranche by its
+  série and subclass, a cedente by its CNPJ). **`match_basis = position`** means the
+  block had no key or a duplicate one and was matched by order: the row is served,
+  flagged, and approximate by construction.
+- **`change_kind`** is `changed`, `added`, `removed`, `nil_to_value` or `value_to_nil`.
+  An empty element and a nil one are different states.
+- **Scope is slice 1: FIDC informe mensal estruturado.** For everything else
+  `fund_restatements.diff_status` is null, which means *not looked at*, not
+  *unchanged*. A compared pair with `n_fields_changed = 0` is a re-upload with nothing
+  changed.
+- **It compares FNET's versions, not CVM's CSVs.** Tab VIII (anonymised debtors) is
+  not in the public XML, so a restatement of it is invisible here.
+- **`cvm_column` is null** until a path-to-column crosswalk exists.
+- Bodies are not stored. `source_url` and `previous_source_url` are FNET's own
+  download links, so every row can be re-derived.
+
+The PCG Brasil 2024-12 informe (`07727002000126`) is the design's own test: its first
+restatement changed one field (a senior-tranche `VL_COTAS`), the second changed 31, all
+numeric; a 2023-12 RC re-filing dropped two duplicate `CLASSE_SUBORD` blocks and reads
+as six `removed` rows flagged `position`, not as nine removed plus three added.
 
 A three-version group, with illustrative values:
 

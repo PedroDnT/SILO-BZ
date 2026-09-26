@@ -194,7 +194,7 @@ def test_fund_restatements_return_shape():
     assert _returns("fund_restatements") == [
         "fnet_id", "cnpj", "tipo_fundo", "fund_name", "tipo_documento", "reference_raw",
         "reference_date", "versao", "modalidade", "delivered_at", "previous_fnet_id",
-        "previous_delivered_at", "lag_days",
+        "previous_delivered_at", "lag_days", "n_fields_changed", "diff_status",
     ]
     assert _args("fund_restatements") == ["p_cnpj", "p_from", "p_to", "p_tipo_fundo"]
     for arg in _args("fund_restatements"):

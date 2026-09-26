@@ -40,7 +40,7 @@ Four date columns meaning four different things. Reading one for another is the 
 | **FI funds** | `fund_nav`, `funds`, `fund_profile`, `search_funds` | 2019 (daily `inf_diario` partition floor) | monthly, 1–2 months in arrears |
 | **Fund holdings** | `fund_holdings`, `fund_debentures` | 2005 (CDA blocks 4, 2 and 6) | monthly, in arrears |
 | **FIDC** | `fund_nav`, `fidc_portfolio`, `fidc_sacados`, `fidc_cedentes`, `fidc_tranches`, `fidc_aging` | 2019 for the monthly informe; tab II sectors and tab VIII debtors from 2013; tab I originator slots from 2019-11; tab X SCR grades from 2023-10; tranches and the aging ladder from **2025-01** (CVM publishes no archive of those tabs) | monthly, in arrears |
-| **Fund documents (FNET)** | `fund_documents`, `fund_restatements` | **first crawl or backfill** — the register is loaded by delivery day, so its span is what Silo has crawled, not FNET's own start | daily (trailing 3 delivery days); fund links fortnightly |
+| **Fund documents (FNET)** | `fund_documents`, `fund_restatements`, `fund_restatement_diff` | **first crawl or backfill** — the register is loaded by delivery day, so its span is what Silo has crawled, not FNET's own start | daily (trailing 3 delivery days); fund links fortnightly |
 | **FII** | `fund_nav` | 2021 monthly, 2019 for the periodic documents | monthly / quarterly |
 | **FIAGRO** | `fund_nav` | **2025-05** — the family is new, not missing | monthly |
 | **FIP** | `fund_nav` | 2010, keyed 31-December | yearly |

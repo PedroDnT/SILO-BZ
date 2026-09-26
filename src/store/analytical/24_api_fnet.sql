@@ -186,6 +186,9 @@ COMMENT ON FUNCTION api.fund_documents(TEXT, DATE, DATE, TEXT) IS
 -- the fund's whole restatement history); without p_cnpj, p_from defaults to
 -- the 30 days before p_to (or today), so a market-wide call is a recent
 -- window rather than a scan of the register.
+-- v40 (B4 slice 1): two columns from fnet_document_pair. Adding columns to a
+-- RETURNS TABLE needs a DROP first; the grants below are re-issued.
+DROP FUNCTION IF EXISTS api.fund_restatements(TEXT, DATE, DATE, TEXT);
 CREATE OR REPLACE FUNCTION api.fund_restatements(
     p_cnpj       TEXT DEFAULT NULL,   -- one fund (its cnpjFundo links); NULL = every fund, in a delivery window
     p_from       DATE DEFAULT NULL,   -- first delivery day of the RESTATED document
@@ -205,7 +208,9 @@ RETURNS TABLE (
     delivered_at          TIMESTAMP,  -- São Paulo local time, as printed
     previous_fnet_id      BIGINT,     -- same group, highest lower versao, greatest fnet_id on a tie; NULL when unpaired
     previous_delivered_at TIMESTAMP,
-    lag_days              INT         -- delivered_at::date - previous_delivered_at::date; NULL when unpaired
+    lag_days              INT,        -- delivered_at::date - previous_delivered_at::date; NULL when unpaired
+    n_fields_changed      INT,        -- v40: changed + added + removed fields in fund_restatement_diff; NULL = not compared
+    diff_status           TEXT        -- v40: compared | unpairable_no_link | unpairable_no_reference | no_predecessor | body_not_xml | parse_error | declared_mismatch; NULL = not looked at (out of slice 1 scope, or not yet queued)
 )
 LANGUAGE plpgsql
 STABLE
@@ -270,12 +275,26 @@ BEGIN
     -- One page + one, then assert_row_cap REFUSES (22023). No cursor.
     page (fnet_id, cnpj, tipo_fundo, fund_name, tipo_documento, reference_raw,
           reference_date, versao, modalidade, delivered_at, previous_fnet_id,
-          previous_delivered_at, lag_days) AS (
+          previous_delivered_at, lag_days, n_fields_changed, diff_status) AS (
         SELECT r.fnet_id, r.cnpj, tf.tipo_fundo, r.fund_name, r.tipo_documento,
                r.reference_raw, r.reference_date, r.versao, r.modalidade,
                r.delivered_at, pv.fnet_id, pv.delivered_at,
-               (r.delivered_at::date - pv.delivered_at::date)
+               (r.delivered_at::date - pv.delivered_at::date),
+               dp.n_fields_changed, dp.status
         FROM restated r
+        -- v40: what the diff queue made of this re-filing (26 fnet_diff
+        -- pipeline). A compared row is keyed on the SAME predecessor the
+        -- pairing below finds (same group key); a "why not" row has
+        -- prev_fnet_id NULL. NULL columns = the queue has not looked at it.
+        LEFT JOIN LATERAL (
+            SELECT (COALESCE(x.n_changed, 0) + COALESCE(x.n_added, 0) + COALESCE(x.n_removed, 0))
+                       AS n_fields_changed,
+                   x.status
+            FROM public.fnet_document_pair x
+            WHERE x.fnet_id = r.fnet_id
+            ORDER BY (x.status = 'compared') DESC, x.compared_at DESC
+            LIMIT 1
+        ) dp ON TRUE
         LEFT JOIN LATERAL (
             SELECT string_agg(
                        CASE t.filter_value WHEN '1' THEN 'FII' WHEN '2' THEN 'FIDC' WHEN '3' THEN 'ETF' END,
@@ -310,7 +329,8 @@ BEGIN
     )
     SELECT g.fnet_id, g.cnpj, g.tipo_fundo, g.fund_name, g.tipo_documento,
            g.reference_raw, g.reference_date, g.versao, g.modalidade,
-           g.delivered_at, g.previous_fnet_id, g.previous_delivered_at, g.lag_days
+           g.delivered_at, g.previous_fnet_id, g.previous_delivered_at, g.lag_days,
+           CASE WHEN g.diff_status = 'compared' THEN g.n_fields_changed END, g.diff_status
     FROM page g
     WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'fund_restatements')
     ORDER BY g.delivered_at DESC, g.fnet_id DESC, g.cnpj
@@ -324,6 +344,6 @@ GRANT EXECUTE ON FUNCTION api.fund_restatements(TEXT, DATE, DATE, TEXT)
 GRANT EXECUTE ON FUNCTION api.fund_restatements(TEXT, DATE, DATE, TEXT) TO silo_api;
 
 COMMENT ON FUNCTION api.fund_restatements(TEXT, DATE, DATE, TEXT) IS
-    'Restatement events from the B3 Fundos.NET (FNET) register: one row per document with versao > 1 (modalidade RE voluntary or RC CVM-required, as published), newest delivery first, with cnpj from its cnpjFundo link (NULL when SILO''s fortnightly sweep has not linked it yet — served, never dropped), tipo_fundo from its tipoFundo link (FII / FIDC / ETF; NULL when none), and previous_fnet_id / previous_delivered_at / lag_days for the version it most plausibly replaced. FNET DOES NOT LINK VERSIONS, so the pairing is by a stated group key — (cnpj link, categoria, tipo_documento, especie, reference_raw) — never by fund_name: previous is the group''s document with the highest versao below this one, the greatest fnet_id winning a tie, because a group can legitimately hold several v1 documents (assemblies). Unlinked documents and documents with no reference text are never paired (previous_* NULL). lag_days = delivery date minus the previous delivery date. Filter by p_cnpj (window verbatim, NULL = whole history) or by a delivery window (default the 30 days before p_to or today); p_tipo_fundo takes FII, FIDC or ETF and anything else raises 22023. More than 1000 rows RAISES 22023 (never trimmed): narrow the window or pin p_cnpj / p_tipo_fundo.';
+    'Restatement events from the B3 Fundos.NET (FNET) register: one row per document with versao > 1 (modalidade RE voluntary or RC CVM-required, as published), newest delivery first, with cnpj from its cnpjFundo link (NULL when SILO''s fortnightly sweep has not linked it yet — served, never dropped), tipo_fundo from its tipoFundo link (FII / FIDC / ETF; NULL when none), and previous_fnet_id / previous_delivered_at / lag_days for the version it most plausibly replaced. FNET DOES NOT LINK VERSIONS, so the pairing is by a stated group key — (cnpj link, categoria, tipo_documento, especie, reference_raw) — never by fund_name: previous is the group''s document with the highest versao below this one, the greatest fnet_id winning a tie, because a group can legitimately hold several v1 documents (assemblies). Unlinked documents and documents with no reference text are never paired (previous_* NULL). lag_days = delivery date minus the previous delivery date. Filter by p_cnpj (window verbatim, NULL = whole history) or by a delivery window (default the 30 days before p_to or today); p_tipo_fundo takes FII, FIDC or ETF and anything else raises 22023. More than 1000 rows RAISES 22023 (never trimmed): narrow the window or pin p_cnpj / p_tipo_fundo. v40: diff_status says what the restatement-diff queue (B4 slice 1, FIDC informe mensal only) made of the row — compared (n_fields_changed = the fields that differ, 0 = a re-upload with nothing changed; the rows are fund_restatement_diff), unpairable_no_link / unpairable_no_reference / no_predecessor (not yet diffable, retried), body_not_xml / parse_error, or declared_mismatch (the XML''s own CNPJ or reference disagrees with the link: the disagreement is the finding) — and NULL when the queue has not looked at it (out of scope, or not yet reached).';
 
 COMMIT;

@@ -2235,3 +2235,69 @@ CREATE INDEX IF NOT EXISTS idx_b3_lending_trade_doador
 
 COMMENT ON TABLE b3_lending_trade IS
     'Individual B3 securities-lending trades (BTBTrade): ticker, quantity, annualized rate, venue, time, and the brokerage on each leg. doador/tomador are BROKERS intermediating, not beneficial owners — ~75% of trades carry the same code on both legs. ~43k rows/session; same ~21-business-day source retention as the rest of the lending group, and no aggregate preserves the individual trades, so an uncaptured session is unrecoverable.';
+
+-- fnet_document_body / fnet_document_pair / fnet_document_diff — FNET
+-- restatement diffs (migration 46, B4 slice 1: FIDC informe mensal). Parsed
+-- shape of a downloaded body (no raw XML), the pairing of each re-filing
+-- with the version it replaced, one row per differing field. Design and
+-- decisions: docs/planning/DOCUMENTS.md.
+CREATE TABLE IF NOT EXISTS fnet_document_body (
+    id                     BIGSERIAL    PRIMARY KEY,
+    fnet_id                BIGINT       NOT NULL CHECK (fnet_id > 0),
+    content_type           TEXT,                      -- as served
+    bytes                  INTEGER      NOT NULL,
+    sha256                 TEXT         NOT NULL,     -- of the bytes as served
+    canonical_sha256       TEXT,                      -- of the parsed, whitespace-free form; NULL unless parse_status = 'ok'
+    filename               TEXT,                      -- Content-Disposition, as served
+    root_element           TEXT,                      -- DOC_ARQ (FIDC) / DadosEconomicoFinanceiros (FII)
+    schema_version         TEXT,                      -- FIDC CAB_INFORM/VERSAO; NULL where none is declared
+    declared_cnpj_raw      TEXT,                      -- the XML's own fund CNPJ, as printed
+    declared_reference_raw TEXT,                      -- the XML's own reference (DT_COMPT / Competencia), as printed
+    declared_cnpj          TEXT         CHECK (declared_cnpj IS NULL OR declared_cnpj ~ '^[0-9]{14}$'),
+    leaf_count             INTEGER,
+    parse_status           TEXT         NOT NULL CHECK (parse_status IN ('ok', 'not_xml', 'parse_error', 'unsupported_root')),
+    parse_error            TEXT,
+    fetched_at             TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fnet_document_body UNIQUE (fnet_id)
+);
+
+CREATE TABLE IF NOT EXISTS fnet_document_pair (
+    id                  BIGSERIAL    PRIMARY KEY,
+    fnet_id             BIGINT       NOT NULL CHECK (fnet_id > 0),   -- the re-filing (versao > 1)
+    prev_fnet_id        BIGINT       CHECK (prev_fnet_id IS NULL OR prev_fnet_id > 0),
+    cnpj                TEXT         CHECK (cnpj IS NULL OR cnpj ~ '^[0-9]{14}$'),  -- the cnpjFundo link that made the pair
+    pair_rule           TEXT         NOT NULL DEFAULT 'group_key_v1',
+    status              TEXT         NOT NULL CHECK (status IN (
+                            'compared', 'unpairable_no_link', 'unpairable_no_reference',
+                            'no_predecessor', 'body_not_xml', 'parse_error', 'declared_mismatch')),
+    n_changed           INTEGER,
+    n_added             INTEGER,
+    n_removed           INTEGER,
+    identical_bytes     BOOLEAN,
+    identical_canonical BOOLEAN,
+    diff_version        TEXT,
+    compared_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fnet_document_pair UNIQUE NULLS NOT DISTINCT (fnet_id, prev_fnet_id)
+);
+CREATE INDEX IF NOT EXISTS idx_fnet_pair_cnpj   ON fnet_document_pair (cnpj);
+CREATE INDEX IF NOT EXISTS idx_fnet_pair_status ON fnet_document_pair (status);
+
+CREATE TABLE IF NOT EXISTS fnet_document_diff (
+    id            BIGSERIAL    PRIMARY KEY,
+    fnet_id       BIGINT       NOT NULL CHECK (fnet_id > 0),
+    prev_fnet_id  BIGINT       NOT NULL CHECK (prev_fnet_id > 0),
+    field_path    TEXT         NOT NULL,   -- canonical path; repeated blocks by key, e.g. .../CLASSE_SENIOR[Série 1;]/QT_COTISTAS
+    block         TEXT,                    -- first-level section, e.g. LISTA_INFORM/PATRLIQ
+    leaf          TEXT,
+    change_kind   TEXT         NOT NULL CHECK (change_kind IN ('changed', 'added', 'removed', 'nil_to_value', 'value_to_nil')),
+    old_value     TEXT,                    -- exactly as printed; NULL when absent or nil
+    new_value     TEXT,
+    old_num       NUMERIC,                 -- only when the number rule parses the text
+    new_num       NUMERIC,
+    match_basis   TEXT         NOT NULL CHECK (match_basis IN ('path', 'key', 'position')),
+    cvm_column    TEXT,                    -- from the crosswalk once it exists (decision 7: deferred); NULL until then
+    silo_column   TEXT,
+    diff_version  TEXT         NOT NULL,
+    CONSTRAINT uq_fnet_document_diff UNIQUE (fnet_id, prev_fnet_id, field_path)
+);
+CREATE INDEX IF NOT EXISTS idx_fnet_diff_pair ON fnet_document_diff (fnet_id, prev_fnet_id);

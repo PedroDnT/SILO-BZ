@@ -29,7 +29,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 39
+KNOWN_CATALOG_VERSION = 40
 
 
 class SiloCatalogDrift(UserWarning):
@@ -99,7 +99,7 @@ class SiloOverCap(SiloError):
     option_history, termo_history, financials, company_financials,
     anbima_classes, inflation, inflation_items, fidc_cedentes, fidc_sacados,
     fidc_portfolio, fidc_tranches, fidc_aging, fund_documents,
-    fund_restatements, company_events, macro_series, ptax and the screen_*
+    fund_restatements, fund_restatement_diff, company_events, macro_series, ptax and the screen_*
     functions — have no cursor: narrow the
     window instead (the fidc concentration trio also take an explicit
     `limit` for the newest N rows).
@@ -771,6 +771,26 @@ class SiloClient:
         return self._rpc("fund_restatements", {
             "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
             "p_tipo_fundo": tipo_fundo,
+        })
+
+    def fund_restatement_diff(self, cnpj: Optional[str] = None, start: Datish = None,
+                              end: Datish = None, tipo: Optional[str] = None,
+                              fnet_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Field-by-field diff of a re-filed FNET document against the version it
+        replaced (v40; FIDC informe mensal only in slice 1).
+
+            silo.fund_restatement_diff(fnet_id=857292)          # one restatement
+            silo.fund_restatement_diff("07727002000126")        # one fund's history
+
+        One row per differing field. `old_value` / `new_value` are the XML leaf
+        text AS PRINTED; `delta` only when both sides parsed under the number
+        rule. `match_basis == 'position'` flags a repeated block matched by
+        order, approximate by construction. Requires `cnpj` or `fnet_id`. No
+        cursor: pin `fnet_id` or narrow the window.
+        """
+        return self._rpc("fund_restatement_diff", {
+            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
+            "p_tipo": tipo, "p_fnet_id": fnet_id,
         })
 
     # -- filing-behaviour screens (v37) --------------------------------------

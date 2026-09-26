@@ -24,6 +24,13 @@ __all__ = [
     "tool_specs",
 ]
 
+# v40 (B4 slice 1, 27_api_fnet_diff.sql): api.fund_restatement_diff — the
+# field-by-field diff of a re-filed FIDC informe mensal against the version it
+# replaced, over fnet_document_pair / fnet_document_diff (migration 46); the
+# pair is fund_restatements' own stated group key, and fund_restatements gains
+# n_fields_changed / diff_status. Values as printed, delta only when both sides
+# parse, repeated blocks by declared key, position-matched rows flagged. Capped
+# count thirty-six -> thirty-seven. coverage() gains fnet_restatement_diffs.
 # v39: three more held datasets reach the API, in 19_api_contract.sql (#295).
 # api.financial_statement_history — raw CIA account lines across every stored
 # filing version for one required statement and company id (financials stays
@@ -319,7 +326,7 @@ __all__ = [
 # stated as (id, asset_class, date, metric) and p_entity_type narrows the fund
 # arms to one family. Universe mode (p_ids empty + p_entity_type, optional
 # p_min_nav / p_min_months) walks a whole family for signed-in callers.
-CATALOG_VERSION = 39
+CATALOG_VERSION = 40
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -516,7 +523,8 @@ CONSTRAINTS = [
     "FIDC PORTFOLIO ROWS ARE A HIERARCHY. fidc_portfolio kind=sector serves tab II as one row per code: TOTAL is the whole receivables book, a lettered code (A..K) a sector, and a code with a digit (C1, F3) a member of its lettered parent (`parent`). Sum leaves or sum parents, never both. kind=scr_debtor and kind=scr_operation are the BACEN SCR grade ladders AA..H for the same receivables, graded by debtor and by operation respectively — two views of one book, not two books. tab X exists from 2023-10 only; earlier months have no scr rows, not zero-graded ones.",
     "WHICH CODE PRODUCED THIS DATA. coverage().landed_git_sha is the git commit of the very ingest run that set landed_at — the code that parsed and stored the newest data for that dataset — read from GITHUB_SHA on the run. It is NULL when that run recorded none (a run from before lineage existed, 2026-09-24, or one started outside GitHub Actions), and it is never borrowed from an older run, because an older run's code did not produce the newest rows. The audit log behind it also records parser_version, bumped only when a parser or field map changes what a stored value means; neither is a property of the SOURCE, so neither says anything about how much CVM, B3 or BACEN have published (that is complete_through).",
     "FIDC TRANCHES AND AGING BEGIN IN 2025, AND ARE SERVED AS FILED. fidc_tranches (informe tabs X_2/X_3/X_6 + X_4) and fidc_aging (tab VI) exist from 2025-01 only: CVM's pre-2025 HIST archive publishes no equivalent member, so an earlier month has no rows — an upstream limit, not a gap and not a backfill to ask for. fidc_tranches is one row per (fund, month, classe_serie): quotas, quota_value, return_month, and performance_expected vs performance_realised (what the series promised vs delivered, percent), dirty the way CVM's percentage fields are — never clipped, range-check in the notebook. Its `flows` array carries tab X_4's operations with CVM's TP_OPER label verbatim (e.g. Captações no Mês, Resgates no Mês, Amortizações); the vocabulary has drifted, so match labels yourself and never read a label you did not find as zero. tranche_filed = FALSE marks a series with flows but no X_2 row. fidc_aging is long: kind=to_maturity (not yet due, by days to maturity) and kind=overdue (by days past due), ten day-bands each, plus kind=overdue_total — CVM's FILED total, not a sum of the bands, and the two can disagree. Nothing is derived by either function: no performance gap, no subordination ratio, no band sums.",
-    "THE FNET REGISTER KNOWS A DOCUMENT'S FUND ONLY BY LINK, AND LINKS NO VERSIONS. fund_documents and fund_restatements serve B3 Fundos.NET's document register as published, metadata only: each version is its own fnet_id, versao counts the filings, modalidade is AP (original), RE (voluntary restatement) or RC (a restatement CVM required), and status is AC / IC (superseded) / CC (cancelled) AS OF fetched_at, not live. FNET rows carry NO CNPJ: a document belongs to a fund because FNET returned it when SILO queried cnpjFundo = that CNPJ, in a sweep that reaches every FII/FIDC once a fortnight — so a document delivered since the fund's last sweep is not in fund_documents yet, and fund_restatements serves it with cnpj NULL rather than dropping it. fund_name is FNET's label and is never joined on. Because FNET does not say which document a re-filing replaces, fund_restatements PAIRS each versao > 1 with the document in the same group — (cnpj link, categoria, tipo_documento, especie, reference_raw) — carrying the highest lower versao, the greatest fnet_id winning a tie (a group can legitimately hold several v1 documents, e.g. assemblies); an unlinked document or one with no reference text is never paired, so its previous_fnet_id and lag_days are NULL — not 'no predecessor', just not pairable. lag_days is days between deliveries. source_url is FNET's own download link for the id. History starts at SILO's first crawl or backfill, not at FNET's; coverage() reports the fnet_documents span.",
+    "THE FNET REGISTER KNOWS A DOCUMENT'S FUND ONLY BY LINK, AND LINKS NO VERSIONS. fund_documents and fund_restatements serve B3 Fundos.NET's document register as published, metadata only: each version is its own fnet_id, versao counts the filings, modalidade is AP (original), RE (voluntary restatement) or RC (a restatement CVM required), and status is AC / IC (superseded) / CC (cancelled) AS OF fetched_at, not live. FNET rows carry NO CNPJ: a document belongs to a fund because FNET returned it when SILO queried cnpjFundo = that CNPJ, in a sweep that reaches every FII/FIDC once a fortnight — so a document delivered since the fund's last sweep is not in fund_documents yet, and fund_restatements serves it with cnpj NULL rather than dropping it. fund_name is FNET's label and is never joined on. Because FNET does not say which document a re-filing replaces, fund_restatements PAIRS each versao > 1 with the document in the same group — (cnpj link, categoria, tipo_documento, especie, reference_raw) — carrying the highest lower versao, the greatest fnet_id winning a tie (a group can legitimately hold several v1 documents, e.g. assemblies); an unlinked document or one with no reference text is never paired, so its previous_fnet_id and lag_days are NULL — not 'no predecessor', just not pairable. lag_days is days between deliveries. source_url is FNET's own download link for the id. History starts at SILO's first crawl or backfill, not at FNET's; coverage() reports the fnet_documents span."
+    " v40 (B4 slice 1): fund_restatement_diff serves the FIELD-BY-FIELD diff of a re-filed FIDC informe mensal against the version it replaced (the same pair fund_restatements states; its new diff_status / n_fields_changed say which rows have one): old_value / new_value are the XML leaf text AS PRINTED, delta only when both sides parse under the number rule, repeated blocks (tranches, cedentes) are addressed by their declared keys and match_basis = position flags a block matched by order — served flagged, never hidden. It compares FNET's versions, not CVM's CSVs, so tab VIII (debtors) restatements are invisible to it. Other document types have diff_status NULL: not looked at, not 'no change'.",
     "FIDC DELINQUENCY STARTS IN 2025-01. CVM's pre-2025 monthly FIDC file (tab II/III) carried no delinquency field, so `delinquency` is null on every fidc row through 2024-12-31 — not zero, not clean books, not a missing month. From 2025-01-31 the tab IV/VI format is ingested and delinquency is filed on every row. Never chain-link, difference or average a FIDC delinquency series across 2024-12 → 2025-01; the series begins there. Machine-readable in `regime_breaks`, and on the funds_fidc coverage row's `notes`.",
     "A FUND'S DEBENTURE HOLDINGS ARE A DIFFERENT SHAPE FROM ITS EQUITY HOLDINGS. api.fund_debentures (CDA block 6) is one row per (fund, month, issuer, maturity, rate structure, application type), as filed and never summed — two series of one issuer maturing the same day at different coupons are different securities. The issuer is its own filed CPF/CNPJ (issuer_id); p_issuer also takes a listed company's ticker or CVM code, resolved only through CVM's published FCA map, and issuer_tickers carries the issuer's active listed codes back (NULL when not listed — most debenture issuers are not). Nothing is matched by name.",
     "ANBIMA CLASS ROWS ARE INDUSTRY AGGREGATES, NOT FUNDS. api.anbima_classes serves the Boletim de Fundos de Investimento as published — R$ milhões (unit brl_mm) and percentage points (unit pct) — per class, ANBIMA type or industry total (`level`; class aggregates by default). No fund in this warehouse is mapped to an ANBIMA class: CVM's `classe` is CVM's taxonomy, so never join a fund to a class by name, and there is no panel arm because these rows carry no id. An unknown category, metric or level raises 22023 listing what exists rather than returning an empty array.",
@@ -566,14 +574,14 @@ CONSTRAINTS = [
     "WHY (the response is one 1000-row page and SILO never returns a silently "
     "truncated result) and HOW to fix it for that function, in the message and "
     "again as PostgREST's `details` / `hint`. That is all "
-    "thirty-six — panel, quote_history, fund_nav, option_history, termo_history, "
+    "thirty-seven — panel, quote_history, fund_nav, option_history, termo_history, "
     "financials, financial_statement_history, company_financials, "
     "income_statements, balance_sheets, "
     "cash_flow_statements, anbima_classes, "
     "inflation, inflation_items, fii_property_history, focus_expectations, "
     "fidc_cedentes, fidc_sacados, fidc_portfolio, "
     "fidc_tranches, fidc_aging, fund_documents, "
-    "fund_restatements, company_events, macro_series, ptax and the ten "
+    "fund_restatements, fund_restatement_diff, company_events, macro_series, ptax and the ten "
     "screen_* functions "
     "(`limits.page.all`). "
     "THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send "
@@ -718,7 +726,25 @@ EXAMPLES = [
             "it replaced. The pairing is by a stated group key because FNET "
             "links no versions; cnpj NULL means the fortnightly fund sweep has "
             "not linked it yet — never match it to a fund by fund_name. Open "
-            "the versions with fund_documents' source_url."
+            "the versions with fund_documents' source_url. Where diff_status = "
+            "compared, fund_restatement_diff (p_fnet_id) lists exactly which "
+            "fields changed."
+        ),
+    },
+    {
+        "ask": "What did this FIDC change when it re-filed its monthly informe?",
+        "call": (
+            "POST /rest/v1/rpc/fund_restatement_diff "
+            '{"p_fnet_id": <fnet_id from fund_restatements>}'
+        ),
+        "then": (
+            "One row per field that differs, old_value and new_value as "
+            "printed (comma or dot decimals as FNET filed them), delta only "
+            "when both parsed. A tranche or cedente block is addressed by its "
+            "declared key; match_basis = position means the block was matched "
+            "by order and the row is approximate. Slice 1 covers FIDC informe "
+            "mensal only; a row with diff_status NULL in fund_restatements has "
+            "not been looked at, which is not the same as unchanged."
         ),
     },
     {
@@ -951,7 +977,7 @@ LIMITS = {
             "focus_expectations",
             "fidc_cedentes", "fidc_sacados", "fidc_portfolio",
             "fidc_tranches", "fidc_aging",
-            "fund_documents", "fund_restatements",
+            "fund_documents", "fund_restatements", "fund_restatement_diff",
             "screen_zombie_growth", "screen_captive_vehicles",
             "screen_evergreen_aging", "screen_overdue_securit",
             "screen_dormant_funds", "screen_dormant_trend",
@@ -1005,7 +1031,7 @@ LIMITS = {
                 "fidc_tranches", "fidc_aging",
                 # v33: the FNET register — a year of one fund's documents,
                 # or a month of restatements, is a window to narrow.
-                "fund_documents", "fund_restatements",
+                "fund_documents", "fund_restatements", "fund_restatement_diff",
                 # v31: a screen is a short list or the wrong screen — raise
                 # its thresholds or pin its output filter, never walk it.
                 "screen_zombie_growth", "screen_captive_vehicles",
@@ -1533,6 +1559,7 @@ def catalog_payload() -> Dict[str, Any]:
             # restatement events paired by a stated group key.
             "fund_documents": "POST /rest/v1/rpc/fund_documents",
             "fund_restatements": "POST /rest/v1/rpc/fund_restatements",
+            "fund_restatement_diff": "POST /rest/v1/rpc/fund_restatement_diff",
             # Held-but-unserved datasets (v38): a company's IPE filings, the
             # non-inflation SGS series and PTAX, all as published.
             "company_events": "POST /rest/v1/rpc/company_events",

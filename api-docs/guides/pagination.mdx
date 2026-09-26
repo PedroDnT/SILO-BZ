@@ -80,7 +80,7 @@ while True:
 
 Every other set-returning function raises `22023` above one page and offers no cursor, on purpose — a window that wide is a mistake rather than a walk. An option series lives months; a financial statement has tens of rows.
 
-`option_history` · `termo_history` · `financials` · `company_financials` · `income_statements` · `balance_sheets` · `cash_flow_statements` · `anbima_classes` · `inflation` · `inflation_items` · `fidc_cedentes` · `fidc_sacados` · `fidc_portfolio` · `fidc_tranches` · `fidc_aging` · `fund_documents` · `fund_restatements` · the seven `screen_*`
+`option_history` · `termo_history` · `financials` · `company_financials` · `income_statements` · `balance_sheets` · `cash_flow_statements` · `anbima_classes` · `inflation` · `inflation_items` · `fidc_cedentes` · `fidc_sacados` · `fidc_portfolio` · `fidc_tranches` · `fidc_aging` · `fund_documents` · `fund_restatements` · `fund_restatement_diff` · the ten `screen_*`
 
 The authoritative list is `catalog().limits.page.functions.raise_only`. Narrow `p_from`/`p_to`, the ids, or the metrics. The error says **why** it refused and **how** to fix it for that function — in the message, and again as PostgREST's `details` and `hint`. `fidc_cedentes`, `fidc_sacados` and `fidc_portfolio` also take `p_limit` (1..1000) as an explicit request for the newest N rows; until catalog v34 they trimmed silently at 500 / 5,000 instead.
 

@@ -360,7 +360,7 @@ def test_refresh_etf_does_not_run_when_schema_apply_failed():
 # The FNET crawl is paced at 1 req/s against an undocumented endpoint, so it
 # is opt-in, runs alone, and must never change what an ordinary dispatch does.
 
-_FNET_ON = "inputs.fnet_start != '' || inputs.fnet_sweep == true"
+_FNET_ON = "inputs.fnet_start != '' || inputs.fnet_sweep == true || inputs.fnet_diff == true"
 
 
 def _backfill_wf() -> dict:
@@ -454,7 +454,7 @@ def _validate_script() -> str:
 def test_fnet_input_validation(start, end, sweep, ok):
     if shutil.which("bash") is None or shutil.which("date") is None:
         pytest.skip("needs bash + GNU date")
-    env = {**os.environ, "FNET_START": start, "FNET_END": end, "FNET_SWEEP": sweep}
+    env = {**os.environ, "FNET_START": start, "FNET_END": end, "FNET_SWEEP": sweep, "FNET_DIFF": "false"}
     r = subprocess.run(
         ["bash", "-c", _validate_script()], env=env,
         capture_output=True, text=True, timeout=30,
@@ -650,3 +650,12 @@ def test_b3_backfill_accepts_an_exact_year_range():
     assert "end_year:" in text
     assert "--b3-start-year ${{ inputs.start_year }}" in text
     assert "--end-year ${{ inputs.end_year }}" in text
+
+
+def test_fnet_diff_alone_is_a_valid_dispatch():
+    """B4 slice 1: fnet_diff=true with no range and no sweep is something to do."""
+    if shutil.which("bash") is None or shutil.which("date") is None:
+        pytest.skip("needs bash + GNU date")
+    env = {**os.environ, "FNET_START": "", "FNET_END": "", "FNET_SWEEP": "false", "FNET_DIFF": "true"}
+    r = subprocess.run(["bash", "-c", _validate_script()], env=env, capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stdout + r.stderr

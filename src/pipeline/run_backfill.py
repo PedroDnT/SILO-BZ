@@ -71,8 +71,8 @@ async def run_fnet(args: argparse.Namespace) -> dict:
     """The FNET register for a delivery-date range and/or the full fund sweep."""
     from datetime import date as _date
 
-    if not (args.fnet_start or args.fnet_sweep):
-        raise SystemExit("--fnet-only needs --fnet-start and/or --fnet-sweep")
+    if not (args.fnet_start or args.fnet_sweep or getattr(args, "fnet_diff", False)):
+        raise SystemExit("--fnet-only needs --fnet-start, --fnet-sweep and/or --fnet-diff")
     ingestor = FnetIngestor()
     totals: dict = {}
     if args.fnet_start:
@@ -83,6 +83,12 @@ async def run_fnet(args: argparse.Namespace) -> dict:
     if args.fnet_sweep:
         logger.info("Starting FNET fund sweep over the FII/FIDC registry")
         totals.update(await ingestor.sweep_all())
+    if getattr(args, "fnet_diff", False):
+        from src.pipeline.fnet_diff_pipeline import FnetDiffIngestor
+        since = _date.fromisoformat(args.fnet_diff_since) if getattr(args, "fnet_diff_since", None) else None
+        logger.info("Starting FNET restatement-diff queue: max %s docs, since %s",
+                    args.fnet_diff_max or "env default", since or "any")
+        totals.update(await FnetDiffIngestor().run(max_docs=args.fnet_diff_max, since=since))
     logger.info("FNET backfill done: %s", totals)
     return totals
 
@@ -402,6 +408,17 @@ def parse_args() -> argparse.Namespace:
         "--fnet-sweep", action="store_true",
         help="Link every FII/FIDC in cvm_fund_registry to its FNET documents (cnpjFundo queries)"
     )
+    parser.add_argument(
+        "--fnet-diff", action="store_true",
+        help="FNET only: work the restatement-diff queue (B4 slice 1: FIDC informe mensal re-filings "
+             "with no compared pair yet), newest delivery first.")
+    parser.add_argument(
+        "--fnet-diff-max", type=int, default=None,
+        help="FNET only, with --fnet-diff: documents per run (default FNET_DIFF_MAX_DOCS, 500). "
+             "Each needs up to two downloads at ~1 s, with a 60-120 s tail.")
+    parser.add_argument(
+        "--fnet-diff-since", type=str, default=None,
+        help="FNET only, with --fnet-diff: only re-filings delivered on or after this day (YYYY-MM-DD).")
     parser.add_argument(
         "--b3-start-year", type=int, default=2019,
         help="First year of B3 COTAHIST yearly zips (default: 2019)"

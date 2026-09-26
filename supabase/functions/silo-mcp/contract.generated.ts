@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "39";
+export const CONTRACT_VERSION = "40";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -2311,10 +2311,64 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "additionalProperties": false
     }
   },
+  "fund_restatement_diff": {
+    "kind": "rpc",
+    "path": "/rpc/fund_restatement_diff",
+    "description": "Field-by-field diff of a re-filed FNET document (versao > 1) against the version it replaced, one row per differing field: FIDC informe mensal estruturado only (slice 1). The pair is the one fund_restatements states (same group key: cnpj link, categoria, tipo_documento, especie, reference_raw; highest lower versao, greatest fnet_id on a tie), so its diff_status = compared marks which rows have a diff here. old_value / new_value are the XML leaf text AS PRINTED (FIDC mixes comma and dot decimals within one document); delta only when both sides parsed under the number rule. field_path addresses repeated blocks (tranches, cedentes) by their declared keys; match_basis = position flags a block matched by ORDER because it had no key or a duplicate one — approximate by construction, served flagged, never hidden. cvm_column is NULL until the path-to-column crosswalk exists. This compares FNET's versions of a document, not CVM's CSVs; tab VIII (debtors) is not in the public XML, so its restatements are invisible here. Requires p_cnpj or p_fnet_id. More than 1000 rows RAISES 22023 (never trimmed): pin p_fnet_id or narrow the delivery window.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_cnpj": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_tipo": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null
+        },
+        "p_fnet_id": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64",
+          "description": "Defaults to `NULL::bigint`.",
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    }
+  },
   "fund_restatements": {
     "kind": "rpc",
     "path": "/rpc/fund_restatements",
-    "description": "Restatement events from the B3 Fundos.NET (FNET) register: one row per document with versao > 1 (modalidade RE voluntary or RC CVM-required, as published), newest delivery first, with cnpj from its cnpjFundo link (NULL when SILO's fortnightly sweep has not linked it yet — served, never dropped), tipo_fundo from its tipoFundo link (FII / FIDC / ETF; NULL when none), and previous_fnet_id / previous_delivered_at / lag_days for the version it most plausibly replaced. FNET DOES NOT LINK VERSIONS, so the pairing is by a stated group key — (cnpj link, categoria, tipo_documento, especie, reference_raw) — never by fund_name: previous is the group's document with the highest versao below this one, the greatest fnet_id winning a tie, because a group can legitimately hold several v1 documents (assemblies). Unlinked documents and documents with no reference text are never paired (previous_* NULL). lag_days = delivery date minus the previous delivery date. Filter by p_cnpj (window verbatim, NULL = whole history) or by a delivery window (default the 30 days before p_to or today); p_tipo_fundo takes FII, FIDC or ETF and anything else raises 22023. More than 1000 rows RAISES 22023 (never trimmed): narrow the window or pin p_cnpj / p_tipo_fundo.",
+    "description": "Restatement events from the B3 Fundos.NET (FNET) register: one row per document with versao > 1 (modalidade RE voluntary or RC CVM-required, as published), newest delivery first, with cnpj from its cnpjFundo link (NULL when SILO's fortnightly sweep has not linked it yet — served, never dropped), tipo_fundo from its tipoFundo link (FII / FIDC / ETF; NULL when none), and previous_fnet_id / previous_delivered_at / lag_days for the version it most plausibly replaced. FNET DOES NOT LINK VERSIONS, so the pairing is by a stated group key — (cnpj link, categoria, tipo_documento, especie, reference_raw) — never by fund_name: previous is the group's document with the highest versao below this one, the greatest fnet_id winning a tie, because a group can legitimately hold several v1 documents (assemblies). Unlinked documents and documents with no reference text are never paired (previous_* NULL). lag_days = delivery date minus the previous delivery date. Filter by p_cnpj (window verbatim, NULL = whole history) or by a delivery window (default the 30 days before p_to or today); p_tipo_fundo takes FII, FIDC or ETF and anything else raises 22023. More than 1000 rows RAISES 22023 (never trimmed): narrow the window or pin p_cnpj / p_tipo_fundo. v40: diff_status says what the restatement-diff queue (B4 slice 1, FIDC informe mensal only) made of the row — compared (n_fields_changed = the fields that differ, 0 = a re-upload with nothing changed; the rows are fund_restatement_diff), unpairable_no_link / unpairable_no_reference / no_predecessor (not yet diffable, retried), body_not_xml / parse_error, or declared_mismatch (the XML's own CNPJ or reference disagrees with the link: the disagreement is the finding) — and NULL when the queue has not looked at it (out of scope, or not yet reached).",
     "inputSchema": {
       "type": "object",
       "properties": {

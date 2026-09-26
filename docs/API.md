@@ -187,7 +187,8 @@ The adapter wraps a **subset** of schema `api`. Everything else — the typed ca
 views, options, termo, holdings, debentures, FIDC concentration, FIDC tranches
 and aging (`fidc_tranches`, `fidc_aging`, catalog v32 — history from 2025-01, as
 CVM publishes no archive of those tabs), the FNET document register
-(`fund_documents`, `fund_restatements`, catalog v33), ANBIMA classes, inflation,
+(`fund_documents`, `fund_restatements`, catalog v33; `fund_restatement_diff`,
+catalog v40), ANBIMA classes, inflation,
 company financials, company events, macro series and PTAX (catalog v38), and the
 B3 lending and investor-flow views — has no `/v1`
 twin and is reachable only over PostgREST. Read those on the published site.
@@ -218,6 +219,37 @@ The operator half, which is what a reviewer needs to check:
   route yet). Both are raise-only above one page. `coverage()` gains an
   `fnet_documents` row (as_of = newest delivery day, complete_through the day
   before; landed_at from `cvm_ingest_log` entity `fnet`, doc_type `register`).
+
+### FNET restatement diffs (catalog v40, B4 slice 1)
+
+`api.fund_restatement_diff` (`27_api_fnet_diff.sql`) serves one row per field that
+differs between a re-filed FIDC informe mensal estruturado and the version it
+replaced, over migration 46 (`fnet_document_body` / `_pair` / `_diff`), and
+`fund_restatements` gains `n_fields_changed` and `diff_status`. Design and the
+eight decisions behind it: `docs/planning/DOCUMENTS.md`. The operator half:
+
+- **The pair is the one `fund_restatements` states.** `src/pipeline/fnet_diff_pipeline.py`
+  finds the predecessor with the same group key (`cnpjFundo` link, categoria,
+  tipo_documento, especie, reference_raw; highest lower versao, greatest fnet_id on
+  a tie), so a diff never contradicts the register.
+- **Bodies are downloaded, parsed and discarded** (`FnetFetcher.download`,
+  `src/parsers/fnet_xml_diff.py`); the body row keeps the byte hash, the canonical
+  hash, the declared CNPJ and reference as printed, and a parse status. The XML's
+  own CNPJ is checked against the link (`declared_mismatch`) and is never itself a
+  link; 13-digit values stay as printed with `declared_cnpj` NULL.
+- **Every queued document ends with a pair row**, and the row says why when there is
+  no diff (`unpairable_no_link`, `unpairable_no_reference`, `no_predecessor`,
+  `body_not_xml`, `parse_error`, `declared_mismatch`). `compared` with
+  `n_fields_changed = 0` is a re-upload with nothing changed.
+- **Repeated blocks are addressed by a checked-in key registry** (`KEY_REGISTRY`);
+  a block with no key or a duplicate key is matched by position and every row it
+  produces is flagged `match_basis = 'position'`.
+- **Cadence.** The daily FNET step runs the queue after the register refresh
+  (`FNET_DIFF_MAX_DOCS`, default 500, newest re-filing first); `backfill.yml`
+  `fnet_diff=true` (`run_backfill --fnet-only --fnet-diff`) works it in bigger
+  bites. One `cvm_ingest_log` row per run, entity `fnet`, doc_type `diff`; a
+  failed download is retried, then the run raises `FnetDiffIncomplete` naming it
+  after the rest were processed.
 
 ### Company events, macro series and PTAX (catalog v38)
 
@@ -392,8 +424,8 @@ cannot be paged" — that stopped being true two catalog versions ago. **`panel`
 `quote_history` and `fund_nav` page with a `p_after` cursor**; the others
 (`option_history`, `termo_history`, `financials`, `company_financials`,
 `anbima_classes`, `inflation`, `inflation_items`, `fidc_tranches`, `fidc_aging`,
-`fund_documents`, `fund_restatements`, `company_events`, `macro_series`,
-`ptax` and the ten `screen_*` functions)
+`fund_documents`, `fund_restatements`, `fund_restatement_diff`, `company_events`,
+`macro_series`, `ptax` and the ten `screen_*` functions)
 have no cursor and ask you to narrow the window. `fund_nav` also
 requires `p_entity_type` to page, because its cursor is a bare period and 385
 CNPJs file under two families in the same month.

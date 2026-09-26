@@ -286,6 +286,9 @@ same for everyone.
 
 ### Pending operator actions
 
+- **FNET restatement diffs start empty.** The daily FNET step diffs up to 500 re-filed FIDC
+  informes a run, newest first; `backfill.yml` with `fnet_diff=true` works the queue in
+  bigger bites. `fund_restatements.diff_status` is NULL for a re-filing not yet reached.
 - **FNET history is empty until backfilled.** The daily run captures new documents
   from now on; the past comes from `backfill.yml` with `fnet_start` / `fnet_end`, one
   year per dispatch, newest first, then one `fnet_sweep` dispatch to link documents to

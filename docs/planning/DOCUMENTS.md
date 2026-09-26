@@ -471,6 +471,13 @@ diff rows:
 
 ## 10. The smallest shippable slice
 
+**Status 2026-09-26: built** (migration 46, `src/parsers/fnet_xml_diff.py`,
+`src/pipeline/fnet_diff_pipeline.py`, `27_api_fnet_diff.sql`, catalog v40).
+The G3 and G4 bodies are checked in as fixtures and the acceptance test
+below passes: 1 leaf, then 31, and G4 as six position-flagged removals. The
+catalog number moved from v35 (written) to v40 (shipped) because five
+versions landed in between.
+
 **FIDC informe mensal only:**
 
 - migration 46 with the three tables (option (b), no raw XML)

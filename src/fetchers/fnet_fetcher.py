@@ -73,6 +73,11 @@ _HEADERS = {
     "Accept": "application/json, text/javascript, */*; q=0.01",
     "User-Agent": "SILO-BZ ingest (+https://github.com/PedroDnT/SILO-BZ)",
 }
+_DOWNLOAD_HEADERS = {
+    "Accept": "*/*",
+    "User-Agent": _HEADERS["User-Agent"],
+}
+_FILENAME_RE = re.compile(r'filename="?([^";]+)"?')
 _RETRY_STATUSES = frozenset({403, 429, 500, 502, 503, 504, 520, 522, 524})
 _CNPJ_RE = re.compile(r"^\d{14}$")
 
@@ -146,6 +151,43 @@ class FnetFetcher:
                         return body
             if attempt < attempts:
                 await asyncio.sleep(self.retry_delay * attempt)
+        raise FnetFetchError(f"FNET {label} failed after {attempts} attempts: {last_exc!r}")
+
+    async def download(self, fnet_id: int) -> Tuple[bytes, Optional[str], Optional[str]]:
+        """One document body: ``(bytes, content_type, filename)`` as served.
+
+        ``GET /downloadDocumento?id=<fnet_id>``, the link api.fund_documents
+        serves as source_url. No login or special header. The content type is
+        RECORDED, not assumed: an FII informe comes as text/xml, a FIDC
+        trimestral as application/pdf (DOCUMENTS.md §2.1). Same pacing and
+        retries as the search; a dropped connection is retried like a 5xx.
+        """
+        url = f"{self.base_url}/downloadDocumento"
+        label = f"download id={fnet_id}"
+        attempts = max(1, self.max_retries)
+        last_exc: Optional[BaseException] = None
+        async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout), headers=_DOWNLOAD_HEADERS,
+                                     follow_redirects=True) as client:
+            for attempt in range(1, attempts + 1):
+                await self._pace()
+                try:
+                    resp = await client.get(url, params={"id": fnet_id})
+                except httpx.HTTPError as exc:
+                    last_exc = exc
+                    logger.warning("FNET %s transport error attempt=%d/%d: %s", label, attempt, attempts, exc)
+                else:
+                    if resp.status_code in _RETRY_STATUSES:
+                        last_exc = FnetFetchError(f"{label} returned HTTP {resp.status_code}")
+                        logger.warning("FNET %s HTTP %s attempt=%d/%d", label, resp.status_code, attempt, attempts)
+                    elif resp.status_code != 200:
+                        raise FnetFetchError(f"{label} returned HTTP {resp.status_code}: {resp.text[:300]}")
+                    else:
+                        ctype = resp.headers.get("content-type")
+                        disp = resp.headers.get("content-disposition") or ""
+                        m = _FILENAME_RE.search(disp)
+                        return resp.content, ctype, (m.group(1) if m else None)
+                if attempt < attempts:
+                    await asyncio.sleep(self.retry_delay * attempt)
         raise FnetFetchError(f"FNET {label} failed after {attempts} attempts: {last_exc!r}")
 
     async def search(
