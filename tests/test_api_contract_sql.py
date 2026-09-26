@@ -865,8 +865,8 @@ def test_coverage_reports_completeness_and_per_family_rows():
     cov = _strip_comments(FUNCS["api.coverage"])
     assert "complete_through" in FUNCS["api.coverage"]
     assert "public.latest_complete_period(NULL)" in cov
-    assert "'funds_' || f.entity_type" in cov
-    assert "public.latest_complete_period(f.entity_type)" in cov
+    assert "'funds_' || fam.entity_type" in cov
+    assert "public.latest_complete_period(fam.entity_type)" in cov
     assert re.search(r"\bnotes\s+TEXT\b", cov), "coverage() must return a notes column"
 
 
@@ -1620,10 +1620,39 @@ def test_coverage_separates_elapsed_from_filed_and_from_landed():
     # as_of is bounded by today on every arm that can carry a forward-dated
     # key. FIP files annually keyed to 31-December, so on 2026-09-16 the
     # blended MAX read 2026-12-31 and an agent read it as freshness.
-    assert cov.count("FILTER (WHERE") >= 4, (
+    assert cov.count("<= CURRENT_DATE)") >= 20, (
         "every period arm must bound as_of by CURRENT_DATE"
     )
-    assert "<= CURRENT_DATE" in cov
+
+
+def test_coverage_reads_each_date_as_an_index_probe_not_a_scan():
+    """Measured 2026-09-26 on production: coverage() took 2.8-3.8 s against
+    anon's 3 s statement timeout, because every period arm was
+    MAX(col) FILTER (WHERE col <= CURRENT_DATE) over FROM t — an aggregate the
+    planner cannot turn into an index probe, so each arm scanned its table
+    twice (bounded and unbounded). The scalar-subquery form
+    (SELECT MAX(col) FROM t WHERE col <= CURRENT_DATE) is one backward probe
+    on an indexed column. The tables that made the difference must never go
+    back to the aggregate form; the two whose date had no leading index get
+    one in migration 47."""
+    cov = _strip_comments(FUNCS["api.coverage"])
+    base = cov[cov.index("base AS ("):cov.index("SELECT b.dataset")]
+    for tbl in ("fact_fund_monthly", "b3_lending_trade", "b3_lending_open_position",
+                "cvm_fidc_sacado", "cvm_fidc_setor", "bacen_expectativas", "bacen_sgs"):
+        assert f"FROM public.{tbl} " in base, tbl
+        assert re.search(rf"\(SELECT MAX\(\w+\.\w+\) FROM public\.{tbl} \w+ WHERE [^)]*<= CURRENT_DATE\)", base), (
+            f"{tbl}: the bounded date must be a scalar-subquery probe"
+        )
+    assert "FILTER (WHERE f.period" not in base and "FILTER (WHERE t.trade_date" not in base, (
+        "the fund and lending arms must not aggregate over a full scan"
+    )
+    # The per-family arm must not GROUP BY over the whole matview either.
+    assert "GROUP BY f.entity_type" not in base
+    assert "FROM (SELECT DISTINCT d.entity_type FROM public.dim_fund d) fam" in base
+    schema = (ROOT / "src" / "store" / "schema.sql").read_text()
+    mig = (ROOT / "src" / "store" / "migrations" / "47_coverage_probe_indexes.sql").read_text()
+    for idx in ("idx_b3_lending_open_position_date", "idx_expectativas_date"):
+        assert idx in schema and idx in mig, idx
 
 
 def test_coverage_serves_the_git_sha_of_the_landed_run():
