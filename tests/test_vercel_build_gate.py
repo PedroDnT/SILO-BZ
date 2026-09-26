@@ -451,10 +451,9 @@ def _validate_script() -> str:
         ("2025-01-01; rm -rf /", "", "false", False),  # injection is just a bad date
     ],
 )
+@pytest.mark.usefixtures("gnu_date")
 def test_fnet_input_validation(start, end, sweep, ok):
-    if shutil.which("bash") is None or shutil.which("date") is None:
-        pytest.skip("needs bash + GNU date")
-    env = {**os.environ, "FNET_START": start, "FNET_END": end, "FNET_SWEEP": sweep}
+    env ={**os.environ, "FNET_START": start, "FNET_END": end, "FNET_SWEEP": sweep}
     r = subprocess.run(
         ["bash", "-c", _validate_script()], env=env,
         capture_output=True, text=True, timeout=30,
