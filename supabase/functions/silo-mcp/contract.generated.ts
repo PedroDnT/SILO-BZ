@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "40";
+export const CONTRACT_VERSION = "41";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {

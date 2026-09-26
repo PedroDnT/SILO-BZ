@@ -251,6 +251,9 @@ REFUSING_FUNCTIONS = {
     "company_events",
     "macro_series",
     "ptax",
+    # v41: the holdings pair stopped trimming at a tier ceiling.
+    "fund_holdings",
+    "fund_debentures",
 }
 PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav"}
 
@@ -259,7 +262,8 @@ def test_fidc_concentration_is_no_longer_described_as_silently_clamped(spec):
     """Until v34 these three trimmed to 500 / 5000 with no signal and the spec
     said so under **Tier ceiling**. They refuse now; a leftover clamp note
     would tell a caller to treat a complete result as probably truncated."""
-    for name in ("fidc_cedentes", "fidc_sacados", "fidc_portfolio"):
+    for name in ("fidc_cedentes", "fidc_sacados", "fidc_portfolio",
+                 "fund_holdings", "fund_debentures"):  # the pair since v41
         desc = spec["paths"][f"/rpc/{name}"]["post"]["description"]
         assert "Tier ceiling" not in desc, name
         assert "22023" in desc and "does not page" in desc, name
