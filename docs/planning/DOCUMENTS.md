@@ -1,6 +1,6 @@
 # Restatement diffs: what a fund changed between versions
 
-**Status: design for approval. Nothing here is built.** This is stage 2 of the
+**Status: design approved 2026-09-26 (decisions in §11). Nothing here is built yet.** This is stage 2 of the
 FNET work (`COMPETITIVE_GAPS.md` §4.3 and backlog B4; `OPEN_ITEMS.md` item 14,
 row 2c). It adds a new source class, document bodies, so it needs Pedro's
 decisions (§11) before any schema work starts. It sits on top of the register
@@ -486,6 +486,22 @@ No crosswalk and no screen. The acceptance test is B4's own: **the PCG Brasil
 second slice. They need only another root element and another key registry.
 
 ## 11. Decisions for Pedro
+
+**Decided 2026-09-26 (Pedro): approved, with every recommended option.**
+
+1. The source class is approved: fetch document bodies from FNET's download
+   endpoint, and add the three tables in §4.
+2. (b) Store hashes and diffs only; raw XML is not kept.
+3. Slice 1 is FIDC informe mensal alone.
+4. Unlinked documents wait for the fortnightly `cnpjFundo` sweep.
+5. 13-digit CNPJs are stored as printed, with `declared_cnpj` NULL.
+6. Backfill 2026 only for now. Older years are decided after the 2026 run
+   shows real runtime and FNET latency.
+7. The crosswalk is deferred to the "risco subiu" screen.
+8. Unkeyed repeated blocks are served position-matched, flagged
+   `match_basis = 'position'`.
+
+The options as they were put:
 
 1. **Approve the source class.** SILO would fetch document bodies from FNET's
    undocumented download endpoint, and add the three tables in §4. The
