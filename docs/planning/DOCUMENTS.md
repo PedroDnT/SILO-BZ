@@ -496,7 +496,8 @@ second slice. They need only another root element and another key registry.
 4. Unlinked documents wait for the fortnightly `cnpjFundo` sweep.
 5. 13-digit CNPJs are stored as printed, with `declared_cnpj` NULL.
 6. Backfill 2026 only for now. Older years are decided after the 2026 run
-   shows real runtime and FNET latency.
+   shows real runtime and FNET latency; that backfill is on the roadmap as
+   `OPEN_ITEMS.md` row 2f.
 7. The crosswalk is deferred to the "risco subiu" screen.
 8. Unkeyed repeated blocks are served position-matched, flagged
    `match_basis = 'position'`.
