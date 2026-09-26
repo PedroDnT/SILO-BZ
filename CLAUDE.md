@@ -200,7 +200,8 @@ per restatement, with a status for every one it could not compare) and
 `fnet_document_diff` (one row per differing leaf; `match_basis` path / key / position,
 position rows flagged, never hidden). Its own `daily_ingest` job (audit `fnet` / `diff`,
 capped per run, the rest stays queued); history is `backfill.yml` `fnet_diff` over
-`fnet_start..fnet_end`. Not served yet.
+`fnet_start..fnet_end`. Served by `api.fund_restatement_diff` and `fund_restatements`'
+`diff_status` / `n_fields_changed` (catalog v40, analytical file 24).
 
 **Lineage.** `cvm_ingest_log` carries `git_sha` (from `GITHUB_SHA`, NULL when unset —
 never guessed) and `parser_version` (`PARSER_VERSION` in `src/pipeline/ingest_log.py`;

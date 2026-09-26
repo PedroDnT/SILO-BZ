@@ -1,6 +1,6 @@
 # Restatement diffs: what a fund changed between versions
 
-**Status: design approved 2026-09-26 (decisions in §11). Slice 1's ingest is built (migration 46, `src/pipeline/fnet_diff.py`); serving (§8) is next.** This is stage 2 of the
+**Status: design approved 2026-09-26 (decisions in §11). Slice 1 is built: ingest (migration 46, `src/pipeline/fnet_diff.py`) and serving (§8, catalog v40).** This is stage 2 of the
 FNET work (`COMPETITIVE_GAPS.md` §4.3 and backlog B4; `OPEN_ITEMS.md` item 14,
 row 2c). It adds a new source class, document bodies, so it needs Pedro's
 decisions (§11) before any schema work starts. It sits on top of the register
@@ -413,8 +413,8 @@ diff rows:
 ## 8. Serving
 
 - **`api.fund_restatement_diff(p_cnpj, p_from, p_to, p_tipo, p_fnet_id)`**, in
-  a new analytical file `27_api_fnet_diff.sql`, following `19_api_contract.sql`
-  and 24.
+  `24_api_fnet.sql` beside the register's two functions (built there rather
+  than in a new file 27: one FNET file, one guard).
   - Returns one row per differing field, with the pair's context:
     `fnet_id`, `prev_fnet_id`, `cnpj`, `tipo_documento`, `reference_raw`,
     `versao`, `modalidade`, `delivered_at` of both versions, `lag_days`,

@@ -134,7 +134,8 @@ The only public record of FIDC restatements: CVM's FIDC CSVs carry no version
 field. Contract and quirks: `src/fetchers/fnet_fetcher.py`. History is loaded
 with `run_backfill --fnet-only --fnet-start … [--fnet-sweep]`. Restatement diffs (FIDC informe
 mensal, backlog B4) run daily in their own job, capped per run; history is
-`backfill.yml` with `fnet_diff` (`src/pipeline/fnet_diff.py`). Not served yet.
+`backfill.yml` with `fnet_diff` (`src/pipeline/fnet_diff.py`). Served by
+`fund_restatement_diff` (catalog v40).
 
 ### ANBIMA / commercial
 
@@ -354,6 +355,7 @@ endpoint of its own.
 | `bacen_sgs` — the nine non-inflation series (432, 11, 12, 189, 188, 25, 1, 21619, 4380), `bacen_ptax` | BACEN macro and PTAX | **Yes** (catalog v38): `macro_series` (one series by label or SGS code, registry mirrored from `SGS_SERIES` minus `INFLATION_SERIES`, `unit` and `frequency` on every row; measured 2026-09-25: SELIC_META is published ahead to the next Copom date, SGS 25 is the OLD-RULE poupança return per anniversary day) and `ptax` (compra / venda per currency, BRL per unit, the Fechamento bulletin for a completed day — measured against SGS 1 and Olinda), and `coverage()` rows `macro_series` and `ptax`. Nothing derived. |
 | `fnet_document`, `fnet_document_filter`, `dim_fund` + `cvm_fund_registry` (via `25_api_filing_screens.sql`) | filing behaviour: restatements, delivery lag, silence | **Yes** (catalog v37), as signals: `screen_restatements` (per `cnpjFundo` link, re-filings in a trailing delivery window, RE vs RC), `screen_late_filers` (first FNET delivery of the monthly informe against the deadline Resolução CVM 175 states — FIDC Anexo II art. 27 III, FII Anexo III art. 36 I, 15 days — cited on every row, measured from 2024-12 FIDC / 2025-07 FII) and `screen_silent_filers` (registry-active funds whose last filing in CVM's own tables is N complete months behind `latest_complete_period`, FNET's newest delivery as context). No fund is identified by name. |
 | `fnet_document`, `fnet_document_filter` | the FNET register: versions, restatements, delivery timestamps, fund links (migration 42) | **Yes** (catalog v33, `24_api_fnet.sql`): `fund_documents` (one fund's documents through its `cnpjFundo` links, newest delivery first, with FNET's download link as `source_url`) and `fund_restatements` (every `versao` > 1, paired with its predecessor by the stated key (cnpj link, categoria, tipo_documento, especie, reference_raw) because FNET links no versions; unlinked documents are served with `cnpj` NULL and never paired), and one `coverage()` row (`fnet_documents`, keyed on the delivery day). A document's fund is a link row or unknown — never its name; links come from the fortnightly sweep, so the newest documents may have none yet. |
+| `fnet_document_pair`, `fnet_document_diff` (via `fnet_document_body` hashes) | what a restatement changed, field by field (migration 46) | **Yes** (catalog v40, `24_api_fnet.sql`): `fund_restatement_diff` (one row per differing field of a compared pair, needs `p_cnpj` or `p_fnet_id`; text as printed, `old_num` / `new_num` / `delta` on numeric leaves only, `match_basis` path / key / position) and `fund_restatements`' `n_fields_changed` / `diff_status`, for the pair it serves only. FIDC informe mensal, restatements delivered from 2026 on; no body is kept. |
 
 ### Held and not served — candidates
 

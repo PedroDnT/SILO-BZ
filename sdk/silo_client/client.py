@@ -29,7 +29,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 39
+KNOWN_CATALOG_VERSION = 40
 
 
 class SiloCatalogDrift(UserWarning):
@@ -99,8 +99,8 @@ class SiloOverCap(SiloError):
     option_history, termo_history, financials, company_financials,
     anbima_classes, inflation, inflation_items, fidc_cedentes, fidc_sacados,
     fidc_portfolio, fidc_tranches, fidc_aging, fund_documents,
-    fund_restatements, company_events, macro_series, ptax and the screen_*
-    functions — have no cursor: narrow the
+    fund_restatements, fund_restatement_diff, company_events, macro_series,
+    ptax and the screen_* functions — have no cursor: narrow the
     window instead (the fidc concentration trio also take an explicit
     `limit` for the newest N rows).
 
@@ -766,11 +766,36 @@ class SiloClient:
         reference_raw), highest lower versao, greatest fnet_id on a tie —
         because FNET links no versions. `cnpj` is None when the fund sweep has
         not linked the document yet; such rows are never paired. `tipo_fundo`
-        is 'FII', 'FIDC' or 'ETF'. No cursor: narrow the window.
+        is 'FII', 'FIDC' or 'ETF'. `diff_status` / `n_fields_changed` say
+        whether SILO diffed this exact pair (None = not diffed; see
+        `fund_restatement_diff`). No cursor: narrow the window.
         """
         return self._rpc("fund_restatements", {
             "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
             "p_tipo_fundo": tipo_fundo,
+        })
+
+    def fund_restatement_diff(self, cnpj: Optional[str] = None, start: Datish = None,
+                              end: Datish = None, tipo: Optional[str] = None,
+                              fnet_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """What a restatement changed: one row per field that differs.
+
+            silo.fund_restatement_diff(fnet_id=857292)           # one re-filed document
+            silo.fund_restatement_diff("07727002000126", start="2026-01-01")
+
+        Needs `cnpj` or `fnet_id`. Rows exist only for pairs SILO diffed (the
+        FIDC informe mensal, delivered from 2026 on), against the same
+        `previous_fnet_id` `fund_restatements` serves. `field_path` addresses
+        repeated blocks by declared key or, lacking one, by position
+        (`match_basis`; position rows are approximate). `old_value` /
+        `new_value` are the text as printed; `old_num` / `new_num` / `delta`
+        exist on numeric leaves only. No rows can mean "nothing changed" or
+        "not diffed": `fund_restatements`' `diff_status` says which. No cursor:
+        narrow the window or pin `fnet_id`.
+        """
+        return self._rpc("fund_restatement_diff", {
+            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
+            "p_tipo": tipo, "p_fnet_id": fnet_id,
         })
 
     # -- filing-behaviour screens (v37) --------------------------------------

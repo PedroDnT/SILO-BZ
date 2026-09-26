@@ -433,6 +433,10 @@ def test_the_queue_pairs_exactly_as_fund_restatements_does():
     ):
         assert predicate in served
         assert predicate.replace("r.", "c.") in fd._QUEUE_SQL, predicate
+    # Done means done against TODAY's predecessor: fund_restatements joins the
+    # pair row the same way, so a stale diff is re-queued, never served.
+    assert "p.prev_fnet_id IS NOT DISTINCT FROM x.prev_fnet_id" in fd._QUEUE_SQL
+    assert "dp.prev_fnet_id IS NOT DISTINCT FROM pv.fnet_id" in served
 
 
 def test_cli_rejects_a_reversed_window(monkeypatch):
