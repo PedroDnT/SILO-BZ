@@ -319,6 +319,38 @@ async def test_daily_update_audits_register_and_fund_link_separately(monkeypatch
     assert len(days) == 2 and (days[1] - days[0]).days == 1
 
 
+async def test_a_night_of_the_daily_sweep_fits_inside_its_step(monkeypatch):
+    """At 14 slices a night was ~746 funds, about 6 h against a 60-minute step.
+
+    The step was killed every night (run 36222582857 after 147 funds), which
+    failed the scheduled run and left the day's fund_link audit row 'running'.
+    Measured 2026-09-26: 10,444 FII/FIDC funds; 30.5 s a fund on the slower of
+    two logged nights; the register crawl before the sweep took up to 6 min;
+    one fund that times out five times costs 5 x 180 s plus backoff, ~16 min.
+    """
+    monkeypatch.delenv("FNET_SWEEP_SLICES", raising=False)
+    seen: Dict[str, int] = {}
+
+    def fake_slice(cnpjs, day, slices):
+        seen["slices"] = slices
+        return []
+
+    async def fake_audited(client, entity, doc_type, fn, **kw):
+        return await fn()
+
+    ing, _, up = _ingestor(_FakeFetcher({}))
+    ing.registry_funds = lambda: []
+    with up, patch.object(fp, "audited", side_effect=fake_audited), \
+            patch.object(fp, "sweep_slice", side_effect=fake_slice):
+        await ing.daily_update()
+
+    wf = (ROOT / ".github/workflows/daily_ingest.yml").read_text(encoding="utf-8")
+    step = wf[wf.index("- name: Refresh FNET document register"):]
+    timeout = int(re.search(r"timeout-minutes:\s*(\d+)", step).group(1))
+    sweep_minutes = 10_444 / seen["slices"] * 30.5 / 60
+    assert sweep_minutes + 6 + 16 <= timeout, (seen["slices"], round(sweep_minutes), timeout)
+
+
 async def test_backfill_audits_one_row_per_calendar_month():
     fake = _FakeFetcher({})
     ing, _, up = _ingestor(fake)

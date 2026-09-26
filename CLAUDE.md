@@ -188,7 +188,8 @@ CVM-required). It is the only public record of FIDC restatements — CVM's FIDC 
 no version. FNET rows carry **no CNPJ**: a document's fund is a `cnpjFundo` row in
 `fnet_document_filter` (the CNPJ we queried with) or it is unknown — never inferred from
 `fund_name`. The daily run crawls the last 3 delivery days (day windows; a month-wide
-query times out) and sweeps a rotating 1/14 of the FII/FIDC registry; history is
+query times out) and sweeps a rotating 1/150 of the FII/FIDC registry (about 70 funds
+a night; a fund search averages ~25 s, so 1/14 overran the 60-minute step); history is
 `backfill.yml` with `fnet_start` / `fnet_end` (one year per dispatch) and `fnet_sweep`.
 Served by `api.fund_documents` / `api.fund_restatements` (analytical file 24).
 
