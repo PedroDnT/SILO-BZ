@@ -128,7 +128,7 @@ def test_coverage_reports_each_tab_with_its_start_month():
                        ("fidc_sectors", "2013-01"), ("fidc_scr", "2023-10")):
         assert f"'{row}'::text" in cov, f"coverage lacks the {row} row"
         seg = cov[cov.index(f"'{row}'::text"):]
-        seg = seg[: seg.index("FROM public.")]
+        seg = seg[: seg.index("UNION ALL")]
         assert start in seg, f"{row}'s notes must say the series starts {start}"
         assert "public.latest_complete_period('fidc')" in seg
 
