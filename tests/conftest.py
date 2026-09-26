@@ -7,6 +7,7 @@ import asyncio
 import os
 import tempfile
 import shutil
+import subprocess
 from typing import Dict, List, Any
 from unittest.mock import Mock, AsyncMock
 
@@ -208,3 +209,19 @@ INGEST_LOG_COLUMNS = frozenset({
 @pytest.fixture
 def ingest_log_columns():
     return INGEST_LOG_COLUMNS
+
+
+@pytest.fixture(scope="session")
+def gnu_date():
+    """Skip unless bash runs a GNU `date`.
+
+    backfill.yml's "Validate FNET inputs" step checks each date with
+    `date -u -d`. macOS ships BSD `date`, which rejects `-d`, so a guard that
+    only looked for a `date` on PATH ran the step there and failed every
+    valid date. Probe the step's own call instead.
+    """
+    if shutil.which("bash") is None:
+        pytest.skip("needs bash + GNU date")
+    probe = subprocess.run(["bash", "-c", "date -u -d 2026-01-01 +%F"], capture_output=True, text=True)
+    if probe.stdout.strip() != "2026-01-01":
+        pytest.skip("needs bash + GNU date")
