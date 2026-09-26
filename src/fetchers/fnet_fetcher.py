@@ -213,6 +213,59 @@ class FnetFetcher:
         logger.info("FNET %s: %d documents", label, len(rows))
         return rows
 
+    # ── document bodies (backlog B4, docs/planning/DOCUMENTS.md §2.1) ─────
+
+    def client(self) -> httpx.AsyncClient:
+        """One HTTP client for a run of ``download`` calls."""
+        return httpx.AsyncClient(timeout=httpx.Timeout(self.timeout), headers=_HEADERS,
+                                 follow_redirects=True)
+
+    async def download(self, client: httpx.AsyncClient, fnet_id: int) -> Tuple[bytes, Optional[str], Optional[str]]:
+        """One document body: ``(bytes, content_type, filename)``, as served.
+
+        ``GET downloadDocumento?id=<fnet_id>`` (verified 2026-09-25): no login
+        or cookie; ``Content-Disposition`` names the file. The content type is
+        recorded, never assumed from the document type (FIDC informe
+        trimestral comes as a PDF). Paced and retried like the search; an HTML
+        page or an empty body with 200 is treated as a challenge and retried.
+        """
+        label = f"download id={fnet_id}"
+        url = f"{self.base_url}/downloadDocumento"
+        attempts = max(1, self.max_retries)
+        last_exc: Optional[BaseException] = None
+        for attempt in range(1, attempts + 1):
+            await self._pace()
+            try:
+                resp = await client.get(url, params={"id": int(fnet_id)}, headers={"Accept": "*/*"})
+            except httpx.HTTPError as exc:
+                last_exc = exc
+                logger.warning("FNET %s transport error attempt=%d/%d: %s", label, attempt, attempts, exc)
+            else:
+                ctype = resp.headers.get("content-type")
+                if resp.status_code in _RETRY_STATUSES:
+                    last_exc = FnetFetchError(f"{label} returned HTTP {resp.status_code}")
+                    logger.warning("FNET %s HTTP %s attempt=%d/%d", label, resp.status_code, attempt, attempts)
+                elif resp.status_code != 200:
+                    raise FnetFetchError(f"{label} returned HTTP {resp.status_code}: {resp.text[:300]}")
+                elif not resp.content or "html" in (ctype or "").lower():
+                    last_exc = FnetFetchError(
+                        f"{label} returned {len(resp.content)} bytes of {ctype!r}: {resp.content[:120]!r}")
+                    logger.warning("FNET %s empty or HTML body attempt=%d/%d", label, attempt, attempts)
+                else:
+                    return resp.content, ctype, _filename(resp.headers.get("content-disposition"))
+            if attempt < attempts:
+                await asyncio.sleep(self.retry_delay * attempt)
+        raise FnetFetchError(f"FNET {label} failed after {attempts} attempts: {last_exc!r}")
+
+
+_FILENAME_RE = re.compile(r"""filename\*?=(?:UTF-8'')?"?([^";]+)"?""", re.IGNORECASE)
+
+
+def _filename(disposition: Optional[str]) -> Optional[str]:
+    """The ``Content-Disposition`` filename as served, or None."""
+    m = _FILENAME_RE.search(disposition or "")
+    return m.group(1).strip() if m else None
+
 
 # ---------------------------------------------------------------------------
 # Parsing — one FNET row → one fnet_document row. Pure; no I/O.

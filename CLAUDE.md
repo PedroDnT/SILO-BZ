@@ -192,6 +192,16 @@ query times out) and sweeps a rotating 1/14 of the FII/FIDC registry; history is
 `backfill.yml` with `fnet_start` / `fnet_end` (one year per dispatch) and `fnet_sweep`.
 Served by `api.fund_documents` / `api.fund_restatements` (analytical file 24).
 
+**Restatement diffs** (migration 46, backlog B4, `docs/planning/DOCUMENTS.md`) say what a
+re-filed FIDC informe mensal changed. `src/pipeline/fnet_diff.py` downloads the body and
+its predecessor, paired by `fund_restatements`' own group key, and stores
+`fnet_document_body` (hashes and header, **no raw XML**), `fnet_document_pair` (one row
+per restatement, with a status for every one it could not compare) and
+`fnet_document_diff` (one row per differing leaf; `match_basis` path / key / position,
+position rows flagged, never hidden). Its own `daily_ingest` job (audit `fnet` / `diff`,
+capped per run, the rest stays queued); history is `backfill.yml` `fnet_diff` over
+`fnet_start..fnet_end`. Not served yet.
+
 **Lineage.** `cvm_ingest_log` carries `git_sha` (from `GITHUB_SHA`, NULL when unset —
 never guessed) and `parser_version` (`PARSER_VERSION` in `src/pipeline/ingest_log.py`;
 bump it only when a parser or field map changes what a stored value means).

@@ -1,6 +1,6 @@
 # Restatement diffs: what a fund changed between versions
 
-**Status: design approved 2026-09-26 (decisions in §11). Nothing here is built yet.** This is stage 2 of the
+**Status: design approved 2026-09-26 (decisions in §11). Slice 1's ingest is built (migration 46, `src/pipeline/fnet_diff.py`); serving (§8) is next.** This is stage 2 of the
 FNET work (`COMPETITIVE_GAPS.md` §4.3 and backlog B4; `OPEN_ITEMS.md` item 14,
 row 2c). It adds a new source class, document bodies, so it needs Pedro's
 decisions (§11) before any schema work starts. It sits on top of the register
@@ -287,8 +287,10 @@ upsert is `ON CONFLICT … DO UPDATE`. Nothing is keyed on a name.
     pair; never from a name
   - `pair_rule`: `'group_key_v1'`, the rule in §5
   - `status`: `compared` | `unpairable_no_link` | `unpairable_no_reference` |
-    `no_predecessor` | `body_not_xml` | `parse_error` | `declared_mismatch`
-    (the XML's own CNPJ or reference disagrees with the link or the register)
+    `no_predecessor` | `body_not_xml` | `parse_error` | `unsupported_root` |
+    `declared_mismatch` (the XML's own CNPJ or reference disagrees with the
+    link or the register) | `body_hash_mismatch` (a stored body re-fetched
+    with different bytes; added in the build, see §3), with `detail` saying why
   - `n_changed`, `n_added`, `n_removed`
   - `identical_bytes` and `identical_canonical` (a re-upload with nothing
     changed; the benchmark reports about 7% of these)
@@ -386,8 +388,10 @@ diff rows:
 - **Daily.** This is a new step after the FNET register step in `run_daily`.
   - It works through a queue: every document in scope with `versao` > 1 that
     has no `compared` pair row.
-  - For each, it downloads the body of the document and its predecessor,
-    skipping any body already held.
+  - For each, it downloads the body of the document and its predecessor.
+    Under decision 2 (b) no body is held, so a body is re-downloaded when a
+    later pair needs it (within one run, a group's versions share a
+    download).
   - It shares the fetcher's pacing: 1 request/s at most (`FNET_MIN_INTERVAL`),
     retrying on 403, 429 and 5xx and on a dropped connection.
   - A per-run cap (for example `FNET_DIFF_MAX_DOCS=500`) bounds the runtime.
@@ -409,7 +413,7 @@ diff rows:
 ## 8. Serving
 
 - **`api.fund_restatement_diff(p_cnpj, p_from, p_to, p_tipo, p_fnet_id)`**, in
-  a new analytical file `25_api_fnet_diff.sql`, following `19_api_contract.sql`
+  a new analytical file `27_api_fnet_diff.sql`, following `19_api_contract.sql`
   and 24.
   - Returns one row per differing field, with the pair's context:
     `fnet_id`, `prev_fnet_id`, `cnpj`, `tipo_documento`, `reference_raw`,
@@ -423,7 +427,7 @@ diff rows:
 - **`api.fund_restatements` gains `n_fields_changed` and `diff_status`**
   (NULL = not compared), so a caller can see which restatements have a diff
   before asking for one.
-- **Catalog v35**, with a caveat: the diff compares FNET's versions of a
+- **Catalog v40**, with a caveat: the diff compares FNET's versions of a
   document, not CVM's CSVs; tab VIII (debtors) is not in the public XML, so
   restatements of it are invisible; and `position`-matched rows are
   approximate by construction.
@@ -476,7 +480,7 @@ diff rows:
 - migration 46 with the three tables (option (b), no raw XML)
 - the key registry for the FIDC tranche and cedente lists
 - the daily queue plus a 2026 backfill dispatch
-- `api.fund_restatement_diff` at catalog v35
+- `api.fund_restatement_diff` at catalog v40
 - offline tests on the G3 fixtures (820655 / 828381 / 857292: 1 then 31
   changed leaves) and G4 (the collapsed duplicate blocks, which must report
   as key/position-matched removals, not 9 + 3 noise)

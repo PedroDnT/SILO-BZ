@@ -122,14 +122,19 @@ history has been loaded with
 
 ### B3 Fundos.NET — the fund document register (`fnet.bmfbovespa.com.br`)
 
-| Table                  | Grain                                           | Notes                                                                                                                                                                                                                                                                         |
-| ---------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fnet_document`        | FNET document id (**each version is a new id**) | metadata only (no bodies): type, reference date, delivery timestamp, `versao`, `modalidade` (AP original / RE voluntary restatement / RC CVM-required), `status` (AC / IC superseded / CC) as of `fetched_at`. Daily: trailing 3 delivery days. Migration 42.                 |
-| `fnet_document_filter` | document × query filter                         | "FNET returned this id for `tipoFundo`=1/2/3 or `cnpjFundo`=X". FNET rows carry **no CNPJ and no fund type**, so a document's fund is known only this way, never from its name. The daily run sweeps 1/14 of the FII/FIDC registry, so every fund is linked once a fortnight. |
+| Table                  | Grain                                           | Notes                                                                                                                                                                                                                                                                                      |
+| ---------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `fnet_document`        | FNET document id (**each version is a new id**) | metadata only (no bodies): type, reference date, delivery timestamp, `versao`, `modalidade` (AP original / RE voluntary restatement / RC CVM-required), `status` (AC / IC superseded / CC) as of `fetched_at`. Daily: trailing 3 delivery days. Migration 42.                              |
+| `fnet_document_filter` | document × query filter                         | "FNET returned this id for `tipoFundo`=1/2/3 or `cnpjFundo`=X". FNET rows carry **no CNPJ and no fund type**, so a document's fund is known only this way, never from its name. The daily run sweeps 1/14 of the FII/FIDC registry, so every fund is linked once a fortnight.              |
+| `fnet_document_body`   | FNET document id                                | a downloaded body's hashes (`sha256` as served, `canonical_sha256` of the parsed form), content type, filename and the XML's own CNPJ / reference **as printed**; `parse_status`. No raw XML is kept. Migration 46.                                                                        |
+| `fnet_document_pair`   | restated document × predecessor                 | one row per FIDC informe mensal with `versao` > 1: the predecessor it was compared with (`fund_restatements`' group key) and `n_changed` / `n_added` / `n_removed`, or why it could not be compared (unlinked, no predecessor yet, not XML, a declared key or a body hash that disagrees). |
+| `fnet_document_diff`   | pair × field path                               | one row per differing leaf: old / new text as printed, `old_num` / `new_num` only where the leaf is numeric, `change_kind`, `match_basis` (path / key / position).                                                                                                                         |
 
 The only public record of FIDC restatements: CVM's FIDC CSVs carry no version
 field. Contract and quirks: `src/fetchers/fnet_fetcher.py`. History is loaded
-with `run_backfill --fnet-only --fnet-start … [--fnet-sweep]`.
+with `run_backfill --fnet-only --fnet-start … [--fnet-sweep]`. Restatement diffs (FIDC informe
+mensal, backlog B4) run daily in their own job, capped per run; history is
+`backfill.yml` with `fnet_diff` (`src/pipeline/fnet_diff.py`). Not served yet.
 
 ### ANBIMA / commercial
 
