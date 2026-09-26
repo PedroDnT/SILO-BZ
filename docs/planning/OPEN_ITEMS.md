@@ -369,7 +369,7 @@ Nothing in wave 2 that depends on these starts until each has an answer.
 | --- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
 | 2a  | `api.screen_restatements`: funds and months with restated filings, by `modalidade`                                             | 1b                 |
 | 2b  | Filing punctuality and silent funds, from FNET delivery timestamps                                                             | 1b                 |
-| 2c  | B4, field-level restatement diffs (`fnet_document_diff`): designed in [DOCUMENTS.md](DOCUMENTS.md), awaiting its §11 decisions | 1b                 |
+| 2c  | B4, field-level restatement diffs (`fnet_document_diff`): designed in [DOCUMENTS.md](DOCUMENTS.md); its eight §11 decisions were taken 2026-09-26 (all as recommended), slice 1 (FIDC informe mensal) is next | 1b                 |
 | 2d  | FII keys carry `versao`                                                                                                        | gate 1, yes to (2) |
 | 2e  | `fidc_*` caps raise instead of trimming                                                                                        | gate 1, yes to (1) |
 

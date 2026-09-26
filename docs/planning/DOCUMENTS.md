@@ -485,7 +485,30 @@ No crosswalk and no screen. The acceptance test is B4's own: **the PCG Brasil
 2024-12 diff matches a manual reading.** FII mensal and trimestral follow in a
 second slice. They need only another root element and another key registry.
 
-## 11. Decisions for Pedro
+## 11. Decisions (taken 2026-09-26)
+
+Pedro took all eight as recommended, in this session, on 2026-09-26. Each is
+now a rule of the build, not an open question.
+
+1. **Source class approved.** SILO fetches document bodies from FNET's
+   undocumented download endpoint and adds the three tables in §4.
+2. **Raw XML: hashes and diffs only** (option (b), about 35–40 MB/yr). A body
+   is re-fetchable by `fnet_id`; nothing in the warehouse keeps it.
+3. **Slice 1 is FIDC informe mensal alone.** FII mensal and trimestral follow
+   in a second slice.
+4. **Unlinked documents wait for the fortnightly cnpjFundo sweep.** The XML's
+   declared CNPJ is stored (`declared_cnpj`) but never used as a link.
+5. **13-digit CNPJs in the XML are stored as printed, `declared_cnpj` NULL.**
+   No padding.
+6. **Backfill: 2026 first, then 2025, then stop and measure.** FNET answers
+   Actions runners in about 60 s a request (runs 52 and 53), so a year takes
+   several 6-hour dispatches; deeper history only on demand.
+7. **The crosswalk is deferred** to the "risco subiu" screen. Slice 1 diffs
+   XML leaves by path.
+8. **Unkeyed repeated blocks are served position-matched**, flagged
+   `match_basis = 'position'`, never suppressed.
+
+The eight as they were put to Pedro, for the record:
 
 1. **Approve the source class.** SILO would fetch document bodies from FNET's
    undocumented download endpoint, and add the three tables in §4. The
