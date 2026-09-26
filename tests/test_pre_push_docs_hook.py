@@ -12,6 +12,12 @@ Its contract, pinned below:
 
 * no CHANGELOG row on the branch -> the push is denied, every time, until the
   row lands or a commit carries a `No-changelog: <reason>` trailer;
+* a row main had at the merge base missing from HEAD, word for word -> the
+  push is denied, every time, until the row is back or a commit carries a
+  `Changelog-removes: <reason>` trailer. On 2026-09-26 GitHub's update of
+  #322's branch from main dropped #324's and #325's rows, and the PR merged
+  green. `.github/workflows/test.yml` runs the same comparison on pull
+  requests, for the merges this hook never sees;
 * README.md untouched -> the push is denied ONCE per branch with a staleness
   checklist (README, planning index, OPEN_ITEMS); the next push goes through,
   so the check costs one round trip, never a loop;
@@ -33,6 +39,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 HOOK = ROOT / ".claude/hooks/pre-push-docs.sh"
 SETTINGS = ROOT / ".claude/settings.json"
+WORKFLOW = ROOT / ".github/workflows/test.yml"
 
 pytestmark = pytest.mark.skipif(
     not all(shutil.which(tool) for tool in ("bash", "git", "jq")),
@@ -42,6 +49,11 @@ pytestmark = pytest.mark.skipif(
 BRANCH = "claude/some-feature"
 HEADER = "| Date | Branch | Change |\n| --- | --- | --- |\n"
 ROW = HEADER + f"| 2026-09-26 | {BRANCH} | **A change.** Why it matters. |\n"
+# Two rows another branch lands on main first, as #324 and #325 did.
+THEIRS = ["| 2026-09-26 | claude/other | **Catalog v40: a new endpoint.** Why. |",
+          "| 2026-09-26 | claude/other | **Slice 1 is built.** Why. |"]
+RESTORED = ROW + "".join(f"{row}\n" for row in THEIRS)
+README = {"README.md": "# SILO\nA new fact.\n"}  # keeps the README check out of the way
 # A git hook running this suite would leak GIT_DIR / GIT_INDEX_FILE into the
 # scratch repositories below.
 ENV = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
@@ -85,14 +97,30 @@ def repo(tmp_path: Path) -> Path:
 
 
 def run_hook(repo: Path, command: str = f"git push -u origin {BRANCH}",
-             project: Path | None = None) -> dict | None:
+             project: Path | None = None, hook: Path = HOOK) -> dict | None:
     """Run the hook as Claude Code does. None means the push goes through."""
     payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash",
                "tool_input": {"command": command}, "cwd": str(repo)}
     env = {**ENV, "CLAUDE_PROJECT_DIR": str(project or repo)}
-    out = subprocess.run(["bash", str(HOOK)], input=json.dumps(payload), env=env,
+    out = subprocess.run(["bash", str(hook)], input=json.dumps(payload), env=env,
                          check=True, capture_output=True, text=True)
     return json.loads(out.stdout) if out.stdout.strip() else None
+
+
+def advance_main(repo: Path, changelog: str) -> None:
+    """Another branch merges first: main gains rows this branch does not have."""
+    git(repo, "checkout", "-q", "main")
+    commit(repo, {"docs/planning/CHANGELOG.md": changelog}, "another branch merges")
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(repo, "checkout", "-q", BRANCH)
+
+
+def merge_main_keeping_our_changelog(repo: Path) -> None:
+    """#322's shape: the branch has its row, main gains two, and the merge of
+    main into the branch keeps the branch's side of the CHANGELOG conflict."""
+    commit(repo, {"src/app.py": "x = 2\n", "docs/planning/CHANGELOG.md": ROW, **README})
+    advance_main(repo, HEADER + "".join(f"{row}\n" for row in THEIRS))
+    git(repo, "merge", "-q", "--no-edit", "-X", "ours", "main")
 
 
 def denied(result: dict | None) -> str:
@@ -132,6 +160,120 @@ def test_a_no_changelog_trailer_stands_in_for_the_row(repo):
            "Update the landscape\n\nNo-changelog: the Scout edits COMPETITIVE_GAPS.md only")
     assert "No CHANGELOG row" not in denied(run_hook(repo))
     assert run_hook(repo) is None
+
+
+def test_a_merge_that_drops_rows_main_had_is_held_until_they_are_back(repo):
+    merge_main_keeping_our_changelog(repo)
+    reason = denied(run_hook(repo))
+    assert "CHANGELOG rows dropped" in reason and "no longer has 2 row(s)" in reason
+    assert all(row in reason for row in THEIRS)
+    assert f"| {BRANCH} |" not in reason  # its own row is not the missing one
+    # Required, not merely suggested: the next push is held again.
+    assert "CHANGELOG rows dropped" in denied(run_hook(repo))
+    commit(repo, {"docs/planning/CHANGELOG.md": RESTORED})
+    assert run_hook(repo) is None
+
+
+def test_the_dropped_rows_are_named_briefly(repo):
+    long_rows = [f"| 2026-09-2{i} | claude/b{i} | **Row {i}.** {'why ' * 60}|"
+                 for i in range(9, 2, -1)]
+    advance_main(repo, HEADER + "".join(f"{row}\n" for row in long_rows))
+    git(repo, "merge", "-q", "--ff-only", "main")
+    commit(repo, {"docs/planning/CHANGELOG.md": ROW, **README})
+    reason = denied(run_hook(repo))
+    assert "no longer has 7 row(s)" in reason and "…and 2 more" in reason
+    named = [line for line in reason.splitlines() if line.startswith("| 20")]
+    assert named == [row[:160] + "…" for row in long_rows[:5]]
+
+
+def test_a_branch_behind_main_is_not_blamed_for_rows_it_never_had(repo):
+    """The comparison is with the merge base, not origin/main's tip. Every merge
+    adds a row to main, so comparing with the tip would hold nearly every push
+    and send the branch off to merge main, the very step that drops rows."""
+    commit(repo, {"src/app.py": "x = 2\n", "docs/planning/CHANGELOG.md": ROW, **README})
+    advance_main(repo, HEADER + "".join(f"{row}\n" for row in THEIRS))
+    assert run_hook(repo) is None
+
+
+def test_a_changelog_removes_trailer_lets_a_deliberate_removal_through(repo):
+    """#318 removed a stale duplicate row on purpose. A trailer says so."""
+    advance_main(repo, HEADER + "".join(f"{row}\n" for row in THEIRS))
+    git(repo, "merge", "-q", "--ff-only", "main")
+    commit(repo, {"docs/planning/CHANGELOG.md": ROW + f"{THEIRS[0]}\n", **README})
+    assert THEIRS[1] in denied(run_hook(repo))
+    commit(repo, {"src/app.py": "x = 2\n"},
+           "Say why the row goes\n\nChangelog-removes: a stale duplicate of a later row")
+    assert run_hook(repo) is None
+
+
+COMPARISON = 'dropped=$(grep -vxFf <(rows HEAD) <(rows "$base"))'
+
+
+def test_the_dropped_row_test_fails_without_the_comparison(repo, tmp_path_factory):
+    """Mutation check: with the comparison disabled, the merge that drops rows
+    goes through. The deny pinned above comes from the comparison, not from
+    anything else the hook checks."""
+    source = HOOK.read_text(encoding="utf-8")
+    assert source.count(COMPARISON) == 1, "the comparison changed; update COMPARISON"
+    mutant = tmp_path_factory.mktemp("mutant") / "pre-push-docs.sh"
+    mutant.write_text(source.replace(COMPARISON, 'dropped=""'), encoding="utf-8")
+    merge_main_keeping_our_changelog(repo)
+    assert run_hook(repo, hook=mutant) is None
+    assert "CHANGELOG rows dropped" in denied(run_hook(repo))
+
+
+CI_STEP = "No CHANGELOG row dropped against the base branch"
+
+
+def ci_step() -> dict:
+    yaml = pytest.importorskip("yaml")
+    spec = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    return next(step for step in spec["jobs"]["pytest"]["steps"]
+                if step.get("name") == CI_STEP)
+
+
+def run_ci_step(repo: Path, runner: Path) -> subprocess.CompletedProcess:
+    """Run the test.yml step where actions/checkout leaves a pull request:
+    detached on GitHub's merge of the branch into main, one commit deep."""
+    git(repo, "checkout", "-q", "-b", "pull-merge", "main")
+    git(repo, "merge", "-q", "--no-ff", "--no-edit", BRANCH)
+    git(repo, "update-ref", "refs/pull/1/merge", "HEAD")
+    git(repo, "checkout", "-q", BRANCH)
+    git(runner, "init", "-q")
+    git(runner, "remote", "add", "origin", repo.as_uri())
+    git(runner, "fetch", "-q", "--no-tags", "--depth=1", "origin",
+        "+refs/pull/1/merge:refs/remotes/pull/1/merge")
+    git(runner, "checkout", "-q", "--detach", "refs/remotes/pull/1/merge")
+    return subprocess.run(["bash", "-e", "-c", ci_step()["run"]], cwd=runner,
+                          env={**ENV, "BASE_REF": "main"}, capture_output=True, text=True)
+
+
+def test_ci_runs_the_comparison_on_pull_requests():
+    """A PR's pytest job, so it gates whatever already gates that job."""
+    step = ci_step()
+    assert step["if"] == "github.event_name == 'pull_request'"
+    assert step["env"] == {"BASE_REF": "${{ github.base_ref }}"}
+
+
+def test_ci_fails_a_pull_request_that_drops_rows_main_had(repo, tmp_path_factory):
+    merge_main_keeping_our_changelog(repo)
+    result = run_ci_step(repo, tmp_path_factory.mktemp("runner"))
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "::error file=docs/planning/CHANGELOG.md::2 CHANGELOG row(s)" in result.stdout
+    assert all(row in result.stdout for row in THEIRS)
+
+
+@pytest.mark.parametrize("fix", ["restore the rows", "Changelog-removes trailer"])
+def test_ci_passes_once_the_rows_are_back_or_the_removal_is_declared(
+        repo, tmp_path_factory, fix):
+    merge_main_keeping_our_changelog(repo)
+    if fix == "restore the rows":
+        commit(repo, {"docs/planning/CHANGELOG.md": RESTORED})
+    else:
+        commit(repo, {"src/app.py": "x = 3\n"},
+               "Drop two rows\n\nChangelog-removes: superseded by a later row")
+    result = run_ci_step(repo, tmp_path_factory.mktemp("runner"))
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_an_edited_planning_doc_points_at_its_index_row(repo):
