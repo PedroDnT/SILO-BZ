@@ -353,14 +353,19 @@ Nothing in wave 2 that depends on these starts until each has an answer.
 
 1. The older `fidc_*` endpoints trim silently at 500 / 5000 rows. Switch them
    to raise-only (SQLSTATE `22023`), like the newer ones?
+   **Answered 2026-09-26: no.** Keep the silent trim; wave 2e is dropped.
 2. Put `versao` into the keys of `cvm_fii_mensal` and `cvm_fii_periodic`? This
    changes their grain, and it is what stops a restatement overwriting the
    original (`DATA_INVENTORY.md` §2, `COMPETITIVE_GAPS.md` B4).
+   **Answered 2026-09-26: yes.** Wave 2d is unblocked.
 3. Where to host the read-only MCP (B2)? A new runtime; a Vercel function is
    the obvious candidate. **Answered:** a Supabase Edge Function, deployed
    2026-09-25 at `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp`.
 4. A read-only database role for the Sentinel agent ([AGENTS.md](AGENTS.md),
    item 13)?
+   **Answered 2026-09-26: yes.** `docs/security/sentinel_readonly_role.sql` plus
+   `default_transaction_read_only = on`; the owner runs it by hand. Role not yet
+   present (checked `pg_roles` 2026-09-26).
 
 ### Wave 2
 
@@ -370,7 +375,7 @@ Nothing in wave 2 that depends on these starts until each has an answer.
 | 2b  | Filing punctuality and silent funds, from FNET delivery timestamps                                                                                                                                                                                             | 1b                 |
 | 2c  | B4, field-level restatement diffs (`fnet_document_diff`): designed in [DOCUMENTS.md](DOCUMENTS.md), §11 decided 2026-09-26 (slice 1: FIDC mensal, 2026 backfill); built: ingest (migration 46, `fnet_diff`) and serving (`fund_restatement_diff`, catalog v40) | 1b                 |
 | 2d  | FII keys carry `versao`                                                                                                                                                                                                                                        | gate 1, yes to (2) |
-| 2e  | `fidc_*` caps raise instead of trimming                                                                                                                                                                                                                        | gate 1, yes to (1) |
+| 2e  | ~~`fidc_*` caps raise instead of trimming~~ (dropped: gate 1 answered no)                                                                                                                                                                                                                        | gate 1, yes to (1) |
 | 2f  | B4 backfill of 2025 and earlier: restatement diffs for older years, newest-first, one year per dispatch; depth and runner-time budget set from the 2026 run's runtime and FNET latency (DOCUMENTS.md §11, decision 6)                                          | 2c's 2026 run      |
 
 ### Wave 3

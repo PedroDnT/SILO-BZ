@@ -2945,6 +2945,17 @@ AS $$
     -- notes = a caveat the dates cannot carry: a regime boundary where the
     -- series changes meaning mid-stream, or where the columns are per family.
     -- NULL on every row that has none.
+    --
+    -- HOW EACH DATE IS READ. Every period arm is a scalar subquery of the form
+    -- (SELECT MAX(col) FROM t WHERE col <= CURRENT_DATE): with an index on
+    -- col that is one backward index probe. The earlier form,
+    -- MAX(col) FILTER (WHERE col <= CURRENT_DATE) over FROM t, is an ordinary
+    -- aggregate the planner cannot turn into a probe, so it scanned the whole
+    -- table — twice per arm, once bounded and once not — and the fund and
+    -- lending arms alone (fact_fund_monthly, b3_lending_trade) put the call at
+    -- 2.8-3.8 s on production on 2026-09-26, against anon's 3 s statement
+    -- timeout: the bootstrap call every agent is told to make first failed
+    -- about half the time. Same dates, same rows, same order.
     WITH landed AS (
         SELECT l.entity, MAX(l.finished_at) AS landed_at,
                (array_agg(l.git_sha ORDER BY l.finished_at DESC, l.id DESC))[1] AS landed_git_sha
@@ -3022,41 +3033,45 @@ AS $$
     base AS (
         -- Session data (quotes/derivatives) is complete by construction and a
         -- trade_date is never in the future, so all three dates coincide.
-        SELECT 'quotes'::text AS dataset, MAX(q.trade_date) AS as_of,
-               MAX(q.trade_date) AS complete_through, 'b3_cotahist'::text AS source,
-               NULL::text AS notes, MAX(q.trade_date) AS newest_period,
+        SELECT 'quotes'::text AS dataset, (SELECT MAX(q.trade_date) FROM public.vw_b3_quote_vista q) AS as_of,
+               (SELECT MAX(q.trade_date) FROM public.vw_b3_quote_vista q) AS complete_through, 'b3_cotahist'::text AS source,
+               NULL::text AS notes, (SELECT MAX(q.trade_date) FROM public.vw_b3_quote_vista q) AS newest_period,
                'b3'::text AS log_entity
-        FROM public.vw_b3_quote_vista q
         UNION ALL
         SELECT 'funds'::text,
-               MAX(d.last_period) FILTER (WHERE d.last_period <= CURRENT_DATE),
+               (SELECT MAX(d.last_period) FROM public.dim_fund d WHERE d.last_period <= CURRENT_DATE),
                public.latest_complete_period(NULL), 'cvm'::text, NULL::text,
-               MAX(d.last_period), '*funds*'::text
-        FROM public.dim_fund d
+               (SELECT MAX(d.last_period) FROM public.dim_fund d), '*funds*'::text
         UNION ALL
         SELECT 'fund_nav'::text,
-               MAX(f.period) FILTER (WHERE f.period <= CURRENT_DATE),
+               (SELECT MAX(f.period) FROM public.fact_fund_monthly f WHERE f.period <= CURRENT_DATE),
                public.latest_complete_period(NULL), 'cvm'::text,
                'columns are per family: a null outside the family''s list in catalog().applicability is not applicable, not missing. api.metric_coverage() reports the filed span of each (family, metric) pair.'::text,
-               MAX(f.period), '*funds*'::text
-        FROM public.fact_fund_monthly f
+               (SELECT MAX(f.period) FROM public.fact_fund_monthly f), '*funds*'::text
         UNION ALL
         -- Per-family rows: the families file on different cadences (FI daily,
         -- FIDC/FII with a 1-2 month lag, FIP annually), so one blended date
         -- misreads all of them. FIP is exactly where as_of and newest_period
         -- diverge.
-        SELECT 'funds_' || f.entity_type,
-               MAX(f.period) FILTER (WHERE f.period <= CURRENT_DATE),
-               public.latest_complete_period(f.entity_type), 'cvm'::text,
-               CASE f.entity_type
+        SELECT 'funds_' || fam.entity_type,
+               (SELECT MAX(f.period) FROM public.fact_fund_monthly f
+                 WHERE f.entity_type = fam.entity_type AND f.period <= CURRENT_DATE),
+               public.latest_complete_period(fam.entity_type), 'cvm'::text,
+               CASE fam.entity_type
                    WHEN 'fidc' THEN
                        'regime break at 2025-01-31: delinquency is null on every row through 2024-12-31 (CVM''s pre-2025 tab II/III monthly file carries no delinquency field) and filed on every row from 2025-01-31 (tab IV/VI). Not zero, not clean books — never chain-link across 2024-12 → 2025-01. See catalog().regime_breaks.'
                    WHEN 'fip' THEN
                        'files annually, keyed to 31-December: newest_period is a year-end key that can sit in the future, as_of is the newest period that has actually elapsed. Never read newest_period as freshness.'
                END::text,
-               MAX(f.period), f.entity_type
-        FROM public.fact_fund_monthly f
-        GROUP BY f.entity_type
+               (SELECT MAX(f.period) FROM public.fact_fund_monthly f
+                 WHERE f.entity_type = fam.entity_type),
+               fam.entity_type
+        -- The families come from dim_fund (one row per fund, ~70k), not from a
+        -- DISTINCT over the fact matview, which would walk the whole index;
+        -- a family with no fact rows yet produces no row, as before.
+        FROM (SELECT DISTINCT d.entity_type FROM public.dim_fund d) fam
+        WHERE EXISTS (SELECT 1 FROM public.fact_fund_monthly f
+                       WHERE f.entity_type = fam.entity_type)
         UNION ALL
         -- Options + termo land in the same COTAHIST file as cash quotes, but the
         -- segments can lag independently, so freshness is reported per segment.
@@ -3091,28 +3106,25 @@ AS $$
         -- says nothing about companies, and a fabricated completeness date is
         -- exactly the claim this function exists to prevent.
         SELECT 'financials'::text,
-               MAX(f.dt_refer) FILTER (WHERE f.dt_refer <= CURRENT_DATE),
+               (SELECT MAX(f.dt_refer) FROM public.cia_filing f WHERE f.dt_refer <= CURRENT_DATE),
                NULL::date, 'cvm'::text,
                'api.financials serves latest stored statement versions; api.financial_statement_history exposes every stored version for one company and required statement. Exact document metadata may be unavailable; coverage reads filing headers and does not scan partitioned account rows.'::text,
-               MAX(f.dt_refer), 'cia_aberta'::text
-        FROM public.cia_filing f
+               (SELECT MAX(f.dt_refer) FROM public.cia_filing f), 'cia_aberta'::text
         UNION ALL
         -- FII property-register snapshots. The source has no stable property
         -- identifier: row_hash identifies source-row content within a filing,
         -- not the physical asset across reports.
         SELECT 'fii_property_history'::text,
-               MAX(i.data_referencia) FILTER (WHERE i.data_referencia <= CURRENT_DATE),
+               (SELECT MAX(i.data_referencia) FROM public.cvm_fii_imovel i WHERE i.data_referencia <= CURRENT_DATE),
                NULL::date, 'cvm'::text,
                'One exact fund CNPJ; one source row per filing snapshot. CVM publishes no stable property id; row_hash is source-row identity only. NULL measurements remain missing, never zero.'::text,
-               MAX(i.data_referencia), 'fii'::text
-        FROM public.cvm_fii_imovel i
+               (SELECT MAX(i.data_referencia) FROM public.cvm_fii_imovel i), 'fii'::text
         UNION ALL
         SELECT 'focus_expectations'::text,
-               MAX(e.reference_date) FILTER (WHERE e.reference_date <= CURRENT_DATE),
+               (SELECT MAX(e.reference_date) FROM public.bacen_expectativas e WHERE e.reference_date <= CURRENT_DATE),
                NULL::date, 'bacen'::text,
                'Weekly Focus observations by report date and exact horizon. The API pins baseCalculo=0 and unsmoothed 12-month inflation; migration 16 fixed horizon collisions, but older lost horizon rows require re-fetch. Later corrections to survey dates outside the daily 30-day refresh are not a vintage archive.'::text,
-               MAX(e.reference_date), 'bacen'::text
-        FROM public.bacen_expectativas e
+               (SELECT MAX(e.reference_date) FROM public.bacen_expectativas e), 'bacen'::text
         UNION ALL
         -- ANBIMA boletim: a published edition is complete by construction (a
         -- monthly publication, not a filing cadence), so both dates coincide.
@@ -3130,32 +3142,28 @@ AS $$
         -- identifiers are. as_of is bounded like every other period arm; these
         -- file monthly in arrears, so it should equal newest_period.
         SELECT 'fidc_cedentes'::text,
-               MAX(c.period) FILTER (WHERE c.period <= CURRENT_DATE),
+               (SELECT MAX(c.period) FROM public.cvm_fidc_cedente c WHERE c.period <= CURRENT_DATE),
                public.latest_complete_period('fidc'), 'cvm'::text,
                'tab I cedente slots exist from 2019-11; cedente_id is checksum-verified at ingest (placeholders dropped, never coerced); share_pct is a percent of the block, not of the fund'::text,
-               MAX(c.period), 'fidc'::text
-        FROM public.cvm_fidc_cedente c
+               (SELECT MAX(c.period) FROM public.cvm_fidc_cedente c), 'fidc'::text
         UNION ALL
         SELECT 'fidc_sacados'::text,
-               MAX(k.period) FILTER (WHERE k.period <= CURRENT_DATE),
+               (SELECT MAX(k.period) FROM public.cvm_fidc_sacado k WHERE k.period <= CURRENT_DATE),
                public.latest_complete_period('fidc'), 'cvm'::text,
                'tab VIII from 2013-01: the 25 largest debtors as anonymized (rank, value); seq is CVM''s rank as filed, never recomputed'::text,
-               MAX(k.period), 'fidc'::text
-        FROM public.cvm_fidc_sacado k
+               (SELECT MAX(k.period) FROM public.cvm_fidc_sacado k), 'fidc'::text
         UNION ALL
         SELECT 'fidc_sectors'::text,
-               MAX(s.period) FILTER (WHERE s.period <= CURRENT_DATE),
+               (SELECT MAX(s.period) FROM public.cvm_fidc_setor s WHERE s.period <= CURRENT_DATE),
                public.latest_complete_period('fidc'), 'cvm'::text,
                'tab II from 2013-01: receivables by sector, a hierarchy (fidc_portfolio.parent); TOTAL is the panel metric receivables'::text,
-               MAX(s.period), 'fidc'::text
-        FROM public.cvm_fidc_setor s
+               (SELECT MAX(s.period) FROM public.cvm_fidc_setor s), 'fidc'::text
         UNION ALL
         SELECT 'fidc_scr'::text,
-               MAX(r2.period) FILTER (WHERE r2.period <= CURRENT_DATE),
+               (SELECT MAX(r2.period) FROM public.cvm_fidc_scr r2 WHERE r2.period <= CURRENT_DATE),
                public.latest_complete_period('fidc'), 'cvm'::text,
                'tab X exists from 2023-10 only: SCR grade ladders AA..H by debtor and by operation; a month before that has no rows, not zero-graded ones'::text,
-               MAX(r2.period), 'fidc'::text
-        FROM public.cvm_fidc_scr r2
+               (SELECT MAX(r2.period) FROM public.cvm_fidc_scr r2), 'fidc'::text
         UNION ALL
         -- FIDC structure tabs (v31): tranches (X_2/X_3/X_6 + X_4) and the
         -- tab VI aging ladder. Same informe, same fidc completeness clamp.
@@ -3163,18 +3171,16 @@ AS $$
         -- misread: it starts in 2025 because CVM publishes no archive of
         -- these members, not because ingest missed anything.
         SELECT 'fidc_tranches'::text,
-               MAX(t2.period) FILTER (WHERE t2.period <= CURRENT_DATE),
+               (SELECT MAX(t2.period) FROM public.cvm_fidc_tranche t2 WHERE t2.period <= CURRENT_DATE),
                public.latest_complete_period('fidc'), 'cvm'::text,
                'tabs X_2/X_3/X_6 (+ X_4 flows) exist from 2025-01 only: CVM''s pre-2025 HIST archive publishes no equivalent member, so an earlier month has no rows — an upstream limit, not a gap to backfill. Quotas, quota value, return and promised vs realised performance are as filed (percent fields carry CVM''s outliers); flows keep CVM''s TP_OPER labels verbatim'::text,
-               MAX(t2.period), 'fidc'::text
-        FROM public.cvm_fidc_tranche t2
+               (SELECT MAX(t2.period) FROM public.cvm_fidc_tranche t2), 'fidc'::text
         UNION ALL
         SELECT 'fidc_aging'::text,
-               MAX(a2.period) FILTER (WHERE a2.period <= CURRENT_DATE),
+               (SELECT MAX(a2.period) FROM public.cvm_fidc_aging a2 WHERE a2.period <= CURRENT_DATE),
                public.latest_complete_period('fidc'), 'cvm'::text,
                'tab VI exists from 2025-01 only: CVM''s pre-2025 HIST archive publishes no equivalent member, so an earlier month has no rows — an upstream limit, not a gap to backfill. to_maturity and overdue ladders in ten day-bands each, BRL as filed; overdue_total is CVM''s filed total, not a sum of the bands'::text,
-               MAX(a2.period), 'fidc'::text
-        FROM public.cvm_fidc_aging a2
+               (SELECT MAX(a2.period) FROM public.cvm_fidc_aging a2), 'fidc'::text
         UNION ALL
         -- The B3 securities-lending and investor-flow group (#235, #240-#245),
         -- published since but absent from this function until v27 — so the one
@@ -3193,69 +3199,61 @@ AS $$
         -- is an index probe on a date column over a table the retention window
         -- already bounds.
         SELECT 'short_interest'::text,
-               MAX(p.trade_date) FILTER (WHERE p.trade_date <= CURRENT_DATE),
-               MAX(p.trade_date) FILTER (WHERE p.trade_date <= CURRENT_DATE),
+               (SELECT MAX(p.trade_date) FROM public.b3_lending_open_position p WHERE p.trade_date <= CURRENT_DATE),
+               (SELECT MAX(p.trade_date) FROM public.b3_lending_open_position p WHERE p.trade_date <= CURRENT_DATE),
                'b3'::text,
                'RATCHET: B3 keeps ~21 business days of the lending book and publishes no archive, so this series starts at SILO''s first capture and cannot be backfilled at any price — a short window is the retention limit, not a gap. Read pct_float together with float_basis: index_free_float (index constituents only) and shares_outstanding (a larger denominator, so a smaller percentage) are different metrics, and any ranking must filter to one. pct_float and days_to_cover are NULL, never 0, when the denominator is missing or the name did not trade.'::text,
-               MAX(p.trade_date), '*b3_lending_balance*'::text
-        FROM public.b3_lending_open_position p
+               (SELECT MAX(p.trade_date) FROM public.b3_lending_open_position p), '*b3_lending_balance*'::text
         UNION ALL
         SELECT 'short_interest_by_sector'::text,
-               MAX(p.trade_date) FILTER (WHERE p.trade_date <= CURRENT_DATE),
-               MAX(p.trade_date) FILTER (WHERE p.trade_date <= CURRENT_DATE),
+               (SELECT MAX(p.trade_date) FROM public.b3_lending_open_position p WHERE p.trade_date <= CURRENT_DATE),
+               (SELECT MAX(p.trade_date) FROM public.b3_lending_open_position p WHERE p.trade_date <= CURRENT_DATE),
                'b3'::text,
                'Same ratchet and same spine as short_interest. Sector is B3''s own top-level sector from the index portfolios; tickers B3 publishes no sector for (ETFs, BDRs, anything outside the index universe) are bucketed as Não classificado rather than dropped, so the bars sum to the whole book. short_value_equities restricts to SHARES and UNIT for the single-name view.'::text,
-               MAX(p.trade_date), '*b3_lending_balance*'::text
-        FROM public.b3_lending_open_position p
+               (SELECT MAX(p.trade_date) FROM public.b3_lending_open_position p), '*b3_lending_balance*'::text
         UNION ALL
         SELECT 'lending_trades'::text,
-               MAX(t.trade_date) FILTER (WHERE t.trade_date <= CURRENT_DATE),
-               MAX(t.trade_date) FILTER (WHERE t.trade_date <= CURRENT_DATE),
+               (SELECT MAX(t.trade_date) FROM public.b3_lending_trade t WHERE t.trade_date <= CURRENT_DATE),
+               (SELECT MAX(t.trade_date) FROM public.b3_lending_trade t WHERE t.trade_date <= CURRENT_DATE),
                'b3'::text,
                'RATCHET: ~21 business days at the source, no archive, history starts at first capture. rate_pct is quantity-weighted, while B3''s own published average in the lending-rate table weights by NUMBER OF TRADES — the two answer different questions and neither overwrites the other (measured 2026-09-10 across 569 tickers: mean absolute difference 0.037pp). internal_trades counts trades a single broker crossed with itself; about three quarters of the tape is that.'::text,
-               MAX(t.trade_date), '*b3_lending_trade*'::text
-        FROM public.b3_lending_trade t
+               (SELECT MAX(t.trade_date) FROM public.b3_lending_trade t), '*b3_lending_trade*'::text
         UNION ALL
         SELECT 'lending_participants'::text,
-               MAX(t.trade_date) FILTER (WHERE t.trade_date <= CURRENT_DATE),
-               MAX(t.trade_date) FILTER (WHERE t.trade_date <= CURRENT_DATE),
+               (SELECT MAX(t.trade_date) FROM public.b3_lending_trade t WHERE t.trade_date <= CURRENT_DATE),
+               (SELECT MAX(t.trade_date) FROM public.b3_lending_trade t WHERE t.trade_date <= CURRENT_DATE),
                'b3'::text,
                'RATCHET: ~21 business days at the source, no archive, history starts at first capture. broker_code is the B3 PARTICIPANT intermediating, NEVER the beneficial owner: ~75% of trades carry the same code on both legs (32,197 of 43,165 on 2026-09-10), so a large borrow through a broker is its client book, not a position it holds. internal_legs / internal_qty are what separate client churn from directional flow — never read a broker''s quantity_borrowed as its own short.'::text,
-               MAX(t.trade_date), '*b3_lending_trade*'::text
-        FROM public.b3_lending_trade t
+               (SELECT MAX(t.trade_date) FROM public.b3_lending_trade t), '*b3_lending_trade*'::text
         UNION ALL
         -- as_of is the newest REFERENCE date held, which trails the calendar by
         -- B3's T+2 publication lag even when ingest is perfectly healthy. That
         -- is the source's cadence, not our staleness — exactly the distinction
         -- CLAUDE.md draws between complete_through and landed_at.
         SELECT 'investor_flow'::text,
-               MAX(i.reference_date) FILTER (WHERE i.reference_date <= CURRENT_DATE),
-               MAX(i.reference_date) FILTER (WHERE i.reference_date <= CURRENT_DATE),
+               (SELECT MAX(i.reference_date) FROM public.b3_investor_participation i WHERE i.reference_date <= CURRENT_DATE),
+               (SELECT MAX(i.reference_date) FROM public.b3_investor_participation i WHERE i.reference_date <= CURRENT_DATE),
                'b3'::text,
                'RATCHET: ~21 business days at the source, no archive, history starts at first capture. Published T+2, so as_of trails the calendar even when ingest is healthy. The daily figures are a FIRST DIFFERENCE of a month-to-date cumulative snapshot and never difference across a month boundary; flow_basis says which row you have — delta (a real one-session difference), month_open (the month''s first session), or unknown_opening_snapshot (no earlier snapshot held that month), whose flows are NULL BY CONSTRUCTION and must never be read or summed as zeros. Values are R$ thousands.'::text,
-               MAX(i.reference_date), '*b3_investor_flow*'::text
-        FROM public.b3_investor_participation i
+               (SELECT MAX(i.reference_date) FROM public.b3_investor_participation i), '*b3_investor_flow*'::text
         UNION ALL
         -- Inflation (BACEN SGS). The headline month is the honest as_of: the
         -- cores, classifications and groups publish on the same day as 433.
         -- A published month is complete by construction (a statistical
         -- release, not a filing cadence), so both dates coincide.
         SELECT 'inflation'::text,
-               MAX(s.reference_date) FILTER (WHERE s.reference_date <= CURRENT_DATE),
-               MAX(s.reference_date) FILTER (WHERE s.reference_date <= CURRENT_DATE),
+               (SELECT MAX(s.reference_date) FROM public.bacen_sgs s WHERE s.series_code = 433 AND s.reference_date <= CURRENT_DATE),
+               (SELECT MAX(s.reference_date) FROM public.bacen_sgs s WHERE s.series_code = 433 AND s.reference_date <= CURRENT_DATE),
                'bacen'::text,
                'Monthly changes in percent AS PUBLISHED; acc_12m is DERIVED (the trailing twelve monthly changes chained, NULL unless all twelve are present and consecutive) and reproduces BACEN''s own IPCA_12M (13522) exactly for the headline. IPCA15 is the mid-month preview, not a revision. Group rows are variations, never contributions — weights are inflation_items. Group codes 1640..1643 are Comunicação, Saúde, Despesas pessoais, Educação (measured, not IBGE''s order). IPCA runs from 1980-01, cores and groups from 1991-01, IPCA-15 from 2000-05.'::text,
-               MAX(s.reference_date), '*bacen_sgs*'::text
-        FROM public.bacen_sgs s
-        WHERE s.series_code = 433
+               (SELECT MAX(s.reference_date) FROM public.bacen_sgs s WHERE s.series_code = 433), '*bacen_sgs*'::text
         UNION ALL
         SELECT 'inflation_items'::text,
-               MAX(i.reference_month) FILTER (WHERE i.reference_month <= CURRENT_DATE),
-               MAX(i.reference_month) FILTER (WHERE i.reference_month <= CURRENT_DATE),
+               (SELECT MAX(i.reference_month) FROM public.ibge_ipca_item_monthly i WHERE i.reference_month <= CURRENT_DATE),
+               (SELECT MAX(i.reference_month) FROM public.ibge_ipca_item_monthly i WHERE i.reference_month <= CURRENT_DATE),
                'ibge'::text,
                'Weights, monthly / YTD / 12-month changes AS PUBLISHED by IBGE SIDRA (table 1419 for 2012-01..2019-12, 7060 from 2020-01); contribution = weight × change_month / 100 is the one derived column. SIDRA item codes CHANGED with the 2020-01 structure — item_number and names are the continuity, sidra_table says which structure a row came from. Sum contributions within one level only. No item tree exists before 2012-01; the group variations before that are inflation (BACEN).'::text,
-               MAX(i.reference_month), 'ibge'::text
-        FROM public.ibge_ipca_item_monthly i
+               (SELECT MAX(i.reference_month) FROM public.ibge_ipca_item_monthly i), 'ibge'::text
         UNION ALL
         -- The FNET document register (v33; api.fund_documents and
         -- api.fund_restatements in 24_api_fnet.sql). The period is the
@@ -3297,21 +3295,18 @@ AS $$
         -- date; newest_period shows that). A published value is final by
         -- construction, so complete_through = as_of, as on the inflation row.
         SELECT 'macro_series'::text,
-               MAX(s.reference_date) FILTER (WHERE s.reference_date <= CURRENT_DATE),
-               MAX(s.reference_date) FILTER (WHERE s.reference_date <= CURRENT_DATE),
+               (SELECT MAX(s.reference_date) FROM public.bacen_sgs s WHERE s.series_code IN (432, 11, 12, 189, 188, 25, 1, 21619, 4380) AND s.reference_date <= CURRENT_DATE),
+               (SELECT MAX(s.reference_date) FROM public.bacen_sgs s WHERE s.series_code IN (432, 11, 12, 189, 188, 25, 1, 21619, 4380) AND s.reference_date <= CURRENT_DATE),
                'bacen'::text,
                'Nine BACEN SGS series as published, units on every row: SELIC_META (432, % a.a., dated per calendar day and published AHEAD to the next Copom date — newest_period can sit in the future), SELIC_DIARIA (11) and CDI (12, % per business day), IGPM (189) and INPC (188, monthly, published in the following month), POUPANCA (25, the old-rule deposit return, one value per anniversary day), USDBRL (1) and EURBRL (21619, BRL per unit), PIB (4380, monthly, R$ millions). The cadences differ, so as_of is the newest elapsed observation of ANY of them — read a monthly series'' own last row before calling it late.'::text,
-               MAX(s.reference_date), '*bacen_sgs*'::text
-        FROM public.bacen_sgs s
-        WHERE s.series_code IN (432, 11, 12, 189, 188, 25, 1, 21619, 4380)
+               (SELECT MAX(s.reference_date) FROM public.bacen_sgs s WHERE s.series_code IN (432, 11, 12, 189, 188, 25, 1, 21619, 4380)), '*bacen_sgs*'::text
         UNION ALL
         SELECT 'ptax'::text,
-               MAX(p.reference_date) FILTER (WHERE p.reference_date <= CURRENT_DATE),
-               MAX(p.reference_date) FILTER (WHERE p.reference_date <= CURRENT_DATE),
+               (SELECT MAX(p.reference_date) FROM public.bacen_ptax p WHERE p.reference_date <= CURRENT_DATE),
+               (SELECT MAX(p.reference_date) FROM public.bacen_ptax p WHERE p.reference_date <= CURRENT_DATE),
                'bacen'::text,
                'PTAX compra / venda per currency and business day, BRL per one unit of the currency, as published. The ingest keeps the last bulletin of the day it received — the Fechamento PTAX for any completed day (the daily run is 03:00 BRT, before the first bulletin); the bulletin type is not stored.'::text,
-               MAX(p.reference_date), '*bacen_ptax*'::text
-        FROM public.bacen_ptax p
+               (SELECT MAX(p.reference_date) FROM public.bacen_ptax p), '*bacen_ptax*'::text
     )
     SELECT b.dataset, b.as_of, b.complete_through, b.source, b.notes,
            b.newest_period, l.landed_at, l.landed_git_sha

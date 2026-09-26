@@ -1379,6 +1379,9 @@ CREATE TABLE IF NOT EXISTS bacen_expectativas (
 );
 CREATE INDEX IF NOT EXISTS idx_expectativas_endpoint_indicador
     ON bacen_expectativas (endpoint_name, indicador, reference_date DESC);
+-- api.coverage() probes MAX(reference_date) over the whole table (migration 47).
+CREATE INDEX IF NOT EXISTS idx_expectativas_date
+    ON bacen_expectativas (reference_date DESC);
 -- idx_expectativas_horizon is NOT created here on purpose. schema.sql runs
 -- before the migrations on every apply, and CREATE TABLE IF NOT EXISTS is a
 -- no-op on a database where bacen_expectativas already exists (production
@@ -2075,6 +2078,9 @@ CREATE TABLE IF NOT EXISTS b3_lending_open_position (
 
 CREATE INDEX IF NOT EXISTS idx_b3_lending_open_position_codneg
     ON b3_lending_open_position (codneg, trade_date DESC);
+-- api.coverage() probes MAX(trade_date) over the whole table (migration 47).
+CREATE INDEX IF NOT EXISTS idx_b3_lending_open_position_date
+    ON b3_lending_open_position (trade_date DESC);
 -- The analytical layer only ever reads B3's own aggregate, and it reads it
 -- one session at a time.
 CREATE INDEX IF NOT EXISTS idx_b3_lending_open_position_total
