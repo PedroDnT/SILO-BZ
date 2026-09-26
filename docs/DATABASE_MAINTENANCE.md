@@ -91,7 +91,10 @@ Each row also carries `git_sha` (the commit the run executed, from `GITHUB_SHA`;
 for local runs) and `parser_version` (`PARSER_VERSION` in `src/pipeline/ingest_log.py`),
 so a stored number can be traced to the code that parsed it. The FNET register logs
 under `entity = 'fnet'`: `doc_type = 'register'` (one row per delivery-day window, or
-per backfill month) and `doc_type = 'fund_link'` (one row per fund sweep).
+per backfill month), `doc_type = 'fund_link'` (one row per fund sweep) and `doc_type =
+'diff'` (one row per restatement-diff run, period = the window's start month; a run that
+spends its cap or time budget is `ok` and leaves the rest queued, a failed download is
+`error`).
 
 Triage query:
 
