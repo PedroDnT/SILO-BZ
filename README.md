@@ -126,8 +126,9 @@ Everything runs in GitHub Actions against Supabase; there is no server to keep u
    and the BACEN series. Then `ANALYZE`, then the analytical layer is rebuilt, then —
    on a successful scheduled run — the dashboard's deploy hook fires. The FNET
    register runs last, as its own step (the last three delivery days, plus a
-   rotating slice of the FII/FIDC registry so each fund's documents are re-linked
-   every fortnight): a slow FNET fails the run but can no longer block the rest.
+   rotating 1/150 of the FII/FIDC registry, about 70 funds a night, so each fund's
+   documents are re-linked about every five months): a slow FNET fails the run but
+   can no longer block the rest.
 2. **08:00 UTC — `watchdog.yml`.** Re-runs any slice whose data stopped advancing, so a
    silent outage heals itself instead of waiting for a person to notice.
 3. **`health.yml`.** Reads the audit log and the tables themselves and fails loudly when

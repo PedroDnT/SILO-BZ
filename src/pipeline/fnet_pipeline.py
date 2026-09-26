@@ -19,8 +19,12 @@ Two tables:
 
 The daily run crawls the trailing ``FNET_DAILY_LOOKBACK_DAYS`` delivery days
 (default 3) and sweeps a rotating slice of the FII/FIDC registry
-(``FNET_SWEEP_SLICES``, default 14: every fund is swept once a fortnight, which
-also refreshes the ``status`` of its older documents when they get superseded).
+(``FNET_SWEEP_SLICES``, default 150: about 70 of the ~10.4k funds a night, so
+every fund is swept about every 150 days, which also refreshes the ``status``
+of its older documents when they get superseded). It was 14 until 2026-09-26,
+but a cnpjFundo search averages ~25 s, so a 1/14 slice (~746 funds, ~5 h)
+never fit the step's 60 minutes: the step was killed every night and left its
+``fund_link`` audit row ``running``.
 """
 
 from __future__ import annotations
@@ -198,7 +202,7 @@ class FnetIngestor:
             self._pg, LOG_ENTITY, DOC_REGISTER, lambda: self.ingest_days(days),
             period_year=days[0].year, period_month=days[0].month, upsert=upsert_rows,
         )
-        slices = _env_int("FNET_SWEEP_SLICES", 14)
+        slices = _env_int("FNET_SWEEP_SLICES", 150)
         todays = sweep_slice(self.registry_funds(), today, slices)
         links = await audited(
             self._pg, LOG_ENTITY, DOC_FUND_LINK, lambda: self.sweep_funds(todays),
