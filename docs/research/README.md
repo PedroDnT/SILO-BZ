@@ -31,5 +31,8 @@ their stated arithmetic locally. The CIA count is a project-documented census,
 not a newly downloaded row-level extract. The FII and Focus results are single
 published snapshots, not time-series benchmarks. Each script prints its source
 and limitations. Direct CVM archive download was unavailable in this
-environment, so no archive-ingestion benchmark is claimed as passed. No OpenAI
-API code is included.
+environment, so no archive-ingestion benchmark is claimed as passed. The
+separate live-agent evaluator is documented in
+[research_examples/README.md](../../research_examples/README.md); its saved
+[baseline grade](agent-evaluation-grade.md) and [latest reconciliation](agent-reconciliation-results.md)
+keep API availability and answer quality separate.
