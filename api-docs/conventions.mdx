@@ -142,6 +142,7 @@ The refusal says **why and how**. The message reads `<function>: refused, this r
 | [`fidc_aging`](/api-docs/fidc-structure) | refuses; no cursor — narrow the window (21 rows per month) |
 | [`fund_documents`](/api-docs/fnet-documents) | refuses; no cursor — defaults to 12 months of deliveries; narrow the window or pin `p_tipo` |
 | [`fund_restatements`](/api-docs/fnet-documents) | refuses; no cursor — defaults to 30 days without `p_cnpj`; narrow the window or pin `p_cnpj` / `p_tipo_fundo` |
+| [`fund_restatement_diff`](/api-docs/fnet-documents) | refuses; no cursor — needs `p_cnpj` or `p_fnet_id`; narrow the window or pin `p_fnet_id` |
 | [`screen_*`](/api-docs/screens) (seven) | refuses; no cursor — raise the thresholds, or pin `p_dormancy` / `p_min_nav` (dormant funds) or `p_driver` (delinquency drivers) |
 | [`screen_restatements` / `screen_late_filers` / `screen_silent_filers`](/api-docs/filing-screens) | refuses; no cursor — raise the thresholds, or pin `p_modalidade` (restatements) or `p_family` (late and silent filers) |
 | [`search_funds`](/api-docs/funds) | **25** rows anonymous, 200 signed in (`p_limit` clamped, not refused) |

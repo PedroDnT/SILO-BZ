@@ -77,6 +77,10 @@ on:
         description: "FNET only: link every FII/FIDC in cvm_fund_registry to its documents (~7.3k funds x ~1.5 s, about 3 h). Dispatch it on its own, not with a year of fnet_start."
         type: boolean
         default: false
+      fnet_diff:
+        description: "FNET only: instead of crawling the register, diff the restated FIDC informes mensais delivered fnet_start..fnet_end (two bodies each at 1 req/s). Stops taking documents at 320 min; re-dispatch the same range until the log says nothing is left. Needs fnet_start; not with fnet_sweep."
+        type: boolean
+        default: false
 
 # Shares the writer group with daily_ingest.yml so a backfill and the daily
 # cron never write to the same tables at once. Jobs inside this workflow also
@@ -651,6 +655,7 @@ jobs:
           FNET_START: ${{ inputs.fnet_start }}
           FNET_END: ${{ inputs.fnet_end }}
           FNET_SWEEP: ${{ inputs.fnet_sweep }}
+          FNET_DIFF: ${{ inputs.fnet_diff }}
         run: |
           set -euo pipefail
           iso='^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
@@ -669,6 +674,12 @@ jobs:
             echo "::error::fnet_end needs fnet_start"
             exit 1
           fi
+          if [[ "${FNET_DIFF:-false}" == "true" ]]; then
+            if [[ -z "$FNET_START" || "$FNET_SWEEP" == "true" ]]; then
+              echo "::error::fnet_diff needs fnet_start (a delivery-day range) and runs without fnet_sweep"
+              exit 1
+            fi
+          fi
           if [[ -n "$FNET_START" ]]; then
             check_date fnet_start "$FNET_START"
             end="${FNET_END:-$(date -u +%F)}"
@@ -677,7 +688,11 @@ jobs:
               echo "::error::fnet_start ($FNET_START) is after fnet_end ($end)"
               exit 1
             fi
-            echo "FNET register: $FNET_START..$end"
+            if [[ "${FNET_DIFF:-false}" == "true" ]]; then
+              echo "FNET restatement diffs: $FNET_START..$end"
+            else
+              echo "FNET register: $FNET_START..$end"
+            fi
           fi
           echo "FNET fund sweep: $FNET_SWEEP"
 
@@ -698,8 +713,20 @@ jobs:
           FNET_START: ${{ inputs.fnet_start }}
           FNET_END: ${{ inputs.fnet_end }}
           FNET_SWEEP: ${{ inputs.fnet_sweep }}
+          FNET_DIFF: ${{ inputs.fnet_diff }}
         run: |
           set -euo pipefail
+          if [[ "$FNET_DIFF" == "true" ]]; then
+            # The diff queue (src/pipeline/fnet_diff.py): no per-run cap, and a
+            # 320-min budget inside the job's 355 so a slow last download
+            # still ends in an audit row rather than a killed runner.
+            args=(--from "$FNET_START" --max-docs 0 --budget-minutes 320)
+            if [[ -n "$FNET_END" ]]; then
+              args+=(--to "$FNET_END")
+            fi
+            python -m src.pipeline.fnet_diff "${args[@]}"
+            exit 0
+          fi
           args=(--fnet-only)
           if [[ -n "$FNET_START" ]]; then
             args+=(--fnet-start "$FNET_START")

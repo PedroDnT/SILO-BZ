@@ -238,13 +238,43 @@ jobs:
         timeout-minutes: 60
         run: python -m src.pipeline.fnet_pipeline
 
+  # FNET restatement diffs (backlog B4, docs/planning/DOCUMENTS.md): for each
+  # re-filed FIDC informe mensal, download it and its predecessor from FNET and
+  # store what changed (src/pipeline/fnet_diff.py). Its own job, after the
+  # ingest job and whatever became of it (!cancelled()), so its FNET latency
+  # never eats the ingest job's 180 minutes. The run caps itself at 200
+  # documents and a 30-minute budget and leaves the rest queued for tomorrow;
+  # a failed download still fails this job and writes its `error` audit row.
+  fnet-diff:
+    name: FNET restatement diffs
+    needs: ingest
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
+      TZ: "America/Sao_Paulo"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Diff restated FIDC informes
+        run: python -m src.pipeline.fnet_diff
+
   # Alerting: a scheduled-run failure files (or bumps) a single tracking issue,
   # so a broken credential or CVM outage emails the repo owner instead of
   # failing silently for weeks (the 2026-07/08 PAM-auth outage went a month
   # unnoticed). Issue-per-incident, comment-per-day — no new secrets needed.
   notify-failure:
     name: File failure issue
-    needs: ingest
+    needs: [ingest, fnet-diff]
     if: ${{ failure() && github.event_name == 'schedule' }}
     runs-on: ubuntu-latest
     permissions:

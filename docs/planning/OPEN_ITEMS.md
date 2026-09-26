@@ -365,14 +365,14 @@ Nothing in wave 2 that depends on these starts until each has an answer.
 
 ### Wave 2
 
-| #   | Item                                                                                                                                                                                                                  | Needs              |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| 2a  | `api.screen_restatements`: funds and months with restated filings, by `modalidade`                                                                                                                                    | 1b                 |
-| 2b  | Filing punctuality and silent funds, from FNET delivery timestamps                                                                                                                                                    | 1b                 |
-| 2c  | B4, field-level restatement diffs (`fnet_document_diff`): designed in [DOCUMENTS.md](DOCUMENTS.md), §11 decided 2026-09-26 (slice 1: FIDC mensal, 2026 backfill); not built                                           | 1b                 |
-| 2d  | FII keys carry `versao`                                                                                                                                                                                               | gate 1, yes to (2) |
-| 2e  | `fidc_*` caps raise instead of trimming                                                                                                                                                                               | gate 1, yes to (1) |
-| 2f  | B4 backfill of 2025 and earlier: restatement diffs for older years, newest-first, one year per dispatch; depth and runner-time budget set from the 2026 run's runtime and FNET latency (DOCUMENTS.md §11, decision 6) | 2c's 2026 run      |
+| #   | Item                                                                                                                                                                                                                                                           | Needs              |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| 2a  | `api.screen_restatements`: funds and months with restated filings, by `modalidade`                                                                                                                                                                             | 1b                 |
+| 2b  | Filing punctuality and silent funds, from FNET delivery timestamps                                                                                                                                                                                             | 1b                 |
+| 2c  | B4, field-level restatement diffs (`fnet_document_diff`): designed in [DOCUMENTS.md](DOCUMENTS.md), §11 decided 2026-09-26 (slice 1: FIDC mensal, 2026 backfill); built: ingest (migration 46, `fnet_diff`) and serving (`fund_restatement_diff`, catalog v40) | 1b                 |
+| 2d  | FII keys carry `versao`                                                                                                                                                                                                                                        | gate 1, yes to (2) |
+| 2e  | `fidc_*` caps raise instead of trimming                                                                                                                                                                                                                        | gate 1, yes to (1) |
+| 2f  | B4 backfill of 2025 and earlier: restatement diffs for older years, newest-first, one year per dispatch; depth and runner-time budget set from the 2026 run's runtime and FNET latency (DOCUMENTS.md §11, decision 6)                                          | 2c's 2026 run      |
 
 ### Wave 3
 

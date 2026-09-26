@@ -187,7 +187,8 @@ The adapter wraps a **subset** of schema `api`. Everything else — the typed ca
 views, options, termo, holdings, debentures, FIDC concentration, FIDC tranches
 and aging (`fidc_tranches`, `fidc_aging`, catalog v32 — history from 2025-01, as
 CVM publishes no archive of those tabs), the FNET document register
-(`fund_documents`, `fund_restatements`, catalog v33), ANBIMA classes, inflation,
+(`fund_documents`, `fund_restatements`, catalog v33, and
+`fund_restatement_diff`, catalog v40), ANBIMA classes, inflation,
 company financials, company events, macro series and PTAX (catalog v38), and the
 B3 lending and investor-flow views — has no `/v1`
 twin and is reachable only over PostgREST. Read those on the published site.
@@ -213,6 +214,15 @@ The operator half, which is what a reviewer needs to check:
   documents — assemblies). No cnpj link or no reference text → never paired.
 - `source_url` is FNET's public `downloadDocumento?id=<fnet_id>` link, built
   from the id; nothing is fetched at read time.
+- **What a restatement changed** (catalog v40): `api.fund_restatement_diff`
+  reads `fnet_document_pair` / `fnet_document_diff` (migration 46), filled by
+  `src/pipeline/fnet_diff.py` for the FIDC informe mensal. It serves only pairs
+  with status `compared`, and only against the predecessor
+  `fund_restatements` pairs today: the queue re-diffs a document whose
+  predecessor changed. `fund_restatements` gains `n_fields_changed` and
+  `diff_status` from the pair row of that exact pair (`prev_fnet_id IS NOT
+  DISTINCT FROM previous_fnet_id`), NULL when not diffed. Needs `p_cnpj` or
+  `p_fnet_id`; raise-only.
 - Grants follow `fidc_tranches`: DEFINER with an empty `search_path`, revoked
   from `PUBLIC`, granted to `anon` / `authenticated` and to `silo_api` (no `/v1`
   route yet). Both are raise-only above one page. `coverage()` gains an
@@ -392,8 +402,8 @@ cannot be paged" — that stopped being true two catalog versions ago. **`panel`
 `quote_history` and `fund_nav` page with a `p_after` cursor**; the others
 (`option_history`, `termo_history`, `financials`, `company_financials`,
 `anbima_classes`, `inflation`, `inflation_items`, `fidc_tranches`, `fidc_aging`,
-`fund_documents`, `fund_restatements`, `company_events`, `macro_series`,
-`ptax` and the ten `screen_*` functions)
+`fund_documents`, `fund_restatements`, `fund_restatement_diff`,
+`company_events`, `macro_series`, `ptax` and the ten `screen_*` functions)
 have no cursor and ask you to narrow the window. `fund_nav` also
 requires `p_entity_type` to page, because its cursor is a bare period and 385
 CNPJs file under two families in the same month.
