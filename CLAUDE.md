@@ -16,6 +16,27 @@ Use the five defaults: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-f
 
 Single-context: root `CONTEXT.md` and `docs/adr/`. See `docs/agents/domain.md`.
 
+## Planning register
+
+The register is `docs/planning/OPEN_ITEMS.md`. When asked to fix items from it: first
+list all open items with a one-line plan for each. Then fix them one at a time. For each
+item: make the change, verify it, and mark its status in the register before moving to
+the next. Keep exploration for any single item short. Do not survey the whole codebase,
+Supabase and Vercel before starting the first fix.
+
+When asked to fix items, do not end a session after exploration alone. For every item,
+produce a commit or an explicit blocker report.
+
+## Tooling
+
+### Data and deploy access
+
+- Supabase: use the Supabase MCP, project ref `zcjbtpxuhdekpwcxmepn`. Run read-only
+  SELECTs freely, but ask before running any DDL or data-modifying SQL.
+- Vercel: use the Vercel MCP. Both `dashboard/` (the Evidence dashboard) and `webapp/`
+  are hosted under project `silo-bz` in team `deloslabs`, so don't call list_projects
+  to rediscover it.
+
 ## The shape of the system: 3 infra, 3 products
 
 Reach for this before reporting a problem — it decides whose problem it is, and
