@@ -12,13 +12,26 @@
 --   1. Adds typed columns for what identifies a bond: tp_fundo, tp_negoc,
 --      cd_isin, cd_selic, tp_titpub, dt_venc, plus qt_pos_final.
 --   2. Widens uq_fi_cda to (cnpj, period, tp_fundo, tp_aplic, tp_ativo,
---      cd_isin, tp_negoc), NULLS NOT DISTINCT. Measured 0 duplicates on HIST
+--      cd_isin, tp_negoc), NULLS DISTINCT like the key it replaces (see
+--      "WHY NULLS DISTINCT" below). Measured 0 duplicates on HIST
 --      2005, 2010, 2015, 2020 and monthly 202306, 202608 (2005 needs tp_fundo,
 --      the same FI-and-FIF double filing block 4 carries it for).
 --   3. Backfills the new columns from raw, one year per statement, so the
 --      refill of block 1 (backfill.yml fi_doc_type) MERGES into each surviving
 --      row instead of leaving it beside the rows it restores. A surviving row
 --      is one real source row, so after the refill nothing is duplicated.
+--
+-- WHY NULLS DISTINCT (edited in place 2026-09-27, before this migration had
+-- ever completed anywhere). The first production apply failed with 23505:
+-- (10406600000108, 2020-01-01, null, VALORES A RECEBER, null, null, null) is
+-- duplicated. 1,705 rows from 2019-2022 carry tp_ativo NULL and no CD_ISIN,
+-- because they are not block 1 at all: TP_FUNDO FIIM, CD_ATIVO / ID_DOC,
+-- the ETF member of the same archive that an earlier member-selection bug
+-- ingested here. The old key was NULLS DISTINCT, so their 762 repeats never
+-- collided, and NULLS NOT DISTINCT made them collide. Keeping NULLS DISTINCT
+-- changes nothing for a block-1 row (CD_ISIN, TP_NEGOC, TP_FUNDO, TP_APLIC,
+-- TP_ATIVO are filled on every row of every file measured) and deletes
+-- nothing. Removing the FIIM rows is a separate, owner-approved cleanup.
 --
 -- WHY THE KEY SWAP CANNOT COLLIDE. Every existing row is the one the old key
 -- let survive, so the old four columns are already unique, and adding columns
@@ -60,8 +73,7 @@ BEGIN
     ) THEN
         ALTER TABLE cvm_fi_cda DROP CONSTRAINT IF EXISTS uq_fi_cda;
         ALTER TABLE cvm_fi_cda ADD CONSTRAINT uq_fi_cda
-            UNIQUE NULLS NOT DISTINCT
-            (cnpj, period, tp_fundo, tp_aplic, tp_ativo, cd_isin, tp_negoc);
+            UNIQUE (cnpj, period, tp_fundo, tp_aplic, tp_ativo, cd_isin, tp_negoc);
     END IF;
 END $$;
 

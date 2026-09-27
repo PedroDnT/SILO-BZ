@@ -110,7 +110,8 @@ CREATE TABLE IF NOT EXISTS cvm_fi_cda (
     tp_titpub     TEXT,                    -- title family: NTN-B, LFT, LTN, ...
     dt_venc       DATE,                    -- maturity
     qt_pos_final  NUMERIC(28,6),
-    CONSTRAINT uq_fi_cda UNIQUE NULLS NOT DISTINCT
+    -- NULLS DISTINCT on purpose: see migration 49 (legacy FIIM rows).
+    CONSTRAINT uq_fi_cda UNIQUE
         (cnpj, period, tp_fundo, tp_aplic, tp_ativo, cd_isin, tp_negoc)
 );
 CREATE INDEX IF NOT EXISTS idx_fi_cda_cnpj   ON cvm_fi_cda (cnpj);
