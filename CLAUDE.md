@@ -349,6 +349,16 @@ review (`docs/planning/AGENTS.md`). Only the owner marks an `agent:*` PR ready.
 - For bulk rewrites (e.g. re-keying), work in batches and check the row count after each batch.
 - Before any destructive change (trim, delete, re-key), stop and confirm the plan with the owner.
 
+## Times are UTC-3 (owner's rule)
+
+Reference every time in UTC-3: Brasília, `America/Sao_Paulo`. Brazil has had no
+daylight saving since 2019. This covers replies, reports, PR bodies, comments and new doc text.
+Convert what a source reports in UTC before quoting it: GitHub Actions schedules and run
+times, Supabase logs, `timestamptz` output. Where someone has to match the time
+against that source, add the UTC value in parentheses: the daily run starts at
+03:00 UTC-3 (06:00 UTC). Cron expressions and stored timestamps stay as configured,
+and existing docs and CHANGELOG rows are not rewritten.
+
 ## Environment
 
 - Never run `npm install` from the home directory. `cd` into `dashboard/` or `webapp/`
