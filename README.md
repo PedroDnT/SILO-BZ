@@ -11,7 +11,7 @@
 > [`api-docs/agents.mdx`](api-docs/agents.mdx) and [`skill.md`](skill.md);
 > page index: [`llms.txt`](llms.txt)).
 > **MCP server:** [`supabase/functions/silo-mcp/`](supabase/functions/silo-mcp/) — read-only remote MCP, one tool per `api` endpoint (49), live at `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp` since 2026-09-25 ([`api-docs/mcp.mdx`](api-docs/mcp.mdx)).
-> **Notebooks:** [`notebooks/`](notebooks/) — nine runnable end-to-end examples.
+> **Notebooks:** [`notebooks/`](notebooks/) — ten runnable end-to-end examples.
 
 ## What SILO is
 

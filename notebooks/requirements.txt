@@ -10,3 +10,6 @@ ipykernel>=6.0
 pandas>=2.0
 matplotlib>=3.8
 httpx>=0.27
+# 09 runs the repository's own parsers on fixtures; the OFR revision workbook
+# is read with openpyxl (the pipeline's requirements.txt pins it too).
+openpyxl>=3.1
