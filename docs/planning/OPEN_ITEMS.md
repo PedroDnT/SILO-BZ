@@ -398,3 +398,23 @@ Nothing in wave 2 that depends on these starts until each has an answer.
 - **B9.** Alerts, only on signals from waves 1 and 2 once they exist.
 - **B10.** Document text (Stage 3), priority categories only.
 - **B11.** Per-event adjusted prices, where verified.
+
+## 15. Portfolio diagnosis: decisions still open (2026-09-26)
+
+Design: `PORTFOLIO_DIAGNOSIS.md`. Tickets: map #340 (#341–#345). Blocked on
+data first: #348 (CDA block 1 kept one bond per fund; key fixed by #357, the
+refill per year is pending with `backfill.yml` `fi_force`, #358) and #352
+(block 2). None of these block writing code; each blocks a demo number.
+
+- **Equal-risk-contribution grouping.** Holding level is the default. Open:
+  whether a what-if may group by issuer or asset class instead.
+- **Minimum history per holding.** How many of the 60 monthly returns a holding
+  needs before it enters the covariance; fewer is an unknown section, never a
+  filled series.
+- **Material-revision fields and thresholds.** The named field list and the
+  numbers, keyed on `field_path` / `leaf` (`cvm_column` is NULL). Set when the
+  demo FIDC is chosen.
+- **Demo portfolio positions.** About eight real positions containing the three
+  planted findings: a directly held stock also held through a fund, a material
+  FIDC restatement, an NTN-B.
+- **Warning severity scale.** Not designed.
