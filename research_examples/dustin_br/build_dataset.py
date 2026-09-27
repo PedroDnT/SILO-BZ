@@ -325,8 +325,10 @@ def build(sessions: Sequence[date], curves: pd.DataFrame, series: Dict[str, pd.D
             native["ust_1y"][["obs_date", "ust_1y"]], on="obs_date")
         doc["brazil_sovereign_risk_proxy"] = (doc["doc_1y_eff"] - ust_effective(doc["ust_1y"].astype(float))) * 100.0
         doc = native_features(doc, "brazil_sovereign_risk_proxy", "rate")
-        doc = with_availability(doc, "di")
-        add("sovereign", doc, [c for c in doc.columns if c.startswith("brazil_")], "di", "brazil_sovereign_risk_proxy")
+        # Observed only on dates both markets were open, so it inherits the UST
+        # staleness limit: a US holiday must not blank the feature.
+        doc = with_availability(doc, "ust")
+        add("sovereign", doc, [c for c in doc.columns if c.startswith("brazil_")], "ust", "brazil_sovereign_risk_proxy")
 
     # Rates-volatility proxy for MOVE: realised UST 10Y vol, in bp. Not MOVE.
     if "ust_10y" in native:
@@ -336,15 +338,17 @@ def build(sessions: Sequence[date], curves: pd.DataFrame, series: Dict[str, pd.D
 
     # Cross-asset correlations of daily changes.
     di_native = di[["obs_date", "di_2y", "available_date"]]
+    # A pair is observed only on dates both sides were; it takes the staleness
+    # limit of its less frequent side (US holidays for UST and VIX).
     pairs = [
-        ("corr_di2y_usdbrl", di_native, "di_2y", "rate", "usdbrl", "price"),
-        ("corr_di2y_ust10y", di_native, "di_2y", "rate", "ust_10y", "rate"),
-        ("corr_di2y_vix", di_native, "di_2y", "rate", "vix", "price"),
+        ("corr_di2y_usdbrl", di_native, "di_2y", "rate", "usdbrl", "price", "usdbrl"),
+        ("corr_di2y_ust10y", di_native, "di_2y", "rate", "ust_10y", "rate", "ust"),
+        ("corr_di2y_vix", di_native, "di_2y", "rate", "vix", "price", "vix"),
     ]
-    for name, a, a_col, a_kind, b_name, b_kind in pairs:
+    for name, a, a_col, a_kind, b_name, b_kind, rule in pairs:
         if b_name in native:
             c = pair_correlation(a, a_col, a_kind, native[b_name], b_name, b_kind, name)
-            add(name, c, [col for col in c.columns if col.startswith(name)], "di")
+            add(name, c, [col for col in c.columns if col.startswith(name)], rule)
     if "usdbrl" in native and "brent" in native:
         c = pair_correlation(native["usdbrl"], "usdbrl", "price", native["brent"], "brent", "price",
                              "corr_usdbrl_brent")

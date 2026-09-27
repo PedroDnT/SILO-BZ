@@ -186,3 +186,14 @@ def test_the_sovereign_proxy_is_doc_minus_ust_in_effective_terms():
     doc_eff = 3.0 * 365 / 360
     ust_eff = ((1 + 2.0 / 200) ** 2 - 1) * 100
     assert out.loc[0, "brazil_sovereign_risk_proxy"] == pytest.approx((doc_eff - ust_eff) * 100)
+
+
+def test_a_us_holiday_does_not_blank_the_cross_market_features():
+    sessions, curves, series, futures = _synthetic()
+    out, _ = bd.build(sessions, curves, series, futures)
+    us = set(series["ust_1y"]["obs_date"])
+    br_only = [d for d in sessions if d not in us and d > date(2020, 5, 1)]
+    assert br_only, "the synthetic calendars must differ"
+    rows = out[out["date"].isin(br_only)]
+    assert rows["brazil_sovereign_risk_proxy"].notna().all()
+    assert rows["corr_di2y_ust10y_21d"].notna().all()
