@@ -391,7 +391,10 @@ Nothing in wave 2 that depends on these starts until each has an answer.
 - **B7.** One manual Builder run on FIDC `tab_X_7` (item 13), then Scout and
   Sentinel only if it passes. **Passed 2026-09-24 (PR #291); prompts written
   2026-09-25; labels and routines pending.**
-- **B8.** DI curve and futures (`INSTRUMENTS.md` Phases B and C).
+- **B8.** DI curve and futures (`INSTRUMENTS.md` Phases B and C). **Ingest done
+  2026-09-27 (PR #355, migration 48):** DI1 per contract from 2018, B3 `PRE` and
+  `DOC` curves from 2008, held and not served; history needs the
+  `market_backfill.yml` dispatches. Serving (`future_curve`, `curve`) is open.
 - **B9.** Alerts, only on signals from waves 1 and 2 once they exist.
 - **B10.** Document text (Stage 3), priority categories only.
 - **B11.** Per-event adjusted prices, where verified.
