@@ -11,11 +11,30 @@ Fixed-width, 72 characters per row, one row per (curve, vertex). Layout,
     [66]     vertex type: F fixed, M moving
     [67:72]  vertex code
 
-What the curves are, from the file itself: PRE is "DIxPRE" (DI x pré, the
-252-business-day basis — on 2026-09-25 its moving vertices at every DI1
-maturity equal that contract's settlement rate), DOC is "DIxXDOL Cupom l"
-(the clean onshore dollar coupon). Only the configured curves are kept; the
-rest of the file (116 curves in 2026) is skipped, not stored.
+What the curves are, from B3's Manual de Curvas (v21, 2025-12-12) and the
+file itself. Only the configured curves are kept; the rest of the file (116
+curves in 2026) is skipped, not stored.
+
+* PRE, "DIxPRE" (§2.1): % a.a. on 252 business days, rounded to the 3rd
+  decimal. Vertex 1 is the day's CDI; every DI1 maturity is a vertex at that
+  contract's settlement rate (checked 2026-09-25); between them flat-forward
+  252; AFTER THE LAST DI1 MATURITY the last segment's forward is EXTENDED, so
+  the long vertices (out to ~34 years in 2026) are B3's extrapolation, not
+  contract prices.
+* DOC, "DIxXDOL Cupom l" (§4.5): the clean onshore dollar coupon from DDI
+  futures, a LINEAR rate on 360 calendar days (factor 1 + r·DC/36000),
+  rounded to the 2nd decimal; extrapolated beyond the last DDI maturity.
+* DPL, "Cupom Limpo de" (§3.2): the IPCA CLEAN coupon (real rate, 252
+  basis, 2 decimals) from DAP futures settlements, falling back to ANBIMA's
+  NTN-B indicative rates; B3 defines implied inflation as
+  (1 + PRE) / (1 + DPL) - 1 and fills non-DAP vertices flat-forward 252.
+  Its short end leans on the IPCA preview for the current month, so it is
+  read from one year out. Chosen over DIC ("DI X IPCA", §3.1), which is the
+  DIRTY coupon from the median of a POLL of informants and steps with the
+  IPCA release calendar (9.85 at 362 days, 9.63 at 399, on 2026-09-25).
+
+Files before 2005 use other layouts (65 characters in 2001, 67 in 2003,
+measured) and are refused by the length check below, as they should be.
 
 A row that is not 72 characters, a date that is not the file's session, or a
 (curve, calendar days) pair seen twice raises: that is a layout change, and
@@ -35,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 TABLE = "b3_reference_rate"
 CONFLICT = ("curve", "trade_date", "calendar_days")
-DEFAULT_CURVES: Tuple[str, ...] = ("PRE", "DOC")
+DEFAULT_CURVES: Tuple[str, ...] = ("PRE", "DOC", "DPL")
 LINE_LENGTH = 72
 
 _validator = DataValidator()

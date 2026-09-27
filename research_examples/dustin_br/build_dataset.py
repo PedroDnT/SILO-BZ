@@ -31,8 +31,15 @@ Mechanics, in order:
 
 DI constant-maturity rates come from B3's PRE curve (the DI x pré reference
 curve, whose vertices include every DI1 maturity at its settlement rate),
-interpolated flat-forward in business days on a 252-day basis — the DI
-convention. No extrapolation: a tenor beyond the longest vertex is NULL.
+interpolated flat-forward in business days on a 252-day basis — B3's own
+method for PRE (Manual de Curvas v21 §2.1, item 1.4.2). B3 EXTENDS the last
+segment's forward rate beyond the last DI1 maturity, so the published long
+vertices are extrapolation. ``anchored_tail_start`` finds where that
+straight-line tail begins (validated against Price Report contract lists,
+2018-2026: it never lands past the second-to-last DI1 maturity), and a tenor
+beyond it is NULL, like a tenor beyond the longest vertex. Measured: 5y was
+always anchored 2008-2026; 10y fell in B3's extrapolated tail in many months
+(8 of 12 monthly samples in 2008), so ``di_10y`` is often NULL early on.
 
 Run (reads with the operator's POSTGRES_URL through src.store.pg_client):
 
@@ -132,25 +139,102 @@ def flat_forward(vertices_du: Sequence[int], rates_pct: Sequence[float], target_
     return (math.exp(-lt * 252.0 / target_du) - 1.0) * 100.0
 
 
+def anchored_tail_start(business_days: Sequence[int], log_factor: Sequence[float],
+                        tolerance: Sequence[float]) -> int:
+    """Business days where a curve's final straight-line (extrapolated) tail begins.
+
+    ``log_factor`` is the log accumulation factor at each vertex (for PRE
+    du/252·ln(1+r), for DOC ln(1+r·dc/36000)); past the last contract
+    maturity B3 extends the last forward rate, which makes it exactly linear
+    in business days. ``tolerance`` is the published rounding mapped into
+    log-factor units. The longest suffix whose least-squares line fits every
+    point within 1.5x that tolerance is the tail; its first vertex is
+    returned. With fewer than three collinear points only the last segment
+    is treated as extrapolated.
+    """
+    x = np.asarray(business_days, dtype=float)
+    y = np.asarray(log_factor, dtype=float)
+    tol = np.asarray(tolerance, dtype=float) * 1.5 + 1e-12
+    order = np.argsort(x)
+    x, y, tol = x[order], y[order], tol[order]
+    n = len(x)
+    if n < 3:
+        return int(x[0]) if n else 0
+    best = n - 2
+    for s in range(n - 3, -1, -1):
+        slope, intercept = np.polyfit(x[s:], y[s:], 1)
+        if np.all(np.abs(y[s:] - (intercept + slope * x[s:])) <= tol[s:]):
+            best = s
+        else:
+            break
+    return int(x[best])
+
+
+def pre_anchor(g: pd.DataFrame) -> int:
+    """``anchored_tail_start`` for one session's PRE vertices (3-decimal rates)."""
+    du = g["business_days"].to_numpy(dtype=float)
+    r = g["rate"].astype(float).to_numpy()
+    return anchored_tail_start(du, du / 252.0 * np.log1p(r / 100.0),
+                               du / 252.0 * (0.0005 / 100.0) / (1.0 + r / 100.0))
+
+
 def di_constant_maturity(curves: pd.DataFrame) -> pd.DataFrame:
-    """One row per session: DI rates at the DI_TENORS_DU business-day tenors."""
+    """One row per session: DI rates at the DI_TENORS_DU business-day tenors,
+    NULL beyond ``di_anchor_du`` (where B3's extrapolated tail begins)."""
     pre = curves[curves["curve"] == "PRE"]
     out = []
     for trade_date, g in pre.groupby("trade_date", sort=True):
         g = g[g["business_days"] > 0]
-        row = {"obs_date": trade_date}
+        anchor = pre_anchor(g)
+        row = {"obs_date": trade_date, "di_anchor_du": anchor}
         for name, du in DI_TENORS_DU.items():
-            row[name] = flat_forward(g["business_days"].to_numpy(), g["rate"].astype(float).to_numpy(), du)
+            row[name] = (flat_forward(g["business_days"].to_numpy(), g["rate"].astype(float).to_numpy(), du)
+                         if du <= anchor else float("nan"))
         out.append(row)
-    return pd.DataFrame(out, columns=["obs_date", *DI_TENORS_DU])
+    return pd.DataFrame(out, columns=["obs_date", "di_anchor_du", *DI_TENORS_DU])
+
+
+def breakeven_inflation(curves: pd.DataFrame) -> pd.DataFrame:
+    """Implied IPCA inflation, % a.a., from PRE against DPL at 1/2/5 years.
+
+    (1 + pre) / (1 + dpl) - 1 on the same business-day tenor: B3's own
+    definition of implied inflation (Manual de Curvas v21 §3.2), with both
+    curves read flat-forward in business days, as B3 fills DPL. DPL is the
+    clean IPCA coupon from DAP futures, falling back to ANBIMA's NTN-B
+    indicative rates; it carries an inflation risk premium, so this is market
+    pricing, not an expectation. OPTIONAL feature. NULL where the PRE tenor is
+    past its anchored span.
+    """
+    tenors = {"1y": 252, "2y": 504, "5y": 1260}
+    di = di_constant_maturity(curves)[["obs_date", *(f"di_{t}" for t in tenors)]]
+    dpl = curves[curves["curve"] == "DPL"]
+    out = []
+    for trade_date, g in dpl.groupby("trade_date", sort=True):
+        g = g[g["business_days"] > 0]
+        row = {"obs_date": trade_date}
+        for tenor, du in tenors.items():
+            row[f"dpl_{tenor}"] = flat_forward(g["business_days"].to_numpy(), g["rate"].astype(float).to_numpy(), du)
+        out.append(row)
+    columns = [f"breakeven_{t}" for t in tenors]
+    real = pd.DataFrame(out, columns=["obs_date", *(f"dpl_{t}" for t in tenors)])
+    m = di.merge(real, on="obs_date")
+    for tenor in tenors:
+        m[f"breakeven_{tenor}"] = ((1 + m[f"di_{tenor}"] / 100.0) / (1 + m[f"dpl_{tenor}"] / 100.0) - 1) * 100.0
+    return m.reindex(columns=["obs_date", *columns])
 
 
 def doc_one_year_effective(curves: pd.DataFrame) -> pd.DataFrame:
     """B3 DOC (clean onshore dollar coupon) at 365 calendar days, as an
-    annual effective rate in %. ASSUMPTION to verify against B3's methodology
-    before modelling: DOC is a linear rate on a 360-day basis, so over one
-    year of 365 days the accumulation is 1 + r·365/360. Linear interpolation
-    in calendar days between the neighbouring vertices; no extrapolation."""
+    annual effective rate in %.
+
+    DOC is a LINEAR rate on 360 calendar days (Manual de Curvas v21 §4.5: the
+    factor is 1 + r·DC/36000), so over 365 days the effective annual rate is
+    r·365/360. The builder interpolates the rate linearly in calendar days
+    between the two published vertices around 365 days (B3 fills its own
+    intermediate vertices with item 1.4.3; its fixed vertices sit near 360).
+    NULL when 365 days is past the start of DOC's extrapolated tail (B3
+    extends it beyond the last DDI maturity) or outside the published vertices.
+    """
     doc = curves[(curves["curve"] == "DOC") & (curves["calendar_days"] >= 30)]
     out = []
     for trade_date, g in doc.groupby("trade_date", sort=True):
@@ -158,8 +242,14 @@ def doc_one_year_effective(curves: pd.DataFrame) -> pd.DataFrame:
         cd = g["calendar_days"].to_numpy(dtype=float)
         if len(cd) == 0 or not (cd[0] <= 365 <= cd[-1]):
             continue
-        r = float(np.interp(365.0, cd, g["rate"].astype(float).to_numpy()))
-        out.append({"obs_date": trade_date, "doc_1y_eff": r * 365.0 / 360.0})
+        r = g["rate"].astype(float).to_numpy()
+        du = g["business_days"].to_numpy(dtype=float)
+        anchor_du = anchored_tail_start(du, np.log1p(r * cd / 36000.0),
+                                        (cd / 36000.0) * 0.005 / (1.0 + r * cd / 36000.0))
+        anchor_cd = float(cd[np.searchsorted(du, anchor_du)]) if anchor_du <= du[-1] else cd[-1]
+        if 365.0 > anchor_cd:
+            continue
+        out.append({"obs_date": trade_date, "doc_1y_eff": float(np.interp(365.0, cd, r)) * 365.0 / 360.0})
     return pd.DataFrame(out, columns=["obs_date", "doc_1y_eff"])
 
 
@@ -301,6 +391,13 @@ def build(sessions: Sequence[date], curves: pd.DataFrame, series: Dict[str, pd.D
     di = with_availability(di, "di")
     add("di", di, [c for c in di.columns if c.startswith("di_")], "di", "di")
 
+    # Implied IPCA from PRE against DPL (OPTIONAL: includes a risk premium).
+    be = breakeven_inflation(curves)
+    if not be.empty:
+        be = native_features(be, "breakeven_2y", "rate")
+        be = with_availability(be, "di")
+        add("breakeven", be, [c for c in be.columns if c.startswith("breakeven_")], "di")
+
     # Scalar series on their own calendars.
     native: Dict[str, pd.DataFrame] = {}
     for name, (rule, kind) in SCALAR_SERIES.items():
@@ -388,7 +485,7 @@ def load(client, start: date, end: date) -> Tuple[List[date], pd.DataFrame, Dict
     lo = start - timedelta(days=200)
     curves = _query(client,
                     "SELECT trade_date, curve, calendar_days, business_days, rate FROM b3_reference_rate "
-                    "WHERE curve IN ('PRE', 'DOC') AND trade_date BETWEEN %s AND %s",
+                    "WHERE curve IN ('PRE', 'DOC', 'DPL') AND trade_date BETWEEN %s AND %s",
                     (lo, end), ["trade_date", "curve", "calendar_days", "business_days", "rate"])
     series: Dict[str, pd.DataFrame] = {}
     for name, code in _SGS.items():

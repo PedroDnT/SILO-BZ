@@ -38,6 +38,8 @@ FIX = Path(__file__).parent / "fixtures"
 PR_2026 = (FIX / "b3_price_report_20260925_sample.xml").read_bytes()
 PR_2018 = (FIX / "b3_price_report_20180102_sample.xml").read_bytes()
 TS_2026 = (FIX / "b3_taxaswap_20260925_sample.txt").read_text(encoding="latin-1")
+# The complete PRE, DOC and DPL curves of the same file (858 vertices).
+TS_CURVES = (FIX / "b3_taxaswap_20260925_curves.txt").read_text(encoding="latin-1")
 S_2026 = date(2026, 9, 25)
 
 
@@ -171,7 +173,11 @@ def test_taxa_swap_unwraps_the_self_extracting_archive():
 
 def test_taxa_swap_keeps_only_the_configured_curves():
     rows, counts = ts.parse_taxa_swap(TS_2026, session=S_2026)
-    assert {r["curve"] for r in rows} == {"PRE", "DOC"}
+    # DPL (clean IPCA coupon) is kept; DIC (the dirty-coupon poll) is in the
+    # fixture and skipped.
+    assert ts.DEFAULT_CURVES == ("PRE", "DOC", "DPL")
+    assert {r["curve"] for r in rows} == {"PRE", "DOC", "DPL"}
+    assert "DIC" in {line[21:26].strip() for line in TS_2026.splitlines()}
     assert counts["kept"] == len(rows) and counts["dropped_invalid"] == 0
     first = min((r for r in rows if r["curve"] == "PRE"), key=lambda r: r["calendar_days"])
     assert (first["calendar_days"], first["business_days"], first["rate"], first["vertex_type"]) == (
@@ -181,16 +187,16 @@ def test_taxa_swap_keeps_only_the_configured_curves():
 def test_pre_equals_the_di1_settlement_rate_at_each_contract_maturity():
     """The measured property the research layer leans on: B3's PRE curve has a
     moving vertex at every DI1 maturity, at that contract's settlement rate."""
-    curve = {r["business_days"]: r for r in ts.parse_taxa_swap(TS_2026, session=S_2026)[0] if r["curve"] == "PRE"}
+    curve = {r["business_days"]: r for r in ts.parse_taxa_swap(TS_CURVES, session=S_2026)[0] if r["curve"] == "PRE"}
     rows, _ = pr.parse_price_report(PR_2026, session=S_2026)
     checked = 0
     for r in rows:
         du = round(252 * math.log(100000 / float(r["settlement_price"])) / math.log(1 + float(r["settlement_rate"]) / 100))
-        if du in curve:
-            assert curve[du]["rate"] == r["settlement_rate"], r["ticker"]
-            assert curve[du]["vertex_type"] == "M"
-            checked += 1
-    assert checked == 3  # DI1F27, DI1J27, DI1F29 are in the trimmed fixture
+        assert du in curve, r["ticker"]
+        assert curve[du]["rate"] == r["settlement_rate"], r["ticker"]
+        assert curve[du]["vertex_type"] == "M"
+        checked += 1
+    assert checked == 5  # every DI1 contract in the fixture, out to DI1F37
 
 
 def test_taxa_swap_layout_changes_raise():
