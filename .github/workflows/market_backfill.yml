@@ -27,7 +27,10 @@ on:
         default: "2026"
 
 # Same writer group as daily_ingest.yml and backfill.yml: one writer at a time
-# against the shared Postgres; an arriving run queues, never cancels.
+# against the shared Postgres. A running job is never cancelled, but GitHub
+# keeps only ONE pending run per group: a newer dispatch (or the daily at
+# 03:00 UTC-3 (06:00 UTC)) cancels an older pending one. Dispatch when nothing
+# else is pending (run 36333939450 was cancelled this way on 2026-09-27).
 concurrency:
   group: supabase-ingest
   cancel-in-progress: false
