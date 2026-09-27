@@ -393,9 +393,11 @@ Nothing in wave 2 that depends on these starts until each has an answer.
   2026-09-25; labels and routines pending.**
 - **B8.** DI curve and futures (`INSTRUMENTS.md` Phases B and C). **Ingest done
   2026-09-27 (PR #355, migration 48):** DI1 per contract from 2018, B3 `PRE`,
-  `DOC` and `DPL` curves from 2008, held and not served; history needs the
-  `market_backfill.yml` dispatches. Serving (`future_curve`, `future_history`,
-  `reference_curve`) is open. Owner-only: an `EIA_API_KEY` secret (optional;
+  `DOC` and `DPL` curves from 2008; history needs the `market_backfill.yml`
+  dispatches. **Served since catalog v42** (`27_api_rates.sql`):
+  `future_curve`, `future_series`, `curve`, `curve_history`, live after the
+  next analytics apply and a `deploy_mcp.yml` run. Still open: the futures arm
+  of `api.panel` (`id_type='future'`, phase B). Owner-only: an `EIA_API_KEY` secret (optional;
   without it EIA's rate-limited demo key is used), and, only if VIX itself is
   wanted, a signed Cboe licence (permissions@cboe.com) before setting the
   `CBOE_VIX_LICENSED` repository variable. Until then the risk regime is the

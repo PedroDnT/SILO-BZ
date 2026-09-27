@@ -258,6 +258,39 @@ operator half:
   `cia_aberta` / `ipe`), `macro_series` (`bacen` / `sgs`) and `ptax` (`bacen` /
   `ptax`).
 
+### DI futures and B3 reference curves (catalog v42)
+
+`api.future_curve`, `api.future_series`, `api.curve` and `api.curve_history`
+(`27_api_rates.sql`) serve the two B3 landing tables of migration 48
+(`b3_futures_settlement`, `b3_reference_rate`; `INSTRUMENTS.md` phases B and C,
+typed endpoints only). Caller documentation:
+[DI futures and B3 reference curves](https://octo-98895abd.mintlify.site/api-docs/rates).
+The operator half:
+
+- **Nothing is derived** except `contract_month`, read from the ticker with
+  B3's month letters (the same `_MONTH_LETTERS` the Price Report parser keeps
+  outright contracts with). DI1 is quoted in rate, so the quote columns are
+  % a.a.; `settlement_price` is the PU.
+- **`curve` / `curve_history` read only the curves in `api.curve_registry()`**,
+  which `tests/test_rates_contract.py` pins to `DEFAULT_CURVES` in
+  `src/parsers/b3_taxa_swap.py`, with each curve's `rate_basis` (`DOC` is
+  linear on 360 days). Add a curve to the ingest and the test fails until the
+  registry follows.
+- **`curve_history` serves B3's fixed vertices only**, by nominal tenor
+  (`vertex_code`); any other tenor is refused with the list. Its access path
+  is `idx_b3_reference_rate_fixed` in `11_indexes.sql` (partial, `vertex_type =
+  'F'`); without it a tenor's history reads every vertex of every session.
+- **The long end is B3's extrapolation** (Manual de Curvas v21): the function
+  comments, the `coverage()` notes and the docs page say so. Where the tail
+  starts is left to research code (`research_examples/dustin_br/`).
+- Grants follow `macro_series`: DEFINER with an empty `search_path`, revoked
+  from `PUBLIC`, granted to `anon` / `authenticated` / `silo_api`. All four are
+  raise-only above one page. `coverage()` gains `di_futures` (landed_at from
+  `market` / `b3_price_report`) and `reference_curves` (`market` /
+  `b3_reference_rate`).
+- Not built: the futures arm of `api.panel` (`id_type='future'`, metric
+  `settlement`), which `INSTRUMENTS.md` phase B also lists.
+
 ### Row caps refuse, and say why (catalog v34)
 
 `fidc_cedentes`, `fidc_sacados` and `fidc_portfolio` used to trim **silently**
@@ -418,8 +451,9 @@ cannot be paged" — that stopped being true two catalog versions ago. **`panel`
 (`option_history`, `termo_history`, `financials`, `company_financials`,
 `anbima_classes`, `inflation`, `inflation_items`, `fidc_tranches`, `fidc_aging`,
 `fund_documents`, `fund_restatements`, `fund_restatement_diff`,
-`company_events`, `macro_series`, `ptax` and the ten `screen_*` functions)
-have no cursor and ask you to narrow the window. `fund_nav` also
+`company_events`, `macro_series`, `ptax`, `future_curve`, `future_series`,
+`curve`, `curve_history` and the ten `screen_*` functions) have no cursor and
+ask you to narrow the window. `fund_nav` also
 requires `p_entity_type` to page, because its cursor is a bare period and 385
 CNPJs file under two families in the same month.
 

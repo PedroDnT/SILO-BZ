@@ -254,6 +254,11 @@ REFUSING_FUNCTIONS = {
     # v41: the holdings pair stopped trimming at a tier ceiling.
     "fund_holdings",
     "fund_debentures",
+    # v42: DI1 futures and B3 reference curves (27_api_rates.sql).
+    "future_curve",
+    "future_series",
+    "curve",
+    "curve_history",
 }
 PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav"}
 

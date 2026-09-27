@@ -49,6 +49,7 @@ Reading one for another is the most common coverage mistake.
 - **`company_events`** — the newest IPE delivery date held for [company events](/api-docs/company-events); `complete_through` is null (no completeness model covers company filings). `notes` states that history starts in 2015 and that filings CVM published without a protocol number are not held. `landed_at` is the IPE ingest alone.
 - **`macro_series`** — the newest elapsed observation of any of the nine [macro series](/api-docs/macro); `newest_period` can sit in the future because the Selic target is published ahead. `landed_at` is the SGS ingest.
 - **`ptax`** — the newest PTAX business day held; `landed_at` is the PTAX ingest alone, never an SGS run.
+- **`di_futures`** and **`reference_curves`** — the newest B3 session held for the [DI1 contracts and the reference curves](/api-docs/rates); each `landed_at` is its own file's ingest. Their notes say where each history starts (2018-01-02, 2008-01-02) and that the long curve vertices are B3's extrapolation.
 - **`inflation_items`** — the newest month of IBGE's item tree held; `notes` states the 2020-01 structure change (SIDRA 7060 replaced 1419, item codes changed, `item_number` is the continuity).
 
 **Not covered**: `fund_holdings` and `fund_debentures` have no row yet — read the newest `period` off the rows themselves.

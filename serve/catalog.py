@@ -24,6 +24,18 @@ __all__ = [
     "tool_specs",
 ]
 
+# v42: the Brazilian rate curve (INSTRUMENTS.md phases B and C, OPEN_ITEMS
+# B8), in 27_api_rates.sql over migration 48's landing tables.
+# api.future_curve — every outright DI1 contract on one B3 session, nearest
+# maturity first (B3 Price Report, from 2018-01-02); api.future_series — one
+# contract through time. DI1 is quoted in rate, so the quote columns are
+# % a.a.; contract_month (from B3's month letters) is the one derived column.
+# api.curve — one B3 reference curve (PRE, DOC, DPL; TaxaSwap, from
+# 2008-01-02) on one session, every vertex, rate_basis on every row (DOC is
+# linear 360); api.curve_history — one of B3's FIXED vertices through time,
+# never an interpolation. The long end of every curve is B3's extrapolation,
+# and the comments say so. coverage() gains di_futures and reference_curves.
+# All four raise-only; capped count thirty-nine -> forty-three.
 # v41: api.fund_holdings / api.fund_debentures stop trimming. Until v40 they
 # were tiered 500 anonymous / 5000 signed in and cut the result SILENTLY at
 # that ceiling with a 200 — the last two functions that did, and the MCP
@@ -337,7 +349,7 @@ __all__ = [
 # stated as (id, asset_class, date, metric) and p_entity_type narrows the fund
 # arms to one family. Universe mode (p_ids empty + p_entity_type, optional
 # p_min_nav / p_min_months) walks a whole family for signed-in callers.
-CATALOG_VERSION = 41
+CATALOG_VERSION = 42
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -544,6 +556,7 @@ CONSTRAINTS = [
     "A LATE FILING IS A TIMESTAMP COMPARED WITH A CITED RULE, AND A SILENT ONE IS READ FROM CVM, NOT FNET. screen_late_filers measures the FIRST FNET delivery of a fund's monthly informe (Informe Mensal Estruturado, versao 1) against the deadline Resolução CVM 175 states — FIDC: Anexo Normativo II, art. 27, III; FII: Anexo Normativo III, art. 36, I; both 15 days after the end of the reference month, counted as calendar days because the text says dias — and every row carries that citation in deadline_rule. It measures only months after each family's adaptation deadline (from 2024-12 for FIDC, 2025-07 for FII) and refuses a window ending earlier, because the predecessor instructions' deadlines are not cited here. No holiday calendar is applied, so p_min_days_late (default 5) absorbs a deadline that rolled over a weekend or holiday; CVM extensions are invisible to it. A month with no informe in the register is NOT counted late — FNET history is partial. screen_silent_filers answers absence from CVM's own deep tables (dim_fund: the informe diário for FI, the monthly informe for FIDC / FII / FIAGRO) against latest_complete_period, for funds whose registry row is active; a merged or liquidated fund whose status CVM has not updated, reporting moved to a new class CNPJ, or a SILO ingest gap produce the same row. screen_restatements counts re-filings (versao > 1) by modalidade — RE voluntary, RC required by CVM — per cnpjFundo link. None of the three ever identifies a fund by fund_name.",
     "COMPANY EVENTS ARE IPE FILINGS AS FILED, FROM 2015, AND NOT EVERY FILING IS HELD. api.company_events serves cia_event — CVM's IPE feed: fatos relevantes, comunicados ao mercado, assembly material and the rest — one row per protocol at its NEWEST version (version says which), every text field (category, event_type, species, subject) exactly as filed, and source_url, the document's link on CVM's RAD. The company is resolved exactly as financials resolves p_id: a ticker only through CVM's published FCA map (active listings), a 14-digit CNPJ or a CVM code, never a name. CVM assigned no protocol number to IPE filings before 2015 and still omits it on a minority (12% of 2015); cia_event is keyed on (protocolo, versao) and a key is never synthesized, so those filings are NOT held — an empty window before 2015, or a filing you know exists and cannot find, is that limit, not an absence of events. p_category matches CVM's label exactly; an unknown one raises 22023 listing the categories held.",
     "MACRO SERIES AND PTAX ARE SERVED AS BACEN PUBLISHES THEM, UNIT ON EVERY ROW, NOTHING DERIVED. api.macro_series serves nine non-inflation SGS series by label or code: SELIC_META (432, % a.a.; dated per calendar day and published AHEAD to the next Copom date, so a p_to after today can return forward-dated targets), SELIC_DIARIA (11) and CDI (12) in % PER BUSINESS DAY (never annualise one yourself without saying so), IGPM (189) and INPC (188) as % change in the month, POUPANCA (25) — the OLD-RULE deposit return (deposits until 2012-05-03), one value per anniversary day, each the return over the month starting that day, not a calendar-month figure — USDBRL (1) and EURBRL (21619) in BRL per unit, and PIB (4380) monthly in R$ millions at current prices. The IPCA set is api.inflation's; asking macro_series for it raises 22023 with that pointer. api.ptax serves PTAX compra and venda per currency and business day in BRL per ONE unit of the currency (JPY and ARS included): the last bulletin of the day the ingest received, which for a completed day is the Fechamento PTAX (measured against SGS 1 and Olinda on 2026-09-22/23); the bulletin type is not stored. No mid rate, cross rate, fill or holiday row is invented.",
+    "DI FUTURES AND B3'S REFERENCE CURVES ARE SERVED AS B3 PUBLISHES THEM, AND THE LONG END OF EVERY CURVE IS B3'S EXTRAPOLATION. api.future_curve lists every outright DI1 contract on one session (B3 Price Report, from 2018-01-02) and api.future_series follows one contract; DI1 is QUOTED IN RATE, so settlement_rate and the open/low/high/avg/close columns are % a.a. on 252 business days (the low rate is the high price) and settlement_price is the PU. contract_month, read from the ticker with B3's month letters (F = January … Z = December), is the one derived column; nothing is rolled or spliced into a continuous series. api.curve serves one reference curve on one session, every vertex (TaxaSwap, from 2008-01-02): PRE is DI x pré, DPL the clean IPCA coupon (a real rate; B3's implied inflation is (1 + PRE) / (1 + DPL) − 1 at the same tenor), both compounded on 252 business days, and DOC the clean onshore dollar coupon, LINEAR on 360 calendar days — read rate_basis before comparing two curves. Past the last maturity of the contract anchoring a curve (DI1, DDI, DAP) B3 EXTENDS the last forward rate (Manual de Curvas v21), so the long vertices are extrapolation, not prices. api.curve_history serves one of B3's FIXED vertices through time by its nominal tenor (p_tenor_days: 30, 90, 360, 720 …); any other tenor raises 22023 with the list, because interpolating is analysis for the notebook.",
     "THE B3 LENDING AND FLOW GROUP IS A RATCHET, AND IT IS THE ONLY PART OF THIS WAREHOUSE THAT IS. short_interest, short_interest_by_sector, lending_trades, lending_participants and investor_flow read B3 tables that B3 keeps for about 21 BUSINESS DAYS and publishes no archive for. History therefore starts at SILO's first capture and cannot be extended backwards at any price — a missed session is gone, not late, and no backfill exists to ask for. coverage() reports the real span per endpoint; read it before describing any of these series as short, broken or anomalous, and never infer a level change from a window that simply begins where capture began. An over-wide request to the source returns HTTP 200 with a silently clamped window, which is why the ingest reconciles what it asked for against what it received.",
     "pct_float IS TWO DIFFERENT METRICS AND float_basis SAYS WHICH ONE YOU HAVE. api.short_interest divides the balance on loan by whichever denominator exists for that ticker. float_basis = 'index_free_float' means B3's published free float (theoretical_qty from the broadest index portfolio carrying the ticker) and exists for index constituents only, ~149 tickers; float_basis = 'shares_outstanding' means capital social from the cash instrument registry, a LARGER denominator that yields a SMALLER percentage for the same position. They are not the same measure and are never comparable: ANY ranking, screen or cross-section on pct_float must filter to ONE basis first, or it sorts index members against non-members on an axis they do not share. float_denominator carries the number actually used. pct_float and days_to_cover are NULL — never 0 — when their denominator is missing or the name did not trade; 0 would sort an unknown to exactly the wrong end.",
     "IN THE LENDING TAPE, doador AND tomador ARE BROKERAGES, NOT BENEFICIAL OWNERS. lending_participants' broker_code / broker_name and lending_trades' lender_brokers / borrower_brokers identify the B3 PARTICIPANT intermediating a trade, never who ends up long or short. B3 names ~33 participants in a whole session, and about three quarters of trades carry the SAME code on both legs (measured 2026-09-10: 32,197 of 43,165, 74.6%) — a broker crossing its own client book. So a large borrow through a broker is its clients' position, not the broker's view, and 'the biggest short' read off this tape is a statement about order flow routing. internal_legs / internal_qty (lending_participants) and internal_trades (lending_trades) are what tell the two apart: high internal share is client churn, low internal share is flow that actually crossed the market. They are published beside the totals rather than netted away, because dropping them makes the remainder look like conviction and keeping them silently makes churn look like demand.",
@@ -585,7 +598,7 @@ CONSTRAINTS = [
     "WHY (the response is one 1000-row page and SILO never returns a silently "
     "truncated result) and HOW to fix it for that function, in the message and "
     "again as PostgREST's `details` / `hint`. That is all "
-    "thirty-nine — panel, quote_history, fund_nav, option_history, termo_history, "
+    "forty-three — panel, quote_history, fund_nav, option_history, termo_history, "
     "financials, financial_statement_history, company_financials, "
     "income_statements, balance_sheets, "
     "cash_flow_statements, anbima_classes, "
@@ -593,7 +606,7 @@ CONSTRAINTS = [
     "fidc_cedentes, fidc_sacados, fidc_portfolio, "
     "fidc_tranches, fidc_aging, fund_holdings, fund_debentures, fund_documents, "
     "fund_restatements, fund_restatement_diff, company_events, macro_series, "
-    "ptax and the ten "
+    "ptax, future_curve, future_series, curve, curve_history and the ten "
     "screen_* functions "
     "(`limits.page.all`). "
     "THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send "
@@ -803,6 +816,22 @@ EXAMPLES = [
         ),
     },
     {
+        "ask": "What is the DI curve pricing, and how has the one-year point moved?",
+        "call": (
+            "POST /rest/v1/rpc/future_curve {}  then  "
+            "POST /rest/v1/rpc/curve_history "
+            '{"p_curve": "PRE", "p_tenor_days": 360}'
+        ),
+        "then": (
+            "future_curve lists every DI1 contract of the newest session: "
+            "settlement_rate is % a.a. on 252 business days and the quote "
+            "columns are rates too. curve_history is B3's own fixed 360-day "
+            "vertex of PRE, never an interpolation; any other tenor means "
+            "reading curve and interpolating in the notebook. The long end "
+            "of every curve is B3's extrapolation, not a price."
+        ),
+    },
+    {
         "ask": "Just give me the panel; I will run a factor model",
         "call": (
             "POST /rest/v1/rpc/panel "
@@ -898,7 +927,8 @@ EXAMPLES = [
 AGENT_INSTRUCTIONS = (
     "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, "
     "B3 COTAHIST cash quotes, options and termo, the B3 securities-lending "
-    "and investor-flow group, and Brazilian inflation — BACEN's IPCA series "
+    "and investor-flow group, B3's DI1 futures and reference-rate curves, "
+    "and Brazilian inflation — BACEN's IPCA series "
     "and IBGE's item tree with weights). Call catalog once and cache "
     "it. Resolve names with lookup, then fetch a panel. The primitive "
     "is a panel (id, date, metric, value). Correlation, ranking, spreads, "
@@ -998,6 +1028,7 @@ LIMITS = {
             "screen_delinquency_drivers",
             "screen_restatements", "screen_late_filers", "screen_silent_filers",
             "company_events", "macro_series", "ptax",
+            "future_curve", "future_series", "curve", "curve_history",
         ],
         # The protocol every cursor below shares.
         "cursor_protocol": (
@@ -1064,6 +1095,9 @@ LIMITS = {
                 # v38: held-but-unserved datasets (26_api_events_macro.sql) —
                 # a window to narrow, never a series to walk.
                 "company_events", "macro_series", "ptax",
+                # v42: the rate curve (27_api_rates.sql) — one session is
+                # tens to hundreds of rows, and a history is a window.
+                "future_curve", "future_series", "curve", "curve_history",
             ],
         },
         "over_cap": (
@@ -1583,6 +1617,10 @@ def catalog_payload() -> Dict[str, Any]:
             "company_events": "POST /rest/v1/rpc/company_events",
             "macro_series": "POST /rest/v1/rpc/macro_series",
             "ptax": "POST /rest/v1/rpc/ptax",
+            "future_curve": "POST /rest/v1/rpc/future_curve",
+            "future_series": "POST /rest/v1/rpc/future_series",
+            "curve": "POST /rest/v1/rpc/curve",
+            "curve_history": "POST /rest/v1/rpc/curve_history",
             # B3 securities lending and investor flow (v27). VIEWS, not
             # functions: filter them with PostgREST's own syntax
             # (?ticker=eq.PETR4&trade_date=gte.2026-09-01) and page with

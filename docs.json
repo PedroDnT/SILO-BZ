@@ -64,6 +64,7 @@
           "api-docs/anbima",
           "api-docs/inflation",
           "api-docs/macro",
+          "api-docs/rates",
           "api-docs/panel",
           "api-docs/lookup",
           "api-docs/coverage",

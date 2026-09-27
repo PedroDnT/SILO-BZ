@@ -29,7 +29,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 41
+KNOWN_CATALOG_VERSION = 42
 
 
 class SiloCatalogDrift(UserWarning):
@@ -100,7 +100,8 @@ class SiloOverCap(SiloError):
     anbima_classes, inflation, inflation_items, fidc_cedentes, fidc_sacados,
     fidc_portfolio, fidc_tranches, fidc_aging, fund_holdings,
     fund_debentures, fund_documents, fund_restatements,
-    fund_restatement_diff, company_events, macro_series, ptax and the
+    fund_restatement_diff, company_events, macro_series, ptax,
+    future_curve, future_series, curve, curve_history and the
     screen_* functions — have no cursor: narrow the window instead (the fidc
     concentration trio, fund_holdings and fund_debentures also take an
     explicit `limit` for the newest N rows).
@@ -1206,6 +1207,70 @@ class SiloClient:
         """
         return self._rpc("ptax", {
             "p_currency": currency, "p_from": _iso(start), "p_to": _iso(end),
+        })
+
+    def future_curve(self, root: str = "DI1",
+                     trade_date: Datish = None) -> List[Dict[str, Any]]:
+        """Every outright DI1 contract on one B3 session, nearest maturity first.
+
+            silo.future_curve()                          # the newest session
+            silo.future_curve(trade_date="2026-09-25")
+
+        DI1 is QUOTED IN RATE: settlement_rate and the open/low/high/avg/close
+        columns are % a.a. on 252 business days, settlement_price is the PU.
+        contract_month is read from the ticker with B3's month letters. From
+        2018-01-02 (B3 Price Report); a date with no session returns [].
+        """
+        return self._rpc("future_curve", {
+            "p_root": root, "p_trade_date": _iso(trade_date),
+        })
+
+    def future_series(self, ticker: str, start: Datish = None,
+                      end: Datish = None) -> List[Dict[str, Any]]:
+        """One DI1 contract through time, oldest session first.
+
+            silo.future_series("DI1F27", start="2026-01-01")
+
+        The same columns as `future_curve`. Nothing is rolled into a
+        continuous series: constant maturities are B3's own curve (`curve`,
+        `curve_history`). A malformed code is a `SiloError` (22023). Default
+        window 12 months.
+        """
+        return self._rpc("future_series", {
+            "p_ticker": ticker, "p_from": _iso(start), "p_to": _iso(end),
+        })
+
+    def curve(self, curve: str = "PRE",
+              trade_date: Datish = None) -> List[Dict[str, Any]]:
+        """One B3 reference curve on one session, every vertex as published.
+
+            silo.curve()                      # PRE, the newest session
+            silo.curve("DPL", "2026-09-25")   # the clean IPCA coupon
+
+        PRE (DI x pré) and DPL (real, IPCA) compound on 252 business days;
+        DOC (onshore dollar coupon) is LINEAR on 360 calendar days — read
+        `rate_basis`. Past the last anchoring contract B3 extrapolates, so the
+        long vertices are not prices. From 2008-01-02.
+        """
+        return self._rpc("curve", {
+            "p_curve": curve, "p_trade_date": _iso(trade_date),
+        })
+
+    def curve_history(self, curve: str, tenor_days: int, start: Datish = None,
+                      end: Datish = None) -> List[Dict[str, Any]]:
+        """One of B3's FIXED vertices of a curve through time, oldest first.
+
+            silo.curve_history("PRE", 360)
+            silo.curve_history("DOC", 720, start="2020-01-01")
+
+        `tenor_days` is the vertex's nominal tenor (30, 90, 360, 720 …);
+        any other tenor is a `SiloError` (22023) listing the fixed ones —
+        interpolate from `curve` in the notebook instead. Default window 12
+        months.
+        """
+        return self._rpc("curve_history", {
+            "p_curve": curve, "p_tenor_days": tenor_days,
+            "p_from": _iso(start), "p_to": _iso(end),
         })
 
     # -- typed views (GET resources, not functions) --------------------------

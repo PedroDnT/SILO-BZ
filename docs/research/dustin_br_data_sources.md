@@ -373,10 +373,11 @@ freely available.
 | OFR FSI and its Volatility category, with first releases | OFR `fsi.csv` and revision workbook           | `mkt_series`                                 | US business day                 | no                |
 | IC-Br (4 series)                                         | BCB SGS 27574 to 27577                        | `bacen_sgs` (existing)                       | month                           | no                |
 
-**Nothing here is served through schema `api` yet.** Serving is a separate
-change: every new endpoint drags a catalog entry, OpenAPI and the MCP
-contract with it. VIX would never be served without a licence that allows
-it. The landing tables are
+**The DI1 contracts and the B3 curves are served since catalog v42**
+(`api.future_curve`, `future_series`, `curve`, `curve_history`;
+`27_api_rates.sql`), as published, with the extrapolated long end stated.
+The global series in `mkt_series` and IC-Br are not served. VIX would never
+be served without a licence that allows it. The landing tables are
 covered by the `anon` revoke sweep. The research builder reads them with the
 operator's database connection.
 
@@ -603,14 +604,15 @@ one dispatch at a time, since all share the `supabase-ingest` queue:
 
 Open:
 
-- Serve DI1 and the B3 curves through `api` (`future_curve`,
-  `future_history`, `reference_curve`; `INSTRUMENTS.md` Phases B and C).
+- The futures arm of `api.panel` (`id_type='future'`, `INSTRUMENTS.md`
+  phase B); the typed endpoints are served since catalog v42.
 - Load `TaxaSwap` 2004 to 2007 (§6): the loader's start date, and a curve
   list that lets `DPL` be absent before mid-2007.
 - Ibovespa level, if the equity channel is added.
 - A Cboe licence, if VIX itself is wanted (permissions@cboe.com); then set
   `CBOE_VIX_LICENSED=1`.
 
-Done (2026-09-27): breakeven inflation, from `DPL` rather than `DIC` (§3.A);
+Done (2026-09-27): the DI1 contracts and the B3 curves served (catalog v42,
+`future_curve`, `future_series`, `curve`, `curve_history`); breakeven inflation, from `DPL` rather than `DIC` (§3.A);
 the `DOC` convention (§3.D); the EMBI+ check of the sovereign proxy (§3.D);
 `TaxaSwap` before 2008 probed (§6); Cboe's terms read (§3.C, §7).
