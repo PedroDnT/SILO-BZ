@@ -101,8 +101,10 @@ def test_the_bond_is_typed_not_left_in_raw(monkeypatch):
 
 
 def _constraint_cols(sql, name):
-    m = re.search(rf"CONSTRAINT {name}\s+UNIQUE NULLS NOT DISTINCT\s*\(([^)]*)\)", sql)
-    assert m, f"{name} not declared UNIQUE NULLS NOT DISTINCT"
+    # NULLS DISTINCT, like the key it replaced: 1,705 legacy FIIM rows carry
+    # NULL key parts and would collide otherwise (migration 49 header).
+    m = re.search(rf"CONSTRAINT {name}\s+UNIQUE\s*\(([^)]*)\)", sql)
+    assert m, f"{name} not declared UNIQUE (NULLS DISTINCT)"
     return tuple(c.strip() for c in m.group(1).split(","))
 
 
