@@ -31,8 +31,8 @@ TABLE = "cvm_fi_cda"
 #
 # CD_ISIN and TP_NEGOC are filled on every row of every layout checked. TP_FUNDO
 # settles the 2005 filings where one CNPJ filed as both FI and FIF (the same
-# reason block 4 carries it). NULLS NOT DISTINCT, so a row missing a key part
-# dedupes exactly as it did before. Do not narrow this key without re-running
+# reason block 4 carries it). NULLS DISTINCT like the old key: legacy FIIM rows
+# with NULL parts sit in this table (migration 49), and no block-1 row has one. Do not narrow this key without re-running
 # the audit on real yearly files.
 CONFLICT = ("cnpj", "period", "tp_fundo", "tp_aplic", "tp_ativo", "cd_isin", "tp_negoc")
 

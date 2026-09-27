@@ -280,6 +280,16 @@ jobs:
                  ('44444444000191','2015-06-01','Títulos Públicos','Título público federal',
                   10.00,
                   '{"TP_FUNDO":"FI","TP_NEGOC":"Para negociação","CD_ISIN":"BRSTNCLTN4X1","DT_VENC":"2017-02-30"}'::jsonb);
+
+          -- What broke the first production apply of 49: FIIM rows an old
+          -- member-selection bug put here, tp_ativo NULL and no CD_ISIN,
+          -- repeated because the old NULLS DISTINCT key never matched them.
+          -- Both must survive the key swap (nothing is deleted).
+          INSERT INTO cvm_fi_cda (cnpj, period, tp_aplic, tp_ativo, vl_merc_pos_final, raw)
+          VALUES ('10406600000108','2020-01-01','VALORES A RECEBER',NULL,1.00,
+                  '{"TP_FUNDO":"FIIM","CD_ATIVO":"VALORES A RECEBER","TP_NEGOC":"Para negociação"}'::jsonb),
+                 ('10406600000108','2020-01-01','VALORES A RECEBER',NULL,1.00,
+                  '{"TP_FUNDO":"FIIM","CD_ATIVO":"VALORES A RECEBER","TP_NEGOC":"Para negociação"}'::jsonb);
           SEED
 
           echo "--- the upgrade: current schema.sql, every migration, then again ---"
@@ -329,6 +339,8 @@ jobs:
           cda_n=$(psql "$OLD_URL" -tAc "SELECT count(*) FROM cvm_fi_cda WHERE cnpj='44444444000191' AND period='2026-08-01';")
           echo "cda block1 rows after refill=$cda_n"
           test "$cda_n" = "2" || { echo "FAIL: refill duplicated or dropped a bond (got $cda_n, want 2)"; exit 1; }
+          fiim_n=$(psql "$OLD_URL" -tAc "SELECT count(*) FROM cvm_fi_cda WHERE cnpj='10406600000108';")
+          test "$fiim_n" = "2" || { echo "FAIL: legacy FIIM rows lost by the key swap (got $fiim_n)"; exit 1; }
           # The pipeline's upsert, twice (idempotent), for a restatement (v3)
           # and for the first versioned write of a legacy NULL-versao filing.
           for _ in 1 2; do
