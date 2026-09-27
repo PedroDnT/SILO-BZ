@@ -7,9 +7,12 @@ name: Market Data Backfill
 # docs/research/dustin_br_data_sources.md §10. Cboe VIX runs only with a
 # signed Cboe licence: repository variable CBOE_VIX_LICENSED=1 (§5).
 #
-# One YEAR per job, one job at a time: a Price Report is ~12 MB zipped and
-# ~10 s to parse, so a year of sessions is roughly an hour, inside the
-# 6-hour job cap with room (INSTRUMENTS.md: new deep backfills year-shard).
+# One YEAR per job, one job at a time by default: a Price Report is ~12 MB
+# zipped and ~10 s to parse, so a year of sessions is roughly an hour, inside
+# the 6-hour job cap with room (INSTRUMENTS.md: new deep backfills year-shard).
+# max_parallel runs up to 4 years at once. The Price Report writes ~40 rows a
+# session, so its 2018-2026 history can run 3 at a time and finish before the
+# daily at 03:00 UTC-3 (06:00 UTC) instead of running into it.
 on:
   workflow_dispatch:
     inputs:
@@ -25,6 +28,10 @@ on:
         description: "Last year (inclusive)"
         required: true
         default: "2026"
+      max_parallel:
+        description: "Year jobs at once, 1-4 (1 unless the history must finish before the next daily)"
+        required: false
+        default: "1"
 
 # Same writer group as daily_ingest.yml and backfill.yml: one writer at a time
 # against the shared Postgres. A running job is never cancelled, but GitHub
@@ -57,10 +64,13 @@ jobs:
         env:
           START: ${{ inputs.start_year }}
           END: ${{ inputs.end_year }}
+          PARALLEL: ${{ inputs.max_parallel || '1' }}
         run: |
           set -euo pipefail
           [[ "$START" =~ ^[0-9]{4}$ && "$END" =~ ^[0-9]{4}$ && "$START" -le "$END" ]] \
             || { echo "::error::start_year/end_year must be YYYY with start <= end"; exit 1; }
+          [[ "$PARALLEL" =~ ^[1-4]$ ]] \
+            || { echo "::error::max_parallel must be 1-4"; exit 1; }
           echo "years=$(seq "$START" "$END" | jq -cs .)" >> "$GITHUB_OUTPUT"
 
   backfill:
@@ -69,7 +79,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
-      max-parallel: 1
+      max-parallel: ${{ fromJSON(inputs.max_parallel || '1') }}
       fail-fast: false
       matrix:
         year: ${{ fromJSON(needs.years.outputs.years) }}
