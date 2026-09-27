@@ -1,0 +1,46 @@
+"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+
+[scripts]
+setup = """
+if [ "$CONDUCTOR_IS_LOCAL" = "1" ]; then
+  python3.12 -m venv .venv
+else
+  python3 -m venv .venv
+fi
+.venv/bin/python -m pip install -r requirements.txt
+npm --prefix dashboard ci
+npm --prefix webapp install --no-package-lock
+bash scripts/install_hooks.sh
+"""
+archive = "true"
+run_mode = "concurrent"
+
+[scripts.run.api]
+available_in = [ "local" ]
+command = "SILO_API_PORT=$CONDUCTOR_PORT .venv/bin/python -m serve.app"
+default = true
+icon = "server"
+
+[scripts.run.dashboard]
+available_in = [ "local" ]
+command = "npm run sources && npm run dev -- --port $((CONDUCTOR_PORT + 1))"
+icon = "monitor"
+
+[scripts.run.dashboard.options]
+cwd = "dashboard"
+
+[scripts.run.webapp]
+available_in = [ "local" ]
+command = "npm run sources && npm run dev -- --port $((CONDUCTOR_PORT + 2))"
+icon = "globe"
+
+[scripts.run.webapp.options]
+cwd = "webapp"
+
+[scripts.run.tests]
+command = ".venv/bin/python -m pytest tests/ -q"
+icon = "test-tube"
+
+[scripts.run.offline-e2e]
+command = ".venv/bin/python scripts/seed_local_db.py --skip-fi && .venv/bin/python scripts/run_analysis_local.py"
+icon = "database"
