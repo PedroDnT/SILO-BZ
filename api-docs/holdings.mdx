@@ -28,7 +28,7 @@ error naming which one you made, not a silently narrowed query.
 | `p_ticker` | text | The **held** equity. Which funds own it. Case-insensitive. |
 | `p_from` / `p_to` | date | Competency-month window. Omit for everything held. |
 | `p_kind` | text | `equity` (default, CDA block 4) or `fund` (block 2). |
-| `p_limit` | int | Clamped by tier: **500** anonymous, 5,000 signed in. |
+| `p_limit` | int | Optional explicit head: the newest N rows (1..1000). Omit it for the whole window, which refuses with `22023` above 1,000 rows instead of trimming (until catalog v41 this clamped silently at 500 / 5,000). |
 
 ```bash
 # Which funds held PETR4, most recent months first
@@ -86,7 +86,7 @@ Give **exactly one** of `p_cnpj` or `p_issuer`:
 | `p_cnpj` | text | The **holder**. What this fund owns. |
 | `p_issuer` | text | The **issuer**. A listed company's ticker or CVM code (resolved only through CVM's published FCA map, active listings), or **any CPF/CNPJ** — most debenture issuers are not listed, and their CNPJ is the only way to reach them. |
 | `p_from` / `p_to` | date | Competency-month window. |
-| `p_limit` | int | Clamped by tier: **500** anonymous, 5,000 signed in. |
+| `p_limit` | int | Optional explicit head: the newest N rows (1..1000). Omit it for the whole window, which refuses with `22023` above 1,000 rows instead of trimming (until catalog v41 this clamped silently at 500 / 5,000). |
 
 ```bash
 # Which funds hold Petrobras debentures — the ticker resolves through the FCA map

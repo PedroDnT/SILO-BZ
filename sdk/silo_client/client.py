@@ -29,7 +29,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 40
+KNOWN_CATALOG_VERSION = 41
 
 
 class SiloCatalogDrift(UserWarning):
@@ -98,11 +98,12 @@ class SiloOverCap(SiloError):
     (`iter_fund_nav`/`fund_nav_all`, which need an `entity_type`). The rest —
     option_history, termo_history, financials, company_financials,
     anbima_classes, inflation, inflation_items, fidc_cedentes, fidc_sacados,
-    fidc_portfolio, fidc_tranches, fidc_aging, fund_documents,
-    fund_restatements, fund_restatement_diff, company_events, macro_series,
-    ptax and the screen_* functions — have no cursor: narrow the
-    window instead (the fidc concentration trio also take an explicit
-    `limit` for the newest N rows).
+    fidc_portfolio, fidc_tranches, fidc_aging, fund_holdings,
+    fund_debentures, fund_documents, fund_restatements,
+    fund_restatement_diff, company_events, macro_series, ptax and the
+    screen_* functions — have no cursor: narrow the window instead (the fidc
+    concentration trio, fund_holdings and fund_debentures also take an
+    explicit `limit` for the newest N rows).
 
     Since catalog v34 the server says WHY and HOW itself: its fix for the
     function that refused is on `.server_hint` (PostgREST's `hint`), and
@@ -337,8 +338,7 @@ class SiloClient:
         `rows_per_response` (the server-wide 1000 and how to detect it),
         `page` (the page size, which functions page with `p_after` and which
         only refuse, and what the 22023 means) and `tiers` (panel ids,
-        search_funds/option_chain/option_exercises/fund_holdings/
-        fund_debentures/fidc_* rows, statement timeout).
+        search_funds/option_chain/option_exercises rows, statement timeout).
 
         There is no `sql_sentinel` block: the cap+1 sentinels were removed in
         catalog v24/v26 because PostgREST cut every response at 1000 rows long
@@ -576,6 +576,12 @@ class SiloClient:
 
         Rows are as filed — one per (application type, trading intent), never
         summed across them.
+
+        More than 1000 rows raises `SiloOverCap` (22023) — never a silently
+        trimmed result (until catalog v41 this clamped at 500 / 5000 without
+        saying so). Narrow `start`/`end` (a `ticker` lookup spans many funds,
+        so it needs fewer months than one fund), or pass `limit` (1..1000) to
+        ask explicitly for the newest N rows.
         """
         if (cnpj is None) == (ticker is None):
             raise ValueError(
@@ -606,7 +612,11 @@ class SiloClient:
 
         Rows are as filed and never summed. `issuer_tickers` is the issuer's
         active listed codes from CVM's published map, None when not listed.
-        Rows are clamped to 500 anonymous / 5000 signed in.
+
+        More than 1000 rows raises `SiloOverCap` (22023) — never a silently
+        trimmed result (until catalog v41 this clamped at 500 / 5000 without
+        saying so). Narrow `start`/`end` (an `issuer` lookup spans many funds),
+        or pass `limit` (1..1000) to ask explicitly for the newest N rows.
         """
         if (cnpj is None) == (issuer is None):
             raise ValueError(

@@ -68,10 +68,13 @@ def test_rows_are_as_filed_and_never_summed():
     assert "h.vl_merc_pos_final" in select and "h.qt_pos_final" in select
 
 
-def test_tiered_cap_and_definer_hygiene():
+def test_refuses_above_one_page_and_definer_hygiene():
+    """v41: until v40 this clamped to 500 / 5000 and trimmed silently. Now it
+    fetches the page + 1 and refuses above it; p_limit is an explicit head."""
     body = _body("fund_debentures")
-    assert "WHEN 'authenticated' THEN 5000 ELSE 500" in body
-    assert "LEAST(GREATEST(COALESCE(p_limit, v_cap), 1), v_cap)" in body
+    assert "caller_tier" not in body and "LEAST(" not in body
+    assert "LIMIT COALESCE(v_head, 1001)" in body
+    assert "api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'fund_debentures')" in body
     assert "SECURITY DEFINER" in body and "SET search_path = ''" in body
 
 
@@ -86,7 +89,9 @@ def test_the_catalog_names_the_endpoint_the_cap_and_the_rule():
 
     payload = catalog_payload()
     assert payload["postgrest"]["fund_debentures"] == "POST /rest/v1/rpc/fund_debentures"
-    assert payload["limits"]["tiers"]["anon"]["fund_debentures_rows"] == 500
-    assert payload["limits"]["tiers"]["authenticated"]["fund_debentures_rows"] == 5000
+    # v41: raise-only on the 1000-row page, so no tier ceiling is published.
+    assert "fund_debentures_rows" not in payload["limits"]["tiers"]["anon"]
+    assert "fund_debentures_rows" not in payload["limits"]["tiers"]["authenticated"]
+    assert "fund_debentures" in payload["limits"]["page"]["functions"]["raise_only"]
     blob = " ".join(payload["constraints"]).lower()
     assert "debenture" in blob and "never summed" in blob and "fca map" in blob

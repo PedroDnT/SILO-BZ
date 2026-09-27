@@ -58,10 +58,17 @@ RAISE_ONLY_FUNCTIONS = (
     "api.fidc_portfolio",
     "api.fidc_tranches",
     "api.fidc_aging",
+    # v41: the holdings pair (CDA blocks 4, 2, 6) trimmed SILENTLY at the
+    # tier ceiling until v40, the last two that did. Same explicit head.
+    "api.fund_holdings",
+    "api.fund_debentures",
 )
 # The raise-only functions whose p_limit is an explicit head (1..1000) rather
 # than a tier clamp. Without p_limit they fetch the page + 1 like every other.
-HEAD_FUNCTIONS = ("api.fidc_cedentes", "api.fidc_sacados", "api.fidc_portfolio")
+HEAD_FUNCTIONS = (
+    "api.fidc_cedentes", "api.fidc_sacados", "api.fidc_portfolio",
+    "api.fund_holdings", "api.fund_debentures",
+)
 CAPPED_FUNCTIONS = PAGED_FUNCTIONS + RAISE_ONLY_FUNCTIONS
 
 # The forensic screens (v31) live in 23_api_screens.sql, not in 19, so FUNCS
@@ -1051,14 +1058,13 @@ def test_catalog_limits_are_the_sql_tier_clamps():
     assert clamp("api.search_funds") == (anon["search_funds_rows"], auth["search_funds_rows"])
     assert clamp("api.option_chain") == (anon["option_chain_rows"], auth["option_chain_rows"])
     assert clamp("api.option_exercises") == (anon["option_exercises_rows"], auth["option_exercises_rows"])
-    assert clamp("api.fund_holdings") == (anon["fund_holdings_rows"], auth["fund_holdings_rows"])
-    assert clamp("api.fund_debentures") == (anon["fund_debentures_rows"], auth["fund_debentures_rows"])
-    # v34: the FIDC concentration trio no longer trims at a tier ceiling, so
-    # it has none to publish — and no tier CASE left in its body to lag one.
+    # v34 (the FIDC concentration trio) and v41 (fund_holdings,
+    # fund_debentures): no longer trimmed at a tier ceiling, so none to
+    # publish — and no tier CASE left in the body to lag one.
     for fn in HEAD_FUNCTIONS:
         name = fn.split(".", 1)[1]
         assert f"{name}_rows" not in anon and f"{name}_rows" not in auth, (
-            f"{fn} is raise-only since v34; a published row ceiling would tell "
+            f"{fn} is raise-only (v34 / v41); a published row ceiling would tell "
             "callers it still trims"
         )
         assert "caller_tier" not in _strip_comments(FUNCS[fn]), f"{fn} still branches on the tier"
@@ -1462,14 +1468,15 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
     # v37 (the three filing-behaviour screens), thirty-three since v38
     # (company_events, macro_series, ptax), thirty-six since v39
     # (financial_statement_history, fii_property_history, focus_expectations),
-    # thirty-seven since v40 (fund_restatement_diff). The
+    # thirty-seven since v40 (fund_restatement_diff), thirty-nine since v41
+    # (fund_holdings, fund_debentures stopped trimming). The
     # prose said "eight" for two versions while listing nine — pin the word
     # to the tuples so it cannot drift again.
-    assert "thirty-seven" in c.lower().split(), "all thirty-seven capped functions refuse"
+    assert "thirty-nine" in c.lower().split(), "all thirty-nine capped functions refuse"
     assert (
         len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) + len(FNET_FUNCTIONS)
         + len(WAVE3_FUNCTIONS)
-    ) == 37
+    ) == 39
     for fn in WAVE3_FUNCTIONS:
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
     for fn in HEAD_FUNCTIONS:
@@ -1523,13 +1530,14 @@ def test_fund_holdings_demands_exactly_one_identifier():
     assert "22023" in body, "argument errors use the house SQLSTATE"
 
 
-def test_fund_holdings_is_tier_aware():
-    """Same pattern as every other row-capped function."""
-    sql = SQL19
-    body = sql[sql.index("FUNCTION api.fund_holdings"):]
-    body = body[: body.index("$fn$;")]
-    assert "api.caller_tier()" in body
-    assert "5000" in body and "500" in body, "authenticated 5000 / anon 500"
+def test_fund_holdings_refuses_rather_than_trims():
+    """v41: until v40 this clamped to 500 anonymous / 5000 signed in and
+    returned the short result with a 200. Both arms (block 4 and block 2) now
+    fetch the page + 1 and refuse above it; nothing branches on the tier."""
+    body = _strip_comments(FUNCS["api.fund_holdings"])
+    assert "caller_tier" not in body
+    assert body.count("LIMIT COALESCE(v_head, 1001)") == 2, "both kinds refuse"
+    assert body.count("api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'fund_holdings')") == 2
 
 
 def test_fund_holdings_pins_search_path():
