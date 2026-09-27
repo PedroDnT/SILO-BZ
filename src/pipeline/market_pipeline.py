@@ -126,12 +126,17 @@ class MarketIngestor:
             error = ingest_log.describe(exc)
             self.failures.append(f"{label}: {error}")
             logger.error("%s failed: %s", label, error, exc_info=exc)
-        try:
-            ingest_log.finish(self._supabase, run_id, LOG_ENTITY, doc_type, status=status,
-                              rows=rows, error=error, period_year=year, period_month=month,
-                              upsert=upsert_rows)
-        except Exception as exc:  # noqa: BLE001 — must not mask the outcome
-            logger.warning("%s: could not write the %s row (%s)", label, status, ingest_log.describe(exc))
+        except BaseException as exc:
+            # Cancellation or a job timeout: record it, then let it propagate.
+            error = ingest_log.describe(exc)
+            raise
+        finally:
+            try:
+                ingest_log.finish(self._supabase, run_id, LOG_ENTITY, doc_type, status=status,
+                                  rows=rows, error=error, period_year=year, period_month=month,
+                                  upsert=upsert_rows)
+            except Exception as exc:  # noqa: BLE001 — must not mask the outcome
+                logger.warning("%s: could not write the %s row (%s)", label, status, ingest_log.describe(exc))
         return rows
 
     # ── B3 files ─────────────────────────────────────────────────────────

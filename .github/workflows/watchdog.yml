@@ -102,6 +102,16 @@ jobs:
         if: ${{ steps.staleness.outputs.stale == 'true' || github.event.inputs.force == 'true' }}
         run: python -m src.pipeline.run_daily
 
+      # The market slices (DI1, B3 curves, UST, VIX, Brent) are written by their
+      # own daily step, not by run_daily, so run_daily alone could never heal an
+      # unhealed `market` error that tripped this watchdog. Its window re-fetches
+      # the last 7 days, so this is the same idempotent re-run.
+      - name: Refresh rates and market data (recovery)
+        if: ${{ !cancelled() && (steps.staleness.outputs.stale == 'true' || github.event.inputs.force == 'true') }}
+        env:
+          EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+        run: python -m src.pipeline.market_pipeline
+
       - name: Report no-op
         if: ${{ steps.staleness.outputs.stale == 'false' && github.event.inputs.force != 'true' }}
         run: echo "All ingest slices are fresh — watchdog took no action."
