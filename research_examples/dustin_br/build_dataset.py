@@ -10,10 +10,15 @@ The one rule everything here serves: **a value appears on row t only if it
 was public by the end of B3 session t.** Every source has an availability
 rule (docs/research/dustin_br_data_sources.md §8, mirrored in ``RULES``):
 
-    DI curves, DOC, USDBRL, UST, VIX, SELIC   same day as the observation
+    DI curves, DOC, USDBRL, UST, SELIC        same day as the observation
+    OFR FSI (two U.S. business days' lag)     three weekdays after it
     Brent (EIA, weekly release)               the day after the first Wednesday after it
     IPCA, IC-Br (monthly, dated the 1st)      the 15th of the next month
     Focus (survey day D)                      the Tuesday after D's week
+
+The OFR FSI replaces VIX, which Cboe licenses and this warehouse does not
+ingest (research doc §5). Where OFR revised a date, its FIRST release is
+used: the value that was public at the time.
 
 Mechanics, in order:
 
@@ -80,6 +85,15 @@ def eia_weekly_release(d: date) -> date:
     return wednesday + timedelta(days=1)
 
 
+def three_weekdays_after(d: date) -> date:
+    """OFR publishes the FSI two U.S. business days after the observation
+    (measured: on Sunday 2026-09-27 the newest value was dated Wednesday
+    09-23). A third weekday covers a U.S. holiday in between."""
+    for _ in range(3):
+        d += timedelta(days=3 if d.weekday() == 4 else 2 if d.weekday() == 5 else 1)
+    return d
+
+
 def fifteenth_of_next_month(d: date) -> date:
     """IPCA (IBGE, ~10th of M+1) and IC-Br (BCB, early M+1) for month M dated
     on its 1st. The 15th is a conservative ASSUMPTION, not a release calendar."""
@@ -104,7 +118,7 @@ RULES: Dict[str, Rule] = {
     "di": Rule(same_day, 0),
     "usdbrl": Rule(same_day, 5),
     "ust": Rule(same_day, 5),
-    "vix": Rule(same_day, 5),
+    "ofr": Rule(three_weekdays_after, 5),
     "selic": Rule(same_day, 5),
     "brent": Rule(eia_weekly_release, 10),
     "monthly": Rule(fifteenth_of_next_month, 45),
@@ -355,7 +369,10 @@ SCALAR_SERIES = {
     "ust_10y": ("ust", "rate"),
     "ust_30y": ("ust", "rate"),
     "ust_1y": ("ust", None),
-    "vix": ("vix", "price"),
+    # Global stress and its Volatility category (implied vols across asset
+    # classes): signed indices, so changes in level, never log changes.
+    "ofr_fsi": ("ofr", "rate"),
+    "ofr_fsi_volatility": ("ofr", "rate"),
     "brent": ("brent", "price"),
     "selic": ("selic", None),
     "ipca": ("monthly", None),
@@ -436,11 +453,11 @@ def build(sessions: Sequence[date], curves: pd.DataFrame, series: Dict[str, pd.D
     # Cross-asset correlations of daily changes.
     di_native = di[["obs_date", "di_2y", "available_date"]]
     # A pair is observed only on dates both sides were; it takes the staleness
-    # limit of its less frequent side (US holidays for UST and VIX).
+    # limit of its less frequent side (US holidays for UST and OFR).
     pairs = [
         ("corr_di2y_usdbrl", di_native, "di_2y", "rate", "usdbrl", "price", "usdbrl"),
         ("corr_di2y_ust10y", di_native, "di_2y", "rate", "ust_10y", "rate", "ust"),
-        ("corr_di2y_vix", di_native, "di_2y", "rate", "vix", "price", "vix"),
+        ("corr_di2y_ofr_vol", di_native, "di_2y", "rate", "ofr_fsi_volatility", "rate", "ofr"),
     ]
     for name, a, a_col, a_kind, b_name, b_kind, rule in pairs:
         if b_name in native:
@@ -471,12 +488,24 @@ def build(sessions: Sequence[date], curves: pd.DataFrame, series: Dict[str, pd.D
 _SGS = {"usdbrl": 1, "selic": 432, "ipca": 433, "ipca_12m": 13522, "commodity_index": 27574}
 _UST = {"ust_1y": "UST_PAR_1Y", "ust_2y": "UST_PAR_2Y", "ust_5y": "UST_PAR_5Y",
         "ust_10y": "UST_PAR_10Y", "ust_30y": "UST_PAR_30Y"}
+_OFR = {"ofr_fsi": "OFR_FSI", "ofr_fsi_volatility": "OFR_FSI_VOLATILITY"}
 
 
 def _query(client, sql: str, params: tuple, columns: List[str]) -> pd.DataFrame:
     with client.cursor() as cur:
         cur.execute(sql, params)
         return pd.DataFrame(cur.fetchall(), columns=columns)
+
+
+def prefer_first_release(current: pd.DataFrame, first: pd.DataFrame) -> pd.DataFrame:
+    """[obs_date, value], taking a date's first release where one is stored.
+
+    ``*_FIRST_RELEASE`` rows exist only for dates OFR revised (from its
+    revision workbook, or the value a later fetch replaced); every other
+    date was never revised, so its stored value is its first release."""
+    m = current.merge(first, on="obs_date", how="outer", suffixes=("", "_first"))
+    m["value"] = pd.to_numeric(m["value_first"]).combine_first(pd.to_numeric(m["value"]))
+    return m[["obs_date", "value"]].sort_values("obs_date").reset_index(drop=True)
 
 
 def load(client, start: date, end: date) -> Tuple[List[date], pd.DataFrame, Dict[str, pd.DataFrame], pd.DataFrame]:
@@ -492,10 +521,15 @@ def load(client, start: date, end: date) -> Tuple[List[date], pd.DataFrame, Dict
         series[name] = _query(client, "SELECT reference_date, value FROM bacen_sgs "
                               "WHERE series_code = %s AND reference_date BETWEEN %s AND %s",
                               (code, lo, end), ["obs_date", "value"])
-    for name, sid in {**_UST, "vix": "VIX_CLOSE", "brent": "BRENT_SPOT_FOB"}.items():
-        series[name] = _query(client, "SELECT observation_date, value FROM mkt_series "
-                              "WHERE series_id = %s AND observation_date BETWEEN %s AND %s",
-                              (sid, lo, end), ["obs_date", "value"])
+    def mkt(series_id: str) -> pd.DataFrame:
+        return _query(client, "SELECT observation_date, value FROM mkt_series "
+                      "WHERE series_id = %s AND observation_date BETWEEN %s AND %s",
+                      (series_id, lo, end), ["obs_date", "value"])
+
+    for name, sid in {**_UST, "brent": "BRENT_SPOT_FOB"}.items():
+        series[name] = mkt(sid)
+    for name, sid in _OFR.items():
+        series[name] = prefer_first_release(mkt(sid), mkt(f"{sid}_FIRST_RELEASE"))
     series["focus_ipca_12m"] = _query(
         client, "SELECT reference_date, median FROM bacen_expectativas "
         "WHERE endpoint_name = 'ExpectativasMercadoInflacao12Meses' AND indicador = 'IPCA' "

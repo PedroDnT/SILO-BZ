@@ -392,9 +392,14 @@ Nothing in wave 2 that depends on these starts until each has an answer.
   Sentinel only if it passes. **Passed 2026-09-24 (PR #291); prompts written
   2026-09-25; labels and routines pending.**
 - **B8.** DI curve and futures (`INSTRUMENTS.md` Phases B and C). **Ingest done
-  2026-09-27 (PR #355, migration 48):** DI1 per contract from 2018, B3 `PRE` and
-  `DOC` curves from 2008, held and not served; history needs the
-  `market_backfill.yml` dispatches. Serving (`future_curve`, `curve`) is open.
+  2026-09-27 (PR #355, migration 48):** DI1 per contract from 2018, B3 `PRE`,
+  `DOC` and `DPL` curves from 2008, held and not served; history needs the
+  `market_backfill.yml` dispatches. Serving (`future_curve`, `future_history`,
+  `reference_curve`) is open. Owner-only: an `EIA_API_KEY` secret (optional;
+  without it EIA's rate-limited demo key is used), and, only if VIX itself is
+  wanted, a signed Cboe licence (permissions@cboe.com) before setting the
+  `CBOE_VIX_LICENSED` repository variable. Until then the risk regime is the
+  OFR Financial Stress Index (`docs/research/dustin_br_data_sources.md` §3.C).
 - **B9.** Alerts, only on signals from waves 1 and 2 once they exist.
 - **B10.** Document text (Stage 3), priority categories only.
 - **B11.** Per-event adjusted prices, where verified.

@@ -110,6 +110,7 @@ jobs:
         if: ${{ !cancelled() && (steps.staleness.outputs.stale == 'true' || github.event.inputs.force == 'true') }}
         env:
           EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+          CBOE_VIX_LICENSED: ${{ vars.CBOE_VIX_LICENSED }}
         run: python -m src.pipeline.market_pipeline
 
       - name: Report no-op

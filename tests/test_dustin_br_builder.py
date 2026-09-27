@@ -72,6 +72,23 @@ def test_monthly_series_are_public_on_the_15th_of_the_next_month():
     assert bd.fifteenth_of_next_month(date(2025, 12, 1)) == date(2026, 1, 15)
 
 
+def test_ofr_fsi_is_used_three_weekdays_after_its_date():
+    # Measured: on Sunday 2026-09-27 the newest OFR value was Wednesday 09-23.
+    assert bd.three_weekdays_after(date(2026, 9, 23)) == date(2026, 9, 28)   # Wed -> Mon
+    assert bd.three_weekdays_after(date(2026, 9, 25)) == date(2026, 9, 30)   # Fri -> Wed
+    assert bd.three_weekdays_after(date(2026, 9, 21)) == date(2026, 9, 24)   # Mon -> Thu
+
+
+def test_a_revised_ofr_date_uses_its_first_release():
+    current = pd.DataFrame({"obs_date": [date(2017, 10, 2), date(2017, 10, 3), date(2026, 9, 23)],
+                            "value": [-3.455, -3.545, -2.663]})
+    first = pd.DataFrame({"obs_date": [date(2017, 10, 2), date(2017, 10, 3)], "value": [-3.605, -3.700]})
+    out = bd.prefer_first_release(current, first)
+    assert list(out["value"]) == [-3.605, -3.700, -2.663]
+    empty = pd.DataFrame(columns=["obs_date", "value"])
+    assert list(bd.prefer_first_release(current, empty)["value"]) == [-3.455, -3.545, -2.663]
+
+
 # ---------------------------------------------------------------------------
 # As-of join
 # ---------------------------------------------------------------------------
@@ -135,7 +152,8 @@ def _synthetic(seed: int = 7):
         "ust_1y": walk(us_days, 1.5, 0.02), "ust_2y": walk(us_days, 1.6, 0.02),
         "ust_5y": walk(us_days, 1.7, 0.02), "ust_10y": walk(us_days, 1.9, 0.02),
         "ust_30y": walk(us_days, 2.3, 0.02),
-        "vix": walk(us_days, 20.0, 0.5), "brent": walk(days, 60.0, 0.8),
+        "ofr_fsi": walk(us_days, -2.0, 0.1), "ofr_fsi_volatility": walk(us_days, -0.5, 0.05),
+        "brent": walk(days, 60.0, 0.8),
         "selic": walk(sessions, 4.5, 0.0),
         "ipca": walk(months, 0.3, 0.1), "ipca_12m": walk(months, 4.0, 0.1),
         "commodity_index": walk(months, 300.0, 5.0),
@@ -160,7 +178,8 @@ def test_the_matrix_has_the_documented_columns():
     sessions, curves, series, futures = _synthetic()
     out, _ = bd.build(sessions, curves, series, futures)
     for col in ("di_1y", "di_2y", "di_3y", "di_5y", "di_10y", "di_anchor_du", "di_2s5s", "di_curvature",
-                "usdbrl", "ust_2y", "ust_10y", "ust_2s10s", "vix", "rates_vol_proxy",
+                "usdbrl", "ust_2y", "ust_10y", "ust_2s10s", "ofr_fsi", "ofr_fsi_volatility",
+                "ofr_fsi_mom_21d", "corr_di2y_ofr_vol_21d", "rates_vol_proxy",
                 "brazil_sovereign_risk_proxy", "brent", "commodity_index", "ipca", "selic",
                 "breakeven_1y", "breakeven_2y", "breakeven_5y", "breakeven_2y_mom_21d",
                 "di_2y_mom_21d", "di_2y_rv_63d", "corr_di2y_usdbrl_21d", "corr_usdbrl_brent_63d",

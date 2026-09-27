@@ -39,4 +39,6 @@ API code is included.
 [`dustin_br_data_sources.md`](dustin_br_data_sources.md) audits what SILO held
 for a Brazilian rates-regime model, tests the candidate sources for DI futures,
 UST, VIX, MOVE, sovereign risk and commodities, and records the choices and the
-point-in-time rules. The dataset builder is `research_examples/dustin_br/`.
+point-in-time rules. VIX is licensed by Cboe and replaced by the OFR Financial
+Stress Index; the sovereign proxy was checked against EMBI+. The dataset
+builder is `research_examples/dustin_br/`.
