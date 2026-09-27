@@ -24,13 +24,27 @@ The evaluator reads `OPENAI_API_KEY` from the environment or the ignored root
 `.env`. It uses the published read-only demo SILO access with `--public-demo`.
 
 Run `.venv/bin/python research_examples/agent_eval.py --public-demo` first to
-validate the 12-case budget without paid model calls. Add `--run` to execute
-the cases. `--case-id L1` selects one case for a smoke run. The model sees
+validate the 12-case budget without paid model calls. Add `--run` and
+`--preflight-report <path>` to execute the cases after the live read-only
+contract check passes. The report must be a JSON object with a UTC
+`checked_at` (within six hours), the exact `base_url`, `read_only: true`,
+`status: "passed"`, and `endpoints` mapping each of
+`financial_statement_history`, `fii_property_history`, and
+`focus_expectations` to `{"status":"passed"}`. `--case-id L1` selects one case
+for a smoke run. The model sees
 only each case's professional question; expected dispositions and review
 notes remain in `research_examples/eval_cases.json`.
 
 Each live case updates `docs/research/agent-evaluation-results.md` and
 `research_examples/eval-results.json`. The Markdown file is the readable
 results summary. The JSON file preserves tool order, usage, errors, and
-answers for review. Discovery checks are automatic; substantive accuracy
-still requires human comparison with source rows and private references.
+answers for review. New runs also preserve bounded public response rows for
+independent numeric review. `research_examples/eval-spend.json` tracks the
+cumulative model-cost estimate across runs, and
+`docs/research/agent-evaluation-grade.md` records the independent baseline
+grading. Discovery checks are automatic; substantive accuracy still requires
+comparison with source rows and private references. Run paid cases only after
+the separate live API preflight passes for the required research RPCs.
+`research_examples/baseline-results.json` preserves the graded baseline;
+future latest-result updates do not change that evidence. The spend ledger
+must exist, reconcile with its entries, and stay within the US$20 total cap.

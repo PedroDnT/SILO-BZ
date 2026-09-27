@@ -5,7 +5,7 @@ from ingestion and longitudinal benchmarks that still require source archives.
 
 | Candidate | Datasets | Check | Current evidence and status |
 | --- | --- | --- | --- |
-| CIA account-chart interpretation | CVM financial statement accounts + company/chart context; FCA mapping for ticker identity | Stratify account-code coverage by chart, verify labels, and reconcile account census denominators before using codes in cross-company metrics. | The repository's `docs/CIA_DATA_MAP.md` documents a 50,439-row statement census and 282 rows without code 3.11 (0.56%; 0.5591% by arithmetic). The code-only API returns NULL for these; the filed labels identify bank-B 3.09 as net income. This is a documented project census, not a fresh raw-file rerun. |
+| CIA account-chart interpretation | CVM financial statement accounts + company/chart context; FCA mapping for ticker identity | Stratify account-code coverage by chart, verify labels, and reconcile account census denominators before using codes in cross-company metrics. | The repository documents a 50,439-row statement census and 282 rows without code 3.11 (0.56%; 0.5591% by arithmetic). The baseline's code-only headline API returned NULL for these; newer main resolves net income from the filed label. This is a documented project census, not a fresh raw-file rerun. |
 | FII property snapshot | CVM quarterly fund report + CVM property report | Match CNPJ/date/version, verify the fund/property row identities and units, calculate area × vacancy fraction, and retain source-reported revenue-share/delinquency values. | A test fixture reproduces a Via Parque Shopping row at 2025-03-31, 56,508.93 m², vacancy 0.124, delinquency 0.231726, revenue share 0.979772. Scripted calculations run; full-portfolio coverage and historical tracking are unverified. |
 | Focus forecast error | BCB Focus vintage + IBGE realized IPCA | Match the report's 2025 IPCA median to the 2025 realized annual IPCA and calculate forecast minus actual in percentage points. | BCB 2024-12-06 median 4.59%; IBGE 2025 actual 4.26%; calculated error +0.33 pp. This is one vintage/target pair, not a multi-horizon accuracy benchmark. |
 
@@ -15,9 +15,12 @@ The runtime prompt for each case is only the professional question. It must
 not name sources, tables, fields, join keys, dates or expected values. The agent
 must discover available data using the SILO catalog and select bounded tools.
 Store expected sources, joins, date rules and reference calculations only in
-the evaluator's case specification. A future evaluation log should record
-catalog discovery and selected tool calls, but no agent run or discovery log
-was produced in this research pass.
+the evaluator's case specification. A 12-case live baseline now records catalog
+discovery and selected tool calls; see the [independent grading](agent-evaluation-grade.md).
+The baseline is not a passed benchmark: production research RPCs were not
+available, several tool arguments were invalid, and response rows were not
+retained for independent numeric review. The next paid run waits for a
+deterministic live API preflight.
 
 ## Ingestion gates still open
 
