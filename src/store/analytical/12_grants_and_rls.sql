@@ -141,7 +141,7 @@ BEGIN
           -- new naming family appears, or the sweep quietly stops covering it.
           AND (
                 NOT c.relrowsecurity
-                OR c.relname ~ '^(cvm_|bacen_|ibge_|fnet_|b3_|anbima_|cia_|etf_|dim_|fact_|mv_|vw_)'
+                OR c.relname ~ '^(cvm_|bacen_|ibge_|fnet_|b3_|mkt_|anbima_|cia_|etf_|dim_|fact_|mv_|vw_)'
                 OR c.relname = 'instrument_activity'
               )
     LOOP
@@ -182,6 +182,9 @@ REVOKE ALL ON TABLE fnet_document_filter   FROM anon, authenticated;
 REVOKE ALL ON TABLE fnet_document_body     FROM anon, authenticated;
 REVOKE ALL ON TABLE fnet_document_pair     FROM anon, authenticated;
 REVOKE ALL ON TABLE fnet_document_diff     FROM anon, authenticated;
+REVOKE ALL ON TABLE b3_futures_settlement  FROM anon, authenticated;
+REVOKE ALL ON TABLE b3_reference_rate      FROM anon, authenticated;
+REVOKE ALL ON TABLE mkt_series             FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_securit_mensal     FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_securit_serie      FROM anon, authenticated;
 REVOKE ALL ON TABLE cvm_securit_fluxo      FROM anon, authenticated;

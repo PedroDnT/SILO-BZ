@@ -2349,3 +2349,73 @@ CREATE INDEX IF NOT EXISTS idx_b3_lending_trade_doador
 
 COMMENT ON TABLE b3_lending_trade IS
     'Individual B3 securities-lending trades (BTBTrade): ticker, quantity, annualized rate, venue, time, and the brokerage on each leg. doador/tomador are BROKERS intermediating, not beneficial owners — ~75% of trades carry the same code on both legs. ~43k rows/session; same ~21-business-day source retention as the rest of the lending group, and no aggregate preserves the individual trades, so an uncaptured session is unrecoverable.';
+
+-- ---------------------------------------------------------------------------
+-- DI1 futures, B3 reference curves, global market series (migration 48).
+-- Sources, coverage and point-in-time rules: docs/research/dustin_br_data_sources.md.
+--   b3_futures_settlement  B3 Price Report, (session, outright futures ticker);
+--                          DI1 price columns are RATES, settlement_price the PU.
+--   b3_reference_rate      B3 TaxaSwap, (session, curve, calendar days); PRE and DOC.
+--   mkt_series             Treasury par yields, Cboe VIX, EIA Brent; long.
+-- Not served through schema api.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS b3_futures_settlement (
+    id                            BIGSERIAL    PRIMARY KEY,
+    trade_date                    DATE         NOT NULL,
+    ticker                        TEXT         NOT NULL,
+    instrument_id                 BIGINT,
+    trades                        INT,
+    contracts                     BIGINT,
+    notional_brl                  NUMERIC,
+    open_interest                 BIGINT,
+    open_px                       NUMERIC,
+    low_px                        NUMERIC,
+    high_px                       NUMERIC,
+    avg_px                        NUMERIC,
+    close_px                      NUMERIC,
+    best_bid                      NUMERIC,
+    best_ask                      NUMERIC,
+    settlement_price              NUMERIC      NOT NULL CHECK (settlement_price > 0),
+    settlement_rate               NUMERIC,
+    settlement_status             TEXT,
+    prev_settlement_price         NUMERIC,
+    prev_settlement_rate          NUMERIC,
+    prev_settlement_status        TEXT,
+    variation_points              NUMERIC,
+    settlement_value_per_contract NUMERIC,
+    report_created_at             TIMESTAMP,
+    raw                           JSONB        NOT NULL,
+    fetched_at                    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_b3_futures_settlement UNIQUE (trade_date, ticker)
+);
+CREATE INDEX IF NOT EXISTS idx_b3_futures_settlement_ticker_date
+    ON b3_futures_settlement (ticker, trade_date DESC);
+
+CREATE TABLE IF NOT EXISTS b3_reference_rate (
+    id             BIGSERIAL    PRIMARY KEY,
+    trade_date     DATE         NOT NULL,
+    curve          TEXT         NOT NULL,
+    curve_desc     TEXT,
+    calendar_days  INT          NOT NULL CHECK (calendar_days > 0),
+    business_days  INT          NOT NULL CHECK (business_days >= 0),
+    rate           NUMERIC      NOT NULL,
+    vertex_type    CHAR(1)      NOT NULL CHECK (vertex_type IN ('F', 'M')),
+    vertex_code    TEXT,
+    fetched_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_b3_reference_rate UNIQUE (curve, trade_date, calendar_days)
+);
+CREATE INDEX IF NOT EXISTS idx_b3_reference_rate_date
+    ON b3_reference_rate (trade_date DESC);
+
+CREATE TABLE IF NOT EXISTS mkt_series (
+    id                BIGSERIAL    PRIMARY KEY,
+    source            TEXT         NOT NULL,
+    series_id         TEXT         NOT NULL,
+    observation_date  DATE         NOT NULL,
+    value             NUMERIC      NOT NULL,
+    unit              TEXT         NOT NULL,
+    first_seen_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_mkt_series UNIQUE (source, series_id, observation_date)
+);
+CREATE INDEX IF NOT EXISTS idx_mkt_series_series_date
+    ON mkt_series (series_id, observation_date DESC);
