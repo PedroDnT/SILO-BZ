@@ -16,6 +16,38 @@ Use the five defaults: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-f
 
 Single-context: root `CONTEXT.md` and `docs/adr/`. See `docs/agents/domain.md`.
 
+## Infrastructure facts
+
+- One Vercel project (`silo-bz`, team `deloslabs`) exists, and it builds only
+  `dashboard/`: root `vercel.json` hardcodes `cd dashboard` and
+  `scripts/vercel_should_build.sh` triggers only on `dashboard/` changes. `webapp/`
+  has no Vercel deployment (`webapp/README.md`). Do not assume a second project.
+- Canonical clone: `~/Dev/SILO-BZ`, remote `github.com/PedroDnT/SILO-BZ`. Before
+  starting work, run `git remote -v && pwd` to confirm you are in it (or in one of
+  its worktrees), not a stale copy.
+
+## Planning register
+
+The register of open work is `docs/planning/OPEN_ITEMS.md` (index:
+`docs/planning/README.md`).
+
+### Register workflow
+
+When fixing register items: first check for existing branches or PRs for each item
+and merge them rather than redoing the work. Commit one fix per item, or add a
+blocker note. When a step only the owner can do is required (e.g., creating a DB
+role), record it clearly and move to the next item. Do not stop after exploration
+only.
+
+## Working style
+
+### Before asking design questions
+
+Check the current code, `docs/adr/`, `docs/planning/`, and the planning register
+before asking the owner a design or hosting question. If the answer is already in
+the code or recorded decisions, state what you found and ask only about the
+remaining ambiguity.
+
 ## The shape of the system: 3 infra, 3 products
 
 Reach for this before reporting a problem — it decides whose problem it is, and
@@ -332,6 +364,10 @@ review (`docs/planning/AGENTS.md`). Only the owner marks an `agent:*` PR ready.
 
 - Never run `npm install` from the home directory. `cd` into `dashboard/` or `webapp/`
   first (the repo root has no `package.json`) and confirm that is the intended target.
+  The PreToolUse hook `.claude/hooks/npm-cwd-guard.sh` refuses `npm install|i|ci`
+  aimed at `$HOME` or at a directory with no `package.json` (`-g` is allowed).
+- On macOS, `date` is BSD date. Use `gdate`, or write tests that are portable across
+  GNU and BSD `date`.
 
 ## Consumers (read-only, query Supabase directly)
 
