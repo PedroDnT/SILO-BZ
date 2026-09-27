@@ -16,16 +16,15 @@ Use the five defaults: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-f
 
 Single-context: root `CONTEXT.md` and `docs/adr/`. See `docs/agents/domain.md`.
 
-## Planning register
+## Infrastructure facts
 
-The register is `docs/planning/OPEN_ITEMS.md`. When asked to fix items from it: first
-list all open items with a one-line plan for each. Then fix them one at a time. For each
-item: make the change, verify it, and mark its status in the register before moving to
-the next. Keep exploration for any single item short. Do not survey the whole codebase,
-Supabase and Vercel before starting the first fix.
-
-When asked to fix items, do not end a session after exploration alone. For every item,
-produce a commit or an explicit blocker report.
+- One Vercel project (`silo-bz`, team `deloslabs`) exists, and it builds only
+  `dashboard/`: root `vercel.json` hardcodes `cd dashboard` and
+  `scripts/vercel_should_build.sh` triggers only on `dashboard/` changes. `webapp/`
+  has no Vercel deployment (`webapp/README.md`). Do not assume a second project.
+- Canonical clone: `~/Dev/SILO-BZ`, remote `github.com/PedroDnT/SILO-BZ`. Before
+  starting work, run `git remote -v && pwd` to confirm you are in it (or in one of
+  its worktrees), not a stale copy.
 
 ## Tooling
 
@@ -33,9 +32,33 @@ produce a commit or an explicit blocker report.
 
 - Supabase: use the Supabase MCP, project ref `zcjbtpxuhdekpwcxmepn`. Run read-only
   SELECTs freely, but ask before running any DDL or data-modifying SQL.
-- Vercel: use the Vercel MCP. Both `dashboard/` (the Evidence dashboard) and `webapp/`
-  are hosted under project `silo-bz` in team `deloslabs`, so don't call list_projects
-  to rediscover it.
+- Vercel: use the Vercel MCP. Project `silo-bz` in team `deloslabs` builds only
+  `dashboard/` (see Infrastructure facts), so don't call list_projects to rediscover it.
+
+## Planning register
+
+The register of open work is `docs/planning/OPEN_ITEMS.md` (index:
+`docs/planning/README.md`).
+
+### Register workflow
+
+When fixing register items: first list the open items with a one-line plan each, and
+check for existing branches or PRs for each item and merge them rather than redoing
+the work. Then fix them one at a time: make the change, verify it, and mark its status
+in the register before moving to the next. Keep exploration for any single item short;
+do not survey the whole codebase, Supabase and Vercel before the first fix. Commit one
+fix per item, or add a blocker note. When a step only the owner can do is required
+(e.g., creating a DB role), record it clearly and move to the next item. Do not end a
+session after exploration alone. The `fix-register` skill runs this loop.
+
+## Working style
+
+### Before asking design questions
+
+Check the current code, `docs/adr/`, `docs/planning/`, and the planning register
+before asking the owner a design or hosting question. If the answer is already in
+the code or recorded decisions, state what you found and ask only about the
+remaining ambiguity.
 
 ## The shape of the system: 3 infra, 3 products
 
