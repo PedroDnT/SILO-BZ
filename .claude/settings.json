@@ -19,6 +19,8 @@
       "Bash(prettier *)",
       "Bash(git push origin --delete claude/*)",
       "Bash(git push origin --delete cclaude/*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr create:*)",
       "mcp__github__pull_request_read",
       "mcp__github__actions_list",
       "mcp__github__actions_get",
@@ -44,6 +46,11 @@
             "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/pre-push-docs.sh\"",
             "timeout": 30,
             "statusMessage": "docs check…"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/npm-cwd-guard.sh\"",
+            "timeout": 10
           }
         ]
       }
