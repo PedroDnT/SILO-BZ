@@ -71,7 +71,7 @@ symptoms routinely surface one layer away from their cause.
 | ------------------ | ----------------------------------------------------------------- | ----------------------------------------------- |
 | **GitHub Actions** | ingestion + parse (`run_daily`, `run_backfill`, health, watchdog) | a red run, a slice in `cvm_ingest_log`          |
 | **Supabase**       | the Postgres store                                                | disk pressure, a failing query, a missing grant |
-| **Vercel**         | hosting for `dashboard/` and `webapp/`                            | a build error, a stale or mis-pointed domain    |
+| **Vercel**         | hosting for `dashboard/` only; `webapp/` is not deployed          | a build error, a stale or mis-pointed domain    |
 
 **Products** (what anyone actually consumes):
 
