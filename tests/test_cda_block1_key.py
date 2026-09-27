@@ -73,7 +73,7 @@ def test_every_bond_of_one_fund_survives_the_key(monkeypatch):
     )
 
 
-def test_the_2005_fi_and_fif_double_filing_keeps_both(monkeypatch):
+def test_the_2005_fi_and_fif_filings_with_different_values_keep_both(monkeypatch):
     """HIST 2005 has 144 CNPJs filed as both FI and FIF with the same bond."""
     rows = [
         {**_bond("BRSTNCLF1RK7", "LETRAS FINANCEIRAS DO TESOURO", "2028-09-01",
@@ -121,3 +121,21 @@ def test_the_migration_backfills_every_year_it_can_hold():
     migration = (ROOT / "src/store/migrations/49_cda_block1_key.sql").read_text()
     years = {int(y) for y in re.findall(r"period >= DATE '(\d{4})-01-01'", migration)}
     assert years == set(range(2005, 2027))
+
+
+def test_an_identical_twin_under_two_labels_is_kept_once(monkeypatch):
+    """202503: 33 positions filed as both FI and CLASSES - FIF, identical
+    otherwise. Both rows would double the position in every sum."""
+    rows = [_bond("BRSTNCLF1RK7", "LETRAS FINANCEIRAS DO TESOURO", "2028-09-01", tp_fundo="FI"),
+            _bond("BRSTNCLF1RK7", "LETRAS FINANCEIRAS DO TESOURO", "2028-09-01")]
+    seen = _captured(monkeypatch, rows)
+    assert [r["tp_fundo"] for r in seen["rows"]] == ["CLASSES - FIF"]
+
+
+def test_twins_with_different_positions_both_survive(monkeypatch):
+    """HIST 2005: 16 FI/FIF groups carry different values, so they are two
+    real positions and neither may be dropped."""
+    rows = [_bond("BRSTNCLF1RK7", "LETRAS FINANCEIRAS DO TESOURO", "2028-09-01", tp_fundo="FI", vl="10.00"),
+            _bond("BRSTNCLF1RK7", "LETRAS FINANCEIRAS DO TESOURO", "2028-09-01", tp_fundo="FIF", vl="20.00")]
+    seen = _captured(monkeypatch, rows)
+    assert sorted(r["tp_fundo"] for r in seen["rows"]) == ["FI", "FIF"]
