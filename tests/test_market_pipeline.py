@@ -214,6 +214,20 @@ def test_taxa_swap_layout_changes_raise():
         ts.parse_taxa_swap(pre + "\n" + pre, session=S_2026, curves=("PRE",))
 
 
+def test_an_earlier_file_republished_under_a_later_date_is_stale_not_broken():
+    # B3 served the 2010-12-23 file under 2010-12-24; here the 2026-09-25 file
+    # under 2026-09-28. Nothing may be stored under the later date.
+    with pytest.raises(ts.TaxaSwapStaleFile, match="republished that file under 2026-09-28"):
+        ts.parse_taxa_swap(TS_2026, session=date(2026, 9, 28))
+    # One earlier-dated line among current ones is a broken file, not a republication.
+    lines = TS_2026.splitlines()
+    i = next(k for k, line in enumerate(lines) if line[21:26].strip() == "PRE")
+    lines[i] = lines[i][:11] + "20260924" + lines[i][19:]
+    with pytest.raises(ts.TaxaSwapFormatError, match="dated 2026-09-24") as exc:
+        ts.parse_taxa_swap("\n".join(lines), session=S_2026)
+    assert not isinstance(exc.value, ts.TaxaSwapStaleFile)
+
+
 def test_short_doc_vertices_of_hundreds_of_percent_are_kept_as_published():
     line = "0068520010120260914T1DOC  DIxXDOL Cupom l0000100001+00004303000000F00001"
     (row,), counts = ts.parse_taxa_swap(line, session=date(2026, 9, 14), curves=("DOC",))
@@ -382,6 +396,20 @@ def test_a_session_that_is_not_published_is_skipped_and_audited():
     finish = _audit(up)[-1]
     assert finish["status"] == "skipped" and finish["entity"] == "market"
     assert finish["doc_type"] == "b3_reference_rate"
+    assert ing.failures == [] and ing.skips
+
+
+def test_a_republished_earlier_file_is_skipped_and_stores_nothing():
+    ing, b3, _ = _ingestor()
+
+    async def republished(session):
+        return TS_2026                                  # the 2026-09-25 file
+    b3.fetch_taxa_swap.side_effect = republished
+    with patch.object(mp, "upsert_rows") as up:
+        assert _run(ing.ingest_reference_rates(date(2026, 9, 28))) == 0
+    finish = _audit(up)[-1]
+    assert finish["status"] == "skipped" and "republished" in finish["error_msg"]
+    assert all(c.args[1] == "cvm_ingest_log" for c in up.call_args_list)
     assert ing.failures == [] and ing.skips
 
 

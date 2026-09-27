@@ -64,6 +64,25 @@ class TaxaSwapFormatError(ValueError):
     """The file is not the documented 72-character layout."""
 
 
+class TaxaSwapStaleFile(TaxaSwapFormatError):
+    """B3 served an earlier session's file under this date: no curve was
+    generated that day. Measured: TS101224 and TS101231 are the 2010-12-23 and
+    2010-12-30 files, every PRE/DOC/DPL vertex identical. Nothing is stored
+    under the requested date; the earlier session keeps its own rows."""
+
+
+def _line_dates(text: str, wanted: set) -> set:
+    """The generation date of every line of the ``wanted`` curves (None if unreadable)."""
+    dates = set()
+    for line in text.splitlines():
+        if len(line) == LINE_LENGTH and line[21:26].strip() in wanted:
+            try:
+                dates.add(datetime.strptime(line[11:19], "%Y%m%d").date())
+            except ValueError:
+                dates.add(None)
+    return dates
+
+
 def _valid(row: Dict[str, Any]) -> bool:
     errors, _ = _validator.validate_record(
         row, ["trade_date", "curve", "calendar_days", "business_days", "rate"], {"trade_date": "date"}
@@ -118,6 +137,12 @@ def parse_taxa_swap(
         if sign not in "+-":
             raise TaxaSwapFormatError(f"{origin} line {n}: sign {sign!r}")
         if generated != session:
+            # One earlier date on every line is B3 republishing that session's
+            # file; any other mismatch is a broken file.
+            if generated < session and _line_dates(text, wanted) == {generated}:
+                raise TaxaSwapStaleFile(
+                    f"{origin}: every {'/'.join(sorted(wanted))} line is dated {generated}; "
+                    f"B3 republished that file under {session}")
             raise TaxaSwapFormatError(f"{origin} line {n}: dated {generated}, file is {session}")
         key = (curve, calendar_days)
         if key in seen:
