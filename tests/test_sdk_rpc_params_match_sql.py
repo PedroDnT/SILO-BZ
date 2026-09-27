@@ -34,6 +34,8 @@ SQL_EXTRA = (
     ROOT / "src/store/analytical/25_api_filing_screens.sql",
     # v38: company events, macro series, PTAX.
     ROOT / "src/store/analytical/26_api_events_macro.sql",
+    # v42: DI1 futures and B3 reference curves.
+    ROOT / "src/store/analytical/27_api_rates.sql",
 )
 CLIENT = ROOT / "sdk/silo_client/client.py"
 

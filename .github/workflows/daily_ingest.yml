@@ -246,6 +246,9 @@ jobs:
         env:
           # Optional. Without it the EIA fetch uses EIA's rate-limited DEMO_KEY.
           EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+          # Cboe VIX is fetched only when this repository variable is 1, which
+          # needs a signed Cboe licence (docs/research/dustin_br_data_sources.md §5).
+          CBOE_VIX_LICENSED: ${{ vars.CBOE_VIX_LICENSED }}
         run: python -m src.pipeline.market_pipeline
 
       - name: Refresh FNET document register

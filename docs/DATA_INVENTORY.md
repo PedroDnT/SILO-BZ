@@ -123,14 +123,18 @@ www2.bmf.com.br pages on 2025-12-10).
 | Table                   | Grain                                   | Notes                                                                                                                                                                              |
 | ----------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `b3_futures_settlement` | session × outright futures ticker (DI1) | Price Report `BVBG.086.01`: trades, contracts, open interest, OHLC **as rates**, settlement PU and rate, as published. From **2018-01-02** (older files are empty)                 |
-| `b3_reference_rate`     | session × curve × calendar days         | TaxaSwap `PRE` (DI x pré; its moving vertices sit on every DI1 maturity at the settlement rate) and `DOC` (onshore dollar coupon). From **2008-01-02**                             |
+| `b3_reference_rate`     | session × curve × calendar days         | TaxaSwap `PRE` (DI x pré; its moving vertices sit on every DI1 maturity at the settlement rate, and B3 extrapolates past the last one), `DOC` (onshore dollar coupon) and `DPL` (IPCA clean coupon, for implied inflation). From **2008-01-02**                             |
 
 ### Global market series (`mkt_series`)
 
 Migration 48, long: `(source, series_id, observation_date)`. U.S. Treasury par
-curve (every published tenor), Cboe VIX OHLC, EIA Brent spot. `first_seen_at`
-is SILO's first sighting of a value; a re-fetch that changes one is counted on
-the audit row. Daily run: `src/pipeline/market_pipeline.py` (audit entity
+curve (every published tenor), EIA Brent spot, and the OFR Financial Stress
+Index with its Volatility category (`OFR_FSI`, `OFR_FSI_VOLATILITY`, and
+`*_FIRST_RELEASE` rows holding the value a date had before OFR revised it).
+Cboe VIX is **not ingested**: Cboe requires a signed licence, and the code
+runs only where the `CBOE_VIX_LICENSED` repository variable is 1.
+`first_seen_at` is SILO's first sighting of a value; a re-fetch that changes
+one is counted on the audit row. Daily run: `src/pipeline/market_pipeline.py` (audit entity
 `market`); history: `market_backfill.yml`.
 
 ### BACEN — IC-Br
@@ -226,8 +230,8 @@ Not variations on COTAHIST; separate files with separate shapes.
 
 | Source                      | What it gives                       | Why it matters                                                                          |
 | --------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------- |
-| Futures settlement (DI1)    | daily settlement per contract       | **ingested since migration 48** (`b3_futures_settlement`, from 2018), not served        |
-| Reference-rate curves (PRE) | the published yield curve           | **ingested since migration 48** (`b3_reference_rate`, `PRE` and `DOC`, from 2008), not served |
+| Futures settlement (DI1)    | daily settlement per contract       | **ingested since migration 48** (`b3_futures_settlement`, from 2018), served since v42 (`future_curve`, `future_series`) |
+| Reference-rate curves (PRE) | the published yield curve           | **ingested since migration 48** (`b3_reference_rate`, `PRE`, `DOC` and `DPL`, from 2008), served since v42 (`curve`, `curve_history`) |
 | Index composition           | IBOV/IBRX/SMLL membership + weights | benchmark-relative performance; without it "beat the index" is unanswerable             |
 
 Called the highest-value additions in `docs/planning/INSTRUMENTS.md`. Each is a
@@ -407,7 +411,7 @@ endpoint. Listed with what serving it would take.
 | `b3_corporate_event`                                                                           | splits, bonuses, groupings                                                                                                                       | **No.** Held as published; `adjusted` stays `FALSE` everywhere. The convention was measured on 2026-08-31 (705 events with a print on both sides): `DESDOBRAMENTO`/`BONIFICACAO` fit `1 + factor/100` to within 0.4% at the median; consecutive-session pairs hit ±5% only 82.6%/86.3% of the time, and `GRUPAMENTO` never exceeds 42%. Below the 90% bar, so no adjusted series. See `docs/planning/INSTRUMENTS.md`. Candidate: serve the events themselves (`corporate_events(p_ticker)`) without applying them.                |
 | `cvm_fi_balancete`                                                                             | ~111M rows, fund accounting                                                                                                                      | **No.** Largest table in the warehouse; nothing reads it, including the dashboard. Deliberate until a question needs it.                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `cvm_fidc_garantia` | FIDC tab X_7 (migration 45): value of guarantees on the credit rights and a percentage, per fund × month, from 2019-11 | **No.** New; nothing reads it yet. CVM's dictionary leaves both columns undescribed and the percentage's denominator does not reconcile to one sibling total, so it is stored as filed. Most funds file zeros (28 of 4,383 non-zero in 2026-08). Candidate: a `kind = 'guarantees'` arm in `fidc_portfolio`, with the unstated denominator in its note, plus a `coverage()` row. |
-| `b3_futures_settlement`, `b3_reference_rate`, `mkt_series`, IC-Br in `bacen_sgs` | DI1 per contract (2018+), B3 `PRE` / `DOC` curves (2008+), UST / VIX / Brent, IC-Br (migration 48) | **No.** Landed for the DUSTIN-BR research dataset (`research_examples/dustin_br/`). Candidates: `future_curve` / `curve` (`INSTRUMENTS.md` Phases B and C). VIX must not be served until Cboe's redistribution terms are confirmed; IC-Br would join `macro_series`' registry. |
+| `mkt_series`, IC-Br in `bacen_sgs` | UST / Brent / OFR FSI, IC-Br (migration 48) | **No.** Landed for the DUSTIN-BR research dataset (`research_examples/dustin_br/`). The DI1 contracts and B3 curves beside them are served since v42 (`future_curve`, `future_series`, `curve`, `curve_history`). VIX is not ingested at all (Cboe licence); IC-Br would join `macro_series`' registry. |
 | `cvm_fi_cda`                                                                                   | CDA block 1, government bonds per fund-month (one row per bond since migration 49)                                                                                               | **No.** Blocks 4, 2 and 6 are served; the header is read by nothing.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ### Not served by design

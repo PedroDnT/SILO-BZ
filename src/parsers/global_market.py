@@ -1,4 +1,4 @@
-"""U.S. Treasury, Cboe and EIA files → `mkt_series` rows.
+"""U.S. Treasury, Cboe, EIA and OFR files → `mkt_series` rows.
 
 One long shape for every non-Brazilian daily series:
 ``{source, series_id, observation_date, value, unit}``. A cell the source left
@@ -7,15 +7,22 @@ raises: Treasury adds tenors over time (``1.5 Month`` and ``4 Mo`` appear in
 2026 and not in 2008, measured), and a silently skipped new column is a
 series that quietly never lands.
 
-Contracts measured 2026-09-26:
+Contracts measured 2026-09-26/27:
 
 * Treasury "Daily Treasury Par Yield Curve Rates", one CSV per year:
   ``Date,"1 Mo",…,"30 Yr"``, dates MM/DD/YYYY, newest first, values in %.
 * Cboe ``VIX_History.csv``: ``DATE,OPEN,HIGH,LOW,CLOSE``, MM/DD/YYYY,
-  1990-01-02 onward, index points.
+  1990-01-02 onward, index points. Licence-gated: see market_pipeline.
 * EIA API v2 ``petroleum/pri/spt/data`` for series ``RBRTE`` (Europe Brent
   Spot Price FOB): JSON ``response.data[]`` with ``period`` (YYYY-MM-DD),
   ``series``, ``value`` (a string) and ``units`` (``$/BBL``).
+* OFR Financial Stress Index ``fsi.csv``: ``Date`` (YYYY-MM-DD, oldest
+  first, U.S. business days from 2000-01-03), the index, then its
+  contributions: five categories that sum to it and three regions that sum
+  to it again (checked on 2000-01-03). Zero is average stress; measured
+  range -5.3 to 29.3. Kept: the index and its Volatility category.
+* OFR's revision-history workbook: the values OFR replaced, per revision
+  (see ``parse_ofr_fsi_revisions``).
 """
 
 from __future__ import annotations
@@ -37,6 +44,7 @@ CONFLICT = ("source", "series_id", "observation_date")
 SOURCE_TREASURY = "us_treasury"
 SOURCE_CBOE = "cboe"
 SOURCE_EIA = "eia"
+SOURCE_OFR = "ofr"
 
 # Treasury CSV header → series_id. Every header ever seen goes here; an
 # unknown one raises (see module docstring).
@@ -61,12 +69,22 @@ CBOE_VIX_COLUMNS: Dict[str, str] = {
 }
 EIA_BRENT = "RBRTE"
 EIA_BRENT_SERIES_ID = "BRENT_SPOT_FOB"
+# fsi.csv's header, whole and in order: a renamed or moved column raises.
+OFR_FSI_HEADER: Tuple[str, ...] = (
+    "Date", "OFR FSI", "Credit", "Equity valuation", "Safe assets", "Funding", "Volatility",
+    "United States", "Other advanced economies", "Emerging markets",
+)
+OFR_FSI_SERIES: Dict[str, str] = {"OFR FSI": "OFR_FSI", "Volatility": "OFR_FSI_VOLATILITY"}
+# The value a date had before OFR revised it, as its own series.
+OFR_FIRST_RELEASE: Dict[str, str] = {s: f"{s}_FIRST_RELEASE" for s in OFR_FSI_SERIES.values()}
 
 # Plausibility bounds per unit. A value outside is dropped and counted.
 _BOUNDS = {
     "pct": (Decimal("-5"), Decimal("30")),
     "index_pts": (Decimal("0"), Decimal("200")),
     "usd_per_bbl": (Decimal("0"), Decimal("1000")),
+    # OFR FSI and its contributions: signed, zero is average stress.
+    "index": (Decimal("-100"), Decimal("100")),
 }
 
 _validator = DataValidator()
@@ -99,7 +117,7 @@ def _keep(row: Dict[str, Any]) -> bool:
     if errors:
         return False
     # Open intervals: VIX and Brent must be strictly positive; yields may be
-    # slightly negative (short bills, 2020).
+    # slightly negative (short bills, 2020); the FSI is signed.
     lo, hi = _BOUNDS[row["unit"]]
     return lo < row["value"] < hi
 
@@ -191,3 +209,112 @@ def parse_eia_spot(records: List[Dict[str, Any]], *, origin: str = "eia") -> Tup
                    "observation_date": obs, "value": value, "unit": "usd_per_bbl"}
 
     return _finish(rows(), origin)
+
+
+def _ofr_row(series_id: str, obs: date, value: Decimal) -> Dict[str, Any]:
+    return {"source": SOURCE_OFR, "series_id": series_id, "observation_date": obs,
+            "value": value, "unit": "index"}
+
+
+def parse_ofr_fsi_csv(text: str, *, origin: str = "ofr") -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    reader = csv.reader(io.StringIO(text.lstrip("﻿")))
+    header = tuple(h.strip() for h in next(reader, []))
+    if header != OFR_FSI_HEADER:
+        raise MarketFormatError(f"{origin}: header {list(header)}, expected {list(OFR_FSI_HEADER)}")
+    columns = {OFR_FSI_HEADER.index(name): series_id for name, series_id in OFR_FSI_SERIES.items()}
+
+    def rows():
+        for rec in reader:
+            if not rec or not rec[0].strip():
+                continue
+            if len(rec) != len(OFR_FSI_HEADER):
+                raise MarketFormatError(f"{origin}: row {rec[:1]} has {len(rec)} fields, header {len(OFR_FSI_HEADER)}")
+            try:
+                obs = date.fromisoformat(rec[0].strip())
+            except ValueError as exc:
+                raise MarketFormatError(f"{origin}: unreadable date {rec[0]!r}") from exc
+            for i, series_id in columns.items():
+                value = _decimal(rec[i], origin)
+                if value is not None:
+                    yield _ofr_row(series_id, obs, value)
+
+    return _finish(rows(), origin)
+
+
+def _cell(value: Any) -> str:
+    return "" if value is None else str(value).strip()
+
+
+def parse_ofr_fsi_revisions(payload: bytes, *, origin: str = "OFR FSI revisions"
+                            ) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    """First releases of every date OFR revised, from its revision workbook.
+
+    One sheet per revision, named ``Revision YYYY-MM-DD``, holding each
+    revised date's value before and after. Two layouts, both in the
+    2023-06-27 edition (measured):
+
+    * 2018 sheets: one header row ``Date, Old OFR FSI, Updated OFR FSI, …,
+      Old Volatility, Updated Volatility, …``.
+    * 2023 sheet: a row marking ``Old Values`` and ``New Values``, then two
+      ten-column blocks, each headed like fsi.csv; the old block first.
+
+    Returns the OLD values under the ``OFR_FIRST_RELEASE`` series ids.
+    Sheets are read oldest revision first and a date keeps the value from
+    its first revision: that is what was published before any revision. The
+    current values are fsi.csv's (checked: identical to every "updated"
+    value in the workbook).
+    """
+    from openpyxl import load_workbook
+
+    try:
+        wb = load_workbook(io.BytesIO(payload), read_only=True, data_only=True)
+    except Exception as exc:  # noqa: BLE001 — re-raised as a format error, never swallowed
+        raise MarketFormatError(f"{origin}: not a readable xlsx workbook ({exc})") from exc
+    sheets = []
+    for ws in wb.worksheets:
+        if not ws.title.startswith("Revision "):
+            continue
+        try:
+            sheets.append((date.fromisoformat(ws.title[len("Revision "):].strip()), ws))
+        except ValueError as exc:
+            raise MarketFormatError(f"{origin}: sheet {ws.title!r} is not 'Revision YYYY-MM-DD'") from exc
+    if not sheets:
+        raise MarketFormatError(f"{origin}: no 'Revision YYYY-MM-DD' sheet")
+
+    out: List[Dict[str, Any]] = []
+    earlier: set = set()
+    for _, ws in sorted(sheets, key=lambda s: s[0]):
+        grid = [tuple(r) for r in ws.iter_rows(values_only=True)]
+        at = next((i for i, r in enumerate(grid) if r and _cell(r[0]) == "Date"), None)
+        if at is None:
+            raise MarketFormatError(f"{origin} {ws.title}: no 'Date' header row")
+        header = [_cell(c) for c in grid[at]]
+        if "Old OFR FSI" in header:
+            labels, width = {"OFR_FSI": "Old OFR FSI", "OFR_FSI_VOLATILITY": "Old Volatility"}, len(header)
+        else:
+            marker = [_cell(c) for c in grid[at - 1]] if at else []
+            width = header.index("Date", 1) if header.count("Date") == 2 else 0
+            if "Old Values" not in marker[:width] or "New Values" not in marker[width:]:
+                raise MarketFormatError(f"{origin} {ws.title}: neither the Old/Updated nor the Old/New Values layout")
+            labels = {"OFR_FSI": "OFR FSI", "OFR_FSI_VOLATILITY": "Volatility"}
+        index = {}
+        for series_id, label in labels.items():
+            if label not in header[:width]:
+                raise MarketFormatError(f"{origin} {ws.title}: no {label!r} column among the old values")
+            index[series_id] = header.index(label)
+        dates = set()
+        for r in grid[at + 1:]:
+            if not r or all(c is None for c in r):
+                continue
+            if not isinstance(r[0], datetime):
+                raise MarketFormatError(f"{origin} {ws.title}: a row starts with {r[0]!r}, not a date")
+            obs = r[0].date()
+            if obs in earlier:
+                continue
+            dates.add(obs)
+            for series_id, i in index.items():
+                value = _decimal(r[i], origin)
+                if value is not None:
+                    out.append(_ofr_row(OFR_FIRST_RELEASE[series_id], obs, value))
+        earlier |= dates
+    return _finish(out, origin)

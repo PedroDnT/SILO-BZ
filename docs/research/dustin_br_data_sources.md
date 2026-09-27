@@ -14,6 +14,35 @@ Everything marked _measured_ was fetched from the stated URL on 2026-09-26/27
 from a cloud container. Anything not measured is marked as an assumption or
 as unverified. An unknown stays unknown.
 
+### Updates after Stage 1 (2026-09-27)
+
+Findings that changed a Stage 1 recommendation. The sections below are
+updated in place; this list says what moved and why.
+
+- **VIX is not ingested: Cboe licenses it.** Cboe's Use of Content policy
+  (<https://www.cboe.com/use-of-content/>): "In order to use any Cboe logo,
+  data, photo/image or other content contained in Cboe websites (collectively
+  "Cboe Content"), you must receive approval in advance from Cboe" and "You
+  are not approved to use Cboe Content until a license agreement has been
+  signed by both you and Cboe." The Stage 1 check read only the history page,
+  which states no terms. SILO ingests nothing that needs a licence, so the VIX
+  code is gated on `CBOE_VIX_LICENSED=1` (set only once a licence is signed)
+  and the risk-regime input is the **OFR Financial Stress Index** (§3.C).
+- **B3 extrapolates `PRE` past the last DI1 maturity** (Manual de Curvas v21
+  §2.1): the long vertices extend the last forward rate; they are not prices.
+  The builder finds where that straight tail starts and leaves tenors beyond
+  it NULL (§3.A).
+- **`DOC` is linear on 360 days** (Manual de Curvas v21 §4.5). Confirmed; the
+  builder's conversion is B3's own (§3.D).
+- **Breakeven inflation comes from `DPL`, not `DIC`.** `DIC` is a dirty IPCA
+  coupon from a poll of informants; `DPL` is the clean coupon from DAP futures
+  (NTN-B fallback), B3's own basis for implied inflation (§3.A).
+- **The sovereign proxy was checked against EMBI+** over 2008 to 2024-07. It
+  follows EMBI+ over quarters, not in level across years. It is now OPTIONAL,
+  to be read in changes (§3.D).
+- **`TaxaSwap` before 2008**: the same 72-character layout, with `PRE` and
+  `DOC`, back to 2004 (§6). Not loaded.
+
 ---
 
 ## 1. What SILO already holds
@@ -38,14 +67,14 @@ Audited against `CLAUDE.md`, `README.md`, `docs/DATA_INVENTORY.md`,
 | DI1 futures per contract      | **missing**   | none                                                              | `INSTRUMENTS.md` Phase B, never built                                                                                        |
 | B3 reference curve (DI x pré) | **missing**   | none                                                              | `INSTRUMENTS.md` Phase C, never built                                                                                        |
 | US Treasury curve             | **missing**   | none                                                              |                                                                                                                              |
-| VIX                           | **missing**   | none                                                              |                                                                                                                              |
+| VIX                           | **missing**   | none                                                              | licensed by Cboe; not ingested, see §3.C                                                                                     |
 | MOVE                          | **missing**   | none                                                              | proprietary, see §3.C                                                                                                        |
 | Sovereign risk                | **missing**   | none                                                              | see §3.D                                                                                                                     |
 | Commodities                   | **missing**   | none                                                              |                                                                                                                              |
 | DI constant-maturity points   | **derivable** | from the B3 reference curve or DI1 contracts                      | research code, not stored                                                                                                    |
 | Slopes, curvature             | **derivable** | from the constant-maturity points                                 | research code                                                                                                                |
 | Momentum, realised vol, corr  | **derivable** | from any daily series above                                       | research code                                                                                                                |
-| Breakeven inflation           | **derivable** | B3 `DIC` curve (DI x IPCA) from the same reference-rate file      | parking lot: one config value if wanted                                                                                      |
+| Breakeven inflation           | **derivable** | B3 `DPL` curve (clean IPCA coupon) from the same reference file   | built by the builder from `PRE` and `DPL` (§3.A); `DPL` is in the file from mid-2007                                         |
 | Rates-volatility proxy        | **derivable** | realised vol of UST and DI yield changes                          | substitute for MOVE, §3.C                                                                                                    |
 
 Two things found during the audit that shape the design:
@@ -67,7 +96,7 @@ Two things found during the audit that shape the design:
 | ------------------------ | -------- | ------------------------------------------------------------------- |
 | DI1 futures per contract | 1        | the target itself (curve level, slope, curvature) and its liquidity |
 | US Treasury par curve    | 2        | global rates level and slope                                        |
-| VIX                      | 3        | global risk regime                                                  |
+| VIX (now: OFR FSI)       | 3        | global risk regime                                                  |
 | Sovereign-risk proxy     | 4        | Brazil's credit premium                                             |
 | Commodities              | 5        | terms of trade, BRL and inflation pass-through                      |
 | MOVE or substitute       | 6        | global rates volatility                                             |
@@ -127,6 +156,37 @@ from 2018. **No splice is needed**: constant-maturity points come from the
 same `PRE` file in every year, and the 2018+ contract data serves liquidity
 features and cross-checks.
 
+**B3 extrapolates the long end.** B3's Manual de Curvas v21 (2025-12-12)
+§2.1: between DI1 maturities `PRE` is flat-forward on 252 business days, and
+after the last DI1 maturity B3 extends the last segment's forward rate. The
+long vertices (out to 34 years in 2026) are B3's extrapolation, not prices.
+In (business days, log accumulation factor) space that tail is one straight
+line, so its start can be found from the published curve alone: the longest
+suffix whose least-squares line fits every vertex within 1.5 times the
+3rd-decimal rounding. Validated where the contract list is known (the Price
+Report of every 2 January, 2018 to 2026, _measured_): the detected start
+never lies past the second-to-last DI1 maturity. On 2026-09-25 it is 3,289
+business days, against DI1 maturities at 3,322 (second-to-last) and 3,572
+(last). Over monthly samples 2008 to 2026 the 5-year tenor (1,260 business
+days) was always anchored; the 10-year (2,520) fell in the extrapolated tail
+in 8 of 12 months of 2008, 9 of 12 of 2013 and 7 of 12 of 2015. The builder
+leaves a tenor NULL past the detected start, so `di_10y` is often NULL early
+in the sample.
+
+**Breakeven inflation.** Manual §3.2: `DPL` ("Cupom Limpo de IPCA") is the
+IPCA clean coupon, a real rate on 252 business days to 2 decimals, from DAP
+futures settlements and, where DAP is missing, ANBIMA's NTN-B indicative
+rates. B3 defines implied inflation as (1 + `PRE`) / (1 + `DPL`) − 1, and the
+builder computes exactly that at 1, 2 and 5 years. `DIC` (§3.1), the Stage 1
+plan, is dropped: it is a dirty coupon from the median of a poll of
+informants, and it steps with the IPCA release calendar (_measured_ on
+2026-09-25: 9.85 at 362 calendar days, 9.63 at 399). `DPL` is in all 225
+monthly samples from 2008-01 to 2026-09 (_measured_) and first appears
+between the April and July 2007 samples. Its short end leans on the current
+month's IPCA projection, which is why the shortest breakeven read is one
+year. A breakeven carries an inflation risk premium: it is market pricing,
+not an expectation. OPTIONAL.
+
 **Settlement rate, not price.** DI1 is quoted and settled in rate terms; the PU
 is a function of the rate and the business-day count. Research code uses
 `AdjstdQtTax` (Price Report) and the `PRE` rate (reference file) directly.
@@ -153,14 +213,58 @@ Treasury changed its curve methodology to monotone convex in December 2021,
 and the 30-year was not published from February 2002 to February 2006
 (before this sample).
 
-### C. VIX and MOVE
+### C. Risk regime: VIX, MOVE and the OFR FSI
 
-| Dataset | Candidate source                                                                | Official? | Frequency    | Earliest                | Update lag | Access                      | Auth | Licence                                                                | Reliability | Selected?                      |
-| ------- | ------------------------------------------------------------------------------- | --------- | ------------ | ----------------------- | ---------- | --------------------------- | ---- | ---------------------------------------------------------------------- | ----------- | ------------------------------ |
-| VIX     | **Cboe `VIX_History.csv`** (`cdn.cboe.com/api/global/us_indices/daily_prices/`) | yes       | business day | 1990-01-02 (_measured_) | same day   | one CSV, OHLC               | none | Cboe states **no redistribution terms** on the page, only a disclaimer | high        | **yes**, stored **not served** |
-| VIX     | FRED `VIXCLS`                                                                   | copy      | business day | 1990                    | next day   | CSV / API                   | key  | FRED marks it Cboe copyright                                           | copy        | no                             |
-| MOVE    | ICE BofA MOVE Index                                                             | yes (ICE) | business day | 1988                    | same day   | ICE Data Indices, terminals | paid | **proprietary**                                                        | high        | **no**                         |
-| MOVE    | Yahoo `^MOVE`                                                                   | no        | —            | —                       | —          | scrape                      | —    | republication of licensed data                                         | —           | **no**                         |
+| Dataset | Candidate source                                                                                | Official?    | Frequency         | Earliest                | Update lag                                 | Access                           | Auth | Licence                                                              | Reliability                   | Selected?                 |
+| ------- | ----------------------------------------------------------------------------------------------- | ------------ | ----------------- | ----------------------- | ------------------------------------------ | -------------------------------- | ---- | -------------------------------------------------------------------- | ----------------------------- | ------------------------- |
+| VIX     | **Cboe `VIX_History.csv`** (`cdn.cboe.com/api/global/us_indices/daily_prices/`)                 | yes          | business day      | 1990-01-02 (_measured_) | same day                                   | one CSV, OHLC                    | none | Cboe Use of Content: **approval in advance and a signed licence**    | high                          | **no** (code kept, gated) |
+| VIX     | FRED `VIXCLS`                                                                                   | copy         | business day      | 1990                    | next day                                   | CSV / API                        | key  | FRED marks it Cboe copyright                                         | copy                          | no                        |
+| OFR FSI | **OFR Financial Stress Index `fsi.csv`** (`financialresearch.gov/financial-stress-index/data/`) | yes (US gov) | U.S. business day | 2000-01-03 (_measured_) | two business days (OFR's note; _measured_) | one CSV, index + 8 contributions | none | no copyright on OFR's own work; credit requested (OFR legal notices) | high; revisions listed by OFR | **yes**                   |
+| MOVE    | ICE BofA MOVE Index                                                                             | yes (ICE)    | business day      | 1988                    | same day                                   | ICE Data Indices, terminals      | paid | **proprietary**                                                      | high                          | **no**                    |
+| MOVE    | Yahoo `^MOVE`                                                                                   | no           | —                 | —                       | —                                          | scrape                           | —    | republication of licensed data                                       | —                             | **no**                    |
+
+**VIX is not ingested.** Cboe requires advance approval and a signed licence
+for any use of data on its websites (Updates, above). The code stays, gated on
+`CBOE_VIX_LICENSED=1`: if a licence is signed, set that repository variable
+and VIX flows again with no code change. FRED's copy carries the same Cboe
+copyright.
+
+**The risk-regime input is the OFR Financial Stress Index** (Office of
+Financial Research, U.S. Treasury). A daily index of systemic financial stress
+from 33 market variables, zero at average stress, positive above; it is the
+sum of five category contributions (credit, equity valuation, funding, safe
+assets, volatility) and, again, of three regional ones. Two series are kept:
+the index, and its **Volatility** category: nine implied and realised
+volatilities (OFR Working Paper 17-04, Appendix A), namely VIX, V2X, the
+Nikkei volatility index, JPMorgan's EM volatility index, 6-month EUR/USD and
+USD/JPY implied vols, Brent 22-day realised vol, and Merrill Lynch's US and
+Euro **swaption** volatility estimates (the swaption siblings of MOVE, which
+is on Treasury options). It is the closest public counterpart of the
+VIX-and-MOVE block, not a copy of either. OFR's 2023 update replaced only
+funding variables.
+
+- **Why it fits point-in-time work.** OFR, Working Paper 17-04: "the OFR FSI
+  respects the arrow of time. The OFR FSI's value on a given day depends only
+  on information available that day and, once estimated, its value does not
+  change." The exceptions are listed in OFR's revision history (four entries
+  2018 to 2023, _measured_): data corrections on 2018-05-18 (2017-10-02 to
+  2018-05-17) and 2018-12-04 (2018-08-30 and 2018-11-01), a regional
+  reclassification on 2021-02-12 (the index and the categories unchanged) and
+  new funding variables on 2023-06-27 (2022-01-03 to 2023-06-23). OFR's
+  workbook keeps the value before each revision; SILO stores those as
+  `*_FIRST_RELEASE` series and the builder uses them. Measured revision size
+  on the index: mean 0.07 in 2018-05, 0.77 in 2018-12, 0.41 (max 1.49) in
+  2023-06, against a standard deviation of 1.28 over the whole history. The
+  current file equals every "updated" value in the workbook (_measured_).
+- **Publication lag.** OFR: "The FSI publishes with data that is current from
+  two business days prior." _Measured_: on Sunday 2026-09-27 the newest value
+  was dated Wednesday 09-23. The builder uses a value three weekdays after its
+  date (§8).
+- **What is lost against VIX.** A composite moves less sharply than a single
+  implied vol, and it arrives two days late: a shock on Monday reaches the
+  row of Thursday. The ingest also keeps a revision SILO sees itself: if a
+  fetch brings a changed value for a stored date, the stored one is kept as
+  the first release.
 
 **MOVE is not ingested.** No public source carries it under terms that permit
 automated ingestion. The substitute is **derived, not ingested**:
@@ -196,14 +300,44 @@ order of magnitude.
 convertibility and transfer risk, onshore dollar liquidity, and hedging
 demand from exporters and banks. It can move on FX-flow shocks that are not
 credit events. It has no standard 5-year point with CDS-like liquidity; the
-long end of `DOC` is thin. Rate conventions differ: `DOC` is quoted by B3 as a
-linear rate on a 360-day basis (**to verify** against B3's methodology before
-modelling; the builder converts explicitly and says so), UST par yields are
-semi-annual bond-equivalent. Call it `brazil_sovereign_risk_proxy`, never
-"CDS".
+long end of `DOC` is thin, and B3 extrapolates it past the last DDI
+maturity as it does `PRE` (the builder applies the same tail detector). Rate
+conventions differ: `DOC` is a **linear rate on 360 calendar days**, factor
+1 + r·DC/36000 (Manual de Curvas v21 §4.5, confirmed), so over 365 days the
+effective annual rate is r·365/360; UST par yields are semi-annual
+bond-equivalent, (1 + y/2)² − 1. The builder compares the two in effective
+annual terms. Call it `brazil_sovereign_risk_proxy`, never "CDS".
 
-EMBI+ via IPEA would be a useful one-off check of the proxy over 2008 to
-2024-07, but a series that stopped is not worth an ingest (parking lot).
+**Checked against EMBI+ Brazil, 2008-01-02 to 2024-07-24** (a one-off, not
+ingested: IPEA's copy stopped). Weekly Wednesdays, the builder's own
+functions on B3's `DOC` and Treasury's 1-year par yield, against IPEA's
+`JPM366_EMBI366`: 865 Wednesdays asked, 30 holidays, 827 aligned weeks
+(_measured_).
+
+| Measure (827 weeks)            | Proxy vs EMBI+ |
+| ------------------------------ | -------------- |
+| level, Pearson                 | 0.37           |
+| level, rank (Spearman)         | 0.04           |
+| 1-week changes                 | 0.20           |
+| 4-week changes                 | 0.41           |
+| 13-week changes                | 0.59           |
+| mean level, bp (proxy / EMBI+) | 171 / 266      |
+
+- **Stress episodes** (start → end of the window, bp): the 2008 crisis,
+  proxy 228 → 516 (peak 624) against EMBI+ 248 → 671; the 2015 downgrade,
+  208 → 369 against 277 → 454; COVID in 2020, 92 → 109 (peak 252) against
+  189 → 370 (peak 441).
+- **Within a year the levels track** (0.86 to 0.93 in 2008, 2012, 2014,
+  2015, 2016 and 2018) and **across years they do not**: the proxy's yearly
+  mean fell from 307 bp in 2008 to 86 in 2021 while EMBI+ stayed between 183
+  and 385, and in 2021 and 2022 the two moved against each other (-0.13 and
+  -0.45).
+
+**Verdict.** The proxy catches Brazil-specific stress (2008, 2015) and moves
+with EMBI+ over one to three months, but its level carries onshore-dollar
+effects that drift for years, and it missed most of the 2020 widening. It is
+reclassified **OPTIONAL** (§6), and the model should read it in changes (its
+21- and 63-session momentum columns), not in level.
 
 ### E. Commodities
 
@@ -229,58 +363,69 @@ freely available.
 
 ## 4. Selected sources
 
-| Dataset                           | Source                                 | Stored in                     | Grain                           | Served via `api`? |
-| --------------------------------- | -------------------------------------- | ----------------------------- | ------------------------------- | ----------------- |
-| DI1 per contract                  | B3 Price Report `BVBG.086.01`          | `b3_futures_settlement` (new) | session × ticker                | no                |
-| DI x pré curve, onshore USD curve | B3 `TaxaSwap.txt`, curves `PRE`, `DOC` | `b3_reference_rate` (new)     | session × curve × calendar days | no                |
-| UST par curve                     | U.S. Treasury CSV                      | `mkt_series` (new)            | US business day × tenor         | no                |
-| VIX OHLC                          | Cboe CSV                               | `mkt_series`                  | US business day × field         | no (licence)      |
-| Brent spot                        | EIA API v2                             | `mkt_series`                  | business day                    | no                |
-| IC-Br (4 series)                  | BCB SGS 27574 to 27577                 | `bacen_sgs` (existing)        | month                           | no                |
+| Dataset                                                  | Source                                        | Stored in                                    | Grain                           | Served via `api`? |
+| -------------------------------------------------------- | --------------------------------------------- | -------------------------------------------- | ------------------------------- | ----------------- |
+| DI1 per contract                                         | B3 Price Report `BVBG.086.01`                 | `b3_futures_settlement` (new)                | session × ticker                | no                |
+| DI x pré, onshore USD, IPCA clean coupon curves          | B3 `TaxaSwap.txt`, curves `PRE`, `DOC`, `DPL` | `b3_reference_rate` (new)                    | session × curve × calendar days | no                |
+| UST par curve                                            | U.S. Treasury CSV                             | `mkt_series` (new)                           | US business day × tenor         | no                |
+| VIX OHLC                                                 | Cboe CSV                                      | `mkt_series`, **only with a signed licence** | US business day × field         | no (licence)      |
+| Brent spot                                               | EIA API v2                                    | `mkt_series`                                 | business day                    | no                |
+| OFR FSI and its Volatility category, with first releases | OFR `fsi.csv` and revision workbook           | `mkt_series`                                 | US business day                 | no                |
+| IC-Br (4 series)                                         | BCB SGS 27574 to 27577                        | `bacen_sgs` (existing)                       | month                           | no                |
 
-**Nothing new is served through schema `api` in this change.** Serving is a
-separate decision: VIX's licence is unclear, and every new endpoint drags a
-catalog entry, OpenAPI and the MCP contract with it. The landing tables are
+**The DI1 contracts and the B3 curves are served since catalog v42**
+(`api.future_curve`, `future_series`, `curve`, `curve_history`;
+`27_api_rates.sql`), as published, with the extrapolated long end stated.
+The global series in `mkt_series` and IC-Br are not served. VIX would never
+be served without a licence that allows it. The landing tables are
 covered by the `anon` revoke sweep. The research builder reads them with the
 operator's database connection.
 
 ## 5. Rejected sources, and why
 
-| Source                                         | Why rejected                                                                        |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------- |
-| www2.bmf.com.br pages (ajustes, pregão, taxas) | retired by B3 on 2025-12-10; answer with database errors                            |
-| BCB SGS swap DI x pré series                   | stopped in 2019                                                                     |
-| BDI `ConsolidatedTradesDerivatives`            | 21-business-day retention; the Price Report carries the same fields with history    |
-| FRED                                           | a secondary copy of Treasury, Cboe and EIA; primary sources exist; unreachable here |
-| Yahoo Finance (`^TNX`, `^MOVE`, `^VIX`)        | not authoritative, republishes licensed data, ToS                                   |
-| CDS (Markit, ICE), MOVE (ICE), GSCI, BCOM      | proprietary                                                                         |
-| EMBI+ via IPEA                                 | stopped 2024-07-30                                                                  |
-| World Bank Pink Sheet                          | monthly, URL changes per release; IC-Br metals covers iron ore for Brazil           |
-| WTI                                            | redundant with Brent for this purpose                                               |
+| Source                                         | Why rejected                                                                                  |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| www2.bmf.com.br pages (ajustes, pregão, taxas) | retired by B3 on 2025-12-10; answer with database errors                                      |
+| BCB SGS swap DI x pré series                   | stopped in 2019                                                                               |
+| BDI `ConsolidatedTradesDerivatives`            | 21-business-day retention; the Price Report carries the same fields with history              |
+| FRED                                           | a secondary copy of Treasury, Cboe and EIA; primary sources exist; unreachable here           |
+| Yahoo Finance (`^TNX`, `^MOVE`, `^VIX`)        | not authoritative, republishes licensed data, ToS                                             |
+| Cboe `VIX_History.csv`                         | licensed: Cboe requires advance approval and a signed licence (§3.C); the code is kept, gated |
+| CDS (Markit, ICE), MOVE (ICE), GSCI, BCOM      | proprietary                                                                                   |
+| EMBI+ via IPEA                                 | stopped 2024-07-30; used once, offline, to check the sovereign proxy (§3.D)                   |
+| World Bank Pink Sheet                          | monthly, URL changes per release; IC-Br metals covers iron ore for Brazil                     |
+| WTI                                            | redundant with Brent for this purpose                                                         |
 
 ---
 
 ## 6. Historical coverage
 
-| Series                                 | Class             | Starts                                      | Notes                                         |
-| -------------------------------------- | ----------------- | ------------------------------------------- | --------------------------------------------- |
-| DI constant-maturity 1Y/2Y/3Y/5Y (PRE) | **CORE**          | 2008-01-02                                  | from B3 `PRE`; older files untested           |
-| DI slope, curvature                    | **CORE**          | 2008-01-02                                  | derived                                       |
-| USDBRL (PTAX, SGS 1)                   | **CORE**          | before 2008 (existing)                      |                                               |
-| UST 2Y/5Y/10Y/30Y                      | **CORE**          | 1990 (loaded from 2008)                     |                                               |
-| VIX                                    | **CORE**          | 1990 (loaded from 2008)                     |                                               |
-| Brent                                  | **CORE**          | 1987 (loaded from 2008)                     | weekly publication lag, §8                    |
-| Sovereign proxy (DOC minus UST)        | **CORE**          | 2008-01-02                                  | derived                                       |
-| Rates-vol proxy                        | **CORE**          | 2008 + 63 sessions                          | derived                                       |
-| SELIC target                           | **CORE**          | before 2008 (existing)                      |                                               |
-| IPCA                                   | **CORE**          | 1980 (existing, after the SGS history load) | monthly, lagged                               |
-| IC-Br                                  | **OPTIONAL**      | 2008-01 at least                            | monthly, lagged                               |
-| Focus expectations                     | **OPTIONAL**      | depends on the stored history               | needs the §8 lag; history may need a re-fetch |
-| DI1 volume, open interest, trades      | **LATE-STARTING** | 2018-01-02                                  | Price Report history limit                    |
-| DI1 per-contract OHLC                  | **LATE-STARTING** | 2018-01-02                                  | same                                          |
+| Series                                    | Class             | Starts                                      | Notes                                                                                                      |
+| ----------------------------------------- | ----------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| DI constant-maturity 1Y/2Y/3Y/5Y (PRE)    | **CORE**          | 2008-01-02                                  | from B3 `PRE`; the same 72-character files, with `PRE` and `DOC`, go back to 2004 (_measured_, not loaded) |
+| DI slope, curvature                       | **CORE**          | 2008-01-02                                  | derived                                                                                                    |
+| DI 10Y (PRE)                              | **OPTIONAL**      | 2008-01-02, with gaps                       | NULL where 10 years falls in B3's extrapolated tail (§3.A)                                                 |
+| Breakeven inflation 1Y/2Y/5Y (PRE vs DPL) | **OPTIONAL**      | 2008-01-02 (`DPL` from mid-2007)            | includes an inflation risk premium (§3.A)                                                                  |
+| USDBRL (PTAX, SGS 1)                      | **CORE**          | before 2008 (existing)                      |                                                                                                            |
+| UST 2Y/5Y/10Y/30Y                         | **CORE**          | 1990 (loaded from 2008)                     |                                                                                                            |
+| OFR FSI, Volatility category              | **CORE**          | 2000-01-03 (loaded from 2007)               | two-business-day lag and first releases (§3.C, §8); replaces VIX                                           |
+| Brent                                     | **CORE**          | 1987 (loaded from 2008)                     | weekly publication lag, §8                                                                                 |
+| Sovereign proxy (DOC minus UST)           | **OPTIONAL**      | 2008-01-02                                  | derived; tracks EMBI+ in 1- to 3-month changes, not in level (§3.D)                                        |
+| Rates-vol proxy                           | **CORE**          | 2008 + 63 sessions                          | derived                                                                                                    |
+| SELIC target                              | **CORE**          | before 2008 (existing)                      |                                                                                                            |
+| IPCA                                      | **CORE**          | 1980 (existing, after the SGS history load) | monthly, lagged                                                                                            |
+| IC-Br                                     | **OPTIONAL**      | 2008-01 at least                            | monthly, lagged                                                                                            |
+| Focus expectations                        | **OPTIONAL**      | depends on the stored history               | needs the §8 lag; history may need a re-fetch                                                              |
+| DI1 volume, open interest, trades         | **LATE-STARTING** | 2018-01-02                                  | Price Report history limit                                                                                 |
+| DI1 per-contract OHLC                     | **LATE-STARTING** | 2018-01-02                                  | same                                                                                                       |
 
 **Earliest date for a consistent CORE matrix: 2008-01-02**, subject to the
-backfills in §10 actually landing. Rolling features consume their own
+backfills in §10 actually landing. It could move to 2004: B3's `TaxaSwap`
+files keep the 72-character layout with `PRE` and `DOC` back to at least
+2004-01-12 (_measured_: quarterly samples 2004 to 2007; 65 characters in
+2001, 67 in 2003), every other CORE series starts earlier, and `DPL` (an
+OPTIONAL input) appears only in mid-2007. That needs the loader's start date
+and a curve list that lets `DPL` be absent before 2007 (parking lot). Rolling features consume their own
 warm-up: 63-session features are first defined in early April 2008, and the
 builder leaves them NULL until then rather than shortening the sample.
 
@@ -293,11 +438,19 @@ builder leaves them NULL until then rather than shortening the sample.
   135 MB XML per version on 2026-09-25, so the backfill is bound by download
   and parse time, not rows.
 - **U.S. Treasury** and **EIA**: US government works, public domain. EIA's API
-  wants a key; a free one goes in the `EIA_API_KEY` secret. Without it the
-  ingest uses EIA's public `DEMO_KEY`, which is rate-limited and logged as such.
-- **Cboe**: the history page gives the file and a disclaimer, and no licence
-  terms. Stored for research; **not served** until someone confirms
-  redistribution terms with Cboe.
+  wants a key; a free one goes in the `EIA_API_KEY` secret (an owner step:
+  register at eia.gov/opendata). Without it the ingest uses EIA's public
+  `DEMO_KEY`, which is rate-limited and logged as such.
+- **Cboe**: its Use of Content policy requires advance approval and a
+  licence signed by both sides for any use of website data (§3.C). Not
+  ingested; requests go to permissions@cboe.com. The gate
+  (`CBOE_VIX_LICENSED`, a repository variable) is set only once a licence
+  is signed.
+- **OFR**: "No copyright may be claimed for any work on this website that was
+  created by a federal employee in the course of his or her duties. However,
+  credit is requested if you reproduce or copy any such work" (OFR legal
+  notices, _measured_ 2026-09-27). Credit: Office of Financial Research, OFR
+  Financial Stress Index.
 - **BCB SGS**: public, already ingested.
 
 ## 8. Point-in-time integrity
@@ -307,18 +460,18 @@ have been **public by the end of day t (Brasília)**. Each source gets an
 explicit availability rule. Where the rule is an assumption, it is marked and
 chosen to be conservative (later, never earlier).
 
-| Series         | Observation date                           | Published                                                                                                    | Revised?                                | Rule used by the builder                                                                                          |
-| -------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------ | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| DI (PRE, PR)   | B3 session                                 | same evening (_measured_ 18:37 to 20:31 BRT)                                                                 | settlement is final                     | available at t                                                                                                    |
-| DOC            | B3 session                                 | same evening                                                                                                 | final                                   | available at t                                                                                                    |
-| USDBRL (SGS 1) | business day                               | PTAX closes ~13:00 BRT                                                                                       | final                                   | available at t                                                                                                    |
-| UST            | US business day                            | US evening, before 23:00 BRT                                                                                 | rare corrections (logged by the ingest) | as-of join: last UST date ≤ t                                                                                     |
-| VIX            | US business day                            | US close                                                                                                     | final                                   | as-of join: last date ≤ t                                                                                         |
-| Brent (EIA)    | business day                               | **weekly**, Wednesdays, through the previous day (_measured_)                                                | occasional revisions (logged)           | available the day after the **first Wednesday strictly after** the observation date (a Wednesday price waits a full week; the extra day absorbs holiday-shifted releases) |
-| SELIC target   | calendar day, dated when in force          | ahead of time                                                                                                | no                                      | value dated t                                                                                                     |
-| IPCA           | month M, dated the 1st                     | IBGE releases around the 10th of M+1                                                                         | no                                      | **assumption**: available from the 15th of M+1                                                                    |
-| IC-Br          | month M, dated the 1st                     | early M+1 (exact day unverified)                                                                             | **unknown**                             | **assumption**: available from the 15th of M+1                                                                    |
-| Focus          | survey day D (the stored `reference_date`) | **the Monday after D's week** (_measured_: on Sunday 2026-09-27 the newest daily value was dated 2026-09-18) | vintage not kept                        | available from the **Tuesday after D's week** (one day of buffer for holiday Mondays)                             |
+| Series         | Observation date                           | Published                                                                                                             | Revised?                                                                                         | Rule used by the builder                                                                                                                                                  |
+| -------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DI (PRE, PR)   | B3 session                                 | same evening (_measured_ 18:37 to 20:31 BRT)                                                                          | settlement is final                                                                              | available at t                                                                                                                                                            |
+| DOC, DPL       | B3 session                                 | same evening                                                                                                          | final                                                                                            | available at t                                                                                                                                                            |
+| USDBRL (SGS 1) | business day                               | PTAX closes ~13:00 BRT                                                                                                | final                                                                                            | available at t                                                                                                                                                            |
+| UST            | US business day                            | US evening, before 23:00 BRT                                                                                          | rare corrections (logged by the ingest)                                                          | as-of join: last UST date ≤ t                                                                                                                                             |
+| OFR FSI        | US business day                            | **two business days later** (OFR's note; _measured_: on Sunday 2026-09-27 the newest value was dated Wednesday 09-23) | only as OFR's revision history lists; the value before each revision is kept (`*_FIRST_RELEASE`) | the **first release**, available **three weekdays** after the observation date (one weekday of buffer for a U.S. holiday)                                                 |
+| Brent (EIA)    | business day                               | **weekly**, Wednesdays, through the previous day (_measured_)                                                         | occasional revisions (logged)                                                                    | available the day after the **first Wednesday strictly after** the observation date (a Wednesday price waits a full week; the extra day absorbs holiday-shifted releases) |
+| SELIC target   | calendar day, dated when in force          | ahead of time                                                                                                         | no                                                                                               | value dated t                                                                                                                                                             |
+| IPCA           | month M, dated the 1st                     | IBGE releases around the 10th of M+1                                                                                  | no                                                                                               | **assumption**: available from the 15th of M+1                                                                                                                            |
+| IC-Br          | month M, dated the 1st                     | early M+1 (exact day unverified)                                                                                      | **unknown**                                                                                      | **assumption**: available from the 15th of M+1                                                                                                                            |
+| Focus          | survey day D (the stored `reference_date`) | **the Monday after D's week** (_measured_: on Sunday 2026-09-27 the newest daily value was dated 2026-09-18)          | vintage not kept                                                                                 | available from the **Tuesday after D's week** (one day of buffer for holiday Mondays)                                                                                     |
 
 Rules the builder enforces:
 
@@ -328,8 +481,12 @@ Rules the builder enforces:
    forward only within a staleness limit per source (5 sessions for daily
    series, 10 for Brent, 45 for monthly series); past it the feature is NULL
    and the gap is counted.
-3. **No revised macro as point-in-time.** IPCA is not revised by IBGE. IC-Br
-   revisions are unknown; until measured, IC-Br is OPTIONAL. SILO keeps no
+3. **No revised value as point-in-time.** IPCA is not revised by IBGE. IC-Br
+   revisions are unknown; until measured, IC-Br is OPTIONAL. The OFR FSI is
+   read at its first release wherever OFR revised it, and the daily ingest
+   re-fetches only its last 30 days, so a later revision of an older date
+   never replaces what was first stored (and one inside the window is kept
+   as the first release). SILO keeps no
    Focus vintages; a Focus value fetched later than its publication week may
    differ from what was public, which the coverage note already says.
 4. **Contract data never leaks forward.** Constant-maturity points on day t
@@ -376,8 +533,10 @@ out of any 1-D series table too (`INSTRUMENTS.md`: a curve is not a panel id).
 the revoke sweep. IC-Br stays in `bacen_sgs` as held-not-served series
 (outside `SGS_SERIES`, so `api.macro_series`' registry is unchanged).
 
-Row volumes: ~150 DI1 rows a day from 2018 (~0.1 M); `PRE` + `DOC` about 230
-to 660 rows a day from 2008 (~2.5 M); `mkt_series` ~20 rows a day (~0.1 M).
+Row volumes: ~150 DI1 rows a day from 2018 (~0.1 M); `PRE` + `DOC` + `DPL`
+about 340 to 860 rows a day from 2008 (~3 M; the three curves share B3's
+vertex grid, 286 vertices each on 2026-09-25); `mkt_series` ~20 rows a day
+(~0.1 M).
 
 ## 10. Implementation plan
 
@@ -389,14 +548,18 @@ to 660 rows a day from 2008 (~2.5 M); `mkt_series` ~20 rows a day (~0.1 M).
    zip, DI1 outright tickers, typed + `raw`) and
    `src/parsers/b3_taxa_swap.py` (fixed-width, strict layout check).
 3. `src/fetchers/global_market_fetcher.py` + `src/parsers/global_market.py`:
-   Treasury CSV (unknown column header raises), Cboe CSV, EIA API v2.
+   Treasury CSV (unknown column header raises), Cboe CSV (licence-gated),
+   EIA API v2, OFR `fsi.csv` and its revision workbook (both headers
+   checked whole).
 4. IC-Br: `RESEARCH_SGS_SERIES` in `bacen_pipeline.py`, fetched with the
    rest of SGS.
 5. Migration 48 + `schema.sql`; `mkt_` in the revoke sweep.
 6. `src/pipeline/market_pipeline.py` (`MarketIngestor`): `daily_update()`
    (last 7 calendar days of B3 files, current year of Treasury, trailing
-   window of Cboe and EIA) and `backfill(source, start, end)`; one audit row
-   per slice, revisions to stored values counted on the audit row.
+   windows of EIA and OFR, Cboe only where licensed) and
+   `backfill(source, start, end)`; one audit row per slice, revisions to
+   stored values counted on the audit row, and a changed OFR value keeps the
+   stored one as its first release.
 7. Wiring: its own step in `daily_ingest.yml`, after the analytical layer
    (the FNET pattern: foreign hosts must not block the core run), and a
    `market_backfill.yml` dispatch (one year per job, `supabase-ingest`
@@ -406,9 +569,11 @@ to 660 rows a day from 2008 (~2.5 M); `mkt_series` ~20 rows a day (~0.1 M).
 
 - duplicates: the natural key is unique within a file; a duplicate raises;
 - impossible values: PU ≤ 0, rates outside (−5, 100) %, business days >
-  calendar days, VIX ≤ 0, Brent ≤ 0 or > 1000 → row dropped and counted;
+  calendar days, VIX ≤ 0, Brent ≤ 0 or > 1000, an OFR value outside ±100 →
+  row dropped and counted;
 - schema changes: an unknown Treasury column, a TaxaSwap row that is not 72
-  characters, a Price Report without `TradDt` → raise;
+  characters, a Price Report without `TradDt`, an OFR header or revision
+  layout we do not know, a configured curve missing from a file → raise;
 - dates: every row's date must equal the file's session date;
 - missing sessions: DI and curve sessions are reconciled against the B3
   sessions `b3_cotahist` already holds (a research-builder check);
@@ -427,18 +592,27 @@ audit per source. Tests: interpolation reproduces a vertex exactly, no value
 is used before its availability date, no fill beyond the staleness limits,
 and `PRE` at each DI1 maturity equals the contract's settlement rate.
 
-**Operator steps after merge** (a merge deploys nothing to the database):
-dispatch `market_backfill.yml` for `ts` 2008 onward, `pr` 2018 onward,
-`treasury`, `cboe`, `eia` from 2008; then
-`run_backfill --bacen-only --bacen-sources sgs --bacen-start 2008-01-01` for
-IC-Br.
+**Operator steps after merge** (a merge deploys nothing to the database),
+one dispatch at a time, since all share the `supabase-ingest` queue:
+`market_backfill.yml` with `us_treasury,eia_brent` 2008 to 2026,
+`ofr_fsi` 2007 to 2026, `b3_reference_rate` 2008 to 2026 and
+`b3_price_report` 2018 to 2026 (the longest: about an hour a year); then
+`backfill.yml` with `bacen_only`, `bacen_sources=sgs`,
+`bacen_start=2008-01-01` for IC-Br. Optional: an `EIA_API_KEY` secret.
 
 ## Parking lot
 
-- Serve DI1 and the `PRE` curve through `api` (`future_curve`, `curve`,
-  `INSTRUMENTS.md` Phases B and C).
-- `DIC` (DI x IPCA) for breakeven inflation: one entry in the curve list.
-- Validate the `DOC` proxy against EMBI+ over 2008 to 2024-07, once, offline.
-- Try `TaxaSwap` files before 2008.
+Open:
+
+- The futures arm of `api.panel` (`id_type='future'`, `INSTRUMENTS.md`
+  phase B); the typed endpoints are served since catalog v42.
+- Load `TaxaSwap` 2004 to 2007 (§6): the loader's start date, and a curve
+  list that lets `DPL` be absent before mid-2007.
 - Ibovespa level, if the equity channel is added.
-- Cboe redistribution terms, before VIX is ever served.
+- A Cboe licence, if VIX itself is wanted (permissions@cboe.com); then set
+  `CBOE_VIX_LICENSED=1`.
+
+Done (2026-09-27): the DI1 contracts and the B3 curves served (catalog v42,
+`future_curve`, `future_series`, `curve`, `curve_history`); breakeven inflation, from `DPL` rather than `DIC` (§3.A);
+the `DOC` convention (§3.D); the EMBI+ check of the sovereign proxy (§3.D);
+`TaxaSwap` before 2008 probed (§6); Cboe's terms read (§3.C, §7).

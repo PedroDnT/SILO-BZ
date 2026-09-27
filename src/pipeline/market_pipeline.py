@@ -1,6 +1,6 @@
-"""Rates and global market data: DI1 futures, B3 reference curves, UST, VIX, Brent.
+"""Rates and global market data: DI1 futures, B3 reference curves, UST, Brent, OFR FSI.
 
-Five sources, one audit entity (``market``), one row of ``cvm_ingest_log``
+Six sources, one audit entity (``market``), one row of ``cvm_ingest_log``
 per slice. Sources, coverage and point-in-time rules:
 docs/research/dustin_br_data_sources.md.
 
@@ -8,8 +8,15 @@ docs/research/dustin_br_data_sources.md.
     b3_price_report    b3_futures_settlement   one B3 session
     b3_reference_rate  b3_reference_rate       one B3 session
     us_treasury        mkt_series              one calendar year
-    cboe_vix           mkt_series              one fetch (window-filtered)
     eia_brent          mkt_series              one date window
+    ofr_fsi            mkt_series              one fetch (window-filtered)
+    cboe_vix           mkt_series              one fetch (window-filtered), LICENSED ONLY
+
+Cboe's terms of use require its advance approval and a signed licence for
+any use of the data on its website (research doc §5), and this warehouse
+ingests nothing that needs a licence. So VIX runs only where
+``CBOE_VIX_LICENSED=1``: the daily run skips it otherwise, and a backfill
+refuses it. Set that only once a licence is signed.
 
 The audit entity is NOT ``b3``: api.coverage() reads the newest ``b3`` success
 as COTAHIST's freshness, and a DI1 run must never answer for the quote tape.
@@ -52,13 +59,22 @@ logger = logging.getLogger(__name__)
 
 LOG_ENTITY = "market"
 SOURCES: Tuple[str, ...] = (
-    "b3_price_report", "b3_reference_rate", "us_treasury", "cboe_vix", "eia_brent",
+    "b3_price_report", "b3_reference_rate", "us_treasury", "eia_brent", "ofr_fsi", "cboe_vix",
 )
 # First date each source has anything to give (measured, research doc §3/§6).
 EARLIEST = {
     "b3_price_report": date(2018, 1, 2),
     "b3_reference_rate": date(2008, 1, 2),
 }
+
+
+def vix_licensed() -> bool:
+    """True only where the operator holds a signed Cboe licence (module docstring)."""
+    return os.getenv("CBOE_VIX_LICENSED", "").strip() == "1"
+
+
+def default_sources() -> Tuple[str, ...]:
+    return tuple(s for s in SOURCES if s != "cboe_vix" or vix_licensed())
 
 
 def _env_list(name: str, default: Sequence[str]) -> Tuple[str, ...]:
@@ -220,12 +236,66 @@ class MarketIngestor:
             return self._store_series(rows, counts)
         return await self._slice("eia_brent", f"EIA Brent {start}..{end}", start, work)
 
+    def _superseded_first_releases(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Stored OFR values that ``rows`` would overwrite, as first-release rows.
+
+        OFR says the FSI is not revised once estimated, except as its revision
+        workbook lists. When a fetch still brings a changed value, the stored
+        one is what was public first, so it is kept under the first-release
+        id; a date that already has one (OFR's record, or an earlier change)
+        keeps it. Point-in-time research reads first releases first.
+        """
+        current = [r for r in rows if r["series_id"] in gm.OFR_FIRST_RELEASE]
+        if not current:
+            return []
+        ids = sorted({*gm.OFR_FIRST_RELEASE, *gm.OFR_FIRST_RELEASE.values()})
+        lo = min(r["observation_date"] for r in current)
+        hi = max(r["observation_date"] for r in current)
+        with self._supabase.cursor() as cur:
+            cur.execute(
+                "SELECT series_id, observation_date, value FROM mkt_series "
+                "WHERE source = %s AND series_id = ANY(%s) AND observation_date BETWEEN %s AND %s",
+                (gm.SOURCE_OFR, ids, lo, hi),
+            )
+            stored = {(s, d): v for s, d, v in cur.fetchall()}
+        incoming = {(r["series_id"], r["observation_date"]) for r in rows}
+        kept = []
+        for r in current:
+            old = stored.get((r["series_id"], r["observation_date"]))
+            first = (gm.OFR_FIRST_RELEASE[r["series_id"]], r["observation_date"])
+            if old is not None and old != r["value"] and first not in stored and first not in incoming:
+                kept.append({**r, "series_id": first[0], "value": old})
+        return kept
+
+    async def ingest_ofr_fsi(self, start: date, end: date, *, revisions: bool = False) -> int:
+        """fsi.csv within [start, end]; with ``revisions``, also the first
+        releases from OFR's revision workbook (backfill only: its URL moves
+        with every new revision, and the daily window never reaches back to
+        the dates it covers)."""
+        async def work():
+            rows, counts = gm.parse_ofr_fsi_csv(await self._mkt.fetch_ofr_fsi())
+            if revisions:
+                first, _ = gm.parse_ofr_fsi_revisions(await self._mkt.fetch_ofr_fsi_revisions())
+                rows = rows + first
+            rows = [r for r in rows if start <= r["observation_date"] <= end]
+            if not rows:
+                raise gm.MarketFormatError(f"OFR FSI: no observation in {start}..{end}")
+            kept = self._superseded_first_releases(rows)
+            n, note = self._store_series(rows + kept, counts)
+            if kept:
+                note = "; ".join(filter(None, [note, f"kept {len(kept)} superseded values as first releases"]))
+            return n, note
+        return await self._slice("ofr_fsi", f"OFR FSI {start}..{end}", start, work)
+
     # ── orchestration ────────────────────────────────────────────────────
     async def backfill(self, sources: Iterable[str], start: date, end: date) -> Dict[str, int]:
         sources = list(sources)
         unknown = sorted(set(sources) - set(SOURCES))
         if unknown or not sources:
             raise ValueError(f"unknown market source(s) {unknown or '(none)'}; choose from {SOURCES}")
+        if "cboe_vix" in sources and not vix_licensed():
+            raise ValueError("cboe_vix needs a signed Cboe licence; set CBOE_VIX_LICENSED=1 only once "
+                             "one exists (docs/research/dustin_br_data_sources.md §5)")
         if end < start:
             raise ValueError(f"end {end} < start {start}")
         # A session that has not happened yet is not a request worth making.
@@ -247,6 +317,8 @@ class MarketIngestor:
                 n += await self.ingest_cboe_vix(lo, end)
             elif source == "eia_brent":
                 n += await self.ingest_eia_brent(lo, end)
+            elif source == "ofr_fsi":
+                n += await self.ingest_ofr_fsi(lo, end, revisions=True)
             totals[source] = n
         return totals
 
@@ -255,8 +327,10 @@ class MarketIngestor:
 
         B3: the last ``MARKET_DAILY_LOOKBACK_DAYS`` (default 7) calendar days,
         so a missed night heals. Treasury: this year's file (and last year's
-        in the first week of January). Cboe: 30 days. EIA: 45 days, because
-        EIA publishes weekly and revises.
+        in the first week of January). EIA: 45 days, because EIA publishes
+        weekly and revises. OFR: 30 days, so an older date is never
+        re-fetched and what was first published stays stored. Cboe: 30
+        days, only where licensed.
         """
         today = today or datetime.now(timezone.utc).date()
         lookback = int(os.getenv("MARKET_DAILY_LOOKBACK_DAYS", "7"))
@@ -266,15 +340,20 @@ class MarketIngestor:
         totals["us_treasury"] = 0
         for year in sorted(years):
             totals["us_treasury"] += await self.ingest_treasury_year(year)
-        totals["cboe_vix"] = await self.ingest_cboe_vix(today - timedelta(days=30), today)
         totals["eia_brent"] = await self.ingest_eia_brent(today - timedelta(days=45), today)
+        totals["ofr_fsi"] = await self.ingest_ofr_fsi(today - timedelta(days=30), today)
+        if vix_licensed():
+            totals["cboe_vix"] = await self.ingest_cboe_vix(today - timedelta(days=30), today)
+        else:
+            logger.info("Cboe VIX not fetched: no licence (CBOE_VIX_LICENSED unset)")
         return totals
 
 
 def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="DI1 futures, B3 reference curves, UST, VIX, Brent")
+    p = argparse.ArgumentParser(description="DI1 futures, B3 reference curves, UST, Brent, OFR FSI")
     p.add_argument("--backfill", action="store_true", help="load --start..--end instead of the daily window")
-    p.add_argument("--sources", default=",".join(SOURCES), help=f"comma-separated subset of {', '.join(SOURCES)}")
+    p.add_argument("--sources", default=",".join(default_sources()),
+                   help=f"comma-separated subset of {', '.join(SOURCES)} (cboe_vix only where licensed)")
     p.add_argument("--start", help="first date (ISO), backfill only")
     p.add_argument("--end", help="last date (ISO, default today), backfill only")
     return p.parse_args(argv)

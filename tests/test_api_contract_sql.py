@@ -98,6 +98,15 @@ WAVE3_FUNCTIONS = (
     "api.ptax",
 )
 
+# v42: the rate curve in 27_api_rates.sql (tests/test_rates_contract.py
+# owns the bodies). Raise-only.
+RATES_FUNCTIONS = (
+    "api.future_curve",
+    "api.future_series",
+    "api.curve",
+    "api.curve_history",
+)
+
 # The FNET register (v33) and its restatement diff (v40) live in
 # 24_api_fnet.sql, for the same reason: FUNCS does not carry them,
 # tests/test_fnet_api_contract.py owns the bodies. All three are raise-only.
@@ -608,11 +617,13 @@ def test_row_cap_helper_page_size_is_the_one_constant():
     assert set(page["all"]) == {
         f.split(".", 1)[1]
         for f in CAPPED_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS + WAVE3_FUNCTIONS
+        + RATES_FUNCTIONS
     }
     assert set(page["functions"]["paged"]) == {f.split(".", 1)[1] for f in PAGED_FUNCTIONS}
     assert set(page["functions"]["raise_only"]) == {
         f.split(".", 1)[1]
         for f in RAISE_ONLY_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS + WAVE3_FUNCTIONS
+        + RATES_FUNCTIONS
     }
 
 
@@ -1469,19 +1480,22 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
     # (company_events, macro_series, ptax), thirty-six since v39
     # (financial_statement_history, fii_property_history, focus_expectations),
     # thirty-seven since v40 (fund_restatement_diff), thirty-nine since v41
-    # (fund_holdings, fund_debentures stopped trimming). The
+    # (fund_holdings, fund_debentures stopped trimming), forty-three since v42
+    # (future_curve, future_series, curve, curve_history). The
     # prose said "eight" for two versions while listing nine — pin the word
     # to the tuples so it cannot drift again.
-    assert "thirty-nine" in c.lower().split(), "all thirty-nine capped functions refuse"
+    assert "forty-three" in c.lower().split(), "all forty-three capped functions refuse"
     assert (
         len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) + len(FNET_FUNCTIONS)
-        + len(WAVE3_FUNCTIONS)
-    ) == 39
+        + len(WAVE3_FUNCTIONS) + len(RATES_FUNCTIONS)
+    ) == 43
     for fn in WAVE3_FUNCTIONS:
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
     for fn in HEAD_FUNCTIONS:
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
     for fn in FNET_FUNCTIONS:
+        assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
+    for fn in RATES_FUNCTIONS:
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
 
 

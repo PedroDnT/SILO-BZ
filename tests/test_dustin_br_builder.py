@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 from datetime import date, timedelta
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -71,6 +72,23 @@ def test_monthly_series_are_public_on_the_15th_of_the_next_month():
     assert bd.fifteenth_of_next_month(date(2025, 12, 1)) == date(2026, 1, 15)
 
 
+def test_ofr_fsi_is_used_three_weekdays_after_its_date():
+    # Measured: on Sunday 2026-09-27 the newest OFR value was Wednesday 09-23.
+    assert bd.three_weekdays_after(date(2026, 9, 23)) == date(2026, 9, 28)   # Wed -> Mon
+    assert bd.three_weekdays_after(date(2026, 9, 25)) == date(2026, 9, 30)   # Fri -> Wed
+    assert bd.three_weekdays_after(date(2026, 9, 21)) == date(2026, 9, 24)   # Mon -> Thu
+
+
+def test_a_revised_ofr_date_uses_its_first_release():
+    current = pd.DataFrame({"obs_date": [date(2017, 10, 2), date(2017, 10, 3), date(2026, 9, 23)],
+                            "value": [-3.455, -3.545, -2.663]})
+    first = pd.DataFrame({"obs_date": [date(2017, 10, 2), date(2017, 10, 3)], "value": [-3.605, -3.700]})
+    out = bd.prefer_first_release(current, first)
+    assert list(out["value"]) == [-3.605, -3.700, -2.663]
+    empty = pd.DataFrame(columns=["obs_date", "value"])
+    assert list(bd.prefer_first_release(current, empty)["value"]) == [-3.455, -3.545, -2.663]
+
+
 # ---------------------------------------------------------------------------
 # As-of join
 # ---------------------------------------------------------------------------
@@ -113,11 +131,14 @@ def _synthetic(seed: int = 7):
     sessions = [d for i, d in enumerate(days) if i % 37 != 5]   # a few B3 holidays
     curve_rows = []
     base = 5.0
+    # Every curve reaches one vertex past the tenors read from it, as B3's do:
+    # the last segment is never treated as anchored.
     for d in sessions:
         base += rng.normal(0, 0.03)
-        for du in DU:
+        for du in [*DU, 3000]:
             curve_rows.append((d, "PRE", int(du * 365 / 252), du, base + du / 1000 + rng.normal(0, 0.005)))
-        for cd in (30, 90, 180, 360, 720):
+            curve_rows.append((d, "DPL", int(du * 365 / 252), du, 3.0 + du / 2000 + rng.normal(0, 0.005)))
+        for cd in (30, 90, 180, 360, 720, 1080):
             curve_rows.append((d, "DOC", cd, int(cd * 252 / 365), 3.0 + rng.normal(0, 0.05)))
     curves = pd.DataFrame(curve_rows, columns=["trade_date", "curve", "calendar_days", "business_days", "rate"])
 
@@ -131,7 +152,8 @@ def _synthetic(seed: int = 7):
         "ust_1y": walk(us_days, 1.5, 0.02), "ust_2y": walk(us_days, 1.6, 0.02),
         "ust_5y": walk(us_days, 1.7, 0.02), "ust_10y": walk(us_days, 1.9, 0.02),
         "ust_30y": walk(us_days, 2.3, 0.02),
-        "vix": walk(us_days, 20.0, 0.5), "brent": walk(days, 60.0, 0.8),
+        "ofr_fsi": walk(us_days, -2.0, 0.1), "ofr_fsi_volatility": walk(us_days, -0.5, 0.05),
+        "brent": walk(days, 60.0, 0.8),
         "selic": walk(sessions, 4.5, 0.0),
         "ipca": walk(months, 0.3, 0.1), "ipca_12m": walk(months, 4.0, 0.1),
         "commodity_index": walk(months, 300.0, 5.0),
@@ -155,12 +177,16 @@ def _published_by(cutoff, curves, series, futures):
 def test_the_matrix_has_the_documented_columns():
     sessions, curves, series, futures = _synthetic()
     out, _ = bd.build(sessions, curves, series, futures)
-    for col in ("di_1y", "di_2y", "di_3y", "di_5y", "di_10y", "di_2s5s", "di_curvature", "usdbrl",
-                "ust_2y", "ust_10y", "ust_2s10s", "vix", "rates_vol_proxy", "brazil_sovereign_risk_proxy",
-                "brent", "commodity_index", "ipca", "selic", "di_2y_mom_21d", "di_2y_rv_63d",
-                "corr_di2y_usdbrl_21d", "corr_usdbrl_brent_63d", "di1_open_interest", "brent__obs_date"):
+    for col in ("di_1y", "di_2y", "di_3y", "di_5y", "di_10y", "di_anchor_du", "di_2s5s", "di_curvature",
+                "usdbrl", "ust_2y", "ust_10y", "ust_2s10s", "ofr_fsi", "ofr_fsi_volatility",
+                "ofr_fsi_mom_21d", "corr_di2y_ofr_vol_21d", "rates_vol_proxy",
+                "brazil_sovereign_risk_proxy", "brent", "commodity_index", "ipca", "selic",
+                "breakeven_1y", "breakeven_2y", "breakeven_5y", "breakeven_2y_mom_21d",
+                "di_2y_mom_21d", "di_2y_rv_63d", "corr_di2y_usdbrl_21d", "corr_usdbrl_brent_63d",
+                "di1_open_interest", "brent__obs_date"):
         assert col in out.columns, col
     assert list(out["date"]) == sorted(sessions)
+    assert out["di_10y"].notna().all() and out["breakeven_5y"].notna().all()
 
 
 def test_no_look_ahead_rows_up_to_t_ignore_everything_published_later():
@@ -177,15 +203,92 @@ def test_no_look_ahead_rows_up_to_t_ignore_everything_published_later():
 
 
 def test_the_sovereign_proxy_is_doc_minus_ust_in_effective_terms():
+    """DOC is linear on 360 days (Manual de Curvas v21 §4.5): over 365 days
+    the effective annual rate is r·365/360. UST par is semi-annual."""
     d = date(2020, 6, 1)
-    curves = pd.DataFrame([(d, "DOC", 360, 250, 3.0), (d, "DOC", 370, 257, 3.0),
-                           (d, "PRE", 365, 252, 5.0), (d, "PRE", 730, 504, 5.5)],
-                          columns=["trade_date", "curve", "calendar_days", "business_days", "rate"])
+    doc = [(30, 20, 2.1), (90, 62, 2.4), (180, 124, 2.7), (360, 250, 3.0), (370, 257, 3.0),
+           (720, 497, 3.6), (1080, 745, 3.9)]
+    curves = pd.DataFrame(
+        [(d, "DOC", cd, du, r) for cd, du, r in doc]
+        + [(d, "PRE", 365, 252, 5.0), (d, "PRE", 730, 504, 5.5), (d, "PRE", 1095, 756, 5.9)],
+        columns=["trade_date", "curve", "calendar_days", "business_days", "rate"])
     series = {"ust_1y": pd.DataFrame({"obs_date": [d], "value": [2.0]})}
     out, _ = bd.build([d], curves, series)
     doc_eff = 3.0 * 365 / 360
     ust_eff = ((1 + 2.0 / 200) ** 2 - 1) * 100
     assert out.loc[0, "brazil_sovereign_risk_proxy"] == pytest.approx((doc_eff - ust_eff) * 100)
+
+
+# ---------------------------------------------------------------------------
+# B3's extrapolated tail (Manual de Curvas v21 §2.1)
+# ---------------------------------------------------------------------------
+
+TS_CURVES = (Path(__file__).parent / "fixtures" / "b3_taxaswap_20260925_curves.txt").read_text(encoding="latin-1")
+
+
+def _real_curves() -> pd.DataFrame:
+    from src.parsers.b3_taxa_swap import parse_taxa_swap
+    rows, _ = parse_taxa_swap(TS_CURVES, session=date(2026, 9, 25))
+    df = pd.DataFrame(rows)
+    df["rate"] = df["rate"].astype(float)
+    return df
+
+
+def test_the_anchor_on_the_real_2026_09_25_curve_stops_before_the_last_di1_maturity():
+    """Measured on the full Price Report of 2026-09-25: 45 DI1 contracts, the
+    second-to-last maturing in 3322 business days and the last in 3572. The
+    detector must never place the anchor past the second-to-last."""
+    pre = _real_curves().query("curve == 'PRE'").sort_values("business_days")
+    anchor = bd.pre_anchor(pre)
+    assert anchor == 3289
+    assert anchor <= 3322 < pre["business_days"].max()
+
+
+def _contracts_then_extension():
+    """DI1-like vertices with an irregular curve, then B3's extension of the
+    last segment's forward, rounded to 3 decimals as PRE is published."""
+    contract_du = [21, 63, 126, 252, 504, 756, 1008, 1260, 1512, 1764, 2016]
+    contract_r = [13.60, 13.52, 13.41, 13.35, 13.62, 13.88, 13.95, 14.10, 14.02, 14.21, 14.40]
+    log_df = [du / 252 * math.log1p(r / 100) for du, r in zip(contract_du, contract_r)]
+    fwd = (log_df[-1] - log_df[-2]) / (contract_du[-1] - contract_du[-2])
+    rows = list(zip(contract_du, contract_r))
+    for du in range(2268, 6048, 252):
+        lf = log_df[-1] + fwd * (du - contract_du[-1])
+        rows.append((du, round((math.exp(lf * 252 / du) - 1) * 100, 3)))
+    return pd.DataFrame([(date(2026, 1, 5), "PRE", int(du * 365 / 252), du, r) for du, r in rows],
+                        columns=["trade_date", "curve", "calendar_days", "business_days", "rate"])
+
+
+def test_the_detector_finds_where_b3s_extension_begins():
+    curves = _contracts_then_extension()
+    # The flat-forward segment starts at the second-to-last contract.
+    assert bd.pre_anchor(curves) == 1764
+
+
+def test_di_tenors_past_the_anchor_are_null_not_b3s_extrapolation():
+    out = bd.di_constant_maturity(_contracts_then_extension())
+    assert out.loc[0, "di_anchor_du"] == 1764
+    assert out.loc[0, "di_5y"] == pytest.approx(14.10, abs=1e-9)   # a contract vertex
+    assert math.isnan(out.loc[0, "di_10y"])                         # 2520 is extrapolated
+
+
+def test_breakeven_is_b3s_implied_inflation_from_pre_and_dpl():
+    d = date(2026, 1, 5)
+    rows = []
+    for du in (21, 252, 504, 756, 1260, 1512, 2520):
+        rows.append((d, "PRE", int(du * 365 / 252), du, 12.0 + du / 10000))
+        rows.append((d, "DPL", int(du * 365 / 252), du, 6.0))
+    out = bd.breakeven_inflation(pd.DataFrame(rows, columns=["trade_date", "curve", "calendar_days",
+                                                             "business_days", "rate"]))
+    assert out.loc[0, "breakeven_1y"] == pytest.approx(((1.12 + 0.000252) / 1.06 - 1) * 100)
+    assert out.loc[0, "breakeven_5y"] == pytest.approx(((1.12 + 0.00126) / 1.06 - 1) * 100)
+
+
+def test_real_breakevens_on_2026_09_25_are_b3s_numbers():
+    """PRE 13.61 / DPL 6.76 at 253 business days, as published that day."""
+    out = bd.breakeven_inflation(_real_curves())
+    assert 6.3 < out.loc[0, "breakeven_1y"] < 6.5
+    assert 5.9 < out.loc[0, "breakeven_2y"] < 6.0
 
 
 def test_a_us_holiday_does_not_blank_the_cross_market_features():

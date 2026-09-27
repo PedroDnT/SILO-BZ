@@ -1,0 +1,100 @@
+---
+title: "DI futures and B3 reference curves"
+description: "Every DI1 futures contract per session from 2018, and B3's own reference curves (DI x pré, the onshore dollar coupon, the IPCA coupon) per vertex from 2008 — as B3 publishes them."
+icon: "chart-line"
+---
+
+<Note>
+  **Parameters, response columns and types are generated** from the SQL catalog and
+  render under **Endpoints → Rates** in the sidebar. This page carries what a schema
+  cannot: how each rate is quoted, and which vertices are B3's extrapolation.
+</Note>
+
+### Overview
+
+Four functions over two B3 files Silo ingests daily. Nothing is interpolated,
+rolled or spliced; the one derived column is `contract_month`.
+
+- **`future_curve(p_root, p_trade_date)`** — every outright DI1 contract on one
+  session, nearest maturity first. Default: the newest session held.
+- **`future_series(p_ticker, p_from, p_to)`** — one contract through time.
+- **`curve(p_curve, p_trade_date)`** — one reference curve on one session, every
+  vertex. Default: `PRE`, the newest session held.
+- **`curve_history(p_curve, p_tenor_days, p_from, p_to)`** — one of B3's fixed
+  vertices through time.
+
+```python
+silo.future_curve()                              # the newest session
+silo.future_series("DI1F27", start="2026-01-01")
+silo.curve("DPL", "2026-09-25")                  # the IPCA coupon
+silo.curve_history("PRE", 360)                   # B3's 360-day vertex, 12 months
+```
+
+### DI1 futures
+
+The source is B3's Price Report (`BVBG.086.01`), one row per session and
+outright DI1 contract, from **2018-01-02**; B3's older reports are empty.
+
+- **DI1 is quoted in rate.** `settlement_rate` and the `open_px` / `low_px` /
+  `high_px` / `avg_px` / `close_px` columns are % a.a. on 252 business days, so
+  the **low rate is the high price**. `settlement_price` is the PU: R$ per
+  contract, 100,000 at maturity.
+- **`contract_month`** is the first day of the month the ticker names, read with
+  B3's month letters (`F` January, `G` February, `H` March, `J` April, `K` May,
+  `M` June, `N` July, `Q` August, `U` September, `V` October, `X` November, `Z`
+  December). The contract matures on that month's first business day. The
+  business days to maturity are not stored and not computed here.
+- **Nothing is made continuous.** `future_series` follows one contract from
+  listing to expiry. For a constant maturity, read B3's own curve below.
+
+### Reference curves
+
+The source is B3's reference-rate file (`TaxaSwap.txt`), every vertex of three
+curves, from **2008-01-02**. Read `rate_basis` before comparing two curves.
+
+| `p_curve` | Is | `rate_basis` | B3 fits it to |
+| --- | --- | --- | --- |
+| `PRE` | DI x pré, the nominal curve | `exp_252`: % a.a. compounded on 252 business days | DI1 futures (a vertex at every DI1 maturity equals that contract's settlement rate) |
+| `DOC` | the clean onshore dollar coupon (cupom cambial limpo) | `linear_360`: % a.a. LINEAR on 360 calendar days, factor `1 + rate × calendar_days / 36000` | DDI futures |
+| `DPL` | the clean IPCA coupon, a real rate | `exp_252` | DAP futures, then ANBIMA's NTN-B indicative rates |
+
+B3 defines implied inflation as `(1 + PRE) / (1 + DPL) − 1` at the same tenor.
+It carries an inflation risk premium: market pricing, not an expectation.
+`DPL`'s shortest vertices lean on the current month's IPCA projection.
+
+<Warning>
+  **The long end of every curve is B3's extrapolation, not a price.** Past the last
+  maturity of the contract that anchors a curve, B3 extends the last forward rate
+  (Manual de Curvas v21). On 2026-09-25, `PRE` ran to 34 years while the last DI1
+  contract matured in about 14. Where the tail starts moves as contracts list and
+  expire.
+</Warning>
+
+### Fixed and moving vertices
+
+B3 publishes every curve on one grid:
+
+- **Fixed vertices** (`vertex_type = F`) sit at nominal tenors, which `vertex_code`
+  carries: 1, 7, 14, 21, 30, 60, 90 … 360 … 720 … 1800 … 10800 calendar days.
+  The actual `calendar_days` is a day or two longer when the nominal date is not a
+  business day. The 30-day vertex was 30 days on 2008-01-02 and 31 on 2026-09-25.
+- **Moving vertices** (`M`) sit at the maturities of B3's contracts.
+
+`curve_history` serves a fixed vertex by its nominal tenor (`p_tenor_days`). Any
+other tenor raises `22023` listing the fixed ones, because an interpolated tenor
+is a choice of method. Read `curve` and interpolate in the notebook; B3's own
+method for `PRE` and `DPL` is flat-forward on 252 business days.
+
+### Freshness
+
+[`coverage()`](/api-docs/coverage) has a `di_futures` row and a
+`reference_curves` row. Each `landed_at` is its own ingest (the Price Report and
+the reference-rate file log separately under the market ingest). History comes
+from a backfill, so a span that starts later than the dates above was not
+loaded; it is not missing at B3.
+
+### Limits
+
+All four refuse above one 1,000-row page (`22023`). One session is about 50 DI1
+contracts and about 300 vertices per curve. For the two histories, narrow
+`p_from` / `p_to`: a daily series fits about four years per call.

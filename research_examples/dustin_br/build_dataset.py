@@ -10,10 +10,15 @@ The one rule everything here serves: **a value appears on row t only if it
 was public by the end of B3 session t.** Every source has an availability
 rule (docs/research/dustin_br_data_sources.md §8, mirrored in ``RULES``):
 
-    DI curves, DOC, USDBRL, UST, VIX, SELIC   same day as the observation
+    DI curves, DOC, USDBRL, UST, SELIC        same day as the observation
+    OFR FSI (two U.S. business days' lag)     three weekdays after it
     Brent (EIA, weekly release)               the day after the first Wednesday after it
     IPCA, IC-Br (monthly, dated the 1st)      the 15th of the next month
     Focus (survey day D)                      the Tuesday after D's week
+
+The OFR FSI replaces VIX, which Cboe licenses and this warehouse does not
+ingest (research doc §5). Where OFR revised a date, its FIRST release is
+used: the value that was public at the time.
 
 Mechanics, in order:
 
@@ -31,8 +36,15 @@ Mechanics, in order:
 
 DI constant-maturity rates come from B3's PRE curve (the DI x pré reference
 curve, whose vertices include every DI1 maturity at its settlement rate),
-interpolated flat-forward in business days on a 252-day basis — the DI
-convention. No extrapolation: a tenor beyond the longest vertex is NULL.
+interpolated flat-forward in business days on a 252-day basis — B3's own
+method for PRE (Manual de Curvas v21 §2.1, item 1.4.2). B3 EXTENDS the last
+segment's forward rate beyond the last DI1 maturity, so the published long
+vertices are extrapolation. ``anchored_tail_start`` finds where that
+straight-line tail begins (validated against Price Report contract lists,
+2018-2026: it never lands past the second-to-last DI1 maturity), and a tenor
+beyond it is NULL, like a tenor beyond the longest vertex. Measured: 5y was
+always anchored 2008-2026; 10y fell in B3's extrapolated tail in many months
+(8 of 12 monthly samples in 2008), so ``di_10y`` is often NULL early on.
 
 Run (reads with the operator's POSTGRES_URL through src.store.pg_client):
 
@@ -73,6 +85,15 @@ def eia_weekly_release(d: date) -> date:
     return wednesday + timedelta(days=1)
 
 
+def three_weekdays_after(d: date) -> date:
+    """OFR publishes the FSI two U.S. business days after the observation
+    (measured: on Sunday 2026-09-27 the newest value was dated Wednesday
+    09-23). A third weekday covers a U.S. holiday in between."""
+    for _ in range(3):
+        d += timedelta(days=3 if d.weekday() == 4 else 2 if d.weekday() == 5 else 1)
+    return d
+
+
 def fifteenth_of_next_month(d: date) -> date:
     """IPCA (IBGE, ~10th of M+1) and IC-Br (BCB, early M+1) for month M dated
     on its 1st. The 15th is a conservative ASSUMPTION, not a release calendar."""
@@ -97,7 +118,7 @@ RULES: Dict[str, Rule] = {
     "di": Rule(same_day, 0),
     "usdbrl": Rule(same_day, 5),
     "ust": Rule(same_day, 5),
-    "vix": Rule(same_day, 5),
+    "ofr": Rule(three_weekdays_after, 5),
     "selic": Rule(same_day, 5),
     "brent": Rule(eia_weekly_release, 10),
     "monthly": Rule(fifteenth_of_next_month, 45),
@@ -132,25 +153,102 @@ def flat_forward(vertices_du: Sequence[int], rates_pct: Sequence[float], target_
     return (math.exp(-lt * 252.0 / target_du) - 1.0) * 100.0
 
 
+def anchored_tail_start(business_days: Sequence[int], log_factor: Sequence[float],
+                        tolerance: Sequence[float]) -> int:
+    """Business days where a curve's final straight-line (extrapolated) tail begins.
+
+    ``log_factor`` is the log accumulation factor at each vertex (for PRE
+    du/252·ln(1+r), for DOC ln(1+r·dc/36000)); past the last contract
+    maturity B3 extends the last forward rate, which makes it exactly linear
+    in business days. ``tolerance`` is the published rounding mapped into
+    log-factor units. The longest suffix whose least-squares line fits every
+    point within 1.5x that tolerance is the tail; its first vertex is
+    returned. With fewer than three collinear points only the last segment
+    is treated as extrapolated.
+    """
+    x = np.asarray(business_days, dtype=float)
+    y = np.asarray(log_factor, dtype=float)
+    tol = np.asarray(tolerance, dtype=float) * 1.5 + 1e-12
+    order = np.argsort(x)
+    x, y, tol = x[order], y[order], tol[order]
+    n = len(x)
+    if n < 3:
+        return int(x[0]) if n else 0
+    best = n - 2
+    for s in range(n - 3, -1, -1):
+        slope, intercept = np.polyfit(x[s:], y[s:], 1)
+        if np.all(np.abs(y[s:] - (intercept + slope * x[s:])) <= tol[s:]):
+            best = s
+        else:
+            break
+    return int(x[best])
+
+
+def pre_anchor(g: pd.DataFrame) -> int:
+    """``anchored_tail_start`` for one session's PRE vertices (3-decimal rates)."""
+    du = g["business_days"].to_numpy(dtype=float)
+    r = g["rate"].astype(float).to_numpy()
+    return anchored_tail_start(du, du / 252.0 * np.log1p(r / 100.0),
+                               du / 252.0 * (0.0005 / 100.0) / (1.0 + r / 100.0))
+
+
 def di_constant_maturity(curves: pd.DataFrame) -> pd.DataFrame:
-    """One row per session: DI rates at the DI_TENORS_DU business-day tenors."""
+    """One row per session: DI rates at the DI_TENORS_DU business-day tenors,
+    NULL beyond ``di_anchor_du`` (where B3's extrapolated tail begins)."""
     pre = curves[curves["curve"] == "PRE"]
     out = []
     for trade_date, g in pre.groupby("trade_date", sort=True):
         g = g[g["business_days"] > 0]
-        row = {"obs_date": trade_date}
+        anchor = pre_anchor(g)
+        row = {"obs_date": trade_date, "di_anchor_du": anchor}
         for name, du in DI_TENORS_DU.items():
-            row[name] = flat_forward(g["business_days"].to_numpy(), g["rate"].astype(float).to_numpy(), du)
+            row[name] = (flat_forward(g["business_days"].to_numpy(), g["rate"].astype(float).to_numpy(), du)
+                         if du <= anchor else float("nan"))
         out.append(row)
-    return pd.DataFrame(out, columns=["obs_date", *DI_TENORS_DU])
+    return pd.DataFrame(out, columns=["obs_date", "di_anchor_du", *DI_TENORS_DU])
+
+
+def breakeven_inflation(curves: pd.DataFrame) -> pd.DataFrame:
+    """Implied IPCA inflation, % a.a., from PRE against DPL at 1/2/5 years.
+
+    (1 + pre) / (1 + dpl) - 1 on the same business-day tenor: B3's own
+    definition of implied inflation (Manual de Curvas v21 §3.2), with both
+    curves read flat-forward in business days, as B3 fills DPL. DPL is the
+    clean IPCA coupon from DAP futures, falling back to ANBIMA's NTN-B
+    indicative rates; it carries an inflation risk premium, so this is market
+    pricing, not an expectation. OPTIONAL feature. NULL where the PRE tenor is
+    past its anchored span.
+    """
+    tenors = {"1y": 252, "2y": 504, "5y": 1260}
+    di = di_constant_maturity(curves)[["obs_date", *(f"di_{t}" for t in tenors)]]
+    dpl = curves[curves["curve"] == "DPL"]
+    out = []
+    for trade_date, g in dpl.groupby("trade_date", sort=True):
+        g = g[g["business_days"] > 0]
+        row = {"obs_date": trade_date}
+        for tenor, du in tenors.items():
+            row[f"dpl_{tenor}"] = flat_forward(g["business_days"].to_numpy(), g["rate"].astype(float).to_numpy(), du)
+        out.append(row)
+    columns = [f"breakeven_{t}" for t in tenors]
+    real = pd.DataFrame(out, columns=["obs_date", *(f"dpl_{t}" for t in tenors)])
+    m = di.merge(real, on="obs_date")
+    for tenor in tenors:
+        m[f"breakeven_{tenor}"] = ((1 + m[f"di_{tenor}"] / 100.0) / (1 + m[f"dpl_{tenor}"] / 100.0) - 1) * 100.0
+    return m.reindex(columns=["obs_date", *columns])
 
 
 def doc_one_year_effective(curves: pd.DataFrame) -> pd.DataFrame:
     """B3 DOC (clean onshore dollar coupon) at 365 calendar days, as an
-    annual effective rate in %. ASSUMPTION to verify against B3's methodology
-    before modelling: DOC is a linear rate on a 360-day basis, so over one
-    year of 365 days the accumulation is 1 + r·365/360. Linear interpolation
-    in calendar days between the neighbouring vertices; no extrapolation."""
+    annual effective rate in %.
+
+    DOC is a LINEAR rate on 360 calendar days (Manual de Curvas v21 §4.5: the
+    factor is 1 + r·DC/36000), so over 365 days the effective annual rate is
+    r·365/360. The builder interpolates the rate linearly in calendar days
+    between the two published vertices around 365 days (B3 fills its own
+    intermediate vertices with item 1.4.3; its fixed vertices sit near 360).
+    NULL when 365 days is past the start of DOC's extrapolated tail (B3
+    extends it beyond the last DDI maturity) or outside the published vertices.
+    """
     doc = curves[(curves["curve"] == "DOC") & (curves["calendar_days"] >= 30)]
     out = []
     for trade_date, g in doc.groupby("trade_date", sort=True):
@@ -158,8 +256,14 @@ def doc_one_year_effective(curves: pd.DataFrame) -> pd.DataFrame:
         cd = g["calendar_days"].to_numpy(dtype=float)
         if len(cd) == 0 or not (cd[0] <= 365 <= cd[-1]):
             continue
-        r = float(np.interp(365.0, cd, g["rate"].astype(float).to_numpy()))
-        out.append({"obs_date": trade_date, "doc_1y_eff": r * 365.0 / 360.0})
+        r = g["rate"].astype(float).to_numpy()
+        du = g["business_days"].to_numpy(dtype=float)
+        anchor_du = anchored_tail_start(du, np.log1p(r * cd / 36000.0),
+                                        (cd / 36000.0) * 0.005 / (1.0 + r * cd / 36000.0))
+        anchor_cd = float(cd[np.searchsorted(du, anchor_du)]) if anchor_du <= du[-1] else cd[-1]
+        if 365.0 > anchor_cd:
+            continue
+        out.append({"obs_date": trade_date, "doc_1y_eff": float(np.interp(365.0, cd, r)) * 365.0 / 360.0})
     return pd.DataFrame(out, columns=["obs_date", "doc_1y_eff"])
 
 
@@ -265,7 +369,10 @@ SCALAR_SERIES = {
     "ust_10y": ("ust", "rate"),
     "ust_30y": ("ust", "rate"),
     "ust_1y": ("ust", None),
-    "vix": ("vix", "price"),
+    # Global stress and its Volatility category (implied vols across asset
+    # classes): signed indices, so changes in level, never log changes.
+    "ofr_fsi": ("ofr", "rate"),
+    "ofr_fsi_volatility": ("ofr", "rate"),
     "brent": ("brent", "price"),
     "selic": ("selic", None),
     "ipca": ("monthly", None),
@@ -300,6 +407,13 @@ def build(sessions: Sequence[date], curves: pd.DataFrame, series: Dict[str, pd.D
         di = native_features(di, col, "rate")
     di = with_availability(di, "di")
     add("di", di, [c for c in di.columns if c.startswith("di_")], "di", "di")
+
+    # Implied IPCA from PRE against DPL (OPTIONAL: includes a risk premium).
+    be = breakeven_inflation(curves)
+    if not be.empty:
+        be = native_features(be, "breakeven_2y", "rate")
+        be = with_availability(be, "di")
+        add("breakeven", be, [c for c in be.columns if c.startswith("breakeven_")], "di")
 
     # Scalar series on their own calendars.
     native: Dict[str, pd.DataFrame] = {}
@@ -339,11 +453,11 @@ def build(sessions: Sequence[date], curves: pd.DataFrame, series: Dict[str, pd.D
     # Cross-asset correlations of daily changes.
     di_native = di[["obs_date", "di_2y", "available_date"]]
     # A pair is observed only on dates both sides were; it takes the staleness
-    # limit of its less frequent side (US holidays for UST and VIX).
+    # limit of its less frequent side (US holidays for UST and OFR).
     pairs = [
         ("corr_di2y_usdbrl", di_native, "di_2y", "rate", "usdbrl", "price", "usdbrl"),
         ("corr_di2y_ust10y", di_native, "di_2y", "rate", "ust_10y", "rate", "ust"),
-        ("corr_di2y_vix", di_native, "di_2y", "rate", "vix", "price", "vix"),
+        ("corr_di2y_ofr_vol", di_native, "di_2y", "rate", "ofr_fsi_volatility", "rate", "ofr"),
     ]
     for name, a, a_col, a_kind, b_name, b_kind, rule in pairs:
         if b_name in native:
@@ -374,6 +488,7 @@ def build(sessions: Sequence[date], curves: pd.DataFrame, series: Dict[str, pd.D
 _SGS = {"usdbrl": 1, "selic": 432, "ipca": 433, "ipca_12m": 13522, "commodity_index": 27574}
 _UST = {"ust_1y": "UST_PAR_1Y", "ust_2y": "UST_PAR_2Y", "ust_5y": "UST_PAR_5Y",
         "ust_10y": "UST_PAR_10Y", "ust_30y": "UST_PAR_30Y"}
+_OFR = {"ofr_fsi": "OFR_FSI", "ofr_fsi_volatility": "OFR_FSI_VOLATILITY"}
 
 
 def _query(client, sql: str, params: tuple, columns: List[str]) -> pd.DataFrame:
@@ -382,23 +497,39 @@ def _query(client, sql: str, params: tuple, columns: List[str]) -> pd.DataFrame:
         return pd.DataFrame(cur.fetchall(), columns=columns)
 
 
+def prefer_first_release(current: pd.DataFrame, first: pd.DataFrame) -> pd.DataFrame:
+    """[obs_date, value], taking a date's first release where one is stored.
+
+    ``*_FIRST_RELEASE`` rows exist only for dates OFR revised (from its
+    revision workbook, or the value a later fetch replaced); every other
+    date was never revised, so its stored value is its first release."""
+    m = current.merge(first, on="obs_date", how="outer", suffixes=("", "_first"))
+    m["value"] = pd.to_numeric(m["value_first"]).combine_first(pd.to_numeric(m["value"]))
+    return m[["obs_date", "value"]].sort_values("obs_date").reset_index(drop=True)
+
+
 def load(client, start: date, end: date) -> Tuple[List[date], pd.DataFrame, Dict[str, pd.DataFrame], pd.DataFrame]:
     """Everything ``build`` needs, with a warm-up margin before ``start`` so
     63-session windows and monthly series are populated on day one."""
     lo = start - timedelta(days=200)
     curves = _query(client,
                     "SELECT trade_date, curve, calendar_days, business_days, rate FROM b3_reference_rate "
-                    "WHERE curve IN ('PRE', 'DOC') AND trade_date BETWEEN %s AND %s",
+                    "WHERE curve IN ('PRE', 'DOC', 'DPL') AND trade_date BETWEEN %s AND %s",
                     (lo, end), ["trade_date", "curve", "calendar_days", "business_days", "rate"])
     series: Dict[str, pd.DataFrame] = {}
     for name, code in _SGS.items():
         series[name] = _query(client, "SELECT reference_date, value FROM bacen_sgs "
                               "WHERE series_code = %s AND reference_date BETWEEN %s AND %s",
                               (code, lo, end), ["obs_date", "value"])
-    for name, sid in {**_UST, "vix": "VIX_CLOSE", "brent": "BRENT_SPOT_FOB"}.items():
-        series[name] = _query(client, "SELECT observation_date, value FROM mkt_series "
-                              "WHERE series_id = %s AND observation_date BETWEEN %s AND %s",
-                              (sid, lo, end), ["obs_date", "value"])
+    def mkt(series_id: str) -> pd.DataFrame:
+        return _query(client, "SELECT observation_date, value FROM mkt_series "
+                      "WHERE series_id = %s AND observation_date BETWEEN %s AND %s",
+                      (series_id, lo, end), ["obs_date", "value"])
+
+    for name, sid in {**_UST, "brent": "BRENT_SPOT_FOB"}.items():
+        series[name] = mkt(sid)
+    for name, sid in _OFR.items():
+        series[name] = prefer_first_release(mkt(sid), mkt(f"{sid}_FIRST_RELEASE"))
     series["focus_ipca_12m"] = _query(
         client, "SELECT reference_date, median FROM bacen_expectativas "
         "WHERE endpoint_name = 'ExpectativasMercadoInflacao12Meses' AND indicador = 'IPCA' "

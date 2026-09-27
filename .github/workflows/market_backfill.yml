@@ -2,8 +2,10 @@ name: Market Data Backfill
 
 # History for src/pipeline/market_pipeline.py: DI1 futures (B3 Price Report,
 # from 2018-01-02), B3 reference curves (TaxaSwap, from 2008-01-02), the U.S.
-# Treasury par curve, Cboe VIX and EIA Brent. The daily run keeps them fresh;
-# this fills the past. docs/research/dustin_br_data_sources.md §10.
+# Treasury par curve, EIA Brent and the OFR Financial Stress Index (from
+# 2000-01-03). The daily run keeps them fresh; this fills the past.
+# docs/research/dustin_br_data_sources.md §10. Cboe VIX runs only with a
+# signed Cboe licence: repository variable CBOE_VIX_LICENSED=1 (§5).
 #
 # One YEAR per job, one job at a time: a Price Report is ~12 MB zipped and
 # ~10 s to parse, so a year of sessions is roughly an hour, inside the
@@ -12,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       sources:
-        description: "Comma-separated: b3_price_report, b3_reference_rate, us_treasury, cboe_vix, eia_brent"
+        description: "Comma-separated: b3_price_report, b3_reference_rate, us_treasury, eia_brent, ofr_fsi (cboe_vix only where licensed)"
         required: true
         default: "b3_reference_rate"
       start_year:
@@ -71,6 +73,8 @@ jobs:
     env:
       POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
       EIA_API_KEY: "${{ secrets.EIA_API_KEY }}"
+      # Set the repository variable to 1 only once a Cboe licence is signed.
+      CBOE_VIX_LICENSED: "${{ vars.CBOE_VIX_LICENSED }}"
       TZ: "America/Sao_Paulo"
     steps:
       - uses: actions/checkout@v5

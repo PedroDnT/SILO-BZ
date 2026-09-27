@@ -193,8 +193,8 @@ offline fixture test → analytical SQL → catalog bump → api-docs page.
 | **Adj** | Label `close_return` as unadjusted (catalog v3 + docs — done); jump screen (`abs(close_return) > 40%` × `cia_event`) still open | none        | small — SQL against data we already have |
 | **A**   | Options + termo endpoints, partial index, panel arms, `api.catalog()`, universe/lookup/coverage extension, docs pages           | none        | small — SQL + docs only (PR #119)        |
 | **A.2** | Odd-lot (`020`/`021`) lot selector on the cash surface; `api.option_exercises` for `012`/`013`; identify `017`                  | none        | small — SQL + docs only                  |
-| **B**   | Futures settlement: fetcher, table, `future_series`/`future_curve`, panel arm                                                   | yes         | medium — first non-COTAHIST B3 file      |
-| **C**   | Reference-rate curves: fetcher, table, `curve`/`curve_history`                                                                  | yes         | medium — piggybacks B's fetcher plumbing |
+| **B**   | Futures settlement: fetcher, table, `future_series`/`future_curve`, panel arm. **Done except the panel arm** (migration 48, catalog v42; DI1 from the Price Report) | yes         | medium — first non-COTAHIST B3 file      |
+| **C**   | Reference-rate curves: fetcher, table, `curve`/`curve_history`. **Done** (migration 48, catalog v42; `PRE`, `DOC`, `DPL` from TaxaSwap; `curve_history` by B3's fixed-vertex tenor) | yes         | medium — piggybacks B's fetcher plumbing |
 | **D**   | Index composition + history                                                                                                     | yes         | small, lowest value today                |
 
 DI1 (phase B) and the PRE curve (phase C) are the highest-value additions for

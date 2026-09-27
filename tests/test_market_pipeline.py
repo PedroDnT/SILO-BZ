@@ -1,11 +1,13 @@
-"""DI1 futures, B3 reference curves, UST, VIX, Brent (migration 48).
+"""DI1 futures, B3 reference curves, UST, Brent, OFR FSI, gated VIX (migration 48).
 
 Fixtures are trimmed REAL files fetched on 2026-09-26/27:
 b3_price_report_20260925_sample.xml (five DI1 contracts and two other
 instruments), b3_price_report_20180102_sample.xml (an untraded DI1),
-b3_taxaswap_20260925_sample.txt (PRE / DOC vertices plus three DIC rows),
-the Treasury par-curve CSV header of 2008 and 2026, Cboe VIX_History.csv and
-an EIA API v2 answer. Nothing is fetched here. Contracts:
+b3_taxaswap_20260925_sample.txt (PRE / DOC / DPL vertices plus three DIC
+rows), the Treasury par-curve CSV header of 2008 and 2026, Cboe
+VIX_History.csv, an EIA API v2 answer, OFR's fsi.csv and its revision
+workbook FSI_Revision_History_2023-06-27.xlsx (first rows of each sheet,
+values unchanged). Nothing is fetched here. Contracts:
 src/fetchers/b3_pesquisapregao_fetcher.py, src/fetchers/global_market_fetcher.py,
 docs/research/dustin_br_data_sources.md.
 """
@@ -38,6 +40,8 @@ FIX = Path(__file__).parent / "fixtures"
 PR_2026 = (FIX / "b3_price_report_20260925_sample.xml").read_bytes()
 PR_2018 = (FIX / "b3_price_report_20180102_sample.xml").read_bytes()
 TS_2026 = (FIX / "b3_taxaswap_20260925_sample.txt").read_text(encoding="latin-1")
+# The complete PRE, DOC and DPL curves of the same file (858 vertices).
+TS_CURVES = (FIX / "b3_taxaswap_20260925_curves.txt").read_text(encoding="latin-1")
 S_2026 = date(2026, 9, 25)
 
 
@@ -171,7 +175,11 @@ def test_taxa_swap_unwraps_the_self_extracting_archive():
 
 def test_taxa_swap_keeps_only_the_configured_curves():
     rows, counts = ts.parse_taxa_swap(TS_2026, session=S_2026)
-    assert {r["curve"] for r in rows} == {"PRE", "DOC"}
+    # DPL (clean IPCA coupon) is kept; DIC (the dirty-coupon poll) is in the
+    # fixture and skipped.
+    assert ts.DEFAULT_CURVES == ("PRE", "DOC", "DPL")
+    assert {r["curve"] for r in rows} == {"PRE", "DOC", "DPL"}
+    assert "DIC" in {line[21:26].strip() for line in TS_2026.splitlines()}
     assert counts["kept"] == len(rows) and counts["dropped_invalid"] == 0
     first = min((r for r in rows if r["curve"] == "PRE"), key=lambda r: r["calendar_days"])
     assert (first["calendar_days"], first["business_days"], first["rate"], first["vertex_type"]) == (
@@ -181,16 +189,16 @@ def test_taxa_swap_keeps_only_the_configured_curves():
 def test_pre_equals_the_di1_settlement_rate_at_each_contract_maturity():
     """The measured property the research layer leans on: B3's PRE curve has a
     moving vertex at every DI1 maturity, at that contract's settlement rate."""
-    curve = {r["business_days"]: r for r in ts.parse_taxa_swap(TS_2026, session=S_2026)[0] if r["curve"] == "PRE"}
+    curve = {r["business_days"]: r for r in ts.parse_taxa_swap(TS_CURVES, session=S_2026)[0] if r["curve"] == "PRE"}
     rows, _ = pr.parse_price_report(PR_2026, session=S_2026)
     checked = 0
     for r in rows:
         du = round(252 * math.log(100000 / float(r["settlement_price"])) / math.log(1 + float(r["settlement_rate"]) / 100))
-        if du in curve:
-            assert curve[du]["rate"] == r["settlement_rate"], r["ticker"]
-            assert curve[du]["vertex_type"] == "M"
-            checked += 1
-    assert checked == 3  # DI1F27, DI1J27, DI1F29 are in the trimmed fixture
+        assert du in curve, r["ticker"]
+        assert curve[du]["rate"] == r["settlement_rate"], r["ticker"]
+        assert curve[du]["vertex_type"] == "M"
+        checked += 1
+    assert checked == 5  # every DI1 contract in the fixture, out to DI1F37
 
 
 def test_taxa_swap_layout_changes_raise():
@@ -276,6 +284,55 @@ def test_eia_brent_and_its_contract_checks():
 def test_implausible_market_values_are_dropped_and_counted():
     rows, counts = gm.parse_cboe_vix_csv("DATE,OPEN,HIGH,LOW,CLOSE\n01/02/1990,0,17.24,17.24,17.24\n")
     assert counts == {"kept": 3, "dropped_invalid": 1}
+
+
+OFR_CSV = (FIX / "ofr_fsi_sample.csv").read_text()
+OFR_XLSX = (FIX / "ofr_fsi_revisions_sample.xlsx").read_bytes()
+
+
+def test_ofr_fsi_keeps_the_index_and_its_volatility_category():
+    rows, counts = gm.parse_ofr_fsi_csv(OFR_CSV)
+    assert counts == {"kept": 18, "dropped_invalid": 0}                      # 9 dates, 2 series
+    got = {(r["series_id"], r["observation_date"]): r["value"] for r in rows}
+    assert got[("OFR_FSI", date(2008, 10, 10))] == Decimal("29.32")          # the series' peak
+    assert got[("OFR_FSI_VOLATILITY", date(2026, 9, 23))] == Decimal("-0.488")
+    assert {r["unit"] for r in rows} == {"index"} and {r["source"] for r in rows} == {"ofr"}
+
+
+def test_an_ofr_header_change_raises():
+    with pytest.raises(gm.MarketFormatError, match="header"):
+        gm.parse_ofr_fsi_csv(OFR_CSV.replace("Volatility", "Vol", 1))
+    with pytest.raises(gm.MarketFormatError, match="unreadable date"):
+        gm.parse_ofr_fsi_csv(OFR_CSV.splitlines()[0] + "\n09/23/2026" + ",0" * 9 + "\n")
+
+
+def test_ofr_first_releases_are_the_values_before_each_revision():
+    rows, counts = gm.parse_ofr_fsi_revisions(OFR_XLSX)
+    first = {(r["series_id"], r["observation_date"]): r["value"] for r in rows}
+    assert counts == {"kept": 16, "dropped_invalid": 0}       # 8 dates in the fixture, 2 series
+    # 2018 layout (Old / Updated columns) and 2023 layout (Old / New Values blocks).
+    assert first[("OFR_FSI_FIRST_RELEASE", date(2017, 10, 2))] == Decimal("-3.605")
+    assert first[("OFR_FSI_FIRST_RELEASE", date(2018, 8, 30))] == Decimal("-1.95")
+    assert first[("OFR_FSI_FIRST_RELEASE", date(2022, 1, 3))] == Decimal("-2.649")
+    assert first[("OFR_FSI_VOLATILITY_FIRST_RELEASE", date(2022, 1, 3))] == Decimal("-0.851")
+    # fsi.csv carries the revised values for the same dates.
+    now = {(r["series_id"], r["observation_date"]): r["value"] for r in gm.parse_ofr_fsi_csv(OFR_CSV)[0]}
+    assert now[("OFR_FSI", date(2017, 10, 2))] == Decimal("-3.455")
+    assert now[("OFR_FSI", date(2018, 8, 30))] == Decimal("-2.683")
+
+
+def test_an_unknown_revision_layout_raises():
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    wb.active.title = "Revision 2027-01-15"
+    wb.active.append(["Date", "Before", "After"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    with pytest.raises(gm.MarketFormatError, match="layout"):
+        gm.parse_ofr_fsi_revisions(buf.getvalue())
+    with pytest.raises(gm.MarketFormatError, match="xlsx"):
+        gm.parse_ofr_fsi_revisions(b"<html>moved</html>")
 
 
 # ---------------------------------------------------------------------------
@@ -401,6 +458,100 @@ def test_unknown_sources_are_refused():
 
 def test_the_audit_entity_is_not_b3_so_coverage_never_reads_it_as_cotahist():
     assert mp.LOG_ENTITY == "market"
+
+
+# ---------------------------------------------------------------------------
+# Cboe VIX needs a licence; OFR FSI keeps what was published first
+# ---------------------------------------------------------------------------
+
+def _daily_fetchers(b3, mkt):
+    async def not_published(session):
+        raise B3FileNotPublished("empty")
+
+    async def treasury(year):
+        return (FIX / "ust_par_yield_2026_sample.csv").read_text()
+
+    async def eia(start, end):
+        return json.loads((FIX / "eia_brent_sample.json").read_text())["response"]["data"]
+
+    async def ofr():
+        return OFR_CSV
+
+    async def vix():
+        return (FIX / "cboe_vix_history_sample.csv").read_text()
+    b3.fetch_price_report.side_effect = not_published
+    b3.fetch_taxa_swap.side_effect = not_published
+    mkt.fetch_treasury_year.side_effect = treasury
+    mkt.fetch_eia_brent.side_effect = eia
+    mkt.fetch_ofr_fsi.side_effect = ofr
+    mkt.fetch_cboe_vix.side_effect = vix
+
+
+def test_the_daily_run_never_fetches_vix_without_a_licence(monkeypatch):
+    monkeypatch.delenv("CBOE_VIX_LICENSED", raising=False)
+    ing, b3, mkt = _ingestor()
+    _daily_fetchers(b3, mkt)
+    with patch.object(mp, "upsert_rows", side_effect=lambda c, t, rows, conflict_columns=None: len(rows)):
+        totals = _run(ing.daily_update(today=date(2026, 9, 27)))
+    mkt.fetch_cboe_vix.assert_not_called()
+    assert "cboe_vix" not in totals and totals["ofr_fsi"] == 6   # 09-21..23, two series
+    assert ing.failures == []
+    assert "cboe_vix" not in mp.default_sources()
+    with pytest.raises(ValueError, match="licence"):
+        _run(ing.backfill(["cboe_vix"], date(2026, 1, 1), date(2026, 1, 2)))
+
+
+def test_a_licensed_operator_gets_vix(monkeypatch):
+    monkeypatch.setenv("CBOE_VIX_LICENSED", "1")
+    ing, b3, mkt = _ingestor()
+    _daily_fetchers(b3, mkt)
+    with patch.object(mp, "upsert_rows", side_effect=lambda c, t, rows, conflict_columns=None: len(rows)):
+        totals = _run(ing.daily_update(today=date(2026, 9, 27)))
+    mkt.fetch_cboe_vix.assert_called_once()
+    assert totals["cboe_vix"] > 0 and "cboe_vix" in mp.default_sources()
+
+
+def _stored_rows(up, table="mkt_series"):
+    return [r for c in up.call_args_list if c.args[1] == table for r in c.args[2]]
+
+
+def test_an_ofr_backfill_stores_current_values_and_ofrs_first_releases():
+    ing, _, mkt = _ingestor()
+
+    async def ofr():
+        return OFR_CSV
+
+    async def revisions():
+        return OFR_XLSX
+    mkt.fetch_ofr_fsi.side_effect = ofr
+    mkt.fetch_ofr_fsi_revisions.side_effect = revisions
+    with patch.object(mp, "upsert_rows", side_effect=lambda c, t, rows, conflict_columns=None: len(rows)) as up:
+        _run(ing.backfill(["ofr_fsi"], date(2017, 1, 1), date(2018, 12, 31)))
+    got = {(r["series_id"], r["observation_date"]): r["value"] for r in _stored_rows(up)}
+    assert got[("OFR_FSI", date(2017, 10, 2))] == Decimal("-3.455")
+    assert got[("OFR_FSI_FIRST_RELEASE", date(2017, 10, 2))] == Decimal("-3.605")
+    # The window applies to the workbook too.
+    assert not any(d.year == 2022 for _, d in got)
+    assert _audit(up)[-1]["status"] == "ok"
+
+
+def test_a_changed_ofr_value_keeps_the_stored_one_as_its_first_release():
+    stored = [("OFR_FSI", date(2026, 9, 23), Decimal("-2.600")),                      # OFR changed it
+              ("OFR_FSI", date(2026, 9, 22), Decimal("-2.700")),                      # changed again…
+              ("OFR_FSI_FIRST_RELEASE", date(2026, 9, 22), Decimal("-2.750")),        # …first kept already
+              ("OFR_FSI_VOLATILITY", date(2026, 9, 23), Decimal("-0.488"))]           # unchanged
+    ing, _, mkt = _ingestor(stored)
+
+    async def ofr():
+        return OFR_CSV
+    mkt.fetch_ofr_fsi.side_effect = ofr
+    with patch.object(mp, "upsert_rows", side_effect=lambda c, t, rows, conflict_columns=None: len(rows)) as up:
+        _run(ing.ingest_ofr_fsi(date(2026, 9, 1), date(2026, 9, 27)))
+    firsts = [r for r in _stored_rows(up) if r["series_id"].endswith("_FIRST_RELEASE")]
+    assert [(r["series_id"], r["observation_date"], r["value"]) for r in firsts] == [
+        ("OFR_FSI_FIRST_RELEASE", date(2026, 9, 23), Decimal("-2.600"))]
+    assert _audit(up)[-1]["error_msg"] == (
+        "revised 2 stored observations; kept 1 superseded values as first releases")
 
 
 # ---------------------------------------------------------------------------

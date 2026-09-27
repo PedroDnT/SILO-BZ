@@ -477,6 +477,9 @@ _ORDER: dict[str, str] = {
     "fund_restatement_diff": "newest delivery first",
     # 26_api_events_macro.sql orders a company's IPE filings newest first.
     "company_events": "newest delivery first",
+    # 27_api_rates.sql: one session's contracts and one session's vertices.
+    "future_curve": "nearest maturity first",
+    "curve": "shortest vertex first",
 }
 
 
@@ -627,6 +630,7 @@ _TAGS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^inflation"), "Inflation"),
     (re.compile(r"^(macro_series|ptax)$"), "Macro"),
     (re.compile(r"^company_events$"), "Company events"),
+    (re.compile(r"^(future_curve|future_series|curve|curve_history)$"), "Rates"),
     (re.compile(r"^screen_"), "Screens"),
     (re.compile(r"^(short_interest|short_interest_by_sector|investor_flow)$"), "Short interest & flows"),
     (re.compile(r"^lending_"), "Securities lending"),

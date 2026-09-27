@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "41";
+export const CONTRACT_VERSION = "42";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -1583,10 +1583,84 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "coverage": {
     "kind": "rpc",
     "path": "/rpc/coverage",
-    "description": "Freshness AND honesty per dataset. as_of = the newest period that has landed and has actually ELAPSED (bounded by today); complete_through = the newest COMPLETE period, which is what default windows serve; newest_period = the newest period KEY present, which can sit in the future when a family files forward-dated (FIP is keyed 31-December); landed_at = when ingest last SUCCEEDED for that source, from cvm_ingest_log (status ok with a finish time, so a later failed run never advances it); landed_git_sha = the git commit of THAT run — which code produced this data — NULL when the run recorded none (before migration 44, or run outside GitHub Actions), never borrowed from an older run. funds_<family> rows report each filing cadence separately. notes carries a caveat the dates cannot: the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); funds_fip states why its newest_period runs ahead; fund_nav points at catalog().applicability and api.metric_coverage(); the fidc_tranches and fidc_aging rows state that those informe tabs begin in 2025-01 because CVM publishes no archive of them (an upstream limit, not a gap); the fnet_documents row (the FNET register behind fund_documents and fund_restatements) is keyed on the DELIVERY day, with complete_through the day before as_of, and states that its history begins at first capture / backfill and that fund links come from a fortnightly sweep, so recent documents may have no cnpj yet; the company_events row (IPE filings, keyed on the delivery date, complete_through NULL as on financials) states that history starts in 2015 and that filings CVM published without a protocol number are not held; the macro_series and ptax rows carry their units and cadences (SELIC_META is published ahead, so its newest_period can sit in the future); and the five B3 lending / flow rows (short_interest, short_interest_by_sector, lending_trades, lending_participants, investor_flow) state the RATCHET — B3 keeps ~21 business days and publishes no archive, so their span starts at first capture and no backfill exists — along with the float_basis, brokerage-not-owner and first-difference traps that make those series easy to read wrongly. Their landed_at is split by ingest doc_type, so a COTAHIST run never reports as the lending group's freshness.",
+    "description": "Freshness AND honesty per dataset. as_of = the newest period that has landed and has actually ELAPSED (bounded by today); complete_through = the newest COMPLETE period, which is what default windows serve; newest_period = the newest period KEY present, which can sit in the future when a family files forward-dated (FIP is keyed 31-December); landed_at = when ingest last SUCCEEDED for that source, from cvm_ingest_log (status ok with a finish time, so a later failed run never advances it); landed_git_sha = the git commit of THAT run — which code produced this data — NULL when the run recorded none (before migration 44, or run outside GitHub Actions), never borrowed from an older run. funds_<family> rows report each filing cadence separately. notes carries a caveat the dates cannot: the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); funds_fip states why its newest_period runs ahead; fund_nav points at catalog().applicability and api.metric_coverage(); the fidc_tranches and fidc_aging rows state that those informe tabs begin in 2025-01 because CVM publishes no archive of them (an upstream limit, not a gap); the fnet_documents row (the FNET register behind fund_documents and fund_restatements) is keyed on the DELIVERY day, with complete_through the day before as_of, and states that its history begins at first capture / backfill and that fund links come from a fortnightly sweep, so recent documents may have no cnpj yet; the company_events row (IPE filings, keyed on the delivery date, complete_through NULL as on financials) states that history starts in 2015 and that filings CVM published without a protocol number are not held; the macro_series and ptax rows carry their units and cadences (SELIC_META is published ahead, so its newest_period can sit in the future); the di_futures and reference_curves rows (B3 Price Report DI1 contracts from 2018, B3 reference curves from 2008) state where each history starts and that the long curve vertices are B3's extrapolation, not prices; and the five B3 lending / flow rows (short_interest, short_interest_by_sector, lending_trades, lending_participants, investor_flow) state the RATCHET — B3 keeps ~21 business days and publishes no archive, so their span starts at first capture and no backfill exists — along with the float_basis, brokerage-not-owner and first-difference traps that make those series easy to read wrongly. Their landed_at is split by ingest doc_type, so a COTAHIST run never reports as the lending group's freshness.",
     "inputSchema": {
       "type": "object",
       "properties": {},
+      "additionalProperties": false
+    }
+  },
+  "curve": {
+    "kind": "rpc",
+    "path": "/rpc/curve",
+    "description": "One B3 reference curve on one session (B3 reference rates, TaxaSwap.txt, b3_reference_rate, from 2008-01-02), shortest vertex first, every vertex as published: calendar_days, business_days, rate, and whether the vertex is FIXED (vertex_type F, its nominal tenor in vertex_code) or MOVING (M, a contract maturity). PRE is DI x pré (% a.a., compounded on 252 business days; its moving vertices include every DI1 maturity at that contract's settlement rate); DOC is the clean onshore dollar coupon (% a.a., LINEAR on 360 calendar days); DPL is the clean IPCA coupon, a real rate (% a.a., 252 business days), and B3's implied inflation is (1 + PRE) / (1 + DPL) − 1 at the same tenor. rate_basis rides on every row. PAST THE LAST MATURITY OF THE CONTRACT THAT ANCHORS A CURVE (DI1 for PRE, DDI for DOC, DAP for DPL) B3 EXTRAPOLATES the last forward rate, so the long vertices are not prices (B3 Manual de Curvas v21). DPL's shortest vertices lean on the current month's IPCA projection. p_curve is PRE, DOC or DPL and anything else raises 22023 listing them; p_trade_date NULL = the newest session held, and a date with no session returns no rows. Nothing is interpolated. More than 1000 rows RAISES 22023; a session holds about 300 vertices per curve.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_curve": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `'PRE'::text`.",
+          "default": "PRE"
+        },
+        "p_trade_date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "curve_history": {
+    "kind": "rpc",
+    "path": "/rpc/curve_history",
+    "description": "One of B3's FIXED vertices of a reference curve through time, oldest session first (b3_reference_rate, from 2008-01-02): a constant tenor exactly as B3 publishes it, never an interpolation. p_curve is PRE, DOC or DPL (see api.curve for what each is and its rate_basis, which rides on every row); p_tenor_days is the vertex's NOMINAL tenor in calendar days (B3's vertex_code: 1, 30, 60, 90 … 360 … 720 … 1800 … 10800), and calendar_days is its actual length that session, a day or two longer when the nominal date is not a business day. A tenor that is not one of B3's fixed vertices raises 22023 listing the fixed tenors of the newest session; any other tenor is analysis — read api.curve and interpolate in the notebook. Long tenors sit in B3's EXTRAPOLATED tail (past the last anchoring contract; B3 Manual de Curvas v21), which moves as contracts list and expire, so a long vertex can be extrapolation on one date and anchored on another. Default window the 12 months before p_to or today. More than 1000 rows RAISES 22023 (never trimmed): narrow p_from/p_to.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_curve": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_tenor_days": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_curve",
+        "p_tenor_days"
+      ],
       "additionalProperties": false
     }
   },
@@ -2407,6 +2481,72 @@ export const CONTRACT: Record<string, ContractEntry> = {
           "default": null
         }
       },
+      "additionalProperties": false
+    }
+  },
+  "future_curve": {
+    "kind": "rpc",
+    "path": "/rpc/future_curve",
+    "description": "Every outright DI1 futures contract on one B3 session (B3 Price Report BVBG.086.01, b3_futures_settlement), nearest maturity first, as published: settlement_rate (% a.a., 252 business days) and settlement_price (the PU, R$; 100,000 at maturity), the previous settlement rate, open_interest, contracts traded, trades, notional_brl and the session's open/low/high/avg/close — which for DI1 are RATES, because B3 quotes DI1 in rate (the low rate is the high price). contract_month is the one derived column: the first day of the month the ticker names, read with B3's month letters (F = January … Z = December); the contract matures on that month's first business day. p_root is DI1 (the only root held); p_trade_date NULL = the newest session held, and a date with no session (a holiday, or before 2018-01-02, when B3's Price Report history starts) returns no rows. More than 1000 rows RAISES 22023 (never trimmed); one session holds about 50.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_root": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `'DI1'::text`.",
+          "default": "DI1"
+        },
+        "p_trade_date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "future_series": {
+    "kind": "rpc",
+    "path": "/rpc/future_series",
+    "description": "One DI1 futures contract through time, oldest session first, with the same columns as api.future_curve (B3 Price Report, b3_futures_settlement, from 2018-01-02): settlement rate and PU, open interest, volume and the session's quotes, which for DI1 are RATES (% a.a., 252 business days). p_ticker is an outright code such as DI1F27 — root, B3 month letter (F = January … Z = December), two-digit year — and anything else raises 22023; future_curve lists the contracts of a session. A contract is listed years before it matures and stops at maturity, so a window outside its life returns no rows. Nothing is rolled, spliced or made continuous: a constant-maturity rate is B3's own curve (api.curve, api.curve_history). Default window the 12 months before p_to or today. More than 1000 rows RAISES 22023 (never trimmed): narrow p_from/p_to.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_ticker": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_ticker"
+      ],
       "additionalProperties": false
     }
   },

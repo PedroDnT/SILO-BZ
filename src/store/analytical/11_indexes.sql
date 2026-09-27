@@ -55,6 +55,18 @@ CREATE INDEX IF NOT EXISTS idx_fact_fund_monthly_entity_cover
 -- ---------------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------------
+-- 6. b3_reference_rate: B3's FIXED vertices by curve and nominal tenor
+--    Pattern: WHERE curve = $1 AND vertex_type = 'F' AND vertex_code = $2
+--             AND trade_date BETWEEN $3 AND $4
+--    (api.curve_history in 27_api_rates.sql). The unique key leads with
+--    (curve, trade_date), so without this a tenor's history reads every
+--    vertex of every session in the window, about 300 per session.
+-- ---------------------------------------------------------------------------
+CREATE INDEX IF NOT EXISTS idx_b3_reference_rate_fixed
+  ON b3_reference_rate (curve, vertex_code, trade_date)
+  WHERE vertex_type = 'F';
+
+-- ---------------------------------------------------------------------------
 -- Autovacuum tuning for materialized views that are refreshed daily.
 -- REFRESH MATERIALIZED VIEW CONCURRENTLY creates dead tuples that must be
 -- vacuumed. Aggressive autovacuum keeps them healthy.
