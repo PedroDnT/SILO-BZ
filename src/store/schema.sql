@@ -101,7 +101,17 @@ CREATE TABLE IF NOT EXISTS cvm_fi_cda (
     vl_merc_pos_final NUMERIC(20,6),
     raw           JSONB        NOT NULL,
     fetched_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_fi_cda UNIQUE (cnpj, period, tp_aplic, tp_ativo)
+    -- Migration 49: one row per bond. The old key stopped at tp_ativo, which
+    -- reads the same for every government bond, and kept one bond per fund.
+    tp_fundo      TEXT,                    -- FI / FIF / CLASSES - FIF, as filed
+    tp_negoc      TEXT,                    -- trading intent, as filed
+    cd_isin       TEXT,
+    cd_selic      TEXT,
+    tp_titpub     TEXT,                    -- title family: NTN-B, LFT, LTN, ...
+    dt_venc       DATE,                    -- maturity
+    qt_pos_final  NUMERIC(28,6),
+    CONSTRAINT uq_fi_cda UNIQUE NULLS NOT DISTINCT
+        (cnpj, period, tp_fundo, tp_aplic, tp_ativo, cd_isin, tp_negoc)
 );
 CREATE INDEX IF NOT EXISTS idx_fi_cda_cnpj   ON cvm_fi_cda (cnpj);
 CREATE INDEX IF NOT EXISTS idx_fi_cda_period ON cvm_fi_cda (period DESC);

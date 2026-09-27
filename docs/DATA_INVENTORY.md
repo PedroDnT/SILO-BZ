@@ -29,7 +29,7 @@ from behind a login, or purchased — except the one ETF market feed noted below
 | FI      | `cvm_fi_diario`          | fund × **day**                       | monthly ZIP 2021+, yearly HIST ≤2020 | 2019 (partition floor)   |
 | FI      | `cvm_fi_perfil`          | fund × month                         | monthly CSV                          | 2019                     |
 | FI      | `cvm_fi_balancete`       | fund × month × account               | monthly ZIP                          | 2019                     |
-| FI      | `cvm_fi_cda`             | fund × month × asset **class**       | monthly 2023+, yearly HIST ≤2022     | 2005                     |
+| FI      | `cvm_fi_cda`             | fund × month × **government bond**   | monthly 2023+, yearly HIST ≤2022     | 2005                     |
 | FI      | `cvm_fi_cda_acoes`       | fund × month × class × **ticker**    | CDA block 4                          | 2005                     |
 | FI      | `cvm_fi_cda_cotas`       | fund × month × **held fund**         | CDA block 2                          | 2005                     |
 | FI      | `cvm_fi_cda_debentures`  | fund × month × **issuer** × maturity | CDA block 6                          | 2005                     |
@@ -268,12 +268,21 @@ government-bond book. `CLAUDE.md` describes the table as "AGGREGATED by asset
 class — one number per (fund, month, tp_aplic, tp_ativo)"; that is what it
 intends, not what it does.
 
-The fix is additive and follows the pattern blocks 4 and 2 already use: a
-`cvm_fi_cda_titpub` table keyed on the security
-(`cnpj, period, tp_aplic, cd_selic, dt_venc`, ~98.8% retention), leaving
-`cvm_fi_cda` as the class-level roll-up the dashboards already read. Changing
-`cvm_fi_cda`'s own key would change its grain and break every consumer of it,
-which is why it is not proposed here.
+**Resolved by migration 49 (2026-09-26, #348), and not the way this section
+first proposed.** The proposal was an additive `cvm_fi_cda_titpub` table that
+left `cvm_fi_cda` as a class-level roll-up, on the grounds that re-keying would
+break its consumers. Checked against the code, it would not: the only readers
+(`dashboard/sources/supabase/fi_allocation.sql`, `fi_top_aplic.sql`) `SUM`
+`vl_merc_pos_final` per bucket and count distinct funds, so more real rows only
+makes their totals true, and they already carried a "lower bound" caveat for
+exactly this bug. A second table would have stored the same rows twice and kept
+one that is knowingly wrong. So the key itself widened to
+`(cnpj, period, tp_fundo, tp_aplic, tp_ativo, cd_isin, tp_negoc)`, NULLS NOT
+DISTINCT, measured at 0 duplicates on HIST 2005, 2010, 2015, 2020 and monthly
+202306, 202608. The dropped bonds come back only through a block-1 re-ingest
+(`backfill.yml` `fi_doc_type`, one year per dispatch). Until a year is
+re-ingested it still holds the collapsed rows, and the dashboard caveats stay
+true for it.
 
 ### `cia_event` cannot key an IPE filing that has no protocol — and before 2015 none do
 
@@ -399,7 +408,7 @@ endpoint. Listed with what serving it would take.
 | `cvm_fi_balancete`                                                                             | ~111M rows, fund accounting                                                                                                                      | **No.** Largest table in the warehouse; nothing reads it, including the dashboard. Deliberate until a question needs it.                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `cvm_fidc_garantia` | FIDC tab X_7 (migration 45): value of guarantees on the credit rights and a percentage, per fund × month, from 2019-11 | **No.** New; nothing reads it yet. CVM's dictionary leaves both columns undescribed and the percentage's denominator does not reconcile to one sibling total, so it is stored as filed. Most funds file zeros (28 of 4,383 non-zero in 2026-08). Candidate: a `kind = 'guarantees'` arm in `fidc_portfolio`, with the unstated denominator in its note, plus a `coverage()` row. |
 | `b3_futures_settlement`, `b3_reference_rate`, `mkt_series`, IC-Br in `bacen_sgs` | DI1 per contract (2018+), B3 `PRE` / `DOC` curves (2008+), UST / VIX / Brent, IC-Br (migration 48) | **No.** Landed for the DUSTIN-BR research dataset (`research_examples/dustin_br/`). Candidates: `future_curve` / `curve` (`INSTRUMENTS.md` Phases B and C). VIX must not be served until Cboe's redistribution terms are confirmed; IC-Br would join `macro_series`' registry. |
-| `cvm_fi_cda`                                                                                   | CDA header block (portfolio totals per fund-month)                                                                                               | **No.** Blocks 4, 2 and 6 are served; the header is read by nothing.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `cvm_fi_cda`                                                                                   | CDA block 1, government bonds per fund-month (one row per bond since migration 49)                                                                                               | **No.** Blocks 4, 2 and 6 are served; the header is read by nothing.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ### Not served by design
 

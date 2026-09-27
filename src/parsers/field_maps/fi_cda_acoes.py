@@ -3,8 +3,7 @@
 Source CSV: cda_fi_BLC_4_{year}{month:02d}.csv, inside the same monthly ZIP the
 `cda` dataset already downloads. Target table: cvm_fi_cda_acoes.
 
-WHY THIS BLOCK. cvm_fi_cda stores the portfolio AGGREGATED by asset class — one
-number per (fund, month, tp_aplic, tp_ativo). Block 4 is the holdings themselves,
+WHY THIS BLOCK. cvm_fi_cda is block 1, the government bonds. Block 4 is the holdings themselves,
 and it carries CD_ATIVO: the B3 ticker. That is the column that joins the fund
 universe to the quote tape, so "which funds hold PETR4, and how did that change"
 becomes answerable. Nothing else in the warehouse provides that edge.
