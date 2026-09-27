@@ -214,6 +214,21 @@ jobs:
               ADD CONSTRAINT uq_fii_periodic UNIQUE NULLS NOT DISTINCT
               (cnpj, doc_type, period_year, data_referencia);
           COMMENT ON COLUMN cvm_fii_periodic.versao IS NULL;
+
+          -- CDA block 1 before migration 49: keyed per fund, not per bond, the
+          -- bond still only in raw. Dropping cd_isin also drops the backfill
+          -- marker (its column comment).
+          ALTER TABLE cvm_fi_cda DROP CONSTRAINT IF EXISTS uq_fi_cda;
+          ALTER TABLE cvm_fi_cda
+              DROP COLUMN IF EXISTS tp_fundo,
+              DROP COLUMN IF EXISTS tp_negoc,
+              DROP COLUMN IF EXISTS cd_isin,
+              DROP COLUMN IF EXISTS cd_selic,
+              DROP COLUMN IF EXISTS tp_titpub,
+              DROP COLUMN IF EXISTS dt_venc,
+              DROP COLUMN IF EXISTS qt_pos_final;
+          ALTER TABLE cvm_fi_cda
+              ADD CONSTRAINT uq_fi_cda UNIQUE (cnpj, period, tp_aplic, tp_ativo);
           REWIND
 
           echo "--- rows in that shape (this is what production holds) ---"
@@ -254,6 +269,17 @@ jobs:
                   '{"Versao":"abc"}'::jsonb);
           INSERT INTO cvm_fii_periodic (cnpj, doc_type, period_year, data_referencia, raw)
           VALUES ('33333333000191','dfin',2024,'2024-12-31','{"Versao":"3"}'::jsonb);
+
+          -- Block 1 as production holds it: the ONE bond the old key kept for
+          -- this fund-month, the rest of the bond only in raw. One malformed
+          -- maturity must stay NULL, never guessed, and the row still survives.
+          INSERT INTO cvm_fi_cda (cnpj, period, tp_aplic, tp_ativo, vl_merc_pos_final, raw)
+          VALUES ('44444444000191','2026-08-01','Títulos Públicos','Título público federal',
+                  318932.00,
+                  '{"TP_FUNDO_CLASSE":"CLASSES - FIF","TP_NEGOC":"Para negociação","CD_ISIN":"BRSTNCNTB3D4","CD_SELIC":"760199","TP_TITPUB":"NOTAS DO TESOURO NACIONAL SERIE B","DT_VENC":"2050-08-15","QT_POS_FINAL":"80.000000"}'::jsonb),
+                 ('44444444000191','2015-06-01','Títulos Públicos','Título público federal',
+                  10.00,
+                  '{"TP_FUNDO":"FI","TP_NEGOC":"Para negociação","CD_ISIN":"BRSTNCLTN4X1","DT_VENC":"2017-02-30"}'::jsonb);
           SEED
 
           echo "--- the upgrade: current schema.sql, every migration, then again ---"
@@ -283,6 +309,26 @@ jobs:
           test "$fii" = "complemento@2024-01-01=2/false,geral@2024-01-01=-/false,complemento@2024-02-01=-/true" \
             || { echo "FAIL: cvm_fii_mensal versao backfill"; exit 1; }
           test "$per" = "3" || { echo "FAIL: cvm_fii_periodic versao backfill"; exit 1; }
+
+          echo "--- CDA block 1: bond backfilled from raw, then the refill MERGES (migration 49) ---"
+          cda=$(psql "$OLD_URL" -tAc "SELECT string_agg(period||'='||coalesce(cd_isin,'-')||'/'||coalesce(tp_fundo,'-')||'/'||coalesce(dt_venc::text,'-')||'/'||coalesce(qt_pos_final::text,'-'), ',' ORDER BY period) FROM cvm_fi_cda WHERE cnpj='44444444000191';")
+          echo "cda block1=$cda"
+          test "$cda" = "2015-06-01=BRSTNCLTN4X1/FI/-/-,2026-08-01=BRSTNCNTB3D4/CLASSES - FIF/2050-08-15/80.000000" \
+            || { echo "FAIL: cvm_fi_cda bond backfill"; exit 1; }
+          # The refill: the surviving NTN-B again (must merge) plus the LFT the
+          # old key had dropped (must be added). Twice, so it is idempotent.
+          for _ in 1 2; do
+            psql "$OLD_URL" -v ON_ERROR_STOP=1 -q <<'UPSERT'
+          INSERT INTO cvm_fi_cda (cnpj, period, tp_fundo, tp_aplic, tp_ativo, cd_isin, tp_negoc, vl_merc_pos_final, raw)
+          VALUES ('44444444000191','2026-08-01','CLASSES - FIF','Títulos Públicos','Título público federal','BRSTNCNTB3D4','Para negociação',318932.00,'{}'::jsonb),
+                 ('44444444000191','2026-08-01','CLASSES - FIF','Títulos Públicos','Título público federal','BRSTNCLF1RK7','Para negociação',3024098.48,'{}'::jsonb)
+          ON CONFLICT (cnpj, period, tp_fundo, tp_aplic, tp_ativo, cd_isin, tp_negoc)
+          DO UPDATE SET vl_merc_pos_final = EXCLUDED.vl_merc_pos_final, raw = EXCLUDED.raw;
+          UPSERT
+          done
+          cda_n=$(psql "$OLD_URL" -tAc "SELECT count(*) FROM cvm_fi_cda WHERE cnpj='44444444000191' AND period='2026-08-01';")
+          echo "cda block1 rows after refill=$cda_n"
+          test "$cda_n" = "2" || { echo "FAIL: refill duplicated or dropped a bond (got $cda_n, want 2)"; exit 1; }
           # The pipeline's upsert, twice (idempotent), for a restatement (v3)
           # and for the first versioned write of a legacy NULL-versao filing.
           for _ in 1 2; do

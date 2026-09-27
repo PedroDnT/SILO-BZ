@@ -55,12 +55,16 @@ CREATE TABLE IF NOT EXISTS cvm_fi_diario (
 CREATE TABLE IF NOT EXISTS cvm_fi_cda (
     cnpj              TEXT NOT NULL,
     period            DATE NOT NULL,
+    tp_fundo          TEXT,
     tp_aplic          TEXT,
     tp_ativo          TEXT,
+    cd_isin           TEXT,
+    tp_negoc          TEXT,
     vl_merc_pos_final DECIMAL(20,6),
     raw               JSON NOT NULL,
     fetched_at        TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (cnpj, period, tp_aplic, tp_ativo)
+    -- one row per bond, as in migration 49 (the old key kept one per fund)
+    UNIQUE (cnpj, period, tp_fundo, tp_aplic, tp_ativo, cd_isin, tp_negoc)
 );
 
 CREATE TABLE IF NOT EXISTS cvm_fidc_mensal (
@@ -247,8 +251,11 @@ def _norm_fi_cda(row: Dict, year: int, month: int) -> Optional[Dict]:
     return {
         "cnpj":               cnpj,
         "period":             f"{year}-{month:02d}-01",
+        "tp_fundo":           _find_field(row, "TP_FUNDO_CLASSE") or _find_field(row, "TP_FUNDO"),
         "tp_aplic":           _find_field(row, "TP_APLIC"),
         "tp_ativo":           _find_field(row, "TP_ATIVO"),
+        "cd_isin":            _find_field(row, "CD_ISIN"),
+        "tp_negoc":           _find_field(row, "TP_NEGOC"),
         "vl_merc_pos_final":  _find_field(row, "VL_MERC_POS_FINAL"),
         "raw":                json.dumps(row, ensure_ascii=False),
     }
@@ -485,7 +492,7 @@ async def seed_fi_diario(conn, fetcher, months):
 
 
 async def seed_fi_cda(conn, fetcher, months):
-    cols = ["cnpj","period","tp_aplic","tp_ativo","vl_merc_pos_final","raw"]
+    cols = ["cnpj","period","tp_fundo","tp_aplic","tp_ativo","cd_isin","tp_negoc","vl_merc_pos_final","raw"]
     total = 0
     for year, month in months:
         t0 = time.time()
