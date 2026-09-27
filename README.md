@@ -293,6 +293,11 @@ same for everyone.
   from now on; the past comes from `backfill.yml` with `fnet_start` / `fnet_end`, one
   year per dispatch, newest first, then one `fnet_sweep` dispatch to link documents to
   funds. Until then `api.fund_restatements` only sees recent filings.
+- **Rates and market history is empty until backfilled** (PR #355). Dispatch
+  `market_backfill.yml` for `b3_reference_rate` from 2008, `b3_price_report` from
+  2018 and `us_treasury,cboe_vix,eia_brent` from 2008, then
+  `run_backfill --bacen-only --bacen-sources sgs --bacen-start 2008-01-01` for
+  IC-Br. Optional: an `EIA_API_KEY` secret (else EIA's rate-limited demo key).
 - **The Sentinel read-only role** is a script the owner runs once:
   [`docs/security/sentinel_readonly_role.sql`](docs/security/sentinel_readonly_role.sql)
   (password via a psql variable, never in the repo).
