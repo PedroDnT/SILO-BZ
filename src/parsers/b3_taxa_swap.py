@@ -1,0 +1,137 @@
+"""B3 reference rates (TaxaSwap.txt) → `b3_reference_rate` rows.
+
+Fixed-width, 72 characters per row, one row per (curve, vertex). Layout,
+0-based slices, measured on 2008-01-02, 2017-01-02 and 2026-09-25 (unchanged):
+
+    [0:6]    record id                [6:9]   complement   [9:11] record type
+    [11:19]  generation date YYYYMMDD [19:21] curve-file code ('T1')
+    [21:26]  curve code ('PRE', 'DOC', 'DIC' …, left-justified)
+    [26:41]  curve description        [41:46] calendar days  [46:51] business days
+    [51]     sign '+'/'-'             [52:66] rate × 10^7
+    [66]     vertex type: F fixed, M moving
+    [67:72]  vertex code
+
+What the curves are, from the file itself: PRE is "DIxPRE" (DI x pré, the
+252-business-day basis — on 2026-09-25 its moving vertices at every DI1
+maturity equal that contract's settlement rate), DOC is "DIxXDOL Cupom l"
+(the clean onshore dollar coupon). Only the configured curves are kept; the
+rest of the file (116 curves in 2026) is skipped, not stored.
+
+A row that is not 72 characters, a date that is not the file's session, or a
+(curve, calendar days) pair seen twice raises: that is a layout change, and
+guessing a layout is how a wrong number gets stored under the right name.
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any, Dict, List, Sequence, Tuple
+
+from src.parsers.validation import DataValidator
+
+logger = logging.getLogger(__name__)
+
+TABLE = "b3_reference_rate"
+CONFLICT = ("curve", "trade_date", "calendar_days")
+DEFAULT_CURVES: Tuple[str, ...] = ("PRE", "DOC")
+LINE_LENGTH = 72
+
+_validator = DataValidator()
+
+
+class TaxaSwapFormatError(ValueError):
+    """The file is not the documented 72-character layout."""
+
+
+def _valid(row: Dict[str, Any]) -> bool:
+    errors, _ = _validator.validate_record(
+        row, ["trade_date", "curve", "calendar_days", "business_days", "rate"], {"trade_date": "date"}
+    )
+    if errors:
+        return False
+    # A vertex has positive tenors and never more business than calendar days.
+    # The rate bound is a PARSE sanity check, not a plausibility filter: B3
+    # publishes 1- and 2-day DOC vertices of several hundred percent (a
+    # one-day onshore dollar coupon annualised linearly — measured +430.3 on
+    # 2026-09-14 and -332.3 on 2026-09-21). Those are the published numbers
+    # and are kept; research reads DOC at 30 days and beyond.
+    if row["calendar_days"] <= 0 or row["business_days"] < 0:
+        return False
+    if row["business_days"] > row["calendar_days"]:
+        return False
+    return Decimal("-1000") < row["rate"] < Decimal("1000")
+
+
+def parse_taxa_swap(
+    text: str,
+    *,
+    session: date,
+    curves: Sequence[str] = DEFAULT_CURVES,
+    origin: str = "",
+) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    """Rows for ``curves`` on ``session``; ``(rows, counts)`` as in the price report."""
+    wanted = set(curves)
+    rows: List[Dict[str, Any]] = []
+    seen: set = set()
+    present: set = set()
+    counts = {"kept": 0, "dropped_invalid": 0, "lines": 0}
+
+    for n, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        counts["lines"] += 1
+        if len(line) != LINE_LENGTH:
+            raise TaxaSwapFormatError(f"{origin} line {n}: {len(line)} characters, expected {LINE_LENGTH}")
+        curve = line[21:26].strip()
+        if curve not in wanted:
+            continue
+        present.add(curve)
+        try:
+            generated = datetime.strptime(line[11:19], "%Y%m%d").date()
+            calendar_days = int(line[41:46])
+            business_days = int(line[46:51])
+            sign = line[51]
+            magnitude = int(line[52:66])
+        except ValueError as exc:
+            raise TaxaSwapFormatError(f"{origin} line {n}: unreadable fixed-width field ({exc})") from exc
+        if sign not in "+-":
+            raise TaxaSwapFormatError(f"{origin} line {n}: sign {sign!r}")
+        if generated != session:
+            raise TaxaSwapFormatError(f"{origin} line {n}: dated {generated}, file is {session}")
+        key = (curve, calendar_days)
+        if key in seen:
+            raise TaxaSwapFormatError(f"{origin}: {curve} vertex {calendar_days} appears twice")
+        seen.add(key)
+
+        rate = Decimal(magnitude).scaleb(-7)
+        row = {
+            "trade_date": generated,
+            "curve": curve,
+            "curve_desc": line[26:41].strip(),
+            "calendar_days": calendar_days,
+            "business_days": business_days,
+            "rate": -rate if sign == "-" else rate,
+            "vertex_type": line[66],
+            "vertex_code": line[67:72],
+        }
+        if row["vertex_type"] not in ("F", "M") or not _valid(row):
+            counts["dropped_invalid"] += 1
+            continue
+        rows.append(row)
+
+    if counts["lines"] == 0:
+        raise TaxaSwapFormatError(f"{origin}: empty TaxaSwap.txt")
+    missing = wanted - present
+    if missing:
+        # A configured curve absent from a session's file is a source change,
+        # not an empty day: the file itself was published.
+        raise TaxaSwapFormatError(f"{origin}: curve(s) {sorted(missing)} not in the file")
+    unusable = wanted - {r["curve"] for r in rows}
+    if unusable:
+        raise TaxaSwapFormatError(f"{origin}: every vertex of {sorted(unusable)} failed validation")
+    counts["kept"] = len(rows)
+    if counts["dropped_invalid"]:
+        logger.warning("TaxaSwap %s: dropped %d invalid vertices", origin, counts["dropped_invalid"])
+    return rows, counts

@@ -33,3 +33,10 @@ published snapshots, not time-series benchmarks. Each script prints its source
 and limitations. Direct CVM archive download was unavailable in this
 environment, so no archive-ingestion benchmark is claimed as passed. No OpenAI
 API code is included.
+
+## DUSTIN-BR data foundation
+
+[`dustin_br_data_sources.md`](dustin_br_data_sources.md) audits what SILO held
+for a Brazilian rates-regime model, tests the candidate sources for DI futures,
+UST, VIX, MOVE, sovereign risk and commodities, and records the choices and the
+point-in-time rules. The dataset builder is `research_examples/dustin_br/`.

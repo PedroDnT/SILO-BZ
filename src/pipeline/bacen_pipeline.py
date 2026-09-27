@@ -92,6 +92,23 @@ SGS_SERIES: Dict[str, int] = {
 assert SGS_SERIES["IPCA"] == INFLATION_SERIES["IPCA"][0] == 433
 assert len(set(SGS_SERIES.values())) == len(SGS_SERIES), "one code per label"
 
+# Held, NOT served: fetched into bacen_sgs with the rest, but kept out of
+# SGS_SERIES because SGS_SERIES minus INFLATION_SERIES IS api.macro_series'
+# registry (26_api_events_macro.sql, pinned by tests/test_wave3_contract.py).
+# Serving these is a separate decision. The Índice de Commodities - Brasil
+# (IC-Br): BACEN's monthly average of commodity prices in reais, weighted
+# for Brazil, dated the 1st of the reference month and published early in
+# the following month. Codes verified 2026-09-27 against api.bcb.gov.br
+# (values from 2008-01). Why these: docs/research/dustin_br_data_sources.md §3.E.
+RESEARCH_SGS_SERIES: Dict[str, int] = {
+    "ICBR":         27574,
+    "ICBR_AGRO":    27575,
+    "ICBR_METAL":   27576,
+    "ICBR_ENERGIA": 27577,
+}
+assert not set(RESEARCH_SGS_SERIES.values()) & set(SGS_SERIES.values())
+assert not set(RESEARCH_SGS_SERIES) & set(SGS_SERIES)
+
 PTAX_CURRENCIES: List[str] = ["USD", "EUR", "GBP", "JPY", "ARS"]
 
 # Audit rows: one per source per run, written by src/pipeline/ingest_log
@@ -157,13 +174,14 @@ class BacenIngestor:
         if end is None:
             end = date.today().isoformat()
 
-        logger.info("SGS: start=%s end=%s series=%d", start, end, len(SGS_SERIES))
+        series = {**SGS_SERIES, **RESEARCH_SGS_SERIES}
+        logger.info("SGS: start=%s end=%s series=%d", start, end, len(series))
         total = 0
 
         # Fetch all series in one call (python-bcb returns a multi-column df)
         try:
             records = await self._client.get_sgs_series(
-                codes=SGS_SERIES,
+                codes=series,
                 start=start,
                 end=end,
             )
@@ -187,7 +205,7 @@ class BacenIngestor:
             ref_date = rec.get("date") or rec.get("Date")
             if not ref_date:
                 continue
-            for series_name, series_code in SGS_SERIES.items():
+            for series_name, series_code in series.items():
                 value = rec.get(series_name)
                 if value is None:
                     continue

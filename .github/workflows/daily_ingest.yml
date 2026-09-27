@@ -233,6 +233,21 @@ jobs:
       # failure still fails the job (no continue-on-error), writes its `error`
       # audit row, and files the tracking issue below. The dashboard does not
       # read FNET, and the api functions over it need no rebuild.
+      # DI1 futures and B3's reference curves (pesquisapregao files), the U.S.
+      # Treasury par curve, Cboe VIX and EIA Brent (src/pipeline/market_pipeline.py,
+      # docs/research/dustin_br_data_sources.md). Its own step, after the
+      # analytical layer, for the same reason as FNET below: four foreign hosts
+      # must not be able to skip ANALYZE, the analytical apply or the deploy
+      # hook. Nothing the dashboard or schema api reads depends on it. A failed
+      # slice writes its `error` audit row and fails the job.
+      - name: Refresh rates and market data
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
+        timeout-minutes: 30
+        env:
+          # Optional. Without it the EIA fetch uses EIA's rate-limited DEMO_KEY.
+          EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+        run: python -m src.pipeline.market_pipeline
+
       - name: Refresh FNET document register
         if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
         timeout-minutes: 60
