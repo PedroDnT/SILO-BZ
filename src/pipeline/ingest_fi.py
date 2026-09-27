@@ -146,12 +146,58 @@ def ingest_fi_cda(
     if not records:
         return 0
 
+    records = _drop_relabelled_twins(records)
+
     return upsert_rows(
         conn,
         _cda.TABLE,
         records,
         conflict_columns=",".join(_cda.CONFLICT),
     )
+
+
+# The same position filed twice in one month, once per fund-type label.
+# Measured on block 1: HIST 2005 has 144 groups under two labels (FI/FIF,
+# FI/FITVM), 128 with identical quantity and value; 202503 has 34 (FI and
+# CLASSES - FIF across the CVM-175 transition), 33 identical. tp_fundo is in
+# the key so the few twins with DIFFERENT positions both survive, but an
+# identical twin is one holding reported twice, and keeping both would double
+# it in every sum.
+_POSITION_COLS = ("qt_pos_final", "vl_merc_pos_final", "cd_selic", "tp_titpub", "dt_venc")
+
+
+def _label_rank(tp_fundo: Optional[str]) -> tuple:
+    # The CVM-175 label ("CLASSES - ...") is the current regime and wins; any
+    # other tie breaks on the label text, so the survivor never depends on the
+    # CSV's row order.
+    return (not (tp_fundo or "").startswith("CLASSES"), tp_fundo or "")
+
+
+def _drop_relabelled_twins(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    key_wo_label = [c for c in _cda.CONFLICT if c != "tp_fundo"]
+    groups: Dict[tuple, List[Dict[str, Any]]] = {}
+    for r in records:
+        groups.setdefault(tuple(r.get(c) for c in key_wo_label), []).append(r)
+
+    kept: List[Dict[str, Any]] = []
+    dropped = 0
+    for group in groups.values():
+        label_of: Dict[tuple, Optional[str]] = {}   # position -> label kept
+        for r in sorted(group, key=lambda r: _label_rank(r.get("tp_fundo"))):
+            position = tuple(r.get(c) for c in _POSITION_COLS)
+            label = r.get("tp_fundo")
+            if position in label_of and label_of[position] != label:
+                dropped += 1
+                continue
+            label_of.setdefault(position, label)
+            kept.append(r)
+
+    if dropped:
+        logger.info(
+            "%s: kept once %d position(s) filed under two fund-type labels",
+            _cda.TABLE, dropped,
+        )
+    return kept
 
 
 def _ingest_cda_holdings(
