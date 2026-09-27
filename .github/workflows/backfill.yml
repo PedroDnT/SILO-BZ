@@ -61,6 +61,10 @@ on:
         description: "FI only: fetch ONLY the months missing from the fi_doc_type table (reads the table, not the audit log). Requires a specific fi_doc_type."
         type: boolean
         default: false
+      fi_force:
+        description: "FI only: re-fetch the selected years even when coverage says they are complete (a key fix that needs every year re-ingested, e.g. migration 49 for cda). Requires a specific fi_doc_type."
+        type: boolean
+        default: false
       fi_months:
         description: "FI only: fetch ONLY these competency months, comma-separated YYYY-MM (e.g. 2019-04,2023-01). Requires a specific fi_doc_type. Each year job takes the months belonging to its own year."
         type: string
@@ -365,6 +369,13 @@ jobs:
           # years — gaps.FI_MONTHLY_TABLES carries that cutoff and says so.
           if "${{ inputs.fi_repair_gaps }}" == "true" or "${{ inputs.fi_months }}".strip():
               print(f"RUN: {year} (repair mode — coverage is decided from the table, not the audit log)")
+          elif "${{ inputs.fi_force }}" == "true" and requested_doc != "all":
+              # Coverage says what landed, not whether it landed at the right
+              # grain. After a key fix (migration 49: cvm_fi_cda kept one bond
+              # per fund) every "complete" year is complete and wrong, and only
+              # a re-ingest restores it. Scoped to one doc type so a force can
+              # never re-fetch all of FI.
+              print(f"RUN: {year} {requested_doc} (forced — coverage gate bypassed)")
           elif requested_doc != "all":
               counts = {
                   "inf_diario": diario_months,
