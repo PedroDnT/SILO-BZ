@@ -134,10 +134,12 @@ class MarketIngestor:
         try:
             rows, note = await work()
             status, error = "ok", note
-        except B3FileNotPublished as exc:
+        except (B3FileNotPublished, ts.TaxaSwapStaleFile) as exc:
+            # No file of its own for that date: an empty archive, or an earlier
+            # session's file republished under it. Nothing is stored.
             status, error = "skipped", ingest_log.describe(exc)
             self.skips.append(label)
-            logger.info("%s: not published — skipped", label)
+            logger.info("%s: not published for that date — skipped (%s)", label, error)
         except Exception as exc:  # noqa: BLE001 — recorded, collected, raised by run()
             error = ingest_log.describe(exc)
             self.failures.append(f"{label}: {error}")

@@ -544,6 +544,11 @@ vertex grid, 286 vertices each on 2026-09-25); `mkt_series` ~20 rows a day
 
 1. `src/fetchers/b3_pesquisapregao_fetcher.py`: one downloader for `PR` and
    `TS` files. An empty zip is "not published" (logged `skipped`), not an error.
+   So is a `TS` file B3 republished from an earlier session under a later date:
+   every PRE/DOC/DPL line carries the earlier date. This was _measured_ on
+   2010-12-24 and 2010-12-31, whose files are the 12-23 and 12-30 files vertex
+   for vertex. It raises `TaxaSwapStaleFile`, is logged `skipped` and stores
+   nothing. Any other date mismatch is still an error.
 2. `src/parsers/b3_price_report.py` (streaming XML, the latest version in the
    zip, DI1 outright tickers, typed + `raw`) and
    `src/parsers/b3_taxa_swap.py` (fixed-width, strict layout check).
