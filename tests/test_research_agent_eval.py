@@ -83,7 +83,7 @@ def test_invalid_arguments_fail_before_network_call():
     with pytest.raises(agent_eval.ArgumentValidationError, match="Unknown argument.*p_endpoint"):
         adapter.invoke_endpoint("focus_expectations", '{"p_endpoint":"x","horizon":"2025"}')
     with pytest.raises(agent_eval.ArgumentValidationError, match="ISO date"):
-        adapter.invoke_endpoint("focus_expectations", '{"endpoint":"x","horizon":"2025","start":"yesterday"}')
+        adapter.invoke_endpoint("focus_expectations", '{"endpoint":"ExpectativasMercadoAnuais","horizon":"2025","start":"yesterday"}')
     assert adapter.data_calls == 0
 
 
