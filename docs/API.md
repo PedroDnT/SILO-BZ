@@ -273,6 +273,21 @@ or refused), and `< 1` is `22023` rather than a silent clamp to 1. Nothing in
 `dashboard/` or `webapp/` calls these functions (the Evidence sources read the
 landing tables directly), so no page relied on the trim.
 
+### The holdings pair stops trimming (catalog v41)
+
+`fund_holdings` and `fund_debentures` were the last two functions that trimmed
+**silently** at a tier ceiling (500 rows anonymous, 5,000 signed in). The
+silo-mcp server always calls as anonymous, so a ticker held by more than 500
+funds, or a fund's full history, reached an agent short and looking complete.
+Since v41 both follow the v34 pattern exactly: the page CTE fetches 1001 rows,
+`api.assert_row_cap` raises `22023` above 1000, `p_limit` is an explicit
+newest-first head (1..1000; `NULL` or above one page is the whole window;
+`< 1` is `22023`), and their `*_rows` entries left `limits.tiers`. The capped
+count is thirty-nine. The fix for a refusal is a narrower `p_from`/`p_to` (a
+`p_ticker` / `p_issuer` lookup spans many funds, so it needs fewer months than
+one fund's holdings) or an explicit `p_limit`. Nothing in `dashboard/` or
+`webapp/` calls either function.
+
 `api.assert_row_cap` now builds its message centrally from the function name:
 `<fn>: refused, this request would return more than 1000 rows.`, then the
 **why** (one 1000-row page; SILO never returns a silently truncated result),

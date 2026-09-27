@@ -24,6 +24,14 @@ __all__ = [
     "tool_specs",
 ]
 
+# v41: api.fund_holdings / api.fund_debentures stop trimming. Until v40 they
+# were tiered 500 anonymous / 5000 signed in and cut the result SILENTLY at
+# that ceiling with a 200 — the last two functions that did, and the MCP
+# (always anonymous) passed the short answer on as whole. They are raise-only
+# on the 1000-row page now, like the FIDC trio since v34: p_limit is an
+# explicit newest-first head (1..1000; NULL or above one page = the whole
+# window, served whole or refused; < 1 = 22023). Their *_rows tier ceilings
+# leave limits.tiers. Capped count thirty-seven -> thirty-nine.
 # v40: what a restatement changed (backlog B4, docs/planning/DOCUMENTS.md),
 # in 24_api_fnet.sql over the diff tables of migration 46. New
 # api.fund_restatement_diff — one row per field a re-filed document changed,
@@ -329,7 +337,7 @@ __all__ = [
 # stated as (id, asset_class, date, metric) and p_entity_type narrows the fund
 # arms to one family. Universe mode (p_ids empty + p_entity_type, optional
 # p_min_nav / p_min_months) walks a whole family for signed-in callers.
-CATALOG_VERSION = 40
+CATALOG_VERSION = 41
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -577,13 +585,13 @@ CONSTRAINTS = [
     "WHY (the response is one 1000-row page and SILO never returns a silently "
     "truncated result) and HOW to fix it for that function, in the message and "
     "again as PostgREST's `details` / `hint`. That is all "
-    "thirty-seven — panel, quote_history, fund_nav, option_history, termo_history, "
+    "thirty-nine — panel, quote_history, fund_nav, option_history, termo_history, "
     "financials, financial_statement_history, company_financials, "
     "income_statements, balance_sheets, "
     "cash_flow_statements, anbima_classes, "
     "inflation, inflation_items, fii_property_history, focus_expectations, "
     "fidc_cedentes, fidc_sacados, fidc_portfolio, "
-    "fidc_tranches, fidc_aging, fund_documents, "
+    "fidc_tranches, fidc_aging, fund_holdings, fund_debentures, fund_documents, "
     "fund_restatements, fund_restatement_diff, company_events, macro_series, "
     "ptax and the ten "
     "screen_* functions "
@@ -598,8 +606,11 @@ CONSTRAINTS = [
     "p_from/p_to instead (inflation and inflation_items default to the last "
     "36 months for that reason), for fidc_cedentes / fidc_sacados / "
     "fidc_portfolio narrow the months (a p_cedente lookup spans many funds), "
+    "for fund_holdings / fund_debentures narrow the months (a p_ticker or "
+    "p_issuer lookup spans many funds), "
     "pin one p_kind on fidc_portfolio, or ask for the "
-    "newest N rows with an explicit p_limit (1..1000 — until v34 these three "
+    "newest N rows with an explicit p_limit (1..1000 — until v34 the FIDC "
+    "three, and until v41 fund_holdings and fund_debentures, "
     "trimmed SILENTLY at 500 anonymous / 5,000 signed in; they no longer do), "
     "or for a screen raise its thresholds or pin "
     "its output filter (p_dormancy / p_min_nav, p_driver, p_family, p_modalidade). The old sentinels (5001 on the series functions, "
@@ -979,6 +990,7 @@ LIMITS = {
             "focus_expectations",
             "fidc_cedentes", "fidc_sacados", "fidc_portfolio",
             "fidc_tranches", "fidc_aging",
+            "fund_holdings", "fund_debentures",
             "fund_documents", "fund_restatements", "fund_restatement_diff",
             "screen_zombie_growth", "screen_captive_vehicles",
             "screen_evergreen_aging", "screen_overdue_securit",
@@ -1031,6 +1043,10 @@ LIMITS = {
                 "fidc_cedentes", "fidc_sacados", "fidc_portfolio",
                 # v32: the FIDC structure tabs.
                 "fidc_tranches", "fidc_aging",
+                # v41: fund holdings (CDA blocks 4, 2, 6), which until v40
+                # trimmed silently at the tier ceiling. p_limit (1..1000) is
+                # an explicit newest-first head, not a cursor.
+                "fund_holdings", "fund_debentures",
                 # v33: the FNET register — a year of one fund's documents,
                 # or a month of restatements, is a window to narrow.
                 "fund_documents", "fund_restatements",
@@ -1073,8 +1089,6 @@ LIMITS = {
             "search_funds_rows": 25,
             "option_chain_rows": 200,
             "option_exercises_rows": 500,
-            "fund_holdings_rows": 500,
-            "fund_debentures_rows": 500,
             "statement_timeout_seconds": 3,
         },
         "authenticated": {
@@ -1083,8 +1097,6 @@ LIMITS = {
             "search_funds_rows": 200,
             "option_chain_rows": 2000,
             "option_exercises_rows": 5000,
-            "fund_holdings_rows": 5000,
-            "fund_debentures_rows": 5000,
             "statement_timeout_seconds": 8,
         },
         "exceeding_an_id_ceiling": (

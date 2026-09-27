@@ -227,6 +227,12 @@ BEGIN
                 'This function has no cursor. Narrow the window with p_from/p_to'
                 || CASE WHEN p_fn = 'fidc_portfolio' THEN ', pin one p_kind' ELSE '' END
                 || ', or ask explicitly for the newest N rows with p_limit (1..1000).'
+            WHEN p_fn IN ('fund_holdings', 'fund_debentures') THEN
+                -- p_cnpj and p_ticker / p_issuer are exclusive, so the window
+                -- is the lever for both directions.
+                'This function has no cursor. Narrow the window with p_from/p_to (a ticker or issuer '
+                || 'looked up across funds spans many funds, so it needs fewer months than one fund''s '
+                || 'own holdings), or ask explicitly for the newest N rows with p_limit (1..1000).'
             WHEN left(p_fn, 7) = 'screen_' THEN
                 'Screens do not page. Raise the screen''s thresholds or pin its output filter '
                 || '(see catalog().screens) so the list fits one page.'
@@ -1550,6 +1556,15 @@ GRANT EXECUTE ON FUNCTION api.search_funds(TEXT, TEXT, INT) TO anon, authenticat
 -- is summed across share classes or re-based, because the source publishes one
 -- row per (application type, trading intent) and collapsing them is precisely
 -- the mistake the holdings key audit exists to prevent.
+--
+-- Row cap (v41): raise-only on the one 1000-row page, like the FIDC trio since
+-- v34. Until v40 this function and fund_debentures were tiered 500 / 5000 and
+-- TRIMMED SILENTLY at the tier ceiling: a busy ticker or a long window came
+-- back short with a 200 and nothing to say so, and silo-mcp (always anon) was
+-- handed the short answer as if it were whole. Now the page CTE fetches 1001
+-- and api.assert_row_cap refuses above 1000 with the why and the how. p_limit
+-- survives as an EXPLICIT newest-first head (1..1000); NULL or anything above
+-- one page is the whole window, served whole or refused; < 1 is 22023.
 -- ---------------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION api.fund_holdings(
@@ -1580,9 +1595,7 @@ AS $fn$
 DECLARE
     v_cnpj   TEXT := NULLIF(regexp_replace(COALESCE(p_cnpj, ''), '\D', '', 'g'), '');
     v_ticker TEXT := NULLIF(upper(btrim(COALESCE(p_ticker, ''))), '');
-    v_cap    INT  := CASE api.caller_tier()
-                          WHEN 'authenticated' THEN 5000 ELSE 500 END;
-    v_limit  INT;
+    v_head   INT;
 BEGIN
     IF (v_cnpj IS NULL) = (v_ticker IS NULL) THEN
         RAISE EXCEPTION
@@ -1607,10 +1620,23 @@ BEGIN
             USING ERRCODE = '22023';
     END IF;
 
-    v_limit := LEAST(GREATEST(COALESCE(p_limit, v_cap), 1), v_cap);
+    -- p_limit 1..1000 is an explicit head the caller asked for. Above one
+    -- page it cannot be served as a head, so it means the whole window and
+    -- the page cap decides. Below 1 is a mistake, refused rather than clamped.
+    IF p_limit IS NOT NULL AND p_limit < 1 THEN
+        RAISE EXCEPTION
+            '%: p_limit must be 1..1000 (the newest N rows, as an explicit request) or NULL for the whole window; got %',
+            'fund_holdings', p_limit
+            USING ERRCODE = '22023';
+    END IF;
+    v_head := CASE WHEN p_limit <= 1000 THEN p_limit END;
 
     IF COALESCE(p_kind, 'equity') = 'equity' THEN
         RETURN QUERY
+        -- One page + one (or the caller's explicit head), then assert_row_cap
+        -- REFUSES (22023) instead of trimming. No cursor.
+        WITH page (cnpj, period, kind, held_id, held_name, tp_aplic, tp_negoc,
+                   emissor_ligado, qt_pos_final, vl_merc_pos_final) AS (
         SELECT h.cnpj, h.period, 'equity'::TEXT, h.cd_ativo, h.ds_ativo,
                h.tp_aplic, h.tp_negoc, h.emissor_ligado,
                h.qt_pos_final, h.vl_merc_pos_final
@@ -1620,9 +1646,16 @@ BEGIN
           AND (p_from IS NULL OR h.period >= p_from)
           AND (p_to   IS NULL OR h.period <= p_to)
         ORDER BY h.period DESC, h.vl_merc_pos_final DESC NULLS LAST
-        LIMIT v_limit;
+        LIMIT COALESCE(v_head, 1001)
+        )
+        SELECT g.* FROM page g
+        WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'fund_holdings')
+        ORDER BY g.period DESC, g.vl_merc_pos_final DESC NULLS LAST
+        LIMIT 1000;
     ELSE
         RETURN QUERY
+        WITH page (cnpj, period, kind, held_id, held_name, tp_aplic, tp_negoc,
+                   emissor_ligado, qt_pos_final, vl_merc_pos_final) AS (
         SELECT h.cnpj, h.period, 'fund'::TEXT, h.cnpj_cota, h.nm_fundo_cota,
                h.tp_aplic, h.tp_negoc, h.emissor_ligado,
                h.qt_pos_final, h.vl_merc_pos_final
@@ -1631,7 +1664,12 @@ BEGIN
           AND (p_from IS NULL OR h.period >= p_from)
           AND (p_to   IS NULL OR h.period <= p_to)
         ORDER BY h.period DESC, h.vl_merc_pos_final DESC NULLS LAST
-        LIMIT v_limit;
+        LIMIT COALESCE(v_head, 1001)
+        )
+        SELECT g.* FROM page g
+        WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'fund_holdings')
+        ORDER BY g.period DESC, g.vl_merc_pos_final DESC NULLS LAST
+        LIMIT 1000;
     END IF;
 END;
 $fn$;
@@ -1671,6 +1709,9 @@ COMMENT ON FUNCTION api.fund_holdings(TEXT, TEXT, DATE, DATE, TEXT, INT) IS
 --
 -- Rows are as filed and never summed: a fund files the same series under
 -- several application types and trading intents (the fund_holdings rule).
+--
+-- Row cap (v41): raise-only on the one 1000-row page, exactly as
+-- fund_holdings. Until v40 it was tiered 500 / 5000 and trimmed silently.
 
 CREATE OR REPLACE FUNCTION api.fund_debentures(
     p_cnpj   TEXT DEFAULT NULL,   -- the HOLDER: what this fund holds
@@ -1710,9 +1751,7 @@ DECLARE
     v_raw     TEXT := NULLIF(btrim(COALESCE(p_issuer, '')), '');
     v_digits  TEXT;
     v_forms   TEXT[];
-    v_cap     INT  := CASE api.caller_tier()
-                          WHEN 'authenticated' THEN 5000 ELSE 500 END;
-    v_limit   INT;
+    v_head    INT;
 BEGIN
     IF (v_cnpj IS NULL) = (v_raw IS NULL) THEN
         RAISE EXCEPTION
@@ -1749,9 +1788,23 @@ BEGIN
         END;
     END IF;
 
-    v_limit := LEAST(GREATEST(COALESCE(p_limit, v_cap), 1), v_cap);
+    -- p_limit 1..1000 is an explicit head; NULL or above one page is the
+    -- whole window, served whole or refused; below 1 is refused.
+    IF p_limit IS NOT NULL AND p_limit < 1 THEN
+        RAISE EXCEPTION
+            '%: p_limit must be 1..1000 (the newest N rows, as an explicit request) or NULL for the whole window; got %',
+            'fund_debentures', p_limit
+            USING ERRCODE = '22023';
+    END IF;
+    v_head := CASE WHEN p_limit <= 1000 THEN p_limit END;
 
     RETURN QUERY
+    -- One page + one (or the caller's explicit head), then assert_row_cap
+    -- REFUSES (22023) instead of trimming. No cursor.
+    WITH page (cnpj, period, issuer_id, issuer_kind, issuer, issuer_tickers,
+               tp_aplic, tp_ativo, tp_negoc, emissor_ligado, maturity, indexer,
+               indexer_pct, coupon_pct, fixed_rate_pct, titulo_cetip,
+               qt_pos_final, vl_merc_pos_final, vl_custo_pos_final) AS (
     SELECT h.cnpj,
            h.period,
            regexp_replace(h.cpf_cnpj_emissor, '\D', '', 'g'),
@@ -1783,7 +1836,12 @@ BEGIN
       AND (p_from IS NULL OR h.period >= p_from)
       AND (p_to   IS NULL OR h.period <= p_to)
     ORDER BY h.period DESC, h.vl_merc_pos_final DESC NULLS LAST, h.dt_venc
-    LIMIT v_limit;
+    LIMIT COALESCE(v_head, 1001)
+    )
+    SELECT g.* FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'fund_debentures')
+    ORDER BY g.period DESC, g.vl_merc_pos_final DESC NULLS LAST, g.maturity
+    LIMIT 1000;
 END;
 $fn$;
 
@@ -4889,7 +4947,7 @@ STABLE
 AS $fn$
 SELECT $json${
   "kind": "catalog",
-  "version": 40,
+  "version": 41,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, the B3 securities-lending and investor-flow group, and Brazilian inflation — BACEN's IPCA series and IBGE's item tree with weights). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -5201,7 +5259,7 @@ SELECT $json${
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
     "CIA, FII AND FOCUS HELD DATA. api.financial_statement_history returns raw CIA account lines across all stored filing versions for one required statement and company id; `financials` remains latest-version only. Filing header metadata is present only on an exact key match. Values are already scaled at ingest and remain in filed currency. api.fii_property_history filters one exact fund CNPJ and reference-date window; CVM publishes no stable property id, so row_hash identifies a source row, not a durable asset. Nullable measurements remain NULL. api.focus_expectations returns the weekly path across BCB survey dates for one exact endpoint and required forecast horizon, with an optional indicator. The stored key retains each date/horizon; `baseCalculo=0` is the trailing 30-day respondent sample and 12-month inflation is unsmoothed. It is not a vintage archive of corrected old reports, and migration 16-era missing horizons may await re-fetch. All three endpoints refuse above 1,000 rows.",
-    "Row caps — getting this wrong means silently analysing a TRUNCATED series, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY set-returning function now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short result can no longer look complete. The error says WHY (the response is one 1000-row page and SILO never returns a silently truncated result) and HOW to fix it for that function, in the message and again as PostgREST's `details` / `hint`. That is all thirty-seven — panel, quote_history, fund_nav, option_history, termo_history, financials, financial_statement_history, company_financials, income_statements, balance_sheets, cash_flow_statements, anbima_classes, inflation, inflation_items, fii_property_history, focus_expectations, fidc_cedentes, fidc_sacados, fidc_portfolio, fidc_tranches, fidc_aging, fund_documents, fund_restatements, fund_restatement_diff, company_events, macro_series, ptax and the ten screen_* functions (`limits.page.all`). THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send p_after='' for the first page, then the key from the last row — for the panel 'date|id|metric|asset_class', for quote_history and fund_nav just that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when paging, because its cursor is a bare period and one CNPJ can file under two families in the same month. The rest do not page: narrow p_from/p_to instead (inflation and inflation_items default to the last 36 months for that reason), for fidc_cedentes / fidc_sacados / fidc_portfolio narrow the months (a p_cedente lookup spans many funds), pin one p_kind on fidc_portfolio, or ask for the newest N rows with an explicit p_limit (1..1000 — until v34 these three trimmed SILENTLY at 500 anonymous / 5,000 signed in; they no longer do), or for a screen raise its thresholds or pin its output filter (p_dormancy / p_min_nav, p_driver, p_family, p_modalidade). The old sentinels (5001 on the series functions, 100001 on the panel) are GONE and were never observable anyway — PostgREST cut the response at 1000 first (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. The RPC functions no longer need it — they raise instead. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
+    "Row caps — getting this wrong means silently analysing a TRUNCATED series, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY set-returning function now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short result can no longer look complete. The error says WHY (the response is one 1000-row page and SILO never returns a silently truncated result) and HOW to fix it for that function, in the message and again as PostgREST's `details` / `hint`. That is all thirty-nine — panel, quote_history, fund_nav, option_history, termo_history, financials, financial_statement_history, company_financials, income_statements, balance_sheets, cash_flow_statements, anbima_classes, inflation, inflation_items, fii_property_history, focus_expectations, fidc_cedentes, fidc_sacados, fidc_portfolio, fidc_tranches, fidc_aging, fund_holdings, fund_debentures, fund_documents, fund_restatements, fund_restatement_diff, company_events, macro_series, ptax and the ten screen_* functions (`limits.page.all`). THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send p_after='' for the first page, then the key from the last row — for the panel 'date|id|metric|asset_class', for quote_history and fund_nav just that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when paging, because its cursor is a bare period and one CNPJ can file under two families in the same month. The rest do not page: narrow p_from/p_to instead (inflation and inflation_items default to the last 36 months for that reason), for fidc_cedentes / fidc_sacados / fidc_portfolio narrow the months (a p_cedente lookup spans many funds), for fund_holdings / fund_debentures narrow the months (a p_ticker or p_issuer lookup spans many funds), pin one p_kind on fidc_portfolio, or ask for the newest N rows with an explicit p_limit (1..1000 — until v34 the FIDC three, and until v41 fund_holdings and fund_debentures, trimmed SILENTLY at 500 anonymous / 5,000 signed in; they no longer do), or for a screen raise its thresholds or pin its output filter (p_dormancy / p_min_nav, p_driver, p_family, p_modalidade). The old sentinels (5001 on the series functions, 100001 on the panel) are GONE and were never observable anyway — PostgREST cut the response at 1000 first (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. The RPC functions no longer need it — they raise instead. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
     "An unrecognised metric name is IGNORED, not rejected: the panel comes back smaller and perfectly plausible. Take metric names from this catalog's `metrics` map, never from memory.",
     "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
     "CALLER TIERS. Anonymous access is free but deliberately small: panel accepts at most 3 ids per call, search_funds returns at most 25 rows, and option_chain pages at most 200. Signing in (GitHub) raises those to 50 ids, 200 rows and 2000 respectively, and the query timeout from 3s to 8s, and unlocks panel universe mode (p_ids empty + p_entity_type: a whole family, paged with p_after). Exceeding the id ceiling raises SQLSTATE 22023 naming the limit — the panel is never silently truncated to fit.",
@@ -5247,6 +5305,8 @@ SELECT $json${
         "fidc_portfolio",
         "fidc_tranches",
         "fidc_aging",
+        "fund_holdings",
+        "fund_debentures",
         "fund_documents",
         "fund_restatements",
         "fund_restatement_diff",
@@ -5290,6 +5350,8 @@ SELECT $json${
           "fidc_portfolio",
           "fidc_tranches",
           "fidc_aging",
+          "fund_holdings",
+          "fund_debentures",
           "fund_documents",
           "fund_restatements",
           "fund_restatement_diff",
@@ -5318,8 +5380,6 @@ SELECT $json${
         "search_funds_rows": 25,
         "option_chain_rows": 200,
         "option_exercises_rows": 500,
-        "fund_holdings_rows": 500,
-        "fund_debentures_rows": 500,
         "statement_timeout_seconds": 3
       },
       "authenticated": {
@@ -5328,8 +5388,6 @@ SELECT $json${
         "search_funds_rows": 200,
         "option_chain_rows": 2000,
         "option_exercises_rows": 5000,
-        "fund_holdings_rows": 5000,
-        "fund_debentures_rows": 5000,
         "statement_timeout_seconds": 8
       },
       "exceeding_an_id_ceiling": "SQLSTATE 22023 naming the limit — a panel is never silently trimmed to fit",

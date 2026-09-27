@@ -34,7 +34,7 @@ The publishable key is not a JWT — do not put it in `Authorization: Bearer`. T
   **The printed publishable key is shared.** It is a project identifier, not your identity — anyone reading these docs has the same one.
 </Warning>
 
-Sign in with GitHub at [silo-bz-deloslabs.vercel.app/signin.html](https://silo-bz-deloslabs.vercel.app/signin.html) and send the token as `Authorization: Bearer <token>` *alongside* `apikey`. That raises four ceilings:
+Sign in with GitHub at [silo-bz-deloslabs.vercel.app/signin.html](https://silo-bz-deloslabs.vercel.app/signin.html) and send the token as `Authorization: Bearer <token>` *alongside* `apikey`. That raises these ceilings:
 
 | | anonymous | signed in |
 | --- | ---: | ---: |
@@ -43,8 +43,6 @@ Sign in with GitHub at [silo-bz-deloslabs.vercel.app/signin.html](https://silo-b
 | `search_funds` rows | 25 | 200 |
 | `option_chain` rows | 200 | 2,000 |
 | `option_exercises` rows | 500 | 5,000 |
-| `fund_holdings` rows | 500 | 5,000 |
-| `fund_debentures` rows | 500 | 5,000 |
 | statement timeout | 3s | 8s |
 | **rows per response** | **1,000** | **1,000** |
 
