@@ -1,6 +1,6 @@
 # Notebooks
 
-Nine runnable notebooks over the SILO public read API. Each one answers a real
+Ten runnable notebooks over the SILO public read API. Each one answers a real
 question end to end rather than touring methods, and each opens by calling
 `coverage()` and printing the as-of dates it is about to rely on — so a stale
 warehouse shows up in the output instead of being silently baked into a number.
@@ -18,6 +18,7 @@ Start at `00_start_here`.
 | 6 | [`06_anbima_classes`](06_anbima_classes.ipynb) | Where did the industry's money go this year, by ANBIMA class? |
 | 7 | [`07_derivatives`](07_derivatives.ipynb) | What does the front-expiry PETR4 option chain look like, and which contracts were exercised? |
 | 8 | [`08_short_interest`](08_short_interest.ipynb) | Who is short, how expensive is the borrow, who is lending — and who was buying? |
+| 9 | [`09_dustin_br_rates`](09_dustin_br_rates.ipynb) | Which public data can support a model of where the Brazilian rate curve goes over the next month, and how is it assembled so that no row ever uses information that was not yet public on its date? |
 
 ## Running them
 
