@@ -4,10 +4,12 @@ See `CLAUDE.md` and `README.md` for architecture, data-integrity rules, and the
 command reference. Load the SILO skill before changing ingest, schema `api`,
 `serve/`, or panel/catalog: `.claude/skills/iliquid_nightly/SKILL.md`.
 
-**Times are UTC-3** (owner's rule). Reference every time in UTC-3 (Brasília,
-`America/Sao_Paulo`, no daylight saving since 2019). Convert anything a source
-reports in UTC. Where the time has to be matched against that source, add the UTC
-value in parentheses: the daily run starts at 03:00 UTC-3 (06:00 UTC). The details
+**Times are UTC-3** (owner's rule), **for display only**. Reference every time in
+UTC-3 (Brasília, `America/Sao_Paulo`, no daylight saving since 2019). Convert
+anything a source reports in UTC. Where the time has to be matched against that
+source, add the UTC value in parentheses: the daily run starts at 03:00 UTC-3
+(06:00 UTC). Never change a cron expression, a `TZ` setting, SQL `AT TIME ZONE`,
+the database time zone, stored timestamps or API output to follow it. The details
 are in `CLAUDE.md`, section "Times are UTC-3".
 
 This file only adds context for Cursor Cloud agent VMs.

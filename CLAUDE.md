@@ -351,13 +351,25 @@ review (`docs/planning/AGENTS.md`). Only the owner marks an `agent:*` PR ready.
 
 ## Times are UTC-3 (owner's rule)
 
+This rule changes how times are **shown**, never how they are computed or stored.
 Reference every time in UTC-3: Brasília, `America/Sao_Paulo`. Brazil has had no
 daylight saving since 2019. This covers replies, reports, PR bodies, comments and new doc text.
 Convert what a source reports in UTC before quoting it: GitHub Actions schedules and run
 times, Supabase logs, `timestamptz` output. Where someone has to match the time
 against that source, add the UTC value in parentheses: the daily run starts at
-03:00 UTC-3 (06:00 UTC). Cron expressions and stored timestamps stay as configured,
-and existing docs and CHANGELOG rows are not rewritten.
+03:00 UTC-3 (06:00 UTC).
+
+Never change anything that runs in order to follow it. That means:
+
+- cron expressions;
+- the workflows' `TZ: America/Sao_Paulo`, which dates B3 sessions;
+- `AT TIME ZONE` in SQL;
+- the database time zone;
+- `timestamptz` columns and stored values;
+- date keys;
+- anything the API returns.
+
+Existing docs and CHANGELOG rows are not rewritten either.
 
 ## Environment
 
