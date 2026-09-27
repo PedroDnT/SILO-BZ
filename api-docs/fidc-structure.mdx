@@ -1,0 +1,139 @@
+---
+title: "FIDC tranches and aging"
+description: "Inside a receivables fund's capital structure and credit book — each tranche's quotas, return and promised vs realised performance with its subscriptions and redemptions, and the aging ladder of what is owed. Informe tabs X and VI, as filed, from 2025."
+icon: "layer-group"
+---
+
+<Note>
+  **Parameters, response columns and types are generated** from the SQL catalog and
+  render under **Endpoints → FIDC** in the sidebar. This page carries what a schema
+  cannot: where the history starts, what the labels mean, and what is not derived.
+</Note>
+
+### Overview
+
+Two more members of the monthly FIDC informe, next to the
+[concentration tabs](/api-docs/fidc):
+
+| Tab | What it publishes | Endpoint |
+| --- | --- | --- |
+| **X_2 / X_3 / X_6** | per tranche (`classe_serie`): quota count and value, the month's return, and the performance the series **promised** vs what it **delivered** | `fidc_tranches` |
+| **X_4** | per tranche: the month's operations — subscriptions, redemptions, amortizations — by CVM's own label | `fidc_tranches` (`flows`) |
+| **VI** | the receivables not yet due by days to maturity, and the overdue ones by days past due | `fidc_aging` |
+
+<Warning>
+  **History begins in 2025.** These tabs are ingested from the current-format informe
+  only, and CVM's pre-2025 HIST archive publishes **no equivalent member** for X_2,
+  X_4 or VI. A month before 2025-01 has no rows — not zero, not a gap, and not a
+  backfill anyone can run. It is an upstream limit. `coverage()` states it on the
+  `fidc_tranches` and `fidc_aging` rows.
+</Warning>
+
+### `fidc_tranches`
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/fidc_tranches" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_cnpj":"05754060000113","p_from":"2025-01-01"}'
+```
+
+```python
+silo.fidc_tranches("05754060000113")
+silo.fidc_tranches("05754060000113", series="Subclasse Senior 1")
+```
+
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `p_cnpj` | **required** | the fund; punctuation is stripped |
+| `p_from` / `p_to` | the whole history | window on `period` (CVM's competency date) |
+| `p_series` | every tranche | one `classe_serie`, matched exactly as filed |
+
+One row per (month, tranche), oldest first:
+
+| Column | Meaning |
+| --- | --- |
+| `classe_serie` | CVM's tranche label, as filed (CVM-175 filings read `Subclasse Senior …` / `Classe Sênior …`; seniority is only ever in this text) |
+| `quotas` / `quota_value` | quota count and quota value (`TAB_X_QT_COTA`, `TAB_X_VL_COTA`) |
+| `return_month` | the tranche's return in the month, percent (`TAB_X_VL_RENTAB_MES`) |
+| `performance_expected` | the performance the series **promised**, percent (`TAB_X_PR_DESEMP_ESPERADO`) |
+| `performance_realised` | the performance it **delivered**, percent (`TAB_X_PR_DESEMP_REAL`) |
+| `tranche_filed` | `false` when the month has tab X_4 flows for this series but no X_2 row — then the columns above are `null` because nothing was filed, not because the value was blank |
+| `flows` | the tranche's tab X_4 operations: an array of `{tp_oper, value, quotas}`, or `null` when none were filed |
+
+The shape, with illustrative values:
+
+```json
+[
+  { "cnpj": "05754060000113", "period": "2026-06-30", "classe_serie": "Subclasse Senior 1",
+    "quotas": 1520000.0, "quota_value": 1.0843, "return_month": 1.12,
+    "performance_expected": 100.0, "performance_realised": 103.4, "tranche_filed": true,
+    "flows": [ { "tp_oper": "Captações no Mês", "value": 2000000.0, "quotas": 1845000.0 },
+               { "tp_oper": "Resgates no Mês",  "value":  500000.0, "quotas":  461000.0 } ] }
+]
+```
+
+<Warning>
+  **`flows` keeps CVM's label verbatim and never buckets it.** `tp_oper` is free text
+  (typically `Captações no Mês`, `Resgates no Mês`, `Amortizações`) whose vocabulary has
+  drifted over the years. A fixed "subscriptions" column would silently drop any label
+  it did not anticipate; the array cannot. Match the labels yourself — and a label you
+  did not find is not a zero.
+</Warning>
+
+**Nothing is derived.** There is no performance gap, no subordination ratio and no
+senior/junior classification: the realised-minus-expected gap is one subtraction in the
+notebook, and the tranche label is the only seniority signal the filing carries. The
+percent fields are dirty the way CVM's percentage fields are — raw values reach 10⁸ —
+so they are served as filed, never clipped: range-check them before you average.
+
+### `fidc_aging`
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/fidc_aging" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_cnpj":"05754060000113","p_from":"2026-01-01"}'
+```
+
+```python
+silo.fidc_aging("05754060000113", start="2026-01-01")
+```
+
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `p_cnpj` | **required** | the fund |
+| `p_from` / `p_to` | the whole history | window on `period` |
+
+Long: 21 rows per month, oldest first.
+
+| `kind` | Rows | Meaning |
+| --- | --- | --- |
+| `to_maturity` | 10 | credits **not yet due**, by days to maturity |
+| `overdue` | 10 | credits **past due**, by days overdue |
+| `overdue_total` | 1 | CVM's **filed** total of overdue credits (`TAB_VI_B_VL_DIRCRED_INAD`) |
+
+`bucket` is the band (`1-30`, `31-60`, `61-90`, `91-120`, `121-150`, `151-180`, `181-360`,
+`361-720`, `721-1080`, `>1080`; `TOTAL` on `overdue_total`), with `days_from` / `days_to`
+as integers (`days_to` is `null` on `>1080`). `item` names the source column. `value` is
+BRL as filed; a blank in the filing is `null`, never `0`.
+
+<Warning>
+  **`overdue_total` is not a sum of the ten overdue bands.** It is the total CVM's form
+  asks for separately, served as filed, and the two can disagree. Sum the bands yourself
+  if you want the sum, and keep them apart.
+</Warning>
+
+Tab VI covers the receivables acquired **without** substantial retention of risk by the
+originator; tab V, its with-risk twin, is not ingested. The panel's `delinquency` metric
+(FIDC, from 2025-01) is the fund-level total; `fidc_aging` is the ladder under it.
+
+### Limits and freshness
+
+- **One 1,000-row page, and both refuse above it** (`22023`). No cursor: a fund's whole
+  post-2025 history is tens of rows, so a larger window means narrowing, not walking. See
+  [Conventions](/api-docs/conventions).
+- **`coverage()`** carries a `fidc_tranches` row and a `fidc_aging` row, clamped to the FIDC
+  family's latest complete month like the concentration rows, with `notes` stating that
+  both begin in 2025-01 because no archive exists.
+- An unknown CNPJ is an empty array, never a guessed row.

@@ -42,13 +42,70 @@ RAISE_ONLY_FUNCTIONS = (
     "api.financial_statement_history",
     "api.company_financials",
     "api.income_statements",
+    "api.balance_sheets",
+    "api.cash_flow_statements",
     "api.anbima_classes",
     "api.inflation",
     "api.inflation_items",
     "api.fii_property_history",
     "api.focus_expectations",
+    # v34 (plan 2e): until v33 these three trimmed SILENTLY at the tier
+    # ceiling (500 / 5000). They now refuse like the rest; p_limit survives
+    # as an explicit newest-first head, so their page CTE reads
+    # LIMIT COALESCE(v_head, 1001) — see HEAD_PAGE below.
+    "api.fidc_cedentes",
+    "api.fidc_sacados",
+    "api.fidc_portfolio",
+    "api.fidc_tranches",
+    "api.fidc_aging",
+    # v41: the holdings pair (CDA blocks 4, 2, 6) trimmed SILENTLY at the
+    # tier ceiling until v40, the last two that did. Same explicit head.
+    "api.fund_holdings",
+    "api.fund_debentures",
+)
+# The raise-only functions whose p_limit is an explicit head (1..1000) rather
+# than a tier clamp. Without p_limit they fetch the page + 1 like every other.
+HEAD_FUNCTIONS = (
+    "api.fidc_cedentes", "api.fidc_sacados", "api.fidc_portfolio",
+    "api.fund_holdings", "api.fund_debentures",
 )
 CAPPED_FUNCTIONS = PAGED_FUNCTIONS + RAISE_ONLY_FUNCTIONS
+
+# The forensic screens (v31) live in 23_api_screens.sql, not in 19, so FUNCS
+# (parsed from 19 alone) does not carry them; tests/test_api_screens_contract.py
+# owns their bodies. They are raise-only: published in limits.page.all and
+# limits.page.functions.raise_only beside the 19 functions.
+SCREEN_FUNCTIONS = (
+    "api.screen_zombie_growth",
+    "api.screen_captive_vehicles",
+    "api.screen_evergreen_aging",
+    "api.screen_overdue_securit",
+    "api.screen_dormant_funds",
+    "api.screen_dormant_trend",
+    "api.screen_delinquency_drivers",
+    # v37: the filing-behaviour screens live in 25_api_filing_screens.sql
+    # (tests/test_filing_screens_contract.py owns their bodies). Raise-only.
+    "api.screen_restatements",
+    "api.screen_late_filers",
+    "api.screen_silent_filers",
+)
+
+# v38: held-but-unserved datasets in 26_api_events_macro.sql
+# (tests/test_wave3_contract.py owns the bodies). Raise-only.
+WAVE3_FUNCTIONS = (
+    "api.company_events",
+    "api.macro_series",
+    "api.ptax",
+)
+
+# The FNET register (v33) and its restatement diff (v40) live in
+# 24_api_fnet.sql, for the same reason: FUNCS does not carry them,
+# tests/test_fnet_api_contract.py owns the bodies. All three are raise-only.
+FNET_FUNCTIONS = (
+    "api.fund_documents",
+    "api.fund_restatements",
+    "api.fund_restatement_diff",
+)
 
 LANDING_PATTERN = re.compile(
     r"\b(?:public\.)?(?:cvm_\w+|b3_cotahist\w*|vw_b3_(?:quote_vista|instrument_typed))\b",
@@ -101,6 +158,8 @@ EXPECTED_FUNCTIONS = {
     "api.financial_statement_history",
     "api.company_financials",
     "api.income_statements",
+    "api.balance_sheets",
+    "api.cash_flow_statements",
     "api.anbima_classes",
     "api.fund_debentures",
     "api.metric_coverage",
@@ -111,6 +170,8 @@ EXPECTED_FUNCTIONS = {
     "api.inflation_items",
     "api.fii_property_history",
     "api.focus_expectations",
+    "api.fidc_tranches",
+    "api.fidc_aging",
 }
 
 # Internal helpers: called only from inside SECURITY DEFINER functions, which
@@ -473,7 +534,10 @@ def test_every_capped_function_fetches_one_page_plus_one_and_refuses(fn):
     """
     body = _strip_comments(FUNCS[fn])
     page = body[body.index("page"):]
-    assert re.search(rf"\bLIMIT\s+{PANEL_PAGE + 1}\b", page), (
+    # The explicit-head functions fetch COALESCE(v_head, 1001): the caller's
+    # own p_limit (1..1000) when given, otherwise one page plus one.
+    head = r"COALESCE\(v_head,\s*" if fn in HEAD_FUNCTIONS else ""
+    assert re.search(rf"\bLIMIT\s+{head}{PANEL_PAGE + 1}\b", page), (
         f"{fn} must fetch page+1 rows to see the overflow"
     )
     assert re.search(rf"\bLIMIT\s+{PANEL_PAGE}\b", page), (
@@ -541,9 +605,58 @@ def test_row_cap_helper_page_size_is_the_one_constant():
     # Every capped function is published, split by whether it hands back a
     # cursor or asks the caller to narrow.
     page = limits["page"]
-    assert set(page["all"]) == {f.split(".", 1)[1] for f in CAPPED_FUNCTIONS}
+    assert set(page["all"]) == {
+        f.split(".", 1)[1]
+        for f in CAPPED_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS + WAVE3_FUNCTIONS
+    }
     assert set(page["functions"]["paged"]) == {f.split(".", 1)[1] for f in PAGED_FUNCTIONS}
-    assert set(page["functions"]["raise_only"]) == {f.split(".", 1)[1] for f in RAISE_ONLY_FUNCTIONS}
+    assert set(page["functions"]["raise_only"]) == {
+        f.split(".", 1)[1]
+        for f in RAISE_ONLY_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS + WAVE3_FUNCTIONS
+    }
+
+
+
+def test_row_cap_error_says_why_and_how():
+    """"Error with error why" (v34): the refusal is all a caller sees, so the
+    MESSAGE alone must carry the reason and the fix, and DETAIL / HINT carry
+    them again for clients that read PostgREST's `details` / `hint`."""
+    helper = _strip_comments(FUNCS["api.assert_row_cap"])
+    # The phrase the SDK's SiloOverCap matches on must survive any rewording.
+    assert "more than 1000 rows" in helper
+    assert "SILO never returns a silently truncated result" in helper, "the WHY"
+    assert "DETAIL  = v_why" in helper and "HINT    = v_how" in helper
+    raise_at = helper[helper.index("RAISE EXCEPTION"):]
+    assert "v_why, v_how" in raise_at, "the message itself must carry both halves"
+    # The HOW is per function: a cursor for the three that page, a fund pin
+    # and an explicit head for the FIDC trio, thresholds for the screens.
+    for name in ("panel", "quote_history", "fund_nav"):
+        assert f"p_fn = '{name}'" in helper
+    assert "p_entity_type" in helper, "fund_nav paging requires a family; the hint must say so"
+    assert "p_fn = 'fidc_cedentes'" in helper
+    assert "('fidc_sacados', 'fidc_portfolio')" in helper
+    assert "p_limit (1..1000)" in helper
+    # p_cnpj and p_cedente are exclusive, so no FIDC hint may tell a caller
+    # to "pin a fund" — a p_cedente caller cannot take that advice, and
+    # sacados / portfolio already require p_cnpj.
+    assert "pin a single fund" not in helper and "pin one fund" not in helper
+    assert "left(p_fn, 7) = 'screen_'" in helper
+    # A function with no cursor must never be told to page.
+    fallback = helper[helper.index("ELSE\n"):]
+    assert "p_after" not in fallback.split("END;")[0]
+
+
+@pytest.mark.parametrize("fn", HEAD_FUNCTIONS)
+def test_fidc_head_functions_take_p_limit_as_an_explicit_head(fn):
+    """p_limit survives on the trio as the caller's own newest-first head:
+    1..1000 is served as asked, NULL or above one page means the whole window
+    (served whole or refused), and < 1 is refused — never clamped to 1."""
+    body = _strip_comments(FUNCS[fn])
+    name = fn.split(".", 1)[1]
+    assert "v_head := CASE WHEN p_limit <= 1000 THEN p_limit END;" in body
+    assert "IF p_limit IS NOT NULL AND p_limit < 1 THEN" in body
+    assert "GREATEST(" not in body and "LEAST(" not in body, "nothing is clamped any more"
+    assert f"api.assert_row_cap((SELECT count(*) FROM page), FALSE, '{name}')" in body
 
 
 def test_panel_cursor_is_transparent_and_keyed_on_the_full_grain():
@@ -759,8 +872,8 @@ def test_coverage_reports_completeness_and_per_family_rows():
     cov = _strip_comments(FUNCS["api.coverage"])
     assert "complete_through" in FUNCS["api.coverage"]
     assert "public.latest_complete_period(NULL)" in cov
-    assert "'funds_' || f.entity_type" in cov
-    assert "public.latest_complete_period(f.entity_type)" in cov
+    assert "'funds_' || fam.entity_type" in cov
+    assert "public.latest_complete_period(fam.entity_type)" in cov
     assert re.search(r"\bnotes\s+TEXT\b", cov), "coverage() must return a notes column"
 
 
@@ -945,11 +1058,16 @@ def test_catalog_limits_are_the_sql_tier_clamps():
     assert clamp("api.search_funds") == (anon["search_funds_rows"], auth["search_funds_rows"])
     assert clamp("api.option_chain") == (anon["option_chain_rows"], auth["option_chain_rows"])
     assert clamp("api.option_exercises") == (anon["option_exercises_rows"], auth["option_exercises_rows"])
-    assert clamp("api.fund_holdings") == (anon["fund_holdings_rows"], auth["fund_holdings_rows"])
-    assert clamp("api.fund_debentures") == (anon["fund_debentures_rows"], auth["fund_debentures_rows"])
-    assert clamp("api.fidc_cedentes") == (anon["fidc_cedentes_rows"], auth["fidc_cedentes_rows"])
-    assert clamp("api.fidc_sacados") == (anon["fidc_sacados_rows"], auth["fidc_sacados_rows"])
-    assert clamp("api.fidc_portfolio") == (anon["fidc_portfolio_rows"], auth["fidc_portfolio_rows"])
+    # v34 (the FIDC concentration trio) and v41 (fund_holdings,
+    # fund_debentures): no longer trimmed at a tier ceiling, so none to
+    # publish — and no tier CASE left in the body to lag one.
+    for fn in HEAD_FUNCTIONS:
+        name = fn.split(".", 1)[1]
+        assert f"{name}_rows" not in anon and f"{name}_rows" not in auth, (
+            f"{fn} is raise-only (v34 / v41); a published row ceiling would tell "
+            "callers it still trims"
+        )
+        assert "caller_tier" not in _strip_comments(FUNCS[fn]), f"{fn} still branches on the tier"
 
     # Universe mode is a tier feature too: 0 anonymous, 1 signed in, read out
     # of the gate's COMMENT the same way.
@@ -1341,10 +1459,30 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
         "skip or repeat a row at a page edge, so the requirement is part of "
         "the contract, not an implementation detail"
     )
-    # The count moves with the surface; pin the current catalog wording to the
-    # SQL contract so newly capped endpoints cannot silently drift.
-    assert "fourteen" in c.lower().split(), "all fourteen capped functions refuse"
-    assert len(CAPPED_FUNCTIONS) == 14
+    # The count moves with the surface: eleven at v30 (inflation,
+    # inflation_items), eighteen at v31 (the seven screen_* functions), twenty
+    # since v32 (fidc_tranches, fidc_aging), twenty-two since v33
+    # (fund_documents, fund_restatements), twenty-five since v34
+    # (fidc_cedentes, fidc_sacados, fidc_portfolio stopped trimming),
+    # twenty-seven since v35 (balance_sheets, cash_flow_statements), thirty since
+    # v37 (the three filing-behaviour screens), thirty-three since v38
+    # (company_events, macro_series, ptax), thirty-six since v39
+    # (financial_statement_history, fii_property_history, focus_expectations),
+    # thirty-seven since v40 (fund_restatement_diff), thirty-nine since v41
+    # (fund_holdings, fund_debentures stopped trimming). The
+    # prose said "eight" for two versions while listing nine — pin the word
+    # to the tuples so it cannot drift again.
+    assert "thirty-nine" in c.lower().split(), "all thirty-nine capped functions refuse"
+    assert (
+        len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) + len(FNET_FUNCTIONS)
+        + len(WAVE3_FUNCTIONS)
+    ) == 39
+    for fn in WAVE3_FUNCTIONS:
+        assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
+    for fn in HEAD_FUNCTIONS:
+        assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
+    for fn in FNET_FUNCTIONS:
+        assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
 
 
 def test_cap_constraint_warns_that_rpc_paging_does_not_work():
@@ -1392,13 +1530,14 @@ def test_fund_holdings_demands_exactly_one_identifier():
     assert "22023" in body, "argument errors use the house SQLSTATE"
 
 
-def test_fund_holdings_is_tier_aware():
-    """Same pattern as every other row-capped function."""
-    sql = SQL19
-    body = sql[sql.index("FUNCTION api.fund_holdings"):]
-    body = body[: body.index("$fn$;")]
-    assert "api.caller_tier()" in body
-    assert "5000" in body and "500" in body, "authenticated 5000 / anon 500"
+def test_fund_holdings_refuses_rather_than_trims():
+    """v41: until v40 this clamped to 500 anonymous / 5000 signed in and
+    returned the short result with a 200. Both arms (block 4 and block 2) now
+    fetch the page + 1 and refuse above it; nothing branches on the tier."""
+    body = _strip_comments(FUNCS["api.fund_holdings"])
+    assert "caller_tier" not in body
+    assert body.count("LIMIT COALESCE(v_head, 1001)") == 2, "both kinds refuse"
+    assert body.count("api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'fund_holdings')") == 2
 
 
 def test_fund_holdings_pins_search_path():
@@ -1489,10 +1628,58 @@ def test_coverage_separates_elapsed_from_filed_and_from_landed():
     # as_of is bounded by today on every arm that can carry a forward-dated
     # key. FIP files annually keyed to 31-December, so on 2026-09-16 the
     # blended MAX read 2026-12-31 and an agent read it as freshness.
-    assert cov.count("FILTER (WHERE") >= 4, (
+    assert cov.count("<= CURRENT_DATE)") >= 20, (
         "every period arm must bound as_of by CURRENT_DATE"
     )
-    assert "<= CURRENT_DATE" in cov
+
+
+def test_coverage_reads_each_date_as_an_index_probe_not_a_scan():
+    """Measured 2026-09-26 on production: coverage() took 2.8-3.8 s against
+    anon's 3 s statement timeout, because every period arm was
+    MAX(col) FILTER (WHERE col <= CURRENT_DATE) over FROM t — an aggregate the
+    planner cannot turn into an index probe, so each arm scanned its table
+    twice (bounded and unbounded). The scalar-subquery form
+    (SELECT MAX(col) FROM t WHERE col <= CURRENT_DATE) is one backward probe
+    on an indexed column. The tables that made the difference must never go
+    back to the aggregate form; the two whose date had no leading index get
+    one in migration 47."""
+    cov = _strip_comments(FUNCS["api.coverage"])
+    base = cov[cov.index("base AS ("):cov.index("SELECT b.dataset")]
+    for tbl in ("fact_fund_monthly", "b3_lending_trade", "b3_lending_open_position",
+                "cvm_fidc_sacado", "cvm_fidc_setor", "bacen_expectativas", "bacen_sgs"):
+        assert f"FROM public.{tbl} " in base, tbl
+        assert re.search(rf"\(SELECT MAX\(\w+\.\w+\) FROM public\.{tbl} \w+ WHERE [^)]*<= CURRENT_DATE\)", base), (
+            f"{tbl}: the bounded date must be a scalar-subquery probe"
+        )
+    assert "FILTER (WHERE f.period" not in base and "FILTER (WHERE t.trade_date" not in base, (
+        "the fund and lending arms must not aggregate over a full scan"
+    )
+    # The per-family arm must not GROUP BY over the whole matview either.
+    assert "GROUP BY f.entity_type" not in base
+    assert "FROM (SELECT DISTINCT d.entity_type FROM public.dim_fund d) fam" in base
+    schema = (ROOT / "src" / "store" / "schema.sql").read_text()
+    mig = (ROOT / "src" / "store" / "migrations" / "47_coverage_probe_indexes.sql").read_text()
+    for idx in ("idx_b3_lending_open_position_date", "idx_expectativas_date"):
+        assert idx in schema and idx in mig, idx
+
+
+def test_coverage_serves_the_git_sha_of_the_landed_run():
+    """v34 lineage: landed_git_sha is the commit of the SAME run that sets
+    landed_at — taken off the newest finished row, not the newest non-null
+    sha, so a NULL (pre-lineage or local run) is served as NULL rather than
+    borrowed from an older run whose code did not produce the newest data."""
+    cov = _strip_comments(FUNCS["api.coverage"])
+    assert "landed_git_sha   TEXT" in cov
+    head = cov[:cov.index("LANGUAGE sql")]
+    assert head.index("landed_git_sha") > head.index("landed_at        TIMESTAMPTZ"), (
+        "landed_git_sha is appended after landed_at so positional readers keep working"
+    )
+    landed = cov[cov.index("WITH landed AS ("):cov.index("base AS (")]
+    arms = landed.count("MAX(l.finished_at)")
+    picks = landed.count("(array_agg(l.git_sha ORDER BY l.finished_at DESC, l.id DESC))[1]")
+    assert arms == picks >= 7, "every landed arm must carry the sha of its own newest run"
+    assert "git_sha IS NOT NULL" not in landed, "a NULL sha is served as NULL, never skipped past"
+    assert "l.landed_git_sha" in cov[cov.index("FROM base b") - 200:]
 
 
 def test_landed_at_reads_only_successful_finished_runs():

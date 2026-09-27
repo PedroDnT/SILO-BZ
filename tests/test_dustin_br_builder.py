@@ -1,0 +1,199 @@
+"""The DUSTIN-BR research dataset builder: interpolation and point-in-time rules.
+
+research_examples/dustin_br/build_dataset.py builds features, never a model.
+What these pin: DI constant-maturity interpolation is exact at vertices and
+never extrapolates; every availability rule in docs/research/
+dustin_br_data_sources.md §8; the as-of join never shows a value before it
+was public and nulls it past its staleness limit; and — the property that
+matters for out-of-sample work — rows up to T are IDENTICAL whether or not
+anything published after T exists.
+"""
+
+from __future__ import annotations
+
+import math
+from datetime import date, timedelta
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from research_examples.dustin_br import build_dataset as bd
+
+
+# ---------------------------------------------------------------------------
+# DI interpolation
+# ---------------------------------------------------------------------------
+
+DU = [1, 21, 63, 126, 252, 504, 756, 1260, 2520]
+RATES = [13.65, 13.66, 13.60, 13.55, 13.60, 13.78, 13.85, 13.98, 13.95]
+
+
+def test_flat_forward_reproduces_every_vertex():
+    for du, r in zip(DU, RATES):
+        assert bd.flat_forward(DU, RATES, du) == pytest.approx(r, abs=1e-10)
+
+
+def test_flat_forward_is_a_constant_forward_between_vertices():
+    # Between 252 and 504 business days the forward is constant, so the
+    # 378-day discount factor is the geometric mean of the two.
+    df252 = (1 + 13.60 / 100) ** (-252 / 252)
+    df504 = (1 + 13.78 / 100) ** (-504 / 252)
+    expected = (math.sqrt(df252 * df504) ** (-252 / 378) - 1) * 100
+    assert bd.flat_forward(DU, RATES, 378) == pytest.approx(expected, abs=1e-10)
+
+
+def test_no_extrapolation_beyond_the_curve():
+    assert math.isnan(bd.flat_forward(DU, RATES, 3000))
+    assert math.isnan(bd.flat_forward([252, 504], [13.0, 13.2], 126))
+
+
+# ---------------------------------------------------------------------------
+# Availability rules
+# ---------------------------------------------------------------------------
+
+def test_eia_brent_waits_for_the_weekly_wednesday_release():
+    tue, wed, mon = date(2026, 9, 22), date(2026, 9, 23), date(2026, 9, 21)
+    assert bd.eia_weekly_release(tue) == date(2026, 9, 24)   # released Wed 23, used Thu
+    assert bd.eia_weekly_release(mon) == date(2026, 9, 24)
+    assert bd.eia_weekly_release(wed) == date(2026, 10, 1)   # waits for next Wednesday
+
+
+def test_focus_is_public_the_week_after_its_survey_date():
+    # Measured: on Sunday 2026-09-27 the newest daily Focus value was 09-18.
+    assert bd.tuesday_after_week(date(2026, 9, 18)) == date(2026, 9, 22)
+    assert bd.tuesday_after_week(date(2026, 9, 14)) == date(2026, 9, 22)
+    assert bd.tuesday_after_week(date(2026, 9, 21)) == date(2026, 9, 29)
+
+
+def test_monthly_series_are_public_on_the_15th_of_the_next_month():
+    assert bd.fifteenth_of_next_month(date(2026, 8, 1)) == date(2026, 9, 15)
+    assert bd.fifteenth_of_next_month(date(2025, 12, 1)) == date(2026, 1, 15)
+
+
+# ---------------------------------------------------------------------------
+# As-of join
+# ---------------------------------------------------------------------------
+
+SESS = [date(2026, 9, d) for d in (14, 15, 16, 17, 18, 21, 22, 23, 24, 25)]
+
+
+def test_a_value_never_appears_before_it_is_public():
+    f = bd.with_availability(pd.DataFrame({"obs_date": [date(2026, 9, 15)], "x": [1.0]}), "brent")
+    out, _ = bd.asof_join(SESS, f, ["x"], "brent", "x")
+    assert out.loc[date(2026, 9, 16), "x"] != out.loc[date(2026, 9, 16), "x"]  # NaN on Wed 16
+    assert out.loc[date(2026, 9, 17), "x"] == 1.0                              # public Thu 17
+    assert out.loc[date(2026, 9, 17), "x__obs_date"] == date(2026, 9, 15)
+
+
+def test_a_value_past_its_staleness_limit_is_nulled_not_carried():
+    f = bd.with_availability(pd.DataFrame({"obs_date": [date(2026, 9, 14)], "x": [4.5]}), "ust")
+    out, nulled = bd.asof_join(SESS, f, ["x"], "ust")
+    assert out["x"].notna().sum() == 6          # the day itself + 5 sessions
+    assert nulled == len(SESS) - 6
+    assert out.loc[date(2026, 9, 22), "x"] != out.loc[date(2026, 9, 22), "x"]
+
+
+def test_native_windows_need_their_full_length():
+    f = pd.DataFrame({"obs_date": [date(2026, 1, 1) + timedelta(days=i) for i in range(30)],
+                      "v": np.linspace(10, 11, 30)})
+    g = bd.native_features(f, "v", "rate")
+    assert g["v_rv_21d"].iloc[:21].isna().all() and g["v_rv_21d"].iloc[21:].notna().all()
+    assert g["v_mom_5d"].iloc[:5].isna().all()
+    assert g["v_rv_63d"].isna().all()
+
+
+# ---------------------------------------------------------------------------
+# End to end on synthetic data
+# ---------------------------------------------------------------------------
+
+def _synthetic(seed: int = 7):
+    rng = np.random.default_rng(seed)
+    days = pd.bdate_range("2020-01-01", "2020-12-31").date
+    sessions = [d for i, d in enumerate(days) if i % 37 != 5]   # a few B3 holidays
+    curve_rows = []
+    base = 5.0
+    for d in sessions:
+        base += rng.normal(0, 0.03)
+        for du in DU:
+            curve_rows.append((d, "PRE", int(du * 365 / 252), du, base + du / 1000 + rng.normal(0, 0.005)))
+        for cd in (30, 90, 180, 360, 720):
+            curve_rows.append((d, "DOC", cd, int(cd * 252 / 365), 3.0 + rng.normal(0, 0.05)))
+    curves = pd.DataFrame(curve_rows, columns=["trade_date", "curve", "calendar_days", "business_days", "rate"])
+
+    def walk(dates, start, sd):
+        return pd.DataFrame({"obs_date": list(dates), "value": start + np.cumsum(rng.normal(0, sd, len(dates)))})
+
+    us_days = [d for i, d in enumerate(days) if i % 41 != 3]    # US holidays differ
+    months = [date(2020, m, 1) for m in range(1, 13)]
+    series = {
+        "usdbrl": walk(sessions, 5.2, 0.02),
+        "ust_1y": walk(us_days, 1.5, 0.02), "ust_2y": walk(us_days, 1.6, 0.02),
+        "ust_5y": walk(us_days, 1.7, 0.02), "ust_10y": walk(us_days, 1.9, 0.02),
+        "ust_30y": walk(us_days, 2.3, 0.02),
+        "vix": walk(us_days, 20.0, 0.5), "brent": walk(days, 60.0, 0.8),
+        "selic": walk(sessions, 4.5, 0.0),
+        "ipca": walk(months, 0.3, 0.1), "ipca_12m": walk(months, 4.0, 0.1),
+        "commodity_index": walk(months, 300.0, 5.0),
+        "focus_ipca_12m": walk(sessions, 3.5, 0.01),
+    }
+    futures = pd.DataFrame({"trade_date": [d for d in sessions for _ in range(3)],
+                            "open_interest": 1000, "contracts": 10})
+    return sessions, curves, series, futures
+
+
+RULE_OF = {name: rule for name, (rule, _kind) in bd.SCALAR_SERIES.items()}
+
+
+def _published_by(cutoff, curves, series, futures):
+    c = curves[curves["trade_date"] <= cutoff]
+    s = {k: v[[bd.RULES[RULE_OF[k]].available(d) <= cutoff for d in v["obs_date"]]] for k, v in series.items()}
+    f = futures[futures["trade_date"] <= cutoff]
+    return c, s, f
+
+
+def test_the_matrix_has_the_documented_columns():
+    sessions, curves, series, futures = _synthetic()
+    out, _ = bd.build(sessions, curves, series, futures)
+    for col in ("di_1y", "di_2y", "di_3y", "di_5y", "di_10y", "di_2s5s", "di_curvature", "usdbrl",
+                "ust_2y", "ust_10y", "ust_2s10s", "vix", "rates_vol_proxy", "brazil_sovereign_risk_proxy",
+                "brent", "commodity_index", "ipca", "selic", "di_2y_mom_21d", "di_2y_rv_63d",
+                "corr_di2y_usdbrl_21d", "corr_usdbrl_brent_63d", "di1_open_interest", "brent__obs_date"):
+        assert col in out.columns, col
+    assert list(out["date"]) == sorted(sessions)
+
+
+def test_no_look_ahead_rows_up_to_t_ignore_everything_published_later():
+    sessions, curves, series, futures = _synthetic()
+    full, _ = bd.build(sessions, curves, series, futures)
+    for cutoff in (date(2020, 3, 18), date(2020, 7, 1), date(2020, 11, 20)):
+        c, s, f = _published_by(cutoff, curves, series, futures)
+        past = [d for d in sessions if d <= cutoff]
+        part, _ = bd.build(past, c, s, f)
+        pd.testing.assert_frame_equal(
+            full[full["date"] <= cutoff].reset_index(drop=True), part.reset_index(drop=True),
+            check_dtype=False,
+        )
+
+
+def test_the_sovereign_proxy_is_doc_minus_ust_in_effective_terms():
+    d = date(2020, 6, 1)
+    curves = pd.DataFrame([(d, "DOC", 360, 250, 3.0), (d, "DOC", 370, 257, 3.0),
+                           (d, "PRE", 365, 252, 5.0), (d, "PRE", 730, 504, 5.5)],
+                          columns=["trade_date", "curve", "calendar_days", "business_days", "rate"])
+    series = {"ust_1y": pd.DataFrame({"obs_date": [d], "value": [2.0]})}
+    out, _ = bd.build([d], curves, series)
+    doc_eff = 3.0 * 365 / 360
+    ust_eff = ((1 + 2.0 / 200) ** 2 - 1) * 100
+    assert out.loc[0, "brazil_sovereign_risk_proxy"] == pytest.approx((doc_eff - ust_eff) * 100)
+
+
+def test_a_us_holiday_does_not_blank_the_cross_market_features():
+    sessions, curves, series, futures = _synthetic()
+    out, _ = bd.build(sessions, curves, series, futures)
+    us = set(series["ust_1y"]["obs_date"])
+    br_only = [d for d in sessions if d not in us and d > date(2020, 5, 1)]
+    assert br_only, "the synthetic calendars must differ"
+    rows = out[out["date"].isin(br_only)]
+    assert rows["brazil_sovereign_risk_proxy"].notna().all()
+    assert rows["corr_di2y_ust10y_21d"].notna().all()

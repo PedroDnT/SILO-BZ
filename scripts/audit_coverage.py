@@ -47,6 +47,7 @@ TABLES: List[Tuple[str, Optional[str]]] = [
     ("cvm_fidc_scr",             "period"),
     ("cvm_fidc_sacado",          "period"),
     ("cvm_fidc_cedente",         "period"),
+    ("cvm_fidc_garantia",        "period"),
     ("cvm_fiagro_mensal",        "period"),
     ("cvm_fip_periodic",         None),
     ("cvm_fii_mensal",           "period"),

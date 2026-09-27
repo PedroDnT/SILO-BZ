@@ -46,10 +46,17 @@ def _function(name: str) -> str:
 
 class TestScreenFunctions:
     @pytest.mark.parametrize("name", ["fraud_screen_dormant_funds", "fraud_screen_dormant_trend"])
-    def test_exists_and_is_granted(self, name):
+    def test_exists_and_is_closed_to_client_roles(self, name):
+        """Since v31 the API reaches this through api.screen_* (23_api_screens.sql);
+        the public function itself is revoked from every client role."""
         body = SCREENS.read_text(encoding="utf-8")
         assert f"CREATE OR REPLACE FUNCTION {name}(" in body
-        assert re.search(rf"GRANT EXECUTE ON FUNCTION {name}\(", body), f"{name} has no GRANT"
+        assert not re.search(rf"GRANT EXECUTE ON FUNCTION {name}\(", body), (
+            f"{name} is granted again; clients reach it only through api.screen_*"
+        )
+        assert re.search(rf"REVOKE ALL ON FUNCTION {name}\([^)]*\)\s+FROM PUBLIC, anon, authenticated;", body), (
+            f"{name} has no REVOKE from PUBLIC, anon, authenticated"
+        )
         assert f"• {name}(" in body, f"{name} missing from the file header list"
 
     @pytest.mark.parametrize("name", ["fraud_screen_dormant_funds", "fraud_screen_dormant_trend"])

@@ -496,3 +496,34 @@ def validate_security_code(code: str) -> bool:
     """Convenience function to validate security code"""
     is_valid, _ = validator._validate_security_code(code)
     return is_valid
+
+
+_VERSAO_RE = re.compile(r"^\d+$")
+
+
+def parse_versao(value: Any) -> Tuple[bool, Optional[int]]:
+    """Validate a CVM ``Versao`` field. Returns (ok, versao).
+
+    CVM bumps ``Versao`` every time a filer re-submits the same document, so it
+    is part of the natural key wherever every version is kept (the FII tables
+    since migration 43). Integrity rule 4 applies: validate, never coerce.
+
+    * absent / empty          -> (True, None): the source published no version.
+      NULL is explicitly allowed (the unique keys are NULLS NOT DISTINCT), so
+      such a row keys exactly as it did before versions were kept.
+    * a plain integer >= 1    -> (True, int).
+    * anything else ("0", "-1", "1.5", "2a") -> (False, None): the caller drops
+      the row and counts it. A malformed version is never guessed into one (the
+      generic ``int`` coercion would read "1.5" as 15).
+    """
+    if value is None:
+        return True, None
+    s = str(value).strip()
+    if s == "" or s.upper() in {"NULL", "NA", "N/A", "-"}:
+        return True, None
+    if not _VERSAO_RE.match(s):
+        return False, None
+    n = int(s)
+    if n < 1:
+        return False, None
+    return True, n

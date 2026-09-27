@@ -67,11 +67,13 @@ class B3Ingestor:
         error: Optional[str] = None,
         *,
         skipped: bool = False,
+        note: Optional[str] = None,
     ) -> None:
+        # `note` records a shortfall on an `ok` row (error_msg, status ok).
         status = "skipped" if skipped else ("error" if error else "ok")
         try:
             ingest_log.finish(self._supabase, run_id, "b3", self._doc_type_of.get(run_id, "unknown"),
-                              status=status, rows=rows, error=error, upsert=upsert_rows)
+                              status=status, rows=rows, error=error or note, upsert=upsert_rows)
         except Exception as exc:  # noqa: BLE001 — audit must not mask the outcome
             logger.warning("ingest_log finish failed: %s", ingest_log.describe(exc))
 
@@ -329,10 +331,19 @@ class B3Ingestor:
             # Only the newest session gets this benefit. A session missing from
             # anywhere older is the silent clamp, or a real hole, and stays an
             # error: it has had a full publication cycle and did not arrive.
+            #
+            # When the older sessions DID land, the slice is `ok`: our run
+            # succeeded, and `coverage().landed_at` counts only `ok` rows, so
+            # `skipped` here made the source's calendar read as our staleness
+            # every morning. The shortfall stays on the row as a note. Only a
+            # span where nothing landed is `skipped`.
             not_published_yet = missing == [targets[-1]]
             if not_published_yet:
                 logger.info("B3 BDI %s: %s — newest session, not published yet", label, msg)
-                self._log_finish(run_id, n, msg, skipped=True)
+                if delivered:
+                    self._log_finish(run_id, n, note=msg)
+                else:
+                    self._log_finish(run_id, n, msg, skipped=True)
             else:
                 logger.warning("B3 BDI %s: %s", label, msg)
                 self._log_finish(run_id, n, error=msg)

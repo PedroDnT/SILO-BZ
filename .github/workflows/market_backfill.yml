@@ -1,0 +1,88 @@
+name: Market Data Backfill
+
+# History for src/pipeline/market_pipeline.py: DI1 futures (B3 Price Report,
+# from 2018-01-02), B3 reference curves (TaxaSwap, from 2008-01-02), the U.S.
+# Treasury par curve, Cboe VIX and EIA Brent. The daily run keeps them fresh;
+# this fills the past. docs/research/dustin_br_data_sources.md §10.
+#
+# One YEAR per job, one job at a time: a Price Report is ~12 MB zipped and
+# ~10 s to parse, so a year of sessions is roughly an hour, inside the
+# 6-hour job cap with room (INSTRUMENTS.md: new deep backfills year-shard).
+on:
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: "Comma-separated: b3_price_report, b3_reference_rate, us_treasury, cboe_vix, eia_brent"
+        required: true
+        default: "b3_reference_rate"
+      start_year:
+        description: "First year (b3_reference_rate starts 2008, b3_price_report 2018)"
+        required: true
+        default: "2008"
+      end_year:
+        description: "Last year (inclusive)"
+        required: true
+        default: "2026"
+
+# Same writer group as daily_ingest.yml and backfill.yml: one writer at a time
+# against the shared Postgres; an arriving run queues, never cancels.
+concurrency:
+  group: supabase-ingest
+  cancel-in-progress: false
+
+jobs:
+  apply-schema:
+    name: "Apply schema"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - name: Apply schema + migrations
+        uses: ./.github/actions/apply-schema
+        with:
+          postgres-url: ${{ secrets.POSTGRES_URL }}
+
+  years:
+    name: "Years"
+    runs-on: ubuntu-latest
+    outputs:
+      years: ${{ steps.range.outputs.years }}
+    steps:
+      - id: range
+        env:
+          START: ${{ inputs.start_year }}
+          END: ${{ inputs.end_year }}
+        run: |
+          set -euo pipefail
+          [[ "$START" =~ ^[0-9]{4}$ && "$END" =~ ^[0-9]{4}$ && "$START" -le "$END" ]] \
+            || { echo "::error::start_year/end_year must be YYYY with start <= end"; exit 1; }
+          echo "years=$(seq "$START" "$END" | jq -cs .)" >> "$GITHUB_OUTPUT"
+
+  backfill:
+    name: "Backfill ${{ matrix.year }}"
+    needs: [apply-schema, years]
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        year: ${{ fromJSON(needs.years.outputs.years) }}
+    env:
+      POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
+      EIA_API_KEY: "${{ secrets.EIA_API_KEY }}"
+      TZ: "America/Sao_Paulo"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Backfill ${{ matrix.year }}
+        env:
+          SOURCES: ${{ inputs.sources }}
+          YEAR: ${{ matrix.year }}
+        run: |
+          python -m src.pipeline.market_pipeline --backfill \
+            --sources "$SOURCES" --start "$YEAR-01-01" --end "$YEAR-12-31"

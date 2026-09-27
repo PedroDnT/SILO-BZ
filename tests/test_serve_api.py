@@ -705,6 +705,8 @@ def test_coverage_forwards_newest_period_and_landed_at(client):
     assert "newest_period" in sql
     assert "landed_at" in sql
     assert "complete_through" in sql and "notes" in sql
+    # v34 lineage: which code produced the newest landed data.
+    assert "landed_git_sha" in sql
 
 
 def test_metric_coverage_is_served(client):

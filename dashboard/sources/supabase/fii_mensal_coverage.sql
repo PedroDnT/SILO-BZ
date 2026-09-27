@@ -30,7 +30,7 @@ left join lateral (
     count(*) filter (where m.cotas_emitidas is not null)              as with_cotas,
     count(*) filter (where m.vl_patrimonial_cotas is not null)        as with_vpc,
     count(*) filter (where m.rendimentos_distribuir is not null)      as with_rendimentos
-  from cvm_fii_mensal m
+  from vw_fii_mensal_latest m
   group by m.doc_subtype
 ) x on true
 order by x.n_rows desc nulls last

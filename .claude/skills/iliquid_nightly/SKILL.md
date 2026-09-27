@@ -59,6 +59,16 @@ Serving open: limits before `fetchall` (step 3), honest returns (4), lookup (5),
 Check “What we will not do” in `docs/planning/SERVING.md`. Caps belong in SQL
 before Python `fetchall`. Catalog `meaning` must match the SQL.
 
+## Shipping: merging to `main` deploys nothing
+
+- **API:** a merged `19_*.sql` or catalog change is live only after
+  `scripts/apply_analytical.sh` runs — the 06:00 UTC `daily_ingest`, or dispatch it
+  with `mode=analytics-only` and `rebuild_dashboard` **off** (~28 min). Then confirm
+  `api.catalog()` reports the new `CATALOG_VERSION`.
+- **Dashboard:** `git.deploymentEnabled.main = false`, so a merge builds nothing; the
+  site rebuilds from the nightly deploy hook, or dispatch `daily_ingest` with
+  `rebuild_dashboard=true`. Then fetch the public URL and grep for the change.
+
 ## Commands
 
 ```bash

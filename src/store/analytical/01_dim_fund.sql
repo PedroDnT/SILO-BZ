@@ -64,7 +64,7 @@ CREATE MATERIALIZED VIEW dim_fund AS
 
     SELECT cnpj, 'fii',
            MIN(period), MAX(period), COUNT(DISTINCT period)
-    FROM cvm_fii_mensal WHERE cnpj IS NOT NULL GROUP BY cnpj
+    FROM vw_fii_mensal_latest WHERE cnpj IS NOT NULL GROUP BY cnpj
 
     UNION ALL
 

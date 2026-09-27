@@ -20,12 +20,12 @@ they belong.
 
 TABLE = "cvm_fii_periodic"
 DOC_TYPE = "trimestral_geral"
-CONFLICT = ("cnpj", "doc_type", "period_year", "data_referencia")
+CONFLICT = ("cnpj", "doc_type", "period_year", "data_referencia", "versao")
 
 FIELD_MAP = {
     "cnpj":            (["CNPJ_Fundo_Classe", "CNPJ_FUNDO_CLASSE", "CNPJ_Fundo"], "cnpj"),
     "data_referencia": (["Data_Referencia", "DT_COMPTC"],       "date"),
-    "versao":          (["Versao"],                              "int"),
+    "versao":          (["Versao"],                              "text"),  # validated in ingest_fii
     "data_entrega":    (["Data_Entrega"],                        "date"),
     "nome_fundo":      (["Nome_Fundo_Classe", "Nome_Fundo"],     "text"),
     "tp_fundo":        (["Tipo_Fundo_Classe", "TP_FUNDO_CLASSE"], "text"),

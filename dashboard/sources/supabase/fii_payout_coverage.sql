@@ -44,7 +44,7 @@ left join lateral (
              ),
              date_trunc('month', current_date)::date
            ) as p_end
-    from cvm_fii_mensal
+    from vw_fii_mensal_latest
   ),
   base as (
     select
@@ -63,7 +63,7 @@ left join lateral (
         max(m.vl_patrim_liq) filter (where m.doc_subtype = 'complemento'),
         max(m.vl_patrim_liq) filter (where m.doc_subtype = 'geral')
       )                                                                        as pl
-    from cvm_fii_mensal m
+    from vw_fii_mensal_latest m
     cross join anchor a
     where m.period = a.p_end
       and m.cnpj is not null

@@ -171,7 +171,9 @@ Storage layout: ~30 tables named `cvm_<entity>_<doctype>` or `bacen_<series>` (p
   named originators, anonymized top-25 debtors, sector, SCR ladder; migration 38, with
   per-tab first months in `_FIDC_TAB_FIRST_PERIOD`; served by `api.fidc_cedentes` /
   `fidc_sacados` / `fidc_portfolio` and the panel metrics `receivables`, `sacado_top1`,
-  `sacado_top25`), `cvm_securit_serie`,
+  `sacado_top25`), `cvm_fidc_garantia` (tab `X_7`, guarantees on the credit rights as a
+  value and a %, as filed — the denominator is undocumented, so never call it
+  "coverage"; migration 45, key `(cnpj, period)`, first month 2019-11), `cvm_securit_serie`,
   `cvm_securit_fluxo`, `cvm_fi_balancete`, `cvm_cia_*`, `cvm_etf_registry`,
   `cvm_fi_cda_acoes`, `cvm_fi_cda_cotas` and `cvm_fi_cda_debentures` (fund holdings —
   CDA blocks 4, 2 and 6, members of the archive `cda` already downloads. Block 4
@@ -194,6 +196,40 @@ Storage layout: ~30 tables named `cvm_<entity>_<doctype>` or `bacen_<series>` (p
   flow, index free float and the cash instrument registry; `src/fetchers/b3_bdi_fetcher.py`
   carries the verified endpoint contract).
 
+**FII filings keep every version** (migration 43): `versao` is part of the key of
+`cvm_fii_mensal` and `cvm_fii_periodic` (`UNIQUE NULLS NOT DISTINCT`), so a restatement
+lands beside the original instead of overwriting it. Read the current filing through
+`vw_fii_mensal_latest` / `vw_fii_periodic_latest`, never by picking a version yourself.
+
+**The FNET register** (`fnet_document`, `fnet_document_filter`; migration 42,
+`src/fetchers/fnet_fetcher.py` → `src/pipeline/fnet_pipeline.py`, audit entity `fnet`) is
+B3 Fundos.NET's document list: metadata only, one row per FNET id, and every version is a
+new id with `versao` and `modalidade` (AP original, RE voluntary restatement, RC
+CVM-required). It is the only public record of FIDC restatements — CVM's FIDC CSVs carry
+no version. FNET rows carry **no CNPJ**: a document's fund is a `cnpjFundo` row in
+`fnet_document_filter` (the CNPJ we queried with) or it is unknown — never inferred from
+`fund_name`. The daily run crawls the last 3 delivery days (day windows; a month-wide
+query times out) and sweeps a rotating 1/150 of the FII/FIDC registry (about 70 funds
+a night; a fund search averages ~25 s, so 1/14 overran the 60-minute step); history is
+`backfill.yml` with `fnet_start` / `fnet_end` (one year per dispatch) and `fnet_sweep`.
+Served by `api.fund_documents` / `api.fund_restatements` (analytical file 24).
+
+**Restatement diffs** (migration 46, backlog B4, `docs/planning/DOCUMENTS.md`) say what a
+re-filed FIDC informe mensal changed. `src/pipeline/fnet_diff.py` downloads the body and
+its predecessor, paired by `fund_restatements`' own group key, and stores
+`fnet_document_body` (hashes and header, **no raw XML**), `fnet_document_pair` (one row
+per restatement, with a status for every one it could not compare) and
+`fnet_document_diff` (one row per differing leaf; `match_basis` path / key / position,
+position rows flagged, never hidden). Its own `daily_ingest` job (audit `fnet` / `diff`,
+capped per run, the rest stays queued); history is `backfill.yml` `fnet_diff` over
+`fnet_start..fnet_end`. Served by `api.fund_restatement_diff` and `fund_restatements`'
+`diff_status` / `n_fields_changed` (catalog v40, analytical file 24).
+
+**Lineage.** `cvm_ingest_log` carries `git_sha` (from `GITHUB_SHA`, NULL when unset —
+never guessed) and `parser_version` (`PARSER_VERSION` in `src/pipeline/ingest_log.py`;
+bump it only when a parser or field map changes what a stored value means).
+`api.coverage()` exposes `landed_git_sha`, the commit of the run that set `landed_at`.
+
 **The BDI group is a ratchet, and the only part of this warehouse that is.** B3 keeps
 ~21 business days of those tables and publishes no archive, and an over-wide request
 returns HTTP 200 with a silently clamped window — so a missed session is lost at any
@@ -210,11 +246,19 @@ The **analytical layer** (`src/store/analytical/`, applied by `scripts/apply_ana
 after ingest) is the read side the dashboards query: `dim_fund` (a **materialized view**,
 refreshed daily by cron + the apply re-create) plus `dim_fund_category` / `dim_administrator`
 / `dim_gestor`; the `fact_fund_monthly` / `fact_security_monthly` matviews; the
-`fraud_screen_*` suspicious-deal screens (15); and the `fund_performance_*` / `etf_*` ranking
+`fraud_screen_*` suspicious-deal screens (15; served to API callers only as the
+`api.screen_*` wrappers in 23 — the public functions hold no client grant); and the `fund_performance_*` / `etf_*` ranking
 functions (16–17). ETFs are carved out of the fund universe and ranked separately —
 `etf_daily` is empty for post-CVM-175 share classes (see the ETF doc).
 `mv_savings_flow_monthly` / `api.mv_savings_flow_monthly` (18) is reproduced as-found so
 CASCADE recreates of `fact_fund_monthly` cannot destroy it; nothing in this repo reads it.
+Schema `api` is 19 (the contract, `catalog()` / `coverage()`, `api.assert_row_cap`),
+20–21 (short interest, lending participants), 23 (screens) and 24 (FNET). Every capped
+function **refuses** above one 1,000-row page (`22023`, with a why/how message built by
+`assert_row_cap`) — none trims silently. A new endpoint also needs a catalog entry, a
+regenerated `openapi.json` (`scripts/gen_openapi.py`) and a regenerated MCP contract
+(`scripts/gen_mcp_contract.py` + a `t()` line in `supabase/functions/silo-mcp/tools.ts`);
+`tests/test_mcp_contract.py` fails until all three agree.
 
 ### Adding a dataset (the `(entity, doc_type)` matrix)
 
@@ -280,7 +324,39 @@ offline suite and blocks the push on failure; the pre-commit hook blocks committ
 URLs with credentials and Python that fails `py_compile`. The `.claude/settings.json` PostToolUse hook runs `py_compile` on every edited
 `.py` file and the offline pytest suite when the file is under `src/`, `serve/`,
 `tests/`, or `scripts/` (`.claude/hooks/post-edit.sh`). Failures surface; they
-are not swallowed.
+are not swallowed. The PreToolUse hook on `git push` (`.claude/hooks/pre-push-docs.sh`)
+holds a push until the branch adds its `docs/planning/CHANGELOG.md` row (or a
+`No-changelog: <reason>` commit trailer), holds it while any row main had at the
+merge base is missing or reworded (or a `Changelog-removes: <reason>` trailer),
+and once per branch, unless it edits `README.md`, asks for a README /
+planning-index / `OPEN_ITEMS.md` staleness check before publishing. The `pytest`
+job in `test.yml` runs the same row comparison on every pull request, which also
+covers merges made in GitHub's web UI: one dropped #324's and #325's rows from
+main via #322. PRs auto-merge on green, so each branch carries its own docs.
+
+**Open pull requests ready for review, never as drafts** (owner's rule). PRs here
+merge by auto-merge once CI is green, and a draft blocks that until someone marks it
+ready by hand. This overrides any tool or harness default that opens drafts.
+One exception: the scheduled agents in `.claude/agents/` (Scout, Builder) open
+drafts on purpose, because agent output must never auto-merge without the owner's
+review (`docs/planning/AGENTS.md`). Only the owner marks an `agent:*` PR ready.
+
+## Database (Supabase)
+
+- Never run unbounded queries on large tables (e.g. `cvm_fi_diario`, `cia_account`,
+  `b3_lending_trade`, `cvm_fi_balancete`). Always add a `LIMIT` or a filtered `WHERE`;
+  prefer `pg_class.reltuples` over a bare `COUNT(*)`, and filter any `COUNT(*)`.
+- For bulk rewrites (e.g. re-keying), work in batches and check the row count after each batch.
+- Before any destructive change (trim, delete, re-key), stop and confirm the plan with the owner.
+
+## Environment
+
+- Never run `npm install` from the home directory. `cd` into `dashboard/` or `webapp/`
+  first (the repo root has no `package.json`) and confirm that is the intended target.
+  The PreToolUse hook `.claude/hooks/npm-cwd-guard.sh` refuses `npm install|i|ci`
+  aimed at `$HOME` or at a directory with no `package.json` (`-g` is allowed).
+- On macOS, `date` is BSD date. Use `gdate`, or write tests that are portable across
+  GNU and BSD `date`.
 
 ## Consumers (read-only, query Supabase directly)
 
@@ -324,7 +400,21 @@ project `silo-bz` in team `deloslabs`; any static host also works).
   other entity jobs use `max-parallel: 1`, inspect coverage first, and are gated on a
   one-time `apply-schema` job. `fi_doc_type` can repair one FI source (for example
   `balancete`) without re-fetching the others. Default to one entity; `all` is deliberately
-  expensive.
+  expensive. `fnet_start` / `fnet_end` / `fnet_sweep` make an FNET-only dispatch (every
+  other job skips).
+- **A merge deploys nothing to the database.** Analytical SQL (and so schema `api`) goes
+  live on the next 06:00 run, or at once via `daily_ingest` `mode=analytics-only`
+  (`rebuild_dashboard=true` also republishes the site). The dashboard build's preflight
+  refuses to build while a view it reads is missing, so a PR that adds a view its pages
+  use fails its Vercel preview until the migration is applied — expected, not a bug.
+- `supabase/functions/silo-mcp/` — the read-only remote MCP (Supabase Edge Function, public
+  anon key only), live since 2026-09-25 at
+  `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp` (one tool per `t()`
+  line in `tools.ts`, `verify_jwt` off). Like analytical SQL, a merge does not redeploy
+  it. Apply analytics first, then dispatch `deploy_mcp.yml` (needs the
+  `SUPABASE_ACCESS_TOKEN` secret; it checks the live `tools/list` against `tools.ts`),
+  or run `supabase functions deploy silo-mcp --project-ref zcjbtpxuhdekpwcxmepn --no-verify-jwt`
+  locally; never `supabase config push`.
 
 Schema rollout = commit `schema.sql` + a new `migrations/NNN_*.sql`, then either let CI apply it
 or run `scripts/apply_schema.py` against Supabase. Idempotent via `CREATE TABLE IF NOT EXISTS` +

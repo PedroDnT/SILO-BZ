@@ -21,7 +21,9 @@ not have one.
 ## Start here
 
 1. `https://octo-98895abd.mintlify.site/llms.txt` — index of every page
-2. Docs MCP (no auth): `https://octo-98895abd.mintlify.site/mcp`
+2. Docs MCP (no auth): `https://octo-98895abd.mintlify.site/mcp`. Data MCP
+   (no auth, read-only, one tool per endpoint):
+   `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp`
 3. `POST /rpc/catalog` — the contract as JSON. Call it once, cache it, and read
    `limits`, `metrics`, `applicability`, `regime_breaks` and `constraints` off
    the payload instead of from memory. `version` says which contract the server

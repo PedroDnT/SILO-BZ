@@ -11,12 +11,12 @@ pointer. Anything provisional or missing goes in this file.
 
 ## Known good as of 2026-09-18
 
-| Surface              | State                                                                                                                              |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Data API (PostgREST) | catalog **v30** live (`inflation`, `inflation_items`), applied 2026-09-21                                                          |
-| Docs site            | `octo-98895abd.mintlify.site` — 200, including `known-limitations` and `api-docs/inflation`                                        |
+| Surface              | State                                                                                                                               |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Data API (PostgREST) | catalog **v30** live (`inflation`, `inflation_items`), applied 2026-09-21                                                           |
+| Docs site            | `octo-98895abd.mintlify.site` — 200, including `known-limitations` and `api-docs/inflation`                                         |
 | Dashboard            | `silo-bz-deloslabs.vercel.app` and `silo-bz.vercel.app` — both 200 on the current build **only since a manual promote**; see item 8 |
-| Test suite           | 1521 offline tests green on `main` (1463 before catalog v30)                                                                       |
+| Test suite           | 1521 offline tests green on `main` (1463 before catalog v30)                                                                        |
 
 Verified live, not inferred: `income_statements('PETR4')` returns
 `chart=industrial`, net income R$37.01bn; `income_statements('19348')`
@@ -24,7 +24,14 @@ Verified live, not inferred: `income_statements('PETR4')` returns
 
 ---
 
-## 1. `balance_sheets` and `cash_flow_statements` — the other two endpoints
+## 1. ~~`balance_sheets` and `cash_flow_statements` — the other two endpoints~~ (done)
+
+**Done 2026-09-25** (`feat/balance-sheets-cash-flows`, catalog v35). Census
+run first; equity sits on 2.03 / 2.07 / 2.08, and `Empréstimos e
+Financiamentos` is filed twice per industrial filing, so the balance sheet
+matches label + parent label. Cash flows map totals only; capex and dividends
+are free text per filer and stay in `api.financials`. Not live until
+`apply_analytical.sh` runs (see item 6).
 
 `docs/planning/FINANCIALS_API.md` §8 step 2. `income_statements` shipped first
 because it carries the sector problem and proves the design; the other two
@@ -63,30 +70,20 @@ TABLE` cannot be replaced in place on a deployed cluster);
 Bump `CATALOG_VERSION`, regenerate `openapi.json`, bump
 `KNOWN_CATALOG_VERSION` in the SDK.
 
-## 2. `company_financials` and `income_statements` disagree on net income
+## 2. ~~`company_financials` and `income_statements` disagree on net income~~ (done)
 
-Not a bug; a deliberate asymmetry, recorded so nobody "fixes" it by accident.
-
-`company_financials.net_income` reads conta `3.11` alone and returns NULL for
-the ~282 statements filed under the chart that has no `3.11`. That set is small
-by row count (0.56%) but **large by substance — it includes Itaú Unibanco and
-BTG Pactual**. `income_statements` resolves them, because it keys on the filed
-label rather than the code.
-
-Options, in preference order:
-
-1. Leave it, and point callers at `income_statements` (current state; the
-   `api-docs/known-limitations.mdx` note and the SDK docstring both do this).
-2. Re-key `company_financials.net_income` on the label too, so both surfaces
-   agree. Cheap, and arguably what a caller expects. Needs a catalog bump and a
-   changelog row explaining that NULLs became numbers.
-
-Do **not** reinstate a `COALESCE(3.11, 3.09)`: that is code-keyed and unsound —
-`3.09` is `Resultado Líquido das Operações Continuadas` on the industrial chart,
-a different quantity. `tests/test_company_financials_contract.py` asserts
-`'3.09'` appears nowhere in that function.
+**Done 2026-09-25** (`feat/company-financials-label`, catalog v36): option 2,
+Pedro's call. `net_income` now matches the same two filed labels as
+`income_statements`; bank B resolves from 3.09's net-income label and insurers
+from 3.13. No code fallback. Live after `apply_analytical.sh`.
 
 ## 3. `/growth` is fixed in the repo but not published anywhere
+
+**Blocked 2026-09-25, cause established:** root `vercel.json` builds only
+`dashboard/` (`cd dashboard && npm run build`), so `webapp/` is deployed by **no**
+project; `CLAUDE.md`'s "both hosted under `silo-bz`" is wrong for `webapp/`.
+Needs a decision: a new Vercel project rooted at `webapp/` (an account change),
+or moving `/growth` and its sources into `dashboard/`.
 
 `webapp/pages/growth.md` + `webapp/sources/supabase/cia_growth_*.sql`. The
 fiscal-year bug is fixed on `main` (PR #270), but the page is **not reachable on
@@ -95,10 +92,16 @@ any public URL** — `/growth` is 404 on both dashboard hosts, which are the
 
 So: no user ever saw the broken version, and no user sees the fixed one either.
 Whoever owns the `webapp/` Vercel project needs to deploy it; this session could
-not determine which project that is. Evidence builds its parquet at deploy time,
+not determine which project that is. (`webapp/README.md` records why none can
+exist yet: `vercel.json` builds `dashboard/` only, so `webapp/` needs a second
+Vercel project or another static host.) Evidence builds its parquet at deploy time,
 so the source-query fix only takes effect on a rebuild.
 
-## 4. Two changelog rows render with phantom columns
+## 4. ~~Two changelog rows render with phantom columns~~ (done)
+
+**Done 2026-09-25** (`fix/changelog-pipes`): the pipes inside the two rows'
+code spans are escaped as `\|`, and `test_every_row_has_exactly_three_cells`
+now pins the cell count (fails on the unescaped file, passes on the fixed one).
 
 `docs/planning/CHANGELOG.md` has two historical rows containing an unescaped
 `|` inside their prose — one of them is literally the panel cursor format
@@ -109,7 +112,19 @@ Two-character fix (escape the pipes). Left as found rather than silently
 rewriting historical entries. `tests/test_changelog_integrity.py` deliberately
 does **not** pin cell count because of them.
 
-## 5. A `MAX()` over a filing date is not a period — check for more of these
+## 5. ~~A `MAX()` over a filing date is not a period — check for more of these~~ (done)
+
+**Done 2026-09-25** (`fix/max-period-sweep`). Swept by measurement, not by
+reading: row counts at the latest vs previous period for every table a dashboard
+source reads with a bare `max()`. One live instance: `distressed_securities()`
+defaulted to `MAX(period)` of `fact_security_monthly`, which held **24** rows at
+2026-08 against **3,260** at 2026-07, so `/securit` showed **10** distressed
+series instead of **173**. It now defaults to the newest period with at least
+half the previous period's rows; guarded by
+`tests/test_distressed_period_resolution.py`. Clean at measurement:
+`cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_fidc_tranche_flows`, `cvm_fii_imovel`
+(latest periods fully populated), FIP (31-Dec key, already guarded per class).
+Live after the next `apply_analytical.sh` run and dashboard rebuild.
 
 PR #270 fixed one instance: `/growth` selected its comparison year with
 `MAX(fy)`, which pinned the whole page to the 8 companies that had filed fiscal
@@ -120,7 +135,13 @@ That makes two independent instances of one mistake, which is enough to justify
 sweeping for others rather than waiting for the third. Candidates are anywhere a
 "latest period" is derived from the data instead of from coverage.
 
-## 6. Deploying the API is manual, and that is easy to forget
+## 6. ~~Deploying the API is manual, and that is easy to forget~~ (done)
+
+**Done 2026-09-25** (`fix/deploy-checklist`): the release-checklist route. The
+`iliquid_nightly` skill, loaded for any `19_*.sql` / catalog / dashboard change,
+now has a "Shipping: merging to `main` deploys nothing" section with both
+manual steps and how to confirm each. An on-merge trigger was not added: it
+would start a ~28 min matview rebuild on every merge.
 
 `scripts/apply_analytical.sh` is what makes a merged catalog change live. It runs
 on the 06:00 UTC `daily_ingest` schedule or a `workflow_dispatch` with
@@ -144,6 +165,8 @@ immediately and on the public site the next morning, unless someone dispatches
 
 ## 7. The docs site is on Mintlify's generated subdomain
 
+**Blocked 2026-09-25:** DNS record plus Mintlify plan; account action, no repo change.
+
 `octo-98895abd.mintlify.site` works and is linked correctly from everywhere. But
 a hex-string hostname reads as provisional to a first-time visitor, which is the
 wrong signal for the one surface a stranger is most likely to open.
@@ -160,14 +183,14 @@ had been built correctly and published nowhere.
 
 Measured 2026-09-22, in this order:
 
-| Observation                                                            | Result                                                                                        |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `GET silo-bz-deloslabs.vercel.app/macro`                               | 200, 31,867 bytes, **0** occurrences of "Inside the IPCA"                                     |
-| `GET silo-bz-git-main-deloslabs.vercel.app/macro`                      | 200, 39,505 bytes, the section present                                                        |
-| aliases on `dpl_f9YsSJ…` (f85e9f3, the newest production deployment)   | `silo-bz-git-main-deloslabs.vercel.app` **only**                                              |
-| aliases on the project                                                 | both `vercel.app` hostnames bound to `dpl_54vMGARv4w1DAhyxD9ivfg7yCVXc` (6646c0c, PR #275)    |
-| that binding's `updatedAt`                                             | 1789743476015 = **2026-09-18T00:17:56Z**, and never since                                     |
-| `list_promote_aliases`                                                 | both hostnames `status: completed` — a **promote** was the last thing that moved them         |
+| Observation                                                          | Result                                                                                     |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `GET silo-bz-deloslabs.vercel.app/macro`                             | 200, 31,867 bytes, **0** occurrences of "Inside the IPCA"                                  |
+| `GET silo-bz-git-main-deloslabs.vercel.app/macro`                    | 200, 39,505 bytes, the section present                                                     |
+| aliases on `dpl_f9YsSJ…` (f85e9f3, the newest production deployment) | `silo-bz-git-main-deloslabs.vercel.app` **only**                                           |
+| aliases on the project                                               | both `vercel.app` hostnames bound to `dpl_54vMGARv4w1DAhyxD9ivfg7yCVXc` (6646c0c, PR #275) |
+| that binding's `updatedAt`                                           | 1789743476015 = **2026-09-18T00:17:56Z**, and never since                                  |
+| `list_promote_aliases`                                               | both hostnames `status: completed` — a **promote** was the last thing that moved them      |
 
 So both hostnames are project domains (`gitBranch: null`, verified) that a
 manual promote pinned on 2026-09-18, and nothing has reassigned them since. A
@@ -195,13 +218,15 @@ the live hosts both ways: green when they match, and red when `PUBLIC_HOST` is
 pointed at `silo-j01uw6fds-deloslabs.vercel.app` (the #275 build that was
 actually being served during the freeze).
 
-Two things remain open:
+**Blocked 2026-09-25:** the cause needs Pedro: the Vercel audit log or support.
 
-1. **`VERCEL_TOKEN` is not set**, so the guard can detect but not fix. Until
-   Pedro adds it (Vercel → Account Settings → Tokens, scope team `deloslabs`,
-   stored as the repository secret), a freeze produces a red run at 08:00 UTC
-   instead of a silent four-day stall — better, but still manual to clear.
-2. **The cause.** Find and undo whatever the 2026-09-17/18 alias attempts left
+1. ~~**`VERCEL_TOKEN` is not set**~~ (done 2026-09-26). Pedro added the
+   repository secret; a dispatched Publish Check (run 36212626171) promoted
+   `dpl_Ei4YqaQyKpQNQ7zYL4X2oCKDB8Ws` after three red days (09-23 to 09-25)
+   and verified it. Checked independently the same hour: `/data/manifest.json`
+   is byte-identical on `silo-bz-deloslabs.vercel.app`, `silo-bz.vercel.app`
+   and the `git-main` alias. The guard now fixes a freeze, not just detects it.
+2. **The cause** (still open). Find and undo whatever the 2026-09-17/18 alias attempts left
    behind; they are recorded below because they are the likeliest culprit.
    Pedro does not remember making the change, so there is no memory to rely on
    here — it needs reading the Vercel project's audit log or support.
@@ -220,7 +245,14 @@ reaching READY. Both were true. Neither was the site. `CLAUDE.md` already says
 observations"; this is the second time that has cost a day. Fetch the public
 URL and grep it for the thing you claim to have shipped.
 
-## 9. `coverage().landed_at` reads a day stale for the B3 lending group
+## 9. ~~`coverage().landed_at` reads a day stale for the B3 lending group~~ (done)
+
+**Done 2026-09-25** (`fix/b3-landed-at`): `_ingest_bdi_span` now logs `ok` when
+older sessions landed and only the newest is missing, with the shortfall kept in
+`error_msg` as a note (`_log_finish(..., note=)`). A span where nothing landed
+stays `skipped`; any older gap stays `error`. The PR #242 gate is unaffected:
+`check_staleness.py` and diagnostic 15 treat `ok` and `skipped` alike. Live
+`landed_at` moves on the first daily run after merge.
 
 `landed_at` is documented as "when ingest last SUCCEEDED for that source", and
 counts only `cvm_ingest_log` rows with status `ok`. But when B3 has not yet
@@ -244,12 +276,25 @@ has to be read together with that gate and its tests.
 
 ## 10. Supabase storage near the plan allowance
 
+**Re-measured 2026-09-25, BLOCKED on a retention decision (Pedro's call).**
+`pg_database_size` = **118.1 GB, 87% of 135 GB**, up from 81% (~109 GB) on
+2026-09-17: ~1.1 GB/day, which fills the allowance around **2026-10-10**.
+Largest relations (incl. partitions and indexes): `cvm_fi_balancete` 33.6 GB,
+`cia_account` 29.6 GB, `cvm_fi_cda_acoes` 12.6 GB, `cvm_fi_cda_cotas` 11.0 GB,
+`cvm_fi_diario` 8.6 GB, `b3_cotahist` 8.2 GB. Options: a plan upgrade, or
+retention on `cvm_fi_balancete` (the largest, and backfillable from CVM, so
+dropping old years loses nothing unrecoverable). The daily growth rate is
+inferred from two points, not a series; re-measure before acting on the date.
+
 Reported at 81% of the 135 GB allowance on 2026-09-17 and **not re-measured
 since**. Ingest stops when it fills, and the largest tables (`cvm_fi_diario`,
 `cia_account`, `b3_lending_trade`) grow every day. Worth a real measurement and
 a retention decision before it is urgent rather than after.
 
 ## 11. `sdk/silo_client` is not published
+
+**Blocked 2026-09-25:** needs a PyPI account/project name and a token secret;
+no repo change unblocks it.
 
 `pip install silo-client` does not resolve; callers vendor the directory. See
 [SDK.md](SDK.md) for what else the client is missing (PyPI, wheel CI, async).
@@ -268,3 +313,88 @@ of -0.32.
 The inputs added to `backfill.yml` stay, so the loads are repeatable:
 `bacen_only = true`, `bacen_sources = sgs`, `bacen_start = 1980-01-01`,
 `ibge = true`.
+
+## 13. B7 agent loop: test passed, prompts written, nothing scheduled
+
+[AGENTS.md](AGENTS.md) is approved (2026-09-24). The manual Builder run on FIDC
+informe `tab_X_7` (AGENTS.md §5) passed: PR #291 merged on 2026-09-24 with 0
+human-edited lines after the agent's commit and a green first CI. The prompt
+files `.claude/agents/scout.md`, `builder.md` and `sentinel.md` exist
+(2026-09-25). Still the owner's: create the `agent-ok` / `agent:<name>`
+labels, schedule the routines one at a time and fill in their ids in the
+AGENTS.md §3a registry, and (optionally) run
+`docs/security/sentinel_readonly_role.sql` so the Sentinel can read
+`cvm_ingest_log` and `fnet_document`; without it the Sentinel runs on the
+public API only.
+
+## 14. The gaps backlog: resolution plan (2026-09-24)
+
+Sequences the [COMPETITIVE_GAPS.md](COMPETITIVE_GAPS.md) §7 backlog (B1 to B11).
+B1, the FNET register, is built (migration 42) and served since catalog v33
+(`api.fund_documents`, `api.fund_restatements`, #286). Waves run in order;
+within a wave, items are independent unless marked.
+
+### Wave 1: no decisions needed
+
+| #   | Item                                                                                                                                                              | Catalog |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 1a  | FNET backfill option in `backfill.yml`, so the `run_backfill --fnet-only --fnet-start … [--fnet-sweep]` load can be dispatched from Actions                       | none    |
+| 1b  | Serve FNET: `api.fund_documents` and `api.fund_restatements`, following `19_api_contract.sql` (grants, catalog entry, contract test, OpenAPI, SDK version)        | v33     |
+| 1c  | Lineage (B6): `git_sha` and `parser_version` on every `cvm_ingest_log` row, exposed through `coverage()`. After 1b, so the two catalog bumps do not collide       | v34     |
+| 1d  | Housekeeping: the B3 BDI tables in `DATA_INVENTORY.md` §1 and §3, and `webapp/README.md` stating the site is built but not deployed (item 3). Done on this branch | none    |
+
+Then run the FNET history backfill, **one year per dispatch, newest first**, so
+a throttled or failed run costs one year and the most useful history lands
+first.
+
+### Decision gate 1: Pedro
+
+Nothing in wave 2 that depends on these starts until each has an answer.
+
+1. The older `fidc_*` endpoints trim silently at 500 / 5000 rows. Switch them
+   to raise-only (SQLSTATE `22023`), like the newer ones?
+   **Answered 2026-09-26: no.** Keep the silent trim; wave 2e is dropped.
+2. Put `versao` into the keys of `cvm_fii_mensal` and `cvm_fii_periodic`? This
+   changes their grain, and it is what stops a restatement overwriting the
+   original (`DATA_INVENTORY.md` §2, `COMPETITIVE_GAPS.md` B4).
+   **Answered 2026-09-26: yes.** Wave 2d is unblocked.
+3. Where to host the read-only MCP (B2)? A new runtime; a Vercel function is
+   the obvious candidate. **Answered:** a Supabase Edge Function, deployed
+   2026-09-25 at `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp`.
+4. A read-only database role for the Sentinel agent ([AGENTS.md](AGENTS.md),
+   item 13)?
+   **Answered 2026-09-26: yes.** `docs/security/sentinel_readonly_role.sql` plus
+   `default_transaction_read_only = on`; the owner runs it by hand. Role not yet
+   present (checked `pg_roles` 2026-09-26).
+
+### Wave 2
+
+| #   | Item                                                                                                                                                                                                                                                           | Needs              |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| 2a  | `api.screen_restatements`: funds and months with restated filings, by `modalidade`                                                                                                                                                                             | 1b                 |
+| 2b  | Filing punctuality and silent funds, from FNET delivery timestamps                                                                                                                                                                                             | 1b                 |
+| 2c  | B4, field-level restatement diffs (`fnet_document_diff`): designed in [DOCUMENTS.md](DOCUMENTS.md), §11 decided 2026-09-26 (slice 1: FIDC mensal, 2026 backfill); built: ingest (migration 46, `fnet_diff`) and serving (`fund_restatement_diff`, catalog v40) | 1b                 |
+| 2d  | FII keys carry `versao`                                                                                                                                                                                                                                        | gate 1, yes to (2) |
+| 2e  | ~~`fidc_*` caps raise instead of trimming~~ (dropped: gate 1 answered no)                                                                                                                                                                                                                        | gate 1, yes to (1) |
+| 2f  | B4 backfill of 2025 and earlier: restatement diffs for older years, newest-first, one year per dispatch; depth and runner-time budget set from the 2026 run's runtime and FNET latency (DOCUMENTS.md §11, decision 6)                                          | 2c's 2026 run      |
+
+### Wave 3
+
+| #   | Item                                                                                                      |
+| --- | --------------------------------------------------------------------------------------------------------- |
+| 3a  | B2, the read-only MCP over schema `api`: **deployed 2026-09-25** (49 tools)                               |
+| 3b  | B3 remainder: `company_events`, `macro_series`, `ptax`; CRI/CRA last, because it needs a third kind of id |
+| 3c  | B5, Sheets and Excel recipes: `api-docs/spreadsheets.mdx`, shipped with 1d                                |
+
+### Wave 4: later, in order
+
+- **B7.** One manual Builder run on FIDC `tab_X_7` (item 13), then Scout and
+  Sentinel only if it passes. **Passed 2026-09-24 (PR #291); prompts written
+  2026-09-25; labels and routines pending.**
+- **B8.** DI curve and futures (`INSTRUMENTS.md` Phases B and C). **Ingest done
+  2026-09-27 (PR #355, migration 48):** DI1 per contract from 2018, B3 `PRE` and
+  `DOC` curves from 2008, held and not served; history needs the
+  `market_backfill.yml` dispatches. Serving (`future_curve`, `curve`) is open.
+- **B9.** Alerts, only on signals from waves 1 and 2 once they exist.
+- **B10.** Document text (Stage 3), priority categories only.
+- **B11.** Per-event adjusted prices, where verified.

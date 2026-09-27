@@ -351,10 +351,11 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
             # used to answer wrongly: as_of is the newest ELAPSED period,
             # newest_period is the newest period KEY (which can sit in the
             # future — FIP is keyed 31-December), and landed_at is when ingest
-            # last SUCCEEDED for that source.
+            # last SUCCEEDED for that source. landed_git_sha (v34) is the
+            # commit of that same run: which code produced the newest data.
             cur.execute(
                 "SELECT dataset, as_of, complete_through, source, notes, "
-                "newest_period, landed_at "
+                "newest_period, landed_at, landed_git_sha "
                 "FROM api.coverage()"
             )
             cols = [d[0] for d in cur.description]

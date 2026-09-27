@@ -17,16 +17,44 @@
       "Bash(.venv/bin/pytest *)",
       "Bash(.venv/bin/python -m py_compile *)",
       "Bash(prettier *)",
+      "Bash(git push origin --delete claude/*)",
+      "Bash(git push origin --delete cclaude/*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr create:*)",
       "mcp__github__pull_request_read",
       "mcp__github__actions_list",
       "mcp__github__actions_get",
       "mcp__github__list_pull_requests",
       "mcp__github__get_job_logs",
       "mcp__Vercel__get_deployment",
-      "mcp__Vercel__get_deployment_build_logs"
+      "mcp__Vercel__get_deployment_build_logs",
+      "WebSearch",
+      "WebFetch",
+      "mcp__Parallel_Search__web_fetch",
+      "mcp__Parallel_Search__web_search",
+      "mcp__Exa__web_fetch_exa"
     ]
   },
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git push *)",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/pre-push-docs.sh\"",
+            "timeout": 30,
+            "statusMessage": "docs check…"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/npm-cwd-guard.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
@@ -39,7 +67,7 @@
           },
           {
             "type": "command",
-            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; case \"$f\" in *.md|*.json|*.yaml|*.yml) command -v prettier >/dev/null && prettier --write --log-level silent \"$f\";; esac; } 2>/dev/null || true",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; case \"$f\" in */docs/planning/CHANGELOG.md|docs/planning/CHANGELOG.md) ;; *.md|*.json|*.yaml|*.yml) command -v prettier >/dev/null && prettier --write --log-level silent \"$f\";; esac; } 2>/dev/null || true",
             "timeout": 30,
             "statusMessage": "prettier…"
           }

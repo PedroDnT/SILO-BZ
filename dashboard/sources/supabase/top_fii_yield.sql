@@ -9,10 +9,10 @@ select
   m.nr_cotst as investors,
   round(m.pct_dividend_yield_mes, 2) as dy_num2,
   round(m.pct_rentab_patrimonial * 100, 2) as return_num2
-from cvm_fii_mensal m
+from vw_fii_mensal_latest m
 left join cvm_fund_registry r on r.cnpj = m.cnpj and r.entity_type = 'fii'
 where m.doc_subtype = 'complemento'
-  and m.period = (select max(period) from cvm_fii_mensal where doc_subtype = 'complemento')
+  and m.period = (select max(period) from vw_fii_mensal_latest where doc_subtype = 'complemento')
   and m.vl_patrim_liq > 5e7
   and m.pct_dividend_yield_mes > 0
 order by dy_num2 desc nulls last

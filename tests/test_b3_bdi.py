@@ -271,24 +271,52 @@ def _run_span(ing, parse, targets):
     ))
 
 
-def test_a_missing_newest_session_is_skipped_not_an_error():
+def test_a_missing_newest_session_is_ok_when_older_sessions_landed():
     """B3 publishes these tables on their own lags, and the cron runs at 03:03 BRT.
 
     Verified 2026-09-17 03:36 BRT: BTBTrade had 2026-09-16 (40,021 rows) while
     BTBLendingOpenPosition for the same session did not exist yet. The gap
     calendar always re-requests the newest two sessions, so filing that as an
     error made DB Health red EVERY morning over a gap the next run heals by
-    itself. The shortfall is still recorded on the audit row — only its status
-    changes, because a daily false alarm is an alarm nobody reads.
+    itself. And since rows DID land, the slice is `ok`, not `skipped`:
+    `coverage().landed_at` counts only `ok` rows, so `skipped` made our
+    pipeline read a day stale over the source's calendar (register item 9).
+    The shortfall is still recorded on the audit row as a note.
     """
     targets = [date(2026, 9, 15), date(2026, 9, 16)]
     ing, parse = _span_ingestor([date(2026, 9, 15)])
     _run_span(ing, parse, targets)
 
     _args, kwargs = ing._log_finish.call_args
-    assert kwargs.get("skipped") is True, "a not-yet-published newest session is not an error"
-    # The fact must survive the downgrade: provenance, not silence.
+    assert not kwargs.get("skipped"), "rows landed: this run succeeded"
+    assert not kwargs.get("error"), "a not-yet-published newest session is not an error"
+    # The fact must survive: provenance, not silence.
+    assert "2026-09-16" in str(kwargs.get("note", ""))
+
+
+def test_a_span_of_only_the_unpublished_newest_session_is_skipped():
+    """Nothing landed, so nothing succeeded: `skipped` keeps landed_at honest."""
+    targets = [date(2026, 9, 16)]
+    ing, parse = _span_ingestor([])
+    _run_span(ing, parse, targets)
+
+    _args, kwargs = ing._log_finish.call_args
+    assert kwargs.get("skipped") is True
     assert "2026-09-16" in " ".join(str(a) for a in _args)
+
+
+def test_log_finish_writes_a_note_on_an_ok_row():
+    """`note` lands in error_msg while the status stays `ok`."""
+    from unittest.mock import MagicMock, patch
+    import src.pipeline.b3_pipeline as bp
+
+    with patch.object(bp, "get_pg_client", return_value=MagicMock()):
+        ing = bp.B3Ingestor(fetcher=MagicMock(), bdi_fetcher=MagicMock())
+    with patch.object(bp.ingest_log, "finish") as finish:
+        ing._log_finish("r1", 5, note="missing 2026-09-16")
+    kwargs = finish.call_args.kwargs
+    assert kwargs["status"] == "ok"
+    assert kwargs["error"] == "missing 2026-09-16"
 
 
 def test_a_missing_older_session_is_still_an_error():

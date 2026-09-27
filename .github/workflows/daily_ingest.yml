@@ -224,13 +224,72 @@ jobs:
                      "keep serving the previous build until the next trigger." ;;
           esac
 
+      # The FNET document register (fnet_document / fnet_document_filter) runs
+      # LAST, on its own. FNET answers GitHub runners slowly and sometimes not at
+      # all; when it lived inside run_daily, one fund's ReadTimeout (run
+      # 36101156388, 2026-09-25) failed that step and so skipped ANALYZE, the
+      # analytical layer and the deploy hook, for CVM/BACEN/B3 data that had all
+      # landed. Here it runs even if an earlier step failed (!cancelled()), but a
+      # failure still fails the job (no continue-on-error), writes its `error`
+      # audit row, and files the tracking issue below. The dashboard does not
+      # read FNET, and the api functions over it need no rebuild.
+      # DI1 futures and B3's reference curves (pesquisapregao files), the U.S.
+      # Treasury par curve, Cboe VIX and EIA Brent (src/pipeline/market_pipeline.py,
+      # docs/research/dustin_br_data_sources.md). Its own step, after the
+      # analytical layer, for the same reason as FNET below: four foreign hosts
+      # must not be able to skip ANALYZE, the analytical apply or the deploy
+      # hook. Nothing the dashboard or schema api reads depends on it. A failed
+      # slice writes its `error` audit row and fails the job.
+      - name: Refresh rates and market data
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
+        timeout-minutes: 30
+        env:
+          # Optional. Without it the EIA fetch uses EIA's rate-limited DEMO_KEY.
+          EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+        run: python -m src.pipeline.market_pipeline
+
+      - name: Refresh FNET document register
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
+        timeout-minutes: 60
+        run: python -m src.pipeline.fnet_pipeline
+
+  # FNET restatement diffs (backlog B4, docs/planning/DOCUMENTS.md): for each
+  # re-filed FIDC informe mensal, download it and its predecessor from FNET and
+  # store what changed (src/pipeline/fnet_diff.py). Its own job, after the
+  # ingest job and whatever became of it (!cancelled()), so its FNET latency
+  # never eats the ingest job's 180 minutes. The run caps itself at 200
+  # documents and a 30-minute budget and leaves the rest queued for tomorrow;
+  # a failed download still fails this job and writes its `error` audit row.
+  fnet-diff:
+    name: FNET restatement diffs
+    needs: ingest
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
+      TZ: "America/Sao_Paulo"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Diff restated FIDC informes
+        run: python -m src.pipeline.fnet_diff
+
   # Alerting: a scheduled-run failure files (or bumps) a single tracking issue,
   # so a broken credential or CVM outage emails the repo owner instead of
   # failing silently for weeks (the 2026-07/08 PAM-auth outage went a month
   # unnoticed). Issue-per-incident, comment-per-day — no new secrets needed.
   notify-failure:
     name: File failure issue
-    needs: ingest
+    needs: [ingest, fnet-diff]
     if: ${{ failure() && github.event_name == 'schedule' }}
     runs-on: ubuntu-latest
     permissions:

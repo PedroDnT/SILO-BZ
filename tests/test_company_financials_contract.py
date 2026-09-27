@@ -138,28 +138,33 @@ def test_public_functions_are_granted_to_both_tiers(name: str) -> None:
     assert re.search(rf"GRANT EXECUTE ON FUNCTION api\.{name}\([^)]*\)\s*TO silo_api;", SQL)
 
 
-def test_net_income_is_3_11_only_with_no_fallback() -> None:
-    """Net income reads conta 3.11 and NOTHING else.
+def test_net_income_is_keyed_on_the_filed_label_with_no_code_fallback() -> None:
+    """Net income resolves from the filed LABEL, as api.income_statements does.
 
-    There used to be a COALESCE to 3.09 behind it, on the belief that banks
-    file a chart without 3.11. That was wrong twice: Banco do Brasil (cd_cvm
-    1023, FY2024, con, 12m) files 3.11 = 29.17bn "Lucro ou Prejuizo Liquido
-    Consolidado do Periodo", and 3.09 = 29.17bn is profit BEFORE the statutory
-    profit-sharing on 3.10 — equal only because 3.10 is zero there.
+    Until v35 it read conta 3.11 alone. Bank B files no 3.11 (its net income is
+    3.09, labelled `Lucro/Prejuízo Consolidado do Período`), so 282 of 50,439
+    DRE statements read NULL — Itaú and BTG among them — and the insurer
+    chart's 3.11 is continuing operations, not net income.
 
-    Measured across the table, 282 of 50,439 DRE statements (0.56%) omit 3.11.
-    Those now read NULL rather than silently reporting a pre-participations
-    figure as net income. This test is the guard against the fallback being
-    reintroduced as a convenience: a null is the honest answer, and a caller
-    who wants the pre-participations number reads 3.09/3.10/3.11 itself.
+    Neither 3.11 nor 3.09 may select net income by code: 3.09 is profit BEFORE
+    statutory profit-sharing on the industrial and bank-A charts (Banco do
+    Brasil FY2024 matches 3.11 only because 3.10 is zero).
     """
     wide = _body("company_financials")
-    assert "'3.11'" in wide, "net income must still read 3.11"
-    assert "'3.09'" not in wide, (
-        "3.09 is profit BEFORE statutory profit-sharing (3.10), not net income. "
-        "It must not appear in company_financials in any form — not as a "
-        "COALESCE fallback, not as a second FILTER."
-    )
+    assert "'3.09'" not in wide, "3.09 must not appear in any form"
+    assert "account_code = '3.11'" not in wide, "net income must not be code-keyed"
+    for label in ("lucro/prejuízo consolidado do período",
+                  "lucro ou prejuízo líquido consolidado do período"):
+        assert label in wide, f"net_income must match the filed label {label!r}"
+
+
+def test_both_surfaces_use_the_same_net_income_labels() -> None:
+    """company_financials and income_statements must not disagree again."""
+    def labels(fn: str) -> set[str]:
+        body = _body(fn)
+        i = body.index("consolidado do período") - 200
+        return set(re.findall(r"'(lucro[^']*consolidado do período)'", body[i:i + 600]))
+    assert labels("company_financials") == labels("income_statements")
 
 
 @pytest.mark.parametrize("name", ["financials", "company_financials"])

@@ -11,11 +11,12 @@ unless the UI needs it typed.
 
 TABLE = "cvm_fii_mensal"
 DOC_SUBTYPE = "complemento"
-CONFLICT = ("cnpj", "period", "doc_subtype")
+CONFLICT = ("cnpj", "period", "doc_subtype", "versao")
 
 FIELD_MAP = {
     "cnpj":                   (["CNPJ_Fundo_Classe", "CNPJ_FUNDO_CLASSE", "CNPJ_Fundo"],                    "cnpj"),
     "period":                 (["Data_Referencia", "DT_COMPTC"],                              "date"),
+    "versao":                 (["Versao"], "text"),  # CVM restatement counter; validated in ingest_fii
     "vl_patrim_liq":          (["Patrimonio_Liquido", "VL_PATRIM_LIQ"],                       "numeric"),
     "vl_ativo":               (["Valor_Ativo"],                                               "numeric"),
     "cotas_emitidas":         (["Cotas_Emitidas"],                                            "numeric"),

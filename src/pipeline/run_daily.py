@@ -86,6 +86,14 @@ async def main() -> None:
         logger.error("IBGE IPCA daily refresh failed: %s", exc, exc_info=True)
         failures.append(("ibge", exc))
 
+    # FNET (the B3 Fundos.NET document register) is NOT run here. It is its
+    # own step in daily_ingest.yml, after the analytical layer and the
+    # dashboard hook: FNET answers GitHub runners slowly, and on 2026-09-25
+    # (run 36101156388) one fund's ReadTimeout failed this process, which
+    # skipped ANALYZE, the analytics apply and the deploy for data that had
+    # all landed. `python -m src.pipeline.fnet_pipeline`; it still fails the run.
+
+
     # ANBIMA: fetch latest monthly boletim (every ANBIMA class + type);
     # idempotent upsert.
     try:

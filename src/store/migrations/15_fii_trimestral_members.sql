@@ -74,12 +74,30 @@
 --    Adding data_referencia keeps NULLS NOT DISTINCT, so rows that carry no
 --    reference date behave exactly as before. Widening a unique key can never
 --    fail on existing data: it only makes collisions rarer.
+--
+--    GUARDED (edited 2026-09-24 alongside migration 43). This used to DROP and
+--    re-ADD the key unconditionally on every apply. Migration 43 widens the
+--    same constraint with versao and keeps every CVM version, so once a
+--    restatement is stored, re-adding the narrower key here would fail with a
+--    duplicate and stop every schema apply. The swap now runs only while the
+--    key does not yet name data_referencia, which is exactly the state this
+--    migration was written for. The end state on every database is unchanged,
+--    and the daily re-apply no longer rebuilds the index.
 -- ---------------------------------------------------------------------------
-ALTER TABLE cvm_fii_periodic DROP CONSTRAINT IF EXISTS uq_fii_periodic;
-
-ALTER TABLE cvm_fii_periodic
-    ADD CONSTRAINT uq_fii_periodic UNIQUE NULLS NOT DISTINCT
-        (cnpj, doc_type, period_year, data_referencia);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'cvm_fii_periodic'::regclass
+          AND conname  = 'uq_fii_periodic'
+          AND pg_get_constraintdef(oid) ILIKE '%data_referencia%'
+    ) THEN
+        ALTER TABLE cvm_fii_periodic DROP CONSTRAINT IF EXISTS uq_fii_periodic;
+        ALTER TABLE cvm_fii_periodic
+            ADD CONSTRAINT uq_fii_periodic UNIQUE NULLS NOT DISTINCT
+                (cnpj, doc_type, period_year, data_referencia);
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- 2. Typed columns for the GERAL and COMPLEMENTO members

@@ -7,6 +7,7 @@ catalog is fetched once per client and drives metric validation.
 
 from __future__ import annotations
 
+import json
 import os
 import warnings
 from datetime import date
@@ -28,7 +29,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 32
+KNOWN_CATALOG_VERSION = 41
 
 
 class SiloCatalogDrift(UserWarning):
@@ -96,16 +97,33 @@ class SiloOverCap(SiloError):
     (`iter_quote_history`/`quote_history_all`) and fund_nav
     (`iter_fund_nav`/`fund_nav_all`, which need an `entity_type`). The rest —
     option_history, termo_history, financials, company_financials,
-    anbima_classes, inflation, inflation_items — have no cursor: narrow the
-    window instead."""
+    anbima_classes, inflation, inflation_items, fidc_cedentes, fidc_sacados,
+    fidc_portfolio, fidc_tranches, fidc_aging, fund_holdings,
+    fund_debentures, fund_documents, fund_restatements,
+    fund_restatement_diff, company_events, macro_series, ptax and the
+    screen_* functions — have no cursor: narrow the window instead (the fidc
+    concentration trio, fund_holdings and fund_debentures also take an
+    explicit `limit` for the newest N rows).
+
+    Since catalog v34 the server says WHY and HOW itself: its fix for the
+    function that refused is on `.server_hint` (PostgREST's `hint`), and
+    `.hint` leads with it."""
 
     def __init__(self, body: str, url: str) -> None:
         super().__init__(400, body, url)
-        self.hint = (
+        self.server_hint: Optional[str] = None
+        try:
+            parsed = json.loads(body)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict) and isinstance(parsed.get("hint"), str):
+            self.server_hint = parsed["hint"]
+        sdk_hint = (
             "the result is larger than one 1000-row page; page it with "
             "p_after via iter_panel()/iter_quote_history()/iter_fund_nav(), "
             "or narrow the request"
         )
+        self.hint = f"{self.server_hint} ({sdk_hint})" if self.server_hint else sdk_hint
 
 
 class SiloTimeout(SiloError):
@@ -320,8 +338,7 @@ class SiloClient:
         `rows_per_response` (the server-wide 1000 and how to detect it),
         `page` (the page size, which functions page with `p_after` and which
         only refuse, and what the 22023 means) and `tiers` (panel ids,
-        search_funds/option_chain/option_exercises/fund_holdings/
-        fund_debentures/fidc_* rows, statement timeout).
+        search_funds/option_chain/option_exercises rows, statement timeout).
 
         There is no `sql_sentinel` block: the cap+1 sentinels were removed in
         catalog v24/v26 because PostgREST cut every response at 1000 rows long
@@ -339,8 +356,12 @@ class SiloClient:
         present, which can sit in the FUTURE when a family files forward-dated
         (FIP is keyed 31-December) — never read it as freshness; `landed_at` is
         when ingest last SUCCEEDED for that source, so a later failed run never
-        advances it. `notes` carries a caveat the dates cannot (the
-        `funds_fidc` row: delinquency starts 2025-01), null on rows with none.
+        advances it. `landed_git_sha` is the commit of that same run — which
+        code produced the newest data — None when the run recorded none
+        (before catalog v34, or run outside GitHub Actions); it is never
+        borrowed from an older run. `notes` carries a caveat the dates cannot
+        (the `funds_fidc` row: delinquency starts 2025-01), null on rows with
+        none.
         """
         return self._rpc("coverage", {})
 
@@ -555,6 +576,12 @@ class SiloClient:
 
         Rows are as filed — one per (application type, trading intent), never
         summed across them.
+
+        More than 1000 rows raises `SiloOverCap` (22023) — never a silently
+        trimmed result (until catalog v41 this clamped at 500 / 5000 without
+        saying so). Narrow `start`/`end` (a `ticker` lookup spans many funds,
+        so it needs fewer months than one fund), or pass `limit` (1..1000) to
+        ask explicitly for the newest N rows.
         """
         if (cnpj is None) == (ticker is None):
             raise ValueError(
@@ -585,7 +612,11 @@ class SiloClient:
 
         Rows are as filed and never summed. `issuer_tickers` is the issuer's
         active listed codes from CVM's published map, None when not listed.
-        Rows are clamped to 500 anonymous / 5000 signed in.
+
+        More than 1000 rows raises `SiloOverCap` (22023) — never a silently
+        trimmed result (until catalog v41 this clamped at 500 / 5000 without
+        saying so). Narrow `start`/`end` (an `issuer` lookup spans many funds),
+        or pass `limit` (1..1000) to ask explicitly for the newest N rows.
         """
         if (cnpj is None) == (issuer is None):
             raise ValueError(
@@ -617,8 +648,13 @@ class SiloClient:
 
         `share_pct` is a percent of the block, never of the fund. `cedente_id`
         was checksum-verified at ingest; `cedente_tickers` is its active listed
-        codes, None when not listed. Slots exist from 2019-11. Rows are clamped
-        to 500 anonymous / 5000 signed in.
+        codes, None when not listed. Slots exist from 2019-11.
+
+        More than 1000 rows raises `SiloOverCap` (22023) — never a silently
+        trimmed result (until catalog v34 this clamped at 500 / 5000 without
+        saying so). Narrow `start`/`end` (a `cedente` lookup spans many
+        funds, so it needs fewer months than one fund), or pass `limit`
+        (1..1000) to ask explicitly for the newest N rows.
         """
         if (cnpj is None) == (cedente is None):
             raise ValueError(
@@ -639,6 +675,9 @@ class SiloClient:
         `seq` is CVM's rank as filed and is never recomputed; a fund that files
         fewer than 25 ranks has fewer rows. A concentration ratio is
         `valor / receivables` (the panel metric) in the notebook.
+
+        More than 1000 rows raises `SiloOverCap` (22023), never trims: narrow
+        `start`/`end` or pass `limit` (1..1000) for the newest N rows.
         """
         return self._rpc("fidc_sacados", {
             "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end), "p_limit": limit,
@@ -655,10 +694,180 @@ class SiloClient:
         'scr_operation' (tab X — BACEN SCR grades AA..H for the same
         receivables graded two ways), 'tax_debt', or None for all. tab X
         exists from 2023-10 only; earlier months have no scr rows.
+
+        More than 1000 rows raises `SiloOverCap` (22023), never trims: narrow
+        `start`/`end`, pin one `kind`, or pass `limit` (1..1000) for the
+        newest N rows.
         """
         return self._rpc("fidc_portfolio", {
             "p_cnpj": cnpj, "p_kind": kind,
             "p_from": _iso(start), "p_to": _iso(end), "p_limit": limit,
+        })
+
+    def fidc_tranches(self, cnpj: str, start: Datish = None, end: Datish = None,
+                      series: Optional[str] = None) -> List[Dict[str, Any]]:
+        """One FIDC's tranches, month by month (informe tabs X_2/X_3/X_6 + X_4).
+
+            silo.fidc_tranches("05754060000113")
+            silo.fidc_tranches("05754060000113", series="Subclasse Senior 1")
+
+        One row per (month, classe_serie): `quotas`, `quota_value`,
+        `return_month`, and `performance_expected` vs `performance_realised`
+        (what the series promised vs delivered, percent) — all as filed,
+        CVM's outliers included. `flows` is the tranche's tab X_4 operations
+        as a list of {tp_oper, value, quotas}, labels verbatim and never
+        bucketed; None when none were filed. History begins in 2025: CVM
+        publishes no archive of these tabs. No cursor: narrow the window.
+        """
+        return self._rpc("fidc_tranches", {
+            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
+            "p_series": series,
+        })
+
+    def fidc_aging(self, cnpj: str, start: Datish = None,
+                   end: Datish = None) -> List[Dict[str, Any]]:
+        """One FIDC's receivables aging ladder from informe tab VI, long.
+
+            silo.fidc_aging("05754060000113", start="2025-01-01")
+
+        21 rows per month: kind='to_maturity' (not yet due, by days to
+        maturity) and kind='overdue' (by days past due), ten day-bands each
+        (`bucket`, `days_from`, `days_to`), plus kind='overdue_total' —
+        CVM's FILED total, not a sum of the bands. BRL as filed; a blank is
+        None, never 0. History begins in 2025. No cursor: narrow the window.
+        """
+        return self._rpc("fidc_aging", {
+            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
+        })
+
+    # -- the FNET document register (B3 Fundos.NET) --------------------------
+
+    def fund_documents(self, cnpj: str, start: Datish = None, end: Datish = None,
+                       tipo: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Every FNET document linked to one fund, newest delivery first.
+
+            silo.fund_documents("07727002000126")
+            silo.fund_documents("07727002000126", tipo="Informe Mensal Estruturado")
+
+        One row per document (each version is its own `fnet_id`): categoria,
+        tipo_documento, especie, reference, `delivered_at`, `versao`,
+        `modalidade` (AP original, RE voluntary restatement, RC CVM-required),
+        `status` (AC / IC superseded / CC — as of `fetched_at`) and
+        `source_url`, FNET's download link. FNET rows carry no CNPJ: a document
+        is this fund's because FNET returned it for that CNPJ in a fortnightly
+        sweep, so the newest deliveries may not be listed yet. Window is the
+        delivery date, default the last 12 months. No cursor: narrow it.
+        """
+        return self._rpc("fund_documents", {
+            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
+            "p_tipo": tipo,
+        })
+
+    def fund_restatements(self, cnpj: Optional[str] = None, start: Datish = None,
+                          end: Datish = None,
+                          tipo_fundo: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Re-filed FNET documents (versao > 1), each paired with its predecessor.
+
+            silo.fund_restatements("07727002000126")          # one fund, all history
+            silo.fund_restatements(tipo_fundo="FIDC")         # last 30 days, FIDCs
+
+        `previous_fnet_id` / `previous_delivered_at` / `lag_days` come from a
+        STATED group key — (cnpj link, categoria, tipo_documento, especie,
+        reference_raw), highest lower versao, greatest fnet_id on a tie —
+        because FNET links no versions. `cnpj` is None when the fund sweep has
+        not linked the document yet; such rows are never paired. `tipo_fundo`
+        is 'FII', 'FIDC' or 'ETF'. `diff_status` / `n_fields_changed` say
+        whether SILO diffed this exact pair (None = not diffed; see
+        `fund_restatement_diff`). No cursor: narrow the window.
+        """
+        return self._rpc("fund_restatements", {
+            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
+            "p_tipo_fundo": tipo_fundo,
+        })
+
+    def fund_restatement_diff(self, cnpj: Optional[str] = None, start: Datish = None,
+                              end: Datish = None, tipo: Optional[str] = None,
+                              fnet_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """What a restatement changed: one row per field that differs.
+
+            silo.fund_restatement_diff(fnet_id=857292)           # one re-filed document
+            silo.fund_restatement_diff("07727002000126", start="2026-01-01")
+
+        Needs `cnpj` or `fnet_id`. Rows exist only for pairs SILO diffed (the
+        FIDC informe mensal, delivered from 2026 on), against the same
+        `previous_fnet_id` `fund_restatements` serves. `field_path` addresses
+        repeated blocks by declared key or, lacking one, by position
+        (`match_basis`; position rows are approximate). `old_value` /
+        `new_value` are the text as printed; `old_num` / `new_num` / `delta`
+        exist on numeric leaves only. No rows can mean "nothing changed" or
+        "not diffed": `fund_restatements`' `diff_status` says which. No cursor:
+        narrow the window or pin `fnet_id`.
+        """
+        return self._rpc("fund_restatement_diff", {
+            "p_cnpj": cnpj, "p_from": _iso(start), "p_to": _iso(end),
+            "p_tipo": tipo, "p_fnet_id": fnet_id,
+        })
+
+    # -- filing-behaviour screens (v37) --------------------------------------
+    # SIGNALS, NOT VERDICTS: every row carries `screen` and `params`; read
+    # catalog()["screens"][<name>]["meaning"] for what else looks the same.
+    # None leaves the server's default in place.
+
+    def screen_restatements(self, months: Optional[int] = None, end: Datish = None,
+                            min_restatements: Optional[int] = None,
+                            min_rate_pct: Optional[float] = None,
+                            modalidade: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Funds with an unusual count AND rate of FNET re-filings (versao > 1).
+
+            silo.screen_restatements()                                  # 12 months, >= 3, >= 20%
+            silo.screen_restatements(modalidade="RC", min_restatements=1, min_rate_pct=0)
+
+        `restatements_re` (voluntary) and `restatements_rc` (required by CVM)
+        split the count as FNET publishes modalidade. Fund identity is the
+        cnpjFundo link only, never the name. No cursor: raise the thresholds.
+        """
+        return self._rpc("screen_restatements", {
+            "p_months": months, "p_end": _iso(end),
+            "p_min_restatements": min_restatements, "p_min_rate_pct": min_rate_pct,
+            "p_modalidade": modalidade,
+        })
+
+    def screen_late_filers(self, months: Optional[int] = None, end: Datish = None,
+                           min_days_late: Optional[int] = None,
+                           min_late: Optional[int] = None,
+                           family: Optional[str] = None) -> List[Dict[str, Any]]:
+        """FIIs / FIDCs whose monthly informe reached FNET past the deadline
+        Resolução CVM 175 states for it (15 days after month end).
+
+            silo.screen_late_filers(family="fidc")
+
+        Every row carries `deadline_rule`, the article it was measured against
+        (FIDC: Anexo II art. 27, III; FII: Anexo III art. 36, I). Months before
+        each family's adaptation deadline are not measured, and a month with no
+        informe in the register is not counted. A timestamp compared with a
+        rule — not a finding. No cursor: raise the thresholds or pin family.
+        """
+        return self._rpc("screen_late_filers", {
+            "p_months": months, "p_end": _iso(end),
+            "p_min_days_late": min_days_late, "p_min_late": min_late,
+            "p_family": family,
+        })
+
+    def screen_silent_filers(self, min_silent_months: Optional[int] = None,
+                             max_silent_months: Optional[int] = None,
+                             family: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Funds the CVM registry lists as active with no periodic informe for
+        N complete months (CVM's own tables, anchored on complete_through).
+
+            silo.screen_silent_filers(family="fidc")
+
+        `fnet_last_delivered_at` shows a fund still delivering to FNET. No
+        cursor: pin family or narrow the month band.
+        """
+        return self._rpc("screen_silent_filers", {
+            "p_min_silent_months": min_silent_months,
+            "p_max_silent_months": max_silent_months,
+            "p_family": family,
         })
 
     # -- listed companies (CIA Aberta) ---------------------------------------
@@ -717,11 +926,10 @@ class SiloClient:
 
         Two things to hold onto before you rank anything:
 
-        * `net_income` is conta **3.11 only**. A filing that omits it reads
-          NULL — `3.09` is profit *before* the statutory profit-sharing on
-          `3.10` and is not substituted. 282 of 50,439 income statements
-          (0.56%) are affected. For the pre-participations figure, read
-          `3.09`/`3.10`/`3.11` from :meth:`financials` and subtract yourself.
+        * `net_income` is resolved from the **filed label**, as in
+          :meth:`income_statements`, so it is on `3.11` for most filers, on
+          `3.09` for the bank chart that files no `3.11`, and on `3.13` for
+          insurers. No code is ever substituted for another.
         * `revenue` and `gross_profit` are **not like-for-like across
           sectors** — `3.01` is sales for an industrial filer and
           intermediation income for a bank. `setor` and `segmento` are on
@@ -810,9 +1018,8 @@ class SiloClient:
         is a different concept across them — net income sits on `3.11` for the
         industrial and one bank chart, on `3.09` for the other bank chart (which
         files no `3.11`), and on `3.13` for insurers (whose `3.11` is the
-        continuing-operations line). Three codes, one pair of labels. So this is
-        also **more complete than** :meth:`company_financials`, which reads
-        `3.11` alone and therefore returns null for those filings.
+        continuing-operations line). Three codes, one pair of labels.
+        :meth:`company_financials` resolves `net_income` the same way.
 
         `chart` says which layout a filing used. A concept a chart does not file
         reads **null, never zero**: `operating_income` (EBIT) is an industrial
@@ -825,6 +1032,68 @@ class SiloClient:
         return self._rpc("income_statements", {
             "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
             "p_scope": scope, "p_doc_type": doc_type,
+        })
+
+    def balance_sheets(self, id: str, start: Datish = None,
+                       end: Datish = None, scope: str = "con",
+                       doc_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """The balance sheet as a period: one row each, with named fields.
+
+            silo.balance_sheets("PETR4")
+            silo.balance_sheets("ITUB4", doc_type="dfp")   # annual only
+
+        Resolved from the as-filed label like :meth:`income_statements`:
+        equity alone sits on `2.03`, `2.07` or `2.08` depending on the chart.
+        Where a filing files one label twice (industrial `Empréstimos e
+        Financiamentos` under both current and non-current liabilities), the
+        parent line's label tells them apart.
+
+        Banks file no current/non-current split and no debt line, so those
+        fields read **null, never zero** for them. `chart` says which layout
+        a filing used. Every value is in absolute reais.
+        """
+        return self._rpc("balance_sheets", {
+            "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
+            "p_scope": scope, "p_doc_type": doc_type,
+        })
+
+    def cash_flow_statements(self, id: str, start: Datish = None,
+                             end: Datish = None, scope: str = "con",
+                             doc_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """The cash flow statement as a period: section totals, one row each.
+
+            silo.cash_flow_statements("PETR4")
+
+        Only the totals are fields — operating, investing, financing, the FX
+        effect and the cash reconciliation — because those carry the same
+        labels on every chart. Capex and dividends are free text per filer, so
+        there is no field for them: read the filed lines from
+        :meth:`financials`. `method` is `direct` or `indirect`;
+        `operating_cash_generated` and `working_capital_changes` exist only on
+        the indirect method and read null otherwise. Absolute reais.
+        """
+        return self._rpc("cash_flow_statements", {
+            "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
+            "p_scope": scope, "p_doc_type": doc_type,
+        })
+
+    def company_events(self, id: str, start: Datish = None, end: Datish = None,
+                       category: Optional[str] = None) -> List[Dict[str, Any]]:
+        """A listed company's IPE filings to CVM, newest delivery first (v38).
+
+            silo.company_events("PETR4")                             # last 12 months
+            silo.company_events("PETR4", category="Fato Relevante")
+
+        `id` resolves exactly as in `financials` (ticker via CVM's FCA map,
+        CNPJ or CVM code — never a name). One row per protocol at its newest
+        version, text as filed, `source_url` on CVM's RAD. History starts in
+        2015 and filings CVM published without a protocol number are not
+        held. An unknown category is a `SiloError` (22023) listing the
+        categories held. No cursor: narrow the window.
+        """
+        return self._rpc("company_events", {
+            "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
+            "p_category": category,
         })
 
     # -- industry aggregates (ANBIMA) ----------------------------------------
@@ -899,6 +1168,44 @@ class SiloClient:
         return self._rpc("inflation_items", {
             "p_level": level, "p_item": item,
             "p_from": _iso(start), "p_to": _iso(end),
+        })
+
+    # -- BACEN macro and PTAX (v38) -------------------------------------------
+
+    def macro_series(self, series: str, start: Datish = None,
+                     end: Datish = None) -> List[Dict[str, Any]]:
+        """One non-inflation BACEN SGS series as published, oldest first.
+
+            silo.macro_series("CDI")                       # % per business day, last 12 months
+            silo.macro_series("SELIC_META", start="2020-01-01")
+            silo.macro_series("4380")                      # monthly GDP by SGS code
+
+        Read `unit` on every row: SELIC_META is % a.a. (published ahead to the
+        next Copom date), SELIC_DIARIA / CDI % per business day, IGPM / INPC %
+        change in the month, POUPANCA the old-rule return over the month
+        starting that anniversary day, USDBRL / EURBRL BRL per unit, PIB R$
+        millions. An IPCA code is refused (use `inflation`); an unknown series
+        is a `SiloError` (22023) listing what exists. Default window 12 months
+        (daily series) or 120 (monthly). No cursor: narrow the window.
+        """
+        return self._rpc("macro_series", {
+            "p_series": series, "p_from": _iso(start), "p_to": _iso(end),
+        })
+
+    def ptax(self, currency: str, start: Datish = None,
+             end: Datish = None) -> List[Dict[str, Any]]:
+        """BACEN's PTAX buy / sell for one currency, oldest first.
+
+            silo.ptax("USD")
+            silo.ptax("JPY", start="2025-01-01")
+
+        BRL per ONE unit of the currency, as published — the Fechamento
+        bulletin for a completed day. No mid or cross rate is computed; a
+        holiday has no row. An unknown currency is a `SiloError` (22023)
+        listing the currencies held. Default window 12 months.
+        """
+        return self._rpc("ptax", {
+            "p_currency": currency, "p_from": _iso(start), "p_to": _iso(end),
         })
 
     # -- typed views (GET resources, not functions) --------------------------

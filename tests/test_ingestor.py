@@ -368,6 +368,7 @@ class TestCVMIngestorOrchestration:
         ingestor.ingest_fidc_scr = AsyncMock(return_value=1)
         ingestor.ingest_fidc_sacado = AsyncMock(return_value=1)
         ingestor.ingest_fidc_cedente = AsyncMock(return_value=1)
+        ingestor.ingest_fidc_garantia = AsyncMock(return_value=1)
         ingestor.ingest_fiagro_mensal = AsyncMock(return_value=1)
         ingestor.ingest_fip_periodic = AsyncMock(return_value=1)
         ingestor.ingest_fii_mensal = AsyncMock(return_value=1)
@@ -583,7 +584,7 @@ def _mocked_daily_ingestor():
         "ingest_fi_diario", "ingest_fi_cda", "ingest_fi_perfil",
         "ingest_fidc_mensal", "ingest_fidc_tranche", "ingest_fidc_tranche_flows",
         "ingest_fidc_aging", "ingest_fidc_setor", "ingest_fidc_scr",
-        "ingest_fidc_sacado", "ingest_fidc_cedente",
+        "ingest_fidc_sacado", "ingest_fidc_cedente", "ingest_fidc_garantia",
         "ingest_fiagro_mensal", "ingest_fip_periodic",
         "ingest_fii_mensal", "ingest_fii_periodic", "ingest_securit_mensal",
         "ingest_securit_serie", "ingest_securit_fluxo", "ingest_securit_dfin",

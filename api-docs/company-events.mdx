@@ -1,0 +1,67 @@
+---
+title: "Company events"
+description: "A listed company's IPE filings to CVM — fatos relevantes, comunicados ao mercado, assembly material — as filed, one row per protocol, each with its link on CVM's RAD."
+icon: "megaphone"
+---
+
+<Note>
+  **Parameters, response columns and types are generated** from the SQL catalog and
+  render under **Endpoints → Company events** in the sidebar. This page carries what
+  a schema cannot: how the company is resolved, which version you get, and where
+  the history stops.
+</Note>
+
+### Overview
+
+`company_events` serves CVM's IPE feed (Informações Periódicas e Eventuais) for one
+listed company, newest delivery first: material facts (_Fato Relevante_), market
+notices, assembly calls and minutes, and the rest of what companies file outside
+the ITR/DFP statements.
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/company_events" \
+  -H "apikey: $SILO_ANON_KEY" -H "Content-Type: application/json" \
+  -d '{"p_id":"PETR4","p_category":"Fato Relevante"}'
+```
+
+```python
+silo.company_events("PETR4", category="Fato Relevante")
+```
+
+### The company is resolved exactly as `financials` resolves it
+
+`p_id` takes a B3 ticker, a 14-digit CNPJ or a CVM code. A ticker resolves **only**
+through CVM's published FCA map (active listings), so `PETR4`, `33000167000101`
+and `9512` are the same company, a delisted code resolves to nothing, and nothing
+is ever matched by name. An id that resolves to nothing returns an empty array, as
+for [`financials`](/api-docs/financials). Find ids with [`lookup`](/api-docs/lookup).
+
+### One row per protocol, as filed
+
+- CVM re-files an IPE document under the same protocol with a higher version.
+  Each protocol is served **once, at its newest version**; `version` says which.
+- `category`, `event_type`, `species` and `subject` are CVM's text exactly as
+  filed — Portuguese, never translated or normalised. `p_category` matches the
+  label exactly (`Fato Relevante`, `Comunicado ao Mercado`, …); an unknown one
+  raises `22023` listing the categories held.
+- `source_url` is the document's link on CVM's RAD. Open it; Silo stores the
+  metadata, not the document.
+- `delivery_date` is `Data_Entrega` (CVM prints a date, no time) and the window
+  runs on it — on `reference_date` for a row published without one. Default: the
+  12 months before `p_to` or today.
+
+### Where the history stops
+
+CVM assigned **no protocol number** to IPE filings before 2015, and still omits
+it on a minority of filings (12% of 2015). Silo's key for these rows is
+(protocol, version), and a key is never synthesized, so **those filings are not
+held**. History therefore starts in 2015 and no year is complete. An empty window
+before 2015, or a filing you know exists and cannot find, is that limit — not a
+quiet company. [`coverage()`](/api-docs/coverage) carries the same note on its
+`company_events` row.
+
+### Limits
+
+Raise-only above one 1,000-row page (`22023`, [Row caps](/api-docs/conventions#row-caps)):
+narrow the window or pin `p_category`. A large issuer files a few hundred
+documents a year, so a year fits.
