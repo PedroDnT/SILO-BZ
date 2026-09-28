@@ -1574,18 +1574,21 @@ class CVMIngestor:
         self._log_start(run_id, "cia_aberta", doc_type, year, None)
         rows_inserted = 0
         try:
+            # One pass over a lazy iterator: each member is parsed, upserted and
+            # released before the next is read, so peak memory is one member,
+            # not the whole ~19-CSV archive.
             members = await self._cia_fetcher.fetch_zip_members_async(
                 doc_type, year, include_summary=True
             )
-            summary_rows: List[Dict[str, Any]] = []
+            n_members = 0
             account_members = 0
             for m in members:
+                n_members += 1
                 if m.is_summary:
-                    summary_rows.extend(m.rows)
+                    rows_inserted += ingest_cia_filing(self._supabase, m.rows, doc_type)
                 elif m.is_account_data:
                     account_members += 1
-            rows_inserted += ingest_cia_filing(self._supabase, summary_rows, doc_type)
-            rows_inserted += ingest_cia_account(self._supabase, members, doc_type)
+                    rows_inserted += ingest_cia_account(self._supabase, [m], doc_type)
             # A real ITR/DFP ZIP always has account members; zero rows from a
             # non-empty publish year signals a bad/truncated fetch (see the
             # serial-only note in backfill) rather than a genuine empty year.
@@ -1593,7 +1596,7 @@ class CVMIngestor:
                 logger.warning(
                     "cia_aberta/%s %d: suspicious empty load (members=%d, account_members=%d) "
                     "— likely a bad fetch; re-run this slice serially",
-                    doc_type, year, len(members), account_members,
+                    doc_type, year, n_members, account_members,
                 )
         except Exception as exc:
             logger.warning("ingest_cia_itr_dfp %s %d failed: %s", doc_type, year, _describe(exc))

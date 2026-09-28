@@ -314,3 +314,120 @@ class TestIngestCiaFiling:
 def test_field_map_yields_normalised_cd_cvm(field_map_module, row, expected_col, expected_val):
     typed, _raw = apply_map(row, field_map_module.FIELD_MAP)
     assert typed[expected_col] == expected_val
+
+
+# ---------------------------------------------------------------------------
+# Idempotency with a NULL versao, and bounded memory on ITR/DFP (PR #37 review)
+# ---------------------------------------------------------------------------
+
+def test_filing_keeps_a_missing_versao_as_null(captured_upserts):
+    # uq_cia_filing is NULLS NOT DISTINCT (migration 50), so the row is kept
+    # and upserts idempotently; the version is never guessed.
+    n = ingest_cia_filing(MagicMock(), [{**SUMMARY_ROW, "VERSAO": ""}], "dfp")
+    assert n == 1
+    assert captured_upserts[0]["rows"][0]["versao"] is None
+
+
+def test_account_flushes_a_large_member_in_bounded_batches(captured_upserts):
+    rows = [{**DRE_ROW, "CD_CONTA": f"3.{i:02d}"} for i in range(5)]
+    member = FakeMember(grupo="DRE", escopo="con", rows=rows)
+    with patch("src.pipeline.ingest_cia._ACCOUNT_FLUSH_ROWS", 2):
+        n = ingest_cia_account(MagicMock(), [member], "dfp")
+    assert n == 5
+    assert [len(c["rows"]) for c in captured_upserts] == [2, 2, 1]
+    assert [r["cd_conta"] for c in captured_upserts for r in c["rows"]] == [
+        f"3.{i:02d}" for i in range(5)
+    ]
+
+
+def _cia_zip(members: Dict[str, str]) -> bytes:
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for name, text in members.items():
+            zf.writestr(name, text.encode("latin-1"))
+    return buf.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_fetch_zip_members_async_parses_one_member_at_a_time():
+    from src.fetchers.cia_fetcher import CIAFetcher
+
+    parsed: List[str] = []
+    inner = MagicMock()
+    inner.base_url = "https://example.invalid"
+    inner.encoding = "latin-1"
+
+    async def _download(url):
+        return _cia_zip({
+            "dfp_cia_aberta_2023.csv": "CD_CVM\n1\n",
+            "dfp_cia_aberta_DRE_con_2023.csv": "CD_CVM\n2\n",
+        })
+
+    def _parse_csv(text):
+        parsed.append(text)
+        return [{"CD_CVM": text.split()[-1]}]
+
+    inner._download = _download
+    inner._parse_csv = _parse_csv
+    fetcher = CIAFetcher.__new__(CIAFetcher)
+    fetcher._fetcher = inner
+
+    members = await fetcher.fetch_zip_members_async("dfp", 2023, include_summary=True)
+
+    assert not isinstance(members, list)
+    assert parsed == []                      # nothing parsed until iterated
+    first = next(members)
+    assert first.is_summary and len(parsed) == 1
+    second = next(members)
+    assert (second.grupo, second.escopo) == ("DRE", "con") and len(parsed) == 2
+    assert next(members, None) is None
+
+
+@pytest.mark.asyncio
+async def test_itr_dfp_ingest_upserts_each_member_before_reading_the_next():
+    from src.pipeline.cvm_pipeline import CVMIngestor
+
+    events: List[str] = []
+    summary = FakeMember(grupo="_summary", escopo=None, rows=[SUMMARY_ROW])
+    dre = FakeMember(grupo="DRE", escopo="con", rows=[DRE_ROW])
+    bpa = FakeMember(grupo="BPA", escopo="ind", rows=[BPA_ROW])
+
+    def _members():
+        for m in (summary, dre, bpa):
+            events.append(f"read {m.grupo}")
+            yield m
+
+    class _Fetcher:
+        async def fetch_zip_members_async(self, doc_type, year, include_summary=False):
+            return _members()
+
+    ing = CVMIngestor.__new__(CVMIngestor)
+    ing._supabase = None
+    ing._cia_fetcher = _Fetcher()
+    finish = {}
+    ing._log_start = lambda *a, **k: None
+    ing._log_finish = lambda run_id, n, error=None, fetched=None: finish.update(
+        n=n, error=error, fetched=fetched)
+
+    def _filing(conn, rows, doc_type):
+        events.append("upsert filing")
+        return len(rows)
+
+    def _account(conn, members, doc_type):
+        events.append("upsert " + ",".join(m.grupo for m in members))
+        return sum(len(m.rows) for m in members)
+
+    with patch("src.pipeline.cvm_pipeline.ingest_cia_filing", side_effect=_filing), \
+         patch("src.pipeline.cvm_pipeline.ingest_cia_account", side_effect=_account):
+        n = await ing.ingest_cia_itr_dfp("dfp", 2023)
+
+    assert events == [
+        "read _summary", "upsert filing",
+        "read DRE", "upsert DRE",
+        "read BPA", "upsert BPA",
+    ]
+    assert n == 3
+    assert finish == {"n": 3, "error": None, "fetched": 2}

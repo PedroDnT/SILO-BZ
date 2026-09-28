@@ -188,8 +188,13 @@ class CIAFetcher:
         *,
         include_summary: bool = False,
         statement_filter: Optional[List[str]] = None,
-    ) -> List[CIAMember]:
-        """Async variant of fetch_zip_members for use inside async pipelines."""
+    ) -> Iterator[CIAMember]:
+        """Async variant of fetch_zip_members for use inside async pipelines.
+
+        Unlike fetch_zip_members it returns a lazy iterator: each member CSV is
+        read and parsed only when the caller reaches it, so only one member's
+        rows are in memory at a time. Iterate it once.
+        """
         doc_type = doc_type.lower()
         if doc_type not in ("itr", "dfp"):
             raise ValueError(f"CIAFetcher.fetch_zip_members_async only supports itr/dfp; got {doc_type!r}")
@@ -199,7 +204,7 @@ class CIAFetcher:
         logger.info(f"CIA async fetch: cia_aberta/{doc_type} year={year} -> {url}")
 
         zip_content = await self._fetcher._download(url)
-        return list(self._enumerate_members(zip_content, doc_type, year, include_summary, statement_filter))
+        return self._enumerate_members(zip_content, doc_type, year, include_summary, statement_filter)
 
     # ----------------------------------------------------------------- internals
 
