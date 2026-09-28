@@ -580,8 +580,16 @@ vertex grid, 286 vertices each on 2026-09-25); `mkt_series` ~20 rows a day
   characters, a Price Report without `TradDt`, an OFR header or revision
   layout we do not know, a configured curve missing from a file → raise;
 - dates: every row's date must equal the file's session date;
-- missing sessions: DI and curve sessions are reconciled against the B3
-  sessions `b3_cotahist` already holds (a research-builder check);
+- missing sessions: the builder's quality report
+  (`research_examples/dustin_br/quality.py`, run by `research_build.yml`)
+  reconciles the `PRE` session grid against `b3_cotahist` (PETR4, held from
+  2019) and DI1 against `PRE`. Measured 2026-09-28, gaps at the source: B3
+  serves an empty `TS150827.ex_` although COTAHIST shows trading that day,
+  so 2015-08-27 is not in the grid; an empty `PR210610.zip` and a malformed
+  newest version of `PR210104.zip` leave DI1 NULL on 2021-06-10 and
+  2021-01-04. Against PTAX days, every other 2008-2018 day without `PRE` is
+  a B3 closure (São Paulo holidays, 24 and 31 December, the year's last
+  business day, the 2014 World Cup opening);
 - stale observations: the builder's staleness limits (§8);
 - outages: fetch failures raise and write an `error` audit row;
 - contract transitions: the builder never assumes a fixed set of listed
@@ -596,6 +604,9 @@ realised volatility and 21/63-session correlations, plus an `available_date`
 audit per source. Tests: interpolation reproduces a vertex exactly, no value
 is used before its availability date, no fill beyond the staleness limits,
 and `PRE` at each DI1 maturity equals the contract's settlement rate.
+`research_build.yml` (manual, read only) builds the matrix from the warehouse
+and uploads it with its quality report, which re-runs the no-look-ahead check
+on the real inputs.
 
 **Operator steps after merge** (a merge deploys nothing to the database),
 one dispatch at a time, since all share the `supabase-ingest` queue:
@@ -604,6 +615,8 @@ one dispatch at a time, since all share the `supabase-ingest` queue:
 `b3_price_report` 2018 to 2026 (the longest: about an hour a year); then
 `backfill.yml` with `bacen_only`, `bacen_sources=sgs`,
 `bacen_start=2008-01-01` for IC-Br. Optional: an `EIA_API_KEY` secret.
+**Done 2026-09-28**, the `EIA_API_KEY` secret included; the gaps left are the
+source's (see missing sessions above).
 
 ## Parking lot
 

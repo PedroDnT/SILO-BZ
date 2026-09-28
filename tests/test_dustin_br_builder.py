@@ -20,6 +20,7 @@ import pandas as pd
 import pytest
 
 from research_examples.dustin_br import build_dataset as bd
+from research_examples.dustin_br import quality
 
 
 # ---------------------------------------------------------------------------
@@ -300,3 +301,103 @@ def test_a_us_holiday_does_not_blank_the_cross_market_features():
     rows = out[out["date"].isin(br_only)]
     assert rows["brazil_sovereign_risk_proxy"].notna().all()
     assert rows["corr_di2y_ust10y_21d"].notna().all()
+
+
+def test_every_warehouse_query_runs_read_only():
+    executed = []
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def execute(self, sql, params=None):
+            executed.append(sql)
+
+        def fetchall(self):
+            return []
+
+    class Client:
+        def cursor(self):
+            return Cursor()
+
+    bd.load(Client(), date(2020, 1, 2), date(2020, 1, 3))
+    assert len(executed) >= 2
+    assert executed[0::2] == ["SET default_transaction_read_only = on"] * (len(executed) // 2)
+    assert all(sql.startswith("SELECT ") for sql in executed[1::2])
+
+
+# ---------------------------------------------------------------------------
+# The quality report (research_examples/dustin_br/quality.py)
+# ---------------------------------------------------------------------------
+
+def test_the_real_data_check_passes_on_the_builder_and_says_so():
+    sessions, curves, series, futures = _synthetic()
+    full, nulled = bd.build(sessions, curves, series, futures)
+    cutoffs = (date(2020, 3, 18), date(2020, 7, 1), date(2020, 11, 20))
+    look = quality.look_ahead(sessions, curves, series, futures, full, cutoffs)
+    assert look == dict.fromkeys(cutoffs, 0)
+    report = quality.render(full, nulled, look, sessions[0], sessions[-1])
+    assert "**No look-ahead: passed.**" in report
+    assert "| year | sessions | di_1y | di_5y | di_10y |" in report
+
+
+def test_the_real_data_check_catches_a_planted_leak(monkeypatch):
+    """Tomorrow's PTAX on today's row: the rows up to the cutoff change."""
+    honest = bd.build
+
+    def leaky(sessions, curves, series, futures=None):
+        usdbrl = series["usdbrl"]
+        leaked = usdbrl.assign(value=usdbrl["value"].shift(-1)).dropna()
+        return honest(sessions, curves, {**series, "usdbrl": leaked}, futures)
+
+    monkeypatch.setattr(bd, "build", leaky)
+    sessions, curves, series, futures = _synthetic()
+    full, nulled = bd.build(sessions, curves, series, futures)
+    look = quality.look_ahead(sessions, curves, series, futures, full, [date(2020, 7, 1)])
+    assert look[date(2020, 7, 1)] > 0
+    assert "**No look-ahead: FAILED.**" in quality.render(full, nulled, look, sessions[0], sessions[-1])
+
+
+def test_a_block_the_rebuild_lacks_reads_as_null():
+    """Before 2018 there are no DI1 settlements, so a rebuild at an early
+    cutoff has no di1_* columns at all: that matches NULL, not a value."""
+    full = pd.DataFrame({"date": [date(2012, 9, 3)], "di_1y": [8.1], "di1_open_interest": [np.nan]})
+    rebuilt = pd.DataFrame({"date": [date(2012, 9, 3)], "di_1y": [8.1]})
+    assert quality.changed_cells(full, rebuilt) == 0
+    assert quality.changed_cells(full.assign(di1_open_interest=5.0), rebuilt) == 1
+    assert quality.changed_cells(full, rebuilt.assign(di_1y=8.2)) == 1
+
+
+def test_coverage_and_tail_masking_are_per_year():
+    frame = pd.DataFrame({
+        "date": [date(2008, 1, 2), date(2008, 1, 3), date(2009, 1, 2), date(2009, 1, 5)],
+        "di_anchor_du": [2000, 3000, 3000, 3000],
+        "di_10y": [np.nan, 11.0, 12.0, np.nan],
+    })
+    cov = quality.coverage_by_year(frame)
+    assert cov.loc[2008, "di_10y"] == 0.5 and cov.loc[2009, "di_anchor_du"] == 1.0
+    tail = quality.tail_masking(frame)
+    assert tail.loc[2008, "sessions"] == 2 and tail.loc[2008, "median_anchor_du"] == 2500
+    assert tail.loc[2008, "di_10y_in_tail"] == 0.5 and tail.loc[2009, "di_10y_in_tail"] == 0.0
+    assert tail.loc[2008, "di_5y_in_tail"] == 0.0
+
+
+def test_sessions_a_source_lacks_are_listed_both_ways():
+    """Measured 2026-09-28: B3 serves an empty archive for PR210610.zip, a
+    session with a PRE curve and equity trading, so DI1 is missing that day."""
+    pre = [date(2021, 6, 8), date(2021, 6, 9), date(2021, 6, 10), date(2021, 6, 11)]
+    equity = [date(2021, 6, 7), date(2021, 6, 8), date(2021, 6, 9), date(2021, 6, 10), date(2021, 6, 14)]
+    futures = pd.DataFrame({"trade_date": [date(2021, 6, 9), date(2021, 6, 11)]})
+    missing = quality.missing_sessions(pre, futures, equity)
+    assert missing == {
+        "PRE curve missing on an equity session": [],   # 06-07 and 06-14 are outside the common span
+        "PRE curve on a day with no equity session": [date(2021, 6, 11)],
+        "DI1 settlements missing on a PRE session (from 2021-06-09)": [date(2021, 6, 10)],
+    }
+    frame = pd.DataFrame({"date": pre, "di_anchor_du": [3000] * 4})
+    report = quality.render(frame, {}, {}, pre[0], pre[-1], missing)
+    assert "- DI1 settlements missing on a PRE session (from 2021-06-09): 2021-06-10." in report
+    assert "- PRE curve missing on an equity session: none." in report
