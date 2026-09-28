@@ -63,7 +63,7 @@ are identical whether or not anything published after `T` exists.
 | `*_mom_{5,21,63}d`                                 | change (rates) or log change (prices) over k observations                                                                                           |
 | `*_rv_{21,63}d`                                    | realised vol of daily changes, annualised (√252)                                                                                                    |
 | `corr_*_{21,63}d`                                  | correlation of daily changes on common observation dates (`corr_di2y_ofr_vol_*` against OFR's Volatility category)                                  |
-| `di1_open_interest`, `di1_contracts`               | DI1 totals per session; **from 2018-01-02 only**                                                                                                    |
+| `di1_open_interest`, `di1_contracts`               | DI1 totals per session; **from 2018-01-02 only**; open interest is NULL on 2018-05-10 and 2025-09-11, where B3 omits it for held contracts          |
 
 Known limits: the monthly publication rule is conservative, not a release
 calendar; SILO keeps no Focus vintages; realised vol lags implied vol at

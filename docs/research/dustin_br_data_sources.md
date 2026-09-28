@@ -587,7 +587,10 @@ vertex grid, 286 vertices each on 2026-09-25); `mkt_series` ~20 rows a day
   serves an empty `TS150827.ex_` although COTAHIST shows trading that day,
   so 2015-08-27 is not in the grid; an empty `PR210610.zip` and a malformed
   newest version of `PR210104.zip` leave DI1 NULL on 2021-06-10 and
-  2021-01-04. Against PTAX days, every other 2008-2018 day without `PRE` is
+  2021-01-04. On 2018-05-10 and 2025-09-11 every version of B3's Price Report
+  omits open interest for contracts that held a position the session before
+  (36 of 37, and 12 of 41), so the builder's session total is NULL there, not
+  a partial sum. Against PTAX days, every other 2008-2018 day without `PRE` is
   a B3 closure (São Paulo holidays, 24 and 31 December, the year's last
   business day, the 2014 World Cup opening);
 - stale observations: the builder's staleness limits (§8);
