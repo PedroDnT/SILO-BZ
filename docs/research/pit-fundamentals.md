@@ -46,8 +46,10 @@ the ITR dictionary is identical. VERSAO is "Versão do documento", a smallint.
 **DT_RECEB is conservative for PETR4.** PETR4's 4T23 earnings press release
 ("Desempenho Financeiro Petrobras 4T23", IPE category *Dados
 Econômico-Financeiros / Press-release*) was delivered on **2024-03-07**. The DFP
-for 2023 v1 has `dt_receb` **2024-03-08**, one day later. So the numbers were
-public before DT_RECEB, and gating on DT_RECEB cannot be early.
+for 2023 v1 has `dt_receb` **2024-03-08**, one day later. For this filing the
+numbers were public a day before DT_RECEB, so gating on DT_RECEB was late, not
+early. (`cia_event.data_entrega` is a date stored as midnight UTC; read it as a
+date only.)
 
 ```sql
 SELECT data_refer, data_entrega, categoria, tipo, assunto FROM public.cia_event
@@ -103,8 +105,18 @@ FROM a LEFT JOIN public.cia_filing f
 -- ind: 20,840 doc-versions, 0 without header
 ```
 
-`cia_filing` itself (ITR+DFP, every year) has 0 NULL `dt_receb`. No row has
-`dt_receb < dt_refer`.
+`cia_filing` itself (ITR+DFP, every year) has 0 NULL `dt_receb`. No stored
+statement document above has `dt_receb < dt_refer`, but `cia_filing` holds one
+ITR header that does (`dt_refer` 2022-03-31, `dt_receb` 2021-12-08; `SELECT ...
+FROM cia_filing WHERE dt_receb < dt_refer` → 1 row). The recipe errs the safe
+way here: when such a document is received, its `dt_refer` is still after T, so
+a `dt_refer <= T` window excludes it.
+
+The same zero result holds for every statement, scope and year. Keyed on each
+statement's total account (BPA `1`, BPP `2`, DFC_MI `6.01`, DRE `3.01`), every
+`(doc_type, statement, scope, year)` cell from 2019 to 2026 has
+`no_receb = 0`. Document counts per cell match the DRE table below within ±2
+for BPA/BPP; DFC_MI runs about 3% lower (e.g. DFP con 2019: 374 vs 386).
 
 **Coverage.** `dt_refer` runs from **2019-01 to 2026-06**. Partitions exist back
 to 2010 (`src/store/migrations/04_cia.sql`), but the backfill floor is 2019
@@ -134,8 +146,9 @@ match DRE exactly. DFC_MI has 451 DFP / 1,365 ITR `con` documents; DFC_MD has
 only 16 / 43 (the direct method is rare). Source: `count(DISTINCT (cd_cvm, dt_refer))`
 on `cia_account` for 2024, `ÚLTIMO`, grouped by `doc_type, grupo, escopo`.
 
-The long p95 lags are mostly restatements. A restated document's only stored
-version carries the *restatement's* receipt date (§4).
+The long p95 lags are consistent with restatements, though the lag was not
+split by restated vs not. A restated document's only stored version carries the
+*restatement's* receipt date (§4).
 
 ## 4. Restatements: CVM keeps every header but only the latest values
 
@@ -194,8 +207,10 @@ CBO 23620, Azul 24112 and Axia Nordeste 3328. Before migration 29, the 3-month
 and year-to-date lines shared one key and the last one written replaced the
 other
 (`src/store/migrations/29_cia_account_dt_ini_exerc.sql:1-45`, commit 74e5266,
-2026-08-28). The re-backfill that restored the missing lines ran after CVM had
-already swapped these documents to v2. An as-of-T caller in the v1 window gets
+2026-08-28). The pattern is consistent with v1 being captured under the old key
+and superseded at CVM before the re-backfill could restore the missing lines.
+The timing is not proven, though: Grupo Toky's 2026-06-30 v1 was also
+superseded around then and is complete. An as-of-T caller in the v1 window gets
 the quarter line only, with the year-to-date line absent. The data is
 incomplete, but no stored value is wrong.
 
@@ -295,8 +310,9 @@ DFC_MI rows/year.
 
 - "3 statements" means 4 calls per window, because the balance sheet is two
   statements (`BPA`, `BPP`). The cash flow may be `DFC_MI` or `DFC_MD`.
-- A **1-year `dt_refer` window** fits every company and statement under the
-  1,000-row cap, with room for a restated version. 2-year windows fit DRE, BPA
+- In 2024 (`con`), a **1-year `dt_refer` window** fit every company and
+  statement under the 1,000-row cap, with room for a restated version. Other
+  years were not measured, so keep halve-on-refusal as the fallback. 2-year windows fit DRE, BPA
   and DFC_MI at p95 but not BPP.
 - For 2019-2026 (8 windows) × 4 statements, that is about **32 calls per
   company, or about 3,200 for 100 companies**, each one bounded. Using 2-year
