@@ -611,6 +611,14 @@ and `PRE` at each DI1 maturity equals the contract's settlement rate.
 and uploads it with its quality report, which re-runs the no-look-ahead check
 on the real inputs.
 
+**Stage 4, the regime model** (`research_examples/dustin_br/model.py`, first
+run 2026-09-28): the 21-session regime (2y level x 2s5s slope) from an L2
+multinomial logistic model on the CORE features, walk-forward from 2012
+against climatology and a Markov baseline. It shows no edge in probability
+over either baseline (log loss 1.387 against 1.399 and 1.400; the gain's 90%
+interval spans zero); its hit rate beats climatology, not Markov. The numbers
+and caveats are in the builder README.
+
 **Operator steps after merge** (a merge deploys nothing to the database),
 one dispatch at a time, since all share the `supabase-ingest` queue:
 `market_backfill.yml` with `us_treasury,eia_brent` 2008 to 2026,
