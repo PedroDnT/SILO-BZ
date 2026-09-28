@@ -74,38 +74,57 @@ Manual de Curvas v21 §4.5), and the builder converts it that way.
 
 ## Stage 4: the regime model
 
-`model.py` asks whether the matrix predicts the curve's regime over the next
-21 sessions: the 2y DI falls (bull) or rises (bear), and the 2s5s slope
-widens (steepener) or narrows (flattener). It fits an L2 multinomial logistic
-model on 24 CORE features, walk-forward from 2012 with a 21-session purge, and
-scores it against two baselines on the same sessions: each regime's share so
-far (climatology), and each regime's share after the regime that just ended
+`model.py` asks whether the matrix predicts the curve over the next 21
+sessions: does the 2y DI fall (bull) or rise (bear), and does the 2s5s slope
+widen (steepener) or narrow (flattener)? It scores three targets: the four-way
+regime, the level alone and the slope alone. Each gets an L2 multinomial
+logistic model on 24 CORE features, walk-forward from 2012 with a 21-session
+purge, against two baselines on the same sessions: each class's share so far
+(climatology), and each class's share after the class that just ended
 (Markov). Research Build runs it after every build (`model_report.md`,
-`model_predictions.csv`).
+`model_predictions_<target>.csv`).
 
 ```bash
 python -m research_examples.dustin_br.model --matrix out/dustin_br.csv --out-dir out
 ```
 
-First result, on run 36438910847's matrix (3,633 labelled sessions out of
-sample, 2012 to 2026):
+Results on run 36444747902's matrix (3,633 labelled sessions out of sample,
+2012 to 2026), for the model with C chosen in each training window:
 
-| Out of sample                           | Log loss | Hit rate |
-| --------------------------------------- | -------- | -------- |
-| Model, C = 0.1 (set in advance)         | 1.855    | 22.3%    |
-| Model, C chosen in each training window | 1.387    | 29.0%    |
-| Climatology                             | 1.399    | 20.2%    |
-| Markov                                  | 1.400    | 26.1%    |
+| Target | Log loss: model / climatology / Markov | Hit rate: model / climatology / Markov |
+| ------ | -------------------------------------- | -------------------------------------- |
+| Regime | 1.387 / 1.399 / 1.400                  | 29.0% / 20.2% / 26.1%                  |
+| Level  | 0.706 / 0.703 / 0.698                  | 51.8% / 47.7% / 50.0%                  |
+| Slope  | 0.701 / 0.697 / 0.700                  | 56.0% / 50.6% / 47.9%                  |
 
-With C set in advance the model overfits (in-sample log loss 1.24): 4,600
-labels that overlap 20 of 21 sessions hold about 220 independent outcomes.
-The second variant was added after that result; it picks C on each training
-window's last two years and never looks at a test year. It is not
-distinguishable from either baseline in log loss (+0.012, 90% interval -0.014
-to +0.035). Its hit rate beats climatology by 8.9 points (+4.7 to +13.0) but
-not Markov (+2.9, -1.4 to +7.0). So far the only signal is the persistence
-the Markov baseline already has; the macro and global inputs add nothing
-measurable to a linear model.
+- **No edge in probability.** For every target the log-loss gain over each
+  baseline has a 90% interval that spans zero (regime +0.012, -0.014 to
+  +0.035, against climatology). A coin scores 1.386 on four classes and
+  0.693 on two.
+- **C set in advance overfits.** The first variant, C = 0.1, scores 1.855 on
+  the regime, worse than both baselines (in sample 1.24): 4,600 labels that
+  overlap 20 of 21 sessions hold about 220 independent outcomes. The variant
+  above was added after that result; it picks C on each training window's
+  last two years and never looks at a test year.
+- **The level is a coin.** The 2y rate's direction is not called better than
+  either baseline.
+- **The slope is a lead, not a finding.** Its direction is called right 56.0%
+  of the time, but not distinguishably better than climatology (+5.4, -0.4 to
+  +10.6), and its probabilities are overconfident (74% predicted, 60%
+  happened). It beats Markov by 8.0 points (+1.9 to +14.3) only because
+  Markov is a coin for the slope: after a flattener the next 21 sessions
+  flatten 50.9% of the time, after a steepener 51.2%. With 12 comparisons at
+  a one-sided 5% level, about one "better" can appear by chance. The level
+  and slope targets were fixed after the regime result and before either was
+  scored.
+
+**Stage 4 is closed (2026-09-28): no edge.** The only follow-up is a re-check
+on 2027-03-29. Dispatch Research Build, then read `model_predictions_slope.csv`
+for the labelled sessions after 2026-09-25 only, the ones no model here has
+seen. Use this `model.py` unchanged, since a changed model is no longer an
+out-of-sample test. Six months add about 5 independent 21-session outcomes.
+That can show the slope lead collapsing, but it cannot confirm it: telling
+56% from 50% takes hundreds of outcomes, decades at 12 a year.
 
 Credit: the stress index is the Office of Financial Research's OFR Financial
 Stress Index (OFR asks for credit when its work is reproduced).

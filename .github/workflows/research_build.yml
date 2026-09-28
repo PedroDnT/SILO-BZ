@@ -6,7 +6,7 @@ name: Research Build
 # di_10y NULL, and the no-look-ahead check re-run on the real inputs (a changed
 # cell fails the run; the files are still uploaded). Then the Stage 4 regime
 # model (research_examples/dustin_br/model.py) is scored walk-forward on that
-# matrix: model_report.md and model_predictions.csv. Both reports are the
+# matrix: model_report.md and model_predictions_<target>.csv. Both reports are the
 # run's summary page.
 #
 # READ ONLY: every query runs with default_transaction_read_only = on
