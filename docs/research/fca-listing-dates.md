@@ -14,7 +14,9 @@ date** are what a company filed, tied to the filing version that stated it.
 **No. The FCA dates are not a usable history of listings, and SILO cannot turn them into
 one.** They are company-stated, sometimes rewritten between yearly filings, describe a
 security's *segment spell* and not its ticker code, and have no end date for most
-securities that stopped trading. Superseded versions are not kept even by CVM. The
+securities that stopped trading. Superseded versions are missing from CVM's CSVs. The
+originals stay downloadable for five years through the index's `LINK_DOC`, but in
+Empresas.NET format, which SILO does not parse. The
 most that can honestly be claimed is "company X stated date D for ticker T in its FCA for
 year Y, version V, received by CVM on date R". R is not in SILO today.
 
@@ -70,8 +72,8 @@ Across years there is one surviving snapshot per company per year.
 **In SILO:** the key keeps versions (`uq_cia_ticker` on
 `(cnpj_cia, data_refer, versao, valor_mobiliario, codneg, mercado)`,
 `src/store/migrations/25_cia_ticker.sql:34`). But SILO only holds a superseded version if
-it fetched the file before CVM replaced it. The table dates from 2026-08-27
-(commit `0c74a25`). 2010–2025 were backfilled once (`fetched_at` 2026-08-28 06:59–07:00
+it fetched the file before CVM replaced it. The migration was added on 2026-08-27 18:49
+UTC-3 (commit `0c74a25`, `git log --diff-filter=A`). 2010–2025 were backfilled once (`fetched_at` 2026-08-28 06:59–07:00
 UTC-3 and 2026-09-02 03:03 UTC-3). Only the current year is refreshed daily
 (`src/pipeline/cvm_pipeline.py:2123-2137`).
 
@@ -146,7 +148,11 @@ GUARARAPES RIAA3 Básico       inicio_neg 1973-05-14  fim_neg (empty)     inicio
 GUARARAPES RIAA3 Novo Mercado inicio_neg 2022-04-05  fim_neg (empty)     inicio_list 1972-01-03
 ```
 
-`Data_Fim_Negociacao` 2021-05-07 is a segment migration, not a delisting. Both spells
+`Data_Fim_Negociacao` 2021-05-07 is a segment migration, not a delisting. The columns
+also do not follow the regulation's items reliably. Anexo B puts the per-segment date in
+item (f), "início da listagem no segmento". In these rows, though, the date that varies
+per spell is `Data_Inicio_Negociacao`, while `Data_Inicio_Listagem` stays fixed across
+spells. That is one more reason neither column can be read as "the listing date". Both spells
 share `valor_mobiliario`, `codneg` and `mercado`, so they collide on `uq_cia_ticker`.
 `upsert_rows` keeps the last row read ("last write wins", `src/store/pg_client.py:307`).
 SILO stores only the Novo Mercado spell for PDTC3 and RIAA3. Rows lost to the collision per year in
@@ -175,12 +181,15 @@ GUAR3→RIAA3 2026-02-05) appear **only** on the tape. No FCA field states them.
 
 **Delisted sample:**
 
-| Ticker | Event | FCA says | Tape |
-|---|---|---|---|
-| BIDI4 / BIDI11 | Banco Inter left B3 | last filing 2022, `dt_fim_*` NULL | last observed 2022-06-17 |
-| SMLS3 | Smiles absorbed | 2021 filing `dt_fim_neg` 2021-06-04, `dt_fim_list` NULL | last observed 2021-06-04 (agrees) |
-| STKF3 | absent after the 2024 filing | `dt_fim_*` NULL in every filing | no session in any `tpmerc`, 2019-01-02 to 2026-09-25 |
-| CSAB3 | see §3 | end date appears, vanishes, reappears | 116 sessions, 2019-01-07 to 2024-01-05 |
+Only what the data shows is stated here. The corporate events behind these cases were
+not checked against a source.
+
+| Ticker | FCA says | Tape |
+|---|---|---|
+| BIDI4 / BIDI11 | last filing mentioning them is 2022, `dt_fim_*` NULL | last observed 2022-06-17 |
+| SMLS3 | last filing 2021: `dt_fim_neg` 2021-06-04, `dt_fim_list` NULL | last observed 2021-06-04 (agrees) |
+| STKF3 | last filing 2024, `dt_fim_*` NULL in every filing | no session in any `tpmerc`, 2019-01-02 to 2026-09-25 |
+| CSAB3 | end date appears, vanishes, reappears (§3) | 116 sessions, 2019-01-07 to 2024-01-05 |
 
 Tape queries were bounded per ticker on the `idx_b3_cotahist_vista` index:
 
@@ -199,7 +208,8 @@ last row, which has no end date (§4), so it reads as active forever:
 SELECT count(*) FILTER (WHERE is_active) flagged_active,                          -- 731
        count(*) FILTER (WHERE is_active AND data_refer < '2026-01-01') absent_2026 -- 241
 FROM vw_company_ticker;
--- 192 of those 241 (well-formed codes) have no cash-market session since 2026-08-01.
+-- Restricted to the well-formed codes (^[A-Z]{4}[0-9]{1,2}$) among those 241,
+-- 192 have no cash-market session since 2026-08-01.
 
 SELECT tickers FROM api.lookup('33.041.260/0652-90');
 -- {BHIA12,BHIA3,VIIA3,VVAR3}   -- VVAR3 and VIIA3 stopped trading in 2021 and 2023
