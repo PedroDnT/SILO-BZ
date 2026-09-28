@@ -493,6 +493,8 @@ _OFR = {"ofr_fsi": "OFR_FSI", "ofr_fsi_volatility": "OFR_FSI_VOLATILITY"}
 
 def _query(client, sql: str, params: tuple, columns: List[str]) -> pd.DataFrame:
     with client.cursor() as cur:
+        # The builder only reads, so Postgres refuses any write on this session.
+        cur.execute("SET default_transaction_read_only = on")
         cur.execute(sql, params)
         return pd.DataFrame(cur.fetchall(), columns=columns)
 

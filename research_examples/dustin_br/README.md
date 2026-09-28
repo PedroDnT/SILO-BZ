@@ -14,6 +14,15 @@ It needs the backfills first (`market_backfill.yml`, and the SGS load for IC-Br)
 With no `b3_reference_rate` rows it exits 1 and says so. A column with no value
 in the window is named at the end of the run, not silently dropped.
 
+Without a local `POSTGRES_URL`, dispatch **Research Build**
+(`.github/workflows/research_build.yml`; empty `end` means today). It runs
+`quality.py`, which writes the same `dustin_br.csv` plus `coverage_by_year.csv`
+and `quality.md` to the run's artifact. The report is also the run's summary:
+sessions, B3 sessions a source lacks, staleness-nulled cells, how often B3's
+extrapolated tail leaves `di_10y` NULL, coverage by year, and the
+no-look-ahead check re-run on the real inputs (a changed cell fails the run).
+Every query runs with `default_transaction_read_only = on`.
+
 ## The rule
 
 A value is on row `t` only if it was public by the end of B3 session `t`:

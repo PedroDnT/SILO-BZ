@@ -393,15 +393,19 @@ Nothing in wave 2 that depends on these starts until each has an answer.
   2026-09-25; labels and routines pending.**
 - **B8.** DI curve and futures (`INSTRUMENTS.md` Phases B and C). **Ingest done
   2026-09-27 (PR #355, migration 48):** DI1 per contract from 2018, B3 `PRE`,
-  `DOC` and `DPL` curves from 2008; history needs the `market_backfill.yml`
-  dispatches. **Served since catalog v42** (`27_api_rates.sql`):
+  `DOC` and `DPL` curves from 2008; **history loaded 2026-09-28** by the
+  `market_backfill.yml` dispatches, with the `EIA_API_KEY` secret set. Gaps
+  are the source's: B3 serves empty archives for `TS150827` and `PR210610`,
+  and `PR210104`'s newest version is malformed (research doc §10, missing
+  sessions). **Served since catalog v42** (`27_api_rates.sql`):
   `future_curve`, `future_series`, `curve`, `curve_history`, live after the
   next analytics apply and a `deploy_mcp.yml` run. Still open: the futures arm
-  of `api.panel` (`id_type='future'`, phase B). Owner-only: an `EIA_API_KEY` secret (optional;
-  without it EIA's rate-limited demo key is used), and, only if VIX itself is
-  wanted, a signed Cboe licence (permissions@cboe.com) before setting the
-  `CBOE_VIX_LICENSED` repository variable. Until then the risk regime is the
-  OFR Financial Stress Index (`docs/research/dustin_br_data_sources.md` §3.C).
+  of `api.panel` (`id_type='future'`, phase B). Owner decision: whether
+  2021-01-04's DI1 may come from that day's earlier, well-formed versions of
+  the Price Report. Owner-only, only if VIX itself is wanted: a signed Cboe
+  licence (permissions@cboe.com) before setting the `CBOE_VIX_LICENSED`
+  repository variable. Until then the risk regime is the OFR Financial Stress
+  Index (`docs/research/dustin_br_data_sources.md` §3.C).
 - **B9.** Alerts, only on signals from waves 1 and 2 once they exist.
 - **B10.** Document text (Stage 3), priority categories only.
 - **B11.** Per-event adjusted prices, where verified.
