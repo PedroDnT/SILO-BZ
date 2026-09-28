@@ -1,8 +1,10 @@
-# SILO Portfolio Analysis
+# SILO
 
-The language of diagnosing a mixed investment portfolio using disclosed holdings, financial documents, and quantitative comparisons.
+The language of SILO's public read side: diagnosing a mixed investment portfolio from disclosed holdings, financial documents and quantitative comparisons, and serving Brazilian market, macro and company data to external research callers.
 
 ## Language
+
+### Portfolio analysis
 
 **Mixed portfolio**:
 An investor's collection of fund positions and directly held financial assets.
@@ -68,3 +70,41 @@ _Avoid_: Double-counting the fund position and its underlying assets.
 **Equal risk contribution allocation**:
 Weights targeting equal contributions from the selected portfolio components to estimated portfolio volatility, accounting for their covariance.
 _Avoid_: Equal invested amounts or guaranteed diversification of underlying economic exposures.
+
+### Research data
+
+**Research caller**:
+An external repository that consumes SILO data to build features, signals, models or backtests. It depends only on SILO's public read contract.
+_Avoid_: Treating a research caller as a dashboard or a portfolio diagnosis client.
+
+**Research universe**:
+The set of instruments a research caller may select from: listed equities and units. BDRs, fund quotas and indices are outside it, even when they are Brazilian companies' receipts or track the market.
+_Avoid_: A hard-coded list of currently active tickers.
+
+**Raw close**:
+The closing price as traded on the session, in the quotation unit B3 published.
+_Avoid_: Calling a raw close "the price" when a return is being computed across corporate events.
+
+**Price-adjusted close**:
+A raw close made continuous across splits, groupings and bonus shares, so a price series has no jump caused by a change in share count.
+_Avoid_: Treating it as a return series; it ignores cash distributions.
+
+**Total-return close**:
+A price-adjusted close that also reinvests cash distributions (dividends and JCP), so its changes are the shareholder's return.
+_Avoid_: Adjusted close without saying which of the two is meant.
+
+**First observed / last observed**:
+The first and last session on which SILO holds a trade for a ticker. They are facts about SILO's tape, not about the listing.
+_Avoid_: Listing date, delisting date.
+
+**Listing date / delisting date**:
+The dates a company filed as the start and end of a security's listing, each tied to the filing version that stated it.
+_Avoid_: Deriving them from the tape or from a company's current filing.
+
+**Current classification**:
+A company attribute (setor, segmento) that SILO holds only as of today. It is not point-in-time and must be labelled as current wherever it is served.
+_Avoid_: Using it as if it were the classification at a past date without saying so.
+
+**Benchmark index**:
+A market index level series (Ibovespa) as published by its administrator. An ETF that tracks it, such as BOVA11, is a separate instrument and never substitutes for it.
+_Avoid_: Using an ETF's price as the index.
