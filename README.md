@@ -412,7 +412,7 @@ The essentials, folded away:
 │       ├── CHANGELOG.md        # workstream history
 │       └── SERVING.md          # ingested → researcher pulls a panel (steps 0–7)
 ├── supabase/functions/silo-mcp/ # read-only remote MCP over schema api (Edge Function)
-├── notebooks/                  # 00–08: runnable end-to-end examples over the read API
+├── notebooks/                  # 00–09: runnable end-to-end examples over the read API
 ├── api-docs/                   # PUBLISHED Mintlify pages (quickstart + reference)
 ├── index.mdx                   # published docs landing page
 ├── skill.md                    # PUBLISHED agent loader (served at /skill.md; not in the nav)
