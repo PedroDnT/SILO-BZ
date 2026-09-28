@@ -86,8 +86,8 @@ The closing price as traded on the session, in the quotation unit B3 published.
 _Avoid_: Calling a raw close "the price" when a return is being computed across corporate events.
 
 **Price-adjusted close**:
-A raw close made continuous across splits, groupings and bonus shares, so a price series has no jump caused by a change in share count.
-_Avoid_: Treating it as a return series; it ignores cash distributions.
+A raw close made continuous across splits, groupings and bonus shares, so a price series has no jump caused by a change in share count. It is anchored to the latest session: past levels change when a new event lands, its returns do not.
+_Avoid_: Treating it as a return series; it ignores cash distributions. Reading a past level as the price seen that day.
 
 **Total-return close**:
 A price-adjusted close that also reinvests cash distributions (dividends and JCP), so its changes are the shareholder's return.
