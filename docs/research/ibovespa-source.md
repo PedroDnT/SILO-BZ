@@ -149,12 +149,24 @@ Across all 316 prints:
 The largest gap, 2020-03-18, was a COVID circuit-breaker day. That fits an
 intraday average rather than the close.
 
-### The fator_cotacao flip: 1 → 100 on 2025-03-05, for the whole family
+### The fator_cotacao flip: 1 → 100, family on 2025-02-17, IBOV11 on 2025-03-05
 
-The flip affected the entire Ibovespa option family, not just IBOV11. On
-2025-02-11 the IBOV options (`tpmerc 070/080`) carry `especi IBO` and
-`fator_cotacao 1`. By 2025-02-28 they carry `especi IBO/` and
-`fator_cotacao 100`. IBOV11's first print after the change is 2025-03-05.
+The flip affected the entire Ibovespa option family, not just IBOV11:
+
+```sql
+SELECT trade_date, especi, fator_cotacao, count(*) FROM b3_cotahist
+WHERE trade_date BETWEEN '2025-02-12' AND '2025-02-19'
+  AND codneg LIKE 'IBOV%' AND tpmerc IN ('070','080') GROUP BY 1,2,3;
+```
+
+| Sessions | Series traded (`tpmerc 070/080`) |
+| --- | --- |
+| 2025-02-12 and 02-13 | All on `IBO` / fatcot 1 (103 and 91 series) |
+| 2025-02-14 | 129 on `IBO` / fatcot 1, and one already on `IBO/` / fatcot 100 |
+| From 2025-02-17 | All on `IBO/` / fatcot 100 (87, 87 and 99 series on 02-17, 02-18, 02-19) |
+
+IBOV11 prints only on expiry days. Its last print at fatcot 1 is
+2025-02-12, and its first print at fatcot 100 is 2025-03-05.
 
 The notional confirms the meaning:
 
@@ -194,7 +206,8 @@ turns IBOV11 into R$ per contract, which is not an index level.
 ### Repo notes that are now known to be imprecise (recorded, not fixed)
 
 - `src/store/analytical/19_api_contract.sql:3625` says "IBOV11 100->1". The
-  measured direction is **1 → 100**, on 2025-03-05.
+  measured direction is **1 → 100**: the option family changed on
+  2025-02-17, and IBOV11's first print at 100 is 2025-03-05.
   `docs/planning/archive/STATUS_2026-08-28.md:35` repeats the same "100→1".
 - `src/store/migrations/27_b3_instrument_typed_v3.sql:17` says "the Ibovespa
   itself printed on the tape". That needs the qualification above: it is
@@ -210,7 +223,8 @@ in `CONTEXT.md`'s sense ("A market index level series (Ibovespa) as
 published by its administrator").
 
 - **Human page:** <https://sistemaswebb3-listados.b3.com.br/indexStatisticsPage/day/IBOV?language=pt-br>
-  (B3 "Índice Bovespa – Evolução diária").
+  (page title "Estatísticas de Índices"). The page text does not label the
+  values as closes.
 - **Undocumented JSON behind that page:**
   `https://sistemaswebb3-listados.b3.com.br/indexStatisticsProxy/IndexCall/GetPortfolioDay/<base64 of {"index":"IBOV","language":"pt-br","year":"YYYY"}>`.
   It returns one year per call as a day × month grid of `"183.476,86"`
@@ -224,7 +238,13 @@ Observed on 2026-09-28:
 - It has no values on non-session days.
 - It keeps the same divisor steps SGS 7 shows (1997-03-03 ÷10).
 
-It agrees with SGS 7 to within truncation (185 of 187 days in 2019). There
+The values are the close, confirmed against B3's own words. B3's 2025
+year-end news item states: "No fechamento do último pregão do ano, na
+terça-feira (30), teve alta de 0,40% aos 161.125,37 pontos"
+(<https://www.b3.com.br/pt_br/noticias/ibovespa-b3-encerra-2025-com-32-recordes-historicos-e-alta-acumulada-de-34.htm>).
+The endpoint has **161.125,37** for 2025-12-30, an exact match.
+
+It also agrees with SGS 7 to within truncation (185 of 187 days in 2019). There
 is no published contract for this endpoint. Treat it like the other B3
 proxies SILO already uses (see `src/fetchers/b3_bdi_fetcher.py`): verify it,
 and fail loudly on any change.
