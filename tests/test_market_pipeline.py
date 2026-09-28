@@ -145,6 +145,23 @@ def test_the_latest_version_is_chosen_by_its_own_timestamp_not_its_name():
     assert name == "BVBG_z_first.xml" and xml == PR_2026
 
 
+def test_a_version_zipped_once_more_is_opened_and_still_ranked_by_timestamp():
+    # PR230719.zip: two versions as BVBG...zip members beside one BVBG...xml.
+    early = PR_2026.replace(b"2026-09-25T20:31:13", b"2026-09-25T18:37:43")
+    nested_early = _zip({"BVBG_early.xml": early})
+    inner = _zip({"BVBG_early.zip": nested_early, "BVBG_latest.xml": PR_2026})
+    name, xml = unwrap_price_report(_zip({"PR230719.zip": inner}), "PR230719.zip")
+    assert name == "BVBG_latest.xml" and xml == PR_2026
+    # The latest version may itself be the nested one.
+    inner = _zip({"BVBG_latest.zip": _zip({"BVBG_latest.xml": PR_2026}), "BVBG_early.xml": early})
+    name, xml = unwrap_price_report(_zip({"PR230719.zip": inner}), "PR230719.zip")
+    assert name == "BVBG_latest.xml" and xml == PR_2026
+    # A nested zip holding anything but one file is a packaging change, not a guess.
+    inner = _zip({"BVBG_two.zip": _zip({"a.xml": PR_2026, "b.xml": early})})
+    with pytest.raises(B3FileFetchError, match="expected one XML"):
+        unwrap_price_report(_zip({"PR230719.zip": inner}), "PR230719.zip")
+
+
 def test_an_empty_archive_is_not_published_not_an_error():
     with pytest.raises(B3FileNotPublished):
         unwrap_price_report(EMPTY_ZIP, "PR260927.zip")

@@ -81,6 +81,19 @@ def _single_member(zf: zipfile.ZipFile, label: str) -> bytes:
     return zf.read(names[0])
 
 
+def _version_xml(inner: zipfile.ZipFile, name: str, label: str) -> Tuple[zipfile.ZipFile, str]:
+    """(archive, member) holding one version's XML. B3 sometimes zips a version
+    once more inside the archive (measured: PR230719.zip holds two BVBG...zip
+    versions beside one BVBG...xml); such a zip must hold exactly one file."""
+    if not name.lower().endswith(".zip"):
+        return inner, name
+    nested = _open_zip(inner.read(name), f"{label}: {name}")
+    names = nested.namelist()
+    if len(names) != 1:
+        raise B3FileFetchError(f"{label}: {name} holds {names}, expected one XML")
+    return nested, names[0]
+
+
 def unwrap_price_report(payload: bytes, label: str) -> Tuple[str, bytes]:
     """(member name, XML bytes) of the LATEST version inside a PR archive.
 
@@ -90,16 +103,17 @@ def unwrap_price_report(payload: bytes, label: str) -> Tuple[str, bytes]:
     inner = _open_zip(_single_member(_open_zip(payload, label), label), label)
     versions = []
     for name in inner.namelist():
-        with inner.open(name) as fh:
+        archive, member = _version_xml(inner, name, label)
+        with archive.open(member) as fh:
             head = fh.read(16_384)
         m = _CREATED.search(head)
         if not m:
             raise B3FileFetchError(f"{label}: {name} has no CreDtAndTm header")
-        versions.append((m.group(1).decode(), name))
+        versions.append((m.group(1).decode(), member, archive))
     if not versions:
         raise B3FileNotPublished(f"{label}: inner archive is empty")
-    _, latest = max(versions)
-    return latest, inner.read(latest)
+    _, latest, archive = max(versions, key=lambda v: (v[0], v[1]))
+    return latest, archive.read(latest)
 
 
 def unwrap_taxa_swap(payload: bytes, label: str) -> str:
