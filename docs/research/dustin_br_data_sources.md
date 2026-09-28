@@ -642,6 +642,9 @@ Open:
 - Ibovespa level, if the equity channel is added.
 - A Cboe licence, if VIX itself is wanted (permissions@cboe.com); then set
   `CBOE_VIX_LICENSED=1`.
+- Stage 4 re-check on 2027-03-29 (closed 2026-09-28 with no edge): the slope
+  lead on sessions after 2026-09-25 only, with `model.py` unchanged. It can
+  show a collapse, not a confirmation (builder README, Stage 4).
 
 Done (2026-09-27): the DI1 contracts and the B3 curves served (catalog v42,
 `future_curve`, `future_series`, `curve`, `curve_history`); breakeven inflation, from `DPL` rather than `DIC` (§3.A);

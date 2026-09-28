@@ -118,5 +118,13 @@ Results on run 36444747902's matrix (3,633 labelled sessions out of sample,
   and slope targets were fixed after the regime result and before either was
   scored.
 
+**Stage 4 is closed (2026-09-28): no edge.** The only follow-up is a re-check
+on 2027-03-29. Dispatch Research Build, then read `model_predictions_slope.csv`
+for the labelled sessions after 2026-09-25 only, the ones no model here has
+seen. Use this `model.py` unchanged, since a changed model is no longer an
+out-of-sample test. Six months add about 5 independent 21-session outcomes.
+That can show the slope lead collapsing, but it cannot confirm it: telling
+56% from 50% takes hundreds of outcomes, decades at 12 a year.
+
 Credit: the stress index is the Office of Financial Research's OFR Financial
 Stress Index (OFR asks for credit when its work is reproduced).
