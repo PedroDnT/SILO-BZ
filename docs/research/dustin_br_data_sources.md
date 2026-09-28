@@ -587,7 +587,10 @@ vertex grid, 286 vertices each on 2026-09-25); `mkt_series` ~20 rows a day
   serves an empty `TS150827.ex_` although COTAHIST shows trading that day,
   so 2015-08-27 is not in the grid; an empty `PR210610.zip` and a malformed
   newest version of `PR210104.zip` leave DI1 NULL on 2021-06-10 and
-  2021-01-04. Against PTAX days, every other 2008-2018 day without `PRE` is
+  2021-01-04. On 2018-05-10 and 2025-09-11 every version of B3's Price Report
+  omits open interest for contracts that held a position the session before
+  (36 of 37, and 12 of 41), so the builder's session total is NULL there, not
+  a partial sum. Against PTAX days, every other 2008-2018 day without `PRE` is
   a B3 closure (São Paulo holidays, 24 and 31 December, the year's last
   business day, the 2014 World Cup opening);
 - stale observations: the builder's staleness limits (§8);
@@ -607,6 +610,14 @@ and `PRE` at each DI1 maturity equals the contract's settlement rate.
 `research_build.yml` (manual, read only) builds the matrix from the warehouse
 and uploads it with its quality report, which re-runs the no-look-ahead check
 on the real inputs.
+
+**Stage 4, the regime model** (`research_examples/dustin_br/model.py`, first
+run 2026-09-28): the 21-session regime (2y level x 2s5s slope) from an L2
+multinomial logistic model on the CORE features, walk-forward from 2012
+against climatology and a Markov baseline. It shows no edge in probability
+over either baseline (log loss 1.387 against 1.399 and 1.400; the gain's 90%
+interval spans zero); its hit rate beats climatology, not Markov. The numbers
+and caveats are in the builder README.
 
 **Operator steps after merge** (a merge deploys nothing to the database),
 one dispatch at a time, since all share the `supabase-ingest` queue:

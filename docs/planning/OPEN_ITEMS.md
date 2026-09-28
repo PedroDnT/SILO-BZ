@@ -396,8 +396,9 @@ Nothing in wave 2 that depends on these starts until each has an answer.
   `DOC` and `DPL` curves from 2008; **history loaded 2026-09-28** by the
   `market_backfill.yml` dispatches, with the `EIA_API_KEY` secret set. Gaps
   are the source's: B3 serves empty archives for `TS150827` and `PR210610`,
-  and `PR210104`'s newest version is malformed (research doc §10, missing
-  sessions). **Served since catalog v42** (`27_api_rates.sql`):
+  `PR210104`'s newest version is malformed, and on 2018-05-10 and 2025-09-11
+  its Price Report omits open interest for contracts that held positions
+  (research doc §10, missing sessions). **Served since catalog v42** (`27_api_rates.sql`):
   `future_curve`, `future_series`, `curve`, `curve_history`, live after the
   next analytics apply and a `deploy_mcp.yml` run. Still open: the futures arm
   of `api.panel` (`id_type='future'`, phase B). Owner decision: whether

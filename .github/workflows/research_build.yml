@@ -4,7 +4,9 @@ name: Research Build
 # warehouse and uploads it as an artifact with its quality report: sessions,
 # coverage by year, staleness-nulled cells, where B3's extrapolated tail leaves
 # di_10y NULL, and the no-look-ahead check re-run on the real inputs (a changed
-# cell fails the run; the files are still uploaded). The report is also the
+# cell fails the run; the files are still uploaded). Then the Stage 4 regime
+# model (research_examples/dustin_br/model.py) is scored walk-forward on that
+# matrix: model_report.md and model_predictions.csv. Both reports are the
 # run's summary page.
 #
 # READ ONLY: every query runs with default_transaction_read_only = on
@@ -53,9 +55,13 @@ jobs:
               || { echo "::error::start/end must be YYYY-MM-DD, got '$d'"; exit 1; }
           done
           python -m research_examples.dustin_br.quality --start "$START" --end "$END" --out-dir out
+          python -m research_examples.dustin_br.model --matrix out/dustin_br.csv --out-dir out
       - name: Summary
         if: ${{ !cancelled() }}
-        run: if [ -f out/quality.md ]; then cat out/quality.md >> "$GITHUB_STEP_SUMMARY"; fi
+        run: |
+          for f in out/quality.md out/model_report.md; do
+            if [ -f "$f" ]; then cat "$f" >> "$GITHUB_STEP_SUMMARY"; fi
+          done
       - uses: actions/upload-artifact@v6
         if: ${{ !cancelled() }}
         with:

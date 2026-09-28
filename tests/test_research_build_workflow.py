@@ -47,6 +47,7 @@ def test_never_joins_the_writer_group():
 def test_runs_the_quality_build_and_nothing_that_writes():
     runs = "\n".join(s.get("run", "") for s in _steps())
     assert "python -m research_examples.dustin_br.quality" in runs
+    assert "python -m research_examples.dustin_br.model --matrix out/dustin_br.csv" in runs
     for forbidden in ("apply_schema", "apply-schema", "apply_analytical", "run_daily", "run_backfill",
                       "market_pipeline", "psql"):
         assert forbidden not in runs, forbidden

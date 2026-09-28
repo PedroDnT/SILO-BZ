@@ -161,6 +161,7 @@ def _synthetic(seed: int = 7):
         "focus_ipca_12m": walk(sessions, 3.5, 0.01),
     }
     futures = pd.DataFrame({"trade_date": [d for d in sessions for _ in range(3)],
+                            "ticker": [t for _ in sessions for t in ("DI1F21", "DI1F22", "DI1F23")],
                             "open_interest": 1000, "contracts": 10})
     return sessions, curves, series, futures
 
@@ -201,6 +202,32 @@ def test_no_look_ahead_rows_up_to_t_ignore_everything_published_later():
             full[full["date"] <= cutoff].reset_index(drop=True), part.reset_index(drop=True),
             check_dtype=False,
         )
+
+
+def test_open_interest_is_null_when_b3_drops_a_contract_that_held_a_position():
+    """Measured: B3's Price Report omits OpnIntrst for 36 of 37 DI1 contracts
+    on 2018-05-10, in every version. Summing the rest would say 4,380
+    contracts were open instead of about 23 million. A contract with no
+    position the session before (new or empty) is not a drop."""
+    d1, d2, d3 = date(2018, 5, 9), date(2018, 5, 10), date(2018, 5, 11)
+    futures = pd.DataFrame([
+        (d1, "DI1N18", 100, 5), (d1, "DI1F19", 200, 7), (d1, "DI1F29", None, None),
+        (d2, "DI1N18", None, 4), (d2, "DI1F19", 210, 6), (d2, "DI1F29", None, None),
+        (d3, "DI1N18", 120, 3), (d3, "DI1F19", 220, 2), (d3, "DI1F29", None, None),
+        (d3, "DI1F30", None, 1),                                  # listed that day
+    ], columns=["trade_date", "ticker", "open_interest", "contracts"])
+    liq = bd.di1_liquidity(futures).set_index("obs_date")
+    assert liq.loc[d1, "di1_open_interest"] == 300
+    assert pd.isna(liq.loc[d2, "di1_open_interest"])              # DI1N18 held 100 the day before
+    assert liq.loc[d2, "di1_contracts"] == 10                     # volume is still whole
+    assert liq.loc[d3, "di1_open_interest"] == 340                # F29 and F30 never held one
+    out, _ = bd.build([d1, d2, d3], _real_like_pre([d1, d2, d3]), {}, futures)
+    assert out["di1_open_interest"].isna().tolist() == [False, True, False]
+
+
+def _real_like_pre(days):
+    return pd.DataFrame([(d, "PRE", cd, du, 6.5) for d in days for cd, du in ((365, 252), (730, 504), (1826, 1260))],
+                        columns=["trade_date", "curve", "calendar_days", "business_days", "rate"])
 
 
 def test_the_sovereign_proxy_is_doc_minus_ust_in_effective_terms():

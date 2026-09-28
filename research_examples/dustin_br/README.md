@@ -63,7 +63,7 @@ are identical whether or not anything published after `T` exists.
 | `*_mom_{5,21,63}d`                                 | change (rates) or log change (prices) over k observations                                                                                           |
 | `*_rv_{21,63}d`                                    | realised vol of daily changes, annualised (√252)                                                                                                    |
 | `corr_*_{21,63}d`                                  | correlation of daily changes on common observation dates (`corr_di2y_ofr_vol_*` against OFR's Volatility category)                                  |
-| `di1_open_interest`, `di1_contracts`               | DI1 totals per session; **from 2018-01-02 only**                                                                                                    |
+| `di1_open_interest`, `di1_contracts`               | DI1 totals per session; **from 2018-01-02 only**; open interest is NULL on 2018-05-10 and 2025-09-11, where B3 omits it for held contracts          |
 
 Known limits: the monthly publication rule is conservative, not a release
 calendar; SILO keeps no Focus vintages; realised vol lags implied vol at
@@ -71,6 +71,41 @@ regime turns; the OFR FSI arrives two business days late and is a composite,
 smoother than VIX; the sovereign proxy's level drifts for years with onshore
 dollar conditions, so read it in changes. `DOC` is linear on 360 days (B3's
 Manual de Curvas v21 §4.5), and the builder converts it that way.
+
+## Stage 4: the regime model
+
+`model.py` asks whether the matrix predicts the curve's regime over the next
+21 sessions: the 2y DI falls (bull) or rises (bear), and the 2s5s slope
+widens (steepener) or narrows (flattener). It fits an L2 multinomial logistic
+model on 24 CORE features, walk-forward from 2012 with a 21-session purge, and
+scores it against two baselines on the same sessions: each regime's share so
+far (climatology), and each regime's share after the regime that just ended
+(Markov). Research Build runs it after every build (`model_report.md`,
+`model_predictions.csv`).
+
+```bash
+python -m research_examples.dustin_br.model --matrix out/dustin_br.csv --out-dir out
+```
+
+First result, on run 36438910847's matrix (3,633 labelled sessions out of
+sample, 2012 to 2026):
+
+| Out of sample                           | Log loss | Hit rate |
+| --------------------------------------- | -------- | -------- |
+| Model, C = 0.1 (set in advance)         | 1.855    | 22.3%    |
+| Model, C chosen in each training window | 1.387    | 29.0%    |
+| Climatology                             | 1.399    | 20.2%    |
+| Markov                                  | 1.400    | 26.1%    |
+
+With C set in advance the model overfits (in-sample log loss 1.24): 4,600
+labels that overlap 20 of 21 sessions hold about 220 independent outcomes.
+The second variant was added after that result; it picks C on each training
+window's last two years and never looks at a test year. It is not
+distinguishable from either baseline in log loss (+0.012, 90% interval -0.014
+to +0.035). Its hit rate beats climatology by 8.9 points (+4.7 to +13.0) but
+not Markov (+2.9, -1.4 to +7.0). So far the only signal is the persistence
+the Markov baseline already has; the macro and global inputs add nothing
+measurable to a linear model.
 
 Credit: the stress index is the Office of Financial Research's OFR Financial
 Stress Index (OFR asks for credit when its work is reproduced).
