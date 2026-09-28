@@ -5,7 +5,7 @@ Wayfinder research ticket #386 (map #371). This note builds on #372
 `research/corporate-event-adjustment`) and bug #385. It was investigated on
 2026-09-28 against `origin/main` at `b73ebb4`, the live Supabase project
 (read-only SELECTs) and B3's own endpoint and web frontend. B3 requests ran
-from 10:33 to 10:48 UTC-3 (13:33 to 13:48 UTC). This note states facts and
+from 10:33 to 10:54 UTC-3 (13:33 to 13:54 UTC). This note states facts and
 how reliable the mapping is. It does not design the ingest.
 
 ## Answer
@@ -67,12 +67,27 @@ Each point below is a live probe (P1–P6):
 - **It is per issuer, not global.** Without `tradingName` the call returns
   `totalRecords 0` (P5). `issuingCompany` is not a filter: `{"issuingCompany":"KLBN"}`
   also returns 0 (P3).
-- **`tradingName` is an exact match after B3's normalization, and the match
-  ignores case.** `PETROBRAS` and `petrobras` both return 343 records. `PETRO`
-  returns 0 (P2, P3). The catalog name `KLABIN S/A` returns 0, but `KLABINSA`
-  returns 219 (P3). The JS `String.replace` with a string pattern removes only
-  the **first** space, `-`, `_` and `/`. So a name with two spaces keeps its
-  second one, and a Python port must use `replace(x, "", 1)`.
+- **`tradingName` must be the whole name, not a fragment, and case does not
+  matter.** `PETROBRAS` and `petrobras` both return 343 records. `PETRO`
+  returns 0 (P2, P3).
+- **Only a slash breaks the match.** The server ignores spaces, dots and
+  dashes. Each pair below returned the same total (P3, P7):
+
+  | name as published | forms tested                 | records |
+  | ----------------- | ---------------------------- | ------- |
+  | `KLABIN S/A`      | `KLABIN SA`, `KLABINSA`      | 219     |
+  | `REDE D OR`       | `REDED OR`, `REDEDOR`        | 24      |
+  | `TIM PART S/A`    | `TIMPART SA`, `TIMPARTSA`    | 60      |
+  | `SUZANO S.A.`     | `SUZANOS.A.`, `SUZANOSA`     | 72      |
+  | `FRAS-LE`         | `FRAS-LE`, `FRASLE`          | 16      |
+
+  Any name that still contains its `/` returns 0: `KLABIN S/A` and
+  `TIM PART S/A` both do. The base64 token for these payloads contains no
+  `/`, so the slash inside the name is what fails.
+
+  B3's own normalization removes the first `/`, and only the first. That is
+  enough: of the 452 equity/unit issuer codes on the tape since 2019, 12 have
+  a `/` in their latest `nome_resumido` and none has two (Q7).
 - **Page size has a silent cap.** `pageSize` 20, 100 and 120 work. 200, 350
   and 400 return HTTP 200 with `"results": []` and
   `"totalRecords": null, "totalPages": null` (P1). The exact cap between 121
@@ -82,7 +97,7 @@ Each point below is a live probe (P1–P6):
   within each group. PETR page 1 at size 20 is therefore all ON. That is why
   #372 saw "only ON" on recent pages. The full PETR history has 170 ON and 173
   PN rows (P1).
-- **Rate limits:** none signalled. 62 API calls spaced 2 to 2.5 s apart all
+- **Rate limits:** none signalled. 72 API calls spaced 2 to 2.5 s apart all
   returned HTTP 200. No rate-limit or `Retry-After` headers came back (P1–P6).
   Two things were not tested: bursts, and a full-universe crawl.
 - **Response:** `{"page":{pageNumber,pageSize,totalRecords,totalPages},"results":[…]}`.
@@ -188,11 +203,18 @@ Unit: a distinct (issuer, `typeStock`, `dateClosingPricePriorExDate`,
 `closingPricePriorExDate`) key with the price date inside the tape span
 2019-01-02 to 2026-09-25. There are 1,054 keys, from 1,365 rows (Q1, Q2).
 
-| rule                          | exact, one candidate | no print that day | price mismatch | several candidates |
-| ----------------------------- | -------------------- | ----------------- | -------------- | ------------------ |
-| current code + class          | 985 (93.5%)          | 69                | 0              | 0                  |
-| lineage + class (§3)          | 1,054 (100%)         | 0                 | 0              | 0                  |
-| naive ISIN pattern            | 964 (91.5%)          | –                 | –              | –                  |
+| rule                          | exact              | no print that day | price mismatch | several candidates |
+| ----------------------------- | ------------------ | ----------------- | -------------- | ------------------ |
+| current code + class          | 985 (93.5%)        | 69                | 0              | 0                  |
+| lineage + class               | 1,054 (100%)       | 0                 | 0              | not counted        |
+| naive ISIN pattern            | 964 (91.5%)        | –                 | –              | –                  |
+
+**What was executed for the lineage row.** The CNPJ rule in §3 was not run
+end to end. Q1 hard-codes two lineages, ISAE ↔ TRPL and AXIA ↔ ELET, and
+scores 1,042 keys. Q2 checks EQPA's 12 CELP-era keys by hand, which brings
+the total to 1,054. Q5 shows that the `cia_ticker` CNPJ rule produces exactly
+these codes, so the result carries over to the rule. Q1 counted several
+candidates only for the current-code rule.
 
 - **The 69 misses are all renames.** AXIA has 29 keys from the ELET era and
   ISAE has 28 from the TRPL era; both match with lineage (Q1). EQPA has 12
@@ -248,9 +270,10 @@ values agree 177 of 177, in both directions.
 
 Each case below fails in a way that can be detected.
 
-- **The name returns 0 rows.** This happens with a substring, an
-  un-normalized name, or a name B3 does not know. It can't be told apart from
-  "no cash events ever" by the response alone.
+- **The name returns 0 rows.** This happens with a fragment of the name, a
+  name that still contains its `/` (12 of 452 universe codes, Q7), or a name
+  B3 does not know. It can't be told apart from "no cash events ever" by the
+  response alone.
 - **A page above the cap is empty.** It returns HTTP 200 with
   `totalRecords null`. A null total is the signal.
 - **There is no print to confirm against.** This covers the 4 rows in §4.1,
@@ -273,7 +296,19 @@ Each case below fails in a way that can be detected.
     3 and CMIG has 2 per event. These match #372's supplement counts (P4).
 
   So `count × valueCash` is the per-share total, and the installment count
-  agreed with the supplement in every case compared. Two things remain
+  agreed with the supplement in every case compared.
+
+  **KLBN compared with #372.** #372's P4 reported "15/12/2025 × 3". It
+  counted rows that share SILO's key, and `rate` is part of that key, so the
+  fourth installment at `…224` fell outside the count. Its §6 also cited
+  KLBN11's stored rows as stale. They are not. SILO holds `0.227985861240`
+  paying 2026-08-19 and `0.227985861230` paying 2026-11-12. Those are the
+  last write of the three `…124` installments (27/02, 20/05 and 19/08) and
+  the single `…123` installment (12/11), exactly as the supplement publishes
+  them today (P4, #372 Q23).
+
+  **Effect on #385.** The installment collapse in #385 stands. The KLBN11
+  example of a stale row does not. Two things remain
   **unverified**: that a repeated row is always an installment and never a
   duplicate publication, and when each installment pays. Payment dates exist
   only in the supplement's roughly 12-month window.
@@ -332,7 +367,7 @@ Sources: P4, P5 and Q6. Last tape prints: ENBR3 2023-08-21, CIEL3 2024-08-26
 ## 7. Not established
 
 - The exact page-size cap between 121 and 199, and whether B3 limits a
-  sustained crawl. This session made 62 calls in total.
+  sustained crawl. This session made 72 calls in total.
 - How long the lag on recent events is, and what causes it.
 - Whether repeated rows are ever duplicates rather than installments.
 - What `RENDIMENTO` means on an equity.
@@ -346,7 +381,7 @@ Sources: P4, P5 and Q6. Last tape prints: ENBR3 2023-08-21, CIEL3 2024-08-26
 **B3 probes.** Every probe is a GET to
 `…/listedCompaniesProxy/CompanyCall/{endpoint}/{base64(json)}` with the headers
 in `src/fetchers/b3_corporate_events_fetcher.py:79-86`, made on 2026-09-28
-between 10:33 and 10:48 UTC-3 (13:33 and 13:48 UTC). Calls were spaced at
+between 10:33 and 10:54 UTC-3 (13:33 and 13:54 UTC). Calls were spaced at
 least 2 s apart.
 
 - **P1** — `GetListedCashDividends` with `tradingName PETROBRAS`.
@@ -375,6 +410,13 @@ least 2 s apart.
 - **P6** — `tradingName ELETROBRAS` returns 184 records, the newest ON row
   `DIVIDENDO 15/08/2025 1,757644112`. `tradingName TRANPAULIST` returns 196,
   the newest ON row `JRS CAP PROPRIO 13/12/2023`.
+- **P7** — 10:54 UTC-3 (13:54 UTC), 10 calls. Results by `tradingName`:
+  - `REDED OR` and `REDEDOR`: 24 each.
+  - `TIMPART SA` and `TIMPARTSA`: 60 each.
+  - `SUZANOS.A.` and `SUZANOSA`: 72 each.
+  - `KLABIN SA`: 219.
+  - `TIM PART S/A`: 0.
+  - `FRASLE` and `FRAS-LE`: 16 each.
 - **Frontend** — `https://sistemaswebb3-listados.b3.com.br/listedCompaniesPage/`
   loads `runtime-es2015.96ced9ab12a999600148.js`, which lazy-loads
   `5-es2015.0712b98cf4306bcf2266.js`. That file contains the excerpt in §1.
@@ -484,3 +526,17 @@ These are the same company under a changed code, not two companies with one
 name. Some codes also carry two names over time, for example SUZB
 `SUZANO PAPEL` → `SUZANO S.A.`. The latest name is the one that returns the
 full history (P6).
+
+**Q7** — separator exposure, taking the latest `nome_resumido` of each
+equity/unit issuer code on board `02` since 2019 (`DISTINCT ON (left(codneg,4))
+… ORDER BY trade_date DESC`). Result: 452 codes.
+
+| pattern                      | codes |
+| ---------------------------- | ----- |
+| contains `/`                 | 12    |
+| two or more `/`              | 0     |
+| contains `-`                 | 10    |
+| two or more `-`              | 0     |
+| two or more spaces           | 14    |
+| contains `.`                 | 10    |
+| other non-alphanumerics      | 0     |
