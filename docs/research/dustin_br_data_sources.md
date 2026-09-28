@@ -612,12 +612,14 @@ and uploads it with its quality report, which re-runs the no-look-ahead check
 on the real inputs.
 
 **Stage 4, the regime model** (`research_examples/dustin_br/model.py`, first
-run 2026-09-28): the 21-session regime (2y level x 2s5s slope) from an L2
-multinomial logistic model on the CORE features, walk-forward from 2012
-against climatology and a Markov baseline. It shows no edge in probability
-over either baseline (log loss 1.387 against 1.399 and 1.400; the gain's 90%
-interval spans zero); its hit rate beats climatology, not Markov. The numbers
-and caveats are in the builder README.
+run 2026-09-28): the 21-session regime (2y level x 2s5s slope), the level
+alone and the slope alone, from an L2 multinomial logistic model on the CORE
+features, walk-forward from 2012 against climatology and a Markov baseline.
+No target shows an edge in probability over either baseline (every log-loss
+gain's 90% interval spans zero). The level is a coin; the slope's direction
+is called right 56% of the time, better than Markov but not than
+climatology: a lead to track forward, not a finding. The numbers and caveats
+are in the builder README.
 
 **Operator steps after merge** (a merge deploys nothing to the database),
 one dispatch at a time, since all share the `supabase-ingest` queue:
