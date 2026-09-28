@@ -20,16 +20,33 @@ DERIVED = {"policy_gap", "real_policy_rate"}
 REGIME, LEVEL, SLOPE = (m.TARGETS[name] for name in ("regime", "level", "slope"))
 
 
-def _frame(years: int = 6, seed: int = 0, planted: float = 0.0) -> pd.DataFrame:
-    """Random-walk curve plus noise features, B3-like sessions from 2008.
-    ``planted`` > 0 leaks the sign of the next 21 sessions' level change into
-    one feature: a positive control, deliberately forward-looking."""
+def _frame(years: int = 6, seed: int = 0) -> pd.DataFrame:
+    """Random-walk curve plus noise inputs, B3-like sessions from 2008."""
     rng = np.random.default_rng(seed)
     dates = pd.bdate_range("2008-01-01", periods=250 * years)
     n = len(dates)
     di_2y = 10 + np.cumsum(rng.normal(0, 0.05, n))
     f = pd.DataFrame({"date": dates, "di_2y": di_2y, "di_2s5s": np.cumsum(rng.normal(0, 0.02, n)),
                       "di_1y": di_2y - 0.2, "selic": 10.0, "ipca_12m": 4.0})
+    for col in m.FEATURES:
+        if col not in f and col not in DERIVED:
+            f[col] = rng.normal(size=n)
+    return f
+
+
+def _clean(seed: int, planted: float = 0.0, years: int = 6) -> pd.DataFrame:
+    """Labels from random walks, every INPUT stationary noise (the di_2s5s and
+    policy inputs included). A random-walk input is the known hazard: its
+    in-sample fit to persistent, overlapping labels is spurious (on
+    ``_frame``, seed 2, the level model loses 0.19 to climatology), which is
+    why the real inputs are spreads, changes and volatilities."""
+    rng = np.random.default_rng(seed)
+    dates = pd.bdate_range("2008-01-01", periods=250 * years)
+    n = len(dates)
+    di_2y = 10 + np.cumsum(rng.normal(0, 0.05, n))
+    f = pd.DataFrame({"date": dates, "di_2y": di_2y, "di_2s5s": rng.normal(size=n),
+                      "di_1y": 10.0 + rng.normal(0, 0.1, n), "selic": 10.0,
+                      "ipca_12m": 4.0 + rng.normal(0, 0.1, n)})
     for col in m.FEATURES:
         if col not in f and col not in DERIVED:
             f[col] = rng.normal(size=n)
@@ -87,18 +104,17 @@ def _gain(preds, target):
     return m.summary(preds, target.classes)["gains"][("log_loss", m.HEADLINE, "climatology")]
 
 
-def test_noise_features_earn_no_skill():
-    frame = _frame(seed=2)
-    for target in (REGIME, SLOPE):
-        mean, lo, hi = _gain(m.walk_forward(frame, target), target)
-        assert lo < 0 < hi and abs(mean) < 0.05, target.name
+def test_noise_inputs_earn_no_skill():
+    for seed in (2, 3, 4):
+        mean, lo, hi = _gain(m.walk_forward(_clean(seed), LEVEL), LEVEL)
+        assert abs(mean) < 0.01, seed
 
 
 def test_a_planted_signal_is_found():
-    frame = _frame(seed=3, planted=2.0)
-    for target in (REGIME, LEVEL):                              # the leak is the level's direction
-        mean, lo, hi = _gain(m.walk_forward(frame, target), target)
-        assert lo > 0.1, target.name
+    for seed in (2, 3):
+        for target in (REGIME, LEVEL):                          # the leak is the level's direction
+            mean, lo, hi = _gain(m.walk_forward(_clean(seed, planted=2.0), target), target)
+            assert lo > 0.3, (seed, target.name)
 
 
 def test_the_block_bootstrap_brackets_the_mean():

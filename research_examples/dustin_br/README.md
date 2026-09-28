@@ -109,13 +109,14 @@ Results on run 36444747902's matrix (3,633 labelled sessions out of sample,
 - **The level is a coin.** The 2y rate's direction is not called better than
   either baseline.
 - **The slope is a lead, not a finding.** Its direction is called right 56.0%
-  of the time, 8.0 points better than Markov (90% interval +1.9 to +14.3),
-  but not distinguishably better than climatology (+5.4, -0.4 to +10.6), and
-  its probabilities are overconfident (74% predicted, 60% happened). The
-  slope tends to reverse over 21 sessions, which is where Markov, betting on
-  persistence, loses. With 12 comparisons at a one-sided 5% level, about one
-  "better" can appear by chance. The level and slope targets were fixed
-  after the regime result and before either was scored.
+  of the time, but not distinguishably better than climatology (+5.4, -0.4 to
+  +10.6), and its probabilities are overconfident (74% predicted, 60%
+  happened). It beats Markov by 8.0 points (+1.9 to +14.3) only because
+  Markov is a coin for the slope: after a flattener the next 21 sessions
+  flatten 50.9% of the time, after a steepener 51.2%. With 12 comparisons at
+  a one-sided 5% level, about one "better" can appear by chance. The level
+  and slope targets were fixed after the regime result and before either was
+  scored.
 
 Credit: the stress index is the Office of Financial Research's OFR Financial
 Stress Index (OFR asks for credit when its work is reproduced).
