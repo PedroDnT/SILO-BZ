@@ -60,14 +60,28 @@ LEFT JOIN cvm_fidc_mensal m ON m.cnpj = t.cnpj AND m.period = t.period
 LEFT JOIN cvm_fidc_aging a ON a.cnpj = t.cnpj AND a.period = t.period;
 
 -- Monthly securitised instrument issuance trend (no params — use security_issuance_trend() for filtering)
+-- One row per series per filing, the grain every per-series reader uses: a
+-- series is (instrument_type, codigo_identificacao, numero_serie). Since
+-- migration 52 cvm_securit_serie keeps every row CVM files, including several
+-- rows for one series number (classes, occurrences) that repeat its value, so
+-- counting and summing raw rows would inflate both measures (CRI, 2019/2022/
+-- 2026 files: +8.1% of value). classe, id only make the pick deterministic.
 CREATE OR REPLACE VIEW vw_securit_emission_trend AS
+WITH per_series AS (
+  SELECT DISTINCT ON (instrument_type, codigo_identificacao, numero_serie, data_referencia)
+    instrument_type,
+    data_referencia,
+    valor_certificados
+  FROM cvm_securit_serie
+  WHERE data_referencia IS NOT NULL
+  ORDER BY instrument_type, codigo_identificacao, numero_serie, data_referencia, classe, id
+)
 SELECT
   date_trunc('month', data_referencia)::date AS period,
   instrument_type,
   COUNT(*)                                   AS n_series,
   SUM(valor_certificados)                    AS total_value
-FROM cvm_securit_serie
-WHERE data_referencia IS NOT NULL
+FROM per_series
 GROUP BY date_trunc('month', data_referencia)::date, instrument_type;
 
 -- Cross-domain yield universe without benchmark (use yield_universe() function for parameterised version)

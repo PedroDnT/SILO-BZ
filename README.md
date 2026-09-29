@@ -294,6 +294,11 @@ same for everyone.
   from now on; the past comes from `backfill.yml` with `fnet_start` / `fnet_end`, one
   year per dispatch, newest first, then one `fnet_sweep` dispatch to link documents to
   funds. Until then `api.fund_restatements` only sees recent filings.
+- **SECURIT history needs one re-ingest after migration 52.** The old keys dropped
+  rows (`cvm_securit_dfin` kept one filing per year of each type) and CRA/CRI rows
+  carry no securitizer CNPJ. The daily run fixes the current year once 52 is applied.
+  Earlier years come back with `backfill.yml`, `entity=securit`, which fills the CNPJ
+  in place on every existing row it matches.
 - **The Sentinel read-only role** is a script the owner runs once:
   [`docs/security/sentinel_readonly_role.sql`](docs/security/sentinel_readonly_role.sql)
   (password via a psql variable, never in the repo).

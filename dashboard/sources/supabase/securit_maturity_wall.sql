@@ -21,8 +21,14 @@ with years as (
 snapshot as (
   -- Latest reported snapshot per series (same de-duplication as
   -- securit_overview.sql — the source table re-states the whole book monthly).
+  -- A series is (instrument_type, codigo_identificacao, numero_serie). The
+  -- securitizer is not part of it: certificates move between securitizers
+  -- (318 CRI codes, 2019-2026), and keying on cnpj_securit would count a moved
+  -- series twice, once with the stale last filing of the old securitizer.
+  -- classe, id only make the pick deterministic when one series number
+  -- carries several rows in a month (migration 52 keeps them all).
   select distinct on (
-      s.instrument_type, s.cnpj_securit, s.codigo_identificacao, s.numero_serie
+      s.instrument_type, s.codigo_identificacao, s.numero_serie
     )
     s.instrument_type,
     s.valor_certificados,
@@ -32,10 +38,11 @@ snapshot as (
   where s.data_referencia is not null
   order by
     s.instrument_type,
-    s.cnpj_securit,
     s.codigo_identificacao,
     s.numero_serie,
-    s.data_referencia desc
+    s.data_referencia desc,
+    s.classe,
+    s.id
 ),
 agg as (
   select
