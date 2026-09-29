@@ -58,3 +58,17 @@ def test_analytical_refresh_is_not_continue_on_error():
 def test_readme_describes_daily_as_the_full_pipeline():
     text = (ROOT / "README.md").read_text(encoding="utf-8")
     assert "`daily` is the scheduled" in text and "ANALYZE and analytical refresh included" in text
+
+
+def test_cash_dividend_history_is_a_dispatch_mode_that_uses_the_secret():
+    """The one-off history load runs in Actions, with the POSTGRES_URL secret,
+    after the shared schema apply that creates b3_cash_dividend."""
+    spec = yaml.safe_load(DAILY.read_text())
+    modes = spec[True]["workflow_dispatch"]["inputs"]["mode"]["options"]
+    assert "b3-cash-dividends" in modes
+    names = [s.get("name") for s in spec["jobs"]["ingest"]["steps"]]
+    step = "Run B3 cash-dividend history backfill"
+    assert names.index("Apply schema + migrations") < names.index(step)
+    assert "mode == 'b3-cash-dividends'" in _condition(step)
+    assert "--b3-cash-dividends-only" in _step(step)["run"]
+    assert "mode == 'b3-cash-dividends'" not in _condition("Run daily update")
