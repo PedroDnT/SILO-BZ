@@ -12,6 +12,22 @@ source, add the UTC value in parentheses: the daily run starts at 03:00 UTC-3
 the database time zone, stored timestamps or API output to follow it. The details
 are in `CLAUDE.md`, section "Times are UTC-3".
 
+**Discovery is not prioritization** (owner's rule). Agents may discover
+problems, but discovery does not equal prioritization.
+
+An agent may:
+
+- report a newly discovered issue;
+- suggest opening a ticket.
+
+An agent must not:
+
+- start implementing discovered work;
+- elevate it to active priority;
+- expand the current task to include it,
+
+unless explicitly authorized by the owner.
+
 This file only adds context for Cursor Cloud agent VMs.
 
 ## Cursor Cloud specific instructions
