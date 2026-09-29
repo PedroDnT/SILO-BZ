@@ -270,6 +270,7 @@ SERIES_READERS = [
     "dashboard/sources/supabase/securit_maturity_wall.sql",
     "src/store/analytical/15_fraud_screens.sql",
     "src/store/analytical/07_vw_cross_domain.sql",
+    "src/store/analytical/05_fact_security_monthly.sql",
 ]
 
 
