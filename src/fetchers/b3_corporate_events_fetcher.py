@@ -222,8 +222,9 @@ class B3CorporateEventsFetcher:
 
         GetListedCashDividends is keyed by tradingName, matched exactly (ITAU
         returns nothing; ITAUSA and ITAUUNIBANCO are different companies), so
-        the name must come from B3's own catalog, never be derived from a
-        ticker. The catalog lists ACTIVE companies under their CURRENT code
+        the name must be one B3 published (this catalog, or for a delisted
+        code the tape's own name), never derived from a ticker. The catalog
+        lists ACTIVE companies under their CURRENT code
         (Eletrobras is AXIA, not ELET); the CNPJ is kept because it is what
         links a renamed company back to its old tickers (cia_ticker). A code
         listed under more than one name keeps all of them.
