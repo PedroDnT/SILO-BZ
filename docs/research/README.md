@@ -42,3 +42,20 @@ UST, VIX, MOVE, sovereign risk and commodities, and records the choices and the
 point-in-time rules. VIX is licensed by Cboe and replaced by the OFR Financial
 Stress Index; the sovereign proxy was checked against EMBI+. The dataset
 builder is `research_examples/dustin_br/`.
+
+## Ibovespa benchmark source
+
+[`ibovespa-source.md`](ibovespa-source.md) (ticket #374) finds BACEN SGS 7
+discontinued since 2019-09-30, shows that COTAHIST's `IBOV11` is the
+Ibovespa-option settlement leg (printed at the settlement index on expiry
+days, never the close), and records B3's own daily-close series as the
+candidate source.
+
+## FCA listing dates (research seam)
+
+[`fca-listing-dates.md`](fca-listing-dates.md) answers ticket #373: whether the
+FCA listing dates in `cia_ticker` hold up as history across filing versions.
+They do not. CVM keeps only the latest version, dates are rewritten between
+years and follow the segment spell rather than the ticker code, and most
+delisted tickers vanish with no end date. Tape first/last observed stays the
+primitive.

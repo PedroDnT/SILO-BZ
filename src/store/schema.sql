@@ -1783,6 +1783,79 @@ COMMENT ON VIEW vw_b3_share_count_event IS
     'Share-count events (splits/groupings/bonuses) with the unit close on each side of the entitlement date. Evidence for verifying B3''s per-label factor convention against the tape before any adjusted price series is served. Applies no adjustment itself.';
 
 -- ---------------------------------------------------------------------------
+-- B3 cash distributions, full history (migration 51). The supplement's cash
+-- array in b3_corporate_event is a ~12-month window; this is the paged
+-- GetListedCashDividends history. See the migration header for why the row
+-- carries no ISIN and how vw_b3_cash_dividend_isin resolves one.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS b3_cash_dividend (
+    id                          BIGSERIAL PRIMARY KEY,
+    -- The 4-letter code we derived tradingName from (B3's GetInitialCompanies
+    -- issuingCompany). Needed for the tape join; not a B3 field on this row.
+    issuing_company             TEXT        NOT NULL,
+    -- tradingName as B3 publishes it: the catalog's ("KLABIN S/A"), or for
+    -- a delisted code the tape's own nome_resumido. The request
+    -- sends it normalized as B3's own page does (the fetcher's
+    -- cash_dividend_query_name): a name that keeps its slash matches nothing.
+    trading_name                TEXT        NOT NULL,
+    -- The company's CNPJ as B3's catalog (GetInitialCompanies) publishes it.
+    -- B3 lists companies under their CURRENT code: Eletrobras is AXIA, and
+    -- its ELET-era distributions come back under that name. The CNPJ joins
+    -- to cia_ticker (CVM's published ticker history), which is how the view
+    -- reaches ELET3/ELET6 for the pre-rename rows. NULL if B3 omits it.
+    cnpj                        TEXT,
+    -- typeStock verbatim: ON, PN, PNA, PNB, UNT ...
+    type_stock                  TEXT        NOT NULL,
+    -- corporateAction verbatim: DIVIDENDO, JRS CAP PROPRIO, RENDIMENTO ...
+    corporate_action            TEXT        NOT NULL,
+    date_approval               DATE,
+    -- lastDatePriorEx: the last session with the entitlement. The ex-date is
+    -- the next trading session; that derivation is left to the consumer.
+    last_date_prior_ex          DATE,
+    -- valueCash, per `quoted_per_shares` shares (1 today; 1000 on records
+    -- from the era when B3 quoted per thousand shares).
+    value_cash                  NUMERIC(28, 12),
+    ratio                       NUMERIC(28, 12),
+    quoted_per_shares           NUMERIC(28, 12),
+    -- B3's own pre-ex reference close and the session it comes from.
+    date_closing_price_prior_ex DATE,
+    closing_price_prior_ex      NUMERIC(28, 12),
+    -- corporateActionPrice: B3's published yield in percent
+    -- (value_cash / closing_price_prior_ex * 100; PETR 1996: 5.1471/114.99).
+    corporate_action_price      NUMERIC(28, 12),
+    -- 1, 2, ... among rows B3 publishes byte-identically. Petrobras pays some
+    -- distributions in equal installments and this endpoint (which carries no
+    -- payment date) lists each as an identical row: PETR has 14 such pairs,
+    -- e.g. two JRS CAP PROPRIO of 0.35048636 on 2026-06-01. Without this the
+    -- unique key would collapse them and silently drop half the payout.
+    -- Deterministic from the fetch (a count, not an order), so re-fetches
+    -- land on the same keys.
+    occurrence                  SMALLINT    NOT NULL DEFAULT 1,
+    raw                         JSONB       NOT NULL,
+    source                      TEXT        NOT NULL DEFAULT 'b3_listed_cash_dividends',
+    fetched_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Idempotency on what B3 publishes about the distribution. Two JCP rows on
+-- the same date with different amounts stay distinct (PETR 2026-08-21 has
+-- two); identical installments stay distinct through `occurrence`.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_b3_cash_dividend
+    ON b3_cash_dividend (trading_name, type_stock, corporate_action,
+                         last_date_prior_ex, date_approval, value_cash, occurrence)
+    NULLS NOT DISTINCT;
+
+CREATE INDEX IF NOT EXISTS idx_b3_cash_dividend_issuer_date
+    ON b3_cash_dividend (issuing_company, type_stock, last_date_prior_ex DESC);
+
+COMMENT ON TABLE b3_cash_dividend IS
+    'Full published history of B3 cash distributions per company tradingName and share class (GetListedCashDividends), fields verbatim. No ISIN is published; vw_b3_cash_dividend_isin resolves it against the tape with evidence. Supersedes the ~12-month cash window in b3_corporate_event for total-return use.';
+
+-- vw_b3_cash_dividend_isin (the ISIN resolved against the tape, with its
+-- evidence) is created by migration 51 and deliberately not here: it reads
+-- cia_ticker, which only migration 25 creates, so on a fresh database this
+-- file runs before that table exists.
+
+-- ---------------------------------------------------------------------------
 -- B3 instrument typing v3 (migration 27): index/right/bonus split out of the
 -- residual bucket; fund subtype falls back to the ISIN's own classified
 -- sessions so an ETF survives a board-code change.

@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 from src.fetchers.b3_bdi_fetcher import B3BdiEmpty, B3BdiFetcher
@@ -167,6 +167,43 @@ class B3Ingestor:
             cur.execute(sql, (lookback_days,))
             return [r[0] for r in cur.fetchall() if r and r[0]]
 
+    def _tape_names(
+        self, codes: List[str], lookback_days: int = 400
+    ) -> Dict[str, Tuple[str, List[str]]]:
+        """code -> (name the tape last printed for it, CNPJs cia_ticker lists).
+
+        For issuing codes B3's catalog no longer lists. The name is COTAHIST's
+        own ``nome_resumido`` on the code's latest standard-lot session inside
+        the same window as _traded_issuers; it equals the catalog tradingName
+        wherever both exist (docs/research/cash-dividends-mapping.md §2). The
+        CNPJs are CVM's published ticker history, used to tell a renamed
+        company from a delisted one. A code with no name printed is absent.
+        """
+        sql = """
+            WITH latest AS (
+                SELECT DISTINCT ON (left(codneg, 4))
+                       left(codneg, 4)        AS issuer,
+                       btrim(nome_resumido)   AS name
+                  FROM b3_cotahist
+                 WHERE tpmerc = '010'
+                   AND codbdi = '02'
+                   AND left(codneg, 4) = ANY(%s)
+                   AND btrim(coalesce(nome_resumido, '')) <> ''
+                   AND trade_date > (SELECT max(trade_date) FROM b3_cotahist) - %s
+                 ORDER BY left(codneg, 4), trade_date DESC
+            )
+            SELECT l.issuer, l.name,
+                   coalesce(array_agg(DISTINCT t.cnpj_cia)
+                              FILTER (WHERE t.cnpj_cia IS NOT NULL), '{}')
+              FROM latest l
+              LEFT JOIN cia_ticker t
+                ON length(t.codneg) >= 5 AND left(t.codneg, 4) = l.issuer
+             GROUP BY l.issuer, l.name
+        """
+        with self._supabase.cursor() as cur:
+            cur.execute(sql, (list(codes), lookback_days))
+            return {r[0]: (r[1], sorted(r[2] or [])) for r in cur.fetchall() if r and r[1]}
+
     async def ingest_corporate_events(
         self,
         issuers: Optional[List[str]] = None,
@@ -250,6 +287,169 @@ class B3Ingestor:
                 "B3 corporate events: %d rows from %d issuers "
                 "(%d failed, %d no supplement)",
                 total, len(codes), len(failures), len(missing),
+            )
+            return total
+        except Exception as exc:
+            self._log_finish(run_id, 0, error=ingest_log.describe(exc))
+            raise
+
+    async def ingest_cash_dividends(
+        self,
+        issuers: Optional[List[str]] = None,
+        lookback_days: int = 400,
+        since: Optional[date] = None,
+        full_history: bool = False,
+    ) -> int:
+        """Fetch B3's full cash-distribution history for the traded universe.
+
+        b3_corporate_event's cash rows come from a ~12-month window; this is
+        the complete history (migration 51). Every page is fetched for every
+        issuer each time, because B3 orders the endpoint by share class before
+        date (see the fetcher). What gets upserted is narrowed instead: the
+        daily run keeps distributions whose entitlement date is within
+        `lookback_days`, unless `since` is given; `full_history` upserts all.
+
+        Failure semantics mirror ingest_corporate_events: one issuer failing
+        is counted and fails the slice, but does not abandon the sweep.
+
+        Names come from B3's catalog first. The catalog lists ACTIVE companies
+        only, so a code missing from it falls back to the name the tape
+        printed for it (_tape_names): B3 answers a delisted company's own
+        COTAHIST name with its history (ENBR, "ENERGIAS BR", 34 rows). A
+        missing code that cia_ticker ties to a CNPJ the catalog carries is
+        queried under the catalog's name instead: a rename (ELET->AXIA) or a
+        tape prefix that is not the catalog key (ADMF3 -> B100). B3 also
+        answers the old name (ELETROBRAS, 184 rows), so querying both would
+        count every distribution twice; a name already fetched is skipped.
+        A code with neither is reported, not guessed.
+        """
+        from src.fetchers.b3_corporate_events_fetcher import (
+            B3CorporateEventsFetcher,
+            cash_dividend_query_name,
+        )
+        from src.pipeline.ingest_b3_cash_dividends import (
+            ingest_b3_cash_dividends,
+            parse_cash_dividends,
+        )
+
+        run_id = str(uuid4())
+        self._log_start(run_id, "cash_dividends", None, None)
+        try:
+            codes = issuers if issuers is not None else self._traded_issuers(lookback_days)
+            if not codes:
+                self._log_finish(run_id, 0, skipped=True)
+                logger.info("B3 cash dividends: no traded issuers found, skipped")
+                return 0
+
+            if full_history:
+                cutoff: Optional[date] = None
+            elif since is not None:
+                cutoff = since
+            else:
+                cutoff = date.today() - timedelta(days=lookback_days)
+
+            fetcher = B3CorporateEventsFetcher()
+            names = fetcher.trading_names()
+            records: List[Dict[str, Any]] = []
+            failures: List[str] = []
+            fetched = 0
+            # Normalized as sent: "KLABIN S/A" and "KLABIN SA" are one query.
+            seen: set = set()
+
+            def fetch_one(code: str, name: str, cnpj: Optional[str]) -> None:
+                nonlocal fetched
+                key = cash_dividend_query_name(name)
+                if key in seen:
+                    return
+                seen.add(key)
+                try:
+                    raw = fetcher.fetch_cash_dividends(name)
+                    records.extend(parse_cash_dividends(
+                        code, name, raw, since=cutoff, cnpj=cnpj,
+                    ))
+                    fetched += 1
+                except Exception as exc:  # noqa: BLE001 - counted, then reported
+                    failures.append(f"{code}/{name}: {exc}")
+
+            not_in_catalog: List[str] = []
+            for code in codes:
+                entries = names.get(code)
+                if not entries:
+                    not_in_catalog.append(code)
+                    continue
+                for entry in entries:
+                    fetch_one(code, entry["trading_name"], entry.get("cnpj") or None)
+
+            renamed: List[str] = []
+            missing: List[str] = []
+            from_tape = 0
+            if not_in_catalog:
+                catalog_by_cnpj: Dict[str, List[str]] = {}
+                for entries in names.values():
+                    for e in entries:
+                        if e.get("cnpj"):
+                            catalog_by_cnpj.setdefault(e["cnpj"], []).append(e["trading_name"])
+                tape = self._tape_names(not_in_catalog, lookback_days)
+                for code in not_in_catalog:
+                    found = tape.get(code)
+                    if found is None:
+                        missing.append(code)
+                        continue
+                    name, cnpjs = found
+                    listed = [c for c in cnpjs if c in catalog_by_cnpj]
+                    if listed:
+                        # A company the catalog lists under another code:
+                        # renamed (ELET, now AXIA) or a tape prefix that is
+                        # not its catalog key (ADMF3 trades as B100). Query
+                        # the catalog name; seen skips it when that code was
+                        # already fetched, so nothing is counted twice.
+                        renamed.append(code)
+                        for c in listed:
+                            for current in catalog_by_cnpj[c]:
+                                fetch_one(code, current, c)
+                        continue
+                    # One CNPJ is CVM's published mapping; several are left
+                    # NULL rather than picked.
+                    cnpj = cnpjs[0] if len(cnpjs) == 1 else None
+                    fetch_one(code, name, cnpj)
+                    from_tape += 1
+
+            total = ingest_b3_cash_dividends(self._supabase, records) if records else 0
+
+            if renamed:
+                logger.info(
+                    "B3 cash dividends: %d codes resolved to a catalog company "
+                    "through cia_ticker's CNPJ (first: %s)",
+                    len(renamed), ", ".join(renamed[:8]),
+                )
+            if missing:
+                logger.warning(
+                    "B3 cash dividends: %d/%d issuers have no tradingName in "
+                    "B3's catalog or on the tape (first: %s)",
+                    len(missing), len(codes), ", ".join(missing[:8]),
+                )
+            if failures:
+                msg = (
+                    f"{len(failures)} company fetches failed; "
+                    f"first: {failures[0][:200]}"
+                )
+                self._log_finish(run_id, total, error=msg)
+                logger.warning("B3 cash dividends partial: %s", msg)
+            elif fetched == 0:
+                msg = (
+                    f"no company in {len(codes)} issuers could be fetched "
+                    f"(no tradingName for {len(missing)})"
+                )
+                self._log_finish(run_id, total, error=msg)
+                logger.error("B3 cash dividends: %s", msg)
+            else:
+                self._log_finish(run_id, total)
+            logger.info(
+                "B3 cash dividends: %d rows from %d companies "
+                "(%d named from the tape, %d via catalog CNPJ, %d failed, "
+                "%d without tradingName, cutoff %s)",
+                total, fetched, from_tape, len(renamed), len(failures),
+                len(missing), cutoff or "none",
             )
             return total
         except Exception as exc:

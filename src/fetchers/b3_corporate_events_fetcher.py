@@ -90,6 +90,22 @@ _HEADERS = {
 PRICE_AFFECTING_LABELS = {"DESDOBRAMENTO", "GRUPAMENTO", "BONIFICACAO"}
 
 
+def cash_dividend_query_name(trading_name: str) -> str:
+    """tradingName as B3's own page sends it to GetListedCashDividends.
+
+    B3's frontend does ``toUpperCase().trim()`` and then removes the FIRST
+    space, dash, underscore and slash (JavaScript's string ``replace``). The
+    server ignores spaces, dots and dashes, but a name that keeps its slash
+    matches nothing: ``KLABIN S/A`` returns 0 records, ``KLABIN SA`` 219
+    (docs/research/cash-dividends-mapping.md §1). No issuer on the tape since
+    2019 has two slashes, so first-only is enough, and it is what B3 does.
+    """
+    name = trading_name.upper().strip()
+    for ch in (" ", "-", "_", "/"):
+        name = name.replace(ch, "", 1)
+    return name
+
+
 class B3SupplementEmpty(LookupError):
     """GetListedSupplementCompany returned HTTP 200 with an empty body.
 
@@ -198,6 +214,97 @@ class B3CorporateEventsFetcher:
             total_pages = int(((data or {}).get("page") or {}).get("totalPages") or 0)
             if page >= total_pages or not results:
                 return
+            page += 1
+            time.sleep(self.sleep_between)
+
+    def trading_names(self, page_size: int = 120) -> Dict[str, List[Dict[str, str]]]:
+        """issuingCompany -> [{trading_name, cnpj}] as B3's catalog lists them.
+
+        GetListedCashDividends is keyed by tradingName, matched exactly (ITAU
+        returns nothing; ITAUSA and ITAUUNIBANCO are different companies), so
+        the name must be one B3 published (this catalog, or for a delisted
+        code the tape's own name), never derived from a ticker. The catalog
+        lists ACTIVE companies under their CURRENT code
+        (Eletrobras is AXIA, not ELET); the CNPJ is kept because it is what
+        links a renamed company back to its old tickers (cia_ticker). A code
+        listed under more than one name keeps all of them.
+        """
+        names: Dict[str, List[Dict[str, str]]] = {}
+        for row in self.list_companies(page_size=page_size):
+            code = (row.get("issuingCompany") or "").strip().upper()
+            name = (row.get("tradingName") or "").strip()
+            if not code or not name:
+                continue
+            entries = names.setdefault(code, [])
+            if all(e["trading_name"] != name for e in entries):
+                # B3 serves the CNPJ as a number in places, dropping leading
+                # zeros (Banco do Brasil 00000000000191 arrives as "191").
+                # Restoring them is formatting, not inference: a CNPJ is 14
+                # digits by definition. Anything longer is left empty.
+                digits = "".join(ch for ch in str(row.get("cnpj") or "") if ch.isdigit())
+                cnpj = digits.zfill(14) if 0 < len(digits) <= 14 else ""
+                entries.append({"trading_name": name, "cnpj": cnpj})
+        return names
+
+    def fetch_cash_dividends(
+        self, trading_name: str, page_size: int = 120
+    ) -> List[Dict[str, Any]]:
+        """Every published cash distribution for one tradingName, all pages.
+
+        B3 sorts this endpoint by typeStock and THEN by date, so page one of a
+        multi-class issuer is typically all ON (PETR: page one ON back to
+        2007, PN only from page two). Stopping early would drop whole share
+        classes, so this always pages to totalPages; callers narrow by date
+        after the fetch, not by fetching less.
+
+        Unlike the supplement's ~12-month cashDividends array, this history
+        is complete (PETR: 343 rows back to 1996, verified 2026-09-26).
+
+        The name is sent normalized as B3's own page sends it
+        (cash_dividend_query_name): a name that still carries its slash
+        ("KLABIN S/A") gets totalRecords 0, which the count check below would
+        accept as "no dividends".
+        """
+        query_name = cash_dividend_query_name(trading_name)
+        rows: List[Dict[str, Any]] = []
+        page = 1
+        while True:
+            data = self._call(
+                "GetListedCashDividends",
+                {
+                    "language": "pt-br",
+                    "pageNumber": page,
+                    "pageSize": page_size,
+                    "tradingName": query_name,
+                },
+            )
+            if not isinstance(data, dict):
+                raise ValueError(
+                    f"unexpected cash-dividend payload for {trading_name!r}: "
+                    f"{type(data).__name__}"
+                )
+            results = data.get("results") or []
+            rows.extend(r for r in results if isinstance(r, dict))
+            page_info = data.get("page") or {}
+            if page_info.get("totalRecords") is None:
+                # A page size over B3's silent cap (200 does it; 120 works)
+                # returns HTTP 200, no results and a null total. A company
+                # with no distributions reports 0, not null.
+                raise ValueError(
+                    f"GetListedCashDividends for {trading_name!r} returned no "
+                    f"totalRecords (pageSize {page_size} over B3's cap?)"
+                )
+            total_pages = int(page_info.get("totalPages") or 0)
+            if page >= total_pages or not results:
+                # A short read would publish "no dividends before X" for a
+                # company that has them; count against B3's own total.
+                total_records = int(page_info.get("totalRecords") or 0)
+                if len(rows) != total_records:
+                    raise ValueError(
+                        f"GetListedCashDividends for {trading_name!r} returned "
+                        f"{len(rows)} rows but reports totalRecords={total_records}"
+                    )
+                return rows
             page += 1
             time.sleep(self.sleep_between)
 

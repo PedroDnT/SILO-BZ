@@ -142,6 +142,17 @@ async def main() -> None:
         logger.error("B3 corporate events refresh failed: %s", exc, exc_info=True)
         failures.append(("b3_corporate_events", exc))
 
+    # B3 cash distributions, full history (migration 51). The supplement above
+    # only carries ~12 months of cash rows; this endpoint carries all of them,
+    # paged by share class. Same isolation: recorded failure, never fatal to
+    # the other sources.
+    try:
+        b3_cash = await B3Ingestor().ingest_cash_dividends()
+        totals["b3_cash_dividend"] = b3_cash
+    except Exception as exc:
+        logger.error("B3 cash dividends refresh failed: %s", exc, exc_info=True)
+        failures.append(("b3_cash_dividends", exc))
+
     # ETF market snapshot: scrape etfsbrasil.com.br via Apify (NAV/price/cotistas
     # the post-CVM-175 daily file no longer exposes). The scrape is paid + rate-
     # limited, so it ONLY runs when APIFY_TOKEN is configured — an absent token
