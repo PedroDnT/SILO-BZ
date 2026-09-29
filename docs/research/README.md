@@ -42,3 +42,11 @@ UST, VIX, MOVE, sovereign risk and commodities, and records the choices and the
 point-in-time rules. VIX is licensed by Cboe and replaced by the OFR Financial
 Stress Index; the sovereign proxy was checked against EMBI+. The dataset
 builder is `research_examples/dustin_br/`.
+
+## Ibovespa benchmark source
+
+[`ibovespa-source.md`](ibovespa-source.md) (ticket #374) finds BACEN SGS 7
+discontinued since 2019-09-30, shows that COTAHIST's `IBOV11` is the
+Ibovespa-option settlement leg (printed at the settlement index on expiry
+days, never the close), and records B3's own daily-close series as the
+candidate source.
