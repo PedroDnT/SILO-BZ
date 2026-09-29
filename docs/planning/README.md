@@ -12,6 +12,7 @@
 | [COMPETITIVE_GAPS.md](COMPETITIVE_GAPS.md) | Who else does this, what they have that we don't, and what nobody has (2026-09-23)                     | Snapshot; its §7 backlog is sequenced in `OPEN_ITEMS.md` item 14                 |
 | [AGENTS.md](AGENTS.md)                     | The governed agent loop (B7): principle, roster, lineage rules, and the registry                       | Nothing scheduled; the smallest test (one manual Builder run) is pending         |
 | [DOCUMENTS.md](DOCUMENTS.md)               | B4 design: field-by-field diffs between FNET versions of one structured informe, with a measured spike | Awaiting Pedro's eight decisions (§11); nothing built                            |
+| [RESEARCH_SEAM.md](RESEARCH_SEAM.md)       | Research seam spec: adjusted closes, research universe, index history and as-of fundamentals for external quant callers (map #371) | Awaiting the owner's approval; nothing built |
 | [PORTFOLIO_DIAGNOSIS.md](PORTFOLIO_DIAGNOSIS.md) | Portfolio diagnosis design: look-through exposure, restatement warnings, min-variance and ERC benchmarks | Open decisions are `OPEN_ITEMS.md` item 15; tickets under #340 |
 
 There is **one** list of open work, and it is `OPEN_ITEMS.md`. On 2026-09-18 two
