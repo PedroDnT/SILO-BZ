@@ -184,6 +184,8 @@ def ingest_cia_filing(conn: Any, summary_rows: List[Dict[str, Any]], doc_type: s
 
     cia_filing has no ``raw`` column, so residual fields are discarded. Rows
     missing cd_cvm or dt_refer are dropped (cannot be upserted on the natural key).
+    A missing versao stays NULL (never guessed); uq_cia_filing is NULLS NOT
+    DISTINCT (migration 50), so such a row still upserts idempotently.
 
     Args:
         conn         -- _PgClient instance
@@ -215,6 +217,11 @@ def ingest_cia_filing(conn: Any, summary_rows: List[Dict[str, Any]], doc_type: s
     )
 
 
+# Rows of one member held before an upsert. upsert_rows chunks at 1000 per
+# statement anyway; this only bounds the typed copy kept in Python.
+_ACCOUNT_FLUSH_ROWS = 5000
+
+
 def ingest_cia_account(conn: Any, members: Sequence[Any], doc_type: str) -> int:
     """Parse and upsert ITR/DFP line-item rows into cia_account.
 
@@ -230,7 +237,9 @@ def ingest_cia_account(conn: Any, members: Sequence[Any], doc_type: str) -> int:
     routed to cia_filing or ignored. Rows missing cd_cvm, cd_conta or dt_refer are
     dropped (cannot be upserted on the natural key / would violate NOT NULL).
 
-    One upsert call per member keeps batches bounded and isolates a bad member.
+    Typed rows are upserted every ``_ACCOUNT_FLUSH_ROWS`` rows and at the end of
+    each member, so the typed copy of a member never has to exist in full next
+    to its parsed rows. A small member is one upsert call.
 
     Args:
         conn     -- _PgClient instance
@@ -248,6 +257,15 @@ def ingest_cia_account(conn: Any, members: Sequence[Any], doc_type: str) -> int:
 
         records: List[Dict[str, Any]] = []
         for row in member.rows:
+            if len(records) >= _ACCOUNT_FLUSH_ROWS:
+                total += upsert_rows(
+                    conn,
+                    _account.TABLE,
+                    records,
+                    conflict_columns=",".join(_account.CONFLICT),
+                )
+                records = []
+
             typed, residual = apply_map(row, _account.FIELD_MAP)
             typed["grupo"] = member.grupo
             typed["escopo"] = member.escopo

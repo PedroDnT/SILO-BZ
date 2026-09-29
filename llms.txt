@@ -74,7 +74,7 @@ Start with Conventions & limits: it is the single source of truth for auth tiers
 
 ## Optional
 
-- [Notebooks](https://github.com/PedroDnT/SILO-BZ/tree/main/notebooks): Ten runnable notebooks, `00_start_here` through `09_dustin_br_rates` — each one a real question answered end to end.
+- [Notebooks](https://github.com/PedroDnT/SILO-BZ/tree/main/notebooks): Eleven runnable notebooks, `00_start_here` through `10_dustin_br_model` — each one a real question answered end to end.
 - [Sign in](https://silo-bz-deloslabs.vercel.app/signin.html): GitHub OAuth. Returns a user token that raises the tier ceilings for about an hour.
 - [Dashboard](https://silo-bz-deloslabs.vercel.app/): The Evidence.dev site — fund health plus B3 market, short-interest, investor-flow and macro pages. A nightly static snapshot, not the API.
 - [Repository](https://github.com/PedroDnT/SILO-BZ): The ingestion pipeline that writes the warehouse these pages read.

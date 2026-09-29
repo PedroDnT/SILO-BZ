@@ -1,0 +1,71 @@
+name: Research Build
+
+# Builds the DUSTIN-BR research matrix (research_examples/dustin_br/) from the
+# warehouse and uploads it as an artifact with its quality report: sessions,
+# coverage by year, staleness-nulled cells, where B3's extrapolated tail leaves
+# di_10y NULL, and the no-look-ahead check re-run on the real inputs (a changed
+# cell fails the run; the files are still uploaded). Then the Stage 4 regime
+# model (research_examples/dustin_br/model.py) is scored walk-forward on that
+# matrix: model_report.md and model_predictions_<target>.csv. Both reports are the
+# run's summary page.
+#
+# READ ONLY: every query runs with default_transaction_read_only = on
+# (research_examples/dustin_br/build_dataset.py, tested). So it stays OUT of
+# the supabase-ingest writer group: joining it would let this dispatch cancel a
+# pending ingest (GitHub keeps one pending run per group). Manual only.
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "First session, YYYY-MM-DD (B3 curves start 2008-01-02)"
+        required: true
+        default: "2008-01-02"
+      end:
+        description: "Last session, YYYY-MM-DD (empty: today, UTC-3)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: "DUSTIN-BR matrix"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
+      TZ: "America/Sao_Paulo"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Build and check
+        env:
+          START: ${{ inputs.start }}
+          END: ${{ inputs.end }}
+        run: |
+          set -euo pipefail
+          END="${END:-$(date +%F)}"
+          for d in "$START" "$END"; do
+            [[ "$d" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] \
+              || { echo "::error::start/end must be YYYY-MM-DD, got '$d'"; exit 1; }
+          done
+          python -m research_examples.dustin_br.quality --start "$START" --end "$END" --out-dir out
+          python -m research_examples.dustin_br.model --matrix out/dustin_br.csv --out-dir out
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: |
+          for f in out/quality.md out/model_report.md; do
+            if [ -f "$f" ]; then cat "$f" >> "$GITHUB_STEP_SUMMARY"; fi
+          done
+      - uses: actions/upload-artifact@v6
+        if: ${{ !cancelled() }}
+        with:
+          name: dustin_br-${{ github.run_id }}
+          path: out/
+          if-no-files-found: warn
+          retention-days: 30

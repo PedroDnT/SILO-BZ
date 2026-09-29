@@ -20,6 +20,7 @@ import pandas as pd
 import pytest
 
 from research_examples.dustin_br import build_dataset as bd
+from research_examples.dustin_br import quality
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +161,7 @@ def _synthetic(seed: int = 7):
         "focus_ipca_12m": walk(sessions, 3.5, 0.01),
     }
     futures = pd.DataFrame({"trade_date": [d for d in sessions for _ in range(3)],
+                            "ticker": [t for _ in sessions for t in ("DI1F21", "DI1F22", "DI1F23")],
                             "open_interest": 1000, "contracts": 10})
     return sessions, curves, series, futures
 
@@ -200,6 +202,32 @@ def test_no_look_ahead_rows_up_to_t_ignore_everything_published_later():
             full[full["date"] <= cutoff].reset_index(drop=True), part.reset_index(drop=True),
             check_dtype=False,
         )
+
+
+def test_open_interest_is_null_when_b3_drops_a_contract_that_held_a_position():
+    """Measured: B3's Price Report omits OpnIntrst for 36 of 37 DI1 contracts
+    on 2018-05-10, in every version. Summing the rest would say 4,380
+    contracts were open instead of about 23 million. A contract with no
+    position the session before (new or empty) is not a drop."""
+    d1, d2, d3 = date(2018, 5, 9), date(2018, 5, 10), date(2018, 5, 11)
+    futures = pd.DataFrame([
+        (d1, "DI1N18", 100, 5), (d1, "DI1F19", 200, 7), (d1, "DI1F29", None, None),
+        (d2, "DI1N18", None, 4), (d2, "DI1F19", 210, 6), (d2, "DI1F29", None, None),
+        (d3, "DI1N18", 120, 3), (d3, "DI1F19", 220, 2), (d3, "DI1F29", None, None),
+        (d3, "DI1F30", None, 1),                                  # listed that day
+    ], columns=["trade_date", "ticker", "open_interest", "contracts"])
+    liq = bd.di1_liquidity(futures).set_index("obs_date")
+    assert liq.loc[d1, "di1_open_interest"] == 300
+    assert pd.isna(liq.loc[d2, "di1_open_interest"])              # DI1N18 held 100 the day before
+    assert liq.loc[d2, "di1_contracts"] == 10                     # volume is still whole
+    assert liq.loc[d3, "di1_open_interest"] == 340                # F29 and F30 never held one
+    out, _ = bd.build([d1, d2, d3], _real_like_pre([d1, d2, d3]), {}, futures)
+    assert out["di1_open_interest"].isna().tolist() == [False, True, False]
+
+
+def _real_like_pre(days):
+    return pd.DataFrame([(d, "PRE", cd, du, 6.5) for d in days for cd, du in ((365, 252), (730, 504), (1826, 1260))],
+                        columns=["trade_date", "curve", "calendar_days", "business_days", "rate"])
 
 
 def test_the_sovereign_proxy_is_doc_minus_ust_in_effective_terms():
@@ -300,3 +328,103 @@ def test_a_us_holiday_does_not_blank_the_cross_market_features():
     rows = out[out["date"].isin(br_only)]
     assert rows["brazil_sovereign_risk_proxy"].notna().all()
     assert rows["corr_di2y_ust10y_21d"].notna().all()
+
+
+def test_every_warehouse_query_runs_read_only():
+    executed = []
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def execute(self, sql, params=None):
+            executed.append(sql)
+
+        def fetchall(self):
+            return []
+
+    class Client:
+        def cursor(self):
+            return Cursor()
+
+    bd.load(Client(), date(2020, 1, 2), date(2020, 1, 3))
+    assert len(executed) >= 2
+    assert executed[0::2] == ["SET default_transaction_read_only = on"] * (len(executed) // 2)
+    assert all(sql.startswith("SELECT ") for sql in executed[1::2])
+
+
+# ---------------------------------------------------------------------------
+# The quality report (research_examples/dustin_br/quality.py)
+# ---------------------------------------------------------------------------
+
+def test_the_real_data_check_passes_on_the_builder_and_says_so():
+    sessions, curves, series, futures = _synthetic()
+    full, nulled = bd.build(sessions, curves, series, futures)
+    cutoffs = (date(2020, 3, 18), date(2020, 7, 1), date(2020, 11, 20))
+    look = quality.look_ahead(sessions, curves, series, futures, full, cutoffs)
+    assert look == dict.fromkeys(cutoffs, 0)
+    report = quality.render(full, nulled, look, sessions[0], sessions[-1])
+    assert "**No look-ahead: passed.**" in report
+    assert "| year | sessions | di_1y | di_5y | di_10y |" in report
+
+
+def test_the_real_data_check_catches_a_planted_leak(monkeypatch):
+    """Tomorrow's PTAX on today's row: the rows up to the cutoff change."""
+    honest = bd.build
+
+    def leaky(sessions, curves, series, futures=None):
+        usdbrl = series["usdbrl"]
+        leaked = usdbrl.assign(value=usdbrl["value"].shift(-1)).dropna()
+        return honest(sessions, curves, {**series, "usdbrl": leaked}, futures)
+
+    monkeypatch.setattr(bd, "build", leaky)
+    sessions, curves, series, futures = _synthetic()
+    full, nulled = bd.build(sessions, curves, series, futures)
+    look = quality.look_ahead(sessions, curves, series, futures, full, [date(2020, 7, 1)])
+    assert look[date(2020, 7, 1)] > 0
+    assert "**No look-ahead: FAILED.**" in quality.render(full, nulled, look, sessions[0], sessions[-1])
+
+
+def test_a_block_the_rebuild_lacks_reads_as_null():
+    """Before 2018 there are no DI1 settlements, so a rebuild at an early
+    cutoff has no di1_* columns at all: that matches NULL, not a value."""
+    full = pd.DataFrame({"date": [date(2012, 9, 3)], "di_1y": [8.1], "di1_open_interest": [np.nan]})
+    rebuilt = pd.DataFrame({"date": [date(2012, 9, 3)], "di_1y": [8.1]})
+    assert quality.changed_cells(full, rebuilt) == 0
+    assert quality.changed_cells(full.assign(di1_open_interest=5.0), rebuilt) == 1
+    assert quality.changed_cells(full, rebuilt.assign(di_1y=8.2)) == 1
+
+
+def test_coverage_and_tail_masking_are_per_year():
+    frame = pd.DataFrame({
+        "date": [date(2008, 1, 2), date(2008, 1, 3), date(2009, 1, 2), date(2009, 1, 5)],
+        "di_anchor_du": [2000, 3000, 3000, 3000],
+        "di_10y": [np.nan, 11.0, 12.0, np.nan],
+    })
+    cov = quality.coverage_by_year(frame)
+    assert cov.loc[2008, "di_10y"] == 0.5 and cov.loc[2009, "di_anchor_du"] == 1.0
+    tail = quality.tail_masking(frame)
+    assert tail.loc[2008, "sessions"] == 2 and tail.loc[2008, "median_anchor_du"] == 2500
+    assert tail.loc[2008, "di_10y_in_tail"] == 0.5 and tail.loc[2009, "di_10y_in_tail"] == 0.0
+    assert tail.loc[2008, "di_5y_in_tail"] == 0.0
+
+
+def test_sessions_a_source_lacks_are_listed_both_ways():
+    """Measured 2026-09-28: B3 serves an empty archive for PR210610.zip, a
+    session with a PRE curve and equity trading, so DI1 is missing that day."""
+    pre = [date(2021, 6, 8), date(2021, 6, 9), date(2021, 6, 10), date(2021, 6, 11)]
+    equity = [date(2021, 6, 7), date(2021, 6, 8), date(2021, 6, 9), date(2021, 6, 10), date(2021, 6, 14)]
+    futures = pd.DataFrame({"trade_date": [date(2021, 6, 9), date(2021, 6, 11)]})
+    missing = quality.missing_sessions(pre, futures, equity)
+    assert missing == {
+        "PRE curve missing on an equity session": [],   # 06-07 and 06-14 are outside the common span
+        "PRE curve on a day with no equity session": [date(2021, 6, 11)],
+        "DI1 settlements missing on a PRE session (from 2021-06-09)": [date(2021, 6, 10)],
+    }
+    frame = pd.DataFrame({"date": pre, "di_anchor_du": [3000] * 4})
+    report = quality.render(frame, {}, {}, pre[0], pre[-1], missing)
+    assert "- DI1 settlements missing on a PRE session (from 2021-06-09): 2021-06-10." in report
+    assert "- PRE curve missing on an equity session: none." in report

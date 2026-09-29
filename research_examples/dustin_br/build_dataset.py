@@ -314,6 +314,28 @@ def pair_correlation(a: pd.DataFrame, a_col: str, a_kind: str,
     return out
 
 
+def di1_liquidity(futures: pd.DataFrame) -> pd.DataFrame:
+    """Per session: DI1 open interest and contracts traded, summed over contracts.
+
+    B3 leaves open interest out for a contract with no position (a new or
+    empty one), which adds nothing to the total. Its Price Report also leaves
+    it out, in every version, for contracts that HELD a position the session
+    before (measured: 36 of 37 contracts on 2018-05-10, 12 of 41 on
+    2025-09-11). A sum over the rest is a plausible-looking wrong total, so
+    that session's open interest is NULL. A NULL volume is a contract with no
+    trades (checked: never one with trades), so volume is summed as it is.
+    """
+    f = futures.assign(open_interest=pd.to_numeric(futures["open_interest"]),
+                       contracts=pd.to_numeric(futures["contracts"])).sort_values(["ticker", "trade_date"])
+    held_before = f.groupby("ticker")["open_interest"].shift().notna()
+    f = f.assign(dropped=f["open_interest"].isna() & held_before)
+    g = f.groupby("trade_date")
+    out = pd.DataFrame({"di1_open_interest": g["open_interest"].sum(min_count=1),
+                        "di1_contracts": g["contracts"].sum(min_count=1)})
+    out.loc[g["dropped"].any(), "di1_open_interest"] = np.nan
+    return out.rename_axis("obs_date").reset_index()
+
+
 # ---------------------------------------------------------------------------
 # Point-in-time join
 # ---------------------------------------------------------------------------
@@ -388,7 +410,7 @@ def build(sessions: Sequence[date], curves: pd.DataFrame, series: Dict[str, pd.D
 
     ``curves``: [trade_date, curve, calendar_days, business_days, rate].
     ``series``: name → [obs_date, value] for every SCALAR_SERIES name present.
-    ``futures`` (optional, 2018+): [trade_date, open_interest, contracts].
+    ``futures`` (optional, 2018+): [trade_date, ticker, open_interest, contracts].
     """
     sessions = sorted(sessions)
     blocks: List[pd.DataFrame] = []
@@ -470,10 +492,7 @@ def build(sessions: Sequence[date], curves: pd.DataFrame, series: Dict[str, pd.D
 
     # DI1 liquidity, contract level summed per session (LATE-STARTING: 2018).
     if futures is not None and not futures.empty:
-        liq = (futures.groupby("trade_date", as_index=False)
-                      .agg(di1_open_interest=("open_interest", "sum"), di1_contracts=("contracts", "sum"))
-                      .rename(columns={"trade_date": "obs_date"}))
-        liq = with_availability(liq, "di")
+        liq = with_availability(di1_liquidity(futures), "di")
         add("di1_liquidity", liq, ["di1_open_interest", "di1_contracts"], "di")
 
     out = pd.concat(blocks, axis=1)
@@ -493,6 +512,8 @@ _OFR = {"ofr_fsi": "OFR_FSI", "ofr_fsi_volatility": "OFR_FSI_VOLATILITY"}
 
 def _query(client, sql: str, params: tuple, columns: List[str]) -> pd.DataFrame:
     with client.cursor() as cur:
+        # The builder only reads, so Postgres refuses any write on this session.
+        cur.execute("SET default_transaction_read_only = on")
         cur.execute(sql, params)
         return pd.DataFrame(cur.fetchall(), columns=columns)
 
@@ -534,9 +555,9 @@ def load(client, start: date, end: date) -> Tuple[List[date], pd.DataFrame, Dict
         client, "SELECT reference_date, median FROM bacen_expectativas "
         "WHERE endpoint_name = 'ExpectativasMercadoInflacao12Meses' AND indicador = 'IPCA' "
         "AND horizon IS NULL AND reference_date BETWEEN %s AND %s", (lo, end), ["obs_date", "value"])
-    futures = _query(client, "SELECT trade_date, open_interest, contracts FROM b3_futures_settlement "
+    futures = _query(client, "SELECT trade_date, ticker, open_interest, contracts FROM b3_futures_settlement "
                      "WHERE ticker LIKE 'DI1%%' AND trade_date BETWEEN %s AND %s",
-                     (lo, end), ["trade_date", "open_interest", "contracts"])
+                     (lo, end), ["trade_date", "ticker", "open_interest", "contracts"])
     # The B3 session grid is the target's own calendar: the days PRE was published.
     sessions = sorted(set(curves.loc[curves["curve"] == "PRE", "trade_date"]))
     for f in series.values():

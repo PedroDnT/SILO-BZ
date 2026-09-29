@@ -11,7 +11,7 @@
 > [`api-docs/agents.mdx`](api-docs/agents.mdx) and [`skill.md`](skill.md);
 > page index: [`llms.txt`](llms.txt)).
 > **MCP server:** [`supabase/functions/silo-mcp/`](supabase/functions/silo-mcp/) — read-only remote MCP, one tool per `api` endpoint (49), live at `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp` since 2026-09-25 ([`api-docs/mcp.mdx`](api-docs/mcp.mdx)).
-> **Notebooks:** [`notebooks/`](notebooks/) — ten runnable end-to-end examples.
+> **Notebooks:** [`notebooks/`](notebooks/) — eleven runnable end-to-end examples.
 
 ## What SILO is
 
@@ -293,12 +293,6 @@ same for everyone.
   from now on; the past comes from `backfill.yml` with `fnet_start` / `fnet_end`, one
   year per dispatch, newest first, then one `fnet_sweep` dispatch to link documents to
   funds. Until then `api.fund_restatements` only sees recent filings.
-- **Rates and market history is empty until backfilled** (PR #355). Dispatch
-  `market_backfill.yml`, one at a time: `us_treasury,eia_brent` 2008 to 2026,
-  `ofr_fsi` 2007 to 2026, `b3_reference_rate` 2008 to 2026, `b3_price_report`
-  2018 to 2026; then `backfill.yml` with `bacen_only`, `bacen_sources=sgs`,
-  `bacen_start=2008-01-01` for IC-Br. Optional: an `EIA_API_KEY` secret (else
-  EIA's rate-limited demo key). Never `cboe_vix` without a signed Cboe licence.
 - **The Sentinel read-only role** is a script the owner runs once:
   [`docs/security/sentinel_readonly_role.sql`](docs/security/sentinel_readonly_role.sql)
   (password via a psql variable, never in the repo).
@@ -418,7 +412,7 @@ The essentials, folded away:
 │       ├── CHANGELOG.md        # workstream history
 │       └── SERVING.md          # ingested → researcher pulls a panel (steps 0–7)
 ├── supabase/functions/silo-mcp/ # read-only remote MCP over schema api (Edge Function)
-├── notebooks/                  # 00–08: runnable end-to-end examples over the read API
+├── notebooks/                  # 00–10: runnable end-to-end examples (00–09 over the read API)
 ├── api-docs/                   # PUBLISHED Mintlify pages (quickstart + reference)
 ├── index.mdx                   # published docs landing page
 ├── skill.md                    # PUBLISHED agent loader (served at /skill.md; not in the nav)
