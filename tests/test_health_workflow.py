@@ -18,6 +18,7 @@ the same predicate from shipping again.
 """
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -148,14 +149,42 @@ def test_plan_disk_gb_is_a_real_provisioned_allowance():
     assert "do not drop landing tables" in body.lower()
 
 
-def test_disk_warns_and_does_not_fail_the_gate():
+def test_disk_warns_at_85_and_fails_only_above_90():
+    env = _spec()["jobs"]["health"]["env"]
+    # Owner decision 2026-09-29 (OPEN_ITEMS.md item 10): ingest stops when the
+    # allowance fills, so above 90% the gate goes red. From 85% to 90% it only
+    # warns, because that band needs human judgement, not a red run.
+    assert env["DISK_WARN_PCT"] == "85"
+    assert env["DISK_FAIL_PCT"] == "90"
     body = _step("Health checks")["run"]
     disk_section = body[body.index("# 5. Disk"):]
-    # 71.9 GB vs a placeholder 8 GB printed 899% on run 33164105326. That is
-    # a warning annotation, not fail=1. Dropping landing tables to clear a
-    # percentage would destroy the warehouse.
-    assert "fail=1" not in disk_section
-    assert "::warning::" in disk_section
+    fail_branch = disk_section[
+        disk_section.index('if [ "$over" -eq 1 ]'):disk_section.index("elif")
+    ]
+    assert "fail=1" in fail_branch
+    assert disk_section.count("fail=1") == 1
+    assert "::warning::" in disk_section[disk_section.index("elif"):]
+    # 71.9 GB vs a placeholder 8 GB printed 899% on run 33164105326. Dropping
+    # landing tables to clear a percentage would destroy the warehouse, so
+    # both branches say so.
+    assert disk_section.lower().count("do not drop landing tables") == 2
+
+
+@pytest.mark.parametrize(
+    "gb, expected",
+    [("115.65", "0"), ("121.50", "0"), ("121.51", "1"), ("135", "1")],
+)
+def test_disk_alarm_compares_the_unrounded_share(gb, expected):
+    # 121.50 GB is exactly 90.0% of 135 GB: not above the alarm. The printed
+    # percentage is rounded, so the fail must not reuse it.
+    body = _step("Health checks")["run"]
+    line = next(ln for ln in body.splitlines() if "over=$(awk" in ln)
+    program = re.search(r"'(BEGIN\{.*\})'", line).group(1)
+    out = subprocess.run(
+        ["awk", "-v", f"g={gb}", "-v", "p=135", "-v", "t=90", program],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert out == expected
 
 
 def test_diagnostics_are_one_file_per_query():

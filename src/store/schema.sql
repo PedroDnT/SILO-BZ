@@ -791,8 +791,15 @@ CREATE TABLE IF NOT EXISTS cvm_securit_mensal (
     tp_ativo        TEXT,
     raw             JSONB        NOT NULL,
     fetched_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    -- Migration 52: one row per certificate-month. The old key had no
+    -- certificate and collapsed reports sharing a month and an issue value.
+    -- dt_emissao holds Data_Referencia (a legacy name). The report has no
+    -- maturity column, so dt_vencto is always NULL.
+    codigo_identificacao TEXT,
+    versao          INT,                     -- as filed, not keyed
+    occurrence      SMALLINT     NOT NULL DEFAULT 1,
     CONSTRAINT uq_securit_mensal UNIQUE NULLS NOT DISTINCT
-        (instrument_type, period_year, cnpj_securit, dt_emissao, dt_vencto, vl_emissao)
+        (instrument_type, codigo_identificacao, dt_emissao, occurrence)
 );
 CREATE INDEX IF NOT EXISTS idx_securit_mensal_cnpj      ON cvm_securit_mensal (cnpj_securit) WHERE cnpj_securit IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_securit_mensal_type_year ON cvm_securit_mensal (instrument_type, period_year DESC);
@@ -826,8 +833,13 @@ CREATE TABLE IF NOT EXISTS cvm_securit_serie (
     indice_subordinacao_minimo NUMERIC(10,6),
     raw                       JSONB,
     fetched_at                TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    -- Migration 52: classe joins the key, and occurrence numbers the rows CVM
+    -- files for one series and class that no column tells apart.
+    -- cnpj_securit left the key: it is an attribute of the report.
+    versao                    INT,                  -- as filed, not keyed
+    occurrence                SMALLINT     NOT NULL DEFAULT 1,
     CONSTRAINT uq_securit_serie UNIQUE NULLS NOT DISTINCT
-        (instrument_type, cnpj_securit, codigo_identificacao, data_referencia, numero_serie)
+        (instrument_type, codigo_identificacao, data_referencia, numero_serie, classe, occurrence)
 );
 CREATE INDEX IF NOT EXISTS idx_securit_serie_cnpj     ON cvm_securit_serie (cnpj_securit);
 CREATE INDEX IF NOT EXISTS idx_securit_serie_isin     ON cvm_securit_serie (codigo_isin);
@@ -872,7 +884,15 @@ CREATE TABLE IF NOT EXISTS cvm_securit_dfin (
     cnpj_securit    TEXT,
     raw             JSONB        NOT NULL,
     fetched_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_securit_dfin UNIQUE NULLS NOT DISTINCT (instrument_type, period_year, cnpj_securit)
+    -- Migration 52: one row per certificate and reference date. The old key
+    -- (instrument_type, period_year, cnpj_securit) with a NULL CNPJ kept one
+    -- filing per year of each type.
+    codigo_identificacao TEXT,
+    data_referencia DATE,
+    versao          INT,                     -- as filed, not keyed
+    occurrence      SMALLINT     NOT NULL DEFAULT 1,
+    CONSTRAINT uq_securit_dfin UNIQUE NULLS NOT DISTINCT
+        (instrument_type, codigo_identificacao, data_referencia, occurrence)
 );
 CREATE INDEX IF NOT EXISTS idx_securit_dfin_cnpj      ON cvm_securit_dfin (cnpj_securit) WHERE cnpj_securit IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_securit_dfin_type_year ON cvm_securit_dfin (instrument_type, period_year DESC);
