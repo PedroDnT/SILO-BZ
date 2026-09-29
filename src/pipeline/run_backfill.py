@@ -33,6 +33,9 @@ Usage:
     # B3 COTAHIST yearly zips (opt-in — large)
     python -m src.pipeline.run_backfill --b3-only --b3-start-year 2019
 
+    # B3 cash-distribution history (opt-in, alone; every issuer that printed
+    # since --b3-start-year and is still in B3's catalog)
+    python -m src.pipeline.run_backfill --b3-cash-dividends-only --b3-start-year 2019
     # FNET document register (opt-in, and alone: one delivery day per request)
     python -m src.pipeline.run_backfill --fnet-only --fnet-start 2026-08-01 --fnet-end 2026-08-31
     # ... and link every FII/FIDC in the registry to its documents (~1.5 s a fund)
@@ -48,6 +51,7 @@ import os
 import re
 import sys
 import time
+from datetime import date
 from typing import List, Optional, Sequence, Tuple
 
 # Allow running as python -m src.pipeline.run_backfill from repo root
@@ -104,6 +108,21 @@ async def main(args: argparse.Namespace) -> None:
     # undocumented endpoint, so it never rides along with a default backfill.
     if getattr(args, "fnet_only", False):
         await run_fnet(args)
+        return
+
+    # Full cash-distribution history runs alone too: it is a few thousand
+    # small paged calls to B3's listed-companies proxy, and its issuer universe
+    # is every code that printed since --b3-start-year. Only codes B3's
+    # catalog still lists get a tradingName to query by: a company delisted
+    # since then is logged as missing, not fetched (survivorship gap).
+    if getattr(args, "b3_cash_dividends_only", False):
+        start = date(args.b3_start_year, 1, 1)
+        lookback = (date.today() - start).days
+        logger.info("Starting B3 cash-dividend history backfill: issuers since %s", start)
+        n = await B3Ingestor().ingest_cash_dividends(
+            lookback_days=lookback, full_history=True
+        )
+        ensure_rows_landed(n)
         return
 
     if not args.bacen_only and not args.b3_only and not args.ibge_only:
@@ -401,6 +420,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--fnet-sweep", action="store_true",
         help="Link every FII/FIDC in cvm_fund_registry to its FNET documents (cnpjFundo queries)"
+    )
+    parser.add_argument(
+        "--b3-cash-dividends-only", action="store_true",
+        help="Skip everything else; backfill B3's full cash-distribution history "
+             "for every issuer that printed since --b3-start-year"
     )
     parser.add_argument(
         "--b3-start-year", type=int, default=2019,
