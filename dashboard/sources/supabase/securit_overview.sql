@@ -6,14 +6,19 @@
 -- rather than the query returning nothing and Evidence writing a 0-byte
 -- parquet.
 --
--- Grain: one row per series (instrument_type, cnpj_securit,
--- codigo_identificacao, numero_serie), taking that series' most recent
--- data_referencia snapshot. cvm_securit_serie is a monthly re-statement of the
+-- Grain: one row per series (instrument_type, codigo_identificacao,
+-- numero_serie), taking that series' most recent data_referencia snapshot. cvm_securit_serie is a monthly re-statement of the
 -- whole live book, so summing it raw would multiply-count every series by the
 -- number of months it has been reported.
 with snapshot as (
+  -- A series is (instrument_type, codigo_identificacao, numero_serie). The
+  -- securitizer is not part of it: certificates move between securitizers
+  -- (318 CRI codes, 2019-2026), and keying on cnpj_securit would count a moved
+  -- series twice, once with the stale last filing of the old securitizer.
+  -- classe, id only make the pick deterministic when one series number
+  -- carries several rows in a month (migration 52 keeps them all).
   select distinct on (
-      s.instrument_type, s.cnpj_securit, s.codigo_identificacao, s.numero_serie
+      s.instrument_type, s.codigo_identificacao, s.numero_serie
     )
     s.instrument_type,
     s.cnpj_securit,
@@ -26,10 +31,11 @@ with snapshot as (
   where s.data_referencia is not null
   order by
     s.instrument_type,
-    s.cnpj_securit,
     s.codigo_identificacao,
     s.numero_serie,
-    s.data_referencia desc
+    s.data_referencia desc,
+    s.classe,
+    s.id
 )
 select
   count(*)                                                       as n_series,
