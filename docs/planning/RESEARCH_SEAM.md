@@ -85,14 +85,18 @@ A separate call, one row per ticker+ISIN pair traded since 2019-01-02.
 
 - **Membership by ISIN instrument code**, characters 7-9 of the ISIN: `ACN`
   (shares), `CDA` and `UNT` (units) in; `R##` subscription receipts and every
-  other code out. The `instrument_type` rule (`equity` + `unit`) is not the
+  other code out. Units must also have a ticker ending in `11` (B3's unit
+  convention); without that clause 6 non-units pass (BPAC13 three rows, AZUL97,
+  AZUL98, AZUL99). The `instrument_type` rule (`equity` + `unit`) is not the
   definition: it leaks about 130 receipts whose `especi` starts with ON/PN.
-  Live on 2026-09-29 the rule gives 645 pairs. BDRs, funds and indices are out.
+  Live on 2026-09-29 the rule gives 639 pairs. BDRs, funds and indices are out.
 - **The ISIN is the identity.** A rename is a new row and is never linked. A gap
   shows as `n_sessions` far below the calendar span (NATU3: one ISIN, 2019-12 to
   2025-07).
 - **Fields:** ticker, isin, instrument_type, cnpj, cnpj_basis, first_observed,
-  last_observed, n_sessions, setor_current, segmento_current.
+  last_observed, n_sessions, setor_current, built_at. There is no
+  `segmento_current`: `cia_company.segmento` is CVM's registration category
+  (Categoria A/B), not a market segment.
 - **No listing or delisting dates and no `is_active`.** FCA dates are not
   historical (#373), and `vw_company_ticker.is_active` marks 241 dead tickers
   active (#381).
@@ -100,20 +104,22 @@ A separate call, one row per ticker+ISIN pair traded since 2019-01-02.
 
   | `cnpj_basis` | Meaning | Pairs today |
   |---|---|---|
-  | `fca_ticker` | the FCA row for that exact ticker | 586 |
-  | `fca_issuer_stem` | same 4-letter stem, exactly one CNPJ in the FCA pair table | 20 |
-  | NULL | no link; `cnpj` and `setor_current` are NULL too | 39 |
+  | `fca_ticker` | the FCA row for that exact ticker | 584 |
+  | `fca_issuer_stem` | same 4-letter stem, exactly one CNPJ in the FCA pair table | 17 |
+  | NULL | no link; `cnpj` and `setor_current` are NULL too | 38 |
 
   No name matching: no published ISIN-to-CNPJ source exists. 38 of the 59
-  unlinked pairs still trade in 2026 (CSNA3, CMIN3, BPAC3, ALUP3).
+  unlinked pairs (of 59 before the units clause) still trade in 2026 (CSNA3, CMIN3, BPAC3, ALUP3).
 - **`setor_current` and `segmento_current`** are current classifications, labelled as such.
 - **No `as_of` parameter.** The caller filters. **Survivorship rule for the usage
   doc:** a rebalance on T selects pairs with `first_observed <= T <= last_observed`;
   a pair inside a gap (NATU3) still matches that filter. A server-side `as_of` was
   deferred and can be added without breaking callers.
-- **Build:** a pin that no `R##` receipt appears; a verification query that no
-  stem maps to more than one CNPJ; a `CONTEXT.md` sentence in *Research universe*
-  excluding receipts.
+- **Built (#411):** `28_api_research.sql` over `mv_research_universe`, a
+  materialized view refreshed daily (`anon`'s statement timeout is 3 s, the bare
+  aggregate 1.6 s warm), so `last_observed` lags the tape by up to a day and
+  `built_at` says when. Both the exact-ticker and the stem link refuse an
+  ambiguous match. The `CONTEXT.md` sentence excludes receipts.
 
 ## 5. The benchmark index: `api.index_history` (#379, #374)
 
