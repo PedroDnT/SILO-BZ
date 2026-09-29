@@ -60,7 +60,7 @@ false`), and GitHub keeps only ONE pending run per group.** A queued run is ther
 
 | When                 | Command                                      | Looking for                                                                                                               |
 | -------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Daily 07:30 UTC      | Actions → **DB Health** (`health.yml`)       | unhealed ingest errors, stalled monthly families, `api.catalog()`/`coverage()`, disk size (warn-only; `PLAN_DISK_GB=135`) |
+| Daily 07:30 UTC      | Actions → **DB Health** (`health.yml`)       | unhealed ingest errors, stalled monthly families, `api.catalog()`/`coverage()`, disk size (warns from 85%, fails above 90%; `PLAN_DISK_GB=135`) |
 | After any run        | `python scripts/check_staleness.py`          | exit `0` fresh · `10` daily stale **or unhealed errors** · `11` monthly (ANBIMA) stale                                    |
 | Weekly               | `python scripts/verify_pipeline.py`          | presence, field-population rates, sample business metrics per entity                                                      |
 | Weekly               | the audit-log triage query (§3)              | `error` slices, slices stuck `running`, entities missing entirely                                                         |
@@ -133,7 +133,9 @@ went red on exactly that (`fidc/mensal_tab_x2` 2026-08). Historical backfill
 errors (DB Health #14: 31 `fi/cda_cotas` 2010–2022 yearly + `fi/cda_acoes`
 2025-12..2026-05 slices after CVM refused the runner) do **not** fail this
 gate: `run_daily` never touches those years, and the backfill workflow already
-went red. Disk size is a warning only; do not DROP landing tables to clear it.
+went red. Disk size warns from 85% and fails the gate above 90% (owner,
+2026-09-29, `docs/planning/OPEN_ITEMS.md` item 10); either way, do not DROP
+landing tables to clear it.
 
 A later `ok` that still leaves the slice unhealed is a classification bug, not
 a missed cron. Run 33299581405 (DB Health #6) failed on `b3/corporate_events`
