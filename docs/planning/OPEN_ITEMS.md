@@ -276,6 +276,20 @@ has to be read together with that gate and its tests.
 
 ## 10. Supabase storage near the plan allowance
 
+**Decided 2026-09-29 (owner): measure first, alarm at 90%, retention ready.**
+DB Health read **115.65 GB, 86% of 135 GB** on 2026-09-29, after the CDA
+block 1 refill (#348) grew `cvm_fi_cda` from 4.2 GB to 6.3 GB. It read
+113.57 GB the day before. That is below the 118.1 GB measured on
+2026-09-25, so the size is not climbing at a steady ~1.1 GB/day.
+
+1. **Measure.** Read the size from DB Health's daily log for seven days,
+   through about 2026-10-06, before choosing between a plan upgrade and
+   retention.
+2. **Alarm.** DB Health fails above 90%. The 85% warning stays.
+3. **Retention.** If the alarm fires, retention falls on `cvm_fi_balancete`.
+   The default is to keep 2019 onward. Measure the per-year sizes in Supabase
+   first, and get the owner's OK before the delete runs.
+
 **Re-measured 2026-09-25, BLOCKED on a retention decision (Pedro's call).**
 `pg_database_size` = **118.1 GB, 87% of 135 GB**, up from 81% (~109 GB) on
 2026-09-17: ~1.1 GB/day, which fills the allowance around **2026-10-10**.
@@ -413,10 +427,20 @@ Nothing in wave 2 that depends on these starts until each has an answer.
 
 ## 15. Portfolio diagnosis: decisions still open (2026-09-26)
 
-Design: `PORTFOLIO_DIAGNOSIS.md`. Tickets: map #340 (#341–#345). Blocked on
-data first: #348 (CDA block 1 kept one bond per fund; key fixed by #357, the
-refill per year is pending with `backfill.yml` `fi_force`, #358) and #352
-(block 2). None of these block writing code; each blocks a demo number.
+**Paused 2026-09-28 (owner):** the active map is #371, and this map's tickets
+are labelled `P2-later`.
+
+Design: `PORTFOLIO_DIAGNOSIS.md`. Tickets: map #340 (#341–#345).
+
+Data blockers:
+
+- **#348 is done.** CDA block 1 had kept one bond per fund. #357 fixed the
+  key, and every year from 2005 to 2026 was re-ingested with `backfill.yml`
+  `fi_force` (#358), in runs 36334547066 and 36507066869 (2026-09-27 and
+  2026-09-28). The issue was closed on 2026-09-29.
+- **#352 is open:** CDA block 2.
+
+Neither blocks writing code; each blocks a demo number.
 
 - **Equal-risk-contribution grouping.** Holding level is the default. Open:
   whether a what-if may group by issuer or asset class instead.
