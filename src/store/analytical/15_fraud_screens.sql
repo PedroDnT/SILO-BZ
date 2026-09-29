@@ -165,12 +165,19 @@ AS $$
     -- same CRA thirty times. Take each series' newest filing first, then
     -- screen it: a series whose latest filing says Liquidado is not overdue,
     -- however many earlier filings said Adimplente.
+    --
+    -- The series is (instrument_type, codigo_identificacao, numero_serie),
+    -- without the securitizer: certificates move between securitizers (318
+    -- CRI codes, 2019-2026), and the old securitizer's last filing would
+    -- screen as a second, stale series, still Adimplente past maturity.
+    -- classe, id only make the pick deterministic when one series number
+    -- carries several rows in a month (migration 52 keeps them all).
     WITH latest AS (
-        SELECT DISTINCT ON (s.instrument_type, s.cnpj_securit, s.codigo_identificacao, s.numero_serie)
+        SELECT DISTINCT ON (s.instrument_type, s.codigo_identificacao, s.numero_serie)
                s.*
         FROM cvm_securit_serie s
-        ORDER BY s.instrument_type, s.cnpj_securit, s.codigo_identificacao, s.numero_serie,
-                 s.data_referencia DESC
+        ORDER BY s.instrument_type, s.codigo_identificacao, s.numero_serie,
+                 s.data_referencia DESC, s.classe, s.id
     )
     SELECT
         s.instrument_type,

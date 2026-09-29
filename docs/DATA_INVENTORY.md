@@ -48,10 +48,10 @@ from behind a login, or purchased — except the one ETF market feed noted below
 | FII     | `cvm_fii_imovel`         | fund × quarter × **property**        | yearly ZIP                           | 2019                     |
 | FIAGRO  | `cvm_fiagro_mensal`      | fund × month                         | monthly ZIP                          | **2025-05**              |
 | FIP     | `cvm_fip_periodic`       | fund × **filing date** × share class | yearly CSV                           | 2010                     |
-| SECURIT | `cvm_securit_mensal`     | vehicle × month                      | yearly ZIP                           | 2019                     |
-| SECURIT | `cvm_securit_serie`      | vehicle × series                     | yearly ZIP                           | 2019                     |
+| SECURIT | `cvm_securit_mensal`     | certificate × month × **occurrence** | yearly ZIP                           | 2019                     |
+| SECURIT | `cvm_securit_serie`      | certificate × month × series × class × **occurrence** | yearly ZIP          | 2019                     |
 | SECURIT | `cvm_securit_fluxo`      | vehicle × series × flow date         | yearly ZIP                           | 2019                     |
-| SECURIT | `cvm_securit_dfin`       | vehicle × year × statement line      | yearly CSV                           | 2019                     |
+| SECURIT | `cvm_securit_dfin`       | certificate × reference date         | yearly CSV                           | 2019                     |
 | ETF     | `cvm_etf_registry`       | ticker (static)                      | curated seed ⋈ `cad_fi`              | current                  |
 
 ### CVM — listed companies (CIA Aberta)

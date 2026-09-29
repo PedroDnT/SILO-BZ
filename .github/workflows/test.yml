@@ -229,6 +229,33 @@ jobs:
               DROP COLUMN IF EXISTS qt_pos_final;
           ALTER TABLE cvm_fi_cda
               ADD CONSTRAINT uq_fi_cda UNIQUE (cnpj, period, tp_aplic, tp_ativo);
+
+          -- SECURIT before migration 52: the old keys, and none of the columns
+          -- 52 adds. Dropping occurrence also drops the backfill marker (its
+          -- column comment).
+          ALTER TABLE cvm_securit_mensal DROP CONSTRAINT IF EXISTS uq_securit_mensal;
+          ALTER TABLE cvm_securit_mensal
+              DROP COLUMN IF EXISTS codigo_identificacao,
+              DROP COLUMN IF EXISTS versao,
+              DROP COLUMN IF EXISTS occurrence;
+          ALTER TABLE cvm_securit_mensal ADD CONSTRAINT uq_securit_mensal
+              UNIQUE NULLS NOT DISTINCT
+              (instrument_type, period_year, cnpj_securit, dt_emissao, dt_vencto, vl_emissao);
+          ALTER TABLE cvm_securit_serie DROP CONSTRAINT IF EXISTS uq_securit_serie;
+          ALTER TABLE cvm_securit_serie
+              DROP COLUMN IF EXISTS versao,
+              DROP COLUMN IF EXISTS occurrence;
+          ALTER TABLE cvm_securit_serie ADD CONSTRAINT uq_securit_serie
+              UNIQUE NULLS NOT DISTINCT
+              (instrument_type, cnpj_securit, codigo_identificacao, data_referencia, numero_serie);
+          ALTER TABLE cvm_securit_dfin DROP CONSTRAINT IF EXISTS uq_securit_dfin;
+          ALTER TABLE cvm_securit_dfin
+              DROP COLUMN IF EXISTS codigo_identificacao,
+              DROP COLUMN IF EXISTS data_referencia,
+              DROP COLUMN IF EXISTS versao,
+              DROP COLUMN IF EXISTS occurrence;
+          ALTER TABLE cvm_securit_dfin ADD CONSTRAINT uq_securit_dfin
+              UNIQUE NULLS NOT DISTINCT (instrument_type, period_year, cnpj_securit);
           REWIND
 
           echo "--- rows in that shape (this is what production holds) ---"
@@ -290,6 +317,39 @@ jobs:
                   '{"TP_FUNDO":"FIIM","CD_ATIVO":"VALORES A RECEBER","TP_NEGOC":"Para negociação"}'::jsonb),
                  ('10406600000108','2020-01-01','VALORES A RECEBER',NULL,1.00,
                   '{"TP_FUNDO":"FIIM","CD_ATIVO":"VALORES A RECEBER","TP_NEGOC":"Para negociação"}'::jsonb);
+
+          -- SECURIT as production holds it before 52. CRA/CRI rows have a NULL
+          -- CNPJ and CNPJ_Emissora is NOT in raw (ingest stripped it), so the
+          -- CNPJ can only come back from the re-ingest. The certificate and
+          -- Versao are in raw. The OTS pair is one certificate-month filed
+          -- twice with different values (real, 2026-03), which the old key
+          -- kept apart by vl_emissao. One Versao is malformed (must stay NULL).
+          INSERT INTO cvm_securit_mensal
+              (instrument_type, period_year, cnpj_securit, dt_emissao, vl_emissao, vl_total, raw)
+          VALUES ('cra_mensal',2026,NULL,'2026-01-01',604555695.63,604600612.97,
+                  '{"Codigo_Identificacao_Certificado":"BRAPCSCRA0M6","Versao":"2"}'::jsonb),
+                 ('cri_mensal',2026,NULL,'2026-01-01',1000.00,1000.00,
+                  '{"Codigo_Identificacao_Certificado":"BRRBRACRI0K7","Versao":"abc"}'::jsonb),
+                 ('ots_mensal',2026,'38042694000100','2026-03-31',1307676002.16,1310149686.28,
+                  '{"Codigo_Identificacao_Certificado":"BRPCHSDBS131","Versao":"1"}'::jsonb),
+                 ('ots_mensal',2026,'38042694000100','2026-03-31',1630849431.59,1626124050.89,
+                  '{"Codigo_Identificacao_Certificado":"BRPCHSDBS131","Versao":"1"}'::jsonb);
+          -- The old serie key had no Classe: one class per series survived.
+          INSERT INTO cvm_securit_serie
+              (instrument_type, cnpj_securit, codigo_identificacao, data_referencia,
+               classe, numero_serie, valor_certificados, raw)
+          VALUES ('cri_mensal',NULL,'BRAPCSCRIK26','2026-03-01','Sênior',1,25506706.26,
+                  '{"Versao":"1"}'::jsonb),
+                 ('cri_mensal',NULL,'BRAPCSCRIK26','2026-03-01','Subordinada',2,100.00,
+                  '{"Versao":"1"}'::jsonb);
+          -- The old dfin key kept ONE filing per year of each type.
+          INSERT INTO cvm_securit_dfin (instrument_type, period_year, cnpj_securit, raw)
+          VALUES ('dfin_cra',2026,NULL,
+                  '{"Codigo_Identificacao_Certificado":"BRAPCSCRA0M6","Data_Referencia":"2026-06-30","Versao":"1"}'::jsonb),
+                 ('dfin_cri',2026,NULL,
+                  '{"Codigo_Identificacao_Certificado":"BRRBRACRI0K7","Data_Referencia":"2026-06-30","Versao":"2"}'::jsonb),
+                 ('dfin_cri',2025,NULL,
+                  '{"Codigo_Identificacao_Certificado":"BRRBRACRI0K7","Data_Referencia":"2025-02-30","Versao":"1"}'::jsonb);
           SEED
 
           echo "--- the upgrade: current schema.sql, every migration, then again ---"
@@ -360,6 +420,48 @@ jobs:
           test "$latest" = "complemento@2024-01-01=3,geral@2024-01-01=1,complemento@2024-02-01=-" \
             || { echo "FAIL: vw_fii_mensal_latest is not one row per filing, latest version"; exit 1; }
           test "$nobs" = "3" || { echo "FAIL: instrument_activity counts versions, not filings"; exit 1; }
+
+          echo "--- SECURIT: keys backfilled from raw, then the re-ingest MERGES (migration 52) ---"
+          sm=$(psql "$OLD_URL" -tAc "SELECT string_agg(instrument_type||':'||coalesce(codigo_identificacao,'-')||'/'||coalesce(versao::text,'-')||'#'||occurrence, ',' ORDER BY instrument_type, vl_emissao) FROM cvm_securit_mensal;")
+          ss=$(psql "$OLD_URL" -tAc "SELECT string_agg(classe||'#'||occurrence||'/'||coalesce(versao::text,'-'), ',' ORDER BY numero_serie) FROM cvm_securit_serie;")
+          sd=$(psql "$OLD_URL" -tAc "SELECT string_agg(instrument_type||':'||coalesce(codigo_identificacao,'-')||'@'||coalesce(data_referencia::text,'-')||'/'||coalesce(versao::text,'-')||'#'||occurrence, ',' ORDER BY instrument_type, period_year) FROM cvm_securit_dfin;")
+          keys=$(psql "$OLD_URL" -tAc "SELECT count(*) FROM pg_constraint WHERE conname IN ('uq_securit_mensal','uq_securit_serie','uq_securit_dfin') AND pg_get_constraintdef(oid) ILIKE '%occurrence%' AND pg_get_constraintdef(oid) NOT ILIKE '%cnpj_securit%';")
+          echo "securit mensal=$sm serie=$ss dfin=$sd new_keys=$keys"
+          test "$sm" = "cra_mensal:BRAPCSCRA0M6/2#1,cri_mensal:BRRBRACRI0K7/-#1,ots_mensal:BRPCHSDBS131/1#1,ots_mensal:BRPCHSDBS131/1#2" \
+            || { echo "FAIL: cvm_securit_mensal backfill or numbering"; exit 1; }
+          test "$ss" = "Sênior#1/-,Subordinada#1/-" || { echo "FAIL: cvm_securit_serie rows changed by the upgrade"; exit 1; }
+          test "$sd" = "dfin_cra:BRAPCSCRA0M6@2026-06-30/1#1,dfin_cri:BRRBRACRI0K7@-/1#1,dfin_cri:BRRBRACRI0K7@2026-06-30/2#1" \
+            || { echo "FAIL: cvm_securit_dfin backfill"; exit 1; }
+          test "$keys" = "3" || { echo "FAIL: a securit key was not swapped"; exit 1; }
+          # The re-ingest, as upsert_rows sends it, twice (idempotent): each
+          # existing row gets its CNPJ in place, and the rows the old keys had
+          # dropped are added. Nothing may land beside a NULL-CNPJ twin.
+          for _ in 1 2; do
+            psql "$OLD_URL" -v ON_ERROR_STOP=1 -q <<'UPSERT'
+          INSERT INTO cvm_securit_mensal (instrument_type, period_year, cnpj_securit, codigo_identificacao, versao, dt_emissao, vl_emissao, occurrence, raw)
+          VALUES ('cra_mensal',2026,'02773542000122','BRAPCSCRA0M6',2,'2026-01-01',604555695.63,1,'{}'::jsonb),
+                 ('cra_mensal',2026,'02773542000122','BRAPCSCRA0N4',1,'2026-01-01',604555695.63,1,'{}'::jsonb)
+          ON CONFLICT (instrument_type, codigo_identificacao, dt_emissao, occurrence)
+          DO UPDATE SET cnpj_securit = EXCLUDED.cnpj_securit, versao = EXCLUDED.versao, raw = EXCLUDED.raw;
+          INSERT INTO cvm_securit_serie (instrument_type, cnpj_securit, codigo_identificacao, data_referencia, numero_serie, classe, versao, occurrence, raw)
+          VALUES ('cri_mensal','12130744000100','BRAPCSCRIK26','2026-03-01',1,'Sênior',1,1,'{}'::jsonb),
+                 ('cri_mensal','12130744000100','BRAPCSCRIK26','2026-03-01',1,'Sênior',1,2,'{}'::jsonb),
+                 ('cri_mensal','12130744000100','BRAPCSCRIK26','2026-03-01',1,'Subordinada',1,1,'{}'::jsonb),
+                 ('cri_mensal','12130744000100','BRAPCSCRIK26','2026-03-01',2,'Subordinada',1,1,'{}'::jsonb)
+          ON CONFLICT (instrument_type, codigo_identificacao, data_referencia, numero_serie, classe, occurrence)
+          DO UPDATE SET cnpj_securit = EXCLUDED.cnpj_securit, versao = EXCLUDED.versao, raw = EXCLUDED.raw;
+          INSERT INTO cvm_securit_dfin (instrument_type, period_year, cnpj_securit, codigo_identificacao, data_referencia, versao, occurrence, raw)
+          VALUES ('dfin_cri',2026,'02773542000122','BRRBRACRI0K7','2026-06-30',2,1,'{}'::jsonb),
+                 ('dfin_cri',2026,'02773542000122','BRRBRACRI0K8','2026-06-30',1,1,'{}'::jsonb)
+          ON CONFLICT (instrument_type, codigo_identificacao, data_referencia, occurrence)
+          DO UPDATE SET cnpj_securit = EXCLUDED.cnpj_securit, versao = EXCLUDED.versao, raw = EXCLUDED.raw;
+          UPSERT
+          done
+          n=$(psql "$OLD_URL" -tAc "SELECT (SELECT count(*) FROM cvm_securit_mensal)||'/'||(SELECT count(*) FROM cvm_securit_serie)||'/'||(SELECT count(*) FROM cvm_securit_dfin);")
+          nulls=$(psql "$OLD_URL" -tAc "SELECT (SELECT count(*) FROM cvm_securit_mensal WHERE instrument_type='cra_mensal' AND cnpj_securit IS NULL)+(SELECT count(*) FROM cvm_securit_serie WHERE cnpj_securit IS NULL)+(SELECT count(*) FROM cvm_securit_dfin WHERE period_year=2026 AND instrument_type='dfin_cri' AND cnpj_securit IS NULL);")
+          echo "securit rows after re-ingest mensal/serie/dfin=$n null-CNPJ twins=$nulls"
+          test "$n" = "5/4/4" || { echo "FAIL: the securit re-ingest duplicated or dropped a row (got $n, want 5/4/4)"; exit 1; }
+          test "$nulls" = "0" || { echo "FAIL: a re-ingested securit row kept a NULL-CNPJ twin"; exit 1; }
 
           echo "--- re-apply 33 on the live-shaped unique (Backfill #24) ---"
           # Two rows unique under the wide key: one already has tp_fundo='FI'
