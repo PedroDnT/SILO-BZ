@@ -79,9 +79,14 @@ def test_definer_empty_search_path_and_grants():
     assert f"GRANT EXECUTE ON FUNCTION {sig} TO silo_api;" in SQL28
 
 
-def test_the_view_has_no_client_grant():
+def test_the_view_has_no_client_grant_and_revokes_the_default_privileges():
     body = _strip(SQL28)
     assert not re.search(r"GRANT\s+\w+\s+ON\s+(?:TABLE\s+)?(?:public\.)?mv_research_universe", body, re.I)
+    # Supabase gives new public objects SELECT for anon by default, and this
+    # view is re-created on every apply, after 12_grants_and_rls.sql has run.
+    revoke = "REVOKE ALL ON public.mv_research_universe FROM PUBLIC, anon, authenticated;"
+    assert revoke in body
+    assert body.index(revoke) > body.index("CREATE MATERIALIZED VIEW public.mv_research_universe")
 
 
 def test_the_function_reads_only_the_view_and_qualifies_it():

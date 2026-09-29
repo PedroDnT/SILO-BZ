@@ -142,6 +142,14 @@ LEFT JOIN setor s ON s.cnpj_cia = l.cnpj;
 -- One row per pair: the unique index is also what lets cron refresh CONCURRENTLY.
 CREATE UNIQUE INDEX uq_mv_research_universe ON public.mv_research_universe (ticker, isin);
 
+-- Supabase's default privileges hand every new public object SELECT for anon
+-- and authenticated (measured 2026-09-29: dim_fund and fact_fund_monthly, both
+-- dropped and re-created by this layer, are readable by anon; mv_b3_isin_subtype,
+-- created by a migration, is not). 12_grants_and_rls.sql runs before this file
+-- and this view is re-created on every apply, so the revoke lives here. Clients
+-- reach the universe through api.research_universe only.
+REVOKE ALL ON public.mv_research_universe FROM PUBLIC, anon, authenticated;
+
 COMMENT ON MATERIALIZED VIEW public.mv_research_universe IS
     'Internal (no client grant): one row per ticker+ISIN pair of shares and units on the B3 cash market since 2019-01-02, membership by the ISIN instrument code (ACN; CDA / UNT with a ticker ending 11). Read only through api.research_universe. Rebuilt by every analytical apply and refreshed daily, so last_observed lags the tape by up to a day.';
 
