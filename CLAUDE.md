@@ -439,7 +439,7 @@ secret: `POSTGRES_URL`. No container registry or Docker. The read-only dashboard
 project `silo-bz` in team `deloslabs`; any static host also works).
 
 - `.github/workflows/daily_ingest.yml` — 06:00 UTC daily (`run_daily`) + `workflow_dispatch`
-  (`mode=daily|analytics-only|b3-backfill`). It bootstraps the schema
+  (`mode=daily|analytics-only|b3-backfill|b3-cash-dividends`). It bootstraps the schema
   via `psql` on every run, then `ANALYZE`s the tables.
 - `.github/workflows/backfill.yml` — on-demand, entity/year-selectable backfill. FI years and
   other entity jobs use `max-parallel: 1`, inspect coverage first, and are gated on a
