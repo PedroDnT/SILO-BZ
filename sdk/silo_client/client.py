@@ -29,7 +29,7 @@ SERVER_ROW_CAP = 1000
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 42
+KNOWN_CATALOG_VERSION = 43  # v43 adds research_universe; its client method is ticket #419
 
 
 class SiloCatalogDrift(UserWarning):

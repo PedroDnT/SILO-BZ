@@ -258,6 +258,43 @@ operator half:
   `cia_aberta` / `ipe`), `macro_series` (`bacen` / `sgs`) and `ptax` (`bacen` /
   `ptax`).
 
+### The research universe (catalog v43)
+
+`api.research_universe()` (`28_api_research.sql`; research-seam spec
+`docs/planning/RESEARCH_SEAM.md` §4, ticket #411) returns one row per
+ticker+ISIN pair of listed shares and units traded on the B3 cash market since
+2019-01-02, so a research caller can build a historical universe without a
+hard-coded ticker list. The operator half:
+
+- **Membership is the ISIN's own instrument code**, characters 7-9: `ACN`
+  (shares), `CDA` and `UNT` (units, whose ticker must end in `11`). It is not
+  `instrument_type`: that field lets about 100 subscription receipts through
+  (ISIN code `R01`..`R21`, ESPECI starting ON/PN), and without the `11` clause
+  6 non-units pass (BPAC13, AZUL97-99). 639 pairs on 2026-09-29.
+- **The ISIN is the identity.** A rename is a new row and nothing links it to
+  the old one; two tickers can share an ISIN (NEOE3, NEOE3B). `n_sessions` far
+  below the calendar span is a gap (NATU3).
+- **Served from `mv_research_universe`**, a materialized view rebuilt by every
+  analytical apply and refreshed by cron (`refresh-research-universe`, 06:13
+  UTC, 03:13 UTC-3), because `anon`'s `statement_timeout` is 3 s and the bare
+  aggregate takes 1.6 s warm. `last_observed` therefore lags the tape by up to
+  a day; `built_at` on each row says when. No client role can read the view.
+- **The company link says how it was made**: `cnpj_basis` is `fca_ticker` (that
+  exact ticker in `vw_company_ticker`, one CNPJ claiming it), `fca_issuer_stem`
+  (the ticker's 4-letter stem, when exactly one CNPJ holds an FCA ticker with
+  it: an inference) or NULL. Placeholder FCA tickers (`0000`, `NÃO`) are
+  filtered by shape. No name matching. 584 / 17 / 38 pairs on 2026-09-29.
+- **`setor_current`** is `cia_company.setor` as of today. `cia_company.segmento`
+  is CVM's registration category ("Categoria A/B"), not a market segment, so it
+  is not served.
+- **No listing / delisting dates and no `is_active`** (#373, #381). A caller
+  reads the universe at a date T as `first_observed <= T <= last_observed`; a
+  pair inside a gap still matches.
+- Grants follow `curve_history`: DEFINER with an empty `search_path`, revoked
+  from `PUBLIC`, granted to `anon` / `authenticated` / `silo_api`. Raise-only
+  above one page, and since nothing narrows it the message says it has no
+  cursor and one must be added.
+
 ### DI futures and B3 reference curves (catalog v42)
 
 `api.future_curve`, `api.future_series`, `api.curve` and `api.curve_history`
@@ -452,7 +489,7 @@ cannot be paged" — that stopped being true two catalog versions ago. **`panel`
 `anbima_classes`, `inflation`, `inflation_items`, `fidc_tranches`, `fidc_aging`,
 `fund_documents`, `fund_restatements`, `fund_restatement_diff`,
 `company_events`, `macro_series`, `ptax`, `future_curve`, `future_series`,
-`curve`, `curve_history` and the ten `screen_*` functions) have no cursor and
+`curve`, `curve_history`, `research_universe` and the ten `screen_*` functions) have no cursor and
 ask you to narrow the window. `fund_nav` also
 requires `p_entity_type` to page, because its cursor is a bare period and 385
 CNPJs file under two families in the same month.

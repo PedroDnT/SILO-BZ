@@ -70,8 +70,9 @@ TABLE = "cvm_ingest_log"
 #: rows were parsed under the old meaning" is ``WHERE parser_version::int <
 #: <n>`` on ``cvm_ingest_log`` rather than an archaeology project over the
 #: commit history. Text holding an integer. "1" = the parsers as of migration
-#: 44 (2026-09-24); rows older than that carry NULL, not "0".
-PARSER_VERSION = "1"
+#: 44 (2026-09-24); rows older than that carry NULL, not "0". "2" = SECURIT
+#: keeps every filed row and maps the CRA/CRI securitizer (migration 52).
+PARSER_VERSION = "2"
 
 # A git object name: SHA-1 (40 hex) or SHA-256 (64 hex). Abbreviated names
 # are accepted from 7 so a locally exported short sha is not thrown away.

@@ -53,6 +53,10 @@ jobs:
       # will never retry them, so they must not fail warehouse health.
       DAILY_LOOKBACK_MONTHS: "4"
       DISK_WARN_PCT: "85" # warn past this share of PLAN_DISK_GB, when that is set
+      # Fail ABOVE this share (owner, 2026-09-29, OPEN_ITEMS.md item 10). Ingest
+      # stops when the allowance fills, so past 90% the retention decision is
+      # due now, not a judgement call for later.
+      DISK_FAIL_PCT: "90"
       # BACEN SGS daily series (CDI 12, SELIC_DIARIA 11) publish every business
       # day, one day in arrears. 7 calendar days absorbs a long weekend plus a
       # holiday; older than that, the BACEN refresh is not landing.
@@ -445,7 +449,18 @@ jobs:
                FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
               WHERE n.nspname = 'public' AND c.relkind IN ('r','m','p')
               ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 12"
-          if [ -n "${PLAN_DISK_GB:-}" ] && [ "${pct:-0}" -ge "$DISK_WARN_PCT" ]; then
+          # Above DISK_FAIL_PCT the gate fails; from DISK_WARN_PCT up it warns.
+          # The fail compares the unrounded share, so 89.6% (printed "90%")
+          # still only warns. Neither branch ever deletes anything.
+          over=0
+          if [ -n "${PLAN_DISK_GB:-}" ]; then
+            over=$(awk -v g="$gb" -v p="$PLAN_DISK_GB" -v t="$DISK_FAIL_PCT" 'BEGIN{r = (100*g/p > t) ? 1 : 0; print r}')
+          fi
+          if [ "$over" -eq 1 ]; then
+            echo "FAIL: database at ${pct}% of the ${PLAN_DISK_GB}GB plan allowance (${gb}GB used), above the ${DISK_FAIL_PCT}% alarm. Retention is due: measure cvm_fi_balancete per year and get the owner's OK first (docs/planning/OPEN_ITEMS.md item 10). Do not drop landing tables to clear this." >&2
+            echo "- ❌ database above ${DISK_FAIL_PCT}% of the plan allowance (${pct}%)" >> "$GITHUB_STEP_SUMMARY"
+            fail=1
+          elif [ -n "${PLAN_DISK_GB:-}" ] && [ "${pct:-0}" -ge "$DISK_WARN_PCT" ]; then
             echo "::warning::database at ${pct}% of the ${PLAN_DISK_GB}GB plan allowance (${gb}GB used). Do not drop landing tables to clear this. See docs/DATABASE_MAINTENANCE.md §9."
           fi
 

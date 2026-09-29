@@ -480,6 +480,8 @@ _ORDER: dict[str, str] = {
     # 27_api_rates.sql: one session's contracts and one session's vertices.
     "future_curve": "nearest maturity first",
     "curve": "shortest vertex first",
+    # 28_api_research.sql orders the universe by ticker, then ISIN.
+    "research_universe": "ticker, then ISIN",
 }
 
 
@@ -631,6 +633,7 @@ _TAGS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^(macro_series|ptax)$"), "Macro"),
     (re.compile(r"^company_events$"), "Company events"),
     (re.compile(r"^(future_curve|future_series|curve|curve_history)$"), "Rates"),
+    (re.compile(r"^research_universe$"), "Research"),
     (re.compile(r"^screen_"), "Screens"),
     (re.compile(r"^(short_interest|short_interest_by_sector|investor_flow)$"), "Short interest & flows"),
     (re.compile(r"^lending_"), "Securities lending"),

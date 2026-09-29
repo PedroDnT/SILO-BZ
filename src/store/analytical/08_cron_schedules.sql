@@ -54,6 +54,16 @@ BEGIN
       'REFRESH MATERIALIZED VIEW CONCURRENTLY mv_b3_isin_subtype'
     );
 
+    -- mv_research_universe — 06:13 UTC daily, after mv_b3_isin_subtype (06:12).
+    -- It aggregates the cash tape into one row per ticker+ISIN, so it only
+    -- needs the night's COTAHIST and the FCA map to have landed. A stale copy
+    -- lags last_observed by a day, and built_at on every row says when.
+    PERFORM cron.schedule(
+      'refresh-research-universe',
+      '13 6 * * *',
+      'REFRESH MATERIALIZED VIEW CONCURRENTLY mv_research_universe'
+    );
+
     -- mv_b3_adtv_21 — 06:14 UTC daily, after mv_b3_isin_subtype (06:12) and
     -- before the fact refreshes that follow. It reads vw_b3_quote_vista, so it
     -- only needs the night's COTAHIST to have landed, not any fund matview.

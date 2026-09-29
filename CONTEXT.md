@@ -78,7 +78,7 @@ An external repository that consumes SILO data to build features, signals, model
 _Avoid_: Treating a research caller as a dashboard or a portfolio diagnosis client.
 
 **Research universe**:
-The set of instruments a research caller may select from: listed equities and units. BDRs, fund quotas and indices are outside it, even when they are Brazilian companies' receipts or track the market.
+The set of instruments a research caller may select from: listed equities and units, defined by the ISIN's own instrument code (shares `ACN`; units `CDA` / `UNT` with a ticker ending 11). BDRs, fund quotas, indices and subscription receipts are outside it, even when they are Brazilian companies' receipts or track the market.
 _Avoid_: A hard-coded list of currently active tickers.
 
 **Raw close**:

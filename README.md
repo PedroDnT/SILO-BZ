@@ -136,7 +136,8 @@ Everything runs in GitHub Actions against Supabase; there is no server to keep u
 3. **`health.yml`.** Reads the audit log and the tables themselves and fails loudly when
    they disagree: no audit row for a run, slices stuck at `running`, an entity whose
    latest month stopped moving, a matview trailing its source, an `api.*` probe that
-   answers wrong. A scheduled failure files (or bumps) one tracking issue.
+   answers wrong, a database above 90% of its plan allowance. A scheduled failure
+   files (or bumps) one tracking issue.
 4. **Fills on demand — `backfill.yml`.** One entity and year range at a time,
    serialized, with current coverage printed before anything is written.
 
@@ -293,6 +294,11 @@ same for everyone.
   from now on; the past comes from `backfill.yml` with `fnet_start` / `fnet_end`, one
   year per dispatch, newest first, then one `fnet_sweep` dispatch to link documents to
   funds. Until then `api.fund_restatements` only sees recent filings.
+- **SECURIT history needs one re-ingest after migration 52.** The old keys dropped
+  rows (`cvm_securit_dfin` kept one filing per year of each type) and CRA/CRI rows
+  carry no securitizer CNPJ. The daily run fixes the current year once 52 is applied.
+  Earlier years come back with `backfill.yml`, `entity=securit`, which fills the CNPJ
+  in place on every existing row it matches.
 - **The Sentinel read-only role** is a script the owner runs once:
   [`docs/security/sentinel_readonly_role.sql`](docs/security/sentinel_readonly_role.sql)
   (password via a psql variable, never in the repo).

@@ -24,6 +24,14 @@ __all__ = [
     "tool_specs",
 ]
 
+# v43: the research universe (docs/planning/RESEARCH_SEAM.md §4, #411), in
+# 28_api_research.sql. api.research_universe — one row per ticker+ISIN pair of
+# listed shares and units traded on the B3 cash market since 2019-01-02;
+# membership by the ISIN's own instrument code (ACN; CDA / UNT with a ticker
+# ending 11), so subscription receipts are out. The ISIN is the identity, a
+# rename is a new row, and cnpj_basis says how the company link was made.
+# Served from a view rebuilt daily, so last_observed lags by up to a day.
+# Raise-only; capped count forty-three -> forty-four.
 # v42: the Brazilian rate curve (INSTRUMENTS.md phases B and C, OPEN_ITEMS
 # B8), in 27_api_rates.sql over migration 48's landing tables.
 # api.future_curve — every outright DI1 contract on one B3 session, nearest
@@ -349,7 +357,7 @@ __all__ = [
 # stated as (id, asset_class, date, metric) and p_entity_type narrows the fund
 # arms to one family. Universe mode (p_ids empty + p_entity_type, optional
 # p_min_nav / p_min_months) walks a whole family for signed-in callers.
-CATALOG_VERSION = 42
+CATALOG_VERSION = 43
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -556,6 +564,7 @@ CONSTRAINTS = [
     "A LATE FILING IS A TIMESTAMP COMPARED WITH A CITED RULE, AND A SILENT ONE IS READ FROM CVM, NOT FNET. screen_late_filers measures the FIRST FNET delivery of a fund's monthly informe (Informe Mensal Estruturado, versao 1) against the deadline Resolução CVM 175 states — FIDC: Anexo Normativo II, art. 27, III; FII: Anexo Normativo III, art. 36, I; both 15 days after the end of the reference month, counted as calendar days because the text says dias — and every row carries that citation in deadline_rule. It measures only months after each family's adaptation deadline (from 2024-12 for FIDC, 2025-07 for FII) and refuses a window ending earlier, because the predecessor instructions' deadlines are not cited here. No holiday calendar is applied, so p_min_days_late (default 5) absorbs a deadline that rolled over a weekend or holiday; CVM extensions are invisible to it. A month with no informe in the register is NOT counted late — FNET history is partial. screen_silent_filers answers absence from CVM's own deep tables (dim_fund: the informe diário for FI, the monthly informe for FIDC / FII / FIAGRO) against latest_complete_period, for funds whose registry row is active; a merged or liquidated fund whose status CVM has not updated, reporting moved to a new class CNPJ, or a SILO ingest gap produce the same row. screen_restatements counts re-filings (versao > 1) by modalidade — RE voluntary, RC required by CVM — per cnpjFundo link. None of the three ever identifies a fund by fund_name.",
     "COMPANY EVENTS ARE IPE FILINGS AS FILED, FROM 2015, AND NOT EVERY FILING IS HELD. api.company_events serves cia_event — CVM's IPE feed: fatos relevantes, comunicados ao mercado, assembly material and the rest — one row per protocol at its NEWEST version (version says which), every text field (category, event_type, species, subject) exactly as filed, and source_url, the document's link on CVM's RAD. The company is resolved exactly as financials resolves p_id: a ticker only through CVM's published FCA map (active listings), a 14-digit CNPJ or a CVM code, never a name. CVM assigned no protocol number to IPE filings before 2015 and still omits it on a minority (12% of 2015); cia_event is keyed on (protocolo, versao) and a key is never synthesized, so those filings are NOT held — an empty window before 2015, or a filing you know exists and cannot find, is that limit, not an absence of events. p_category matches CVM's label exactly; an unknown one raises 22023 listing the categories held.",
     "MACRO SERIES AND PTAX ARE SERVED AS BACEN PUBLISHES THEM, UNIT ON EVERY ROW, NOTHING DERIVED. api.macro_series serves nine non-inflation SGS series by label or code: SELIC_META (432, % a.a.; dated per calendar day and published AHEAD to the next Copom date, so a p_to after today can return forward-dated targets), SELIC_DIARIA (11) and CDI (12) in % PER BUSINESS DAY (never annualise one yourself without saying so), IGPM (189) and INPC (188) as % change in the month, POUPANCA (25) — the OLD-RULE deposit return (deposits until 2012-05-03), one value per anniversary day, each the return over the month starting that day, not a calendar-month figure — USDBRL (1) and EURBRL (21619) in BRL per unit, and PIB (4380) monthly in R$ millions at current prices. The IPCA set is api.inflation's; asking macro_series for it raises 22023 with that pointer. api.ptax serves PTAX compra and venda per currency and business day in BRL per ONE unit of the currency (JPY and ARS included): the last bulletin of the day the ingest received, which for a completed day is the Fechamento PTAX (measured against SGS 1 and Olinda on 2026-09-22/23); the bulletin type is not stored. No mid rate, cross rate, fill or holiday row is invented.",
+    "THE RESEARCH UNIVERSE IS A TAPE FACT, NOT A LISTING RECORD, AND ITS COMPANY LINK SAYS HOW IT WAS MADE. api.research_universe returns one row per ticker+ISIN pair of listed shares and units traded on the B3 cash market since 2019-01-02 (the start of the tape). Membership is the ISIN's own instrument code, characters 7-9: ACN (shares), CDA and UNT (units, whose ticker must also end in 11); subscription receipts, BDRs, funds and indices are outside it, so instrument_type = equity on api.quotes is NOT the definition (it lets about 100 receipts in). THE ISIN IS THE IDENTITY: a rename is a NEW row and nothing links it to the old one, and two tickers can share an ISIN (NEOE3 and NEOE3B). first_observed, last_observed and n_sessions are facts about SILO's tape, never listing or delisting dates; n_sessions far below the calendar span is a gap (NATU3: one ISIN, no sessions 2019-12 to 2025-07). cnpj comes from CVM's published FCA ticker map and cnpj_basis says how: fca_ticker (that exact ticker), fca_issuer_stem (the ticker's 4-letter stem, when exactly one CNPJ holds an FCA ticker with it: an inference, so it is labelled), or NULL (no link: cnpj and setor_current are NULL, never guessed from a name). setor_current is CVM's cadastro setor as of TODAY, not the setor on a past date. TO READ THE UNIVERSE AT A DATE T, keep the rows with first_observed <= T <= last_observed; a pair inside a gap still matches that filter. The view is rebuilt daily, so last_observed lags the tape by up to a day (built_at says when). Not trimmed: more than 1000 rows raises 22023.",
     "DI FUTURES AND B3'S REFERENCE CURVES ARE SERVED AS B3 PUBLISHES THEM, AND THE LONG END OF EVERY CURVE IS B3'S EXTRAPOLATION. api.future_curve lists every outright DI1 contract on one session (B3 Price Report, from 2018-01-02) and api.future_series follows one contract; DI1 is QUOTED IN RATE, so settlement_rate and the open/low/high/avg/close columns are % a.a. on 252 business days (the low rate is the high price) and settlement_price is the PU. contract_month, read from the ticker with B3's month letters (F = January … Z = December), is the one derived column; nothing is rolled or spliced into a continuous series. api.curve serves one reference curve on one session, every vertex (TaxaSwap, from 2008-01-02): PRE is DI x pré, DPL the clean IPCA coupon (a real rate; B3's implied inflation is (1 + PRE) / (1 + DPL) − 1 at the same tenor), both compounded on 252 business days, and DOC the clean onshore dollar coupon, LINEAR on 360 calendar days — read rate_basis before comparing two curves. Past the last maturity of the contract anchoring a curve (DI1, DDI, DAP) B3 EXTENDS the last forward rate (Manual de Curvas v21), so the long vertices are extrapolation, not prices. api.curve_history serves one of B3's FIXED vertices through time by its nominal tenor (p_tenor_days: 30, 90, 360, 720 …); any other tenor raises 22023 with the list, because interpolating is analysis for the notebook.",
     "THE B3 LENDING AND FLOW GROUP IS A RATCHET, AND IT IS THE ONLY PART OF THIS WAREHOUSE THAT IS. short_interest, short_interest_by_sector, lending_trades, lending_participants and investor_flow read B3 tables that B3 keeps for about 21 BUSINESS DAYS and publishes no archive for. History therefore starts at SILO's first capture and cannot be extended backwards at any price — a missed session is gone, not late, and no backfill exists to ask for. coverage() reports the real span per endpoint; read it before describing any of these series as short, broken or anomalous, and never infer a level change from a window that simply begins where capture began. An over-wide request to the source returns HTTP 200 with a silently clamped window, which is why the ingest reconciles what it asked for against what it received.",
     "pct_float IS TWO DIFFERENT METRICS AND float_basis SAYS WHICH ONE YOU HAVE. api.short_interest divides the balance on loan by whichever denominator exists for that ticker. float_basis = 'index_free_float' means B3's published free float (theoretical_qty from the broadest index portfolio carrying the ticker) and exists for index constituents only, ~149 tickers; float_basis = 'shares_outstanding' means capital social from the cash instrument registry, a LARGER denominator that yields a SMALLER percentage for the same position. They are not the same measure and are never comparable: ANY ranking, screen or cross-section on pct_float must filter to ONE basis first, or it sorts index members against non-members on an axis they do not share. float_denominator carries the number actually used. pct_float and days_to_cover are NULL — never 0 — when their denominator is missing or the name did not trade; 0 would sort an unknown to exactly the wrong end.",
@@ -598,7 +607,7 @@ CONSTRAINTS = [
     "WHY (the response is one 1000-row page and SILO never returns a silently "
     "truncated result) and HOW to fix it for that function, in the message and "
     "again as PostgREST's `details` / `hint`. That is all "
-    "forty-three — panel, quote_history, fund_nav, option_history, termo_history, "
+    "forty-four — panel, quote_history, fund_nav, option_history, termo_history, "
     "financials, financial_statement_history, company_financials, "
     "income_statements, balance_sheets, "
     "cash_flow_statements, anbima_classes, "
@@ -606,7 +615,7 @@ CONSTRAINTS = [
     "fidc_cedentes, fidc_sacados, fidc_portfolio, "
     "fidc_tranches, fidc_aging, fund_holdings, fund_debentures, fund_documents, "
     "fund_restatements, fund_restatement_diff, company_events, macro_series, "
-    "ptax, future_curve, future_series, curve, curve_history and the ten "
+    "ptax, future_curve, future_series, curve, curve_history, research_universe and the ten "
     "screen_* functions "
     "(`limits.page.all`). "
     "THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send "
@@ -1029,6 +1038,7 @@ LIMITS = {
             "screen_restatements", "screen_late_filers", "screen_silent_filers",
             "company_events", "macro_series", "ptax",
             "future_curve", "future_series", "curve", "curve_history",
+            "research_universe",
         ],
         # The protocol every cursor below shares.
         "cursor_protocol": (
@@ -1098,6 +1108,9 @@ LIMITS = {
                 # v42: the rate curve (27_api_rates.sql) — one session is
                 # tens to hundreds of rows, and a history is a window.
                 "future_curve", "future_series", "curve", "curve_history",
+                # v43: the research universe (28_api_research.sql) — no
+                # parameter narrows it; it is one page today (639 pairs).
+                "research_universe",
             ],
         },
         "over_cap": (
@@ -1621,6 +1634,7 @@ def catalog_payload() -> Dict[str, Any]:
             "future_series": "POST /rest/v1/rpc/future_series",
             "curve": "POST /rest/v1/rpc/curve",
             "curve_history": "POST /rest/v1/rpc/curve_history",
+            "research_universe": "POST /rest/v1/rpc/research_universe",
             # B3 securities lending and investor flow (v27). VIEWS, not
             # functions: filter them with PostgREST's own syntax
             # (?ticker=eq.PETR4&trade_date=gte.2026-09-01) and page with
