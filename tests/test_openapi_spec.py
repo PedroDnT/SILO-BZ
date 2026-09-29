@@ -259,6 +259,8 @@ REFUSING_FUNCTIONS = {
     "future_series",
     "curve",
     "curve_history",
+    # v43: the research universe (28_api_research.sql).
+    "research_universe",
 }
 PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav"}
 

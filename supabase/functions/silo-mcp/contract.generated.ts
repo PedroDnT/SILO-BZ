@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "42";
+export const CONTRACT_VERSION = "43";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -3132,6 +3132,16 @@ export const CONTRACT: Record<string, ContractEntry> = {
       "required": [
         "p_ticker"
       ],
+      "additionalProperties": false
+    }
+  },
+  "research_universe": {
+    "kind": "rpc",
+    "path": "/rpc/research_universe",
+    "description": "The research universe: one row per ticker+ISIN pair of listed shares and units traded on the B3 cash market since 2019-01-02 (the start of the tape), ordered by ticker then ISIN. Membership is the ISIN's own instrument code (ACN shares; CDA and UNT units, whose ticker must end in 11); subscription receipts, BDRs, funds and indices are outside it. The ISIN is the identity: a rename is a NEW row and nothing links it to the old one, and two tickers can share an ISIN (NEOE3 and NEOE3B). first_observed / last_observed / n_sessions are facts about SILO's tape, not listing or delisting dates (FCA dates are not historical); n_sessions far below the calendar span is a gap (NATU3). cnpj comes from CVM's published FCA ticker map and cnpj_basis says how: fca_ticker (that exact ticker), fca_issuer_stem (the ticker's 4-letter stem, when exactly one CNPJ holds an FCA ticker with it: an inference), or NULL (no link; cnpj and setor_current are NULL). setor_current is CVM's cadastro setor as of today, never the setor on a past date. Read the universe at a date T as the rows with first_observed <= T <= last_observed; a pair inside a gap still matches. Served from a view rebuilt daily: last_observed lags the tape by up to a day, built_at says when. Not trimmed: more than 1000 rows RAISES 22023.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
       "additionalProperties": false
     }
   },
