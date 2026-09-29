@@ -1793,7 +1793,8 @@ CREATE TABLE IF NOT EXISTS b3_cash_dividend (
     -- The 4-letter code we derived tradingName from (B3's GetInitialCompanies
     -- issuingCompany). Needed for the tape join; not a B3 field on this row.
     issuing_company             TEXT        NOT NULL,
-    -- tradingName as B3's catalog publishes it ("KLABIN S/A"). The request
+    -- tradingName as B3 publishes it: the catalog's ("KLABIN S/A"), or for
+    -- a delisted code the tape's own nome_resumido. The request
     -- sends it normalized as B3's own page does (the fetcher's
     -- cash_dividend_query_name): a name that keeps its slash matches nothing.
     trading_name                TEXT        NOT NULL,
