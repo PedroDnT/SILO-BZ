@@ -34,7 +34,7 @@ Usage:
     python -m src.pipeline.run_backfill --b3-only --b3-start-year 2019
 
     # B3 cash-distribution history (opt-in, alone; every issuer that printed
-    # since --b3-start-year and is still in B3's catalog)
+    # since --b3-start-year, delisted ones by the name the tape printed)
     python -m src.pipeline.run_backfill --b3-cash-dividends-only --b3-start-year 2019
     # FNET document register (opt-in, and alone: one delivery day per request)
     python -m src.pipeline.run_backfill --fnet-only --fnet-start 2026-08-01 --fnet-end 2026-08-31
@@ -112,9 +112,10 @@ async def main(args: argparse.Namespace) -> None:
 
     # Full cash-distribution history runs alone too: it is a few thousand
     # small paged calls to B3's listed-companies proxy, and its issuer universe
-    # is every code that printed since --b3-start-year. Only codes B3's
-    # catalog still lists get a tradingName to query by: a company delisted
-    # since then is logged as missing, not fetched (survivorship gap).
+    # is every code that printed since --b3-start-year. A company delisted
+    # since then is not in B3's catalog, so it is queried by the name the
+    # tape printed for it (B3Ingestor._tape_names); renamed codes are
+    # skipped because their history comes under the current name.
     if getattr(args, "b3_cash_dividends_only", False):
         start = date(args.b3_start_year, 1, 1)
         lookback = (date.today() - start).days
