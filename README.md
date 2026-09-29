@@ -136,7 +136,8 @@ Everything runs in GitHub Actions against Supabase; there is no server to keep u
 3. **`health.yml`.** Reads the audit log and the tables themselves and fails loudly when
    they disagree: no audit row for a run, slices stuck at `running`, an entity whose
    latest month stopped moving, a matview trailing its source, an `api.*` probe that
-   answers wrong. A scheduled failure files (or bumps) one tracking issue.
+   answers wrong, a database above 90% of its plan allowance. A scheduled failure
+   files (or bumps) one tracking issue.
 4. **Fills on demand — `backfill.yml`.** One entity and year range at a time,
    serialized, with current coverage printed before anything is written.
 
