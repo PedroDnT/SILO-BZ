@@ -349,3 +349,99 @@ def test_identical_installments_are_kept_apart_by_occurrence():
     keys = [tuple(r[c] for c in CONFLICT_COLS.split(",")) for r in recs]
     assert len(set(keys)) == 3
     assert [r["occurrence"] for r in recs] == [1, 2, 1]
+
+
+# -- codes B3's catalog no longer lists (delisted or renamed) --------------------
+
+_AXIA = {"trading_name": "AXIA ENERGIA", "cnpj": "00001180000126"}
+
+
+async def _sweep_with_tape(catalog, tape, issuers):
+    """Run the sweep with B3's catalog and the tape lookup both faked."""
+    with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
+         patch("src.pipeline.ingest_b3_cash_dividends.ingest_b3_cash_dividends",
+               return_value=1) as ingest, \
+         patch("src.fetchers.b3_corporate_events_fetcher.B3CorporateEventsFetcher") as Fetcher:
+        fetcher = Fetcher.return_value
+        fetcher.trading_names.return_value = catalog
+        fetcher.fetch_cash_dividends.return_value = [ROW_ON_2026]
+        ing = B3Ingestor(fetcher=MagicMock())
+        ing._tape_names = MagicMock(return_value=tape)
+        finishes = _finish_recorder(ing)
+        await ing.ingest_cash_dividends(issuers=issuers, full_history=True)
+    fetched = [c.args[0] for c in fetcher.fetch_cash_dividends.call_args_list]
+    records = ingest.call_args.args[1] if ingest.called else []
+    return fetched, records, finishes, ing._tape_names
+
+
+@pytest.mark.asyncio
+async def test_a_delisted_code_is_fetched_under_the_name_the_tape_printed():
+    """ENBR left B3's catalog in 2023; its COTAHIST name still answers (34 rows)."""
+    fetched, records, finishes, _ = await _sweep_with_tape(
+        {"PETR": [_NAME_PETR]},
+        {"ENBR": ("ENERGIAS BR", ["99999999000191"])},
+        ["PETR", "ENBR"],
+    )
+    assert fetched == ["PETROBRAS", "ENERGIAS BR"]
+    enbr = [r for r in records if r["issuing_company"] == "ENBR"]
+    assert enbr and enbr[0]["trading_name"] == "ENERGIAS BR"
+    assert enbr[0]["cnpj"] == "99999999000191"
+    assert finishes[-1]["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_a_renamed_code_is_skipped_so_its_history_is_not_counted_twice():
+    """ELET's history arrives under AXIA ENERGIA; ELETROBRAS would repeat it."""
+    fetched, _, _, tape = await _sweep_with_tape(
+        {"AXIA": [_AXIA]},
+        {"ELET": ("ELETROBRAS", ["00001180000126"])},
+        ["AXIA", "ELET"],
+    )
+    assert fetched == ["AXIA ENERGIA"]
+    assert tape.call_args.args[0] == ["ELET"], "only codes missing from the catalog"
+
+
+@pytest.mark.asyncio
+async def test_a_tape_prefix_that_is_not_the_catalog_key_is_fetched_by_catalog_name():
+    """ADMF3 trades as B100 S.A.: B100 is never a tape prefix, so without the
+    CNPJ link its history would never be fetched at all."""
+    fetched, records, _, _ = await _sweep_with_tape(
+        {"B100": [{"trading_name": "B100", "cnpj": "88888888000188"}]},
+        {"ADMF": ("B100 S.A.", ["88888888000188"])},
+        ["ADMF"],
+    )
+    assert fetched == ["B100"]
+    assert {(r["issuing_company"], r["cnpj"]) for r in records} == {("ADMF", "88888888000188")}
+
+
+@pytest.mark.asyncio
+async def test_several_cnpjs_for_a_tape_code_leave_the_cnpj_null():
+    _, records, _, _ = await _sweep_with_tape(
+        {}, {"OLDX": ("OLD CO", ["11111111000111", "22222222000122"])}, ["OLDX"],
+    )
+    assert [r["cnpj"] for r in records] == [None]
+
+
+@pytest.mark.asyncio
+async def test_a_tape_name_already_fetched_from_the_catalog_is_not_fetched_again():
+    """Same name, normalized: KLABIN S/A from the catalog, KLABIN SA elsewhere."""
+    fetched, _, _, _ = await _sweep_with_tape(
+        {"KLBN": [{"trading_name": "KLABIN S/A", "cnpj": ""}]},
+        {"KLBX": ("KLABIN SA", [])},
+        ["KLBN", "KLBX"],
+    )
+    assert fetched == ["KLABIN S/A"]
+
+
+@pytest.mark.asyncio
+async def test_a_code_with_no_catalog_name_and_no_tape_name_is_reported_not_guessed():
+    fetched, _, finishes, _ = await _sweep_with_tape({}, {}, ["XXXX"])
+    assert fetched == []
+    assert finishes[-1]["status"] == "error"
+
+
+def test_tape_lookup_reads_the_tapes_own_name_and_cvms_ticker_history():
+    import inspect
+    src = inspect.getsource(B3Ingestor._tape_names)
+    assert "nome_resumido" in src and "cia_ticker" in src
+    assert "ORDER BY left(codneg, 4), trade_date DESC" in src, "latest session's name"
