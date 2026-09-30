@@ -134,7 +134,7 @@ def test_the_series_follows_the_isin_not_the_latest_board():
 
 def test_the_panel_shares_the_same_adjustment():
     panel = _function("panel")
-    assert "api.close_adj_status(q.isin, q.ticker)" in panel
+    assert "api.close_adj_status(d.isin, d.ticker)" in panel
     assert "api.assert_close_adj('panel'" in panel
     assert "api.close_adj_ratio(q.isin, q.obs_date, a.anchor)" in panel
 

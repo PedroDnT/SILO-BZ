@@ -162,6 +162,22 @@ class SiloRevisionChanged(SiloError):
         )
 
 
+class SiloRefusals(SiloError):
+    """One or more tickers of a multi-ticker retrieval were refused.
+
+    prices() walks every ticker before raising, so a long run reports every
+    refusal at once instead of stopping at the first. `.errors` maps each
+    refused ticker to its SiloError (the server's message and `reason=`
+    detail). No partial result is returned: a panel missing tickers silently
+    is the failure this client exists to prevent.
+    """
+
+    def __init__(self, errors: Dict[str, SiloError], url: str) -> None:
+        self.errors = dict(errors)
+        lines = "; ".join(f"{t}: {e.body[:300]}" for t, e in self.errors.items())
+        super().__init__(400, f"{len(self.errors)} ticker(s) refused: {lines}", url)
+
+
 class SiloTimeout(SiloError):
     """SQLSTATE 57014 — the query ran out of the server's time budget.
 
@@ -518,18 +534,32 @@ class SiloClient:
         for _attempt in range(REVISION_RETRIES):
             rows: List[Dict[str, Any]] = []
             revs: set = set()
+            refused: Dict[str, SiloError] = {}
             try:
                 for t in tickers:
-                    for page, rev in self._quote_pages(t, start, end, board, fields):
-                        if page:
-                            revs.add(rev)
-                        if len(revs) > 1:
-                            raise SiloRevisionChanged(sorted(map(str, revs)),
-                                                      f"{self._rest}/rpc/quote_history")
-                        rows.extend(page)
+                    got: List[Dict[str, Any]] = []
+                    try:
+                        for page, rev in self._quote_pages(t, start, end, board, fields):
+                            if page:
+                                revs.add(rev)
+                            if len(revs) > 1:
+                                raise SiloRevisionChanged(sorted(map(str, revs)),
+                                                          f"{self._rest}/rpc/quote_history")
+                            got.extend(page)
+                    except SiloRevisionChanged:
+                        raise
+                    except SiloError as exc:
+                        # Keep walking: report every refused ticker at once.
+                        refused[t] = exc
+                        continue
+                    rows.extend(got)
             except SiloRevisionChanged as exc:
                 last = exc
                 continue
+            if refused:
+                if len(tickers) == 1:
+                    raise next(iter(refused.values()))
+                raise SiloRefusals(refused, f"{self._rest}/rpc/quote_history")
             return rows
         assert last is not None
         raise last
@@ -549,7 +579,8 @@ class SiloClient:
         grouping- and bonus-adjusted close (shares and units only; no dividend
         adjustment). Name fields for anything else: `fields=["close"]` is the
         raw close as traded. Any refusal (unknown ticker, a window outside the
-        coverage, a stretch close_adj cannot adjust) raises SiloError with the
+        coverage, a stretch close_adj cannot adjust) is collected, and after
+        every ticker is walked SiloRefusals lists each refused ticker with the
         server's reason; nothing is dropped or filled in.
 
         Returns columns ticker, trade_date (Date) and the requested fields in

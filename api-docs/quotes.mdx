@@ -125,11 +125,11 @@ Inside the coverage a missing session is a session with **no trade** (COTAHIST l
   Page it with `p_after: ""` then the last row's `trade_date`, or narrow the window:
 
   ```json
-  { "p_ticker": "PETR4", "p_from": "2019-01-01", "p_after": "" }
-  { "p_ticker": "PETR4", "p_from": "2019-01-01", "p_after": "2022-12-29" }
+  { "p_ticker": "PETR4", "p_from": "2019-01-02", "p_after": "" }
+  { "p_ticker": "PETR4", "p_from": "2019-01-02", "p_after": "2022-12-29" }
   ```
 
-  The SDK walks it: `silo.iter_quote_history("PETR4", start="2019-01-01")`.
+  The SDK walks it: `silo.iter_quote_history("PETR4", start="2019-01-02")`.
 </Warning>
 
 ### `POST /rpc/quote_latest`

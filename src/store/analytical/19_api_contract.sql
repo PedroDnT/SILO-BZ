@@ -1155,7 +1155,7 @@ BEGIN
                        TRUE);
 
     RETURN QUERY
-    WITH page AS (
+    WITH RECURSIVE page AS (
         SELECT q.*
         FROM api.quotes q
         WHERE q.ticker = v_ticker
@@ -1175,6 +1175,27 @@ BEGIN
           AND b.codneg = v_ticker AND b.tpmerc = '010' AND b.isin IS NOT DISTINCT FROM v_isin
           AND (v_board IS NULL OR b.codbdi = v_board)
           AND b.trade_date < (SELECT min(g.trade_date) FROM page g)
+    ),
+    -- The market calendar over the page (sessions = days the cash tape
+    -- printed), by skip scan: one index probe per session, ~34 ms for the
+    -- whole tape measured 2026-09-30, instead of counting tape rows per gap.
+    -- Built only when prior_no_trade_sessions is asked for.
+    cal_span AS (
+        SELECT COALESCE((SELECT p.d FROM prev p), (SELECT min(g.trade_date) FROM page g)) AS d0,
+               (SELECT max(g.trade_date) FROM page g) AS d1
+        WHERE 'prior_no_trade_sessions' = ANY (v_fields)
+    ),
+    cal AS (
+        SELECT c.d0 AS d FROM cal_span c WHERE c.d0 IS NOT NULL
+        UNION ALL
+        SELECT (SELECT min(b.trade_date) FROM public.b3_cotahist b
+                WHERE b.tpmerc = '010' AND b.trade_date > cal.d)
+        FROM cal, cal_span c
+        WHERE cal.d < c.d1
+    ),
+    cal_ord AS (
+        SELECT cal.d, row_number() OVER (ORDER BY cal.d) AS n
+        FROM cal WHERE cal.d IS NOT NULL
     ),
     r_all AS (
         SELECT g.*,
@@ -1210,13 +1231,14 @@ BEGIN
             'source',           r.source,
             'coverage_start',   v_cov_start,
             'coverage_end',     v_cov_end,
-            'prior_no_trade_sessions', CASE WHEN 'prior_no_trade_sessions' = ANY (v_fields) THEN (
-                SELECT count(DISTINCT t.trade_date)
-                FROM public.b3_cotahist t
-                WHERE t.tpmerc = '010'
-                  AND t.trade_date > COALESCE(r.prev_date, (SELECT p.d FROM prev p), r.trade_date)
-                  AND t.trade_date < r.trade_date
-            ) END,
+            -- Every printed row is a session, and so is the previous one, so
+            -- the sessions strictly between them are an ordinal difference.
+            'prior_no_trade_sessions', CASE WHEN 'prior_no_trade_sessions' = ANY (v_fields) THEN
+                (SELECT c.n FROM cal_ord c WHERE c.d = r.trade_date)
+              - (SELECT c.n FROM cal_ord c
+                 WHERE c.d = COALESCE(r.prev_date, (SELECT p.d FROM prev p), r.trade_date))
+              - CASE WHEN COALESCE(r.prev_date, (SELECT p.d FROM prev p)) IS NULL THEN 0 ELSE 1 END
+            END,
             'events_proven_at', to_char(v_proven AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
             'data_revision',    v_rev
         )) kv
@@ -4061,12 +4083,16 @@ quote_px AS (
 -- window; a stretch it cannot adjust refuses the panel (22023) instead of
 -- serving the raw close under the adjusted name.
 adj_ids AS (
-    SELECT DISTINCT q.ticker, q.isin, s.anchor
-    FROM quote_px q
-    JOIN params p ON TRUE
-    CROSS JOIN LATERAL api.close_adj_status(q.isin, q.ticker) s
-    WHERE 'close_adj' = ANY (p.metrics)
-      AND (NOT p.default_metrics OR q.in_universe)
+    -- One status lookup per (ticker, ISIN), not per row.
+    SELECT d.ticker, d.isin, s.anchor
+    FROM (
+        SELECT DISTINCT q.ticker, q.isin
+        FROM quote_px q
+        JOIN params p ON TRUE
+        WHERE 'close_adj' = ANY (p.metrics)
+          AND (NOT p.default_metrics OR q.in_universe)
+    ) d
+    CROSS JOIN LATERAL api.close_adj_status(d.isin, d.ticker) s
 ),
 adj_ok AS (
     SELECT a.ticker, a.isin, a.anchor

@@ -56,18 +56,22 @@ PETR4,2026-09-18,48.500000,2554613048.00
 PETR4,2026-09-17,48.610000,1574576494.00
 ```
 
-A function, as CSV. `POST` with a JSON body, or `GET` with the arguments in the query string; both returned the same CSV:
+A function, as CSV. `POST` with a JSON body, or `GET` with the arguments in the query string; both return the same CSV:
 
 ```bash
-curl -s -X POST "$SILO_URL/rpc/quote_history" \
+curl -s -X POST "$SILO_URL/rpc/quote_latest" \
   -H "apikey: $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -H "Accept: text/csv" \
-  -d '{"p_ticker":"PETR4","p_from":"2026-09-15","p_to":"2026-09-23"}'
+  -d '{"p_ticker":"PETR4"}'
 
-curl -s "$SILO_URL/rpc/quote_history?p_ticker=PETR4&p_from=2026-09-21&p_to=2026-09-23&apikey=$SILO_ANON_KEY" \
+curl -s "$SILO_URL/rpc/quote_latest?p_ticker=PETR4&apikey=$SILO_ANON_KEY" \
   -H "Accept: text/csv"
 ```
+
+<Note>
+  `quote_history` returns one JSON object per session holding only the fields you select (default `ticker`, `trade_date`, `close_adj`), so as CSV it is a single column of JSON. For a price series in a sheet, read the typed views (`equities`, `units`, raw closes) as below, or call `quote_history` as JSON.
+</Note>
 
 The key in the URL, with no headers at all, returns JSON:
 
@@ -124,7 +128,7 @@ function SILO(path) {
 }
 
 /**
- * A function as a table. =SILO_RPC("quote_history", "{""p_ticker"":""PETR4"",""p_from"":""2026-09-01""}")
+ * A function as a table. =SILO_RPC("quote_latest", "{""p_ticker"":""PETR4""}")
  * @customfunction
  */
 function SILO_RPC(name, jsonArgs) {
@@ -213,13 +217,13 @@ For a function, pass a body; `Web.Contents` sends a `POST` when `Content` is set
 Source = Web.Contents(
     "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/",
     [
-        RelativePath = "rpc/quote_history",
+        RelativePath = "rpc/quote_latest",
         Headers = [
             apikey = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437",
             Accept = "text/csv",
             #"Content-Type" = "application/json"
         ],
-        Content = Text.ToBinary("{""p_ticker"":""PETR4"",""p_from"":""2026-09-01""}")
+        Content = Text.ToBinary("{""p_ticker"":""PETR4""}")
     ]
 )
 ```

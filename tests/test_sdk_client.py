@@ -1109,7 +1109,7 @@ def test_prices_gives_up_when_the_revision_never_settles():
 def test_prices_surfaces_a_refusal_instead_of_dropping_the_ticker():
     def responder(request):
         body = json.loads(request.content)
-        if body["p_ticker"] == "SUBS3":
+        if body["p_ticker"] in ("SUBS3", "XXXX3"):
             return httpx.Response(400, json={
                 "code": "22023",
                 "message": "quote_history: refused, close_adj is not available for SUBS3 from 2020-01-01 to 2020-08-13",
@@ -1118,9 +1118,12 @@ def test_prices_surfaces_a_refusal_instead_of_dropping_the_ticker():
         return httpx.Response(200, json=_price_rows(body["p_ticker"], 2))
 
     c = make_client(catalog_then(responder))
-    with pytest.raises(SiloError) as exc:
-        c.prices(["PETR4", "SUBS3"], "2020-01-01", "2020-12-31")
-    assert "adjustment_unavailable" in str(exc.value.body)
+    from silo_client import SiloRefusals
+    with pytest.raises(SiloRefusals) as exc:
+        c.prices(["SUBS3", "PETR4", "XXXX3"], "2020-01-01", "2020-12-31")
+    # Every ticker is walked; each refusal is reported, none is dropped.
+    assert set(exc.value.errors) == {"SUBS3", "XXXX3"}
+    assert "adjustment_unavailable" in exc.value.errors["SUBS3"].body
 
 
 def test_iter_quote_history_refuses_to_splice_two_revisions():
