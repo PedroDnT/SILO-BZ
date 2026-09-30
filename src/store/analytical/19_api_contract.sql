@@ -760,7 +760,7 @@ AS $$
     VALUES
         ('ticker',           'string',  TRUE,  'B3 trading code (CODNEG), as asked, upper-cased. In every row.'),
         ('trade_date',       'date',    TRUE,  'Session date. In every row.'),
-        ('close_adj',        'number',  TRUE,  'Close per single share, backward-adjusted for splits (DESDOBRAMENTO), groupings (GRUPAMENTO) and bonus shares (BONIFICACAO) and anchored to the instrument''s latest session; rounded to 6 decimal places. No dividend or JCP adjustment. Shares and units only. Null only when the session has no close; a window it cannot adjust is refused, never filled with the raw close.'),
+        ('close_adj',        'number',  TRUE,  'Close per single share, backward-adjusted for splits (DESDOBRAMENTO), groupings (GRUPAMENTO) and bonus shares (BONIFICACAO) and anchored to the instrument''s latest session; rounded to 6 decimal places. No dividend, JCP or subscription-right adjustment. Shares and units only. Null only when the session has no close; a window it cannot adjust is refused, never filled with the raw close.'),
         ('close',            'number',  FALSE, 'RAW close as traded, per quotation unit (see quotation_factor). Never adjusted.'),
         ('open',             'number',  FALSE, 'Raw opening price.'),
         ('high',             'number',  FALSE, 'Raw high.'),
@@ -831,10 +831,12 @@ REVOKE ALL ON FUNCTION api.quote_data_revision() FROM PUBLIC;
 -- events): DESDOBRAMENTO and BONIFICACAO multiply the share count by
 -- 1 + factor/100, GRUPAMENTO by factor, and distinct events on one ISIN and
 -- date multiply together. B3's cash class (DIVIDENDO, JRS CAP PROPRIO,
--- RENDIMENTO, AMORTIZACAO RF, JUROS RF, REST CAP DIN) is outside this price-only
--- adjustment and blocks nothing. EVERY other stock or subscription label (CIS
--- RED CAP, INCORPORACAO, SUBSCRICAO, REST CAP ACOES, RESG TOTAL RV, ..., and
--- any label B3 adds later)
+-- RENDIMENTO, AMORTIZACAO RF, JUROS RF, REST CAP DIN) and its subscription
+-- class (SUBSCRICAO, SUBS C/ RENUNC, PRIORIDADE SUBS: a right that moves value
+-- to holders the way a distribution does and changes no share count; owner,
+-- 2026-09-30) are outside this price-only adjustment and block nothing. EVERY
+-- other stock label (CIS RED CAP, INCORPORACAO, REST CAP ACOES, RESG TOTAL
+-- RV, ..., and any label B3 adds later)
 -- moves the price in a way this version does not adjust, so it blocks the
 -- stretch on or before its last_date_prior. So do an unreadable factor and one
 -- label on one date republished with two different factors (two events or a
@@ -863,7 +865,7 @@ AS $$
         FROM public.b3_corporate_event e, a
         WHERE e.isin = p_isin
           AND e.last_date_prior < a.anchor
-          AND e.event_class <> 'cash'
+          AND e.event_class = 'stock'
     ),
     blocking AS (
         SELECT ev.last_date_prior,
@@ -981,7 +983,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION api.assert_close_adj(TEXT, TEXT, TEXT, DATE, DATE) IS
-    'Internal. Raises 22023 (DETAIL reason=adjustment_unavailable; cause=...) naming ticker, period and cause when close_adj cannot cover the window: outside shares/units, issuer events not proven swept, proof older than the last session, or an unsupported, unreadable or ambiguous event after the window start. Never falls back to the raw close.';
+    'Internal. Raises 22023 (DETAIL reason=adjustment_unavailable; cause=...) naming ticker, period and cause when close_adj cannot cover the window: outside shares/units, issuer events not proven swept, proof older than the last session, or an unsupported stock event (spin-off, merger, capital restitution in shares, ...), an unreadable factor or an ambiguous event after the window start. Never falls back to the raw close.';
 
 REVOKE ALL ON FUNCTION api.assert_close_adj(TEXT, TEXT, TEXT, DATE, DATE) FROM PUBLIC;
 
@@ -1252,7 +1254,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT, TEXT[]) IS
-    'Daily price series for one ticker, oldest first, one JSON object per session holding only the selected fields. Default (p_fields omitted): ticker, trade_date, close_adj. close_adj is the close per single share, backward-adjusted for splits, groupings and bonus shares by B3''s rule and anchored to the instrument''s latest session (past levels change when an event lands; returns do not); no dividend or JCP adjustment; shares and units only; 6 decimal places. It is never null and never the raw close: a window it cannot cover is REFUSED (22023, DETAIL reason=adjustment_unavailable) naming ticker, period and cause. The raw close, OHLC and volume are an explicit selection (p_fields = {close, ...}); fields are listed in catalog(). The series follows the ISIN across boards; p_board restricts it. Refusals (22023, DETAIL reason=...): unknown_ticker; outside_coverage (a window with no coverage, or starting before the instrument''s first session; the tape starts 2019-01-02); isin_change (two ISINs in the window); ambiguous_session (two rows on one session); invalid_field; adjustment_unavailable. A session missing inside the coverage is a session with no trade (prior_no_trade_sessions counts them); a field with no value is a null. data_revision (field, and header X-Silo-Data-Revision) identifies the data; do not combine pages with different revisions. Row cap: more than 1000 rows RAISES 22023 unless p_after pages: '''' = first page, then the last row''s trade_date as ''YYYY-MM-DD''; a page shorter than 1000 is the last.';
+    'Daily price series for one ticker, oldest first, one JSON object per session holding only the selected fields. Default (p_fields omitted): ticker, trade_date, close_adj. close_adj is the close per single share, backward-adjusted for splits, groupings and bonus shares by B3''s rule and anchored to the instrument''s latest session (past levels change when an event lands; returns do not); no dividend, JCP or subscription-right adjustment; shares and units only; 6 decimal places. It is never null and never the raw close: a window it cannot cover is REFUSED (22023, DETAIL reason=adjustment_unavailable) naming ticker, period and cause. The raw close, OHLC and volume are an explicit selection (p_fields = {close, ...}); fields are listed in catalog(). The series follows the ISIN across boards; p_board restricts it. Refusals (22023, DETAIL reason=...): unknown_ticker; outside_coverage (a window with no coverage, or starting before the instrument''s first session; the tape starts 2019-01-02); isin_change (two ISINs in the window); ambiguous_session (two rows on one session); invalid_field; adjustment_unavailable. A session missing inside the coverage is a session with no trade (prior_no_trade_sessions counts them); a field with no value is a null. data_revision (field, and header X-Silo-Data-Revision) identifies the data; do not combine pages with different revisions. Row cap: more than 1000 rows RAISES 22023 unless p_after pages: '''' = first page, then the last row''s trade_date as ''YYYY-MM-DD''; a page shorter than 1000 is the last.';
 
 REVOKE ALL ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT, TEXT[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT, TEXT[]) TO anon, authenticated;
@@ -5573,7 +5575,7 @@ SELECT $json${
         "month"
       ],
       "source": "b3_cotahist",
-      "meaning": "Close per single share, backward-adjusted for splits, groupings and bonus shares by B3's rule and anchored to the instrument's latest session; 6 decimal places. No dividend or JCP adjustment. Shares (ISIN code ACN) and units (CDA/UNT, ticker ending 11) only. A window it cannot adjust REFUSES (22023) naming ticker, period and cause; it is never the raw close under this name. The panel default for shares and units. Month = last session.",
+      "meaning": "Close per single share, backward-adjusted for splits, groupings and bonus shares by B3's rule and anchored to the instrument's latest session; 6 decimal places. No dividend, JCP or subscription-right adjustment. Shares (ISIN code ACN) and units (CDA/UNT, ticker ending 11) only. A window it cannot adjust REFUSES (22023) naming ticker, period and cause; it is never the raw close under this name. The panel default for shares and units. Month = last session.",
       "derived": true
     },
     "volume": {
@@ -5835,7 +5837,7 @@ SELECT $json${
     "close_return across a missing month is null, not a multi-month return.",
     "close_return is unadjusted: a 2:1 split reports roughly -50%. It is not a total return.",
     "close is the price as published, which for a paper quoted per lot refers to 1000 shares; close_unit divides it by the published quotation_factor so levels are comparable. Neither is corporate-action adjusted, and `adjusted` is FALSE on every view row because it describes close. The adjusted price is close_adj (quote_history's default field, the panel's default metric for shares and units; see the next constraint).",
-    "close_adj IS CONTINUOUS ACROSS SPLITS, GROUPINGS AND BONUS SHARES ONLY, AND IT IS ANCHORED TO THE INSTRUMENT'S LATEST SESSION. It is the close per single share divided by the share ratio of every later event, by B3's rule: 1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for GRUPAMENTO, distinct events on one date multiplied. Past levels change when a new event lands and returns do not, so never read a past level as the price seen that day, and never combine pages with different data_revision values. Dividends and JCP are not adjusted in this version. A window close_adj cannot cover is REFUSED (22023, DETAIL reason=adjustment_unavailable; cause=...) naming ticker, period and cause, never served as the raw close: outside shares (ISIN code ACN) and units (CDA/UNT, ticker ending 11); issuer events not proven swept, or the proof older than the last session; a stretch on or before an event this version does not adjust (spin-off CIS RED CAP, INCORPORACAO, SUBSCRICAO, REST CAP ACOES, RESG TOTAL RV, any new label), an unreadable factor, or one label on one date published with two factors. The absence of events is never taken as proof: the sweep proof is. Select close explicitly for the raw close.",
+    "close_adj IS CONTINUOUS ACROSS SPLITS, GROUPINGS AND BONUS SHARES ONLY, AND IT IS ANCHORED TO THE INSTRUMENT'S LATEST SESSION. It is the close per single share divided by the share ratio of every later event, by B3's rule: 1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for GRUPAMENTO, distinct events on one date multiplied. Past levels change when a new event lands and returns do not, so never read a past level as the price seen that day, and never combine pages with different data_revision values. Dividends, JCP and subscription rights are not adjusted in this version (they move value to holders and change no share count; total return is separate). A window close_adj cannot cover is REFUSED (22023, DETAIL reason=adjustment_unavailable; cause=...) naming ticker, period and cause, never served as the raw close: outside shares (ISIN code ACN) and units (CDA/UNT, ticker ending 11); issuer events not proven swept, or the proof older than the last session; a stretch on or before a stock event this version does not adjust (spin-off CIS RED CAP, INCORPORACAO, REST CAP ACOES, RESG TOTAL RV, any new stock label), an unreadable factor, or one label on one date published with two factors. The absence of events is never taken as proof: the sweep proof is. Select close explicitly for the raw close.",
     "quote_history IS KEYED ON THE ISIN AND REFUSES WHAT IT CANNOT SERVE WHOLE. The series follows the instrument across BDI boards (p_board restricts it). 22023 with DETAIL reason=: unknown_ticker (never printed on the cash tape); outside_coverage (no session in the window, or the window starts before the instrument's first session; the tape starts 2019-01-02, see coverage()); isin_change (the ticker printed under two ISINs in the window; a reused receipt code is a new instrument and is never joined); ambiguous_session (two rows on one session; pass p_board); invalid_field; adjustment_unavailable. Inside the coverage a missing session is a session with no trade (COTAHIST lists only papers that traded; prior_no_trade_sessions counts them), holidays are not sessions, and a field with no value is a JSON null.",
     "Daily close_return is null when the previous session is more than 7 calendar days back (halts, listing gaps), and null across a quotation-factor change — a fatcot flip rescales the quote with no market move behind it.",
     "Default windows are honest: with no explicit `to`, fund metrics end at each family's latest COMPLETE period (coverage() reports it as complete_through) — a partially-filed trailing month is not served. An explicit `to` serves the window verbatim, partial months included.",

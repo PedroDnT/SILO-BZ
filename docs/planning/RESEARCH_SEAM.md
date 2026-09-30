@@ -44,9 +44,17 @@ session holding only the fields named in `p_fields`; the default is `ticker`,
 `trade_date`, `close_adj`, and the raw close, OHLC and volume are explicit
 selections. `close_adj` is never NULL in disguise: a window it cannot adjust is
 refused (22023, `reason=adjustment_unavailable`) naming ticker, period and
-cause. Every stock or subscription event other than a split, grouping or bonus
-blocks the stretch on or before it (measured 2026-09-30: 126 of 639 universe
-pairs have one since 2019, 113 of them subscriptions). The total-return field
+cause. Every stock event other than a split, grouping or bonus blocks the
+stretch on or before it: 17 of 639 universe pairs since 2019 (CIS RED CAP,
+INCORPORACAO, REST CAP ACOES). Subscription rights are outside a price-only
+adjustment, like dividends (owner, 2026-09-30); blocking them too would have
+refused 126 pairs, ETER3 before 2021-03-25 and MGLU3 before 2024-01-31 among
+them. Same-date events multiply by B3's documented rule, and all 10 same-date
+pairs on universe ISINs since 2019 sit closest to it on the tape (or tie with no
+adjustment where the net ratio is 1). A missing session inside the coverage is
+a no-trade session; the tape is the market calendar (all 91 weekdays without a
+tape since 2019 are B3 holidays), checked once against B3's published holidays
+in the §9 script. The total-return field
 leaves the row until #418 serves it. `data_revision` (field and header) names
 the data behind an answer, and the SDK never combines two revisions.
 

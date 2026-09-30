@@ -77,11 +77,12 @@ def test_the_share_ratio_is_b3s_rule_and_only_three_labels_adjust():
     assert "round(r.close_unit / api.close_adj_ratio(v_isin, r.trade_date, v_anchor), 6)" in _function("quote_history")
 
 
-def test_every_non_cash_label_that_is_not_adjusted_blocks():
-    """Cash events are outside a price-only adjustment; every other stock or
-    subscription label (and any label B3 adds later) blocks its stretch."""
+def test_every_stock_label_that_is_not_adjusted_blocks():
+    """Cash events and subscription rights are outside a price-only adjustment
+    (owner, 2026-09-30); every other stock label (and any B3 adds later)
+    blocks its stretch."""
     status = _function("close_adj_status")
-    assert "e.event_class <> 'cash'" in status
+    assert "e.event_class = 'stock'" in status
     assert "ev.label NOT IN ('DESDOBRAMENTO', 'GRUPAMENTO', 'BONIFICACAO')" in status
     assert "'unsupported corporate event '" in status
     assert "'unreadable factor on '" in status

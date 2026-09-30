@@ -27,9 +27,10 @@ FROM sess WHERE d NOT BETWEEN '2024-08-20' AND '2024-08-22';
 -- CMPD3: grouping 10:1 and a 10% bonus on the same cum date multiply.
 INSERT INTO b3_cotahist (codneg, trade_date, tpmerc, codbdi, especi, preco_fechamento, fator_cotacao, isin, raw)
 SELECT 'CMPD3', d, '010', '02', 'ON', CASE WHEN d <= '2024-08-14' THEN 1.10 ELSE 10 END, 1, 'BRCMPDACNOR1', '{}' FROM sess;
--- SUBS3: a subscription (not adjusted in this version) blocks through 08-13.
+-- SPIN3: a spin-off (not adjusted in this version) blocks through 08-13.
+-- SUBS3: a subscription right, outside a price-only adjustment, blocks nothing.
 INSERT INTO b3_cotahist (codneg, trade_date, tpmerc, codbdi, especi, preco_fechamento, fator_cotacao, isin, raw)
-SELECT 'SUBS3', d, '010', '02', 'ON', 7, 1, 'BRSUBSACNOR1', '{}' FROM sess;
+SELECT t, d, '010', '02', 'ON', 7, 1, 'BR' || left(t, 4) || 'ACNOR1', '{}' FROM sess, unnest(ARRAY['SPIN3', 'SUBS3']) t;
 -- AMBG3: one label on one date with two factors.
 INSERT INTO b3_cotahist (codneg, trade_date, tpmerc, codbdi, especi, preco_fechamento, fator_cotacao, isin, raw)
 SELECT 'AMBG3', d, '010', '02', 'ON', 3, 1, 'BRAMBGACNOR1', '{}' FROM sess;
@@ -64,13 +65,14 @@ INSERT INTO b3_corporate_event (issuing_company, isin, event_class, label, last_
     ('SPLT', 'BRSPLTACNOR1', 'cash', 'DIVIDENDO', '2024-08-12', NULL, '{}'),
     ('CMPD', 'BRCMPDACNOR1', 'stock', 'GRUPAMENTO', '2024-08-14', 0.1, '{}'),
     ('CMPD', 'BRCMPDACNOR1', 'stock', 'BONIFICACAO', '2024-08-14', 10, '{}'),
-    ('SUBS', 'BRSUBSACNOR1', 'subscription', 'SUBSCRICAO', '2024-08-13', 5, '{}'),
+    ('SPIN', 'BRSPINACNOR1', 'stock', 'CIS RED CAP', '2024-08-13', 12.5, '{}'),
+    ('SUBS', 'BRSUBSACNOR1', 'subscription', 'SUBSCRICAO', '2024-08-13', NULL, '{}'),
     ('AMBG', 'BRAMBGACNOR1', 'stock', 'DESDOBRAMENTO', '2024-08-06', 100, '{"v":1}'),
     ('AMBG', 'BRAMBGACNOR1', 'stock', 'DESDOBRAMENTO', '2024-08-06', 200, '{"v":2}');
 
 INSERT INTO b3_corporate_event_sweep (issuing_company, n_events, proven_at)
 SELECT c, 0, '2024-09-02 06:00+00'
-FROM unnest(ARRAY['REFR', 'ETER', 'SPLT', 'CMPD', 'SUBS', 'AMBG', 'DUPL', 'UNIT', 'LOTS', 'LONG']) c;
+FROM unnest(ARRAY['REFR', 'ETER', 'SPLT', 'CMPD', 'SPIN', 'SUBS', 'AMBG', 'DUPL', 'UNIT', 'LOTS', 'LONG']) c;
 INSERT INTO b3_corporate_event_sweep (issuing_company, n_events, proven_at)
 VALUES ('STAL', 0, '2024-08-20 06:00+00');
 
@@ -161,13 +163,13 @@ INSERT INTO cases VALUES
     ('two rows on a session', $s$SELECT * FROM api.quote_history('DUPL3', '2024-08-01', '2024-08-30', NULL, NULL, ARRAY['close'])$s$, 'reason=ambiguous_session'),
     ('unknown field',         $s$SELECT * FROM api.quote_history('ETER3', '2024-08-01', '2024-08-02', NULL, NULL, ARRAY['close', 'nope'])$s$, 'reason=invalid_field'),
     ('empty field list',      $s$SELECT * FROM api.quote_history('ETER3', '2024-08-01', '2024-08-02', NULL, NULL, ARRAY[]::text[])$s$, 'reason=invalid_field'),
-    ('unsupported event',     $s$SELECT * FROM api.quote_history('SUBS3', '2024-08-01', '2024-08-30')$s$, 'reason=adjustment_unavailable; cause=unsupported corporate event SUBSCRICAO'),
+    ('unsupported event',     $s$SELECT * FROM api.quote_history('SPIN3', '2024-08-01', '2024-08-30')$s$, 'reason=adjustment_unavailable; cause=unsupported corporate event CIS RED CAP'),
     ('ambiguous event',       $s$SELECT * FROM api.quote_history('AMBG3', '2024-08-01', '2024-08-30')$s$, 'reason=adjustment_unavailable; cause=ambiguous DESDOBRAMENTO'),
     ('never swept',           $s$SELECT * FROM api.quote_history('NOPR3', '2024-08-01', '2024-08-30')$s$, 'reason=adjustment_unavailable; cause=issuer corporate events not proven swept'),
     ('proof older than tape', $s$SELECT * FROM api.quote_history('STAL3', '2024-08-01', '2024-08-30')$s$, 'reason=adjustment_unavailable; cause=corporate-event proof older'),
     ('not a share or unit',   $s$SELECT * FROM api.quote_history('FUND11', '2024-08-01', '2024-08-30')$s$, 'reason=adjustment_unavailable; cause=outside research universe'),
     ('over the page',         $s$SELECT * FROM api.quote_history('LONG3', '2020-01-01', '2024-07-31', NULL, NULL, ARRAY['close'])$s$, NULL),
-    ('panel unsupported',     $s$SELECT * FROM api.panel(ARRAY['SUBS3'], NULL, '2024-08-01', '2024-08-30', 'month')$s$, 'reason=adjustment_unavailable'),
+    ('panel unsupported',     $s$SELECT * FROM api.panel(ARRAY['SPIN3'], NULL, '2024-08-01', '2024-08-30', 'month')$s$, 'reason=adjustment_unavailable'),
     ('panel explicit fund',   $s$SELECT * FROM api.panel(ARRAY['FUND11'], ARRAY['close_adj'], '2024-08-01', '2024-08-30', 'month')$s$, 'reason=adjustment_unavailable');
 
 DO $$
@@ -189,15 +191,18 @@ BEGIN
     RAISE NOTICE 'quote_history refusals OK';
 END $$;
 
--- The adjusted stretch after an unsupported event is still served.
+-- The adjusted stretch after an unsupported event is still served, the raw
+-- close is never refused for an adjustment reason, and a subscription right
+-- (outside a price-only adjustment, like a dividend) blocks nothing.
 DO $$
 DECLARE n INT;
 BEGIN
-    SELECT count(*) INTO n FROM api.quote_history('SUBS3', '2024-08-14', '2024-08-30');
-    ASSERT n = 12, format('SUBS3 after the subscription: %s rows, expected 12', n);
-    -- The raw close is never refused for an adjustment reason.
-    SELECT count(*) INTO n FROM api.quote_history('SUBS3', '2024-08-01', '2024-08-30', NULL, NULL, ARRAY['close']);
-    ASSERT n = 21, format('SUBS3 raw: %s rows, expected 21', n);
+    SELECT count(*) INTO n FROM api.quote_history('SPIN3', '2024-08-14', '2024-08-30');
+    ASSERT n = 12, format('SPIN3 after the spin-off: %s rows, expected 12', n);
+    SELECT count(*) INTO n FROM api.quote_history('SPIN3', '2024-08-01', '2024-08-30', NULL, NULL, ARRAY['close']);
+    ASSERT n = 21, format('SPIN3 raw: %s rows, expected 21', n);
+    SELECT count(*) INTO n FROM api.quote_history('SUBS3', '2024-08-01', '2024-08-30');
+    ASSERT n = 21, format('SUBS3 across its subscription: %s rows, expected 21', n);
 END $$;
 
 ROLLBACK;
