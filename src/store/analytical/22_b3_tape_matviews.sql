@@ -34,10 +34,12 @@
 -- uq_b3_monthly_activity). A missing matview makes the plain REFRESH raise.
 --
 -- mv_b3_monthly_activity is the one full pass over the tape per day (about
--- 17M rows on 2026-09-30). Same session settings as 04_fact_fund_monthly.sql,
--- for the same reasons: no parallel workers and no JIT bound the memory peak
--- on a small instance, and the timeout is LOCAL so a pooler that ignores a
--- session SET still honours it.
+-- 17M rows on 2026-09-30). Its first population took 2 min 10 s on production
+-- (Daily CVM Ingest run 33207753376, 2026-08-28, default planner settings).
+-- Same session settings as 04_fact_fund_monthly.sql, for the same reasons: no
+-- parallel workers and no JIT bound the memory peak on a small instance, at
+-- the price of a slower scan, and the timeout is LOCAL so a pooler that
+-- ignores a session SET still honours it.
 --
 -- pg_cron stays optional. If it is ever enabled, 08's two jobs refresh the
 -- same matviews again, which costs a scan and changes nothing.

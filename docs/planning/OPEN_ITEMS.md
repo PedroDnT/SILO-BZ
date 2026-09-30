@@ -491,6 +491,14 @@ To close this item, check on the live database after the first apply:
    `mv_b3_isin_subtype`.
 4. `/markets` on the public URL shows it, after the publish check has run.
 
+**Going live, 2026-09-30.** `daily_ingest` with `mode=analytics-only` and
+`rebuild_dashboard=true` was dispatched at 14:37 UTC-3 (17:37 UTC), run
+36752752981, on `main` at the merge of this fix. Before it, the public `/markets`
+data (`b3_monthly_volume`) read August 2026 as R$ 480.96 bn over 19 sessions.
+The apply gains one full pass over the tape: the matview's first population
+took 2 min 10 s on production (Daily CVM Ingest run 33207753376, 2026-08-28,
+read from the log timestamps).
+
 The record of what was found:
 
 `mv_b3_isin_subtype` and `mv_b3_monthly_activity` are created in `schema.sql`
