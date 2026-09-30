@@ -280,12 +280,6 @@ same for everyone.
 
 ### Known defects
 
-- **Three dashboard pages read a matview that nothing refreshes.**
-  `mv_b3_monthly_activity` (behind `/markets`, `/etf` and `/flows`) and
-  `mv_b3_isin_subtype` were last populated around 2026-08-28. Their daily refresh
-  is a pg_cron job, and the live database has no pg_cron. August shows 19 of its
-  21 sessions and September is absent
-  ([OPEN_ITEMS.md](docs/planning/OPEN_ITEMS.md), item 16).
 - **`etf_daily` / `etf_latest` can be absent from production.** Migration 06
   recreates them when missing, so a run whose schema step failed leaves them
   gone and the backfill's "Refresh ETF metrics" job then fails on an assertion

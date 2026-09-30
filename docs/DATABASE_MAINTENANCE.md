@@ -394,10 +394,12 @@ Each year, before January:
 bash scripts/apply_analytical.sh     # run AFTER data exists
 ```
 
-Applies `src/store/analytical/01…17` in order, re-creating dims, matviews
+Applies `src/store/analytical/01…28` in order, re-creating dims, matviews
 (`dim_fund`, `fact_fund_monthly`, `fact_security_monthly`), fraud screens and the
 ranking/ETF functions. The re-create _is_ the daily refresh, so dashboards see fresh
-aggregates without a separate cron.
+aggregates without a separate cron. The two matviews `schema.sql` owns
+(`mv_b3_isin_subtype`, `mv_b3_monthly_activity`) cannot be re-created here, so
+`22_b3_tape_matviews.sql` refreshes them in the same apply.
 
 - Several files carry **smoke guards that RAISE on an empty database** — never run this
   before ingesting.

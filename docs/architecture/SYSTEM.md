@@ -36,8 +36,7 @@ it read-only. Three infrastructures, three products.
 2. **Landed vs complete.** `landed_at` is our health; `complete_through` is
    the source's filing calendar.
 3. **View vs matview.** A plain view is live; a matview is only as fresh as the
-   last analytical apply. Two B3 matviews do not even follow that rule (see
-   [DATA_FLOW](DATA_FLOW.md#analytical)).
+   last analytical apply (see [DATA_FLOW](DATA_FLOW.md#analytical)).
 4. **The BDI ratchet.** B3 keeps about 21 business days of lending and flow
    data and publishes no archive. A missed session is lost.
 5. **Shared database.** Another application's tables (`messages`, `profiles`,

@@ -32,10 +32,11 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 - Plain views change the moment rows land.
 - Matviews (`dim_fund`, `fact_fund_monthly`, `mv_period_completeness`, …) change
   only when `scripts/apply_analytical.sh` drops and recreates them.
-- `mv_b3_isin_subtype` and `mv_b3_monthly_activity` are created in `schema.sql`
-  and refreshed only when empty. Their daily refresh was a pg_cron job, and the
-  live database has no pg_cron (checked 2026-09-29). Both still hold what they
-  held when first populated around 2026-08-28.
+- `mv_b3_isin_subtype` and `mv_b3_monthly_activity` are created in `schema.sql`,
+  because a view depends on the first. The same apply refreshes them
+  (`22_b3_tape_matviews.sql`).
+- Nothing depends on pg_cron. The live database has none (checked 2026-09-29),
+  so the jobs in `08_cron_schedules.sql` do not run.
 
 ## Serving
 

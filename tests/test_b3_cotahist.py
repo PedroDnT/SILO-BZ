@@ -472,11 +472,15 @@ def test_the_isin_map_learns_only_from_decisive_board_codes():
 
 
 def test_isin_subtype_matview_is_refreshed_on_a_schedule():
+    # This pins the pg_cron JOB, which runs only where pg_cron is installed.
+    # The live database has none, and this test passed for a month while the
+    # matview sat frozen (OPEN_ITEMS.md item 16). The refresh that actually
+    # runs is pinned in tests/test_b3_tape_matview_refresh.py.
     cron = (
         Path(__file__).resolve().parents[1]
         / "src/store/analytical/08_cron_schedules.sql"
     ).read_text(encoding="utf-8")
     assert "refresh-b3-isin-subtype" in cron, (
-        "a matview nobody refreshes silently freezes the classification"
+        "the optional pg_cron job for the ISIN map is gone from the cron file"
     )
     assert "REFRESH MATERIALIZED VIEW CONCURRENTLY mv_b3_isin_subtype" in cron
