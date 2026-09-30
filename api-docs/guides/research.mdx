@@ -1,0 +1,133 @@
+---
+title: "Pulling a research universe"
+description: "The universe, adjusted and total-return prices, the benchmark, fundamentals as they were known and macro: the calls, in order, and where each one can quietly mislead."
+icon: "flask"
+---
+
+### Overview
+
+A backtest needs five things: a universe that includes the names that died, prices you can take returns from, fundamentals as they were known on the day, a benchmark, and macro. Each has a call. Each also has one way to produce a plausible wrong answer, and this page names it.
+
+<Warning>
+  **Two calls look interchangeable and are not.** `panel`'s `close_return` and `quote_history`'s raw `close` are **unadjusted**: a 2:1 split reads as a −50% return. Take returns from `quote_history`'s `close_price_adjusted` or `close_total_return`. And `IBOV11` is not the index: use `index_history`.
+</Warning>
+
+### 1. The universe: `research_universe`
+
+```python
+from silo_client import SiloClient
+
+silo = SiloClient()
+pairs = silo.research_universe(as_of="2024-06-03")   # who could be traded that day
+```
+
+One row per **ticker + ISIN pair** of listed shares and units traded on the B3 cash market since 2019-01-02 (about 640 pairs on 2026-09-30). Membership is the ISIN's own instrument code, so subscription receipts, BDRs, funds and indices are out. Columns: `ticker`, `isin`, `instrument_type`, `cnpj`, `cnpj_basis`, `first_observed`, `last_observed`, `n_sessions`, `setor_current`, `built_at`.
+
+**The survivorship rule.** A rebalance on date *T* trades the pairs with `first_observed <= T <= last_observed`. That is what `as_of=T` does, on the client. Without it you get every pair, including names that stopped trading years ago. Choosing today's survivors and looking backwards is the classic survivorship bias.
+
+<Note>
+  **Read these five before you trust a row.**
+
+  - **The ISIN is the identity, and a rename is two rows.** `ELET3` until 2025-11-07 and `AXIA3` from 2025-11-10 are separate pairs; nothing links them.
+  - **A gap still matches.** `NATU3` is one ISIN with no sessions from 2019-12 to 2025-07, so the filter says it "existed" on a date inside the gap. `n_sessions` far below the calendar span is the sign; check the series before assuming it traded on *T*.
+  - **`first_observed` and `last_observed` are facts about SILO's tape, not listing dates.** There are no listing or delisting dates and no `is_active`.
+  - **`last_observed` lags the tape by up to a day** (the view is rebuilt daily), so `as_of=today` can miss a name that traded this morning.
+  - **`setor_current` is CVM's classification as of *today***, never the sector on *T*. Using it to neutralise a 2020 portfolio is look-ahead.
+</Note>
+
+`cnpj_basis` says how the company link was made: `fca_ticker` (CVM's published ticker map has that exact ticker), `fca_issuer_stem` (the ticker's four-letter stem maps to exactly one CNPJ: an inference, labelled as one) or null (no link; `cnpj` and `setor_current` are null too). Nothing is matched by name.
+
+### 2. Prices: `quote_history`
+
+One ticker per call, with the raw `close` and four research columns beside it:
+
+| Column | What it is |
+| --- | --- |
+| `close_price_adjusted` | Close per single share, continuous across splits, groupings and bonus shares, **anchored to the ticker's latest session** |
+| `close_total_return` | The same with cash distributions reinvested on the ex session |
+| `close_price_adjusted_null_reason` · `close_total_return_null_reason` | Why a value is NULL, else NULL |
+
+**Anchored to the latest session means a past level changes when a new event lands; a return does not.** Never append a new pull to an old one: re-pull the whole series, or take returns inside one pull. Compare levels only within one pull.
+
+**A NULL is a reason to read, not a gap to fill.** The value is NULL outside shares and units, where the issuer's corporate events are not proven swept, where a distribution cannot be valued, and, for total return, where B3's history holds no resolved distribution for the ISIN. A non-payer and an issuer the history does not match look identical, so neither is given a price return labelled as a total return. Spin-offs, mergers, capital reductions and subscriptions are **not** adjusted.
+
+**The tape starts on 2019-01-02.** A `start` before it is refused (`22023`, naming the date), even for a window that would hold no rows. `2019-01-01` is refused too.
+
+#### Many tickers: `quote_history_many`
+
+There is no multi-ticker function, and a name over one page takes one call per page (100 liquid names over seven years is about 190 requests). The SDK fans them out and returns **the whole request or raises**:
+
+```python
+from silo_client import SiloFanOutError
+
+tickers = sorted({p["ticker"] for p in pairs})[:100]      # your own selection rule
+
+try:
+    rows = silo.quote_history_many(tickers, start="2019-01-02", end="2024-06-03")
+except SiloFanOutError as e:
+    print(e.failures)          # {ticker: exception}: every one that failed
+    raise                      # never analyse e.partial; it is missing those tickers
+
+rows["PETR4"][0]["close_total_return"]
+```
+
+`rows` is `{ticker: series}` in the order you gave, each series oldest first. Duplicates are refused before any request, because the dict would silently keep one. An **empty series means the window held no rows** for that ticker: a typo, an unlisted name and a name not yet trading look the same, so `require_rows=True` raises for them too.
+
+<Note>
+  **Concurrency is observed to be free, not guaranteed.** On 2026-09-28 sixteen anonymous workers drew no rate limiting and cut a 70-second sequential pull of 100 names to 8 seconds. No limit is documented, so `workers` defaults to 8. Nothing raises the 1,000-row page, for anyone.
+</Note>
+
+#### Returns from the panel of levels
+
+```python
+import pandas as pd
+
+levels = (
+    pd.DataFrame([r for series in rows.values() for r in series])
+    .pivot(index="trade_date", columns="ticker", values="close_total_return")
+    .astype(float)
+)
+returns = levels.pct_change(fill_method=None)   # a NULL level makes the next return NaN: never bridged
+```
+
+`fill_method=None` matters: pandas' older default forward-fills, which turns a missing level into a zero return.
+
+### 3. The benchmark: `index_history`
+
+```python
+ibov = silo.index_history_all("IBOV", start="1968-01-02")    # 15 pages; or pass a window
+```
+
+B3's own published daily levels, **as published**: `index_code`, `trade_date`, `level`, `divisor_step`, `source`. IBOV is held from 1968-01-02.
+
+- **It takes an index code, never a ticker.** `BOVA11` is an ETF; `IBOV11` is the index **options** settlement leg: its `asset_class` is `index`, its `close_unit` is R$ per contract, and it prints **only on expiry days**. Neither is the index, so both are refused with `22023`, naming the codes held.
+- **It is a price index, not total return**, and it is not adjusted. B3 re-scaled it eleven times (1983-10-04 by 100 and ten sessions by 10, the last on 1997-03-03). `divisor_step` is true on the first session after each, where a level ratio is not a return. Exclude or splice those sessions.
+- `start=None` is the last 365 days, not the whole history.
+
+### 4. Fundamentals as they were known: `as_of`
+
+By default the statement functions read each document at its **latest stored version**, so a later filing or a restatement appears as if it had been known earlier. That is look-ahead. `financials`, `company_financials`, `income_statements`, `balance_sheets` and `cash_flow_statements` take `as_of`:
+
+```python
+# PETR4's 2023 annual statements were received on 2024-03-08
+silo.financials("PETR4", "DRE", start="2023-01-01", end="2024-06-30", as_of="2024-02-29")
+# newest period: the quarter ended 2023-09-30
+```
+
+Only documents CVM had **received before** the date are read (one received on the date itself is out), the highest remaining version of each is kept, and a document with no filing header is dropped. `ref_date` still says which period a row is for; `start` / `end` window on that, not on the receipt date.
+
+<Warning>
+  **Stale, never early.** CVM's files carry only the newest version of each document, and most versions superseded before 2026 are not held. For a company that restated, an as-of read shows the restated numbers only once they were filed, but it may be missing the original. `financial_statement_history` lists every stored version with its `filing_received_date`.
+</Warning>
+
+These functions refuse above one page and have no cursor. A long window on several statements can exceed 1,000 lines, so read one statement at a time and narrow the window.
+
+### 5. Macro: split by date
+
+`macro_series` has no cursor; the caller splits by date. Measured on 2026-09-28: `CDI` (a daily series) refuses over four years and three-year chunks fit, so 2019 onward is three calls; `SELIC_META` fits about 2.7 years per call. A refusal is cheap and says why, so it is safe to start wide and halve. Read `unit` on every row: the series differ (`CDI` is percent per business day, `SELIC_META` percent a year).
+
+### Not served
+
+Historical index membership, BDRs in the universe, a sector history, spin-offs, mergers, subscriptions and any link across a rename, fundamentals before 2019, and recovery of superseded ITR/DFP versions. Adjusted and total-return values exist only for shares and units.
+
+See also [Quotes](/api-docs/quotes), [Reading a fundamental](/api-docs/guides/fundamentals), [Paging without losing rows](/api-docs/guides/pagination), [Known limitations](/api-docs/known-limitations) and [the SDK](/api-docs/sdk).

@@ -57,6 +57,19 @@ except SiloOverCap:
     # long series page. A cursor walk, not a stitched guess:
     rows = silo.quote_history_all("PETR4", start="2019-01-02")
 
+# Many tickers at once: concurrent, and the whole request or an exception.
+from silo_client import SiloFanOutError
+rows = silo.quote_history_many(["PETR4", "VALE3"], start="2019-01-02")
+rows["PETR4"][0]["close_total_return"]      # NULL with a *_null_reason where unproven
+
+# The research universe on a date (the survivorship rule), and the benchmark
+# by INDEX CODE (BOVA11 and IBOV11 are refused, they are not the index).
+pairs = silo.research_universe(as_of="2024-06-03")
+ibov = silo.index_history_all("IBOV", start="1968-01-02")
+
+# Fundamentals as they were known: only documents CVM had received before T.
+silo.financials("PETR4", "DRE", start="2023-01-01", end="2024-06-30", as_of="2024-02-29")
+
 # fund_nav pages within ONE family: its cursor is a bare period, and 385 CNPJs
 # file under two families in the same month, so the family is not optional.
 nav = silo.fund_nav_all("05754060000113", "fi", start="2019-01-01")
