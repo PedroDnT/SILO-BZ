@@ -1,5 +1,5 @@
 """
-B3 corporate events and cash distributions, as their own daily step.
+B3 corporate events, cash distributions and index levels, as their own daily step.
 
 Both ran inside run_daily until 2026-09-30. There, a failure made the process
 exit non-zero, and that skipped ANALYZE, the analytical apply and the dashboard
@@ -60,6 +60,15 @@ async def main() -> None:
     except Exception as exc:
         logger.error("B3 cash dividends refresh failed: %s", exc, exc_info=True)
         failures.append(("b3_cash_dividends", exc))
+
+    # Daily levels of B3's published indices (migration 55): IBOV from 1968.
+    # Every year is refetched, about a minute, so it needs no backfill mode.
+    # The benchmark a research caller reads through api.index_history.
+    try:
+        totals["b3_index_level"] = await B3Ingestor().ingest_index_levels()
+    except Exception as exc:
+        logger.error("B3 index levels refresh failed: %s", exc, exc_info=True)
+        failures.append(("b3_index_levels", exc))
 
     logger.info("B3 events done — rows upserted: %s", totals)
 

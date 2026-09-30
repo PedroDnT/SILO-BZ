@@ -1,4 +1,4 @@
-"""B3 corporate events and cash dividends run as their own daily step.
+"""B3 corporate events, cash dividends and index levels run as their own daily step.
 
 Until 2026-09-30 both ran inside run_daily, where a failure made the process
 exit 1. That skipped ANALYZE, the analytical apply and the dashboard deploy hook
@@ -29,9 +29,13 @@ STEP = "Refresh B3 corporate events and cash dividends"
 RECOVERY = "Refresh B3 corporate events and cash dividends (recovery)"
 
 
-def _ingestor(events=0, cash=0) -> MagicMock:
+def _ingestor(events=0, cash=0, index=0) -> MagicMock:
     """Each arg is a return value, or an Exception to raise."""
     ing = MagicMock()
+    ing.ingest_index_levels = AsyncMock(
+        side_effect=index if isinstance(index, Exception) else None,
+        return_value=None if isinstance(index, Exception) else index,
+    )
     ing.ingest_corporate_events = AsyncMock(
         side_effect=events if isinstance(events, Exception) else None,
         return_value=None if isinstance(events, Exception) else events,
@@ -44,12 +48,13 @@ def _ingestor(events=0, cash=0) -> MagicMock:
 
 
 @pytest.mark.asyncio
-async def test_both_sources_run_and_a_healthy_run_exits_normally():
-    ing = _ingestor(events=11664, cash=1107)
+async def test_every_source_runs_and_a_healthy_run_exits_normally():
+    ing = _ingestor(events=11664, cash=1107, index=14489)
     with patch.object(rb, "B3Ingestor", return_value=ing):
         await rb.main()  # no SystemExit
     ing.ingest_corporate_events.assert_awaited_once()
     ing.ingest_cash_dividends.assert_awaited_once()
+    ing.ingest_index_levels.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -59,6 +64,20 @@ async def test_a_corporate_events_failure_does_not_skip_cash_dividends():
         with pytest.raises(SystemExit) as exc:
             await rb.main()
     assert exc.value.code == 1
+    ing.ingest_cash_dividends.assert_awaited_once()
+    ing.ingest_index_levels.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_an_index_levels_failure_exits_nonzero_after_the_others_ran(caplog):
+    ing = _ingestor(index=RuntimeError("results=null for IBOV 2026"))
+    with patch.object(rb, "B3Ingestor", return_value=ing):
+        with caplog.at_level("ERROR"):
+            with pytest.raises(SystemExit) as exc:
+                await rb.main()
+    assert exc.value.code == 1
+    assert "b3_index_levels" in caplog.text
+    ing.ingest_corporate_events.assert_awaited_once()
     ing.ingest_cash_dividends.assert_awaited_once()
 
 

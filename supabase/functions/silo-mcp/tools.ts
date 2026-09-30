@@ -101,6 +101,8 @@ export const TOOL_SPECS: ToolSpec[] = [
   t("curve_history", "B3 reference curve fixed-vertex history"),
   // The research universe (listed shares and units, from the B3 tape).
   t("research_universe", "Research universe: listed shares and units"),
+  // The benchmark index: levels by B3 index code (IBOV), never a ticker.
+  t("index_history", "Index levels (B3), by index code"),
   // Views (GET, PostgREST filters). The B3 lending / flow group is a RATCHET.
   t("funds", "Fund registry (view)"),
   t("quotes", "Cash quotes (view)"),

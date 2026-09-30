@@ -112,7 +112,7 @@ Times are UTC-3, with UTC in parentheses.
 1. **03:00 (06:00 UTC), `daily_ingest.yml`.** Applies the schema and any new
    migration, runs `run_daily`, then `ANALYZE`, then rebuilds the analytical layer,
    then fires the dashboard's deploy hook. If any source fails, those last three
-   steps are skipped. B3's corporate events and cash dividends, the market data
+   steps are skipped. B3's corporate events, cash dividends and index levels, the market data
    and the FNET register run last, as their own steps, so a slow host fails the
    run but cannot block the rest.
 2. **04:30 (07:30 UTC), `health.yml`.** Reads the audit log and the tables
