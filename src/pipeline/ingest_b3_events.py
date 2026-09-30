@@ -15,7 +15,7 @@ Formats, all as B3 publishes them:
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional
 
@@ -110,3 +110,28 @@ def ingest_b3_corporate_events(conn: Any, rows: List[Dict[str, Any]]) -> int:
     from src.store.pg_client import upsert_rows
 
     return upsert_rows(conn, TABLE, records, CONFLICT_COLS)
+
+
+SWEEP_TABLE = "b3_corporate_event_sweep"
+SWEEP_CONFLICT_COLS = "issuing_company"
+
+
+def record_sweep_proofs(conn: Any, n_events: Dict[str, int], run_id: str) -> int:
+    """Record the codes whose supplement came back, with how many events it held.
+
+    Call it only after ingest_b3_corporate_events has stored the events: a
+    proof written first would claim a sweep that did not happen. A code whose
+    supplement listed no events is proven too, since that is B3 saying none.
+    api.quote_history serves a price-adjusted close only for proven codes
+    (migration 53, #413).
+    """
+    if not n_events:
+        return 0
+    from src.store.pg_client import upsert_rows
+
+    proven_at = datetime.now(timezone.utc)
+    records = [
+        {"issuing_company": code, "n_events": n, "proven_at": proven_at, "run_id": run_id}
+        for code, n in sorted(n_events.items())
+    ]
+    return upsert_rows(conn, SWEEP_TABLE, records, SWEEP_CONFLICT_COLS)

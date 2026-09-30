@@ -732,6 +732,9 @@ GRANT SELECT ON api.cash_securities TO anon, authenticated;
 -- CREATE OR REPLACE cannot add a parameter, and PostgREST resolves an RPC by
 -- argument names, so the 4-argument form must not survive as an overload.
 DROP FUNCTION IF EXISTS api.quote_history(TEXT, DATE, DATE, TEXT);
+-- Return-type change (the adjusted closes, #417): CREATE OR REPLACE cannot
+-- change OUT columns either.
+DROP FUNCTION IF EXISTS api.quote_history(TEXT, DATE, DATE, TEXT, TEXT);
 
 CREATE OR REPLACE FUNCTION api.quote_history(
     p_ticker TEXT,
@@ -763,7 +766,11 @@ RETURNS TABLE (
     quotation_factor  INT,
     adjusted          BOOLEAN,
     source            TEXT,
-    asset_class       TEXT
+    asset_class       TEXT,
+    close_price_adjusted             NUMERIC,
+    close_price_adjusted_null_reason TEXT,
+    close_total_return               NUMERIC,
+    close_total_return_null_reason   TEXT
 )
 LANGUAGE sql
 STABLE
@@ -805,15 +812,94 @@ AS $$
           AND (pp.after_date IS NULL OR q.trade_date > pp.after_date)
         ORDER BY q.trade_date
         LIMIT 1001
+    ),
+    -- PRICE-ADJUSTED CLOSE (#417; the rule was verified in #372). Backward
+    -- adjustment anchored to the ticker's latest session: a session on or
+    -- before an event's last_date_prior is divided by the event's share ratio,
+    -- so past levels change when an event lands and returns do not. B3's rule
+    -- (options Caderno de Formulas): DESDOBRAMENTO and BONIFICACAO multiply the
+    -- share count by 1 + factor/100, GRUPAMENTO by factor, and events on one
+    -- ISIN and date multiply together. The other stock labels (CIS RED CAP,
+    -- INCORPORACAO, RESG TOTAL RV, ...) and subscriptions are NOT adjusted. An
+    -- event whose last_date_prior is on or after the latest session has not
+    -- gone ex yet and adjusts nothing. It adjusts close_unit (close per single
+    -- share): no share or unit has changed fator_cotacao since 2019.
+    anchor AS (
+        SELECT max(a.trade_date) AS last_session
+        FROM api.quotes a
+        WHERE a.ticker = upper(btrim(p_ticker))
+          AND a.board = (SELECT sb.board FROM selected_board sb)
+    ),
+    -- Proof that the issuer's events are complete (#413): its supplement came
+    -- back in a sweep. The sweep asks B3 by the ticker's first four characters.
+    proof AS (
+        SELECT EXISTS (
+            SELECT 1
+            FROM public.b3_corporate_event_sweep s
+            WHERE s.issuing_company = left(upper(btrim(p_ticker)), 4)
+        ) AS proven
+    ),
+    adj AS (
+        SELECT
+            g.*,
+            g.close / NULLIF(g.quotation_factor, 0) AS close_unit,
+            -- The research universe's own membership rule (28_api_research.sql):
+            -- the ISIN's instrument code, ACN, or CDA / UNT with a ticker ending 11.
+            COALESCE(
+                substr(g.isin, 7, 3) = 'ACN'
+                OR (substr(g.isin, 7, 3) IN ('CDA', 'UNT') AND g.ticker LIKE '%11'),
+                FALSE
+            ) AS in_universe,
+            ev.n_unreadable,
+            ev.log_share_ratio
+        FROM page g
+        LEFT JOIN LATERAL (
+            SELECT
+                count(*) FILTER (WHERE x.share_ratio IS NULL OR x.share_ratio <= 0) AS n_unreadable,
+                sum(ln(x.share_ratio)) FILTER (WHERE x.share_ratio > 0)            AS log_share_ratio
+            FROM (
+                -- DISTINCT: a republished event can come back as a second row
+                -- that differs only in approved_on; it is still one event.
+                SELECT DISTINCT
+                    e.label,
+                    e.last_date_prior,
+                    e.factor,
+                    CASE e.label
+                        WHEN 'GRUPAMENTO' THEN e.factor
+                        ELSE 1 + e.factor / 100
+                    END AS share_ratio
+                FROM public.b3_corporate_event e
+                WHERE e.isin = g.isin
+                  AND e.label IN ('DESDOBRAMENTO', 'GRUPAMENTO', 'BONIFICACAO')
+                  AND e.last_date_prior >= g.trade_date
+                  AND e.last_date_prior < (SELECT an.last_session FROM anchor an)
+            ) x
+        ) ev ON TRUE
     )
     -- Positional ORDER BY dodges OUT-parameter name ambiguity (trade_date is
-    -- column 2). The subquery is uncorrelated, so it runs once, not per row.
+    -- column 2). The subqueries are uncorrelated, so they run once, not per row.
     SELECT
-        g.ticker, g.trade_date, g.board, g.short_name, g.spec, g.currency,
-        g.open, g.high, g.low, g.average, g.close, g.bid, g.ask,
-        g.trades, g.quantity, g.volume, g.isin, g.quotation_factor,
-        g.adjusted, g.source, g.asset_class
-    FROM page g
+        j.ticker, j.trade_date, j.board, j.short_name, j.spec, j.currency,
+        j.open, j.high, j.low, j.average, j.close, j.bid, j.ask,
+        j.trades, j.quantity, j.volume, j.isin, j.quotation_factor,
+        j.adjusted, j.source, j.asset_class,
+        CASE
+            WHEN j.in_universe
+             AND (SELECT pr.proven FROM proof pr)
+             AND j.n_unreadable = 0
+             AND j.close_unit IS NOT NULL
+            THEN round(j.close_unit * exp(-COALESCE(j.log_share_ratio, 0)), 6)
+        END,
+        CASE
+            WHEN NOT j.in_universe                    THEN 'outside research universe'
+            WHEN NOT (SELECT pr.proven FROM proof pr) THEN 'issuer corporate events not proven swept'
+            WHEN j.n_unreadable > 0                   THEN 'unreadable event factor'
+            WHEN j.close_unit IS NULL                 THEN 'no close on the session'
+        END,
+        NULL::NUMERIC,
+        -- The cash history it needs is not backfilled yet (#418).
+        'cash distribution history not yet backfilled'::TEXT
+    FROM adj j
     WHERE api.assert_row_cap((SELECT count(*) FROM page),
                              (SELECT pp.paging FROM params pp), 'quote_history')
     ORDER BY 2
@@ -821,7 +907,7 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT) IS
-    'Daily unadjusted quote series for one ticker, oldest first. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '''' = first page, then the last row''s trade_date as ''YYYY-MM-DD''; a page shorter than 1000 is the last. Or narrow p_from/p_to.';
+    'Daily quote series for one ticker, oldest first. close is RAW, as traded (adjusted stays FALSE because it describes close). close_price_adjusted is the close per single share made continuous across splits (DESDOBRAMENTO), groupings (GRUPAMENTO) and bonus shares (BONIFICACAO) by B3''s rule, backward-adjusted to the ticker''s latest session: past levels change when an event lands, returns do not. Spin-offs, mergers, capital reductions and subscriptions are NOT adjusted. It is NULL, with close_price_adjusted_null_reason saying why, when the ISIN is outside the research universe (shares ACN; units CDA/UNT with a ticker ending 11), when the issuer''s corporate events are not proven swept, or when an event factor is unreadable. close_total_return is NULL until the cash distribution history is backfilled (close_total_return_null_reason says so). Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '''' = first page, then the last row''s trade_date as ''YYYY-MM-DD''; a page shorter than 1000 is the last. Or narrow p_from/p_to.';
 
 REVOKE ALL ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
@@ -4986,7 +5072,7 @@ STABLE
 AS $fn$
 SELECT $json${
   "kind": "catalog",
-  "version": 43,
+  "version": 44,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, the B3 securities-lending and investor-flow group, B3's DI1 futures and reference-rate curves, and Brazilian inflation — BACEN's IPCA series and IBGE's item tree with weights). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -5294,7 +5380,8 @@ SELECT $json${
     "freq=day is quotes only. Mix equity with fund fundamentals on freq=month.",
     "close_return across a missing month is null, not a multi-month return.",
     "close_return is unadjusted: a 2:1 split reports roughly -50%. It is not a total return.",
-    "close is the price as published, which for a paper quoted per lot refers to 1000 shares; close_unit divides it by the published quotation_factor so levels are comparable. Neither is corporate-action adjusted — no split, grouping or bonus adjustment exists yet, and `adjusted` is FALSE on every row.",
+    "close is the price as published, which for a paper quoted per lot refers to 1000 shares; close_unit divides it by the published quotation_factor so levels are comparable. Neither is corporate-action adjusted, and `adjusted` is FALSE on every row because it describes close. The one adjusted price is quote_history's close_price_adjusted (see the next constraint).",
+    "quote_history'S close_price_adjusted IS CONTINUOUS ACROSS SPLITS, GROUPINGS AND BONUS SHARES ONLY, AND IT IS ANCHORED TO THE LATEST SESSION. It is the close per single share divided by every later event's share ratio, by B3's rule: 1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for GRUPAMENTO. Past levels change when a new event lands and returns do not, so never read a past level as the price seen that day. Spin-offs, mergers, capital reductions and subscriptions are NOT adjusted. It is NULL, with close_price_adjusted_null_reason saying why, outside the research universe (shares ACN; units CDA/UNT with a ticker ending 11), when the issuer's corporate events are not proven swept, or when an event factor is unreadable: a NULL is never a raw close in disguise. close_total_return is NULL until the cash distribution history is backfilled.",
     "Daily close_return is null when the previous session is more than 7 calendar days back (halts, listing gaps), and null across a quotation-factor change — a fatcot flip rescales the quote with no market move behind it.",
     "Default windows are honest: with no explicit `to`, fund metrics end at each family's latest COMPLETE period (coverage() reports it as complete_through) — a partially-filed trailing month is not served. An explicit `to` serves the window verbatim, partial months included.",
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",

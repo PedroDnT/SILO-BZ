@@ -357,7 +357,11 @@ __all__ = [
 # stated as (id, asset_class, date, metric) and p_entity_type narrows the fund
 # arms to one family. Universe mode (p_ids empty + p_entity_type, optional
 # p_min_nav / p_min_months) walks a whole family for signed-in callers.
-CATALOG_VERSION = 43
+# v44: quote_history gains close_price_adjusted (continuous across splits,
+# groupings and bonus shares, anchored to the latest session, NULL with a
+# reason until the issuer's events are proven swept) and close_total_return
+# (NULL with a reason until the cash history is backfilled), #417 / #413.
+CATALOG_VERSION = 44
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -585,8 +589,21 @@ CONSTRAINTS = [
     "close_return is unadjusted: a 2:1 split reports roughly -50%. It is not a total return.",
     "close is the price as published, which for a paper quoted per lot refers "
     "to 1000 shares; close_unit divides it by the published quotation_factor so "
-    "levels are comparable. Neither is corporate-action adjusted — no split, "
-    "grouping or bonus adjustment exists yet, and `adjusted` is FALSE on every row.",
+    "levels are comparable. Neither is corporate-action adjusted, and `adjusted` "
+    "is FALSE on every row because it describes close. The one adjusted price is "
+    "quote_history's close_price_adjusted (see the next constraint).",
+    "quote_history'S close_price_adjusted IS CONTINUOUS ACROSS SPLITS, GROUPINGS "
+    "AND BONUS SHARES ONLY, AND IT IS ANCHORED TO THE LATEST SESSION. It is the "
+    "close per single share divided by every later event's share ratio, by B3's "
+    "rule: 1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for "
+    "GRUPAMENTO. Past levels change when a new event lands and returns do not, "
+    "so never read a past level as the price seen that day. Spin-offs, mergers, "
+    "capital reductions and subscriptions are NOT adjusted. It is NULL, with "
+    "close_price_adjusted_null_reason saying why, outside the research universe "
+    "(shares ACN; units CDA/UNT with a ticker ending 11), when the issuer's "
+    "corporate events are not proven swept, or when an event factor is "
+    "unreadable: a NULL is never a raw close in disguise. close_total_return is "
+    "NULL until the cash distribution history is backfilled.",
     "Daily close_return is null when the previous session is more than 7 "
     "calendar days back (halts, listing gaps), and null across a quotation-"
     "factor change — a fatcot flip rescales the quote with no market move "
