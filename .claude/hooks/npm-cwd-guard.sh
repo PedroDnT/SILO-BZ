@@ -48,7 +48,7 @@ for seg in re.split(r"&&|\|\||;|\n", cmd):
         continue
     shown = " ".join(w)
     print(f"Refusing `{shown}`: {why}. cd into dashboard/ or webapp/ "
-          "first and confirm that is the intended target (CLAUDE.md, Environment).",
+          "first and confirm that is the intended target (AGENTS.md, Environment).",
           file=sys.stderr)
     sys.exit(2)
 '

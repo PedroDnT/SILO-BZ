@@ -5,7 +5,7 @@
 // it is tested offline with a stubbed fetch. index.ts only wires it into the
 // MCP SDK's streamable-HTTP handler.
 //
-// Rules this file enforces, from CLAUDE.md and docs/planning/SERVING.md:
+// Rules this file enforces, from AGENTS.md and docs/planning/SERVING.md:
 //   * read-only: POST /rpc/<fn> and GET /<view> on schema `api`, nothing else;
 //   * one tool call = exactly one PostgREST request, never retried;
 //   * a PostgREST error is returned VERBATIM as an MCP tool error (isError),

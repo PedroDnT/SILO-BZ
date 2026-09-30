@@ -24,7 +24,7 @@ change.
   | ------------------------------------------- | -------------------------------------------------------- |
   | Offline pytest suite (`test.yml`, pre-push) | code and contracts, no network, no DB                    |
   | `scripts/verify_pipeline.py`                | the live warehouse after a change lands                  |
-  | `.claude/skills/iliquid_nightly` checklist  | the integrity rules and the serving contract, in review  |
+  | `.claude/skills/silo` checklist            | the integrity rules and the serving contract, in review  |
   | Pedro's merge                               | everything else, including whether the item was worth it |
 
   If an agent change makes a gate fail, the change is wrong, not the gate

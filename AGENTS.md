@@ -8,7 +8,7 @@ Claude Code's own mechanics. Add or change a rule here, nowhere else.
 The four-page model of the system is `docs/architecture/` (`SYSTEM.md`,
 `DATA_FLOW.md`, `OPERATIONS.md`, `DECISIONS.md`). Where every doc lives: `docs/README.md`. Load the SILO skill before
 changing ingest, schema `api`, `serve/`, or panel/catalog:
-`.claude/skills/iliquid_nightly/SKILL.md`.
+`.claude/skills/silo/SKILL.md`.
 
 Keep this file under 32 KiB. Codex truncates project instructions at that size by
 default (`project_doc_max_bytes`), so anything past it would be a rule Codex never

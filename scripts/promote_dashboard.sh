@@ -15,7 +15,7 @@
 # So a production deployment stopped taking the project domains. Every build was
 # correct; none of them was published. Nobody noticed for four days because the
 # only things anyone checked were row counts in the build log and the
-# deployment's READY state — both true, neither the site. CLAUDE.md already says
+# deployment's READY state — both true, neither the site. AGENTS.md already says
 # row counts in a build log and pixels on the public URL are different
 # observations. This script is that sentence made executable.
 #

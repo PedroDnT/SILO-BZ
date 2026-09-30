@@ -15,8 +15,7 @@
 --   1  Discovery      — fund_profile, search_funds, new_funds_per_period
 --   2  Time Series    — fund_nav_series, fund_flow_trend, industry_aum_trend
 --   3  Cross-Sectional— yield_distribution, fund_ranking, market_concentration
---   4  Trend & Sector — entity_monthly_stats, cross_entity_comparison,
---                       quotaholder_trend
+--   4  Trend & Sector — cross_entity_comparison, quotaholder_trend
 --   5  FIDC           — fidc_tranche_performance, fidc_delinquency_trend,
 --                       fidc_subordination_trend
 --   6  SECURIT        — security_issuance_trend, security_maturity_ladder,
@@ -493,42 +492,12 @@ $$;
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
--- entity_monthly_stats(p_entity_type, start_date, end_date)
--- Monthly sector-level summary for one entity type: AUM, yield percentiles,
--- delinquency, and net flows.
+-- entity_monthly_stats was dropped on 2026-09-30. Nothing called it: not
+-- schema api, not a dashboard source, not a query script, not a test, and no
+-- database object depended on it. The DROP stays so a database that still has
+-- the function loses it on the next apply.
 -- -----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION entity_monthly_stats(
-    p_entity_type TEXT,
-    start_date    DATE DEFAULT '2019-01-01',
-    end_date      DATE DEFAULT CURRENT_DATE
-)
-RETURNS TABLE (
-    period         DATE,
-    total_aum      NUMERIC,
-    n_funds        BIGINT,
-    avg_aum        NUMERIC,
-    median_yield   NUMERIC,
-    p90_yield      NUMERIC,
-    total_inadimpl NUMERIC,
-    net_flow       NUMERIC
-)
-LANGUAGE sql STABLE SECURITY INVOKER
-AS $$
-    SELECT
-        period,
-        SUM(vl_patrim_liq)                                                     AS total_aum,
-        COUNT(DISTINCT cnpj)                                                   AS n_funds,
-        AVG(vl_patrim_liq)                                                     AS avg_aum,
-        PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY pct_yield_mes)            AS median_yield,
-        PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY pct_yield_mes)            AS p90_yield,
-        SUM(vl_inadimpl)                                                       AS total_inadimpl,
-        SUM(captc_mes - resg_mes)                                              AS net_flow
-    FROM fact_fund_monthly
-    WHERE entity_type = p_entity_type
-      AND period BETWEEN start_date AND end_date
-    GROUP BY period
-    ORDER BY period
-$$;
+DROP FUNCTION IF EXISTS entity_monthly_stats(TEXT, DATE, DATE);
 
 
 -- -----------------------------------------------------------------------------

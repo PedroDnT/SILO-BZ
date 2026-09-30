@@ -12,7 +12,7 @@ corporate actions — never inferred from the price series itself. A jump-shaped
 gap in a price is evidence of nothing in particular: it can be a split, a
 delisting-and-relisting, a fat-finger print, or a real crash. Guessing a factor
 from the jump would fabricate the very number the adjustment depends on, which
-this repository forbids (CLAUDE.md rule 1).
+this repository forbids (AGENTS.md, integrity rule 1).
 
 THE SOURCE
 ----------
