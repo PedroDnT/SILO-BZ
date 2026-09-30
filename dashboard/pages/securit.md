@@ -92,12 +92,15 @@ select * from supabase.securit_dfin_coverage
 <BigValue data={securit_overview} value=n_series title="Live Series" fmt=num0/>
 <BigValue data={securit_overview} value=n_securitizadoras title="Securitizadoras" fmt=num0/>
 <BigValue data={securit_overview} value=outstanding_bn title="Outstanding (R$bn)" fmt=num0/>
-<BigValue data={securit_overview} value=inadimplente_num1 title="Series Inadimplente (%)" fmt=num1/>
+<BigValue data={securit_overview} value=em_atraso_num1 title="Series Em Atraso (%)" fmt=num1/>
 <BigValue data={securit_overview} value=last_reference title="Latest Reference"/>
 
-> `Series Inadimplente` is a share of the **series count**, not of value: it says
-> what fraction of live series carry that filed status, and a single large
-> defaulted series moves it exactly as much as a small one.
+> `Series Em Atraso` is a share of the **series count**, not of value: it says
+> what fraction of series carry that filed status, and a single large series in
+> arrears moves it exactly as much as a small one. CVM files `Situacao` as
+> Adimplente or Em atraso (in arrears); it never files "Inadimplente". CRI
+> filings before 2022-07 carry no status at all, so those series are left out
+> of the share instead of being counted as current.
 
 ---
 
@@ -120,9 +123,9 @@ yAxisTitle="R$bn"
 <LineChart
   data={securit_issuance_trend}
   x=period
-  y=inadimplente_num1
+  y=em_atraso_num1
   yAxisTitle="% of Series"
-  title="Share of Series Marked Inadimplente"
+  title="Share of Series Em Atraso"
 />
 
 <DataTable data={securit_issuance_trend} rows=6>
@@ -131,9 +134,14 @@ yAxisTitle="R$bn"
   <Column id=cri_bn title="CRI (R$bn)" fmt=num2/>
   <Column id=cra_bn title="CRA (R$bn)" fmt=num2/>
   <Column id=ots_bn title="OTS (R$bn)" fmt=num2/>
-  <Column id=n_inadimplente title="Inadimplente" fmt=num0/>
-  <Column id=inadimplente_num1 title="Series Inadimplente (%)" fmt=num1/>
+  <Column id=n_em_atraso title="Em Atraso" fmt=num0/>
+  <Column id=em_atraso_num1 title="Series Em Atraso (%)" fmt=num1/>
+  <Column id=n_outro_status title="Other Status" fmt=num0/>
 </DataTable>
+
+> `Other Status` counts series whose filed status is neither Adimplente nor Em
+> atraso. It is 0 today; anything else means CVM has started filing a status
+> this page does not classify yet.
 
 ---
 
@@ -234,8 +242,8 @@ yAxisTitle="R$mm"
   <Column id=rating title="Rating (as filed)"/>
   <Column id=n_series title="Series" fmt=num0/>
   <Column id=value_bn title="Outstanding (R$bn)" fmt=num2/>
-  <Column id=n_inadimplente title="Inadimplente" fmt=num0/>
-  <Column id=inadimplente_num1 title="Series Inadimplente (%)" fmt=num1/>
+  <Column id=n_em_atraso title="Em Atraso" fmt=num0/>
+  <Column id=em_atraso_num1 title="Series Em Atraso (%)" fmt=num1/>
 </DataTable>
 
 ---
@@ -261,7 +269,7 @@ yAxisTitle="R$mm"
   <Column id=idx_subord_min_avg title="Índice Subord. Mínimo (mean, unscaled)" fmt=num2/>
   <Column id=n_with_idx title="Series w/ Index" fmt=num0/>
   <Column id=n_with_nivel title="Series w/ Nível" fmt=num0/>
-  <Column id=inadimplente_num1 title="Series Inadimplente (%)" fmt=num1/>
+  <Column id=em_atraso_num1 title="Series Em Atraso (%)" fmt=num1/>
 </DataTable>
 
 ---

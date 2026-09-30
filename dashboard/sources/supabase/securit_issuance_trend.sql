@@ -45,7 +45,8 @@ trend as (
     t.n_series,
     t.total_value,
     t.n_adimplente,
-    t.n_inadimplente
+    t.n_em_atraso,
+    t.n_sem_status
   from anchor a
   cross join lateral security_issuance_trend(
          null::text,
@@ -61,7 +62,12 @@ agg as (
     sum(total_value) filter (where family = 'ots') / 1e9 as ots_bn,
     sum(total_value) filter (where family = 'outros') / 1e9 as outros_bn,
     sum(n_series)                                        as n_series,
-    sum(n_inadimplente)                                  as n_inadimplente
+    sum(n_em_atraso)                                     as n_em_atraso,
+    sum(n_sem_status)                                    as n_sem_status,
+    -- A status nobody classifies yet: 0 while CVM files only Adimplente and
+    -- Em atraso. Non-zero is how a new value shows up instead of hiding the
+    -- way 'Inadimplente' did (#430).
+    sum(n_series - n_adimplente - n_em_atraso - n_sem_status) as n_outro_status
   from trend
   group by period
 )
@@ -72,8 +78,11 @@ select
   a.ots_bn,
   a.outros_bn,
   a.n_series,
-  a.n_inadimplente,
-  round(100.0 * a.n_inadimplente / nullif(a.n_series, 0), 1) as inadimplente_num1
+  a.n_em_atraso,
+  a.n_sem_status,
+  a.n_outro_status,
+  -- Of series that filed a status: an empty status is unknown, not current.
+  round(100.0 * a.n_em_atraso / nullif(a.n_series - a.n_sem_status, 0), 1) as em_atraso_num1
 from months m
 left join agg a on a.period = m.period
 order by m.period

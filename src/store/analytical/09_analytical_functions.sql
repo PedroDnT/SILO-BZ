@@ -798,7 +798,18 @@ $$;
 -- security_issuance_trend(p_instrument_type, start_date, end_date)
 -- Monthly issuance / status snapshot per instrument type.
 -- p_instrument_type NULL → all types.
+--
+-- Situacao, as filed: 'Adimplente', 'Em atraso', or empty. CVM's dictionary
+-- leaves the field's domain blank, and the empty value is every CRI row
+-- through 2022-06, a layout with no status (measured on the 2019-2026 files).
+-- 'Inadimplente' never occurs, so the n_inadimplente this used to return was
+-- always 0 (issue #430). n_sem_status keeps the unfiled status out of any
+-- share: a series with no status is not current, it is unknown. The residual
+-- n_series - n_adimplente - n_em_atraso - n_sem_status is a value nobody
+-- classifies yet.
 -- -----------------------------------------------------------------------------
+-- The OUT columns changed, which CREATE OR REPLACE cannot do in place.
+DROP FUNCTION IF EXISTS security_issuance_trend(TEXT, DATE, DATE);
 CREATE OR REPLACE FUNCTION security_issuance_trend(
     p_instrument_type TEXT  DEFAULT NULL,
     start_date        DATE  DEFAULT '2021-01-01',
@@ -810,7 +821,8 @@ RETURNS TABLE (
     n_series         BIGINT,
     total_value      NUMERIC,
     n_adimplente     BIGINT,
-    n_inadimplente   BIGINT
+    n_em_atraso      BIGINT,
+    n_sem_status     BIGINT
 )
 LANGUAGE sql STABLE SECURITY INVOKER
 AS $$
@@ -820,7 +832,8 @@ AS $$
         COUNT(*)                                                AS n_series,
         SUM(valor_certificados)                                 AS total_value,
         COUNT(*) FILTER (WHERE situacao_mes = 'Adimplente')     AS n_adimplente,
-        COUNT(*) FILTER (WHERE situacao_mes = 'Inadimplente')   AS n_inadimplente
+        COUNT(*) FILTER (WHERE situacao_mes = 'Em atraso')      AS n_em_atraso,
+        COUNT(*) FILTER (WHERE situacao_mes IS NULL)            AS n_sem_status
     FROM fact_security_monthly
     WHERE period BETWEEN start_date AND end_date
       AND (p_instrument_type IS NULL OR instrument_type = p_instrument_type)
