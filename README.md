@@ -315,7 +315,7 @@ same for everyone.
 
 ### Deferred by design
 
-- **Historical backfills** for `securit` and `fidc` — the daily window only heals the
+- **Historical backfills** for `fidc` — the daily window only heals the
   trailing months, so deep history for the recently-fixed field maps needs `backfill.yml`.
 - **`VERCEL_DEPLOY_HOOK_URL`** — set. Fired after every successful scheduled Daily
   Ingest, and after a manual dispatch that sets `rebuild_dashboard=true`; fills never
