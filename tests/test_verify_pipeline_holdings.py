@@ -2,7 +2,7 @@
 
 WHY BOTH HALVES MATTER. The three CDA holdings blocks are the largest ingest
 tables in the warehouse (cvm_fi_cda_acoes alone is 11 GB). They shipped without
-a presence check, so `verify_pipeline.py` — the quality gate CLAUDE.md says must
+a presence check, so `verify_pipeline.py` — the quality gate AGENTS.md says must
 stay green — would have reported a clean bill of health on a warehouse whose
 biggest tables were empty.
 

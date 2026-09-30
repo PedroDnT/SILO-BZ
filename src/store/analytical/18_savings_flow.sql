@@ -12,8 +12,8 @@
 --
 -- CONSUMERS: none in this repo. dashboard/, webapp/, and the Python pipeline
 -- all read fact_fund_monthly / bacen_sgs directly. The `api` schema
--- passthrough is PostgREST-oriented and predates CLAUDE.md's "no public API"
--- decision. Keep recreating it so a CASCADE of fact_fund_monthly cannot
+-- passthrough is PostgREST-oriented and predates the "no public API"
+-- decision (AGENTS.md). Keep recreating it so a CASCADE of fact_fund_monthly cannot
 -- destroy an unknown external consumer; retiring it is a product decision
 -- after checking PostgREST logs / other Delos repos, not something this
 -- apply pass should do.
@@ -131,7 +131,7 @@ ORDER BY u.month, u.vehicle;
 -- this too, so it must be recreated in the same pass. CREATE SCHEMA IF NOT
 -- EXISTS so this file is self-contained on a fresh database rather than
 -- assuming the schema already exists — the "api" schema itself predates this
--- repo's "no public API" architecture decision (see CLAUDE.md) and is not
+-- repo's "no public API" architecture decision (see AGENTS.md) and is not
 -- otherwise used here; reproduced as found, not extended.
 CREATE SCHEMA IF NOT EXISTS api;
 
@@ -166,7 +166,7 @@ FROM mv_savings_flow_monthly;
 --
 -- It also contradicted the contract two files away: 19_api_contract.sql states
 -- the public bundle is schema api and nothing else, enumerating exactly the
--- views and functions it grants. CLAUDE.md describes this matview as
+-- views and functions it grants. docs/agents/dataset-notes.md describes this matview as
 -- reproduced-as-found so a CASCADE recreate of fact_fund_monthly cannot destroy
 -- it, and notes nothing in this repo reads it.
 --

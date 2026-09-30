@@ -39,7 +39,7 @@ CREATE INDEX IF NOT EXISTS idx_fact_fund_monthly_nav_cover
 -- 4. fact_fund_monthly: covering index for entity-level aggregate queries
 --    Pattern: WHERE entity_type = $1 AND period BETWEEN $2 AND $3
 --    SELECT vl_patrim_liq, pct_yield_mes, vl_inadimpl
---    (entity_monthly_stats, cross_entity_comparison, industry_aum_trend)
+--    (cross_entity_comparison, industry_aum_trend)
 -- ---------------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_fact_fund_monthly_entity_cover
   ON fact_fund_monthly (entity_type, period)

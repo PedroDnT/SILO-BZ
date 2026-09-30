@@ -240,7 +240,6 @@ GRANT EXECUTE ON FUNCTION industry_aum_trend(TEXT[], DATE, DATE)                
 GRANT EXECUTE ON FUNCTION yield_distribution(TEXT, DATE, NUMERIC)                                 TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION fund_ranking(TEXT, TEXT, DATE, INT)                                     TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION market_concentration(TEXT, DATE)                                        TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION entity_monthly_stats(TEXT, DATE, DATE)                                  TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION cross_entity_comparison(TEXT[], TEXT, DATE, DATE)                       TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION quotaholder_trend(TEXT, DATE, DATE)                                     TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION fidc_tranche_performance(TEXT, DATE, DATE)                              TO anon, authenticated;

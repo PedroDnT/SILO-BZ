@@ -2,7 +2,7 @@
 
 Turns a raw CSV row + a dataset FIELD_MAP into (typed_columns, residual_raw),
 so ingestion is map-driven and deterministic. See the "Adding a dataset" recipe
-in CLAUDE.md.
+in AGENTS.md.
 
 A FIELD_MAP is::
 

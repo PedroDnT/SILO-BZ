@@ -5,7 +5,7 @@ published nothing. Four production deployments went READY while both vercel.app
 project domains stayed bound to dpl_54vMGARv4w1DAhyx… (6646c0c, PR #275). The
 inflation feature shipped into that gap: live on the branch alias, invisible on
 the public URL, reported as done on the strength of build-log row counts and a
-READY state. CLAUDE.md's rule — row counts in a build log and pixels on the
+READY state. AGENTS.md's rule — row counts in a build log and pixels on the
 public URL are different observations — is what these tests enforce.
 
 The script's contract is the ordinary one (0 published, 1 not), unlike

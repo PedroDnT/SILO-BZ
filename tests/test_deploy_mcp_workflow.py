@@ -9,7 +9,7 @@ rather than trusted to review:
 * functions only — never ``supabase config push`` / ``db push``, which would
   overwrite the production project's settings with the CLI's defaults
   (supabase/config.toml says why);
-* ``--no-verify-jwt`` and the right project, matching config.toml and CLAUDE.md;
+* ``--no-verify-jwt`` and the right project, matching config.toml and AGENTS.md;
 * the token comes from a secret, never from the file;
 * the deploy is proven by asking the live endpoint for its tool list.
 """
