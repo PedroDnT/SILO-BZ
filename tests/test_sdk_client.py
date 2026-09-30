@@ -17,6 +17,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sdk"))
 
 from silo_client import (  # noqa: E402
+    DEFAULT_ANON_KEY,
+    DEFAULT_URL,
     KNOWN_CATALOG_VERSION,
     SERVER_ROW_CAP,
     SiloCatalogDrift,
@@ -61,13 +63,29 @@ def catalog_then(responder):
     return handler
 
 
-def test_requires_url_and_key(monkeypatch):
+def test_url_and_key_default_to_the_public_project(monkeypatch):
+    """No argument and no env: the public project and its publishable key.
+
+    The key names the project, not the caller, so it is safe to ship; the
+    caller is still anonymous until a token is passed.
+    """
     monkeypatch.delenv("SILO_URL", raising=False)
     monkeypatch.delenv("SILO_ANON_KEY", raising=False)
-    with pytest.raises(ValueError):
-        SiloClient()
-    with pytest.raises(ValueError):
-        SiloClient(url="https://example.supabase.co")
+    monkeypatch.delenv("SILO_TOKEN", raising=False)
+    silo = SiloClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=[])))
+    assert silo._rest == f"{DEFAULT_URL}/rest/v1"
+    assert silo._key == DEFAULT_ANON_KEY
+    assert DEFAULT_ANON_KEY.startswith("sb_publishable_")
+    assert silo.tier == "anon"
+
+
+def test_argument_beats_env_beats_default(monkeypatch):
+    monkeypatch.setenv("SILO_URL", "https://env.supabase.co")
+    monkeypatch.setenv("SILO_ANON_KEY", "env-key")
+    env = SiloClient()
+    assert (env._rest, env._key) == ("https://env.supabase.co/rest/v1", "env-key")
+    arg = SiloClient(url="https://arg.supabase.co", key="arg-key")
+    assert (arg._rest, arg._key) == ("https://arg.supabase.co/rest/v1", "arg-key")
 
 
 def _header_probe():

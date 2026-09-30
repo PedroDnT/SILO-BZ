@@ -26,11 +26,10 @@ Python ≥ 3.10. Or copy `sdk/silo_client/` into your project.
 ```python
 from silo_client import SiloClient
 
-silo = SiloClient(url="https://zcjbtpxuhdekpwcxmepn.supabase.co",
-                  key="sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437")   # testing key
+silo = SiloClient()   # public project + publishable key built in
 ```
 
-Or set `SILO_URL` and `SILO_ANON_KEY` and call `SiloClient()`. To move to the signed-in tier, pass a user JWT as `token=` (or set `SILO_TOKEN`); `silo.tier` says which ceiling you are under.
+Pass `url=` / `key=` or set `SILO_URL` / `SILO_ANON_KEY` to override the built-in project and key. To move to the signed-in tier, pass a user JWT as `token=` (or set `SILO_TOKEN`); `silo.tier` says which ceiling you are under.
 
 ### First calls
 

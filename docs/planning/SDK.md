@@ -1,6 +1,6 @@
 # Python SDK — state
 
-`sdk/silo_client` today: **1,140 lines, v0.7.0, 67 tests, not published.**
+`sdk/silo_client` today: **1,140 lines, v0.8.0, 67 tests, not published.**
 Wraps 22 `api` functions and all 13 views, built against catalog **v28**.
 
 The client is not a convenience layer. It is the last place the project's
