@@ -370,6 +370,26 @@ SELECT issuing_company, isin, action, event_date FROM mv_b3_cash_event
 WHERE kind = 'pending' ORDER BY event_date DESC;
 ```
 
+### Fundamentals as of a date (catalog v47)
+
+`financials`, `company_financials`, `income_statements`, `balance_sheets` and
+`cash_flow_statements` take a trailing `p_as_of DATE DEFAULT NULL`, carried by
+the shared internal reader `api.cia_statement_rows`. NULL is unchanged and now
+labelled not point-in-time. A date T reads only the documents CVM received
+before T (`cia_filing.dt_receb < T`, the exact `(cd_cvm, doc_type, dt_refer,
+versao)` header; a document received on T is out and one with no header is
+dropped), keeps the highest remaining version of each and all its lines. The
+filter sits before the `MAX(versao)` window, so the version kept is the highest
+one known at T. No new function and no new column: rows already carry `version`,
+and `financial_statement_history` shows `filing_received_date` for every stored
+version. The recipe is #375's (`docs/reference/research/pit-fundamentals.md`).
+
+The old signatures are dropped, because an old overload beside a new one makes
+the RPC ambiguous for PostgREST. Measured on production 2026-09-30, read-only:
+PETR's DFP 2023 v1 was received 2024-03-08 and the ITR 2023-09-30 on 2023-11-09,
+so `as_of = 2024-02-29` returns that ITR; the filter costs about 450 ms over six
+years of PETR's consolidated lines.
+
 ### DI futures and B3 reference curves (catalog v42)
 
 `api.future_curve`, `api.future_series`, `api.curve` and `api.curve_history`

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SILO Data API",
-    "version": "46",
+    "version": "47",
     "summary": "Read-only Brazilian public financial data: CVM filings, BACEN series, B3 quotes and the B3 BDI group.",
     "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Forty-five set-returning functions raise SQLSTATE\n  `22023` when the window they were handed would produce more than 1000 rows.\n  Nothing is trimmed, and the error says why and how to fix it (the message,\n  plus PostgREST's `details` and `hint`). Four of them (`panel`,\n  `quote_history`, `fund_nav`, `index_history`) take a `p_after` cursor so you\n  can walk the series; the other forty-one ask you to narrow the window. `fund_nav` paging\n  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which\n  is unique only within one family, and CNPJs that file under both `fi` and\n  `fidc` in the same month would otherwise be ambiguous.\n* **The tier ceiling clamps.** Three other functions (`search_funds`,\n  `option_chain`, `option_exercises`) silently lower `p_limit` to a per-tier maximum. No error is raised, so the\n  only way to know the result was cut is to know the ceiling. Signing in\n  raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
     "license": {
@@ -3968,7 +3968,7 @@
       "post": {
         "operationId": "rpc_balance_sheets",
         "summary": "balance_sheets",
-        "description": "Balance sheet, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label (and, where one label is filed twice, its parent's label), not on cd_conta and not on setor: CVM ships three balance-sheet charts and equity alone sits on 2.03, 2.07 or 2.08. A concept a chart does not file reads NULL — banks file no current/non-current split and no `Empréstimos e Financiamentos`, so those fields are NULL for them, never zero. `chart` says which layout the filing used. Values are absolute reais.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "description": "Balance sheet, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label (and, where one label is filed twice, its parent's label), not on cd_conta and not on setor: CVM ships three balance-sheet charts and equity alone sits on 2.03, 2.07 or 2.08. A concept a chart does not file reads NULL — banks file no current/non-current split and no `Empréstimos e Financiamentos`, so those fields are NULL for them, never zero. `chart` says which layout the filing used. Values are absolute reais. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
         "tags": [
           "Other"
         ],
@@ -4024,6 +4024,15 @@
                       "itr",
                       "dfp"
                     ]
+                  },
+                  "p_as_of": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
                   }
                 },
                 "required": [
@@ -4268,7 +4277,7 @@
       "post": {
         "operationId": "rpc_cash_flow_statements",
         "summary": "cash_flow_statements",
-        "description": "Cash flow statement, one row per filed period, with named TOTALS keyed on the as-filed label. `method` is direct (DFC_MD) or indirect (DFC_MI). Only the section totals and the cash reconciliation are mapped: detail lines such as capex and dividends are free-text per company and are NOT fields — read them from api.financials. operating_cash_generated and working_capital_changes are indirect-method lines and read NULL on a direct-method filing, never zero. Values are absolute reais.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "description": "Cash flow statement, one row per filed period, with named TOTALS keyed on the as-filed label. `method` is direct (DFC_MD) or indirect (DFC_MI). Only the section totals and the cash reconciliation are mapped: detail lines such as capex and dividends are free-text per company and are NOT fields — read them from api.financials. operating_cash_generated and working_capital_changes are indirect-method lines and read NULL on a direct-method filing, never zero. Values are absolute reais. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
         "tags": [
           "Other"
         ],
@@ -4324,6 +4333,15 @@
                       "itr",
                       "dfp"
                     ]
+                  },
+                  "p_as_of": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
                   }
                 },
                 "required": [
@@ -4799,7 +4817,7 @@
       "post": {
         "operationId": "rpc_company_financials",
         "summary": "company_financials",
-        "description": "**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "description": "Headline financials for one company, one row per filed period, latest stored version of each document. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
         "tags": [
           "Financials"
         ],
@@ -4843,6 +4861,15 @@
                       "con",
                       "ind"
                     ]
+                  },
+                  "p_as_of": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
                   }
                 },
                 "required": [
@@ -6728,7 +6755,7 @@
       "post": {
         "operationId": "rpc_financials",
         "summary": "financials",
-        "description": "**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "description": "Filed statement lines for one company, one row per account, latest stored version of each document. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early. version is on every row. Refuses above 1,000 rows with SQLSTATE 22023; narrow the window.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
         "tags": [
           "Financials"
         ],
@@ -6792,6 +6819,15 @@
                       "itr",
                       "dfp"
                     ]
+                  },
+                  "p_as_of": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
                   }
                 },
                 "required": [
@@ -8947,7 +8983,7 @@
       "post": {
         "operationId": "rpc_income_statements",
         "summary": "income_statements",
-        "description": "Income statement, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label, not on cd_conta and not on setor: CVM ships four DRE charts and the same code means different things across them. net_income therefore resolves for the filings that report it on 3.09 (the one bank chart with no 3.11) as well as those on 3.11. A concept a chart does not file reads NULL — operating_income is industrial-only. `chart` says which layout the filing used. Values are absolute reais.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "description": "Income statement, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label, not on cd_conta and not on setor: CVM ships four DRE charts and the same code means different things across them. net_income therefore resolves for the filings that report it on 3.09 (the one bank chart with no 3.11) as well as those on 3.11. A concept a chart does not file reads NULL — operating_income is industrial-only. `chart` says which layout the filing used. Values are absolute reais. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
         "tags": [
           "Other"
         ],
@@ -9003,6 +9039,15 @@
                       "itr",
                       "dfp"
                     ]
+                  },
+                  "p_as_of": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
                   }
                 },
                 "required": [

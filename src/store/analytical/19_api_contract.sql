@@ -4279,7 +4279,13 @@ CREATE OR REPLACE FUNCTION api.cia_statement_rows(
     p_to        DATE,
     p_scope     TEXT,
     p_doc_type  TEXT,
-    p_statement TEXT
+    p_statement TEXT,
+    -- NULL = latest stored version of every document, which is NOT
+    -- point-in-time. A date T reads only what CVM had received before T
+    -- (cia_filing.dt_receb < T), then keeps the highest remaining version of
+    -- each document (#414; the recipe is #375's,
+    -- docs/reference/research/pit-fundamentals.md).
+    p_as_of     DATE
 )
 RETURNS TABLE (
     cd_cvm        TEXT,
@@ -4347,6 +4353,18 @@ AS $$
           AND a.dt_refer BETWEEN w.d0 AND w.d1
           AND (p_statement IS NULL OR a.grupo    = upper(btrim(p_statement)))
           AND (p_doc_type  IS NULL OR a.doc_type = lower(btrim(p_doc_type)))
+          -- As of T: a document counts only if its exact (company, type,
+          -- reference date, version) header was received before T. A document
+          -- with no header or a NULL receipt date is dropped, never assumed
+          -- early. This runs BEFORE the MAX(versao) window above, so the
+          -- "highest remaining version" is the highest one known at T.
+          AND (p_as_of IS NULL OR EXISTS (
+                SELECT 1 FROM public.cia_filing f
+                WHERE f.cd_cvm   = a.cd_cvm
+                  AND f.doc_type = a.doc_type
+                  AND f.dt_refer = a.dt_refer
+                  AND f.versao   = a.versao
+                  AND f.dt_receb < p_as_of))
     )
     SELECT
         x.r_cd_cvm, x.r_cnpj, x.r_company, x.r_ticker,
@@ -4367,7 +4385,7 @@ AS $$
     WHERE x.versao = x.latest_versao;
 $$;
 
-REVOKE ALL ON FUNCTION api.cia_statement_rows(TEXT, DATE, DATE, TEXT, TEXT, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION api.cia_statement_rows(TEXT, DATE, DATE, TEXT, TEXT, TEXT, DATE) FROM PUBLIC;
 
 DROP FUNCTION IF EXISTS api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT);
 CREATE OR REPLACE FUNCTION api.financials(
@@ -4376,7 +4394,8 @@ CREATE OR REPLACE FUNCTION api.financials(
     p_from      DATE DEFAULT (CURRENT_DATE - 1825),
     p_to        DATE DEFAULT CURRENT_DATE,
     p_scope     TEXT DEFAULT 'con',
-    p_doc_type  TEXT DEFAULT NULL
+    p_doc_type  TEXT DEFAULT NULL,
+    p_as_of     DATE DEFAULT NULL
 )
 RETURNS TABLE (
     id            TEXT,
@@ -4421,7 +4440,7 @@ AS $$
             s.ref_date, s.period_start, s.period_end, s.period_months,
             s.account_code, s.account_name, s.value, s.version, 'cvm'::text,
             s.setor, s.segmento
-        FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, p_statement) s
+        FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, p_statement, p_as_of) s
         ORDER BY s.ref_date DESC, s.statement, s.period_months NULLS FIRST, s.account_code
         LIMIT 1001
     )
@@ -4431,8 +4450,11 @@ AS $$
     LIMIT 1000;
 $$;
 
-REVOKE ALL ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
+REVOKE ALL ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT, DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT, DATE) TO anon, authenticated;
+
+COMMENT ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT, DATE) IS
+    'Filed statement lines for one company, one row per account, latest stored version of each document. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early. version is on every row. Refuses above 1,000 rows with SQLSTATE 22023; narrow the window.';
 
 -- Raw statement lines across every stored filing version. `financials` above
 -- remains the latest-version view; this narrower, explicit history endpoint
@@ -4552,7 +4574,8 @@ CREATE OR REPLACE FUNCTION api.company_financials(
     p_id    TEXT,
     p_from  DATE DEFAULT (CURRENT_DATE - 1825),
     p_to    DATE DEFAULT CURRENT_DATE,
-    p_scope TEXT DEFAULT 'con'
+    p_scope TEXT DEFAULT 'con',
+    p_as_of DATE DEFAULT NULL
 )
 RETURNS TABLE (
     id             TEXT,
@@ -4598,7 +4621,7 @@ AS $$
     -- declared, which also dodges OUT-parameter ambiguity.
     WITH page (id, id_type, cnpj, company, ticker, doc_type, scope, ref_date, period_start, period_end, period_months, revenue, gross_profit, net_income, total_assets, equity, net_margin_pct, roe_pct, version, source, setor, segmento) AS (
         WITH s AS (
-            SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, NULL, NULL)
+            SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, NULL, NULL, p_as_of)
         ),
         income AS (
             SELECT
@@ -4680,8 +4703,11 @@ AS $$
     LIMIT 1000;
 $$;
 
-REVOKE ALL ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT) TO anon, authenticated;
+REVOKE ALL ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT, DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT, DATE) TO anon, authenticated;
+
+COMMENT ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT, DATE) IS
+    'Headline financials for one company, one row per filed period, latest stored version of each document. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early.';
 
 -- ---------------------------------------------------------------------------
 -- Listed companies — the income statement, one row per filed period
@@ -4736,7 +4762,8 @@ CREATE OR REPLACE FUNCTION api.income_statements(
     p_from     DATE DEFAULT (CURRENT_DATE - 1825),
     p_to       DATE DEFAULT CURRENT_DATE,
     p_scope    TEXT DEFAULT 'con',
-    p_doc_type TEXT DEFAULT NULL
+    p_doc_type TEXT DEFAULT NULL,
+    p_as_of    DATE DEFAULT NULL
 )
 RETURNS TABLE (
     id                    TEXT,
@@ -4775,7 +4802,7 @@ SET search_path = ''
 AS $$
     WITH page (id, id_type, cnpj, company, ticker, setor, segmento, doc_type, scope, ref_date, period_start, period_end, period_months, chart, revenue, cost_of_revenue, gross_profit, operating_expenses, operating_income, financial_result, pretax_income, income_tax, continuing_operations, net_income, net_income_controlling, net_income_noncontrolling, version, source) AS (
         WITH s AS (
-            SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'DRE')
+            SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'DRE', p_as_of)
         ),
         lab AS (
             SELECT s.*, lower(btrim(s.account_name)) AS lbl FROM s
@@ -4852,11 +4879,11 @@ AS $$
     LIMIT 1000;
 $$;
 
-COMMENT ON FUNCTION api.income_statements(TEXT, DATE, DATE, TEXT, TEXT) IS
-    'Income statement, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label, not on cd_conta and not on setor: CVM ships four DRE charts and the same code means different things across them. net_income therefore resolves for the filings that report it on 3.09 (the one bank chart with no 3.11) as well as those on 3.11. A concept a chart does not file reads NULL — operating_income is industrial-only. `chart` says which layout the filing used. Values are absolute reais.';
+COMMENT ON FUNCTION api.income_statements(TEXT, DATE, DATE, TEXT, TEXT, DATE) IS
+    'Income statement, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label, not on cd_conta and not on setor: CVM ships four DRE charts and the same code means different things across them. net_income therefore resolves for the filings that report it on 3.09 (the one bank chart with no 3.11) as well as those on 3.11. A concept a chart does not file reads NULL — operating_income is industrial-only. `chart` says which layout the filing used. Values are absolute reais. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early.';
 
-REVOKE ALL ON FUNCTION api.income_statements(TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION api.income_statements(TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
+REVOKE ALL ON FUNCTION api.income_statements(TEXT, DATE, DATE, TEXT, TEXT, DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.income_statements(TEXT, DATE, DATE, TEXT, TEXT, DATE) TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Listed companies — the balance sheet, one row per filed period
@@ -4891,7 +4918,8 @@ CREATE OR REPLACE FUNCTION api.balance_sheets(
     p_from     DATE DEFAULT (CURRENT_DATE - 1825),
     p_to       DATE DEFAULT CURRENT_DATE,
     p_scope    TEXT DEFAULT 'con',
-    p_doc_type TEXT DEFAULT NULL
+    p_doc_type TEXT DEFAULT NULL,
+    p_as_of    DATE DEFAULT NULL
 )
 RETURNS TABLE (
     id                        TEXT,
@@ -4932,9 +4960,9 @@ SET search_path = ''
 AS $$
     WITH page (id, id_type, cnpj, company, ticker, setor, segmento, doc_type, scope, ref_date, chart, total_assets, current_assets, cash_and_equivalents, short_term_investments, receivables, inventories, noncurrent_assets, property_plant_equipment, intangible_assets, total_liabilities_and_equity, current_liabilities, noncurrent_liabilities, short_term_debt, long_term_debt, equity, share_capital, noncontrolling_interests, version, source) AS (
         WITH s AS (
-            SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'BPA')
+            SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'BPA', p_as_of)
             UNION ALL
-            SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'BPP')
+            SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'BPP', p_as_of)
         ),
         lab AS (
             SELECT s.*, lower(btrim(s.account_name)) AS lbl,
@@ -5002,11 +5030,11 @@ AS $$
     LIMIT 1000;
 $$;
 
-COMMENT ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT) IS
-    'Balance sheet, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label (and, where one label is filed twice, its parent''s label), not on cd_conta and not on setor: CVM ships three balance-sheet charts and equity alone sits on 2.03, 2.07 or 2.08. A concept a chart does not file reads NULL — banks file no current/non-current split and no `Empréstimos e Financiamentos`, so those fields are NULL for them, never zero. `chart` says which layout the filing used. Values are absolute reais.';
+COMMENT ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT, DATE) IS
+    'Balance sheet, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label (and, where one label is filed twice, its parent''s label), not on cd_conta and not on setor: CVM ships three balance-sheet charts and equity alone sits on 2.03, 2.07 or 2.08. A concept a chart does not file reads NULL — banks file no current/non-current split and no `Empréstimos e Financiamentos`, so those fields are NULL for them, never zero. `chart` says which layout the filing used. Values are absolute reais. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early.';
 
-REVOKE ALL ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
+REVOKE ALL ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT, DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT, DATE) TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Listed companies — the cash flow statement, one row per filed period
@@ -5028,7 +5056,8 @@ CREATE OR REPLACE FUNCTION api.cash_flow_statements(
     p_from     DATE DEFAULT (CURRENT_DATE - 1825),
     p_to       DATE DEFAULT CURRENT_DATE,
     p_scope    TEXT DEFAULT 'con',
-    p_doc_type TEXT DEFAULT NULL
+    p_doc_type TEXT DEFAULT NULL,
+    p_as_of    DATE DEFAULT NULL
 )
 RETURNS TABLE (
     id                       TEXT,
@@ -5065,10 +5094,10 @@ AS $$
     WITH page (id, id_type, cnpj, company, ticker, setor, segmento, doc_type, scope, ref_date, period_start, period_end, period_months, method, operating_cash_flow, operating_cash_generated, working_capital_changes, investing_cash_flow, financing_cash_flow, fx_effect, net_change_in_cash, cash_start, cash_end, version, source) AS (
         WITH s AS (
             SELECT *, 'direct'::text AS method
-            FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'DFC_MD')
+            FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'DFC_MD', p_as_of)
             UNION ALL
             SELECT *, 'indirect'::text
-            FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'DFC_MI')
+            FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'DFC_MI', p_as_of)
         ),
         lab AS (
             -- The parent's label anchors the two indirect-method lines: one
@@ -5135,11 +5164,11 @@ AS $$
     LIMIT 1000;
 $$;
 
-COMMENT ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT) IS
-    'Cash flow statement, one row per filed period, with named TOTALS keyed on the as-filed label. `method` is direct (DFC_MD) or indirect (DFC_MI). Only the section totals and the cash reconciliation are mapped: detail lines such as capex and dividends are free-text per company and are NOT fields — read them from api.financials. operating_cash_generated and working_capital_changes are indirect-method lines and read NULL on a direct-method filing, never zero. Values are absolute reais.';
+COMMENT ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT, DATE) IS
+    'Cash flow statement, one row per filed period, with named TOTALS keyed on the as-filed label. `method` is direct (DFC_MD) or indirect (DFC_MI). Only the section totals and the cash reconciliation are mapped: detail lines such as capex and dividends are free-text per company and are NOT fields — read them from api.financials. operating_cash_generated and working_capital_changes are indirect-method lines and read NULL on a direct-method filing, never zero. Values are absolute reais. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early.';
 
-REVOKE ALL ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
+REVOKE ALL ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT, DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT, DATE) TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Catalog — the metric map, public (INSTRUMENTS.md: discovery is contract)
@@ -5166,7 +5195,7 @@ STABLE
 AS $fn$
 SELECT $json${
   "kind": "catalog",
-  "version": 46,
+  "version": 47,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, the B3 securities-lending and investor-flow group, B3's DI1 futures and reference-rate curves, and Brazilian inflation — BACEN's IPCA series and IBGE's item tree with weights). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -5463,6 +5492,7 @@ SELECT $json${
     "IN THE LENDING TAPE, doador AND tomador ARE BROKERAGES, NOT BENEFICIAL OWNERS. lending_participants' broker_code / broker_name and lending_trades' lender_brokers / borrower_brokers identify the B3 PARTICIPANT intermediating a trade, never who ends up long or short. B3 names ~33 participants in a whole session, and about three quarters of trades carry the SAME code on both legs (measured 2026-09-10: 32,197 of 43,165, 74.6%) — a broker crossing its own client book. So a large borrow through a broker is its clients' position, not the broker's view, and 'the biggest short' read off this tape is a statement about order flow routing. internal_legs / internal_qty (lending_participants) and internal_trades (lending_trades) are what tell the two apart: high internal share is client churn, low internal share is flow that actually crossed the market. They are published beside the totals rather than netted away, because dropping them makes the remainder look like conviction and keeping them silently makes churn look like demand.",
     "investor_flow IS A FIRST DIFFERENCE, NOT A PUBLISHED DAILY SERIES. B3 publishes investor participation as a MONTH-TO-DATE CUMULATIVE snapshot with a T+2 lag; the daily figures are consecutive snapshots subtracted WITHIN one month, and the difference never reaches across a month boundary (that would report a whole month as one day's flow). flow_basis says which kind of row you have: 'delta' is a real one-session difference, 'month_open' is the month's first session where MTD equals the day, and 'unknown_opening_snapshot' is a row whose predecessor SILO does not hold — those carry NULL flows ON PURPOSE and must never be read, filled or summed as zeros. mtd_buy_value_thousands / mtd_sell_value_thousands carry the cumulative figures as published, so the difference can be checked against the source rather than trusted. Values are R$ thousands. Sum a month only over rows whose flow_basis you have inspected.",
     "LISTED-COMPANY FINANCIALS ARE FILED, NOT DERIVED. api.financials returns one row per account line exactly as the company filed it; nothing is summed, annualised or restated. Read period_months before comparing two rows: an ITR publishes the SAME account twice under one reference date, once for the three months and once year-to-date, and they are distinguished only by the period span. Adding a 3-month row to a 6-month row double-counts the quarter.",
+    "THE LATEST-VERSION FUNDAMENTALS ARE NOT POINT-IN-TIME UNLESS p_as_of IS GIVEN. financials, company_financials, income_statements, balance_sheets and cash_flow_statements take a trailing p_as_of DATE (default NULL). NULL reads the latest stored version of every document, so a later filing or a restatement appears as if it had been known on an earlier date: fine for a current screen, look-ahead in a backtest. A date T reads only the documents CVM had received before T (cia_filing.dt_receb < T; a document received ON T is excluded), keeps the highest remaining version of each and all its lines, and drops a document with no filing header. ref_date still says which period a row is FOR; the window p_from/p_to is on that, not on the receipt date. CVM's files carry only the newest version of each document and most versions superseded before 2026 are not held, so an as-of read is stale for a company that restated, never early. financial_statement_history already exposes every stored version with its filing_received_date.",
     "FINANCIALS DEFAULT TO CONSOLIDATED (scope=con) AND TO THE PERIOD THE DOCUMENT IS FOR (ordem_exerc ULTIMO). The prior-year comparative printed beside it is never returned. When a company re-files, only the newest version of each statement is served and `version` carries it; in company_financials a balance sheet from a different version than the income statement reads NULL rather than being paired across filings.",
     "CVM'S CHART OF ACCOUNTS IS SECTOR-SPECIFIC, SO `setor` IS A PARTITION KEY, NOT A LABEL. financials and company_financials carry setor and segmento on every row for exactly one reason: the same account code is a different quantity in a different chart. Measured live, 3.01 is `Receita de Venda de Bens e/ou Serviços` for PETR4 and `Receitas de Intermediação Financeira` for Banco do Brasil (cd_cvm 1023), and 3.05 is EBIT for the first and pre-tax profit for the second. So company_financials.revenue and gross_profit are NOT like-for-like across sectors: PARTITION every median, rank, percentile and peer comparison BY setor, and read the as-filed Portuguese account_name rather than assuming a code carries one concept. There is deliberately no canonical English line-item mapping, because keying one on account_code would mislabel at least one sector.",
     "company_financials.net_income IS KEYED ON THE FILED LABEL (since v36), exactly as in api.income_statements, so the two surfaces agree. It matches `Lucro/Prejuízo Consolidado do Período` / `Lucro ou Prejuízo Líquido Consolidado do Período`, which sits on 3.11 for the industrial and bank-A charts, on 3.09 for bank B (which files no 3.11) and on 3.13 for insurers (whose 3.11 is continuing operations). Until v35 it read 3.11 alone, so 282 bank-B statements (Itaú and BTG among them) read NULL and insurers got their continuing-operations line. No code is ever substituted: 3.09 is pre-participations profit on the other charts. revenue and gross_profit remain code-keyed (3.01 / 3.03) and are not like-for-like across sectors — use api.income_statements for label-keyed revenue. Every value in both functions is in absolute reais: the filed ESCALA_MOEDA is applied at ingest, so never scale by thousands again.",
@@ -6158,11 +6188,11 @@ GRANT EXECUTE ON FUNCTION api.metric_coverage()                       TO silo_ap
 GRANT EXECUTE ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT, TEXT, NUMERIC, INT, TEXT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.lookup(TEXT)                            TO silo_api;
 GRANT EXECUTE ON FUNCTION api.fund_holdings(TEXT, TEXT, DATE, DATE, TEXT, INT) TO silo_api;
-GRANT EXECUTE ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT) TO silo_api;
-GRANT EXECUTE ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT) TO silo_api;
-GRANT EXECUTE ON FUNCTION api.income_statements(TEXT, DATE, DATE, TEXT, TEXT) TO silo_api;
-GRANT EXECUTE ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT) TO silo_api;
-GRANT EXECUTE ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT) TO silo_api;
+GRANT EXECUTE ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT, DATE) TO silo_api;
+GRANT EXECUTE ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT, DATE) TO silo_api;
+GRANT EXECUTE ON FUNCTION api.income_statements(TEXT, DATE, DATE, TEXT, TEXT, DATE) TO silo_api;
+GRANT EXECUTE ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT, DATE) TO silo_api;
+GRANT EXECUTE ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT, DATE) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.anbima_classes(TEXT, TEXT, TEXT, DATE, DATE) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.fund_debentures(TEXT, TEXT, DATE, DATE, INT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.fidc_cedentes(TEXT, TEXT, DATE, DATE, INT)   TO silo_api;

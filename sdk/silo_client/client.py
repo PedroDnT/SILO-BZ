@@ -37,7 +37,7 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 46  # v46 serves close_total_return (#418); v45 adds index_history; v44 quote_history's adjusted closes (#417); v43 research_universe
+KNOWN_CATALOG_VERSION = 47  # v47 adds p_as_of to the fundamentals (#414); v46 serves close_total_return (#418); v45 adds index_history; v44 quote_history's adjusted closes (#417); v43 research_universe
 
 
 class SiloCatalogDrift(UserWarning):
@@ -881,7 +881,8 @@ class SiloClient:
     def financials(self, id: str, statement: Optional[str] = None,
                    start: Datish = None, end: Datish = None,
                    scope: str = "con",
-                   doc_type: Optional[str] = None) -> List[Dict[str, Any]]:
+                   doc_type: Optional[str] = None,
+                   as_of: Datish = None) -> List[Dict[str, Any]]:
         """Filed financial-statement lines for one listed company.
 
         `id` is a B3 ticker, a CNPJ, or a CVM code — they resolve to the same
@@ -900,6 +901,17 @@ class SiloClient:
         double-counts the quarter. `version` carries the restatement: only the
         newest version of each statement is returned.
 
+        **`as_of` makes the read point-in-time.** Without it every document
+        is read at its latest stored version, so a later filing or a
+        restatement shows as if it had been known on an earlier date. With
+        `as_of=T` only documents CVM had received **before** T are read
+        (one received on T is out), the highest remaining version of each is
+        kept, and `ref_date` still says which period a row is for. The same
+        `as_of` is on `company_financials`, `income_statements`,
+        `balance_sheets` and `cash_flow_statements`.
+
+            silo.financials("PETR4", "DRE", as_of="2024-02-29")  # DFP 2023 not out yet
+
         `setor` and `segmento` ride on every row because CVM's chart of
         accounts is **sector-specific**: `3.01` is `Receita de Venda de Bens
         e/ou Serviços` for PETR4 and `Receitas de Intermediação Financeira`
@@ -911,11 +923,13 @@ class SiloClient:
             "p_id": id, "p_statement": statement,
             "p_from": _iso(start), "p_to": _iso(end),
             "p_scope": scope, "p_doc_type": doc_type,
+            "p_as_of": _iso(as_of),
         })
 
     def company_financials(self, id: str, start: Datish = None,
                            end: Datish = None,
-                           scope: str = "con") -> List[Dict[str, Any]]:
+                           scope: str = "con",
+                           as_of: Datish = None) -> List[Dict[str, Any]]:
         """Headline financials for one company, one row per filed period.
 
         The convenience shape over :meth:`financials`: revenue, gross profit,
@@ -946,7 +960,7 @@ class SiloClient:
         """
         return self._rpc("company_financials", {
             "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
-            "p_scope": scope,
+            "p_scope": scope, "p_as_of": _iso(as_of),
         })
 
     def financial_statement_history(self, id: str, statement: str,
@@ -1010,7 +1024,8 @@ class SiloClient:
 
     def income_statements(self, id: str, start: Datish = None,
                           end: Datish = None, scope: str = "con",
-                          doc_type: Optional[str] = None) -> List[Dict[str, Any]]:
+                          doc_type: Optional[str] = None,
+                          as_of: Datish = None) -> List[Dict[str, Any]]:
         """The income statement as a period: one row each, with named fields.
 
             silo.income_statements("PETR4")
@@ -1038,11 +1053,13 @@ class SiloClient:
         return self._rpc("income_statements", {
             "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
             "p_scope": scope, "p_doc_type": doc_type,
+            "p_as_of": _iso(as_of),
         })
 
     def balance_sheets(self, id: str, start: Datish = None,
                        end: Datish = None, scope: str = "con",
-                       doc_type: Optional[str] = None) -> List[Dict[str, Any]]:
+                       doc_type: Optional[str] = None,
+                       as_of: Datish = None) -> List[Dict[str, Any]]:
         """The balance sheet as a period: one row each, with named fields.
 
             silo.balance_sheets("PETR4")
@@ -1061,11 +1078,13 @@ class SiloClient:
         return self._rpc("balance_sheets", {
             "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
             "p_scope": scope, "p_doc_type": doc_type,
+            "p_as_of": _iso(as_of),
         })
 
     def cash_flow_statements(self, id: str, start: Datish = None,
                              end: Datish = None, scope: str = "con",
-                             doc_type: Optional[str] = None) -> List[Dict[str, Any]]:
+                             doc_type: Optional[str] = None,
+                             as_of: Datish = None) -> List[Dict[str, Any]]:
         """The cash flow statement as a period: section totals, one row each.
 
             silo.cash_flow_statements("PETR4")
@@ -1081,6 +1100,7 @@ class SiloClient:
         return self._rpc("cash_flow_statements", {
             "p_id": id, "p_from": _iso(start), "p_to": _iso(end),
             "p_scope": scope, "p_doc_type": doc_type,
+            "p_as_of": _iso(as_of),
         })
 
     def company_events(self, id: str, start: Datish = None, end: Datish = None,

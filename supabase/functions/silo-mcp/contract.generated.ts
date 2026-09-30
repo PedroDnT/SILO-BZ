@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "46";
+export const CONTRACT_VERSION = "47";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -1359,7 +1359,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "balance_sheets": {
     "kind": "rpc",
     "path": "/rpc/balance_sheets",
-    "description": "Balance sheet, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label (and, where one label is filed twice, its parent's label), not on cd_conta and not on setor: CVM ships three balance-sheet charts and equity alone sits on 2.03, 2.07 or 2.08. A concept a chart does not file reads NULL — banks file no current/non-current split and no `Empréstimos e Financiamentos`, so those fields are NULL for them, never zero. `chart` says which layout the filing used. Values are absolute reais.",
+    "description": "Balance sheet, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label (and, where one label is filed twice, its parent's label), not on cd_conta and not on setor: CVM ships three balance-sheet charts and equity alone sits on 2.03, 2.07 or 2.08. A concept a chart does not file reads NULL — banks file no current/non-current split and no `Empréstimos e Financiamentos`, so those fields are NULL for them, never zero. `chart` says which layout the filing used. Values are absolute reais. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1408,6 +1408,15 @@ export const CONTRACT: Record<string, ContractEntry> = {
             "itr",
             "dfp"
           ]
+        },
+        "p_as_of": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
         }
       },
       "required": [
@@ -1419,7 +1428,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "cash_flow_statements": {
     "kind": "rpc",
     "path": "/rpc/cash_flow_statements",
-    "description": "Cash flow statement, one row per filed period, with named TOTALS keyed on the as-filed label. `method` is direct (DFC_MD) or indirect (DFC_MI). Only the section totals and the cash reconciliation are mapped: detail lines such as capex and dividends are free-text per company and are NOT fields — read them from api.financials. operating_cash_generated and working_capital_changes are indirect-method lines and read NULL on a direct-method filing, never zero. Values are absolute reais.",
+    "description": "Cash flow statement, one row per filed period, with named TOTALS keyed on the as-filed label. `method` is direct (DFC_MD) or indirect (DFC_MI). Only the section totals and the cash reconciliation are mapped: detail lines such as capex and dividends are free-text per company and are NOT fields — read them from api.financials. operating_cash_generated and working_capital_changes are indirect-method lines and read NULL on a direct-method filing, never zero. Values are absolute reais. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1468,6 +1477,15 @@ export const CONTRACT: Record<string, ContractEntry> = {
             "itr",
             "dfp"
           ]
+        },
+        "p_as_of": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
         }
       },
       "required": [
@@ -1535,7 +1553,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "company_financials": {
     "kind": "rpc",
     "path": "/rpc/company_financials",
-    "description": "**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+    "description": "Headline financials for one company, one row per filed period, latest stored version of each document. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1572,6 +1590,15 @@ export const CONTRACT: Record<string, ContractEntry> = {
             "con",
             "ind"
           ]
+        },
+        "p_as_of": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
         }
       },
       "required": [
@@ -2017,7 +2044,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "financials": {
     "kind": "rpc",
     "path": "/rpc/financials",
-    "description": "**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+    "description": "Filed statement lines for one company, one row per account, latest stored version of each document. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early. version is on every row. Refuses above 1,000 rows with SQLSTATE 22023; narrow the window.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2074,6 +2101,15 @@ export const CONTRACT: Record<string, ContractEntry> = {
             "itr",
             "dfp"
           ]
+        },
+        "p_as_of": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
         }
       },
       "required": [
@@ -2553,7 +2589,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "income_statements": {
     "kind": "rpc",
     "path": "/rpc/income_statements",
-    "description": "Income statement, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label, not on cd_conta and not on setor: CVM ships four DRE charts and the same code means different things across them. net_income therefore resolves for the filings that report it on 3.09 (the one bank chart with no 3.11) as well as those on 3.11. A concept a chart does not file reads NULL — operating_income is industrial-only. `chart` says which layout the filing used. Values are absolute reais.",
+    "description": "Income statement, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label, not on cd_conta and not on setor: CVM ships four DRE charts and the same code means different things across them. net_income therefore resolves for the filings that report it on 3.09 (the one bank chart with no 3.11) as well as those on 3.11. A concept a chart does not file reads NULL — operating_income is industrial-only. `chart` says which layout the filing used. Values are absolute reais. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2602,6 +2638,15 @@ export const CONTRACT: Record<string, ContractEntry> = {
             "itr",
             "dfp"
           ]
+        },
+        "p_as_of": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
         }
       },
       "required": [

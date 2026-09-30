@@ -42,6 +42,7 @@ curl -s -X POST "$SILO_URL/rpc/financials" \
 | `p_from` / `p_to` | last 5 years | window on `ref_date` |
 | `p_scope` | `con` | `con` or `ind` |
 | `p_doc_type` | both | `itr` (quarterly) or `dfp` (annual) |
+| `p_as_of` | `null` | a date T makes the read point-in-time: only documents CVM received **before** T (see [Point in time](#point-in-time)) |
 
 One row per account line:
 
@@ -97,6 +98,22 @@ Carries `revenue`, `gross_profit`, `net_income`, `total_assets`, `equity`, `net_
 </Warning>
 
 **Note**: one 1,000-row page, and it refuses above it (`22023`). There is **no cursor** — narrow the window, pin a `p_statement`, or ask for one `p_doc_type`.
+
+### Point in time
+
+By default every document is read at its **latest stored version**, so a filing that arrived later, or a restatement, shows as if it had been known on an earlier date. That is right for a current screen and look-ahead in a backtest. `financials`, `company_financials`, `income_statements`, `balance_sheets` and `cash_flow_statements` all take a trailing `p_as_of` date that removes it:
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/financials" \
+  -H "apikey: $SILO_ANON_KEY" -H "Content-Type: application/json" \
+  -d '{"p_id":"PETR4","p_statement":"DRE","p_as_of":"2024-02-29"}'
+```
+
+- Only documents CVM had **received before** the date are read. One received on the date itself is out. `ref_date` still says which period a row is for, and the window `p_from` / `p_to` is on that, not on the receipt date.
+- Of each document the highest remaining version is kept, with all its lines. A document with no filing header is dropped, never assumed early.
+- PETR4's 2023 annual statements were received on 2024-03-08, so at `2024-02-29` the newest period is the quarter ended 2023-09-30.
+- CVM's files carry only the newest version of each document, and versions superseded before 2026 are mostly not held. An as-of read is therefore **stale for a company that restated, never early**: a restating company looks later than it was.
+- `financial_statement_history` already lists every stored version with its `filing_received_date`.
 
 ### Freshness
 
