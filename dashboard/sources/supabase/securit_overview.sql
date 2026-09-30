@@ -7,10 +7,40 @@
 -- parquet.
 --
 -- Grain: one row per series (instrument_type, codigo_identificacao,
--- numero_serie), taking that series' most recent data_referencia snapshot. cvm_securit_serie is a monthly re-statement of the
+-- numero_serie), taking that series' most recent filing in the live window
+-- (the snapshot CTE, #434). cvm_securit_serie is a monthly re-statement of the
 -- whole live book, so summing it raw would multiply-count every series by the
 -- number of months it has been reported.
-with snapshot as (
+with per_period as (
+  select period, count(*) as n,
+         lag(count(*)) over (order by period) as prev_n
+  from fact_security_monthly
+  group by period
+),
+as_of as (
+  -- AS-OF MONTH: the rule securit_issuance_trend.sql and
+  -- distressed_securities() (09) use, the newest ENDED period holding at least
+  -- half the previous period's rows. COALESCE falls back to the last ended
+  -- month when nothing qualifies (an empty fact).
+  select coalesce(
+           (select period
+              from per_period
+             where period <= (date_trunc('month', current_date) - interval '1 month')::date
+               and (prev_n is null or n >= 0.5 * prev_n)
+             order by period desc
+             limit 1),
+           (date_trunc('month', current_date) - interval '1 month')::date
+         ) as p_end
+),
+snapshot as (
+  -- LIVE SERIES (#434): a series is live when its latest filing falls in the
+  -- as-of month or the month before; filings after the as-of month are
+  -- ignored. This used to be every series' latest filing EVER, which kept the
+  -- series that stopped filing (matured or redeemed): 10,855 series against
+  -- 6,862 live at 2026-07, R$427.8 bn against R$376.8 bn. Two months, not
+  -- the as-of month alone, because that month can be only half filed: with
+  -- 2026-07 at 55%, "filed in 2026-07" showed 3,763 series and R$201.0 bn,
+  -- the window 6,824 and R$372.5 bn.
   -- A series is (instrument_type, codigo_identificacao, numero_serie). The
   -- securitizer is not part of it: certificates move between securitizers
   -- (318 CRI codes, 2019-2026), and keying on cnpj_securit would count a moved
@@ -28,7 +58,9 @@ with snapshot as (
     s.data_vencimento,
     s.data_referencia
   from cvm_securit_serie s
-  where s.data_referencia is not null
+  cross join as_of a
+  where s.data_referencia >= (a.p_end - interval '1 month')::date
+    and s.data_referencia <  (a.p_end + interval '1 month')::date
   order by
     s.instrument_type,
     s.codigo_identificacao,
@@ -59,5 +91,5 @@ select
       and coalesce(situacao, '') not in ('Vencido', 'Cancelado', 'Liquidado', 'Encerrado')
   )                                                              as n_past_maturity,
   count(*) filter (where data_vencimento is null)                as n_sem_vencimento,
-  max(data_referencia)                                           as last_reference
+  (select p_end from as_of)                                      as as_of_period
 from snapshot
