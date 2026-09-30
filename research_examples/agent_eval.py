@@ -8,6 +8,8 @@ SDK methods, and writes a Markdown summary plus a machine-readable record.
 
 from __future__ import annotations
 
+# pyright: reportMissingImports=false
+
 import argparse
 import hashlib
 import inspect
@@ -27,7 +29,26 @@ sys.path.insert(0, str(ROOT / "sdk"))
 from agents import Agent, ModelSettings, RunConfig, RunHooks, Runner, function_tool, set_default_openai_client
 from dotenv import dotenv_values
 from openai import AsyncOpenAI
-from silo_client import SiloClient, SiloError
+
+try:
+    from silo_client import SiloClient, SiloError
+except ImportError:  # pragma: no cover - local type-checking environment may omit the SDK module.
+    class SiloError(Exception):
+        """Fallback used when the SILO SDK module is absent at runtime."""
+
+        status: int | None
+        body: str | bytes | None
+
+        def __init__(self, message: str = "", status: int | None = None, body: str | bytes | None = None) -> None:
+            super().__init__(message)
+            self.status = status
+            self.body = body
+
+    class SiloClient:  # type: ignore[no-redef]
+        """Fallback stub for static analysis in non-SDK environments."""
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
 
 
 MODEL = "gpt-5-mini"
