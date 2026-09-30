@@ -38,6 +38,8 @@ SQL_EXTRA = (
     ROOT / "src/store/analytical/27_api_rates.sql",
     # v43: the research universe.
     ROOT / "src/store/analytical/28_api_research.sql",
+    # v45: the benchmark index.
+    ROOT / "src/store/analytical/29_api_index.sql",
 )
 CLIENT = ROOT / "sdk/silo_client/client.py"
 

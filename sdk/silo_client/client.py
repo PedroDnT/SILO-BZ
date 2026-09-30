@@ -37,7 +37,7 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 44  # v44 adds quote_history's adjusted closes (#417); v43 research_universe (#419)
+KNOWN_CATALOG_VERSION = 45  # v45 adds index_history; v44 quote_history's adjusted closes (#417); v43 research_universe
 
 
 class SiloCatalogDrift(UserWarning):

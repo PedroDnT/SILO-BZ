@@ -124,6 +124,7 @@ The refusal says **why and how**. The message reads `<function>: refused, this r
 | [`panel`](/api-docs/panel) | refuses; pages with `p_after` = `'<date>\|<id>\|<metric>\|<asset_class>'` |
 | [`quote_history`](/api-docs/quotes) | refuses; pages with `p_after` = the last row's `trade_date` |
 | [`fund_nav`](/api-docs/funds) | refuses; pages with `p_after` = the last row's `period` — **`p_entity_type` required to page** |
+| `index_history` | refuses; pages with `p_after` = the last row's `trade_date` |
 | [`option_history`](/api-docs/options) | refuses; no cursor — narrow `p_from`/`p_to` |
 | [`termo_history`](/api-docs/termo) | refuses; no cursor — narrow `p_from`/`p_to` |
 | [`financials`](/api-docs/financials) | refuses; no cursor — narrow the window or pin a statement |
@@ -163,7 +164,7 @@ The refusal says **why and how**. The message reads `<function>: refused, this r
 | `''` (empty string) | First page. |
 | the key from the last row | The page after that key. |
 
-A page shorter than 1,000 rows is the last. The key is `'<date>\|<id>\|<metric>\|<asset_class>'` for `panel`, and the bare date for `quote_history` and `fund_nav`.
+A page shorter than 1,000 rows is the last. The key is `'<date>\|<id>\|<metric>\|<asset_class>'` for `panel`, and the bare date for `quote_history`, `fund_nav` and `index_history`.
 
 - **`fund_nav` requires a family before it will page.** Its cursor is a bare period, unique only *within* a family — 385 CNPJs file under two in the same month. Without `p_after` you get every family at once, each row labelled with its `entity_type`.
 - **`Range` paging does not work on RPC.** Rows 1000–1999 of an `/rpc/` call re-runs the function and returns the first page again. `p_after` is the RPC cursor; `Range` / `limit` / `offset` are the **view** cursor.

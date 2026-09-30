@@ -1,6 +1,6 @@
 # Research seam: SILO as the data layer for external quant research
 
-**Status: spec drafted 2026-09-29 from the wayfinder map ([#371](https://github.com/PedroDnT/SILO-BZ/issues/371), 11 of 11 tickets resolved). Approved 2026-09-29; the build tickets are under epic #410. The research universe (#411) is built (§4), and so is the price-adjusted close in `quote_history` with the per-issuer sweep proof (§3; #413, #417 without the pre-2019 refusal).**
+**Status: spec drafted 2026-09-29 from the wayfinder map ([#371](https://github.com/PedroDnT/SILO-BZ/issues/371), 11 of 11 tickets resolved). Approved 2026-09-29; the build tickets are under epic #410. The research universe (#411) is built (§4), and so are the price-adjusted close in `quote_history` with the per-issuer sweep proof (§3; #413, #417 without the pre-2019 refusal) and the benchmark index `api.index_history` (§5; #412, #415, catalog v45).**
 
 A *research caller* is an external repository that builds features, signals or
 backtests on SILO data (terms: `CONTEXT.md`, *Research data*). Its first
@@ -134,7 +134,7 @@ levels, from a closed, extensible list of index codes.
 - **Source:** B3's administrator-published daily close, `indexStatisticsProxy/IndexCall/GetPortfolioDay`
   (undocumented; one year per call). SGS 7 is discontinued since 2019-09-30 and is not used.
 - **Columns:** `index_code`, `trade_date`, `level`, `source`, a flag for a divisor
-  step as published (IBOV 1997-03-03, ÷10). Same 1,000-row cap and date cursor as
+  step as published (IBOV: eleven, 1983-10-04 ÷100 and ten ÷10 sessions, the last 1997-03-03; found in the series on 2026-09-30). Same 1,000-row cap and date cursor as
   `quote_history`. The tape-start refusal does not apply; depth per index is published in `api.coverage()`.
 - **Storage:** a new table keyed on `(index_code, trade_date)`, one `cvm_ingest_log`
   row per ingest, idempotent upsert, level as published. **A null endpoint result

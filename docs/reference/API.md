@@ -295,6 +295,42 @@ hard-coded ticker list. The operator half:
   above one page, and since nothing narrows it the message says it has no
   cursor and one must be added.
 
+### The benchmark index (catalog v45)
+
+`api.index_history(p_index, p_from, p_to, p_after)` (`29_api_index.sql`;
+research-seam spec `docs/planning/RESEARCH_SEAM.md` §5, tickets #412 and #415)
+serves the daily level of a B3-published index from `b3_index_level` (migration
+55). The operator half:
+
+- **Source.** B3's index statistics proxy, `indexStatisticsProxy/IndexCall/
+  GetPortfolioDay`, one calendar year per call as a 31 x 12 grid with Brazilian
+  decimals (`src/fetchers/b3_index_fetcher.py`). IBOV from 1968-01-02: 14,489
+  sessions on 2026-09-30, 2025-12-30 = 161,125.37 (B3's year-end figure).
+- **Ingest.** `B3Ingestor.ingest_index_levels`, the third source of
+  `run_b3_events` (audit `b3` / `index_levels`). It refetches every year every
+  night (59 calls, about a minute): the upsert rewrites only rows that changed,
+  so there is no backfill mode and a B3 correction heals itself. It validates the
+  whole series before any write. **A null `results` for a configured index is an
+  error** (B3 answers HTTP 200 for a code it does not publish, and for any year
+  it has nothing for); the one exception is the current year in the first ten
+  days of January, before its first session. It sits in `run_b3_events`, not
+  `run_daily`, for the reason #450 moved the other B3 calls there.
+- **Levels are as published and the series is not adjusted.** B3 re-scaled IBOV
+  eleven times (divided by 100 on 1983-10-04 and by 10 on ten other sessions,
+  the last on 1997-03-03); `divisor_step` is TRUE on the first session after
+  each. The list is `INDEX_DIVISOR_STEPS` in `src/pipeline/ingest_b3_index.py`,
+  and the ingest refuses any other one-session move beyond a factor of two, so a
+  new step is reviewed before it is served. +36% on 1991-02-04 is a real move.
+- **Index codes only.** The accepted codes are those the table holds, so a
+  ticker, BOVA11 (an ETF) and IBOV11 (the options settlement leg) all raise
+  `22023` naming the codes held.
+- **Paging.** Date cursor like `quote_history`; IBOV from 1968 is 15 pages. The
+  tape-start refusal of `quote_history` does not apply. `coverage()` has an
+  `index_history` row with the depth of each index in its notes.
+- Grants follow `quote_history`: DEFINER with an empty `search_path`, revoked
+  from `PUBLIC`, granted to `anon` / `authenticated` / `silo_api`. No client
+  role can read `b3_index_level`.
+
 ### DI futures and B3 reference curves (catalog v42)
 
 `api.future_curve`, `api.future_series`, `api.curve` and `api.curve_history`
@@ -484,7 +520,7 @@ series and statement functions in v25/v26.
 set-returning function now fetches one page plus one row and **raises `22023`**
 rather than returning a trimmed result. This file previously stated that "a panel
 cannot be paged" — that stopped being true two catalog versions ago. **`panel`,
-`quote_history` and `fund_nav` page with a `p_after` cursor**; the others
+`quote_history`, `fund_nav` and `index_history` page with a `p_after` cursor**; the others
 (`option_history`, `termo_history`, `financials`, `company_financials`,
 `anbima_classes`, `inflation`, `inflation_items`, `fidc_tranches`, `fidc_aging`,
 `fund_documents`, `fund_restatements`, `fund_restatement_diff`,
