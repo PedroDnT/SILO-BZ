@@ -352,7 +352,7 @@ not-yet-published misses can never trip it.
 - Keep everything idempotent: `CREATE TABLE IF NOT EXISTS`, named `UNIQUE` constraints,
   `ADD COLUMN IF NOT EXISTS`.
 
-Adding a whole dataset is a different recipe — see "Adding a dataset" in `CLAUDE.md`.
+Adding a whole dataset is a different recipe — see "Adding a dataset" in `AGENTS.md`.
 
 ---
 
@@ -619,5 +619,5 @@ rediscover these by querying the warehouse from scratch.
 - `scripts/queries/14_advisor_triage.sql` — classify Performance Advisor lints (§10)
 - [`DATA_MODELING.md`](DATA_MODELING.md) — star schema conventions for new data classes
 - [`ETF_AND_PERFORMANCE.md`](ETF_AND_PERFORMANCE.md) — ETF carve-out and the CVM-175 CNPJ split
-- `CLAUDE.md` — architecture, the "Adding a dataset" recipe, and the non-negotiable
+- `AGENTS.md` — architecture, the "Adding a dataset" recipe, and the non-negotiable
   data-integrity rules

@@ -23,8 +23,8 @@ Times in UTC-3, with UTC in parentheses.
   again on the next green run, or on `daily_ingest` `mode=analytics-only` with
   `rebuild_dashboard=true`.
 - Plain-view endpoints (quotes, short interest) show new data at once. Their
-  matview-fed columns do not: `days_to_cover` joins `mv_b3_adtv_21`, and the
-  fund subtype in `asset_class` falls back to `mv_b3_isin_subtype`.
+  matview-fed columns do not: `days_to_cover` joins `mv_b3_adtv_21`, and
+  `fund_type` in `api.fund_quotas` falls back to `mv_b3_isin_subtype`.
 - A GitHub issue titled "Daily ingest is failing" is opened, or commented on.
 - The watchdog heals data only. It runs neither the analytical apply nor the
   deploy hook.

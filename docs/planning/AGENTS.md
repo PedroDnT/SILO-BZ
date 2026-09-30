@@ -28,9 +28,9 @@ change.
   | Pedro's merge                               | everything else, including whether the item was worth it |
 
   If an agent change makes a gate fail, the change is wrong, not the gate
-  (`CLAUDE.md`). No agent may edit a gate: `tests/` may gain tests but not
+  (root `AGENTS.md`). No agent may edit a gate: `tests/` may gain tests but not
   lose or loosen them, and `scripts/verify_pipeline.py`, `.github/workflows/`,
-  `.claude/` and `CLAUDE.md` are out of bounds.
+  `.claude/`, `CLAUDE.md` and the root `AGENTS.md` are out of bounds.
 
 - **Scope stays with Pedro.** The Builder works only on issues Pedro labelled
   `agent-ok`. The Scout and the Sentinel have a fixed scope written in their
@@ -43,7 +43,7 @@ Three to start.
 | Agent        | Cadence                                         | Reads                                                                                                                                         | Output                                                                                                                                                                      | Permissions                                                                         |
 | ------------ | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | **Scout**    | weekly                                          | Tomé (`agentetome.com/api/stats`, `/como-funciona`), CNN Money, the competitor list in COMPETITIVE_GAPS §2                                    | one draft PR updating COMPETITIVE_GAPS §2 (landscape) and §3 (matrix); every new Y cell carries a URL, unknown stays `?`                                                    | web read; edits `docs/planning/COMPETITIVE_GAPS.md` only                            |
-| **Builder**  | weekly, one item per run                        | open GitHub issues labelled `agent-ok`, oldest first                                                                                          | one draft PR: a dataset through the `CLAUDE.md` "Adding a dataset" six steps, or one new `api.*` endpoint in the `19_api_contract.sql` pattern, with code and offline tests | repo read and write on its own branch; no schema apply, no deploy, no DB credential |
+| **Builder**  | weekly, one item per run                        | open GitHub issues labelled `agent-ok`, oldest first                                                                                          | one draft PR: a dataset through the root `AGENTS.md` "Adding a dataset" six steps, or one new `api.*` endpoint in the `19_api_contract.sql` pattern, with code and offline tests | repo read and write on its own branch; no schema apply, no deploy, no DB credential |
 | **Sentinel** | daily, after the 06:00 UTC ingest and its gates | `api.coverage()`, `cvm_ingest_log`, and source drift: new FNET document types or categories, changed CVM CSV headers against our `FIELD_MAP`s | one issue, never code                                                                                                                                                       | read-only                                                                           |
 
 **Later:** a question-queue agent, once the API or an MCP (B2) logs the calls
@@ -64,7 +64,7 @@ None of them notices that a **source** changed: a new column in a CVM CSV that
 our field map ignores, a new FNET document category, a member added to the
 FIDC ZIP. Those land as green runs that silently hold less than the source
 publishes. The Sentinel watches for exactly that, which is the other half of
-the `CLAUDE.md` rule "do not confuse OUR health with the SOURCE's". It does not
+the root `AGENTS.md` rule "do not confuse OUR health with the SOURCE's". It does not
 duplicate the three above: a red `health.yml` is already the alarm, and the
 Sentinel does not file an issue for it.
 

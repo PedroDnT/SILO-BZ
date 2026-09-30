@@ -66,7 +66,7 @@ minutes against the live API.
 
 ## The two rules
 
-Both come from `CLAUDE.md`'s data-integrity rules, and every notebook here obeys
+Both come from `AGENTS.md`'s data-integrity rules, and every notebook here obeys
 them:
 
 1. **Never fill a gap to make a chart look continuous.** A null is a null. No

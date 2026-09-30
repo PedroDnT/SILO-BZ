@@ -4,7 +4,7 @@ The existing schema is sound. This note exists so future additions — most like
 **market/price data for securities** — extend it the same way instead of growing a
 parallel, wide, source-shaped table that downstream queries then have to special-case.
 Read it before adding a new `(entity, doc_type)` or a new class of data; it sits on top
-of the non-negotiable data-integrity rules in `CLAUDE.md` ("Data integrity rules"), it
+of the non-negotiable data-integrity rules in `AGENTS.md` ("Data integrity rules"), it
 does not replace them.
 
 ## The shape we already have
@@ -29,7 +29,7 @@ by `(entity natural key, period)`. Keep new data inside this grain.
    per ingest, as always.
 4. **Idempotent by construction.** Named UNIQUE on the natural key
    (e.g. `(instrument_code, price_date, metric)`), upsert with `ON CONFLICT DO UPDATE`.
-   Follow the 6-step "Adding a dataset" checklist in `CLAUDE.md`.
+   Follow the 6-step "Adding a dataset" checklist in `AGENTS.md`.
 5. **A failed fetch raises.** No fabricated last-known-price fallbacks — that is precisely
    the `b3_calc_api` mistake. Validate every row through `DataValidator` before upsert.
 

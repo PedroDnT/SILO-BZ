@@ -51,7 +51,7 @@ period is withheld until it is complete; an unadjusted price says so. A retrieva
 that answers confidently when it does not know is the failure mode that makes model
 output unusable in regulated work — so this one is built to say it does not have the
 answer, in a shape an agent can detect. Concretely, every change is held to five rules
-(`CLAUDE.md`), and about 2,300 offline tests hold it there:
+(`AGENTS.md`), and about 2,300 offline tests hold it there:
 
 1. **Never fabricate.** No fallback values, no fills, no inferred joins.
 2. **Never swallow a failure.** It raises, or it is written to `cvm_ingest_log`.
@@ -280,6 +280,12 @@ same for everyone.
 
 ### Known defects
 
+- **Three dashboard pages read a matview that nothing refreshes.**
+  `mv_b3_monthly_activity` (behind `/markets`, `/etf` and `/flows`) and
+  `mv_b3_isin_subtype` were last populated around 2026-08-28. Their daily refresh
+  is a pg_cron job, and the live database has no pg_cron. August shows 19 of its
+  21 sessions and September is absent
+  ([OPEN_ITEMS.md](docs/planning/OPEN_ITEMS.md), item 16).
 - **`etf_daily` / `etf_latest` can be absent from production.** Migration 06
   recreates them when missing, so a run whose schema step failed leaves them
   gone and the backfill's "Refresh ETF metrics" job then fails on an assertion
@@ -327,7 +333,7 @@ same for everyone.
 
 ## Working on the code
 
-Local setup, the CLI and the tests are documented in `CLAUDE.md` (commands),
+Local setup, the CLI and the tests are documented in `AGENTS.md` (commands),
 [scripts/README.md](scripts/README.md) (operator tooling) and the two Evidence READMEs.
 The essentials, folded away:
 

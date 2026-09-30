@@ -102,7 +102,7 @@ If nothing verifiable changed, stop. No-op: "no verifiable change since
    attribution lines your environment specifies for commits.
 5. Push the branch and open **one draft PR** against `main`, labelled
    `agent:scout`. Title: `Scout: <what changed, in a few words>`. It stays a draft on purpose: it is the one exception to
-   CLAUDE.md's ready-for-review rule, so agent output can never auto-merge.
+   the root AGENTS.md's ready-for-review rule, so agent output can never auto-merge.
    Never mark it ready yourself; only the owner does. Body:
 
    ```
