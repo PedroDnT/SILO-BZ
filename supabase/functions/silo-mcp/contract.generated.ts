@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "45";
+export const CONTRACT_VERSION = "46";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -3102,7 +3102,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "quote_history": {
     "kind": "rpc",
     "path": "/rpc/quote_history",
-    "description": "Daily quote series for one ticker, oldest first. close is RAW, as traded (adjusted stays FALSE because it describes close). close_price_adjusted is the close per single share made continuous across splits (DESDOBRAMENTO), groupings (GRUPAMENTO) and bonus shares (BONIFICACAO) by B3's rule, backward-adjusted to the ticker's latest session: past levels change when an event lands, returns do not. Spin-offs, mergers, capital reductions and subscriptions are NOT adjusted. It is NULL, with close_price_adjusted_null_reason saying why, when the ISIN is outside the research universe (shares ACN; units CDA/UNT with a ticker ending 11), when the issuer's corporate events are not proven swept, or when an event factor is unreadable. close_total_return is NULL until the cash distribution history is backfilled (close_total_return_null_reason says so). Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '' = first page, then the last row's trade_date as 'YYYY-MM-DD'; a page shorter than 1000 is the last. Or narrow p_from/p_to.",
+    "description": "Daily quote series for one ticker, oldest first. close is RAW, as traded (adjusted stays FALSE because it describes close). close_price_adjusted is the close per single share made continuous across splits (DESDOBRAMENTO), groupings (GRUPAMENTO) and bonus shares (BONIFICACAO) by B3's rule, backward-adjusted to the ticker's latest session: past levels change when an event lands, returns do not. Spin-offs, mergers, capital reductions and subscriptions are NOT adjusted. It is NULL, with close_price_adjusted_null_reason saying why, when the ISIN is outside the research universe (shares ACN; units CDA/UNT with a ticker ending 11), when the issuer's corporate events are not proven swept, or when an event factor is unreadable. close_total_return is the price-adjusted close with cash distributions reinvested at the ex-date close, anchored the same way: the level is divided by the product of (1 + cash / ex-session close) over later distributions (DIVIDENDO, JRS CAP PROPRIO gross of tax, RENDIMENTO, REST CAP DIN from B3's full history, ISIN proven against the tape). It is NULL, with close_total_return_null_reason saying why, where close_price_adjusted is NULL, where the ISIN has no resolved distribution in B3's history, where a later distribution of the issuer's share class has no proven ISIN, where B3's supplement lists a distribution the history lacks, or where a later distribution has no ex-date close within 7 days. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '' = first page, then the last row's trade_date as 'YYYY-MM-DD'; a page shorter than 1000 is the last. Or narrow p_from/p_to.",
     "inputSchema": {
       "type": "object",
       "properties": {

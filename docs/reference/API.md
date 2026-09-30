@@ -331,6 +331,45 @@ serves the daily level of a B3-published index from `b3_index_level` (migration
   from `PUBLIC`, granted to `anon` / `authenticated` / `silo_api`. No client
   role can read `b3_index_level`.
 
+### The total-return close (catalog v46)
+
+`quote_history.close_total_return` is the price-adjusted close with cash
+distributions reinvested on the ex session, anchored to the latest session like
+`close_price_adjusted`: the level is divided by the product of
+`1 + cash / ex-session close` over every distribution that went ex after the
+session. The latest session equals the price-adjusted close, and an earlier level
+is lower by the cash paid since. It needs no new function and no new column.
+
+- **Cash** is B3's full history (`b3_cash_dividend`): `DIVIDENDO`, `JRS CAP PROPRIO`
+  (gross of withholding tax), `RENDIMENTO` and `REST CAP DIN`. Installments are
+  identical history rows and each counts once (PETR4 2026-06-01: two JCP of
+  0.35048636). A distribution counts only where its ISIN is resolved against the
+  tape and B3's published pre-ex close agrees with the tape's close (7,459 of 8,190
+  since 2019, all 7,459 agreeing on 2026-10-01).
+- **The ex session** is the ISIN's first printed session after the last cum session,
+  within 7 calendar days. A paper that does not print within a week has no price to
+  reinvest at (189 events print 30+ days later, all in the research universe).
+- **Where it is NULL**, each with a reason in `close_total_return_null_reason`: the
+  price-adjusted close is NULL; the ISIN has no resolved distribution in B3's history
+  (a non-payer, or an issuer B3's history does not match: the two look identical, so
+  neither is given a price return labelled as a total return; 188 of 639 universe
+  ISINs on 2026-10-01); a later distribution of the issuer's share class has no proven
+  ISIN (731 events, 53 issuers, hitting 101 of 639 tickers, none of the large caps);
+  a distribution B3's supplement lists is missing from the history (48 from September,
+  which the history had not caught up with, and 3 older holes: FRAS, BRST); a later
+  distribution has no ex-date close within 7 days.
+- **Why a matview.** `vw_b3_cash_dividend_isin` resolves every distribution's ISIN
+  with a dated join into the tape: 5.3 s over all rows, and an ISIN filter cannot be
+  pushed down (`anon` has a 3 s timeout). `mv_b3_cash_event` (migration 56, no client
+  grant) holds the events once, refreshed by `22_b3_tape_matviews.sql` (about 7 s).
+- **Overlap check** (the lag and the holes are countable at any time):
+
+```sql
+SELECT kind, count(*) FROM mv_b3_cash_event GROUP BY kind ORDER BY 2 DESC;
+SELECT issuing_company, isin, action, event_date FROM mv_b3_cash_event
+WHERE kind = 'pending' ORDER BY event_date DESC;
+```
+
 ### DI futures and B3 reference curves (catalog v42)
 
 `api.future_curve`, `api.future_series`, `api.curve` and `api.curve_history`

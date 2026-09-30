@@ -1,6 +1,6 @@
 # Research seam: SILO as the data layer for external quant research
 
-**Status: spec drafted 2026-09-29 from the wayfinder map ([#371](https://github.com/PedroDnT/SILO-BZ/issues/371), 11 of 11 tickets resolved). Approved 2026-09-29; the build tickets are under epic #410. The research universe (#411) is built (§4), and so are the price-adjusted close in `quote_history` with the per-issuer sweep proof (§3; #413, #417 without the pre-2019 refusal) and the benchmark index `api.index_history` (§5; #412, #415, catalog v45).**
+**Status: spec drafted 2026-09-29 from the wayfinder map ([#371](https://github.com/PedroDnT/SILO-BZ/issues/371), 11 of 11 tickets resolved). Approved 2026-09-29; the build tickets are under epic #410. The research universe (#411) is built (§4), and so are the price-adjusted close in `quote_history` with the per-issuer sweep proof (§3; #413, #417 without the pre-2019 refusal) the benchmark index `api.index_history` (§5; #412, #415, catalog v45) and the total-return close in `quote_history` (§3; #418, catalog v46).**
 
 A *research caller* is an external repository that builds features, signals or
 backtests on SILO data (terms: `CONTEXT.md`, *Research data*). Its first
@@ -48,8 +48,12 @@ No new function. `api.quotes`, the typed views (`adjusted` stays FALSE) and
 4. **Both adjusted fields are NULL-with-reason until proven**, one reason column
    per field (their coverage is independent):
    - price-adjusted: NULL until the issuer's corporate events are proven swept from 2019;
-   - total-return: NULL until the cash history table (below) is backfilled for that ISIN.
-   An unresolvable event NULLs the *earlier* total-return closes of its own ISIN only.
+   - total-return: NULL until the ISIN has a resolved cash distribution in B3's history
+     and no later distribution is unvalued. Built in #418 (catalog v46): an event with
+     no proven ISIN NULLs the earlier closes of its issuer's same share class (by the
+     class B3 publishes and the ticker prefixes the issuer has used, never a guessed
+     ISIN), and a supplement event absent from the history NULLs its own ISIN's.
+     See `docs/reference/API.md`, "The total-return close".
 5. **Equity and unit only.** Every other asset class gets NULL with reason
    `outside research universe`.
 6. **Board default unchanged.** The verification script (§9) adds a query for

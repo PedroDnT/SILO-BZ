@@ -855,7 +855,12 @@ AS $$
                 FALSE
             ) AS in_universe,
             ev.n_unreadable,
-            ev.log_share_ratio
+            ev.log_share_ratio,
+            ce.has_cash_evidence,
+            ce.n_unresolved,
+            ce.n_pending,
+            ce.n_no_ex_close,
+            ce.log_cash_factor
         FROM page g
         LEFT JOIN LATERAL (
             SELECT
@@ -879,6 +884,50 @@ AS $$
                   AND e.last_date_prior < (SELECT an.last_session FROM anchor an)
             ) x
         ) ev ON TRUE
+        -- TOTAL RETURN (#418): cash distributions that went ex after the
+        -- session and before the latest one, from mv_b3_cash_event (migration
+        -- 56). A level is the price-adjusted close divided by the product of
+        -- (1 + D / ex-session close) over those events, so the latest session
+        -- equals the price-adjusted close and every earlier level is lower by
+        -- the cash the holder received since. An event this function cannot
+        -- value blocks the level, it never counts as zero:
+        --   unresolved  no proven ISIN: blocks THIS issuer's same share class
+        --               (B3's typeStock = the first word of ESPECI), by the
+        --               ticker prefix the issuer has used, never by a guessed ISIN
+        --   pending     B3's supplement lists it for this ISIN, the history does not
+        --   no_ex_close resolved, but no ex-session close or no readable amount
+        -- The ISIN must also have at least one resolved distribution: an ISIN
+        -- the history never saw paying is reported as that, not as a price return.
+        LEFT JOIN LATERAL (
+            SELECT
+                COALESCE(bool_or(m.isin = g.isin AND m.kind IN ('cash', 'no_ex_close')), FALSE)
+                    AS has_cash_evidence,
+                count(*) FILTER (
+                    WHERE m.kind = 'unresolved'
+                      AND m.event_date >= g.trade_date
+                      AND m.event_date < (SELECT an.last_session FROM anchor an)
+                      AND m.type_stock = split_part(btrim(g.spec), ' ', 1)
+                ) AS n_unresolved,
+                count(*) FILTER (
+                    WHERE m.kind = 'pending' AND m.isin = g.isin
+                      AND m.event_date >= g.trade_date
+                      AND m.event_date < (SELECT an.last_session FROM anchor an)
+                ) AS n_pending,
+                count(*) FILTER (
+                    WHERE m.kind = 'no_ex_close' AND m.isin = g.isin
+                      AND m.event_date >= g.trade_date
+                      AND m.event_date < (SELECT an.last_session FROM anchor an)
+                ) AS n_no_ex_close,
+                sum(ln(m.factor)) FILTER (
+                    WHERE m.kind = 'cash' AND m.isin = g.isin
+                      AND m.event_date >= g.trade_date
+                      AND m.event_date < (SELECT an.last_session FROM anchor an)
+                ) AS log_cash_factor
+            FROM public.mv_b3_cash_event m
+            WHERE m.isin = g.isin
+               OR (m.kind = 'unresolved'
+                   AND m.stems @> ARRAY[left(g.ticker, 4)])
+        ) ce ON TRUE
     )
     -- Positional ORDER BY dodges OUT-parameter name ambiguity (trade_date is
     -- column 2). The subqueries are uncorrelated, so they run once, not per row.
@@ -900,9 +949,28 @@ AS $$
             WHEN j.n_unreadable > 0                   THEN 'unreadable event factor'
             WHEN j.close_unit IS NULL                 THEN 'no close on the session'
         END,
-        NULL::NUMERIC,
-        -- The cash history it needs is not backfilled yet (#418).
-        'cash distribution history not yet backfilled'::TEXT
+        CASE
+            WHEN j.in_universe
+             AND (SELECT pr.proven FROM proof pr)
+             AND j.n_unreadable = 0
+             AND j.close_unit IS NOT NULL
+             AND j.has_cash_evidence
+             AND j.n_unresolved = 0
+             AND j.n_pending = 0
+             AND j.n_no_ex_close = 0
+            THEN round(j.close_unit * exp(-COALESCE(j.log_share_ratio, 0)
+                                          - COALESCE(j.log_cash_factor, 0)), 6)
+        END,
+        CASE
+            WHEN NOT j.in_universe                    THEN 'outside research universe'
+            WHEN NOT (SELECT pr.proven FROM proof pr) THEN 'issuer corporate events not proven swept'
+            WHEN j.n_unreadable > 0                   THEN 'unreadable event factor'
+            WHEN j.close_unit IS NULL                 THEN 'no close on the session'
+            WHEN NOT j.has_cash_evidence              THEN 'no cash distribution resolved for this ISIN in B3''s history'
+            WHEN j.n_unresolved > 0                   THEN 'a later distribution of this issuer''s share class has no proven ISIN'
+            WHEN j.n_pending > 0                      THEN 'a later distribution B3 lists is missing from its cash history'
+            WHEN j.n_no_ex_close > 0                  THEN 'a later distribution has no ex-date close within 7 days'
+        END
     FROM adj j
     WHERE api.assert_row_cap((SELECT count(*) FROM page),
                              (SELECT pp.paging FROM params pp), 'quote_history')
@@ -911,7 +979,7 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT) IS
-    'Daily quote series for one ticker, oldest first. close is RAW, as traded (adjusted stays FALSE because it describes close). close_price_adjusted is the close per single share made continuous across splits (DESDOBRAMENTO), groupings (GRUPAMENTO) and bonus shares (BONIFICACAO) by B3''s rule, backward-adjusted to the ticker''s latest session: past levels change when an event lands, returns do not. Spin-offs, mergers, capital reductions and subscriptions are NOT adjusted. It is NULL, with close_price_adjusted_null_reason saying why, when the ISIN is outside the research universe (shares ACN; units CDA/UNT with a ticker ending 11), when the issuer''s corporate events are not proven swept, or when an event factor is unreadable. close_total_return is NULL until the cash distribution history is backfilled (close_total_return_null_reason says so). Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '''' = first page, then the last row''s trade_date as ''YYYY-MM-DD''; a page shorter than 1000 is the last. Or narrow p_from/p_to.';
+    'Daily quote series for one ticker, oldest first. close is RAW, as traded (adjusted stays FALSE because it describes close). close_price_adjusted is the close per single share made continuous across splits (DESDOBRAMENTO), groupings (GRUPAMENTO) and bonus shares (BONIFICACAO) by B3''s rule, backward-adjusted to the ticker''s latest session: past levels change when an event lands, returns do not. Spin-offs, mergers, capital reductions and subscriptions are NOT adjusted. It is NULL, with close_price_adjusted_null_reason saying why, when the ISIN is outside the research universe (shares ACN; units CDA/UNT with a ticker ending 11), when the issuer''s corporate events are not proven swept, or when an event factor is unreadable. close_total_return is the price-adjusted close with cash distributions reinvested at the ex-date close, anchored the same way: the level is divided by the product of (1 + cash / ex-session close) over later distributions (DIVIDENDO, JRS CAP PROPRIO gross of tax, RENDIMENTO, REST CAP DIN from B3''s full history, ISIN proven against the tape). It is NULL, with close_total_return_null_reason saying why, where close_price_adjusted is NULL, where the ISIN has no resolved distribution in B3''s history, where a later distribution of the issuer''s share class has no proven ISIN, where B3''s supplement lists a distribution the history lacks, or where a later distribution has no ex-date close within 7 days. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '''' = first page, then the last row''s trade_date as ''YYYY-MM-DD''; a page shorter than 1000 is the last. Or narrow p_from/p_to.';
 
 REVOKE ALL ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
@@ -5098,7 +5166,7 @@ STABLE
 AS $fn$
 SELECT $json${
   "kind": "catalog",
-  "version": 45,
+  "version": 46,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, the B3 securities-lending and investor-flow group, B3's DI1 futures and reference-rate curves, and Brazilian inflation — BACEN's IPCA series and IBGE's item tree with weights). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -5408,7 +5476,7 @@ SELECT $json${
     "close_return across a missing month is null, not a multi-month return.",
     "close_return is unadjusted: a 2:1 split reports roughly -50%. It is not a total return.",
     "close is the price as published, which for a paper quoted per lot refers to 1000 shares; close_unit divides it by the published quotation_factor so levels are comparable. Neither is corporate-action adjusted, and `adjusted` is FALSE on every row because it describes close. The one adjusted price is quote_history's close_price_adjusted (see the next constraint).",
-    "quote_history'S close_price_adjusted IS CONTINUOUS ACROSS SPLITS, GROUPINGS AND BONUS SHARES ONLY, AND IT IS ANCHORED TO THE LATEST SESSION. It is the close per single share divided by every later event's share ratio, by B3's rule: 1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for GRUPAMENTO. Past levels change when a new event lands and returns do not, so never read a past level as the price seen that day. Spin-offs, mergers, capital reductions and subscriptions are NOT adjusted. It is NULL, with close_price_adjusted_null_reason saying why, outside the research universe (shares ACN; units CDA/UNT with a ticker ending 11), when the issuer's corporate events are not proven swept, or when an event factor is unreadable: a NULL is never a raw close in disguise. close_total_return is NULL until the cash distribution history is backfilled.",
+    "quote_history'S close_price_adjusted IS CONTINUOUS ACROSS SPLITS, GROUPINGS AND BONUS SHARES ONLY, AND IT IS ANCHORED TO THE LATEST SESSION. It is the close per single share divided by every later event's share ratio, by B3's rule: 1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for GRUPAMENTO. Past levels change when a new event lands and returns do not, so never read a past level as the price seen that day. Spin-offs, mergers, capital reductions and subscriptions are NOT adjusted. It is NULL, with close_price_adjusted_null_reason saying why, outside the research universe (shares ACN; units CDA/UNT with a ticker ending 11), when the issuer's corporate events are not proven swept, or when an event factor is unreadable: a NULL is never a raw close in disguise. close_total_return is the price-adjusted close with cash distributions reinvested at the ex-date close, also anchored to the latest session: the level is divided by the product of (1 + cash / ex-session close) over every distribution that went ex after the session, so the latest session equals the price-adjusted close and earlier levels are lower by the cash paid since. Cash is B3's full history (DIVIDENDO, JRS CAP PROPRIO gross of withholding tax, RENDIMENTO, REST CAP DIN), counted only where its ISIN is proven against the tape. It is NULL, with close_total_return_null_reason saying why, where the price-adjusted close is NULL; where the ISIN has no resolved distribution in B3's history (a non-payer, or one B3's history does not match: the two look the same, so neither gets a price return labelled as a total return); where a later distribution of the issuer's share class has no proven ISIN; where a distribution B3's supplement lists is missing from the history; and where a later distribution has no ex-date close within 7 days. A NULL is never the price return in disguise.",
     "Daily close_return is null when the previous session is more than 7 calendar days back (halts, listing gaps), and null across a quotation-factor change — a fatcot flip rescales the quote with no market move behind it.",
     "Default windows are honest: with no explicit `to`, fund metrics end at each family's latest COMPLETE period (coverage() reports it as complete_through) — a partially-filed trailing month is not served. An explicit `to` serves the window verbatim, partial months included.",
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",

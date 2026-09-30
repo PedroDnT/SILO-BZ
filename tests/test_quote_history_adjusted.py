@@ -91,7 +91,6 @@ def test_every_null_carries_a_reason():
         "issuer corporate events not proven swept",
         "unreadable event factor",
         "no close on the session",
-        "cash distribution history not yet backfilled",
     ):
         assert f"'{reason}'" in body, reason
 

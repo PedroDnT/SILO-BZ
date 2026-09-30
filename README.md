@@ -316,8 +316,10 @@ same for everyone.
   describes `close`. The adjusted close divides earlier sessions by each split, grouping and
   bonus share ratio (B3's rule, verified against the tape in #372), is anchored to the latest
   session, and is NULL with a reason until the issuer's events are proven swept
-  (`b3_corporate_event_sweep`). Spin-offs and mergers are not adjusted, and the total-return
-  close stays NULL until the cash history is backfilled (#418).
+  (`b3_corporate_event_sweep`). Spin-offs and mergers are not adjusted. Its sibling
+  `close_total_return` reinvests B3's cash distributions on the ex session (catalog v46, #418)
+  and is NULL with a reason wherever a distribution cannot be valued
+  (`docs/reference/API.md`, "The total-return close").
 
 ## What's intentionally not here
 
