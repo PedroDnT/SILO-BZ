@@ -8,7 +8,7 @@ Times in UTC-3, with UTC in parentheses.
                              ├─ run_daily: CVM → BACEN → IBGE → B3 → BDI → ANBIMA → ETF
                              │       any source failed → exit 1 → the next three steps are skipped
                              ├─ ANALYZE
-                             ├─ apply_analytical.sh   rebuilds the analytical matviews and api; smoke guards
+                             ├─ apply_analytical.sh   rebuilds or refreshes every matview, and api; smoke guards
                              ├─ Vercel deploy hook    dashboard build, 17 to 45 min
                              └─ rates/market · FNET register · fnet-diff   (run even after a failure)
 04:30 (07:30)  health         read-only gate: errors, stuck slices, fact_fund_monthly lag, disk, anon exposure
@@ -45,8 +45,8 @@ Times in UTC-3, with UTC in parentheses.
 ## Not automated
 
 - `scripts/verify_pipeline.py` is run by hand.
-- No check watches the freshness of `mv_b3_isin_subtype` or
-  `mv_b3_monthly_activity`.
+- DB Health checks matview lag on `fact_fund_monthly` only. The other matviews
+  are refreshed by the same apply, so they go stale together with it.
 - The Scout, Builder and Sentinel agents are defined in `.claude/agents/`, but
   no workflow or routine schedules them (checked 2026-09-29).
 

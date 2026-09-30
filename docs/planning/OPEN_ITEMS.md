@@ -3,7 +3,8 @@
 Written 2026-09-18, closing the session that shipped catalog v28 and v29.
 Everything here is **deliberately not done**, not forgotten. Nothing in this
 list is broken in production — see "Known good" below. The one exception is
-item 16, added 2026-09-30: a defect that is live.
+item 16, added 2026-09-30: a defect that stays live until the first analytics
+apply after its fix.
 
 This is the **single** register of open work. Items 7–11 were merged the same day
 as a second list, in `README.md` of this directory, written by another session
@@ -463,8 +464,42 @@ Neither blocks writing code; each blocks a demo number.
 
 ## 16. Two B3 matviews have no refresh path (found 2026-09-29)
 
-**Reported 2026-09-30, not prioritized.** Found while tracing the system for
-`docs/architecture/`. Nothing here is fixed or started.
+**Fixed in code 2026-09-30** (`claude/refresh-b3-tape-matviews`), on the
+owner's instruction. **Not live until `apply_analytical.sh` runs**, and not yet
+confirmed on the live database.
+
+`src/store/analytical/22_b3_tape_matviews.sql` refreshes both matviews in every
+analytical apply: the ISIN map first, then the monthly aggregate, CONCURRENTLY
+so no reader is blocked, with a plain `REFRESH` for an empty matview. It is a
+file of its own because `apply_analytical.sh` downgrades a failure of
+`08_cron_schedules.sql` to a warning. pg_cron was not enabled: that is an
+extension change on production, its jobs fire at 03:12 to 03:40 UTC-3 (06:12
+to 06:40 UTC) while the ingest is still writing, and the apply already is the
+daily refresh of every other matview.
+
+Proved on a local Postgres 16 with the schema and the whole analytical layer
+applied: with today's code, new tape rows reach neither matview; with the new
+file they reach both, a second run changes nothing, an emptied matview is
+refilled, and a failed refresh fails the apply. `tests/test_b3_tape_matview_refresh.py`
+pins it, and fails if the refresh is removed or moved into the cron file.
+
+To close this item, check on the live database after the first apply:
+
+1. `mv_b3_monthly_activity` has a 2026-09 period.
+2. August on `tpmerc = '010'` shows 21 sessions and about R$ 529.8 bn.
+3. None of the fund-quota ISINs traded in the last 60 days is missing from
+   `mv_b3_isin_subtype`.
+4. `/markets` on the public URL shows it, after the publish check has run.
+
+**Going live, 2026-09-30.** `daily_ingest` with `mode=analytics-only` and
+`rebuild_dashboard=true` was dispatched at 14:37 UTC-3 (17:37 UTC), run
+36752752981, on `main` at the merge of this fix. Before it, the public `/markets`
+data (`b3_monthly_volume`) read August 2026 as R$ 480.96 bn over 19 sessions.
+The apply gains one full pass over the tape: the matview's first population
+took 2 min 10 s on production (Daily CVM Ingest run 33207753376, 2026-08-28,
+read from the log timestamps).
+
+The record of what was found:
 
 `mv_b3_isin_subtype` and `mv_b3_monthly_activity` are created in `schema.sql`
 (migrations 27 and 30) `WITH NO DATA`, and the `REFRESH` beside each one runs
@@ -497,5 +532,9 @@ No check covers it. DB Health's matview-lag check reads `fact_fund_monthly`
 only, and `docs/DATABASE_MAINTENANCE.md` still says the analytical re-create
 "is the daily refresh", which is not true for these two.
 
-Open: where the refresh should live (enable pg_cron, or a step of the daily
-run). Not decided.
+Decided 2026-09-30: the refresh is a step of the daily run (the analytical
+apply), not pg_cron. See the top of this item.
+
+Found alongside, still open: `mv_etf_landscape` exists on the live database and
+is defined nowhere in this repository, so nothing refreshes it either. Nothing
+in this repository reads it.
