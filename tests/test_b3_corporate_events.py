@@ -306,6 +306,7 @@ async def test_empty_supplement_does_not_fail_the_slice_when_siblings_succeed():
     with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
          patch("src.pipeline.ingest_b3_events.ingest_b3_corporate_events",
                return_value=11632) as ingest, \
+         patch("src.pipeline.ingest_b3_events.record_sweep_proofs") as proofs, \
          patch("src.fetchers.b3_corporate_events_fetcher.B3CorporateEventsFetcher") as Fetcher:
         fetcher = Fetcher.return_value
 
@@ -321,6 +322,8 @@ async def test_empty_supplement_does_not_fail_the_slice_when_siblings_succeed():
 
     assert n == 11632
     assert ingest.called
+    # ADMF has no supplement, so it gets no proof and stays unproven.
+    assert proofs.call_args[0][1] == {"PETR": 1, "VALE": 1}
     assert finishes[-1]["status"] == "ok"
     assert finishes[-1]["error"] is None
 
@@ -330,6 +333,7 @@ async def test_all_empty_supplements_still_fail_the_slice():
     """A malformed token empties every issuer; that must not look like a clean sweep."""
     with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
          patch("src.pipeline.ingest_b3_events.ingest_b3_corporate_events") as ingest, \
+         patch("src.pipeline.ingest_b3_events.record_sweep_proofs") as proofs, \
          patch("src.fetchers.b3_corporate_events_fetcher.B3CorporateEventsFetcher") as Fetcher:
         Fetcher.return_value.fetch_events.side_effect = B3SupplementEmpty("empty")
         ing = B3Ingestor(fetcher=MagicMock())
@@ -338,6 +342,7 @@ async def test_all_empty_supplements_still_fail_the_slice():
 
     assert n == 0
     ingest.assert_not_called()
+    assert proofs.call_args[0][1] == {}
     assert finishes[-1]["status"] == "error"
     assert "all 2 issuers returned an empty supplement" in finishes[-1]["error"]
 
@@ -348,6 +353,7 @@ async def test_transport_failure_still_fails_the_slice_when_siblings_succeed():
     with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
          patch("src.pipeline.ingest_b3_events.ingest_b3_corporate_events",
                return_value=10), \
+         patch("src.pipeline.ingest_b3_events.record_sweep_proofs") as proofs, \
          patch("src.fetchers.b3_corporate_events_fetcher.B3CorporateEventsFetcher") as Fetcher:
         fetcher = Fetcher.return_value
 
@@ -362,6 +368,95 @@ async def test_transport_failure_still_fails_the_slice_when_siblings_succeed():
         n = await ing.ingest_corporate_events(issuers=["PETR", "VALE"])
 
     assert n == 10
+    assert proofs.call_args[0][1] == {"VALE": 1}
     assert finishes[-1]["status"] == "error"
     assert "1/2 issuers failed" in finishes[-1]["error"]
     assert "SSL SYSCALL" in finishes[-1]["error"]
+
+
+# --------------------------------------------------------------------------
+# #413: every issuer traded since the tape start is swept, and a code is
+# recorded as proven only after its events are stored.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_covers_every_issuer_since_the_tape_start():
+    """The old 400-day window left about 115 of 452 equity/unit prefixes out."""
+    with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
+         patch("src.pipeline.ingest_b3_events.ingest_b3_corporate_events", return_value=1), \
+         patch("src.pipeline.ingest_b3_events.record_sweep_proofs"), \
+         patch("src.fetchers.b3_corporate_events_fetcher.B3CorporateEventsFetcher") as Fetcher:
+        Fetcher.return_value.fetch_events.side_effect = lambda code: [_event_row(code)]
+        ing = B3Ingestor(fetcher=MagicMock())
+        _finish_recorder(ing)
+        ing._traded_issuers = MagicMock(return_value=["PETR"])
+        await ing.ingest_corporate_events()
+
+    ing._traded_issuers.assert_called_once_with(since=date(2019, 1, 2))
+
+
+@pytest.mark.asyncio
+async def test_a_proof_is_recorded_only_after_its_events_are_stored():
+    order: list[str] = []
+    with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
+         patch("src.pipeline.ingest_b3_events.ingest_b3_corporate_events",
+               side_effect=lambda conn, rows: order.append("events") or len(rows)), \
+         patch("src.pipeline.ingest_b3_events.record_sweep_proofs",
+               side_effect=lambda conn, n, run_id: order.append("proofs") or len(n)), \
+         patch("src.fetchers.b3_corporate_events_fetcher.B3CorporateEventsFetcher") as Fetcher:
+        Fetcher.return_value.fetch_events.side_effect = lambda code: [_event_row(code)]
+        ing = B3Ingestor(fetcher=MagicMock())
+        _finish_recorder(ing)
+        await ing.ingest_corporate_events(issuers=["PETR"])
+
+    assert order == ["events", "proofs"]
+
+
+@pytest.mark.asyncio
+async def test_no_proof_survives_a_failed_event_upsert():
+    with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
+         patch("src.pipeline.ingest_b3_events.ingest_b3_corporate_events",
+               side_effect=RuntimeError("upsert failed")), \
+         patch("src.pipeline.ingest_b3_events.record_sweep_proofs") as proofs, \
+         patch("src.fetchers.b3_corporate_events_fetcher.B3CorporateEventsFetcher") as Fetcher:
+        Fetcher.return_value.fetch_events.side_effect = lambda code: [_event_row(code)]
+        ing = B3Ingestor(fetcher=MagicMock())
+        _finish_recorder(ing)
+        with pytest.raises(RuntimeError):
+            await ing.ingest_corporate_events(issuers=["PETR"])
+
+    proofs.assert_not_called()
+
+
+def test_record_sweep_proofs_writes_one_row_per_code():
+    from src.pipeline.ingest_b3_events import record_sweep_proofs
+
+    with patch("src.store.pg_client.upsert_rows", return_value=2) as upsert:
+        n = record_sweep_proofs(MagicMock(), {"VALE": 0, "PETR": 3}, "run-1")
+
+    assert n == 2
+    _, table, records, conflict = upsert.call_args[0]
+    assert table == "b3_corporate_event_sweep"
+    assert conflict == "issuing_company"
+    assert [(r["issuing_company"], r["n_events"], r["run_id"]) for r in records] == [
+        ("PETR", 3, "run-1"),
+        ("VALE", 0, "run-1"),
+    ]
+    assert all(r["proven_at"].tzinfo is not None for r in records)
+
+
+def test_record_sweep_proofs_writes_nothing_for_an_empty_sweep():
+    from src.pipeline.ingest_b3_events import record_sweep_proofs
+
+    with patch("src.store.pg_client.upsert_rows") as upsert:
+        assert record_sweep_proofs(MagicMock(), {}, "run-1") == 0
+    upsert.assert_not_called()
+
+
+def test_migration_53_keys_the_proof_on_the_issuing_code():
+    sql = (ROOT / "src/store/migrations/53_b3_corporate_event_sweep.sql").read_text()
+    schema = (ROOT / "src/store/schema.sql").read_text()
+    for text in (sql, schema):
+        assert "CREATE TABLE IF NOT EXISTS b3_corporate_event_sweep" in text
+        assert "CONSTRAINT uq_b3_corporate_event_sweep UNIQUE (issuing_company)" in text

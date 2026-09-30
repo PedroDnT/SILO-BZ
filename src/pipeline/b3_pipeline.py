@@ -27,6 +27,11 @@ logger = logging.getLogger(__name__)
 
 _UPSERT_BATCH = 5000
 
+# The first session of the COTAHIST tape SILO holds. The corporate-event sweep
+# covers every issuer that printed since then, so a price-adjusted close has
+# its issuer's events for the whole window it can serve (#413).
+TAPE_START = date(2019, 1, 2)
+
 
 class B3Ingestor:
     def __init__(
@@ -141,7 +146,9 @@ class B3Ingestor:
         logger.info("B3 COTAHIST year %s upserted %d rows", year, n)
         return n
 
-    def _traded_issuers(self, lookback_days: int = 400) -> List[str]:
+    def _traded_issuers(
+        self, lookback_days: int = 400, since: Optional[date] = None
+    ) -> List[str]:
         """B3 issuing-company codes for tickers that actually printed recently.
 
         The corporate-events endpoint is one request per issuer and B3 lists
@@ -154,17 +161,33 @@ class B3Ingestor:
         one and are skipped rather than padded. That prefix is not always
         B3's listed-company catalog key (ADMF3 trades as B100 S.A.); those
         codes come back as ``B3SupplementEmpty`` and are not slice errors.
+
+        ``since`` replaces the lookback with a fixed first session. The
+        corporate-event sweep passes the tape start, so an issuer that stopped
+        trading more than 400 days ago still has its events (#413).
         """
-        sql = """
-            SELECT DISTINCT left(codneg, 4) AS issuer
-              FROM b3_cotahist
-             WHERE tpmerc = '010'
-               AND length(codneg) >= 4
-               AND trade_date > (SELECT max(trade_date) FROM b3_cotahist) - %s
-             ORDER BY issuer
-        """
+        if since is not None:
+            sql = """
+                SELECT DISTINCT left(codneg, 4) AS issuer
+                  FROM b3_cotahist
+                 WHERE tpmerc = '010'
+                   AND length(codneg) >= 4
+                   AND trade_date >= %s
+                 ORDER BY issuer
+            """
+            params: Tuple[Any, ...] = (since,)
+        else:
+            sql = """
+                SELECT DISTINCT left(codneg, 4) AS issuer
+                  FROM b3_cotahist
+                 WHERE tpmerc = '010'
+                   AND length(codneg) >= 4
+                   AND trade_date > (SELECT max(trade_date) FROM b3_cotahist) - %s
+                 ORDER BY issuer
+            """
+            params = (lookback_days,)
         with self._supabase.cursor() as cur:
-            cur.execute(sql, (lookback_days,))
+            cur.execute(sql, params)
             return [r[0] for r in cur.fetchall() if r and r[0]]
 
     def _tape_names(
@@ -207,9 +230,9 @@ class B3Ingestor:
     async def ingest_corporate_events(
         self,
         issuers: Optional[List[str]] = None,
-        lookback_days: int = 400,
+        since: date = TAPE_START,
     ) -> int:
-        """Fetch published corporate events for the traded universe.
+        """Fetch published corporate events for every issuer traded since ``since``.
 
         One request per issuer, so a failure on ONE issuer must not abandon
         the sweep — but it must not vanish either. Transport/parse failures
@@ -221,17 +244,25 @@ class B3Ingestor:
         not fabricated, and do not fail the slice when any sibling returned
         a body. An all-empty sweep is still an error — that is the
         malformed-token case.
+
+        Every code whose supplement came back is recorded in
+        b3_corporate_event_sweep once its events are stored: the proof that
+        api.quote_history needs before it serves a price-adjusted close for
+        that issuer (#413).
         """
         from src.fetchers.b3_corporate_events_fetcher import (
             B3CorporateEventsFetcher,
             B3SupplementEmpty,
         )
-        from src.pipeline.ingest_b3_events import ingest_b3_corporate_events
+        from src.pipeline.ingest_b3_events import (
+            ingest_b3_corporate_events,
+            record_sweep_proofs,
+        )
 
         run_id = str(uuid4())
         self._log_start(run_id, "corporate_events", None, None)
         try:
-            codes = issuers if issuers is not None else self._traded_issuers(lookback_days)
+            codes = issuers if issuers is not None else self._traded_issuers(since=since)
             if not codes:
                 self._log_finish(run_id, 0, skipped=True)
                 logger.info("B3 corporate events: no traded issuers found, skipped")
@@ -241,17 +272,24 @@ class B3Ingestor:
             rows: List[Dict[str, Any]] = []
             failures: List[str] = []
             missing: List[str] = []
-            fetched = 0
+            n_events: Dict[str, int] = {}
             for code in codes:
                 try:
-                    rows.extend(fetcher.fetch_events(code))
-                    fetched += 1
+                    code_rows = fetcher.fetch_events(code)
                 except B3SupplementEmpty:
                     missing.append(code)
+                    continue
                 except Exception as exc:  # noqa: BLE001 - counted, then reported
                     failures.append(f"{code}: {exc}")
+                    continue
+                rows.extend(code_rows)
+                n_events[code] = len(code_rows)
+            fetched = len(n_events)
 
             total = ingest_b3_corporate_events(self._supabase, rows) if rows else 0
+            # After the events, never before: a proof must not outlive a
+            # failed upsert of the events it vouches for.
+            record_sweep_proofs(self._supabase, n_events, run_id)
 
             if missing:
                 logger.warning(

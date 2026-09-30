@@ -1875,6 +1875,21 @@ COMMENT ON TABLE b3_cash_dividend IS
 -- cia_ticker, which only migration 25 creates, so on a fresh database this
 -- file runs before that table exists.
 
+-- Per-issuer proof that the corporate-event sweep covered a code (migration
+-- 53, #413). Written only for a code whose supplement came back and whose
+-- events were stored in the same run; api.quote_history serves a
+-- price-adjusted close only for proven codes.
+CREATE TABLE IF NOT EXISTS b3_corporate_event_sweep (
+    issuing_company TEXT        NOT NULL,
+    n_events        INT         NOT NULL,
+    proven_at       TIMESTAMPTZ NOT NULL,
+    run_id          TEXT,
+    CONSTRAINT uq_b3_corporate_event_sweep UNIQUE (issuing_company)
+);
+
+COMMENT ON TABLE b3_corporate_event_sweep IS
+    'One row per B3 issuing code whose listed-company supplement (its full published corporate-event history) came back and was stored by the corporate-event sweep; proven_at is the latest such run. A code with no row is unproven, and api.quote_history serves its price-adjusted close as NULL with a reason.';
+
 -- ---------------------------------------------------------------------------
 -- B3 instrument typing v3 (migration 27): index/right/bonus split out of the
 -- residual bucket; fund subtype falls back to the ISIN's own classified
