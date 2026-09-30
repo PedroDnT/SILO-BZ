@@ -43,7 +43,7 @@ def _body() -> str:
 
 def test_the_function_exists_and_is_granted_to_every_role() -> None:
     assert f"CREATE OR REPLACE FUNCTION api.{FN}(" in SQL
-    args = r"TEXT, DATE, DATE, TEXT, TEXT"
+    args = r"TEXT, DATE, DATE, TEXT, TEXT, DATE"
     assert f"REVOKE ALL ON FUNCTION api.{FN}({args}) FROM PUBLIC;" in SQL
     assert f"GRANT EXECUTE ON FUNCTION api.{FN}({args}) TO anon, authenticated;" in SQL
     assert f"GRANT EXECUTE ON FUNCTION api.{FN}({args}) TO silo_api;" in SQL, (
