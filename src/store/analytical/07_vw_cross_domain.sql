@@ -100,7 +100,7 @@ UNION ALL
 SELECT
   'security'::TEXT,
   s.instrument_type,
-  s.cnpj_securit || ':' || s.codigo_identificacao,
+  s.cnpj_securit || ':' || s.codigo_identificacao || ':' || s.numero_serie,
   s.period,
   s.rentabilidade_mes,
   s.valor_certificados

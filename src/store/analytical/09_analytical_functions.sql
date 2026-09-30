@@ -880,6 +880,8 @@ $$;
 -- the rest (measured 2026-09-25: 2026-08 had 24 rows against 2026-07's 3,260,
 -- so the default showed 10 distressed series instead of 173).
 -- Distressed statuses: Inadimplente, Em atraso, Cancelado.
+-- One row per series. The flow columns are the certificate's, so series of
+-- one certificate carry the same figures (05_fact_security_monthly.sql).
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION distressed_securities(
     p_instrument_type TEXT  DEFAULT NULL,
@@ -940,7 +942,7 @@ AS $$
     WHERE s.period = rp.eff_period
       AND s.situacao_mes IN ('Inadimplente', 'Em atraso', 'Cancelado')
       AND (p_instrument_type IS NULL OR s.instrument_type = p_instrument_type)
-    ORDER BY s.instrument_type, s.cnpj_securit, s.codigo_identificacao
+    ORDER BY s.instrument_type, s.cnpj_securit, s.codigo_identificacao, s.numero_serie
 $$;
 
 
@@ -1004,7 +1006,8 @@ AS $$
     SELECT
         'security'                                      AS domain,
         s.instrument_type                               AS instrument,
-        s.cnpj_securit || ':' || s.codigo_identificacao AS identifier,
+        s.cnpj_securit || ':' || s.codigo_identificacao
+            || ':' || s.numero_serie                    AS identifier,
         s.period,
         s.rentabilidade_mes                             AS yield_mes,
         s.valor_certificados                            AS aum,
