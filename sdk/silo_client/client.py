@@ -24,6 +24,14 @@ Datish = Union[str, date, None]
 #: indistinguishable from a truncated one unless the server tells us the total.
 SERVER_ROW_CAP = 1000
 
+#: The public SILO project and its publishable key. The key is public by design
+#: (it names the project, not the caller: the user JWT does that) and is printed
+#: in the docs, so it ships as the default. `url=`/`key=` or SILO_URL /
+#: SILO_ANON_KEY override both, which is also how a rotated key is picked up
+#: without a release.
+DEFAULT_URL = "https://zcjbtpxuhdekpwcxmepn.supabase.co"
+DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
+
 #: The catalog version this client was written against (serve/catalog.py
 #: CATALOG_VERSION). The server's catalog() carries its own; when the two
 #: differ the client warns once — a newer server has endpoints, metrics or
@@ -177,9 +185,10 @@ class SiloClient:
 
     Args:
         url:  Supabase project base (https://<ref>.supabase.co). Defaults to
-              the SILO_URL environment variable.
-        key:  publishable (anon) key. Defaults to SILO_ANON_KEY. The shared
-              key printed in the docs is TESTING ONLY.
+              the SILO_URL environment variable, then DEFAULT_URL.
+        key:  publishable (anon) key. Defaults to SILO_ANON_KEY, then
+              DEFAULT_ANON_KEY. It names the project, not the caller; pass
+              `token=` (or SILO_TOKEN) to be signed in.
         transport: optional httpx transport (tests inject a MockTransport).
     """
 
@@ -192,12 +201,8 @@ class SiloClient:
         retries: int = 2,
         transport: Optional[httpx.BaseTransport] = None,
     ) -> None:
-        base = (url or os.environ.get("SILO_URL", "")).rstrip("/")
-        if not base:
-            raise ValueError("url is required (or set SILO_URL)")
-        self._key = key or os.environ.get("SILO_ANON_KEY", "")
-        if not self._key:
-            raise ValueError("key is required (or set SILO_ANON_KEY)")
+        base = (url or os.environ.get("SILO_URL") or DEFAULT_URL).rstrip("/")
+        self._key = key or os.environ.get("SILO_ANON_KEY") or DEFAULT_ANON_KEY
         self._token = token or os.environ.get("SILO_TOKEN") or None
         self._rest = f"{base}/rest/v1"
 

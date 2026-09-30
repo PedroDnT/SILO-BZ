@@ -39,6 +39,8 @@ server-wide and identical for every caller.
 """
 
 from .client import (
+    DEFAULT_ANON_KEY,
+    DEFAULT_URL,
     KNOWN_CATALOG_VERSION,
     SERVER_ROW_CAP,
     SiloCatalogDrift,
@@ -52,7 +54,7 @@ from .client import (
 #: Kept equal to sdk/pyproject.toml's `version` by a test. 0.7.0 adds the five
 #: B3 securities-lending / investor-flow views and reconciles the two files,
 #: which had drifted to 0.6.0 here against 0.4.0 in the package metadata.
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 __all__ = [
     "SiloClient",
@@ -61,6 +63,8 @@ __all__ = [
     "SiloOverCap",
     "SiloTimeout",
     "SiloCatalogDrift",
+    "DEFAULT_ANON_KEY",
+    "DEFAULT_URL",
     "SERVER_ROW_CAP",
     "KNOWN_CATALOG_VERSION",
     "__version__",
