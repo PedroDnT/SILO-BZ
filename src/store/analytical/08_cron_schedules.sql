@@ -13,6 +13,14 @@
 --
 -- Remove old bacen schedule if it was previously registered:
 --   SELECT cron.unschedule('refresh-fact-bacen-monthly');
+--
+-- NOTHING MAY DEPEND ON THIS FILE FOR ITS REFRESH. The jobs below run only
+-- where pg_cron is installed, and the live database has none (checked
+-- 2026-09-29). Every matview is refreshed by the apply itself: most are dropped
+-- and re-created by their own file, and the two schema.sql owns
+-- (mv_b3_isin_subtype, mv_b3_monthly_activity) by 22_b3_tape_matviews.sql.
+-- Those two sat frozen for a month while this file was their only refresh
+-- (docs/planning/OPEN_ITEMS.md item 16).
 -- =============================================================================
 
 BEGIN;

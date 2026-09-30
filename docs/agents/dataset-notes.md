@@ -84,6 +84,8 @@ functions (16–17). ETFs are carved out of the fund universe and ranked separat
 `etf_daily` is empty for post-CVM-175 share classes (see the ETF doc).
 `mv_savings_flow_monthly` / `api.mv_savings_flow_monthly` (18) is reproduced as-found so
 CASCADE recreates of `fact_fund_monthly` cannot destroy it; nothing in this repo reads it.
+`mv_b3_isin_subtype` and `mv_b3_monthly_activity` are created in `schema.sql`, not here,
+and `22_b3_tape_matviews.sql` refreshes them in the same apply.
 Schema `api` is 19 (the contract, `catalog()` / `coverage()`, `api.assert_row_cap`),
 20–21 (short interest, lending participants), 23 (screens) and 24 (FNET). The row cap
 and what a new endpoint needs are in `AGENTS.md`, "Adding an API endpoint".
