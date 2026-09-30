@@ -1890,6 +1890,22 @@ CREATE TABLE IF NOT EXISTS b3_corporate_event_sweep (
 COMMENT ON TABLE b3_corporate_event_sweep IS
     'One row per B3 issuing code whose listed-company supplement (its full published corporate-event history) came back and was stored by the corporate-event sweep; proven_at is the latest such run. A code with no row is unproven, and api.quote_history serves its price-adjusted close as NULL with a reason.';
 
+-- Daily levels of B3-published indices (migration 55, #412): IBOV from
+-- 1968-01-02, as published. divisor_step marks the first session after B3
+-- re-scaled the series; the level is not adjusted. Served by api.index_history.
+CREATE TABLE IF NOT EXISTS b3_index_level (
+    index_code   TEXT        NOT NULL,
+    trade_date   DATE        NOT NULL,
+    level        NUMERIC(24, 6) NOT NULL CHECK (level > 0),
+    divisor_step BOOLEAN     NOT NULL DEFAULT FALSE,
+    source       TEXT        NOT NULL DEFAULT 'b3_index_statistics',
+    fetched_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_b3_index_level UNIQUE (index_code, trade_date)
+);
+
+COMMENT ON TABLE b3_index_level IS
+    'Daily levels of B3-published indices (IBOV from 1968-01-02), as published by B3''s index statistics proxy, one row per index and session. divisor_step marks the first session after B3 re-scaled the series: the level is not adjusted, so a ratio across a step is not a return. Served by api.index_history.';
+
 -- ---------------------------------------------------------------------------
 -- B3 instrument typing v3 (migration 27): index/right/bonus split out of the
 -- residual bucket; fund subtype falls back to the ISIN's own classified

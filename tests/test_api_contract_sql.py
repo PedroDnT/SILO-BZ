@@ -111,6 +111,11 @@ RATES_FUNCTIONS = (
 # owns the body). Raise-only.
 RESEARCH_FUNCTIONS = ("api.research_universe",)
 
+# v45: the benchmark index in 29_api_index.sql (tests/test_index_history_contract.py
+# owns the body). It PAGES with a date cursor, like quote_history, so it is
+# published under limits.page.functions.paged, not raise_only.
+INDEX_FUNCTIONS = ("api.index_history",)
+
 # The FNET register (v33) and its restatement diff (v40) live in
 # 24_api_fnet.sql, for the same reason: FUNCS does not carry them,
 # tests/test_fnet_api_contract.py owns the bodies. All three are raise-only.
@@ -209,6 +214,7 @@ INTERNAL_FUNCTIONS = {
     "api.close_adj_status",
     "api.close_adj_ratio",
     "api.assert_close_adj",
+    "api.close_total_return_cash",
 }
 
 
@@ -631,9 +637,11 @@ def test_row_cap_helper_page_size_is_the_one_constant():
     assert set(page["all"]) == {
         f.split(".", 1)[1]
         for f in CAPPED_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS + WAVE3_FUNCTIONS
-        + RATES_FUNCTIONS + RESEARCH_FUNCTIONS
+        + RATES_FUNCTIONS + RESEARCH_FUNCTIONS + INDEX_FUNCTIONS
     }
-    assert set(page["functions"]["paged"]) == {f.split(".", 1)[1] for f in PAGED_FUNCTIONS}
+    assert set(page["functions"]["paged"]) == {
+        f.split(".", 1)[1] for f in PAGED_FUNCTIONS + INDEX_FUNCTIONS
+    }
     assert set(page["functions"]["raise_only"]) == {
         f.split(".", 1)[1]
         for f in RAISE_ONLY_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS + WAVE3_FUNCTIONS
@@ -655,7 +663,7 @@ def test_row_cap_error_says_why_and_how():
     assert "v_why, v_how" in raise_at, "the message itself must carry both halves"
     # The HOW is per function: a cursor for the three that page, a fund pin
     # and an explicit head for the FIDC trio, thresholds for the screens.
-    for name in ("panel", "quote_history", "fund_nav"):
+    for name in ("panel", "quote_history", "fund_nav", "index_history"):
         assert f"p_fn = '{name}'" in helper
     assert "p_entity_type" in helper, "fund_nav paging requires a family; the hint must say so"
     assert "p_fn = 'fidc_cedentes'" in helper
@@ -1500,14 +1508,15 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
     # thirty-seven since v40 (fund_restatement_diff), thirty-nine since v41
     # (fund_holdings, fund_debentures stopped trimming), forty-three since v42
     # (future_curve, future_series, curve, curve_history), forty-four since v43
-    # (research_universe). The
+    # (research_universe), forty-five since v45 (index_history, which pages). The
     # prose said "eight" for two versions while listing nine — pin the word
     # to the tuples so it cannot drift again.
-    assert "forty-four" in c.lower().split(), "all forty-four capped functions refuse"
+    assert "forty-five" in c.lower().split(), "all forty-five capped functions refuse"
     assert (
         len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) + len(FNET_FUNCTIONS)
         + len(WAVE3_FUNCTIONS) + len(RATES_FUNCTIONS) + len(RESEARCH_FUNCTIONS)
-    ) == 44
+        + len(INDEX_FUNCTIONS)
+    ) == 45
     for fn in WAVE3_FUNCTIONS:
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
     for fn in HEAD_FUNCTIONS:
@@ -1516,7 +1525,7 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
     for fn in RATES_FUNCTIONS:
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
-    for fn in RESEARCH_FUNCTIONS:
+    for fn in RESEARCH_FUNCTIONS + INDEX_FUNCTIONS:
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
 
 

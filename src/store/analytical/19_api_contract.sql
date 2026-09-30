@@ -216,6 +216,10 @@ BEGIN
                 'Page with the cursor: send p_after = '''' for the first page, then the last row''s '
                 || 'trade_date as YYYY-MM-DD; a page shorter than 1000 rows is the last. '
                 || 'Or narrow p_from/p_to.'
+            WHEN p_fn = 'index_history' THEN
+                'Page with the cursor: send p_after = '''' for the first page, then the last row''s '
+                || 'trade_date as YYYY-MM-DD; a page shorter than 1000 rows is the last. '
+                || 'Or narrow p_from/p_to.'
             WHEN p_fn = 'fund_nav' THEN
                 'Page with the cursor: send p_after = '''' for the first page, then the last row''s '
                 || 'period as YYYY-MM-DD, and pass p_entity_type (paging requires one family); '
@@ -784,7 +788,9 @@ AS $$
         ('coverage_end',     'date',    FALSE, 'Last session this ticker printed under this ISIN on the tape.'),
         ('prior_no_trade_sessions', 'integer', FALSE, 'Market sessions (days the B3 cash tape printed) since this ticker''s previous row in which it printed nothing. COTAHIST lists only papers that traded, so a missing session is a session with no trade; holidays are not sessions.'),
         ('events_proven_at', 'string',  FALSE, 'When the issuer''s corporate-event history was last proven complete (b3_corporate_event_sweep), ISO 8601 UTC. Null outside shares and units or when not proven.'),
-        ('data_revision',    'string',  FALSE, 'Revision of the data behind this response: the latest successful load of the B3 cash tape, the corporate events or their proof, ISO 8601 UTC. It changes when adjusted levels can change; pages with different revisions must not be combined.')
+        ('data_revision',    'string',  FALSE, 'Revision of the data behind this response: the latest successful load of the B3 cash tape, the corporate events or their proof, ISO 8601 UTC. It changes when adjusted levels can change; pages with different revisions must not be combined.'),
+        ('close_total_return', 'number', FALSE, 'close_adj with cash distributions reinvested at the ex-date close (#418): divided by the product of (1 + cash / ex-session close) over later distributions (DIVIDENDO, JRS CAP PROPRIO gross of tax, RENDIMENTO, REST CAP DIN from B3''s full history, ISIN proven against the tape). 6 decimal places. NULL, with close_total_return_null_reason, where it cannot be valued.'),
+        ('close_total_return_null_reason', 'string', FALSE, 'Why close_total_return is NULL on the session; null when it has a value.')
 $$;
 
 COMMENT ON FUNCTION api.quote_history_fields() IS
@@ -987,6 +993,63 @@ COMMENT ON FUNCTION api.assert_close_adj(TEXT, TEXT, TEXT, DATE, DATE) IS
 
 REVOKE ALL ON FUNCTION api.assert_close_adj(TEXT, TEXT, TEXT, DATE, DATE) FROM PUBLIC;
 
+-- Internal. TOTAL RETURN (#418), unchanged in meaning from catalog v46: the
+-- cash distributions that went ex after the session and before the anchor,
+-- from mv_b3_cash_event (migration 56). The total-return level is close_adj
+-- divided by exp(log_cash_factor), the product of (1 + D / ex-session close)
+-- over those events. An event it cannot value blocks the level, never counts
+-- as zero:
+--   unresolved  no proven ISIN: blocks THIS issuer's same share class (B3's
+--               typeStock = the first word of ESPECI), by the ticker prefix
+--               the issuer has used, never by a guessed ISIN
+--   pending     B3's supplement lists it for this ISIN, the history does not
+--   no_ex_close resolved, but no ex-session close or no readable amount
+-- The ISIN must also have at least one resolved distribution: an ISIN the
+-- history never saw paying is reported as that, not as a price return.
+CREATE OR REPLACE FUNCTION api.close_total_return_cash(
+    p_isin TEXT, p_ticker TEXT, p_spec TEXT, p_trade_date DATE, p_anchor DATE
+)
+RETURNS TABLE (
+    has_cash_evidence BOOLEAN,
+    n_unresolved      BIGINT,
+    n_pending         BIGINT,
+    n_no_ex_close     BIGINT,
+    log_cash_factor   NUMERIC
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+    SELECT
+        COALESCE(bool_or(m.isin = p_isin AND m.kind IN ('cash', 'no_ex_close')), FALSE),
+        count(*) FILTER (
+            WHERE m.kind = 'unresolved'
+              AND m.event_date >= p_trade_date AND m.event_date < p_anchor
+              AND m.type_stock = split_part(btrim(p_spec), ' ', 1)
+        ),
+        count(*) FILTER (
+            WHERE m.kind = 'pending' AND m.isin = p_isin
+              AND m.event_date >= p_trade_date AND m.event_date < p_anchor
+        ),
+        count(*) FILTER (
+            WHERE m.kind = 'no_ex_close' AND m.isin = p_isin
+              AND m.event_date >= p_trade_date AND m.event_date < p_anchor
+        ),
+        sum(ln(m.factor)) FILTER (
+            WHERE m.kind = 'cash' AND m.isin = p_isin
+              AND m.event_date >= p_trade_date AND m.event_date < p_anchor
+        )
+    FROM public.mv_b3_cash_event m
+    WHERE m.isin = p_isin
+       OR (m.kind = 'unresolved' AND m.stems @> ARRAY[left(p_ticker, 4)]);
+$$;
+
+COMMENT ON FUNCTION api.close_total_return_cash(TEXT, TEXT, TEXT, DATE, DATE) IS
+    'Internal. For one session of one ISIN: whether B3''s cash history resolves any distribution for it, the counts of later distributions it cannot value (unresolved for the share class, pending, no ex-date close), and the log of the product of (1 + cash / ex-session close) over later valued ones. Feeds quote_history''s close_total_return.';
+
+REVOKE ALL ON FUNCTION api.close_total_return_cash(TEXT, TEXT, TEXT, DATE, DATE) FROM PUBLIC;
+
 -- Signature change (p_fields, and rows become jsonb): CREATE OR REPLACE can
 -- change neither, and PostgREST resolves an RPC by argument names, so no older
 -- shape may survive as an overload.
@@ -1035,6 +1098,8 @@ DECLARE
     v_anchor    DATE;
     v_proven    TIMESTAMPTZ;
     v_rev       TEXT;
+    v_tr        BOOLEAN;
+    v_status    RECORD;
 BEGIN
     -- 1. The selection. An unknown name refuses; nothing is silently dropped.
     SELECT string_agg(f.field, ', ' ORDER BY f.field) INTO v_valid
@@ -1058,6 +1123,7 @@ BEGIN
     END IF;
     v_keep := ARRAY['ticker', 'trade_date'] || v_fields;
     v_adj  := 'close_adj' = ANY (v_fields);
+    v_tr   := v_fields && ARRAY['close_total_return', 'close_total_return_null_reason'];
 
     SELECT c.paging, c.after_date INTO v_paging, v_after
     FROM api.parse_date_cursor(p_after, 'quote_history') c;
@@ -1147,8 +1213,9 @@ BEGIN
     IF v_adj THEN
         PERFORM api.assert_close_adj('quote_history', v_ticker, v_isin, v_from, v_to);
     END IF;
-    SELECT s.anchor, s.proven_at INTO v_anchor, v_proven
-    FROM api.close_adj_status(v_isin, v_ticker) s;
+    SELECT * INTO v_status FROM api.close_adj_status(v_isin, v_ticker);
+    v_anchor := v_status.anchor;
+    v_proven := v_status.proven_at;
 
     v_rev := api.quote_data_revision();
     -- Also on every response as a header, for callers that keep only rows.
@@ -1201,8 +1268,32 @@ BEGIN
     ),
     r_all AS (
         SELECT g.*,
-               lag(g.trade_date) OVER (ORDER BY g.trade_date) AS prev_date
+               lag(g.trade_date) OVER (ORDER BY g.trade_date) AS prev_date,
+               tr.reason   AS tr_reason,
+               tr.log_cash AS tr_log_cash
         FROM page g
+        -- Total return, only when asked for: the price adjustment must be
+        -- servable for the session (the same status close_adj checks, per
+        -- session instead of refusing), then every later distribution valued.
+        LEFT JOIN LATERAL (
+            SELECT
+                CASE
+                    WHEN NOT v_status.in_universe THEN 'outside research universe'
+                    WHEN v_status.proven_at IS NULL THEN 'issuer corporate events not proven swept'
+                    WHEN (v_status.proven_at AT TIME ZONE 'America/Sao_Paulo')::date < v_status.anchor
+                        THEN 'corporate-event proof older than the last session'
+                    WHEN v_status.block_through IS NOT NULL AND g.trade_date <= v_status.block_through
+                        THEN v_status.block_reason
+                    WHEN g.close_unit IS NULL THEN 'no close on the session'
+                    WHEN NOT c.has_cash_evidence THEN 'no cash distribution resolved for this ISIN in B3''s history'
+                    WHEN c.n_unresolved > 0 THEN 'a later distribution of this issuer''s share class has no proven ISIN'
+                    WHEN c.n_pending > 0 THEN 'a later distribution B3 lists is missing from its cash history'
+                    WHEN c.n_no_ex_close > 0 THEN 'a later distribution has no ex-date close within 7 days'
+                END AS reason,
+                c.log_cash_factor AS log_cash
+            FROM api.close_total_return_cash(v_isin, v_ticker, g.spec, g.trade_date, v_anchor) c
+            WHERE v_tr
+        ) tr ON TRUE
     )
     SELECT (
         SELECT jsonb_object_agg(kv.key, kv.value)
@@ -1242,7 +1333,12 @@ BEGIN
               - CASE WHEN COALESCE(r.prev_date, (SELECT p.d FROM prev p)) IS NULL THEN 0 ELSE 1 END
             END,
             'events_proven_at', to_char(v_proven AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
-            'data_revision',    v_rev
+            'data_revision',    v_rev,
+            'close_total_return', CASE WHEN v_tr AND r.tr_reason IS NULL THEN
+                round(r.close_unit / api.close_adj_ratio(v_isin, r.trade_date, v_anchor)
+                      / exp(COALESCE(r.tr_log_cash, 0)), 6)
+            END,
+            'close_total_return_null_reason', CASE WHEN v_tr THEN r.tr_reason END
         )) kv
         WHERE kv.key = ANY (v_keep)
     )
@@ -1254,7 +1350,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT, TEXT[]) IS
-    'Daily price series for one ticker, oldest first, one JSON object per session holding only the selected fields. Default (p_fields omitted): ticker, trade_date, close_adj. close_adj is the close per single share, backward-adjusted for splits, groupings and bonus shares by B3''s rule and anchored to the instrument''s latest session (past levels change when an event lands; returns do not); no dividend, JCP or subscription-right adjustment; shares and units only; 6 decimal places. It is never null and never the raw close: a window it cannot cover is REFUSED (22023, DETAIL reason=adjustment_unavailable) naming ticker, period and cause. The raw close, OHLC and volume are an explicit selection (p_fields = {close, ...}); fields are listed in catalog(). The series follows the ISIN across boards; p_board restricts it. Refusals (22023, DETAIL reason=...): unknown_ticker; outside_coverage (a window with no coverage, or starting before the instrument''s first session; the tape starts 2019-01-02); isin_change (two ISINs in the window); ambiguous_session (two rows on one session); invalid_field; adjustment_unavailable. A session missing inside the coverage is a session with no trade (prior_no_trade_sessions counts them); a field with no value is a null. data_revision (field, and header X-Silo-Data-Revision) identifies the data; do not combine pages with different revisions. Row cap: more than 1000 rows RAISES 22023 unless p_after pages: '''' = first page, then the last row''s trade_date as ''YYYY-MM-DD''; a page shorter than 1000 is the last.';
+    'Daily price series for one ticker, oldest first, one JSON object per session holding only the selected fields. Default (p_fields omitted): ticker, trade_date, close_adj. close_adj is the close per single share, backward-adjusted for splits, groupings and bonus shares by B3''s rule and anchored to the instrument''s latest session (past levels change when an event lands; returns do not); no dividend, JCP or subscription-right adjustment; shares and units only; 6 decimal places. It is never null and never the raw close: a window it cannot cover is REFUSED (22023, DETAIL reason=adjustment_unavailable) naming ticker, period and cause. The raw close, OHLC and volume are an explicit selection (p_fields = {close, ...}); fields are listed in catalog(). The series follows the ISIN across boards; p_board restricts it. Refusals (22023, DETAIL reason=...): unknown_ticker; outside_coverage (a window with no coverage, or starting before the instrument''s first session; the tape starts 2019-01-02); isin_change (two ISINs in the window); ambiguous_session (two rows on one session); invalid_field; adjustment_unavailable. A session missing inside the coverage is a session with no trade (prior_no_trade_sessions counts them); a field with no value is a null. close_total_return (with close_total_return_null_reason) is selectable too: close_adj with B3''s cash distributions reinvested at the ex-date close (#418), NULL with a reason wherever a distribution cannot be valued, never the price return in disguise. data_revision (field, and header X-Silo-Data-Revision) identifies the data; do not combine pages with different revisions. Row cap: more than 1000 rows RAISES 22023 unless p_after pages: '''' = first page, then the last row''s trade_date as ''YYYY-MM-DD''; a page shorter than 1000 is the last.';
 
 REVOKE ALL ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT, TEXT[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT, TEXT[]) TO anon, authenticated;
@@ -3542,6 +3638,14 @@ AS $$
         FROM public.cvm_ingest_log l
         WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
           AND l.entity = 'market' AND l.doc_type = 'b3_reference_rate'
+        UNION ALL
+        -- v45 (29_api_index.sql): B3 index levels log under entity 'b3' next to
+        -- COTAHIST and the BDI group, so the row reads its own doc_type.
+        SELECT '*b3_index_level*'::text, MAX(l.finished_at),
+               (array_agg(l.git_sha ORDER BY l.finished_at DESC, l.id DESC))[1]
+        FROM public.cvm_ingest_log l
+        WHERE l.status = 'ok' AND l.finished_at IS NOT NULL
+          AND l.entity = 'b3' AND l.doc_type = 'index_levels'
     ),
     base AS (
         -- Session data (quotes/derivatives) is complete by construction and a
@@ -3844,6 +3948,20 @@ AS $$
                'b3'::text,
                'B3 reference rates (TaxaSwap.txt), every vertex of PRE (DI x pré), DOC (clean onshore dollar coupon, LINEAR on 360 days) and DPL (clean IPCA coupon, a real rate), from 2008-01-02 (curve, curve_history). Past the last maturity of the contract anchoring each curve (DI1, DDI, DAP) B3 extrapolates the last forward rate, so the long vertices are not prices (Manual de Curvas v21). History comes from market_backfill.yml.'::text,
                (SELECT MAX(r.trade_date) FROM public.b3_reference_rate r), '*market_reference_rate*'::text
+        UNION ALL
+        -- v45 (29_api_index.sql). A session level is final once published, so the
+        -- three dates coincide. The depth of each index is in the notes, read
+        -- from the table, so a second index shows up here with no edit.
+        SELECT 'index_history'::text,
+               (SELECT MAX(i.trade_date) FROM public.b3_index_level i WHERE i.trade_date <= CURRENT_DATE),
+               (SELECT MAX(i.trade_date) FROM public.b3_index_level i WHERE i.trade_date <= CURRENT_DATE),
+               'b3'::text,
+               'Daily levels of B3-published indices AS PUBLISHED (index_history), a price index, not adjusted: B3 re-scaled IBOV eleven times, the last on 1997-03-03, and divisor_step marks the first session after each, where a level ratio is not a return. Depth per index: '
+                   || COALESCE((SELECT string_agg(d.index_code || ' from ' || d.first_date::text, '; ' ORDER BY d.index_code)
+                                FROM (SELECT i.index_code, MIN(i.trade_date) AS first_date
+                                      FROM public.b3_index_level i GROUP BY i.index_code) d), 'none loaded yet')
+                   || '. The whole series is refetched nightly.'::text,
+               (SELECT MAX(i.trade_date) FROM public.b3_index_level i), '*b3_index_level*'::text
     )
     SELECT b.dataset, b.as_of, b.complete_through, b.source, b.notes,
            b.newest_period, l.landed_at, l.landed_git_sha
@@ -4110,7 +4228,7 @@ adj_ok AS (
 --     NULL, not a fabricated smooth number.
 --   * both grains: the quotation factor must not have changed between the
 --     two prints. A fatcot flip (measured live: GOLL2 1000->1, IBOV11
---     100->1) rescales the quote by that factor and reports a ~±99.9%
+--     1->100, on 2025-03-05) rescales the quote by that factor and reports a ~±99.9%
 --     "return" with no market move behind it.
 quote_ret AS (
     SELECT
@@ -4586,7 +4704,13 @@ CREATE OR REPLACE FUNCTION api.cia_statement_rows(
     p_to        DATE,
     p_scope     TEXT,
     p_doc_type  TEXT,
-    p_statement TEXT
+    p_statement TEXT,
+    -- NULL = latest stored version of every document, which is NOT
+    -- point-in-time. A date T reads only what CVM had received before T
+    -- (cia_filing.dt_receb < T), then keeps the highest remaining version of
+    -- each document (#414; the recipe is #375's,
+    -- docs/reference/research/pit-fundamentals.md).
+    p_as_of     DATE
 )
 RETURNS TABLE (
     cd_cvm        TEXT,
@@ -4654,6 +4778,18 @@ AS $$
           AND a.dt_refer BETWEEN w.d0 AND w.d1
           AND (p_statement IS NULL OR a.grupo    = upper(btrim(p_statement)))
           AND (p_doc_type  IS NULL OR a.doc_type = lower(btrim(p_doc_type)))
+          -- As of T: a document counts only if its exact (company, type,
+          -- reference date, version) header was received before T. A document
+          -- with no header or a NULL receipt date is dropped, never assumed
+          -- early. This runs BEFORE the MAX(versao) window above, so the
+          -- "highest remaining version" is the highest one known at T.
+          AND (p_as_of IS NULL OR EXISTS (
+                SELECT 1 FROM public.cia_filing f
+                WHERE f.cd_cvm   = a.cd_cvm
+                  AND f.doc_type = a.doc_type
+                  AND f.dt_refer = a.dt_refer
+                  AND f.versao   = a.versao
+                  AND f.dt_receb < p_as_of))
     )
     SELECT
         x.r_cd_cvm, x.r_cnpj, x.r_company, x.r_ticker,
@@ -4674,7 +4810,7 @@ AS $$
     WHERE x.versao = x.latest_versao;
 $$;
 
-REVOKE ALL ON FUNCTION api.cia_statement_rows(TEXT, DATE, DATE, TEXT, TEXT, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION api.cia_statement_rows(TEXT, DATE, DATE, TEXT, TEXT, TEXT, DATE) FROM PUBLIC;
 
 DROP FUNCTION IF EXISTS api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT);
 CREATE OR REPLACE FUNCTION api.financials(
@@ -4683,7 +4819,8 @@ CREATE OR REPLACE FUNCTION api.financials(
     p_from      DATE DEFAULT (CURRENT_DATE - 1825),
     p_to        DATE DEFAULT CURRENT_DATE,
     p_scope     TEXT DEFAULT 'con',
-    p_doc_type  TEXT DEFAULT NULL
+    p_doc_type  TEXT DEFAULT NULL,
+    p_as_of     DATE DEFAULT NULL
 )
 RETURNS TABLE (
     id            TEXT,
@@ -4728,7 +4865,7 @@ AS $$
             s.ref_date, s.period_start, s.period_end, s.period_months,
             s.account_code, s.account_name, s.value, s.version, 'cvm'::text,
             s.setor, s.segmento
-        FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, p_statement) s
+        FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, p_statement, p_as_of) s
         ORDER BY s.ref_date DESC, s.statement, s.period_months NULLS FIRST, s.account_code
         LIMIT 1001
     )
@@ -4738,8 +4875,11 @@ AS $$
     LIMIT 1000;
 $$;
 
-REVOKE ALL ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
+REVOKE ALL ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT, DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT, DATE) TO anon, authenticated;
+
+COMMENT ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT, DATE) IS
+    'Filed statement lines for one company, one row per account, latest stored version of each document. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early. version is on every row. Refuses above 1,000 rows with SQLSTATE 22023; narrow the window.';
 
 -- Raw statement lines across every stored filing version. `financials` above
 -- remains the latest-version view; this narrower, explicit history endpoint
@@ -4859,7 +4999,8 @@ CREATE OR REPLACE FUNCTION api.company_financials(
     p_id    TEXT,
     p_from  DATE DEFAULT (CURRENT_DATE - 1825),
     p_to    DATE DEFAULT CURRENT_DATE,
-    p_scope TEXT DEFAULT 'con'
+    p_scope TEXT DEFAULT 'con',
+    p_as_of DATE DEFAULT NULL
 )
 RETURNS TABLE (
     id             TEXT,
@@ -4905,7 +5046,7 @@ AS $$
     -- declared, which also dodges OUT-parameter ambiguity.
     WITH page (id, id_type, cnpj, company, ticker, doc_type, scope, ref_date, period_start, period_end, period_months, revenue, gross_profit, net_income, total_assets, equity, net_margin_pct, roe_pct, version, source, setor, segmento) AS (
         WITH s AS (
-            SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, NULL, NULL)
+            SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, NULL, NULL, p_as_of)
         ),
         income AS (
             SELECT
@@ -4987,8 +5128,11 @@ AS $$
     LIMIT 1000;
 $$;
 
-REVOKE ALL ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT) TO anon, authenticated;
+REVOKE ALL ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT, DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT, DATE) TO anon, authenticated;
+
+COMMENT ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT, DATE) IS
+    'Headline financials for one company, one row per filed period, latest stored version of each document. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early.';
 
 -- ---------------------------------------------------------------------------
 -- Listed companies — the income statement, one row per filed period
@@ -5043,7 +5187,8 @@ CREATE OR REPLACE FUNCTION api.income_statements(
     p_from     DATE DEFAULT (CURRENT_DATE - 1825),
     p_to       DATE DEFAULT CURRENT_DATE,
     p_scope    TEXT DEFAULT 'con',
-    p_doc_type TEXT DEFAULT NULL
+    p_doc_type TEXT DEFAULT NULL,
+    p_as_of    DATE DEFAULT NULL
 )
 RETURNS TABLE (
     id                    TEXT,
@@ -5082,7 +5227,7 @@ SET search_path = ''
 AS $$
     WITH page (id, id_type, cnpj, company, ticker, setor, segmento, doc_type, scope, ref_date, period_start, period_end, period_months, chart, revenue, cost_of_revenue, gross_profit, operating_expenses, operating_income, financial_result, pretax_income, income_tax, continuing_operations, net_income, net_income_controlling, net_income_noncontrolling, version, source) AS (
         WITH s AS (
-            SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'DRE')
+            SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'DRE', p_as_of)
         ),
         lab AS (
             SELECT s.*, lower(btrim(s.account_name)) AS lbl FROM s
@@ -5159,11 +5304,11 @@ AS $$
     LIMIT 1000;
 $$;
 
-COMMENT ON FUNCTION api.income_statements(TEXT, DATE, DATE, TEXT, TEXT) IS
-    'Income statement, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label, not on cd_conta and not on setor: CVM ships four DRE charts and the same code means different things across them. net_income therefore resolves for the filings that report it on 3.09 (the one bank chart with no 3.11) as well as those on 3.11. A concept a chart does not file reads NULL — operating_income is industrial-only. `chart` says which layout the filing used. Values are absolute reais.';
+COMMENT ON FUNCTION api.income_statements(TEXT, DATE, DATE, TEXT, TEXT, DATE) IS
+    'Income statement, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label, not on cd_conta and not on setor: CVM ships four DRE charts and the same code means different things across them. net_income therefore resolves for the filings that report it on 3.09 (the one bank chart with no 3.11) as well as those on 3.11. A concept a chart does not file reads NULL — operating_income is industrial-only. `chart` says which layout the filing used. Values are absolute reais. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early.';
 
-REVOKE ALL ON FUNCTION api.income_statements(TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION api.income_statements(TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
+REVOKE ALL ON FUNCTION api.income_statements(TEXT, DATE, DATE, TEXT, TEXT, DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.income_statements(TEXT, DATE, DATE, TEXT, TEXT, DATE) TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Listed companies — the balance sheet, one row per filed period
@@ -5198,7 +5343,8 @@ CREATE OR REPLACE FUNCTION api.balance_sheets(
     p_from     DATE DEFAULT (CURRENT_DATE - 1825),
     p_to       DATE DEFAULT CURRENT_DATE,
     p_scope    TEXT DEFAULT 'con',
-    p_doc_type TEXT DEFAULT NULL
+    p_doc_type TEXT DEFAULT NULL,
+    p_as_of    DATE DEFAULT NULL
 )
 RETURNS TABLE (
     id                        TEXT,
@@ -5239,9 +5385,9 @@ SET search_path = ''
 AS $$
     WITH page (id, id_type, cnpj, company, ticker, setor, segmento, doc_type, scope, ref_date, chart, total_assets, current_assets, cash_and_equivalents, short_term_investments, receivables, inventories, noncurrent_assets, property_plant_equipment, intangible_assets, total_liabilities_and_equity, current_liabilities, noncurrent_liabilities, short_term_debt, long_term_debt, equity, share_capital, noncontrolling_interests, version, source) AS (
         WITH s AS (
-            SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'BPA')
+            SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'BPA', p_as_of)
             UNION ALL
-            SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'BPP')
+            SELECT * FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'BPP', p_as_of)
         ),
         lab AS (
             SELECT s.*, lower(btrim(s.account_name)) AS lbl,
@@ -5309,11 +5455,11 @@ AS $$
     LIMIT 1000;
 $$;
 
-COMMENT ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT) IS
-    'Balance sheet, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label (and, where one label is filed twice, its parent''s label), not on cd_conta and not on setor: CVM ships three balance-sheet charts and equity alone sits on 2.03, 2.07 or 2.08. A concept a chart does not file reads NULL — banks file no current/non-current split and no `Empréstimos e Financiamentos`, so those fields are NULL for them, never zero. `chart` says which layout the filing used. Values are absolute reais.';
+COMMENT ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT, DATE) IS
+    'Balance sheet, one row per filed period, with named fields. Fields are keyed on the AS-FILED account label (and, where one label is filed twice, its parent''s label), not on cd_conta and not on setor: CVM ships three balance-sheet charts and equity alone sits on 2.03, 2.07 or 2.08. A concept a chart does not file reads NULL — banks file no current/non-current split and no `Empréstimos e Financiamentos`, so those fields are NULL for them, never zero. `chart` says which layout the filing used. Values are absolute reais. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early.';
 
-REVOKE ALL ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
+REVOKE ALL ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT, DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT, DATE) TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Listed companies — the cash flow statement, one row per filed period
@@ -5335,7 +5481,8 @@ CREATE OR REPLACE FUNCTION api.cash_flow_statements(
     p_from     DATE DEFAULT (CURRENT_DATE - 1825),
     p_to       DATE DEFAULT CURRENT_DATE,
     p_scope    TEXT DEFAULT 'con',
-    p_doc_type TEXT DEFAULT NULL
+    p_doc_type TEXT DEFAULT NULL,
+    p_as_of    DATE DEFAULT NULL
 )
 RETURNS TABLE (
     id                       TEXT,
@@ -5372,10 +5519,10 @@ AS $$
     WITH page (id, id_type, cnpj, company, ticker, setor, segmento, doc_type, scope, ref_date, period_start, period_end, period_months, method, operating_cash_flow, operating_cash_generated, working_capital_changes, investing_cash_flow, financing_cash_flow, fx_effect, net_change_in_cash, cash_start, cash_end, version, source) AS (
         WITH s AS (
             SELECT *, 'direct'::text AS method
-            FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'DFC_MD')
+            FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'DFC_MD', p_as_of)
             UNION ALL
             SELECT *, 'indirect'::text
-            FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'DFC_MI')
+            FROM api.cia_statement_rows(p_id, p_from, p_to, p_scope, p_doc_type, 'DFC_MI', p_as_of)
         ),
         lab AS (
             -- The parent's label anchors the two indirect-method lines: one
@@ -5442,11 +5589,11 @@ AS $$
     LIMIT 1000;
 $$;
 
-COMMENT ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT) IS
-    'Cash flow statement, one row per filed period, with named TOTALS keyed on the as-filed label. `method` is direct (DFC_MD) or indirect (DFC_MI). Only the section totals and the cash reconciliation are mapped: detail lines such as capex and dividends are free-text per company and are NOT fields — read them from api.financials. operating_cash_generated and working_capital_changes are indirect-method lines and read NULL on a direct-method filing, never zero. Values are absolute reais.';
+COMMENT ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT, DATE) IS
+    'Cash flow statement, one row per filed period, with named TOTALS keyed on the as-filed label. `method` is direct (DFC_MD) or indirect (DFC_MI). Only the section totals and the cash reconciliation are mapped: detail lines such as capex and dividends are free-text per company and are NOT fields — read them from api.financials. operating_cash_generated and working_capital_changes are indirect-method lines and read NULL on a direct-method filing, never zero. Values are absolute reais. p_as_of (a date, default NULL) makes the read point-in-time: only documents CVM had received (cia_filing.dt_receb) BEFORE that date are read, the highest remaining version of each is kept, and a document with no filing header is dropped. NULL reads the latest stored version of every document and is NOT point-in-time: a later filing or a restatement appears as if it had been known. Versions superseded before 2026 are not held, so an as-of read is stale for a restating company, never early.';
 
-REVOKE ALL ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
+REVOKE ALL ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT, DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT, DATE) TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Catalog — the metric map, public (INSTRUMENTS.md: discovery is contract)
@@ -5473,7 +5620,7 @@ STABLE
 AS $fn$
 SELECT $json${
   "kind": "catalog",
-  "version": 45,
+  "version": 48,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, the B3 securities-lending and investor-flow group, B3's DI1 futures and reference-rate curves, and Brazilian inflation — BACEN's IPCA series and IBGE's item tree with weights). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close_adj` (split-, grouping- and bonus-adjusted) for share and unit tickers, `close` for other tickers and `nav` for CNPJs, and quote_history with no p_fields returns ticker, trade_date and close_adj; that is the call to make unless you actually need another measure — name metrics or fields explicitly only when you will use them (p_fields=['close'] for the raw close). A close_adj window SILO cannot adjust is refused with the cause, never served raw. The wide endpoints are the exception and behave the other way round: quote_latest and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -5524,7 +5671,9 @@ SELECT $json${
         "coverage_end": "date",
         "prior_no_trade_sessions": "integer",
         "events_proven_at": "string",
-        "data_revision": "string"
+        "data_revision": "string",
+        "close_total_return": "number",
+        "close_total_return_null_reason": "string"
       }
     },
     "wide_endpoints": {
@@ -5818,12 +5967,14 @@ SELECT $json${
     "COMPANY EVENTS ARE IPE FILINGS AS FILED, FROM 2015, AND NOT EVERY FILING IS HELD. api.company_events serves cia_event — CVM's IPE feed: fatos relevantes, comunicados ao mercado, assembly material and the rest — one row per protocol at its NEWEST version (version says which), every text field (category, event_type, species, subject) exactly as filed, and source_url, the document's link on CVM's RAD. The company is resolved exactly as financials resolves p_id: a ticker only through CVM's published FCA map (active listings), a 14-digit CNPJ or a CVM code, never a name. CVM assigned no protocol number to IPE filings before 2015 and still omits it on a minority (12% of 2015); cia_event is keyed on (protocolo, versao) and a key is never synthesized, so those filings are NOT held — an empty window before 2015, or a filing you know exists and cannot find, is that limit, not an absence of events. p_category matches CVM's label exactly; an unknown one raises 22023 listing the categories held.",
     "MACRO SERIES AND PTAX ARE SERVED AS BACEN PUBLISHES THEM, UNIT ON EVERY ROW, NOTHING DERIVED. api.macro_series serves nine non-inflation SGS series by label or code: SELIC_META (432, % a.a.; dated per calendar day and published AHEAD to the next Copom date, so a p_to after today can return forward-dated targets), SELIC_DIARIA (11) and CDI (12) in % PER BUSINESS DAY (never annualise one yourself without saying so), IGPM (189) and INPC (188) as % change in the month, POUPANCA (25) — the OLD-RULE deposit return (deposits until 2012-05-03), one value per anniversary day, each the return over the month starting that day, not a calendar-month figure — USDBRL (1) and EURBRL (21619) in BRL per unit, and PIB (4380) monthly in R$ millions at current prices. The IPCA set is api.inflation's; asking macro_series for it raises 22023 with that pointer. api.ptax serves PTAX compra and venda per currency and business day in BRL per ONE unit of the currency (JPY and ARS included): the last bulletin of the day the ingest received, which for a completed day is the Fechamento PTAX (measured against SGS 1 and Olinda on 2026-09-22/23); the bulletin type is not stored. No mid rate, cross rate, fill or holiday row is invented.",
     "THE RESEARCH UNIVERSE IS A TAPE FACT, NOT A LISTING RECORD, AND ITS COMPANY LINK SAYS HOW IT WAS MADE. api.research_universe returns one row per ticker+ISIN pair of listed shares and units traded on the B3 cash market since 2019-01-02 (the start of the tape). Membership is the ISIN's own instrument code, characters 7-9: ACN (shares), CDA and UNT (units, whose ticker must also end in 11); subscription receipts, BDRs, funds and indices are outside it, so instrument_type = equity on api.quotes is NOT the definition (it lets about 100 receipts in). THE ISIN IS THE IDENTITY: a rename is a NEW row and nothing links it to the old one, and two tickers can share an ISIN (NEOE3 and NEOE3B). first_observed, last_observed and n_sessions are facts about SILO's tape, never listing or delisting dates; n_sessions far below the calendar span is a gap (NATU3: one ISIN, no sessions 2019-12 to 2025-07). cnpj comes from CVM's published FCA ticker map and cnpj_basis says how: fca_ticker (that exact ticker), fca_issuer_stem (the ticker's 4-letter stem, when exactly one CNPJ holds an FCA ticker with it: an inference, so it is labelled), or NULL (no link: cnpj and setor_current are NULL, never guessed from a name). setor_current is CVM's cadastro setor as of TODAY, not the setor on a past date. TO READ THE UNIVERSE AT A DATE T, keep the rows with first_observed <= T <= last_observed; a pair inside a gap still matches that filter. The view is rebuilt daily, so last_observed lags the tape by up to a day (built_at says when). Not trimmed: more than 1000 rows raises 22023.",
+    "THE BENCHMARK INDEX IS api.index_history, TAKEN BY INDEX CODE, AND IT IS A PRICE INDEX AS PUBLISHED. It serves the daily level of a B3-published index (IBOV from 1968-01-02; coverage() lists the depth of each) from B3's own statistics, and accepts an INDEX CODE only: a ticker raises 22023 naming the codes held, so BOVA11 (an ETF) and IBOV11 (the Ibovespa options settlement leg: it prints on expiry days only, in R$ per contract) can never stand in for the index by construction. The levels are NOT adjusted: B3 re-scaled IBOV eleven times (divided by 100 on 1983-10-04 and by 10 on ten other sessions, the last on 1997-03-03) and divisor_step is TRUE on the first session after each, where a level ratio is not a return; from 1997-03-03 on there is none. There is no return, adjusted or total-return column: it is a price index and is never labelled as anything else. It pages with p_after like quote_history, because IBOV from 1968 is 14,489 rows.",
     "DI FUTURES AND B3'S REFERENCE CURVES ARE SERVED AS B3 PUBLISHES THEM, AND THE LONG END OF EVERY CURVE IS B3'S EXTRAPOLATION. api.future_curve lists every outright DI1 contract on one session (B3 Price Report, from 2018-01-02) and api.future_series follows one contract; DI1 is QUOTED IN RATE, so settlement_rate and the open/low/high/avg/close columns are % a.a. on 252 business days (the low rate is the high price) and settlement_price is the PU. contract_month, read from the ticker with B3's month letters (F = January … Z = December), is the one derived column; nothing is rolled or spliced into a continuous series. api.curve serves one reference curve on one session, every vertex (TaxaSwap, from 2008-01-02): PRE is DI x pré, DPL the clean IPCA coupon (a real rate; B3's implied inflation is (1 + PRE) / (1 + DPL) − 1 at the same tenor), both compounded on 252 business days, and DOC the clean onshore dollar coupon, LINEAR on 360 calendar days — read rate_basis before comparing two curves. Past the last maturity of the contract anchoring a curve (DI1, DDI, DAP) B3 EXTENDS the last forward rate (Manual de Curvas v21), so the long vertices are extrapolation, not prices. api.curve_history serves one of B3's FIXED vertices through time by its nominal tenor (p_tenor_days: 30, 90, 360, 720 …); any other tenor raises 22023 with the list, because interpolating is analysis for the notebook.",
     "THE B3 LENDING AND FLOW GROUP IS A RATCHET, AND IT IS THE ONLY PART OF THIS WAREHOUSE THAT IS. short_interest, short_interest_by_sector, lending_trades, lending_participants and investor_flow read B3 tables that B3 keeps for about 21 BUSINESS DAYS and publishes no archive for. History therefore starts at SILO's first capture and cannot be extended backwards at any price — a missed session is gone, not late, and no backfill exists to ask for. coverage() reports the real span per endpoint; read it before describing any of these series as short, broken or anomalous, and never infer a level change from a window that simply begins where capture began. An over-wide request to the source returns HTTP 200 with a silently clamped window, which is why the ingest reconciles what it asked for against what it received.",
     "pct_float IS TWO DIFFERENT METRICS AND float_basis SAYS WHICH ONE YOU HAVE. api.short_interest divides the balance on loan by whichever denominator exists for that ticker. float_basis = 'index_free_float' means B3's published free float (theoretical_qty from the broadest index portfolio carrying the ticker) and exists for index constituents only, ~149 tickers; float_basis = 'shares_outstanding' means capital social from the cash instrument registry, a LARGER denominator that yields a SMALLER percentage for the same position. They are not the same measure and are never comparable: ANY ranking, screen or cross-section on pct_float must filter to ONE basis first, or it sorts index members against non-members on an axis they do not share. float_denominator carries the number actually used. pct_float and days_to_cover are NULL — never 0 — when their denominator is missing or the name did not trade; 0 would sort an unknown to exactly the wrong end.",
     "IN THE LENDING TAPE, doador AND tomador ARE BROKERAGES, NOT BENEFICIAL OWNERS. lending_participants' broker_code / broker_name and lending_trades' lender_brokers / borrower_brokers identify the B3 PARTICIPANT intermediating a trade, never who ends up long or short. B3 names ~33 participants in a whole session, and about three quarters of trades carry the SAME code on both legs (measured 2026-09-10: 32,197 of 43,165, 74.6%) — a broker crossing its own client book. So a large borrow through a broker is its clients' position, not the broker's view, and 'the biggest short' read off this tape is a statement about order flow routing. internal_legs / internal_qty (lending_participants) and internal_trades (lending_trades) are what tell the two apart: high internal share is client churn, low internal share is flow that actually crossed the market. They are published beside the totals rather than netted away, because dropping them makes the remainder look like conviction and keeping them silently makes churn look like demand.",
     "investor_flow IS A FIRST DIFFERENCE, NOT A PUBLISHED DAILY SERIES. B3 publishes investor participation as a MONTH-TO-DATE CUMULATIVE snapshot with a T+2 lag; the daily figures are consecutive snapshots subtracted WITHIN one month, and the difference never reaches across a month boundary (that would report a whole month as one day's flow). flow_basis says which kind of row you have: 'delta' is a real one-session difference, 'month_open' is the month's first session where MTD equals the day, and 'unknown_opening_snapshot' is a row whose predecessor SILO does not hold — those carry NULL flows ON PURPOSE and must never be read, filled or summed as zeros. mtd_buy_value_thousands / mtd_sell_value_thousands carry the cumulative figures as published, so the difference can be checked against the source rather than trusted. Values are R$ thousands. Sum a month only over rows whose flow_basis you have inspected.",
     "LISTED-COMPANY FINANCIALS ARE FILED, NOT DERIVED. api.financials returns one row per account line exactly as the company filed it; nothing is summed, annualised or restated. Read period_months before comparing two rows: an ITR publishes the SAME account twice under one reference date, once for the three months and once year-to-date, and they are distinguished only by the period span. Adding a 3-month row to a 6-month row double-counts the quarter.",
+    "THE LATEST-VERSION FUNDAMENTALS ARE NOT POINT-IN-TIME UNLESS p_as_of IS GIVEN. financials, company_financials, income_statements, balance_sheets and cash_flow_statements take a trailing p_as_of DATE (default NULL). NULL reads the latest stored version of every document, so a later filing or a restatement appears as if it had been known on an earlier date: fine for a current screen, look-ahead in a backtest. A date T reads only the documents CVM had received before T (cia_filing.dt_receb < T; a document received ON T is excluded), keeps the highest remaining version of each and all its lines, and drops a document with no filing header. ref_date still says which period a row is FOR; the window p_from/p_to is on that, not on the receipt date. CVM's files carry only the newest version of each document and most versions superseded before 2026 are not held, so an as-of read is stale for a company that restated, never early. financial_statement_history already exposes every stored version with its filing_received_date.",
     "FINANCIALS DEFAULT TO CONSOLIDATED (scope=con) AND TO THE PERIOD THE DOCUMENT IS FOR (ordem_exerc ULTIMO). The prior-year comparative printed beside it is never returned. When a company re-files, only the newest version of each statement is served and `version` carries it; in company_financials a balance sheet from a different version than the income statement reads NULL rather than being paired across filings.",
     "CVM'S CHART OF ACCOUNTS IS SECTOR-SPECIFIC, SO `setor` IS A PARTITION KEY, NOT A LABEL. financials and company_financials carry setor and segmento on every row for exactly one reason: the same account code is a different quantity in a different chart. Measured live, 3.01 is `Receita de Venda de Bens e/ou Serviços` for PETR4 and `Receitas de Intermediação Financeira` for Banco do Brasil (cd_cvm 1023), and 3.05 is EBIT for the first and pre-tax profit for the second. So company_financials.revenue and gross_profit are NOT like-for-like across sectors: PARTITION every median, rank, percentile and peer comparison BY setor, and read the as-filed Portuguese account_name rather than assuming a code carries one concept. There is deliberately no canonical English line-item mapping, because keying one on account_code would mislabel at least one sector.",
     "company_financials.net_income IS KEYED ON THE FILED LABEL (since v36), exactly as in api.income_statements, so the two surfaces agree. It matches `Lucro/Prejuízo Consolidado do Período` / `Lucro ou Prejuízo Líquido Consolidado do Período`, which sits on 3.11 for the industrial and bank-A charts, on 3.09 for bank B (which files no 3.11) and on 3.13 for insurers (whose 3.11 is continuing operations). Until v35 it read 3.11 alone, so 282 bank-B statements (Itaú and BTG among them) read NULL and insurers got their continuing-operations line. No code is ever substituted: 3.09 is pre-participations profit on the other charts. revenue and gross_profit remain code-keyed (3.01 / 3.03) and are not like-for-like across sectors — use api.income_statements for label-keyed revenue. Every value in both functions is in absolute reais: the filed ESCALA_MOEDA is applied at ingest, so never scale by thousands again.",
@@ -5839,12 +5990,13 @@ SELECT $json${
     "close is the price as published, which for a paper quoted per lot refers to 1000 shares; close_unit divides it by the published quotation_factor so levels are comparable. Neither is corporate-action adjusted, and `adjusted` is FALSE on every view row because it describes close. The adjusted price is close_adj (quote_history's default field, the panel's default metric for shares and units; see the next constraint).",
     "close_adj IS CONTINUOUS ACROSS SPLITS, GROUPINGS AND BONUS SHARES ONLY, AND IT IS ANCHORED TO THE INSTRUMENT'S LATEST SESSION. It is the close per single share divided by the share ratio of every later event, by B3's rule: 1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for GRUPAMENTO, distinct events on one date multiplied. Past levels change when a new event lands and returns do not, so never read a past level as the price seen that day, and never combine pages with different data_revision values. Dividends, JCP and subscription rights are not adjusted in this version (they move value to holders and change no share count; total return is separate). A window close_adj cannot cover is REFUSED (22023, DETAIL reason=adjustment_unavailable; cause=...) naming ticker, period and cause, never served as the raw close: outside shares (ISIN code ACN) and units (CDA/UNT, ticker ending 11); issuer events not proven swept, or the proof older than the last session; a stretch on or before a stock event this version does not adjust (spin-off CIS RED CAP, INCORPORACAO, REST CAP ACOES, RESG TOTAL RV, any new stock label), an unreadable factor, or one label on one date published with two factors. The absence of events is never taken as proof: the sweep proof is. Select close explicitly for the raw close.",
     "quote_history IS KEYED ON THE ISIN AND REFUSES WHAT IT CANNOT SERVE WHOLE. The series follows the instrument across BDI boards (p_board restricts it). 22023 with DETAIL reason=: unknown_ticker (never printed on the cash tape); outside_coverage (no session in the window, or the window starts before the instrument's first session; the tape starts 2019-01-02, see coverage()); isin_change (the ticker printed under two ISINs in the window; a reused receipt code is a new instrument and is never joined); ambiguous_session (two rows on one session; pass p_board); invalid_field; adjustment_unavailable. Inside the coverage a missing session is a session with no trade (COTAHIST lists only papers that traded; prior_no_trade_sessions counts them), holidays are not sessions, and a field with no value is a JSON null.",
+    "close_total_return (SELECT IT IN p_fields) IS close_adj with cash distributions reinvested at the ex-date close, also anchored to the latest session: the level is divided by the product of (1 + cash / ex-session close) over every distribution that went ex after the session, so the latest session equals close_adj and earlier levels are lower by the cash paid since. Cash is B3's full history (DIVIDENDO, JRS CAP PROPRIO gross of withholding tax, RENDIMENTO, REST CAP DIN), counted only where its ISIN is proven against the tape. It is NULL, with close_total_return_null_reason saying why, where close_adj cannot be served for that session; where the ISIN has no resolved distribution in B3's history (a non-payer, or one B3's history does not match: the two look the same, so neither gets a price return labelled as a total return); where a later distribution of the issuer's share class has no proven ISIN; where a distribution B3's supplement lists is missing from the history; and where a later distribution has no ex-date close within 7 days. A NULL is never the price return in disguise.",
     "Daily close_return is null when the previous session is more than 7 calendar days back (halts, listing gaps), and null across a quotation-factor change — a fatcot flip rescales the quote with no market move behind it.",
     "Default windows are honest: with no explicit `to`, fund metrics end at each family's latest COMPLETE period (coverage() reports it as complete_through) — a partially-filed trailing month is not served. An explicit `to` serves the window verbatim, partial months included.",
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
     "CIA, FII AND FOCUS HELD DATA. api.financial_statement_history returns raw CIA account lines across all stored filing versions for one required statement and company id; `financials` remains latest-version only. Filing header metadata is present only on an exact key match. Values are already scaled at ingest and remain in filed currency. api.fii_property_history filters one exact fund CNPJ and reference-date window; CVM publishes no stable property id, so row_hash identifies a source row, not a durable asset. Nullable measurements remain NULL. api.focus_expectations returns the weekly path across BCB survey dates for one exact endpoint and required forecast horizon, with an optional indicator. The stored key retains each date/horizon; `baseCalculo=0` is the trailing 30-day respondent sample and 12-month inflation is unsmoothed. It is not a vintage archive of corrected old reports, and migration 16-era missing horizons may await re-fetch. All three endpoints refuse above 1,000 rows.",
-    "Row caps — getting this wrong means silently analysing a TRUNCATED series, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY set-returning function now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short result can no longer look complete. The error says WHY (the response is one 1000-row page and SILO never returns a silently truncated result) and HOW to fix it for that function, in the message and again as PostgREST's `details` / `hint`. That is all forty-four — panel, quote_history, fund_nav, option_history, termo_history, financials, financial_statement_history, company_financials, income_statements, balance_sheets, cash_flow_statements, anbima_classes, inflation, inflation_items, fii_property_history, focus_expectations, fidc_cedentes, fidc_sacados, fidc_portfolio, fidc_tranches, fidc_aging, fund_holdings, fund_debentures, fund_documents, fund_restatements, fund_restatement_diff, company_events, macro_series, ptax, future_curve, future_series, curve, curve_history, research_universe and the ten screen_* functions (`limits.page.all`). THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send p_after='' for the first page, then the key from the last row — for the panel 'date|id|metric|asset_class', for quote_history and fund_nav just that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when paging, because its cursor is a bare period and one CNPJ can file under two families in the same month. The rest do not page: narrow p_from/p_to instead (inflation and inflation_items default to the last 36 months for that reason), for fidc_cedentes / fidc_sacados / fidc_portfolio narrow the months (a p_cedente lookup spans many funds), for fund_holdings / fund_debentures narrow the months (a p_ticker or p_issuer lookup spans many funds), pin one p_kind on fidc_portfolio, or ask for the newest N rows with an explicit p_limit (1..1000 — until v34 the FIDC three, and until v41 fund_holdings and fund_debentures, trimmed SILENTLY at 500 anonymous / 5,000 signed in; they no longer do), or for a screen raise its thresholds or pin its output filter (p_dormancy / p_min_nav, p_driver, p_family, p_modalidade). The old sentinels (5001 on the series functions, 100001 on the panel) are GONE and were never observable anyway — PostgREST cut the response at 1000 first (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. The RPC functions no longer need it — they raise instead. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
+    "Row caps — getting this wrong means silently analysing a TRUNCATED series, the exact fabrication this API exists to prevent. THE PAGE IS 1000 ROWS, imposed by PostgREST (db-max-rows) on every response. EVERY set-returning function now REFUSES rather than trims: a window that would produce more than 1000 rows raises SQLSTATE 22023 naming the function, so a short result can no longer look complete. The error says WHY (the response is one 1000-row page and SILO never returns a silently truncated result) and HOW to fix it for that function, in the message and again as PostgREST's `details` / `hint`. That is all forty-five — panel, quote_history, fund_nav, option_history, termo_history, financials, financial_statement_history, company_financials, income_statements, balance_sheets, cash_flow_statements, anbima_classes, inflation, inflation_items, fii_property_history, focus_expectations, fidc_cedentes, fidc_sacados, fidc_portfolio, fidc_tranches, fidc_aging, fund_holdings, fund_debentures, fund_documents, fund_restatements, fund_restatement_diff, company_events, macro_series, ptax, future_curve, future_series, curve, curve_history, research_universe, index_history and the ten screen_* functions (`limits.page.all`). FOUR OF THEM PAGE with p_after: panel, quote_history, fund_nav and index_history. Send p_after='' for the first page, then the key from the last row — for the panel 'date|id|metric|asset_class', for quote_history, fund_nav and index_history just that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when paging, because its cursor is a bare period and one CNPJ can file under two families in the same month. The rest do not page: narrow p_from/p_to instead (inflation and inflation_items default to the last 36 months for that reason), for fidc_cedentes / fidc_sacados / fidc_portfolio narrow the months (a p_cedente lookup spans many funds), for fund_holdings / fund_debentures narrow the months (a p_ticker or p_issuer lookup spans many funds), pin one p_kind on fidc_portfolio, or ask for the newest N rows with an explicit p_limit (1..1000 — until v34 the FIDC three, and until v41 fund_holdings and fund_debentures, trimmed SILENTLY at 500 anonymous / 5,000 signed in; they no longer do), or for a screen raise its thresholds or pin its output filter (p_dormancy / p_min_nav, p_driver, p_family, p_modalidade). The old sentinels (5001 on the series functions, 100001 on the panel) are GONE and were never observable anyway — PostgREST cut the response at 1000 first (measured 2026-08-28: quote_history from 2019 returned exactly 1000 rows, 200, OLDEST rows kept). On GET views the Content-Range RESPONSE HEADER is still the signal: `0-999/*` means cut; send `Prefer: count=exact` to read the true total. The RPC functions no longer need it — they raise instead. RANGE PAGING DOES NOT WORK ON RPC (a Range header on /rest/v1/rpc/panel returns the same first page again); p_after is the RPC cursor, Range/limit/offset are the view cursor. The local /v1 Flask adapter pages the SQL itself and answers 400 above its own total; do not carry its rules over.",
     "An unrecognised metric name is IGNORED, not rejected: the panel comes back smaller and perfectly plausible. Take metric names from this catalog's `metrics` map, never from memory.",
     "Option chains require a codneg prefix of at least 3 characters (api.option_chain); an unfiltered whole-market chain is refused.",
     "CALLER TIERS. Anonymous access is free but deliberately small: panel accepts at most 3 ids per call, search_funds returns at most 25 rows, and option_chain pages at most 200. Signing in (GitHub) raises those to 50 ids, 200 rows and 2000 respectively, and the query timeout from 3s to 8s, and unlocks panel universe mode (p_ids empty + p_entity_type: a whole family, paged with p_after). Exceeding the id ceiling raises SQLSTATE 22023 naming the limit — the panel is never silently truncated to fit.",
@@ -5912,13 +6064,15 @@ SELECT $json${
         "future_series",
         "curve",
         "curve_history",
-        "research_universe"
+        "research_universe",
+        "index_history"
       ],
       "cursor_protocol": "p_after: null = whole result (refused above 1000 rows); '' = first page; the function's key copied from the last row = the next page; a page shorter than 1000 is the last",
       "functions": {
         "paged": {
           "panel": "'<date>|<id>|<metric>|<asset_class>' copied from the last row; order is date, id, metric, asset_class",
           "quote_history": "the last row's trade_date as 'YYYY-MM-DD'; order is trade_date. Keep the same p_fields on every page, and restart when data_revision changes between pages",
+          "index_history": "the last row's trade_date as 'YYYY-MM-DD'; order is trade_date",
           "fund_nav": "the last row's period as 'YYYY-MM-DD'; order is period, entity_type. PAGING REQUIRES p_entity_type — the cursor is a bare period, which is unique only within one family, and 385 CNPJs file under two (fi + fidc) in the same month. Without it you get 22023, not a wrong answer. Whole-result mode needs no p_entity_type and labels every row with its family"
         },
         "raise_only": [
@@ -6457,6 +6611,7 @@ SELECT $json${
     "curve": "POST /rest/v1/rpc/curve",
     "curve_history": "POST /rest/v1/rpc/curve_history",
     "research_universe": "POST /rest/v1/rpc/research_universe",
+    "index_history": "POST /rest/v1/rpc/index_history",
     "short_interest": "GET /rest/v1/short_interest",
     "short_interest_by_sector": "GET /rest/v1/short_interest_by_sector",
     "lending_trades": "GET /rest/v1/lending_trades",
@@ -6517,11 +6672,11 @@ GRANT EXECUTE ON FUNCTION api.metric_coverage()                       TO silo_ap
 GRANT EXECUTE ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT, TEXT, NUMERIC, INT, TEXT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.lookup(TEXT)                            TO silo_api;
 GRANT EXECUTE ON FUNCTION api.fund_holdings(TEXT, TEXT, DATE, DATE, TEXT, INT) TO silo_api;
-GRANT EXECUTE ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT) TO silo_api;
-GRANT EXECUTE ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT) TO silo_api;
-GRANT EXECUTE ON FUNCTION api.income_statements(TEXT, DATE, DATE, TEXT, TEXT) TO silo_api;
-GRANT EXECUTE ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT) TO silo_api;
-GRANT EXECUTE ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT) TO silo_api;
+GRANT EXECUTE ON FUNCTION api.financials(TEXT, TEXT, DATE, DATE, TEXT, TEXT, DATE) TO silo_api;
+GRANT EXECUTE ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT, DATE) TO silo_api;
+GRANT EXECUTE ON FUNCTION api.income_statements(TEXT, DATE, DATE, TEXT, TEXT, DATE) TO silo_api;
+GRANT EXECUTE ON FUNCTION api.balance_sheets(TEXT, DATE, DATE, TEXT, TEXT, DATE) TO silo_api;
+GRANT EXECUTE ON FUNCTION api.cash_flow_statements(TEXT, DATE, DATE, TEXT, TEXT, DATE) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.anbima_classes(TEXT, TEXT, TEXT, DATE, DATE) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.fund_debentures(TEXT, TEXT, DATE, DATE, INT) TO silo_api;
 GRANT EXECUTE ON FUNCTION api.fidc_cedentes(TEXT, TEXT, DATE, DATE, INT)   TO silo_api;

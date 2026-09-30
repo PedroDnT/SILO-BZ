@@ -1,7 +1,9 @@
 -- =============================================================================
 -- 22_b3_tape_matviews.sql
--- Refresh the two matviews schema.sql owns: mv_b3_isin_subtype and
--- mv_b3_monthly_activity.
+-- Refresh the matviews the schema owns: mv_b3_isin_subtype and
+-- mv_b3_monthly_activity (schema.sql), and mv_b3_cash_event (migration 56, the
+-- cash events behind quote_history's close_total_return: about 7 s on
+-- 2026-09-30, and it must read the tape this apply's ingest just landed).
 --
 -- WHY THIS FILE EXISTS (docs/planning/OPEN_ITEMS.md item 16, found 2026-09-29).
 -- Every other matview is dropped and re-created by this layer, so applying the
@@ -66,6 +68,23 @@ BEGIN
   END IF;
 END
 $silo_refresh_mv_b3_isin_subtype$;
+
+DO $silo_refresh_mv_b3_cash_event$
+BEGIN
+  IF (
+    SELECT c.relispopulated
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname = 'mv_b3_cash_event'
+      AND c.relkind = 'm'
+  ) THEN
+    REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_b3_cash_event;
+  ELSE
+    REFRESH MATERIALIZED VIEW public.mv_b3_cash_event;
+  END IF;
+END
+$silo_refresh_mv_b3_cash_event$;
 
 DO $silo_refresh_mv_b3_monthly_activity$
 BEGIN

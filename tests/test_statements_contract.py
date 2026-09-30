@@ -35,7 +35,10 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SQL = (ROOT / "src/store/analytical/19_api_contract.sql").read_text(encoding="utf-8")
-ARGS = "TEXT, DATE, DATE, TEXT, TEXT"
+ARGS = "TEXT, DATE, DATE, TEXT, TEXT, DATE"
+# The signature before #414 added p_as_of: it is still dropped, so the old
+# overload cannot sit beside the new one (PostgREST refuses an ambiguous RPC).
+OLD_ARGS = "TEXT, DATE, DATE, TEXT, TEXT"
 
 
 def _body(fn: str) -> str:
@@ -76,7 +79,7 @@ def test_refuses_over_the_page(fn: str) -> None:
 @pytest.mark.parametrize("fn", ["balance_sheets", "cash_flow_statements"])
 def test_drops_before_replace(fn: str) -> None:
     """A widened RETURNS TABLE cannot be replaced in place on a live cluster."""
-    assert f"DROP FUNCTION IF EXISTS api.{fn}({ARGS});" in SQL
+    assert f"DROP FUNCTION IF EXISTS api.{fn}({OLD_ARGS});" in SQL
 
 
 def test_debt_is_split_by_the_parent_label() -> None:

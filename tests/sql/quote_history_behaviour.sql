@@ -205,4 +205,20 @@ BEGIN
     ASSERT n = 21, format('SUBS3 across its subscription: %s rows, expected 21', n);
 END $$;
 
+-- close_total_return (#418) is a selection that never refuses: NULL with the
+-- session's reason, here the missing cash history and, before a spin-off,
+-- the blocking event itself.
+DO $$
+DECLARE j JSONB;
+BEGIN
+    SELECT q INTO j FROM api.quote_history('SPLT3', '2024-08-05', '2024-08-05', NULL, NULL,
+                                           ARRAY['close_total_return', 'close_total_return_null_reason']) q;
+    ASSERT j ? 'close_total_return' AND j -> 'close_total_return' = 'null'::jsonb, format('total return: %s', j);
+    ASSERT j ->> 'close_total_return_null_reason' LIKE 'no cash distribution resolved%', format('reason: %s', j);
+    SELECT q INTO j FROM api.quote_history('SPIN3', '2024-08-05', '2024-08-05', NULL, NULL,
+                                           ARRAY['close_total_return_null_reason']) q;
+    ASSERT j ->> 'close_total_return_null_reason' LIKE 'unsupported corporate event CIS RED CAP%', format('reason: %s', j);
+    RAISE NOTICE 'close_total_return OK';
+END $$;
+
 ROLLBACK;

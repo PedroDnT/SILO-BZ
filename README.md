@@ -112,7 +112,7 @@ Times are UTC-3, with UTC in parentheses.
 1. **03:00 (06:00 UTC), `daily_ingest.yml`.** Applies the schema and any new
    migration, runs `run_daily`, then `ANALYZE`, then rebuilds the analytical layer,
    then fires the dashboard's deploy hook. If any source fails, those last three
-   steps are skipped. B3's corporate events and cash dividends, the market data
+   steps are skipped. B3's corporate events, cash dividends and index levels, the market data
    and the FNET register run last, as their own steps, so a slow host fails the
    run but cannot block the rest.
 2. **04:30 (07:30 UTC), `health.yml`.** Reads the audit log and the tables
@@ -319,7 +319,10 @@ same for everyone.
   session. It never falls back to the raw close: a window it cannot adjust (issuer events not
   proven swept in `b3_corporate_event_sweep`, or a spin-off, merger or other stock event
   this version does not adjust) is refused with ticker, period and cause. Dividends, JCP and
-  subscription rights are not adjusted; the total-return close waits for #418. The series follows the ISIN
+  subscription rights are not adjusted by `close_adj`; `p_fields` can also select
+  `close_total_return`, which reinvests B3's cash distributions on the ex session (#418) and
+  is NULL with a reason wherever a distribution cannot be valued (`docs/reference/API.md`,
+  "The total-return close"). The series follows the ISIN
   across boards, and an unknown ticker, a window outside the coverage, a second ISIN or two
   rows on one session are refused too. `close` and `close_unit` stay as traded, and every
   view keeps `adjusted = false`.

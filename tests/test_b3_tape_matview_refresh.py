@@ -98,10 +98,12 @@ def test_refresh_never_blocks_readers_and_still_fills_an_empty_matview():
     one also needs the plain form behind a relispopulated check."""
     body = _code(REFRESH_FILE.read_text(encoding="utf-8"))
     forms = _refreshes(REFRESH_FILE)
-    for mv in ("mv_b3_isin_subtype", "mv_b3_monthly_activity"):
+    # mv_b3_cash_event (migration 56, #418) is owned by a migration, not
+    # schema.sql, and follows the same two-form refresh.
+    for mv in ("mv_b3_isin_subtype", "mv_b3_monthly_activity", "mv_b3_cash_event"):
         assert (mv, True) in forms, f"{mv} must be refreshed CONCURRENTLY"
         assert (mv, False) in forms, f"{mv} needs the plain REFRESH for the empty case"
-    assert body.count("relispopulated") == 2
+    assert body.count("relispopulated") == 3
 
 
 def test_a_failed_refresh_cannot_be_downgraded_to_a_warning():

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
@@ -326,6 +327,56 @@ class B3Ingestor:
                 "(%d failed, %d no supplement)",
                 total, len(codes), len(failures), len(missing),
             )
+            return total
+        except Exception as exc:
+            self._log_finish(run_id, 0, error=ingest_log.describe(exc))
+            raise
+
+    async def ingest_index_levels(
+        self,
+        indices: Optional[Tuple[str, ...]] = None,
+        today: Optional[date] = None,
+    ) -> int:
+        """Fetch every published year of each configured index and upsert the levels.
+
+        One call per calendar year (59 for IBOV, about a minute), refetched in
+        full every night: the upsert rewrites only a row that changed, so a
+        B3 correction or an intraday level stored earlier heals with no
+        backfill mode. The whole series is validated before anything is
+        written, because the divisor-step check compares neighbouring sessions
+        across year boundaries. A null result for a configured index is an
+        error (B3IndexNoResults), except for the current year in the first days
+        of January, before its first session. One cvm_ingest_log row.
+        """
+        from src.fetchers.b3_index_fetcher import B3IndexFetcher, B3IndexNoResults
+        from src.pipeline import ingest_b3_index as idx
+
+        run_id = str(uuid4())
+        self._log_start(run_id, "index_levels", None, None)
+        try:
+            today = today or date.today()
+            fetcher = B3IndexFetcher()
+            records: List[Dict[str, Any]] = []
+            for code in indices or idx.INDEX_CODES:
+                series: List[Dict[str, Any]] = []
+                for year in range(idx.FIRST_YEAR[code], today.year + 1):
+                    try:
+                        payload = fetcher.fetch_year(code, year)
+                    except B3IndexNoResults:
+                        if not idx.year_may_be_empty(year, today):
+                            raise
+                        logger.info(
+                            "B3 index %s %d: no grid yet, the year has no session", code, year
+                        )
+                        continue
+                    series.extend(idx.parse_year(code, year, payload))
+                    time.sleep(fetcher.sleep_between)
+                idx.mark_divisor_steps(code, series)
+                records.extend(series)
+            total = idx.ingest_b3_index_levels(self._supabase, records)
+            self._log_finish(run_id, total)
+            logger.info("B3 index levels: %d sessions across %d index(es)", total,
+                        len(indices or idx.INDEX_CODES))
             return total
         except Exception as exc:
             self._log_finish(run_id, 0, error=ingest_log.describe(exc))

@@ -1,6 +1,6 @@
 # Research seam: SILO as the data layer for external quant research
 
-**Status: spec drafted 2026-09-29 from the wayfinder map ([#371](https://github.com/PedroDnT/SILO-BZ/issues/371), 11 of 11 tickets resolved). Approved 2026-09-29; the build tickets are under epic #410. The research universe (#411) is built (§4). The price contract (§3) is built as amended by the owner on 2026-09-30: `close_adj` is the default field of `quote_history` and the panel's default for shares and units, rows are JSON objects holding only the selected fields, the series follows the ISIN across boards, and every window it cannot serve whole is refused.**
+**Status: spec drafted 2026-09-29 from the wayfinder map ([#371](https://github.com/PedroDnT/SILO-BZ/issues/371), 11 of 11 tickets resolved). Approved 2026-09-29; the build tickets are under epic #410. The research universe (#411) is built (§4), and so are the benchmark index `api.index_history` (§5; #412, #415, catalog v45), the total-return close in `quote_history` (§3; #418, catalog v46) and the as-of date on the fundamentals (§6; #414, catalog v47). The price contract (§3) is built as amended by the owner on 2026-09-30 (catalog v48): `close_adj` is the default field of `quote_history` and the panel's default for shares and units, rows are JSON objects holding only the selected fields (`close_total_return` is one), the series follows the ISIN across boards, and every window it cannot serve whole is refused, the pre-2019 window included.**
 
 A *research caller* is an external repository that builds features, signals or
 backtests on SILO data (terms: `CONTEXT.md`, *Research data*). Its first
@@ -70,8 +70,12 @@ the data behind an answer, and the SDK never combines two revisions.
    **Both adjusted fields are NULL-with-reason until proven**, one reason column
    per field (their coverage is independent):
    - price-adjusted: NULL until the issuer's corporate events are proven swept from 2019;
-   - total-return: NULL until the cash history table (below) is backfilled for that ISIN.
-   An unresolvable event NULLs the *earlier* total-return closes of its own ISIN only.
+   - total-return: NULL until the ISIN has a resolved cash distribution in B3's history
+     and no later distribution is unvalued. Built in #418 (catalog v46): an event with
+     no proven ISIN NULLs the earlier closes of its issuer's same share class (by the
+     class B3 publishes and the ticker prefixes the issuer has used, never a guessed
+     ISIN), and a supplement event absent from the history NULLs its own ISIN's.
+     See `docs/reference/API.md`, "The total-return close".
 5. **Equity and unit only.** Every other asset class gets NULL with reason
    `outside research universe`.
 6. **The board default follows the ISIN** (owner, 2026-09-30). 62 share/unit
@@ -157,7 +161,7 @@ levels, from a closed, extensible list of index codes.
 - **Source:** B3's administrator-published daily close, `indexStatisticsProxy/IndexCall/GetPortfolioDay`
   (undocumented; one year per call). SGS 7 is discontinued since 2019-09-30 and is not used.
 - **Columns:** `index_code`, `trade_date`, `level`, `source`, a flag for a divisor
-  step as published (IBOV 1997-03-03, ÷10). Same 1,000-row cap and date cursor as
+  step as published (IBOV: eleven, 1983-10-04 ÷100 and ten ÷10 sessions, the last 1997-03-03; found in the series on 2026-09-30). Same 1,000-row cap and date cursor as
   `quote_history`. The tape-start refusal does not apply; depth per index is published in `api.coverage()`.
 - **Storage:** a new table keyed on `(index_code, trade_date)`, one `cvm_ingest_log`
   row per ingest, idempotent upsert, level as published. **A null endpoint result
