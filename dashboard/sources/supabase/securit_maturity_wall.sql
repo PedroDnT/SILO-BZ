@@ -12,13 +12,42 @@
 -- Series with no data_vencimento, or already past maturity, fall outside this
 -- forward ladder on purpose — they are counted in securit_overview.sql
 -- (n_sem_vencimento / n_past_maturity) so the excluded tail stays visible.
-with years as (
+with per_period as (
+  select period, count(*) as n,
+         lag(count(*)) over (order by period) as prev_n
+  from fact_security_monthly
+  group by period
+),
+as_of as (
+  -- AS-OF MONTH: the rule securit_issuance_trend.sql and
+  -- distressed_securities() (09) use, the newest ENDED period holding at least
+  -- half the previous period's rows. COALESCE falls back to the last ended
+  -- month when nothing qualifies (an empty fact).
+  select coalesce(
+           (select period
+              from per_period
+             where period <= (date_trunc('month', current_date) - interval '1 month')::date
+               and (prev_n is null or n >= 0.5 * prev_n)
+             order by period desc
+             limit 1),
+           (date_trunc('month', current_date) - interval '1 month')::date
+         ) as p_end
+),
+years as (
   select generate_series(
            extract(year from current_date)::int,
            extract(year from current_date)::int + 14
          ) as maturity_year
 ),
 snapshot as (
+  -- LIVE SERIES (#434): a series is live when its latest filing falls in the
+  -- as-of month or the month before; filings after the as-of month are
+  -- ignored. This used to be every series' latest filing EVER, which kept the
+  -- series that stopped filing (matured or redeemed): 10,855 series against
+  -- 6,862 live at 2026-07, R$427.8 bn against R$376.8 bn. Two months, not
+  -- the as-of month alone, because that month can be only half filed: with
+  -- 2026-07 at 55%, "filed in 2026-07" showed 3,763 series and R$201.0 bn,
+  -- the window 6,824 and R$372.5 bn.
   -- Latest reported snapshot per series (same de-duplication as
   -- securit_overview.sql — the source table re-states the whole book monthly).
   -- A series is (instrument_type, codigo_identificacao, numero_serie). The
@@ -35,7 +64,9 @@ snapshot as (
     s.data_vencimento,
     s.situacao
   from cvm_securit_serie s
-  where s.data_referencia is not null
+  cross join as_of a
+  where s.data_referencia >= (a.p_end - interval '1 month')::date
+    and s.data_referencia <  (a.p_end + interval '1 month')::date
   order by
     s.instrument_type,
     s.codigo_identificacao,

@@ -15,7 +15,8 @@ sidebar_position: 9
   Every "outstanding" figure on this page therefore de-duplicates to the latest
   data_referencia per series (instrument_type, codigo_identificacao,
   numero_serie) before summing. Summing the table raw would multiply each series
-  by the number of months it has been reported.
+  by the number of months it has been reported. Only live series count: those
+  whose latest filing falls in the As Of month or the month before (#434).
 
   For the same reason, the trend section is labelled "reported value", not
   "issuance": security_issuance_trend() sums valor_certificados per month, which
@@ -93,7 +94,7 @@ select * from supabase.securit_dfin_coverage
 <BigValue data={securit_overview} value=n_securitizadoras title="Securitizadoras" fmt=num0/>
 <BigValue data={securit_overview} value=outstanding_bn title="Outstanding (R$bn)" fmt=num0/>
 <BigValue data={securit_overview} value=em_atraso_num1 title="Series Em Atraso (%)" fmt=num1/>
-<BigValue data={securit_overview} value=last_reference title="Latest Reference"/>
+<BigValue data={securit_overview} value=as_of_period title="As Of"/>
 
 > `Series Em Atraso` is a share of the **series count**, not of value: it says
 > what fraction of series carry that filed status, and a single large series in
@@ -101,6 +102,11 @@ select * from supabase.securit_dfin_coverage
 > Adimplente or Em atraso (in arrears); it never files "Inadimplente". CRI
 > filings before 2022-07 carry no status at all, so those series are left out
 > of the share instead of being counted as current.
+>
+> `Live Series` and every figure beside it count the series whose latest filing
+> falls in the `As Of` month or the month before, so a series that stops filing
+> drops out a month later. `As Of` is the newest month holding at least half the
+> previous month's series, the month the trend below ends on.
 
 ---
 
@@ -149,8 +155,8 @@ yAxisTitle="R$bn"
 
 ## Maturity Wall
 
-> Outstanding certificate value by maturity year, from the latest snapshot of
-> each series. Built from `cvm_securit_serie` rather than
+> Outstanding certificate value by maturity year, from the latest filing of
+> each live series (see `Live Series` above). Built from `cvm_securit_serie` rather than
 > `security_maturity_ladder()` — that function reads `dim_security`, which does
 > not carry `valor_certificados`, and hardcodes `total_value` to NULL.
 
