@@ -127,6 +127,11 @@ half the previous period's rows; guarded by
 (latest periods fully populated), FIP (31-Dec key, already guarded per class).
 Live after the next `apply_analytical.sh` run and dashboard rebuild.
 
+**Addendum 2026-09-30 (#436):** the sweep missed a second instance.
+`securit_issuance_trend.sql` put its `max(data_referencia)` inside `least()`, so
+its trend ended on partial months: 2026-08 held 1,247 series against 2026-07's
+6,810. It now uses the same half-the-previous-period rule.
+
 PR #270 fixed one instance: `/growth` selected its comparison year with
 `MAX(fy)`, which pinned the whole page to the 8 companies that had filed fiscal
 2026, against fiscal 2025's 438. `CLAUDE.md` already warns about the same class
