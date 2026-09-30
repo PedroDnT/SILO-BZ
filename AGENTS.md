@@ -301,8 +301,9 @@ request.
 
 **Every branch carries its own docs.** Before pushing, add the branch's row to
 `docs/planning/CHANGELOG.md` (or a `No-changelog: <reason>` commit trailer), keep
-every row main already had word for word (or a `Changelog-removes: <reason>`
-trailer), and update `README.md`, the planning index and `OPEN_ITEMS.md` where the
+every row main already had word for word, in `CHANGELOG.md` or its archive
+`docs/archive/changelog/` (`scripts/roll_changelog.py` rolls old rows there; or a
+`Changelog-removes: <reason>` trailer), and update `README.md`, the planning index and `OPEN_ITEMS.md` where the
 branch made them stale. A change to the files one of the four `docs/architecture/`
 pages describes edits that page in place, short and with no dated entry (or a
 `No-architecture-change: <reason>` trailer). The `pytest` job in `test.yml` runs the row comparison on

@@ -67,7 +67,12 @@ fi
 # the branch while the branch merged an older main) there are two, and
 # `git merge-base` names only one. .github/workflows/test.yml repeats this for
 # pull requests, which also covers merges made outside Claude Code.
-rows() { git show "$1:docs/planning/CHANGELOG.md" 2>/dev/null | grep '^| 20'; }
+# Every row the live file and the frozen archive files (docs/archive/changelog/,
+# filled by scripts/roll_changelog.py) hold: a row rolled between them is not dropped.
+rows() {
+  git ls-tree -r --name-only "$1" -- docs/planning/CHANGELOG.md docs/archive/changelog 2>/dev/null |
+    while IFS= read -r f; do git show "$1:$f"; done | grep '^| 20'
+}
 bases=$(git merge-base --all HEAD origin/main)
 base_rows() { for b in $bases; do rows "$b"; done | awk '!seen[$0]++'; }
 if ! git log --format=%B origin/main..HEAD | grep -qiE '^Changelog-removes:[[:space:]]*[^[:space:]]'; then

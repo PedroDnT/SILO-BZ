@@ -30,11 +30,28 @@ from pathlib import Path
 
 import pytest
 
-CHANGELOG = Path(__file__).resolve().parents[1] / "docs/planning/CHANGELOG.md"
+ROOT = Path(__file__).resolve().parents[1]
+CHANGELOG = ROOT / "docs/planning/CHANGELOG.md"
+ARCHIVE = ROOT / "docs/archive/changelog"
+
+
+def _files() -> list[Path]:
+    """The live file, then the frozen archive files, newest range first.
+
+    The live file keeps the newest rows; `scripts/roll_changelog.py` moves the
+    rest, byte for byte, into `docs/archive/changelog/<oldest>_to_<newest>.md`.
+    Every property below is about the rows of all of them read in this order,
+    as one changelog.
+    """
+    return [CHANGELOG, *sorted(ARCHIVE.glob("*.md"), reverse=True)]
+
+
+def _lines_of(path: Path) -> list[str]:
+    return path.read_text(encoding="utf-8").split("\n")
 
 
 def _lines() -> list[str]:
-    return CHANGELOG.read_text(encoding="utf-8").split("\n")
+    return [line for path in _files() for line in _lines_of(path)]
 
 
 def _rows() -> list[str]:
@@ -59,13 +76,25 @@ def test_there_are_no_duplicate_rows() -> None:
     )
 
 
-def test_there_is_exactly_one_table_header() -> None:
-    headers = [line for line in _lines() if _is_header(line)]
-    assert len(headers) == 1, (
-        f"found {len(headers)} `| Date |` header rows; expected 1. A second "
-        "header is a concatenated second table, and markdown renders it as a "
-        "data row rather than a header."
-    )
+def test_there_is_exactly_one_table_header_per_file() -> None:
+    for path in _files():
+        headers = [line for line in _lines_of(path) if _is_header(line)]
+        assert len(headers) == 1, (
+            f"{path.name}: found {len(headers)} `| Date |` header rows; expected "
+            "1. A second header is a concatenated second table, and markdown "
+            "renders it as a data row rather than a header."
+        )
+
+
+def test_an_archive_file_is_named_for_the_rows_it_holds() -> None:
+    """`<oldest>_to_<newest>.md`, so a roll never guesses and two never collide."""
+    for path in sorted(ARCHIVE.glob("*.md")):
+        dates = [r.split("|")[1].strip() for r in _lines_of(path) if r.startswith("| 20")]
+        assert dates, f"{path.name} holds no rows; delete it"
+        assert path.name == f"{dates[-1]}_to_{dates[0]}.md", (
+            f"{path.name} holds rows from {dates[-1]} to {dates[0]}; rename it "
+            f"{dates[-1]}_to_{dates[0]}.md"
+        )
 
 
 def test_rows_are_newest_first() -> None:

@@ -9,4 +9,6 @@
 # brings it in. GitHub's merge button has not honoured this attribute, so a PR
 # can still show a conflict until main is merged into it locally, and a branch
 # update in GitHub's web UI (be050dd, #322) dropped #324's and #325's rows.
+# The rows it rolls out live in docs/archive/changelog/ (scripts/roll_changelog.py):
+# frozen files, never edited, so they need no merge attribute.
 docs/planning/CHANGELOG.md merge=union

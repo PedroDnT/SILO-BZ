@@ -9,7 +9,7 @@ folder it is in is in the wrong folder.
 | [`architecture/`](architecture/)                                   | How does it work?            | `SYSTEM.md`, `DATA_FLOW.md`, `OPERATIONS.md`, `DECISIONS.md`                                    |
 | [`reference/`](reference/)                                         | What is true about the data? | `API.md`, `DATABASE_MAINTENANCE.md`, `DATA_INVENTORY.md`, `DATA_MODELING.md`, `CIA_DATA_MAP.md`, `research/` (measured findings), `security/` (role and RLS SQL) |
 | [`planning/`](planning/)                                           | What is open?                | Live work only: `OPEN_ITEMS.md`, the roadmap docs, `CHANGELOG.md`                               |
-| [`archive/`](archive/)                                             | What did we decide, and why? | Finished research kept because a live doc cites it                                              |
+| [`archive/`](archive/)                                             | What did we decide, and why? | Finished research a live doc cites; changelog rows rolled out of `planning/CHANGELOG.md`                                              |
 
 Two rules keep it this way:
 
