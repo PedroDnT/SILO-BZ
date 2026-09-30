@@ -202,6 +202,13 @@ INTERNAL_FUNCTIONS = {
     "api.company_ref",
     "api.cia_statement_rows",
     "api.inflation_registry",
+    # The research price contract (#410): quote_history's field list, the data
+    # revision, and the close_adj status / ratio / refusal shared with panel.
+    "api.quote_history_fields",
+    "api.quote_data_revision",
+    "api.close_adj_status",
+    "api.close_adj_ratio",
+    "api.assert_close_adj",
 }
 
 
@@ -250,7 +257,7 @@ DELEGATING_FUNCTIONS = {"api.fund_profile", "api.fund_nav", "api.search_funds"}
 # is the one deliberate SECURITY INVOKER: DEFINER would grant owner rights for
 # nothing, and with no object references there is no search_path surface.
 # test_constant_functions_read_nothing keeps that justification honest.
-CONSTANT_FUNCTIONS = {"api.catalog"}
+CONSTANT_FUNCTIONS = {"api.catalog", "api.quote_history_fields"}
 
 
 def test_every_definer_function_pins_an_immutable_search_path():
@@ -488,7 +495,10 @@ def test_typed_b3_surfaces_do_not_assume_equity_board_02():
         assert "board = '02'" not in FUNCS[name]
     assert re.search(r"p_board\s+TEXT\s+DEFAULT\s+NULL", FUNCS["api.quote_history"])
     assert re.search(r"p_board\s+TEXT\s+DEFAULT\s+NULL", FUNCS["api.quote_latest"])
-    assert "latest.board" in FUNCS["api.quote_history"]
+    # The series follows the ISIN across boards (#410): the latest-board
+    # default cut ETER3 at its 2024-08-12 move from board 08 to 02.
+    assert "latest.board" not in FUNCS["api.quote_history"]
+    assert "v_board IS NULL OR q.board = v_board" in FUNCS["api.quote_history"]
 
 
 def test_ingest_log_summary_not_executable_by_clients():
@@ -1399,18 +1409,22 @@ def test_partitioned_and_view_relkinds_are_in_scope():
 
 
 def test_panel_still_defaults_to_price():
+    # NULL = each family's price: close_adj for shares and units, close for
+    # every other ticker, nav for funds (#410). The routing lives in the arms.
     panel = FUNCS["api.panel"]
-    assert "p_metrics TEXT[] DEFAULT ARRAY['close', 'nav']::TEXT[]" in panel
-    # and the COALESCE fallback inside params must agree with the signature,
-    # or an explicit NULL would widen what the signature narrows.
-    assert "COALESCE(p_metrics, ARRAY['close','nav']::TEXT[])" in panel
+    assert "p_metrics TEXT[] DEFAULT NULL" in panel
+    assert "COALESCE(p_metrics, ARRAY['close','close_adj','nav']::TEXT[])" in panel
+    assert "(NOT p.default_metrics OR NOT q.in_universe)" in panel
+    assert "(NOT p.default_metrics OR q.in_universe)" in panel
 
 
 def test_catalog_declares_the_default_machine_readably():
     from serve.catalog import catalog_payload
 
     d = catalog_payload()["defaults"]
-    assert d["panel"]["metrics"] == ["close", "nav"]
+    assert d["panel"]["metrics"] == ["close", "close_adj", "nav"]
+    assert d["quote_history"]["fields"] == ["ticker", "trade_date", "close_adj"]
+    assert "p_fields" in d["quote_history"]["to_widen"]
     assert "opt-in" in d["principle"]
     # The escape hatch must be named, not implied: an agent told only "these are
     # the defaults" has no documented way to get the other columns back.
@@ -1424,7 +1438,7 @@ def test_catalog_default_matches_the_sql_signature():
 
     declared = catalog_payload()["defaults"]["panel"]["metrics"]
     panel = FUNCS["api.panel"]
-    m = re.search(r"p_metrics TEXT\[\] DEFAULT ARRAY\[(.*?)\]::TEXT\[\]", panel)
+    m = re.search(r"COALESCE\(p_metrics, ARRAY\[(.*?)\]::TEXT\[\]\)", panel)
     assert m, "could not read p_metrics default out of api.panel"
     actual = [x.strip().strip("'") for x in m.group(1).split(",")]
     assert actual == declared, f"catalog says {declared}, SQL says {actual}"

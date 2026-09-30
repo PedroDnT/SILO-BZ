@@ -361,7 +361,19 @@ __all__ = [
 # groupings and bonus shares, anchored to the latest session, NULL with a
 # reason until the issuer's events are proven swept) and close_total_return
 # (NULL with a reason until the cash history is backfilled), #417 / #413.
-CATALOG_VERSION = 44
+# v45: the research price contract (#410). quote_history returns one JSON
+# object per session holding only the selected fields (p_fields); the default
+# is ticker, trade_date, close_adj, and the raw close, OHLC and volume are an
+# explicit selection. close_price_adjusted becomes close_adj and is never NULL
+# in disguise: a window it cannot adjust (outside shares/units, issuer events
+# not proven swept, an unsupported, unreadable or ambiguous event) is refused
+# with ticker, period and cause. close_total_return leaves the row until #418
+# serves it. The series follows the ISIN across boards (ETER3 had lost 1,396
+# sessions to the latest-board default); an unknown ticker, a window outside
+# the coverage, a second ISIN in the window or two rows on one session refuse.
+# data_revision identifies the data behind a response. The panel defaults to
+# close_adj for shares and units (new metric), close for other tickers.
+CATALOG_VERSION = 45
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -390,11 +402,30 @@ METRICS: Dict[str, Dict[str, Any]] = {
         "grain": ["day", "month"],
         "source": "b3_cotahist",
         "meaning": (
-            "Unadjusted close. Cash tickers: the ticker's latest BDI board by "
-            "default, classified from published TPMERC/ESPECI. Option/termo "
-            "codnegs: that derivative segment's session close. "
-            "Month = last session."
+            "Unadjusted close, as traded. Cash tickers: every BDI board "
+            "(the instrument's own series), classified from published "
+            "TPMERC/ESPECI. Option/termo codnegs: that derivative segment's "
+            "session close. Month = last session. The default for tickers "
+            "outside shares and units, and for options and termo."
         ),
+    },
+    "close_adj": {
+        # Owned by SILO, never the caller (RESEARCH_SEAM.md §3). The same
+        # value quote_history serves: api.close_adj_ratio / assert_close_adj.
+        "id_type": ["ticker"],
+        "asset_class": ["equity", "unit"],
+        "grain": ["day", "month"],
+        "source": "b3_cotahist",
+        "meaning": (
+            "Close per single share, backward-adjusted for splits, groupings "
+            "and bonus shares by B3's rule and anchored to the instrument's "
+            "latest session; 6 decimal places. No dividend or JCP adjustment. "
+            "Shares (ISIN code ACN) and units (CDA/UNT, ticker ending 11) "
+            "only. A window it cannot adjust REFUSES (22023) naming ticker, "
+            "period and cause; it is never the raw close under this name. The "
+            "panel default for shares and units. Month = last session."
+        ),
+        "derived": True,
     },
     "volume": {
         "id_type": ["ticker", "option", "termo"],
@@ -402,8 +433,8 @@ METRICS: Dict[str, Dict[str, Any]] = {
         "grain": ["day", "month"],
         "source": "b3_cotahist",
         "meaning": (
-            "Session traded volume (BRL). Cash: the ticker's latest BDI board "
-            "by default; option/termo: that derivative segment. "
+            "Session traded volume (BRL). Cash: every BDI board (the "
+            "instrument's own series); option/termo: that derivative segment. "
             "Month = last session."
         ),
     },
@@ -590,20 +621,38 @@ CONSTRAINTS = [
     "close is the price as published, which for a paper quoted per lot refers "
     "to 1000 shares; close_unit divides it by the published quotation_factor so "
     "levels are comparable. Neither is corporate-action adjusted, and `adjusted` "
-    "is FALSE on every row because it describes close. The one adjusted price is "
-    "quote_history's close_price_adjusted (see the next constraint).",
-    "quote_history'S close_price_adjusted IS CONTINUOUS ACROSS SPLITS, GROUPINGS "
-    "AND BONUS SHARES ONLY, AND IT IS ANCHORED TO THE LATEST SESSION. It is the "
-    "close per single share divided by every later event's share ratio, by B3's "
-    "rule: 1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for "
-    "GRUPAMENTO. Past levels change when a new event lands and returns do not, "
-    "so never read a past level as the price seen that day. Spin-offs, mergers, "
-    "capital reductions and subscriptions are NOT adjusted. It is NULL, with "
-    "close_price_adjusted_null_reason saying why, outside the research universe "
-    "(shares ACN; units CDA/UNT with a ticker ending 11), when the issuer's "
-    "corporate events are not proven swept, or when an event factor is "
-    "unreadable: a NULL is never a raw close in disguise. close_total_return is "
-    "NULL until the cash distribution history is backfilled.",
+    "is FALSE on every view row because it describes close. The adjusted price "
+    "is close_adj (quote_history's default field, the panel's default metric "
+    "for shares and units; see the next constraint).",
+    "close_adj IS CONTINUOUS ACROSS SPLITS, GROUPINGS AND BONUS SHARES ONLY, AND "
+    "IT IS ANCHORED TO THE INSTRUMENT'S LATEST SESSION. It is the close per "
+    "single share divided by the share ratio of every later event, by B3's rule: "
+    "1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for GRUPAMENTO, "
+    "distinct events on one date multiplied. Past levels change when a new event "
+    "lands and returns do not, so never read a past level as the price seen that "
+    "day, and never combine pages with different data_revision values. Dividends "
+    "and JCP are not adjusted in this version. A window close_adj cannot cover "
+    "is REFUSED (22023, DETAIL reason=adjustment_unavailable; cause=...) naming "
+    "ticker, period and cause, never served as the raw close: outside shares "
+    "(ISIN code ACN) and units (CDA/UNT, ticker ending 11); issuer events not "
+    "proven swept, or the proof older than the last session; a stretch on or "
+    "before an event this version does not adjust (spin-off CIS RED CAP, "
+    "INCORPORACAO, SUBSCRICAO, REST CAP ACOES, RESG TOTAL RV, any new label), an "
+    "unreadable factor, or one label on one date published with two factors. "
+    "The absence of events is never taken as proof: the sweep proof is. Select "
+    "close explicitly for the raw close.",
+    "quote_history IS KEYED ON THE ISIN AND REFUSES WHAT IT CANNOT SERVE WHOLE. "
+    "The series follows the instrument across BDI boards (p_board restricts it). "
+    "22023 with DETAIL reason=: unknown_ticker (never printed on the cash tape); "
+    "outside_coverage (no session in the window, or the window starts before "
+    "the instrument's first session; the tape starts 2019-01-02, see "
+    "coverage()); isin_change (the ticker printed under two ISINs in the "
+    "window; a reused receipt code is a new instrument and is never joined); "
+    "ambiguous_session (two rows on one session; pass p_board); invalid_field; "
+    "adjustment_unavailable. Inside the coverage a missing session is a session "
+    "with no trade (COTAHIST lists only papers that traded; "
+    "prior_no_trade_sessions counts them), holidays are not sessions, and a "
+    "field with no value is a JSON null.",
     "Daily close_return is null when the previous session is more than 7 "
     "calendar days back (halts, listing gaps), and null across a quotation-"
     "factor change — a fatcot flip rescales the quote with no market move "
@@ -980,29 +1029,73 @@ AGENT_INSTRUCTIONS = (
     "period; newest_period can sit in the future when a family files "
     "forward-dated (FIP is keyed 31-December), so never read it as freshness. "
     "PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics "
-    "returns `close` for tickers and `nav` for CNPJs, and that is the call to "
-    "make unless you actually need another measure — name metrics explicitly "
-    "only when you will use them. The wide endpoints are the exception and "
-    "behave the other way round: quote_latest, quote_history and the views "
-    "return their full OHLCV/identity row every time, so trim them with "
-    "PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than "
-    "pulling 22 columns to read one. See `defaults`."
+    "returns `close_adj` (split-, grouping- and bonus-adjusted) for share and "
+    "unit tickers, `close` for other tickers and `nav` for CNPJs, and "
+    "quote_history with no p_fields returns ticker, trade_date and close_adj; "
+    "that is the call to make unless you actually need another measure — name "
+    "metrics or fields explicitly only when you will use them (p_fields=['close'] "
+    "for the raw close). A close_adj window SILO cannot adjust is refused with "
+    "the cause, never served raw. The wide endpoints are the exception and "
+    "behave the other way round: quote_latest and the views return their full "
+    "OHLCV/identity row every time, so trim them with PostgREST `?select=` "
+    "(e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to "
+    "read one. See `defaults`."
 )
 
 # What a caller gets when it asks for nothing. Machine-readable because an
 # agent that has to infer the default from prose will instead request every
 # metric it can see — which is how a price lookup turns into seven columns of
 # fund accounting it never reads.
+# quote_history's selectable fields (p_fields) and their JSON types, the same
+# list as api.quote_history_fields() in 19_api_contract.sql;
+# tests/test_quote_history_contract.py pins the two together.
+QUOTE_HISTORY_FIELDS: Dict[str, str] = {
+    "ticker": "string",
+    "trade_date": "date",
+    "close_adj": "number",
+    "close": "number",
+    "open": "number",
+    "high": "number",
+    "low": "number",
+    "average": "number",
+    "bid": "number",
+    "ask": "number",
+    "close_unit": "number",
+    "trades": "integer",
+    "quantity": "number",
+    "volume": "number",
+    "quotation_factor": "integer",
+    "board": "string",
+    "isin": "string",
+    "short_name": "string",
+    "spec": "string",
+    "currency": "string",
+    "asset_class": "string",
+    "source": "string",
+    "coverage_start": "date",
+    "coverage_end": "date",
+    "prior_no_trade_sessions": "integer",
+    "events_proven_at": "string",
+    "data_revision": "string",
+}
+
 DEFAULTS = {
     "principle": "price by default; every other measure is opt-in",
     "panel": {
-        "metrics": ["close", "nav"],
-        "means": "close for ticker ids, nav for cnpj ids; a metric absent for an id type simply yields no rows",
+        "metrics": ["close", "close_adj", "nav"],
+        "means": "p_metrics omitted: close_adj for share and unit tickers, close for every other ticker, option and termo, nav for cnpj ids; an explicit list is served as asked, and a metric absent for an id type simply yields no rows",
         "grain": "(id, asset_class, date, metric) — a CNPJ filing under two families yields one row per family; p_entity_type narrows to one",
         "to_widen": "pass p_metrics explicitly, e.g. p_metrics=['close','volume']",
     },
+    "quote_history": {
+        "fields": ["ticker", "trade_date", "close_adj"],
+        "means": "one JSON object per session with only the selected keys; ticker and trade_date are in every row",
+        "to_widen": "pass p_fields, e.g. p_fields=['close','volume'] for the raw close and volume; an unknown name refuses (22023)",
+        "precision": "prices are decimals as published (6 decimal places on the tape); close_adj is rounded to 6 decimal places",
+        "available": QUOTE_HISTORY_FIELDS,
+    },
     "wide_endpoints": {
-        "which": ["quote_latest", "quote_history", "fund_nav", "api.quotes and the typed views"],
+        "which": ["quote_latest", "fund_nav", "api.quotes and the typed views"],
         "behaviour": "fixed full row (OHLCV + identity); the column list cannot vary by argument",
         "to_narrow": "PostgREST ?select=, e.g. /rest/v1/rpc/quote_latest?select=ticker,trade_date,close",
     },
@@ -1073,7 +1166,8 @@ LIMITS = {
                 ),
                 "quote_history": (
                     "the last row's trade_date as 'YYYY-MM-DD'; order is "
-                    "trade_date"
+                    "trade_date. Keep the same p_fields on every page, and "
+                    "restart when data_revision changes between pages"
                 ),
                 "fund_nav": (
                     "the last row's period as 'YYYY-MM-DD'; order is period, "

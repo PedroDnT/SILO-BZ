@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "44";
+export const CONTRACT_VERSION = "45";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -1583,7 +1583,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "coverage": {
     "kind": "rpc",
     "path": "/rpc/coverage",
-    "description": "Freshness AND honesty per dataset. as_of = the newest period that has landed and has actually ELAPSED (bounded by today); complete_through = the newest COMPLETE period, which is what default windows serve; newest_period = the newest period KEY present, which can sit in the future when a family files forward-dated (FIP is keyed 31-December); landed_at = when ingest last SUCCEEDED for that source, from cvm_ingest_log (status ok with a finish time, so a later failed run never advances it); landed_git_sha = the git commit of THAT run — which code produced this data — NULL when the run recorded none (before migration 44, or run outside GitHub Actions), never borrowed from an older run. funds_<family> rows report each filing cadence separately. notes carries a caveat the dates cannot: the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); funds_fip states why its newest_period runs ahead; fund_nav points at catalog().applicability and api.metric_coverage(); the fidc_tranches and fidc_aging rows state that those informe tabs begin in 2025-01 because CVM publishes no archive of them (an upstream limit, not a gap); the fnet_documents row (the FNET register behind fund_documents and fund_restatements) is keyed on the DELIVERY day, with complete_through the day before as_of, and states that its history begins at first capture / backfill and that fund links come from a fortnightly sweep, so recent documents may have no cnpj yet; the company_events row (IPE filings, keyed on the delivery date, complete_through NULL as on financials) states that history starts in 2015 and that filings CVM published without a protocol number are not held; the macro_series and ptax rows carry their units and cadences (SELIC_META is published ahead, so its newest_period can sit in the future); the di_futures and reference_curves rows (B3 Price Report DI1 contracts from 2018, B3 reference curves from 2008) state where each history starts and that the long curve vertices are B3's extrapolation, not prices; and the five B3 lending / flow rows (short_interest, short_interest_by_sector, lending_trades, lending_participants, investor_flow) state the RATCHET — B3 keeps ~21 business days and publishes no archive, so their span starts at first capture and no backfill exists — along with the float_basis, brokerage-not-owner and first-difference traps that make those series easy to read wrongly. Their landed_at is split by ingest doc_type, so a COTAHIST run never reports as the lending group's freshness.",
+    "description": "Freshness AND honesty per dataset. as_of = the newest period that has landed and has actually ELAPSED (bounded by today); complete_through = the newest COMPLETE period, which is what default windows serve; newest_period = the newest period KEY present, which can sit in the future when a family files forward-dated (FIP is keyed 31-December); landed_at = when ingest last SUCCEEDED for that source, from cvm_ingest_log (status ok with a finish time, so a later failed run never advances it); landed_git_sha = the git commit of THAT run — which code produced this data — NULL when the run recorded none (before migration 44, or run outside GitHub Actions), never borrowed from an older run. funds_<family> rows report each filing cadence separately. notes carries a caveat the dates cannot: the quotes row states where the cash tape starts (quote_history refuses a window before an instrument's first session); the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); funds_fip states why its newest_period runs ahead; fund_nav points at catalog().applicability and api.metric_coverage(); the fidc_tranches and fidc_aging rows state that those informe tabs begin in 2025-01 because CVM publishes no archive of them (an upstream limit, not a gap); the fnet_documents row (the FNET register behind fund_documents and fund_restatements) is keyed on the DELIVERY day, with complete_through the day before as_of, and states that its history begins at first capture / backfill and that fund links come from a fortnightly sweep, so recent documents may have no cnpj yet; the company_events row (IPE filings, keyed on the delivery date, complete_through NULL as on financials) states that history starts in 2015 and that filings CVM published without a protocol number are not held; the macro_series and ptax rows carry their units and cadences (SELIC_META is published ahead, so its newest_period can sit in the future); the di_futures and reference_curves rows (B3 Price Report DI1 contracts from 2018, B3 reference curves from 2008) state where each history starts and that the long curve vertices are B3's extrapolation, not prices; and the five B3 lending / flow rows (short_interest, short_interest_by_sector, lending_trades, lending_participants, investor_flow) state the RATCHET — B3 keeps ~21 business days and publishes no archive, so their span starts at first capture and no backfill exists — along with the float_basis, brokerage-not-owner and first-difference traps that make those series easy to read wrongly. Their landed_at is split by ingest doc_type, so a COTAHIST run never reports as the lending group's freshness.",
     "inputSchema": {
       "type": "object",
       "properties": {},
@@ -2907,7 +2907,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "panel": {
     "kind": "rpc",
     "path": "/rpc/panel",
-    "description": "Long panel for correlation/factor work. Mix tickers, option/termo codnegs, + CNPJs. Grain is (id, asset_class, date, metric): a CNPJ filing under two families yields one row per family unless p_entity_type narrows it. No ffill. close_return is p_t/p_{t-1}-1 from unadjusted closes (a split appears as a jump), cash tickers only, and is null across calendar gaps. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '' = first page, 'date|id|metric|asset_class' = next; a page shorter than 1000 is the last. Universe mode: p_ids empty + p_entity_type walks a whole family (optionally p_min_nav, p_min_months), signed-in callers only.",
+    "description": "Long panel for correlation/factor work. Mix tickers, option/termo codnegs, + CNPJs. Grain is (id, asset_class, date, metric): a CNPJ filing under two families yields one row per family unless p_entity_type narrows it. No ffill. p_metrics NULL = each family's default: close_adj for shares and units, close for other tickers, options and termo, nav for funds. close_adj is quote_history's adjusted close (splits, groupings, bonus shares; anchored to the latest session) and a window it cannot adjust REFUSES 22023 naming ticker, period and cause; close stays raw. Quotes follow the instrument across boards. close_return is p_t/p_{t-1}-1 from unadjusted closes (a split appears as a jump), cash tickers only, and is null across calendar gaps. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '' = first page, 'date|id|metric|asset_class' = next; a page shorter than 1000 is the last. Universe mode: p_ids empty + p_entity_type walks a whole family (optionally p_min_nav, p_min_months), signed-in callers only.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2934,11 +2934,8 @@ export const CONTRACT: Record<string, ContractEntry> = {
               "null"
             ]
           },
-          "description": "Defaults to `ARRAY['close'::text, 'nav'::text]`.",
-          "default": [
-            "close",
-            "nav"
-          ]
+          "description": "Defaults to `NULL::text[]`.",
+          "default": null
         },
         "p_from": {
           "type": [
@@ -3058,7 +3055,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "quote_history": {
     "kind": "rpc",
     "path": "/rpc/quote_history",
-    "description": "Daily quote series for one ticker, oldest first. close is RAW, as traded (adjusted stays FALSE because it describes close). close_price_adjusted is the close per single share made continuous across splits (DESDOBRAMENTO), groupings (GRUPAMENTO) and bonus shares (BONIFICACAO) by B3's rule, backward-adjusted to the ticker's latest session: past levels change when an event lands, returns do not. Spin-offs, mergers, capital reductions and subscriptions are NOT adjusted. It is NULL, with close_price_adjusted_null_reason saying why, when the ISIN is outside the research universe (shares ACN; units CDA/UNT with a ticker ending 11), when the issuer's corporate events are not proven swept, or when an event factor is unreadable. close_total_return is NULL until the cash distribution history is backfilled (close_total_return_null_reason says so). Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '' = first page, then the last row's trade_date as 'YYYY-MM-DD'; a page shorter than 1000 is the last. Or narrow p_from/p_to.",
+    "description": "Daily price series for one ticker, oldest first, one JSON object per session holding only the selected fields. Default (p_fields omitted): ticker, trade_date, close_adj. close_adj is the close per single share, backward-adjusted for splits, groupings and bonus shares by B3's rule and anchored to the instrument's latest session (past levels change when an event lands; returns do not); no dividend or JCP adjustment; shares and units only; 6 decimal places. It is never null and never the raw close: a window it cannot cover is REFUSED (22023, DETAIL reason=adjustment_unavailable) naming ticker, period and cause. The raw close, OHLC and volume are an explicit selection (p_fields = {close, ...}); fields are listed in catalog(). The series follows the ISIN across boards; p_board restricts it. Refusals (22023, DETAIL reason=...): unknown_ticker; outside_coverage (a window with no coverage, or starting before the instrument's first session; the tape starts 2019-01-02); isin_change (two ISINs in the window); ambiguous_session (two rows on one session); invalid_field; adjustment_unavailable. A session missing inside the coverage is a session with no trade (prior_no_trade_sessions counts them); a field with no value is a null. data_revision (field, and header X-Silo-Data-Revision) identifies the data; do not combine pages with different revisions. Row cap: more than 1000 rows RAISES 22023 unless p_after pages: '' = first page, then the last row's trade_date as 'YYYY-MM-DD'; a page shorter than 1000 is the last.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3098,6 +3095,46 @@ export const CONTRACT: Record<string, ContractEntry> = {
             "null"
           ],
           "description": "Defaults to `NULL::text`.",
+          "default": null
+        },
+        "p_fields": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string",
+            "enum": [
+              "ticker",
+              "trade_date",
+              "close_adj",
+              "close",
+              "open",
+              "high",
+              "low",
+              "average",
+              "bid",
+              "ask",
+              "close_unit",
+              "trades",
+              "quantity",
+              "volume",
+              "quotation_factor",
+              "board",
+              "isin",
+              "short_name",
+              "spec",
+              "currency",
+              "asset_class",
+              "source",
+              "coverage_start",
+              "coverage_end",
+              "prior_no_trade_sessions",
+              "events_proven_at",
+              "data_revision"
+            ]
+          },
+          "description": "Fields to return; null or omitted = ticker, trade_date, close_adj. ticker and trade_date are in every row.",
           "default": null
         }
       },
