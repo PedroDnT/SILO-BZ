@@ -41,11 +41,15 @@ select
   count(*)                                                       as n_series,
   count(distinct cnpj_securit)                                   as n_securitizadoras,
   sum(valor_certificados) / 1e9                                  as outstanding_bn,
-  count(*) filter (where situacao = 'Inadimplente')              as n_inadimplente,
+  -- Situacao as filed: Adimplente, Em atraso, or empty (every CRI row
+  -- through 2022-06). 'Inadimplente' never occurs (#430). The share is of
+  -- series that filed a status: an empty one is unknown, not current.
+  count(*) filter (where situacao = 'Em atraso')                 as n_em_atraso,
+  count(*) filter (where situacao is null)                       as n_sem_status,
   round(
-    100.0 * count(*) filter (where situacao = 'Inadimplente')
-    / nullif(count(*), 0), 1
-  )                                                              as inadimplente_num1,
+    100.0 * count(*) filter (where situacao = 'Em atraso')
+    / nullif(count(*) filter (where situacao is not null), 0), 1
+  )                                                              as em_atraso_num1,
   -- Series already past their maturity date but not yet marked closed: these
   -- fall outside the forward maturity ladder, so surface them separately
   -- instead of silently dropping them.
