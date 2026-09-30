@@ -24,7 +24,11 @@ The hooks in `.claude/settings.json`:
   `No-changelog: <reason>` commit trailer), holds it while any row main had at the
   merge base is missing or reworded (or a `Changelog-removes: <reason>` trailer),
   and once per branch, unless it edits `README.md`, asks for a README /
-  planning-index / `OPEN_ITEMS.md` staleness check before publishing.
+  planning-index / `OPEN_ITEMS.md` staleness check before publishing. It also
+  holds a push that changes files one of the four `docs/architecture/` pages
+  describes (the map is in the script) until that page is edited, or a
+  `No-architecture-change: <reason>` trailer says it is still right, and holds an
+  edited page over its size cap (4 KiB, `DECISIONS.md` 5 KiB).
 - **PreToolUse on Bash** (`.claude/hooks/npm-cwd-guard.sh`) refuses
   `npm install|i|ci` aimed at `$HOME` or at a directory with no `package.json`
   (`-g` is allowed).

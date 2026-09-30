@@ -21,6 +21,10 @@ Its contract, pinned below:
 * README.md untouched -> the push is denied ONCE per branch with a staleness
   checklist (README, planning index, OPEN_ITEMS); the next push goes through,
   so the check costs one round trip, never a loop;
+* a change to the files one of the four docs/architecture/ pages describes ->
+  the push is denied, every time, until that page is edited in place or a
+  commit carries a `No-architecture-change: <reason>` trailer; an edited page
+  over its size cap is denied until it is trimmed;
 * anything it cannot judge (not a push, a branch delete, `main`, nothing
   changed, another repository) passes. The hook guards docs; it must never be
   what blocks an unrelated command. A skip it did not expect is shown to the
@@ -436,3 +440,122 @@ def test_the_prettier_hook_leaves_the_changelog_alone(tmp_path):
                        input=json.dumps({"tool_input": {"file_path": path}}))
     formatted = calls.read_text(encoding="utf-8").splitlines()
     assert len(formatted) == 1 and formatted[0].endswith("/repo/README.md")
+
+
+# The four architecture pages (docs/architecture/) describe structure. A change
+# to the files a page owns must edit that page in place, and an edited page must
+# stay short. The map is narrow on purpose: a new dataset, or a workflow tweak
+# that touches no schedule, concurrency or job order, is not held.
+READY = {"docs/planning/CHANGELOG.md": ROW, **README}  # keeps the other checks quiet
+WORKFLOW_FILE = ".github/workflows/daily_ingest.yml"
+
+
+def land_on_main(repo: Path, files: dict[str, str]) -> None:
+    """The files exist on main already, so the branch only edits them."""
+    commit(repo, files, "already on main")
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+
+def test_a_change_to_a_pages_files_is_held_until_the_page_is_edited(repo):
+    commit(repo, {"src/pipeline/run_daily.py": "x = 2\n", **READY})
+    reason = denied(run_hook(repo))
+    assert "docs/architecture/DATA_FLOW.md is not updated" in reason
+    assert "src/pipeline/run_daily.py" in reason and "no dated entry" in reason
+    # Required, not merely suggested: the next push is held again.
+    assert "DATA_FLOW.md is not updated" in denied(run_hook(repo))
+    commit(repo, {"docs/architecture/DATA_FLOW.md": "# Data flow\nOne stage fewer.\n"})
+    assert run_hook(repo) is None
+
+
+def test_editing_one_page_does_not_excuse_another(repo):
+    commit(repo, {"src/pipeline/run_daily.py": "x = 2\n", "vercel.json": "{}\n",
+                  "docs/architecture/DATA_FLOW.md": "# Data flow\n", **READY})
+    reason = denied(run_hook(repo))
+    assert "OPERATIONS.md is not updated" in reason and "DATA_FLOW.md is not" not in reason
+
+
+@pytest.mark.parametrize("path", ["src/app.py", "src/fetchers/new_fetcher.py",
+                                  "src/parsers/field_maps/new_map.py",
+                                  "tests/test_x.py", "dashboard/pages/fi.md"])
+def test_a_change_no_page_describes_is_not_held(repo, path):
+    commit(repo, {path: "x = 2\n", **READY})
+    assert run_hook(repo) is None
+
+
+def test_a_workflow_tweak_that_leaves_the_schedule_alone_is_not_held(repo):
+    land_on_main(repo, {WORKFLOW_FILE: "on:\n  schedule:\n    - cron: '0 6 * * *'\njobs:\n  a:\n    steps:\n      - run: echo 1\n"})
+    commit(repo, {WORKFLOW_FILE: "on:\n  schedule:\n    - cron: '0 6 * * *'\njobs:\n  a:\n    steps:\n      - run: echo 2\n", **READY})
+    assert run_hook(repo) is None
+
+
+@pytest.mark.parametrize("edit", ["cron: '0 7 * * *'", "concurrency:", "needs: [b]", "if: always()"])
+def test_a_workflow_change_to_the_schedule_or_job_order_is_held(repo, edit):
+    land_on_main(repo, {WORKFLOW_FILE: "jobs:\n  a:\n    steps:\n      - run: echo 1\n"})
+    commit(repo, {WORKFLOW_FILE: f"jobs:\n  a:\n    {edit}\n    steps:\n      - run: echo 1\n", **READY})
+    assert "OPERATIONS.md is not updated" in denied(run_hook(repo))
+
+
+def test_a_new_workflow_is_held(repo):
+    commit(repo, {WORKFLOW_FILE: "jobs: {}\n", **READY})
+    assert "OPERATIONS.md is not updated" in denied(run_hook(repo))
+
+
+def test_a_new_materialized_view_is_held_but_a_plain_view_is_not(repo):
+    commit(repo, {"src/store/analytical/29_x.sql": "CREATE OR REPLACE VIEW v AS SELECT 1;\n", **READY})
+    assert run_hook(repo) is None
+    commit(repo, {"src/store/analytical/30_y.sql": "CREATE MATERIALIZED VIEW m AS SELECT 1;\n"})
+    assert "DATA_FLOW.md is not updated" in denied(run_hook(repo))
+
+
+@pytest.mark.parametrize("path,page", [
+    ("src/store/pg_client.py", "SYSTEM"), ("supabase/functions/silo-mcp/tools.ts", "SYSTEM"),
+    ("serve/app.py", "DATA_FLOW"), ("scripts/apply_analytical.sh", "DATA_FLOW"),
+    ("vercel.json", "OPERATIONS"), ("scripts/promote_dashboard.sh", "OPERATIONS"),
+    ("docs/adr/0002-x.md", "DECISIONS"),
+])
+def test_each_page_owns_its_files(repo, path, page):
+    commit(repo, {path: "x\n", **READY})
+    assert f"docs/architecture/{page}.md is not updated" in denied(run_hook(repo))
+
+
+def test_a_no_architecture_change_trailer_stands_in_for_the_edit(repo):
+    commit(repo, {"src/pipeline/run_daily.py": "x = 2\n", **READY},
+           "tidy\n\nNo-architecture-change: only a log line moved")
+    assert run_hook(repo) is None
+
+
+def test_an_empty_trailer_does_not_excuse_the_edit(repo):
+    commit(repo, {"src/pipeline/run_daily.py": "x = 2\n", **READY},
+           "tidy\n\nNo-architecture-change:")
+    assert "DATA_FLOW.md is not updated" in denied(run_hook(repo))
+
+
+def test_a_page_over_its_cap_is_held_until_it_is_trimmed(repo):
+    commit(repo, {"docs/architecture/SYSTEM.md": "# System\n" + "x" * 4200 + "\n", **READY})
+    reason = denied(run_hook(repo))
+    assert "SYSTEM.md is" in reason and "cap is 4096" in reason
+    commit(repo, {"docs/architecture/SYSTEM.md": "# System\n" + "x" * 500 + "\n"})
+    assert run_hook(repo) is None
+
+
+def test_decisions_has_a_larger_cap_because_it_is_a_table(repo):
+    commit(repo, {"docs/architecture/DECISIONS.md": "# D\n" + "x" * 4600 + "\n", **READY})
+    assert run_hook(repo) is None
+
+
+def test_the_shipped_pages_are_under_their_caps():
+    for page, cap in (("SYSTEM", 4096), ("DATA_FLOW", 4096), ("OPERATIONS", 4096), ("DECISIONS", 5120)):
+        assert (ROOT / f"docs/architecture/{page}.md").stat().st_size <= cap, page
+
+
+def test_a_top_level_concurrency_key_at_column_zero_is_held(repo):
+    land_on_main(repo, {WORKFLOW_FILE: "jobs: {}\n"})
+    commit(repo, {WORKFLOW_FILE: "concurrency:\n  group: g\njobs: {}\n", **READY})
+    assert "OPERATIONS.md is not updated" in denied(run_hook(repo))
+
+
+def test_a_pure_move_of_a_pages_file_is_not_held(repo):
+    land_on_main(repo, {"docs/security/enable_rls.sql": "-- rls\n"})
+    git(repo, "mv", "docs/security/enable_rls.sql", "docs/enable_rls.sql")
+    commit(repo, dict(READY), "move")
+    assert run_hook(repo) is None
