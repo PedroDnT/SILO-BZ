@@ -13,9 +13,9 @@ sidebar_position: 9
   WHAT THE NUMBERS ARE. cvm_securit_serie is a monthly RE-STATEMENT of the whole
   live book — every series is filed again each month for as long as it exists.
   Every "outstanding" figure on this page therefore de-duplicates to the latest
-  data_referencia per series (instrument_type, cnpj_securit,
-  codigo_identificacao, numero_serie) before summing. Summing the table raw would
-  multiply each series by the number of months it has been reported.
+  data_referencia per series (instrument_type, codigo_identificacao,
+  numero_serie) before summing. Summing the table raw would multiply each series
+  by the number of months it has been reported.
 
   For the same reason, the trend section is labelled "reported value", not
   "issuance": security_issuance_trend() sums valor_certificados per month, which
@@ -272,6 +272,9 @@ yAxisTitle="R$mm"
 > atraso, or Cancelado — from `distressed_securities()`. Largest by outstanding
 > value first. An empty table here means no series in the book carried a
 > distressed status at the latest period, not that the check did not run.
+> Collected and Paid are the certificate's cash flows for the month: CVM files
+> them per certificate, not per series, so every series of one certificate
+> shows the same figures. Do not add them up across rows.
 
 <DataTable data={securit_distressed} rows=15 search=true>
   <Column id=instrument title="Type"/>
