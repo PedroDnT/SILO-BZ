@@ -246,9 +246,7 @@ symptom → fix index — is [docs/DATABASE_MAINTENANCE.md](docs/DATABASE_MAINTE
 
 The pipeline runs unattended; **serving is the open front**. Everything below is an
 operator action or a known defect, none of it speculative roadmap. The build-out history
-is in [docs/planning/CHANGELOG.md](docs/planning/CHANGELOG.md); the dashboard's ship
-checklist in
-[docs/planning/archive/SHIP_DASHBOARD_2026-09-14.md](docs/planning/archive/SHIP_DASHBOARD_2026-09-14.md).
+is in [docs/planning/CHANGELOG.md](docs/planning/CHANGELOG.md).
 
 ### The API is live
 

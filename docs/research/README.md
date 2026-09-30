@@ -1,18 +1,8 @@
 # Professional research vertical
 
-This package ranks research additions, specifies questions and data checks, and
-provides three reproducible cross-dataset demonstrations. It does not imply
-that every candidate is served or that any finding is investment advice.
-
-## Candidate ranking
-
-Candidates are scored 0–5 on professional question value (40%), difficulty of
-obtaining/combining elsewhere (25%), source reliability and implementation
-feasibility (20%), and reuse (15%). Eligibility requires an existing SILO data
-contract or a verified public source contract; candidates without that evidence
-stay conditional.
-
-See [candidate ranking](candidate-ranking.md), [question specifications](question-specifications.md), [benchmark specifications](benchmark-specifications.md), and the [API surface matrix](api-surface-matrix.md).
+Measured findings, source audits and reproducible demonstrations for the
+research vertical. It does not imply that every source is served or that any
+finding is investment advice.
 
 ## Flagship demonstrations
 

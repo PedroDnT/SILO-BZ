@@ -23,18 +23,10 @@ queue.
 
 ## Archive
 
-Finished work, kept as the record of a decision — not live state. Nothing here
-is a queue; do not work from it.
-
-| Doc                                                                                  | Was                                                                          |
-| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| [archive/competitive_research_2026-09-23/](archive/competitive_research_2026-09-23/) | The six research tracks behind `COMPETITIVE_GAPS.md`, with every source URL  |
-| [archive/DASHBOARD_REVIEW_2026-09-15.md](archive/DASHBOARD_REVIEW_2026-09-15.md)     | Page-by-page review of the live site                                         |
-| [archive/SHIP_DASHBOARD_2026-09-14.md](archive/SHIP_DASHBOARD_2026-09-14.md)         | What "shipped" meant for `dashboard/`, and the four things that did not hold |
-| [archive/API_FIELD_TEST_2026-08-28.md](archive/API_FIELD_TEST_2026-08-28.md)         | A fresh agent given the docs and no source, to find the friction             |
-| [archive/STATUS_2026-08-28.md](archive/STATUS_2026-08-28.md)                         | Overnight run snapshot                                                       |
-| [archive/STATUS_2026-08-28_day.md](archive/STATUS_2026-08-28_day.md)                 | Day session snapshot                                                         |
-| [archive/RELEASE_v1.1.md](archive/RELEASE_v1.1.md)                                   | Annotation for the v1.1 tag, which could not be pushed                       |
+Finished work lives in [`../archive/`](../archive/), kept as the record of a
+decision, not live state. Nothing there is a queue; do not work from it.
+Dated snapshots (status runs, reviews, field tests) are not kept as files: they
+are in git history.
 
 ## Where else to look
 

@@ -13,7 +13,7 @@ or tool hints.
 The examples use a project-documented CIA census and published FII/BCB/IBGE
 observations, rather than claiming a newly fetched full history. Therefore
 their arithmetic can be reproduced, but they do not pass archive-ingestion or
-research-agent catalog-discovery benchmarks. See `docs/research/benchmark-specifications.md`.
+research-agent catalog-discovery benchmarks.
 
 ## Live agent evaluation
 

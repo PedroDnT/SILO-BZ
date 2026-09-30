@@ -46,7 +46,7 @@ preserves this run independently of later updates to the latest result file.
 
 ## Evidence boundaries and next gate
 
-Direct production probes documented in the [implementation plan](../../tasks/plan.md)
+Direct production probes documented in the 2026-09-26 dispatch plan (since removed, in git history)
 returned PostgREST `PGRST202` for the new FII property and Focus RPCs; the
 branch contract names those RPCs.
 The agent log itself recorded `SiloError` without safe API codes. The revised

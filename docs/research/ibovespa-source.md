@@ -208,7 +208,7 @@ turns IBOV11 into R$ per contract, which is not an index level.
 - `src/store/analytical/19_api_contract.sql:3625` says "IBOV11 100->1". The
   measured direction is **1 → 100**: the option family changed on
   2025-02-17, and IBOV11's first print at 100 is 2025-03-05.
-  `docs/planning/archive/STATUS_2026-08-28.md:35` repeats the same "100→1".
+  The 2026-08-28 status snapshot (since removed, in git history) repeated the same "100→1".
 - `src/store/migrations/27_b3_instrument_typed_v3.sql:17` says "the Ibovespa
   itself printed on the tape". That needs the qualification above: it is
   the option-settlement index, printed only on expiry days.

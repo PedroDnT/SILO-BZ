@@ -513,7 +513,7 @@ Measured 2026-09-29:
 
 | Observation                                  | Result                                                                                       |
 | -------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `mv_b3_isin_subtype` rows                    | 897, the count `archive/STATUS_2026-08-28_day.md` recorded                                    |
+| `mv_b3_isin_subtype` rows                    | 897, the count the 2026-08-28 status snapshot recorded                                    |
 | Fund-quota ISINs traded in the last 60 days  | 627, of which **9** are not in the matview                                                   |
 | `mv_b3_monthly_activity`, newest period      | 2026-08-01; September is absent                                                              |
 | August, standard lot (`tpmerc = '010'`)      | **19** sessions and R$ 481.0 bn in the matview; **21** sessions and R$ 529.8 bn in `b3_cotahist` |
