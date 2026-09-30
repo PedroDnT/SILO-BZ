@@ -101,7 +101,7 @@ def test_builds_when_a_watched_path_changes(repo: Path, path: str):
 @pytest.mark.parametrize(
     "path",
     ["README.md", "tests/test_x.py", "src/pipeline/x.py",
-     ".github/workflows/x.yml", "docs/API.md", "api-docs/quickstart.mdx"],
+     ".github/workflows/x.yml", "docs/reference/API.md", "api-docs/quickstart.mdx"],
 )
 def test_skips_when_nothing_the_site_uses_changed(repo: Path, path: str):
     _commit(repo, path, "changed\n")
@@ -183,7 +183,7 @@ def test_the_decision_log_names_the_vercel_variables(repo: Path):
         assert var in out, f"{var} missing from the decision log:\n{out}"
 
 
-@pytest.mark.parametrize("path", ["README.md", "docs/API.md", "tests/test_x.py"])
+@pytest.mark.parametrize("path", ["README.md", "docs/reference/API.md", "tests/test_x.py"])
 def test_production_always_builds_even_with_nothing_to_diff(repo: Path, path: str):
     """The deploy hook could never refresh the site, and this is the fix.
 

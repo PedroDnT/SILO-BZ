@@ -25,7 +25,7 @@ zero-padding yields a CNPJ or CPF whose check digits verify. The share
 are (9% of slots above 100 in 2026-07); readers range-check it.
 
 The remaining ~70 tab_I columns (asset composition, admin, condomínio,
-derivatives) are not modeled here; see docs/DATA_INVENTORY.md §2.
+derivatives) are not modeled here; see docs/reference/DATA_INVENTORY.md §2.
 Target table: cvm_fidc_cedente.
 """
 

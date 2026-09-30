@@ -27,7 +27,7 @@ warehouse follows, applied to research: an unknown stays unknown.
 
 ### What each layer holds, by population
 
-Measured against `docs/DATA_INVENTORY.md`, `19_api_contract.sql`–`21_*` and a
+Measured against `docs/reference/DATA_INVENTORY.md`, `19_api_contract.sql`–`21_*` and a
 live `api.coverage()` call on 2026-09-23. Every dataset listed there had landed
 that morning.
 
@@ -90,7 +90,7 @@ claim §6 tests.
 
 About 45 platforms, grouped by segment. The full profiles, the per-capability
 grids and every source URL are in
-[`archive/competitive_research_2026-09-23/`](archive/competitive_research_2026-09-23/),
+[`docs/archive/competitive_research_2026-09-23/`](../archive/competitive_research_2026-09-23/),
 one file per track. This table is the short version.
 
 | Platform                                                     | Segment     | What it is                                                                                                                                                                                                    | Price                                   | AI / agent                                                  |
@@ -344,7 +344,7 @@ already built to ingest under its integrity rules.
 
 Pedro heard Liqi's CEO say in a talk that they "don't even know which agents
 are running because they self-update". The full evidence is in
-[`liqi_operating_model.md`](archive/competitive_research_2026-09-23/liqi_operating_model.md).
+[`liqi_operating_model.md`](../archive/competitive_research_2026-09-23/liqi_operating_model.md).
 
 - **The quote is not in any public transcript.** Both were read in full:
   Talkenização ep. 187, "constelação de agentes", Part 1 (2026-09-16), and
@@ -497,7 +497,7 @@ Nothing here is scheduled until Pedro picks it; the picked items then go to
   ChatGPT.
 - **Key assumption.** Anonymous limits (3 ids, 1,000 rows) are enough for a
   useful first answer.
-- **Smallest test.** Rerun `archive/API_FIELD_TEST_2026-08-28.md`: give a
+- **Smallest test.** Rerun the 2026-08-28 API field test (in git history): give a
   fresh agent its FIDC delinquency × sector equity question, with only the
   MCP connected.
 - **Reject if** it rates discoverability no better than the REST run's 6/10,

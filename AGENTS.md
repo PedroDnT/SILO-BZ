@@ -6,7 +6,7 @@ rules, the architecture and the commands. `CLAUDE.md` only imports it and adds
 Claude Code's own mechanics. Add or change a rule here, nowhere else.
 
 The four-page model of the system is `docs/architecture/` (`SYSTEM.md`,
-`DATA_FLOW.md`, `OPERATIONS.md`, `DECISIONS.md`). Load the SILO skill before
+`DATA_FLOW.md`, `OPERATIONS.md`, `DECISIONS.md`). Where every doc lives: `docs/README.md`. Load the SILO skill before
 changing ingest, schema `api`, `serve/`, or panel/catalog:
 `.claude/skills/iliquid_nightly/SKILL.md`.
 
@@ -101,7 +101,7 @@ symptoms routinely surface one layer away from their cause.
 
 |                     | Is                      | Contract                                         |
 | ------------------- | ----------------------- | ------------------------------------------------ |
-| **the API**         | schema `api` + `serve/` | `docs/API.md`, `api.catalog()`, `api.coverage()` |
+| **the API**         | schema `api` + `serve/` | `docs/reference/API.md`, `api.catalog()`, `api.coverage()` |
 | **the dashboard**   | the Evidence sites      | parquet built at deploy time                     |
 | **the stored data** | the warehouse itself    | the integrity rules below                        |
 
@@ -139,7 +139,7 @@ by intuition.
 
 There is **no public ingest API** and no localhost ingest HTTP server. Downstream
 dashboards (`dashboard/`, `webapp/`) query Supabase directly. The **read contract**
-for apps is schema `api` plus `serve/` (`docs/API.md`). Serving roadmap (catalog →
+for apps is schema `api` plus `serve/` (`docs/reference/API.md`). Serving roadmap (catalog →
 SQL smoke → pool → honest returns → lookup → privileges → HTTPS) is
 `docs/planning/SERVING.md`. Operators trigger ingest with GitHub Actions or
 `python -m src.pipeline.run_daily` / `run_backfill` (optional `--entity`).
@@ -147,7 +147,7 @@ SQL smoke → pool → honest returns → lookup → privileges → HTTPS) is
 > Read `docs/architecture/` for the four-page model of the system (`SYSTEM.md`,
 > `DATA_FLOW.md`, `OPERATIONS.md`, `DECISIONS.md`), `README.md` for what SILO is
 > and what it covers (operator commands are folded at
-> its end and in `scripts/README.md`), `docs/DATABASE_MAINTENANCE.md` for the
+> its end and in `scripts/README.md`), `docs/reference/DATABASE_MAINTENANCE.md` for the
 > ongoing DB upkeep runbook (checks, cadence, audit-log triage, partition rollover,
 > troubleshooting), and `docs/planning/CHANGELOG.md` for the
 > workstream history. A previous version had multiple FastAPI
@@ -155,7 +155,7 @@ SQL smoke → pool → honest returns → lookup → privileges → HTTPS) is
 > reintroduce Docker/Alembic, local Postgres-as-source-of-truth, or a **fake** B3
 > quote API — see "What's intentionally not here" in `README.md`. Public COTAHIST
 > zips are in scope (`b3_cotahist`). The user-facing read API is schema `api` +
-> `serve/` (`docs/API.md`); do not expose landing tables or reintroduce an ingest HTTP API.
+> `serve/` (`docs/reference/API.md`); do not expose landing tables or reintroduce an ingest HTTP API.
 
 ## Data integrity rules (NON-NEGOTIABLE)
 
@@ -208,7 +208,7 @@ UPDATE`). **Never open a raw DB connection elsewhere — always go through `pg_c
   current month + 7-day window, including B3 COTAHIST daily zips) and `run_backfill.py`
   (one-shot, all years; B3 yearly zips are `--include-b3` / `--b3-only`).
 - **`serve/`** — read-only Flask adapter over schema `api` (`python -m serve.app`).
-  Not an ingest trigger. See `docs/API.md`.
+  Not an ingest trigger. See `docs/reference/API.md`.
 
 **The BDI group is a ratchet, and the only part of this warehouse that is.** B3 keeps
 ~21 business days of those tables and publishes no archive, and an over-wide request
@@ -244,7 +244,7 @@ key on `competencia` = first day of the month; **yearly** datasets (`fii *`, `fi
 `securit *`) take `(year)` only; **BACEN** time series key on `(series_code, date)`.
 
 For a _new class_ of data (e.g. market/price series for securities), read
-`docs/DATA_MODELING.md` first: extend the existing `dim_`/`fact_` star schema and model
+`docs/reference/DATA_MODELING.md` first: extend the existing `dim_`/`fact_` star schema and model
 time series as a **long fact** keyed on `(instrument natural key, date[, metric])` rather
 than a wide per-source table — same provenance + idempotent-upsert rules apply.
 
@@ -303,7 +303,9 @@ request.
 `docs/planning/CHANGELOG.md` (or a `No-changelog: <reason>` commit trailer), keep
 every row main already had word for word (or a `Changelog-removes: <reason>`
 trailer), and update `README.md`, the planning index and `OPEN_ITEMS.md` where the
-branch made them stale. The `pytest` job in `test.yml` runs the row comparison on
+branch made them stale. A change to the files one of the four `docs/architecture/`
+pages describes edits that page in place, short and with no dated entry (or a
+`No-architecture-change: <reason>` trailer). The `pytest` job in `test.yml` runs the row comparison on
 every pull request, which also covers merges made in GitHub's web UI: one dropped
 #324's and #325's rows from main via #322. PRs auto-merge on green. Claude Code is
 held to this by hooks (`CLAUDE.md`); Cursor and Codex are not hooked, so do it by

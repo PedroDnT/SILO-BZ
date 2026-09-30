@@ -105,7 +105,7 @@ def test_a_null_total_is_an_error_not_an_empty_history():
 
 
 @pytest.mark.parametrize("published, sent", [
-    # docs/research/cash-dividends-mapping.md §1: each "sent" form was probed
+    # docs/reference/research/cash-dividends-mapping.md §1: each "sent" form was probed
     # live and returned the same total as B3's page; the slashed ones return 0.
     ("KLABIN S/A", "KLABINSA"),
     ("TIM PART S/A", "TIMPART SA"),

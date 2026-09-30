@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Reference calculation: CVM statement census and account-chart context.
 
-Expected counts are transcribed from docs/CIA_DATA_MAP.md; this is not a fresh
+Expected counts are transcribed from docs/reference/CIA_DATA_MAP.md; this is not a fresh
 row-level download. It demonstrates the reproducible percentage calculation
 and why chart context matters when combining company and financial-statement
 data.
@@ -22,7 +22,7 @@ def main() -> None:
     print("the filed labels/chart context identify bank-B 3.09 as net income.")
     print("Measured 3.09 fallback was numerically harmless in this census, but")
     print("code meaning varies by chart; read labels before comparing companies.")
-    print("Sources: docs/CIA_DATA_MAP.md; https://dados.cvm.gov.br/dataset/cia_aberta-doc-itr;")
+    print("Sources: docs/reference/CIA_DATA_MAP.md; https://dados.cvm.gov.br/dataset/cia_aberta-doc-itr;")
     print("https://dados.cvm.gov.br/dataset/cia_aberta-doc-dfp")
     print("Limit: documented census, not a current full-universe rerun or earnings measure.")
 

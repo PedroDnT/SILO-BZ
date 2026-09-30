@@ -1,7 +1,7 @@
 -- DISK: what is actually reclaimable, before anything is dropped
 --
 -- The warehouse is at ~104 GB of a 135 GB allowance and the next backfills
--- want room. docs/DATABASE_MAINTENANCE.md §9 forbids the two easy answers —
+-- want room. docs/reference/DATABASE_MAINTENANCE.md §9 forbids the two easy answers —
 -- dropping landing tables, and VACUUM FULL on balancete from CI — and names
 -- the one sanctioned reclaim: dropping indexes that have never served a
 -- query, with migration 22 as the precedent. Migration 22 was written from a

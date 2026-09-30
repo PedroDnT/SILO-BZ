@@ -47,4 +47,4 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 | dashboard                     | `public`, at build     | last successful build |
 | research job                  | landing tables         | when dispatched       |
 
-Deeper: [API](../API.md), [data inventory](../DATA_INVENTORY.md).
+Deeper: [API](../reference/API.md), [data inventory](../reference/DATA_INVENTORY.md).

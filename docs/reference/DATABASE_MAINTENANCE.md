@@ -426,12 +426,12 @@ statement as the data being reachable: with no grant there is no row for a
 policy to filter. Enabling RLS on top would be defence in depth, not the
 boundary itself.
 
-`docs/security/enable_rls.sql` remains as that optional second layer. It is
+`docs/reference/security/enable_rls.sql` remains as that optional second layer. It is
 deliberately outside `migrations/` so the CI bootstrap cannot run it, and it is
 **not** what stands between the publishable key and the warehouse today:
 
 ```bash
-psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f docs/security/enable_rls.sql
+psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f docs/reference/security/enable_rls.sql
 ```
 
 It enables RLS and adds a SELECT-only `anon_read` policy to every public base table
@@ -445,7 +445,7 @@ running it:
 
 Verify afterwards with the query in the file's footer.
 
-**The Sentinel login.** `docs/security/sentinel_readonly_role.sql` creates
+**The Sentinel login.** `docs/reference/security/sentinel_readonly_role.sql` creates
 `silo_sentinel`, the read-only credential for the scheduled monitoring agent
 (`docs/planning/AGENTS.md`): `EXECUTE` on `api.coverage()` / `api.metric_coverage()`,
 `SELECT` on `cvm_ingest_log` and `fnet_document`, nothing else. The owner runs it by

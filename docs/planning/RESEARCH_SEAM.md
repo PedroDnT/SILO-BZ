@@ -181,7 +181,7 @@ per call (#376), SELIC_META about 2.7, so 2019 onward is 2 to 3 calls.
 
 ## 9. Verification and tests
 
-Verification script (extends `docs/research/retrieval_measurement.py` on
+Verification script (extends `docs/reference/research/retrieval_measurement.py` on
 `research/retrieval-measurement`): PETR4; PETR4 + VALE3; the Ibovespa; CDI; PETR4
 fundamentals; the ~100-ticker research-sized retrieval; the `codbdi`-change query.
 

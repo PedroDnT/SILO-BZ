@@ -461,7 +461,7 @@ jobs:
             echo "- ❌ database above ${DISK_FAIL_PCT}% of the plan allowance (${pct}%)" >> "$GITHUB_STEP_SUMMARY"
             fail=1
           elif [ -n "${PLAN_DISK_GB:-}" ] && [ "${pct:-0}" -ge "$DISK_WARN_PCT" ]; then
-            echo "::warning::database at ${pct}% of the ${PLAN_DISK_GB}GB plan allowance (${gb}GB used). Do not drop landing tables to clear this. See docs/DATABASE_MAINTENANCE.md §9."
+            echo "::warning::database at ${pct}% of the ${PLAN_DISK_GB}GB plan allowance (${gb}GB used). Do not drop landing tables to clear this. See docs/reference/DATABASE_MAINTENANCE.md §9."
           fi
 
           echo
@@ -540,7 +540,7 @@ jobs:
               -H "apikey: $key" -H 'Accept-Profile: public' --max-time 25)
             if [ "$code" = "200" ]; then
               echo "  FAIL $t is READABLE by anon — landing data is exposed"
-              echo "::error::$t is readable with the publishable key. See docs/DATABASE_MAINTENANCE.md and the sweep in 12_grants_and_rls.sql."
+              echo "::error::$t is readable with the publishable key. See docs/reference/DATABASE_MAINTENANCE.md and the sweep in 12_grants_and_rls.sql."
               pfail=1
             else
               echo "  ok   $t closed ($code)"

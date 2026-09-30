@@ -29,7 +29,7 @@ sidebar_position: 2
                         unique key: a filter regression would silently collide
                         again. Historical months older than the daily window
                         stay sparse until a bacen_only backfill is dispatched
-                        (docs/DATABASE_MAINTENANCE.md §4).
+                        (docs/reference/DATABASE_MAINTENANCE.md §4).
 
   UNITS ARE BACEN'S AND ARE NOT CONVERTED. They differ per series and mixing
   them would be the fastest way to publish a wrong number:

@@ -48,7 +48,7 @@ anything under `.claude/`, `.github/`, `tests/`, `scripts/` or `CLAUDE.md`.
 
 In the repo: `docs/planning/COMPETITIVE_GAPS.md` §2 and §3 (and the lines
 above §1 for the date conventions), plus the per-track research files in
-`docs/planning/archive/competitive_research_2026-09-23/` for the sources the
+`docs/archive/competitive_research_2026-09-23/` for the sources the
 current cells rest on.
 
 On the web (read-only; no sign-ups, no logins, no forms, no paid access):

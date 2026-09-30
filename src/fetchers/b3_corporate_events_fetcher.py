@@ -97,7 +97,7 @@ def cash_dividend_query_name(trading_name: str) -> str:
     space, dash, underscore and slash (JavaScript's string ``replace``). The
     server ignores spaces, dots and dashes, but a name that keeps its slash
     matches nothing: ``KLABIN S/A`` returns 0 records, ``KLABIN SA`` 219
-    (docs/research/cash-dividends-mapping.md §1). No issuer on the tape since
+    (docs/reference/research/cash-dividends-mapping.md §1). No issuer on the tape since
     2019 has two slashes, so first-only is enough, and it is what B3 does.
     """
     name = trading_name.upper().strip()

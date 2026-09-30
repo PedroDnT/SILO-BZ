@@ -8,7 +8,7 @@ modelling notebook.
 
 The one rule everything here serves: **a value appears on row t only if it
 was public by the end of B3 session t.** Every source has an availability
-rule (docs/research/dustin_br_data_sources.md §8, mirrored in ``RULES``):
+rule (docs/reference/research/dustin_br_data_sources.md §8, mirrored in ``RULES``):
 
     DI curves, DOC, USDBRL, UST, SELIC        same day as the observation
     OFR FSI (two U.S. business days' lag)     three weekdays after it

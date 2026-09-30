@@ -4,7 +4,7 @@ Read-only. Uses only the public SDK (`sdk/silo_client`) and the publishable key
 published in `skill.md`, i.e. exactly what an external research caller has.
 
     pip install -e sdk/
-    python docs/research/retrieval_measurement.py [--workers 1] [--n 100] [--years 10]
+    python docs/reference/research/retrieval_measurement.py [--workers 1] [--n 100] [--years 10]
 
 Every request is timed. Refusals (22023 over-cap), timeouts (57014) and
 rate limiting (HTTP 429) are recorded, never retried silently. Results go to

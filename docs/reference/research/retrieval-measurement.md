@@ -77,6 +77,6 @@ ORVR3 CMIN3 JHSF3 ISAE4 TTEN3 BRAV3 RECV3 RENT4 PLPL3 SMTO3
 
 ```bash
 pip install -e sdk/
-python docs/research/retrieval_measurement.py                       # sequential, all four
-python docs/research/retrieval_measurement.py --workers 8 --skip cdi,fund,ibov
+python docs/reference/research/retrieval_measurement.py                       # sequential, all four
+python docs/reference/research/retrieval_measurement.py --workers 8 --skip cdi,fund,ibov
 ```

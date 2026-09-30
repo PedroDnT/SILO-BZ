@@ -82,7 +82,7 @@ answer, in a shape an agent can detect. Concretely, every change is held to five
 | Apify scrape | ETF market snapshot                                                                                  | NAV, price, yields, volatility, drawdown per listed ETF                                                                                                                                                                     | daily, gated on `APIFY_TOKEN`                          | the market side of the ETF page; self-skips without the token                                                                                                                                                                                                      |
 
 Where each dataset lands, at what grain, and what is ingested but not yet served is in
-[docs/DATA_INVENTORY.md](docs/DATA_INVENTORY.md). The schema itself is
+[docs/reference/DATA_INVENTORY.md](docs/reference/DATA_INVENTORY.md). The schema itself is
 `src/store/schema.sql` plus the append-only `src/store/migrations/`.
 
 ## How it works
@@ -170,7 +170,7 @@ breaks, and `POST /rpc/catalog` is the same contract as JSON. Worked examples ar
 [`notebooks/`](notebooks/). How "ingested" became "a researcher pulls a panel":
 [docs/planning/SERVING.md](docs/planning/SERVING.md). `serve/` — the read-only
 local Flask adapter, which is **not** the public API — is
-[docs/API.md](docs/API.md).
+[docs/reference/API.md](docs/reference/API.md).
 
 ### The dashboard
 
@@ -240,15 +240,13 @@ reader. Dashboard builds are gated by `scripts/vercel_should_build.sh` — produ
 always builds, previews only when `dashboard/` changed — because one build is 25–45
 minutes of SELECTs against production. Day-to-day upkeep — what to check and how
 often, reading `cvm_ingest_log`, healing gaps, the yearly partition rollover, a
-symptom → fix index — is [docs/DATABASE_MAINTENANCE.md](docs/DATABASE_MAINTENANCE.md).
+symptom → fix index — is [docs/reference/DATABASE_MAINTENANCE.md](docs/reference/DATABASE_MAINTENANCE.md).
 
 ## What's next
 
 The pipeline runs unattended; **serving is the open front**. Everything below is an
 operator action or a known defect, none of it speculative roadmap. The build-out history
-is in [docs/planning/CHANGELOG.md](docs/planning/CHANGELOG.md); the dashboard's ship
-checklist in
-[docs/planning/archive/SHIP_DASHBOARD_2026-09-14.md](docs/planning/archive/SHIP_DASHBOARD_2026-09-14.md).
+is in [docs/planning/CHANGELOG.md](docs/planning/CHANGELOG.md).
 
 ### The API is live
 
@@ -275,7 +273,7 @@ same for everyone.
   year per dispatch, newest first, then one `fnet_sweep` dispatch to link documents to
   funds. Until then `api.fund_restatements` only sees recent filings.
 - **The Sentinel read-only role** is a script the owner runs once:
-  [`docs/security/sentinel_readonly_role.sql`](docs/security/sentinel_readonly_role.sql)
+  [`docs/reference/security/sentinel_readonly_role.sql`](docs/reference/security/sentinel_readonly_role.sql)
   (password via a psql variable, never in the repo).
 
 ### Known defects
@@ -319,7 +317,7 @@ same for everyone.
 
 ## What's intentionally not here
 
-- **No ingest REST API, and no PostgREST dump of landing tables.** The pipeline writes to Supabase via GitHub Actions and the CLI. Callers read schema `api` at `https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/`, documented at [https://octo-98895abd.mintlify.site](https://octo-98895abd.mintlify.site) ([api-docs/quickstart.mdx](api-docs/quickstart.mdx)). `serve/` is a **local** read-only adapter over the same schema, not the public API, and is not necessarily deployed ([docs/API.md](docs/API.md)). The old localhost ingest Flask (`app.py` / `src/api/`) is deleted.
+- **No ingest REST API, and no PostgREST dump of landing tables.** The pipeline writes to Supabase via GitHub Actions and the CLI. Callers read schema `api` at `https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/`, documented at [https://octo-98895abd.mintlify.site](https://octo-98895abd.mintlify.site) ([api-docs/quickstart.mdx](api-docs/quickstart.mdx)). `serve/` is a **local** read-only adapter over the same schema, not the public API, and is not necessarily deployed ([docs/reference/API.md](docs/reference/API.md)). The old localhost ingest Flask (`app.py` / `src/api/`) is deleted.
 - **No fabricated quotes.** The old `b3_calc_api` (non-B3 domain + hard-coded sample dicts) stays deleted. Historical quotations come from B3's public COTAHIST zips (`src/fetchers/b3_fetcher.py` → `b3_cotahist` → `api.quotes`). An unknown ticker returns an empty result, never a guessed last close — `404` from `serve/`, `200 []` from PostgREST, which has no adapter to shape the error. Same contract, different status code.
 - **No local Postgres / Docker / Alembic.** Supabase Postgres is the single source of truth. Use `scripts/seed_local_db.py`
   with a local Postgres for offline testing.
@@ -488,7 +486,7 @@ Failed fetches raise and write `cvm_ingest_log`; they are not auto-retried.
 Re-run the same command. Quality gate: `python scripts/verify_pipeline.py`.
 
 The read-only **local** HTTP adapter is separate: `python -m serve.app` (see
-[docs/API.md](docs/API.md)). It is not the public API — that is PostgREST, at the
+[docs/reference/API.md](docs/reference/API.md)). It is not the public API — that is PostgREST, at the
 URL in the header of this file.
 
 </details>

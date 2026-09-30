@@ -2,7 +2,7 @@
 
 Six sources, one audit entity (``market``), one row of ``cvm_ingest_log``
 per slice. Sources, coverage and point-in-time rules:
-docs/research/dustin_br_data_sources.md.
+docs/reference/research/dustin_br_data_sources.md.
 
     doc_type           table                   slice
     b3_price_report    b3_futures_settlement   one B3 session
@@ -297,7 +297,7 @@ class MarketIngestor:
             raise ValueError(f"unknown market source(s) {unknown or '(none)'}; choose from {SOURCES}")
         if "cboe_vix" in sources and not vix_licensed():
             raise ValueError("cboe_vix needs a signed Cboe licence; set CBOE_VIX_LICENSED=1 only once "
-                             "one exists (docs/research/dustin_br_data_sources.md §5)")
+                             "one exists (docs/reference/research/dustin_br_data_sources.md §5)")
         if end < start:
             raise ValueError(f"end {end} < start {start}")
         # A session that has not happened yet is not a request worth making.

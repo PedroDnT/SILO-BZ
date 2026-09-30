@@ -2373,7 +2373,7 @@ COMMENT ON TABLE b3_instrument_registry IS
 -- of magnitude more than every other table in migration 39 combined. Ranged
 -- by trade_date like b3_cotahist so a year can be detached or vacuumed on its
 -- own. Partitions run to 2029; beyond that rows land in `_future` and the
--- yearly rollover in docs/DATABASE_MAINTENANCE.md §6 applies to this table
+-- yearly rollover in docs/reference/DATABASE_MAINTENANCE.md §6 applies to this table
 -- too.
 --
 -- Same ~21-business-day retention and the same ratchet as migration 39: a
@@ -2456,7 +2456,7 @@ COMMENT ON TABLE b3_lending_trade IS
 
 -- ---------------------------------------------------------------------------
 -- DI1 futures, B3 reference curves, global market series (migration 48).
--- Sources, coverage and point-in-time rules: docs/research/dustin_br_data_sources.md.
+-- Sources, coverage and point-in-time rules: docs/reference/research/dustin_br_data_sources.md.
 --   b3_futures_settlement  B3 Price Report, (session, outright futures ticker);
 --                          DI1 price columns are RATES, settlement_price the PU.
 --   b3_reference_rate      B3 TaxaSwap, (session, curve, calendar days); PRE and DOC.

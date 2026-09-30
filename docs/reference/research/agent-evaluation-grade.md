@@ -2,10 +2,10 @@
 
 Run: 2026-09-25 01:20 UTC, `gpt-5-mini`. This grades the saved 12-case
 [process record](agent-evaluation-results.md) against evaluator-only
-[`eval_reference.json`](../../research_examples/eval_reference.json) and
-[`baseline-review.json`](../../research_examples/baseline-review.json).
+[`eval_reference.json`](../../../research_examples/eval_reference.json) and
+[`baseline-review.json`](../../../research_examples/baseline-review.json).
 Only the professional question was passed as case-specific model input.
-The [immutable baseline JSON](../../research_examples/baseline-results.json)
+The [immutable baseline JSON](../../../research_examples/baseline-results.json)
 preserves this run independently of later updates to the latest result file.
 
 ## Result
@@ -46,7 +46,7 @@ preserves this run independently of later updates to the latest result file.
 
 ## Evidence boundaries and next gate
 
-Direct production probes documented in the [implementation plan](../../tasks/plan.md)
+Direct production probes documented in the 2026-09-26 dispatch plan (since removed, in git history)
 returned PostgREST `PGRST202` for the new FII property and Focus RPCs; the
 branch contract names those RPCs.
 The agent log itself recorded `SiloError` without safe API codes. The revised

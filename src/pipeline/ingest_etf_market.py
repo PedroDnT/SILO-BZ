@@ -7,7 +7,7 @@ FETCH (src/fetchers/apify_etf_fetcher.ApifyETFFetcher)
 Wired into run_daily when APIFY_TOKEN is set (self-skips when unset, and when
 Apify never returns a dataset: 403 actor-not-approved, 403 usage hard limit,
 408/wait timeout, or platform ABORTED).
-See docs/ETF_AND_PERFORMANCE.md.
+See docs/reference/ETF_AND_PERFORMANCE.md.
 Run manually:  APIFY_TOKEN=… python -m src.pipeline.ingest_etf_market
 
 Data-integrity: a row that fails validation (no ticker) is dropped and counted,

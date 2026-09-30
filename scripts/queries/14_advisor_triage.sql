@@ -2,7 +2,7 @@
 -- Read-only. Paste into psql $POSTGRES_URL -f scripts/queries/14_advisor_triage.sql
 --
 -- Do NOT add PRIMARY KEYs or DROP INDEX to silence the dashboard. See
--- docs/DATABASE_MAINTENANCE.md §10.
+-- docs/reference/DATABASE_MAINTENANCE.md §10.
 
 \echo '=== 1. public tables that are not ours (leftovers) ==='
 -- Anything here is not created by schema.sql / migrations. `messages` belongs

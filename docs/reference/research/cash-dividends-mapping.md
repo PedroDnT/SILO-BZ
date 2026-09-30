@@ -1,7 +1,7 @@
 # Can B3's `GetListedCashDividends` history be mapped to ISINs for a cash backfill?
 
 Wayfinder research ticket #386 (map #371). This note builds on #372
-(`docs/research/corporate-event-adjustment.md` on branch
+(`docs/reference/research/corporate-event-adjustment.md` on branch
 `research/corporate-event-adjustment`) and bug #385. It was investigated on
 2026-09-28 against `origin/main` at `b73ebb4`, the live Supabase project
 (read-only SELECTs) and B3's own endpoint and web frontend. B3 requests ran

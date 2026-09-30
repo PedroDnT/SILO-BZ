@@ -175,7 +175,7 @@ class B3Ingestor:
         For issuing codes B3's catalog no longer lists. The name is COTAHIST's
         own ``nome_resumido`` on the code's latest standard-lot session inside
         the same window as _traded_issuers; it equals the catalog tradingName
-        wherever both exist (docs/research/cash-dividends-mapping.md §2). The
+        wherever both exist (docs/reference/research/cash-dividends-mapping.md §2). The
         CNPJs are CVM's published ticker history, used to tell a renamed
         company from a delisted one. A code with no name printed is absent.
         """

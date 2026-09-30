@@ -75,7 +75,7 @@ credential, and whether it is a new Postgres role, is Pedro's call (§6).
 
 ### Sentinel credential
 
-[`docs/security/sentinel_readonly_role.sql`](../security/sentinel_readonly_role.sql)
+[`docs/reference/security/sentinel_readonly_role.sql`](../reference/security/sentinel_readonly_role.sql)
 is the proposed answer, for Pedro to run by hand with psql: a LOGIN role
 `silo_sentinel` whose password comes from a psql variable
 (`-v sentinel_password=…`), never a literal in the file. It holds CONNECT,
@@ -169,7 +169,7 @@ history to set a bar that means something.
 
 One **manual** Builder run, on FIDC informe `tab_X_7` (collateral coverage of
 the receivables, value and %; listed as unread in
-[`docs/DATA_INVENTORY.md`](../DATA_INVENTORY.md) §2).
+[`docs/reference/DATA_INVENTORY.md`](../reference/DATA_INVENTORY.md) §2).
 
 Why this item: it is a real gap, it is small, and it exercises the whole
 six-step recipe (config, field map, `schema.sql` plus a migration, the ingest
@@ -227,7 +227,7 @@ not hold and the prompts were written (§6).
 | Prompt files `.claude/agents/*.md` | **written** 2026-09-25: `scout.md`, `builder.md`, `sentinel.md`                                                                                             |
 | Labels `agent-ok`, `agent:<name>`  | not created; the owner creates them (each prompt no-ops while its label is missing)                                                                         |
 | Routines                           | none; every routine id above is TBD, filled by the owner's session after merge                                                                              |
-| Sentinel's read-only DB credential | script ready (`docs/security/sentinel_readonly_role.sql`), run by the owner by hand; until `SENTINEL_DATABASE_URL` is set, the Sentinel runs in public mode |
+| Sentinel's read-only DB credential | script ready (`docs/reference/security/sentinel_readonly_role.sql`), run by the owner by hand; until `SENTINEL_DATABASE_URL` is set, the Sentinel runs in public mode |
 
 Order from here: create the labels, then schedule the routines one at a
 time (Builder first, since it is the one tested; then Sentinel; then Scout),

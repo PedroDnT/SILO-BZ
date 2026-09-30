@@ -44,7 +44,7 @@ MAX_TOOL_CHARS = 80_000
 CASE_FILE = Path(__file__).with_name("eval_cases.json")
 JSON_RESULT = Path(__file__).with_name("eval-results.json")
 SPEND_LEDGER = Path(__file__).with_name("eval-spend.json")
-MARKDOWN_RESULT = ROOT / "docs" / "research" / "agent-evaluation-results.md"
+MARKDOWN_RESULT = ROOT / "docs" / "reference" / "research" / "agent-evaluation-results.md"
 
 # Pricing and context are fixed to this model and were checked against the
 # official model page on 2026-09-23. Update these constants if the model or

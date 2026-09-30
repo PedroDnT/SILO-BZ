@@ -9,7 +9,7 @@ VIX_History.csv, an EIA API v2 answer, OFR's fsi.csv and its revision
 workbook FSI_Revision_History_2023-06-27.xlsx (first rows of each sheet,
 values unchanged). Nothing is fetched here. Contracts:
 src/fetchers/b3_pesquisapregao_fetcher.py, src/fetchers/global_market_fetcher.py,
-docs/research/dustin_br_data_sources.md.
+docs/reference/research/dustin_br_data_sources.md.
 """
 
 from __future__ import annotations
