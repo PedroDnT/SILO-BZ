@@ -82,12 +82,22 @@ One ticker's daily series over a window, ordered by `trade_date` ascending.
 api.quote_history(p_ticker TEXT,
                   p_from   DATE DEFAULT CURRENT_DATE - 365,
                   p_to     DATE DEFAULT CURRENT_DATE,
-                  p_board  TEXT DEFAULT NULL)
+                  p_board  TEXT DEFAULT NULL,
+                  p_after  TEXT DEFAULT NULL)
 ```
 
 `p_ticker` is upper-cased and trimmed server-side. `p_board` null selects the board on the ticker's latest stored row; pass a code explicitly only when you need that exact BDI category.
 
-Returns the view's columns minus `term_days` and `fetched_at`.
+Returns the view's columns minus `term_days` and `fetched_at`, plus four columns for research. `close`, `close_unit` and `adjusted` stay exactly as traded; the new columns sit beside them:
+
+| Column | Meaning |
+| --- | --- |
+| `close_price_adjusted` | The close per single share, made continuous across splits (`DESDOBRAMENTO`), groupings (`GRUPAMENTO`) and bonus shares (`BONIFICACAO`) by B3's rule, **backward-adjusted to the ticker's latest session**: a past level changes when a new event lands, a return does not. Spin-offs, mergers, capital reductions and subscriptions are **not** adjusted. |
+| `close_price_adjusted_null_reason` | Why the value is NULL, else NULL. `outside research universe` (only shares and units are adjusted), `issuer corporate events not proven swept`, `unreadable event factor` or `no close on the session`. |
+| `close_total_return` | The adjusted close with cash distributions reinvested at the ex-date close, anchored the same way: the latest session equals `close_price_adjusted` and an earlier level is lower by the cash paid since. Cash is B3's full history (dividends, interest on equity **gross of withholding tax**, yield, capital returned in cash). |
+| `close_total_return_null_reason` | Why the value is NULL, else NULL: the adjusted close is NULL; B3's history holds no resolved distribution for this ISIN (a non-payer and an issuer the history does not match look identical, so neither is given a price return labelled total return); a later distribution of the issuer's share class has no proven ISIN; a distribution B3 lists is missing from its cash history; or a later distribution has no ex-date close within 7 days. |
+
+A NULL is never a raw close in disguise: read the reason before filling anything. The rules and their counts are in the repository's `docs/reference/API.md`.
 
 ```bash
 curl -s -X POST "$SILO_URL/rpc/quote_history" \
@@ -102,11 +112,15 @@ curl -s -X POST "$SILO_URL/rpc/quote_history" \
   Page it with `p_after: ""` then the last row's `trade_date`, or narrow the window:
 
   ```json
-  { "p_ticker": "PETR4", "p_from": "2019-01-01", "p_after": "" }
-  { "p_ticker": "PETR4", "p_from": "2019-01-01", "p_after": "2022-12-29" }
+  { "p_ticker": "PETR4", "p_from": "2019-01-02", "p_after": "" }
+  { "p_ticker": "PETR4", "p_from": "2019-01-02", "p_after": "2022-12-29" }
   ```
 
-  The SDK walks it: `silo.iter_quote_history("PETR4", start="2019-01-01")`.
+  The SDK walks it: `silo.iter_quote_history("PETR4", start="2019-01-02")`.
+</Warning>
+
+<Warning>
+  **The tape starts on 2019-01-02, and an earlier `p_from` is refused** (`22023`, naming that date). The adjusted and total-return closes are built from the corporate events and cash distributions swept from then, and a window that started earlier would come back beginning on 2019-01-02 and look complete. The refusal fires even when the window would hold no rows. `coverage` publishes the start in the notes of its `quotes` row. `index_history` is not bound by it: IBOV is held from 1968.
 </Warning>
 
 ### `POST /rpc/quote_latest`

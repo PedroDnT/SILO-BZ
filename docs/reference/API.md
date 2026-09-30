@@ -370,6 +370,28 @@ SELECT issuing_company, isin, action, event_date FROM mv_b3_cash_event
 WHERE kind = 'pending' ORDER BY event_date DESC;
 ```
 
+### The tape starts at 2019-01-02 (catalog v48)
+
+`api.quote_history` raises `22023` for a `p_from` before 2019-01-02, the first
+session of the tape, with the why and the fix in the message, `DETAIL` and `HINT`
+like the row cap. The date floors four things that have to agree, pinned to one
+value by `tests/test_quote_history_tape_window.py`: the tape itself, the
+corporate-event sweep (`B3Ingestor.TAPE_START`), `mv_b3_cash_event` (migration 56)
+and `mv_research_universe`. Below it the adjusted and total-return closes would be
+built on events and distributions nobody swept, and a window that started earlier
+would come back beginning on 2019-01-02 and look complete.
+
+- **It fires on an empty window too.** A window wholly before the tape holds no
+  rows, so a check inside the query would never run. The function is now plpgsql
+  for that reason alone; the query, the cursor and the row cap are unchanged, and
+  the values are identical to the SQL-language version (checked on a local Postgres).
+- **2019-01-01 is refused.** It is a holiday with no session, so nothing would be
+  lost, but the rule is the date, not the sessions. The documented examples use
+  2019-01-02.
+- **`api.coverage()` says so** in the notes of its `quotes` row.
+- **`api.index_history` is not bound by it:** IBOV is held from 1968-01-02.
+- `serve/` maps the `22023` to a caller error like every other refusal.
+
 ### Fundamentals as of a date (catalog v47)
 
 `financials`, `company_financials`, `income_statements`, `balance_sheets` and

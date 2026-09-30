@@ -51,11 +51,11 @@ a whole family for a signed-in caller.
 from silo_client import SiloClient, SiloOverCap, SiloTruncated
 
 try:
-    rows = silo.quote_history("PETR4", start="2019-01-01")
+    rows = silo.quote_history("PETR4", start="2019-01-02")
 except SiloOverCap:
     # Since catalog v26 the server REFUSES rather than trims, and the three
     # long series page. A cursor walk, not a stitched guess:
-    rows = silo.quote_history_all("PETR4", start="2019-01-01")
+    rows = silo.quote_history_all("PETR4", start="2019-01-02")
 
 # fund_nav pages within ONE family: its cursor is a bare period, and 385 CNPJs
 # file under two families in the same month, so the family is not optional.

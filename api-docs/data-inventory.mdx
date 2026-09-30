@@ -251,7 +251,7 @@ fund_*()    →  one fund's own series
 
 - **No fabricated observations.** A missing month is absent, never interpolated or carried forward.
 - **`as_of` ≠ `complete_through`.** The first is the newest row held, the second the last period believed complete. `coverage()` returns both.
-- **Prices are unadjusted.** A split reads as a real ~50% jump. `adjusted` is `false` on every row.
+- **Prices are unadjusted.** A split reads as a real ~50% jump. `adjusted` is `false` on every row. The exception is `quote_history`'s `close_price_adjusted` / `close_total_return`, continuous across splits and NULL with a reason where unproven.
 - **1,000 rows per response, for everyone.** Signing in raises ids, page sizes and the query budget — never this.
 
 ### Keeping this honest

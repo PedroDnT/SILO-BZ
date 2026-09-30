@@ -37,7 +37,7 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 47  # v47 adds p_as_of to the fundamentals (#414); v46 serves close_total_return (#418); v45 adds index_history; v44 quote_history's adjusted closes (#417); v43 research_universe
+KNOWN_CATALOG_VERSION = 48  # v48 quote_history refuses a p_from before the tape (#417); v47 adds p_as_of to the fundamentals (#414); v46 serves close_total_return (#418); v45 adds index_history; v44 quote_history's adjusted closes (#417); v43 research_universe
 
 
 class SiloCatalogDrift(UserWarning):
@@ -393,6 +393,14 @@ class SiloClient:
         self, ticker: str, start: Datish = None, end: Datish = None,
         board: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
+        """One ticker's daily series, oldest first, with the raw `close` and
+        the research columns `close_price_adjusted` / `close_total_return`
+        (each NULL with a `*_null_reason`, never a raw close in disguise).
+
+        The tape starts on 2019-01-02: a `start` before it raises `SiloError`
+        (22023) naming that date, even for a window that would hold no rows.
+        More than 1000 rows raises `SiloOverCap`; use `quote_history_all`.
+        """
         return self._rpc("quote_history", {
             "p_ticker": ticker, "p_from": _iso(start), "p_to": _iso(end),
             "p_board": board,

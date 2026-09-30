@@ -776,11 +776,45 @@ RETURNS TABLE (
     close_total_return               NUMERIC,
     close_total_return_null_reason   TEXT
 )
-LANGUAGE sql
+-- plpgsql, not sql, for one reason: the window refusal below must fire even
+-- when the window holds no rows, and a statement in an SQL function only
+-- evaluates what the plan reaches. (A window wholly before the tape is empty,
+-- so a guard inside the query would never run.) The query itself is unchanged.
+LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
+#variable_conflict use_column
+DECLARE
+    -- The first session of the research tape. The same date floors the
+    -- corporate-event sweep (B3Ingestor.TAPE_START), mv_b3_cash_event
+    -- (migration 56) and mv_research_universe (28_api_research.sql), so the
+    -- adjusted and total-return closes are only built from here.
+    -- tests/test_quote_history_tape_window.py pins the four to one date.
+    v_start CONSTANT DATE := DATE '2019-01-02';
+    v_why   TEXT;
+    v_how   TEXT;
+BEGIN
+    -- A window that starts before the tape would come back beginning at the
+    -- tape and look complete: the caller asked for 2010-2024 and analysed
+    -- 2019-2024 without knowing. Refuse, the same way the row cap does.
+    IF p_from < v_start THEN
+        v_why := 'SILO holds B3 cash quotes from ' || v_start || ', and the price-adjusted and '
+              || 'total-return closes are built from the corporate events and cash distributions '
+              || 'swept from that date. A window that starts earlier would come back beginning on '
+              || v_start || ' and look complete, so SILO refuses it instead.';
+        v_how := 'Ask for p_from on or after ' || v_start || '. api.coverage() publishes the tape '
+              || 'start on its quotes row. (api.index_history reaches further back: IBOV is held from 1968.)';
+        RAISE EXCEPTION
+            'quote_history: refused, p_from % is before the start of the tape (%). % To fix: %',
+            p_from, v_start, v_why, v_how
+            USING ERRCODE = '22023',
+                  DETAIL  = v_why,
+                  HINT    = v_how;
+    END IF;
+
+    RETURN QUERY
     WITH params AS (
         SELECT c.paging, c.after_date
         FROM api.parse_date_cursor(p_after, 'quote_history') c
@@ -976,10 +1010,11 @@ AS $$
                              (SELECT pp.paging FROM params pp), 'quote_history')
     ORDER BY 2
     LIMIT 1000;
+END;
 $$;
 
 COMMENT ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT) IS
-    'Daily quote series for one ticker, oldest first. close is RAW, as traded (adjusted stays FALSE because it describes close). close_price_adjusted is the close per single share made continuous across splits (DESDOBRAMENTO), groupings (GRUPAMENTO) and bonus shares (BONIFICACAO) by B3''s rule, backward-adjusted to the ticker''s latest session: past levels change when an event lands, returns do not. Spin-offs, mergers, capital reductions and subscriptions are NOT adjusted. It is NULL, with close_price_adjusted_null_reason saying why, when the ISIN is outside the research universe (shares ACN; units CDA/UNT with a ticker ending 11), when the issuer''s corporate events are not proven swept, or when an event factor is unreadable. close_total_return is the price-adjusted close with cash distributions reinvested at the ex-date close, anchored the same way: the level is divided by the product of (1 + cash / ex-session close) over later distributions (DIVIDENDO, JRS CAP PROPRIO gross of tax, RENDIMENTO, REST CAP DIN from B3''s full history, ISIN proven against the tape). It is NULL, with close_total_return_null_reason saying why, where close_price_adjusted is NULL, where the ISIN has no resolved distribution in B3''s history, where a later distribution of the issuer''s share class has no proven ISIN, where B3''s supplement lists a distribution the history lacks, or where a later distribution has no ex-date close within 7 days. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '''' = first page, then the last row''s trade_date as ''YYYY-MM-DD''; a page shorter than 1000 is the last. Or narrow p_from/p_to.';
+    'Daily quote series for one ticker, oldest first. close is RAW, as traded (adjusted stays FALSE because it describes close). close_price_adjusted is the close per single share made continuous across splits (DESDOBRAMENTO), groupings (GRUPAMENTO) and bonus shares (BONIFICACAO) by B3''s rule, backward-adjusted to the ticker''s latest session: past levels change when an event lands, returns do not. Spin-offs, mergers, capital reductions and subscriptions are NOT adjusted. It is NULL, with close_price_adjusted_null_reason saying why, when the ISIN is outside the research universe (shares ACN; units CDA/UNT with a ticker ending 11), when the issuer''s corporate events are not proven swept, or when an event factor is unreadable. close_total_return is the price-adjusted close with cash distributions reinvested at the ex-date close, anchored the same way: the level is divided by the product of (1 + cash / ex-session close) over later distributions (DIVIDENDO, JRS CAP PROPRIO gross of tax, RENDIMENTO, REST CAP DIN from B3''s full history, ISIN proven against the tape). It is NULL, with close_total_return_null_reason saying why, where close_price_adjusted is NULL, where the ISIN has no resolved distribution in B3''s history, where a later distribution of the issuer''s share class has no proven ISIN, where B3''s supplement lists a distribution the history lacks, or where a later distribution has no ex-date close within 7 days. Window: a p_from before 2019-01-02, the start of the tape, RAISES 22023 naming that date (api.coverage() publishes it on the quotes row). Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '''' = first page, then the last row''s trade_date as ''YYYY-MM-DD''; a page shorter than 1000 is the last. Or narrow p_from/p_to.';
 
 REVOKE ALL ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
@@ -3281,7 +3316,10 @@ AS $$
         -- trade_date is never in the future, so all three dates coincide.
         SELECT 'quotes'::text AS dataset, (SELECT MAX(q.trade_date) FROM public.vw_b3_quote_vista q) AS as_of,
                (SELECT MAX(q.trade_date) FROM public.vw_b3_quote_vista q) AS complete_through, 'b3_cotahist'::text AS source,
-               NULL::text AS notes, (SELECT MAX(q.trade_date) FROM public.vw_b3_quote_vista q) AS newest_period,
+               -- The tape start is a fact a caller needs before choosing a
+               -- window, and quote_history refuses an earlier p_from (#417).
+               'the tape starts 2019-01-02: api.quote_history raises 22023 for an earlier p_from, and its adjusted and total-return closes are built from that date'::text AS notes,
+               (SELECT MAX(q.trade_date) FROM public.vw_b3_quote_vista q) AS newest_period,
                'b3'::text AS log_entity
         UNION ALL
         SELECT 'funds'::text,
@@ -5195,7 +5233,7 @@ STABLE
 AS $fn$
 SELECT $json${
   "kind": "catalog",
-  "version": 47,
+  "version": 48,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, the B3 securities-lending and investor-flow group, B3's DI1 futures and reference-rate curves, and Brazilian inflation — BACEN's IPCA series and IBGE's item tree with weights). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close` for tickers and `nav` for CNPJs, and that is the call to make unless you actually need another measure — name metrics explicitly only when you will use them. The wide endpoints are the exception and behave the other way round: quote_latest, quote_history and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -5506,6 +5544,7 @@ SELECT $json${
     "close_return across a missing month is null, not a multi-month return.",
     "close_return is unadjusted: a 2:1 split reports roughly -50%. It is not a total return.",
     "close is the price as published, which for a paper quoted per lot refers to 1000 shares; close_unit divides it by the published quotation_factor so levels are comparable. Neither is corporate-action adjusted, and `adjusted` is FALSE on every row because it describes close. The one adjusted price is quote_history's close_price_adjusted (see the next constraint).",
+    "QUOTE WINDOWS START AT 2019-01-02, AND quote_history REFUSES AN EARLIER p_from. The B3 tape SILO holds begins on 2019-01-02 (api.coverage() says so in the notes of its quotes row), and the price-adjusted and total-return closes are built from the corporate events and cash distributions swept from that date. A p_from before it raises 22023 naming the date, rather than returning a series that starts later than asked and looks complete: a caller who asked for 2010-2024 would otherwise analyse 2019-2024 without knowing. The refusal fires even when the window would hold no rows. api.index_history is not bound by it: IBOV is held from 1968-01-02. The other series functions keep their own windows.",
     "quote_history'S close_price_adjusted IS CONTINUOUS ACROSS SPLITS, GROUPINGS AND BONUS SHARES ONLY, AND IT IS ANCHORED TO THE LATEST SESSION. It is the close per single share divided by every later event's share ratio, by B3's rule: 1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for GRUPAMENTO. Past levels change when a new event lands and returns do not, so never read a past level as the price seen that day. Spin-offs, mergers, capital reductions and subscriptions are NOT adjusted. It is NULL, with close_price_adjusted_null_reason saying why, outside the research universe (shares ACN; units CDA/UNT with a ticker ending 11), when the issuer's corporate events are not proven swept, or when an event factor is unreadable: a NULL is never a raw close in disguise. close_total_return is the price-adjusted close with cash distributions reinvested at the ex-date close, also anchored to the latest session: the level is divided by the product of (1 + cash / ex-session close) over every distribution that went ex after the session, so the latest session equals the price-adjusted close and earlier levels are lower by the cash paid since. Cash is B3's full history (DIVIDENDO, JRS CAP PROPRIO gross of withholding tax, RENDIMENTO, REST CAP DIN), counted only where its ISIN is proven against the tape. It is NULL, with close_total_return_null_reason saying why, where the price-adjusted close is NULL; where the ISIN has no resolved distribution in B3's history (a non-payer, or one B3's history does not match: the two look the same, so neither gets a price return labelled as a total return); where a later distribution of the issuer's share class has no proven ISIN; where a distribution B3's supplement lists is missing from the history; and where a later distribution has no ex-date close within 7 days. A NULL is never the price return in disguise.",
     "Daily close_return is null when the previous session is more than 7 calendar days back (halts, listing gaps), and null across a quotation-factor change — a fatcot flip rescales the quote with no market move behind it.",
     "Default windows are honest: with no explicit `to`, fund metrics end at each family's latest COMPLETE period (coverage() reports it as complete_through) — a partially-filed trailing month is not served. An explicit `to` serves the window verbatim, partial months included.",

@@ -92,7 +92,7 @@ PostgREST stops every response at 1,000 rows and answers `200` with the oldest p
 from silo_client import SiloTruncated
 
 try:
-    rows = silo.quote_history("PETR4", start="2019-01-01")
+    rows = silo.quote_history("PETR4", start="2019-01-02")
 except SiloTruncated as e:
     print(e.returned, "of", e.total)      # 1000 of 4382
     print(e.rows[-1]["trade_date"])       # where the cut fell — inspect, never use
@@ -108,7 +108,7 @@ try:
 except SiloOverCap:
     rows = silo.panel_all(["PETR4"], ["close"], start="2019-01-01", freq="day")
 
-quotes = silo.quote_history_all("PETR4", start="2019-01-01")
+quotes = silo.quote_history_all("PETR4", start="2019-01-02")
 
 # nav pages within ONE family — the cursor is a bare period, and 385 CNPJs
 # file under two in the same month, so the family is not optional

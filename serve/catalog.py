@@ -386,7 +386,15 @@ __all__ = [
 # received before T (cia_filing.dt_receb < T), keeps the highest remaining
 # version of each, and drops a document with no header. The shared internal
 # api.cia_statement_rows carries it. No new function and no new column.
-CATALOG_VERSION = 47
+# v48: quote_history refuses a p_from before the start of the tape (#417). The
+# B3 tape SILO holds begins on 2019-01-02, and the price-adjusted and total-return
+# closes are built from the corporate events and cash distributions swept from
+# that date, so an earlier window raises 22023 naming the date instead of coming
+# back beginning later than asked. It fires even when the window holds no rows,
+# which is why the function is now plpgsql (the query is unchanged). api.coverage()
+# publishes the tape start in the notes of its quotes row. api.index_history is
+# not bound by it: IBOV is held from 1968. No new function and no new column.
+CATALOG_VERSION = 48
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -619,6 +627,7 @@ CONSTRAINTS = [
     "levels are comparable. Neither is corporate-action adjusted, and `adjusted` "
     "is FALSE on every row because it describes close. The one adjusted price is "
     "quote_history's close_price_adjusted (see the next constraint).",
+    "QUOTE WINDOWS START AT 2019-01-02, AND quote_history REFUSES AN EARLIER p_from. The B3 tape SILO holds begins on 2019-01-02 (api.coverage() says so in the notes of its quotes row), and the price-adjusted and total-return closes are built from the corporate events and cash distributions swept from that date. A p_from before it raises 22023 naming the date, rather than returning a series that starts later than asked and looks complete: a caller who asked for 2010-2024 would otherwise analyse 2019-2024 without knowing. The refusal fires even when the window would hold no rows. api.index_history is not bound by it: IBOV is held from 1968-01-02. The other series functions keep their own windows.",
     "quote_history'S close_price_adjusted IS CONTINUOUS ACROSS SPLITS, GROUPINGS "
     "AND BONUS SHARES ONLY, AND IT IS ANCHORED TO THE LATEST SESSION. It is the "
     "close per single share divided by every later event's share ratio, by B3's "

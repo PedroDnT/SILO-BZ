@@ -177,16 +177,20 @@ And you cannot reliably rebuild a cumulative figure by summing quarters:
   statement is served, so the quarter you would subtract may no longer be the quarter
   that was originally filed.
 
-## Quotes are unadjusted
+## Quotes are unadjusted, except one column
 
-`adjusted` is `false` on every quote row, and that is a statement of fact rather
-than a default waiting to be flipped. Splits, reverse splits and bonuses are ingested
-and published in their own corporate-events table, but **no adjustment factor is
-derived from them**.
+`close`, `close_unit` and the `adjusted` flag are as traded, and `adjusted` is `false`
+on every quote row: a statement of fact rather than a default waiting to be flipped.
+A return computed from them across a split date is wrong, by the split ratio.
 
-A return computed across a split date is wrong — by the split ratio — unless the
-caller handles the event. Nothing is interpolated or forward-filled either; see
-[Market coverage](/api-docs/market-coverage#what-is-not-here).
+The one adjusted price is [`quote_history`](/api-docs/quotes)'s `close_price_adjusted`
+(and, with cash reinvested, `close_total_return`). It is continuous across splits,
+groupings and bonus shares, anchored to the ticker's latest session, and NULL with a
+reason wherever SILO cannot stand behind it: outside shares and units, before the
+issuer's corporate events are proven swept, or where a distribution cannot be valued.
+Spin-offs, mergers, capital reductions and subscriptions are not adjusted. `quotes`,
+the typed views and `panel` are unchanged. Nothing is interpolated or forward-filled
+either; see [Market coverage](/api-docs/market-coverage#what-is-not-here).
 
 ## The B3 lending and flow group is a ratchet
 
