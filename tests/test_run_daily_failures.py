@@ -47,6 +47,8 @@ def _patches(cvm_totals=None, bacen=None, anbima=None, b3=None):
     # its own guarded await, so a plain MagicMock attribute would make every
     # daily-run test report a b3_bdi failure the code under test never had.
     b3_ing.daily_update_bdi = AsyncMock(return_value={"b3_lending_open_position": 0})
+    # B3 index closing levels (#412): their own step, their own failure.
+    b3_ing.daily_update_index_levels = AsyncMock(return_value={"b3_index_level": 250})
     b3_ing.daily_update = AsyncMock()
     if isinstance(b3, Exception):
         b3_ing.daily_update.side_effect = b3

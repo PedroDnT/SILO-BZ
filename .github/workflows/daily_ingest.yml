@@ -16,6 +16,7 @@ on:
           - analytics-only
           - b3-backfill
           - b3-cash-dividends
+          - b3-index-backfill
       start_year:
         description: "First year of B3 COTAHIST yearly zips (mode=b3-backfill). Try 2025 first — yearly zips are large. With mode=b3-cash-dividends: the issuer universe is every code that printed since this year (use 2019); each issuer's full history is fetched."
         required: false
@@ -134,6 +135,16 @@ jobs:
           python -m src.pipeline.run_backfill \
             --b3-cash-dividends-only \
             --b3-start-year ${{ inputs.start_year }}
+
+      # B3's published index closing levels (#412), one call per index and
+      # year from start_year (use 2020). The daily run keeps the current year;
+      # this is the one-off history load, a few seconds per year.
+      - name: Run B3 index-level backfill
+        if: ${{ github.event.inputs && github.event.inputs.mode == 'b3-index-backfill' }}
+        run: |
+          python -m src.pipeline.run_backfill \
+            --b3-index-only \
+            --b3-index-start-year ${{ inputs.start_year }}
 
       # Statistics only — it makes later queries plan better, it never changes a
       # row. continue-on-error because on 2026-08-28 it was the ONE step that

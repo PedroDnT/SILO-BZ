@@ -211,4 +211,100 @@ GRANT EXECUTE ON FUNCTION api.research_universe() TO silo_api;
 COMMENT ON FUNCTION api.research_universe() IS
     'The research universe: one row per ticker+ISIN pair of listed shares and units traded on the B3 cash market since 2019-01-02 (the start of the tape), ordered by ticker then ISIN. Membership is the ISIN''s own instrument code (ACN shares; CDA and UNT units, whose ticker must end in 11); subscription receipts, BDRs, funds and indices are outside it. The ISIN is the identity: a rename is a NEW row and nothing links it to the old one, and two tickers can share an ISIN (NEOE3 and NEOE3B). first_observed / last_observed / n_sessions are facts about SILO''s tape, not listing or delisting dates (FCA dates are not historical); n_sessions far below the calendar span is a gap (NATU3). cnpj comes from CVM''s published FCA ticker map and cnpj_basis says how: fca_ticker (that exact ticker), fca_issuer_stem (the ticker''s 4-letter stem, when exactly one CNPJ holds an FCA ticker with it: an inference), or NULL (no link; cnpj and setor_current are NULL). setor_current is CVM''s cadastro setor as of today, never the setor on a past date. Read the universe at a date T as the rows with first_observed <= T <= last_observed; a pair inside a gap still matches. Served from a view rebuilt daily: last_observed lags the tape by up to a day, built_at says when. Not trimmed: more than 1000 rows RAISES 22023.';
 
+
+-- ---------------------------------------------------------------------------
+-- The benchmark index: api.index_history (RESEARCH_SEAM.md §5, #415)
+-- ---------------------------------------------------------------------------
+-- B3's own published closing level, from b3_index_level (migration 55). Index
+-- codes only, from a closed list: a ticker, BOVA11 (an ETF) and IBOV11 (the
+-- options settlement index, printed on expiry days only) included, raises, so
+-- no substitution can happen by construction. Levels as published; no OHLC,
+-- no volume, no return. Same 1000-row page and date cursor as quote_history,
+-- and the same coverage rule: a window starting before the first published
+-- level is refused, not shortened.
+DROP FUNCTION IF EXISTS api.index_history(TEXT, DATE, DATE, TEXT);
+
+CREATE OR REPLACE FUNCTION api.index_history(
+    p_index TEXT,
+    -- NULL = from the first published level.
+    p_from  DATE DEFAULT (CURRENT_DATE - 365),
+    p_to    DATE DEFAULT CURRENT_DATE,
+    -- NULL = whole result (refuses over 1000 rows); '' = first page;
+    -- 'YYYY-MM-DD' = the page after that trade_date.
+    p_after TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+    index_code TEXT,
+    trade_date DATE,
+    level      NUMERIC,
+    source     TEXT
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    -- The closed list. A new code is verified, then added here and to
+    -- INDEX_LEVEL_CODES in src/pipeline/b3_pipeline.py (a test pins the two).
+    v_codes  TEXT[] := ARRAY['IBOV'];
+    v_code   TEXT := upper(btrim(COALESCE(p_index, '')));
+    v_to     DATE := COALESCE(p_to, CURRENT_DATE);
+    v_from   DATE := p_from;
+    v_start  DATE;
+    v_end    DATE;
+    v_paging BOOLEAN;
+    v_after  DATE;
+BEGIN
+    IF NOT v_code = ANY (v_codes) THEN
+        RAISE EXCEPTION 'index_history: refused, % is not an index code. Accepted: %. A ticker is never served as an index: BOVA11 is an ETF and IBOV11 the options settlement index. To fix: pass an accepted code, or use quote_history for a ticker.',
+            COALESCE(NULLIF(v_code, ''), '(empty)'), array_to_string(v_codes, ', ')
+            USING ERRCODE = '22023', DETAIL = 'reason=unknown_index',
+                  HINT = 'Accepted index codes: ' || array_to_string(v_codes, ', ');
+    END IF;
+    SELECT min(i.trade_date), max(i.trade_date) INTO v_start, v_end
+    FROM public.b3_index_level i WHERE i.index_code = v_code;
+    IF v_start IS NULL THEN
+        RAISE EXCEPTION 'index_history: refused, no level for % has been loaded yet. An index with nothing stored is an error, never an empty series.', v_code
+            USING ERRCODE = '22023', DETAIL = 'reason=outside_coverage';
+    END IF;
+    v_from := COALESCE(v_from, v_start);
+    IF v_from > v_to THEN
+        RAISE EXCEPTION 'index_history: refused, p_from % is after p_to %.', v_from, v_to
+            USING ERRCODE = '22023', DETAIL = 'reason=invalid_window';
+    END IF;
+    IF v_from < v_start OR v_from > v_end THEN
+        RAISE EXCEPTION 'index_history: refused, % is covered from % to %, and the window starts %. To fix: start the window inside the coverage.', v_code, v_start, v_end, v_from
+            USING ERRCODE = '22023', DETAIL = 'reason=outside_coverage',
+                  HINT = format('Coverage: %s %s..%s', v_code, v_start, v_end);
+    END IF;
+
+    SELECT c.paging, c.after_date INTO v_paging, v_after
+    FROM api.parse_date_cursor(p_after, 'index_history') c;
+
+    RETURN QUERY
+    WITH page AS (
+        SELECT i.index_code, i.trade_date, i.level, i.source
+        FROM public.b3_index_level i
+        WHERE i.index_code = v_code
+          AND i.trade_date BETWEEN v_from AND v_to
+          AND (v_after IS NULL OR i.trade_date > v_after)
+        ORDER BY i.trade_date
+        LIMIT 1001
+    )
+    SELECT g.index_code, g.trade_date, g.level::NUMERIC, g.source
+    FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), v_paging, 'index_history')
+    ORDER BY 2
+    LIMIT 1000;
+END;
+$$;
+
+COMMENT ON FUNCTION api.index_history(TEXT, DATE, DATE, TEXT) IS
+    'Daily closing level of a B3 index as B3, its administrator, publishes it; oldest first. p_index takes index codes only (IBOV); anything else, BOVA11 and IBOV11 included, RAISES 22023 (DETAIL reason=unknown_index) naming the accepted codes, so a ticker never stands in for the index. Columns: index_code, trade_date, level (index points, two decimals, as published), source. Price-index levels only: no OHLC, volume or return. A window starting before the first published level (or after the last) is refused (reason=outside_coverage); coverage() publishes the span. Row cap: more than 1000 rows RAISES 22023 unless p_after pages: '''' = first page, then the last row''s trade_date as ''YYYY-MM-DD''; a page shorter than 1000 is the last.';
+
+REVOKE ALL ON FUNCTION api.index_history(TEXT, DATE, DATE, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.index_history(TEXT, DATE, DATE, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION api.index_history(TEXT, DATE, DATE, TEXT) TO silo_api;
+
 COMMIT;

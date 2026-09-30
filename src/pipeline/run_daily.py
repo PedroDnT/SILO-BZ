@@ -7,6 +7,7 @@ Fetches:
   - IBGE: IPCA item tree with weights, previous + current month
   - ANBIMA: latest monthly boletim, all classes (idempotent — upserts full history)
   - B3 COTAHIST: last 7 calendar days of daily quotation zips (404 → skipped)
+  - B3 index closing levels (IBOV): the current year's published grid
 
 Required env vars: POSTGRES_URL
 """
@@ -113,6 +114,15 @@ async def main() -> None:
     except Exception as exc:
         logger.error("B3 COTAHIST daily refresh failed: %s", exc, exc_info=True)
         failures.append(("b3", exc))
+
+    # B3 index closing levels (#412): one call per index for the current year,
+    # the whole published grid re-upserted. Its own failure, so a B3 index
+    # outage never hides behind the tape's.
+    try:
+        totals.update(await B3Ingestor().daily_update_index_levels())
+    except Exception as exc:
+        logger.error("B3 index levels daily refresh failed: %s", exc, exc_info=True)
+        failures.append(("b3_index_level", exc))
 
     # B3 BDI: securities lending (short balances + rates), investor-type
     # participation, index free float and the cash-market instrument registry.

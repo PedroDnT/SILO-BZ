@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "45";
+export const CONTRACT_VERSION = "46";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -2606,6 +2606,50 @@ export const CONTRACT: Record<string, ContractEntry> = {
       },
       "required": [
         "p_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "index_history": {
+    "kind": "rpc",
+    "path": "/rpc/index_history",
+    "description": "Daily closing level of a B3 index as B3, its administrator, publishes it; oldest first. p_index takes index codes only (IBOV); anything else, BOVA11 and IBOV11 included, RAISES 22023 (DETAIL reason=unknown_index) naming the accepted codes, so a ticker never stands in for the index. Columns: index_code, trade_date, level (index points, two decimals, as published), source. Price-index levels only: no OHLC, volume or return. A window starting before the first published level (or after the last) is refused (reason=outside_coverage); coverage() publishes the span. Row cap: more than 1000 rows RAISES 22023 unless p_after pages: '' = first page, then the last row's trade_date as 'YYYY-MM-DD'; a page shorter than 1000 is the last.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_index": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "p_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `(CURRENT_DATE - 365)`."
+        },
+        "p_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `CURRENT_DATE`."
+        },
+        "p_after": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Defaults to `NULL::text`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_index"
       ],
       "additionalProperties": false
     }

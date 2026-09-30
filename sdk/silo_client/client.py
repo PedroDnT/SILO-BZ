@@ -37,7 +37,7 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 45  # v45 quote_history fields + close_adj default (#410); v44 adjusted closes (#417)
+KNOWN_CATALOG_VERSION = 46  # v46 index_history (#415); v45 quote_history fields + close_adj default (#410)
 
 #: How many times prices() / quote_history_all() restart a retrieval whose
 #: pages came back with different data revisions before giving up.
@@ -105,8 +105,9 @@ class SiloOverCap(SiloError):
     1000-row page (SQLSTATE 22023) rather than trim it. Not a bug: page it or
     narrow the window, ids or metrics.
 
-    Three functions page: panel (`iter_panel`/`panel_all`), quote_history
-    (`iter_quote_history`/`quote_history_all`) and fund_nav
+    Four functions page: panel (`iter_panel`/`panel_all`), quote_history
+    (`iter_quote_history`/`quote_history_all`), index_history
+    (`iter_index_history`/`index_history_all`) and fund_nav
     (`iter_fund_nav`/`fund_nav_all`, which need an `entity_type`). The rest —
     option_history, termo_history, financials, company_financials,
     anbima_classes, inflation, inflation_items, fidc_cedentes, fidc_sacados,
@@ -603,6 +604,38 @@ class SiloClient:
         )
         frame = frame.with_columns(pl.col("trade_date").str.to_date("%Y-%m-%d"))
         return frame.sort(["ticker", "trade_date"])
+
+    def index_history(
+        self, index: str, start: Datish = None, end: Datish = None,
+    ) -> List[Dict[str, Any]]:
+        """B3's published closing level of an index (IBOV), one page.
+
+        Index codes only: a ticker (BOVA11, IBOV11) is refused by the server,
+        never substituted. A window outside the published span is refused too.
+        """
+        return self._rpc("index_history", {
+            "p_index": index, "p_from": _iso(start), "p_to": _iso(end),
+        })
+
+    def iter_index_history(
+        self, index: str, start: Datish = None, end: Datish = None,
+    ) -> Iterator[Dict[str, Any]]:
+        """Every index_history row, paged with `p_after` (the last trade_date)."""
+        body = {"p_index": index, "p_from": _iso(start), "p_to": _iso(end)}
+        after = ""
+        while True:
+            rows = self._rpc("index_history", {**body, "p_after": after}, page=True)
+            for row in rows:
+                yield row
+            if len(rows) < SERVER_ROW_CAP:
+                return
+            after = str(rows[-1]["trade_date"])
+
+    def index_history_all(
+        self, index: str, start: Datish = None, end: Datish = None,
+    ) -> List[Dict[str, Any]]:
+        """iter_index_history collected into a list."""
+        return list(self.iter_index_history(index, start, end))
 
     def iter_fund_nav(
         self, cnpj: str, entity_type: str, start: Datish = None,

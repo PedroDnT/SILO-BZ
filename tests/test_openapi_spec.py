@@ -261,8 +261,10 @@ REFUSING_FUNCTIONS = {
     "curve_history",
     # v43: the research universe (28_api_research.sql).
     "research_universe",
+    # v46: B3's published index levels (28_api_research.sql).
+    "index_history",
 }
-PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav"}
+PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav", "index_history"}
 
 
 def test_fidc_concentration_is_no_longer_described_as_silently_clamped(spec):

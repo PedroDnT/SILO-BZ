@@ -116,6 +116,17 @@ async def main(args: argparse.Namespace) -> None:
     # since then is not in B3's catalog, so it is queried by the name the
     # tape printed for it (B3Ingestor._tape_names); renamed codes are
     # skipped because their history comes under the current name.
+    # B3 index closing levels (#412): one call per index and year, alone.
+    if getattr(args, "b3_index_only", False):
+        from src.pipeline.b3_pipeline import INDEX_LEVEL_START_YEAR
+
+        first = args.b3_index_start_year or INDEX_LEVEL_START_YEAR
+        years = list(range(first, (args.end_year or date.today().year) + 1))
+        logger.info("Starting B3 index-level backfill: %s..%s", years[0], years[-1])
+        n = B3Ingestor().ingest_index_levels(years)
+        ensure_rows_landed(n)
+        return
+
     if getattr(args, "b3_cash_dividends_only", False):
         start = date(args.b3_start_year, 1, 1)
         lookback = (date.today() - start).days
@@ -426,6 +437,15 @@ def parse_args() -> argparse.Namespace:
         "--b3-cash-dividends-only", action="store_true",
         help="Skip everything else; backfill B3's full cash-distribution history "
              "for every issuer that printed since --b3-start-year"
+    )
+    parser.add_argument(
+        "--b3-index-only", action="store_true",
+        help="Skip everything else; backfill B3's published index closing levels "
+             "(IBOV) from --b3-index-start-year (default 2020) through --end-year"
+    )
+    parser.add_argument(
+        "--b3-index-start-year", type=int, default=None,
+        help="First year of B3 index closing levels (default: 2020)"
     )
     parser.add_argument(
         "--b3-start-year", type=int, default=2019,

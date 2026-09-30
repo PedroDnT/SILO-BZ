@@ -373,7 +373,12 @@ __all__ = [
 # the coverage, a second ISIN in the window or two rows on one session refuse.
 # data_revision identifies the data behind a response. The panel defaults to
 # close_adj for shares and units (new metric), close for other tickers.
-CATALOG_VERSION = 45
+# v46: api.index_history serves B3's published index closing level (IBOV,
+# from 2020) from b3_index_level (migration 55, #412 / #415). Index codes only:
+# a ticker, BOVA11 and IBOV11 included, is refused, so none can stand in for
+# the index. Same page, cursor and coverage rule as quote_history; coverage()
+# gains an index_levels row.
+CATALOG_VERSION = 46
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -643,6 +648,15 @@ CONSTRAINTS = [
     "label on one date published with two factors. "
     "The absence of events is never taken as proof: the sweep proof is. Select "
     "close explicitly for the raw close.",
+    "THE BENCHMARK IS THE INDEX AS B3 PUBLISHES IT: api.index_history. It takes "
+    "index codes only (IBOV, from 2020) and returns index_code, trade_date, the "
+    "closing level (index points, two decimals, as published) and source. A "
+    "ticker is REFUSED (22023, reason=unknown_index), BOVA11 and IBOV11 "
+    "included: BOVA11 is an ETF and IBOV11 the options settlement index, printed "
+    "on expiry days only and never equal to the close, so neither may stand in "
+    "for the index. Price-index levels only: no OHLC, volume or total-return "
+    "variant. A window outside the published span is refused; coverage() "
+    "(index_levels) states it.",
     "quote_history IS KEYED ON THE ISIN AND REFUSES WHAT IT CANNOT SERVE WHOLE. "
     "The series follows the instrument across BDI boards (p_board restricts it). "
     "22023 with DETAIL reason=: unknown_ticker (never printed on the cash tape); "
@@ -675,7 +689,7 @@ CONSTRAINTS = [
     "WHY (the response is one 1000-row page and SILO never returns a silently "
     "truncated result) and HOW to fix it for that function, in the message and "
     "again as PostgREST's `details` / `hint`. That is all "
-    "forty-four — panel, quote_history, fund_nav, option_history, termo_history, "
+    "forty-five — panel, quote_history, fund_nav, option_history, termo_history, "
     "financials, financial_statement_history, company_financials, "
     "income_statements, balance_sheets, "
     "cash_flow_statements, anbima_classes, "
@@ -683,12 +697,13 @@ CONSTRAINTS = [
     "fidc_cedentes, fidc_sacados, fidc_portfolio, "
     "fidc_tranches, fidc_aging, fund_holdings, fund_debentures, fund_documents, "
     "fund_restatements, fund_restatement_diff, company_events, macro_series, "
-    "ptax, future_curve, future_series, curve, curve_history, research_universe and the ten "
+    "ptax, future_curve, future_series, curve, curve_history, research_universe, index_history and the ten "
     "screen_* functions "
     "(`limits.page.all`). "
-    "THREE OF THEM PAGE with p_after: panel, quote_history and fund_nav. Send "
-    "p_after='' for the first page, then the key from the last row — for the "
-    "panel 'date|id|metric|asset_class', for quote_history and fund_nav just "
+    "FOUR OF THEM PAGE with p_after: panel, quote_history, index_history and "
+    "fund_nav. Send p_after='' for the first page, then the key from the last "
+    "row — for the panel 'date|id|metric|asset_class', for quote_history, "
+    "index_history and fund_nav just "
     "that row's date as 'YYYY-MM-DD'; every page is exactly 1000 rows until "
     "the last, which is shorter. fund_nav ALSO REQUIRES p_entity_type when "
     "paging, because its cursor is a bare period and one CNPJ can file under "
@@ -1150,7 +1165,7 @@ LIMITS = {
             "screen_restatements", "screen_late_filers", "screen_silent_filers",
             "company_events", "macro_series", "ptax",
             "future_curve", "future_series", "curve", "curve_history",
-            "research_universe",
+            "research_universe", "index_history",
         ],
         # The protocol every cursor below shares.
         "cursor_protocol": (
@@ -1170,6 +1185,10 @@ LIMITS = {
                     "the last row's trade_date as 'YYYY-MM-DD'; order is "
                     "trade_date. Keep the same p_fields on every page, and "
                     "restart when data_revision changes between pages"
+                ),
+                "index_history": (
+                    "the last row's trade_date as 'YYYY-MM-DD'; order is "
+                    "trade_date"
                 ),
                 "fund_nav": (
                     "the last row's period as 'YYYY-MM-DD'; order is period, "
@@ -1748,6 +1767,7 @@ def catalog_payload() -> Dict[str, Any]:
             "curve": "POST /rest/v1/rpc/curve",
             "curve_history": "POST /rest/v1/rpc/curve_history",
             "research_universe": "POST /rest/v1/rpc/research_universe",
+            "index_history": "POST /rest/v1/rpc/index_history",
             # B3 securities lending and investor flow (v27). VIEWS, not
             # functions: filter them with PostgREST's own syntax
             # (?ticker=eq.PETR4&trade_date=gte.2026-09-01) and page with

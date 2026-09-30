@@ -1890,6 +1890,21 @@ CREATE TABLE IF NOT EXISTS b3_corporate_event_sweep (
 COMMENT ON TABLE b3_corporate_event_sweep IS
     'One row per B3 issuing code whose listed-company supplement (its full published corporate-event history) came back and was stored by the corporate-event sweep; proven_at is the latest such run. A code with no row is unproven, and api.quote_history serves its price-adjusted close as NULL with a reason.';
 
+-- B3 index closing levels (migration 55, #412): the benchmark as its
+-- administrator publishes it, one row per (index_code, trade_date).
+CREATE TABLE IF NOT EXISTS b3_index_level (
+    index_code  TEXT          NOT NULL,
+    trade_date  DATE          NOT NULL,
+    level       NUMERIC(18,2) NOT NULL CHECK (level > 0),
+    source      TEXT          NOT NULL DEFAULT 'b3_index_statistics',
+    source_url  TEXT,
+    fetched_at  TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_b3_index_level UNIQUE (index_code, trade_date)
+);
+
+COMMENT ON TABLE b3_index_level IS
+    'B3 index closing levels as published by the index administrator (indexStatisticsProxy GetPortfolioDay, one call per index and year). One row per (index_code, trade_date) with a published level; no row on a non-session day. Served by api.index_history.';
+
 -- ---------------------------------------------------------------------------
 -- B3 instrument typing v3 (migration 27): index/right/bonus split out of the
 -- residual bucket; fund subtype falls back to the ISIN's own classified

@@ -66,7 +66,8 @@ def test_file_is_one_guarded_transaction_after_19():
 
 def test_exactly_one_function_is_created():
     created = re.findall(r"CREATE\s+OR\s+REPLACE\s+FUNCTION\s+api\.(\w+)\(", _strip(SQL28))
-    assert created == ["research_universe"]
+    # v46 adds index_history to the same file (tests/test_index_history_contract.py).
+    assert created == ["research_universe", "index_history"]
 
 
 def test_definer_empty_search_path_and_grants():

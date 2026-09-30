@@ -32,6 +32,12 @@ _UPSERT_BATCH = 5000
 # its issuer's events for the whole window it can serve (#413).
 TAPE_START = date(2019, 1, 2)
 
+# B3 index closing levels (#412). The closed list of index codes served by
+# api.index_history; a new code is added here, verified, and in the SQL list.
+INDEX_LEVEL_TABLE = "b3_index_level"
+INDEX_LEVEL_CODES: Tuple[str, ...] = ("IBOV",)
+INDEX_LEVEL_START_YEAR = 2020
+
 
 class B3Ingestor:
     def __init__(
@@ -849,6 +855,47 @@ class B3Ingestor:
         totals[bdi.TABLE_INDEX_PORTFOLIO] = await self.ingest_index_portfolios()
         totals[bdi.TABLE_INSTRUMENT] = await self.ingest_instruments()
         return totals
+
+    def ingest_index_levels(
+        self, years: List[int], codes: Optional[List[str]] = None,
+    ) -> int:
+        """B3's published closing level for each index and year (#412).
+
+        One call per (index, year), each its own cvm_ingest_log row
+        (doc_type index_level). A failure on one year is logged and the rest
+        still run, then the whole call raises: a missing year is an error, not
+        a shorter history.
+        """
+        from src.fetchers.b3_index_level_fetcher import B3IndexLevelFetcher
+
+        fetcher = B3IndexLevelFetcher()
+        total = 0
+        failures: List[str] = []
+        for code in codes or list(INDEX_LEVEL_CODES):
+            for year in years:
+                run_id = str(uuid4())
+                self._log_start(run_id, "index_level", year, None)
+                try:
+                    rows = fetcher.fetch_year(code, year)
+                    n = upsert_rows(self._supabase, INDEX_LEVEL_TABLE, rows,
+                                    conflict_columns="index_code,trade_date") if rows else 0
+                except Exception as exc:  # noqa: BLE001 — logged per year, raised below
+                    self._log_finish(run_id, 0, ingest_log.describe(exc))
+                    failures.append(f"{code} {year}: {exc}")
+                    continue
+                self._log_finish(run_id, n)
+                total += n
+        if failures:
+            raise RuntimeError(f"B3 index levels: {len(failures)} failed; first: {failures[0][:300]}")
+        logger.info("B3 index levels: %d rows", total)
+        return total
+
+    async def daily_update_index_levels(self) -> Dict[str, int]:
+        """The current year, and the previous one in early January so a
+        late December close is not missed."""
+        today = date.today()
+        years = sorted({today.year, (today - timedelta(days=10)).year})
+        return {INDEX_LEVEL_TABLE: self.ingest_index_levels(years)}
 
     async def daily_update(self) -> Dict[str, int]:
         """Re-fetch the trailing calendar window of daily zips.

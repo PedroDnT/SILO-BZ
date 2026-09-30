@@ -132,6 +132,28 @@ Inside the coverage a missing session is a session with **no trade** (COTAHIST l
   The SDK walks it: `silo.iter_quote_history("PETR4", start="2019-01-02")`.
 </Warning>
 
+### `POST /rpc/index_history`
+
+The benchmark: an index's daily closing level **as B3, its administrator, publishes it**, oldest first.
+
+```sql
+api.index_history(p_index TEXT,                               -- index codes only: IBOV
+                  p_from  DATE DEFAULT CURRENT_DATE - 365,    -- NULL = from the first level
+                  p_to    DATE DEFAULT CURRENT_DATE,
+                  p_after TEXT DEFAULT NULL)                  -- same cursor as quote_history
+-- -> index_code, trade_date, level (index points, two decimals), source
+```
+
+```bash
+curl -s -X POST "$SILO_URL/rpc/index_history" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_index":"IBOV","p_from":"2025-12-30","p_to":"2025-12-30"}'
+# [{"index_code":"IBOV","trade_date":"2025-12-30","level":161125.37,"source":"b3_index_statistics"}]
+```
+
+**A ticker is refused** (`22023`, `reason=unknown_index`), BOVA11 and IBOV11 included: BOVA11 is an ETF, and IBOV11 is the options settlement index, printed on expiry days only and never equal to the close. Neither stands in for the index. Price-index levels only: no OHLC, no volume, no total-return variant. History starts in 2020; a window outside the published span is refused (`reason=outside_coverage`), and `coverage()` has an `index_levels` row. The SDK walks it with `silo.index_history_all("IBOV", "2020-01-02", "2026-09-29")`.
+
 ### `POST /rpc/quote_latest`
 
 The most recent stored session for one ticker. At most one row, same columns as `quote_history`.

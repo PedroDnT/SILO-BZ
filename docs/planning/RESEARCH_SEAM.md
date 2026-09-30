@@ -146,6 +146,14 @@ A separate call, one row per ticker+ISIN pair traded since 2019-01-02.
 
 ## 5. The benchmark index: `api.index_history` (#379, #374)
 
+**Built (2026-09-30, #412, #415):** `b3_index_level` (migration 55), the
+`b3_index_level_fetcher` over `GetPortfolioDay` (one call per index and year;
+grid, weekends, future dates, duplicates and the published monthly min/max all
+checked, a null grid raises), daily for the current year and
+`daily_ingest` `mode=b3-index-backfill` from 2020. IBOV only. From 2020 to
+2026-09-29 its missing weekdays are exactly the tape's holidays, year by year,
+and 2025-12-30 reads 161,125.37. No divisor-step flag: none falls after 2020.
+
 `api.index_history(p_index, p_from, p_to, p_after)` over B3's own published
 levels, from a closed, extensible list of index codes.
 

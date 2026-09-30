@@ -110,6 +110,10 @@ RATES_FUNCTIONS = (
 # v43: the research universe in 28_api_research.sql (tests/test_research_universe_contract.py
 # owns the body). Raise-only.
 RESEARCH_FUNCTIONS = ("api.research_universe",)
+# v46: B3's published index levels, also in 28_api_research.sql
+# (tests/test_index_history_contract.py owns the body). Paged, like
+# quote_history.
+RESEARCH_PAGED_FUNCTIONS = ("api.index_history",)
 
 # The FNET register (v33) and its restatement diff (v40) live in
 # 24_api_fnet.sql, for the same reason: FUNCS does not carry them,
@@ -631,9 +635,11 @@ def test_row_cap_helper_page_size_is_the_one_constant():
     assert set(page["all"]) == {
         f.split(".", 1)[1]
         for f in CAPPED_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS + WAVE3_FUNCTIONS
-        + RATES_FUNCTIONS + RESEARCH_FUNCTIONS
+        + RATES_FUNCTIONS + RESEARCH_FUNCTIONS + RESEARCH_PAGED_FUNCTIONS
     }
-    assert set(page["functions"]["paged"]) == {f.split(".", 1)[1] for f in PAGED_FUNCTIONS}
+    assert set(page["functions"]["paged"]) == {
+        f.split(".", 1)[1] for f in PAGED_FUNCTIONS + RESEARCH_PAGED_FUNCTIONS
+    }
     assert set(page["functions"]["raise_only"]) == {
         f.split(".", 1)[1]
         for f in RAISE_ONLY_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS + WAVE3_FUNCTIONS
@@ -1500,14 +1506,15 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
     # thirty-seven since v40 (fund_restatement_diff), thirty-nine since v41
     # (fund_holdings, fund_debentures stopped trimming), forty-three since v42
     # (future_curve, future_series, curve, curve_history), forty-four since v43
-    # (research_universe). The
+    # (research_universe), forty-five since v46 (index_history). The
     # prose said "eight" for two versions while listing nine — pin the word
     # to the tuples so it cannot drift again.
-    assert "forty-four" in c.lower().split(), "all forty-four capped functions refuse"
+    assert "forty-five" in c.lower().split(), "all forty-five capped functions refuse"
     assert (
         len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) + len(FNET_FUNCTIONS)
         + len(WAVE3_FUNCTIONS) + len(RATES_FUNCTIONS) + len(RESEARCH_FUNCTIONS)
-    ) == 44
+        + len(RESEARCH_PAGED_FUNCTIONS)
+    ) == 45
     for fn in WAVE3_FUNCTIONS:
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
     for fn in HEAD_FUNCTIONS:
