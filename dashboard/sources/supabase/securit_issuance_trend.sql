@@ -12,18 +12,31 @@
 -- 'ots_mensal' — NOT the 'cra_classe' spelling that the dim_security comment
 -- and yield_universe()'s default still mention. The prefix/suffix match below
 -- classifies either spelling correctly.
-with anchor as (
+with per_period as (
+  select period, count(*) as n,
+         lag(count(*)) over (order by period) as prev_n
+  from fact_security_monthly
+  group by period
+),
+anchor as (
   -- SPINE END. Securitizadoras are outside fact_fund_monthly, so no
-  -- coverage-based completeness exists for them. The rule is the last ENDED
-  -- month that has a filing: never the in-progress month (partial by
-  -- construction for a monthly filing) and never a month the filings have not
-  -- reached yet — the axis would run past the data. least() ignores a NULL
-  -- max() on an empty table, so this falls back to the last ended month.
-  select least(
-           date_trunc('month', current_date) - interval '1 month',
-           date_trunc('month', max(data_referencia))
-         )::date as p_end
-  from cvm_securit_serie
+  -- coverage-based completeness exists for them. The rule is the one
+  -- distressed_securities() (09) uses: the newest period holding at least half
+  -- the previous period's rows. A month with a filing is not a complete month:
+  -- early filers open it weeks before the rest (on 2026-09-30, 2026-08 held
+  -- 1,247 series against 2026-07's 6,810, and the chart's last point fell
+  -- about 92%, #436). Only ENDED months are candidates: an in-progress month
+  -- never counts, even against a partial previous month. COALESCE falls back to
+  -- the last ended month when nothing qualifies (an empty fact).
+  select coalesce(
+           (select period
+              from per_period
+             where period <= (date_trunc('month', current_date) - interval '1 month')::date
+               and (prev_n is null or n >= 0.5 * prev_n)
+             order by period desc
+             limit 1),
+           (date_trunc('month', current_date) - interval '1 month')::date
+         ) as p_end
 ),
 months as (
   select generate_series(
