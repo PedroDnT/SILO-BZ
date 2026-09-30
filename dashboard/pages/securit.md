@@ -109,7 +109,9 @@ select * from supabase.securit_dfin_coverage
 > Monthly `valor_certificados` by family, from `security_issuance_trend()`. This
 > is the **stock outstanding** as re-stated in each month's filings — not new
 > issuance. A step in the line is a change in what is on the book, which can be
-> new deals, redemptions, or a change in who filed that month.
+> new deals, redemptions, or a change in who filed that month. The last point is
+> the newest month holding at least half the previous month's series: a month
+> still receiving its filings is left out rather than drawn as a drop.
 
 <AreaChart
 data={securit_issuance_trend}
