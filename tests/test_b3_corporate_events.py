@@ -252,13 +252,15 @@ def test_price_affecting_labels_are_the_share_count_ones():
     assert PRICE_AFFECTING_LABELS == {"DESDOBRAMENTO", "GRUPAMENTO", "BONIFICACAO"}
 
 
-def test_daily_run_wires_corporate_events():
-    run_daily = (ROOT / "src/pipeline/run_daily.py").read_text(encoding="utf-8")
-    assert "ingest_corporate_events" in run_daily, (
+def test_daily_job_wires_corporate_events():
+    """Their own daily step since 2026-09-30 (src/pipeline/run_b3_events.py),
+    after the deploy hook. tests/test_run_b3_events.py pins the workflow."""
+    step = (ROOT / "src/pipeline/run_b3_events.py").read_text(encoding="utf-8")
+    assert "ingest_corporate_events" in step, (
         "an ingest method nobody calls never runs in CI (dataset checklist step 5)"
     )
-    # It must not be able to fail the whole daily run.
-    assert 'failures.append(("b3_corporate_events", exc))' in run_daily
+    # A failure is recorded and fails the step, never the rest of the job.
+    assert 'failures.append(("b3_corporate_events", exc))' in step
 
 
 # --------------------------------------------------------------------------

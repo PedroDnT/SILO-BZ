@@ -10,9 +10,9 @@ Times in UTC-3, with UTC in parentheses.
                              ├─ ANALYZE
                              ├─ apply_analytical.sh   rebuilds or refreshes every matview, and api; smoke guards
                              ├─ Vercel deploy hook    dashboard build, 17 to 45 min
-                             └─ rates/market · FNET register · fnet-diff   (run even after a failure)
+                             └─ B3 events · rates/market · FNET register · fnet-diff   (run even after a failure)
 04:30 (07:30)  health         read-only gate: errors, stuck slices, fact_fund_monthly lag, disk, anon exposure
-05:00 (08:00)  watchdog       stale or unhealed? → re-run run_daily (data only)
+05:00 (08:00)  watchdog       stale or unhealed? → re-run run_daily, B3 events and market (data only)
 05:00 (08:00)  publish_check  is the new build on the public URL? if not, promote it
 ```
 

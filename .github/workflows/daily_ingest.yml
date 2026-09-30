@@ -238,6 +238,21 @@ jobs:
                      "keep serving the previous build until the next trigger." ;;
           esac
 
+      # B3 corporate events and cash distributions (src/pipeline/run_b3_events.py).
+      # Their own step, right after the deploy hook, for the same reason as the
+      # market data and FNET below: a few hundred calls to B3's listed-companies
+      # proxy (about 10 minutes on 2026-09-30) must not be able to skip ANALYZE,
+      # the analytical apply or the deploy hook. They ran inside run_daily until
+      # 2026-09-30, and on 2026-08-29 a corporate-events SSL EOF turned that
+      # process red for data that had all landed. The analytical apply reads
+      # neither table; api.quote_history reads b3_corporate_event live, so a new
+      # event counts from the moment it lands. A failed source writes its
+      # `error` audit row and fails the job.
+      - name: Refresh B3 corporate events and cash dividends
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
+        timeout-minutes: 45
+        run: python -m src.pipeline.run_b3_events
+
       # The FNET document register (fnet_document / fnet_document_filter) runs
       # LAST, on its own. FNET answers GitHub runners slowly and sometimes not at
       # all; when it lived inside run_daily, one fund's ReadTimeout (run
