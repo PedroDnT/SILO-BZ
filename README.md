@@ -51,7 +51,7 @@ period is withheld until it is complete; an unadjusted price says so. A retrieva
 that answers confidently when it does not know is the failure mode that makes model
 output unusable in regulated work — so this one is built to say it does not have the
 answer, in a shape an agent can detect. Concretely, every change is held to five rules
-(`CLAUDE.md`), and 1,839 offline tests hold it there:
+(`AGENTS.md`), and about 2,300 offline tests hold it there:
 
 1. **Never fabricate.** No fallback values, no fills, no inferred joins.
 2. **Never swallow a failure.** It raises, or it is written to `cvm_ingest_log`.
@@ -87,59 +87,41 @@ Where each dataset lands, at what grain, and what is ingested but not yet served
 
 ## How it works
 
+The model of the whole system is four short pages in `docs/architecture/`:
+
+| Page                                           | Answers                                                       |
+| ---------------------------------------------- | ------------------------------------------------------------- |
+| [SYSTEM](docs/architecture/SYSTEM.md)          | What the parts are, who reads what, which boundaries matter   |
+| [DATA_FLOW](docs/architecture/DATA_FLOW.md)    | How a source file becomes a row, a matview and an `api` answer |
+| [OPERATIONS](docs/architecture/OPERATIONS.md)  | The daily timeline, and what a failed run leaves behind       |
+| [DECISIONS](docs/architecture/DECISIONS.md)    | The rules already decided, each with its source               |
+
 ### One pipeline, three stages
 
-```
-  ┌───── FETCH ─────┐    ┌───── PARSE ────┐    ┌───── STORE ────┐
-  │ src/fetchers/   │ →  │ src/parsers/   │ →  │ src/store/     │
-  │  cvm_fetcher    │    │  validation    │    │  pg_client.py  │
-  │  bacen_fetcher  │    │  (CVM zip→csv  │    │  schema.sql    │
-  │                 │    │   and BACEN df │    │                │
-  │                 │    │   normalization│    │                │
-  │                 │    │   live in the  │    │                │
-  │                 │    │   fetchers)    │    │                │
-  └─────────────────┘    └────────────────┘    └────────────────┘
-                                                       ▲
-                           ┌───── ORCHESTRATE ──────────┘
-                           │ src/pipeline/
-                           │   cvm_pipeline.CVMIngestor
-                           │   bacen_pipeline.BacenIngestor
-                           │   run_backfill.py  (one-shot, all years)
-                           │   run_daily.py     (cron, current month + 7-day window)
-                           └─────────────────────────────────────
-```
-
-| Package         | Role                                                                                                                                                                           |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/fetchers/` | **FETCH** — HTTP/SDK calls only. CVM downloads ZIP/CSV from `dados.cvm.gov.br` with retry, DNS rotation, and on-disk cache. BACEN wraps `python-bcb`.                          |
-| `src/parsers/`  | **PARSE** — shared field/CNPJ/date validation. CVM CSV extraction is co-located with `CVMFetcher.fetch()` because it needs the URL/filename context. BACEN DataFrame normaliza |
-| `src/store/`    | **STORE** — psycopg2 Supabase client and chunked upserts; canonical schema.                                                                                                    |
-| `src/pipeline/` | **ORCHESTRATE** — wires the three stages, writes audit log rows, runs daily/backfill.                                                                                          |
+`src/pipeline/` orchestrates every slice of work. A fetcher (`src/fetchers/`, HTTP
+only) downloads the file, a parser (`src/parsers/`) turns it into validated rows, and
+`src/store/pg_client.py` upserts them on the table's natural key. Each slice writes one
+`cvm_ingest_log` audit row. `run_daily.py` is the scheduled entry point;
+`run_backfill.py` loads history on demand.
 
 ### The daily cycle
 
 Everything runs in GitHub Actions against Supabase; there is no server to keep up.
+Times are UTC-3, with UTC in parentheses.
 
-1. **06:00 UTC — `daily_ingest.yml`.** Applies the schema and any new migration
-   (`psql`, lock-guarded, idempotent), then runs `run_daily`: the current and previous
-   month of every monthly CVM dataset plus any month in a trailing four-month window
-   with no successful audit row (CVM publishes with a 1–2 month lag; a month not yet
-   published is logged `skipped`, not `error`), the last seven sessions of B3 quotes,
-   and the BACEN series. Then `ANALYZE`, then the analytical layer is rebuilt, then —
-   on a successful scheduled run — the dashboard's deploy hook fires. The FNET
-   register runs last, as its own step (the last three delivery days, plus a
-   rotating 1/150 of the FII/FIDC registry, about 70 funds a night, so each fund's
-   documents are re-linked about every five months): a slow FNET fails the run but
-   can no longer block the rest.
-2. **08:00 UTC — `watchdog.yml`.** Re-runs any slice whose data stopped advancing, so a
-   silent outage heals itself instead of waiting for a person to notice.
-3. **`health.yml`.** Reads the audit log and the tables themselves and fails loudly when
-   they disagree: no audit row for a run, slices stuck at `running`, an entity whose
-   latest month stopped moving, a matview trailing its source, an `api.*` probe that
-   answers wrong, a database above 90% of its plan allowance. A scheduled failure
-   files (or bumps) one tracking issue.
-4. **Fills on demand — `backfill.yml`.** One entity and year range at a time,
-   serialized, with current coverage printed before anything is written.
+1. **03:00 (06:00 UTC), `daily_ingest.yml`.** Applies the schema and any new
+   migration, runs `run_daily`, then `ANALYZE`, then rebuilds the analytical layer,
+   then fires the dashboard's deploy hook. If any source fails, those last three
+   steps are skipped. The FNET register and the market data run last, as their own
+   steps, so a slow host fails the run but cannot block the rest.
+2. **04:30 (07:30 UTC), `health.yml`.** Reads the audit log and the tables
+   themselves and fails loudly when they disagree. A scheduled failure files (or
+   bumps) one tracking issue.
+3. **05:00 (08:00 UTC), `watchdog.yml` and `publish_check.yml`.** The watchdog
+   re-runs the ingest when a slice is stale. The publish check confirms the public
+   URL serves the new build, and promotes it if not.
+4. **On demand, `backfill.yml`.** One entity and year range at a time, serialized,
+   with current coverage printed before anything is written.
 
 ### How the data is stored
 
@@ -148,21 +130,19 @@ Everything runs in GitHub Actions against Supabase; there is no server to keep u
 - **Partitioning**: `cvm_fi_diario` is partitioned by year (monotonic append, ~5M rows/yr).
 - **Indexes**: BRIN on date columns, unique constraints on natural keys (idempotent ON CONFLICT upserts).
 - **No soft deletes**: Deletion is physical; canceled funds drop out of `cvm_fund_registry.status`.
-- **Partitioned where it is large**: `cvm_fi_diario` (~5M rows a year) is partitioned by
-  year, with BRIN indexes on its dates.
 
 ## How it is read
 
 ### The analytical layer
 
-`src/store/analytical/`, applied by `scripts/apply_analytical.sh` after every ingest, is
-the read side: conformed dimensions (`dim_fund` — a materialized view — plus category,
-administrator and gestor), the monthly fact matviews (`fact_fund_monthly`,
+`src/store/analytical/`, applied by `scripts/apply_analytical.sh` after every successful
+ingest, is the read side: conformed dimensions (`dim_fund` — a materialized view — plus
+category, administrator and gestor), the monthly fact matviews (`fact_fund_monthly`,
 `fact_security_monthly`), a completeness view that says which months are fully filed
 (`mv_period_completeness`, read through `latest_complete_period()`), the suspicious-deal
 screens, per-class and ETF performance rankings, and finally schema `api` — the only
-surface exposed to callers (files 19–24: the contract, short interest, lending
-participants, the `api.screen_*` wrappers over the screens, and the FNET functions).
+surface exposed to callers (files 19–28). Which objects are live and which are only as
+fresh as the last apply is in [DATA_FLOW](docs/architecture/DATA_FLOW.md).
 
 ### The read API
 
@@ -300,6 +280,12 @@ same for everyone.
 
 ### Known defects
 
+- **Three dashboard pages read a matview that nothing refreshes.**
+  `mv_b3_monthly_activity` (behind `/markets`, `/etf` and `/flows`) and
+  `mv_b3_isin_subtype` were last populated around 2026-08-28. Their daily refresh
+  is a pg_cron job, and the live database has no pg_cron. August shows 19 of its
+  21 sessions and September is absent
+  ([OPEN_ITEMS.md](docs/planning/OPEN_ITEMS.md), item 16).
 - **`etf_daily` / `etf_latest` can be absent from production.** Migration 06
   recreates them when missing, so a run whose schema step failed leaves them
   gone and the backfill's "Refresh ETF metrics" job then fails on an assertion
@@ -347,7 +333,7 @@ same for everyone.
 
 ## Working on the code
 
-Local setup, the CLI and the tests are documented in `CLAUDE.md` (commands),
+Local setup, the CLI and the tests are documented in `AGENTS.md` (commands),
 [scripts/README.md](scripts/README.md) (operator tooling) and the two Evidence READMEs.
 The essentials, folded away:
 
@@ -374,7 +360,7 @@ The essentials, folded away:
 │   │   ├── pg_client.py        # get_pg_client(), upsert_rows() — the ONLY DB door
 │   │   ├── schema.sql          # canonical schema (tables + audit log)
 │   │   ├── migrations/         # NNN_*.sql, append-only — never edit a historical one
-│   │   └── analytical/         # 01–24: dims, fact matviews, screens, rankings, schema api
+│   │   └── analytical/         # 01–28: dims, fact matviews, screens, rankings, schema api
 │   ├── pipeline/               # wires fetch→parse→store, writes cvm_ingest_log
 │   │   ├── cvm_pipeline.py     # CVMIngestor — the (entity, doc_type) orchestrator
 │   │   ├── bacen_pipeline.py   # BacenIngestor
@@ -398,17 +384,18 @@ The essentials, folded away:
 │   └── README.md               # Webapp-specific setup
 ├── tests/                      # offline pytest suite (DB + HTTP mocked)
 ├── scripts/                    # operator + dev tooling — see scripts/README.md
-│   ├── apply_analytical.sh     # build the analytical layer (01–24) after ingest
+│   ├── apply_analytical.sh     # build the analytical layer (01–28) after ingest
 │   ├── verify_pipeline.py      # quality gate against live Supabase
 │   ├── seed_local_db.py        # offline: real CVM data → local DuckDB
 │   ├── vercel_should_build.sh  # Vercel ignoreCommand (0 SKIPS, 1 BUILDS)
-│   └── queries/                # 13 numbered read-only SQL files
+│   └── queries/                # 14 numbered read-only SQL files
 ├── docs/                       # prose docs (NOT published; see .mintignore)
+│   ├── architecture/           # the system in four pages: SYSTEM, DATA_FLOW, OPERATIONS, DECISIONS
 │   ├── API.md                  # serve/, the LOCAL adapter — not the public read contract
 │   ├── DATABASE_MAINTENANCE.md # upkeep runbook: checks, cadence, partition rollover
 │   ├── DATA_MODELING.md        # read before adding a new CLASS of data
 │   ├── ETF_AND_PERFORMANCE.md  # why etf_daily is empty post-CVM-175
-│   ├── supabase_operations.md  # connection / pooler / ops notes
+│   ├── supabase_operations.md  # standing up or re-pointing a project: pooler, schema, first ingest
 │   └── planning/
 │       ├── CHANGELOG.md        # workstream history
 │       └── SERVING.md          # ingested → researcher pulls a panel (steps 0–7)

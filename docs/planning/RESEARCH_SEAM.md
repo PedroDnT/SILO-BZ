@@ -1,6 +1,6 @@
 # Research seam: SILO as the data layer for external quant research
 
-**Status: spec drafted 2026-09-29 from the wayfinder map ([#371](https://github.com/PedroDnT/SILO-BZ/issues/371), 11 of 11 tickets resolved). Awaiting the owner's approval before tickets are cut. Nothing is built.**
+**Status: spec drafted 2026-09-29 from the wayfinder map ([#371](https://github.com/PedroDnT/SILO-BZ/issues/371), 11 of 11 tickets resolved). Approved 2026-09-29; the build tickets are under epic #410, and the research universe (#411) is built (§4).**
 
 A *research caller* is an external repository that builds features, signals or
 backtests on SILO data (terms: `CONTEXT.md`, *Research data*). Its first
@@ -208,4 +208,4 @@ splits as returns).
 ## 11. Open owner calls
 
 - The map's Notes still tell sessions to consult a `codebase-design` skill that is not installed here. Install it or drop the line.
-- Approve this spec so it can be cut into tickets and built.
+- ~~Approve this spec so it can be cut into tickets and built.~~ Approved 2026-09-29 (epic #410).

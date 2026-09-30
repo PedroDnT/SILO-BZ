@@ -10,7 +10,7 @@ description: >
 # SILO
 
 Headless CVM/BACEN/B3 ingest into Supabase. The product is a researcher panel
-`(id, date, metric, value)` via schema `api` + `serve/`. Full rules: `CLAUDE.md`,
+`(id, date, metric, value)` via schema `api` + `serve/`. Full rules: `AGENTS.md`,
 `docs/planning/SERVING.md`, `docs/API.md`.
 
 ## Integrity (non-negotiable)

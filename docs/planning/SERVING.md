@@ -32,7 +32,7 @@ Not done: a quote widget, a PostgREST dump of landing tables, or a
 | **Chart / app** | Draw one ticker or one fund                  | `/v1/quotes/{ticker}?range=1y`, `/v1/funds/{cnpj}/nav`         |
 | **Operator**    | Keep the warehouse true                      | Ingest + `cvm_ingest_log`; read API cannot write               |
 
-Integrity rules in `CLAUDE.md` apply to every step: never fabricate, preserve
+Integrity rules in `AGENTS.md` apply to every step: never fabricate, preserve
 provenance, validate before upsert, idempotent `ON CONFLICT`.
 
 ---

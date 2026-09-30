@@ -4,16 +4,16 @@ The existing schema is sound. This note exists so future additions — most like
 **market/price data for securities** — extend it the same way instead of growing a
 parallel, wide, source-shaped table that downstream queries then have to special-case.
 Read it before adding a new `(entity, doc_type)` or a new class of data; it sits on top
-of the non-negotiable data-integrity rules in `CLAUDE.md` ("Data integrity rules"), it
+of the non-negotiable data-integrity rules in `AGENTS.md` ("Data integrity rules"), it
 does not replace them.
 
 ## The shape we already have
 
-Ingestion is `FETCH → PARSE → STORE`, landing source rows in `cvm_<entity>_<doctype>` /
-`bacen_<series>` tables, each with a **named UNIQUE constraint on its natural key** and
-`ON CONFLICT DO UPDATE` upserts. The analytical layer (`src/store/analytical/`) then builds
-a **star schema** on top: `dim_*` (fund, administrator, gestor, asset-class) and `fact_*`
-matviews keyed by `(entity natural key, period)`. Keep new data inside this grain.
+The path from a source file to schema `api` is drawn in
+[architecture/DATA_FLOW.md](architecture/DATA_FLOW.md). The part that matters here:
+landing tables carry a **named UNIQUE constraint on their natural key**, and the
+analytical layer builds a **star schema** on top, `dim_*` and `fact_*` matviews keyed
+by `(entity natural key, period)`. Keep new data inside this grain.
 
 ## How to decide the model for something new
 
@@ -29,7 +29,7 @@ matviews keyed by `(entity natural key, period)`. Keep new data inside this grai
    per ingest, as always.
 4. **Idempotent by construction.** Named UNIQUE on the natural key
    (e.g. `(instrument_code, price_date, metric)`), upsert with `ON CONFLICT DO UPDATE`.
-   Follow the 6-step "Adding a dataset" checklist in `CLAUDE.md`.
+   Follow the 6-step "Adding a dataset" checklist in `AGENTS.md`.
 5. **A failed fetch raises.** No fabricated last-known-price fallbacks — that is precisely
    the `b3_calc_api` mistake. Validate every row through `DataValidator` before upsert.
 

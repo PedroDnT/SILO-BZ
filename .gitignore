@@ -59,6 +59,7 @@ node_modules
 # Evidence dashboard secrets and cache
 dashboard/.env
 dashboard/.evidence/
+webapp/.evidence/
 
 # stray Evidence scaffold (degit template) — not part of the pipeline
 evi/
@@ -74,3 +75,17 @@ evi/
 
 .codex/coordination/*
 !.codex/coordination/project.yaml
+
+# Local agent and tool state. Until 2026-09-30 these were hidden only by one
+# checkout's .git/info/exclude, so a fresh clone or worktree showed them as
+# untracked.
+.context/
+.conductor/settings.local.*
+**/.claude/scheduled_tasks.*
+**/.claude/routines/.state/
+**/.claude/checkpoints/
+**/.claude/mailbox/
+**/.claude/agent-registry.json
+**/.claude/agent-memory-local
+**/.claude/first-run
+**/.claude/assistant-daemon-state.json

@@ -2,7 +2,8 @@
 
 Written 2026-09-18, closing the session that shipped catalog v28 and v29.
 Everything here is **deliberately not done**, not forgotten. Nothing in this
-list is broken in production — see "Known good" below.
+list is broken in production — see "Known good" below. The one exception is
+item 16, added 2026-09-30: a defect that is live.
 
 This is the **single** register of open work. Items 7–11 were merged the same day
 as a second list, in `README.md` of this directory, written by another session
@@ -454,3 +455,42 @@ Neither blocks writing code; each blocks a demo number.
   planted findings: a directly held stock also held through a fund, a material
   FIDC restatement, an NTN-B.
 - **Warning severity scale.** Not designed.
+
+## 16. Two B3 matviews have no refresh path (found 2026-09-29)
+
+**Reported 2026-09-30, not prioritized.** Found while tracing the system for
+`docs/architecture/`. Nothing here is fixed or started.
+
+`mv_b3_isin_subtype` and `mv_b3_monthly_activity` are created in `schema.sql`
+(migrations 27 and 30) `WITH NO DATA`, and the `REFRESH` beside each one runs
+only while the matview is unpopulated. Their daily refresh is two pg_cron jobs
+in `08_cron_schedules.sql`, at 03:12 and 03:18 UTC-3 (06:12 and 06:18 UTC). The
+live database has no `pg_cron` extension (`pg_extension`, checked 2026-09-29),
+so that file only raises a NOTICE, and `apply_analytical.sh` does not rebuild
+these two. Neither has changed since it was first populated around 2026-08-28.
+
+Measured 2026-09-29:
+
+| Observation                                  | Result                                                                                       |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `mv_b3_isin_subtype` rows                    | 897, the count `archive/STATUS_2026-08-28_day.md` recorded                                    |
+| Fund-quota ISINs traded in the last 60 days  | 627, of which **9** are not in the matview                                                   |
+| `mv_b3_monthly_activity`, newest period      | 2026-08-01; September is absent                                                              |
+| August, standard lot (`tpmerc = '010'`)      | **19** sessions and R$ 481.0 bn in the matview; **21** sessions and R$ 529.8 bn in `b3_cotahist` |
+
+What reads them:
+
+- `mv_b3_monthly_activity`: `/markets` (`b3_monthly_volume`, `b3_market_overview`,
+  `b3_asset_class_volume`, `b3_options_activity`), `/etf` (`etf_market_series`)
+  and `/flows` (`flow_adtv_monthly`, `flow_headline`). Those pages show a
+  partial August as a full month.
+- `mv_b3_isin_subtype`: `vw_b3_instrument_typed.instrument_subtype`, served as
+  `fund_type` by `api.fund_quotas`, for a fund quota whose board code is not
+  decisive.
+
+No check covers it. DB Health's matview-lag check reads `fact_fund_monthly`
+only, and `docs/DATABASE_MAINTENANCE.md` still says the analytical re-create
+"is the daily refresh", which is not true for these two.
+
+Open: where the refresh should live (enable pg_cron, or a step of the daily
+run). Not decided.

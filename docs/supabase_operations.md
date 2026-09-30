@@ -7,6 +7,9 @@ that one variable at Supabase is the entire wiring; there are no code changes.
 
 This runbook covers applying the schema, ingesting data, and validating a
 Supabase project from scratch (e.g. a fresh project, a reset, or a parity check).
+It is not the daily picture: how the system runs is
+[architecture/OPERATIONS.md](architecture/OPERATIONS.md), and ongoing upkeep is
+[DATABASE_MAINTENANCE.md](DATABASE_MAINTENANCE.md).
 
 ## Prerequisites
 
@@ -43,12 +46,12 @@ for f in src/store/migrations/*.sql; do psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 
 ```
 Applies `src/store/schema.sql` then every `src/store/migrations/*.sql` in order, all
 idempotent. Expect base tables, the `cvm_fi_diario_YYYY` partitions,
-`cvm_etf_registry`, the `etf_daily` / `etf_latest` materialized views (refreshed by
-the pipeline after each ingest), and the `instrument_activity` view.
+`cvm_etf_registry`, the `etf_daily` / `etf_latest` views (plain views since
+migration 10, so always current), and the `instrument_activity` view.
 The CI workflows (`apply-schema` gate in `backfill.yml`, and `daily_ingest.yml`)
-run exactly this. Use `psql`, not `scripts/apply_schema.py` — the latter's naive
-`;`-splitter mis-parses semicolons inside SQL comments and silently skips
-migrations.
+run exactly this. `python scripts/apply_schema.py` does the same: it shells out
+to `psql`, and falls back to a Python driver that runs each file whole only when
+the `psql` path fails.
 
 ### 4. Verify schema parity
 ```bash
@@ -63,8 +66,8 @@ python -m src.pipeline.run_daily                    # current + previous month, 
 ```
 …or via CI (recommended for the long backfill): set the GitHub secret
 `POSTGRES_URL`, then dispatch **CVM Historical Backfill** (`backfill.yml`) and let
-the daily cron (`daily_ingest.yml`) take over. The backfill's per-year FI matrix +
-`backfill-other` jobs run in parallel; the tuned knobs
+the daily cron (`daily_ingest.yml`) take over. The backfill's FI year jobs and
+its other entity jobs run one at a time (`max-parallel: 1`); the tuned knobs
 (`CVM_UPSERT_CHUNK_SIZE=5000`, etc.) already apply.
 
 The ETF seed (`src/store/seeds/etf_registry_seed.csv`) and the CVM-175 registry
@@ -88,9 +91,9 @@ Confirm row counts are in the expected ballpark and `cvm_ingest_log` shows
 - **Evidence dashboard** (`dashboard/`): the source dir is `dashboard/sources/supabase/`
   (`name: supabase`, `type: postgres`; the yaml holds no secrets). Credentials load
   from a single env var `EVIDENCE_SOURCE__supabase__connectionString`, read from
-  gitignored `dashboard/.env` locally and from project env settings on Evidence
-  Cloud. See `dashboard/.env.example`. Point it at the **session pooler** host for
-  Evidence Cloud / CI — the direct `db.<ref>.supabase.co:5432` host is IPv6-only
+  gitignored `dashboard/.env` locally and from the environment settings of the
+  Vercel project. See `dashboard/.env.example`. Point it at the **session pooler**
+  host for Vercel / CI — the direct `db.<ref>.supabase.co:5432` host is IPv6-only
   and fails from IPv4-only build environments. Page queries reference tables bare
   (`from fact_fund_monthly`), so they don't depend on the source name.
 
@@ -101,13 +104,14 @@ Confirm row counts are in the expected ballpark and `cvm_ingest_log` shows
   the limit, raise it for the ingestion role:
   `ALTER ROLE postgres SET statement_timeout = '0';` (or a high value).
 - **Connection limits**: the session pooler caps connections. The pipeline uses a
-  single connection per process; the backfill FI matrix runs ≤8 parallel CI jobs —
-  well within pooler limits, but don't crank `CVM_*_CONCURRENCY` arbitrarily.
+  single connection per process, and the backfill runs its jobs one at a time
+  (`max-parallel: 1`), so don't crank `CVM_*_CONCURRENCY` arbitrarily.
 - **RLS / exposure**: tables created via SQL land in `public`, which Supabase's
-  auto API (PostgREST) can expose. The pipeline connects directly (not via the
-  API), so RLS isn't required to function — but if the project's anon/public API
-  is enabled, either enable RLS on these tables or keep the API restricted, so the
-  financial data isn't world-readable.
+  auto API (PostgREST) can expose. `12_grants_and_rls.sql` revokes the landing
+  tables from `anon` and `authenticated` on every analytical apply, and
+  `health.yml` probes them with the publishable key. Schema `api` is the only
+  surface PostgREST should expose. The sweep is part of the analytical layer, so
+  a newly created table is covered only after the next `apply_analytical.sh`.
 - **`ANALYZE`**: `daily_ingest.yml` runs `ANALYZE` post-ingest; `db_parity.py`
   estimates rely on it. After a manual local backfill, run `ANALYZE;` so the
   estimates (and the planner) are fresh.
