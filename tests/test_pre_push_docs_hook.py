@@ -559,3 +559,60 @@ def test_a_pure_move_of_a_pages_file_is_not_held(repo):
     git(repo, "mv", "docs/security/enable_rls.sql", "docs/enable_rls.sql")
     commit(repo, dict(READY), "move")
     assert run_hook(repo) is None
+
+
+# `docs/planning/CHANGELOG.md` keeps the newest rows; the older ones are rolled,
+# unchanged, into frozen files under `docs/archive/changelog/` (scripts/roll_changelog.py).
+# "Every row main had is still here, word for word" therefore reads every one of
+# those files: moving a row between them is not a drop, and deleting or rewording
+# one is, wherever it sat.
+ARCHIVE = "docs/archive/changelog/2026-09-26_to_2026-09-26.md"
+
+
+def start_from_main_with(repo: Path, files: dict[str, str]) -> None:
+    """Main already has `files`; the branch is cut from that commit."""
+    git(repo, "checkout", "-q", "main")
+    commit(repo, files, "main has these")
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(repo, "checkout", "-q", "-B", BRANCH, "main")
+
+
+def archived(*rows: str) -> str:
+    return HEADER + "".join(f"{row}\n" for row in rows)
+
+
+def test_rows_moved_into_the_archive_are_not_dropped(repo):
+    start_from_main_with(repo, {"docs/planning/CHANGELOG.md": archived(*THEIRS)})
+    commit(repo, {"docs/planning/CHANGELOG.md": ROW, ARCHIVE: archived(*THEIRS), **README})
+    assert run_hook(repo) is None
+
+
+@pytest.mark.parametrize("edit", ["delete", "reword"])
+def test_a_row_lost_or_reworded_inside_the_archive_is_held(repo, edit):
+    start_from_main_with(repo, {"docs/planning/CHANGELOG.md": HEADER, ARCHIVE: archived(*THEIRS)})
+    kept = [THEIRS[0], THEIRS[1].replace("Slice 1", "Slice one")] if edit == "reword" else [THEIRS[0]]
+    commit(repo, {"docs/planning/CHANGELOG.md": ROW, ARCHIVE: archived(*kept), **README})
+    reason = denied(run_hook(repo))
+    assert "CHANGELOG rows dropped" in reason and THEIRS[1] in reason
+
+
+def test_an_archived_row_moved_back_into_the_changelog_is_not_dropped(repo):
+    start_from_main_with(repo, {"docs/planning/CHANGELOG.md": HEADER, ARCHIVE: archived(*THEIRS)})
+    commit(repo, {"docs/planning/CHANGELOG.md": ROW + "".join(f"{r}\n" for r in THEIRS),
+                  ARCHIVE: HEADER, **README})
+    assert run_hook(repo) is None
+
+
+def test_ci_passes_when_rows_are_rolled_into_the_archive(repo, tmp_path_factory):
+    start_from_main_with(repo, {"docs/planning/CHANGELOG.md": archived(*THEIRS)})
+    commit(repo, {"docs/planning/CHANGELOG.md": ROW, ARCHIVE: archived(*THEIRS)})
+    result = run_ci_step(repo, tmp_path_factory.mktemp("runner"))
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_ci_fails_when_an_archived_row_is_deleted(repo, tmp_path_factory):
+    start_from_main_with(repo, {"docs/planning/CHANGELOG.md": HEADER, ARCHIVE: archived(*THEIRS)})
+    commit(repo, {"docs/planning/CHANGELOG.md": ROW, ARCHIVE: archived(THEIRS[0])})
+    result = run_ci_step(repo, tmp_path_factory.mktemp("runner"))
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert THEIRS[1] in result.stdout

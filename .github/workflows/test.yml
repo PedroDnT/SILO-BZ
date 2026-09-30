@@ -57,7 +57,12 @@ jobs:
             echo "A Changelog-removes: trailer lets this PR remove or rewrite CHANGELOG rows."
             exit 0
           fi
-          rows() { git show "$1:docs/planning/CHANGELOG.md" 2>/dev/null | grep '^| 20'; }
+          # The live file and the frozen archive files hold the rows together
+          # (scripts/roll_changelog.py), so a row rolled between them is not a drop.
+          rows() {
+            git ls-tree -r --name-only "$1" -- docs/planning/CHANGELOG.md docs/archive/changelog 2>/dev/null |
+              while IFS= read -r f; do git show "$1:$f"; done | grep '^| 20'
+          }
           rc=0
           dropped=$(grep -vxFf <(rows HEAD) <(rows "$base")) || rc=$?
           if [ "$rc" -eq 1 ]; then
