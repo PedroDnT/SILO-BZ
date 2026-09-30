@@ -2,12 +2,15 @@
 
 @AGENTS.md
 
+@docs/agents/dataset-notes.md
+
 ## Claude Code
 
-Everything above this heading is imported from `AGENTS.md`, the source of truth
-for every agent in this repository. Add or change a rule there, never here. This
-file exists because Claude Code loads `CLAUDE.md` when both files are present, and
-it holds only what is specific to Claude Code.
+Everything above this heading is imported: `AGENTS.md`, the source of truth for
+every agent in this repository, and `docs/agents/dataset-notes.md`, the
+per-dataset detail. Add or change a rule in `AGENTS.md`, never here. This file
+exists because Claude Code loads `CLAUDE.md` when both files are present, and it
+holds only what is specific to Claude Code.
 
 The hooks in `.claude/settings.json`:
 
