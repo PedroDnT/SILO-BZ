@@ -39,13 +39,11 @@ def _patches(cvm_totals=None, bacen=None, anbima=None, b3=None):
         anbima_ing.daily_update.return_value = anbima or {"anbima_etf": 3}
 
     b3_ing = MagicMock()
-    # Corporate events run in their own guarded block after daily_update, so
-    # the mock needs it too — otherwise every daily-run test reports a
-    # b3_corporate_events failure that the code under test did not have.
-    b3_ing.ingest_corporate_events = AsyncMock(return_value=0)
-    # The cash-dividend history block (migration 51) is guarded the same way.
-    b3_ing.ingest_cash_dividends = AsyncMock(return_value=0)
-    # Same for the BDI lending/flow block (b3_pipeline.daily_update_bdi): it is
+    # Corporate events and cash dividends are NOT mocked: they left run_daily
+    # for their own step (src/pipeline/run_b3_events.py). If run_daily awaited
+    # either again, the plain MagicMock would raise, and every test here that
+    # expects a clean run would fail.
+    # The BDI lending/flow block (b3_pipeline.daily_update_bdi): it is
     # its own guarded await, so a plain MagicMock attribute would make every
     # daily-run test report a b3_bdi failure the code under test never had.
     b3_ing.daily_update_bdi = AsyncMock(return_value={"b3_lending_open_position": 0})

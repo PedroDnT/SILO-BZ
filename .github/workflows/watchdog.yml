@@ -113,6 +113,15 @@ jobs:
           CBOE_VIX_LICENSED: ${{ vars.CBOE_VIX_LICENSED }}
         run: python -m src.pipeline.market_pipeline
 
+      # Same reason for B3's corporate events and cash distributions: they left
+      # run_daily for their own daily step on 2026-09-30, so without this an
+      # unhealed `b3` corporate_events / cash_dividends error could never heal
+      # here. Both re-fetch every traded issuer, so the re-run is idempotent.
+      - name: Refresh B3 corporate events and cash dividends (recovery)
+        if: ${{ !cancelled() && (steps.staleness.outputs.stale == 'true' || github.event.inputs.force == 'true') }}
+        timeout-minutes: 45
+        run: python -m src.pipeline.run_b3_events
+
       - name: Report no-op
         if: ${{ steps.staleness.outputs.stale == 'false' && github.event.inputs.force != 'true' }}
         run: echo "All ingest slices are fresh — watchdog took no action."

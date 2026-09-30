@@ -216,10 +216,13 @@ def test_schema_sql_carries_the_table_but_leaves_the_view_to_the_migration():
     assert "CREATE TABLE IF NOT EXISTS cia_ticker" not in schema
 
 
-def test_daily_run_wires_cash_dividends_without_making_them_fatal():
-    run_daily = (ROOT / "src/pipeline/run_daily.py").read_text(encoding="utf-8")
-    assert "ingest_cash_dividends()" in run_daily
-    assert 'failures.append(("b3_cash_dividends", exc))' in run_daily
+def test_daily_job_wires_cash_dividends_without_making_them_fatal():
+    """Their own daily step since 2026-09-30 (src/pipeline/run_b3_events.py),
+    after the deploy hook, so a failure cannot skip the analytical apply or
+    the dashboard publish. tests/test_run_b3_events.py pins the workflow."""
+    step = (ROOT / "src/pipeline/run_b3_events.py").read_text(encoding="utf-8")
+    assert "ingest_cash_dividends()" in step
+    assert 'failures.append(("b3_cash_dividends", exc))' in step
 
 
 def test_backfill_flag_exists():

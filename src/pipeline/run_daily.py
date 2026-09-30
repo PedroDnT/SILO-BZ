@@ -130,28 +130,12 @@ async def main() -> None:
         logger.error("B3 BDI lending/flow refresh failed: %s", exc, exc_info=True)
         failures.append(("b3_bdi", exc))
 
-    # B3 corporate events: published splits, groupings, bonuses, dividends and
-    # subscriptions per ISIN. One request per traded issuer (derived from our
-    # own tape, not B3's 3,500-company list), so it is a few hundred small
-    # calls. Events are near-static history — a failure here must not fail the
-    # whole daily run, but it is recorded as a failure, never swallowed.
-    try:
-        b3_events = await B3Ingestor().ingest_corporate_events()
-        totals["b3_corporate_event"] = b3_events
-    except Exception as exc:
-        logger.error("B3 corporate events refresh failed: %s", exc, exc_info=True)
-        failures.append(("b3_corporate_events", exc))
-
-    # B3 cash distributions, full history (migration 51). The supplement above
-    # only carries ~12 months of cash rows; this endpoint carries all of them,
-    # paged by share class. Same isolation: recorded failure, never fatal to
-    # the other sources.
-    try:
-        b3_cash = await B3Ingestor().ingest_cash_dividends()
-        totals["b3_cash_dividend"] = b3_cash
-    except Exception as exc:
-        logger.error("B3 cash dividends refresh failed: %s", exc, exc_info=True)
-        failures.append(("b3_cash_dividends", exc))
+    # B3 corporate events and cash distributions are NOT run here. They are
+    # their own step in daily_ingest.yml, after the dashboard deploy hook
+    # (`python -m src.pipeline.run_b3_events`): a few hundred per-issuer calls
+    # to B3's listed-companies proxy, and on 2026-08-29 a corporate-events SSL
+    # EOF failed this process, which skipped ANALYZE, the analytics apply and
+    # the deploy for data that had all landed. They still fail their own step.
 
     # ETF market snapshot: scrape etfsbrasil.com.br via Apify (NAV/price/cotistas
     # the post-CVM-175 daily file no longer exposes). The scrape is paid + rate-
