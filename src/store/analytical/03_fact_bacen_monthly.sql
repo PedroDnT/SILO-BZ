@@ -9,7 +9,7 @@
 -- this monthly matview: the analytical functions take the benchmark rate as a
 -- parameter (benchmark_rate NUMERIC DEFAULT NULL) instead of joining it.
 --
--- Nothing in schema `api` reads a bacen_* table (docs/DATA_INVENTORY.md §3
+-- Nothing in schema `api` reads a bacen_* table (docs/reference/DATA_INVENTORY.md §3
 -- lists the macro series as held-not-served), and mv_savings_flow_monthly —
 -- the one analytical reader of bacen_sgs — is revoked from every client role.
 --

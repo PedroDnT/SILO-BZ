@@ -35,13 +35,13 @@ for a smoke run. The model sees
 only each case's professional question; expected dispositions and review
 notes remain in `research_examples/eval_cases.json`.
 
-Each live case updates `docs/research/agent-evaluation-results.md` and
+Each live case updates `docs/reference/research/agent-evaluation-results.md` and
 `research_examples/eval-results.json`. The Markdown file is the readable
 results summary. The JSON file preserves tool order, usage, errors, and
 answers for review. New runs also preserve bounded public response rows for
 independent numeric review. `research_examples/eval-spend.json` tracks the
 cumulative model-cost estimate across runs, and
-`docs/research/agent-evaluation-grade.md` records the independent baseline
+`docs/reference/research/agent-evaluation-grade.md` records the independent baseline
 grading. Discovery checks are automatic; substantive accuracy still requires
 comparison with source rows and private references. Run paid cases only after
 the separate live API preflight passes for the required research RPCs.

@@ -27,7 +27,7 @@ warehouse follows, applied to research: an unknown stays unknown.
 
 ### What each layer holds, by population
 
-Measured against `docs/DATA_INVENTORY.md`, `19_api_contract.sql`–`21_*` and a
+Measured against `docs/reference/DATA_INVENTORY.md`, `19_api_contract.sql`–`21_*` and a
 live `api.coverage()` call on 2026-09-23. Every dataset listed there had landed
 that morning.
 

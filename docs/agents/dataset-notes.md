@@ -29,7 +29,7 @@ the audit. Blocks 3, 5, 7 and 8 are not ingested),
 `anbima_class_monthly` (every ANBIMA class/type; `anbima_etf_class_monthly`
 survives as an ETF-only compat view), `etf_market_snapshot` (scraped ETF NAV/cotistas — wired
 into the daily run but **gated on the `APIFY_TOKEN` secret**; it self-skips when the
-token is unset. See `docs/ETF_AND_PERFORMANCE.md`), and `b3_cotahist` (B3 COTAHIST
+token is unset. See `docs/reference/ETF_AND_PERFORMANCE.md`), and `b3_cotahist` (B3 COTAHIST
 quotes; daily run fetches the last 7 calendar days, yearly backfill is opt-in.
 Serve cash quotes from `vw_b3_quote_vista` (`tpmerc = '010'`), not the option-heavy parent),
 and the **B3 BDI** group — `b3_lending_open_position`, `b3_lending_rate`,

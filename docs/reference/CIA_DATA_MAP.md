@@ -2,7 +2,7 @@
 
 Originally mapped 2026-08-28 by reading the code, not the docs; updated
 2026-09-24 for the served history and coverage endpoints. Companion to
-`docs/DATA_MODELING.md` (which covers the fund star schema) and `docs/API.md`
+`docs/reference/DATA_MODELING.md` (which covers the fund star schema) and `docs/reference/API.md`
 (the read contract).
 
 **Short version:** CVM's financial statements are structured CSVs, not PDFs, and
@@ -267,7 +267,7 @@ revision series:
 
 The `cia_aberta` 2019–2026 backfill dispatched 2026-08-28 09:55Z finished at
 13:52Z (3h57m). It superseded the "only the 2026 partition exists" note in
-`docs/DATABASE_MAINTENANCE.md`. Measured immediately after:
+`docs/reference/DATABASE_MAINTENANCE.md`. Measured immediately after:
 
 | Partition | Size       | Est. rows |
 | --------- | ---------- | --------- |

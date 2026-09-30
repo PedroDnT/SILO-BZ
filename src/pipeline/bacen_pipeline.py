@@ -99,7 +99,7 @@ assert len(set(SGS_SERIES.values())) == len(SGS_SERIES), "one code per label"
 # (IC-Br): BACEN's monthly average of commodity prices in reais, weighted
 # for Brazil, dated the 1st of the reference month and published early in
 # the following month. Codes verified 2026-09-27 against api.bcb.gov.br
-# (values from 2008-01). Why these: docs/research/dustin_br_data_sources.md §3.E.
+# (values from 2008-01). Why these: docs/reference/research/dustin_br_data_sources.md §3.E.
 RESEARCH_SGS_SERIES: Dict[str, int] = {
     "ICBR":         27574,
     "ICBR_AGRO":    27575,

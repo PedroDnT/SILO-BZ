@@ -12,7 +12,7 @@
 --   read -rs SENTINEL_PW    # type or paste it; nothing is echoed
 --   psql "$OWNER_DATABASE_URL" -v ON_ERROR_STOP=1 \
 --        -v sentinel_password="$SENTINEL_PW" \
---        -f docs/security/sentinel_readonly_role.sql
+--        -f docs/reference/security/sentinel_readonly_role.sql
 --   unset SENTINEL_PW
 --
 -- Re-running is safe: an existing role gets its password reset and the same
@@ -60,7 +60,7 @@ SELECT NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'silo_sentinel') AS se
 \endif
 
 COMMENT ON ROLE silo_sentinel IS
-    'Sentinel agent (docs/planning/AGENTS.md): CONNECT; USAGE on public, api; SELECT on cvm_ingest_log, fnet_document; EXECUTE on api.coverage(), api.metric_coverage(). Created by docs/security/sentinel_readonly_role.sql.';
+    'Sentinel agent (docs/planning/AGENTS.md): CONNECT; USAGE on public, api; SELECT on cvm_ingest_log, fnet_document; EXECUTE on api.coverage(), api.metric_coverage(). Created by docs/reference/security/sentinel_readonly_role.sql.';
 
 ALTER ROLE silo_sentinel SET statement_timeout = '30s';
 

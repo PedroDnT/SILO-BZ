@@ -2,7 +2,7 @@
 
 research_examples/dustin_br/build_dataset.py builds features, never a model.
 What these pin: DI constant-maturity interpolation is exact at vertices and
-never extrapolates; every availability rule in docs/research/
+never extrapolates; every availability rule in docs/reference/research/
 dustin_br_data_sources.md §8; the as-of join never shows a value before it
 was public and nulls it past its staleness limit; and — the property that
 matters for out-of-sample work — rows up to T are IDENTICAL whether or not

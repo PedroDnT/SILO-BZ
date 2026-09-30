@@ -8,7 +8,7 @@
 --   api.curve          one B3 reference curve (PRE, DOC, DPL) on one session
 --   api.curve_history  one of B3's FIXED vertices of a curve through time
 --
--- Sources (migration 48; docs/research/dustin_br_data_sources.md):
+-- Sources (migration 48; docs/reference/research/dustin_br_data_sources.md):
 -- b3_futures_settlement is B3's Price Report (BVBG.086.01), one row per
 -- session and outright DI1 contract, from 2018-01-02 (older reports are
 -- empty); b3_reference_rate is B3's reference-rate file (TaxaSwap.txt), one

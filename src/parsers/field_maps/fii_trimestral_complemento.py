@@ -20,7 +20,7 @@ The liquidity block and the four indexer value shares are typed here because
 they answer "how is this FII's income indexed, and how much of its book is
 actually liquid". The 24 maturity-ladder columns stay in residual `raw` — a
 ladder is better modelled as a long fact than as 24 wide columns (see
-docs/DATA_MODELING.md), and nothing queries it yet.
+docs/reference/DATA_MODELING.md), and nothing queries it yet.
 """
 
 TABLE = "cvm_fii_periodic"

@@ -12,7 +12,7 @@ This is the map the rest of the planning hangs off. Four questions, in order:
 4. [How it is served](#4-how-it-is-served) — grain by grain, and how `api.*`
    reflects it
 
-Coverage figures are as of 2026-08-31. `docs/DATABASE_MAINTENANCE.md` §11 keeps
+Coverage figures are as of 2026-08-31. `docs/reference/DATABASE_MAINTENANCE.md` §11 keeps
 the live gap register; this file is the shape, not the meter reading.
 
 ---
@@ -117,7 +117,7 @@ history has been loaded with
 ### B3 — DI1 futures and reference curves (`b3.com.br/pesquisapregao`)
 
 Migration 48. Contract: `src/fetchers/b3_pesquisapregao_fetcher.py`; why these
-files: `docs/research/dustin_br_data_sources.md` (B3 retired the old
+files: `docs/reference/research/dustin_br_data_sources.md` (B3 retired the old
 www2.bmf.com.br pages on 2025-12-10).
 
 | Table                   | Grain                                   | Notes                                                                                                                                                                              |

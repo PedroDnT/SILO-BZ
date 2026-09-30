@@ -90,7 +90,7 @@ string in an error you quote.
 ### DB mode (`SENTINEL_DATABASE_URL` is set)
 
 Everything in public mode, plus a read-only connection as `silo_sentinel`
-(`docs/security/sentinel_readonly_role.sql`). That role can read exactly:
+(`docs/reference/security/sentinel_readonly_role.sql`). That role can read exactly:
 `cvm_ingest_log`, `fnet_document`, `api.coverage()`, `api.metric_coverage()`.
 Do not try anything else; a permission error means you asked outside your
 grant. Open every transaction read-only:

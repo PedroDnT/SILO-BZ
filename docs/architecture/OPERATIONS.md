@@ -50,5 +50,5 @@ Times in UTC-3, with UTC in parentheses.
 - The Scout, Builder and Sentinel agents are defined in `.claude/agents/`, but
   no workflow or routine schedules them (checked 2026-09-29).
 
-Deeper: [database maintenance](../DATABASE_MAINTENANCE.md),
-[Supabase operations](../supabase_operations.md).
+Deeper: [database maintenance](../reference/DATABASE_MAINTENANCE.md),
+[Supabase operations](../reference/supabase_operations.md).

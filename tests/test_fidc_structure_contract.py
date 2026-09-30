@@ -256,7 +256,7 @@ def test_docs_register_the_page_and_the_inventory_moves_the_rows():
     nav = json.loads((ROOT / "docs.json").read_text(encoding="utf-8"))
     assert "api-docs/fidc-structure" in json.dumps(nav)
     assert "api-docs/fidc-structure.md" in (ROOT / "llms.txt").read_text(encoding="utf-8")
-    inv = (ROOT / "docs/DATA_INVENTORY.md").read_text(encoding="utf-8")
+    inv = (ROOT / "docs/reference/DATA_INVENTORY.md").read_text(encoding="utf-8")
     served = inv[inv.index("### Served"):inv.index("### Held and not served")]
     held = inv[inv.index("### Held and not served"):inv.index("### Not served by design")]
     for table in ("cvm_fidc_tranche", "cvm_fidc_tranche_flows", "cvm_fidc_aging"):

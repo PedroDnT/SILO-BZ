@@ -47,7 +47,7 @@ updated in place; this list says what moved and why.
 
 ## 1. What SILO already holds
 
-Audited against `CLAUDE.md`, `README.md`, `docs/DATA_INVENTORY.md`,
+Audited against `CLAUDE.md`, `README.md`, `docs/reference/DATA_INVENTORY.md`,
 `docs/planning/COMPETITIVE_GAPS.md`, `docs/planning/INSTRUMENTS.md`,
 `src/pipeline/bacen_pipeline.py` (`SGS_SERIES`, `INFLATION_SERIES`,
 `PTAX_CURRENCIES`, `EXPECTATIVAS_*`), `src/store/schema.sql`, the migrations,

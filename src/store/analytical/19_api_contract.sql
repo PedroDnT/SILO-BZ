@@ -4219,7 +4219,7 @@ RETURNS TABLE (
     -- Appended, not inserted mid-row, so an existing positional consumer is
     -- unaffected. CVM's chart is sector-specific, so these are the partition
     -- key for any median/rank/percentile a caller computes over several
-    -- companies — never a display label. See docs/CIA_DATA_MAP.md.
+    -- companies — never a display label. See docs/reference/CIA_DATA_MAP.md.
     setor         TEXT,
     segmento      TEXT
 )
@@ -4401,7 +4401,7 @@ RETURNS TABLE (
     -- for a bank), which is exactly why the sector ships on the row: it is the
     -- partition key for any median, rank or percentile computed over several
     -- companies. Ranking these columns across sectors ranks two different
-    -- quantities. See docs/CIA_DATA_MAP.md.
+    -- quantities. See docs/reference/CIA_DATA_MAP.md.
     setor          TEXT,
     segmento       TEXT
 )
@@ -4445,7 +4445,7 @@ AS $$
                 -- 3.01/3.03 above stay code-keyed and are not like-for-like
                 -- between a bank and an industrial filer — which is why setor
                 -- ships on the row. Use api.income_statements for label-keyed
-                -- revenue. Documented in docs/CIA_DATA_MAP.md.
+                -- revenue. Documented in docs/reference/CIA_DATA_MAP.md.
                 MAX(s.value) FILTER (WHERE lower(btrim(s.account_name)) IN (
                     'lucro/prejuízo consolidado do período',
                     'lucro ou prejuízo líquido consolidado do período')) AS net_income
@@ -4542,7 +4542,7 @@ GRANT EXECUTE ON FUNCTION api.company_financials(TEXT, DATE, DATE, TEXT) TO anon
 -- setor is NOT the key. It under-partitions: `Bancos` contains both bank charts,
 -- and `Emp. Adm. Part. - Sem Setor Principal` contains an industrial and a bank
 -- filer. It ships on the row because it is the right unit for a peer median,
--- which is a different job. docs/CIA_DATA_MAP.md carries the evidence tables.
+-- which is a different job. docs/reference/CIA_DATA_MAP.md carries the evidence tables.
 --
 -- A concept a chart does not report reads NULL. operating_income is an
 -- industrial line: banks do not publish an EBIT level and insurers put a
@@ -5951,7 +5951,7 @@ GRANT EXECUTE ON FUNCTION api.catalog() TO anon, authenticated;
 -- grant in schema public — the DEFINER functions and owner-privileged views
 -- above are the only path from silo_api to the data. serve/-only works with
 -- exactly this; exposing schema api on the Supabase Data API would be a
--- separate, owner-made decision (documented in docs/API.md when taken).
+-- separate, owner-made decision (documented in docs/reference/API.md when taken).
 
 GRANT USAGE ON SCHEMA api TO silo_api;
 

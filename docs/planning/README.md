@@ -32,6 +32,6 @@ are in git history.
 
 - `docs/architecture/` — the system in four pages: `SYSTEM.md`, `DATA_FLOW.md`,
   `OPERATIONS.md`, `DECISIONS.md`. Start there.
-- `docs/DATA_INVENTORY.md` — what is held, what is served, what is neither.
-- `docs/DATABASE_MAINTENANCE.md` — the ongoing upkeep runbook.
-- `docs/API.md` — the read contract.
+- `docs/reference/DATA_INVENTORY.md` — what is held, what is served, what is neither.
+- `docs/reference/DATABASE_MAINTENANCE.md` — the ongoing upkeep runbook.
+- `docs/reference/API.md` — the read contract.

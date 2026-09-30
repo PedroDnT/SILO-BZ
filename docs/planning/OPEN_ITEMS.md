@@ -344,7 +344,7 @@ files `.claude/agents/scout.md`, `builder.md` and `sentinel.md` exist
 (2026-09-25). Still the owner's: create the `agent-ok` / `agent:<name>`
 labels, schedule the routines one at a time and fill in their ids in the
 AGENTS.md §3a registry, and (optionally) run
-`docs/security/sentinel_readonly_role.sql` so the Sentinel can read
+`docs/reference/security/sentinel_readonly_role.sql` so the Sentinel can read
 `cvm_ingest_log` and `fnet_document`; without it the Sentinel runs on the
 public API only.
 
@@ -384,7 +384,7 @@ Nothing in wave 2 that depends on these starts until each has an answer.
    2026-09-25 at `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp`.
 4. A read-only database role for the Sentinel agent ([AGENTS.md](AGENTS.md),
    item 13)?
-   **Answered 2026-09-26: yes.** `docs/security/sentinel_readonly_role.sql` plus
+   **Answered 2026-09-26: yes.** `docs/reference/security/sentinel_readonly_role.sql` plus
    `default_transaction_read_only = on`; the owner runs it by hand. Role not yet
    present (checked `pg_roles` 2026-09-26).
 
@@ -427,7 +427,7 @@ Nothing in wave 2 that depends on these starts until each has an answer.
   the Price Report. Owner-only, only if VIX itself is wanted: a signed Cboe
   licence (permissions@cboe.com) before setting the `CBOE_VIX_LICENSED`
   repository variable. Until then the risk regime is the OFR Financial Stress
-  Index (`docs/research/dustin_br_data_sources.md` §3.C).
+  Index (`docs/reference/research/dustin_br_data_sources.md` §3.C).
 - **B9.** Alerts, only on signals from waves 1 and 2 once they exist.
 - **B10.** Document text (Stage 3), priority categories only.
 - **B11.** Per-event adjusted prices, where verified.
@@ -529,7 +529,7 @@ What reads them:
   decisive.
 
 No check covers it. DB Health's matview-lag check reads `fact_fund_monthly`
-only, and `docs/DATABASE_MAINTENANCE.md` still says the analytical re-create
+only, and `docs/reference/DATABASE_MAINTENANCE.md` still says the analytical re-create
 "is the daily refresh", which is not true for these two.
 
 Decided 2026-09-30: the refresh is a step of the daily run (the analytical

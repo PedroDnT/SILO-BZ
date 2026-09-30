@@ -436,11 +436,11 @@ def test_docs_register_the_page_and_the_inventory_moves_the_rows():
     nav = json.loads((ROOT / "docs.json").read_text(encoding="utf-8"))
     assert "api-docs/fnet-documents" in json.dumps(nav)
     assert "api-docs/fnet-documents.md" in (ROOT / "llms.txt").read_text(encoding="utf-8")
-    inv = (ROOT / "docs/DATA_INVENTORY.md").read_text(encoding="utf-8")
+    inv = (ROOT / "docs/reference/DATA_INVENTORY.md").read_text(encoding="utf-8")
     served = inv[inv.index("### Served"):inv.index("### Held and not served")]
     held = inv[inv.index("### Held and not served"):inv.index("### Not served by design")]
     for table in ("fnet_document", "fnet_document_filter"):
         assert f"`{table}`" in served, f"{table} belongs in Served"
         assert f"`{table}`" not in held, f"{table} is no longer a candidate"
-    api_md = (ROOT / "docs/API.md").read_text(encoding="utf-8")
+    api_md = (ROOT / "docs/reference/API.md").read_text(encoding="utf-8")
     assert "### The FNET document register" in api_md

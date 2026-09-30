@@ -260,4 +260,4 @@ title="Funds Reporting per Month by Family"
   <Column id=error_msg title="Error"/>
 </DataTable>
 
-> Triage runbook for what to do with a red row: `docs/DATABASE_MAINTENANCE.md`.
+> Triage runbook for what to do with a red row: `docs/reference/DATABASE_MAINTENANCE.md`.

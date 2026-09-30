@@ -498,7 +498,7 @@ It is the closest match to SILO's refusal and provenance stance, and it adds per
 
 ### S3 (agents and developers): what is now standard
 
-1. **A remote MCP server with an OAuth "one-click connector".** brapi, Mais Retorno, bolsai, Financial Datasets and Tomé all have one; Partnr has an MCP with auth undisclosed. All five of the first group say the agent never needs to handle a key. **SILO has none.** Its `serve/` `/v1/tools` produces OpenAI/AI-SDK tool specs, but only for a local adapter (docs/API.md).
+1. **A remote MCP server with an OAuth "one-click connector".** brapi, Mais Retorno, bolsai, Financial Datasets and Tomé all have one; Partnr has an MCP with auth undisclosed. All five of the first group say the agent never needs to handle a key. **SILO has none.** Its `serve/` `/v1/tools` produces OpenAI/AI-SDK tool specs, but only for a local adapter (docs/reference/API.md).
 2. **Per-user keys, usage dashboards and quota-aware errors.** brapi returns a 403 that names the plan needed, and a 429 with `Retry-After`. Mais Retorno's MCP tool explains that credits are exhausted. brapi has `get_account_capabilities`. SILO has one shared anon key and no per-user identity beyond the signed-in tier.
 3. **Official SDKs on registries.** brapi has TypeScript and Python SDKs. bolsai's MCP is on PyPI. SILO's `silo-client` is not on PyPI.
 4. **Documentation formats agents can read.** brapi offers `.mdx` copies of every page, pricing.md, versioning.md, auth.md, an Agent Skills repo and OpenAPI 3.1. Financial Datasets offers `skill.md` at `.well-known` and agent self-signup. SILO has llms.txt and skill.md, but no published OpenAPI for the `api` RPCs (inference: PostgREST's auto-OpenAPI was not verified), no skills repo and no versioning policy page.

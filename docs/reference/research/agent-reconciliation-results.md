@@ -25,7 +25,7 @@ or paid model call was performed.
 
 The [baseline grade](agent-evaluation-grade.md) remains 2 full passes out of
 12, with no answerable case independently verified as a full pass. The
-[immutable baseline record](../../research_examples/baseline-results.json)
+[immutable baseline record](../../../research_examples/baseline-results.json)
 is preserved separately from the latest-result file.
 
 Cumulative observed estimated model spend is **US$0.604687**. A new 12-case

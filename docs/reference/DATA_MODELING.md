@@ -10,7 +10,7 @@ does not replace them.
 ## The shape we already have
 
 The path from a source file to schema `api` is drawn in
-[architecture/DATA_FLOW.md](architecture/DATA_FLOW.md). The part that matters here:
+[architecture/DATA_FLOW.md](../architecture/DATA_FLOW.md). The part that matters here:
 landing tables carry a **named UNIQUE constraint on their natural key**, and the
 analytical layer builds a **star schema** on top, `dim_*` and `fact_*` matviews keyed
 by `(entity natural key, period)`. Keep new data inside this grain.

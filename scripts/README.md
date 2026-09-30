@@ -22,7 +22,7 @@ Grouped by when you would reach for them.
 | `audit_matview_dependents.py` | What a `CASCADE` drop of each matview would destroy. Read before touching `fact_*`.                                                         |
 | `db_parity.py`                | Lists user tables/views with row-count estimates — used to compare two databases.                                                           |
 | `list_tables.py`              | Every schema / table / row-count / column. Broader than `db_parity.py`, handy for a first look at an unfamiliar database.                   |
-| `_check_conn.py`              | Bare connection check. Rewrites `:6543`→`:5432` defensively; see `docs/supabase_operations.md`.                                             |
+| `_check_conn.py`              | Bare connection check. Rewrites `:6543`→`:5432` defensively; see `docs/reference/supabase_operations.md`.                                             |
 
 ## Offline development (no Supabase credentials needed)
 

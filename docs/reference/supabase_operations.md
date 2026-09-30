@@ -8,7 +8,7 @@ that one variable at Supabase is the entire wiring; there are no code changes.
 This runbook covers applying the schema, ingesting data, and validating a
 Supabase project from scratch (e.g. a fresh project, a reset, or a parity check).
 It is not the daily picture: how the system runs is
-[architecture/OPERATIONS.md](architecture/OPERATIONS.md), and ongoing upkeep is
+[architecture/OPERATIONS.md](../architecture/OPERATIONS.md), and ongoing upkeep is
 [DATABASE_MAINTENANCE.md](DATABASE_MAINTENANCE.md).
 
 ## Prerequisites

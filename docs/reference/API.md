@@ -526,4 +526,4 @@ decision.
 | Rebuilding FastAPI microservices                    | Already deleted; duplicates the warehouse                                                |
 
 Roadmap for how "ingested" became "a researcher pulls a panel":
-[docs/planning/SERVING.md](planning/SERVING.md).
+[docs/planning/SERVING.md](../planning/SERVING.md).

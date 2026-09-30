@@ -44,5 +44,5 @@ it read-only. Three infrastructures, three products.
 
 `webapp/` exists but is not deployed.
 
-Deeper: [README](../../README.md), [API](../API.md),
-[data modeling](../DATA_MODELING.md).
+Deeper: [README](../../README.md), [API](../reference/API.md),
+[data modeling](../reference/DATA_MODELING.md).

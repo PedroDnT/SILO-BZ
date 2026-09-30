@@ -1,6 +1,6 @@
 """U.S. Treasury par curve, Cboe VIX, EIA Brent and the OFR FSI — HTTP only.
 
-Primary publishers only; FRED and Yahoo are copies (docs/research/
+Primary publishers only; FRED and Yahoo are copies (docs/reference/research/
 dustin_br_data_sources.md §3). Verified 2026-09-26/27, no auth except EIA:
 
     Treasury  https://home.treasury.gov/resource-center/data-chart-center/

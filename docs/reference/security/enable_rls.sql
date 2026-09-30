@@ -7,7 +7,7 @@
 -- deliberately, not have slipped in by a schema bootstrap. Apply it by hand after
 -- review:
 --
---     psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f docs/security/enable_rls.sql
+--     psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f docs/reference/security/enable_rls.sql
 --
 -- -----------------------------------------------------------------------------
 -- WHY
@@ -24,7 +24,7 @@
 -- 401. So there is no live exposure for this file to remediate.
 --
 -- It is kept as an OPTIONAL SECOND LAYER (defence in depth: RLS would still deny if
--- a future GRANT were widened by mistake), which is how docs/DATABASE_MAINTENANCE.md
+-- a future GRANT were widened by mistake), which is how docs/reference/DATABASE_MAINTENANCE.md
 -- describes it. Read that section before applying this; do not apply it believing
 -- you are closing an open door.
 --

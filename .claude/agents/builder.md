@@ -39,7 +39,7 @@ authenticated` and `silo_api`, a `COMMENT` that says what NULL means. Then
    a regenerated `openapi.json` (`python3 scripts/gen_openapi.py`), a
    regenerated MCP contract (`python3 scripts/gen_mcp_contract.py`) plus a
    `t()` line in `supabase/functions/silo-mcp/tools.ts`, the SDK method in
-   `sdk/silo_client/client.py`, `docs/API.md`, the `api-docs/` page(s), and
+   `sdk/silo_client/client.py`, `docs/reference/API.md`, the `api-docs/` page(s), and
    offline contract tests. Commit `5162e28` + `686e32f` (FNET endpoints) is
    the worked example of the full set.
 
@@ -115,7 +115,7 @@ ON_ERROR_STOP=1` on an ephemeral Postgres) and idempotent
 - Tests: offline only (no network, no DB), fixtures cut verbatim from the
   real files you downloaded, covering each header variant, the key, the
   validator drops, and idempotence (upsert twice, same rows).
-- Docs in the same PR: `docs/DATA_INVENTORY.md` for a dataset; for an
+- Docs in the same PR: `docs/reference/DATA_INVENTORY.md` for a dataset; for an
   endpoint, the doc set listed under shape 2. One row at the **top** of
   `docs/planning/CHANGELOG.md`'s table (insert the line; never run a
   formatter over that file).

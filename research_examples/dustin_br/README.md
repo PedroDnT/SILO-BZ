@@ -3,7 +3,7 @@
 One point-in-time row per B3 session for a Brazilian rates-regime model inspired
 by HSBC's DUSTIN framework. This builds **features only**: no model, no target.
 Sources, coverage and every availability rule:
-[`docs/research/dustin_br_data_sources.md`](../../docs/research/dustin_br_data_sources.md).
+[`docs/reference/research/dustin_br_data_sources.md`](../../docs/reference/research/dustin_br_data_sources.md).
 
 ```bash
 # reads with POSTGRES_URL through src.store.pg_client, read only

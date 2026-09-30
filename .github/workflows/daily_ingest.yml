@@ -249,7 +249,7 @@ jobs:
       # read FNET, and the api functions over it need no rebuild.
       # DI1 futures and B3's reference curves (pesquisapregao files), the U.S.
       # Treasury par curve, Cboe VIX and EIA Brent (src/pipeline/market_pipeline.py,
-      # docs/research/dustin_br_data_sources.md). Its own step, after the
+      # docs/reference/research/dustin_br_data_sources.md). Its own step, after the
       # analytical layer, for the same reason as FNET below: four foreign hosts
       # must not be able to skip ANALYZE, the analytical apply or the deploy
       # hook. Nothing the dashboard or schema api reads depends on it. A failed
@@ -261,7 +261,7 @@ jobs:
           # Optional. Without it the EIA fetch uses EIA's rate-limited DEMO_KEY.
           EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
           # Cboe VIX is fetched only when this repository variable is 1, which
-          # needs a signed Cboe licence (docs/research/dustin_br_data_sources.md §5).
+          # needs a signed Cboe licence (docs/reference/research/dustin_br_data_sources.md §5).
           CBOE_VIX_LICENSED: ${{ vars.CBOE_VIX_LICENSED }}
         run: python -m src.pipeline.market_pipeline
 

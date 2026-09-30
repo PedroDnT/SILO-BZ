@@ -4,7 +4,7 @@ name: Market Data Backfill
 # from 2018-01-02), B3 reference curves (TaxaSwap, from 2008-01-02), the U.S.
 # Treasury par curve, EIA Brent and the OFR Financial Stress Index (from
 # 2000-01-03). The daily run keeps them fresh; this fills the past.
-# docs/research/dustin_br_data_sources.md §10. Cboe VIX runs only with a
+# docs/reference/research/dustin_br_data_sources.md §10. Cboe VIX runs only with a
 # signed Cboe licence: repository variable CBOE_VIX_LICENSED=1 (§5).
 #
 # One YEAR per job, one job at a time by default: a Price Report is ~12 MB
