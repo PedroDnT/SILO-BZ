@@ -2,9 +2,7 @@
 
 Written 2026-09-18, closing the session that shipped catalog v28 and v29.
 Everything here is **deliberately not done**, not forgotten. Nothing in this
-list is broken in production — see "Known good" below. The one exception is
-item 16, added 2026-09-30: a defect that stays live until the first analytics
-apply after its fix.
+list is broken in production — see "Known good" below.
 
 This is the **single** register of open work. Items 7–11 were merged the same day
 as a second list, in `README.md` of this directory, written by another session
@@ -462,11 +460,11 @@ Neither blocks writing code; each blocks a demo number.
   FIDC restatement, an NTN-B.
 - **Warning severity scale.** Not designed.
 
-## 16. Two B3 matviews have no refresh path (found 2026-09-29)
+## 16. ~~Two B3 matviews have no refresh path (found 2026-09-29)~~ (done)
 
-**Fixed in code 2026-09-30** (`claude/refresh-b3-tape-matviews`), on the
-owner's instruction. **Not live until `apply_analytical.sh` runs**, and not yet
-confirmed on the live database.
+**Done 2026-09-30** (`claude/refresh-b3-tape-matviews`, #439), on the owner's
+instruction, and confirmed on the live database and the public site the same
+day (checks below).
 
 `src/store/analytical/22_b3_tape_matviews.sql` refreshes both matviews in every
 analytical apply: the ISIN map first, then the monthly aggregate, CONCURRENTLY
@@ -483,13 +481,19 @@ file they reach both, a second run changes nothing, an emptied matview is
 refilled, and a failed refresh fails the apply. `tests/test_b3_tape_matview_refresh.py`
 pins it, and fails if the refresh is removed or moved into the cron file.
 
-To close this item, check on the live database after the first apply:
+**Confirmed 2026-09-30**, after `daily_ingest` run 36752752981 applied all 28
+analytical files with no failure. `22_b3_tape_matviews.sql` took 3 min 37 s of
+it, read from the log timestamps.
 
-1. `mv_b3_monthly_activity` has a 2026-09 period.
-2. August on `tpmerc = '010'` shows 21 sessions and about R$ 529.8 bn.
-3. None of the fund-quota ISINs traded in the last 60 days is missing from
-   `mv_b3_isin_subtype`.
-4. `/markets` on the public URL shows it, after the publish check has run.
+1. `mv_b3_monthly_activity` has a 2026-09 period (20 sessions so far). The month
+   is still open, so the dashboard shows it from 2026-10-01.
+2. August on `tpmerc = '010'`: 21 sessions and R$ 529.76 bn in the matview,
+   equal to the tape.
+3. Fund-quota ISINs traded in the last 60 days and missing from
+   `mv_b3_isin_subtype`: 0 of 627. The map holds 906 ISINs, up from 897.
+4. The public `/markets` data (`b3_monthly_volume`) reads August as
+   R$ 529.76 bn over 21 sessions, after Publish Check run 36760305426 promoted
+   the rebuilt deployment. Before, it read R$ 480.96 bn over 19.
 
 **Going live, 2026-09-30.** `daily_ingest` with `mode=analytics-only` and
 `rebuild_dashboard=true` was dispatched at 14:37 UTC-3 (17:37 UTC), run
