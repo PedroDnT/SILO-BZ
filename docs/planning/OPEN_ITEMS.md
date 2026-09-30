@@ -539,6 +539,7 @@ only, and `docs/reference/DATABASE_MAINTENANCE.md` still says the analytical re-
 Decided 2026-09-30: the refresh is a step of the daily run (the analytical
 apply), not pg_cron. See the top of this item.
 
-Found alongside, still open: `mv_etf_landscape` exists on the live database and
-is defined nowhere in this repository, so nothing refreshes it either. Nothing
-in this repository reads it.
+Found alongside: `mv_etf_landscape` existed on the live database and was defined
+nowhere in this repository, so nothing refreshed it either, and nothing read it.
+Migration 54 (`claude/drop-mv-etf-landscape`, 2026-09-30) drops it and keeps its
+one-line definition, a `rank()` over `cvm_etf_registry`, in the file's comment.

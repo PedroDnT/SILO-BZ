@@ -1,0 +1,30 @@
+-- =============================================================================
+-- Migration 54 — drop mv_etf_landscape, a matview this repository never owned
+--
+-- WHY
+-- mv_etf_landscape exists on the live database and is defined nowhere in this
+-- repository or its git history, so nothing refreshes it: it holds whatever it
+-- held when someone created it by hand. Measured on 2026-09-30:
+--
+--   187 rows, 96 kB, owner postgres, no grant to any other role;
+--   no view, matview or function depends on it (pg_depend);
+--   seq_scan = 0 and idx_scan = 0 in pg_stat_all_tables, so it has never been
+--   read since the statistics began;
+--   no statement in pg_stat_statements (reset 2026-09-15) mentions it.
+--
+-- Nothing is lost. It is a rank() over cvm_etf_registry, which stays. This was
+-- its definition, if it is ever wanted again (as a plain view it would always
+-- be current, which the matview never was):
+--
+--   SELECT ticker, cnpj, fund_name, gestor, admin, provider, underlying_index,
+--          segment, classe_anbima, taxa_adm, taxa_perfm, dt_reg, is_active,
+--          situacao, dt_cancel, vl_patrim_liq, dt_patrim_liq,
+--          rank() OVER (ORDER BY vl_patrim_liq DESC NULLS LAST) AS aum_rank
+--     FROM cvm_etf_registry;
+--
+-- Found with the two frozen B3 matviews (docs/planning/OPEN_ITEMS.md item 16).
+-- Idempotent: IF EXISTS makes it a no-op on every later apply and on a fresh
+-- database, so schema.sql needs no change.
+-- =============================================================================
+
+DROP MATERIALIZED VIEW IF EXISTS public.mv_etf_landscape;
