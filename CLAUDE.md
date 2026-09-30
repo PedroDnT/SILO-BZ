@@ -19,9 +19,13 @@ Single-context: root `CONTEXT.md` and `docs/adr/`. See `docs/agents/domain.md`.
 ## Infrastructure facts
 
 - One Vercel project (`silo-bz`, team `deloslabs`) exists, and it builds only
-  `dashboard/`: root `vercel.json` hardcodes `cd dashboard` and
-  `scripts/vercel_should_build.sh` triggers only on `dashboard/` changes. `webapp/`
-  has no Vercel deployment (`webapp/README.md`). Do not assume a second project.
+  `dashboard/`: root `vercel.json` hardcodes `cd dashboard`. It also disables
+  git-triggered production deployments on `main`, so a merge publishes nothing:
+  only the deploy hook does, fired by a green scheduled daily run or by a dispatch
+  with `rebuild_dashboard=true`. `scripts/vercel_should_build.sh`
+  builds a PR preview only when `dashboard/`, `vercel.json` or the script itself
+  changed. `webapp/` has no Vercel deployment (`webapp/README.md`). Do not assume
+  a second project.
 - Canonical clone: `~/Dev/SILO-BZ`, remote `github.com/PedroDnT/SILO-BZ`. Before
   starting work, run `git remote -v && pwd` to confirm you are in it (or in one of
   its worktrees), not a stale copy.
@@ -59,6 +63,14 @@ Check the current code, `docs/adr/`, `docs/planning/`, and the planning register
 before asking the owner a design or hosting question. If the answer is already in
 the code or recorded decisions, state what you found and ask only about the
 remaining ambiguity.
+
+### Discovery is not prioritization (owner's rule)
+
+An agent may discover problems, but discovering one does not make it the
+current work. An agent may report a newly discovered issue and suggest opening
+a ticket. Unless the owner explicitly authorizes it, an agent must not start
+implementing the discovered work, raise it to active priority, or widen the
+current task to include it.
 
 ## The shape of the system: 3 infra, 3 products
 
@@ -120,7 +132,9 @@ SQL smoke → pool → honest returns → lookup → privileges → HTTPS) is
 `docs/planning/SERVING.md`. Operators trigger ingest with GitHub Actions or
 `python -m src.pipeline.run_daily` / `run_backfill` (optional `--entity`).
 
-> Read `README.md` for what SILO is and how it works (operator commands are folded at
+> Read `docs/architecture/` for the four-page model of the system (`SYSTEM.md`,
+> `DATA_FLOW.md`, `OPERATIONS.md`, `DECISIONS.md`), `README.md` for what SILO is
+> and what it covers (operator commands are folded at
 > its end and in `scripts/README.md`), `docs/DATABASE_MAINTENANCE.md` for the
 > ongoing DB upkeep runbook (checks, cadence, audit-log triage, partition rollover,
 > troubleshooting), and `docs/planning/CHANGELOG.md` for the
@@ -267,7 +281,8 @@ broker is its client book, not its own position.
 
 The **analytical layer** (`src/store/analytical/`, applied by `scripts/apply_analytical.sh`
 after ingest) is the read side the dashboards query: `dim_fund` (a **materialized view**,
-refreshed daily by cron + the apply re-create) plus `dim_fund_category` / `dim_administrator`
+rebuilt by the apply; the pg_cron jobs in `08_cron_schedules.sql` do not run, because the
+live database has no pg_cron, checked 2026-09-29) plus `dim_fund_category` / `dim_administrator`
 / `dim_gestor`; the `fact_fund_monthly` / `fact_security_monthly` matviews; the
 `fraud_screen_*` suspicious-deal screens (15; served to API callers only as the
 `api.screen_*` wrappers in 23 — the public functions hold no client grant); and the `fund_performance_*` / `etf_*` ranking
@@ -318,7 +333,7 @@ history is still `run_backfill`'s job, not the daily window's.
 # Setup
 python3 -m venv .venv && source .venv/bin/activate   # Python 3.12
 pip install -r requirements.txt
-bash scripts/install_hooks.sh        # installs .githooks (pre-commit secret/syntax, pre-push tests)
+bash scripts/install_hooks.sh        # installs .githooks (pre-commit: secrets, syntax)
 cp .env.example .env                 # set POSTGRES_URL (Supabase conn string, sslmode=require)
 
 # Schema
@@ -342,9 +357,10 @@ pytest tests/test_serve_api.py -v    # one file
 pytest tests/test_serve_api.py::test_name  # one test
 ```
 
-`pytest.ini` sets `pythonpath = .` and `asyncio_mode = auto`. The pre-push hook runs the full
-offline suite and blocks the push on failure; the pre-commit hook blocks committing Postgres
-URLs with credentials and Python that fails `py_compile`. The `.claude/settings.json` PostToolUse hook runs `py_compile` on every edited
+`pytest.ini` sets `pythonpath = .` and `asyncio_mode = auto`. There is no git pre-push hook:
+`.githooks/` holds only `pre-commit`, which blocks committing Postgres URLs with credentials
+and Python that fails `py_compile`. The offline suite runs in `test.yml` on every pull
+request. The `.claude/settings.json` PostToolUse hook runs `py_compile` on every edited
 `.py` file and the offline pytest suite when the file is under `src/`, `serve/`,
 `tests/`, or `scripts/` (`.claude/hooks/post-edit.sh`). Failures surface; they
 are not swallowed. The PreToolUse hook on `git push` (`.claude/hooks/pre-push-docs.sh`)

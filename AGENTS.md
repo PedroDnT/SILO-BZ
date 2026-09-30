@@ -1,34 +1,26 @@
 # AGENTS.md
 
-See `CLAUDE.md` and `README.md` for architecture, data-integrity rules, and the
-command reference. Load the SILO skill before changing ingest, schema `api`,
-`serve/`, or panel/catalog: `.claude/skills/iliquid_nightly/SKILL.md`.
+`CLAUDE.md` is the source of truth for this repository: the data-integrity
+rules, the architecture, the commands and the owner's rules. Read it first. The
+four-page model of the system is `docs/architecture/`. Load the SILO skill
+before changing ingest, schema `api`, `serve/`, or panel/catalog:
+`.claude/skills/iliquid_nightly/SKILL.md`.
 
-**Times are UTC-3** (owner's rule), **for display only**. Reference every time in
-UTC-3 (Brasília, `America/Sao_Paulo`, no daylight saving since 2019). Convert
-anything a source reports in UTC. Where the time has to be matched against that
-source, add the UTC value in parentheses: the daily run starts at 03:00 UTC-3
-(06:00 UTC). Never change a cron expression, a `TZ` setting, SQL `AT TIME ZONE`,
-the database time zone, stored timestamps or API output to follow it. The details
-are in `CLAUDE.md`, section "Times are UTC-3".
+Two owner's rules are repeated here in one line each, because every agent needs
+them before it reads anything else. The full text is in `CLAUDE.md`.
 
-**Discovery is not prioritization** (owner's rule). Agents may discover
-problems, but discovery does not equal prioritization.
+- **Times are UTC-3, for display only.** Show every time in UTC-3 and add the
+  UTC value in parentheses where it has to match a source: the daily run starts
+  at 03:00 UTC-3 (06:00 UTC). Never change a cron expression, a `TZ` setting,
+  SQL `AT TIME ZONE`, stored timestamps or API output to follow it
+  (`CLAUDE.md`, "Times are UTC-3").
+- **Discovery is not prioritization.** Report a newly discovered issue, or
+  suggest a ticket. Do not start implementing it, raise its priority or widen
+  the current task to include it, unless the owner authorizes that
+  (`CLAUDE.md`, "Working style").
 
-An agent may:
-
-- report a newly discovered issue;
-- suggest opening a ticket.
-
-An agent must not:
-
-- start implementing discovered work;
-- elevate it to active priority;
-- expand the current task to include it,
-
-unless explicitly authorized by the owner.
-
-This file only adds context for Cursor Cloud agent VMs.
+The rest of this file is tool-specific setup: Cursor Cloud agent VMs first, then
+the Codex task board.
 
 ## Cursor Cloud specific instructions
 
@@ -44,7 +36,7 @@ This file only adds context for Cursor Cloud agent VMs.
   it is listed in `requirements.txt` under "Local dev / offline verification".
 - Git hooks live in `.githooks/` (enabled with `bash scripts/install_hooks.sh`, which sets
   `core.hooksPath`). Only a `pre-commit` hook exists (secret scan + `py_compile`/`bash -n`);
-  despite `CLAUDE.md` mentioning a pre-push hook, there is none in `.githooks/`.
+  there is no git pre-push hook.
 - Claude PostToolUse (`.claude/hooks/post-edit.sh`): `py_compile` on every edited `.py`;
   offline pytest when the file is under `src/`, `serve/`, `tests/`, or `scripts/`.
   Failures surface (not swallowed).
@@ -71,7 +63,7 @@ No `POSTGRES_URL` / Supabase credentials are needed for the core loop:
 
 - Lint/syntax gate: `.venv/bin/python -m py_compile <changed .py files>` (what the
   pre-commit hook runs). There is no ruff/flake8/black configured.
-- Tests: `.venv/bin/python -m pytest tests/ -q` — 383 tests, fully offline (DB + HTTP mocked).
+- Tests: `.venv/bin/python -m pytest tests/ -q` — fully offline (DB + HTTP mocked).
 - End-to-end pipeline (fetch→parse→store) against **real CVM data over the network** into a
   local DuckDB file: `.venv/bin/python scripts/seed_local_db.py --skip-fi` then
   `.venv/bin/python scripts/run_analysis_local.py`. This is the self-contained way to prove

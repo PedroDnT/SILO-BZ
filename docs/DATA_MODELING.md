@@ -9,11 +9,11 @@ does not replace them.
 
 ## The shape we already have
 
-Ingestion is `FETCH → PARSE → STORE`, landing source rows in `cvm_<entity>_<doctype>` /
-`bacen_<series>` tables, each with a **named UNIQUE constraint on its natural key** and
-`ON CONFLICT DO UPDATE` upserts. The analytical layer (`src/store/analytical/`) then builds
-a **star schema** on top: `dim_*` (fund, administrator, gestor, asset-class) and `fact_*`
-matviews keyed by `(entity natural key, period)`. Keep new data inside this grain.
+The path from a source file to schema `api` is drawn in
+[architecture/DATA_FLOW.md](architecture/DATA_FLOW.md). The part that matters here:
+landing tables carry a **named UNIQUE constraint on their natural key**, and the
+analytical layer builds a **star schema** on top, `dim_*` and `fact_*` matviews keyed
+by `(entity natural key, period)`. Keep new data inside this grain.
 
 ## How to decide the model for something new
 
