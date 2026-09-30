@@ -369,7 +369,17 @@ __all__ = [
 # re-scaled it. Pages with p_after like quote_history; paged count three -> four,
 # capped count forty-four -> forty-five. api.coverage() gains an index_history
 # row with the depth of each index in its notes.
-CATALOG_VERSION = 45
+# v46: quote_history's close_total_return is served (#418). It is the
+# price-adjusted close divided by the product of (1 + cash / ex-session close)
+# over the distributions that went ex after the session, from migration 56's
+# mv_b3_cash_event: DIVIDENDO, JRS CAP PROPRIO (gross), RENDIMENTO and REST CAP
+# DIN from B3's full cash history, resolved to an ISIN only where the published
+# pre-ex close agrees with the tape. NULL with a reason where a distribution
+# cannot be valued (no proven ISIN for that issuer's class, listed by B3's
+# supplement and missing from the history, no ex-date close within 7 days) or
+# the ISIN has no resolved distribution at all. No new function and no new
+# column: the version moves because the published meaning of a column did.
+CATALOG_VERSION = 46
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -612,7 +622,21 @@ CONSTRAINTS = [
     "(shares ACN; units CDA/UNT with a ticker ending 11), when the issuer's "
     "corporate events are not proven swept, or when an event factor is "
     "unreadable: a NULL is never a raw close in disguise. close_total_return is "
-    "NULL until the cash distribution history is backfilled.",
+    "the price-adjusted close with cash distributions reinvested at the ex-date "
+    "close, also anchored to the latest session: the level is divided by the "
+    "product of (1 + cash / ex-session close) over every distribution that went "
+    "ex after the session, so the latest session equals the price-adjusted "
+    "close and earlier levels are lower by the cash paid since. Cash is B3's "
+    "full history (DIVIDENDO, JRS CAP PROPRIO gross of withholding tax, "
+    "RENDIMENTO, REST CAP DIN), counted only where its ISIN is proven against "
+    "the tape. It is NULL, with close_total_return_null_reason saying why, "
+    "where the price-adjusted close is NULL; where the ISIN has no resolved "
+    "distribution in B3's history (a non-payer, or one B3's history does not "
+    "match: the two look the same, so neither gets a price return labelled as "
+    "a total return); where a later distribution of the issuer's share class "
+    "has no proven ISIN; where a distribution B3's supplement lists is missing "
+    "from the history; and where a later distribution has no ex-date close "
+    "within 7 days. A NULL is never the price return in disguise.",
     "Daily close_return is null when the previous session is more than 7 "
     "calendar days back (halts, listing gaps), and null across a quotation-"
     "factor change — a fatcot flip rescales the quote with no market move "
