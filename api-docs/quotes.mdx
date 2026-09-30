@@ -14,7 +14,7 @@ icon: "chart-line"
 
 B3 COTAHIST cash-market prints (`tpmerc = 010`), exactly as published. Nothing is split- or dividend-adjusted, and every row carries `adjusted: false`.
 
-The grain is **`(ticker, trade_date, board, term_days)`**. A ticker can print on more than one board on the same day, so a query that does not pin `board` can return several rows per session. `codbdi` varies by instrument type (`02` common equities, `12` FIIs, `14` ETFs, `34` BDRs). The functions select the ticker's latest board unless you pass one.
+The grain is **`(ticker, trade_date, board, term_days)`**. A ticker can print on more than one board on the same day, so a query that does not pin `board` can return several rows per session. `codbdi` varies by instrument type (`02` common equities, `12` FIIs, `14` ETFs, `34` BDRs). `quote_history` follows the instrument (its ISIN) across boards unless you pass one; `quote_latest` reads every board.
 
 `asset_class` is derived conservatively from B3's published `tpmerc` and `especi`: `equity`, `unit`, `bdr`, `fund_quota`, `index`, `right`, `bonus`, or `cash_security`. To split `fund_quota` into ETF vs FII vs FIAGRO, use [`fund_quotas`](/api-docs/instruments)' `fund_type` column, which comes from B3's published CODBDI board code.
 
@@ -76,25 +76,48 @@ const { data } = await supabase
 
 ### `POST /rpc/quote_history`
 
-One ticker's daily series over a window, ordered by `trade_date` ascending.
+One ticker's daily series over a window, ordered by `trade_date` ascending, one JSON object per session holding **only the fields you select**.
 
 ```sql
 api.quote_history(p_ticker TEXT,
-                  p_from   DATE DEFAULT CURRENT_DATE - 365,
-                  p_to     DATE DEFAULT CURRENT_DATE,
-                  p_board  TEXT DEFAULT NULL)
+                  p_from   DATE   DEFAULT CURRENT_DATE - 365,  -- NULL = from the first session
+                  p_to     DATE   DEFAULT CURRENT_DATE,
+                  p_board  TEXT   DEFAULT NULL,                -- NULL = every board
+                  p_after  TEXT   DEFAULT NULL,                -- cursor, see below
+                  p_fields TEXT[] DEFAULT NULL)                -- NULL = ticker, trade_date, close_adj
 ```
 
-`p_ticker` is upper-cased and trimmed server-side. `p_board` null selects the board on the ticker's latest stored row; pass a code explicitly only when you need that exact BDI category.
+**Default: `ticker`, `trade_date`, `close_adj`.** `close_adj` is the close per single share, backward-adjusted for splits (DESDOBRAMENTO), groupings (GRUPAMENTO) and bonus shares (BONIFICACAO) by B3's rule (`1 + factor/100` for splits and bonuses, `factor` for groupings, events on one date multiplied), anchored to the instrument's latest session and rounded to 6 decimal places. Past levels change when an event lands; returns do not. Dividends and JCP are not adjusted. Shares (ISIN code `ACN`) and units (`CDA`/`UNT`, ticker ending `11`) only.
 
-Returns the view's columns minus `term_days` and `fetched_at`.
+**The raw close is an explicit selection:** `p_fields: ["close"]`, or any of `open`, `high`, `low`, `average`, `bid`, `ask`, `close_unit`, `trades`, `quantity`, `volume`, `quotation_factor`, `board`, `isin`, `short_name`, `spec`, `currency`, `asset_class`, `source`, `coverage_start`, `coverage_end`, `prior_no_trade_sessions`, `events_proven_at`, `data_revision` (types in `catalog().defaults.quote_history.available`). Keep the same `p_fields` on every page.
 
 ```bash
 curl -s -X POST "$SILO_URL/rpc/quote_history" \
   -H "apikey: $SILO_ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{"p_ticker":"PETR4","p_from":"2026-01-02","p_to":"2026-08-26"}'
+# [{"ticker": "PETR4", "trade_date": "2026-01-02", "close_adj": 30.123400}, ...]
+
+curl -s -X POST "$SILO_URL/rpc/quote_history" \
+  -H "apikey: $SILO_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_ticker":"PETR4","p_from":"2026-01-02","p_to":"2026-08-26","p_fields":["close","volume"]}'
 ```
+
+**What it refuses** (`22023`, with `details` starting `reason=`) rather than serve a partial or substituted series:
+
+| reason | when |
+|---|---|
+| `unknown_ticker` | the code never printed on the cash tape (or not on `p_board`) |
+| `outside_coverage` | no session in the window, or the window starts before the instrument's first session (the tape starts 2019-01-02, see `coverage()`) |
+| `isin_change` | the ticker printed under two ISINs in the window; a reused code is a new instrument and is never joined |
+| `ambiguous_session` | two rows on one session; pass `p_board` |
+| `invalid_field` | a name `p_fields` does not know |
+| `adjustment_unavailable` | `close_adj` cannot cover the window: not a share or unit, issuer events not proven swept (or proven before the last session), or a spin-off, merger, subscription, capital restitution or any other event this version does not adjust; the message names ticker, period and cause |
+
+Inside the coverage a missing session is a session with **no trade** (COTAHIST lists only papers that traded; `prior_no_trade_sessions` counts them) and holidays are not sessions. A field with no value is a JSON `null`.
+
+**Data revision.** Every response carries the header `X-Silo-Data-Revision` (and the `data_revision` field when selected): the newest load of the tape, the corporate events or their proof. `close_adj` levels move when it changes, so never combine pages or calls with different revisions; the SDK restarts instead.
 
 <Warning>
   **One 1,000-row page, and it refuses above it** (`22023`) — you never receive a truncated series that looks complete. Roughly four years of one ticker fits in a page.

@@ -310,14 +310,19 @@ same for everyone.
   is the published B3 ticker a fund holds, so fund → ticker → `cia_ticker` → company
   is a real join over ingested rows. No `api.*` object exposes it yet, and no edge
   is ever inferred from a name.
-- **One price is corporate-action adjusted: `quote_history`'s `close_price_adjusted`.**
-  `close` and `close_unit` (= `close / quotation_factor`, both published) stay as traded, so
-  a split still reads as a jump there, and `adjusted` is `false` on every row because it
-  describes `close`. The adjusted close divides earlier sessions by each split, grouping and
-  bonus share ratio (B3's rule, verified against the tape in #372), is anchored to the latest
-  session, and is NULL with a reason until the issuer's events are proven swept
-  (`b3_corporate_event_sweep`). Spin-offs and mergers are not adjusted, and the total-return
-  close stays NULL until the cash history is backfilled (#418).
+- **One price is corporate-action adjusted: `close_adj`, the default of `quote_history`
+  and of the panel for shares and units.** `quote_history` returns one JSON object per
+  session with only the selected fields: `ticker`, `trade_date`, `close_adj` unless
+  `p_fields` names others, and the raw `close`, OHLC and volume are one explicit selection
+  away. `close_adj` divides earlier sessions by each split, grouping and bonus share ratio
+  (B3's rule, verified against the tape in #372) and is anchored to the instrument's latest
+  session. It never falls back to the raw close: a window it cannot adjust (issuer events not
+  proven swept in `b3_corporate_event_sweep`, or a spin-off, merger, subscription or other
+  event this version does not adjust) is refused with ticker, period and cause. Dividends
+  are not adjusted; the total-return close waits for #418. The series follows the ISIN
+  across boards, and an unknown ticker, a window outside the coverage, a second ISIN or two
+  rows on one session are refused too. `close` and `close_unit` stay as traded, and every
+  view keeps `adjusted = false`.
 
 ## What's intentionally not here
 

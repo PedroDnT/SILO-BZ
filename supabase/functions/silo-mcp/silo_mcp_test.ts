@@ -100,6 +100,24 @@ Deno.test("an RPC call is exactly one POST to /rpc/<fn> with the api profile hea
   assertStringIncludes(text, JSON.stringify(rows));
 });
 
+Deno.test("quote_history names the data revision the server reports", async () => {
+  const rows = [{ ticker: "PETR4", trade_date: "2026-09-29", close_adj: 30.12 }];
+  const { impl } = stubFetch(200, JSON.stringify(rows), { "X-Silo-Data-Revision": "2026-09-30T06:36:59.261060Z" });
+  const res = await callTool("quote_history", { p_ticker: "PETR4" }, CFG, impl);
+  assertEquals(res.isError, undefined);
+  assertStringIncludes(res.content[0].text, "data_revision: 2026-09-30T06:36:59.261060Z");
+  assertStringIncludes(res.content[0].text, JSON.stringify(rows));
+});
+
+Deno.test("quote_history publishes its field selection and default", () => {
+  const tool = TOOLS.find((x) => x.name === "quote_history")!;
+  // deno-lint-ignore no-explicit-any
+  const fields = (tool.inputSchema as any).properties.p_fields;
+  assert(fields.items.enum.includes("close_adj") && fields.items.enum.includes("close"));
+  assertStringIncludes(fields.description, "ticker, trade_date, close_adj");
+  assertStringIncludes(tool.description, "p_fields");
+});
+
 Deno.test("a no-argument RPC sends {}", async () => {
   const { calls, impl } = stubFetch(200, "[]");
   const res = await callTool("coverage", {}, CFG, impl);
