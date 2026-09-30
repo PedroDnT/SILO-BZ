@@ -37,7 +37,8 @@ agg as (
     coalesce(nullif(trim(classificacao_risco_atual), ''), 'Sem rating informado') as rating,
     count(*)                                                       as n_series,
     sum(valor_certificados) / 1e9                                  as value_bn,
-    count(*) filter (where situacao = 'Inadimplente')               as n_inadimplente
+    count(*) filter (where situacao = 'Em atraso')                  as n_em_atraso,
+    count(*) filter (where situacao is null)                        as n_sem_status
   from snapshot
   group by coalesce(nullif(trim(classificacao_risco_atual), ''), 'Sem rating informado')
 ),
@@ -48,8 +49,9 @@ select
   a.rating,
   a.n_series,
   a.value_bn,
-  a.n_inadimplente,
-  round(100.0 * a.n_inadimplente / nullif(a.n_series, 0), 1) as inadimplente_num1
+  a.n_em_atraso,
+  -- Of series that filed a status (securit_overview.sql says why).
+  round(100.0 * a.n_em_atraso / nullif(a.n_series - a.n_sem_status, 0), 1) as em_atraso_num1
 from row_guard g
 left join agg a on true
 order by a.n_series desc nulls last
