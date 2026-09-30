@@ -11,8 +11,8 @@ pip install -e sdk/              # from the repo root, or copy sdk/silo_client/
 ```python
 from silo_client import SiloClient
 
-silo = SiloClient(url="https://<ref>.supabase.co", key="<publishable key>")
-# or set SILO_URL / SILO_ANON_KEY and call SiloClient()
+silo = SiloClient()   # the public SILO project and its publishable key by default
+# override with SiloClient(url=..., key=...) or SILO_URL / SILO_ANON_KEY
 
 silo.catalog()                    # metric map + constraints — read it once
 silo.coverage()                   # as_of (elapsed) vs complete_through (served)
@@ -169,7 +169,10 @@ refuses: everything read off the catalog itself keeps working.
   models are reductions of the DataFrame this client hands you. The API will
   not compute them, and neither will this client.
 
-The shared publishable key printed in the docs is **testing only**.
+The publishable key built into the client names the project, not the caller, so
+it is public by design. It is anonymous until you pass `token=` (or set
+`SILO_TOKEN`). A rotated key is picked up through `SILO_ANON_KEY` without a
+release.
 
 ## Testing
 
