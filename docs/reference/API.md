@@ -345,7 +345,7 @@ is lower by the cash paid since. It needs no new function and no new column.
   identical history rows and each counts once (PETR4 2026-06-01: two JCP of
   0.35048636). A distribution counts only where its ISIN is resolved against the
   tape and B3's published pre-ex close agrees with the tape's close (7,459 of 8,190
-  since 2019, all 7,459 agreeing on 2026-10-01).
+  since 2019, all 7,459 agreeing on 2026-09-30).
 - **The ex session** is the ISIN's first printed session after the last cum session,
   within 7 calendar days. A paper that does not print within a week has no price to
   reinvest at (189 events print 30+ days later, all in the research universe).
@@ -353,7 +353,7 @@ is lower by the cash paid since. It needs no new function and no new column.
   price-adjusted close is NULL; the ISIN has no resolved distribution in B3's history
   (a non-payer, or an issuer B3's history does not match: the two look identical, so
   neither is given a price return labelled as a total return; 188 of 639 universe
-  ISINs on 2026-10-01); a later distribution of the issuer's share class has no proven
+  ISINs on 2026-09-30); a later distribution of the issuer's share class has no proven
   ISIN (731 events, 53 issuers, hitting 101 of 639 tickers, none of the large caps);
   a distribution B3's supplement lists is missing from the history (48 from September,
   which the history had not caught up with, and 3 older holes: FRAS, BRST); a later

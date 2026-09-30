@@ -3,7 +3,7 @@
 --
 -- WHY A MATERIALIZED VIEW. vw_b3_cash_dividend_isin (migration 51) resolves the
 -- ISIN of every distribution with a dated lateral join into the tape. Measured
--- on production 2026-10-01: 5.3 s over the 23,730 rows and 1.3 M buffer hits,
+-- on production 2026-09-30: 5.3 s over the 23,730 rows and 1.3 M buffer hits,
 -- and the ISIN is computed inside the join, so a filter on one ISIN cannot be
 -- pushed down. `anon` has statement_timeout = 3 s. The per-event work below
 -- costs about 7 s once; api.quote_history reads the result by ISIN.

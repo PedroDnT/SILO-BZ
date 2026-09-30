@@ -3,7 +3,7 @@
 -- Refresh the matviews the schema owns: mv_b3_isin_subtype and
 -- mv_b3_monthly_activity (schema.sql), and mv_b3_cash_event (migration 56, the
 -- cash events behind quote_history's close_total_return: about 7 s on
--- 2026-10-01, and it must read the tape this apply's ingest just landed).
+-- 2026-09-30, and it must read the tape this apply's ingest just landed).
 --
 -- WHY THIS FILE EXISTS (docs/planning/OPEN_ITEMS.md item 16, found 2026-09-29).
 -- Every other matview is dropped and re-created by this layer, so applying the
