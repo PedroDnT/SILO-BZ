@@ -26,8 +26,8 @@
 -- FUND IDENTITY. FNET rows carry no CNPJ; a document is a fund's only through
 -- a cnpjFundo row in fnet_document_filter (the CNPJ SILO queried with). The
 -- two FNET screens read ONLY those links — never fund_name, which is served as
--- FNET's label for reading and joined on nothing (CLAUDE.md: no name matching,
--- ever). A document the fortnightly sweep has not linked yet is invisible to
+-- FNET's label for reading and joined on nothing (docs/agents/dataset-notes.md: no name
+-- matching, ever). A document the fortnightly sweep has not linked yet is invisible to
 -- them, not attributed. The silent screen reads CVM's own CNPJ-keyed tables.
 --
 -- "LATE" IS MEASURED AGAINST A CITED RULE, NOTHING ELSE. The deadline is the

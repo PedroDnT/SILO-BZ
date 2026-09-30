@@ -1248,7 +1248,7 @@ CREATE INDEX IF NOT EXISTS idx_fnet_document_type_ref ON fnet_document (tipo_doc
 --     filter_name = 'tipoFundo', filter_value = '1' (FII) | '2' (FIDC) | '3' (ETF)
 --     filter_name = 'cnpjFundo', filter_value = the 14-digit CNPJ queried
 --   A document's fund CNPJ is a row here or it is unknown. It is never
---   inferred from fund_name (CLAUDE.md: no name matching, ever).
+--   inferred from fund_name (docs/agents/dataset-notes.md: no name matching, ever).
 CREATE TABLE IF NOT EXISTS fnet_document_filter (
     id            BIGSERIAL    PRIMARY KEY,
     fnet_id       BIGINT       NOT NULL,

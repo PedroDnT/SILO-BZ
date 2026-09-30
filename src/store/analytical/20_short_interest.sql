@@ -525,8 +525,8 @@ GRANT SELECT ON api.investor_flow TO anon, authenticated;
 COMMENT ON VIEW api.investor_flow IS
     'Daily net flow by investor type (R$ thousands), differenced from B3''s month-to-date participation snapshots, T+2. Rows with flow_basis = unknown_opening_snapshot carry NULL flows on purpose — see fact_investor_flow_daily.';
 
--- Dashboards read these through the analytical layer directly (see CLAUDE.md:
--- "Evidence dashboards may keep reading dim_/fact_*"), so the landing tables
+-- Dashboards read these through the analytical layer directly (see AGENTS.md,
+-- "Consumers": they query Supabase directly), so the landing tables
 -- stay closed to anon exactly as 12_grants_and_rls.sql leaves them.
 REVOKE ALL ON TABLE b3_lending_open_position         FROM anon, authenticated;
 REVOKE ALL ON TABLE b3_lending_rate                  FROM anon, authenticated;

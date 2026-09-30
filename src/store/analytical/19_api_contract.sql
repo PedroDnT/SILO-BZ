@@ -3395,7 +3395,7 @@ AS $$
         -- as_of is the newest REFERENCE date held, which trails the calendar by
         -- B3's T+2 publication lag even when ingest is perfectly healthy. That
         -- is the source's cadence, not our staleness — exactly the distinction
-        -- CLAUDE.md draws between complete_through and landed_at.
+        -- AGENTS.md draws between complete_through and landed_at.
         SELECT 'investor_flow'::text,
                (SELECT MAX(i.reference_date) FROM public.b3_investor_participation i WHERE i.reference_date <= CURRENT_DATE),
                (SELECT MAX(i.reference_date) FROM public.b3_investor_participation i WHERE i.reference_date <= CURRENT_DATE),

@@ -12,8 +12,8 @@ plus 6 early filers): the old query returned 1 sector / 6 companies at fy2026,
 the fixed query returns 4 sectors / 66 companies at fy2025 with the early filers
 still present on their fy2025 row.
 
-This is the same family as the warning in CLAUDE.md about `complete_through` and
-FIP being keyed 31-December: a MAX() over a filing date is not "the current
+This is the same family as the warnings about `complete_through` (AGENTS.md) and
+FIP being keyed 31-December (`api.coverage()`): a MAX() over a filing date is not "the current
 period".
 """
 

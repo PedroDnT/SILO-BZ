@@ -5,9 +5,6 @@
 -- vw_fii_vs_fiagro          — unified FII + FIAGRO slice (no params needed for
 --                             quick comparisons; parameterised via cross_entity_comparison())
 -- vw_fidc_tranche_detail    — tranche grain enriched with fund PL + delinquency
--- vw_fidc_aging_summary     — aging bucket aggregates (grouped into 5 duration bands)
---                             for the full FIDC universe; use fidc_aging_buckets() for
---                             single-fund time series or fidc_aging_universe() for ranking
 -- vw_securit_emission_trend — monthly issuance volume by instrument type
 -- vw_fund_security_yield    — UNION of fund yields + security returns (no BACEN;
 --                             benchmark rate passed at query time via yield_universe())
@@ -26,25 +23,12 @@ SELECT cnpj, period, entity_type, vl_patrim_liq, pct_yield_mes, nr_cotst
 FROM fact_fund_monthly
 WHERE entity_type IN ('fii', 'fiagro');
 
--- Aging bucket summary: grouped into 5 duration bands across the FIDC universe
-CREATE OR REPLACE VIEW vw_fidc_aging_summary AS
-SELECT
-    a.cnpj,
-    a.period,
-    a.vl_total_inad,
-    COALESCE(a.vl_inad_30, 0)                                    AS vl_inad_0_30d,
-    COALESCE(a.vl_inad_60, 0)  + COALESCE(a.vl_inad_90, 0)      AS vl_inad_31_90d,
-    COALESCE(a.vl_inad_120, 0) + COALESCE(a.vl_inad_150, 0) +
-    COALESCE(a.vl_inad_180, 0)                                   AS vl_inad_91_180d,
-    COALESCE(a.vl_inad_360, 0)                                   AS vl_inad_181_360d,
-    COALESCE(a.vl_inad_720, 0) + COALESCE(a.vl_inad_1080, 0) +
-    COALESCE(a.vl_inad_maior_1080, 0)                            AS vl_long_tail,
-    m.vl_patrim_liq                                               AS fund_pl,
-    CASE WHEN m.vl_patrim_liq > 0 THEN
-        ROUND(a.vl_total_inad / m.vl_patrim_liq * 100, 4)
-    END                                                           AS inadimpl_rate
-FROM cvm_fidc_aging a
-LEFT JOIN cvm_fidc_mensal m ON m.cnpj = a.cnpj AND m.period = a.period;
+-- vw_fidc_aging_summary was dropped on 2026-09-30. Nothing read it (no api
+-- object, dashboard source, query script, test or dependent view), and it
+-- turned a blank aging bucket into 0, which the integrity rules forbid.
+-- api.fidc_aging serves the ladder as filed. The DROP stays so a database that
+-- still has the view loses it on the next apply.
+DROP VIEW IF EXISTS vw_fidc_aging_summary;
 
 -- Tranche detail enriched with fund-level PL and delinquency
 CREATE OR REPLACE VIEW vw_fidc_tranche_detail AS

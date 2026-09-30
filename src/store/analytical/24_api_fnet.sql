@@ -36,7 +36,7 @@
 -- id for cnpjFundo = X" (the fortnightly per-fund sweep) and "for tipoFundo =
 -- 1/2/3" (the per-type daily crawl). A document's fund is a cnpjFundo row or it
 -- is unknown. fund_name is FNET's label, served for reading and NEVER joined
--- on (CLAUDE.md: no name matching, ever). Because the sweep is fortnightly, a
+-- on (docs/agents/dataset-notes.md: no name matching, ever). Because the sweep is fortnightly, a
 -- document delivered this week may not be linked to its fund yet — it is in
 -- the register and reaches fund_documents after the next sweep of that fund.
 -- coverage()'s fnet_documents row says so.
