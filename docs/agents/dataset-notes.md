@@ -39,6 +39,15 @@ including the trade-by-trade tape with the brokerage on each leg, investor-type
 flow, index free float and the cash instrument registry; `src/fetchers/b3_bdi_fetcher.py`
 carries the verified endpoint contract).
 
+**Fixed income ETFs are not in COTAHIST** (migration 57). B3 lists them in segment
+FORWARD, market FIXED INCOME, which the COTAHIST files do not carry, so they have no
+`b3_cotahist` row and no CODBDI. Their prints are `b3_trade_consolidated`, from B3's
+TradeInformationConsolidatedFile (`src/fetchers/b3_trade_consolidated_fetcher.py`), keyed
+on (ticker, session) and on B3's segment, not on `cvm_etf_registry`. The source has no
+opening price, and its volume is not comparable with COTAHIST's. Only a file marked
+`Final` is stored; an empty file (no session, or before B3's retention edge, 2025-06-10
+when checked on 2026-09-30) is logged `skipped`.
+
 **FII filings keep every version** (migration 43): `versao` is part of the key of
 `cvm_fii_mensal` and `cvm_fii_periodic` (`UNIQUE NULLS NOT DISTINCT`), so a restatement
 lands beside the original instead of overwriting it. Read the current filing through

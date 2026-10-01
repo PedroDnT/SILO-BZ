@@ -9,6 +9,7 @@ Landing table: b3_cotahist. No ticker↔CNPJ match here (deferred).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
@@ -27,6 +28,9 @@ from src.pipeline import ingest_log
 logger = logging.getLogger(__name__)
 
 _UPSERT_BATCH = 5000
+# arquivos.b3.com.br sits behind Cloudflare, which 403s bursts (the BDI host).
+# One second between consolidated-trade sessions, as the manual probes paced.
+_TC_PAUSE_SECONDS = 1.0
 
 # The first session of the COTAHIST tape SILO holds. The corporate-event sweep
 # covers every issuer that printed since then, so a price-adjusted close has
@@ -39,9 +43,11 @@ class B3Ingestor:
         self,
         fetcher: Optional[B3CotahistFetcher] = None,
         bdi_fetcher: Optional[B3BdiFetcher] = None,
+        trade_consolidated_fetcher: Optional[Any] = None,
     ) -> None:
         self._fetcher = fetcher or B3CotahistFetcher()
         self._bdi = bdi_fetcher or B3BdiFetcher()
+        self._tc_fetcher = trade_consolidated_fetcher
         self._supabase = get_pg_client()
         self._doc_type_of: Dict[str, str] = {}
 
@@ -915,6 +921,90 @@ class B3Ingestor:
             total += await self.ingest_daily(session)
         logger.info("B3 COTAHIST daily_update done: rows=%d lookback=%d", total, lookback)
         return {TABLE: total}
+
+    # B3's consolidated trade file, segment FORWARD (migration 57): the fixed
+    # income ETFs COTAHIST does not carry. One file and one audit row per session.
+    async def ingest_trade_consolidated(self, session: date) -> int:
+        """Fetch one session's file and upsert its FORWARD rows.
+
+        An empty file (no session, or outside retention) and a file B3 has not
+        marked Final are logged `skipped` and return 0. Anything else raises.
+        """
+        from src.fetchers.b3_trade_consolidated_fetcher import (
+            B3TradeConsolidatedEmpty,
+            B3TradeConsolidatedFetcher,
+        )
+        from src.pipeline import ingest_b3_trade_consolidated as tc
+
+        run_id = str(uuid4())
+        self._log_start(run_id, "trade_consolidated", session.year, session.month)
+        label = session.isoformat()
+        try:
+            payload = await (self._tc_fetcher or B3TradeConsolidatedFetcher()).fetch(session)
+            rows, dropped = tc.parse(tc.decode(payload), session)
+        except (B3TradeConsolidatedEmpty, tc.B3TradeConsolidatedNotFinal) as exc:
+            logger.info("B3 consolidated trades %s skipped: %s", label, exc)
+            self._log_finish(run_id, 0, ingest_log.describe(exc), skipped=True)
+            return 0
+        except Exception as exc:
+            logger.error("B3 consolidated trades %s failed: %s", label, exc)
+            self._log_finish(run_id, 0, ingest_log.describe(exc))
+            raise
+        try:
+            n = upsert_rows(self._supabase, tc.TABLE, rows, conflict_columns=tc.CONFLICT_COLS)
+        except Exception as exc:
+            self._log_finish(run_id, 0, ingest_log.describe(exc))
+            raise
+        note = f"{dropped} row(s) dropped by validation" if dropped else None
+        self._log_finish(run_id, n, note=note)
+        logger.info("B3 consolidated trades %s: %d rows (%d dropped)", label, n, dropped)
+        return n
+
+    async def daily_update_trade_consolidated(self) -> Dict[str, int]:
+        """The trailing calendar window, like COTAHIST's (B3_DAILY_LOOKBACK_DAYS).
+
+        Weekends are not requested; a holiday answers an empty file and is skipped.
+        """
+        from src.pipeline.ingest_b3_trade_consolidated import TABLE as TC_TABLE
+
+        today = date.today()
+        total = 0
+        sessions = [today - timedelta(days=o) for o in range(self._lookback_days())]
+        for session in (s for s in sessions if s.weekday() < 5):
+            total += await self.ingest_trade_consolidated(session)
+            await asyncio.sleep(_TC_PAUSE_SECONDS)
+        # A day with no session is skipped (HTTP 400 or an empty file). If EVERY
+        # weekday of the window was, the contract has more likely changed than
+        # B3 closed for a week, so that is an error, never a quiet zero.
+        if total == 0:
+            raise RuntimeError(
+                f"B3 consolidated trades: no row landed for any weekday of the last "
+                f"{len(sessions)} days; check the contract in b3_trade_consolidated_fetcher"
+            )
+        return {TC_TABLE: total}
+
+    async def backfill_trade_consolidated(
+        self, start: date, end: Optional[date] = None
+    ) -> Dict[str, int]:
+        """Every weekday from ``start`` to ``end`` (default today), one file each.
+
+        Sessions before B3's retention edge answer an empty file and are logged
+        skipped: no row is stored for them, and none can be.
+        """
+        from src.pipeline.ingest_b3_trade_consolidated import TABLE as TC_TABLE
+
+        end = end or date.today()
+        if end < start:
+            raise ValueError(f"end {end} < start {start}")
+        total = 0
+        session = start
+        while session <= end:
+            if session.weekday() < 5:
+                total += await self.ingest_trade_consolidated(session)
+                await asyncio.sleep(_TC_PAUSE_SECONDS)
+            session += timedelta(days=1)
+        logger.info("B3 consolidated trades backfill %s..%s: %d rows", start, end, total)
+        return {TC_TABLE: total}
 
     async def backfill(self, start_year: int = 2019, end_year: Optional[int] = None) -> Dict[str, int]:
         """Yearly COTAHIST zips. COTAHIST ONLY — there is no lending backfill.

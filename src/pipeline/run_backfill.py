@@ -126,6 +126,17 @@ async def main(args: argparse.Namespace) -> None:
         ensure_rows_landed(n)
         return
 
+    # B3's consolidated trade file, segment FORWARD (migration 57): the fixed
+    # income ETFs COTAHIST does not carry. One file per weekday, alone, from
+    # --b3-trade-consolidated-start; sessions before B3's retention edge
+    # answer an empty file and are logged skipped.
+    if getattr(args, "b3_trade_consolidated_start", None):
+        start = date.fromisoformat(args.b3_trade_consolidated_start)
+        logger.info("Starting B3 consolidated trades backfill from %s", start)
+        tc_totals = await B3Ingestor().backfill_trade_consolidated(start)
+        ensure_rows_landed(sum(tc_totals.values()))
+        return
+
     if not args.bacen_only and not args.b3_only and not args.ibge_only:
         logger.info(
             "Starting CVM backfill: start_year=%d entity=%s doc_type=%s",
@@ -426,6 +437,11 @@ def parse_args() -> argparse.Namespace:
         "--b3-cash-dividends-only", action="store_true",
         help="Skip everything else; backfill B3's full cash-distribution history "
              "for every issuer that printed since --b3-start-year"
+    )
+    parser.add_argument(
+        "--b3-trade-consolidated-start", type=str, default=None,
+        help="Skip everything else; backfill B3's consolidated trade file "
+             "(fixed income ETFs, segment FORWARD) from this ISO date to today"
     )
     parser.add_argument(
         "--b3-start-year", type=int, default=2019,

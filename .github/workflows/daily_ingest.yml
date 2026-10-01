@@ -16,8 +16,9 @@ on:
           - analytics-only
           - b3-backfill
           - b3-cash-dividends
+          - b3-trade-consolidated
       start_year:
-        description: "First year of B3 COTAHIST yearly zips (mode=b3-backfill). Try 2025 first — yearly zips are large. With mode=b3-cash-dividends: the issuer universe is every code that printed since this year (use 2019); each issuer's full history is fetched."
+        description: "First year of B3 COTAHIST yearly zips (mode=b3-backfill). Try 2025 first — yearly zips are large. With mode=b3-cash-dividends: the issuer universe is every code that printed since this year (use 2019); each issuer's full history is fetched. With mode=b3-trade-consolidated: every weekday from January 1 of this year (B3 kept sessions from 2025-06-10 when checked on 2026-09-30; earlier ones are logged skipped)."
         required: false
         default: "2025"
       end_year:
@@ -84,8 +85,8 @@ jobs:
       # analytics-only dispatch went green without fetching, and the Saturday
       # watchdog no-op'd because fi/inf_diario still had Friday's ok. ANY HTTP
       # response (including 404) passes; only a connect-level failure fails.
-      # analytics-only / b3-backfill / b3-cash-dividends never touch CVM, so
-      # they skip this.
+      # analytics-only / b3-backfill / b3-cash-dividends / b3-trade-consolidated
+      # never touch CVM, so they skip this.
       - name: Probe dados.cvm.gov.br
         if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily') }}
         run: python scripts/check_cvm_reachable.py
@@ -135,6 +136,16 @@ jobs:
             --b3-cash-dividends-only \
             --b3-start-year ${{ inputs.start_year }}
 
+      # B3's consolidated trade file, segment FORWARD (migration 57): the fixed
+      # income ETFs COTAHIST does not carry. One ~6-9 MB file per weekday from
+      # January 1 of start_year; sessions before B3's retention edge answer an
+      # empty file and are logged skipped. About 330 sessions from 2025-06-10.
+      - name: Run B3 consolidated trades backfill
+        if: ${{ github.event.inputs && github.event.inputs.mode == 'b3-trade-consolidated' }}
+        run: |
+          python -m src.pipeline.run_backfill \
+            --b3-trade-consolidated-start ${{ inputs.start_year }}-01-01
+
       # Statistics only — it makes later queries plan better, it never changes a
       # row. continue-on-error because on 2026-08-28 it was the ONE step that
       # could abort this job: 20 ANALYZEs in a single psql string is a single
@@ -149,7 +160,7 @@ jobs:
       # its own table instead of the other 19, and no single statement runs long
       # enough to look like a hung connection.
       - name: Analyze tables post-ingest
-        if: ${{ github.event_name == 'schedule' || (github.event.inputs && (github.event.inputs.mode == 'daily' || github.event.inputs.mode == 'analytics-only' || github.event.inputs.mode == 'b3-backfill' || github.event.inputs.mode == 'b3-cash-dividends')) }}
+        if: ${{ github.event_name == 'schedule' || (github.event.inputs && (github.event.inputs.mode == 'daily' || github.event.inputs.mode == 'analytics-only' || github.event.inputs.mode == 'b3-backfill' || github.event.inputs.mode == 'b3-cash-dividends' || github.event.inputs.mode == 'b3-trade-consolidated')) }}
         continue-on-error: true
         run: |
           set +e
@@ -160,7 +171,8 @@ jobs:
                    cvm_fidc_cedente cvm_fiagro_mensal cvm_fip_periodic \
                    cvm_fii_mensal cvm_fii_periodic cvm_securit_mensal \
                    cvm_securit_serie cvm_securit_fluxo cvm_securit_dfin \
-                   cvm_fund_registry cvm_etf_registry cvm_ingest_log b3_cotahist; do
+                   cvm_fund_registry cvm_etf_registry cvm_ingest_log b3_cotahist \
+                   b3_trade_consolidated; do
             if psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -q -c "ANALYZE $t;"; then
               echo "analyzed $t"
             else
