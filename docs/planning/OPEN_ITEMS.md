@@ -544,3 +544,9 @@ Found alongside: `mv_etf_landscape` existed on the live database and was defined
 nowhere in this repository, so nothing refreshed it either, and nothing read it.
 Migration 54 (`claude/drop-mv-etf-landscape`, 2026-09-30) drops it and keeps its
 one-line definition, a `rank()` over `cvm_etf_registry`, in the file's comment.
+On its first production apply (daily run of 2026-10-01, 03:00 UTC-3) the drop
+failed: an object on the live database, defined nowhere here, now depends on the
+matview, and that failure skipped the day's ingest and apply. Migration 54 is now
+guarded (`claude/guard-migration-54`): it drops the matview only when nothing
+depends on it, and otherwise raises a NOTICE naming the dependents in the
+apply log. **Open:** read that NOTICE, decide about the dependent, then drop.
