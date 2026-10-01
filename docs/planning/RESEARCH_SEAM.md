@@ -133,8 +133,10 @@ levels, from a closed, extensible list of index codes.
 - **Index codes only.** A ticker, including BOVA11 and IBOV11, raises `22023`
   naming the accepted codes, so substitution cannot happen by construction.
   `quote_history('IBOV11')` and `api.quotes` keep today's behaviour (IBOV11 is
-  `asset_class = 'index'`, `close_unit` R$ per contract, prints only on expiry days);
-  the usage doc warns about it.
+  `asset_class = 'index'` and each print is that session's settlement index, never the
+  official close; it printed on expiry days only through 2024, weekly in 2025 and on
+  nearly every session since December 2025, **corrected 2026-10-01**: the spec said
+  "prints only on expiry days"); the usage doc warns about it.
 - **Source:** B3's administrator-published daily close, `indexStatisticsProxy/IndexCall/GetPortfolioDay`
   (undocumented; one year per call). SGS 7 is discontinued since 2019-09-30 and is not used.
 - **Columns:** `index_code`, `trade_date`, `level`, `source`, a flag for a divisor

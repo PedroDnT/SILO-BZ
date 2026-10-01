@@ -113,5 +113,7 @@ check digit. Two consequences the API uses:
   mapping. `underlying_ticker` on the option endpoints joins it to the same session's
   cash print (measured: 14,895 of 14,900 rows matched, 1:1). PETR-prefix options split
   correctly between PETR3 and PETR4 — something the ticker root can never do.
-- **Index prints exist in COTAHIST** (`IND` category, ~monthly on option expiry
-  days) — sparse, so not served as a series.
+- **Index prints exist in COTAHIST** (`IND` category: `IBOV11`, plus three `SMLL11`
+  prints). They are option-settlement indices, not the official close, so they are
+  not served as an index series: use `index_history`. `IBOV11` printed on expiry days
+  only through 2024, weekly in 2025 and on nearly every session since December 2025.
