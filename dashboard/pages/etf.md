@@ -320,8 +320,10 @@ order by class, period
 
 ## ETF Universe
 
-> The full registry, searchable by ticker, fund name, manager or index. `Status`
-> is CVM's own registry status, not a liquidity or delisting judgement.
+> The full registry, searchable by ticker, fund name, manager or index, largest
+> first. `Status` is CVM's own registry status, not a liquidity or delisting
+> judgement. Net assets are CVM's, each dated by its own filing (`As of`); a fund
+> with no published figure has no rank.
 >
 > **Manager, brand and index are three different things.** `Manager (CVM)` is the
 > gestor as published in CVM's cad_fi registry — the firm that runs the fund.
@@ -330,6 +332,7 @@ order by class, period
 > that firm indexes the fund, it does not manage it.
 
 <DataTable data={etf_list} rows=20 search=true>
+  <Column id=size_rank title="Size Rank"/>
   <Column id=ticker title="Ticker"/>
   <Column id=fund_name title="Fund"/>
   <Column id=manager title="Manager (CVM)"/>
@@ -337,6 +340,8 @@ order by class, period
   <Column id=index_name title="Index Tracked"/>
   <Column id=segment title="Segment"/>
   <Column id=status title="Status"/>
+  <Column id=nav_mm title="Net Assets (R$ mm)" fmt=num1/>
+  <Column id=nav_date title="As of"/>
 </DataTable>
 
 ---
