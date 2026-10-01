@@ -130,7 +130,16 @@ def _checks(silo: SiloClient) -> None:
     check(refused(lambda: silo.quote_history("PETR4", "2018-06-01", "2019-06-01"), "reason=outside_coverage"), "window before the tape refused")
 
     # 7. IBOV.
-    ibov = silo.index_history_all("IBOV", "2020-01-02", tape[-1])
+    # Paged with the server's cursor directly, so the check needs no SDK
+    # wrapper for index_history.
+    ibov, after = [], ""
+    while True:
+        page = silo._rpc("index_history", {"p_index": "IBOV", "p_from": "2020-01-02",
+                                           "p_to": tape[-1], "p_after": after}, page=True)
+        ibov.extend(page)
+        if len(page) < 1000:
+            break
+        after = str(page[-1]["trade_date"])
     by_date = {r["trade_date"]: r["level"] for r in ibov}
     check(float(by_date.get("2025-12-30", 0)) == 161125.37, f"IBOV 2025-12-30 = {by_date.get('2025-12-30')}")
     tape20 = {d for d in tape if d >= "2020-01-02"}
