@@ -59,8 +59,9 @@ async def main() -> None:
         failures.append(("b3_trade_consolidated", exc))
 
     # Published splits, groupings, bonuses, dividends and subscriptions per
-    # ISIN. One request per traded issuer, derived from our own tape, not B3's
-    # 3,500-company list.
+    # ISIN. One request per issuer due tonight (B3Ingestor._sweep_plan): the
+    # share and unit issuers that printed since their proof, plus a rotating
+    # 1/14 of everyone else, instead of all ~2,600 every night.
     try:
         totals["b3_corporate_event"] = await B3Ingestor().ingest_corporate_events()
     except Exception as exc:
