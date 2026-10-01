@@ -192,6 +192,7 @@ Built** so nobody has to guess how old the numbers are; to publish sooner, dispa
 | `/fidc`        | FIDC Credit Monitor             | delinquency, aging, subordination, tranche flows and performance                           |
 | `/fii`         | FII Market                      | FII vs FIAGRO, yield distribution, payout coverage                                         |
 | `/fund`        | Fund Explorer                   | per-fund NAV, flows, quotaholders and rebased returns                                      |
+| `/holdings`    | Fund Holdings                   | largest stock holdings, debenture issuers, same-group holdings                             |
 | `/performance` | Fund Performance                | rankings by class, rebased cumulative return                                               |
 | `/etf`         | ETF Market                      | registry by provider and segment, fixed income ETFs by index family with their B3 prints, ANBIMA net assets and flows, exchange volume, scraped snapshot |
 | `/markets`     | B3 Markets                      | monthly traded volume, instrument mix, option activity                                     |

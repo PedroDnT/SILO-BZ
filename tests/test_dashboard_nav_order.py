@@ -19,7 +19,7 @@ ORDER = [
     # /markets because they are all about the exchange, not about funds.
     "industry", "macro", "rates", "markets", "short", "flows",
     "fi", "fidc", "fii", "securit", "etf",
-    "managers", "fund", "performance", "suspicious", "dormant",
+    "managers", "fund", "holdings", "performance", "suspicious", "dormant",
     "ops",
 ]
 
