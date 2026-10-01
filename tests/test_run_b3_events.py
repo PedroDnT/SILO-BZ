@@ -162,3 +162,15 @@ def test_the_watchdog_can_recover_the_step():
     cond = str(step.get("if", ""))
     assert "steps.staleness.outputs.stale == 'true'" in cond
     assert "!cancelled()" in cond
+
+
+async def test_consolidated_trades_run_before_the_corporate_event_sweep():
+    """Run 36842444079: the sweep took 44 of the step's 45 minutes, so nothing
+    after it ran. The consolidated trades take seconds and go first."""
+    order = []
+    ing = _ingestor()
+    ing.daily_update_trade_consolidated.side_effect = lambda: order.append("trades") or {}
+    ing.ingest_corporate_events.side_effect = lambda: order.append("events") or 0
+    with patch.object(rb, "B3Ingestor", return_value=ing):
+        await rb.main()
+    assert order[:2] == ["trades", "events"]
