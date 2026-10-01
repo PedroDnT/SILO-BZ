@@ -104,15 +104,18 @@ def _cnpj14(v: Any) -> Optional[str]:
     return digits if len(digits) == 14 else None  # CNPJ is 14 digits or it's not one
 
 
-# The /etfs/<ticker> page is rendered text (innerText). NAV/cotistas/taxa appear as
-# value-then-label; name/index/provedor/região/lançamento/CNPJ/ISIN as label-then-
-# value. These regexes pull each by its Portuguese label; returns are chart-rendered
-# (not in text) so they stay NULL until mapped from the next_data JSON post-verify.
+# The /etfs/<ticker> page is rendered text (innerText). Every figure in the info
+# block is label-then-value, one per line ("NÚMERO DE COTISTAS\n105.270"). The
+# NAV/cotistas/taxa patterns used to assume value-then-label, so they matched the
+# number above a LATER label: the cotistas and PL charts print their date range
+# ("24 de set. de 2026") right above "Número de cotistas" / "Patrimônio líquido",
+# and a year landed in 178/178 cotistas and 26 NAVs (checked 2026-09-30). Those
+# three now go through _labelled_line: the FIRST line that is exactly the label,
+# then the next line, kept only if the whole line has the expected shape — never
+# a fall-through to a later occurrence. Returns are chart-rendered (not in text)
+# so they stay NULL until mapped from the next_data JSON post-verify.
 _RE = {
     "price":    r"R\$\s*([\d.,]+)",
-    "nav_mm":   r"([\d.,]+)\s*\n+\s*Patrim[oô]nio l[ií]quido",
-    "cotistas": r"([\d.,]+)\s*\n+\s*N[uú]mero de cotistas",
-    "taxa_adm": r"([\d.,]+\s*%)\s*\n+\s*Taxa de administra[cç][aã]o total",
     "fund_name": r"Nome do fundo\s*\n+\s*([^\n]+)",
     "indice":   r"\n[ÍI]ndice\s*\n+\s*\[?([^\n\]]+)",
     "provedor": r"Provedor do [íi]ndice\s*\n+\s*\[?([^\n\]]+)",
@@ -120,6 +123,14 @@ _RE = {
     "launch":   r"Lan[cç]amento\s*\n+\s*(\d{2}/\d{2}/\d{4})",
     "cnpj":     r"CNPJ\s*\n+\s*([\d./\-]+)",
     "isin":     r"ISIN\s*\n+\s*([A-Z0-9]{12})",
+}
+
+# (label line, shape the whole next line must have). Brazilian format: "." groups
+# thousands, "," is the decimal mark.
+_LABELLED = {
+    "nav_mm":   (r"Patrim[oô]nio l[ií]quido \(R\$ MM\)", r"\d{1,3}(?:\.\d{3})*(?:,\d+)?"),
+    "cotistas": (r"N[uú]mero de cotistas",                 r"\d{1,3}(?:\.\d{3})*"),
+    "taxa_adm": (r"Taxa de administra[cç][aã]o total",     r"\d+(?:,\d+)?\s*%"),
 }
 
 
@@ -130,12 +141,28 @@ def _grab(text: Optional[str], pattern: str) -> Optional[str]:
     return m.group(1).strip() if m else None
 
 
+def _labelled_line(text: Optional[str], key: str) -> Optional[str]:
+    """The line after the first line that is exactly the label, if it has the shape.
+
+    Anything else (no label, a chart heading followed by "Zoom", a placeholder)
+    is None: a missing value stays a gap, never the nearest number on the page.
+    """
+    if not text:
+        return None
+    label, shape = _LABELLED[key]
+    m = re.search(rf"^[ \t]*{label}[ \t]*\n+[ \t]*([^\n]*)", text, re.IGNORECASE | re.MULTILINE)
+    if not m:
+        return None
+    value = m.group(1).strip()
+    return value if re.fullmatch(shape, value) else None
+
+
 def _record_to_row(rec: Dict[str, Any], snapshot: str) -> Optional[Dict[str, Any]]:
     ticker = _ticker(rec.get("ticker"))
     if not ticker:
         return None
     text = rec.get("text")
-    nav_mm = _num(_grab(text, _RE["nav_mm"]))   # page shows R$ MM
+    nav_mm = _num(_labelled_line(text, "nav_mm"))   # page shows R$ MM
     return {
         "ticker":           ticker,
         "snapshot_date":    snapshot,
@@ -147,9 +174,9 @@ def _record_to_row(rec: Dict[str, Any], snapshot: str) -> Optional[Dict[str, Any
         "regiao":           _clean(_grab(text, _RE["regiao"])),
         "indice":           _clean(_grab(text, _RE["indice"])),
         "provedor_indice":  _clean(_grab(text, _RE["provedor"])),
-        "taxa_adm_pct":     _pct(_grab(text, _RE["taxa_adm"])),
+        "taxa_adm_pct":     _pct(_labelled_line(text, "taxa_adm")),
         "nav":              (nav_mm * 1_000_000) if nav_mm is not None else None,
-        "cotistas":         _int(_grab(text, _RE["cotistas"])),
+        "cotistas":         _int(_labelled_line(text, "cotistas")),
         "price":            _num(_grab(text, _RE["price"])),
         "ret_ytd_pct":      None,
         "ret_12m_pct":      None,

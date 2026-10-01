@@ -7,23 +7,25 @@ parser is protected by the offline pre-push suite even though the live scrape is
 paid/rate-limited and never runs in tests.
 """
 
+from pathlib import Path
 from unittest.mock import patch
 
 from src.pipeline import ingest_etf_market as m
 
 
-# A realistic slice of the /etfs/<ticker> rendered innerText: values appear next to
-# their Portuguese labels exactly as the _RE patterns expect (value-then-label for
-# NAV/cotistas/taxa, label-then-value for name/index/região/lançamento/CNPJ/ISIN).
+# A slice of the /etfs/<ticker> rendered innerText, every figure label-then-value.
+# This sample used to put NAV/cotistas/taxa value-then-label, matching the parser
+# rather than the page, which is how a year sat in cotistas for every ETF unseen.
+# The captured page shape is tests/fixtures/etfsbrasil/ (TestCapturedPage below).
 SAMPLE_TEXT = """\
 BOVA11
 R$ 123,45
+Patrimônio líquido (R$ MM)
 1.234,56
-Patrimônio líquido
-45.678
 Número de cotistas
-0,30 %
+45.678
 Taxa de administração total
+0,30 %
 Nome do fundo
 ISHARES IBOVESPA FUNDO DE ÍNDICE
 Índice
@@ -120,6 +122,49 @@ class TestRecordToRow:
         assert row is not None
         assert row["nav"] is None
         assert row["price"] is None
+        assert row["cotistas"] is None
+
+
+FIXTURES = Path(__file__).parent / "fixtures" / "etfsbrasil"
+
+
+class TestCapturedPage:
+    """The real page layout: labels in capitals ABOVE their values, and charts whose
+    date range ("24 de set. de 2026") sits right above a second "Número de cotistas"
+    / "Patrimônio líquido" label. Trimmed from the BOVA11 snapshot of 2026-09-26
+    (etf_market_snapshot.raw->>'text'); the old value-then-label regexes read
+    cotistas = 2026 and NAV = 2026 R$ MM from it."""
+
+    TEXT = (FIXTURES / "bova11_innertext_20260926.txt").read_text(encoding="utf-8")
+
+    def test_cotistas_is_the_holder_count_not_a_year(self):
+        row = m._record_to_row({"ticker": "BOVA11", "text": self.TEXT}, "2026-09-26")
+        assert row["cotistas"] == 105270
+
+    def test_nav_and_fee_from_the_info_block(self):
+        row = m._record_to_row({"ticker": "BOVA11", "text": self.TEXT}, "2026-09-26")
+        assert row["nav"] == 14813.48 * 1_000_000
+        assert row["taxa_adm_pct"] == 0.10
+        assert row["price"] == 180.82
+        assert row["cnpj"] == "10406511000161"
+        assert row["isin"] == "BRBOVACTF003"
+
+    def test_no_info_block_value_is_null_not_the_chart_axis(self):
+        # 7 of 178 pages (BULZ11, BLOK11, ...) carry no figure under the labels:
+        # the only "Número de Cotistas" line is the chart heading, then "Zoom",
+        # then the date range and the year axis. That must stay NULL.
+        text = self.TEXT
+        text = text.replace("PATRIMÔNIO LÍQUIDO (R$ MM)\n14.813,48\n", "")
+        text = text.replace("NÚMERO DE COTISTAS\n105.270\n", "")
+        text = text.replace("TAXA DE ADMINISTRAÇÃO TOTAL\n0,10%\n", "")
+        row = m._record_to_row({"ticker": "BULZ11", "text": text}, "2026-09-26")
+        assert row["cotistas"] is None
+        assert row["nav"] is None
+        assert row["taxa_adm_pct"] is None
+
+    def test_placeholder_value_is_null(self):
+        text = self.TEXT.replace("NÚMERO DE COTISTAS\n105.270", "NÚMERO DE COTISTAS\n-")
+        row = m._record_to_row({"ticker": "BOVA11", "text": text}, "2026-09-26")
         assert row["cotistas"] is None
 
 
