@@ -10,9 +10,14 @@ for raises:
 * a "Status do Arquivo" other than Final is not stored (NotFinal; the daily
   window fetches the session again);
 * a row dated other than the requested session raises (a misdated file);
-* a non-empty file with no FORWARD row at all raises. The segment held 55 to
+* a non-empty file with no FORWARD row at all raises. The segment held 18 to
   67 tickers on every session checked, so zero is a changed file, not a quiet
-  day.
+  day;
+* EXCEPT a file with no CASH row either (Incomplete; skipped). B3's file for
+  2025-08-13, a normal session (COTAHIST has 14,176 rows), is marked Final but
+  carries only options, FINANCIAL and AGRIBUSINESS: the whole cash market is
+  missing. That is B3 publishing part of a day, and nothing can be stored for
+  it, but it is not a format change.
 """
 
 from __future__ import annotations
@@ -33,6 +38,8 @@ SOURCE = "b3_trade_consolidated_file"
 # in b3_cotahist already, or out of scope.
 SEGMENTS: Tuple[str, ...] = ("FORWARD",)
 FINAL = "Final"
+# The cash equities segment. Its absence marks a file B3 published incomplete.
+CASH = "CASH"
 
 _STATUS_PREFIX = "status do arquivo:"
 _COLUMNS = (
@@ -48,6 +55,10 @@ _PRICES = (
 
 class B3TradeConsolidatedParseError(RuntimeError):
     """The file is not the shape the contract describes."""
+
+
+class B3TradeConsolidatedIncomplete(RuntimeError):
+    """B3's file is marked Final but carries no cash-market segment at all."""
 
 
 class B3TradeConsolidatedNotFinal(RuntimeError):
@@ -93,12 +104,14 @@ def parse(text: str, session: date) -> Tuple[List[Dict[str, Any]], int]:
 
     rows: List[Dict[str, Any]] = []
     dropped = 0
+    has_cash = False
     for line in lines[2:]:
         cells = line.split(";")
         if len(cells) < width:
             dropped += 1
             continue
         segment = cells[ix["SgmtNm"]].strip()
+        has_cash = has_cash or segment == CASH
         if segment not in SEGMENTS:
             continue
         try:
@@ -139,6 +152,12 @@ def parse(text: str, session: date) -> Tuple[List[Dict[str, Any]], int]:
             continue
         rows.append(row)
 
+    if not rows and not has_cash:
+        raise B3TradeConsolidatedIncomplete(
+            f"{session}: B3's file is marked {status!r} but has no CASH or "
+            f"{'/'.join(SEGMENTS)} row ({len(lines) - 2} data lines): the cash "
+            f"market is missing from B3's file"
+        )
     if not rows:
         raise B3TradeConsolidatedParseError(
             f"{session}: the file has no usable {'/'.join(SEGMENTS)} row "

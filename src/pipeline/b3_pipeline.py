@@ -1014,7 +1014,11 @@ class B3Ingestor:
         try:
             payload = await (self._tc_fetcher or B3TradeConsolidatedFetcher()).fetch(session)
             rows, dropped = tc.parse(tc.decode(payload), session)
-        except (B3TradeConsolidatedEmpty, tc.B3TradeConsolidatedNotFinal) as exc:
+        except (
+            B3TradeConsolidatedEmpty,
+            tc.B3TradeConsolidatedNotFinal,
+            tc.B3TradeConsolidatedIncomplete,
+        ) as exc:
             logger.info("B3 consolidated trades %s skipped: %s", label, exc)
             self._log_finish(run_id, 0, ingest_log.describe(exc), skipped=True)
             return 0
@@ -1069,13 +1073,26 @@ class B3Ingestor:
         if end < start:
             raise ValueError(f"end {end} < start {start}")
         total = 0
+        failed: List[str] = []
         session = start
         while session <= end:
             if session.weekday() < 5:
-                total += await self.ingest_trade_consolidated(session)
+                # One bad session must not cost the rest of the history: each
+                # failure already has its own error row in cvm_ingest_log, and
+                # the run still fails at the end, naming every one.
+                try:
+                    total += await self.ingest_trade_consolidated(session)
+                except Exception as exc:  # noqa: BLE001 - logged per session, raised below
+                    failed.append(f"{session}: {exc}")
                 await asyncio.sleep(_TC_PAUSE_SECONDS)
             session += timedelta(days=1)
-        logger.info("B3 consolidated trades backfill %s..%s: %d rows", start, end, total)
+        logger.info("B3 consolidated trades backfill %s..%s: %d rows, %d failed",
+                    start, end, total, len(failed))
+        if failed:
+            raise RuntimeError(
+                f"B3 consolidated trades backfill: {len(failed)} session(s) failed; "
+                f"first: {failed[0][:300]}"
+            )
         return {TC_TABLE: total}
 
     async def backfill(self, start_year: int = 2019, end_year: Optional[int] = None) -> Dict[str, int]:

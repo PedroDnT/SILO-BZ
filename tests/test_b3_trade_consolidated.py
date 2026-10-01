@@ -356,3 +356,39 @@ def test_the_backfill_is_a_dispatch_mode():
     step = next(s for s in spec["jobs"]["ingest"]["steps"]
                 if s.get("name") == "Run B3 consolidated trades backfill")
     assert "--b3-trade-consolidated-start" in step["run"]
+
+
+def test_a_file_missing_the_whole_cash_market_is_incomplete_not_a_format_change():
+    """2025-08-13: marked Final, a normal session in COTAHIST, but B3's file
+    carries only options, FINANCIAL and AGRIBUSINESS."""
+    lines = _text().splitlines()
+    kept = lines[:2] + [l for l in lines[2:] if ";FORWARD;" not in l and ";CASH;" not in l]
+    with pytest.raises(tc.B3TradeConsolidatedIncomplete, match="cash market is missing"):
+        tc.parse("\n".join(kept), SESSION)
+
+
+async def test_an_incomplete_file_is_logged_skipped():
+    lines = _text().splitlines()
+    kept = lines[:2] + [l for l in lines[2:] if ";FORWARD;" not in l and ";CASH;" not in l]
+    ing = _ingestor(AsyncMock(return_value="\n".join(kept).encode()))
+    with patch("src.pipeline.b3_pipeline.upsert_rows") as up, \
+         patch.object(ing, "_log_start"), patch.object(ing, "_log_finish") as finish:
+        assert await ing.ingest_trade_consolidated(SESSION) == 0
+    up.assert_not_called()
+    assert finish.call_args.kwargs["skipped"] is True
+
+
+async def test_the_backfill_continues_past_a_failed_session_then_raises():
+    ing = _ingestor(AsyncMock())
+    calls = []
+
+    async def one(session):
+        calls.append(session)
+        if session == date(2026, 9, 28):
+            raise RuntimeError("boom")
+        return 1
+
+    with _NO_PAUSE, patch.object(ing, "ingest_trade_consolidated", side_effect=one):
+        with pytest.raises(RuntimeError, match="1 session\\(s\\) failed; first: 2026-09-28: boom"):
+            await ing.backfill_trade_consolidated(date(2026, 9, 25), date(2026, 9, 29))
+    assert calls == [date(2026, 9, 25), date(2026, 9, 28), date(2026, 9, 29)]
