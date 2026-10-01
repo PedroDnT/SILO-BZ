@@ -200,7 +200,7 @@ order by class, period
   <Column id=family title="Index Family"/>
   <Column id=index_name title="Index Tracked"/>
   <Column id=brand title="Brand"/>
-  <Column id=nav_mm title="Net Assets, CVM (R$mm)" fmt=num1/>
+  <Column id=nav_mm title="Net Assets (R$mm)" fmt=num1/>
   <Column id=nav_date title="NAV Date"/>
   <Column id=cotistas title="Quotaholders" fmt=num0/>
   <Column id=price title="Close, B3 (R$)" fmt='#,##0.00'/>
@@ -332,7 +332,7 @@ order by class, period
   <Column id=index_name title="Index Tracked"/>
   <Column id=price title="Close, B3 (R$)" fmt='#,##0.00'/>
   <Column id=price_date title="Close Date"/>
-  <Column id=nav title="Net Assets, CVM (R$)" fmt=num0/>
+  <Column id=nav title="Net Assets (R$)" fmt=num0/>
   <Column id=nav_date title="NAV Date"/>
   <Column id=cotistas title="Quotaholders" fmt=num0/>
   <Column id=taxa_adm_num2 title="Adm Fee (%)" fmt=num2/>
