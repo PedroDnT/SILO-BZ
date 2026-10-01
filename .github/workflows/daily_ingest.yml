@@ -184,7 +184,7 @@ jobs:
         run: |
           set +e
           failed=0
-          for t in cvm_fi_diario cvm_fi_cda cvm_fi_perfil cvm_fi_balancete \
+          for t in cvm_fi_diario cvm_fi_cda cvm_fi_perfil cvm_fi_balancete_resumo \
                    cvm_fidc_mensal cvm_fidc_tranche cvm_fidc_tranche_flows \
                    cvm_fidc_aging cvm_fidc_setor cvm_fidc_scr cvm_fidc_sacado \
                    cvm_fidc_cedente cvm_fiagro_mensal cvm_fip_periodic \

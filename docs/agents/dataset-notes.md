@@ -17,7 +17,8 @@ per-tab first months in `_FIDC_TAB_FIRST_PERIOD`; served by `api.fidc_cedentes` 
 `sacado_top25`), `cvm_fidc_garantia` (tab `X_7`, guarantees on the credit rights as a
 value and a %, as filed — the denominator is undocumented, so never call it
 "coverage"; migration 45, key `(cnpj, period)`, first month 2019-11), `cvm_securit_serie`,
-`cvm_securit_fluxo`, `cvm_fi_balancete`, `cvm_cia_*`, `cvm_etf_registry`,
+`cvm_securit_fluxo`, `cvm_fi_balancete_resumo` (the FI balancete; the account-level
+`cvm_fi_balancete` is retired and empty, migration 62), `cvm_cia_*`, `cvm_etf_registry`,
 `cvm_fi_cda_acoes`, `cvm_fi_cda_cotas` and `cvm_fi_cda_debentures` (fund holdings —
 CDA blocks 4, 2 and 6, members of the archive `cda` already downloads. Block 4
 carries `cd_ativo`, the B3 ticker, so it is the join between the fund universe and

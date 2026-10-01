@@ -36,7 +36,7 @@ select *
 from (
 select 'cvm_fi_diario'     as table_name, 'dt_comptc'   as date_column, (select n_rows_est from est where relname = 'cvm_fi_diario')     as n_rows_est, max(dt_comptc) as latest, (current_date - max(dt_comptc)) as days_stale from cvm_fi_diario
 union all
-select 'cvm_fi_balancete',  'dt_comptc', (select n_rows_est from est where relname = 'cvm_fi_balancete'),  max(dt_comptc), (current_date - max(dt_comptc)) from cvm_fi_balancete
+select 'cvm_fi_balancete_resumo', 'dt_comptc', (select n_rows_est from est where relname = 'cvm_fi_balancete_resumo'), max(dt_comptc), (current_date - max(dt_comptc)) from cvm_fi_balancete_resumo
 union all
 select 'cvm_fidc_mensal',   'period',    (select n_rows_est from est where relname = 'cvm_fidc_mensal'),   max(period),    (current_date - max(period))    from cvm_fidc_mensal
 union all

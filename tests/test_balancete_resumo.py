@@ -62,9 +62,11 @@ def _ingest(rows):
     return n, calls
 
 
-def test_ingest_writes_accounts_and_one_summary_row_per_fund_month():
+def test_ingest_writes_only_the_summary_one_row_per_fund_month():
     n, calls = _ingest(FUND_A + FUND_B)
-    assert n == len(FUND_A) + len(FUND_B)
+    # migration 62 retired the account table: the ingest writes nothing else
+    assert set(calls) == {_balancete.RESUMO_TABLE}
+    assert n == 2
     resumo, conflict = calls[_balancete.RESUMO_TABLE]
     assert conflict == "cnpj,dt_comptc"
     by_cnpj = {r["cnpj"]: r for r in resumo}
@@ -163,3 +165,27 @@ def test_daily_ingest_offers_the_backfill_as_its_own_mode():
     assert "- balancete-summary" in wf
     assert "mode == 'balancete-summary' }}" in wf
     assert "python scripts/backfill_balancete_summary.py" in wf
+
+
+def test_retire_migration_truncates_only_behind_a_complete_summary():
+    sql = (ROOT / "src/store/migrations/62_fi_balancete_retire.sql").read_text()
+    body = sql[sql.index("DO $$"):]
+    # never a DROP: migration 22 alters the table on every schema apply
+    assert "DROP TABLE" not in body
+    assert "EXECUTE 'TRUNCATE TABLE cvm_fi_balancete'" in body
+    # the guard: months read by a loose index scan, each must have summary rows,
+    # and the truncate sits after the early return for a missing month
+    assert "WITH RECURSIVE" in body
+    assert "NOT EXISTS (\n                   SELECT 1 FROM cvm_fi_balancete_resumo r WHERE r.dt_comptc = m.d)" in body
+    assert body.index("IF missing IS NOT NULL") < body.index("TRUNCATE TABLE")
+
+
+def test_nothing_reads_the_retired_account_table_for_coverage():
+    from src.pipeline.gaps import FI_MONTHLY_TABLES
+    from scripts.audit_coverage import TABLES as AUDIT_TABLES  # noqa: N811
+
+    assert FI_MONTHLY_TABLES["balancete"][0] == "cvm_fi_balancete_resumo"
+    assert ("cvm_fi_balancete", "dt_comptc") not in AUDIT_TABLES
+    ops = (ROOT / "dashboard/sources/supabase/ops_table_freshness.sql").read_text()
+    assert "from cvm_fi_balancete_resumo" in ops
+    assert "from cvm_fi_balancete\n" not in ops

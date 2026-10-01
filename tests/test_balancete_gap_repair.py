@@ -124,7 +124,7 @@ class TestGapDetection:
     @pytest.mark.parametrize(
         "doc_type,table,date_col",
         [
-            ("balancete", "cvm_fi_balancete", "dt_comptc"),
+            ("balancete", "cvm_fi_balancete_resumo", "dt_comptc"),
             ("perfil_mensal", "cvm_fi_perfil", "period"),
             ("cda", "cvm_fi_cda", "period"),
             ("inf_diario", "cvm_fi_diario", "dt_comptc"),
@@ -223,7 +223,7 @@ class TestMonthSelection:
         assert ing.ingest_fi_balancete.await_count == 3
         called = {c.args for c in ing.ingest_fi_balancete.await_args_list}
         assert called == {(2019, 4), (2023, 1), (2025, 10)}
-        assert totals["cvm_fi_balancete"] == 3000
+        assert totals["cvm_fi_balancete_resumo"] == 3000
 
     @pytest.mark.asyncio
     async def test_months_does_not_touch_the_other_fi_documents(self):
@@ -366,7 +366,7 @@ class TestFailLoudly:
             months=[(2019, 4), (2019, 5), (2019, 6)],
         )
 
-        assert totals["cvm_fi_balancete"] == 200
+        assert totals["cvm_fi_balancete_resumo"] == 200
         assert len(ing.failures) == 1
         assert ing.failures[0].month == 4
         with pytest.raises(SystemExit):

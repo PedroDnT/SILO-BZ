@@ -286,7 +286,9 @@ account table (31 GB, 27% of the database, which was 116 GB that day). Steps: (1
 `cvm_fi_balancete_resumo` (migration 59) and its backfill, `daily_ingest` mode=balancete-summary;
 (2) the fee accounts, mapped from CVM's COFI chart (Instrução CVM 438) and carried in the same
 summary (done in migration 59); (3) the owner sees the month-by-month check, then the account table is
-dropped; (4) the CDA tables stop repeating the fund name in `raw` (about 4.8 GB, measured
+emptied (migration 62: a guarded TRUNCATE, not a DROP, because migration 22 alters the table on every
+schema apply; it fires only when every stored month has summary rows, and the ingest writes only the
+summary from then on); (4) the CDA tables stop repeating the fund name in `raw` (about 4.8 GB, measured
 2026-10-01). Deleting rows does not shrink the billed disk; the saving comes from a smaller
 compute size once the database is under 100 GB, the owner's call.
 

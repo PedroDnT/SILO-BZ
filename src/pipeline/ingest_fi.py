@@ -414,14 +414,17 @@ def ingest_fi_perfil(conn: Any, raw_rows: List[Dict[str, Any]], year: int, month
 
 
 def ingest_fi_balancete(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
-    """Parse and upsert FI monthly balance-sheet (BALANCETE) rows.
+    """Parse FI monthly balance-sheet (BALANCETE) rows and upsert their summary.
 
     Keyed on the source DT_COMPTC (no first-of-month override) — the natural
     key is (cnpj, dt_comptc, cd_conta_balcte).  Rows missing cnpj or dt_comptc
     are dropped (they can't satisfy the UNIQUE constraint).
 
+    Only cvm_fi_balancete_resumo is written: the account-level table was
+    retired (migration 62) once the summary covered every stored month.
+
     Returns:
-        number of rows upserted
+        number of summary rows (fund-months) upserted
     """
     records: List[Dict[str, Any]] = []
 
@@ -443,19 +446,12 @@ def ingest_fi_balancete(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     if not records:
         return 0
 
-    n = upsert_rows(
-        conn,
-        _balancete.TABLE,
-        records,
-        conflict_columns=",".join(_balancete.CONFLICT),
-    )
-    upsert_rows(
+    return upsert_rows(
         conn,
         _balancete.RESUMO_TABLE,
         balancete_resumo(records),
         conflict_columns=",".join(_balancete.RESUMO_CONFLICT),
     )
-    return n
 
 
 def balancete_resumo(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -463,8 +459,8 @@ def balancete_resumo(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     Each COFI account in RESUMO_ACCOUNTS lands in its column as filed; an account
     the fund did not file stays NULL. n_contas counts distinct account codes, and
-    a code repeated in the file counts once with its last value, matching what
-    upsert_rows keeps in cvm_fi_balancete.
+    a code repeated in the file counts once with its last value, as the
+    account table's key kept it.
     """
     accounts: Dict[tuple, Dict[str, Any]] = {}
     meta: Dict[tuple, Dict[str, Any]] = {}

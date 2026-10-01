@@ -177,7 +177,7 @@ _PAGE_SIZE = 5000
 _ALL_TABLES: List[str] = [
     "cvm_fi_diario", "cvm_fi_cda", "cvm_fi_cda_acoes", "cvm_fi_cda_cotas",
     "cvm_fi_cda_debentures",
-    "cvm_fi_perfil", "cvm_fi_balancete",
+    "cvm_fi_perfil", "cvm_fi_balancete_resumo",
     "cvm_fidc_mensal", "cvm_fidc_tranche", "cvm_fidc_tranche_flows", "cvm_fidc_aging",
     "cvm_fidc_setor", "cvm_fidc_scr", "cvm_fidc_sacado", "cvm_fidc_cedente",
     "cvm_fidc_garantia",
@@ -1768,7 +1768,7 @@ class CVMIngestor:
                     ))
                 if _want_fi_doc("balancete"):
                     fi_tasks.append(IngestTask(
-                        "cvm_fi_balancete",
+                        "cvm_fi_balancete_resumo",
                         f"fi/balancete {year}-{month:02d}",
                         self.ingest_fi_balancete(year, month),
                     ))
@@ -2057,8 +2057,9 @@ class CVMIngestor:
                 # balancete used to live only on the deleted ingest Flask and
                 # sat empty in production. It is now on the daily/backfill specs.
                 # CVM publishes it monthly from 2019 (verified by ranged GET
-                # against the BALANCETE endpoint).
-                ("cvm_fi_balancete", "fi", "balancete", "balancete", self.ingest_fi_balancete),
+                # against the BALANCETE endpoint). Only its summary is stored
+                # (migration 62 retired the account table).
+                ("cvm_fi_balancete_resumo", "fi", "balancete", "balancete", self.ingest_fi_balancete),
             ]
         if "fidc" in daily_entities:
             monthly_specs += [
