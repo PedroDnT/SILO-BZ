@@ -22,8 +22,11 @@ value and a %, as filed — the denominator is undocumented, so never call it
 CDA blocks 4, 2 and 6, members of the archive `cda` already downloads. Block 4
 carries `cd_ativo`, the B3 ticker, so it is the join between the fund universe and
 the quote tape; block 2 carries the held fund's CNPJ and CVM's published
-`emissor_ligado` flag; block 6 carries `cpf_cnpj_emissor`, the debenture issuer's
-own CNPJ, which joins to `cia_*` with no bridge. Block 6 has no `CD_ATIVO`, so its
+`emissor_ligado` flag. Block 6 is CVM's private-credit block (debentures, private credit
+and agribusiness titles), and it carries `cpf_cnpj_emissor`, the issuer's own CNPJ, which
+joins to `cia_*` with no bridge. It is not where most fund debentures are: block 4 files them
+under `tp_aplic = 'Debêntures'` (R$788.9bn on 2026-05, against R$34.4bn in block 6), keyed by
+`cd_ativo` and the ISIN, with no issuer CNPJ. Block 6 has no `CD_ATIVO`, so its
 key ends in `row_hash` after (fund, month, issuer, maturity) — see migration 35 for
 the audit. Blocks 3, 5, 7 and 8 are not ingested; the filing fund's name, DENOM_SOCIAL, is
 `cvm_fi_cda_fund_name`, once per fund and month, not in each row's `raw`, migration 60),
