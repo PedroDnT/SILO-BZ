@@ -53,6 +53,10 @@ select * from supabase.fidc_delinquency
 select * from supabase.row_counts
 ```
 
+```sql rates_1y
+select * from supabase.rates_breakeven_latest where tenor_label = '1y'
+```
+
 # Brazilian Public Financial Data
 
 > A public-data record of Brazilian **funds**, **listed companies** and the **B3
@@ -83,6 +87,13 @@ select * from supabase.row_counts
 > - **Snapshot Built** — this site is a build-time snapshot, rebuilt after each
 >   successful ingest. Nothing here is newer than that stamp.
 
+<BigValue data={rates_1y} value=real_num2 title="1y Real Yield (% a.a.)" fmt=num2/>
+<BigValue data={rates_1y} value=breakeven_num2 title="1y Breakeven Inflation (%)" fmt=num2/>
+<BigValue data={rates_1y} value=trade_date title="Curve Session"/>
+
+> B3's real (DPL) curve at its fixed 1-year vertex, and the inflation it implies
+> against the nominal (PRE) curve. Method and history on [Rates and Curves](/rates).
+
 ---
 
 ## Start Here
@@ -102,6 +113,8 @@ select * from supabase.row_counts
 
 - **What is the exchange actually doing?** → [B3 Markets](/markets) for session volume
   by board and instrument type.
+- **What do real yields and implied inflation look like?** → [Rates and Curves](/rates)
+  for B3's nominal and real curves, breakeven inflation since 2008 and DI1 open interest.
 - **Who is short, and what does it cost to borrow?** → [Short Monitor](/short) — short
   interest, % of free float, days to cover and borrow rates.
 - **Who is buying and selling?** → [Follow the Money](/flows) for net flow by investor
@@ -171,6 +184,7 @@ granular views, then the pipeline.
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | [Industry Structure](/industry) | Size, concentration (HHI and top-N share), fund formation, investor base, composition by asset class, plus FIP and FIAGRO by name | Families are measured at their **own** latest period; FIP's grain is yearly                        |
 | [Macro Context](/macro)         | SELIC, CDI, inflation, PTAX and the BACEN Focus consensus                                                                         | Units are BACEN's and are **not converted** — % a.a. and % a.d. sit side by side                   |
+| [Rates and Curves](/rates)      | B3 nominal (PRE) and real (DPL) curves, implied breakeven inflation since 2008, DI1 open interest                                 | Breakeven is **derived** at B3's fixed vertices and includes any risk premium; the long end is extrapolated by B3 |
 | [B3 Markets](/markets)          | Exchange session prints from the COTAHIST tape: volume by board and instrument type, options                                      | Quotes are **unadjusted** and some papers quote per lot (`fator_cotacao` ≠ 1)                      |
 | [Short Monitor](/short)         | Securities lending: short interest by ticker, % of free float, days to cover, borrow rates, sector concentration                  | History starts when SILO began capturing — B3 keeps ~21 business days and **cannot be backfilled** |
 | [Follow the Money](/flows)      | Net flow by investor type (foreign, institutional, retail) and B3 cash-market ADTV                                                | Flow is **derived** from B3's month-to-date snapshots and lags **T+2**; there is no YTD column     |
