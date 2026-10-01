@@ -16,7 +16,9 @@ A month that does not exist upstream is not a gap.
 
 The probe is one `EXISTS` per month, which rides the table's `dt_comptc` index.
 Do not replace it with a `GROUP BY date_trunc('month', ...)` over the whole
-table: `cvm_fi_balancete` is 111M rows / 24 GB and unpartitioned.
+table: `cvm_fi_diario` and the CDA tables are tens of millions of rows. (Balancete
+is read from its one-row-per-fund-month summary, `cvm_fi_balancete_resumo`,
+since the account table was retired in migration 62.)
 """
 
 from __future__ import annotations
@@ -37,7 +39,7 @@ logger = logging.getLogger(__name__)
 # scheduled as nothing. Those years are filled by a plain backfill of the year,
 # not by a repair. None means every year has monthly files.
 FI_MONTHLY_TABLES: Dict[str, Tuple[str, str, Optional[int]]] = {
-    "balancete":     ("cvm_fi_balancete", "dt_comptc", None),
+    "balancete":     ("cvm_fi_balancete_resumo", "dt_comptc", None),
     "inf_diario":    ("cvm_fi_diario",    "dt_comptc", 2021),
     "perfil_mensal": ("cvm_fi_perfil",    "period",    None),
     "cda":           ("cvm_fi_cda",       "period",    2023),

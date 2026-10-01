@@ -15,6 +15,9 @@ columns above — no ID_SUBCLASSE. 2,178,163 rows, zero same-key dual
 TP_FUNDO_CLASSE labels. Do not widen the key without a new CVM header.
 """
 
+# The account-level table. Retired by migration 62 (emptied once
+# cvm_fi_balancete_resumo covered every stored month); the ingest no longer
+# writes it, and only scripts/backfill_balancete_summary.py reads it.
 TABLE = "cvm_fi_balancete"
 
 # Tuple of column names used in ON CONFLICT (must match UNIQUE constraint)

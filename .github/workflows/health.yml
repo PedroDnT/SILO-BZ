@@ -457,7 +457,7 @@ jobs:
             over=$(awk -v g="$gb" -v p="$PLAN_DISK_GB" -v t="$DISK_FAIL_PCT" 'BEGIN{r = (100*g/p > t) ? 1 : 0; print r}')
           fi
           if [ "$over" -eq 1 ]; then
-            echo "FAIL: database at ${pct}% of the ${PLAN_DISK_GB}GB plan allowance (${gb}GB used), above the ${DISK_FAIL_PCT}% alarm. Retention is due: measure cvm_fi_balancete per year and get the owner's OK first (docs/planning/OPEN_ITEMS.md item 10). Do not drop landing tables to clear this." >&2
+            echo "FAIL: database at ${pct}% of the ${PLAN_DISK_GB}GB plan allowance (${gb}GB used), above the ${DISK_FAIL_PCT}% alarm. Retention is due: see docs/planning/OPEN_ITEMS.md item 10 and get the owner's OK first. Do not drop landing tables to clear this." >&2
             echo "- ❌ database above ${DISK_FAIL_PCT}% of the plan allowance (${pct}%)" >> "$GITHUB_STEP_SUMMARY"
             fail=1
           elif [ -n "${PLAN_DISK_GB:-}" ] && [ "${pct:-0}" -ge "$DISK_WARN_PCT" ]; then

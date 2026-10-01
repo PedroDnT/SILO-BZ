@@ -26,7 +26,7 @@ async def test_fi_balancete_filter_schedules_only_balancete():
     )
 
     assert ingestor.ingest_fi_balancete.await_count == 12
-    assert totals["cvm_fi_balancete"] == 12
+    assert totals["cvm_fi_balancete_resumo"] == 12
     assert sum(totals.values()) == 12
 
 

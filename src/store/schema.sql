@@ -948,6 +948,9 @@ CREATE INDEX IF NOT EXISTS idx_fund_registry_gestor ON cvm_fund_registry (gestor
 --
 -- Natural key: (cnpj, dt_comptc, cd_conta_balcte)
 -- One row per fund × reference date × account code.
+-- RETIRED by migration 62: emptied once cvm_fi_balancete_resumo (below) covered
+-- every stored month; the ingest writes only the summary. Kept as an empty table
+-- because migration 22 alters it on every schema apply.
 -- ---------------------------------------------------------------------------
 -- `id` is a plain BIGSERIAL, deliberately NOT a PRIMARY KEY: migration 22
 -- dropped that constraint after pg_stat_user_indexes showed its 2.5 GB index

@@ -499,21 +499,18 @@ class TestCVMPipelineFieldMapping:
                 ingestor = CVMIngestor()
                 count = await ingestor.ingest_fi_balancete(2025, 3)
 
-        assert count == 2
-        # the account rows, then one cvm_fi_balancete_resumo row for the fund-month
-        resumo = [r for r in captured if "n_contas" in r]
-        captured = [r for r in captured if "cd_conta_balcte" in r]
-        assert len(captured) == 2
-        assert len(resumo) == 1 and resumo[0]["n_contas"] == 2
+        # only the summary is written (migration 62 retired the account table):
+        # one cvm_fi_balancete_resumo row for the fund-month
+        assert count == 1
+        assert len(captured) == 1
         rec = captured[0]
         assert rec["cnpj"] == "12345678000190"
         # balancete keys on the source DT_COMPTC (no first-of-month override)
         assert rec["dt_comptc"] == datetime.date(2025, 3, 31)
         assert rec["plano_conta_balcte"] == "COFI"
-        assert rec["cd_conta_balcte"] == "1.1.0.00.00.00"
-        assert rec["vl_saldo_balcte"] == pytest.approx(1164101.50, rel=1e-6)
-        # the two rows differ only by account code → both survive de-dup
-        assert {r["cd_conta_balcte"] for r in captured} == {"1.1.0.00.00.00", "4.1.0.00.00.00"}
+        # the two rows differ only by account code, so both are counted
+        assert rec["n_contas"] == 2
+        assert "cd_conta_balcte" not in rec
 
     @pytest.mark.asyncio
     async def test_fidc_mensal_pipeline_extracts_patrim_liq(self):
