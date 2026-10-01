@@ -34,6 +34,9 @@ def captured(monkeypatch):
     seen = {}
 
     def fake_upsert(conn, table, rows, conflict_columns=None, **kw):
+        if table == "cvm_fi_cda_fund_name":   # migration 60, tested on its own
+            seen["names"] = rows
+            return len(rows)
         seen["table"] = table
         seen["rows"] = rows
         seen["conflict"] = conflict_columns
