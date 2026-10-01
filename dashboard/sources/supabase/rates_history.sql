@@ -69,4 +69,8 @@ left join bacen_expectativas fx
   on fx.reference_date = w.trade_date
  and fx.endpoint_name  = 'ExpectativasMercadoInflacao12Meses'
  and fx.indicador      = 'IPCA'
+ -- pinned here as well as at fetch time: neither is a key column, so a fetch
+ -- regression would otherwise land a smoothed or base-1 median under this label
+ and fx.raw->>'baseCalculo' = '0'
+ and fx.raw->>'Suavizada'   = 'N'
 order by s.week
