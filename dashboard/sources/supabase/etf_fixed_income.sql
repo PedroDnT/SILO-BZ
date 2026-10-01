@@ -19,13 +19,11 @@
 --              snapshot_date: the previous session's B3 close (matched the
 --              COTAHIST close to the cent for BOVA11, IVVB11, SMAL11, GOLD11,
 --              HASH11 and DIVO11 on 2026-09-25). Present for all 46.
--- Not shown: the snapshot's cotistas holds a year (2024 to 2026) for every
--- ETF, not a holder count, and its return, volatility and Sharpe fields are
--- empty, so none of them are used.
--- No B3 tape column: none of these tickers appear in b3_cotahist, because
--- B3's COTAHIST file itself omits them (raw COTAHIST_D29092026: 14,966 records,
--- none of the 46, while equity ETFs such as BOVA11 are present; the parser
--- filters no board). Where B3 publishes their prints is not identified.
+-- Not shown: quotaholders (the page's snapshot table carries them) and the
+-- snapshot's return, volatility and Sharpe fields, which are empty.
+-- No B3 tape column: B3 lists these ETFs in segment FORWARD, which COTAHIST
+-- omits (raw COTAHIST_D29092026 has none of the 46, BOVA11 present). Their
+-- prints are b3_trade_consolidated (migration 57), not read here.
 --
 -- ZERO-ROW SAFETY: a one-row driver LEFT JOINs the ETF list, so an empty
 -- segment yields one NULL row, never a 0-row source. NAV and the snapshot are
