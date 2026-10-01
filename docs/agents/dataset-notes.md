@@ -106,6 +106,9 @@ functions (16–17). ETFs are carved out of the fund universe and ranked separat
 `etf_daily` is empty for post-CVM-175 share classes (see the ETF doc).
 `mv_savings_flow_monthly` / `api.mv_savings_flow_monthly` (18) is reproduced as-found so
 CASCADE recreates of `fact_fund_monthly` cannot destroy it; nothing in this repo reads it.
+`mv_fund_holdings_monthly` (30) is what funds hold per month from CDA blocks 4 and 2: stocks
+by ticker, debentures by the issuer code in the ISIN (block 4 carries the debentures funds hold,
+R$789bn on 2026-05 against R$34bn in block 6), and fund-quota totals with the same-group part.
 `mv_b3_isin_subtype` and `mv_b3_monthly_activity` are created in `schema.sql`, not here,
 and `22_b3_tape_matviews.sql` refreshes them in the same apply.
 Schema `api` is 19 (the contract, `catalog()` / `coverage()`, `api.assert_row_cap`),

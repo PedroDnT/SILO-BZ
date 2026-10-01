@@ -39,15 +39,16 @@ frontmatter (1–17 below; Evidence sorts alphabetically without it), and
 | --- | ------------------ | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | 12  | Managers           | `/managers`    | Administrator and gestor league tables by net assets and net flow, led by the registry-name coverage disclosure                         |
 | 13  | Fund Explorer      | `/fund`        | Searchable fund universe first, then net assets / quota / return / flow series for the largest funds                                    |
-| 14  | Performance        | `/performance` | Per-asset-class ranking (who beat their peers), with the per-class return basis and the coverage caveat                                 |
-| 15  | Suspicious Screens | `/suspicious`  | Zombie growth, evergreen aging, overdue securit series, captive vehicles — with thresholds stated                                       |
-| 16  | Dormant Funds      | `/dormant`     | Funds with capital parked for 36 months (definition stated first), where the money stands still, by administrator, and the empty shells |
+| 14  | Fund Holdings      | `/holdings`    | Largest stock holdings by ticker, debentures by issuer code and same-group holdings, on the last complete CDA month                    |
+| 15  | Performance        | `/performance` | Per-asset-class ranking (who beat their peers), with the per-class return basis and the coverage caveat                                 |
+| 16  | Suspicious Screens | `/suspicious`  | Zombie growth, evergreen aging, overdue securit series, captive vehicles — with thresholds stated                                       |
+| 17  | Dormant Funds      | `/dormant`     | Funds with capital parked for 36 months (definition stated first), where the money stands still, by administrator, and the empty shells |
 
 **Operations** — whether the numbers landed.
 
 | #   | Page            | Path   | What it shows                                                                                        |
 | --- | --------------- | ------ | ---------------------------------------------------------------------------------------------------- |
-| 17  | Pipeline Health | `/ops` | Ingest freshness per entity, rows/day, status breakdown, table freshness, coverage, audit-log triage |
+| 18  | Pipeline Health | `/ops` | Ingest freshness per entity, rows/day, status breakdown, table freshness, coverage, audit-log triage |
 
 ### Page conventions
 

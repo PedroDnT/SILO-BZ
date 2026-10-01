@@ -104,6 +104,12 @@ const REQUIRED_AFTER_MIGRATION = [
     source: 'src/store/migrations/41_ibge_ipca_item_monthly.sql',
     fix: 'python scripts/apply_schema.py',
   },
+  // /holdings reads the monthly holdings matview, not the 10-12 GB CDA tables.
+  {
+    relation: 'mv_fund_holdings_monthly', column: null,
+    source: 'src/store/analytical/30_fund_holdings.sql',
+    fix: 'bash scripts/apply_analytical.sh',
+  },
   // Every /fii and /suspicious FII source reads the latest-version view, not
   // cvm_fii_mensal, since the table keeps every CVM version of a filing.
   {
