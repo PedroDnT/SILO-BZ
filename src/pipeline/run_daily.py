@@ -7,6 +7,7 @@ Fetches:
   - IBGE: IPCA item tree with weights, previous + current month
   - ANBIMA: latest monthly boletim, all classes (idempotent — upserts full history)
   - B3 COTAHIST: last 7 calendar days of daily quotation zips (404 → skipped)
+  - B3 consolidated trade file: fixed income ETFs (segment FORWARD), same window
 
 Required env vars: POSTGRES_URL
 """
@@ -113,6 +114,16 @@ async def main() -> None:
     except Exception as exc:
         logger.error("B3 COTAHIST daily refresh failed: %s", exc, exc_info=True)
         failures.append(("b3", exc))
+
+    # B3's consolidated trade file, segment FORWARD (migration 57): the fixed
+    # income ETFs (IMAB11, LFTS11, ...) that COTAHIST does not carry. Same
+    # trailing window as COTAHIST; holidays answer an empty file and are skipped.
+    try:
+        tc_totals = await B3Ingestor().daily_update_trade_consolidated()
+        totals.update(tc_totals)
+    except Exception as exc:
+        logger.error("B3 consolidated trades refresh failed: %s", exc, exc_info=True)
+        failures.append(("b3_trade_consolidated", exc))
 
     # B3 BDI: securities lending (short balances + rates), investor-type
     # participation, index free float and the cash-market instrument registry.
