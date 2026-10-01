@@ -42,6 +42,17 @@ close), and records B3's own daily-close series as the candidate source. It
 printed on expiry days only through 2024 and on nearly every session since
 December 2025; the note's addendum of 2026-10-01 has the numbers.
 
+## Research seam verification
+
+[`verify_research_seam.py`](verify_research_seam.py) (ticket #420) runs the public-interface
+test list of `docs/planning/RESEARCH_SEAM.md` section 9 against the live API, read-only,
+and prints a READY or NOT READY verdict per requirement with the evidence:
+`python docs/reference/research/verify_research_seam.py [--n 100] [--db-url ...]`. The
+board-continuity requirement reads `b3_cotahist`, which the API does not expose, so it
+needs `--db-url`; without one it is NOT RUN and prints the query.
+`tests/test_verify_research_seam.py` runs it against an in-memory simulator with
+switchable defects, so each check is known to be able to fail.
+
 ## FCA listing dates (research seam)
 
 [`fca-listing-dates.md`](fca-listing-dates.md) answers ticket #373: whether the
