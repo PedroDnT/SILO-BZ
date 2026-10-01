@@ -38,6 +38,8 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
   (`22_b3_tape_matviews.sql`), and also `mv_b3_cash_event`, created by migration
   56 (it reads `cia_ticker`): the cash events behind `close_total_return`,
   resolved once there because the ISIN join costs seconds per call.
+- `mv_fund_holdings_monthly` (`30_fund_holdings.sql`) is the one daily pass over
+  the CDA holdings tables, which have no index on period; `/holdings` reads it.
 - Nothing depends on pg_cron. The live database has none (checked 2026-09-29),
   so the jobs in `08_cron_schedules.sql` do not run.
 
