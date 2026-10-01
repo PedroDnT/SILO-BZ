@@ -197,6 +197,35 @@ class B3Ingestor:
             cur.execute(sql, params)
             return [r[0] for r in cur.fetchall() if r and r[0]]
 
+    def _issuers_due_for_sweep(self, since: date = TAPE_START) -> List[str]:
+        """Issuers traded since ``since`` whose sweep proof is missing or stale.
+
+        api.quote_history refuses close_adj when
+        ``(proven_at AT TIME ZONE 'America/Sao_Paulo')::date`` is before the
+        instrument's latest session, so a proof only needs renewing once the
+        issuer has printed after it. An issuer that stopped trading before its
+        proof stays proven, and re-asking B3 for it every night is what pushed
+        the sweep to 2,597 serial requests and past the step's 45 minutes
+        (run 36842444079). Same universe and prefix rule as _traded_issuers.
+        """
+        sql = """
+            SELECT t.issuer
+              FROM (SELECT left(codneg, 4) AS issuer, max(trade_date) AS last_session
+                      FROM b3_cotahist
+                     WHERE tpmerc = '010'
+                       AND length(codneg) >= 4
+                       AND trade_date >= %s
+                     GROUP BY 1) t
+              LEFT JOIN b3_corporate_event_sweep s
+                ON s.issuing_company = t.issuer
+             WHERE s.proven_at IS NULL
+                OR (s.proven_at AT TIME ZONE 'America/Sao_Paulo')::date < t.last_session
+             ORDER BY t.issuer
+        """
+        with self._supabase.cursor() as cur:
+            cur.execute(sql, (since,))
+            return [r[0] for r in cur.fetchall() if r and r[0]]
+
     def _tape_names(
         self, codes: List[str], lookback_days: int = 400
     ) -> Dict[str, Tuple[str, List[str]]]:
@@ -239,7 +268,8 @@ class B3Ingestor:
         issuers: Optional[List[str]] = None,
         since: date = TAPE_START,
     ) -> int:
-        """Fetch published corporate events for every issuer traded since ``since``.
+        """Fetch published corporate events for issuers traded since ``since``
+        whose sweep proof is missing or stale (_issuers_due_for_sweep).
 
         One request per issuer, so a failure on ONE issuer must not abandon
         the sweep — but it must not vanish either. Transport/parse failures
@@ -269,7 +299,7 @@ class B3Ingestor:
         run_id = str(uuid4())
         self._log_start(run_id, "corporate_events", None, None)
         try:
-            codes = issuers if issuers is not None else self._traded_issuers(since=since)
+            codes = issuers if issuers is not None else self._issuers_due_for_sweep(since)
             if not codes:
                 self._log_finish(run_id, 0, skipped=True)
                 logger.info("B3 corporate events: no traded issuers found, skipped")

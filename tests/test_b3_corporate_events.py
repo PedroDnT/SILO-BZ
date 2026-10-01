@@ -392,10 +392,41 @@ async def test_the_sweep_covers_every_issuer_since_the_tape_start():
         Fetcher.return_value.fetch_events.side_effect = lambda code: [_event_row(code)]
         ing = B3Ingestor(fetcher=MagicMock())
         _finish_recorder(ing)
-        ing._traded_issuers = MagicMock(return_value=["PETR"])
+        ing._issuers_due_for_sweep = MagicMock(return_value=["PETR"])
         await ing.ingest_corporate_events()
 
-    ing._traded_issuers.assert_called_once_with(since=date(2019, 1, 2))
+    ing._issuers_due_for_sweep.assert_called_once_with(date(2019, 1, 2))
+
+
+def test_issuers_due_for_sweep_skips_a_proof_that_is_still_valid():
+    """Run 36842444079: re-asking B3 for all 2,597 issuers every night took 44
+    of the step's 45 minutes. An issuer is due only with no proof, or once it
+    has printed after its proof day, the same comparison api.quote_history
+    refuses close_adj on: (proven_at AT TIME ZONE 'America/Sao_Paulo')::date
+    < the latest session."""
+    conn = MagicMock()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchall.return_value = [("PETR",), ("ADMF",), (None,)]
+    with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=conn):
+        ing = B3Ingestor(fetcher=MagicMock())
+    ing._supabase = conn
+
+    assert ing._issuers_due_for_sweep(date(2019, 1, 2)) == ["PETR", "ADMF"]
+    sql, params = cur.execute.call_args[0]
+    flat = " ".join(sql.split())
+    assert params == (date(2019, 1, 2),)
+    assert "LEFT JOIN b3_corporate_event_sweep s" in flat
+    assert "s.proven_at IS NULL" in flat
+    assert ("(s.proven_at AT TIME ZONE 'America/Sao_Paulo')::date < t.last_session"
+            in flat)
+    assert "tpmerc = '010'" in flat and "trade_date >= %s" in flat
+
+
+def test_quote_history_still_uses_the_staleness_rule_the_sweep_mirrors():
+    """If the contract's proof comparison changes, the sweep's must too."""
+    from pathlib import Path
+    sql = (Path(__file__).parents[1] / "src/store/analytical/19_api_contract.sql").read_text()
+    assert "IF (s.proven_at AT TIME ZONE 'America/Sao_Paulo')::date < s.anchor THEN" in sql
 
 
 @pytest.mark.asyncio
