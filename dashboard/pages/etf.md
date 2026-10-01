@@ -83,8 +83,13 @@ order by nav_bn desc
 select * from supabase.etf_anbima_total
 ```
 
-```sql etf_anbima_by_type
-select * from supabase.etf_anbima_by_type
+```sql etf_anbima_by_type_long
+select period, 'Fixed income' as class, pl_fixed_income_bn as pl_bn, flow_fixed_income_bn as flow_bn
+from supabase.etf_anbima_by_type
+union all
+select period, 'Equity' as class, pl_equity_bn, flow_equity_bn
+from supabase.etf_anbima_by_type
+order by class, period
 ```
 
 # ETF Market
@@ -219,17 +224,19 @@ select * from supabase.etf_anbima_by_type
 />
 
 <LineChart
-  data={etf_anbima_by_type}
+  data={etf_anbima_by_type_long}
   x=period
-  y={['pl_fixed_income_bn','pl_equity_bn']}
+  y=pl_bn
+  series=class
   yAxisTitle="R$bn"
   title="ETF Net Assets: Fixed Income vs Equity (R$bn, ANBIMA)"
 />
 
 <BarChart
-  data={etf_anbima_by_type}
+  data={etf_anbima_by_type_long}
   x=period
-  y={['flow_fixed_income_bn','flow_equity_bn']}
+  y=flow_bn
+  series=class
   type=grouped
   yAxisTitle="R$bn"
   title="ETF Net Flows per Month: Fixed Income vs Equity (R$bn, ANBIMA)"
