@@ -63,6 +63,30 @@ select * from supabase.etf_market
 select * from supabase.etf_market_series
 ```
 
+```sql etf_fixed_income
+select * from supabase.etf_fixed_income
+```
+
+```sql etf_fixed_income_family
+select
+  family,
+  count(ticker)        as n_etfs,
+  sum(nav_mm) / 1000   as nav_bn,
+  max(nav_date)        as nav_date
+from supabase.etf_fixed_income
+where ticker is not null
+group by family
+order by nav_bn desc
+```
+
+```sql etf_anbima_total
+select * from supabase.etf_anbima_total
+```
+
+```sql etf_anbima_by_type
+select * from supabase.etf_anbima_by_type
+```
+
 # ETF Market
 
 > Brazilian listed ETFs (Fundos de Índice), evaluated **separately** from the fund
@@ -132,6 +156,84 @@ select * from supabase.etf_market_series
   <Column id=underlying_index title="Underlying Index"/>
   <Column id=n_etfs title="ETFs" fmt=num0/>
 </DataTable>
+
+---
+
+## Brazilian Fixed Income ETFs
+
+> The 46 ETFs the registry labels `fixed_income_br`, grouped by the index they
+> track. The family is mapped from the registry's index name (the rule is in
+> `etf_fixed_income.sql`); the index name sits next to it so the mapping can be
+> checked. Net assets are CVM's published figure with its own date. The close is
+> the previous session's B3 price as carried by the etfsbrasil snapshot, dated by
+> the snapshot.
+>
+> **Not available:** exchange volume (none of these tickers are in the COTAHIST
+> tape SILO holds), quotaholders (the snapshot's field holds a year, not a count)
+> and returns, volatility or Sharpe (empty in the snapshot for every ETF).
+
+<BarChart
+  data={etf_fixed_income_family}
+  x=family
+  y=nav_bn
+  swapXY=true
+  yAxisTitle="Net Assets (R$bn)"
+  title="Fixed Income ETF Net Assets by Index Family (R$bn, CVM)"
+/>
+
+<DataTable data={etf_fixed_income_family}>
+  <Column id=family title="Index Family"/>
+  <Column id=n_etfs title="ETFs" fmt=num0/>
+  <Column id=nav_bn title="Net Assets (R$bn)" fmt=num1/>
+  <Column id=nav_date title="Latest NAV Date"/>
+</DataTable>
+
+<DataTable data={etf_fixed_income} rows=15 search=true>
+  <Column id=ticker title="Ticker"/>
+  <Column id=family title="Index Family"/>
+  <Column id=index_name title="Index Tracked"/>
+  <Column id=brand title="Brand"/>
+  <Column id=nav_mm title="Net Assets, CVM (R$mm)" fmt=num1/>
+  <Column id=nav_date title="NAV Date"/>
+  <Column id=price title="Close, B3 (R$)" fmt='#,##0.00'/>
+  <Column id=snapshot_date title="Snapshot Date"/>
+</DataTable>
+
+---
+
+## ETF Industry Net Assets and Flows (ANBIMA)
+
+> ANBIMA's monthly bulletin, as held in `anbima_class_monthly`. Total ETF net
+> assets are one point per year-end from 2006 to 2024, then monthly from 2025;
+> nothing is drawn between year-ends. The fixed income and equity split, and
+> monthly net flows, start 2025-01 in this table. Monthly, published with about
+> a month's lag.
+
+<LineChart
+  data={etf_anbima_total}
+  x=reference_date
+  y=pl_bn
+  markers=true
+  yAxisTitle="R$bn"
+  title="ETF Net Assets, All Classes (R$bn, ANBIMA)"
+/>
+
+<LineChart
+  data={etf_anbima_by_type}
+  x=period
+  y={['pl_fixed_income_bn','pl_equity_bn']}
+  yAxisTitle="R$bn"
+  title="ETF Net Assets: Fixed Income vs Equity (R$bn, ANBIMA)"
+/>
+
+<BarChart
+  data={etf_anbima_by_type}
+  x=period
+  y={['flow_fixed_income_bn','flow_equity_bn']}
+  type=grouped
+  yAxisTitle="R$bn"
+  title="ETF Net Flows per Month: Fixed Income vs Equity (R$bn, ANBIMA)"
+/>
 
 ---
 
