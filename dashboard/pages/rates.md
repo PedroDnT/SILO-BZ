@@ -46,8 +46,20 @@ select * from supabase.rates_breakeven_latest where tenor_label = '1y'
 select * from supabase.rates_breakeven_latest where tenor_label = '5y'
 ```
 
-```sql rates_history
-select * from supabase.rates_history
+```sql rates_curve_long
+select business_days, 'Nominal (PRE)' as curve, nominal_num2 as rate_num2 from supabase.rates_curve_latest
+union all
+select business_days, 'Real (DPL)' as curve, real_num2 as rate_num2 from supabase.rates_curve_latest
+order by curve, business_days
+```
+
+```sql rates_history_long
+select week, '1y' as tenor, real_1y_num2 as real_num2, breakeven_1y_num2 as breakeven_num2, nominal_1y_num2 as nominal_num2
+from supabase.rates_history
+union all
+select week, '5y' as tenor, real_5y_num2, breakeven_5y_num2, nominal_5y_num2
+from supabase.rates_history
+order by tenor, week
 ```
 
 ```sql rates_di1_oi
@@ -83,9 +95,10 @@ select * from supabase.rates_di1_oi
 > Past the last DI1 and DAP maturities B3 extrapolates the last forward rate.
 
 <LineChart
-  data={rates_curve_latest}
+  data={rates_curve_long}
   x=business_days
-  y={['nominal_num2','real_num2']}
+  y=rate_num2
+  series=curve
   xAxisTitle="Business days"
   yAxisTitle="% a.a."
   title="Nominal (PRE) and Real (DPL) Curves, Latest Session"
@@ -118,25 +131,28 @@ select * from supabase.rates_di1_oi
 > vertices. A week with no session is blank. Same method as above.
 
 <LineChart
-  data={rates_history}
+  data={rates_history_long}
   x=week
-  y={['real_1y_num2','real_5y_num2']}
+  y=real_num2
+  series=tenor
   yAxisTitle="% a.a."
   title="1y and 5y Real Yield (DPL)"
 />
 
 <LineChart
-  data={rates_history}
+  data={rates_history_long}
   x=week
-  y={['breakeven_1y_num2','breakeven_5y_num2']}
+  y=breakeven_num2
+  series=tenor
   yAxisTitle="%"
   title="1y and 5y Implied Breakeven Inflation"
 />
 
 <LineChart
-  data={rates_history}
+  data={rates_history_long}
   x=week
-  y={['nominal_1y_num2','nominal_5y_num2']}
+  y=nominal_num2
+  series=tenor
   yAxisTitle="% a.a."
   title="1y and 5y Nominal Yield (PRE)"
 />
@@ -152,9 +168,8 @@ select * from supabase.rates_di1_oi
 
 <BarChart
   data={rates_di1_oi}
-  x=ticker
+  x=maturity_month
   y=open_interest
-  sort=false
   yAxisTitle="Contracts"
   title="DI1 Open Interest by Maturity, Latest Session"
 />
