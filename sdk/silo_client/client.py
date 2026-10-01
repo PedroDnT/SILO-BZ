@@ -604,6 +604,39 @@ class SiloClient:
         frame = frame.with_columns(pl.col("trade_date").str.to_date("%Y-%m-%d"))
         return frame.sort(["ticker", "trade_date"])
 
+    def index_history(
+        self, index: str, start: Datish = None, end: Datish = None,
+    ) -> List[Dict[str, Any]]:
+        """B3's published level of an index (IBOV), one page, as published.
+
+        Index codes only: a ticker (BOVA11, IBOV11) is refused by the server,
+        never substituted. `divisor_step` marks a session where B3 re-scaled
+        the index, so a level ratio across it is not a return.
+        """
+        return self._rpc("index_history", {
+            "p_index": index, "p_from": _iso(start), "p_to": _iso(end),
+        })
+
+    def iter_index_history(
+        self, index: str, start: Datish = None, end: Datish = None,
+    ) -> Iterator[Dict[str, Any]]:
+        """Every index_history row, paged with `p_after` (the last trade_date)."""
+        body = {"p_index": index, "p_from": _iso(start), "p_to": _iso(end)}
+        after = ""
+        while True:
+            rows = self._rpc("index_history", {**body, "p_after": after}, page=True)
+            for row in rows:
+                yield row
+            if len(rows) < SERVER_ROW_CAP:
+                return
+            after = str(rows[-1]["trade_date"])
+
+    def index_history_all(
+        self, index: str, start: Datish = None, end: Datish = None,
+    ) -> List[Dict[str, Any]]:
+        """iter_index_history collected into a list."""
+        return list(self.iter_index_history(index, start, end))
+
     def iter_fund_nav(
         self, cnpj: str, entity_type: str, start: Datish = None,
         end: Datish = None,

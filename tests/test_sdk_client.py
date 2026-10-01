@@ -1152,3 +1152,19 @@ def test_quote_history_passes_the_field_selection():
     c.quote_history("PETR4", "2020-01-01", "2020-02-01", fields="close")
     assert "p_fields" not in bodies[0], "no selection = the server's default"
     assert bodies[1]["p_fields"] == ["close"]
+
+
+def test_index_history_pages_on_trade_date():
+    seen = []
+
+    def responder(request):
+        body = json.loads(request.content)
+        seen.append(body)
+        n = SERVER_ROW_CAP if body["p_after"] == "" else 2
+        rows = [{"index_code": "IBOV", "trade_date": f"2020-01-{1 + i % 28:02d}", "level": 1.0} for i in range(n)]
+        return httpx.Response(200, json=rows)
+
+    c = make_client(catalog_then(responder))
+    rows = c.index_history_all("IBOV", "2020-01-02", "2026-09-29")
+    assert len(rows) == SERVER_ROW_CAP + 2
+    assert seen[0]["p_index"] == "IBOV" and seen[1]["p_after"] == rows[SERVER_ROW_CAP - 1]["trade_date"]
