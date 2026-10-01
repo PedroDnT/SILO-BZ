@@ -200,6 +200,7 @@ order by class, period
   <Column id=brand title="Brand"/>
   <Column id=nav_mm title="Net Assets, CVM (R$mm)" fmt=num1/>
   <Column id=nav_date title="NAV Date"/>
+  <Column id=cotistas title="Quotaholders" fmt=num0/>
   <Column id=price title="Close, B3 (R$)" fmt='#,##0.00'/>
   <Column id=snapshot_date title="Snapshot Date"/>
 </DataTable>
@@ -318,9 +319,8 @@ order by class, period
 
 <BigValue data={etf_market_coverage} value=etfs_with_snapshot title="ETFs w/ Snapshot" fmt=num0/>
 <BigValue data={etf_market_coverage} value=with_nav title="With NAV" fmt=num0/>
+<BigValue data={etf_market_coverage} value=with_cotistas title="With Quotaholders" fmt=num0/>
 <BigValue data={etf_market_coverage} value=latest_snapshot title="Latest Snapshot"/>
-
-> **Quotaholders are hidden** until a re-parsed scrape lands: the parser stored a year (2026) instead of the holder count for every ETF.
 
 <DataTable data={etf_market} rows=20 search=true>
   <Column id=ticker title="Ticker"/>
@@ -332,6 +332,7 @@ order by class, period
   <Column id=price_date title="Close Date"/>
   <Column id=nav title="Net Assets, CVM (R$)" fmt=num0/>
   <Column id=nav_date title="NAV Date"/>
+  <Column id=cotistas title="Quotaholders" fmt=num0/>
   <Column id=taxa_adm_num2 title="Adm Fee (%)" fmt=num2/>
   <Column id=ret_12m_num2 title="12m Return (%)" fmt=num2/>
 </DataTable>
