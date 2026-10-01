@@ -474,7 +474,13 @@ class TestCVMPipelineFieldMapping:
                 ingestor = CVMIngestor()
                 await ingestor.ingest_fi_cda(2025, 3)
 
+        # its fund name in cvm_fi_cda_fund_name (migration 60), then the holding row
+        names = [r for r in captured if "denom_social" in r]
+        captured = [r for r in captured if "denom_social" not in r]
         assert len(captured) == 1
+        assert names == [{"cnpj": "12345678000190", "period": datetime.date(2025, 3, 1),
+                          "denom_social": "FUNDO EXEMPLO FI"}]
+        assert "DENOM_SOCIAL" not in captured[0]["raw"]
         rec = captured[0]
         assert rec["cnpj"] == "12345678000190"
         assert rec["period"] == datetime.date(2025, 3, 1)

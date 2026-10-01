@@ -25,7 +25,8 @@ the quote tape; block 2 carries the held fund's CNPJ and CVM's published
 `emissor_ligado` flag; block 6 carries `cpf_cnpj_emissor`, the debenture issuer's
 own CNPJ, which joins to `cia_*` with no bridge. Block 6 has no `CD_ATIVO`, so its
 key ends in `row_hash` after (fund, month, issuer, maturity) — see migration 35 for
-the audit. Blocks 3, 5, 7 and 8 are not ingested),
+the audit. Blocks 3, 5, 7 and 8 are not ingested; the filing fund's name, DENOM_SOCIAL, is
+`cvm_fi_cda_fund_name`, once per fund and month, not in each row's `raw`, migration 60),
 `anbima_class_monthly` (every ANBIMA class/type; `anbima_etf_class_monthly`
 survives as an ETF-only compat view), `etf_market_snapshot` (scraped ETF NAV/cotistas — wired
 into the daily run but **gated on the `APIFY_TOKEN` secret**; it self-skips when the

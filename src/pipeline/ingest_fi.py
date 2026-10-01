@@ -147,13 +147,46 @@ def ingest_fi_cda(
         return 0
 
     records = _drop_relabelled_twins(records)
-
+    # The names go first: if the holdings upsert then fails, no row has lost
+    # its name without it being stored (the strip script's order too).
+    _upsert_fund_names(conn, take_fund_names(records))
     return upsert_rows(
         conn,
         _cda.TABLE,
         records,
         conflict_columns=",".join(_cda.CONFLICT),
     )
+
+
+FUND_NAME_TABLE = "cvm_fi_cda_fund_name"
+FUND_NAME_CONFLICT = "cnpj,period,denom_social"
+
+
+def take_fund_names(records: List[Dict[str, Any]]) -> set:
+    """Pop DENOM_SOCIAL out of each record's raw; return {(cnpj, period, name)}.
+
+    CVM repeats the filing fund's name on every CDA row. It is kept once per
+    fund, month and name in cvm_fi_cda_fund_name (migration 60) instead of on
+    every holding row.
+    """
+    names = set()
+    for r in records:
+        raw = r.get("raw")
+        if isinstance(raw, dict):
+            name = raw.pop("DENOM_SOCIAL", None)
+            if name:
+                names.add((r["cnpj"], r["period"], name))
+    return names
+
+
+def _upsert_fund_names(conn: Any, names: set) -> None:
+    if names:
+        upsert_rows(
+            conn,
+            FUND_NAME_TABLE,
+            [{"cnpj": c, "period": p, "denom_social": d} for c, p, d in sorted(names)],
+            conflict_columns=FUND_NAME_CONFLICT,
+        )
 
 
 # The same position filed twice in one month, once per fund-type label.
@@ -254,6 +287,7 @@ def _ingest_cda_holdings(
     if not records:
         return 0
 
+    _upsert_fund_names(conn, take_fund_names(records))   # names first, see ingest_fi_cda
     return upsert_rows(
         conn,
         field_map_module.TABLE,

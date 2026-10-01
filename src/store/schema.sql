@@ -117,6 +117,17 @@ CREATE TABLE IF NOT EXISTS cvm_fi_cda (
 CREATE INDEX IF NOT EXISTS idx_fi_cda_cnpj   ON cvm_fi_cda (cnpj);
 CREATE INDEX IF NOT EXISTS idx_fi_cda_period ON cvm_fi_cda (period DESC);
 
+-- DENOM_SOCIAL as filed in CDA blocks 1, 2 and 4, once per fund, month and
+-- name (migration 60). The ingest keeps it here instead of in every holding
+-- row's raw.
+CREATE TABLE IF NOT EXISTS cvm_fi_cda_fund_name (
+    cnpj          TEXT        NOT NULL CHECK (char_length(cnpj) = 14),
+    period        DATE        NOT NULL,   -- first day of month, as the CDA tables
+    denom_social  TEXT        NOT NULL,   -- DENOM_SOCIAL, as filed
+    fetched_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fi_cda_fund_name UNIQUE (cnpj, period, denom_social)
+);
+
 -- ---------------------------------------------------------------------------
 -- FI — monthly investor profile  (PERFIL_MENSAL)
 -- ---------------------------------------------------------------------------

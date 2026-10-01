@@ -51,6 +51,8 @@ def _captured(monkeypatch, rows, year=2026, month=8):
     seen = {}
 
     def fake_upsert(conn, table, recs, **kw):
+        if table == "cvm_fi_cda_fund_name":   # migration 60, tested on its own
+            return len(recs)
         seen["table"], seen["rows"], seen["conflict"] = table, recs, kw["conflict_columns"]
         return len(recs)
 

@@ -18,6 +18,7 @@ on:
           - b3-cash-dividends
           - b3-trade-consolidated
           - balancete-summary
+          - cda-fund-name
       start_year:
         description: "First year of B3 COTAHIST yearly zips (mode=b3-backfill). Try 2025 first — yearly zips are large. With mode=b3-cash-dividends: the issuer universe is every code that printed since this year (use 2019); each issuer's full history is fetched. With mode=b3-trade-consolidated: every weekday from January 1 of this year (B3 kept sessions from 2025-06-10 when checked on 2026-09-30; earlier ones are logged skipped)."
         required: false
@@ -154,6 +155,15 @@ jobs:
       - name: Build balancete summary from stored months
         if: ${{ github.event.inputs && github.event.inputs.mode == 'balancete-summary' }}
         run: python scripts/backfill_balancete_summary.py
+      # Moves DENOM_SOCIAL out of raw on the stored CDA rows into
+      # cvm_fi_cda_fund_name (migration 60), in ctid batches with a VACUUM
+      # between chunks. Fails if any row still carries the name. Dispatch it
+      # only after the balancete account table is dropped (disk headroom); a
+      # run cut by the job timeout resumes on the next dispatch. Returning the
+      # space to the OS (VACUUM FULL) is a separate, later step.
+      - name: Move the CDA fund name out of raw
+        if: ${{ github.event.inputs && github.event.inputs.mode == 'cda-fund-name' }}
+        run: python scripts/strip_cda_fund_name.py
 
       # Statistics only — it makes later queries plan better, it never changes a
       # row. continue-on-error because on 2026-08-28 it was the ONE step that
