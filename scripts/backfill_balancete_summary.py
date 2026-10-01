@@ -5,10 +5,17 @@ summary for the months already stored, in SQL, without downloading anything
 from CVM. It is idempotent (ON CONFLICT DO UPDATE), so a re-run rewrites the
 same rows.
 
-For each month it prints the rows it upserted and how many of them break the
-balance identity  vl_ativo = vl_passivo + vl_patrim_liq + vl_receitas +
-vl_despesas  (a group the fund did not file counts as 0 in the check only;
-the stored value stays NULL). A database error raises and the process exits 1.
+For each month it prints the two checks the account table's retirement waits
+on (docs/planning/OPEN_ITEMS.md item 10):
+
+- identity: how many rows break  vl_ativo = vl_passivo +
+  vl_patrimonio_sem_resultado + vl_receitas + vl_despesas  (a group the fund
+  did not file counts as 0 in the check only; the stored value stays NULL);
+- NAV: of the funds with a cvm_fi_diario row on the same date, how many have
+  vl_patrimonio_sem_resultado + vl_receitas + vl_despesas within 0.1% of that
+  day's vl_patrim_liq (summed over subclasses).
+
+A database error raises and the process exits 1.
 
     python scripts/backfill_balancete_summary.py                 # every month
     python scripts/backfill_balancete_summary.py --start 2026-01 --end 2026-08
@@ -74,15 +81,29 @@ ON CONFLICT ON CONSTRAINT uq_fi_balancete_resumo DO UPDATE SET
 """
 
 
-IDENTITY_SQL = f"""
+CHECK_SQL = f"""
+WITH r AS (
+    SELECT * FROM {_balancete.RESUMO_TABLE}
+    WHERE dt_comptc >= %(lo)s AND dt_comptc < %(hi)s
+), d AS (
+    SELECT cnpj, dt_comptc, sum(vl_patrim_liq) AS nav
+    FROM cvm_fi_diario
+    WHERE dt_comptc IN (SELECT DISTINCT dt_comptc FROM r)
+    GROUP BY cnpj, dt_comptc
+)
 SELECT count(*) AS n,
        count(*) FILTER (
-           WHERE abs(coalesce(vl_ativo, 0)
-                     - coalesce(vl_passivo, 0) - coalesce(vl_patrim_liq, 0)
-                     - coalesce(vl_receitas, 0) - coalesce(vl_despesas, 0)) > 1
-       ) AS broken
-FROM {_balancete.RESUMO_TABLE}
-WHERE dt_comptc >= %(lo)s AND dt_comptc < %(hi)s
+           WHERE abs(coalesce(r.vl_ativo, 0)
+                     - coalesce(r.vl_passivo, 0) - coalesce(r.vl_patrimonio_sem_resultado, 0)
+                     - coalesce(r.vl_receitas, 0) - coalesce(r.vl_despesas, 0)) > 1
+       ) AS broken,
+       count(d.nav) AS with_nav,
+       count(*) FILTER (
+           WHERE abs(coalesce(r.vl_patrimonio_sem_resultado, 0) + coalesce(r.vl_receitas, 0)
+                     + coalesce(r.vl_despesas, 0) - d.nav)
+                 <= greatest(1, 0.001 * abs(d.nav))
+       ) AS nav_match
+FROM r LEFT JOIN d USING (cnpj, dt_comptc)
 """
 
 
@@ -117,11 +138,12 @@ def main(argv: Optional[List[str]] = None) -> int:
                 cur.execute("SET statement_timeout = '30min'")
                 cur.execute(upsert_sql, {"lo": lo, "hi": hi})
                 upserted = cur.rowcount
-                cur.execute(IDENTITY_SQL, {"lo": lo, "hi": hi})
-                n, broken = cur.fetchone()
+                cur.execute(CHECK_SQL, {"lo": lo, "hi": hi})
+                n, broken, with_nav, nav_match = cur.fetchone()
             total += upserted
-            logger.info("%s: upserted %d, stored %d, identity broken in %d",
-                        lo.strftime("%Y-%m"), upserted, n, broken)
+            logger.info("%s: upserted %d, stored %d, identity broken in %d, "
+                        "NAV within 0.1%% for %d of %d with a daily NAV",
+                        lo.strftime("%Y-%m"), upserted, n, broken, nav_match, with_nav)
     finally:
         client.closeall()
     logger.info("done: %d rows upserted", total)

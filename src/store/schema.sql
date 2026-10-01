@@ -977,7 +977,7 @@ CREATE TABLE IF NOT EXISTS cvm_fi_balancete_resumo (
     vl_ativo               NUMERIC(28,2),   -- 10000007
     vl_compensacao_ativa   NUMERIC(28,2),   -- 30000001
     vl_passivo             NUMERIC(28,2),   -- 40000008
-    vl_patrim_liq          NUMERIC(28,2),   -- 60000002
+    vl_patrimonio_sem_resultado NUMERIC(28,2),   -- 60000002, excludes the open result
     vl_receitas            NUMERIC(28,2),   -- 70000009, accumulated
     vl_despesas            NUMERIC(28,2),   -- 80000006, accumulated, negative
     vl_compensacao_passiva NUMERIC(28,2),   -- 90000003
