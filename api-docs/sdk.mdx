@@ -61,8 +61,11 @@ One per published endpoint. Dates accept `date` objects or ISO strings; `None` m
 | `lookup(query)` | `lookup` | never a name-inferred ticker↔CNPJ |
 | `panel(ids, metrics, start, end, freq, wide, entity_type, min_nav, min_months)` | `panel` | raises `SiloOverCap` above one page; `wide=False` for long rows |
 | `iter_panel(...)` · `panel_all(..., wide)` | `panel` + `p_after` | `ids=None` + `entity_type=` is universe mode (signed in) |
-| `quote_history(ticker, start, end, board)` · `quote_latest(ticker, board)` | `quote_history` · `quote_latest` | unadjusted prices |
+| `quote_history(ticker, start, end, board)` · `quote_latest(ticker, board)` | `quote_history` · `quote_latest` | raw `close` plus `close_price_adjusted` / `close_total_return`, each NULL with a reason; a `start` before 2019-01-02 raises `SiloError` |
 | `iter_quote_history(...)` · `quote_history_all(...)` | `quote_history` + `p_after` | pages on `trade_date` |
+| `quote_history_many(tickers, start, end, board, workers, require_rows)` | `quote_history` × N | concurrent; **the whole request or `SiloFanOutError`** naming every failed ticker; see [Pulling a research universe](/api-docs/guides/research) |
+| `research_universe(as_of)` | `research_universe` | one row per ticker+ISIN pair; `as_of=T` keeps `first_observed <= T <= last_observed` |
+| `index_history(index, start, end)` · `iter_index_history(...)` · `index_history_all(...)` | `index_history` + `p_after` | an index **code**, never a ticker; IBOV from 1968 is 15 pages |
 | `iter_fund_nav(cnpj, entity_type, start, end)` · `fund_nav_all(...)` | `fund_nav` + `p_after` | **`entity_type` is required**, checked client-side |
 | `option_chain(prefix, trade_date, expiry_from, limit)` · `option_history(codneg, …)` · `option_exercises(prefix, …)` | options | prefix ≥ 3 chars, checked client-side |
 | `termo_history(codneg, start, end)` | `termo_history` | |
@@ -73,7 +76,7 @@ One per published endpoint. Dates accept `date` objects or ISO strings; `None` m
 | `fidc_tranches(cnpj, start, end, series)` · `fidc_aging(cnpj, start, end)` | [FIDC tranches and aging](/api-docs/fidc-structure) | as filed, from 2025-01; `flows` keeps CVM's labels |
 | `fund_documents(cnpj, start, end, tipo)` · `fund_restatements(cnpj, start, end, tipo_fundo)` · `fund_restatement_diff(cnpj, start, end, tipo, fnet_id)` | [Fund documents and restatements](/api-docs/fnet-documents) | fund by FNET link only; versions paired by a stated key; the diff needs `cnpj` or `fnet_id` |
 | `screen_restatements(months, end, …)` · `screen_late_filers(months, end, …, family)` · `screen_silent_filers(min_silent_months, max_silent_months, family)` | [Filing-behaviour screens](/api-docs/filing-screens) | signals, not verdicts; `late_filers` cites its rule on every row |
-| `financials(id, statement, start, end, scope, doc_type)` · `company_financials(id, …)` | financials | read `period_months` before comparing rows |
+| `financials(id, statement, start, end, scope, doc_type, as_of)` · `company_financials(id, …, as_of)` | financials | read `period_months` before comparing rows; `as_of` makes the read point-in-time (also on `income_statements`, `balance_sheets`, `cash_flow_statements`) |
 | `company_events(id, start, end, category)` | [Company events](/api-docs/company-events) | id resolved like `financials`; newest version per protocol; from 2015 |
 | `anbima_classes(category, metric, level, start, end)` | `anbima_classes` | industry aggregates, no fund join |
 | `inflation(series, family, start, end)` · `inflation_items(level, item, start, end)` | [inflation](/api-docs/inflation) | as published, in percent; `acc_12m` and `contribution` are the derived columns |

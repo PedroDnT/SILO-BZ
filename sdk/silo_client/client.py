@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
 
@@ -150,6 +151,37 @@ class SiloTimeout(SiloError):
             f"raises the budget from 3s to 8s. Server said: {body[:200]}",
             url,
         )
+
+
+class SiloFanOutError(SiloError):
+    """A fan-out over many tickers did not return the whole request.
+
+    `quote_history_many` returns every ticker it was asked for or raises this:
+    a hundred-ticker pull that silently dropped three names would be a
+    survivorship bias the caller never chose. `.failures` maps each ticker that
+    failed to the exception it raised (`SiloOverCap`, `SiloTimeout`, `SiloError`,
+    a connection error...). `.partial` holds what DID arrive, for inspection,
+    never as the result: the tickers in `.failures` are simply missing from it.
+    `.empty` lists tickers that returned no rows when `require_rows=True` was
+    asked for.
+    """
+
+    def __init__(self, failures: Dict[str, BaseException],
+                 partial: Dict[str, List[Dict[str, Any]]],
+                 empty: Optional[List[str]] = None) -> None:
+        self.failures = failures
+        self.partial = partial
+        self.empty = empty or []
+        parts = []
+        if failures:
+            first = next(iter(failures))
+            parts.append(f"{len(failures)} ticker(s) failed: {', '.join(failures)}; "
+                         f"first, {first}: {str(failures[first])[:300]}")
+        if self.empty:
+            parts.append(f"{len(self.empty)} ticker(s) returned no rows in the window: "
+                         f"{', '.join(self.empty)}")
+        # status 0: no single HTTP response to report. The body is the summary.
+        super().__init__(0, " | ".join(parts), "fan-out")
 
 
 def _iso(d: Datish) -> Optional[str]:
@@ -444,6 +476,149 @@ class SiloClient:
     ) -> List[Dict[str, Any]]:
         """iter_quote_history collected into a list."""
         return list(self.iter_quote_history(ticker, start, end, board))
+
+    def quote_history_many(
+        self, tickers: Listish, start: Datish = None, end: Datish = None,
+        board: Optional[str] = None, *, workers: int = 8,
+        require_rows: bool = False,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """`quote_history_all` for many tickers, concurrently: the whole request
+        or an exception, never a quiet subset.
+
+            rows = silo.quote_history_many(["PETR4", "VALE3"], start="2019-01-02")
+            rows["PETR4"][0]["close_price_adjusted"]
+
+        The series function takes one ticker per call, and a ticker over one
+        page takes one call per page, so a 100-name pull is about 190 requests.
+        This runs them on `workers` threads (default 8). Concurrency is
+        **observed to be free, not guaranteed**: on 2026-09-28 sixteen anonymous
+        workers drew no rate limiting and cut a 70 s sequential pull to 8 s,
+        but no limit is documented, so the default stays modest.
+
+        Returns `{ticker: rows}` keyed by the ticker as you wrote it, in the
+        order you gave, each series oldest first. Raises `SiloFanOutError` if
+        any ticker failed (it names every one; the partial result is on
+        `.partial` for inspection only). Raises `ValueError` before any request
+        for duplicates (the dict would silently keep one) or `workers < 1`. An
+        **empty list means the window held no rows for that ticker**: a typo,
+        an unlisted name and a name not yet trading all look the same, so pass
+        `require_rows=True` to raise for them too.
+
+        The raw `close` and `close_price_adjusted` / `close_total_return` are in
+        every row (each NULL with a `*_null_reason`, never a raw close in
+        disguise). A `start` before 2019-01-02 is refused by the server for
+        every ticker, so it surfaces as a `SiloFanOutError` naming all of them.
+        """
+        names = _as_list(tickers)
+        seen: Dict[str, str] = {}
+        dupes = []
+        for name in names:
+            key = name.strip().upper()
+            if key in seen:
+                dupes.append(name)
+            seen[key] = name
+        if dupes:
+            raise ValueError(
+                f"duplicate tickers {dupes!r}: the result is keyed by ticker, so a "
+                "repeat would silently keep one of them. Pass each ticker once."
+            )
+        if workers < 1:
+            raise ValueError("workers must be at least 1")
+        if not names:
+            return {}
+
+        results: Dict[str, List[Dict[str, Any]]] = {}
+        failures: Dict[str, BaseException] = {}
+
+        def one(name: str) -> List[Dict[str, Any]]:
+            return self.quote_history_all(name, start, end, board)
+
+        with ThreadPoolExecutor(max_workers=min(workers, len(names))) as pool:
+            futures = [(name, pool.submit(one, name)) for name in names]
+            for name, future in futures:
+                try:
+                    results[name] = future.result()
+                except Exception as exc:  # noqa: BLE001 - collected, then raised together
+                    failures[name] = exc
+
+        empty = [n for n in names if n in results and not results[n]] if require_rows else []
+        if failures or empty:
+            raise SiloFanOutError(failures, results, empty)
+        return {name: results[name] for name in names}
+
+    # -- the research seam (#419) -------------------------------------------
+
+    def research_universe(self, as_of: Datish = None) -> List[Dict[str, Any]]:
+        """The research universe: one row per ticker+ISIN pair of shares and
+        units traded on the B3 cash tape since 2019-01-02.
+
+        Columns: ticker, isin, instrument_type, cnpj, cnpj_basis,
+        first_observed, last_observed, n_sessions, setor_current, built_at.
+        The ISIN is the identity: a rename is a NEW row and nothing links it to
+        the old one. `first_observed` / `last_observed` are facts about SILO's
+        tape, not listing or delisting dates.
+
+        `as_of=T` applies the **survivorship rule** on the client: only pairs
+        with `first_observed <= T <= last_observed`, which is what a rebalance
+        on T should trade. A pair inside a gap (NATU3: one ISIN, no sessions
+        from 2019-12 to 2025-07) still matches that filter, so read
+        `n_sessions` against the span, or check the series, before trusting
+        that a name traded on T. `last_observed` lags the tape by up to a day
+        (the server view is rebuilt daily), so `as_of=today` can miss a name
+        that traded this morning. `as_of=None` returns the whole universe,
+        including names that no longer trade.
+        """
+        rows = self._rpc("research_universe", {})
+        if as_of is None:
+            return rows
+        when = _iso(as_of)
+        return [r for r in rows if r["first_observed"] <= when <= r["last_observed"]]
+
+    def index_history(
+        self, index: str, start: Datish = None, end: Datish = None,
+    ) -> List[Dict[str, Any]]:
+        """Daily levels of a B3-published index **as published**: columns
+        index_code, trade_date, level, divisor_step, source. IBOV from
+        1968-01-02.
+
+        `index` is an INDEX CODE ("IBOV"), never a ticker: BOVA11 (an ETF) and
+        IBOV11 (the Ibovespa options settlement code, whose price is each
+        print's settlement index and never the official close) are refused
+        with `SiloError` (22023) naming the codes held. The series is a price index and is not adjusted: B3
+        re-scaled it eleven times and `divisor_step` is True on the first
+        session after each, where a level ratio is not a return. One page of
+        at most 1000 rows; more raises `SiloOverCap`, so use
+        `index_history_all` for a long window. `start=None` is the last 365
+        days, not the whole history.
+        """
+        return self._rpc("index_history", {
+            "p_index": index, "p_from": _iso(start), "p_to": _iso(end),
+        })
+
+    def iter_index_history(
+        self, index: str, start: Datish = None, end: Datish = None,
+    ) -> Iterator[Dict[str, Any]]:
+        """Every index level, paged with the server's cursor (`p_after`).
+
+        Page 1 is `p_after=''`; each next page is the last row's `trade_date`.
+        A page shorter than the 1000-row cap is the last one. Rows arrive
+        oldest first; IBOV from 1968 is 15 pages.
+        """
+        body = {"p_index": index, "p_from": _iso(start), "p_to": _iso(end)}
+        after = ""
+        while True:
+            rows = self._rpc("index_history", {**body, "p_after": after}, page=True)
+            for row in rows:
+                yield row
+            if len(rows) < SERVER_ROW_CAP:
+                return
+            after = str(rows[-1]["trade_date"])
+
+    def index_history_all(
+        self, index: str, start: Datish = None, end: Datish = None,
+    ) -> List[Dict[str, Any]]:
+        """iter_index_history collected into a list."""
+        return list(self.iter_index_history(index, start, end))
 
     def iter_fund_nav(
         self, cnpj: str, entity_type: str, start: Datish = None,

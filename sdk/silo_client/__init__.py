@@ -46,6 +46,7 @@ from .client import (
     SiloCatalogDrift,
     SiloClient,
     SiloError,
+    SiloFanOutError,
     SiloOverCap,
     SiloTimeout,
     SiloTruncated,
@@ -59,6 +60,7 @@ __version__ = "0.8.0"
 __all__ = [
     "SiloClient",
     "SiloError",
+    "SiloFanOutError",
     "SiloTruncated",
     "SiloOverCap",
     "SiloTimeout",

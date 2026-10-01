@@ -331,6 +331,18 @@ serves the daily level of a B3-published index from `b3_index_level` (migration
   from `PUBLIC`, granted to `anon` / `authenticated` / `silo_api`. No client
   role can read `b3_index_level`.
 
+### Using the research seam
+
+The caller-facing guide is [`api-docs/guides/research.mdx`](../../api-docs/guides/research.mdx)
+(published as "Pulling a research universe"): the survivorship rule
+(`first_observed <= T <= last_observed`, a pair inside a gap such as NATU3 still
+matches, a rename is two rows), adjusted and total-return prices and their NULL
+reasons, the 2019-01-02 floor, the `index_history` warnings (BOVA11 and IBOV11
+are not the index, eleven divisor steps), the as-of fundamentals recipe and macro
+by date split. The SDK side is `quote_history_many` (concurrent, the whole
+request or `SiloFanOutError`), `research_universe(as_of=)` and
+`index_history` / `iter_index_history` / `index_history_all`.
+
 ### The total-return close (catalog v46)
 
 `quote_history.close_total_return` is the price-adjusted close with cash
