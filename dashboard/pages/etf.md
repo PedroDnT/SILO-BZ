@@ -79,6 +79,47 @@ group by family
 order by nav_bn desc
 ```
 
+```sql etf_fixed_income_prints_family
+select
+  p.trade_date,
+  coalesce(f.family, 'Unmapped')  as family,
+  sum(p.notional_mm)              as notional_mm
+from supabase.etf_fixed_income_prints p
+left join supabase.etf_fixed_income f on f.ticker = p.ticker
+where p.ticker is not null
+group by 1, 2
+order by 1, 2
+```
+
+```sql etf_fixed_income_prints_latest
+with latest as (
+  select max(trade_date) as d from supabase.etf_fixed_income_prints
+),
+per_ticker as (
+  select
+    ticker,
+    count(*)            as sessions,
+    avg(notional_mm)    as avg_notional_mm
+  from supabase.etf_fixed_income_prints
+  where ticker is not null
+  group by ticker
+)
+select
+  p.ticker,
+  f.family,
+  p.last_price,
+  p.notional_mm,
+  p.trade_count,
+  t.avg_notional_mm,
+  t.sessions,
+  p.trade_date
+from supabase.etf_fixed_income_prints p
+join latest l on p.trade_date = l.d
+left join supabase.etf_fixed_income f on f.ticker = p.ticker
+left join per_ticker t on t.ticker = p.ticker
+order by p.notional_mm desc
+```
+
 ```sql etf_anbima_total
 select * from supabase.etf_anbima_total
 ```
@@ -173,11 +214,10 @@ order by class, period
 > the previous session's B3 price as carried by the etfsbrasil snapshot, dated by
 > the snapshot.
 >
-> **Not here:** exchange prints. B3 lists these ETFs in segment FORWARD, which its
-> COTAHIST tape does not carry; their prints are ingested separately from B3's
-> consolidated trade file (`b3_trade_consolidated`, from 2025-06-10) and are not
-> charted in this section. Quotaholders are in the snapshot table further down.
-> Returns, volatility and Sharpe are empty in the snapshot for every ETF.
+> **Exchange prints:** below. B3 lists these ETFs in segment FORWARD, which its
+> COTAHIST tape does not carry, so their prints come from B3's consolidated trade
+> file instead. Quotaholders are in the snapshot table further down. Returns,
+> volatility and Sharpe are empty in the snapshot for every ETF.
 
 <BarChart
   data={etf_fixed_income_family}
@@ -205,6 +245,37 @@ order by class, period
   <Column id=cotistas title="Quotaholders" fmt=num0/>
   <Column id=price title="Close, B3 (R$)" fmt='#,##0.00'/>
   <Column id=snapshot_date title="Snapshot Date"/>
+</DataTable>
+
+### Exchange Prints (B3 Consolidated Trade File)
+
+> Daily traded value and last price of the 46 fixed income ETFs, from B3's
+> TradeInformationConsolidatedFile (`b3_trade_consolidated`). They trade in B3's
+> segment FORWARD, which COTAHIST omits, so the equity ETF volume chart further
+> down does not include them, and the two volume measures are not comparable.
+> Traded value is in R$ million as B3 reports it. Daily, final files only. The
+> history starts at the first session loaded; B3 keeps the file back to
+> 2025-06-10.
+
+<BarChart
+  data={etf_fixed_income_prints_family}
+  x=trade_date
+  y=notional_mm
+  series=family
+  type=stacked
+  yAxisTitle="R$mm"
+  title="Fixed Income ETF Traded Value per Session, by Index Family (R$mm, B3)"
+/>
+
+<DataTable data={etf_fixed_income_prints_latest} rows=15 search=true>
+  <Column id=ticker title="Ticker"/>
+  <Column id=family title="Index Family"/>
+  <Column id=last_price title="Last Price (R$)" fmt='#,##0.00'/>
+  <Column id=notional_mm title="Traded, Latest Session (R$mm)" fmt=num1/>
+  <Column id=trade_count title="Trades" fmt=num0/>
+  <Column id=avg_notional_mm title="Avg Traded per Session (R$mm)" fmt=num1/>
+  <Column id=sessions title="Sessions Held" fmt=num0/>
+  <Column id=trade_date title="Session"/>
 </DataTable>
 
 ---

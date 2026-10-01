@@ -193,7 +193,7 @@ Built** so nobody has to guess how old the numbers are; to publish sooner, dispa
 | `/fii`         | FII Market                      | FII vs FIAGRO, yield distribution, payout coverage                                         |
 | `/fund`        | Fund Explorer                   | per-fund NAV, flows, quotaholders and rebased returns                                      |
 | `/performance` | Fund Performance                | rankings by class, rebased cumulative return                                               |
-| `/etf`         | ETF Market                      | registry by provider and segment, fixed income ETFs by index family, ANBIMA net assets and flows, exchange volume, scraped snapshot |
+| `/etf`         | ETF Market                      | registry by provider and segment, fixed income ETFs by index family with their B3 prints, ANBIMA net assets and flows, exchange volume, scraped snapshot |
 | `/markets`     | B3 Markets                      | monthly traded volume, instrument mix, option activity                                     |
 | `/macro`       | Macro Context                   | SELIC and CDI, inflation, PTAX, Focus consensus                                            |
 | `/rates`       | Rates and Curves                | B3 nominal and real curves, breakeven inflation since 2008 vs the Focus survey, DI1 open interest, NTN-B held by funds, UST/Brent/OFR backdrop |
