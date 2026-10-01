@@ -5,43 +5,19 @@ sidebar_position: 10
 ---
 
 <!--
-  CRI / CRA / OTS securitised debt certificates. These are NOT investment funds:
-  they are certificates issued by securitizadoras against a pool of receivables,
-  so they sit outside dim_fund / fact_fund_monthly entirely and are modelled on
-  their own axis (dim_security, fact_security_monthly).
+  CRI / CRA / OTS certificates, NOT funds: modelled on dim_security / fact_security_monthly.
+  cvm_securit_serie is a monthly RE-STATEMENT of the whole live book, so every
+  "outstanding" figure de-duplicates to the latest data_referencia per series
+  (instrument_type, codigo_identificacao, numero_serie) before summing, and counts only
+  series whose latest filing is in the As Of month or the month before (#434). The
+  trend is "reported value", not issuance: CVM publishes no clean issuance flow.
+  Known gaps, none estimated: nivel_subordinacao is never written by any FIELD_MAP
+  (always NULL); indice_subordinacao_minimo is unscaled (fraction or percentage is
+  undocumented); cvm_securit_dfin is raw JSONB with only cnpj_securit parsed, so its
+  section is coverage only; instrument_type is stored as the *_mensal label
+  ('cri_mensal'), so queries match on prefix.
+-->
 
-  WHAT THE NUMBERS ARE. cvm_securit_serie is a monthly RE-STATEMENT of the whole
-  live book — every series is filed again each month for as long as it exists.
-  Every "outstanding" figure on this page therefore de-duplicates to the latest
-  data_referencia per series (instrument_type, codigo_identificacao,
-  numero_serie) before summing. Summing the table raw would multiply each series
-  by the number of months it has been reported. Only live series count: those
-  whose latest filing falls in the As Of month or the month before (#434).
-
-  For the same reason, the trend section is labelled "reported value", not
-  "issuance": security_issuance_trend() sums valor_certificados per month, which
-  is the stock outstanding in that month's filings, not new-issuance flow. CVM
-  does not publish a clean issuance flow series here, so none is shown.
-
-  KNOWN GAPS, none of them filled with estimates:
-    * nivel_subordinacao — column exists in cvm_securit_serie (schema.sql ALTER)
-      but no FIELD_MAP entry writes it, so it is always NULL. The subordination
-      section reports its coverage count rather than pretending it is populated.
-    * indice_subordinacao_minimo IS populated, but CVM does not document whether
-      it is a fraction or a percentage, so it is shown unscaled and unlabelled
-      as "%".
-    * cvm_securit_dfin is raw JSONB with only cnpj_securit parsed
-      (securit_dfin.py: "All other fields fall through to residual raw"), so its
-      section is filing COVERAGE only — there is no balance sheet to chart yet.
-    * instrument_type in cvm_securit_serie / _fluxo is stored as the *_mensal
-      label ('cri_mensal', …), not the 'cri_classe' spelling that the
-      dim_security comment and yield_universe()'s default still use. Queries
-      here match on prefix so either spelling classifies correctly.
-
-  SECTION ORDER runs the three structural questions in the order the lede poses
-  them — what is outstanding, when it comes due, who gets paid — then the credit
-  read (ratings, subordination, distressed), then the coverage-only DFIN section
-  last because it charts filings rather than money.
 -->
 
 ```sql securit_overview
@@ -78,17 +54,7 @@ select * from supabase.securit_dfin_coverage
 
 # Securitization
 
-> Brazilian securitised debt — CRI (real-estate), CRA (agribusiness) and OTS
-> (other) certificates. Each series is a slice of a receivables pool, so the
-> questions that matter are structural: when does it come due, who gets paid
-> first, and is the pool still paying.
->
-> These are **not funds**: no NAV, no quotaholder count, no return series. The
-> number that most invites misreading is the trend below — **stock outstanding as
-> re-stated each month**, not new issuance, because CVM publishes no clean issuance
-> flow here. FIDCs buy comparable receivables inside a fund wrapper
-> ([FIDC Credit Monitor](/fidc)); series past maturity and still open are screened
-> on [Suspicious Deal Screens](/suspicious).
+> CRI (real-estate), CRA (agribusiness) and OTS (other) certificates, each a slice of a receivables pool (CVM, monthly, 1 to 2 months lag). These are **not funds**: no NAV, quotaholders or returns. The trend is **stock outstanding as re-stated each month**, not new issuance. Related: [FIDC Credit Monitor](/fidc), [Suspicious Deal Screens](/suspicious).
 
 <BigValue data={securit_overview} value=n_series title="Live Series" fmt=num0/>
 <BigValue data={securit_overview} value=n_securitizadoras title="Securitizadoras" fmt=num0/>
@@ -96,28 +62,13 @@ select * from supabase.securit_dfin_coverage
 <BigValue data={securit_overview} value=em_atraso_num1 title="Series Em Atraso (%)" fmt=num1/>
 <BigValue data={securit_overview} value=as_of_period title="As Of"/>
 
-> `Series Em Atraso` is a share of the **series count**, not of value: it says
-> what fraction of series carry that filed status, and a single large series in
-> arrears moves it exactly as much as a small one. CVM files `Situacao` as
-> Adimplente or Em atraso (in arrears); it never files "Inadimplente". CRI
-> filings before 2022-07 carry no status at all, so those series are left out
-> of the share instead of being counted as current.
->
-> `Live Series` and every figure beside it count the series whose latest filing
-> falls in the `As Of` month or the month before, so a series that stops filing
-> drops out a month later. `As Of` is the newest month holding at least half the
-> previous month's series, the month the trend below ends on.
+> `Series Em Atraso` is a share of the **series count**, not of value. CVM files `Situacao` as Adimplente or Em atraso, never "Inadimplente"; CRI filings before 2022-07 carry no status, so those series are left out of the share, not counted as current. Every figure here counts series whose latest filing is in the `As Of` month or the month before; `As Of` is the newest month holding at least half the previous month's series.
 
 ---
 
 ## Reported Value by Instrument Family
 
-> Monthly `valor_certificados` by family, from `security_issuance_trend()`. This
-> is the **stock outstanding** as re-stated in each month's filings — not new
-> issuance. A step in the line is a change in what is on the book, which can be
-> new deals, redemptions, or a change in who filed that month. The last point is
-> the newest month holding at least half the previous month's series: a month
-> still receiving its filings is left out rather than drawn as a drop.
+> Monthly `valor_certificados` by family, from `security_issuance_trend()` (CVM, monthly, 1 to 2 months lag): **stock outstanding**, not new issuance. A step can be new deals, redemptions or a change in who filed. A month still receiving filings is left out, not drawn as a drop.
 
 <AreaChart
 data={securit_issuance_trend}
@@ -147,18 +98,13 @@ yAxisTitle="R$bn"
   <Column id=n_outro_status title="Other Status" fmt=num0/>
 </DataTable>
 
-> `Other Status` counts series whose filed status is neither Adimplente nor Em
-> atraso. It is 0 today; anything else means CVM has started filing a status
-> this page does not classify yet.
+> `Other Status` counts series whose status is neither Adimplente nor Em atraso. It is 0 today; anything else means CVM filed a status this page does not classify.
 
 ---
 
 ## Maturity Wall
 
-> Outstanding certificate value by maturity year, from the latest filing of
-> each live series (see `Live Series` above). Built from `cvm_securit_serie` rather than
-> `security_maturity_ladder()` — that function reads `dim_security`, which does
-> not carry `valor_certificados`, and hardcodes `total_value` to NULL.
+> Outstanding value by maturity year, from the latest filing of each live series (CVM, monthly). Built from `cvm_securit_serie`, not `security_maturity_ladder()`, which reads `dim_security` (no `valor_certificados`) and hardcodes `total_value` to NULL.
 
 <BarChart
 data={securit_maturity_wall}
@@ -178,10 +124,7 @@ yAxisTitle="R$bn"
   <Column id=ots_bn title="OTS (R$bn)" fmt=num2/>
 </DataTable>
 
-> The ladder runs 15 years forward only. Series already past maturity, and series
-> filed with no maturity date at all, are counted separately below rather than
-> folded into a bucket they do not belong in. The past-maturity population is
-> listed series by series on [Suspicious Deal Screens](/suspicious).
+> The ladder runs 15 years forward only. Series past maturity or with no maturity date are counted separately below; the past-maturity series are listed on [Suspicious Deal Screens](/suspicious).
 
 <BigValue data={securit_overview} value=n_past_maturity title="Past Maturity, Still Open" fmt=num0/>
 <BigValue data={securit_overview} value=n_sem_vencimento title="No Maturity Date Filed" fmt=num0/>
@@ -190,10 +133,7 @@ yAxisTitle="R$bn"
 
 ## Payment Waterfall
 
-> Where each month's collections went, aggregated across the whole book, from
-> `cvm_securit_fluxo`. Receivables come in at the top; payments go out in
-> priority order — expenses first, then senior, mezzanine, and junior last. All
-> legs are plotted as positive amounts, as filed.
+> Each month's collections across the whole book, from `cvm_securit_fluxo` (CVM, monthly, 1 to 2 months lag). Payments go out in priority order: expenses, senior, mezzanine, junior. All legs are positive, as filed.
 
 <AreaChart
 data={securit_waterfall}
@@ -223,19 +163,13 @@ yAxisTitle="R$mm"
   <Column id=n_securitizadoras title="Filers" fmt=num0/>
 </DataTable>
 
-> `Paid / Collected` above 100% means the structure paid out more than it
-> collected that month — normal for an amortisation date drawing on reserves,
-> and worth a second look when it persists. A month with filings but no payment
-> figures at all reports blank, never zero.
+> `Paid / Collected` above 100% means more paid out than collected that month, normal when an amortisation date draws on reserves, worth a look if it persists. A month with filings but no payment figures is blank, never zero.
 
 ---
 
 ## Credit Ratings
 
-> `classificacao_risco_atual` is free text as filed — different agencies,
-> different scales, and several spellings of "no rating" coexist. Values are
-> grouped verbatim; collapsing e.g. `brAAA` and `AAA(bra)` into one label would
-> be an assumption, not data.
+> `classificacao_risco_atual` is free text as filed (CVM, monthly), grouped verbatim: merging `brAAA` and `AAA(bra)` would be an assumption, not data.
 
 <BarChart
   data={securit_ratings}
@@ -258,16 +192,7 @@ yAxisTitle="R$mm"
 
 ## Subordination Structure
 
-> Tranche classes as filed in `classe`, with the minimum subordination index
-> reported alongside. **`Índice Subord. Mínimo` is shown unscaled**: CVM does not
-> document whether the field is a fraction or a percentage, and both conventions
-> appear across filings, so it is not converted into a "%" here.
->
-> `Series w/ Nível` will read **0** until the parser is extended.
-> `cvm_securit_serie.nivel_subordinacao` exists in `schema.sql` but no
-> `FIELD_MAP` entry populates it, so the column is structurally always NULL
-> today. It is counted here rather than omitted so the gap stays visible — the
-> tranche ordering below comes from `classe`, which is populated.
+> Tranche classes as filed in `classe` (CVM, monthly). **`Índice Subord. Mínimo` is shown unscaled**: CVM does not document whether it is a fraction or a percentage. `Series w/ Nível` reads **0** because `nivel_subordinacao` exists in `schema.sql` but no `FIELD_MAP` entry populates it; it is counted so the gap stays visible.
 
 <DataTable data={securit_subordination} rows=12>
   <Column id=classe title="Tranche Class (as filed)"/>
@@ -284,13 +209,7 @@ yAxisTitle="R$mm"
 
 ## Distressed Series
 
-> Series whose latest filing carries a distressed `situacao` — Inadimplente, Em
-> atraso, or Cancelado — from `distressed_securities()`. Largest by outstanding
-> value first. An empty table here means no series in the book carried a
-> distressed status at the latest period, not that the check did not run.
-> Collected and Paid are the certificate's cash flows for the month: CVM files
-> them per certificate, not per series, so every series of one certificate
-> shows the same figures. Do not add them up across rows.
+> Series whose latest filing carries a distressed `situacao` (Inadimplente, Em atraso or Cancelado), from `distressed_securities()` (CVM, monthly), largest first. An empty table means none at the latest period, not that the check did not run. Collected and Paid are filed per certificate, not per series, so series of one certificate repeat the same figures: do not add them across rows.
 
 <DataTable data={securit_distressed} rows=15 search=true>
   <Column id=instrument title="Type"/>
@@ -309,12 +228,7 @@ yAxisTitle="R$mm"
 
 ## Financial Statement Coverage
 
-> **Coverage only — there is no financial analysis in this section, by design.**
-> `cvm_securit_dfin` is stored as `(instrument_type, period_year, cnpj_securit,
-raw JSONB)`, and its field map parses exactly one column, `cnpj_securit`;
-> every statement line is still unparsed inside `raw`. Charting revenue or
-> equity from this table would mean inventing it, so this counts filings and
-> stops there.
+> **Coverage only, by design.** `cvm_securit_dfin` parses one column, `cnpj_securit`; every statement line is unparsed in `raw` (CVM, yearly). Charting revenue or equity would mean inventing it, so this counts filings.
 
 <BarChart
 data={securit_dfin_coverage}
@@ -333,7 +247,4 @@ title="DFIN Filings Ingested per Year"
   <Column id=n_securitizadoras title="Distinct Securitizadoras" fmt=num0/>
 </DataTable>
 
-> Blank years are years not yet fetched. `dfin_cri` starts at 2018 and
-> `dfin_cra` at 2019 upstream (`src/fetchers/cvm_config.py`), so a blank before
-> those dates is expected rather than a gap. Whether the fetch has run at all is
-> on [Pipeline Ops](/ops).
+> Blank years are not yet fetched; `dfin_cri` starts at 2018 and `dfin_cra` at 2019 upstream (`src/fetchers/cvm_config.py`). Fetch status: [Pipeline Ops](/ops).

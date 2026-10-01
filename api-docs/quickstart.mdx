@@ -4,10 +4,10 @@ description: "Get the publishable key, make your first request, and read the res
 icon: "rocket"
 ---
 
-### 1. Testing key
+### 1. Set the key
 
 <Warning>
-  The publishable key below is **shared** — everyone reading these docs has the same one. It identifies the project, not you.
+  This publishable key is **shared** by everyone reading these docs. It identifies the project, not you.
 </Warning>
 
 ```bash
@@ -15,25 +15,14 @@ export SILO_URL="https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"
 export SILO_ANON_KEY="sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 ```
 
-The env var omits the trailing slash so `"$SILO_URL/rpc/..."` joins cleanly.
+- Send it on `apikey` only. It is **not** a JWT: as `Authorization: Bearer` it returns `Invalid JWT`.
+- `Authorization` is only for a **user** session. The JS client (`createClient(url, publishableKey)`) sets `apikey` for you.
+- **Sign in for a bigger ceiling:** [the sign-in page](https://silo-bz-deloslabs.vercel.app/signin.html) (GitHub) hands you a user JWT to send as `Authorization: Bearer <token>` alongside `apikey`. Tiers: [Conventions & limits](/api-docs/conventions#authentication). Never invent or mint a key.
+- Ignore **Secret** (`sb_secret_…`) and legacy `service_role`: they bypass every boundary. Landing tables are unreachable with the publishable key; `Accept-Profile: public` answers 401.
 
-**Sign in for a bigger ceiling.** [The sign-in page](https://silo-bz-deloslabs.vercel.app/signin.html) (GitHub) hands you a user JWT to send as `Authorization: Bearer <token>` alongside `apikey`. What each tier gets is one table on [Conventions & limits](/api-docs/conventions#authentication). Never invent or mint a key.
+### 2. First call
 
-**Note**: ignore **Secret** (`sb_secret_…`) and legacy `service_role` — those bypass every boundary on these pages. Landing tables are unreachable with the publishable key: schema `api` is the entire public surface, and `Accept-Profile: public` answers 401 for every caller.
-
-### 2. Send it on every request
-
-The publishable key is **not** a JWT. Put it only on `apikey` — sending it as `Authorization: Bearer` returns `Invalid JWT`.
-
-```
-apikey: sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437
-```
-
-`Authorization` is only for a **user** session. The JS client (`createClient(url, publishableKey)`) sets `apikey` for you.
-
-### 3. Your first call
-
-Ask what the warehouse holds. `coverage` takes no arguments:
+`coverage` takes no arguments and says what the warehouse holds:
 
 <CodeGroup>
 
@@ -69,7 +58,7 @@ console.log(data)
 
 </CodeGroup>
 
-The response is a plain JSON array — PostgREST has no envelope:
+The response is a plain JSON array, with no envelope:
 
 ```json
 [
@@ -79,11 +68,7 @@ The response is a plain JSON array — PostgREST has no envelope:
 ]
 ```
 
-**Note**: sample values throughout this documentation are illustrative shapes, not live prints. Call `coverage` to see what is actually loaded.
-
-### 4. Read a view
-
-Views are read with `GET` and PostgREST filter syntax:
+### 3. Read a view (`GET`)
 
 <CodeGroup>
 
@@ -120,9 +105,9 @@ const { data } = await supabase
 
 </CodeGroup>
 
-### 5. Call a function
+### 4. Call a function (`POST`)
 
-Functions take **named arguments** in a JSON body, `POST /rpc/<name>`. Argument names are the SQL parameter names and all start with `p_`. Omit an argument to take its default.
+Named arguments in a JSON body to `POST /rpc/<name>`. Names are the SQL parameter names and all start with `p_`; omit one to take its default.
 
 <CodeGroup>
 
@@ -171,16 +156,7 @@ const { data } = await supabase.rpc('panel', {
 ]
 ```
 
-That is the whole shape of the API: views you `GET`, functions you `POST`.
-
-### 6. Schema headers
-
-Everything above assumes `api` is the **default** exposed schema. If the project exposes more than one and `api` is not first, name it explicitly:
-
-- `Accept-Profile: api` on `GET`
-- `Content-Profile: api` on `POST` (including `/rpc/`)
-
-In `supabase-js` that is `createClient(url, key, { db: { schema: 'api' } })` or `supabase.schema('api')` per call. A `PGRST106` error means the schema is not exposed at all — fixed in Supabase Dashboard → Settings → API → **Exposed schemas**.
+That is the whole API shape: views you `GET`, functions you `POST`.
 
 ### Next
 
@@ -192,7 +168,7 @@ In `supabase-js` that is `createClient(url, key, { db: { schema: 'api' } })` or 
     One method per endpoint; a capped response raises; views page.
   </Card>
   <Card title="Panel" icon="table" href="/api-docs/panel">
-    The researcher endpoint — mixed ids, mixed metrics, one grain.
+    The researcher endpoint: mixed ids, mixed metrics, one grain.
   </Card>
   <Card title="Quotes" icon="chart-line" href="/api-docs/quotes">
     B3 cash prices, unadjusted, by ticker and session.
@@ -201,3 +177,9 @@ In `supabase-js` that is `createClient(url, key, { db: { schema: 'api' } })` or 
     Registry, profile, and monthly NAV by CNPJ.
   </Card>
 </CardGroup>
+
+### Notes
+
+- Sample values in these docs are illustrative shapes, not live prints. Call `coverage` for what is loaded.
+- If the project exposes several schemas and `api` is not first, send `Accept-Profile: api` on `GET` and `Content-Profile: api` on `POST` (including `/rpc/`). In `supabase-js`: `{ db: { schema: 'api' } }` or `supabase.schema('api')`.
+- `PGRST106` means the schema is not exposed: Supabase Dashboard, Settings, API, **Exposed schemas**.

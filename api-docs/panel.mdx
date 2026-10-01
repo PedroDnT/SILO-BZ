@@ -12,9 +12,7 @@ icon: "table"
 
 ### Overview
 
-`panel` is the primitive this API is built around. One row is an observation: `(id, date, metric, value)`.
-
-That shape pulls B3 cash-market prints and fund fundamentals for the same window in one request. Pivot to a `dates × columns` matrix locally and run your reductions there — there is no server-side `corr`, `rank`, or regression.
+`panel` returns one row per observation, `(id, date, metric, value)`, so B3 prices and fund fundamentals for the same window come in one request. Pivot locally; there is no server-side `corr`, `rank` or regression.
 
 ```sql
 api.panel(p_ids         TEXT[],
@@ -33,33 +31,31 @@ api.panel(p_ids         TEXT[],
 </Note>
 
 <Warning>
-  **Over 1,000 rows the panel refuses; it never trims.** Since v26 every set-returning function does the same. A window over one page raises `22023` (HTTP 400) naming the fix: **page with `p_after`**, or narrow the request. See [Paging](#paging).
+  **Over 1,000 rows the panel refuses; it never trims.** A window over one page raises `22023` (HTTP 400): **page with `p_after`**, or narrow the request. See [Paging](#paging).
 </Warning>
 
-### Parameter notes
+### Parameters
 
 | Parameter | What to know |
 | --- | --- |
-| `p_ids` | Tickers, derivative codnegs and CNPJs, mixed freely. Strip the non-digits: **exactly 14 digits means CNPJ**, anything else is a B3 code, upper-cased. Whether that code resolves as a cash ticker, an option series or a termo contract is decided by the market segment it prints in, not the string. Blank entries dropped. **Capped by tier: 3 ids anonymously, 50 signed in** — over it raises `22023`, never a quiet truncation. |
-| `p_metrics` | Lower-cased and trimmed server-side. **A name not in the table below is silently ignored**, so a typo shows up as missing rows rather than a `400`. |
-| `p_from` | Snapped **down** to the first of the month for fund metrics; used as-is for quote metrics. |
-| `p_to` | Omitted, fund metrics end at each family's latest **complete** period, so a default panel never shows a fake trailing collapse; quote metrics still run to today. An explicit `p_to` serves the window verbatim, partial months included. [`coverage`](/api-docs/coverage) reports each bound as `complete_through`. |
-| `p_freq` | `day`, `d` and `daily` all mean daily; **every other value, including a typo like `week`, falls back to `month`** rather than erroring. |
-| `p_entity_type` | `fi`, `fidc`, `fii`, `fip` or `fiagro`. Anything else raises `22023` listing the five. With `p_ids` empty it selects universe mode. |
-| `p_min_nav` | Universe mode only. Latest non-null net assets in the window, in BRL — a filter on a published value, not a rank. |
-| `p_min_months` | Universe mode only. Minimum non-null observations of the **first** requested metric, so a fund that filed two of twelve months is not compared with one that filed all twelve. |
-| `p_after` | `null` is whole-result mode and refuses above one page. `''` asks for the first page. `'<date>\|<id>\|<metric>\|<asset_class>'` from the last row asks for the next. A malformed cursor raises `22023`. |
+| `p_ids` | Tickers, derivative codnegs and CNPJs, mixed. After stripping non-digits, **exactly 14 digits means CNPJ**; anything else is a B3 code, upper-cased (cash ticker, option series or termo contract is decided by the market segment it prints in). **3 ids anonymously, 50 signed in**; over it raises `22023`. |
+| `p_metrics` | Lower-cased and trimmed. **A name not in the Metrics table is silently ignored**, so a typo shows as missing rows, not a `400`. |
+| `p_from` | Snapped **down** to the first of the month for fund metrics; as-is for quote metrics. |
+| `p_to` | Omitted: fund metrics end at each family's latest **complete** period; quote metrics run to today. Explicit: served verbatim, partial months included. [`coverage`](/api-docs/coverage) reports the bound as `complete_through`. |
+| `p_freq` | `day`, `d`, `daily` mean daily; **every other value, including a typo like `week`, falls back to `month`**. |
+| `p_entity_type` | `fi`, `fidc`, `fii`, `fip` or `fiagro`; anything else raises `22023`. With `p_ids` empty it selects universe mode. |
+| `p_min_nav` | Universe mode only. Latest non-null net assets in the window, in BRL; a filter, not a rank. |
+| `p_min_months` | Universe mode only. Minimum non-null observations of the **first** requested metric. |
+| `p_after` | `null` is whole-result mode and refuses above one page. `''` is the first page. `'<date>\|<id>\|<metric>\|<asset_class>'` from the last row is the next. A malformed cursor raises `22023`. |
 
 ### Universe mode
 
-Leave `p_ids` empty and name a family with `p_entity_type`: the panel selects that family's funds itself, optionally floored by `p_min_nav` and `p_min_months`. Same long rows, nothing ranked server-side — so *"every FIDC by how much its delinquency worsened"* is a handful of paged calls instead of hundreds of three-id ones.
+Leave `p_ids` empty and name a family with `p_entity_type`: the panel selects that family's funds itself, optionally floored by `p_min_nav` and `p_min_months`. Nothing is ranked server-side. **Signed-in callers only** (each page re-scans the family's whole window); `catalog().limits.tiers.<tier>.panel_universe` says which you are.
 
 ```json
 {"p_ids": [], "p_metrics": ["delinquency", "nav"], "p_entity_type": "fidc",
  "p_from": "2025-09-01", "p_min_nav": 10000000, "p_min_months": 12, "p_after": ""}
 ```
-
-**Signed-in callers only** — each page re-scans the family's whole window. `catalog().limits.tiers.<tier>.panel_universe` says which you are.
 
 ### Metrics
 
@@ -67,35 +63,35 @@ Leave `p_ids` empty and name a family with `p_entity_type`: the panel selects th
 | --- | --- | --- | --- | --- | --- |
 | `close` | ticker, option, termo | equity, unit, bdr, fund_quota, cash_security, derivative | day, month | `b3_cotahist` | Unadjusted close. Cash tickers: the instrument's published BDI board. Monthly = last session of the month. |
 | `volume` | ticker, option, termo | equity, unit, bdr, fund_quota, cash_security, derivative | day, month | `b3_cotahist` | Session financial volume in BRL. Monthly = the last session's volume, not a sum. |
-| `close_unit` | ticker | equity, unit, bdr, fund_quota, cash_security | day, month | `b3_cotahist` | `close / quotation_factor`, both published — the close per **single** quoted unit. Use it to compare price levels across papers: one quoted per lot reads 1000× its unit price. Not corporate-action adjusted. |
+| `close_unit` | ticker | equity, unit, bdr, fund_quota, cash_security | day, month | `b3_cotahist` | `close / quotation_factor`: close per **single** quoted unit. Compares price levels across papers (one quoted per lot reads 1000× its unit price). Not corporate-action adjusted. |
 | `close_return` | ticker | equity, unit, bdr, fund_quota, cash_security | day, month | `b3_cotahist` | `p_t / p_(t-1) - 1` from **unadjusted** closes. A 2:1 split reports roughly −50%. **Cash tickers only.** |
 | `nav` | cnpj | fi, fidc, fii, fip, fiagro | month | `cvm` | Fund net assets (`vl_patrim_liq`). |
 | `quota` | cnpj | fi | month | `cvm` | Unit quota value. Comparable within a subclass only. |
-| `delinquency` | cnpj | fidc, fiagro | month | `cvm` | Delinquent portfolio **value**, not a rate — divide by `nav` yourself. |
+| `delinquency` | cnpj | fidc, fiagro | month | `cvm` | Delinquent portfolio **value**, not a rate; divide by `nav` yourself. |
 | `yield` | cnpj | fii | month | `cvm` | Monthly yield percentage as published. |
 | `inflows` | cnpj | fi | month | `cvm` | Gross monthly subscriptions. |
 | `redemptions` | cnpj | fi | month | `cvm` | Gross monthly redemptions. |
-| `quotaholders` | cnpj | fi, fii | month | `cvm` | Number of unit-holders. Not served for fidc, fiagro or fip — their fact-table arms carry no holder count. |
-| `receivables` | cnpj | fidc | month | `cvm` | Receivables portfolio total (tab II `TOTAL`) — the denominator for a concentration ratio. See [FIDC concentration](/api-docs/fidc). |
+| `quotaholders` | cnpj | fi, fii | month | `cvm` | Number of unit-holders. Not served for fidc, fiagro or fip. |
+| `receivables` | cnpj | fidc | month | `cvm` | Receivables portfolio total (tab II `TOTAL`), the denominator for a concentration ratio. See [FIDC concentration](/api-docs/fidc). |
 | `sacado_top1` | cnpj | fidc | month | `cvm` | Exposure to the single largest debtor (tab VIII rank 1, as filed). Anonymized in the source. |
-| `sacado_top25` | cnpj | fidc | month | `cvm` | Sum of the ranks the fund filed (1..n, n ≤ 25); nothing imputed. Can exceed `receivables` for ~2% of funds — served as filed, never capped. |
+| `sacado_top25` | cnpj | fidc | month | `cvm` | Sum of the ranks the fund filed (1..n, n ≤ 25); nothing imputed. Can exceed `receivables` for ~2% of funds, served as filed, never capped. |
 
-*Asset class* is exactly the set of families whose fact-table arm files that column (`catalog().applicability`). Ask for a metric outside its families and you get **no rows** for those ids — not nulls, not zeros. FIDC `delinquency` is null through 2024-12 and filed from 2025-01, so a FIDC delinquency series starts there.
+A metric asked outside its asset classes (`catalog().applicability`) gives **no rows** for those ids, not nulls or zeros. FIDC `delinquency` is null through 2024-12 and filed from 2025-01.
 
 <Warning>
-  **`freq=day` is quotes only.** No CVM fundamental is published daily, so the fund arms are not evaluated at a daily grain — asking for `nav` with `p_freq: "day"` returns the quote rows and nothing else. Mix asset classes at `freq=month`, where the B3 value is the **last real session in the month**. Aligning a monthly NAV onto a daily calendar would require filling, and this API does not fill.
+  **`freq=day` is quotes only.** No CVM fundamental is daily, so `nav` with `p_freq: "day"` returns the quote rows and nothing else. Mix asset classes at `freq=month`, where the B3 value is the **last real session in the month**. Aligning a monthly NAV to a daily calendar would require filling, and this API does not fill.
 </Warning>
 
-### Field notes
+### Response fields
 
 | Field | What to know |
 | --- | --- |
-| `asset_class` | For cash tickers the conservative B3 type — `fund_quota` deliberately does not guess ETF versus FII. `derivative` for option and termo codnegs. For funds, the vehicle's `entity_type`. |
-| `date` | At `freq=month` **always the first day of the month**, for every id, so ids from different sources land on the same row. This is normalisation, not the stored value: CVM publishes FI/FII/FIAGRO at first-of-month, FIDC at month-**end**, FIP at year-**end**. [`fund_nav`](/api-docs/funds) still serves the period exactly as filed. |
-| `value` | Nullable for `close` and `volume`; for every other metric a null is emitted as **no row at all**. |
-| `source` | `b3_cotahist` or `cvm` — provenance travels with the row. |
+| `asset_class` | Cash tickers: the conservative B3 type (`fund_quota` deliberately does not guess ETF versus FII). `derivative` for option and termo codnegs. Funds: the vehicle's `entity_type`. |
+| `date` | At `freq=month` **always the first day of the month**, for every id. This is normalisation: CVM publishes FI/FII/FIAGRO at first-of-month, FIDC at month-**end**, FIP at year-**end**. [`fund_nav`](/api-docs/funds) serves the period as filed. |
+| `value` | Nullable for `close` and `volume`; for every other metric a null is **no row at all**. |
+| `source` | `b3_cotahist` or `cvm`. |
 
-Rows are ordered by `date`, then `id`, then `metric`.
+Rows are ordered by `date`, `id`, `metric`, `asset_class`.
 
 ### Example
 
@@ -115,74 +111,29 @@ curl -s -X POST "$SILO_URL/rpc/panel" \
 ```
 
 ```python Python
-import pandas as pd
-
-body = {
-    "p_ids": ["PETR4", "12345678000190"],
-    "p_metrics": ["close_return", "delinquency", "nav"],
-    "p_from": "2021-01-01",
-    "p_to": "2026-06-30",
-    "p_freq": "month",
-}
+body = {"p_ids": ["PETR4", "12345678000190"], "p_metrics": ["close_return", "delinquency", "nav"],
+        "p_from": "2021-01-01", "p_to": "2026-06-30", "p_freq": "month"}
 rows = requests.post(f"{URL}/rpc/panel", headers=H, json=body).json()
-
-long = pd.DataFrame(rows)
-wide = long.pivot_table(index="date", columns=["id", "metric"], values="value")
-# Pairwise-complete correlation. Do NOT ffill first.
-wide.corr(min_periods=12)
-```
-
-```javascript JavaScript
-const { data } = await supabase.rpc('panel', {
-  p_ids: ['PETR4', '12345678000190'],
-  p_metrics: ['close_return', 'delinquency', 'nav'],
-  p_from: '2021-01-01',
-  p_to: '2026-06-30',
-  p_freq: 'month',
-})
+wide = pd.DataFrame(rows).pivot_table(index="date", columns=["id", "metric"], values="value")
+wide.corr(min_periods=12)  # pairwise-complete; do NOT ffill first
 ```
 
 </CodeGroup>
 
-```json
-[
-  { "id": "12345678000190", "id_type": "cnpj", "asset_class": "fidc",
-    "date": "2021-02-01", "metric": "delinquency", "value": 7412008.3, "source": "cvm" },
-  { "id": "12345678000190", "id_type": "cnpj", "asset_class": "fidc",
-    "date": "2021-02-01", "metric": "nav", "value": 301844120.0, "source": "cvm" },
-  { "id": "PETR4", "id_type": "ticker", "asset_class": "equity",
-    "date": "2021-02-01", "metric": "close_return", "value": -0.0827, "source": "b3_cotahist" }
-]
-```
-
 ### Paging
 
-Rows are ordered by `(date, id, metric, asset_class)`, and that tuple is the cursor. Send `p_after: ""` for the first page, then the last row's key. A full page always has a next page; a short page is always the last.
+Send `p_after: ""` for the first page, then the last row's key `'<date>|<id>|<metric>|<asset_class>'`. A full page always has a next page; a short page is always the last. The SDK does this: `iter_panel(...)` / `panel_all(...)`. `Range` headers and `limit`/`offset` do **not** page an RPC call.
 
-```bash
-after=""
-while :; do
-  page=$(curl -s -X POST "$SILO_URL/rpc/panel" -H "apikey: $SILO_ANON_KEY" \
-    -H "Content-Type: application/json" \
-    -d "{\"p_ids\":[\"PETR4\"],\"p_metrics\":[\"close\"],\"p_from\":\"2019-01-01\",\"p_freq\":\"day\",\"p_after\":\"$after\"}")
-  echo "$page" | jq -c '.[]' >> panel.jsonl
-  n=$(echo "$page" | jq 'length'); [ "$n" -lt 1000 ] && break
-  after=$(echo "$page" | jq -r '.[-1] | "\(.date)|\(.id)|\(.metric)|\(.asset_class)"')
-done
-```
-
-The SDK does this: `iter_panel(...)` / `panel_all(...)`. `Range` headers and `limit`/`offset` do **not** page an RPC call.
+For scale: 3 ids × 2 metrics × 5 years of daily quotes is ~7,500 rows, eight pages.
 
 ### Notes
 
-- **Nothing is forward-filled, interpolated or carried forward.** A month a fund did not file is **absent**, and stays absent. Correlate pairwise-complete; do not fill.
-- **Two shapes of "no data".** Fund and derived metrics are emitted only when non-null, so a gap is an **absent row** — `nav`, `quota`, `delinquency`, `yield`, `inflows`, `redemptions`, `quotaholders` and `close_return` never appear with a null `value`. `close` and `volume` are emitted every session and can carry a JSON `null`.
-- **`close_return` is unadjusted.** The ratio of two raw B3 prints, so a 2:1 split reports roughly −50% and calls it a return. An event study or a drawdown will silently eat a fabricated shock. Treat jumps over ~40% as suspect until you have checked for a corporate action.
-- **`close_return` needs a predecessor.** Monthly, only when the preceding row is the immediately preceding calendar month — a missing month never becomes a silent two-month return. Daily, against the previous **stored** session, so a session missing from the warehouse makes the return span the gap; check [`coverage`](/api-docs/coverage). The first observation in a window is always absent, so request more history than you analyze.
-- **Windows behave differently per side.** Quote metrics honor `p_from` exactly; fund metrics start from `date_trunc('month', p_from)` and `p_to` is month-truncated too, so a `p_to` of `2026-07-01` still returns the whole of July for a FIDC whose filed period is `2026-07-31`.
-- **Derivatives carry no `close_return`** and their real grain is wider than the panel's — COTAHIST keys them on board, and termo also on term, so a within-session tie is **cut deterministically** (shortest term wins) rather than averaged into a price nobody quoted. For the full grain use [`option_history`](/api-docs/options) or [`termo_history`](/api-docs/termo). There is no `underlying` column anywhere.
-- **The panel accepts every cash-market BDI board** and deterministically keeps one row when a ticker has multiple boards on a session.
-- **Requests are bounded by the statement timeout.** A call that runs too long fails outright rather than returning part of a panel.
-- **An empty array means no observation matched** — unknown ids, no filings in the window, a metric that does not apply, or a silently ignored metric name. Confirm with [`lookup`](/api-docs/lookup) and [`coverage`](/api-docs/coverage).
-
-For scale: 1 id × 2 metrics × 12 months is 24 rows; 3 ids × 2 metrics × 5 years of daily quotes is ~7,500 rows — eight pages, or one call after narrowing to a year.
+- **Nothing is forward-filled or interpolated.** A month a fund did not file is **absent**. Correlate pairwise-complete.
+- **Two shapes of "no data".** `nav`, `quota`, `delinquency`, `yield`, `inflows`, `redemptions`, `quotaholders` and `close_return` never appear with a null `value`; a gap is an absent row. `close` and `volume` are emitted every session and can carry a JSON `null`.
+- **`close_return` is unadjusted.** A 2:1 split reports roughly −50% and calls it a return. Treat jumps over ~40% as suspect until you have checked for a corporate action.
+- **`close_return` needs a predecessor.** Monthly: only when the preceding row is the immediately preceding calendar month. Daily: against the previous **stored** session, so a session missing from the warehouse makes the return span the gap (check [`coverage`](/api-docs/coverage)). The first observation in a window is always absent, so request more history than you analyze.
+- **Windows differ per side.** Quote metrics honor `p_from` exactly; fund metrics start from `date_trunc('month', p_from)` and `p_to` is month-truncated too, so `p_to` of `2026-07-01` still returns all of July for a FIDC filed at `2026-07-31`.
+- **Derivatives carry no `close_return`**, and their real grain is wider (COTAHIST keys them on board, termo also on term), so a within-session tie is **cut deterministically** (shortest term wins), not averaged. For the full grain use [`option_history`](/api-docs/options) or [`termo_history`](/api-docs/termo). There is no `underlying` column anywhere.
+- **Every cash-market BDI board is accepted**; one row is kept deterministically when a ticker has multiple boards in a session.
+- **Statement timeout:** a call that runs too long fails outright rather than returning part of a panel.
+- **An empty array means no observation matched**: unknown ids, no filings in the window, a metric that does not apply, or an ignored metric name. Confirm with [`lookup`](/api-docs/lookup) and [`coverage`](/api-docs/coverage).

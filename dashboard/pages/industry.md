@@ -5,51 +5,14 @@ sidebar_position: 1
 ---
 
 <!--
-  The shape of the Brazilian fund industry as a whole: size, concentration,
-  formation, investor base, and the composition by conformed asset class.
-
-  Every number on this page comes from an analytical RPC that already existed and
-  had no caller:
-    industry_aum_trend()          09_analytical_functions.sql
-    market_concentration()        09_analytical_functions.sql
-    new_funds_per_period()        09_analytical_functions.sql
-    quotaholder_trend()           09_analytical_functions.sql
-    asset_class_performance()     14_ranking_functions.sql
-    quotaholder_trend_by_class()  14_ranking_functions.sql
-  The last two run over dim_fund_category (13_dim_classification.sql), which
-  conforms five heterogeneous CVM families onto one asset_class axis.
-
-  FIP AND FIAGRO ARE READ AT SOURCE. Both are otherwise only visible as an
-  anonymous slice of an aggregate, so each gets its own section built directly
-  on cvm_fip_periodic and cvm_fiagro_mensal — including FIAGRO's vl_inadimpl,
-  which no aggregate view exposes for it.
-
-  GRAIN WARNINGS, none of them smoothed over:
-    * FIP reports YEARLY (inf_trimestral to 2023, inf_quadrimestral from 2024)
-      and fact_fund_monthly maps it to 31-DEC of the reporting year — a date in
-      the FUTURE for most of the calendar year. Anything that resolves "the
-      latest period" as max(period) therefore lands on a FIP-only date. That is
-      why the class snapshot uses each class's OWN latest period (and prints it).
-    * captc_mes / resg_mes exist for FI only, so "net flow" is an FI number.
-    * nr_cotst is absent for FIDC and FIP entirely.
-    * pct_yield_mes is populated for FII only, so median yield is blank for every
-      other class by construction — it is NOT a cross-class return comparison.
-    * CVM publishes monthly datasets 1-2 months in arrears; the newest month or
-      two are legitimately thin, not broken.
-
-  ZERO-ROW RULE: every source is driven from a generate_series spine or a literal
-  driver list with the RPC LEFT JOINed on, so none can return zero rows — which
-  would write a zero-byte parquet and kill the Evidence build. Absent data
-  renders blank.
-
-  SHARE-OF-TOTAL CHART: Evidence AreaChart type=stacked100 does not work with a
-  wide list of y columns (it rewrites each to `{name}_pct` and then fails to
-  find that column). industry_aum_trend.sql therefore emits *_share_num1 and the
-  page uses a regular stacked area of those.
-
-  SECTION ORDER is size → concentration → composition → flows and formation →
-  investors → the two families that are otherwise invisible. Concentration sits
-  second because it is the finding, not an appendix to the size chart.
+  Size, concentration, formation, investor base and composition by asset class, from
+  existing analytical RPCs (09 and 14) over dim_fund_category (13); FIP and FIAGRO are
+  read at source (cvm_fip_periodic, cvm_fiagro_mensal).
+  Grain: FIP is YEARLY, mapped to 31-DEC of the reporting year (a future date most of
+  the year), so the class snapshot uses each class's OWN latest period. captc_mes and
+  resg_mes are FI only; nr_cotst is absent for FIDC and FIP; pct_yield_mes is FII only.
+  Zero-row rule: sources are a spine LEFT JOINed with the RPC, so none returns zero rows.
+  Share chart: stacked100 breaks with a wide y list, so the SQL emits *_share_num1.
 -->
 
 ```sql industry_aum_trend
@@ -90,33 +53,15 @@ select * from supabase.industry_fiagro
 
 # Industry Structure
 
-> The Brazilian fund industry is a one-family market: FI holds an order of
-> magnitude more net assets than FIDC, FII, FIAGRO and FIP combined, and each of
-> those families is concentrated in a handful of houses at the top. The
-> concentration table below is the measurement, not the impression.
->
-> What this page does **not** support: any cross-family return comparison. Net
-> flow exists for FI alone, quotaholder counts are absent for FIDC and FIP, and
-> median yield is an FII-only field. Read each column against the family that
-> actually reports it. Who runs these funds is on [Managers](/managers); whether
-> the underlying slices landed at all is on [Pipeline Ops](/ops).
+> FI holds an order of magnitude more net assets than FIDC, FII, FIAGRO and FIP combined, and each family is concentrated in a few houses (CVM, monthly, 1 to 2 months lag). No cross-family return comparison is supported: net flow is FI only, quotaholders are absent for FIDC and FIP, and median yield is FII only. Houses: [Managers](/managers); landing: [Pipeline Ops](/ops).
 
 ---
 
 ## Industry Net Assets by Fund Family
 
-> Net assets summed per family per month. FIP contributes only in the month its
-> yearly filing maps to (December), so its line is a step, not a trend.
->
-> FI is an order of magnitude larger than the other four combined, so on one
-> linear scale its band fills the chart. Hence two views: share of the total,
-> and absolute net assets with FI excluded.
+> Net assets summed per family per month (CVM, monthly, 1 to 2 months lag). FIP lands only in December, so its line is a step. Two views, because FI fills a linear scale: share of total, and absolute with FI excluded.
 
-> **The step at 2025-05 is FIAGRO entering the data, not the industry growing.**
-> CVM's FIAGRO monthly file begins in May 2025 with **3 funds**, reaches 125 by
-> September and 202 by December, so every aggregate including FIAGRO steps up as
-> the family is onboarded. The per-family lines are unaffected and are the honest
-> read; the total is a sum over whatever families the data covers that month.
+> **The step at 2025-05 is FIAGRO entering the data, not the industry growing.** CVM's FIAGRO file begins May 2025 with **3 funds**, reaches 125 by September and 202 by December; per-family lines are unaffected.
 
 <AreaChart
 data={industry_aum_trend}
@@ -135,22 +80,13 @@ yAxisTitle="Net Assets (R$bn)"
 title="Net Assets by Family — Last 36 Months (ex-FI and ex-FIP, absolute)"
 />
 
-> FIP is left off the absolute stack: its yearly filing lands in one month of
-> twelve as a band larger than the other three families together, which turns a
-> monthly chart into a saw. Its yearly bars are further down this page.
+> FIP is left off the absolute stack: its yearly filing would dwarf the other three in one month. Its yearly bars are below.
 
 ---
 
 ## Concentration
 
-> HHI on the 0–10,000 scale (sum of squared net-asset shares × 10,000) plus top-N
-> share, each family measured at **its own latest reported period** — shown in the
-> Period column, because FIP's yearly grain means the families are not all as-of
-> the same date.
->
-> As a rule of thumb an HHI above 2,500 is a concentrated market; below 1,500 is
-> not. All five families are listed even when a family has no data. The houses
-> behind these shares are named on [Managers](/managers).
+> HHI (0 to 10,000; sum of squared net-asset shares × 10,000) and top-N share, each family at **its own latest period** (Period column, since FIP is yearly). Rule of thumb: above 2,500 concentrated, below 1,500 not. All five families are listed even without data.
 
 <DataTable data={industry_concentration}>
   <Column id=family title="Fund Family"/>
@@ -166,11 +102,7 @@ title="Net Assets by Family — Last 36 Months (ex-FI and ex-FIP, absolute)"
 
 ## Composition by Asset Class
 
-> `dim_fund_category` conforms the five families onto one axis: FI splits into Fixed
-> Income / Equity / Multimarket / Other FI on the registry's `tp_fundo`, and each
-> other family maps whole (FIDC → Structured Credit, FII → Real Estate, FIAGRO →
-> Agribusiness, FIP → Private Equity). Funds with no ingested registry row fall into
-> **Other FI**, so that bucket is a coverage artefact as much as a category.
+> `dim_fund_category` conforms the five families onto one axis: FI splits by the registry's `tp_fundo`; FIDC is Structured Credit, FII Real Estate, FIAGRO Agribusiness, FIP Private Equity. Funds with no registry row fall into **Other FI**, a coverage artefact as much as a category (CVM, monthly, 1 to 2 months lag).
 
 <AreaChart
   data={industry_asset_class}
@@ -181,11 +113,7 @@ title="Net Assets by Family — Last 36 Months (ex-FI and ex-FIP, absolute)"
   title="Net Assets by Conformed Asset Class — Last 24 Months"
 />
 
-> Each class below is at **its own latest period** — the Period column says which,
-> and the rows are therefore not necessarily as-of the same date. Median yield is
-> blank outside Real Estate because `pct_yield_mes` is an FII-only field, so this
-> column is **not** a cross-class return comparison. Ranked performance within
-> each class is on [Performance](/performance).
+> Each class is at **its own latest period** (Period column). Median yield is blank outside Real Estate (`pct_yield_mes` is FII only), so it is **not** a cross-class return comparison. Rankings: [Performance](/performance).
 
 <DataTable data={industry_class_latest} rows=9>
   <Column id=asset_class title="Asset Class"/>
@@ -201,11 +129,7 @@ title="Net Assets by Family — Last 36 Months (ex-FI and ex-FIP, absolute)"
 
 ## FI Net Flow
 
-> Subscriptions minus redemptions. `captc_mes` and `resg_mes` are FI-only columns
-> in `fact_fund_monthly`, so this is the open-ended fund industry alone — the
-> other families report no flow at all and are omitted rather than shown as zero.
-> The daily version of the same series, and the funds behind it, are on
-> [FI Industry](/fi).
+> Subscriptions minus redemptions (CVM, monthly, 1 to 2 months lag). `captc_mes` and `resg_mes` exist for FI only, so other families are omitted, not zero. Daily version: [FI Industry](/fi).
 
 <BarChart
   data={industry_aum_trend}
@@ -219,10 +143,7 @@ title="Net Assets by Family — Last 36 Months (ex-FI and ex-FIP, absolute)"
 
 ## Fund Formation
 
-> Count of funds whose **first appearance in CVM's data** falls in each month.
-> That is a proxy for launch, not a registration date: a fund that existed before
-> the ingested history begins looks new in the first month of coverage, so read
-> the left edge of the series with care.
+> Funds whose **first appearance in CVM's data** falls in each month (CVM, monthly): a proxy for launch, so the left edge of the series looks inflated.
 
 <BarChart
 data={industry_new_funds}
@@ -233,19 +154,13 @@ yAxisTitle="New Funds"
 title="First-Reported Funds per Month — Monthly Filers"
 />
 
-> **FIP is not on this chart.** It files once a year, so every FIP's first period
-> lands on a January and it stacked into a fake formation spike each January. A
-> yearly filer on a monthly axis is a plotting artefact, not a market event; the
-> FIP universe is charted on its own annual basis in the FIP section below.
+> **FIP is not on this chart:** it files yearly, so it stacked into a fake spike each January. See the FIP section below.
 
 ---
 
 ## Investor Base
 
-> Total quotaholders (`nr_cotst`), in millions. **FIDC and FIP report no
-> quotaholder count at all** in CVM's files, so the total is a total of what
-> exists — not an industry-wide investor count. It also counts positions rather
-> than people: one investor in three funds appears three times.
+> Total quotaholders (`nr_cotst`), in millions (CVM, monthly, 1 to 2 months lag). **FIDC and FIP report no quotaholder count**, so this totals what exists. It counts positions, not people.
 
 <LineChart
 data={industry_quotaholders}
@@ -255,12 +170,7 @@ yAxisTitle="Quotaholders (millions)"
 title="Quotaholders by Family — Last 36 Months"
 />
 
-> Average quotaholders per fund below — retail reach per vehicle rather than raw
-> headcount. Structured Credit, Private Equity **and Agribusiness** are blank
-> throughout because their source files carry no quotaholder count: measured
-> 2026-08-28, `nr_cotst` is present on 100% of FI rows and 99.9% of FII rows and
-> on **zero** FIDC, FIP or FIAGRO rows. A blank here is CVM not publishing the
-> number, never a failed load.
+> Average quotaholders per fund. Structured Credit, Private Equity and Agribusiness are blank because their files carry no count: measured 2026-08-28, `nr_cotst` is on 100% of FI rows, 99.9% of FII rows and **zero** FIDC, FIP or FIAGRO rows. Blank is CVM not publishing, never a failed load.
 
 <LineChart
   data={industry_quotaholder_by_class}
@@ -273,16 +183,9 @@ title="Quotaholders by Family — Last 36 Months"
 
 ---
 
-## FIP — Private Equity (Yearly Grain)
+## FIP: Private Equity (Yearly Grain)
 
-> Read directly from `cvm_fip_periodic`, whose natural key is
-> `(cnpj, doc_type, period_year)`. CVM changed the filing from **inf_trimestral**
-> (through 2023) to **inf_quadrimestral** (2024 onward) — the Doc Types column
-> shows which applied in each year.
->
-> `Funds w/ Net Assets` is the honest denominator: a FIP can file without a
-> net-assets figure, and those funds are counted as filers but contribute nothing
-> to the net-assets column.
+> Read from `cvm_fip_periodic`, key `(cnpj, doc_type, period_year)` (CVM, yearly). The filing changed from **inf_trimestral** (through 2023) to **inf_quadrimestral** (2024 onward). `Funds w/ Net Assets` is the honest denominator: a FIP can file without a net-assets figure.
 
 <BarChart
   data={industry_fip}
@@ -303,15 +206,9 @@ title="Quotaholders by Family — Last 36 Months"
 
 ---
 
-## FIAGRO — Agribusiness (Monthly Grain)
+## FIAGRO: Agribusiness (Monthly Grain)
 
-> Read directly from `cvm_fiagro_mensal`, including `vl_inadimpl` — FIAGRO
-> carries a delinquency figure like FIDC does, and no aggregate view exposes it.
-> Read it alongside the FIDC series on [the FIDC Credit Monitor](/fidc): they are
-> the industry's two receivables books, filed separately.
->
-> **Coverage:** CVM's FIAGRO monthly file only begins **2025-05**. Earlier months
-> are empty because the dataset did not exist, not because the pipeline failed.
+> Read from `cvm_fiagro_mensal` (CVM, monthly), including `vl_inadimpl`, which no aggregate exposes. Compare with [the FIDC Credit Monitor](/fidc). **Coverage:** the file begins **2025-05**; earlier months are empty because the dataset did not exist.
 
 <LineChart
   data={industry_fiagro}

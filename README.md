@@ -1,524 +1,125 @@
-# SILO — Brazilian public financial data, ingested daily and served to people and AI agents
+# SILO: Brazilian public financial data, ingested daily and served to people and AI agents
 
-> **Dashboard:** [https://silo-bz-deloslabs.vercel.app/](https://silo-bz-deloslabs.vercel.app/) — rebuilt
-> after every nightly ingest; the page header says when.
-> **Read API:** [https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/](https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/)
-> — schema `api`, anon key, open read.
-> **Caller docs:** [https://octo-98895abd.mintlify.site](https://octo-98895abd.mintlify.site)
-> — the contract is
-> [Conventions & limits](https://octo-98895abd.mintlify.site/api-docs/conventions)
-> (source: [`api-docs/`](api-docs/quickstart.mdx); for agents:
-> [`api-docs/agents.mdx`](api-docs/agents.mdx) and [`skill.md`](skill.md);
-> page index: [`llms.txt`](llms.txt)).
-> **MCP server:** [`supabase/functions/silo-mcp/`](supabase/functions/silo-mcp/) — read-only remote MCP, one tool per `api` endpoint (67), live at `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp` since 2026-09-25 ([`api-docs/mcp.mdx`](api-docs/mcp.mdx)).
-> **Notebooks:** [`notebooks/`](notebooks/) — eleven runnable end-to-end examples.
+SILO is a production system. A GitHub Actions cron pulls the day's filings from **CVM**, **BACEN**, **IBGE** and **B3**, validates them, upserts them into one Supabase Postgres warehouse, rebuilds the analytical layer and republishes the public dashboard. It keeps a verifiable record of **funds**, **listed companies** and **markets**, for researchers, AI agents and anyone checking a claim against what was actually filed.
 
-## What SILO is
+It is built for financial accountability, not for choosing investments: there is no advice, rating or recommendation anywhere in it. A failed fetch raises, a field the source did not publish stays blank, and an unknown identifier returns nothing rather than a plausible number.
 
-SILO is a production system, not a notebook. A GitHub Actions cron runs unattended every
-morning: it pulls the day's filings from **CVM**, **BACEN** and **B3**, validates them,
-upserts them into one Supabase Postgres warehouse — 6,009,412 rows on 2026-09-18 —
-rebuilds the analytical layer, gates itself on a health check, and republishes the public
-site. Nobody presses anything.
+| Start here | Link |
+| --- | --- |
+| Dashboard | [silo-bz-deloslabs.vercel.app](https://silo-bz-deloslabs.vercel.app/) (rebuilt after every nightly ingest; the page header says when) |
+| Read API | `https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/` (schema `api`, anon key, open read) |
+| Caller docs | [octo-98895abd.mintlify.site](https://octo-98895abd.mintlify.site), contract in [Conventions & limits](https://octo-98895abd.mintlify.site/api-docs/conventions) |
+| For agents | [`api-docs/agents.mdx`](api-docs/agents.mdx), [`skill.md`](skill.md), [`llms.txt`](llms.txt) |
 
-It keeps a continuous, verifiable record of three populations, not one:
+## The five rules
 
-- **Funds** — FI, FIDC, FII, FIP, FIAGRO and securitisation vehicles: net assets, flows,
-  delinquency, tranche structure, payout behaviour, portfolio composition.
-- **Listed companies** — ITR/DFP financial statements as filed, the IPE event feed, and
-  CVM's published ticker map.
-- **Markets** — the B3 COTAHIST tape (equities, BDRs, units, fund quotas, options,
-  termo), the fixed income ETF prints COTAHIST does not carry, the securities-lending book and short interest, investor-type flows, and the
-  BACEN macro series behind all of it.
-
-It is built for **financial accountability**: checking a claim against what was actually
-filed, whether the reader is a researcher, an agent, or someone opening the dashboard. It
-is not built for choosing investments; there is no advice, rating or recommendation
-anywhere in it.
-
-Three things read the warehouse: a **read API** (schema `api` over PostgREST, with a
-machine-readable catalog so an LLM agent can discover the endpoints, read each one's
-limits and be refused in a form it can act on, without a human in the loop), the
-**dashboard** (an Evidence.dev site, snapshotted nightly), and a second
-Evidence site for listed companies. SILO — this repository — is the part that writes:
-fetch, parse, validate, store, and the SQL that turns landing tables into something
-worth reading.
-
-What it refuses to do is the point, and it is what makes the warehouse safe to put a
-model in front of. A failed fetch raises; a field the source did not publish stays blank;
-an unknown identifier returns nothing rather than a plausible number; a partly filed
-period is withheld until it is complete; an unadjusted price says so. A retrieval layer
-that answers confidently when it does not know is the failure mode that makes model
-output unusable in regulated work — so this one is built to say it does not have the
-answer, in a shape an agent can detect. Concretely, every change is held to five rules
-(`AGENTS.md`), and about 2,300 offline tests hold it there:
+Every change is held to these (`AGENTS.md`) by the offline test suite.
 
 1. **Never fabricate.** No fallback values, no fills, no inferred joins.
 2. **Never swallow a failure.** It raises, or it is written to `cvm_ingest_log`.
-3. **Provenance from source keys.** Every row keeps its natural key and its original CSV
-   row (`raw`); every ingest writes exactly one audit row.
+3. **Provenance from source keys.** Every row keeps its natural key and its original CSV row (`raw`); every ingest writes exactly one audit row.
 4. **Validate before upsert.** Invalid rows are dropped and counted, never coerced.
-5. **Idempotent by construction.** Named UNIQUE keys and `ON CONFLICT … DO UPDATE`; a
-   re-run is always safe.
+5. **Idempotent by construction.** Named UNIQUE keys and `ON CONFLICT ... DO UPDATE`; a re-run is always safe.
 
 ## What it covers
 
-| Source       | Family                                                                                               | What is read                                                                                                                                                                                                                | Cadence                                                | What it enables                                                                                                                                                                                                                                                    |
-| ------------ | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| CVM          | **FI** — investment funds                                                                            | daily NAV and flows (`inf_diario`); portfolio composition and holdings — equities with their B3 ticker, fund-of-fund quotas, debentures with their issuer (`cda`); investor profile (`perfil`); balance sheet (`balancete`) | daily / monthly                                        | AUM, flows, quotaholders, concentration; the fund → ticker → company join                                                                                                                                                                                          |
-| CVM          | **FIDC** — receivables funds                                                                         | monthly NAV and delinquency (`tab_IV`); tranches (`tab_X`) and their subscriptions/redemptions; aging buckets 30–1080+ days (`tab_VI`); named originators, anonymized top debtors, sector and SCR ladders; guarantees on the credit rights (`tab_X_7`)                                                                                      | monthly                                                | delinquency, subordination, tranche performance against promise                                                                                                                                                                                                    |
-| CVM          | **FII** — real-estate funds                                                                          | monthly NAV, yield and distributions (`geral`, `ativo_passivo`, `complemento`); property-level detail; every filed version kept (`versao` is in the key; `vw_fii_mensal_latest` / `vw_fii_periodic_latest` read the current one)                                                                                                                       | monthly / yearly                                       | payout coverage, yield distribution, FII vs FIAGRO                                                                                                                                                                                                                 |
-| CVM          | **FIP**, **FIAGRO**                                                                                  | quadrimestral patrimony (FIP); monthly NAV (FIAGRO, published from May 2025)                                                                                                                                                | yearly / monthly                                       | private equity and agribusiness inside the industry totals                                                                                                                                                                                                         |
-| CVM          | **SECURIT** — CRA / CRI / OTS securitisers                                                           | monthly emissions; per-series status, rating and yield; cash-flow waterfall; annual statements                                                                                                                              | monthly / yearly                                       | outstanding by family, defaults, payments by priority, maturity wall                                                                                                                                                                                               |
-| CVM          | **CIA Aberta** — listed companies                                                                    | registry; ITR/DFP accounts; IPE events (Fatos Relevantes); FCA tickers                                                                                                                                                      | per filing                                             | company financials and events; the only company ↔ ticker link, never name-matched                                                                                                                                                                                  |
-| BACEN        | SGS, PTAX, Focus                                                                                     | SELIC, CDI, IPCA, IGP-M, INPC, poupança, PIB; PTAX buy/sell per currency; Focus consensus per indicator and horizon                                                                                                         | daily / business days                                  | the macro context every fund is measured against                                                                                                                                                                                                                   |
-| B3           | COTAHIST, corporate events                                                                           | unadjusted OHLC, volume, ticker and ISIN per session; splits, groupings, bonuses and dividends per ISIN                                                                                                                     | daily (yearly zips for history)                        | quotes, monthly market and option activity; the price-adjusted close in quote_history                                                                                                                                                                              |
-| B3           | **BDI** — securities lending (incl. trade-by-trade), investor flow, index float, instrument registry | short balance and borrow rates per ticker; buy/sell volume per investor type; free-float share counts and B3 sector; shares outstanding per ticker                                                                          | daily — **~21 business days of retention, no archive** | the Short Monitor (% of float, days to cover, borrow cost), the investor-flow panel, and — from the trade tape — which brokerage lent and borrowed each name. **Not backfillable**: a session missed is lost, so the daily job is the only way this history exists |
-| B3           | **DI1 futures, reference curves** | DI1 per contract from the Price Report (OHLC as rates, volume, open interest, settlement PU and rate), from 2018; B3's `PRE` (DI x pré), `DOC` (onshore dollar coupon) and `DPL` (IPCA clean coupon) curves from 2008 | daily; history via `market_backfill.yml` | the Brazilian rate curve and its liquidity: `future_curve`, `future_series`, `curve`, `curve_history` (catalog v42); feeds `research_examples/dustin_br/` and the dashboard's `/rates` page |
-| Treasury, EIA, OFR | global rates, Brent, financial stress | U.S. Treasury par curve (all tenors), Brent spot, the OFR Financial Stress Index and its volatility category, from the primary publishers. Not VIX: Cboe requires a signed licence | daily (EIA publishes weekly; OFR two business days late) | the global backdrop for Brazilian rates, shown on the dashboard's `/rates` page (VIX excluded). Not served through the API |
-| B3 **FNET**  | Fundos.NET document register (FII, FIDC, ETF) | metadata for every document version: type, reference date, delivery timestamp, `versao`, and whether it is the original (AP), a voluntary restatement (RE) or one CVM required (RC). No document bodies | daily (last 3 delivery days + a fortnightly per-fund sweep); history via `backfill.yml` | FIDC restatement history, which CVM's CSVs overwrite in place; filing punctuality; `api.fund_documents` / `api.fund_restatements`. A document's fund is known only from the CNPJ FNET was queried with, never from its name |
-| ANBIMA       | class boletim                                                                                        | monthly figures per ANBIMA class and type                                                                                                                                                                                   | monthly                                                | class-level benchmarks, served by `api.anbima_classes` (an ETF-only view is kept for compatibility)                                                                                                                                                                |
-| IBGE         | SIDRA — the IPCA item tree                                                                           | weight, monthly / YTD / 12-month change per node (general index, 9 groups, 19 subgroups, 51 items, ~377 subitems)                                                                                                           | monthly, on release                                    | what moved the index — `api.inflation_items` (contribution = weight × change); BACEN's IPCA set (headline, cores, groups) is `api.inflation`                                                                                                                       |
-| Apify scrape | ETF market snapshot                                                                                  | NAV, price, yields, volatility, drawdown per listed ETF                                                                                                                                                                     | daily, gated on `APIFY_TOKEN`                          | the market side of the ETF page; self-skips without the token                                                                                                                                                                                                      |
+| Population | Source | Data | Frequency |
+| --- | --- | --- | --- |
+| Funds: FI | CVM | daily NAV and flows, holdings (equities by B3 ticker, fund quotas, debentures), investor profile, balance sheet | daily / monthly |
+| Funds: FIDC | CVM | NAV, delinquency, tranches, aging, originators, debtors, sector, guarantees | monthly |
+| Funds: FII, FIP, FIAGRO | CVM | NAV, yield, distributions, property detail (every FII filed version kept) | monthly / yearly |
+| Securitisation (CRA, CRI, OTS) | CVM | emissions, per-series status and rating, cash-flow waterfall | monthly / yearly |
+| Listed companies | CVM | registry, ITR/DFP accounts, IPE events (Fatos Relevantes), FCA tickers | per filing |
+| Market tape | B3 | COTAHIST quotes, corporate events, fixed income ETF prints | daily |
+| Securities lending and flows | B3 BDI | short balance, borrow rates, trade tape, investor-type flow, index float, instrument registry | daily, **not backfillable** (about 21 business days of retention, no archive) |
+| Rate curves | B3 | DI1 futures and the PRE, DOC and DPL reference curves | daily |
+| Macro | BACEN, IBGE | SGS series (SELIC, CDI, IPCA, IGP-M), PTAX, Focus; IPCA item tree (SIDRA) | daily / monthly |
+| Global backdrop | Treasury, EIA, OFR | UST par curve, Brent, OFR Financial Stress Index (dashboard only, not served by the API) | daily |
+| Fund documents | B3 FNET | document register (metadata only), including FIDC restatements | daily |
+| Class benchmarks and ETF snapshot | ANBIMA, Apify | monthly class figures; scraped ETF NAV and price (gated on `APIFY_TOKEN`) | monthly / daily |
 
-Where each dataset lands, at what grain, and what is ingested but not yet served is in
-[docs/reference/DATA_INVENTORY.md](docs/reference/DATA_INVENTORY.md). The schema itself is
-`src/store/schema.sql` plus the append-only `src/store/migrations/`.
+Where each dataset lands, at what grain and what is ingested but not yet served: [api-docs/data-inventory.mdx](api-docs/data-inventory.mdx) and [docs/reference/DATA_INVENTORY.md](docs/reference/DATA_INVENTORY.md). The schema is `src/store/schema.sql` plus the append-only `src/store/migrations/`.
 
 ## How it works
 
-The model of the whole system is four short pages in `docs/architecture/`:
+Fetch (`src/fetchers/`, HTTP only), parse (`src/parsers/`, validated rows), store (`src/store/pg_client.py`, upsert on the natural key), orchestrated by `src/pipeline/`. Everything runs in GitHub Actions against Supabase; there is no server to keep up. Times are UTC-3, with UTC in parentheses.
 
-| Page                                           | Answers                                                       |
-| ---------------------------------------------- | ------------------------------------------------------------- |
-| [SYSTEM](docs/architecture/SYSTEM.md)          | What the parts are, who reads what, which boundaries matter   |
-| [DATA_FLOW](docs/architecture/DATA_FLOW.md)    | How a source file becomes a row, a matview and an `api` answer |
-| [OPERATIONS](docs/architecture/OPERATIONS.md)  | The daily timeline, and what a failed run leaves behind       |
-| [DECISIONS](docs/architecture/DECISIONS.md)    | The rules already decided, each with its source               |
+- **03:00 UTC-3 (06:00 UTC), `daily_ingest.yml`:** schema and migrations, `run_daily`, `ANALYZE`, analytical rebuild, dashboard deploy hook. If any source fails, the last three steps are skipped.
+- **04:30 UTC-3 (07:30 UTC), `health.yml`:** reads the audit log and the tables, fails loudly when they disagree.
+- **05:00 UTC-3 (08:00 UTC), `watchdog.yml` and `publish_check.yml`:** re-run stale slices; confirm the public URL serves the new build.
+- **On demand, `backfill.yml`:** one entity and year range at a time.
 
-### One pipeline, three stages
+The system in four short pages, in `docs/architecture/`:
 
-`src/pipeline/` orchestrates every slice of work. A fetcher (`src/fetchers/`, HTTP
-only) downloads the file, a parser (`src/parsers/`) turns it into validated rows, and
-`src/store/pg_client.py` upserts them on the table's natural key. Each slice writes one
-`cvm_ingest_log` audit row. `run_daily.py` is the scheduled entry point;
-`run_backfill.py` loads history on demand.
+| Page | Answers |
+| --- | --- |
+| [SYSTEM](docs/architecture/SYSTEM.md) | What the parts are, who reads what, which boundaries matter |
+| [DATA_FLOW](docs/architecture/DATA_FLOW.md) | How a source file becomes a row, a matview and an `api` answer |
+| [OPERATIONS](docs/architecture/OPERATIONS.md) | The daily timeline, and what a failed run leaves behind |
+| [DECISIONS](docs/architecture/DECISIONS.md) | The rules already decided, each with its source |
 
-### The daily cycle
-
-Everything runs in GitHub Actions against Supabase; there is no server to keep up.
-Times are UTC-3, with UTC in parentheses.
-
-1. **03:00 (06:00 UTC), `daily_ingest.yml`.** Applies the schema and any new
-   migration, runs `run_daily`, then `ANALYZE`, then rebuilds the analytical layer,
-   then fires the dashboard's deploy hook. If any source fails, those last three
-   steps are skipped. B3's corporate events, cash dividends and index levels, the market data
-   and the FNET register run last, as their own steps, so a slow host fails the
-   run but cannot block the rest.
-2. **04:30 (07:30 UTC), `health.yml`.** Reads the audit log and the tables
-   themselves and fails loudly when they disagree. A scheduled failure files (or
-   bumps) one tracking issue.
-3. **05:00 (08:00 UTC), `watchdog.yml` and `publish_check.yml`.** The watchdog
-   re-runs the ingest when a slice is stale. The publish check confirms the public
-   URL serves the new build, and promotes it if not.
-4. **On demand, `backfill.yml`.** One entity and year range at a time, serialized,
-   with current coverage printed before anything is written.
-
-### How the data is stored
-
-- **Proper types**: DATE and NUMERIC (not text) for all date and money columns.
-- **JSONB audit column**: Every row preserves the original CSV (`raw` field) for re-processing.
-- **Partitioning**: `cvm_fi_diario` is partitioned by year (monotonic append, ~5M rows/yr).
-- **Indexes**: BRIN on date columns, unique constraints on natural keys (idempotent ON CONFLICT upserts).
-- **No soft deletes**: Deletion is physical; canceled funds drop out of `cvm_fund_registry.status`.
+Where every doc lives: [docs/README.md](docs/README.md).
 
 ## How it is read
 
-### The analytical layer
+| Surface | What it is | Link |
+| --- | --- | --- |
+| Read API | Schema `api` over PostgREST: `rpc/catalog` and `rpc/coverage` first, then typed functions and the `api.panel` primitive. A request over one 1,000-row page is refused with `22023`, never truncated | [docs site](https://octo-98895abd.mintlify.site), [`api-docs/`](api-docs/quickstart.mdx) |
+| `serve/` | Local read-only Flask adapter over schema `api`; not the public API | [docs/reference/API.md](docs/reference/API.md) |
+| MCP server | Read-only remote MCP, one tool per `api` endpoint, live since 2026-09-25 at `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp` | [`api-docs/mcp.mdx`](api-docs/mcp.mdx), [`supabase/functions/silo-mcp/`](supabase/functions/silo-mcp/) |
+| Dashboard | `dashboard/`, Evidence.dev static snapshot (19 pages, including `/dormant`), rebuilt once a day by the deploy hook | [live site](https://silo-bz-deloslabs.vercel.app/), [page list](dashboard/pages/index.md), [dashboard/README.md](dashboard/README.md) |
+| Webapp | `webapp/`, Evidence.dev site over the CIA Aberta tables (financials, Fato Relevante feed) | [webapp/README.md](webapp/README.md) |
+| Notebooks | Runnable end-to-end examples | [`notebooks/`](notebooks/) |
 
-`src/store/analytical/`, applied by `scripts/apply_analytical.sh` after every successful
-ingest, is the read side: conformed dimensions (`dim_fund` — a materialized view — plus
-category, administrator and gestor), the monthly fact matviews (`fact_fund_monthly`,
-`fact_security_monthly`), a completeness view that says which months are fully filed
-(`mv_period_completeness`, read through `latest_complete_period()`), the suspicious-deal
-screens, per-class and ETF performance rankings, and finally schema `api` — the only
-surface exposed to callers (files 19–28). Which objects are live and which are only as
-fresh as the last apply is in [DATA_FLOW](docs/architecture/DATA_FLOW.md).
-
-### The read API
-
-Schema `api` is served by Supabase's PostgREST at the URL above: a catalog
-(`rpc/catalog`) and a coverage map (`rpc/coverage`) that an agent reads first, a panel
-primitive (`api.panel` — one row per id, date, metric and value), and typed functions
-for funds, quotes, option chains, FIDC structure (tranches, aging, originators,
-debtors), the forensic screens (signals, not verdicts), the FNET document register and
-search. Row caps live inside the SQL, landing tables are revoked from `anon`, and
-`health.yml` asserts both on every run.
-
-A request that would return more than one 1,000-row page is refused with `22023` and
-a message that says why and how to narrow it; nothing is ever silently truncated.
-`rpc/coverage` also says, per dataset, when it last landed and the git commit of the
-run that landed it (`landed_git_sha`), so a number can be traced to the code that
-produced it. The same contract is exposed as a read-only MCP server
-([`api-docs/mcp.mdx`](api-docs/mcp.mdx)), live since 2026-09-25. Signing in
-(GitHub OAuth, at [`/signin.html`](https://silo-bz-deloslabs.vercel.app/signin.html)) raises the
-caps and the query budget for a token holder.
-
-The contract and its edge cases are the **published site**, not this repository's
-`docs/`: [Conventions & limits](https://octo-98895abd.mintlify.site/api-docs/conventions)
-is the single source of truth for auth tiers, row caps, null semantics and regime
-breaks, and `POST /rpc/catalog` is the same contract as JSON. Worked examples are
-[`notebooks/`](notebooks/). How "ingested" became "a researcher pulls a panel":
-[docs/planning/SERVING.md](docs/planning/SERVING.md). `serve/` — the read-only
-local Flask adapter, which is **not** the public API — is
-[docs/reference/API.md](docs/reference/API.md).
-
-### The dashboard
-
-`dashboard/` is an Evidence.dev site: SQL in Markdown, extracted to parquet at build time
-and queried in the browser through DuckDB — a **static snapshot, not a live view**. It is
-rebuilt once a day, after every successful nightly ingest (the deploy hook above).
-A merge does NOT rebuild it: since 2026-09-17 `vercel.json` disables git-triggered
-production deployments on `main`, because six merges in fifteen minutes had queued
-fourteen concurrent builds against the same Postgres. Its header shows **Snapshot
-Built** so nobody has to guess how old the numbers are; to publish sooner, dispatch
-`daily_ingest` with `rebuild_dashboard=true`.
-
-| Route          | Page                            | What it shows                                                                              |
-| -------------- | ------------------------------- | ------------------------------------------------------------------------------------------ |
-| `/`            | Brazilian Public Financial Data | entry point: headline figures, freshness signal, reading path                              |
-| `/industry`    | Industry Structure              | net assets by family and by asset class, quotaholders, new funds, FIP and FIAGRO           |
-| `/fi`          | FI Industry                     | AUM and flows, daily subscriptions vs redemptions, investor base, allocation by asset type |
-| `/fidc`        | FIDC Credit Monitor             | delinquency, aging, subordination, tranche flows and performance                           |
-| `/fii`         | FII Market                      | FII vs FIAGRO, yield distribution, payout coverage                                         |
-| `/fund`        | Fund Explorer                   | per-fund NAV, flows, quotaholders and rebased returns                                      |
-| `/holdings`    | Fund Holdings                   | largest stock holdings, debenture issuers, same-group holdings                             |
-| `/performance` | Fund Performance                | rankings by class, rebased cumulative return                                               |
-| `/etf`         | ETF Market                      | registry by provider and segment, fixed income ETFs by index family with their B3 prints, ANBIMA net assets and flows, exchange volume, scraped snapshot |
-| `/markets`     | B3 Markets                      | monthly traded volume, instrument mix, option activity                                     |
-| `/macro`       | Macro Context                   | SELIC and CDI, inflation, PTAX, Focus consensus                                            |
-| `/rates`       | Rates and Curves                | B3 nominal and real curves, breakeven inflation since 2008 vs the Focus survey, DI1 open interest, NTN-B held by funds, UST/Brent/OFR backdrop |
-| `/short`       | Short Monitor                   | short interest by ticker, % of free float, days to cover, borrow rates, sector mix         |
-| `/flows`       | Follow the Money                | net flow by investor type (foreign, institutional, retail) and B3 cash-market ADTV         |
-| `/managers`    | Managers                        | administrator and gestor league tables                                                     |
-| `/securit`     | Securitization                  | outstanding by family, defaults, payment waterfall, maturity wall                          |
-| `/suspicious`  | Suspicious Deal Screens         | zombie growth, captive vehicles and the other screens                                      |
-| `/dormant`     | Dormant Funds                   | vehicles that file every month and do nothing                                              |
-| `/ops`         | Pipeline Ops                    | audit log, freshness per entity, table freshness, when the snapshot was built              |
-
-Two rules shape every chart. **Blank is never zero**: a month the source did not publish
-renders as a gap, not a dip. And **the axis ends at the last month that has data** —
-never the month in progress, never a completeness bound measured on a different filing
-(the "Spine rule" in [dashboard/README.md](dashboard/README.md)). Visits are counted by
-Vercel Web Analytics.
-
-### The webapp
-
-`webapp/` is a second Evidence site over the CIA Aberta tables: the company registry,
-consolidated ITR/DFP financials (revenue, net income, margins, ROE) and the Fato
-Relevante feed. The conventions that matter when reading it are in
-[webapp/README.md](webapp/README.md).
+Sign-in (GitHub OAuth, [`/signin.html`](https://silo-bz-deloslabs.vercel.app/signin.html)) raises the caps and the query budget for a token holder. A merge does not rebuild the dashboard: only the deploy hook does, so to publish sooner dispatch `daily_ingest` with `rebuild_dashboard=true`.
 
 ## Operating it
 
-| Workflow           | When                       | What                                                                                                                                                                                                                                                                       |
-| ------------------ | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `test.yml`         | every PR and push          | the offline pytest suite; on dispatch, a read-only `api.*` smoke against production                                                                                                                                                                                        |
-| `daily_ingest.yml` | 06:00 UTC, and on dispatch | the daily cycle above. `daily` is the scheduled run, ANALYZE and analytical refresh included; `analytics-only` is just those two; `b3-backfill` loads yearly COTAHIST zips for an exact year range; `b3-cash-dividends` loads B3's full cash-distribution history for every issuer that printed since `start_year`; `b3-trade-consolidated` loads the fixed income ETF prints (`b3_trade_consolidated`) for every weekday from January 1 of `start_year`. `rebuild_dashboard=true` also fires the deploy hook after a manual run |
-| `watchdog.yml`     | 08:00 UTC                  | self-healing re-run of stale slices                                                                                                                                                                                                                                        |
-| `health.yml`       | scheduled                  | the gates above; files an issue on failure                                                                                                                                                                                                                                 |
-| `backfill.yml`     | on dispatch                | historical fills, one entity at a time; `fi_doc_type` repairs one FI source without re-fetching the others; `fnet_start` / `fnet_end` / `fnet_sweep` make an FNET-only dispatch (every other job skips) — one year per dispatch, newest first                              |
+| Workflow | When | What |
+| --- | --- | --- |
+| `test.yml` | every PR and push | the offline pytest suite; on dispatch, a read-only `api.*` smoke against production |
+| `daily_ingest.yml` | 03:00 UTC-3 (06:00 UTC), and on dispatch | `daily` is the scheduled run, ANALYZE and analytical refresh included; `analytics-only` is just those two; `b3-backfill` loads yearly COTAHIST zips; `b3-cash-dividends` loads B3's cash-distribution history; `b3-trade-consolidated` loads the fixed income ETF prints. `rebuild_dashboard=true` also fires the deploy hook after a manual run |
+| `watchdog.yml` | 05:00 UTC-3 (08:00 UTC) | self-healing re-run of stale slices |
+| `health.yml` | scheduled | the health gates; files an issue on failure |
+| `backfill.yml` | on dispatch | historical fills, one entity at a time; `fi_doc_type` repairs one FI source; `fnet_start` / `fnet_end` / `fnet_sweep` make an FNET-only dispatch |
 
-Secrets: `POSTGRES_URL` (Supabase, `sslmode=require`); `VERCEL_DEPLOY_HOOK_URL` (a deploy
-hook of the Vercel project `silo-bz` on `main`, in team `deloslabs`. That hook is the
-ONLY thing that publishes the site — git-triggered production deployments are disabled,
-so if the hook stops firing the dashboard silently stops updating); `APIFY_TOKEN`
-(optional). The dashboard build reads the
-`EVIDENCE_SOURCE__supabase__*` variables set on the Vercel project.
+Secrets: `POSTGRES_URL` (Supabase, `sslmode=require`); `VERCEL_DEPLOY_HOOK_URL` (deploy hook of the Vercel project `silo-bz` on `main`, team `deloslabs`; it is the only thing that publishes the site); `APIFY_TOKEN` (optional). Day-to-day upkeep (checks, audit-log triage, partition rollover, symptom to fix): [docs/reference/DATABASE_MAINTENANCE.md](docs/reference/DATABASE_MAINTENANCE.md). Operator tooling: [scripts/README.md](scripts/README.md).
 
-Schema changes are a commit: `src/store/schema.sql` plus a new
-`src/store/migrations/NNN_*.sql`; every ingest applies them, with `lock_timeout` and
-retries so a blocked `ALTER TABLE` gives up in seconds instead of queueing behind every
-reader. Dashboard builds are gated by `scripts/vercel_should_build.sh` — production
-always builds, previews only when `dashboard/` changed — because one build is 25–45
-minutes of SELECTs against production. Day-to-day upkeep — what to check and how
-often, reading `cvm_ingest_log`, healing gaps, the yearly partition rollover, a
-symptom → fix index — is [docs/reference/DATABASE_MAINTENANCE.md](docs/reference/DATABASE_MAINTENANCE.md).
-
-## What's next
-
-The pipeline runs unattended; **serving is the open front**. Everything below is an
-operator action or a known defect, none of it speculative roadmap. The build-out history
-is in [docs/planning/CHANGELOG.md](docs/planning/CHANGELOG.md).
-
-### The API is live
-
-```
-https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/
+```bash
+python -m src.pipeline.run_daily                       # incremental
+python -m src.pipeline.run_backfill --start-year 2019  # historical
+python -m src.pipeline.run_backfill --cvm-only --entity fidc --start-year 2024 --end-year 2024  # one entity
+python scripts/verify_pipeline.py                      # quality gate against live Supabase
 ```
 
-Schema `api` is applied and exposed, the row caps and landing-table REVOKEs are
-in place, and `health.yml` verifies both on every run — the anon probe asserts
-`rpc/coverage`, `rpc/catalog`, `quotes` and `funds` answer 200 while
-`cvm_fi_diario`, `b3_cotahist`, `cia_account` and `bacen_sgs` under
-`Accept-Profile: public` do **not**.
-
-Sign-in is live too: GitHub OAuth, with the page at
-`dashboard/static/signin.html`. A user token raises `panel` ids 3 → 50,
-`search_funds` 25 → 200, `option_chain` 200 → 2,000 and the query budget
-3s → 8s. It does not raise PostgREST's server-wide 1,000-row cap, which is the
-same for everyone.
-
-### Pending operator actions
-
-- **FNET history is empty until backfilled.** The daily run captures new documents
-  from now on; the past comes from `backfill.yml` with `fnet_start` / `fnet_end`, one
-  year per dispatch, newest first, then one `fnet_sweep` dispatch to link documents to
-  funds. Until then `api.fund_restatements` only sees recent filings.
-- **The Sentinel read-only role** is a script the owner runs once:
-  [`docs/reference/security/sentinel_readonly_role.sql`](docs/reference/security/sentinel_readonly_role.sql)
-  (password via a psql variable, never in the repo).
-
-### Known defects
-
-- **`etf_daily` / `etf_latest` can be absent from production.** Migration 06
-  recreates them when missing, so a run whose schema step failed leaves them
-  gone and the backfill's "Refresh ETF metrics" job then fails on an assertion
-  that is really reporting the earlier failure. The ETF dashboard page depends
-  on these views.
-- **Dashboard builds are slow** (~25 min). The remaining cost is `fi_investor_mix`
-  (4m19) and `fi_investor_split` (3m13), which scan `cvm_fi_perfil` across 24 months.
-  Optimizing them needs `EXPLAIN ANALYZE` against real data.
-- **`cvm_fip_periodic` holds a pre-fix remnant.** Rows stored before the key was
-  corrected carry `row_hash = 'pre-migration-34:<id>'` and are the survivors of
-  a key that discarded 72–77% of each file. A backfill of `entity=fip` writes
-  the real rows alongside them.
-
-### Deferred by design
-
-- **Historical backfills** for `fidc` — the daily window only heals the
-  trailing months, so deep history for the recently-fixed field maps needs `backfill.yml`.
-- **`VERCEL_DEPLOY_HOOK_URL`** — set. Fired after every successful scheduled Daily
-  Ingest, and after a manual dispatch that sets `rebuild_dashboard=true`; fills never
-  touch Vercel. Must be a deploy hook of the `silo-bz` project on `main`.
-- **`APIFY_TOKEN`** — set. The ETF market scrape self-skips without it, and also
-  skips (does not fail the daily run) when Apify returns
-  `full-permission-actor-not-approved` or HTTP 408 `run-timeout-exceeded`.
-  The fetcher starts the actor asynchronously (the sync dataset endpoint caps
-  at 300s). Default actor is `apify/playwright-scraper`.
-- **Company ↔ ticker** comes from CVM's published FCA valores-mobiliários filing
-  (`cia_ticker` → `vw_company_ticker`), never from name matching.
-- **Fund → company** now exists as data but is not served. `cvm_fi_cda_acoes.cd_ativo`
-  is the published B3 ticker a fund holds, so fund → ticker → `cia_ticker` → company
-  is a real join over ingested rows. No `api.*` object exposes it yet, and no edge
-  is ever inferred from a name.
-- **One price is corporate-action adjusted: `close_adj`, the default of `quote_history`
-  and of the panel for shares and units.** `quote_history` returns one JSON object per
-  session with only the selected fields: `ticker`, `trade_date`, `close_adj` unless
-  `p_fields` names others, and the raw `close`, OHLC and volume are one explicit selection
-  away. `close_adj` divides earlier sessions by each split, grouping and bonus share ratio
-  (B3's rule, verified against the tape in #372) and is anchored to the instrument's latest
-  session. It never falls back to the raw close: a window it cannot adjust (issuer events not
-  proven swept in `b3_corporate_event_sweep`, or a spin-off, merger or other stock event
-  this version does not adjust) is refused with ticker, period and cause. Dividends, JCP and
-  subscription rights are not adjusted by `close_adj`; `p_fields` can also select
-  `close_total_return`, which reinvests B3's cash distributions on the ex session (#418) and
-  is NULL with a reason wherever a distribution cannot be valued (`docs/reference/API.md`,
-  "The total-return close"). The series follows the ISIN
-  across boards, and an unknown ticker, a window outside the coverage, a second ISIN or two
-  rows on one session are refused too. `close` and `close_unit` stay as traded, and every
-  view keeps `adjusted = false`.
-
-## What's intentionally not here
-
-- **No ingest REST API, and no PostgREST dump of landing tables.** The pipeline writes to Supabase via GitHub Actions and the CLI. Callers read schema `api` at `https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/`, documented at [https://octo-98895abd.mintlify.site](https://octo-98895abd.mintlify.site) ([api-docs/quickstart.mdx](api-docs/quickstart.mdx)). `serve/` is a **local** read-only adapter over the same schema, not the public API, and is not necessarily deployed ([docs/reference/API.md](docs/reference/API.md)). The old localhost ingest Flask (`app.py` / `src/api/`) is deleted.
-- **No fabricated quotes.** The old `b3_calc_api` (non-B3 domain + hard-coded sample dicts) stays deleted. Historical quotations come from B3's public COTAHIST zips (`src/fetchers/b3_fetcher.py` → `b3_cotahist` → `api.quotes`). An unknown ticker returns an empty result, never a guessed last close — `404` from `serve/`, `200 []` from PostgREST, which has no adapter to shape the error. Same contract, different status code.
-- **No local Postgres / Docker / Alembic.** Supabase Postgres is the single source of truth. Use `scripts/seed_local_db.py`
-  with a local Postgres for offline testing.
-- **No Solana oracle.** The Delos Oracle experiment is out of scope.
+Failed fetches raise and write `cvm_ingest_log`; they are not auto-retried. Re-run the same command.
 
 ## Working on the code
-
-Local setup, the CLI and the tests are documented in `AGENTS.md` (commands),
-[scripts/README.md](scripts/README.md) (operator tooling) and the two Evidence READMEs.
-The essentials, folded away:
-
-<details>
-<summary>Repository layout</summary>
-
-```text
-.
-├── src/
-│   ├── fetchers/               # HTTP/SDK calls only — no parsing, no storage
-│   │   ├── cvm_fetcher.py      # CVMFetcher.fetch(entity, doc_type, year, month)
-│   │   ├── cvm_config.py       # URL templates + dataset configs (entity × doc_type matrix)
-│   │   ├── bacen_fetcher.py    # BacenClient (SGS/PTAX/Expectativas/TaxaJuros)
-│   │   ├── b3_fetcher.py       # public COTAHIST daily/yearly quotation zips
-│   │   ├── cia_fetcher.py      # listed-company (CIA Aberta) filings
-│   │   ├── b3_bdi_fetcher.py   # B3 BDI: lending, investor flow, index float, registry
-│   │   ├── b3_trade_consolidated_fetcher.py # B3 consolidated trade file (fixed income ETFs)
-│   │   ├── fnet_fetcher.py     # B3 Fundos.NET document register (metadata only)
-│   │   └── apify_etf_fetcher.py# ETF market scrape (gated on APIFY_TOKEN)
-│   ├── parsers/
-│   │   ├── mapping.py          # the declarative FIELD_MAP engine + coercions
-│   │   ├── validation.py       # CNPJ / date / numeric / record validators
-│   │   └── field_maps/         # per-dataset CSV header → typed DB column
-│   ├── store/
-│   │   ├── pg_client.py        # get_pg_client(), upsert_rows() — the ONLY DB door
-│   │   ├── schema.sql          # canonical schema (tables + audit log)
-│   │   ├── migrations/         # NNN_*.sql, append-only — never edit a historical one
-│   │   └── analytical/         # 01–28: dims, fact matviews, screens, rankings, schema api
-│   ├── pipeline/               # wires fetch→parse→store, writes cvm_ingest_log
-│   │   ├── cvm_pipeline.py     # CVMIngestor — the (entity, doc_type) orchestrator
-│   │   ├── bacen_pipeline.py   # BacenIngestor
-│   │   ├── b3_pipeline.py      # B3Ingestor (COTAHIST)
-│   │   ├── anbima_pipeline.py  # ANBIMA boletim
-│   │   ├── fnet_pipeline.py    # FnetIngestor (register + per-fund sweep)
-│   │   ├── ingest_<entity>.py  # per-entity ingest_* methods (fi, fidc, fii, securit, cia…)
-│   │   ├── run_daily.py        # CLI: incremental daily update
-│   │   └── run_backfill.py     # CLI: full historical backfill
-├── serve/                      # read-only local adapter over schema api
-│   ├── app.py                  # `python -m serve.app` — 127.0.0.1:8080, NOT an ingest trigger
-│   ├── pool.py                 # one pooled client per process
-│   └── catalog.py              # machine-readable metric catalog (CATALOG_VERSION)
-├── dashboard/                  # Evidence.dev analytics dashboard
-│   ├── pages/                  # Markdown-based pages + embedded SQL queries
-│   ├── sources/
-│   │   └── supabase/           # Supabase Postgres connection config
-│   └── README.md               # Dashboard-specific setup
-├── webapp/                     # Evidence.dev CIA Aberta (listed-company) analytics
-│   ├── pages/                  # Listed-company financials & events
-│   └── README.md               # Webapp-specific setup
-├── tests/                      # offline pytest suite (DB + HTTP mocked)
-├── scripts/                    # operator + dev tooling — see scripts/README.md
-│   ├── apply_analytical.sh     # build the analytical layer (01–28) after ingest
-│   ├── verify_pipeline.py      # quality gate against live Supabase
-│   ├── seed_local_db.py        # offline: real CVM data → local DuckDB
-│   ├── vercel_should_build.sh  # Vercel ignoreCommand (0 SKIPS, 1 BUILDS)
-│   └── queries/                # 14 numbered read-only SQL files
-├── docs/                       # prose docs (NOT published; see .mintignore)
-│   ├── architecture/           # the system in four pages: SYSTEM, DATA_FLOW, OPERATIONS, DECISIONS
-│   ├── API.md                  # serve/, the LOCAL adapter — not the public read contract
-│   ├── DATABASE_MAINTENANCE.md # upkeep runbook: checks, cadence, partition rollover
-│   ├── DATA_MODELING.md        # read before adding a new CLASS of data
-│   ├── ETF_AND_PERFORMANCE.md  # why etf_daily is empty post-CVM-175
-│   ├── supabase_operations.md  # standing up or re-pointing a project: pooler, schema, first ingest
-│   └── planning/
-│       ├── CHANGELOG.md        # workstream history
-│       └── SERVING.md          # ingested → researcher pulls a panel (steps 0–7)
-├── supabase/functions/silo-mcp/ # read-only remote MCP over schema api (Edge Function)
-├── notebooks/                  # 00–10: runnable end-to-end examples (00–09 over the read API)
-├── api-docs/                   # PUBLISHED Mintlify pages (quickstart + reference)
-├── index.mdx                   # published docs landing page
-├── skill.md                    # PUBLISHED agent loader (served at /skill.md; not in the nav)
-├── llms.txt                    # repo-controlled page index for agents
-├── docs.json                   # Mintlify config: theme + navigation
-├── .mintignore                 # keeps Evidence template markdown — and README/CLAUDE/AGENTS — out of the MDX parser
-├── vercel.json                 # dashboard build config + ignoreCommand
-├── .githooks/                  # pre-commit: blocks credentialed URLs, bad syntax
-├── .claude/hooks/              # Claude Code: pytest after edits; CHANGELOG + README check before git push
-├── apify/                      # ETF market scrape actor (gated on APIFY_TOKEN)
-├── .github/
-│   ├── actions/apply-schema/   # composite action: schema + migrations, lock-guarded
-│   └── workflows/
-│       ├── test.yml            # pytest on PR/push; api-smoke on dispatch
-│       ├── daily_ingest.yml    # cron @ 06:00 UTC + workflow_dispatch
-│       ├── watchdog.yml        # cron @ 08:00 UTC — self-healing staleness re-run
-│       └── backfill.yml        # on-demand full historical backfill
-├── requirements.txt
-└── .env.example
-```
-
-</details>
-
-<details>
-<summary>Quick start (local)</summary>
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-bash scripts/install_hooks.sh   # fail-safe pre-commit guards (secrets, syntax)
-cp .env.example .env   # fill in POSTGRES_URL (Supabase connection string)
-
-# 1. Apply schema + migrations (one-time, against your Supabase Postgres)
-python scripts/apply_schema.py
-
-# 2. Run an incremental update
-python -m src.pipeline.run_daily
-
-# 3. Run a one-shot historical backfill (e.g. 2019 onward)
-python -m src.pipeline.run_backfill --start-year 2019
-
-# 3c. Optional: B3 COTAHIST yearly quotation zips (large; daily run already
-#     picks up the last 7 calendar days)
-python -m src.pipeline.run_backfill --b3-only --b3-start-year 2019
-
-# 3b. Build the analytical layer (views/functions) — AFTER data is ingested
-bash scripts/apply_analytical.sh
-
-# 4. Verify the pipeline (local DuckDB, ~2 min, skips FI inf_diario)
-python scripts/seed_local_db.py --skip-fi
-python scripts/run_analysis_local.py
-
-# 5. Verify against live Supabase DB
-python scripts/verify_pipeline.py
+bash scripts/install_hooks.sh      # pre-commit: secrets, syntax
+cp .env.example .env               # set POSTGRES_URL
+python scripts/apply_schema.py     # schema + migrations
+bash scripts/apply_analytical.sh   # analytical layer, after data exists
+pytest tests/ -v                   # all offline (DB and HTTP mocked)
 ```
 
-</details>
+- **Rules and commands:** `AGENTS.md` is the source of truth; `CLAUDE.md` only adds Claude Code's hooks.
+- **Schema changes:** edit `src/store/schema.sql` and add a new `src/store/migrations/NNN_*.sql`; never edit a historical migration.
+- **New dataset or API endpoint:** the steps are in `AGENTS.md` ("Adding a dataset", "Adding an API endpoint").
+- **Every branch carries its own docs:** add its row to [docs/planning/CHANGELOG.md](docs/planning/CHANGELOG.md), keep every existing row word for word, and update this README, the planning index and `OPEN_ITEMS.md` where the branch made them stale.
 
-<details>
-<summary>Partial fills from the CLI</summary>
+## What is intentionally not here
 
-Ingest is GitHub Actions plus the pipeline CLI. There is no localhost HTTP
-control plane. One entity or year:
+- **No ingest API.** The pipeline writes via GitHub Actions and the CLI; callers read schema `api`. The old localhost ingest Flask (`app.py`, `src/api/`) is deleted.
+- **No fabricated quotes.** The old `b3_calc_api` stays deleted. Quotes come from B3's public COTAHIST zips; an unknown ticker returns an empty result, never a guessed close.
+- **No local Postgres, Docker or Alembic.** Supabase Postgres is the single source of truth.
+- **No Solana oracle.** The Delos Oracle experiment is out of scope.
 
-```bash
-python -m src.pipeline.run_backfill --cvm-only --entity fidc --start-year 2024 --end-year 2024
-python -m src.pipeline.run_backfill --cvm-only --entity fidc --start-year 2019
+## What's next
 
-# Repair only the months missing from one FI document's table (not the audit log)
-python -m src.pipeline.run_backfill --cvm-only --entity fi --doc-type balancete --repair-gaps
-python -m src.pipeline.run_daily
-
-# FNET register, daily window (a separate step of daily_ingest.yml)
-python -m src.pipeline.fnet_pipeline
-
-# FNET register: one delivery-date range, then the full per-fund link sweep
-python -m src.pipeline.run_backfill --fnet-only --fnet-start 2025-01-01 --fnet-end 2025-12-31
-python -m src.pipeline.run_backfill --fnet-only --fnet-sweep
-```
-
-One month of one dataset — call the ingestor method (needs `POSTGRES_URL`):
-
-```python
-import asyncio
-from src.pipeline.cvm_pipeline import CVMIngestor
-
-asyncio.run(CVMIngestor().ingest_fidc_tranche(2024, 5))
-```
-
-Failed fetches raise and write `cvm_ingest_log`; they are not auto-retried.
-Re-run the same command. Quality gate: `python scripts/verify_pipeline.py`.
-
-The read-only **local** HTTP adapter is separate: `python -m serve.app` (see
-[docs/reference/API.md](docs/reference/API.md)). It is not the public API — that is PostgREST, at the
-URL in the header of this file.
-
-</details>
-
-<details>
-<summary>Tests</summary>
-
-```bash
-PYTHONPATH=. pytest tests/ -v
-```
-
-All tests are offline (Supabase DB and HTTP are mocked). The read API is covered by
-`tests/test_serve_api.py` — also fully offline; Postgres is stubbed.
-
-CI: `.github/workflows/test.yml` runs this suite on every PR and push to `main`
-(pip cache + `.pytest_cache`). **Actions → Tests → Run workflow** also runs a
-read-only `api.*` smoke against Silo (`POSTGRES_URL`); SQL errors fail, zero
-rows do not.
-
-</details>
+Open work, known defects and pending operator actions are in [docs/planning/OPEN_ITEMS.md](docs/planning/OPEN_ITEMS.md) (index: [docs/planning/README.md](docs/planning/README.md)).
+Build-out history is in [docs/planning/CHANGELOG.md](docs/planning/CHANGELOG.md).
+The serving roadmap is [docs/planning/SERVING.md](docs/planning/SERVING.md).
