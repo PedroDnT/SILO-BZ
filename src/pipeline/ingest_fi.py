@@ -409,12 +409,50 @@ def ingest_fi_balancete(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     if not records:
         return 0
 
-    return upsert_rows(
+    n = upsert_rows(
         conn,
         _balancete.TABLE,
         records,
         conflict_columns=",".join(_balancete.CONFLICT),
     )
+    upsert_rows(
+        conn,
+        _balancete.RESUMO_TABLE,
+        balancete_resumo(records),
+        conflict_columns=",".join(_balancete.RESUMO_CONFLICT),
+    )
+    return n
+
+
+def balancete_resumo(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """One cvm_fi_balancete_resumo row per (cnpj, dt_comptc) of typed balancete rows.
+
+    Each COFI account in RESUMO_ACCOUNTS lands in its column as filed; an account
+    the fund did not file stays NULL. n_contas counts distinct account codes, and
+    a code repeated in the file counts once with its last value, matching what
+    upsert_rows keeps in cvm_fi_balancete.
+    """
+    accounts: Dict[tuple, Dict[str, Any]] = {}
+    meta: Dict[tuple, Dict[str, Any]] = {}
+    for rec in records:
+        key = (rec["cnpj"], rec["dt_comptc"])
+        accounts.setdefault(key, {})[rec["cd_conta_balcte"]] = rec.get("vl_saldo_balcte")
+        meta[key] = rec
+
+    out: List[Dict[str, Any]] = []
+    for key, by_code in accounts.items():
+        last = meta[key]
+        row: Dict[str, Any] = {
+            "cnpj": key[0],
+            "dt_comptc": key[1],
+            "tp_fundo_classe": last.get("tp_fundo_classe"),
+            "plano_conta_balcte": last.get("plano_conta_balcte"),
+            "n_contas": len(by_code),
+        }
+        for code, column in _balancete.RESUMO_ACCOUNTS.items():
+            row[column] = by_code.get(code)
+        out.append(row)
+    return out
 
 
 def ingest_fund_registry_fi(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:

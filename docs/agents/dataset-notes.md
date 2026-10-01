@@ -48,6 +48,17 @@ opening price, and its volume is not comparable with COTAHIST's. Only a file mar
 `Final` is stored; an empty file (no session, or before B3's retention edge, 2025-06-10
 when checked on 2026-09-30) is logged `skipped`.
 
+**The FI balancete has a summary** (migration 59): `cvm_fi_balancete_resumo` holds one row per
+fund and month with the COFI group totals, as filed. `vl_receitas` and `vl_despesas` accumulate
+from each fund's own fiscal-year start, which is not January for every fund, so a month's flow is
+this month minus last month except in the reset month; derive it, never store it. `vl_patrim_liq`
+there excludes the open result: equity + revenue + expenses is the NAV. The 3xxx/9xxx codes are
+memorandum accounts (equal on both sides), never assets. A group a fund did not file is NULL.
+The fee columns (`vl_taxa_administracao` and its parts, `vl_taxa_performance`, ...) are COFI
+8.1.7 accounts, accumulated and negative like group 8. Many funds file the whole administration
+fee in 81781001/81781056 and nothing in the management (`vl_taxa_gestao`) or distribution
+split, so a NULL part is not a zero fee.
+
 **FII filings keep every version** (migration 43): `versao` is part of the key of
 `cvm_fii_mensal` and `cvm_fii_periodic` (`UNIQUE NULLS NOT DISTINCT`), so a restatement
 lands beside the original instead of overwriting it. Read the current filing through
