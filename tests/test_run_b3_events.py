@@ -29,9 +29,14 @@ STEP = "Refresh B3 corporate events and cash dividends"
 RECOVERY = "Refresh B3 corporate events and cash dividends (recovery)"
 
 
-def _ingestor(events=0, cash=0, index=0) -> MagicMock:
+def _ingestor(events=0, cash=0, index=0, trades=None) -> MagicMock:
     """Each arg is a return value, or an Exception to raise."""
     ing = MagicMock()
+    trades = {"b3_trade_consolidated": 0} if trades is None else trades
+    ing.daily_update_trade_consolidated = AsyncMock(
+        side_effect=trades if isinstance(trades, Exception) else None,
+        return_value=None if isinstance(trades, Exception) else trades,
+    )
     ing.ingest_index_levels = AsyncMock(
         side_effect=index if isinstance(index, Exception) else None,
         return_value=None if isinstance(index, Exception) else index,
@@ -98,6 +103,17 @@ def test_run_daily_no_longer_calls_either_source():
     src = RUN_DAILY.read_text(encoding="utf-8")
     assert "ingest_corporate_events(" not in src
     assert "ingest_cash_dividends(" not in src
+    assert "daily_update_trade_consolidated(" not in src
+
+
+async def test_a_consolidated_trades_failure_exits_nonzero_after_the_others_ran():
+    ing = _ingestor(trades=RuntimeError("no row landed"))
+    with patch.object(rb, "B3Ingestor", return_value=ing):
+        with pytest.raises(SystemExit):
+            await rb.main()
+    ing.ingest_corporate_events.assert_awaited_once()
+    ing.ingest_index_levels.assert_awaited_once()
+    ing.daily_update_trade_consolidated.assert_awaited_once()
 
 
 yaml = pytest.importorskip("yaml")

@@ -22,7 +22,7 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 - A **slice** is one (source, doc_type, period). It ends `ok`, `skipped` (the
   source has not published yet) or `error` (ours to fix).
 - Daily windows heal late publication: CVM 4 months (gap-aware), COTAHIST and
-  B3's consolidated trade file 7 days, BACEN 30 days. Deep history is manual:
+  B3's consolidated trade file (in `run_b3_events`) 7 days, BACEN 30 days. Deep history is manual:
   `backfill.yml`, `market_backfill.yml`, `daily_ingest` `mode=b3-backfill` and
   `mode=b3-trade-consolidated` (B3 kept that file from 2025-06-10 only).
 - The B3 BDI group (lending, investor flow) has no backfill. See the ratchet in

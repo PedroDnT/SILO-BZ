@@ -34,10 +34,12 @@
 -- fixed_income_br ETFs plus 21 the registry does not list (NTNF11, SELI11,
 -- XB3011, ...). The table keys on what B3 published, not on the registry.
 --
--- RETENTION. On 2026-09-30 the oldest session the endpoint served was
--- 2025-06-10 (2025-06-09 came back as an empty body). Whether that edge
--- moves forward every day, as the BDI tables' does, was not yet known.
--- An empty body is logged `skipped`, never stored as a row.
+-- RETENTION AND CALENDAR. On 2026-09-30 the oldest session the endpoint
+-- served was 2025-06-10: a weekday before it gets a token and an EMPTY body.
+-- A weekend, a holiday (2026-09-07) or a future date gets HTTP 400 at the
+-- token step. Both are logged `skipped`, never stored as a row. Whether the
+-- retention edge moves forward every day, as the BDI tables' does, was not
+-- yet known.
 
 BEGIN;
 
@@ -68,6 +70,17 @@ CREATE TABLE IF NOT EXISTS b3_trade_consolidated (
 
 CREATE INDEX IF NOT EXISTS ix_b3_trade_consolidated_date
     ON b3_trade_consolidated (trade_date);
+
+-- Close the window before the analytical apply's sweep: Supabase's default
+-- privileges grant every new public table to anon/authenticated. Landing
+-- tables carry no client grant (12_grants_and_rls.sql).
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon')
+       AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+        EXECUTE 'REVOKE ALL ON b3_trade_consolidated FROM anon, authenticated';
+    END IF;
+END $$;
 
 COMMENT ON TABLE b3_trade_consolidated IS
     'B3 TradeInformationConsolidatedFile rows for segment FORWARD (fixed income ETFs, which COTAHIST does not carry), one row per ticker and session, as published. No opening price exists in the source. ref_price is a reference, not a trade. notional_brl is this file''s volume and differs from COTAHIST''s VOLTOT for the same session.';

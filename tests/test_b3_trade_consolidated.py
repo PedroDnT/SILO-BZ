@@ -21,6 +21,7 @@ from src.fetchers.b3_trade_consolidated_fetcher import (
     B3TradeConsolidatedEmpty,
     B3TradeConsolidatedFetcher,
     B3TradeConsolidatedFetchError,
+    B3TradeConsolidatedNoSession,
 )
 from src.pipeline import ingest_b3_trade_consolidated as tc
 from src.pipeline.b3_pipeline import B3Ingestor
@@ -174,6 +175,44 @@ async def test_an_empty_file_is_empty_not_an_error():
         patcher.stop()
 
 
+# Verbatim shape of B3's answer for 2026-09-07 (a holiday), 2026-09-27 (a
+# Sunday) and 2026-10-01 (the future), captured 2026-09-30.
+_NO_SESSION = {
+    "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+    "title": "Bad Request",
+    "status": 400,
+    "traceId": "00-e5552335109b35ea7cf1f92c36e8c781-4098cf8b0225e122-00",
+}
+
+
+async def test_a_day_with_no_session_is_no_session_not_an_error():
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(400, json=_NO_SESSION)
+
+    fetcher, patcher = _fetcher_with(handler)
+    try:
+        with pytest.raises(B3TradeConsolidatedNoSession):
+            await fetcher.fetch(date(2026, 9, 7))
+    finally:
+        patcher.stop()
+    assert calls == ["/api/download/requestname"]  # not retried
+
+
+async def test_a_400_that_is_not_b3s_problem_body_is_an_error():
+    def handler(request):
+        return httpx.Response(400, text="could not be converted")
+
+    fetcher, patcher = _fetcher_with(handler)
+    try:
+        with pytest.raises(B3TradeConsolidatedFetchError, match="HTTP 400"):
+            await fetcher.fetch(SESSION)
+    finally:
+        patcher.stop()
+
+
 async def test_an_html_page_is_an_error_never_a_file():
     def handler(request):
         if request.url.path.endswith("requestname"):
@@ -259,9 +298,38 @@ async def test_a_fetch_failure_is_logged_and_raised():
     assert "HTTP 500" in finish.call_args.args[2]
 
 
+async def test_a_no_session_day_is_logged_skipped():
+    ing = _ingestor(AsyncMock(side_effect=B3TradeConsolidatedNoSession("400")))
+    with patch("src.pipeline.b3_pipeline.upsert_rows") as up, \
+         patch.object(ing, "_log_start"), patch.object(ing, "_log_finish") as finish:
+        assert await ing.ingest_trade_consolidated(date(2026, 9, 7)) == 0
+    up.assert_not_called()
+    assert finish.call_args.kwargs["skipped"] is True
+
+
+_NO_PAUSE = patch("src.pipeline.b3_pipeline.asyncio.sleep", AsyncMock())
+
+
+async def test_the_daily_window_raises_when_no_weekday_lands_a_row():
+    """Every day skipped is a changed contract more likely than a closed week."""
+    ing = _ingestor(AsyncMock())
+    with _NO_PAUSE, patch.object(ing, "ingest_trade_consolidated", AsyncMock(return_value=0)):
+        with pytest.raises(RuntimeError, match="no row landed"):
+            await ing.daily_update_trade_consolidated()
+
+
+async def test_the_daily_window_requests_weekdays_and_sums():
+    ing = _ingestor(AsyncMock())
+    with _NO_PAUSE, patch.object(ing, "ingest_trade_consolidated", AsyncMock(return_value=67)) as one:
+        totals = await ing.daily_update_trade_consolidated()
+    sessions = [c.args[0] for c in one.call_args_list]
+    assert sessions and all(s.weekday() < 5 for s in sessions)
+    assert totals == {"b3_trade_consolidated": 67 * len(sessions)}
+
+
 async def test_backfill_requests_weekdays_only():
     ing = _ingestor(AsyncMock())
-    with patch.object(ing, "ingest_trade_consolidated", AsyncMock(return_value=1)) as one:
+    with _NO_PAUSE, patch.object(ing, "ingest_trade_consolidated", AsyncMock(return_value=1)) as one:
         # 2026-09-25 is a Friday, 2026-09-28 a Monday.
         totals = await ing.backfill_trade_consolidated(date(2026, 9, 25), date(2026, 9, 28))
     assert [c.args[0] for c in one.call_args_list] == [date(2026, 9, 25), date(2026, 9, 28)]
@@ -277,6 +345,8 @@ def test_migration_57_and_schema_agree_on_the_key():
         assert "CREATE TABLE IF NOT EXISTS b3_trade_consolidated" in text
         assert "CONSTRAINT uq_b3_trade_consolidated UNIQUE (ticker, trade_date)" in text
         assert "open_price" not in text.split("b3_trade_consolidated", 1)[1].split(";", 1)[0]
+    migration = (ROOT / "src/store/migrations/57_b3_trade_consolidated.sql").read_text()
+    assert "REVOKE ALL ON b3_trade_consolidated FROM anon, authenticated" in migration
 
 
 def test_the_backfill_is_a_dispatch_mode():

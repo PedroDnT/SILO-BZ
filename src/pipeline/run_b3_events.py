@@ -1,5 +1,6 @@
 """
-B3 corporate events, cash distributions and index levels, as their own daily step.
+B3 corporate events, cash distributions, index levels and the fixed income ETF
+prints (b3_trade_consolidated), as their own daily step.
 
 Both ran inside run_daily until 2026-09-30. There, a failure made the process
 exit non-zero, and that skipped ANALYZE, the analytical apply and the dashboard
@@ -69,6 +70,17 @@ async def main() -> None:
     except Exception as exc:
         logger.error("B3 index levels refresh failed: %s", exc, exc_info=True)
         failures.append(("b3_index_levels", exc))
+
+    # B3's consolidated trade file, segment FORWARD (migration 57): the fixed
+    # income ETFs (IMAB11, LFTS11, ...) that COTAHIST does not carry. The last
+    # 7 calendar days, one file per weekday; a day with no session is skipped.
+    # Here, not in run_daily: it shares arquivos.b3.com.br with the BDI
+    # ratchet, and a failure must not skip the apply or the deploy.
+    try:
+        totals.update(await B3Ingestor().daily_update_trade_consolidated())
+    except Exception as exc:
+        logger.error("B3 consolidated trades refresh failed: %s", exc, exc_info=True)
+        failures.append(("b3_trade_consolidated", exc))
 
     logger.info("B3 events done — rows upserted: %s", totals)
 

@@ -12,17 +12,22 @@ Two plain GETs. The first names the file and returns a one-time token:
     -> text/csv: "Status do Arquivo: Final", then a ';' header row
        (RptDt;TckrSymb;ISIN;SgmtNm;...), ISO dates, pt-BR decimals.
 
-Three quirks, all load-bearing:
+Four quirks, all load-bearing:
 
 1. `recaptchaToken` is accepted EMPTY. If B3 starts enforcing it the source
    is gone; this fetcher raises and never tries to solve a captcha.
-2. A session outside retention, a weekend or a holiday is HTTP 200 with an
-   EMPTY body. That is `B3TradeConsolidatedEmpty` (the ingestor logs it
-   `skipped`), not a failure. On 2026-09-30 the oldest session served was
+2. A weekday before the retention edge is HTTP 200 with an EMPTY body
+   (`B3TradeConsolidatedEmpty`). On 2026-09-30 the oldest session served was
    2025-06-10.
 3. The download route is `/api/download/?token=`. The `redirectUrl`'s own
    `~/download?token=` path serves the site's HTML shell with HTTP 200, so a
    body that is HTML is an error, never a file.
+4. A day with no session (a weekend, the 2026-09-07 holiday, any future
+   date, so also today before B3 publishes) answers the token request with
+   HTTP 400 and an RFC 9110 problem body titled "Bad Request"
+   (`B3TradeConsolidatedNoSession`, a subclass of Empty). Both are logged
+   `skipped`. Because a changed contract could also answer 400, the daily
+   window raises when NONE of its weekdays lands a row.
 
 Why this source exists, and what it is checked against: migration 57.
 """
@@ -54,6 +59,10 @@ _HEADERS = {
 
 class B3TradeConsolidatedEmpty(LookupError):
     """B3 served an empty file: no session that day, or outside retention."""
+
+
+class B3TradeConsolidatedNoSession(B3TradeConsolidatedEmpty):
+    """The token request answered HTTP 400: B3 has no session (or no file yet) that day."""
 
 
 class B3TradeConsolidatedFetchError(RuntimeError):
@@ -89,6 +98,7 @@ class B3TradeConsolidatedFetcher:
                 f"{self.base_url}/api/download/requestname",
                 params={"fileName": FILE_NAME, "date": session.isoformat(), "recaptchaToken": ""},
                 label=label,
+                no_session_on_400=True,
             )
             try:
                 redirect = resp.json()["redirectUrl"]
@@ -113,7 +123,13 @@ class B3TradeConsolidatedFetcher:
         return content
 
     async def _get(
-        self, client: httpx.AsyncClient, url: str, *, params: dict, label: str
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        *,
+        params: dict,
+        label: str,
+        no_session_on_400: bool = False,
     ) -> httpx.Response:
         attempts = max(1, self.max_retries)
         last_exc: Optional[BaseException] = None
@@ -126,6 +142,10 @@ class B3TradeConsolidatedFetcher:
             else:
                 if resp.status_code == 200:
                     return resp
+                if resp.status_code == 400 and no_session_on_400 and _is_problem(resp):
+                    raise B3TradeConsolidatedNoSession(
+                        f"{label}: B3 answered HTTP 400 (no session that day, or not published yet)"
+                    )
                 if resp.status_code not in _RETRY_STATUSES:
                     raise B3TradeConsolidatedFetchError(f"{url} returned HTTP {resp.status_code}")
                 last_exc = B3TradeConsolidatedFetchError(f"{url} returned HTTP {resp.status_code}")
@@ -135,3 +155,12 @@ class B3TradeConsolidatedFetcher:
         raise B3TradeConsolidatedFetchError(
             f"{label}: failed after {attempts} attempts: {last_exc}"
         )
+
+
+def _is_problem(resp: httpx.Response) -> bool:
+    """B3's 400 for a day with no session is an RFC 9110 problem body."""
+    try:
+        body = resp.json()
+    except ValueError:
+        return False
+    return isinstance(body, dict) and body.get("status") == 400 and body.get("title") == "Bad Request"

@@ -9,6 +9,7 @@ Landing table: b3_cotahist. No ticker↔CNPJ match here (deferred).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
@@ -27,6 +28,9 @@ from src.pipeline import ingest_log
 logger = logging.getLogger(__name__)
 
 _UPSERT_BATCH = 5000
+# arquivos.b3.com.br sits behind Cloudflare, which 403s bursts (the BDI host).
+# One second between consolidated-trade sessions, as the manual probes paced.
+_TC_PAUSE_SECONDS = 1.0
 
 # The first session of the COTAHIST tape SILO holds. The corporate-event sweep
 # covers every issuer that printed since then, so a price-adjusted close has
@@ -965,10 +969,18 @@ class B3Ingestor:
 
         today = date.today()
         total = 0
-        for offset in range(self._lookback_days()):
-            session = today - timedelta(days=offset)
-            if session.weekday() < 5:
-                total += await self.ingest_trade_consolidated(session)
+        sessions = [today - timedelta(days=o) for o in range(self._lookback_days())]
+        for session in (s for s in sessions if s.weekday() < 5):
+            total += await self.ingest_trade_consolidated(session)
+            await asyncio.sleep(_TC_PAUSE_SECONDS)
+        # A day with no session is skipped (HTTP 400 or an empty file). If EVERY
+        # weekday of the window was, the contract has more likely changed than
+        # B3 closed for a week, so that is an error, never a quiet zero.
+        if total == 0:
+            raise RuntimeError(
+                f"B3 consolidated trades: no row landed for any weekday of the last "
+                f"{len(sessions)} days; check the contract in b3_trade_consolidated_fetcher"
+            )
         return {TC_TABLE: total}
 
     async def backfill_trade_consolidated(
@@ -989,6 +1001,7 @@ class B3Ingestor:
         while session <= end:
             if session.weekday() < 5:
                 total += await self.ingest_trade_consolidated(session)
+                await asyncio.sleep(_TC_PAUSE_SECONDS)
             session += timedelta(days=1)
         logger.info("B3 consolidated trades backfill %s..%s: %d rows", start, end, total)
         return {TC_TABLE: total}
