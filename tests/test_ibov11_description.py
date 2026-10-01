@@ -23,6 +23,7 @@ PUBLISHED = [
     "api-docs/guides/research.mdx",
     "api-docs/cotahist-dictionary.mdx",
     "sdk/silo_client/client.py",
+    "docs/reference/research/README.md",
 ]
 
 STALE = re.compile(
