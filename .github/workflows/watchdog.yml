@@ -119,7 +119,7 @@ jobs:
       # here. Both re-fetch every traded issuer, so the re-run is idempotent.
       - name: Refresh B3 corporate events and cash dividends (recovery)
         if: ${{ !cancelled() && (steps.staleness.outputs.stale == 'true' || github.event.inputs.force == 'true') }}
-        timeout-minutes: 45
+        timeout-minutes: 75
         run: python -m src.pipeline.run_b3_events
 
       - name: Report no-op

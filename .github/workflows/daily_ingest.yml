@@ -260,9 +260,13 @@ jobs:
       # neither table; api.quote_history reads b3_corporate_event live, so a new
       # event counts from the moment it lands. A failed source writes its
       # `error` audit row and fails the job.
+      # 75, not 45: the corporate-event sweep is one serial request per issuer and
+      # B3's latency swings (0.2 s a request on 2026-09-30, 1.0 s on 2026-10-01,
+      # when 2,597 requests took 44 minutes and timed out run 36842444079).
+      # #482 made the sweep incremental; this is headroom for a slow B3 night.
       - name: Refresh B3 corporate events and cash dividends
         if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily')) }}
-        timeout-minutes: 45
+        timeout-minutes: 75
         run: python -m src.pipeline.run_b3_events
 
       # The FNET document register (fnet_document / fnet_document_filter) runs

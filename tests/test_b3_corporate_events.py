@@ -8,7 +8,7 @@ than silently producing an empty event table.
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -393,9 +393,53 @@ async def test_the_sweep_covers_every_issuer_since_the_tape_start():
         ing = B3Ingestor(fetcher=MagicMock())
         _finish_recorder(ing)
         ing._traded_issuers = MagicMock(return_value=["PETR"])
-        await ing.ingest_corporate_events()
+        await ing.ingest_corporate_events(full=True)
 
     ing._traded_issuers.assert_called_once_with(since=date(2019, 1, 2))
+
+
+def _planner(due, traded):
+    with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()):
+        ing = B3Ingestor(fetcher=MagicMock())
+    ing._issuers_due_for_proof = MagicMock(return_value=due)
+    ing._traded_issuers = MagicMock(return_value=traded)
+    return ing
+
+
+def test_the_nightly_plan_sweeps_every_issuer_due_for_proof():
+    """api.close_adj refuses a proof older than the last session, so a share
+    issuer that printed since its proof is swept every night, whatever the slot."""
+    ing = _planner(due=["PETR", "VALE"], traded=["PETR", "VALE"])
+    for offset in range(14):
+        plan = ing._sweep_plan(since=date(2019, 1, 2), today=date(2026, 10, 1) + timedelta(days=offset))
+        assert {"PETR", "VALE"} <= set(plan)
+
+
+def test_the_rest_rotate_once_every_fourteen_days():
+    traded = [f"C{i:03d}" for i in range(500)]
+    ing = _planner(due=[], traded=traded)
+    days = [date(2026, 10, 1) + timedelta(days=o) for o in range(14)]
+    plans = [ing._sweep_plan(since=date(2019, 1, 2), today=d) for d in days]
+    seen = [c for p in plans for c in p]
+    assert sorted(seen) == sorted(traded)          # each exactly once in 14 days
+    assert max(len(p) for p in plans) < 500 / 14 * 2  # spread, not bunched
+    # and the slot repeats: day 15 is day 1 again
+    assert ing._sweep_plan(since=date(2019, 1, 2), today=days[0] + timedelta(days=14)) == plans[0]
+
+
+@pytest.mark.asyncio
+async def test_the_default_sweep_is_the_incremental_plan():
+    with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
+         patch("src.pipeline.ingest_b3_events.ingest_b3_corporate_events", return_value=1), \
+         patch("src.pipeline.ingest_b3_events.record_sweep_proofs"), \
+         patch("src.fetchers.b3_corporate_events_fetcher.B3CorporateEventsFetcher") as Fetcher:
+        Fetcher.return_value.fetch_events.side_effect = lambda code: [_event_row(code)]
+        ing = B3Ingestor(fetcher=MagicMock())
+        _finish_recorder(ing)
+        ing._sweep_plan = MagicMock(return_value=["PETR"])
+        await ing.ingest_corporate_events()
+    ing._sweep_plan.assert_called_once()
+    Fetcher.return_value.fetch_events.assert_called_once_with("PETR")
 
 
 @pytest.mark.asyncio
