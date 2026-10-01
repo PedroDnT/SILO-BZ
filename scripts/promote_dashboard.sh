@@ -46,6 +46,12 @@ VERCEL_TEAM_ID=${VERCEL_TEAM_ID:-team_7ysDZks5qlq6ycBQAioNZf7J}
 API=${VERCEL_API:-https://api.vercel.com}
 VERIFY_TRIES=${VERIFY_TRIES:-10}
 VERIFY_DELAY=${VERIFY_DELAY:-15}
+# INTERIM (OPEN_ITEMS item 8): when the workflow runs right after a dispatch,
+# the deploy hook's build may still be in flight. Wait up to this many minutes
+# for it to leave BUILDING/QUEUED/INITIALIZING so the promote picks it up. 0
+# (the scheduled 08:00 run) never waits.
+WAIT_FOR_BUILD_MINUTES=${WAIT_FOR_BUILD_MINUTES:-0}
+WAIT_DELAY=${WAIT_DELAY:-30}
 
 # The fingerprint. Evidence writes /data/manifest.json at build time and every
 # source's parquet path carries a content hash, so the manifest digest changes
@@ -90,6 +96,18 @@ fi
 
 auth=(-H "Authorization: Bearer $VERCEL_TOKEN")
 q="teamId=$VERCEL_TEAM_ID"
+
+inflight() {
+    curl -sS --max-time 30 "${auth[@]}" \
+        "$API/v6/deployments?projectId=$VERCEL_PROJECT_ID&target=production&state=BUILDING,QUEUED,INITIALIZING&limit=1&$q" \
+        | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("deployments") or []))' 2>/dev/null
+}
+waited=0
+while [ "$waited" -lt "$((WAIT_FOR_BUILD_MINUTES * 60))" ] && [ "$(inflight)" = "1" ]; do
+    echo "  a production build is still in flight; waiting ${WAIT_DELAY}s"
+    sleep "$WAIT_DELAY"
+    waited=$((waited + WAIT_DELAY))
+done
 
 newest=$(curl -sS --max-time 30 "${auth[@]}" \
     "$API/v6/deployments?projectId=$VERCEL_PROJECT_ID&target=production&state=READY&limit=1&$q" \

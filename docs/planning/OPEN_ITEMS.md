@@ -223,6 +223,15 @@ the live hosts both ways: green when they match, and red when `PUBLIC_HOST` is
 pointed at `silo-j01uw6fds-deloslabs.vercel.app` (the #275 build that was
 actually being served during the freeze).
 
+**Interim fix 2026-10-01 (not the durable one).** A dispatch with
+`rebuild_dashboard=true` built a production deployment that nothing published
+until a manual promote: the 08:00 UTC check only covers the scheduled run.
+`publish_check.yml` now also runs when a `Daily CVM Ingest` run succeeds, waits
+up to 45 minutes for the hook's build to leave BUILDING, and promotes it
+(`WAIT_FOR_BUILD_MINUTES`, `scripts/promote_dashboard.sh`). It treats the symptom
+only. The durable fix is the cause below; when Vercel assigns the project
+domains to a production build again, delete the `workflow_run` trigger.
+
 **Blocked 2026-09-25:** the cause needs Pedro: the Vercel audit log or support.
 
 1. ~~**`VERCEL_TOKEN` is not set**~~ (done 2026-09-26). Pedro added the

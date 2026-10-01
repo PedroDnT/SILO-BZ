@@ -54,6 +54,12 @@ body, code = "", "200"
 if "/promote/" in url:
     (state / "promoted").touch()
     code = os.environ.get("PROMOTE_CODE", "201")
+elif "/v6/deployments" in url and "state=BUILDING" in url:
+    n = state / "inflight_polls"
+    seen = int(n.read_text()) if n.exists() else 0
+    n.write_text(str(seen + 1))
+    body = '{"deployments":[{"uid":"dpl_BUILDING"}]}' if seen < int(os.environ.get("INFLIGHT_POLLS", "0")) \
+        else '{"deployments":[]}'
 elif "/v6/deployments" in url:
     body = os.environ.get("DEPLOYMENTS_JSON", '{"deployments":[{"uid":"dpl_NEW"}]}')
 elif url.startswith(f"https://{os.environ['PUBLIC_HOST']}/"):
@@ -149,6 +155,35 @@ def test_an_empty_public_response_is_never_equal(run):
     a match would report a dead site as published."""
     p, _ = run(token=None, public="", branch="")
     assert p.returncode == 1
+
+
+def test_it_waits_for_a_build_in_flight_before_promoting(run):
+    """INTERIM: after a dispatch the hook's build may still be running. The
+    promote must pick the build that finishes, not the one before it."""
+    p, calls = run(token="tok", public="OLD", branch="NEW", WAIT_FOR_BUILD_MINUTES=1,
+                   WAIT_DELAY=0, INFLIGHT_POLLS=2)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert p.stdout.count("still in flight") == 2
+    lines = calls.splitlines()
+    last_poll = max(i for i, u in enumerate(lines) if "state=BUILDING" in u)
+    assert last_poll < next(i for i, u in enumerate(lines) if "state=READY" in u)
+    assert "/promote/dpl_NEW" in calls
+
+
+def test_the_scheduled_run_never_waits(run):
+    p, calls = run(token="tok", public="OLD", branch="NEW", INFLIGHT_POLLS=5)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "state=BUILDING" not in calls
+
+
+def test_the_workflow_also_runs_after_a_dispatch_and_waits_for_the_build():
+    wf = yaml.safe_load(WORKFLOW.read_text())
+    assert wf[True]["workflow_run"]["workflows"] == ["Daily CVM Ingest"]
+    job = wf["jobs"]["publish-check"]
+    assert "conclusion == 'success'" in job["if"]
+    run_step = next(s for s in job["steps"] if "run" in s)
+    assert "workflow_run" in run_step["env"]["WAIT_FOR_BUILD_MINUTES"]
+    assert job["timeout-minutes"] >= 50
 
 
 def test_the_workflow_runs_the_script_and_passes_the_token():
