@@ -100,7 +100,7 @@ ibov = silo.index_history_all("IBOV", start="1968-01-02")    # 15 pages; or pass
 
 B3's own published daily levels, **as published**: `index_code`, `trade_date`, `level`, `divisor_step`, `source`. IBOV is held from 1968-01-02.
 
-- **It takes an index code, never a ticker.** `BOVA11` is an ETF; `IBOV11` is the index **options** settlement leg: its `asset_class` is `index`, its `close_unit` is R$ per contract, and it prints **only on expiry days**. Neither is the index, so both are refused with `22023`, naming the codes held.
+- **It takes an index code, never a ticker.** `BOVA11` is an ETF; `IBOV11` is the Ibovespa **options** settlement code: its `asset_class` is `index`, and each print is that day's settlement index, **never the official close** (in 2026 none of its 181 prints equals the close; they differ by 0.18% on average and by up to 1.07%). It printed on expiry days only, 12 a year, through 2024, weekly in 2025, and on nearly every session since December 2025 (181 of 187 sessions of 2026), so a dense `IBOV11` series is not a sign that it is the index. Neither is the index, so both are refused with `22023`, naming the codes held.
 - **It is a price index, not total return**, and it is not adjusted. B3 re-scaled it eleven times (1983-10-04 by 100 and ten sessions by 10, the last on 1997-03-03). `divisor_step` is true on the first session after each, where a level ratio is not a return. Exclude or splice those sessions.
 - `start=None` is the last 365 days, not the whole history.
 

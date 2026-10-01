@@ -582,9 +582,9 @@ class SiloClient:
         1968-01-02.
 
         `index` is an INDEX CODE ("IBOV"), never a ticker: BOVA11 (an ETF) and
-        IBOV11 (the index options settlement leg, which prints on expiry days
-        only, in R$ per contract) are refused with `SiloError` (22023) naming
-        the codes held. The series is a price index and is not adjusted: B3
+        IBOV11 (the Ibovespa options settlement code, whose price is each
+        print's settlement index and never the official close) are refused
+        with `SiloError` (22023) naming the codes held. The series is a price index and is not adjusted: B3
         re-scaled it eleven times and `divisor_step` is True on the first
         session after each, where a level ratio is not a return. One page of
         at most 1000 rows; more raises `SiloOverCap`, so use
