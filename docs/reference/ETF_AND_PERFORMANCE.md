@@ -78,6 +78,12 @@ Pieces (FETCH → PARSE → STORE):
 - `src/pipeline/ingest_etf_market.py` — parses Brazilian number/date formats and
   upserts into `etf_market_snapshot` (migration `12_etf_market.sql`), idempotent on
   `(ticker, snapshot_date)`.
+  The page prints each figure label-then-value (`NÚMERO DE COTISTAS` / `105.270`);
+  NAV, cotistas and fee are read from the line after the first exact label line and
+  kept only if that whole line is a number, so a page without the figure stores
+  NULL, never the year on a chart axis below it (before 2026-09-30 the parser read
+  them value-then-label and stored 2026 as cotistas). Fixture:
+  `tests/fixtures/etfsbrasil/`.
 
 Run it:
 
