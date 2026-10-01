@@ -4,25 +4,9 @@ hide_title: true
 ---
 
 <!--
-  ENTRY POINT. This page has three jobs and nothing else:
-    1. say what the site covers and what it does not,
-    2. give the two numbers that orient a first-time reader (how big the
-       industry is, and whether its worst-behaved corner is deteriorating),
-    3. route to the right page.
-
-  It deliberately shows a SHORTER window than the pages it links to — 12 months
-  of AUM and 12 months of FIDC delinquency, against 36 and 24 on /industry and
-  /fidc — so it reads as an entry point rather than a duplicate of them.
-
-  Sources used here are index-only (aum_by_entity, fidc_delinquency, row_counts)
-  plus two shared headline sources (fund_headline from /fund, ops_health from
-  /ops) so the tile strip and the freshness signal are the same numbers those
-  pages report, never a second computation of them.
-
-  fund_headline.latest_period is deliberately NOT shown: it resolves to
-  max(period) over fact_fund_monthly, and FIP is stored at 31-Dec of its
-  reporting year — a date in the future for most of the calendar year. A "latest
-  month" tile built on it would be wrong for eleven months of twelve.
+  Entry point: what the site covers, two orienting numbers, routing. Shows a shorter
+  window (12 months) than /industry and /fidc. fund_headline.latest_period is NOT
+  shown: FIP is stored at 31-Dec of its reporting year, a future date most of the year.
 -->
 
 ```sql build_stamp
@@ -60,16 +44,9 @@ select * from supabase.rates_breakeven_latest where tenor_label = '1y'
 # Brazilian Public Financial Data
 
 > A public-data record of Brazilian **funds**, **listed companies** and the **B3
-> market** — net assets, flows, delinquency, tranche structure, payout behaviour,
-> filed financials, short interest and investor flow — from CVM, BACEN and B3 open
-> data, ingested and republished unattended every morning. Built for checking
-> claims against filings, not for choosing investments: no advice, no rating, no
-> recommendation.
->
-> Everything shown is what the filings say. Unpublished, uningested or ambiguous
-> fields are left **blank, never estimated** — the same rule the API enforces for
-> the agents that query it, which is why a question this warehouse cannot answer
-> returns nothing rather than a plausible number.
+> market**, from CVM, BACEN and B3 open data, rebuilt after each daily ingest. It
+> checks claims against filings and gives no advice. Unpublished or ambiguous fields
+> are left **blank, never estimated**.
 
 <BigValue data={fund_headline} value=funds_tracked title="Funds Tracked" fmt=num0/>
 <BigValue data={fund_headline} value=aum_bn title="Net Assets (R$bn)" fmt=num0/>
@@ -78,21 +55,16 @@ select * from supabase.rates_breakeven_latest where tenor_label = '1y'
 <BigValue data={ops_health} value=hours_since_last_run title="Hours Since Last Ingest" fmt=num1/>
 <BigValue data={build_stamp} value=built_at_utc title="Snapshot Built"/>
 
-> - **Net assets** — each fund's most recent `vl_patrim_liq`, summed. Latest-available
->   per fund, not an as-of-one-date figure.
-> - **Quotaholder positions** — summed `nr_cotst`. **Positions, not people**: one
->   investor in three funds counts three times. FIDC and FIP report no holder count.
-> - **Hours Since Last Ingest** much above 30 means the daily cron has stopped —
->   check [Pipeline Ops](/ops).
-> - **Snapshot Built** — this site is a build-time snapshot, rebuilt after each
->   successful ingest. Nothing here is newer than that stamp.
+> - **Net assets**: each fund's latest `vl_patrim_liq`, summed (latest per fund, not one date).
+> - **Quotaholder positions**: summed `nr_cotst`. Positions, not people. FIDC and FIP report no holder count.
+> - **Hours Since Last Ingest** much above 30 means the daily cron stopped; see [Pipeline Ops](/ops).
+> - **Snapshot Built**: nothing here is newer than this stamp.
 
 <BigValue data={rates_1y} value=real_num2 title="1y Real Yield (% a.a.)" fmt=num2/>
 <BigValue data={rates_1y} value=breakeven_num2 title="1y Breakeven Inflation (%)" fmt=num2/>
 <BigValue data={rates_1y} value=trade_date title="Curve Session"/>
 
-> B3's real (DPL) curve at its fixed 1-year vertex, and the inflation it implies
-> against the nominal (PRE) curve. Method and history on [Rates and Curves](/rates).
+> B3's real (DPL) curve at the 1-year vertex and the inflation it implies against the nominal (PRE) curve. Method on [Rates and Curves](/rates).
 
 ---
 
@@ -106,7 +78,7 @@ select * from supabase.rates_breakeven_latest where tenor_label = '1y'
   flows and return; [Performance](/performance) for its rank within its asset class.
 - **Where is credit deteriorating?** → [FIDC Credit Monitor](/fidc),
   [Securitization](/securit) for CRI/CRA, [Suspicious Deal Screens](/suspicious).
-- **Which funds exist but do nothing?** → [Dormant Funds](/dormant) — vehicles filing
+- **Which funds exist but do nothing?** → [Dormant Funds](/dormant): vehicles filing
   every month with zero flow: empty shells, and parked capital that stopped moving.
 
 **Markets and macro**
@@ -115,7 +87,7 @@ select * from supabase.rates_breakeven_latest where tenor_label = '1y'
   by board and instrument type.
 - **What do real yields and implied inflation look like?** → [Rates and Curves](/rates)
   for B3's nominal and real curves, breakeven inflation since 2008 and DI1 open interest.
-- **Who is short, and what does it cost to borrow?** → [Short Monitor](/short) — short
+- **Who is short, and what does it cost to borrow?** → [Short Monitor](/short): short
   interest, % of free float, days to cover and borrow rates.
 - **Who is buying and selling?** → [Follow the Money](/flows) for net flow by investor
   type; [Macro Context](/macro) for SELIC, CDI, inflation and the Focus consensus.
@@ -126,15 +98,9 @@ the companion CIA Aberta site, and every number on both is queryable through the
 
 ---
 
-## Industry Net Assets by Family — 12 Months
+## Industry Net Assets by Family, 12 Months
 
-> The four **monthly** CVM fund families stacked. FI dominates by an order of
-> magnitude, so the others read as thin bands at the top — the 36-month series
-> split per family is on [Industry Structure](/industry). The stack ends at the
-> last month **every** family has fully filed.
->
-> FIP is excluded: it files **yearly** and would appear as one December band
-> larger than FIDC, FII and FIAGRO together. Its latest year-end is the tile below.
+> CVM **monthly** fund families, stacked; the stack ends at the last month **every** family has fully filed (CVM, monthly, 1 to 2 months lag). FIP files **yearly** and is excluded; its latest year-end is in the tiles below. Per-family 36 months on [Industry Structure](/industry).
 
 <AreaChart
   data={aum_by_entity}
@@ -152,16 +118,9 @@ the companion CIA Aberta site, and every number on both is queryable through the
 
 ---
 
-## FIDC Sector Delinquency — 12 Months
+## FIDC Sector Delinquency, 12 Months
 
-> Overdue receivables as a share of FIDC net assets, across every FIDC filing both
-> an aging table and a monthly report — the asset side of the receivables-fund
-> industry marking itself.
->
-> It is a **sector aggregate and hides distribution**: a stable line is consistent
-> with a handful of funds deteriorating badly while the rest improve. The 24-month
-> series, the aging buckets and the fund-level ranking are on [the FIDC Credit
-> Monitor](/fidc).
+> Overdue receivables as a share of FIDC net assets (CVM, monthly, 1 to 2 months lag). A **sector aggregate that hides distribution**: a flat line can hide a few funds deteriorating badly. Detail on [the FIDC Credit Monitor](/fidc).
 
 <LineChart
   data={fidc_delinquency}
@@ -175,8 +134,7 @@ the companion CIA Aberta site, and every number on both is queryable through the
 
 ## Pages
 
-In sidebar order: industry and backdrop, then one page per asset class, then the
-granular views, then the pipeline.
+In sidebar order.
 
 ### Industry and backdrop
 
@@ -220,12 +178,7 @@ granular views, then the pipeline.
 
 ## What Is in the Warehouse
 
-> Row counts for the four largest ingested tables. Per-table freshness and the
-> full audit log are on [Pipeline Ops](/ops).
->
-> **≈** — Postgres planner estimates (`pg_class.reltuples`), within ~1% of the
-> true count since the daily ingest runs `ANALYZE`. An exact `count(*)` would
-> full-scan tens of millions of rows on every build.
+> Row counts for the largest tables; freshness is on [Pipeline Ops](/ops). **≈** marks Postgres planner estimates (`pg_class.reltuples`, within ~1% after the daily `ANALYZE`).
 
 <DataTable data={row_counts}>
   <Column id=dataset title="Dataset"/>
@@ -236,36 +189,20 @@ granular views, then the pipeline.
 
 ## How to Read This Dashboard
 
-**Units live in the column title.** Scaling happens in SQL: `(R$mm)` is already
-millions, `(%)` is already a percentage. Where CVM publishes a field whose scale it
-does not document, the column is labelled **source units** and shown unconverted —
-read those as rankings, not percentages.
+**Units** are in the column title; scaling happens in SQL. A column labelled **source units** is unconverted: read it as a ranking, not a percentage.
 
-**Blank is not zero.** Blank means not published, not filed, or not yet ingested.
-Zero means the filing said zero. Nothing is carried forward, interpolated or imputed.
+**Blank is not zero.** Blank means not published, not filed or not yet ingested; nothing is carried forward or imputed.
 
-**Publication lag is structural.** CVM publishes monthly data one to two months in
-arrears, so the newest month or two are legitimately thin. FIP files yearly, FIAGRO's
-file begins 2025-05, and post-CVM-175 share-class splits break the CNPJ join ETF NAV
-history depended on. None are pipeline failures; each is flagged where it bites.
+**Publication lag is structural.** CVM publishes monthly data 1 to 2 months in arrears; FIP files yearly, FIAGRO's file begins 2025-05, and post-CVM-175 share-class splits break the CNPJ join ETF NAV history depended on. None are pipeline failures. Each page states coverage before charting a partial field.
 
-**Coverage differs per field.** Registry names, investor splits, property detail and
-securitisation lines are ingested to different depths. Every page states its coverage
-before charting a partial field, so a thin table can be told from a thin market.
-
-**Terminology.** "Net assets" is CVM's `vl_patrim_liq` — loosely called AUM elsewhere.
-"Quotaholders" is `nr_cotst`, a count of positions rather than of distinct people.
+**Terminology.** "Net assets" is `vl_patrim_liq`; "quotaholders" is `nr_cotst`, positions not people.
 
 ---
 
 ## Want to know more?
 
-**[What Silo serves](https://claude.ai/code/artifact/10fa2f4d-ce1f-48b1-aa31-064cdb0cb1dd)** — a plain-language walkthrough of what this
-is and what the warehouse does and does not claim. Start here if you are not already
-deep in Brazilian fund filings.
+**[What Silo serves](https://claude.ai/code/artifact/10fa2f4d-ce1f-48b1-aa31-064cdb0cb1dd)**: a plain-language walkthrough of what the warehouse does and does not claim.
 
-**[API docs](https://octo-98895abd.mintlify.site/)** — every number on this site is
-queryable. Free and anonymous to read.
+**[API docs](https://octo-98895abd.mintlify.site/)**: every number here is queryable, free and anonymous.
 
-**[Sign in](/signin.html)** — a GitHub account raises the query ceilings (3 → 50 ids
-per call, and a longer time budget). Nothing on this page requires it.
+**[Sign in](/signin.html)**: a GitHub account raises query ceilings (3 → 50 ids per call).

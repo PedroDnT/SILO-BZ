@@ -4,256 +4,198 @@ description: "What we ingest, what we don't, and what we hold but don't serve."
 icon: "database"
 ---
 
-### Overview
-
-What this warehouse ingests, what it deliberately does not, what it holds but does not serve, and at what grain.
-
-1. [What we ingest](#1-what-we-ingest) — source → table → grain → coverage
-2. [What we could ingest and don't](#2-what-we-could-ingest-and-dont) — and why
-3. [What we ingest and don't serve](#3-what-we-ingest-and-dont-serve) — the gap between the warehouse and the API
-4. [How it is served](#4-how-it-is-served) — grain by grain
-
-Coverage figures are as of 2026-08-31. The full audit, with the measurements behind each decision, is [`docs/reference/DATA_INVENTORY.md`](https://github.com/PedroDnT/SILO-BZ/blob/main/docs/DATA_INVENTORY.md); the live gap register is [`docs/reference/DATABASE_MAINTENANCE.md`](https://github.com/PedroDnT/SILO-BZ/blob/main/docs/DATABASE_MAINTENANCE.md) §11.
+The warehouse in three lists: [what we ingest](#1-what-we-ingest), [what we don't](#2-what-we-could-ingest-and-dont), [what we hold but don't serve](#3-what-we-ingest-and-dont-serve), then [how it is served](#4-how-it-is-served). Coverage figures are as of 2026-08-31. Full audit: [`docs/reference/DATA_INVENTORY.md`](https://github.com/PedroDnT/SILO-BZ/blob/main/docs/DATA_INVENTORY.md). Live gap register: [`docs/reference/DATABASE_MAINTENANCE.md`](https://github.com/PedroDnT/SILO-BZ/blob/main/docs/DATABASE_MAINTENANCE.md) §11.
 
 ### 1. What we ingest
 
-CVM, B3, BACEN, IBGE and ANBIMA supply the main public datasets. The ETF
-market feed noted below is the exception to the public-source path.
+Sources are CVM, B3, BACEN, IBGE and ANBIMA, all public except the ETF market feed.
 
-#### CVM — funds (`dados.cvm.gov.br`)
+#### CVM funds (`dados.cvm.gov.br`)
 
-| Family  | Table                    | Grain                                | Source shape                         | From                   |
-| ------- | ------------------------ | ------------------------------------ | ------------------------------------ | ---------------------- |
-| FI      | `cvm_fi_diario`          | fund × **day**                       | monthly ZIP 2021+, yearly HIST ≤2020 | 2019 (partition floor) |
-| FI      | `cvm_fi_perfil`          | fund × month                         | monthly CSV                          | 2019                   |
-| FI      | `cvm_fi_balancete`       | fund × month × account               | monthly ZIP                          | 2019                   |
-| FI      | `cvm_fi_cda`             | fund × month × asset **class**       | monthly 2023+, yearly HIST ≤2022     | 2005                   |
-| FI      | `cvm_fi_cda_acoes`       | fund × month × class × **ticker**    | CDA block 4                          | 2005                   |
-| FI      | `cvm_fi_cda_cotas`       | fund × month × **held fund**         | CDA block 2                          | 2005                   |
-| FI      | `cvm_fi_cda_debentures`  | fund × month × **issuer** × maturity | CDA block 6                          | 2005                   |
-| FI      | `cvm_fund_registry`      | fund (static)                        | CVM-175 registry ZIP                 | current                |
-| FIDC    | `cvm_fidc_mensal`        | fund × month                         | monthly 2025+, yearly HIST ≤2024     | 2019                   |
-| FIDC    | `cvm_fidc_tranche`       | fund × month × tranche               | monthly (tab X2/X3/X6)               | **2025**               |
-| FIDC    | `cvm_fidc_tranche_flows` | fund × month × tranche               | monthly (tab X4)                     | **2025**               |
-| FIDC    | `cvm_fidc_aging`         | fund × month × bucket                | monthly (tab VI)                     | **2025**               |
-| FIDC    | `cvm_fidc_setor`         | fund × month                         | tab II, monthly 2025+, HIST ≤2024    | 2013                   |
-| FIDC    | `cvm_fidc_sacado`        | fund × month × **rank** (1–25)       | tab VIII, monthly 2025+, HIST ≤2024  | 2013                   |
-| FIDC    | `cvm_fidc_cedente`       | fund × month × block × slot (1–9)    | tab I cedente slots, unpivoted       | 2019-11 (slots appear) |
-| FIDC    | `cvm_fidc_scr`           | fund × month                         | tab X, monthly 2025+, HIST ≤2024     | 2023-10 (member appears) |
-| FIDC    | `cvm_fidc_garantia`      | fund × month                         | tab X_7, monthly 2025+, HIST ≤2024   | 2019-11 (member appears) |
-| FII     | `cvm_fii_mensal`         | fund × month × subtype × **version** | yearly ZIP                           | 2021                     |
-| FII     | `cvm_fii_periodic`       | fund × quarter/year × doc × **version** | yearly ZIP, 4 members             | 2019                     |
-| FII     | `cvm_fii_imovel`         | fund × quarter × **source row**      | yearly ZIP                           | 2019                   |
-| FIAGRO  | `cvm_fiagro_mensal`      | fund × month                         | monthly ZIP                          | **2025-05**            |
-| FIP     | `cvm_fip_periodic`       | fund × **filing date** × share class | yearly CSV                           | 2010                   |
-| SECURIT | `cvm_securit_mensal`     | vehicle × month                      | yearly ZIP                           | 2019                   |
-| SECURIT | `cvm_securit_serie`      | vehicle × series                     | yearly ZIP                           | 2019                   |
-| SECURIT | `cvm_securit_fluxo`      | vehicle × series × flow date         | yearly ZIP                           | 2019                   |
-| SECURIT | `cvm_securit_dfin`       | vehicle × year × statement line      | yearly CSV                           | 2019                   |
-| ETF     | `cvm_etf_registry`       | ticker (static)                      | curated seed ⋈ `cad_fi`              | current                |
+| Family | Table | Grain | Source shape | From |
+| --- | --- | --- | --- | --- |
+| FI | `cvm_fi_diario` | fund × **day** | monthly ZIP 2021+, yearly HIST ≤2020 | 2019 (partition floor) |
+| FI | `cvm_fi_perfil` | fund × month | monthly CSV | 2019 |
+| FI | `cvm_fi_balancete` | fund × month × account | monthly ZIP | 2019 |
+| FI | `cvm_fi_cda` | fund × month × asset **class** | monthly 2023+, yearly HIST ≤2022 | 2005 |
+| FI | `cvm_fi_cda_acoes` | fund × month × class × **ticker** | CDA block 4 | 2005 |
+| FI | `cvm_fi_cda_cotas` | fund × month × **held fund** | CDA block 2 | 2005 |
+| FI | `cvm_fi_cda_debentures` | fund × month × **issuer** × maturity | CDA block 6 | 2005 |
+| FI | `cvm_fund_registry` | fund (static) | CVM-175 registry ZIP | current |
+| FIDC | `cvm_fidc_mensal` | fund × month | monthly 2025+, yearly HIST ≤2024 | 2019 |
+| FIDC | `cvm_fidc_tranche` | fund × month × tranche | monthly (tab X2/X3/X6) | **2025** |
+| FIDC | `cvm_fidc_tranche_flows` | fund × month × tranche | monthly (tab X4) | **2025** |
+| FIDC | `cvm_fidc_aging` | fund × month × bucket | monthly (tab VI) | **2025** |
+| FIDC | `cvm_fidc_setor` | fund × month | tab II, monthly 2025+, HIST ≤2024 | 2013 |
+| FIDC | `cvm_fidc_sacado` | fund × month × **rank** (1–25) | tab VIII, monthly 2025+, HIST ≤2024 | 2013 |
+| FIDC | `cvm_fidc_cedente` | fund × month × block × slot (1–9) | tab I cedente slots, unpivoted | 2019-11 (slots appear) |
+| FIDC | `cvm_fidc_scr` | fund × month | tab X, monthly 2025+, HIST ≤2024 | 2023-10 (member appears) |
+| FIDC | `cvm_fidc_garantia` | fund × month | tab X_7, monthly 2025+, HIST ≤2024 | 2019-11 (member appears) |
+| FII | `cvm_fii_mensal` | fund × month × subtype × **version** | yearly ZIP | 2021 |
+| FII | `cvm_fii_periodic` | fund × quarter/year × doc × **version** | yearly ZIP, 4 members | 2019 |
+| FII | `cvm_fii_imovel` | fund × quarter × **source row** | yearly ZIP | 2019 |
+| FIAGRO | `cvm_fiagro_mensal` | fund × month | monthly ZIP | **2025-05** |
+| FIP | `cvm_fip_periodic` | fund × **filing date** × share class | yearly CSV | 2010 |
+| SECURIT | `cvm_securit_mensal` / `_serie` / `_fluxo` / `_dfin` | vehicle × month / series / series × flow date / year × statement line | yearly ZIP (`_dfin`: yearly CSV) | 2019 |
+| ETF | `cvm_etf_registry` | ticker (static) | curated seed ⋈ `cad_fi` | current |
 
-#### CVM — listed companies (CIA Aberta)
+#### CVM listed companies (CIA Aberta)
 
-| Table         | Grain                                | From    |
-| ------------- | ------------------------------------ | ------- |
-| `cia_company` | company (static)                     | current |
-| `cia_filing`  | company × ITR/DFP filing × version   | 2019    |
-| `cia_account` | company × filing × **account line**  | 2019    |
-| `cia_event`   | company × IPE event × version        | 2010    |
-| `cia_ticker`  | company × ticker (published FCA map) | 2010    |
+| Table | Grain | From |
+| --- | --- | --- |
+| `cia_company` | company (static) | current |
+| `cia_filing` | company × ITR/DFP filing × version | 2019 |
+| `cia_account` | company × filing × **account line** | 2019 |
+| `cia_event` | company × IPE event × version | 2010 |
+| `cia_ticker` | company × ticker (published FCA map) | 2010 |
 
-#### B3 — market data (`bvmf.bmfbovespa.com.br`)
-
-| Table                 | Grain                    | Notes                                                                                   |
-| --------------------- | ------------------------ | ----------------------------------------------------------------------------------------- |
-| `b3_cotahist`         | instrument × **session** | every COTAHIST print: equities, BDRs, units, fund quotas, options, termo, auctions       |
-| `b3_cotahist_pre2019` | instrument × session     | pre-2019 archive, kept separate                                                          |
-| `b3_corporate_event`  | instrument × event       | splits/bonuses as published; **no adjustment factor derived**                             |
-
-#### B3 — DI futures and reference curves (`b3.com.br/pesquisapregao`)
+#### B3 and global series
 
 | Table | Grain | Notes |
 | --- | --- | --- |
-| `b3_futures_settlement` | session × outright DI1 contract | B3's Price Report: settlement rate and PU, open interest, volume, the session's quotes (DI1 is quoted in rate). From 2018-01-02 |
-| `b3_reference_rate` | session × curve × vertex | B3's reference-rate file: `PRE` (DI x pré), `DOC` (onshore dollar coupon), `DPL` (IPCA coupon), every vertex. From 2008-01-02; the long end is B3's extrapolation |
+| `b3_cotahist` | instrument × **session** | every COTAHIST print: equities, BDRs, units, fund quotas, options, termo, auctions (`bvmf.bmfbovespa.com.br`) |
+| `b3_cotahist_pre2019` | instrument × session | pre-2019 archive, kept separate |
+| `b3_corporate_event` | instrument × event | splits/bonuses as published; **no adjustment factor derived** |
+| `b3_futures_settlement` | session × outright DI1 contract | Price Report: settlement rate and PU, open interest, volume, quotes (DI1 is quoted in rate). From 2018-01-02 (`b3.com.br/pesquisapregao`) |
+| `b3_reference_rate` | session × curve × vertex | `PRE` (DI x pré), `DOC` (onshore dollar coupon), `DPL` (IPCA coupon), every vertex. From 2008-01-02; the long end is B3's extrapolation |
+| `mkt_series` | series × date | U.S. Treasury par yields, every tenor (U.S. Treasury, daily); Brent spot (EIA, published weekly); OFR Financial Stress Index and its volatility category (U.S. Office of Financial Research, two business days late; the value before each revision is kept) |
 
-#### Global series (`mkt_series`)
+#### BACEN, IBGE, ANBIMA
 
-| Series | Source | Notes |
+| Table | Grain | Notes |
 | --- | --- | --- |
-| U.S. Treasury par yields, every tenor | U.S. Treasury | daily |
-| Brent spot | EIA | published weekly |
-| OFR Financial Stress Index and its volatility category | U.S. Office of Financial Research | two business days late; the value before each OFR revision is kept |
+| `bacen_sgs` | series × date | macro series |
+| `bacen_ptax` | currency × date | |
+| `bacen_expectativas` | indicator × survey date × horizon | Focus survey |
+| `ibge_ipca_item_monthly` | node × **month** | general index, 9 groups, 19 subgroups, 51 items, ~377 subitems: weight, monthly / YTD / 12-month change, as published; SIDRA 1419 (2012-01..2019-12) then 7060 (2020-01→) (`apisidra.ibge.gov.br`) |
+| `anbima_class_monthly` | ANBIMA class × month | boletim class metrics |
+| `anbima_etf_class_monthly` | none | ETF-only compat **view** over the above |
+| `etf_market_snapshot` | ticker × day | scraped NAV/cotistas; needs `APIFY_TOKEN` |
 
-#### BACEN — macro
-
-| Table                | Grain                             |
-| -------------------- | --------------------------------- |
-| `bacen_sgs`          | series × date                     |
-| `bacen_ptax`         | currency × date                   |
-| `bacen_expectativas` | indicator × survey date × horizon |
-
-#### IBGE — the IPCA item tree (`apisidra.ibge.gov.br`)
-
-| Table                    | Grain            | Notes                                                                                                                                                 |
-| ------------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ibge_ipca_item_monthly` | node × **month** | general index, 9 groups, 19 subgroups, 51 items, ~377 subitems: weight, monthly / YTD / 12-month change, as published; SIDRA 1419 (2012-01..2019-12) then 7060 (2020-01→) |
-
-#### ANBIMA / commercial
-
-| Table                      | Grain                | Notes                                     |
-| -------------------------- | -------------------- | ----------------------------------------- |
-| `anbima_class_monthly`     | ANBIMA class × month | boletim class metrics                     |
-| `anbima_etf_class_monthly` | —                    | ETF-only compat **view** over the above   |
-| `etf_market_snapshot`      | ticker × day         | scraped NAV/cotistas; needs `APIFY_TOKEN` |
-
-Plus `cvm_ingest_log` — one row per `(entity, doc_type, period)` attempt, the audit trail every ingest writes exactly once.
+Plus `cvm_ingest_log`: one row per `(entity, doc_type, period)` attempt, written exactly once by every ingest.
 
 ### 2. What we could ingest and don't
 
-Everything here is published and reachable. Each line is a decision, not an oversight. The measurements behind them are in the [repository inventory](https://github.com/PedroDnT/SILO-BZ/blob/main/docs/DATA_INVENTORY.md) §2.
+Each line is a decision, not an oversight; measurements are in the [repository inventory](https://github.com/PedroDnT/SILO-BZ/blob/main/docs/DATA_INVENTORY.md) §2.
 
-#### CVM CDA — the unread blocks
+#### CVM CDA blocks
 
-The monthly CDA archive holds eight blocks; we read four. Adding one costs a field map, a migration and one `ingest_*` method — the download already happens.
+The monthly CDA archive holds eight blocks; we read four. Adding one costs a field map, a migration and one `ingest_*` method.
 
-| Block | Content                  | Status                                                                  |
-| ----- | ------------------------ | ------------------------------------------------------------------------- |
-| BLC_1 | Títulos públicos         | **ingested** (`cvm_fi_cda`)                                              |
-| BLC_2 | Cotas de fundos          | **ingested** (`cvm_fi_cda_cotas`)                                        |
-| BLC_4 | Ações / BDR              | **ingested** (`cvm_fi_cda_acoes`)                                        |
-| BLC_6 | Debêntures               | **ingested** (`cvm_fi_cda_debentures`) — no `CD_ATIVO`, so the key ends in `row_hash` |
-| BLC_3 | Swaps                    | not ingested — no consumer asked                                         |
-| BLC_5 | Títulos privados         | not ingested                                                             |
-| BLC_7 | Investimento no exterior | not ingested                                                             |
-| BLC_8 | Disponibilidades         | not ingested — 28.9% of the archive by size for cash balances            |
-
-#### FIDC informe mensal — the tabs still unread
-
-Ten of the ZIP's 18 members are ingested. Still unread: tab I's other ~70 columns (asset composition, admin, condomínio), `III` (2025+), `V` (maturity ladder), `VII` (custody split, repurchases), `IX` (assignment prices), `X_1` / `X_1_1` (quotaholders per tranche and by investor type), `X_5` (liquidity ladder), `X_7` (collateral coverage).
-
-#### B3 — possible additions
-
-These require source and access checks before they become implementation work.
-`b3_index_portfolio` already captures B3's current constituent portfolio and
-feeds short-interest analytics; a historical effective-vintage series would be
-a distinct addition, subject to archive and layout verification.
-
-| Source | What it could give | Gate before adding |
+| Block | Content | Status |
 | --- | --- | --- |
-| Historical index composition | Point-in-time membership and weights beyond the current portfolio SILO captures | Verify the archive, effective dates and each CIND layout version |
+| BLC_1 | Títulos públicos | **ingested** (`cvm_fi_cda`) |
+| BLC_2 | Cotas de fundos | **ingested** (`cvm_fi_cda_cotas`) |
+| BLC_4 | Ações / BDR | **ingested** (`cvm_fi_cda_acoes`) |
+| BLC_6 | Debêntures | **ingested** (`cvm_fi_cda_debentures`); no `CD_ATIVO`, so the key ends in `row_hash` |
+| BLC_3 | Swaps | not ingested, no consumer asked |
+| BLC_5 | Títulos privados | not ingested |
+| BLC_7 | Investimento no exterior | not ingested |
+| BLC_8 | Disponibilidades | not ingested, 28.9% of the archive by size for cash balances |
+
+#### Other gaps
+
+| Gap | Why |
+| --- | --- |
+| FIDC informe tabs unread | Ten of the ZIP's 18 members are ingested. Unread: tab I's other ~70 columns (asset composition, admin, condomínio), `III` (2025+), `V` (maturity ladder), `VII` (custody split, repurchases), `IX` (assignment prices), `X_1` / `X_1_1` (quotaholders per tranche and by investor type), `X_5` (liquidity ladder), `X_7` (collateral coverage) |
+| Historical B3 index composition | Point-in-time membership and weights beyond the current portfolio in `b3_index_portfolio`. Gate: verify the archive, effective dates and each CIND layout version |
+| FIDC tranche / flows / aging before 2025 | CVM publishes **no HIST equivalent** for tabs X2/X4/VI: an upstream limit, not a backlog item |
+| FIAGRO before 2025-05 | the monthly file itself begins there |
+| CIA ITR/DFP 2010–2018 | pipeline is wired from 2019; partitions are declared and empty |
+| `cvm_fi_diario` before 2019 | RANGE partitions floor at 2019-01-01. Adding CVM's HIST back to 2000 means ~a decade of daily rows on the largest table. Deliberate |
+| Company ↔ fund ownership beyond CDA | Two published edges exist and neither is inferred: `cvm_fi_cda_acoes.cd_ativo` (B3 ticker, joined to `cia_ticker`) and `cvm_fi_cda_debentures.cpf_cnpj_emissor` (joins to `cia_*` directly). No name matching, ever |
+| Anything needing a licence or login | `etf_market_snapshot` is the one scrape, and it self-skips without its token |
 
 #### Known defects in what is ingested
 
-Two, both written up in full with their measurements in the repository inventory:
+Both are written up with measurements in the repository inventory.
 
-- **`cvm_fi_cda` keeps one bond in five and calls it the class total.** BLC_1 is one row per security, but the shipped key carries none of `CD_SELIC` / `CD_ISIN` / `DT_VENC`, so 80.4% of rows are lost on upsert — the stored number is one arbitrary bond's position wearing the label of the fund's whole government-bond book. The fix is additive: a `cvm_fi_cda_titpub` table keyed on the security, leaving `cvm_fi_cda` as the class roll-up the dashboards read.
-- **`cia_event` cannot key an IPE filing with no protocol, and before 2015 none have one.** The natural key is `(protocolo, versao)`, so those rows are dropped rather than given a synthesized key. 2010–2014 cannot be loaded at all; 2015 silently loses 12% of its filings. The fix is a second key era (a `row_hash` for protocol-less rows), which changes the grain and so waits for the owner's call.
-
-#### Periods no wired source reaches
-
-| Gap                                      | Why                                                                                            |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| FIDC tranche / flows / aging before 2025 | CVM publishes **no HIST equivalent** for tabs X2/X4/VI — an upstream limit, not a backlog item. |
-| FIAGRO before 2025-05                    | the monthly file itself begins there                                                            |
-| CIA ITR/DFP 2010–2018                    | pipeline is wired from 2019; partitions are declared and empty                                  |
-| `cvm_fi_diario` before 2019              | RANGE partitions floor at 2019-01-01. Adding CVM's HIST back to 2000 means ~a decade of daily rows on the largest table. Deliberate. |
-
-#### Not ingested by decision
-
-- **Company ↔ fund ownership beyond CDA.** Two published edges exist and neither is inferred: `cvm_fi_cda_acoes.cd_ativo` (the B3 ticker, joined to `cia_ticker`) and `cvm_fi_cda_debentures.cpf_cnpj_emissor` (which joins to `cia_*` directly). No name matching, ever.
-- **Anything requiring a licence or a login.** `etf_market_snapshot` is the one scrape, and it self-skips without its token.
+- **`cvm_fi_cda` keeps one bond in five and calls it the class total.** BLC_1 is one row per security, but the shipped key carries none of `CD_SELIC` / `CD_ISIN` / `DT_VENC`, so 80.4% of rows are lost on upsert. The fix is additive: a `cvm_fi_cda_titpub` table keyed on the security, leaving `cvm_fi_cda` as the class roll-up the dashboards read.
+- **`cia_event` cannot key an IPE filing with no protocol, and before 2015 none have one.** The natural key is `(protocolo, versao)`, so those rows are dropped, not given a synthesized key. 2010–2014 cannot be loaded; 2015 silently loses 12% of its filings. The fix is a second key era (a `row_hash` for protocol-less rows), which changes the grain and waits for the owner's call.
 
 ### 3. What we ingest and don't serve
 
-The warehouse is wider than the API. Checked against `19_api_contract.sql` on 2026-09-15. "Indirect" means the table feeds `dim_fund` / `fact_fund_monthly` and so reaches `funds`, `fund_nav` and `panel` without an endpoint of its own.
+The warehouse is wider than the API. Checked against `19_api_contract.sql` on 2026-09-15. "Indirect" means the table feeds `dim_fund` / `fact_fund_monthly` and reaches `funds`, `fund_nav` and `panel` without an endpoint of its own.
 
 #### Served
 
+Each endpoint's page has the detail; this maps table to endpoint.
+
 | Held | Through `api` |
 | --- | --- |
-| `cvm_fi_diario`, `cvm_fidc_mensal`, `cvm_fii_mensal`, `cvm_fiagro_mensal`, `cvm_fip_periodic`, `cvm_fund_registry` | **Indirect**: `funds`, `fund_profile`, `fund_nav`, `search_funds`, `panel` (fund arms), `lookup`, `coverage`. No table is served raw. |
-| `b3_cotahist` | **Yes**: `quotes` and the five typed views, `auctions`, `quote_history`, `quote_latest`, `option_chain`, `option_history`, `option_exercises`, `termo_history`, `panel` (quote arms). |
-| `cia_account`, `cia_company`, `cia_ticker` | **Yes**: `financials`, `company_financials`, `lookup` (company rows with `tickers`), `fund_debentures` (`issuer_tickers`). `cia_filing` reaches `coverage` only. |
-| `cvm_fi_cda_acoes` / `_cotas` | **Yes**, via `fund_holdings` — both directions. |
-| `cvm_fi_cda_debentures` | **Yes**, via `fund_debentures`: issuer, maturity, rate structure, by holder CNPJ or by issuer. |
-| `anbima_class_monthly` | **Yes**, via `anbima_classes`: AUM, flows, returns, fund counts per class / type / total. |
-| `bacen_sgs` — the IPCA set (26 codes) | **Yes**, via [`inflation`](/api-docs/inflation): headline, IPCA-15, the BCB cores, classifications, diffusion and the nine groups, as published, plus a derived `acc_12m`. |
-| `ibge_ipca_item_monthly` | **Yes**, via [`inflation_items`](/api-docs/inflation): the IPCA tree with weights and a derived `contribution`. |
-| `cvm_fidc_cedente`, `cvm_fidc_sacado`, `cvm_fidc_setor`, `cvm_fidc_scr` | **Yes**: `fidc_cedentes`, `fidc_sacados`, `fidc_portfolio`, the panel metrics `receivables` / `sacado_top1` / `sacado_top25`, four `coverage()` rows. See [FIDC concentration](/api-docs/fidc). |
-| `cvm_fidc_tranche`, `cvm_fidc_tranche_flows`, `cvm_fidc_aging` | **Yes**, since v32: `fidc_tranches` (per tranche per month, promised vs realised performance as filed, tab X_4 flows with CVM's labels verbatim) and `fidc_aging` (tab VI long, to-maturity and overdue ladders plus the filed total), two `coverage()` rows. From 2025-01 only — CVM publishes no archive. See [FIDC tranches and aging](/api-docs/fidc-structure). |
-| `fnet_document`, `fnet_document_filter` | **Yes**, since v33: `fund_documents` (one fund's B3 Fundos.NET documents, through its cnpjFundo links, with FNET's download link) and `fund_restatements` (every re-filed document paired with the version it replaced by a stated key — FNET links no versions), one `coverage()` row. See [Fund documents and restatements](/api-docs/fnet-documents). |
-| `fnet_document_pair`, `fnet_document_diff` | **Yes**, since v40: `fund_restatement_diff` (one row per field a re-filed FIDC informe mensal changed, text as printed, numbers only on numeric fields, repeated blocks matched by declared key or flagged as position-matched) and `fund_restatements`' `diff_status` / `n_fields_changed`. Diffs cover restatements delivered from 2026 on; no document body is kept. See [Fund documents and restatements](/api-docs/fnet-documents). |
-| `cia_event` | **Yes**, since v38: `company_events` (a listed company's IPE filings, one row per protocol at its newest version, text as filed, CVM's RAD link as `source_url`; from 2015 — protocol-less filings are not held), one `coverage()` row. See [Company events](/api-docs/company-events). |
-| `b3_futures_settlement`, `b3_reference_rate` | **Yes**, since v42: [`future_curve` / `future_series`](/api-docs/rates) (every DI1 contract per session, from 2018; quoted in rate) and [`curve` / `curve_history`](/api-docs/rates) (B3's `PRE`, `DOC` and `DPL` curves per vertex from 2008, and B3's fixed vertices through time — never interpolated; the long end is B3's extrapolation), two `coverage()` rows. |
-| `bacen_sgs` (the nine non-inflation series), `bacen_ptax` | **Yes**, since v38: `macro_series` (Selic target and daily, CDI, IGP-M, INPC, old-rule poupança, SGS BRL/USD and BRL/EUR, monthly GDP — unit on every row) and `ptax` (compra / venda per currency, BRL per unit), two `coverage()` rows. See [Macro series and PTAX](/api-docs/macro). |
-| The forensic screens over `cvm_fidc_aging`, `cvm_fidc_mensal`, `cvm_fii_mensal`, `cvm_securit_serie`, `fact_fund_monthly` | **Yes**, as signals: seven `screen_*` functions — FIDC zombie growth, evergreen aging and delinquency drivers, captive FIIs, overdue CRI/CRA, dormant FI funds. Every row carries `screen` and `params`; no score. See [Forensic screens](/api-docs/screens). |
-| The FNET register and `dim_fund` / `cvm_fund_registry`, as filing behaviour | **Yes**, since v37, as signals: `screen_restatements` (unusual FNET re-filings, RE vs RC), `screen_late_filers` (monthly informes past the deadline Resolução CVM 175 states, cited on every row) and `screen_silent_filers` (registry-active funds with no periodic informe for N complete months). See [Filing-behaviour screens](/api-docs/filing-screens). |
+| `cvm_fi_diario`, `cvm_fidc_mensal`, `cvm_fii_mensal`, `cvm_fiagro_mensal`, `cvm_fip_periodic`, `cvm_fund_registry` | **Indirect**: `funds`, `fund_profile`, `fund_nav`, `search_funds`, `panel` (fund arms), `lookup`, `coverage`. No table is served raw |
+| `b3_cotahist` | `quotes` and the five typed views, `auctions`, `quote_history`, `quote_latest`, `option_chain`, `option_history`, `option_exercises`, `termo_history`, `panel` (quote arms) |
+| `cia_account`, `cia_company`, `cia_ticker` | `financials`, `company_financials`, `lookup`, `fund_debentures` (`issuer_tickers`). `cia_filing` reaches `coverage` only |
+| `cvm_fi_cda_acoes` / `_cotas` / `_debentures` | `fund_holdings` (both directions); `fund_debentures` (by holder CNPJ or by issuer) |
+| `anbima_class_monthly` | `anbima_classes` |
+| `bacen_sgs` IPCA set (26 codes), `ibge_ipca_item_monthly` | [`inflation`](/api-docs/inflation) (plus a derived `acc_12m`) and `inflation_items` (weights, plus a derived `contribution`) |
+| `cvm_fidc_cedente`, `_sacado`, `_setor`, `_scr` | `fidc_cedentes`, `fidc_sacados`, `fidc_portfolio`, panel metrics `receivables` / `sacado_top1` / `sacado_top25`, four `coverage()` rows. [FIDC concentration](/api-docs/fidc) |
+| `cvm_fidc_tranche`, `_tranche_flows`, `_aging` | Since v32: `fidc_tranches` and `fidc_aging`, two `coverage()` rows. From 2025-01 only. [FIDC tranches and aging](/api-docs/fidc-structure) |
+| `fnet_document`, `fnet_document_filter` | Since v33: `fund_documents` and `fund_restatements`, one `coverage()` row. [Fund documents and restatements](/api-docs/fnet-documents) |
+| `fnet_document_pair`, `fnet_document_diff` | Since v40: `fund_restatement_diff` and `fund_restatements`' `diff_status` / `n_fields_changed`. Restatements delivered from 2026 on; no document body is kept. [Fund documents and restatements](/api-docs/fnet-documents) |
+| `cia_event` | Since v38: `company_events`, one `coverage()` row; from 2015, protocol-less filings are not held. [Company events](/api-docs/company-events) |
+| `b3_futures_settlement`, `b3_reference_rate` | Since v42: [`future_curve` / `future_series`](/api-docs/rates) (from 2018) and [`curve` / `curve_history`](/api-docs/rates) (from 2008; never interpolated; the long end is B3's extrapolation), two `coverage()` rows |
+| `bacen_sgs` (nine non-inflation series), `bacen_ptax` | Since v38: `macro_series` (unit on every row) and `ptax`, two `coverage()` rows. [Macro series and PTAX](/api-docs/macro) |
+| Forensic screens over `cvm_fidc_aging`, `cvm_fidc_mensal`, `cvm_fii_mensal`, `cvm_securit_serie`, `fact_fund_monthly` | Seven `screen_*` functions as signals; every row carries `screen` and `params`; no score. [Forensic screens](/api-docs/screens) |
+| FNET register and `dim_fund` / `cvm_fund_registry`, as filing behaviour | Since v37: `screen_restatements`, `screen_late_filers` (deadline from Resolução CVM 175, cited on every row), `screen_silent_filers`. [Filing-behaviour screens](/api-docs/filing-screens) |
 
-#### Held and not served — candidates
+#### Held and not served
 
-Each is a real gap a caller could want; none has an endpoint.
+Real gaps a caller could want; none has an endpoint.
 
-| Held | What it is | What serving it would take |
-| --- | --- | --- |
-| `bacen_expectativas` | the Focus survey | The IPCA set is served by [`inflation`](/api-docs/inflation) since v30, and the rest of `bacen_sgs` and `bacen_ptax` by [`macro_series` / `ptax`](/api-docs/macro) since v38. The Focus survey needs its own shape (indicator × horizon × statistic). |
-| `cvm_fiagro_mensal.vl_quota` / `nr_cotst` / `vl_total`; `cvm_fidc_mensal.vl_total` | FIAGRO quota, quotaholders, total assets; FIDC total assets pre-2025 (~82% of rows) | `fact_fund_monthly`'s fiagro arm copies the fidc arm and sets all three `NULL`. Pass them through; the applicability block and its lockstep test follow. |
-| `cvm_fi_perfil` | FI investor mix and single-holder concentration | `fund_investors(p_cnpj, …)`. |
-| `mkt_series`; IC-Br in `bacen_sgs` | U.S. Treasury par yields, Brent spot, the OFR Financial Stress Index; BCB's commodity index | Held for rates research (`research_examples/dustin_br/`). Serving would follow `macro_series`: a registry, the unit on every row. Not VIX: Cboe requires a signed licence, so it is not ingested at all. |
-| `cvm_fii_periodic`, `cvm_fii_imovel` | FII quarterly/annual filings; the property register | `fii_properties(p_cnpj)` — the register is the one FII fact with no monthly counterpart. |
-| `cvm_securit_*` (4 tables) | CRI/CRA vehicles, series, flows, statements | Structural: CRI/CRA are notes, not funds, and need a third id type (securitiser CNPJ plus a series key). |
-| `etf_market_snapshot`, `cvm_etf_registry` | scraped ETF NAV / price / quotaholders | `etf_snapshot(p_ticker)`. Post-CVM-175 ETFs have no monthly CVM row, so this is the only ETF fundamentals path. |
-| `b3_corporate_event` | splits, bonuses, groupings | Held as published; `adjusted` stays `FALSE`. The convention was measured on 705 events and fell below the 90% bar, so no adjusted series. Candidate: serve the events without applying them. |
-| `cvm_fi_balancete` | ~111M rows, fund accounting | Largest table in the warehouse; nothing reads it. Deliberate until a question needs it. |
-| `cvm_fi_cda` | CDA header block (portfolio totals per fund-month) | Blocks 4, 2 and 6 are served; the header is read by nothing. |
-| `cvm_fidc_garantia` | FIDC tab X_7 (migration 45): guarantees on the credit rights, as a value and a percentage, per fund × month from 2019-11 | CVM's dictionary leaves both columns undescribed and the percentage's denominator does not reconcile to one sibling total, so it is stored as filed. A `kind = 'guarantees'` arm in `fidc_portfolio` with that caveat in its note, plus a `coverage()` row |
+| Held | What serving it would take |
+| --- | --- |
+| `bacen_expectativas` (Focus survey) | Its own shape (indicator × horizon × statistic) |
+| `cvm_fiagro_mensal.vl_quota` / `nr_cotst` / `vl_total`; `cvm_fidc_mensal.vl_total` (pre-2025, ~82% of rows) | `fact_fund_monthly`'s fiagro arm sets all three `NULL`. Pass them through; the applicability block and its lockstep test follow |
+| `cvm_fi_perfil` (FI investor mix, single-holder concentration) | `fund_investors(p_cnpj, …)` |
+| `mkt_series`; IC-Br in `bacen_sgs` | Would follow `macro_series`: a registry, the unit on every row. Held for rates research (`research_examples/dustin_br/`). Not VIX: Cboe requires a signed licence |
+| `cvm_fii_periodic`, `cvm_fii_imovel` | `fii_properties(p_cnpj)`; the register is the one FII fact with no monthly counterpart |
+| `cvm_securit_*` (4 tables) | Structural: CRI/CRA are notes, not funds, and need a third id type (securitiser CNPJ plus a series key) |
+| `etf_market_snapshot`, `cvm_etf_registry` | `etf_snapshot(p_ticker)`. Post-CVM-175 ETFs have no monthly CVM row, so this is the only ETF fundamentals path |
+| `b3_corporate_event` | Held as published; `adjusted` stays `FALSE`. The convention was measured on 705 events and fell below the 90% bar. Candidate: serve the events without applying them |
+| `cvm_fi_balancete` (~111M rows) | Largest table; nothing reads it. Deliberate until a question needs it |
+| `cvm_fi_cda` header block | Blocks 4, 2 and 6 are served; the header is read by nothing |
+| `cvm_fidc_garantia` (tab X_7, migration 45, from 2019-11) | CVM leaves both columns undescribed and the percentage's denominator does not reconcile to one sibling total, so it is stored as filed. Would need a `kind = 'guarantees'` arm in `fidc_portfolio` with that caveat in its note, plus a `coverage()` row |
 
 #### Not served by design
 
 | Held | Why |
 | --- | --- |
-| `cvm_ingest_log` | The audit table. Operator-only; `/ops` reads it through the build-time connection. |
-| `mv_savings_flow_monthly` | Reproduced as-found so CASCADE recreates cannot destroy it; revoked from every client role. Not in the catalog. |
-| `anbima_etf_class_monthly` | A compatibility view; `anbima_classes` with `p_category = 'ETF'` is the served form. |
-| `dim_*`, `fact_security_monthly`, `vw_*`, `etf_daily`, `etf_latest`, `etf_market_latest` | Analytical-layer objects the dashboard reads. The API reads through them and never exposes them as resources. |
-
-**Note**: `coverage()` has no row for `fund_holdings` or `fund_debentures` yet. Until one exists, take freshness from the rows themselves (`ORDER BY period DESC LIMIT 1`).
+| `cvm_ingest_log` | Audit table. Operator-only; `/ops` reads it through the build-time connection |
+| `mv_savings_flow_monthly` | Reproduced as-found so CASCADE recreates cannot destroy it; revoked from every client role. Not in the catalog |
+| `anbima_etf_class_monthly` | Compat view; `anbima_classes` with `p_category = 'ETF'` is the served form |
+| `dim_*`, `fact_security_monthly`, `vw_*`, `etf_daily`, `etf_latest`, `etf_market_latest` | Analytical-layer objects the dashboard reads. The API reads through them and never exposes them |
 
 ### 4. How it is served
 
-Five objects do the work. Everything else is a typed view over `b3_cotahist`.
+Five objects do the work; everything else is a typed view over `b3_cotahist`.
 
-```
-coverage()  →  what is here, and how complete   (read this FIRST)
-lookup()    →  a name/ISIN/CNPJ/ticker → an id you can query
-panel()     →  (id, date, metric, value) — mix tickers and fund CNPJs
-quote_*()   →  one instrument's own series
-fund_*()    →  one fund's own series
-```
+| Object | Does |
+| --- | --- |
+| `coverage()` | what is here, and how complete (read this FIRST) |
+| `lookup()` | a name/ISIN/CNPJ/ticker to an id you can query |
+| `panel()` | `(id, date, metric, value)`, mixing tickers and fund CNPJs |
+| `quote_*()` | one instrument's own series |
+| `fund_*()` | one fund's own series |
 
-`panel` is the primitive. Correlation, ranking and spreads are reductions of a panel and happen in the client.
+`panel` is the primitive: correlation, ranking and spreads are reductions of it, done in the client.
 
-#### Grain, family by family
+| Family | Native grain | Served as | Consequence |
+| --- | --- | --- | --- |
+| B3 cash | **session** | day, or month = last session | a monthly close is a real print, never an average |
+| FI | fund × day (`cvm_fi_diario`) | **month** | daily rows exist but the panel does not serve them for funds |
+| FIDC | fund × month-end | month | `delinquency` is a **BRL value**, not a rate: divide by `nav` yourself |
+| FII | fund × month | month | the only family carrying `yield` |
+| FIAGRO | fund × month | month | begins 2025-05: a shorter axis, not a thinner one |
+| FIP | fund × **filing date** × share class | month | files 3–4× a year, not annually |
+| CIA | company × filing × account line | **not served** by `panel` | a statement line fits no fund-shaped endpoint |
 
-| Family  | Native grain                         | Served as                    | Consequence                                                                     |
-| ------- | ------------------------------------ | ---------------------------- | --------------------------------------------------------------------------------- |
-| B3 cash | **session**                          | day, or month = last session | a monthly close is a real print, never an average                                |
-| FI      | fund × day (`cvm_fi_diario`)         | **month**                    | the daily rows exist but the panel does not serve them for funds                 |
-| FIDC    | fund × month-end                     | month                        | `delinquency` is a **BRL value**, not a rate — divide by `nav` yourself          |
-| FII     | fund × month                         | month                        | the only family carrying `yield`                                                 |
-| FIAGRO  | fund × month                         | month                        | begins 2025-05; a shorter axis, not a thinner one                                |
-| FIP     | fund × **filing date** × share class | month                        | files 3–4× a year, not annually                                                  |
-| CIA     | company × filing × account line      | **not served** by `panel`    | the grain is a statement line, which no fund-shaped endpoint fits                |
+### Notes
 
-**FIP is the one to know about.** It reads as annual and is not: a fund files quarterly or three times a year, one row per share class each time. Until 2026-08-31 the key discarded 72–77% of every published file on upsert, which is why FIP looked like a single 31-December row per fund. The key is now `(cnpj, doc_type, period, classe_cota, row_hash)`.
-
-#### What the API will not do
-
+- **FIP reads as annual and is not:** a fund files quarterly or three times a year, one row per share class each time. Until 2026-08-31 the key discarded 72–77% of every published file on upsert. The key is now `(cnpj, doc_type, period, classe_cota, row_hash)`.
 - **No fabricated observations.** A missing month is absent, never interpolated or carried forward.
 - **`as_of` ≠ `complete_through`.** The first is the newest row held, the second the last period believed complete. `coverage()` returns both.
-- **Prices are unadjusted.** A split reads as a real ~50% jump. `adjusted` is `false` on every row. The exception is `quote_history`'s `close_adj`, continuous across splits and refused where unproven, and the selectable `close_total_return`, NULL with a reason where unproven.
-- **1,000 rows per response, for everyone.** Signing in raises ids, page sizes and the query budget — never this.
-
-### Keeping this honest
-
-Add a dataset, add a row to §1. Decide against one, add a row to §2 with the reason. Ingest something the API does not expose, it belongs in §3 until it does. A table in none of the three sections is what this document exists to prevent.
+- **Prices are unadjusted.** A split reads as a real ~50% jump; `adjusted` is `false` on every row. Exceptions: `quote_history`'s `close_adj`, continuous across splits and refused where unproven, and the selectable `close_total_return`, NULL with a reason where unproven.
+- **1,000 rows per response, for everyone.** Signing in raises ids, page sizes and the query budget, never this.
+- `coverage()` has no row for `fund_holdings` or `fund_debentures` yet; take freshness from the rows (`ORDER BY period DESC LIMIT 1`).
+- Keeping this honest: a new dataset is a row in §1; a decision against one is a row in §2 with the reason; ingested but unserved belongs in §3. A table in none of the three is what this page exists to prevent.

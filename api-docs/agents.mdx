@@ -4,11 +4,7 @@ description: "How an agent uses this site and the Data API. You cannot generate 
 icon: "robot"
 ---
 
-### Overview
-
-The operator guide for coding agents and the docs assistant. Agents should follow it in order.
-
-It does not restate the contract. Row caps, tier ceilings, null semantics and regime breaks are written once on [Conventions & limits](/api-docs/conventions) and served as JSON by `POST /rpc/catalog`. What is here is the *procedure*.
+The procedure for coding agents and the docs assistant: follow it in order. The contract itself (row caps, tier ceilings, null semantics, regime breaks) is written once on [Conventions & limits](/api-docs/conventions) and served as JSON by `POST /rpc/catalog`.
 
 ### 1. Read the published site
 
@@ -21,20 +17,15 @@ It does not restate the contract. Row caps, tier ceilings, null semantics and re
 | Data MCP (read-only, no login) | `https://zcjbtpxuhdekpwcxmepn.supabase.co/functions/v1/silo-mcp` ([MCP server](/api-docs/mcp)) |
 | Runnable notebooks | [`notebooks/`](https://github.com/PedroDnT/SILO-BZ/tree/main/notebooks) |
 
-Prefer MCP search / `llms.txt` over training data. The Evidence dashboards and the repository's `docs/` notes are **not** the read contract — `docs/reference/API.md` documents the local Flask adapter, not this API.
+Prefer MCP search or `llms.txt` over training data. The Evidence dashboards and the repository's `docs/` notes are **not** the read contract: `docs/reference/API.md` documents the local Flask adapter, not this API.
 
 ### 2. Auth
 
-The publishable key in [quickstart](/api-docs/quickstart) is shared, for testing. Anonymous access is free and deliberately small; signing in with GitHub raises four ceilings.
+The publishable key in [quickstart](/api-docs/quickstart) is shared, for testing. Anonymous access is free and small; signing in with GitHub raises four ceilings. There is no `createApiKey`; `service_role` / Secret is never a caller credential. Never mint or forge a key.
 
-There is no `createApiKey`. `service_role` / Secret is never a caller credential. Do not mint or forge a key.
-
-Sign in at [silo-bz-deloslabs.vercel.app/signin.html](https://silo-bz-deloslabs.vercel.app/signin.html). Send the token alongside the publishable key:
+Sign in at [silo-bz-deloslabs.vercel.app/signin.html](https://silo-bz-deloslabs.vercel.app/signin.html) and send the token alongside the publishable key:
 
 ```bash
-export SILO_URL="https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1"
-export SILO_ANON_KEY="sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"  # testing only
-
 curl -s -X POST "$SILO_URL/rpc/panel" \
   -H "apikey: $SILO_ANON_KEY" \
   -H "Authorization: Bearer $SILO_TOKEN" \
@@ -42,73 +33,56 @@ curl -s -X POST "$SILO_URL/rpc/panel" \
   -d '{"p_ids":["PETR4","VALE3","ITUB4","BOVA11"],"p_metrics":["close"]}'
 ```
 
-The numbers live in the table on [Conventions & limits](/api-docs/conventions#authentication) and in `catalog().limits`. Read one of them — do not size a request from memory. Three things to carry anyway:
+`SILO_URL` and `SILO_ANON_KEY` are set in [quickstart](/api-docs/quickstart).
+
+Ceilings live in [Conventions & limits](/api-docs/conventions#authentication) and `catalog().limits`; never size a request from memory.
 
 - **Rows per response never change with tier.**
 - **Exceeding a ceiling is a `22023` error, never a silent trim.**
-- **The token lasts about an hour and expiry is silent** — you drop back to anonymous, so a four-id call starts raising `22023`. Durable per-user keys do not exist yet.
+- **The token lasts about an hour and expiry is silent.** You drop to anonymous, so a four-id call starts raising `22023`. Durable per-user keys do not exist yet.
+- Landing tables (`cvm_*`, `b3_cotahist`, `cia_*`, `bacen_*`) are closed to both tiers.
 
-Landing tables (`cvm_*`, `b3_cotahist`, `cia_*`, `bacen_*`) are closed to both tiers.
+### 3. First live call is `coverage`
 
-### 3. First live call is always `coverage`
+`POST $SILO_URL/rpc/coverage` with body `{}` (example in [quickstart](/api-docs/quickstart)).
 
-```bash
-curl -s -X POST "$SILO_URL/rpc/coverage" \
-  -H "apikey: $SILO_ANON_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{}'
-```
+| Column | Use |
+| --- | --- |
+| `as_of` | freshness |
+| `complete_through` | what the default windows serve |
+| `notes` | a caveat the dates cannot carry |
 
-Read `as_of` for freshness, `complete_through` for what the default windows serve, `notes` for a caveat the dates cannot carry. Column meanings: [Freshness](/api-docs/conventions#freshness).
-
-A `401` is missing or wrong headers. An empty or error body is a failed fetch — **raise**, do not invent a last date.
+Column meanings: [Freshness](/api-docs/conventions#freshness). A `401` is missing or wrong headers. An empty or error body is a failed fetch: **raise**, do not invent a last date.
 
 ### 4. Discover the data for the question
 
-Start with the research question, without a preselected dataset or endpoint. Read
-the machine-readable catalog before choosing tools:
+Start from the research question, not a preselected endpoint.
 
-```bash
-curl -s -X POST "$SILO_URL/rpc/catalog" \
-  -H "apikey: $SILO_ANON_KEY" \
-  -H "Content-Type: application/json" \
-  -H "Content-Profile: api" \
-  -d '{}'
-```
+1. Read the catalog: `POST $SILO_URL/rpc/catalog` with `apikey`, `Content-Type: application/json`, `Content-Profile: api` and body `{}`.
+2. Find candidates from its endpoint and metric descriptions, then search the docs MCP for grain, identifiers, date meaning, units, limits and caveats.
+3. Check `coverage` for the actual observation window.
+4. Resolve fund and company ids with `lookup` or `search_funds`; join only on published keys.
+5. Record why each source was selected. If the data cannot support the question or the periods do not align, say so.
 
-Use its endpoint and metric descriptions to find candidate data, then search
-the relevant pages through the docs MCP for grain, identifiers, date meaning,
-units, limits and caveats. Check `coverage` for the actual observation window.
-Resolve fund and company identifiers with `lookup` or `search_funds`; join only
-on published keys. Record why each source was selected. If the available data
-cannot support the question or the periods do not align, say so explicitly.
+The workflows below are examples of what to do **after** discovery, not a fixed dataset list.
 
-The workflows below are examples of decisions an agent can make **after**
-discovery. They are not a fixed dataset list for every research question.
+### 5. Example: does equity stress show up in FIDC credit?
 
-### 5. Broad finance questions
-
-*Does Brazilian equity stress show up in FIDC credit?*
-
-1. `lookup` (`p_query`) / `search_funds` for FIDC CNPJs. Do not invent a ticker→fund join.
+1. `lookup` (`p_query`) / `search_funds` for FIDC CNPJs. Do not invent a ticker-to-fund join.
 2. `panel` with `p_ids: ["PETR4", "<cnpj>", …]`, `p_metrics: ["close_return","delinquency","nav"]`, `p_freq: "month"`.
 3. Pivot locally keeping `asset_class` in the key. Correlate pairwise-complete. **No ffill.**
-4. `delinquency` is BRL outstanding, not a rate — divide by `nav`, which is why both are in the same call. For a FIDC the series **starts** at 2025-01 ([regime break](/api-docs/conventions#regime-breaks)).
+4. `delinquency` is BRL outstanding, not a rate: divide by `nav` (both are in the same call). For a FIDC the series **starts** at 2025-01 ([regime break](/api-docs/conventions#regime-breaks)).
 5. `close` is unadjusted (a split reads as a jump in `panel` and `quotes`); `quote_history`'s `close_adj`, its default field, is continuous across splits and is refused where unproven. A missing month is not a two-month return.
 6. Before reading a null as a gap, call `coverage` and `metric_coverage`.
 
-There is no server-side `corr` — the catalog lists those as `notebook_reducers`. No RPC hands you a truncated result: functions page or refuse.
+There is no server-side `corr`; the catalog lists those as `notebook_reducers`. No RPC returns a truncated result: functions page or refuse.
 
-### 6. Screening a whole family
+### 6. Example: screening a whole family
 
-*Rank every FIDC by how much its delinquency worsened* is one paged `panel` call for a signed-in caller. Anonymous callers cannot use universe mode — enumerate from the `funds` **view** instead and batch ids within the ceiling.
+*Rank every FIDC by how much its delinquency worsened* is one paged `panel` call when signed in. Anonymous callers cannot use universe mode: enumerate from the `funds` **view** and batch ids within the ceiling.
 
 <Steps>
   <Step title="Check the family is complete through your window">
-    ```bash
-    curl -s -X POST "$SILO_URL/rpc/coverage" -H "apikey: $SILO_ANON_KEY" \
-      -H "Content-Type: application/json" -H "Content-Profile: api" -d '{}'
-    ```
     Require `complete_through >= ` your end month on the `funds_fidc` row. Read `as_of`, not `newest_period`.
   </Step>
   <Step title="Enumerate the family from the funds view, paging">
@@ -117,7 +91,7 @@ There is no server-side `corr` — the catalog lists those as `notebook_reducers
 &entity_type=eq.fidc&order=cnpj.asc&limit=1000&offset=0" \
       -H "apikey: $SILO_ANON_KEY" -H "Accept-Profile: api" -H "Prefer: count=exact"
     ```
-    `Content-Range` carries the total. Keep only funds whose `first_period` / `last_period` span your window.
+    `Content-Range` carries the total. Keep funds whose `first_period` / `last_period` span your window.
   </Step>
   <Step title="Signed in: walk the family with p_after">
     ```json
@@ -130,18 +104,17 @@ There is no server-side `corr` — the catalog lists those as `notebook_reducers
     The grain is `(id, asset_class, date, metric)`. A CNPJ that also files as an FI comes back twice per month.
   </Step>
   <Step title="Reduce locally">
-    Compute `delinquency / nav` per fund-month (guard `nav` of zero), then rank on the change. Require a minimum of non-null months. No ffill.
+    Compute `delinquency / nav` per fund-month (guard `nav` of zero), rank on the change, require a minimum of non-null months. No ffill.
   </Step>
 </Steps>
 
-Notebook [`04_fidc_credit`](https://github.com/PedroDnT/SILO-BZ/blob/main/notebooks/04_fidc_credit.ipynb) is this walkthrough as runnable code.
+Notebook [`04_fidc_credit`](https://github.com/PedroDnT/SILO-BZ/blob/main/notebooks/04_fidc_credit.ipynb) is this walkthrough as code.
 
-**Note**: a fund's **name** is never a taxonomy. For "FIDCs exposed to sector X" use `fidc_portfolio` (sector and SCR ladders), `fidc_cedentes` (named originators) or `fidc_sacados` (anonymized top-25 debtors) — see [FIDC concentration](/api-docs/fidc).
-
-### 7. Integrity
+### Notes
 
 <Warning>
-  Never fabricate a price, NAV, fill, ranking, or ticker↔CNPJ match. Null stays null. Unknown id → no row. Known id, empty window → empty series, not a guessed last close.
+  Never fabricate a price, NAV, fill, ranking, or ticker-to-CNPJ match. Null stays null. Unknown id returns no row. Known id with an empty window returns an empty series, not a guessed last close.
 </Warning>
 
-Ingest (`run_daily`, landing tables) is out of scope for this API.
+- A fund's **name** is never a taxonomy. For "FIDCs exposed to sector X" use `fidc_portfolio` (sector and SCR ladders), `fidc_cedentes` (named originators) or `fidc_sacados` (anonymized top-25 debtors): [FIDC concentration](/api-docs/fidc).
+- Ingest (`run_daily`, landing tables) is out of scope for this API.

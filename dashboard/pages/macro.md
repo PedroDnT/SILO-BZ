@@ -5,63 +5,16 @@ sidebar_position: 2
 ---
 
 <!--
-  The BACEN side of the pipeline, which until now had ZERO consumers: three
-  tables ingested every day by src/pipeline/bacen_pipeline.py and read by
-  nothing.
-
-    bacen_sgs           grain (series_code, reference_date) — 35 configured SGS
-                        series (SGS_SERIES in bacen_pipeline.py: the ten
-                        policy / price / FX series plus the 25-code IPCA set
-                        of INFLATION_SERIES — cores, classifications,
-                        diffusion, IBGE groups — served by api.inflation)
-    ibge_ipca_item_monthly  grain (reference_month, item_code) — IBGE SIDRA's
-                        IPCA tree with WEIGHTS (api.inflation_items). BACEN
-                        has the group variations; only IBGE has the weights,
-                        so contribution-by-group is read from here.
-    bacen_ptax          grain (currency, reference_date) — USD/EUR/GBP/JPY/ARS,
-                        buy_rate + sell_rate
-    bacen_expectativas  grain (endpoint_name, indicador, reference_date,
-                        horizon) — Focus survey median / mean / std_dev.
-                        horizon is DataReferencia (year for Anuais, month/year
-                        for Mensais). Fetch filters to baseCalculo=0 (30-day
-                        window) and, on the Inflacao12/13-24 endpoints,
-                        Suavizada='N'. Those two dimensions are NOT in the
-                        unique key: a filter regression would silently collide
-                        again. Historical months older than the daily window
-                        stay sparse until a bacen_only backfill is dispatched
-                        (docs/reference/DATABASE_MAINTENANCE.md §4).
-
-  UNITS ARE BACEN'S AND ARE NOT CONVERTED. They differ per series and mixing
-  them would be the fastest way to publish a wrong number:
-    432  SELIC meta          % a.a.   (annualised policy target)
-    11   SELIC diária        % a.d.   (daily rate — NOT comparable to 432)
-    12   CDI                 % a.d.
-    433  IPCA / 189 IGP-M / 188 INPC / 25 poupança   % change in the month
-    1    USDBRL              BRL per USD
-    4380 PIB                 R$ million, monthly, current prices
-    The IPCA set is % change in the month too, except 13522 (BACEN's own
-    12-month accumulation, %) and 21379 (diffusion: % of items that rose).
-    IBGE group codes are NOT in IBGE's order: 1640 Comunicação, 1641 Saúde,
-    1642 Despesas pessoais, 1643 Educação — value-matched against SIDRA.
-  The unit travels with the row in the series inventory table so the reader can
-  always check which one they are looking at.
-
-  FOCUS CAVEAT, stated on the page as well: bacen_expectativas is keyed UNIQUE on
-  (endpoint_name, indicador, reference_date, horizon) since migration 16. The
-  series query pins horizon = the survey's calendar year so adjacent points are
-  the same forecast, not a mix of 1y and 5y. Rows ingested before that migration
-  (and not yet re-fetched) can still lack extra horizons — the 24-month chart
-  then renders blank for those months rather than a mixed track. baseCalculo and
-  Suavizada are fetch-time filters, not key columns.
-
-  ZERO-ROW RULE: every source here is driven from a generate_series spine or a
-  literal driver list with the data LEFT JOINed on, so no source can return zero
-  rows. A 0-row source makes Evidence write a zero-byte parquet and the whole
-  build then dies with "Invalid Input Error: File ... too small to be a Parquet
-  file". Missing data renders blank; nothing is filled in.
-
-  FORMATTING NOTE: series_code carries NO numeric fmt. It is an identifier, and
-  num0 renders SGS 4380 as "4,380".
+  BACEN side: bacen_sgs (35 SGS series incl. the 25-code IPCA set, api.inflation),
+  ibge_ipca_item_monthly (IPCA tree with weights, api.inflation_items), bacen_ptax,
+  bacen_expectativas (Focus; baseCalculo=0 and Suavizada='N' are fetch-time filters,
+  not key columns; the series query pins horizon = survey calendar year).
+  Units are BACEN's and NOT converted (432 % a.a.; 11 and 12 % a.d.; 433/189/188/25 %
+  in month; 1 BRL per USD; 4380 R$ million; 13522 12-month %; 21379 diffusion).
+  IBGE group codes are not in IBGE's order: 1640 Comunicação, 1641 Saúde, 1642 Despesas
+  pessoais, 1643 Educação (value-matched against SIDRA).
+  Zero-row rule: every source is a spine LEFT JOINed with data, because a 0-row source
+  breaks the Evidence build. series_code carries no numeric fmt (num0 shows 4,380).
 -->
 
 ```sql macro_latest
@@ -128,17 +81,7 @@ select * from supabase.macro_series_inventory
 
 # Macro Context
 
-> The discount rate, the currency and the expectations every fund on this site is
-> implicitly measured against — straight from `bacen_sgs`, `bacen_ptax` and
-> `bacen_expectativas`. When SELIC sits high, a fixed-income fund clearing CDI is
-> doing nothing remarkable, and a credit book's delinquency has a macro
-> explanation as readily as a governance one.
->
-> **Units are BACEN's and are not converted.** SELIC meta is annualised (% a.a.),
-> SELIC diária and CDI are per-day (% a.d.), and the inflation series are
-> month-on-month rather than twelve-month accumulations. Nothing is annualised,
-> chained or rebased — each of those is an assumption, not data. The unit travels
-> with every row in the inventory table below.
+> The rate, currency and expectations every fund here is measured against, from `bacen_sgs`, `bacen_ptax` and `bacen_expectativas` (BACEN). **Units are BACEN's and not converted**: SELIC meta is % a.a., SELIC diária and CDI are % a.d., inflation is month-on-month; the unit is on every inventory row.
 
 <BigValue data={macro_latest} value=selic_meta_num2 title="SELIC Target (% a.a.)" fmt=num2/>
 <BigValue data={macro_latest} value=ipca_mes_num2 title="IPCA (% in Month)" fmt=num2/>
@@ -150,10 +93,7 @@ select * from supabase.macro_series_inventory
 
 ## Policy Rate
 
-> SELIC meta is the annualised policy target (% a.a.). The daily SELIC and CDI
-> series below it are **% per day** — they are not on the same scale and are
-> deliberately not converted, because an annualisation convention is an
-> assumption, not data.
+> SELIC meta is % a.a.; daily SELIC and CDI are **% per day**, deliberately not converted (BACEN SGS, daily series).
 
 <LineChart
   data={macro_rate_series}
@@ -175,9 +115,7 @@ title="SELIC Diária vs CDI (% per Day)"
 
 ## Inflation
 
-> Each series is the **change in that month**, not a 12-month accumulation. Blank
-> months are months BACEN has not published (or has not been ingested), never
-> zero.
+> Each series is the **change in that month**, not a 12-month accumulation (BACEN SGS, monthly, published in M+1). Blank means unpublished or not ingested, never zero.
 
 <LineChart
 data={cpi_series}
@@ -189,12 +127,7 @@ title="IPCA · IGP-M · INPC · Poupança"
 
 ### Inside the IPCA
 
-> BACEN's IPCA set, straight from `bacen_sgs` and served by `api.inflation`.
-> Headline against the three BCB cores the Copom reads most (EX0 excludes
-> monitored prices and food at home; MS is the smoothed trimmed mean; DP the
-> double-weighted core). Every line is the **change in that month** as
-> published; the 12-month line is BACEN's own accumulation (SGS 13522),
-> not chained here. Blank months are not yet published, never zero.
+> Headline against the three BCB cores (EX0, MS smoothed trimmed mean, DP double-weighted), from `bacen_sgs` via `api.inflation` (monthly, M+1). Lines are the **change in that month**; the 12-month line is BACEN's own accumulation (SGS 13522), not chained here.
 
 <LineChart
 data={inflation_series}
@@ -212,10 +145,7 @@ title="IPCA Headline vs BCB Cores — Last 36 Months"
   title="IPCA — 12-Month Accumulation (BACEN 13522)"
 />
 
-> Monitored (administered) prices — fuel, electricity, transit fares, health
-> plans — move on regulatory calendars; free prices are the demand-sensitive
-> part. Reading them apart is how a single month's print is separated into
-> policy shock and underlying pressure.
+> Monitored prices move on regulatory calendars; free prices are demand-sensitive.
 
 <LineChart
 data={inflation_series}
@@ -227,14 +157,7 @@ title="Monitored vs Free Prices (% per Month)"
 
 ### What Moved the IPCA
 
-> IBGE's nine expenditure groups for the latest month held, from
-> `ibge_ipca_item_monthly` (SIDRA 7060) and served by `api.inflation_items`.
-> **Contribution = weight × change ÷ 100**, in percentage points of the
-> headline — the one derived number on this page — and the nine bars sum to
-> the month's IPCA to rounding, because the groups partition the basket. A
-> group's _variation_ alone says nothing about its pull: Educação's 6 %
-> weight and Transportes' 20 % are not the same lever. Weights are IBGE's;
-> BACEN publishes none.
+> IBGE's nine groups for the latest month held, from `ibge_ipca_item_monthly` (SIDRA 7060, monthly, M+1) via `api.inflation_items`. **Contribution = weight × change ÷ 100**, in p.p. of the headline and the one derived number here; the bars sum to the month's IPCA to rounding. Weights are IBGE's.
 
 <BarChart
   data={inflation_groups_latest}
@@ -258,10 +181,7 @@ title="Monitored vs Free Prices (% per Month)"
 
 ## Exchange Rates
 
-> PTAX month-end **sell** rate, BRL per unit of foreign currency. USD, EUR and
-> GBP are charted together because they share a scale; JPY and ARS are orders of
-> magnitude smaller and would flatten to zero on the same axis, so they appear in
-> the table below instead.
+> PTAX month-end **sell** rate, BRL per unit (BACEN, daily). JPY and ARS are orders of magnitude smaller and appear in the table instead.
 
 <LineChart
 data={macro_fx_series}
@@ -271,10 +191,7 @@ yAxisTitle="BRL per Unit"
 title="PTAX Month-End — USD, EUR, GBP"
 />
 
-> Bid-ask spread below: `spread_num2` = (sell − buy) / sell, in percentage points.
-> All five configured currencies are listed whether or not they have data, so a
-> currency that failed to ingest is visible as a blank line rather than silently
-> absent.
+> `spread_num2` = (sell − buy) / sell, in p.p. All five currencies are listed even without data, so a failed ingest shows blank.
 
 <DataTable data={macro_fx_latest}>
   <Column id=currency title="Currency"/>
@@ -290,22 +207,7 @@ title="PTAX Month-End — USD, EUR, GBP"
 
 ## Focus Consensus
 
-> Median forecast from the Focus bulletin (`ExpectativasMercadoAnuais`), one
-> reading per month — the **last survey published in that month**, not an average
-> of the month's surveys.
->
-> Each point is the last survey in that month for the **current-calendar-year
-> horizon** (`horizon = YYYY` of the survey date), so adjacent months are the
-> same forecast, not a mix of 1-year and 5-year numbers. Months that were never
-> re-fetched after the horizon key landed render blank — a coverage gap, not a
-> blended vintage. The horizon that actually landed is shown per row in the
-> latest-reading table below.
->
-> **Every January the line steps** — that is the forecast _target_ rolling
-> over (December plots the forecast for the year just ending, January the
-> forecast for the new year), not a revision and not a data error. Selic is
-> the clearest case: the December point is effectively the realized year-end
-> rate, the January point a fresh year-ahead forecast.
+> Median from the Focus bulletin (`ExpectativasMercadoAnuais`, BACEN): the **last survey in each month**, at the **current-calendar-year horizon**, so adjacent points are the same forecast. Months never re-fetched after the horizon key landed render blank, a coverage gap not a blended vintage. **Every January the line steps** because the forecast target rolls over, not a revision or error.
 
 <LineChart
   data={macro_focus_series}
@@ -316,11 +218,7 @@ title="PTAX Month-End — USD, EUR, GBP"
   title="Focus Median by Indicator — Last 24 Months"
 />
 
-> Dispersion below is the standard deviation across forecasters for the same
-> readings. Rising dispersion means the market disagrees more, which is
-> information the median alone hides. Blank months are the same coverage gap as
-> the median chart (pre-horizon-key rows not yet re-fetched), not a mixed
-> horizon.
+> Standard deviation across forecasters for the same readings; blanks are the same coverage gap.
 
 <LineChart
   data={macro_focus_series}
@@ -335,9 +233,7 @@ title="PTAX Month-End — USD, EUR, GBP"
 
 ## Latest Focus Reading per Endpoint
 
-> Every (endpoint, indicator) pair the pipeline subscribes to. `Horizon` is
-> `raw->>'DataReferencia'` — the period the forecast is _about_; `Survey Date` is
-> when it was collected.
+> Every pair the pipeline subscribes to. `Horizon` is the period the forecast is about; `Survey Date` is when it was collected.
 
 <DataTable data={macro_focus_latest} rows=10>
   <Column id=endpoint_name title="Endpoint"/>
@@ -355,11 +251,7 @@ title="PTAX Month-End — USD, EUR, GBP"
 
 ## SGS Series Coverage
 
-> All 35 series the ingestor is configured to fetch — the ten policy / price /
-> FX series and the 25-code IPCA set — each with its own unit. This is the
-> honest inventory: a series with no observations shows blank counts rather
-> than being dropped from the list. `Last Value` is in the unit named on its
-> own row and the column must not be read down the page.
+> All 35 configured series, each with its own unit; a series with no observations shows blank counts. `Last Value` is in the unit on its own row: do not read the column down the page.
 
 <DataTable data={macro_series_inventory} rows=35>
   <Column id=series_code title="SGS Code"/>
@@ -372,5 +264,4 @@ title="PTAX Month-End — USD, EUR, GBP"
   <Column id=days_stale title="Days Stale" fmt=num0/>
 </DataTable>
 
-> Ingest health for these tables — when BACEN last landed, and whether the run
-> succeeded — is on [Pipeline Ops](/ops).
+> Ingest health is on [Pipeline Ops](/ops).

@@ -5,21 +5,15 @@ description: "Public read API for Brazilian public financial data — CVM fund d
 
 ### What this is
 
-**SILO** is a warehouse of Brazilian public financial data, ingested daily into Supabase Postgres for **financial accountability** — checking a claim against what was actually filed. Three populations: **funds** (CVM disclosures for FI, FIDC, FII, FIP, FIAGRO and securitisation vehicles), **listed companies** (ITR/DFP statements, events, the published ticker map), and **markets** (the B3 COTAHIST tape, the securities-lending book, investor-type flows, and BACEN macro series).
+**SILO** is a read API over Brazilian public financial data, ingested daily into Supabase Postgres so a claim can be checked against what was actually filed.
 
-This site documents the **read API**: schema `api` over PostgREST, with a shared publishable key. Anonymous access is free and deliberately small; signing in raises the ceilings ([Conventions & limits](/api-docs/conventions#authentication), or `catalog().limits` machine-readably).
+- **Funds:** CVM disclosures for FI, FIDC, FII, FIP, FIAGRO and securitisation vehicles.
+- **Listed companies:** ITR/DFP statements, events, the published ticker map.
+- **Markets:** the B3 COTAHIST tape, securities lending, investor-type flows, BACEN macro series.
 
-It is built to be read by software as much as by people: `catalog()` returns every endpoint, argument, limit and refusal code as JSON, `llms.txt` indexes this site for retrieval, and [`skill.md`](https://github.com/PedroDnT/SILO-BZ/blob/main/skill.md) is a drop-in agent skill. An endpoint that cannot answer refuses with a code — it never returns a plausible substitute.
+Schema `api` over PostgREST, one shared publishable key. Anonymous access is free and small; signing in raises the ceilings ([Conventions & limits](/api-docs/conventions#authentication), or `catalog().limits`). An endpoint that cannot answer refuses with a code and never returns a plausible substitute.
 
-The human dashboard is [silo-bz-deloslabs.vercel.app](https://silo-bz-deloslabs.vercel.app/); the code is [PedroDnT/SILO-BZ](https://github.com/PedroDnT/SILO-BZ).
-
-### Base URL
-
-```
-https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/
-```
-
-The only public HTTP surface. Views are `GET /<view>`; functions are `POST /rpc/<function>`. Send the publishable key on `apikey` only — not as `Authorization: Bearer`.
+Built for software too: `catalog()` returns every endpoint, argument, limit and refusal code as JSON, `llms.txt` indexes this site, and [`skill.md`](https://github.com/PedroDnT/SILO-BZ/blob/main/skill.md) is a drop-in agent skill. Dashboard: [silo-bz-deloslabs.vercel.app](https://silo-bz-deloslabs.vercel.app/). Code: [PedroDnT/SILO-BZ](https://github.com/PedroDnT/SILO-BZ).
 
 <CardGroup cols={2}>
   <Card title="Quickstart" icon="rocket" href="/api-docs/quickstart">
@@ -30,9 +24,13 @@ The only public HTTP surface. Views are `GET /<view>`; functions are `POST /rpc/
   </Card>
 </CardGroup>
 
-### The primitive is a panel
+### Base URL
 
-The core endpoint is `panel` — one row is `(id, date, metric, value)` — so a notebook can pull equity closes and fund fundamentals in a single call and reduce them locally.
+```
+https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/
+```
+
+Views are `GET /<view>`; functions are `POST /rpc/<function>`. Send the publishable key on `apikey` only, not as `Authorization: Bearer`.
 
 ```bash
 curl -s -X POST "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/rpc/panel" \
@@ -40,6 +38,8 @@ curl -s -X POST "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/rpc/panel" \
   -H "Content-Type: application/json" \
   -d '{"p_ids":["PETR4","VALE3"],"p_metrics":["close_return"],"p_freq":"month"}'
 ```
+
+`panel` is the core endpoint: one row is `(id, date, metric, value)`, so one call can mix equity closes and fund fundamentals.
 
 ### What is exposed
 
@@ -50,33 +50,29 @@ curl -s -X POST "https://zcjbtpxuhdekpwcxmepn.supabase.co/rest/v1/rpc/panel" \
 | [`options`](/api-docs/options) / [`termo`](/api-docs/termo) | functions | Derivative chain and forward history |
 | [`funds`](/api-docs/funds) | view + 3 functions | Fund registry, profile, and monthly NAV/flows by CNPJ |
 | [`holdings`](/api-docs/holdings) | function | What a fund owns, and which funds own a ticker |
-| [`financials`](/api-docs/financials) | 2 functions | Listed-company income statements, balance sheets and cash flows, by ticker, CNPJ or CVM code |
-| [`fidc`](/api-docs/fidc) | 3 functions | FIDC concentration — named originators, anonymized top-25 debtors, sector and SCR ladders |
-| [`anbima`](/api-docs/anbima) | function | ANBIMA class benchmarks — AUM, flows, returns and fund counts per class, as published |
-| [`lending`](/api-docs/lending) | 4 views | B3 securities lending — short interest, % of float, the trade tape, the brokerage on each leg |
+| [`financials`](/api-docs/financials) | 2 functions | Listed-company income statements, balance sheets and cash flows |
+| [`fidc`](/api-docs/fidc) | 3 functions | FIDC concentration: originators, top-25 debtors, sector and SCR ladders |
+| [`anbima`](/api-docs/anbima) | function | ANBIMA class benchmarks, as published |
+| [`lending`](/api-docs/lending) | 4 views | B3 securities lending: short interest, % of float, the trade tape |
 | [`flows`](/api-docs/flows) | view | Daily buy/sell/net flow by investor type |
 | [`panel`](/api-docs/panel) | function | Long `(id, date, metric, value)` observations across both |
 | [`lookup`](/api-docs/lookup) | function | Resolve a ticker, ISIN, CNPJ, or name to an id |
 | [`coverage`](/api-docs/coverage) | function | Latest date per dataset, before you claim freshness |
 | [`data inventory`](/api-docs/data-inventory) | map | What we ingest, what we don't, what we hold but don't serve |
 
-Landing tables (`cvm_*`, `b3_cotahist`, `cvm_ingest_log`) are **not** exposed. Schema `api` is the boundary: English column names, ticker/CNPJ keys, and an explicit `adjusted = false` flag.
+Landing tables (`cvm_*`, `b3_cotahist`, `cvm_ingest_log`) are not exposed. Schema `api` is the boundary: English column names, ticker/CNPJ keys, an explicit `adjusted = false` flag.
 
 ### Rules the data follows
 
 <Warning>
-  Non-negotiable properties of the contract, not best-effort behavior.
-
-  - **Nothing is fabricated.** A ticker we have no row for returns no row — never a plausible last close.
-  - **Missing observations stay missing.** No forward-fill, no interpolation, no carry-last-observation.
-  - **`close_return` across a calendar gap is null**, not a two-month return. The ratio is of unadjusted closes: a 2:1 split reports roughly −50%.
+  - **Nothing is fabricated.** No row for a ticker means no row, never a plausible last close.
+  - **Missing stays missing.** No forward-fill, interpolation or carry-last-observation.
+  - **`close_return` across a calendar gap is null.** Closes are unadjusted: a 2:1 split reports roughly -50%.
   - **`freq=day` is quotes only.** Mix equity with fund fundamentals on `freq=month`.
-  - **A response stops at 1,000 rows**, server-wide. RPC functions **refuse** above it (`22023`); GET views are **cut silently** and only `Content-Range` says so. Never analyse a cut series. See [Row caps](/api-docs/conventions#row-caps).
+  - **1,000 rows per response.** RPC functions **refuse** above it (`22023`); GET views are **cut silently** and only `Content-Range` says so. Never analyse a cut series. See [Row caps](/api-docs/conventions#row-caps).
 </Warning>
 
-### Ingest
+### Notes
 
-Ingestion runs on a GitHub Actions cron (`run_daily`) plus on-demand backfills (`run_backfill`). There is **no ingest HTTP API** — this documentation covers the read side only.
-
-- [README](https://github.com/PedroDnT/SILO-BZ/blob/main/README.md) — what SILO is and how it works
-- [docs/](https://github.com/PedroDnT/SILO-BZ/tree/main/docs) — architecture, data modeling, and the serving roadmap
+- Ingestion runs on a GitHub Actions cron (`run_daily`) plus on-demand backfills (`run_backfill`). There is no ingest HTTP API.
+- More: [README](https://github.com/PedroDnT/SILO-BZ/blob/main/README.md), [docs/](https://github.com/PedroDnT/SILO-BZ/tree/main/docs).
