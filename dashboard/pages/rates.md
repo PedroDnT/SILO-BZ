@@ -18,6 +18,14 @@ sidebar_position: 3
                            2018-01-02. settlement_rate is the rate, settlement_price
                            the PU.
 
+    bacen_expectativas     Focus survey, ExpectativasMercadoInflacao12Meses
+                           (IPCA, next 12 months), joined on the curve session.
+    cvm_fi_cda             CVM CDA fund portfolios, NTN-B rows of block
+                           "Títulos Públicos" (repo collateral excluded).
+    mkt_series             U.S. Treasury par curve, EIA Brent, OFR Financial
+                           Stress Index. VIX is held but not published (Cboe
+                           licence).
+
   METHOD: only B3's fixed vertices are read. PRE and DPL are both % a.a.
   compounded on 252 business days (api.curve_registry), and they publish the same
   fixed tenors every session, so breakeven = (1 + PRE) / (1 + DPL) - 1 at one
@@ -66,13 +74,58 @@ order by tenor, week
 select * from supabase.rates_di1_oi
 ```
 
+```sql rates_focus_vs_breakeven
+select week, 'Breakeven 1y (market)' as measure, breakeven_1y_num2 as value_num2
+from supabase.rates_history
+where week >= '2019-01-01'
+union all
+select week, 'Focus IPCA 12m (survey median)' as measure, focus_ipca_12m_num2 as value_num2
+from supabase.rates_history
+where week >= '2019-01-01'
+order by measure, week
+```
+
+```sql rates_ntnb_fund_holdings
+select * from supabase.rates_ntnb_fund_holdings
+```
+
+```sql rates_ntnb_by_maturity
+select cast(maturity_year as varchar) as maturity_year, ntnb_bn, period
+from supabase.rates_ntnb_holders_latest
+where grain = 'maturity'
+order by 1
+```
+
+```sql rates_ntnb_top_funds
+select fund, ntnb_bn, period
+from supabase.rates_ntnb_holders_latest
+where grain = 'fund'
+order by ntnb_bn desc
+```
+
+```sql rates_global_latest
+select * from supabase.rates_global_latest
+```
+
+```sql rates_global_history
+select * from supabase.rates_global_history
+```
+
+```sql rates_ust_long
+select week, 'UST 2y' as tenor, ust_2y_num2 as yield_num2 from supabase.rates_global_history
+union all
+select week, 'UST 10y' as tenor, ust_10y_num2 as yield_num2 from supabase.rates_global_history
+order by tenor, week
+```
+
 # Rates and Curves
 
 > The nominal and real yield curves B3 publishes every session, the inflation
 > they imply, and where DI1 futures positions sit. Source: B3 reference rates
 > (`b3_reference_rate`, daily since 2008-01-02) and the DI1 settlement report
 > (`b3_futures_settlement`, daily since 2018-01-02). Each tile shows the session
-> it comes from.
+> it comes from. Further down: the Focus survey against the market breakeven,
+> how much NTN-B investment funds hold, and the global rates backdrop.
 >
 > **Breakeven is derived, not published as a series.** It is
 > (1 + nominal) / (1 + real) - 1 at the same B3 fixed vertex, both rates in % a.a.
@@ -157,6 +210,24 @@ select * from supabase.rates_di1_oi
   title="1y and 5y Nominal Yield (PRE)"
 />
 
+### Market Breakeven vs the Focus Survey
+
+> The 1-year breakeven above against the BACEN Focus survey's median forecast
+> for IPCA over the next 12 months (`bacen_expectativas`, unsmoothed series),
+> read on the same session; weeks with no Focus row that day are blank. Focus
+> starts 2019-01. The two are not the same quantity: the breakeven is a market
+> price and also carries an inflation risk premium, so a gap between them is
+> not a forecast error.
+
+<LineChart
+  data={rates_focus_vs_breakeven}
+  x=week
+  y=value_num2
+  series=measure
+  yAxisTitle="%"
+  title="1y Breakeven vs Focus 12-Month IPCA Median"
+/>
+
 ---
 
 ## DI1 Open Interest by Maturity
@@ -182,3 +253,86 @@ select * from supabase.rates_di1_oi
   <Column id=settlement_rate_num2 title="Settlement Rate (% a.a.)" fmt=num2/>
   <Column id=trade_date title="Session"/>
 </DataTable>
+
+---
+
+## Who Holds NTN-Bs: Investment Funds
+
+> NTN-B (Tesouro IPCA+) positions reported by Brazilian investment funds in
+> CVM's monthly portfolio filing (CDA, `cvm_fi_cda`, block "Títulos Públicos"),
+> at the market value each fund reported. Repo collateral is excluded: it is a
+> loan backed by NTN-Bs, not a holding. Funds only: banks, insurers, pension
+> plans held directly and foreign investors are not in this filing.
+>
+> **The series stops at the last complete month.** CVM's newest CDA months are
+> partly filed: from 2026-06 they hold about 60% of the usual funds. The chart
+> ends at the last month with at least 90% of the prior year's median count of
+> holding funds, shown in the Month column below. Monthly, last 36 months.
+
+<LineChart
+  data={rates_ntnb_fund_holdings}
+  x=period
+  y=ntnb_bn
+  yAxisTitle="R$bn"
+  title="NTN-B Held by Investment Funds (R$bn, CVM CDA)"
+/>
+
+<BarChart
+  data={rates_ntnb_by_maturity}
+  x=maturity_year
+  y=ntnb_bn
+  yAxisTitle="R$bn"
+  title="NTN-B Held by Funds, by Maturity Year (R$bn, latest complete month)"
+/>
+
+<DataTable data={rates_ntnb_top_funds} rows=15>
+  <Column id=fund title="Fund"/>
+  <Column id=ntnb_bn title="NTN-B Held (R$bn)" fmt=num2/>
+  <Column id=period title="Month"/>
+</DataTable>
+
+---
+
+## Global Backdrop
+
+> The rates a Brazilian curve is read against, each from its primary publisher
+> (`mkt_series`): the U.S. Treasury par yield curve (% a.a.), Brent spot from
+> the EIA (USD per barrel, published weekly) and the OFR Financial Stress Index
+> (above zero means stress above its average; published about two business
+> days late). Weekly history takes each series' last observation in the week.
+> VIX is not shown: Cboe requires a licence to publish it, so the OFR index
+> stands in as the stress gauge.
+
+<LineChart
+  data={rates_global_latest}
+  x=tenor_years
+  y=ust_par_num2
+  xAxisTitle="Years"
+  yAxisTitle="% a.a."
+  title="US Treasury Par Curve, Latest Day"
+/>
+
+<LineChart
+  data={rates_ust_long}
+  x=week
+  y=yield_num2
+  series=tenor
+  yAxisTitle="% a.a."
+  title="US Treasury 2y and 10y Par Yields"
+/>
+
+<LineChart
+  data={rates_global_history}
+  x=week
+  y=brent_usd_num2
+  yAxisTitle="USD per barrel"
+  title="Brent Spot (EIA)"
+/>
+
+<LineChart
+  data={rates_global_history}
+  x=week
+  y=ofr_fsi_num2
+  yAxisTitle="Index"
+  title="OFR Financial Stress Index"
+/>
