@@ -28,7 +28,7 @@ def _row(cnpj, code, value, dt=date(2026, 6, 30)):
 
 
 # A fund whose groups satisfy assets = liabilities + equity + revenue + expenses
-# (1000 = 100 + 800 + 150 - 50), plus one detail account that is not a group.
+# (1000 = 100 + 800 + 150 - 50), plus detail accounts that are not groups.
 FUND_A = [
     _row("11.111.111/0001-11", "10000007", "1000.00"),
     _row("11.111.111/0001-11", "40000008", "100.00"),
@@ -38,6 +38,10 @@ FUND_A = [
     _row("11.111.111/0001-11", "30000001", "7000.00"),
     _row("11.111.111/0001-11", "90000003", "7000.00"),
     _row("11.111.111/0001-11", "71100001", "150.00"),
+    # administrative expenses inside group 8: admin fee 30, performance fee 20
+    _row("11.111.111/0001-11", "81700006", "-50.00"),
+    _row("11.111.111/0001-11", "81781001", "-30.00"),
+    _row("11.111.111/0001-11", "81782000", "-20.00"),
 ]
 # A fund that filed no liabilities group: that column must stay NULL, not 0.
 FUND_B = [
@@ -74,7 +78,11 @@ def test_ingest_writes_accounts_and_one_summary_row_per_fund_month():
     assert float(a["vl_receitas"]) == 150.0
     assert float(a["vl_despesas"]) == -50.0
     assert float(a["vl_compensacao_ativa"]) == float(a["vl_compensacao_passiva"]) == 7000.0
-    assert a["n_contas"] == 8
+    assert float(a["vl_desp_administrativas"]) == -50.0
+    assert float(a["vl_taxa_administracao"]) == -30.0
+    assert float(a["vl_taxa_performance"]) == -20.0
+    assert a["vl_taxa_gestao"] is None  # not filed by this fund
+    assert a["n_contas"] == 11
     assert a["plano_conta_balcte"] == "COFI"
     assert a["tp_fundo_classe"] == "CLASSES - FIF"
     total = (a["vl_passivo"] + a["vl_patrim_liq"] + a["vl_receitas"] + a["vl_despesas"])
@@ -118,7 +126,7 @@ def test_schema_and_migration_define_the_same_table():
 
 def test_every_group_column_exists_in_the_table():
     block = _create_block(MIGRATION.read_text())
-    for col in _balancete.RESUMO_GROUPS.values():
+    for col in _balancete.RESUMO_ACCOUNTS.values():
         assert re.search(rf"\b{col}\b NUMERIC", block), col
     assert "CONSTRAINT uq_fi_balancete_resumo UNIQUE (cnpj, dt_comptc)" in block
 
@@ -127,7 +135,7 @@ def test_backfill_sql_uses_the_same_code_map_and_upserts():
     from scripts.backfill_balancete_summary import build_upsert_sql, _months
 
     sql = build_upsert_sql()
-    for code, col in _balancete.RESUMO_GROUPS.items():
+    for code, col in _balancete.RESUMO_ACCOUNTS.items():
         assert f"cd_conta_balcte = '{code}') AS {col}" in sql
         assert f"{col} = EXCLUDED.{col}" in sql
     assert "ON CONFLICT ON CONSTRAINT uq_fi_balancete_resumo DO UPDATE" in sql

@@ -54,6 +54,10 @@ from each fund's own fiscal-year start, which is not January for every fund, so 
 this month minus last month except in the reset month; derive it, never store it. `vl_patrim_liq`
 there excludes the open result: equity + revenue + expenses is the NAV. The 3xxx/9xxx codes are
 memorandum accounts (equal on both sides), never assets. A group a fund did not file is NULL.
+The fee columns (`vl_taxa_administracao` and its parts, `vl_taxa_performance`, ...) are COFI
+8.1.7 accounts, accumulated and negative like group 8. Many funds file the whole administration
+fee in 81781001/81781056 and nothing in the management (`vl_taxa_gestao`) or distribution
+split, so a NULL part is not a zero fee.
 
 **FII filings keep every version** (migration 43): `versao` is part of the key of
 `cvm_fii_mensal` and `cvm_fii_periodic` (`UNIQUE NULLS NOT DISTINCT`), so a restatement

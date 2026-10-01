@@ -32,11 +32,12 @@ FIELD_MAP = {
 }
 
 # cvm_fi_balancete_resumo (migration 59): one row per fund and month, holding
-# the COFI group totals. Code -> column. A group the fund did not file stays
-# NULL. The codes and the identities they satisfy are in migration 59.
+# the COFI group totals and the administrative-expense accounts. Code ->
+# column. An account the fund did not file stays NULL. The codes, their
+# source and the identities they satisfy are in migration 59.
 RESUMO_TABLE = "cvm_fi_balancete_resumo"
 RESUMO_CONFLICT = ("cnpj", "dt_comptc")
-RESUMO_GROUPS = {
+RESUMO_ACCOUNTS = {
     "10000007": "vl_ativo",
     "30000001": "vl_compensacao_ativa",
     "40000008": "vl_passivo",
@@ -44,4 +45,13 @@ RESUMO_GROUPS = {
     "70000009": "vl_receitas",
     "80000006": "vl_despesas",
     "90000003": "vl_compensacao_passiva",
+    "81700006": "vl_desp_administrativas",
+    "81754007": "vl_desp_servicos_financeiros",
+    "81763005": "vl_desp_servicos_tecnicos",
+    "81781001": "vl_taxa_administracao",
+    "81781056": "vl_taxa_adm_efetiva",
+    "81781104": "vl_taxa_gestao",
+    "81781252": "vl_taxa_distribuicao",
+    "81782000": "vl_taxa_performance",
+    "81783009": "vl_taxa_ingresso_saida",
 }

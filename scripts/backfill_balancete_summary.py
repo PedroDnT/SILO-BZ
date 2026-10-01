@@ -46,10 +46,10 @@ def _months(start: date, end: date) -> Iterator[Tuple[date, date]]:
 def build_upsert_sql() -> str:
     """INSERT ... SELECT for one month, taking %(lo)s and %(hi)s.
 
-    Built from RESUMO_GROUPS so the backfill and the ingest can never disagree
+    Built from RESUMO_ACCOUNTS so the backfill and the ingest can never disagree
     on which code fills which column.
     """
-    groups = _balancete.RESUMO_GROUPS
+    groups = _balancete.RESUMO_ACCOUNTS
     cols = list(groups.values())
     picks = ",\n           ".join(
         f"max(vl_saldo_balcte) FILTER (WHERE cd_conta_balcte = '{code}') AS {col}"

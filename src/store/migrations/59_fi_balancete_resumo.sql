@@ -27,6 +27,25 @@
 -- And group 6 + group 7 + group 8 equals the same day's vl_patrim_liq in
 -- cvm_fi_diario within 0.1% for 24,408 of those 25,061 funds.
 --
+-- EXPENSE ACCOUNTS. From the COFI chart of accounts (Instrução CVM 438,
+-- consolidated text, section "Elenco de Contas"; code 8.1.7.81.00-1 is stored
+-- as 81781001). All are inside group 8, accumulated and negative like it:
+--
+--   81700006  8.1.7.00.00-6  despesas administrativas (all of the below)
+--   81754007  8.1.7.54.00-7  despesas de serviços do sistema financeiro
+--   81763005  8.1.7.63.00-5  despesas de serviços técnicos especializados
+--   81781001  8.1.7.81.00-1  despesas de taxa de administração do fundo
+--   81781056  8.1.7.81.05-6    taxa de administração efetiva
+--   81781104  8.1.7.81.10-4    taxa de gestão
+--   81781252  8.1.7.81.25-2    despesa com distribuição
+--   81782000  8.1.7.82.00-0  despesas de taxa de desempenho/performance
+--   81783009  8.1.7.83.00-9  despesas de taxa de ingresso e saída
+--
+-- On 2026-06-30, 81781001 was filed by 23,214 funds and summed to
+-- R$-23.67bn, equal to the sum of its sub-accounts; 81782000 by 3,585 funds.
+-- The sub-accounts 81781159 (consultoria), 81781207 (controladoria) and
+-- 81781300 are small and stay inside 81781001; 81781300 is not in that text.
+--
 -- Groups 7 and 8 restart at each fund's own fiscal-year start, which is not
 -- January for every fund. They are stored as filed. A month's flow is derived
 -- in the analytical layer, never here.
@@ -47,6 +66,15 @@ CREATE TABLE IF NOT EXISTS cvm_fi_balancete_resumo (
     vl_receitas            NUMERIC(28,2),   -- 70000009, accumulated
     vl_despesas            NUMERIC(28,2),   -- 80000006, accumulated, negative
     vl_compensacao_passiva NUMERIC(28,2),   -- 90000003
+    vl_desp_administrativas      NUMERIC(28,2),   -- 81700006
+    vl_desp_servicos_financeiros NUMERIC(28,2),   -- 81754007
+    vl_desp_servicos_tecnicos    NUMERIC(28,2),   -- 81763005
+    vl_taxa_administracao        NUMERIC(28,2),   -- 81781001
+    vl_taxa_adm_efetiva          NUMERIC(28,2),   -- 81781056
+    vl_taxa_gestao               NUMERIC(28,2),   -- 81781104
+    vl_taxa_distribuicao         NUMERIC(28,2),   -- 81781252
+    vl_taxa_performance          NUMERIC(28,2),   -- 81782000
+    vl_taxa_ingresso_saida       NUMERIC(28,2),   -- 81783009
     n_contas               INTEGER       NOT NULL CHECK (n_contas > 0),
     fetched_at             TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_fi_balancete_resumo UNIQUE (cnpj, dt_comptc)
@@ -65,6 +93,6 @@ BEGIN
 END $$;
 
 COMMENT ON TABLE cvm_fi_balancete_resumo IS
-    'FI balancete group totals, one row per fund and month, as filed (COFI codes in migration 59). vl_receitas and vl_despesas accumulate from each fund''s own fiscal-year start; vl_patrim_liq excludes that open result. n_contas is the number of accounts the fund filed that month.';
+    'FI balancete group totals and administrative-expense accounts (fees), one row per fund and month, as filed (COFI codes in migration 59). Revenue, expenses and every fee column accumulate from each fund''s own fiscal-year start; vl_patrim_liq excludes that open result. An account not filed is NULL. n_contas is the number of accounts the fund filed that month.';
 
 COMMIT;

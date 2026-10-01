@@ -427,7 +427,7 @@ def ingest_fi_balancete(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
 def balancete_resumo(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """One cvm_fi_balancete_resumo row per (cnpj, dt_comptc) of typed balancete rows.
 
-    Each COFI group total in RESUMO_GROUPS lands in its column as filed; a group
+    Each COFI account in RESUMO_ACCOUNTS lands in its column as filed; an account
     the fund did not file stays NULL. n_contas counts distinct account codes, and
     a code repeated in the file counts once with its last value, matching what
     upsert_rows keeps in cvm_fi_balancete.
@@ -449,7 +449,7 @@ def balancete_resumo(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "plano_conta_balcte": last.get("plano_conta_balcte"),
             "n_contas": len(by_code),
         }
-        for code, column in _balancete.RESUMO_GROUPS.items():
+        for code, column in _balancete.RESUMO_ACCOUNTS.items():
             row[column] = by_code.get(code)
         out.append(row)
     return out
