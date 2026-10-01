@@ -31,7 +31,7 @@ frontmatter (1–17 below; Evidence sorts alphabetically without it), and
 | 8   | FIDC Credit Monitor | `/fidc`    | Sector delinquency, worst funds, delinquency drivers (Δ R$ vs Δ rate), both aging bands, tranche promised-vs-realised, subordination, flows   |
 | 9   | FII Market          | `/fii`     | FII vs FIAGRO net assets, yield distribution, top payers, filing coverage, payout coverage, property explorer                                 |
 | 10  | Securitização       | `/securit` | CRI/CRA/OTS reported value, maturity wall, payment waterfall, ratings, subordination, distressed series                                       |
-| 11  | ETF                 | `/etf`     | ETF universe by provider / segment / index from `cvm_etf_registry`, plus the scraped market snapshot (NAV/return largely absent post-CVM-175) |
+| 11  | ETF                 | `/etf`     | ETF universe by provider / segment / index from `cvm_etf_registry`, the 46 Brazilian fixed income ETFs by index family (CVM net assets), ANBIMA ETF net assets since 2006 and flows since 2025, plus the scraped market snapshot (NAV/return largely absent post-CVM-175) |
 
 **Houses, funds, rankings and screens** — the granular views.
 
