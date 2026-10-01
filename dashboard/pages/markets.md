@@ -1,7 +1,7 @@
 ---
 title: B3 Markets
 hide_title: true
-sidebar_position: 3
+sidebar_position: 4
 ---
 
 <!--
@@ -57,6 +57,10 @@ select * from supabase.b3_top_volume
 
 ```sql b3_options_activity
 select * from supabase.b3_options_activity
+```
+
+```sql b3_ibov_top_weights
+select * from supabase.b3_ibov_top_weights
 ```
 
 # B3 Markets
@@ -183,3 +187,20 @@ yAxisTitle="Premium (R$bn)"
   yAxisTitle="Series"
   title="Option Series Traded per Month"
 />
+
+---
+
+## IBOV Theoretical Portfolio
+
+> The 15 largest weights in B3's published IBOV theoretical portfolio on the
+> latest date held (`b3_index_portfolio`, B3 BDI). **History starts 2026-09-16**:
+> B3 publishes no archive, so this is a snapshot, not a series.
+
+<DataTable data={b3_ibov_top_weights} rows=15>
+  <Column id=rank title="Rank"/>
+  <Column id=codneg title="Ticker"/>
+  <Column id=asset_name title="Company"/>
+  <Column id=b3_sector title="B3 Sector"/>
+  <Column id=weight_num2 title="Weight (%)" fmt=num2/>
+  <Column id=reference_date title="Portfolio Date"/>
+</DataTable>
