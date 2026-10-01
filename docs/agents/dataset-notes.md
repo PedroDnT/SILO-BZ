@@ -52,8 +52,9 @@ when checked on 2026-09-30) is logged `skipped`.
 **The FI balancete has a summary** (migration 59): `cvm_fi_balancete_resumo` holds one row per
 fund and month with the COFI group totals, as filed. `vl_receitas` and `vl_despesas` accumulate
 from each fund's own fiscal-year start, which is not January for every fund, so a month's flow is
-this month minus last month except in the reset month; derive it, never store it. `vl_patrim_liq`
-there excludes the open result: equity + revenue + expenses is the NAV. The 3xxx/9xxx codes are
+this month minus last month except in the reset month; derive it, never store it.
+`vl_patrimonio_sem_resultado` (group 6) excludes the open result: it + revenue + expenses is the
+NAV, so never compare it alone with `cvm_fi_diario.vl_patrim_liq`. The 3xxx/9xxx codes are
 memorandum accounts (equal on both sides), never assets. A group a fund did not file is NULL.
 The fee columns (`vl_taxa_administracao` and its parts, `vl_taxa_performance`, ...) are COFI
 8.1.7 accounts, accumulated and negative like group 8. Many funds file the whole administration

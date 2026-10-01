@@ -74,7 +74,7 @@ def test_ingest_writes_accounts_and_one_summary_row_per_fund_month():
     assert a["dt_comptc"] == date(2026, 6, 30)
     assert float(a["vl_ativo"]) == 1000.0
     assert float(a["vl_passivo"]) == 100.0
-    assert float(a["vl_patrim_liq"]) == 800.0
+    assert float(a["vl_patrimonio_sem_resultado"]) == 800.0
     assert float(a["vl_receitas"]) == 150.0
     assert float(a["vl_despesas"]) == -50.0
     assert float(a["vl_compensacao_ativa"]) == float(a["vl_compensacao_passiva"]) == 7000.0
@@ -85,7 +85,7 @@ def test_ingest_writes_accounts_and_one_summary_row_per_fund_month():
     assert a["n_contas"] == 11
     assert a["plano_conta_balcte"] == "COFI"
     assert a["tp_fundo_classe"] == "CLASSES - FIF"
-    total = (a["vl_passivo"] + a["vl_patrim_liq"] + a["vl_receitas"] + a["vl_despesas"])
+    total = (a["vl_passivo"] + a["vl_patrimonio_sem_resultado"] + a["vl_receitas"] + a["vl_despesas"])
     assert float(a["vl_ativo"]) == float(total)
 
 
@@ -120,12 +120,20 @@ def _create_block(text: str) -> str:
     return re.sub(r"\s+", " ", m.group(1)).strip()
 
 
-def test_schema_and_migration_define_the_same_table():
-    assert _create_block(MIGRATION.read_text()) == _create_block(SCHEMA.read_text())
+def test_schema_and_migrations_define_the_same_table():
+    # schema.sql carries migration 61's rename of group 6's column.
+    migrated = _create_block(MIGRATION.read_text()).replace(
+        "vl_patrim_liq NUMERIC(28,2), -- 60000002",
+        "vl_patrimonio_sem_resultado NUMERIC(28,2), -- 60000002, excludes the open result",
+    )
+    assert migrated == _create_block(SCHEMA.read_text())
+    rename = (ROOT / "src/store/migrations/61_fi_balancete_resumo_rename.sql").read_text()
+    assert "RENAME COLUMN vl_patrim_liq TO vl_patrimonio_sem_resultado" in rename
+    assert "column_name = 'vl_patrim_liq'" in rename
 
 
 def test_every_group_column_exists_in_the_table():
-    block = _create_block(MIGRATION.read_text())
+    block = _create_block(SCHEMA.read_text())
     for col in _balancete.RESUMO_ACCOUNTS.values():
         assert re.search(rf"\b{col}\b NUMERIC", block), col
     assert "CONSTRAINT uq_fi_balancete_resumo UNIQUE (cnpj, dt_comptc)" in block
