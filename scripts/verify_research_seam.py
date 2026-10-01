@@ -53,7 +53,15 @@ def refused(fn, reason: str) -> bool:
 
 def main() -> int:
     silo = SiloClient()
+    try:
+        _checks(silo)
+    except Exception as exc:  # noqa: BLE001 — a crash is a FAIL line, not a traceback
+        check(False, f"verification stopped: {type(exc).__name__}: {str(exc)[:300]}")
+    print(f"\n{len(problems)} problem(s)")
+    return 1 if problems else 0
 
+
+def _checks(silo: SiloClient) -> None:
     # 1. ETER3 across boards.
     rows = silo.quote_history_all("ETER3", "2019-01-02", "2026-12-31", fields=["close", "board", "prior_no_trade_sessions"])
     boards = {r["board"] for r in rows}
@@ -74,8 +82,12 @@ def main() -> int:
 
     # 3. The page edge.
     d999, d1000, d1001 = tape[0], tape[999 - 1], tape[1000]
-    n999 = len(silo.quote_history("PETR4", d999, tape[998], fields=["close"]))
-    n1000 = len(silo.quote_history("PETR4", d999, tape[999], fields=["close"]))
+    # Through the raw page call: the SDK's truncation guard cannot tell a
+    # 1000-row answer from a cut one unless the server sends a total.
+    def whole(to):
+        return silo._rpc("quote_history", {"p_ticker": "PETR4", "p_from": d999, "p_to": to,
+                                           "p_fields": ["close"]}, page=True)
+    n999, n1000 = len(whole(tape[998])), len(whole(tape[999]))
     check(n999 == 999 and n1000 == 1000, f"999 and 1000 rows serve whole ({n999}, {n1000})")
     check(refused(lambda: silo.quote_history("PETR4", d999, d1001, fields=["close"]), "more than 1000 rows"),
           "1001 rows refuse in whole-result mode")
@@ -123,9 +135,6 @@ def main() -> int:
     check(float(by_date.get("2025-12-30", 0)) == 161125.37, f"IBOV 2025-12-30 = {by_date.get('2025-12-30')}")
     tape20 = {d for d in tape if d >= "2020-01-02"}
     check(set(by_date) == tape20, f"IBOV sessions equal the tape's from 2020 ({len(by_date)} vs {len(tape20)})")
-
-    print(f"\n{len(problems)} problem(s)")
-    return 1 if problems else 0
 
 
 if __name__ == "__main__":
