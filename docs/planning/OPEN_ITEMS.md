@@ -281,6 +281,15 @@ has to be read together with that gate and its tests.
 
 ## 10. Supabase storage near the plan allowance
 
+**Decided 2026-10-01 (owner): retire `cvm_fi_balancete` behind a summary.** Nothing reads the
+account table (31 GB, 27% of the database, which was 116 GB that day). Steps: (1) the summary
+`cvm_fi_balancete_resumo` (migration 59) and its backfill, `daily_ingest` mode=balancete-summary;
+(2) the fee and expense accounts mapped from CVM's COFI plan and added to the summary while the
+account rows still exist; (3) the owner sees the month-by-month check, then the account table is
+dropped; (4) the CDA tables stop repeating the fund name in `raw` (about 4.8 GB, measured
+2026-10-01). Deleting rows does not shrink the billed disk; the saving comes from a smaller
+compute size once the database is under 100 GB, the owner's call.
+
 **Decided 2026-09-29 (owner): measure first, alarm at 90%, retention ready.**
 DB Health read **115.65 GB, 86% of 135 GB** on 2026-09-29, after the CDA
 block 1 refill (#348) grew `cvm_fi_cda` from 4.2 GB to 6.3 GB. It read

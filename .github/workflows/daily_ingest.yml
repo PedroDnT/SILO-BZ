@@ -17,6 +17,7 @@ on:
           - b3-backfill
           - b3-cash-dividends
           - b3-trade-consolidated
+          - balancete-summary
       start_year:
         description: "First year of B3 COTAHIST yearly zips (mode=b3-backfill). Try 2025 first — yearly zips are large. With mode=b3-cash-dividends: the issuer universe is every code that printed since this year (use 2019); each issuer's full history is fetched. With mode=b3-trade-consolidated: every weekday from January 1 of this year (B3 kept sessions from 2025-06-10 when checked on 2026-09-30; earlier ones are logged skipped)."
         required: false
@@ -145,6 +146,14 @@ jobs:
         run: |
           python -m src.pipeline.run_backfill \
             --b3-trade-consolidated-start ${{ inputs.start_year }}-01-01
+
+      # cvm_fi_balancete_resumo (migration 59) from the stored balancete, one
+      # month per statement, 2019 to this month. SQL only, nothing is fetched
+      # from CVM; idempotent. Prints rows upserted and balance-identity breaks
+      # per month. About 92 months.
+      - name: Build balancete summary from stored months
+        if: ${{ github.event.inputs && github.event.inputs.mode == 'balancete-summary' }}
+        run: python scripts/backfill_balancete_summary.py
 
       # Statistics only — it makes later queries plan better, it never changes a
       # row. continue-on-error because on 2026-08-28 it was the ONE step that

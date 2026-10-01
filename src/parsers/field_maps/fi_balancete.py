@@ -30,3 +30,18 @@ FIELD_MAP = {
     "vl_saldo_balcte":    (["VL_SALDO_BALCTE"],                        "numeric"),
     "tp_fundo_classe":    (["TP_FUNDO_CLASSE", "TP_FUNDO"],            "text"),
 }
+
+# cvm_fi_balancete_resumo (migration 59): one row per fund and month, holding
+# the COFI group totals. Code -> column. A group the fund did not file stays
+# NULL. The codes and the identities they satisfy are in migration 59.
+RESUMO_TABLE = "cvm_fi_balancete_resumo"
+RESUMO_CONFLICT = ("cnpj", "dt_comptc")
+RESUMO_GROUPS = {
+    "10000007": "vl_ativo",
+    "30000001": "vl_compensacao_ativa",
+    "40000008": "vl_passivo",
+    "60000002": "vl_patrim_liq",
+    "70000009": "vl_receitas",
+    "80000006": "vl_despesas",
+    "90000003": "vl_compensacao_passiva",
+}

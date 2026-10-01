@@ -964,6 +964,29 @@ CREATE TABLE IF NOT EXISTS cvm_fi_balancete (
 -- slice.
 CREATE INDEX IF NOT EXISTS idx_fi_balancete_date   ON cvm_fi_balancete (dt_comptc DESC);
 
+-- One row per fund and month: the COFI group totals of cvm_fi_balancete
+-- (migration 59, which documents the codes and the identities they satisfy).
+-- vl_receitas / vl_despesas accumulate from each fund's own fiscal-year start
+-- and are stored as filed. A group a fund did not file is NULL, never zero.
+CREATE TABLE IF NOT EXISTS cvm_fi_balancete_resumo (
+    cnpj                   TEXT          NOT NULL CHECK (char_length(cnpj) = 14),
+    dt_comptc              DATE          NOT NULL,
+    tp_fundo_classe        TEXT,
+    plano_conta_balcte     TEXT,
+    vl_ativo               NUMERIC(28,2),   -- 10000007
+    vl_compensacao_ativa   NUMERIC(28,2),   -- 30000001
+    vl_passivo             NUMERIC(28,2),   -- 40000008
+    vl_patrim_liq          NUMERIC(28,2),   -- 60000002
+    vl_receitas            NUMERIC(28,2),   -- 70000009, accumulated
+    vl_despesas            NUMERIC(28,2),   -- 80000006, accumulated, negative
+    vl_compensacao_passiva NUMERIC(28,2),   -- 90000003
+    n_contas               INTEGER       NOT NULL CHECK (n_contas > 0),
+    fetched_at             TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fi_balancete_resumo UNIQUE (cnpj, dt_comptc)
+);
+CREATE INDEX IF NOT EXISTS ix_fi_balancete_resumo_date
+    ON cvm_fi_balancete_resumo (dt_comptc);
+
 -- ---------------------------------------------------------------------------
 -- Additive column migrations for typed-field lifts (idempotent).
 -- ---------------------------------------------------------------------------
