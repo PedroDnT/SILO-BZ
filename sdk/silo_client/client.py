@@ -37,7 +37,7 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 48  # v48 quote_history fields + close_adj default (#410); v47 p_as_of (#414); v46 close_total_return (#418); v45 index_history
+KNOWN_CATALOG_VERSION = 49  # v49 corrects the IBOV11 description; v48 quote_history fields + close_adj default (#410); v47 p_as_of (#414); v46 close_total_return (#418); v45 index_history
 
 #: How many times prices() / quote_history_all() restart a retrieval whose
 #: pages came back with different data revisions before giving up.
@@ -603,6 +603,80 @@ class SiloClient:
         )
         frame = frame.with_columns(pl.col("trade_date").str.to_date("%Y-%m-%d"))
         return frame.sort(["ticker", "trade_date"])
+
+    # -- the research seam (#419) -------------------------------------------
+
+    def research_universe(self, as_of: Datish = None) -> List[Dict[str, Any]]:
+        """The research universe: one row per ticker+ISIN pair of shares and
+        units traded on the B3 cash tape since 2019-01-02.
+
+        Columns: ticker, isin, instrument_type, cnpj, cnpj_basis,
+        first_observed, last_observed, n_sessions, setor_current, built_at.
+        The ISIN is the identity: a rename is a NEW row and nothing links it to
+        the old one. `first_observed` / `last_observed` are facts about SILO's
+        tape, not listing or delisting dates.
+
+        `as_of=T` applies the **survivorship rule** on the client: only pairs
+        with `first_observed <= T <= last_observed`, which is what a rebalance
+        on T should trade. A pair inside a gap (NATU3: one ISIN, no sessions
+        from 2019-12 to 2025-07) still matches that filter, so read
+        `n_sessions` against the span, or check the series, before trusting
+        that a name traded on T. `last_observed` lags the tape by up to a day
+        (the server view is rebuilt daily), so `as_of=today` can miss a name
+        that traded this morning. `as_of=None` returns the whole universe,
+        including names that no longer trade.
+        """
+        rows = self._rpc("research_universe", {})
+        if as_of is None:
+            return rows
+        when = _iso(as_of)
+        return [r for r in rows if r["first_observed"] <= when <= r["last_observed"]]
+
+    def index_history(
+        self, index: str, start: Datish = None, end: Datish = None,
+    ) -> List[Dict[str, Any]]:
+        """Daily levels of a B3-published index **as published**: columns
+        index_code, trade_date, level, divisor_step, source. IBOV from
+        1968-01-02.
+
+        `index` is an INDEX CODE ("IBOV"), never a ticker: BOVA11 (an ETF) and
+        IBOV11 (the Ibovespa options settlement code, whose price is each
+        print's settlement index and never the official close) are refused
+        with `SiloError` (22023) naming the codes held. The series is a price index and is not adjusted: B3
+        re-scaled it eleven times and `divisor_step` is True on the first
+        session after each, where a level ratio is not a return. One page of
+        at most 1000 rows; more raises `SiloOverCap`, so use
+        `index_history_all` for a long window. `start=None` is the last 365
+        days, not the whole history.
+        """
+        return self._rpc("index_history", {
+            "p_index": index, "p_from": _iso(start), "p_to": _iso(end),
+        })
+
+    def iter_index_history(
+        self, index: str, start: Datish = None, end: Datish = None,
+    ) -> Iterator[Dict[str, Any]]:
+        """Every index level, paged with the server's cursor (`p_after`).
+
+        Page 1 is `p_after=''`; each next page is the last row's `trade_date`.
+        A page shorter than the 1000-row cap is the last one. Rows arrive
+        oldest first; IBOV from 1968 is 15 pages.
+        """
+        body = {"p_index": index, "p_from": _iso(start), "p_to": _iso(end)}
+        after = ""
+        while True:
+            rows = self._rpc("index_history", {**body, "p_after": after}, page=True)
+            for row in rows:
+                yield row
+            if len(rows) < SERVER_ROW_CAP:
+                return
+            after = str(rows[-1]["trade_date"])
+
+    def index_history_all(
+        self, index: str, start: Datish = None, end: Datish = None,
+    ) -> List[Dict[str, Any]]:
+        """iter_index_history collected into a list."""
+        return list(self.iter_index_history(index, start, end))
 
     def iter_fund_nav(
         self, cnpj: str, entity_type: str, start: Datish = None,

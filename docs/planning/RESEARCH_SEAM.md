@@ -1,6 +1,6 @@
 # Research seam: SILO as the data layer for external quant research
 
-**Status: spec drafted 2026-09-29 from the wayfinder map ([#371](https://github.com/PedroDnT/SILO-BZ/issues/371), 11 of 11 tickets resolved). Approved 2026-09-29; the build tickets are under epic #410. The research universe (#411) is built (§4), and so are the benchmark index `api.index_history` (§5; #412, #415, catalog v45), the total-return close in `quote_history` (§3; #418, catalog v46) and the as-of date on the fundamentals (§6; #414, catalog v47). The price contract (§3) is built as amended by the owner on 2026-09-30 (catalog v48): `close_adj` is the default field of `quote_history` and the panel's default for shares and units, rows are JSON objects holding only the selected fields (`close_total_return` is one), the series follows the ISIN across boards, and every window it cannot serve whole is refused, the pre-2019 window included.**
+**Status: spec drafted 2026-09-29 from the wayfinder map ([#371](https://github.com/PedroDnT/SILO-BZ/issues/371), 11 of 11 tickets resolved). Approved 2026-09-29; the build tickets are under epic #410. The research universe (#411) is built (§4), and so are the benchmark index `api.index_history` (§5; #412, #415, catalog v45), the total-return close in `quote_history` (§3; #418, catalog v46) and the as-of date on the fundamentals (§6; #414, catalog v47). The price contract (§3) is built as amended by the owner on 2026-09-30 (catalog v48): `close_adj` is the default field of `quote_history` and the panel's default for shares and units, rows are JSON objects holding only the selected fields (`close_total_return` is one), the series follows the ISIN across boards, and every window it cannot serve whole is refused, the pre-2019 window included. The SDK research clients (`research_universe(as_of)`, `index_history`) and the research usage guide are built (§7, §8; #419); the multi-ticker pull is `prices()`. The IBOV11 description is corrected (catalog v49).**
 
 A *research caller* is an external repository that builds features, signals or
 backtests on SILO data (terms: `CONTEXT.md`, *Research data*). Its first
@@ -156,8 +156,10 @@ levels, from a closed, extensible list of index codes.
 - **Index codes only.** A ticker, including BOVA11 and IBOV11, raises `22023`
   naming the accepted codes, so substitution cannot happen by construction.
   `quote_history('IBOV11')` and `api.quotes` keep today's behaviour (IBOV11 is
-  `asset_class = 'index'`, `close_unit` R$ per contract, prints only on expiry days);
-  the usage doc warns about it.
+  `asset_class = 'index'` and each print is that session's settlement index, never the
+  official close; it printed on expiry days only through 2024, weekly in 2025 and on
+  nearly every session since December 2025, **corrected 2026-10-01**: the spec said
+  "prints only on expiry days"); the usage doc warns about it.
 - **Source:** B3's administrator-published daily close, `indexStatisticsProxy/IndexCall/GetPortfolioDay`
   (undocumented; one year per call). SGS 7 is discontinued since 2019-09-30 and is not used.
 - **Columns:** `index_code`, `trade_date`, `level`, `source`, a flag for a divisor
@@ -199,7 +201,10 @@ per call (#376), SELIC_META about 2.7, so 2019 onward is 2 to 3 calls.
 ## 8. SDK and MCP surface
 
 - The SDK gets a fan-out helper over `quote_history` (concurrency is observed
-  free today, not guaranteed) and clients for the two new functions.
+  free today, not guaranteed) and clients for the two new functions. Built as
+  `prices()` (one data revision, the tickers walked one after another) and
+  `research_universe` / `index_history`; the concurrent variant is not built
+  (100 names over six years took 70 s sequentially on 2026-09-28).
 - One MCP tool per new function (`t()` line in `supabase/functions/silo-mcp/tools.ts`).
 - Each new endpoint needs a catalog entry, a regenerated `openapi.json`
   (`scripts/gen_openapi.py`) and MCP contract (`scripts/gen_mcp_contract.py`);
