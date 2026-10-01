@@ -1906,6 +1906,37 @@ CREATE TABLE IF NOT EXISTS b3_index_level (
 COMMENT ON TABLE b3_index_level IS
     'Daily levels of B3-published indices (IBOV from 1968-01-02), as published by B3''s index statistics proxy, one row per index and session. divisor_step marks the first session after B3 re-scaled the series: the level is not adjusted, so a ratio across a step is not a return. Served by api.index_history.';
 
+-- B3's consolidated trade file, segment FORWARD (migration 57): the fixed
+-- income ETFs COTAHIST does not carry (IMAB11, B5P211, LFTS11, ...). No
+-- opening price in the source; ref_price is not a trade.
+CREATE TABLE IF NOT EXISTS b3_trade_consolidated (
+    trade_date       DATE        NOT NULL,
+    ticker           TEXT        NOT NULL,
+    isin             TEXT,
+    segment          TEXT        NOT NULL,
+    min_price        NUMERIC(20, 8) CHECK (min_price > 0),
+    max_price        NUMERIC(20, 8) CHECK (max_price > 0),
+    avg_price        NUMERIC(20, 8) CHECK (avg_price > 0),
+    last_price       NUMERIC(20, 8) CHECK (last_price > 0),
+    oscillation_pct  NUMERIC(20, 8),
+    adjusted_qty     NUMERIC(24, 8),
+    adjusted_qty_tax NUMERIC(24, 8),
+    ref_price        NUMERIC(20, 8),
+    trade_count      BIGINT      CHECK (trade_count >= 0),
+    quantity         BIGINT      CHECK (quantity >= 0),
+    notional_brl     NUMERIC(24, 2) CHECK (notional_brl >= 0),
+    file_status      TEXT        NOT NULL,
+    source           TEXT        NOT NULL DEFAULT 'b3_trade_consolidated_file',
+    fetched_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_b3_trade_consolidated UNIQUE (ticker, trade_date)
+);
+
+CREATE INDEX IF NOT EXISTS ix_b3_trade_consolidated_date
+    ON b3_trade_consolidated (trade_date);
+
+COMMENT ON TABLE b3_trade_consolidated IS
+    'B3 TradeInformationConsolidatedFile rows for segment FORWARD (fixed income ETFs, which COTAHIST does not carry), one row per ticker and session, as published. No opening price exists in the source. ref_price is a reference, not a trade. notional_brl is this file''s volume and differs from COTAHIST''s VOLTOT for the same session.';
+
 -- ---------------------------------------------------------------------------
 -- B3 instrument typing v3 (migration 27): index/right/bonus split out of the
 -- residual bucket; fund subtype falls back to the ISIN's own classified
