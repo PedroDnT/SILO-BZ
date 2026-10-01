@@ -6,6 +6,13 @@
 -- PRE and DPL are % a.a. on 252 business days, breakeven = (1 + PRE) /
 -- (1 + DPL) - 1 at the same vertex, nothing interpolated.
 --
+-- FOCUS: focus_ipca_12m_num2 is the BACEN Focus survey's median for IPCA over
+-- the next 12 months (bacen_expectativas, ExpectativasMercadoInflacao12Meses;
+-- the fetch keeps the unsmoothed series, Suavizada='N'), read on the same date
+-- as the curve session and left blank when Focus has no row that day. It
+-- starts 2019-01. A survey median and a market breakeven are different things:
+-- the breakeven also carries an inflation risk premium.
+--
 -- ZERO-ROW SAFETY: a generate_series week spine from 2008-01-07 to the current
 -- week drives the row count; the curves are LEFT JOINed on, so an empty table
 -- yields NULLs, never a 0-row source. The current week is included: its last
@@ -54,7 +61,12 @@ select
   ((1 + w.pre_1y / 100) / (1 + w.dpl_1y / 100) - 1) * 100 as breakeven_1y_num2,
   w.pre_5y                                            as nominal_5y_num2,
   w.dpl_5y                                            as real_5y_num2,
-  ((1 + w.pre_5y / 100) / (1 + w.dpl_5y / 100) - 1) * 100 as breakeven_5y_num2
+  ((1 + w.pre_5y / 100) / (1 + w.dpl_5y / 100) - 1) * 100 as breakeven_5y_num2,
+  fx.median                                           as focus_ipca_12m_num2
 from spine s
 left join wide w on w.week = s.week
+left join bacen_expectativas fx
+  on fx.reference_date = w.trade_date
+ and fx.endpoint_name  = 'ExpectativasMercadoInflacao12Meses'
+ and fx.indicador      = 'IPCA'
 order by s.week

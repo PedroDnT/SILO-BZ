@@ -22,9 +22,10 @@
 -- Not shown: the snapshot's cotistas holds a year (2024 to 2026) for every
 -- ETF, not a holder count, and its return, volatility and Sharpe fields are
 -- empty, so none of them are used.
--- No B3 tape column: none of these tickers appear in b3_cotahist (checked
--- 2026-09-30; the COTAHIST parser filters no board), so exchange volume is
--- not available for them.
+-- No B3 tape column: none of these tickers appear in b3_cotahist, because
+-- B3's COTAHIST file itself omits them (raw COTAHIST_D29092026: 14,966 records,
+-- none of the 46, while equity ETFs such as BOVA11 are present; the parser
+-- filters no board). Where B3 publishes their prints is not identified.
 --
 -- ZERO-ROW SAFETY: a one-row driver LEFT JOINs the ETF list, so an empty
 -- segment yields one NULL row, never a 0-row source. NAV and the snapshot are

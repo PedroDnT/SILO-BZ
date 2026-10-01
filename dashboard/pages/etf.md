@@ -173,8 +173,9 @@ order by class, period
 > the previous session's B3 price as carried by the etfsbrasil snapshot, dated by
 > the snapshot.
 >
-> **Not available:** exchange volume (none of these tickers are in the COTAHIST
-> tape SILO holds), quotaholders (the snapshot's field holds a year, not a count)
+> **Not available:** exchange volume (B3's own COTAHIST file does not carry
+> these tickers: the raw file for 2026-09-29 has none of them, so this is the
+> source, not the ingest), quotaholders (the snapshot's field holds a year, not a count)
 > and returns, volatility or Sharpe (empty in the snapshot for every ETF).
 
 <BarChart
