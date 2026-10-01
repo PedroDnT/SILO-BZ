@@ -44,6 +44,20 @@ async def main() -> None:
     failures: list[tuple[str, Exception]] = []
     totals: dict[str, int] = {}
 
+    # B3's consolidated trade file, segment FORWARD (migration 57): the fixed
+    # income ETFs (IMAB11, LFTS11, ...) that COTAHIST does not carry. The last
+    # 7 calendar days, one file per weekday; a day with no session is skipped.
+    # Here, not in run_daily: it shares arquivos.b3.com.br with the BDI
+    # ratchet, and a failure must not skip the apply or the deploy. FIRST in
+    # this step: it takes seconds, and on 2026-10-01 (run 36842444079) the
+    # corporate-event sweep took 44 of the step's 45 minutes, so nothing
+    # after it ran.
+    try:
+        totals.update(await B3Ingestor().daily_update_trade_consolidated())
+    except Exception as exc:
+        logger.error("B3 consolidated trades refresh failed: %s", exc, exc_info=True)
+        failures.append(("b3_trade_consolidated", exc))
+
     # Published splits, groupings, bonuses, dividends and subscriptions per
     # ISIN. One request per traded issuer, derived from our own tape, not B3's
     # 3,500-company list.
@@ -70,17 +84,6 @@ async def main() -> None:
     except Exception as exc:
         logger.error("B3 index levels refresh failed: %s", exc, exc_info=True)
         failures.append(("b3_index_levels", exc))
-
-    # B3's consolidated trade file, segment FORWARD (migration 57): the fixed
-    # income ETFs (IMAB11, LFTS11, ...) that COTAHIST does not carry. The last
-    # 7 calendar days, one file per weekday; a day with no session is skipped.
-    # Here, not in run_daily: it shares arquivos.b3.com.br with the BDI
-    # ratchet, and a failure must not skip the apply or the deploy.
-    try:
-        totals.update(await B3Ingestor().daily_update_trade_consolidated())
-    except Exception as exc:
-        logger.error("B3 consolidated trades refresh failed: %s", exc, exc_info=True)
-        failures.append(("b3_trade_consolidated", exc))
 
     logger.info("B3 events done — rows upserted: %s", totals)
 
