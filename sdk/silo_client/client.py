@@ -38,7 +38,7 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 48  # v48 quote_history refuses a p_from before the tape (#417); v47 adds p_as_of to the fundamentals (#414); v46 serves close_total_return (#418); v45 adds index_history; v44 quote_history's adjusted closes (#417); v43 research_universe
+KNOWN_CATALOG_VERSION = 49  # v49 corrects the IBOV11 description; v48 quote_history refuses a p_from before the tape (#417); v47 adds p_as_of to the fundamentals (#414); v46 serves close_total_return (#418); v45 adds index_history; v44 quote_history's adjusted closes (#417); v43 research_universe
 
 
 class SiloCatalogDrift(UserWarning):

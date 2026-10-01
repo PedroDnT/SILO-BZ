@@ -304,3 +304,26 @@ Full URLs are given inline above.
   `src/store/migrations/27_b3_instrument_typed_v3.sql`,
   `src/store/analytical/19_api_contract.sql`,
   `tests/test_wave3_contract.py`.
+
+## Addendum 2026-10-01 (UTC-3): IBOV11 no longer prints on expiry days only
+
+This note, and the spec built on it, say IBOV11 "prints only on expiry days". That
+was true of 2019 to 2024 and is not true now. Read-only on production, 2026-09-30:
+
+| Period | IBOV11 cash prints |
+| --- | --- |
+| 2019 to 2024 | 12 a year, one per monthly expiry (first 2019-01-16) |
+| 2025 | 65: monthly until 2025-02, then 4 to 5 a month from the March flip to fatcot 100, 8 in November, 20 in December |
+| 2026 to 2026-09-29 | 181 of the 187 sessions B3 published an Ibovespa close for |
+
+The expiry sessions are still visible as the rows with a quantity in the millions
+(2026-01-14, 02-18, 03-18, 04-15, 05-13, 06-17, 07-15, 08-12, 09-16); the other
+rows carry tens to hundreds of thousands, and 24 of the 181 carry under 1,000.
+
+**The conclusion stands.** Across the 181 prints of 2026, none equals B3's official
+close to within half a point: the mean absolute difference is 0.18%, the median
+0.14% and the largest 1.07% (2025-12-30: IBOV11 161,669 against the official
+161,125.37). IBOV11 is a settlement index, so `index_history` still takes an index
+code and refuses it. What changes is the description: a dense IBOV11 series is not a
+sign that it is the benchmark. The published catalog text, the SQL header, the usage
+guide and the SDK docstring were corrected in catalog v49.
