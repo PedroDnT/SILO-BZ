@@ -28,7 +28,7 @@ It keeps a continuous, verifiable record of three populations, not one:
 - **Listed companies** — ITR/DFP financial statements as filed, the IPE event feed, and
   CVM's published ticker map.
 - **Markets** — the B3 COTAHIST tape (equities, BDRs, units, fund quotas, options,
-  termo), the securities-lending book and short interest, investor-type flows, and the
+  termo), the fixed income ETF prints COTAHIST does not carry, the securities-lending book and short interest, investor-type flows, and the
   BACEN macro series behind all of it.
 
 It is built for **financial accountability**: checking a claim against what was actually
@@ -223,7 +223,7 @@ Relevante feed. The conventions that matter when reading it are in
 | Workflow           | When                       | What                                                                                                                                                                                                                                                                       |
 | ------------------ | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `test.yml`         | every PR and push          | the offline pytest suite; on dispatch, a read-only `api.*` smoke against production                                                                                                                                                                                        |
-| `daily_ingest.yml` | 06:00 UTC, and on dispatch | the daily cycle above. `daily` is the scheduled run, ANALYZE and analytical refresh included; `analytics-only` is just those two; `b3-backfill` loads yearly COTAHIST zips for an exact year range; `b3-cash-dividends` loads B3's full cash-distribution history for every issuer that printed since `start_year`. `rebuild_dashboard=true` also fires the deploy hook after a manual run |
+| `daily_ingest.yml` | 06:00 UTC, and on dispatch | the daily cycle above. `daily` is the scheduled run, ANALYZE and analytical refresh included; `analytics-only` is just those two; `b3-backfill` loads yearly COTAHIST zips for an exact year range; `b3-cash-dividends` loads B3's full cash-distribution history for every issuer that printed since `start_year`; `b3-trade-consolidated` loads the fixed income ETF prints (`b3_trade_consolidated`) for every weekday from January 1 of `start_year`. `rebuild_dashboard=true` also fires the deploy hook after a manual run |
 | `watchdog.yml`     | 08:00 UTC                  | self-healing re-run of stale slices                                                                                                                                                                                                                                        |
 | `health.yml`       | scheduled                  | the gates above; files an issue on failure                                                                                                                                                                                                                                 |
 | `backfill.yml`     | on dispatch                | historical fills, one entity at a time; `fi_doc_type` repairs one FI source without re-fetching the others; `fnet_start` / `fnet_end` / `fnet_sweep` make an FNET-only dispatch (every other job skips) — one year per dispatch, newest first                              |
@@ -355,6 +355,7 @@ The essentials, folded away:
 │   │   ├── b3_fetcher.py       # public COTAHIST daily/yearly quotation zips
 │   │   ├── cia_fetcher.py      # listed-company (CIA Aberta) filings
 │   │   ├── b3_bdi_fetcher.py   # B3 BDI: lending, investor flow, index float, registry
+│   │   ├── b3_trade_consolidated_fetcher.py # B3 consolidated trade file (fixed income ETFs)
 │   │   ├── fnet_fetcher.py     # B3 Fundos.NET document register (metadata only)
 │   │   └── apify_etf_fetcher.py# ETF market scrape (gated on APIFY_TOKEN)
 │   ├── parsers/

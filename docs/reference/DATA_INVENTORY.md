@@ -72,6 +72,17 @@ from behind a login, or purchased — except the one ETF market feed noted below
 | `b3_cotahist_pre2019` | instrument × session     | pre-2019 archive, kept separate                                                                          |
 | `b3_corporate_event`  | instrument × event       | splits/bonuses as published; **no adjustment factor derived** (convention measured, not yet met the bar) |
 
+### B3 consolidated trade file: fixed income ETFs (`arquivos.b3.com.br`)
+
+Migration 57. Contract and quirks: `src/fetchers/b3_trade_consolidated_fetcher.py`.
+COTAHIST does not carry B3's FORWARD segment (market FIXED INCOME), where the
+fixed income ETFs trade (IMAB11, B5P211, LFTS11, BLFT11, ...): none of them has
+ever had a `b3_cotahist` row. This file does.
+
+| Table                   | Grain                | Notes |
+| ----------------------- | -------------------- | ----- |
+| `b3_trade_consolidated` | ticker × **session** | segment FORWARD only (67 tickers on 2026-09-29, 21 of them not in `cvm_etf_registry`). Min, max, average and last price, trade count, quantity, R$ volume. **No opening price** in the source. `ref_price` is a reference, not a trade. Its volume differs from COTAHIST's for the same session. B3 served sessions from 2025-06-10 when checked on 2026-09-30. |
+
 ### B3 BDI: lending, flows, float (`arquivos.b3.com.br`, `sistemaswebb3-listados.b3.com.br`)
 
 Migrations 39 and 40. Contract and quirks: `src/fetchers/b3_bdi_fetcher.py`.

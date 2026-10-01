@@ -130,6 +130,11 @@ async def main() -> None:
         logger.error("B3 BDI lending/flow refresh failed: %s", exc, exc_info=True)
         failures.append(("b3_bdi", exc))
 
+    # B3's consolidated trade file (migration 57, fixed income ETFs) is NOT run
+    # here either: it is on arquivos.b3.com.br, the Cloudflare-fronted host of
+    # the BDI ratchet above, and a failure here would skip the apply and the
+    # deploy. It runs in run_b3_events.
+    #
     # B3 corporate events and cash distributions are NOT run here. They are
     # their own step in daily_ingest.yml, after the dashboard deploy hook
     # (`python -m src.pipeline.run_b3_events`): a few hundred per-issuer calls
