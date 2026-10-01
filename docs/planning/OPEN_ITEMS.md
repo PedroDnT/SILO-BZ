@@ -549,4 +549,8 @@ failed: an object on the live database, defined nowhere here, now depends on the
 matview, and that failure skipped the day's ingest and apply. Migration 54 is now
 guarded (`claude/guard-migration-54`): it drops the matview only when nothing
 depends on it, and otherwise raises a NOTICE naming the dependents in the
-apply log. **Open:** read that NOTICE, decide about the dependent, then drop.
+apply log. The NOTICE (run 36842444079) named `api.mv_etf_landscape`, an
+equally unowned object in schema `api`. Owner's call on 2026-10-01: drop both
+(migration 58, `claude/etf-universe-aum`), and show net assets, their date and
+the size rank on `/etf`'s "ETF Universe" from the live registry instead. Closed
+once migration 58's apply logs both drops.
