@@ -474,7 +474,7 @@ class TestCVMPipelineFieldMapping:
                 ingestor = CVMIngestor()
                 await ingestor.ingest_fi_cda(2025, 3)
 
-        # the holding row, then its fund name in cvm_fi_cda_fund_name (migration 60)
+        # its fund name in cvm_fi_cda_fund_name (migration 60), then the holding row
         names = [r for r in captured if "denom_social" in r]
         captured = [r for r in captured if "denom_social" not in r]
         assert len(captured) == 1
@@ -500,7 +500,11 @@ class TestCVMPipelineFieldMapping:
                 count = await ingestor.ingest_fi_balancete(2025, 3)
 
         assert count == 2
+        # the account rows, then one cvm_fi_balancete_resumo row for the fund-month
+        resumo = [r for r in captured if "n_contas" in r]
+        captured = [r for r in captured if "cd_conta_balcte" in r]
         assert len(captured) == 2
+        assert len(resumo) == 1 and resumo[0]["n_contas"] == 2
         rec = captured[0]
         assert rec["cnpj"] == "12345678000190"
         # balancete keys on the source DT_COMPTC (no first-of-month override)

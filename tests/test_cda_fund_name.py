@@ -54,7 +54,7 @@ def _ingest_holdings(rows):
     return calls
 
 
-def test_holdings_are_written_without_the_name_then_the_name_once():
+def test_the_name_is_written_once_before_the_holdings_without_it():
     row = {
         "TP_FUNDO_CLASSE": "CLASSES - FIF", "CNPJ_FUNDO_CLASSE": "11.111.111/0001-11",
         "DENOM_SOCIAL": "FUNDO A", "DT_COMPTC": "2026-05-31",
@@ -63,12 +63,12 @@ def test_holdings_are_written_without_the_name_then_the_name_once():
     }
     calls = _ingest_holdings([row])
     tables = [c[0] for c in calls]
-    assert tables == ["cvm_fi_cda_cotas", "cvm_fi_cda_fund_name"]
-    holding = calls[0][1][0]
+    assert tables == ["cvm_fi_cda_fund_name", "cvm_fi_cda_cotas"]
+    holding = calls[1][1][0]
     assert "DENOM_SOCIAL" not in holding["raw"]
-    assert calls[1][1] == [{"cnpj": "11111111000111", "period": date(2026, 5, 1),
+    assert calls[0][1] == [{"cnpj": "11111111000111", "period": date(2026, 5, 1),
                             "denom_social": "FUNDO A"}]
-    assert calls[1][2] == "cnpj,period,denom_social"
+    assert calls[0][2] == "cnpj,period,denom_social"
 
 
 def _create_block(text: str) -> str:

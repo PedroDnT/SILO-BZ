@@ -8,12 +8,17 @@ table). Each batch is one transaction: the names are copied into
 cvm_fi_cda_fund_name first, then removed from `raw`. Re-running is safe: a row
 without the key is skipped and the copy is an upsert.
 
-An UPDATE writes a new row version, so a plain VACUUM runs between chunks of
-batches to let the next updates reuse the space instead of growing the table.
-The space only goes back to the operating system with --vacuum-full, which
-rewrites each table under an exclusive lock and needs free disk about the size
-of the table: run it only once the balancete account table is dropped
-(docs/planning/OPEN_ITEMS.md item 10).
+An UPDATE writes a new row version and WAL, so a plain VACUUM runs between
+chunks of batches to let the next updates reuse the space; the table still
+carries about one chunk of bloat at a time. Run this only once the balancete
+account table is dropped (docs/planning/OPEN_ITEMS.md item 10): with the disk
+near 86% that transient growth could trip DB Health's 90% alarm or a disk
+expansion. The space only goes back to the operating system with
+--vacuum-full, which rewrites each table under an exclusive lock and needs
+free disk about the size of the table.
+
+A run that stops midway (a job timeout) is resumed by running it again: rows
+already stripped are skipped.
 
     python scripts/strip_cda_fund_name.py                    # all three tables
     python scripts/strip_cda_fund_name.py --table cvm_fi_cda_cotas
