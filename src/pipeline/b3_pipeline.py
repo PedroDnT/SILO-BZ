@@ -13,6 +13,7 @@ import asyncio
 import logging
 import os
 import time
+import zlib
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
@@ -36,6 +37,15 @@ _TC_PAUSE_SECONDS = 1.0
 # covers every issuer that printed since then, so a price-adjusted close has
 # its issuer's events for the whole window it can serve (#413).
 TAPE_START = date(2019, 1, 2)
+
+# The nightly corporate-event sweep is incremental. api.close_adj refuses an
+# instrument whose issuer proof predates its last session, so every share or
+# unit issuer that printed since its proof is re-swept every night. Everyone
+# else (delisted issuers, BDRs, FIIs, ETFs, funds, none of which close_adj
+# serves) is re-swept in a rotating slice, each issuer once every this many
+# days. On 2026-10-01 the full sweep was 2,597 issuers and 44 minutes, the
+# whole of its step's 45-minute timeout.
+EVENT_SWEEP_ROTATION_DAYS = 14
 
 
 class B3Ingestor:
@@ -197,34 +207,55 @@ class B3Ingestor:
             cur.execute(sql, params)
             return [r[0] for r in cur.fetchall() if r and r[0]]
 
-    def _issuers_due_for_sweep(self, since: date = TAPE_START) -> List[str]:
-        """Issuers traded since ``since`` whose sweep proof is missing or stale.
+    def _issuers_due_for_proof(self, since: date) -> List[str]:
+        """Share and unit issuers whose sweep proof is missing or stale.
 
-        api.quote_history refuses close_adj when
-        ``(proven_at AT TIME ZONE 'America/Sao_Paulo')::date`` is before the
-        instrument's latest session, so a proof only needs renewing once the
-        issuer has printed after it. An issuer that stopped trading before its
-        proof stays proven, and re-asking B3 for it every night is what pushed
-        the sweep to 2,597 serial requests and past the step's 45 minutes
-        (run 36842444079). Same universe and prefix rule as _traded_issuers.
+        The same rule api.assert_close_adj applies: the issuer is
+        substr(isin, 3, 4), the universe is ISIN code ACN, CDA or UNT, and a
+        proof is stale when its date in UTC-3 is before the issuer's last
+        session on the tape. (The API also requires a unit ticker to end in
+        11; sweeping a few more issuers than it serves is harmless.)
         """
         sql = """
-            SELECT t.issuer
-              FROM (SELECT left(codneg, 4) AS issuer, max(trade_date) AS last_session
-                      FROM b3_cotahist
-                     WHERE tpmerc = '010'
-                       AND length(codneg) >= 4
-                       AND trade_date >= %s
-                     GROUP BY 1) t
-              LEFT JOIN b3_corporate_event_sweep s
-                ON s.issuing_company = t.issuer
+            WITH last AS (
+                SELECT substr(isin, 3, 4) AS issuer, max(trade_date) AS last_session
+                  FROM b3_cotahist
+                 WHERE tpmerc = '010'
+                   AND trade_date >= %s
+                   AND substr(isin, 7, 3) IN ('ACN', 'CDA', 'UNT')
+                 GROUP BY 1
+            )
+            SELECT l.issuer
+              FROM last l
+              LEFT JOIN b3_corporate_event_sweep s ON s.issuing_company = l.issuer
              WHERE s.proven_at IS NULL
-                OR (s.proven_at AT TIME ZONE 'America/Sao_Paulo')::date < t.last_session
-             ORDER BY t.issuer
+                OR (s.proven_at AT TIME ZONE 'America/Sao_Paulo')::date < l.last_session
+             ORDER BY 1
         """
         with self._supabase.cursor() as cur:
             cur.execute(sql, (since,))
             return [r[0] for r in cur.fetchall() if r and r[0]]
+
+    def _sweep_plan(self, since: date, today: date) -> List[str]:
+        """Tonight's issuers: every one due for proof, plus today's rotation slice.
+
+        The slice is fixed by a checksum of the code, not by Python's salted
+        hash(), so the same issuers come up on the same day in every run and
+        each one is swept once every EVENT_SWEEP_ROTATION_DAYS days.
+        """
+        due = self._issuers_due_for_proof(since)
+        due_set = set(due)
+        slot = today.toordinal() % EVENT_SWEEP_ROTATION_DAYS
+        rotation = [
+            code for code in self._traded_issuers(since=since)
+            if code not in due_set
+            and zlib.crc32(code.encode()) % EVENT_SWEEP_ROTATION_DAYS == slot
+        ]
+        logger.info(
+            "B3 corporate events plan: %d due for proof + %d in rotation slot %d/%d",
+            len(due), len(rotation), slot, EVENT_SWEEP_ROTATION_DAYS,
+        )
+        return sorted(due_set | set(rotation))
 
     def _tape_names(
         self, codes: List[str], lookback_days: int = 400
@@ -267,9 +298,15 @@ class B3Ingestor:
         self,
         issuers: Optional[List[str]] = None,
         since: date = TAPE_START,
+        full: bool = False,
     ) -> int:
-        """Fetch published corporate events for issuers traded since ``since``
-        whose sweep proof is missing or stale (_issuers_due_for_sweep).
+        """Fetch published corporate events for the issuers due tonight.
+
+        By default the sweep is incremental (``_sweep_plan``): the share and
+        unit issuers whose proof is missing or older than their last session,
+        plus a rotating slice of every other issuer traded since ``since``.
+        ``full=True`` sweeps every issuer traded since ``since``; ``issuers``
+        names the codes outright.
 
         One request per issuer, so a failure on ONE issuer must not abandon
         the sweep — but it must not vanish either. Transport/parse failures
@@ -299,7 +336,12 @@ class B3Ingestor:
         run_id = str(uuid4())
         self._log_start(run_id, "corporate_events", None, None)
         try:
-            codes = issuers if issuers is not None else self._issuers_due_for_sweep(since)
+            if issuers is not None:
+                codes = issuers
+            elif full:
+                codes = self._traded_issuers(since=since)
+            else:
+                codes = self._sweep_plan(since=since, today=date.today())
             if not codes:
                 self._log_finish(run_id, 0, skipped=True)
                 logger.info("B3 corporate events: no traded issuers found, skipped")

@@ -8,7 +8,7 @@ than silently producing an empty event table.
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -392,41 +392,54 @@ async def test_the_sweep_covers_every_issuer_since_the_tape_start():
         Fetcher.return_value.fetch_events.side_effect = lambda code: [_event_row(code)]
         ing = B3Ingestor(fetcher=MagicMock())
         _finish_recorder(ing)
-        ing._issuers_due_for_sweep = MagicMock(return_value=["PETR"])
-        await ing.ingest_corporate_events()
+        ing._traded_issuers = MagicMock(return_value=["PETR"])
+        await ing.ingest_corporate_events(full=True)
 
-    ing._issuers_due_for_sweep.assert_called_once_with(date(2019, 1, 2))
+    ing._traded_issuers.assert_called_once_with(since=date(2019, 1, 2))
 
 
-def test_issuers_due_for_sweep_skips_a_proof_that_is_still_valid():
-    """Run 36842444079: re-asking B3 for all 2,597 issuers every night took 44
-    of the step's 45 minutes. An issuer is due only with no proof, or once it
-    has printed after its proof day, the same comparison api.quote_history
-    refuses close_adj on: (proven_at AT TIME ZONE 'America/Sao_Paulo')::date
-    < the latest session."""
-    conn = MagicMock()
-    cur = conn.cursor.return_value.__enter__.return_value
-    cur.fetchall.return_value = [("PETR",), ("ADMF",), (None,)]
-    with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=conn):
+def _planner(due, traded):
+    with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()):
         ing = B3Ingestor(fetcher=MagicMock())
-    ing._supabase = conn
-
-    assert ing._issuers_due_for_sweep(date(2019, 1, 2)) == ["PETR", "ADMF"]
-    sql, params = cur.execute.call_args[0]
-    flat = " ".join(sql.split())
-    assert params == (date(2019, 1, 2),)
-    assert "LEFT JOIN b3_corporate_event_sweep s" in flat
-    assert "s.proven_at IS NULL" in flat
-    assert ("(s.proven_at AT TIME ZONE 'America/Sao_Paulo')::date < t.last_session"
-            in flat)
-    assert "tpmerc = '010'" in flat and "trade_date >= %s" in flat
+    ing._issuers_due_for_proof = MagicMock(return_value=due)
+    ing._traded_issuers = MagicMock(return_value=traded)
+    return ing
 
 
-def test_quote_history_still_uses_the_staleness_rule_the_sweep_mirrors():
-    """If the contract's proof comparison changes, the sweep's must too."""
-    from pathlib import Path
-    sql = (Path(__file__).parents[1] / "src/store/analytical/19_api_contract.sql").read_text()
-    assert "IF (s.proven_at AT TIME ZONE 'America/Sao_Paulo')::date < s.anchor THEN" in sql
+def test_the_nightly_plan_sweeps_every_issuer_due_for_proof():
+    """api.close_adj refuses a proof older than the last session, so a share
+    issuer that printed since its proof is swept every night, whatever the slot."""
+    ing = _planner(due=["PETR", "VALE"], traded=["PETR", "VALE"])
+    for offset in range(14):
+        plan = ing._sweep_plan(since=date(2019, 1, 2), today=date(2026, 10, 1) + timedelta(days=offset))
+        assert {"PETR", "VALE"} <= set(plan)
+
+
+def test_the_rest_rotate_once_every_fourteen_days():
+    traded = [f"C{i:03d}" for i in range(500)]
+    ing = _planner(due=[], traded=traded)
+    days = [date(2026, 10, 1) + timedelta(days=o) for o in range(14)]
+    plans = [ing._sweep_plan(since=date(2019, 1, 2), today=d) for d in days]
+    seen = [c for p in plans for c in p]
+    assert sorted(seen) == sorted(traded)          # each exactly once in 14 days
+    assert max(len(p) for p in plans) < 500 / 14 * 2  # spread, not bunched
+    # and the slot repeats: day 15 is day 1 again
+    assert ing._sweep_plan(since=date(2019, 1, 2), today=days[0] + timedelta(days=14)) == plans[0]
+
+
+@pytest.mark.asyncio
+async def test_the_default_sweep_is_the_incremental_plan():
+    with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
+         patch("src.pipeline.ingest_b3_events.ingest_b3_corporate_events", return_value=1), \
+         patch("src.pipeline.ingest_b3_events.record_sweep_proofs"), \
+         patch("src.fetchers.b3_corporate_events_fetcher.B3CorporateEventsFetcher") as Fetcher:
+        Fetcher.return_value.fetch_events.side_effect = lambda code: [_event_row(code)]
+        ing = B3Ingestor(fetcher=MagicMock())
+        _finish_recorder(ing)
+        ing._sweep_plan = MagicMock(return_value=["PETR"])
+        await ing.ingest_corporate_events()
+    ing._sweep_plan.assert_called_once()
+    Fetcher.return_value.fetch_events.assert_called_once_with("PETR")
 
 
 @pytest.mark.asyncio
