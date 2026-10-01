@@ -37,9 +37,10 @@ builder is `research_examples/dustin_br/`.
 
 [`ibovespa-source.md`](ibovespa-source.md) (ticket #374) finds BACEN SGS 7
 discontinued since 2019-09-30, shows that COTAHIST's `IBOV11` is the
-Ibovespa-option settlement leg (printed at the settlement index on expiry
-days, never the close), and records B3's own daily-close series as the
-candidate source.
+Ibovespa-option settlement code (each print is a settlement index, never the
+close), and records B3's own daily-close series as the candidate source. It
+printed on expiry days only through 2024 and on nearly every session since
+December 2025; the note's addendum of 2026-10-01 has the numbers.
 
 ## FCA listing dates (research seam)
 

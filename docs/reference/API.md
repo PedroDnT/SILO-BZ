@@ -336,21 +336,22 @@ serves the daily level of a B3-published index from `b3_index_level` (migration
 The caller-facing guide is [`api-docs/guides/research.mdx`](../../api-docs/guides/research.mdx)
 (published as "Pulling a research universe"): the survivorship rule
 (`first_observed <= T <= last_observed`, a pair inside a gap such as NATU3 still
-matches, a rename is two rows), adjusted and total-return prices and their NULL
-reasons, the 2019-01-02 floor, the `index_history` warnings (BOVA11 and IBOV11
-are not the index, eleven divisor steps), the as-of fundamentals recipe and macro
-by date split. The SDK side is `quote_history_many` (concurrent, the whole
-request or `SiloFanOutError`), `research_universe(as_of=)` and
+matches, a rename is two rows), `close_adj` and total-return prices with what each
+refuses or leaves NULL, the 2019-01-02 floor, the `index_history` warnings (BOVA11
+and IBOV11 are not the index, eleven divisor steps), the as-of fundamentals recipe
+and macro by date split. The SDK side is `prices()` (many tickers from one data
+revision, every refusal named), `research_universe(as_of=)` and
 `index_history` / `iter_index_history` / `index_history_all`.
 
 ### The total-return close (catalog v46)
 
-`quote_history.close_total_return` is the price-adjusted close with cash
-distributions reinvested on the ex session, anchored to the latest session like
-`close_price_adjusted`: the level is divided by the product of
-`1 + cash / ex-session close` over every distribution that went ex after the
-session. The latest session equals the price-adjusted close, and an earlier level
-is lower by the cash paid since. It needs no new function and no new column.
+`close_total_return` is a `quote_history` field (select it in `p_fields`,
+catalog v48): `close_adj` with cash distributions reinvested on the ex session,
+anchored to the instrument's latest session like `close_adj`. The level is
+divided by the product of `1 + cash / ex-session close` over every distribution
+that went ex after the session. The latest session equals `close_adj`, and an
+earlier level is lower by the cash paid since. Unlike `close_adj` it never
+refuses: a session it cannot value is NULL with a reason.
 
 - **Cash** is B3's full history (`b3_cash_dividend`): `DIVIDENDO`, `JRS CAP PROPRIO`
   (gross of withholding tax), `RENDIMENTO` and `REST CAP DIN`. Installments are
@@ -361,8 +362,8 @@ is lower by the cash paid since. It needs no new function and no new column.
 - **The ex session** is the ISIN's first printed session after the last cum session,
   within 7 calendar days. A paper that does not print within a week has no price to
   reinvest at (189 events print 30+ days later, all in the research universe).
-- **Where it is NULL**, each with a reason in `close_total_return_null_reason`: the
-  price-adjusted close is NULL; the ISIN has no resolved distribution in B3's history
+- **Where it is NULL**, each with a reason in `close_total_return_null_reason`: `close_adj`
+  cannot be served for the session (the same causes it refuses for); the ISIN has no resolved distribution in B3's history
   (a non-payer, or an issuer B3's history does not match: the two look identical, so
   neither is given a price return labelled as a total return; 188 of 639 universe
   ISINs on 2026-09-30); a later distribution of the issuer's share class has no proven
@@ -382,25 +383,26 @@ SELECT issuing_company, isin, action, event_date FROM mv_b3_cash_event
 WHERE kind = 'pending' ORDER BY event_date DESC;
 ```
 
-### The tape starts at 2019-01-02 (catalog v48)
+### The tape starts at 2019-01-02
 
-`api.quote_history` raises `22023` for a `p_from` before 2019-01-02, the first
-session of the tape, with the why and the fix in the message, `DETAIL` and `HINT`
-like the row cap. The date floors four things that have to agree, pinned to one
-value by `tests/test_quote_history_tape_window.py`: the tape itself, the
-corporate-event sweep (`B3Ingestor.TAPE_START`), `mv_b3_cash_event` (migration 56)
-and `mv_research_universe`. Below it the adjusted and total-return closes would be
-built on events and distributions nobody swept, and a window that started earlier
-would come back beginning on 2019-01-02 and look complete.
+`api.quote_history` refuses (`22023`, `DETAIL reason=outside_coverage`) a window
+that starts before the instrument's first session on the tape, and one that holds
+no session of it at all; for an instrument that traded on the first session of the
+tape, the message names the tape start (the research price contract, catalog v48).
+The refusal is read from the data, as the first session of the cash tape, not from
+a literal. Below that date the adjusted and total-return closes would be built on
+corporate events and cash distributions nobody swept, and a window that started
+earlier would come back beginning on 2019-01-02 and look complete.
 
-- **It fires on an empty window too.** A window wholly before the tape holds no
-  rows, so a check inside the query would never run. The function is now plpgsql
-  for that reason alone; the query, the cursor and the row cap are unchanged, and
-  the values are identical to the SQL-language version (checked on a local Postgres).
-- **2019-01-01 is refused.** It is a holiday with no session, so nothing would be
-  lost, but the rule is the date, not the sessions. The documented examples use
-  2019-01-02.
-- **`api.coverage()` says so** in the notes of its `quotes` row.
+Three literals still have to agree with that first session, and
+`tests/test_quote_history_tape_window.py` pins them to one date: the corporate-event
+sweep (`B3Ingestor.TAPE_START`), `mv_b3_cash_event` (migration 56) and
+`mv_research_universe`.
+
+- **2019-01-01 is refused** for an instrument already trading on 2019-01-02. It is
+  a holiday with no session, so nothing would be lost, but the rule is the
+  instrument's first session. The documented examples use 2019-01-02.
+- **`api.coverage()` says so** in the notes of its `quotes` row, read from the tape.
 - **`api.index_history` is not bound by it:** IBOV is held from 1968-01-02.
 - `serve/` maps the `22023` to a caller error like every other refusal.
 

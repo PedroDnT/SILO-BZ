@@ -8,7 +8,7 @@ name = "silo-client"
 # pins them equal. They had drifted to 0.4.0 here against 0.6.0 in the package,
 # so `pip show silo-client` and `silo_client.__version__` named two different
 # releases of the same code and neither could be trusted to identify a build.
-version = "0.8.0"
+version = "0.9.0"
 description = "Thin, honest Python client for the Silo read API (Brazilian public-markets warehouse: CVM funds, B3 COTAHIST, B3 securities lending)."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -17,7 +17,7 @@ requires-python = ">=3.10"
 #: bare `pip install silo-client` followed by the documented first call used to
 #: raise ImportError. The alternatives were worse: defaulting `wide=False` would
 #: silently change the return type under every one of those call sites.
-dependencies = ["httpx>=0.27", "pandas>=2.0"]
+dependencies = ["httpx>=0.27", "pandas>=2.0", "polars>=1.0"]
 
 [project.optional-dependencies]
 #: Retained so an existing `silo-client[pandas]` pin keeps resolving; it is now

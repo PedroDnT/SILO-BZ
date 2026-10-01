@@ -159,7 +159,7 @@ def test_series_envelope_rows_and_columnar():
 
 
 def test_quote_series_on_same_url(client):
-    client.pool.cur = _Cur(
+    client.pool.cur = _QCur(
         rows=[
             (
                 "PETR4",
@@ -398,7 +398,7 @@ def test_handlers_do_not_mutate_environ(client):
 
 
 def test_quote_series_columnar(client):
-    client.pool.cur = _Cur(
+    client.pool.cur = _QCur(
         rows=[
             (
                 "PETR4",
@@ -534,8 +534,9 @@ def test_quote_endpoints_keep_the_today_default(client):
     from datetime import date as _date
 
     client.pool.cur = _Cur(
-        rows=[("PETR4", "2026-08-25", 41.35, "b3_cotahist")],
-        description=[("ticker",), ("trade_date",), ("close",), ("source",)],
+        rows=[({"ticker": "PETR4", "trade_date": "2026-08-25", "close": 41.35,
+                "source": "b3_cotahist"},)],
+        description=[("q",)],
     )
     rv = client.get("/v1/quotes/PETR4/history")
     assert rv.status_code == 200
@@ -674,6 +675,17 @@ def test_coverage_serves_complete_through(client):
 # v26 — the adapter pages the SQL and forwards the honest coverage columns
 # ---------------------------------------------------------------------------
 
+class _QCur(_Cur):
+    """api.quote_history rows are jsonb: one dict column per row holding only
+    the selected fields. Built from the tuple + description form the other
+    fakes use."""
+
+    def __init__(self, rows, description):
+        cols = [d[0] for d in description]
+        super().__init__(rows=[(dict(zip(cols, r)),) for r in rows],
+                         description=[("q",)])
+
+
 class _PagingCur(_Cur):
     """Serves successive pages, recording the cursor it was asked for.
 
@@ -691,7 +703,8 @@ class _PagingCur(_Cur):
     def execute(self, sql, params=None):
         self.sql = sql
         self.params = params
-        self.cursors.append(params[-1])
+        # quote_history's cursor is followed by p_fields; fund_nav ends on it.
+        self.cursors.append(params[4] if "quote_history" in sql else params[-1])
         self._rows = self._pages[self._i] if self._i < len(self._pages) else []
         self._i += 1
 
@@ -723,12 +736,13 @@ def test_metric_coverage_is_served(client):
 
 
 def test_quote_history_walks_every_page(client):
-    page1 = [("PETR4", f"2019-01-{1 + (i % 28):02d}", 10.0 + i, "b3_cotahist", "R$", "02")
-             for i in range(1000)]
-    page2 = [("PETR4", "2023-06-01", 30.0, "b3_cotahist", "R$", "02")]
-    cur = _PagingCur([page1, page2],
-                     [("ticker",), ("trade_date",), ("close",), ("source",),
-                      ("currency",), ("board",)])
+    # api.quote_history rows are jsonb holding only the selected fields.
+    def row(d, c):
+        return ({"ticker": "PETR4", "trade_date": d, "close": c,
+                 "source": "b3_cotahist", "currency": "R$", "board": "02"},)
+    page1 = [row(f"2019-01-{1 + (i % 28):02d}", 10.0 + i) for i in range(1000)]
+    page2 = [row("2023-06-01", 30.0)]
+    cur = _PagingCur([page1, page2], [("q",)])
     client.pool.cur = cur
     rv = client.get("/v1/quotes/PETR4/history?from=2019-01-01&to=2023-12-31")
     assert rv.status_code == 200
@@ -736,7 +750,9 @@ def test_quote_history_walks_every_page(client):
     assert len(rv.get_json()["series"]) == 1001
     # '' opens paging mode; the next cursor is the last row's trade_date.
     assert cur.cursors[0] == ""
-    assert cur.cursors[1] == page1[-1][1]
+    assert cur.cursors[1] == page1[-1][0]["trade_date"]
+    # The adapter serves the raw series, so it names raw fields explicitly.
+    assert "close" in cur.params[5] and "close_adj" not in cur.params[5]
 
 
 def test_fund_nav_pages_only_when_a_family_is_pinned(client):

@@ -183,14 +183,16 @@ And you cannot reliably rebuild a cumulative figure by summing quarters:
 on every quote row: a statement of fact rather than a default waiting to be flipped.
 A return computed from them across a split date is wrong, by the split ratio.
 
-The one adjusted price is [`quote_history`](/api-docs/quotes)'s `close_price_adjusted`
-(and, with cash reinvested, `close_total_return`). It is continuous across splits,
-groupings and bonus shares, anchored to the ticker's latest session, and NULL with a
-reason wherever SILO cannot stand behind it: outside shares and units, before the
-issuer's corporate events are proven swept, or where a distribution cannot be valued.
-Spin-offs, mergers, capital reductions and subscriptions are not adjusted. `quotes`,
-the typed views and `panel` are unchanged. Nothing is interpolated or forward-filled
-either; see [Market coverage](/api-docs/market-coverage#what-is-not-here).
+The one adjusted price is [`quote_history`](/api-docs/quotes)'s `close_adj`, its
+default field (and, with cash reinvested, the selectable `close_total_return`). It is
+continuous across splits, groupings and bonus shares, anchored to the ticker's latest
+session, and a window SILO cannot stand behind is refused with the cause, never served
+raw: outside shares and units, before the issuer's corporate events are proven swept,
+or at an event this version does not adjust. `close_total_return` is NULL with a reason
+where a distribution cannot be valued. Spin-offs, mergers, capital reductions and
+subscriptions are not adjusted. `quotes`, the typed views and `panel` are unchanged.
+Nothing is interpolated or forward-filled either; see
+[Market coverage](/api-docs/market-coverage#what-is-not-here).
 
 ## The B3 lending and flow group is a ratchet
 

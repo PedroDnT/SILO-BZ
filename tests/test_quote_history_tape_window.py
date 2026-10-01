@@ -1,12 +1,12 @@
-"""api.quote_history refuses a p_from before the start of the tape (#417).
+"""The start of the tape (#417): what has to agree with it, and where it is published.
 
-The offline suite has no database, so the SQL is pinned as text. The behaviour
-was run on a local Postgres (schema, migrations, the whole analytical layer):
-2019-01-02 is accepted and 2019-01-01 refused with 22023 naming the start, a
-window wholly before the tape (empty, so a guard inside the query would never
-run) is refused, an unknown ticker before the tape is refused too, the default
-window and a cursor page still work, a 1,073-session ticker still refuses over
-one page, and the total-return levels are identical to the SQL-language version.
+The window refusal itself belongs to the research price contract (catalog v48):
+`api.quote_history` raises 22023 `reason=outside_coverage` for a window that starts
+before the instrument's first session or holds none of its sessions, and
+tests/test_quote_history_contract.py and tests/sql/quote_history_behaviour.sql pin
+and execute it. It reads the first session off the tape rather than from a literal,
+so the thing that can still drift is the set of literals around it. This file pins
+those to one date, and pins where a caller is told the date.
 """
 
 from __future__ import annotations
@@ -33,72 +33,46 @@ def _function() -> str:
     return sql[start:sql.index("$$;", start) + 3]
 
 
-def test_the_window_refusal_fires_before_the_query_and_names_the_start():
-    body = _function()
-    guard = body[body.index("BEGIN"):body.index("RETURN QUERY")]
-    assert re.search(r"IF p_from < v_start THEN", guard)
-    assert "ERRCODE = '22023'" in guard
-    # The same "error with error why" shape as the row cap: message, detail, hint.
-    assert "DETAIL  = v_why" in guard and "HINT    = v_how" in guard
-    assert "is before the start of the tape" in guard
-    assert "v_start CONSTANT DATE := DATE '2019-01-02'" in body
-
-
-def test_it_is_plpgsql_so_an_empty_window_is_still_refused():
-    body = _function()
-    head = body.split("AS $$")[0]
-    assert "LANGUAGE plpgsql" in head and "LANGUAGE sql" not in head
-    # A guard inside an SQL-language query is only evaluated where the plan
-    # reaches it, and a window wholly before the tape holds no rows.
-    assert "#variable_conflict use_column" in body
-    assert body.index("IF p_from < v_start") < body.index("RETURN QUERY")
-
-
-def test_the_query_and_its_row_cap_are_unchanged_by_the_wrapper():
-    body = _function()
-    assert re.search(
-        r"api\.assert_row_cap\(\(SELECT count\(\*\) FROM page\),\s*\(SELECT pp\.paging FROM params pp\), 'quote_history'\)",
-        body,
-    )
-    assert re.search(r"ORDER BY 2\s+LIMIT 1000;\s+END;\s+\$\$;", body)
-    assert "LIMIT 1001" in body
-
-
 def test_one_date_floors_the_tape_the_sweep_the_cash_events_and_the_universe():
-    """The adjusted and total-return closes are only built from this date, so
-    the window floor must not drift from the things that floor them."""
+    """The adjusted and total-return closes are only built from this date, so the
+    literals that floor them must not drift apart."""
     from src.pipeline.b3_pipeline import TAPE_START
 
     assert TAPE_START.isoformat() == START
     assert f"DATE '{START}'" in _code(RESEARCH.read_text(encoding="utf-8"))
     # the history filter and the supplement filter, one each
     assert _code(CASH_MV.read_text(encoding="utf-8")).count(f"DATE '{START}'") == 2
-    assert f"DATE '{START}'" in _function()
+
+
+def test_the_window_refusal_reads_the_start_of_the_tape_from_the_data():
+    body = _function()
+    assert "v_from < v_cov_start" in body
+    assert "reason=outside_coverage" in body
+    # Named in the message when the instrument's coverage begins on it ...
+    assert "' (the tape starts ' || v_tape_start || ')'" in body
+    # ... and taken from the tape, so there is no second literal to drift.
+    assert re.search(r"SELECT min\(b\.trade_date\) INTO v_tape_start\s+FROM public\.b3_cotahist b WHERE b\.tpmerc = '010'", body)
+    assert f"DATE '{START}'" not in body
 
 
 def test_coverage_publishes_the_tape_start_on_the_quotes_row():
     sql = CONTRACT.read_text(encoding="utf-8")
     arm = sql[sql.index("SELECT 'quotes'::text AS dataset"):]
     arm = arm[:arm.index("'b3'::text AS log_entity")]
-    assert f"the tape starts {START}" in arm
-    assert "api.quote_history raises 22023" in arm
+    assert "B3 COTAHIST cash tape from" in arm and "MIN(q.trade_date)" in arm
+    assert "refuses a window that starts before an instrument" in arm
     assert "NULL::text AS notes" not in arm
 
 
-def test_the_comment_and_the_catalog_say_so():
-    from serve.catalog import CATALOG_VERSION, catalog_payload
+def test_the_catalog_says_where_the_tape_starts_and_that_the_index_goes_further_back():
+    from serve.catalog import catalog_payload
 
-    sql = CONTRACT.read_text(encoding="utf-8")
-    comment = sql[sql.index("COMMENT ON FUNCTION api.quote_history"):]
-    comment = comment[:comment.index("REVOKE ALL ON FUNCTION api.quote_history")]
-    assert f"a p_from before {START}" in comment and "RAISES 22023" in comment
-    assert CATALOG_VERSION >= 48
     text = " ".join(catalog_payload()["constraints"])
-    assert "QUOTE WINDOWS START AT 2019-01-02" in text
-    assert "IBOV is held from 1968-01-02" in text
+    assert f"the tape starts {START}, see coverage()" in text
+    assert "IBOV from 1968-01-02" in text
 
 
 def test_the_index_is_not_bound_by_the_tape_window():
     sql = _code(INDEX.read_text(encoding="utf-8"))
     assert START not in sql
-    assert "is before the start of the tape" not in sql
+    assert "outside_coverage" not in sql

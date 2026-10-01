@@ -61,9 +61,9 @@ One per published endpoint. Dates accept `date` objects or ISO strings; `None` m
 | `lookup(query)` | `lookup` | never a name-inferred ticker↔CNPJ |
 | `panel(ids, metrics, start, end, freq, wide, entity_type, min_nav, min_months)` | `panel` | raises `SiloOverCap` above one page; `wide=False` for long rows |
 | `iter_panel(...)` · `panel_all(..., wide)` | `panel` + `p_after` | `ids=None` + `entity_type=` is universe mode (signed in) |
-| `quote_history(ticker, start, end, board)` · `quote_latest(ticker, board)` | `quote_history` · `quote_latest` | raw `close` plus `close_price_adjusted` / `close_total_return`, each NULL with a reason; a `start` before 2019-01-02 raises `SiloError` |
-| `iter_quote_history(...)` · `quote_history_all(...)` | `quote_history` + `p_after` | pages on `trade_date` |
-| `quote_history_many(tickers, start, end, board, workers, require_rows)` | `quote_history` × N | concurrent; **the whole request or `SiloFanOutError`** naming every failed ticker; see [Pulling a research universe](/api-docs/guides/research) |
+| `prices(tickers, start, end, fields=None)` | `quote_history` + `p_after`, per ticker | one polars DataFrame from one data revision; `close_adj` by default, `fields=["close"]` for the raw close |
+| `quote_history(ticker, start, end, board, fields)` · `quote_latest(ticker, board)` | `quote_history` · `quote_latest` | one page; `close_adj` by default (quote_latest is raw) |
+| `iter_quote_history(...)` · `quote_history_all(...)` | `quote_history` + `p_after` | pages on `trade_date`; never combine two data revisions |
 | `research_universe(as_of)` | `research_universe` | one row per ticker+ISIN pair; `as_of=T` keeps `first_observed <= T <= last_observed` |
 | `index_history(index, start, end)` · `iter_index_history(...)` · `index_history_all(...)` | `index_history` + `p_after` | an index **code**, never a ticker; IBOV from 1968 is 15 pages |
 | `iter_fund_nav(cnpj, entity_type, start, end)` · `fund_nav_all(...)` | `fund_nav` + `p_after` | **`entity_type` is required**, checked client-side |

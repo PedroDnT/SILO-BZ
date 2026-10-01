@@ -310,16 +310,22 @@ same for everyone.
   is the published B3 ticker a fund holds, so fund → ticker → `cia_ticker` → company
   is a real join over ingested rows. No `api.*` object exposes it yet, and no edge
   is ever inferred from a name.
-- **One price is corporate-action adjusted: `quote_history`'s `close_price_adjusted`.**
-  `close` and `close_unit` (= `close / quotation_factor`, both published) stay as traded, so
-  a split still reads as a jump there, and `adjusted` is `false` on every row because it
-  describes `close`. The adjusted close divides earlier sessions by each split, grouping and
-  bonus share ratio (B3's rule, verified against the tape in #372), is anchored to the latest
-  session, and is NULL with a reason until the issuer's events are proven swept
-  (`b3_corporate_event_sweep`). Spin-offs and mergers are not adjusted. Its sibling
-  `close_total_return` reinvests B3's cash distributions on the ex session (catalog v46, #418)
-  and is NULL with a reason wherever a distribution cannot be valued
-  (`docs/reference/API.md`, "The total-return close").
+- **One price is corporate-action adjusted: `close_adj`, the default of `quote_history`
+  and of the panel for shares and units.** `quote_history` returns one JSON object per
+  session with only the selected fields: `ticker`, `trade_date`, `close_adj` unless
+  `p_fields` names others, and the raw `close`, OHLC and volume are one explicit selection
+  away. `close_adj` divides earlier sessions by each split, grouping and bonus share ratio
+  (B3's rule, verified against the tape in #372) and is anchored to the instrument's latest
+  session. It never falls back to the raw close: a window it cannot adjust (issuer events not
+  proven swept in `b3_corporate_event_sweep`, or a spin-off, merger or other stock event
+  this version does not adjust) is refused with ticker, period and cause. Dividends, JCP and
+  subscription rights are not adjusted by `close_adj`; `p_fields` can also select
+  `close_total_return`, which reinvests B3's cash distributions on the ex session (#418) and
+  is NULL with a reason wherever a distribution cannot be valued (`docs/reference/API.md`,
+  "The total-return close"). The series follows the ISIN
+  across boards, and an unknown ticker, a window outside the coverage, a second ISIN or two
+  rows on one session are refused too. `close` and `close_unit` stay as traded, and every
+  view keeps `adjusted = false`.
 
 ## What's intentionally not here
 

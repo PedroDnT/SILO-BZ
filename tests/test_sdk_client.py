@@ -24,7 +24,6 @@ from silo_client import (  # noqa: E402
     SiloCatalogDrift,
     SiloClient,
     SiloError,
-    SiloFanOutError,
     SiloOverCap,
     SiloTimeout,
     SiloTruncated,
@@ -1012,153 +1011,152 @@ def test_iter_panel_normalises_the_same_way():
 
 
 # ---------------------------------------------------------------------------
-# The research seam (#419): the fan-out helper and the two new clients
+# v45 — prices(): many tickers, close_adj by default, one data revision
 # ---------------------------------------------------------------------------
 
-import threading  # noqa: E402
+def _price_rows(ticker, n, start=0, rev="R1", field="close_adj"):
+    return [
+        {"ticker": ticker,
+         "trade_date": f"2020-{1 + (start + i) // 28 % 12:02d}-{1 + (start + i) % 28:02d}",
+         field: 10.0 + i, "data_revision": rev}
+        for i in range(n)
+    ]
 
 
-def _series_handler(rows_by_ticker, calls=None, lock=None, fail=None):
-    """A quote_history server: rows per ticker, paged on p_after like the real one."""
+def test_prices_defaults_to_close_adj_and_returns_a_sorted_polars_frame():
+    pl = pytest.importorskip("polars")
+    bodies = []
 
     def responder(request):
         body = json.loads(request.content)
-        ticker = body["p_ticker"]
-        if calls is not None:
-            with lock:
-                calls.append((ticker, body.get("p_after")))
-        if fail and ticker in fail:
-            return fail[ticker](request)
-        rows = rows_by_ticker.get(ticker, [])
-        after = body.get("p_after")
-        if after is None or after == "":
-            page = rows[:SERVER_ROW_CAP]
-        else:
-            later = [r for r in rows if r["trade_date"] > after]
-            page = later[:SERVER_ROW_CAP]
-        return httpx.Response(200, json=page,
-                              headers={"Content-Range": f"0-{max(len(page) - 1, 0)}/*"})
-
-    return catalog_then(responder)
-
-
-def _dated(ticker, n, year=2024):
-    return [{"ticker": ticker, "trade_date": f"{year}-{1 + i // 28:02d}-{1 + i % 28:02d}", "close": 1.0 + i}
-            for i in range(n)]
-
-
-def test_quote_history_many_returns_every_ticker_in_the_order_asked():
-    data = {"PETR4": _dated("PETR4", 3), "VALE3": _dated("VALE3", 5), "ITUB4": _dated("ITUB4", 1)}
-    calls, lock = [], threading.Lock()
-    c = make_client(_series_handler(data, calls, lock))
-    out = c.quote_history_many(["VALE3", "PETR4", "ITUB4"], start="2019-01-02")
-    assert list(out) == ["VALE3", "PETR4", "ITUB4"]
-    assert [len(out[t]) for t in out] == [5, 3, 1]
-    assert {t for t, _ in calls} == {"VALE3", "PETR4", "ITUB4"}
-
-
-def test_quote_history_many_walks_the_cursor_inside_the_fan_out():
-    big = _dated("PETR4", SERVER_ROW_CAP + 7)
-    # distinct, sortable dates for the page cursor
-    for i, r in enumerate(big):
-        r["trade_date"] = f"{2019 + i // 360}-{1 + (i % 360) // 30:02d}-{1 + i % 30:02d}"
-    c = make_client(_series_handler({"PETR4": big, "VALE3": _dated("VALE3", 2)}))
-    out = c.quote_history_many(["PETR4", "VALE3"])
-    assert len(out["PETR4"]) == SERVER_ROW_CAP + 7
-    assert len(out["VALE3"]) == 2
-
-
-def test_quote_history_many_takes_one_bare_string_as_one_ticker_not_five_letters():
-    calls, lock = [], threading.Lock()
-    c = make_client(_series_handler({"PETR4": _dated("PETR4", 2)}, calls, lock))
-    out = c.quote_history_many("PETR4")
-    assert list(out) == ["PETR4"] and len(out["PETR4"]) == 2
-    assert {t for t, _ in calls} == {"PETR4"}
-
-
-def test_quote_history_many_refuses_duplicates_before_any_request():
-    calls, lock = [], threading.Lock()
-    c = make_client(_series_handler({}, calls, lock))
-    with pytest.raises(ValueError) as exc:
-        c.quote_history_many(["PETR4", "VALE3", "petr4"])
-    assert "duplicate" in str(exc.value) and "petr4" in str(exc.value)
-    assert calls == [], "no request may leave before the request is known to be sound"
-
-
-def test_quote_history_many_refuses_no_workers_and_returns_nothing_for_nothing():
-    calls, lock = [], threading.Lock()
-    c = make_client(_series_handler({}, calls, lock))
-    with pytest.raises(ValueError):
-        c.quote_history_many(["PETR4"], workers=0)
-    assert c.quote_history_many([]) == {}
-    assert calls == []
-
-
-def test_quote_history_many_raises_naming_every_failed_ticker_and_never_returns_a_subset():
-    data = {"PETR4": _dated("PETR4", 3), "VALE3": _dated("VALE3", 2)}
-    fail = {
-        "BAD3": lambda r: httpx.Response(500, text="boom"),
-        "SLOW3": lambda r: httpx.Response(500, text="canceling statement due to statement timeout 57014"),
-    }
-    c = make_client(_series_handler(data, fail=fail))
-    with pytest.raises(SiloFanOutError) as exc:
-        c.quote_history_many(["PETR4", "BAD3", "VALE3", "SLOW3"])
-    err = exc.value
-    assert list(err.failures) == ["BAD3", "SLOW3"]
-    assert isinstance(err.failures["SLOW3"], SiloTimeout)
-    assert isinstance(err.failures["BAD3"], SiloError)
-    # what did arrive is on .partial, for inspection; the failures are absent from it
-    assert set(err.partial) == {"PETR4", "VALE3"}
-    assert "BAD3" in str(err) and "SLOW3" in str(err)
-    assert isinstance(err, SiloError), "callers catching SiloError keep working"
-
-
-def test_a_window_before_the_tape_fails_the_whole_fan_out_with_every_ticker_named():
-    refusal = ('{"code":"22023","message":"quote_history: refused, p_from 2015-01-01 is before '
-               'the start of the tape (2019-01-02)."}')
-    fail = {t: (lambda r: httpx.Response(400, text=refusal)) for t in ("PETR4", "VALE3")}
-    c = make_client(_series_handler({}, fail=fail))
-    with pytest.raises(SiloFanOutError) as exc:
-        c.quote_history_many(["PETR4", "VALE3"], start="2015-01-01")
-    assert set(exc.value.failures) == {"PETR4", "VALE3"}
-    assert "2019-01-02" in str(exc.value)
-
-
-def test_an_empty_series_is_returned_empty_unless_rows_are_required():
-    data = {"PETR4": _dated("PETR4", 2)}
-    c = make_client(_series_handler(data))
-    out = c.quote_history_many(["PETR4", "TYPO3"])
-    assert out["TYPO3"] == [] and len(out["PETR4"]) == 2
-    with pytest.raises(SiloFanOutError) as exc:
-        c.quote_history_many(["PETR4", "TYPO3"], require_rows=True)
-    assert exc.value.empty == ["TYPO3"] and exc.value.failures == {}
-    assert "TYPO3" in str(exc.value)
-
-
-def test_quote_history_many_really_runs_the_requests_concurrently():
-    """Workers overlap: a barrier only releases when all three calls are in
-    flight at once, so a sequential implementation would deadlock and time out."""
-    barrier = threading.Barrier(3, timeout=5)
-    seen_threads = set()
-
-    def responder(request):
-        seen_threads.add(threading.get_ident())
-        barrier.wait()
-        body = json.loads(request.content)
-        return httpx.Response(200, json=_dated(body["p_ticker"], 1))
+        bodies.append(body)
+        return httpx.Response(200, json=_price_rows(body["p_ticker"], 3))
 
     c = make_client(catalog_then(responder))
-    out = c.quote_history_many(["AAA3", "BBB3", "CCC3"], workers=3)
-    assert set(out) == {"AAA3", "BBB3", "CCC3"}
-    assert len(seen_threads) == 3
+    df = c.prices(["VALE3", "PETR4", "VALE3"], "2020-01-01", "2020-12-31")
+    assert isinstance(df, pl.DataFrame)
+    assert df.columns == ["ticker", "trade_date", "close_adj"]
+    assert df.schema["trade_date"] == pl.Date
+    assert df["ticker"].to_list() == ["PETR4"] * 3 + ["VALE3"] * 3
+    # One walk per distinct ticker; the revision is asked for and stripped.
+    assert [b["p_ticker"] for b in bodies] == ["VALE3", "PETR4"]
+    assert all(b["p_fields"] == ["close_adj", "data_revision"] for b in bodies)
+    assert all(b["p_after"] == "" for b in bodies)
 
 
-def test_silo_fan_out_error_is_exported():
-    import silo_client
+def test_prices_raw_close_is_an_explicit_selection():
+    bodies = []
 
-    assert "SiloFanOutError" in silo_client.__all__
-    assert silo_client.SiloFanOutError is SiloFanOutError
+    def responder(request):
+        body = json.loads(request.content)
+        bodies.append(body)
+        return httpx.Response(200, json=_price_rows(body["p_ticker"], 2, field="close"))
 
+    c = make_client(catalog_then(responder))
+    df = c.prices("PETR4", "2020-01-01", "2020-12-31", fields=["close"])
+    assert df.columns == ["ticker", "trade_date", "close"]
+    assert bodies[0]["p_fields"] == ["close", "data_revision"]
+
+
+def test_prices_walks_every_page_of_every_ticker():
+    seen = []
+
+    def responder(request):
+        body = json.loads(request.content)
+        seen.append((body["p_ticker"], body["p_after"]))
+        if body["p_after"] == "":
+            return httpx.Response(200, json=_price_rows(body["p_ticker"], SERVER_ROW_CAP))
+        return httpx.Response(200, json=_price_rows(body["p_ticker"], 5, start=SERVER_ROW_CAP))
+
+    c = make_client(catalog_then(responder))
+    df = c.prices(["PETR4", "VALE3"], "2019-01-01", "2026-01-01")
+    assert df.height == 2 * (SERVER_ROW_CAP + 5)
+    assert [p for p in seen if p[0] == "PETR4"][1][1] != ""
+
+
+def test_prices_restarts_when_the_data_revision_changes_mid_walk():
+    """A load between pages can move every earlier close_adj; the pages must
+    never be combined. The first attempt sees R1 then R2, so the whole call
+    restarts and the retry is served from R2 alone."""
+    calls = {"n": 0}
+
+    def responder(request):
+        body = json.loads(request.content)
+        calls["n"] += 1
+        rev = "R1" if calls["n"] == 1 else "R2"
+        return httpx.Response(200, json=_price_rows(body["p_ticker"], 2, rev=rev))
+
+    c = make_client(catalog_then(responder))
+    df = c.prices(["PETR4", "VALE3"], "2020-01-01", "2020-12-31")
+    assert df.height == 4
+    assert calls["n"] == 4, "attempt 1: PETR4 (R1), VALE3 (R2) -> restart; attempt 2: both R2"
+
+
+def test_prices_gives_up_when_the_revision_never_settles():
+    from silo_client import SiloRevisionChanged
+    calls = {"n": 0}
+
+    def responder(request):
+        body = json.loads(request.content)
+        calls["n"] += 1
+        return httpx.Response(200, json=_price_rows(body["p_ticker"], 1, rev=f"R{calls['n']}"))
+
+    c = make_client(catalog_then(responder))
+    with pytest.raises(SiloRevisionChanged):
+        c.prices(["PETR4", "VALE3"], "2020-01-01", "2020-12-31")
+
+
+def test_prices_surfaces_a_refusal_instead_of_dropping_the_ticker():
+    def responder(request):
+        body = json.loads(request.content)
+        if body["p_ticker"] in ("SUBS3", "XXXX3"):
+            return httpx.Response(400, json={
+                "code": "22023",
+                "message": "quote_history: refused, close_adj is not available for SUBS3 from 2020-01-01 to 2020-08-13",
+                "details": "reason=adjustment_unavailable; cause=unsupported corporate event SUBSCRICAO",
+            })
+        return httpx.Response(200, json=_price_rows(body["p_ticker"], 2))
+
+    c = make_client(catalog_then(responder))
+    from silo_client import SiloRefusals
+    with pytest.raises(SiloRefusals) as exc:
+        c.prices(["SUBS3", "PETR4", "XXXX3"], "2020-01-01", "2020-12-31")
+    # Every ticker is walked; each refusal is reported, none is dropped.
+    assert set(exc.value.errors) == {"SUBS3", "XXXX3"}
+    assert "adjustment_unavailable" in exc.value.errors["SUBS3"].body
+
+
+def test_iter_quote_history_refuses_to_splice_two_revisions():
+    from silo_client import SiloRevisionChanged
+
+    def responder(request):
+        body = json.loads(request.content)
+        if body["p_after"] == "":
+            return httpx.Response(200, json=_price_rows("PETR4", SERVER_ROW_CAP, rev="R1"))
+        return httpx.Response(200, json=_price_rows("PETR4", 3, start=SERVER_ROW_CAP, rev="R2"))
+
+    c = make_client(catalog_then(responder))
+    with pytest.raises(SiloRevisionChanged):
+        list(c.iter_quote_history("PETR4", "2019-01-01", "2026-01-01"))
+
+
+def test_quote_history_passes_the_field_selection():
+    bodies = []
+
+    def responder(request):
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json=[])
+
+    c = make_client(catalog_then(responder))
+    c.quote_history("PETR4", "2020-01-01", "2020-02-01")
+    c.quote_history("PETR4", "2020-01-01", "2020-02-01", fields="close")
+    assert "p_fields" not in bodies[0], "no selection = the server's default"
+    assert bodies[1]["p_fields"] == ["close"]
+
+
+# ---------------------------------------------------------------------------
+# The research seam (#419): research_universe and index_history
+# ---------------------------------------------------------------------------
 
 UNIVERSE = [
     # Rows as production held them on 2026-09-30.
@@ -1248,4 +1246,3 @@ def test_index_history_over_one_page_raises_over_cap_like_every_function():
     c = make_client(catalog_then(lambda r: httpx.Response(400, text=body)))
     with pytest.raises(SiloOverCap):
         c.index_history("IBOV", start="1968-01-02")
-

@@ -47,6 +47,21 @@ metric at a time. `iter_panel()` / `panel_all()` walk the panel, and
 `panel_all(None, [...], entity_type="fidc", min_nav=1e7, min_months=12)` walks
 a whole family for a signed-in caller.
 
+Prices for research: `prices(tickers, start, end, fields=None)` returns one
+polars DataFrame (`ticker`, `trade_date`, then the fields), sorted, from ONE data
+revision. It walks every page of every ticker; if a load lands mid-retrieval it
+restarts (`SiloRevisionChanged` after three tries), because adjusted levels from
+before and after an update must never be combined. The default field is
+`close_adj`, split-, grouping- and bonus-adjusted (shares and units only); ask
+for `fields=["close"]` for the raw close. A refusal (unknown ticker, window
+outside the coverage, a stretch `close_adj` cannot adjust) raises `SiloError`
+with the server's reason; nothing is dropped or filled in.
+
+```python
+df = silo.prices(["PETR4", "VALE3"], "2020-01-02", "2026-09-29")
+raw = silo.prices("PETR4", "2020-01-02", "2026-09-29", fields=["close", "volume"])
+```
+
 ```python
 from silo_client import SiloClient, SiloOverCap, SiloTruncated
 
@@ -56,11 +71,6 @@ except SiloOverCap:
     # Since catalog v26 the server REFUSES rather than trims, and the three
     # long series page. A cursor walk, not a stitched guess:
     rows = silo.quote_history_all("PETR4", start="2019-01-02")
-
-# Many tickers at once: concurrent, and the whole request or an exception.
-from silo_client import SiloFanOutError
-rows = silo.quote_history_many(["PETR4", "VALE3"], start="2019-01-02")
-rows["PETR4"][0]["close_total_return"]      # NULL with a *_null_reason where unproven
 
 # The research universe on a date (the survivorship rule), and the benchmark
 # by INDEX CODE (BOVA11 and IBOV11 are refused, they are not the index).

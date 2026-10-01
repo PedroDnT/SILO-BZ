@@ -55,7 +55,14 @@ def test_deploys_the_function_only_never_pushes_config():
 def test_the_live_endpoint_is_checked_after_the_deploy():
     names = [s.get("name", "") for s in _spec()["jobs"]["deploy"]["steps"]]
     deploy = names.index("Deploy silo-mcp")
-    smoke = next(i for i, n in enumerate(names) if n.startswith("Live tools/list"))
+    smoke = next(i for i, n in enumerate(names) if n.startswith("Live contract"))
     assert smoke > deploy
-    runs = _runs()
-    assert "tools/list" in runs and "tools.ts" in runs
+    assert "python3 scripts/check_live_contract.py" in _runs()
+
+
+def test_the_live_check_compares_versions_tools_arguments_and_results():
+    """#410: the published MCP is checked against this commit, not counted."""
+    script = (ROOT / "scripts/check_live_contract.py").read_text(encoding="utf-8")
+    for probe in ('"initialize"', '"tools/list"', '"tools/call"', "inputSchema",
+                  "CATALOG_VERSION", "quote_history", "x-silo-data-revision"):
+        assert probe in script, probe

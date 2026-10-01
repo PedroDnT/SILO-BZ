@@ -46,6 +46,9 @@ _PANEL_METRICS = tuple(METRICS)
 
 # Compact chart payload. Extra warehouse columns stay on the latest-point route.
 _QUOTE_SERIES_FIELDS = ("open", "high", "low", "close", "volume", "trades")
+# What _quote_series asks api.quote_history for (p_fields): the raw series
+# fields plus the envelope's source, currency and board.
+_QUOTE_SERIES_SQL_FIELDS = (*_QUOTE_SERIES_FIELDS, "source", "currency", "board")
 _NAV_SERIES_FIELDS = (
     "nav",
     "quota",
@@ -272,12 +275,17 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
         with pool.connection() as conn:
             with conn.cursor() as cur:
                 while True:
+                    # Rows are jsonb holding only the fields asked for; this
+                    # adapter serves the RAW series (adjusted=false), so it
+                    # names the raw fields explicitly.
                     cur.execute(
-                        "SELECT * FROM api.quote_history(%s, %s::date, %s::date, %s, %s)",
-                        (code, p_from, p_to, board, after),
+                        "SELECT q FROM api.quote_history(%s, %s::date, %s::date, %s, %s, %s) AS q",
+                        (code, p_from, p_to, board, after, list(_QUOTE_SERIES_SQL_FIELDS)),
                     )
-                    cols = [d[0] for d in cur.description]
-                    page_rows = [_row(r, cols) for r in cur.fetchall()]
+                    page_rows = [
+                        {k: _jsonable(v) for k, v in (r[0] or {}).items()}
+                        for r in cur.fetchall()
+                    ]
                     rows.extend(page_rows)
                     # Bound inside the loop: the adapter's own ceiling stops the
                     # walk instead of accumulating an unbounded list first.
