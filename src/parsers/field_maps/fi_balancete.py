@@ -41,7 +41,7 @@ RESUMO_ACCOUNTS = {
     "10000007": "vl_ativo",
     "30000001": "vl_compensacao_ativa",
     "40000008": "vl_passivo",
-    "60000002": "vl_patrim_liq",
+    "60000002": "vl_patrimonio_sem_resultado",
     "70000009": "vl_receitas",
     "80000006": "vl_despesas",
     "90000003": "vl_compensacao_passiva",
