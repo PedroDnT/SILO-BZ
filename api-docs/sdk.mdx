@@ -61,8 +61,9 @@ One per published endpoint. Dates accept `date` objects or ISO strings; `None` m
 | `lookup(query)` | `lookup` | never a name-inferred ticker↔CNPJ |
 | `panel(ids, metrics, start, end, freq, wide, entity_type, min_nav, min_months)` | `panel` | raises `SiloOverCap` above one page; `wide=False` for long rows |
 | `iter_panel(...)` · `panel_all(..., wide)` | `panel` + `p_after` | `ids=None` + `entity_type=` is universe mode (signed in) |
-| `quote_history(ticker, start, end, board)` · `quote_latest(ticker, board)` | `quote_history` · `quote_latest` | unadjusted prices |
-| `iter_quote_history(...)` · `quote_history_all(...)` | `quote_history` + `p_after` | pages on `trade_date` |
+| `prices(tickers, start, end, fields=None)` | `quote_history` + `p_after`, per ticker | one polars DataFrame from one data revision; `close_adj` by default, `fields=["close"]` for the raw close |
+| `quote_history(ticker, start, end, board, fields)` · `quote_latest(ticker, board)` | `quote_history` · `quote_latest` | one page; `close_adj` by default (quote_latest is raw) |
+| `iter_quote_history(...)` · `quote_history_all(...)` | `quote_history` + `p_after` | pages on `trade_date`; never combine two data revisions |
 | `iter_fund_nav(cnpj, entity_type, start, end)` · `fund_nav_all(...)` | `fund_nav` + `p_after` | **`entity_type` is required**, checked client-side |
 | `option_chain(prefix, trade_date, expiry_from, limit)` · `option_history(codneg, …)` · `option_exercises(prefix, …)` | options | prefix ≥ 3 chars, checked client-side |
 | `termo_history(codneg, start, end)` | `termo_history` | |
@@ -92,7 +93,7 @@ PostgREST stops every response at 1,000 rows and answers `200` with the oldest p
 from silo_client import SiloTruncated
 
 try:
-    rows = silo.quote_history("PETR4", start="2019-01-01")
+    rows = silo.quote_history("PETR4", start="2019-01-02")
 except SiloTruncated as e:
     print(e.returned, "of", e.total)      # 1000 of 4382
     print(e.rows[-1]["trade_date"])       # where the cut fell — inspect, never use
@@ -108,7 +109,7 @@ try:
 except SiloOverCap:
     rows = silo.panel_all(["PETR4"], ["close"], start="2019-01-01", freq="day")
 
-quotes = silo.quote_history_all("PETR4", start="2019-01-01")
+quotes = silo.quote_history_all("PETR4", start="2019-01-02")
 
 # nav pages within ONE family — the cursor is a bare period, and 385 CNPJs
 # file under two in the same month, so the family is not optional

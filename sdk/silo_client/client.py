@@ -37,7 +37,11 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 47  # v47 adds p_as_of to the fundamentals (#414); v46 serves close_total_return (#418); v45 adds index_history; v44 quote_history's adjusted closes (#417); v43 research_universe
+KNOWN_CATALOG_VERSION = 48  # v48 quote_history fields + close_adj default (#410); v47 p_as_of (#414); v46 close_total_return (#418); v45 index_history
+
+#: How many times prices() / quote_history_all() restart a retrieval whose
+#: pages came back with different data revisions before giving up.
+REVISION_RETRIES = 3
 
 
 class SiloCatalogDrift(UserWarning):
@@ -133,6 +137,45 @@ class SiloOverCap(SiloError):
             "or narrow the request"
         )
         self.hint = f"{self.server_hint} ({sdk_hint})" if self.server_hint else sdk_hint
+
+
+class SiloRevisionChanged(SiloError):
+    """The data changed while a multi-page retrieval was running.
+
+    Every quote_history page carries `data_revision`. Adjusted levels are
+    anchored to the latest session, so a load that lands between two pages can
+    move every earlier close_adj: combining the pages would splice two
+    different adjustment bases into one series. prices() and
+    quote_history_all() restart on it (REVISION_RETRIES times); this is raised
+    when the revisions still disagree, or from iter_quote_history, which has
+    already yielded rows and cannot restart.
+    """
+
+    def __init__(self, revisions: Sequence[Any], url: str) -> None:
+        self.revisions = list(revisions)
+        super().__init__(
+            409,
+            f"the data changed during the retrieval (data_revision "
+            f"{', '.join(str(r) for r in self.revisions)}); pages from different "
+            f"revisions are never combined. Retry the call.",
+            url,
+        )
+
+
+class SiloRefusals(SiloError):
+    """One or more tickers of a multi-ticker retrieval were refused.
+
+    prices() walks every ticker before raising, so a long run reports every
+    refusal at once instead of stopping at the first. `.errors` maps each
+    refused ticker to its SiloError (the server's message and `reason=`
+    detail). No partial result is returned: a panel missing tickers silently
+    is the failure this client exists to prevent.
+    """
+
+    def __init__(self, errors: Dict[str, SiloError], url: str) -> None:
+        self.errors = dict(errors)
+        lines = "; ".join(f"{t}: {e.body[:300]}" for t, e in self.errors.items())
+        super().__init__(400, f"{len(self.errors)} ticker(s) refused: {lines}", url)
 
 
 class SiloTimeout(SiloError):
@@ -391,11 +434,20 @@ class SiloClient:
 
     def quote_history(
         self, ticker: str, start: Datish = None, end: Datish = None,
-        board: Optional[str] = None,
+        board: Optional[str] = None, fields: Listish = None,
     ) -> List[Dict[str, Any]]:
+        """One page of one ticker's daily series (refuses over 1000 rows).
+
+        `fields=None` returns ticker, trade_date and close_adj (split-,
+        grouping- and bonus-adjusted, shares and units only); name fields for
+        anything else, e.g. `fields=["close", "volume"]` for the raw close.
+        The server refuses (SiloError, 22023) an unknown ticker, a window
+        outside the coverage and a close_adj window it cannot adjust, with the
+        cause in the message.
+        """
         return self._rpc("quote_history", {
             "p_ticker": ticker, "p_from": _iso(start), "p_to": _iso(end),
-            "p_board": board,
+            "p_board": board, "p_fields": _as_list(fields) or None,
         })
 
     def fund_nav(
@@ -409,33 +461,148 @@ class SiloClient:
             "p_entity_type": entity_type,
         })
 
+    def _quote_pages(
+        self, ticker: str, start: Datish, end: Datish, board: Optional[str],
+        fields: List[str],
+    ) -> Iterator[Tuple[List[Dict[str, Any]], Any]]:
+        """Yield (rows, data_revision) per page, paged with `p_after`.
+
+        `data_revision` is always requested and stripped from the rows unless
+        the caller asked for it, so every page can be checked against the
+        first one.
+        """
+        wanted = list(fields) or ["close_adj"]
+        ask = wanted if "data_revision" in wanted else [*wanted, "data_revision"]
+        body = {"p_ticker": ticker, "p_from": _iso(start), "p_to": _iso(end),
+                "p_board": board, "p_fields": ask}
+        keep_rev = "data_revision" in wanted
+        after = ""
+        while True:
+            rows = self._rpc("quote_history", {**body, "p_after": after}, page=True)
+            revs = {row.get("data_revision") for row in rows}
+            if len(revs) > 1:
+                raise SiloRevisionChanged(sorted(map(str, revs)), f"{self._rest}/rpc/quote_history")
+            rev = next(iter(revs)) if revs else None
+            if not keep_rev:
+                rows = [{k: v for k, v in row.items() if k != "data_revision"} for row in rows]
+            yield rows, rev
+            if len(rows) < SERVER_ROW_CAP:
+                return
+            after = str(rows[-1]["trade_date"])
+
     def iter_quote_history(
         self, ticker: str, start: Datish = None, end: Datish = None,
-        board: Optional[str] = None,
+        board: Optional[str] = None, fields: Listish = None,
     ) -> Iterator[Dict[str, Any]]:
         """Every quote row, paged with the server's cursor (`p_after`).
 
         Page 1 is `p_after=''`; each next page is the last row's `trade_date`.
         A page shorter than the 1000-row cap is the last one — nothing is ever
-        cut. Rows arrive oldest first.
+        cut. Rows arrive oldest first. Raises SiloRevisionChanged when a later
+        page carries a different data_revision than the first (the rows
+        already yielded were built on another adjustment base); use
+        quote_history_all() or prices(), which restart instead.
         """
-        body = {"p_ticker": ticker, "p_from": _iso(start), "p_to": _iso(end),
-                "p_board": board}
-        after = ""
-        while True:
-            rows = self._rpc("quote_history", {**body, "p_after": after}, page=True)
+        first = None
+        for rows, rev in self._quote_pages(ticker, start, end, board, _as_list(fields)):
+            if rows and first is None:
+                first = rev
+            elif rows and rev != first:
+                raise SiloRevisionChanged([first, rev], f"{self._rest}/rpc/quote_history")
             for row in rows:
                 yield row
-            if len(rows) < SERVER_ROW_CAP:
-                return
-            after = str(rows[-1]["trade_date"])
 
     def quote_history_all(
         self, ticker: str, start: Datish = None, end: Datish = None,
-        board: Optional[str] = None,
+        board: Optional[str] = None, fields: Listish = None,
     ) -> List[Dict[str, Any]]:
-        """iter_quote_history collected into a list."""
-        return list(self.iter_quote_history(ticker, start, end, board))
+        """Every page of one ticker, all from ONE data revision: when the data
+        changes mid-walk it restarts (REVISION_RETRIES times), then raises
+        SiloRevisionChanged."""
+        return self._collect_one_revision([ticker], start, end, board, _as_list(fields))
+
+    def _collect_one_revision(
+        self, tickers: List[str], start: Datish, end: Datish,
+        board: Optional[str], fields: List[str],
+    ) -> List[Dict[str, Any]]:
+        """Every page of every ticker, all carrying the same data_revision.
+
+        A second revision anywhere restarts the whole collection: the rows
+        already held were adjusted on the older base.
+        """
+        last: Optional[SiloRevisionChanged] = None
+        for _attempt in range(REVISION_RETRIES):
+            rows: List[Dict[str, Any]] = []
+            revs: set = set()
+            refused: Dict[str, SiloError] = {}
+            try:
+                for t in tickers:
+                    got: List[Dict[str, Any]] = []
+                    try:
+                        for page, rev in self._quote_pages(t, start, end, board, fields):
+                            if page:
+                                revs.add(rev)
+                            if len(revs) > 1:
+                                raise SiloRevisionChanged(sorted(map(str, revs)),
+                                                          f"{self._rest}/rpc/quote_history")
+                            got.extend(page)
+                    except SiloRevisionChanged:
+                        raise
+                    except SiloError as exc:
+                        # Keep walking: report every refused ticker at once.
+                        refused[t] = exc
+                        continue
+                    rows.extend(got)
+            except SiloRevisionChanged as exc:
+                last = exc
+                continue
+            if refused:
+                if len(tickers) == 1:
+                    raise next(iter(refused.values()))
+                raise SiloRefusals(refused, f"{self._rest}/rpc/quote_history")
+            return rows
+        assert last is not None
+        raise last
+
+    def prices(
+        self, tickers: Listish, start: Datish, end: Datish,
+        fields: Listish = None,
+    ) -> Any:
+        """Daily prices for many tickers as one polars DataFrame.
+
+        One quote_history walk per ticker (paged with `p_after`), every page
+        from ONE data revision: if a load lands mid-retrieval the whole call
+        restarts (REVISION_RETRIES times), because close_adj levels anchored
+        before and after an update must never be combined.
+
+        `fields=None` returns ticker, trade_date and close_adj — the split-,
+        grouping- and bonus-adjusted close (shares and units only; no dividend
+        adjustment). Name fields for anything else: `fields=["close"]` is the
+        raw close as traded. Any refusal (unknown ticker, a window outside the
+        coverage, a stretch close_adj cannot adjust) is collected, and after
+        every ticker is walked SiloRefusals lists each refused ticker with the
+        server's reason; nothing is dropped or filled in.
+
+        Returns columns ticker, trade_date (Date) and the requested fields in
+        order, sorted by ticker then trade_date. Prices are Float64 (the API
+        serves up to 6 decimal places).
+        """
+        import polars as pl  # a hard dependency (pyproject), imported late
+
+        names = list(dict.fromkeys(_as_list(tickers)))
+        if not names:
+            raise ValueError("prices() needs at least one ticker")
+        wanted = [f for f in _as_list(fields) if f not in ("ticker", "trade_date")] or ["close_adj"]
+        rows = self._collect_one_revision(names, start, end, None, wanted)
+
+        cols = ["ticker", "trade_date", *wanted]
+        frame = pl.DataFrame(
+            {c: [r.get(c) for r in rows] for c in cols},
+            schema_overrides={"ticker": pl.Utf8, "trade_date": pl.Utf8},
+            strict=False,
+        )
+        frame = frame.with_columns(pl.col("trade_date").str.to_date("%Y-%m-%d"))
+        return frame.sort(["ticker", "trade_date"])
 
     def iter_fund_nav(
         self, cnpj: str, entity_type: str, start: Datish = None,

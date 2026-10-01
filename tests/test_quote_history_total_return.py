@@ -35,6 +35,14 @@ def _quote_history() -> str:
     return sql[start:sql.index("$$;", start)]
 
 
+def _cash_helper() -> str:
+    """Since catalog v48 the cash logic lives in api.close_total_return_cash,
+    called per session by quote_history when close_total_return is selected."""
+    sql = _uncommented(CONTRACT.read_text(encoding="utf-8"))
+    start = sql.index("CREATE OR REPLACE FUNCTION api.close_total_return_cash(")
+    return sql[start:sql.index("$$;", sql.index("AS $$", start) + 5)]
+
+
 def _migration() -> str:
     return _uncommented(MIGRATION.read_text(encoding="utf-8"))
 
@@ -88,31 +96,38 @@ def test_a_supplement_event_the_history_lacks_is_pending_with_no_age_limit():
 
 
 def test_the_function_reads_the_view_and_divides_earlier_sessions():
+    helper = _cash_helper()
+    assert "public.mv_b3_cash_event" in helper
+    assert re.search(r"m\.event_date\s*>=\s*p_trade_date", helper)
+    assert re.search(r"m\.event_date\s*<\s*p_anchor", helper)
+    assert re.search(r"sum\(ln\(m\.factor\)\)", helper)
     body = _quote_history()
-    assert "public.mv_b3_cash_event" in body
-    assert re.search(r"m\.event_date\s*>=\s*g\.trade_date", body)
-    assert re.search(r"m\.event_date\s*<\s*\(SELECT\s+an\.last_session\s+FROM\s+anchor\s+an\)", body)
-    assert re.search(r"sum\(ln\(m\.factor\)\)", body)
-    # Divide, not multiply: earlier levels are lower by the cash received since.
+    assert "api.close_total_return_cash(v_isin, v_ticker, g.spec, g.trade_date, v_anchor)" in body
+    # Divide, not multiply: earlier levels are lower by the cash received since,
+    # on top of the price adjustment.
     assert re.search(
-        r"exp\(-COALESCE\(j\.log_share_ratio,\s*0\)\s*-\s*COALESCE\(j\.log_cash_factor,\s*0\)\)", body
+        r"r\.close_unit / api\.close_adj_ratio\(v_isin, r\.trade_date, v_anchor\)\s*/ exp\(COALESCE\(r\.tr_log_cash, 0\)\)",
+        body,
     )
 
 
 def test_an_unresolved_event_blocks_only_its_issuers_share_class():
-    body = _quote_history()
-    assert "m.type_stock = split_part(btrim(g.spec), ' ', 1)" in body
-    assert "m.stems @> ARRAY[left(g.ticker, 4)]" in body
+    helper = _cash_helper()
+    assert "m.type_stock = split_part(btrim(p_spec), ' ', 1)" in helper
+    assert "m.stems @> ARRAY[left(p_ticker, 4)]" in helper
     # By stem and class, never by an ISIN it does not have.
-    assert re.search(r"m\.kind = 'unresolved'\s+AND m\.event_date", body)
+    assert re.search(r"m\.kind = 'unresolved'\s+AND m\.event_date", helper)
 
 
 def test_a_value_needs_the_adjusted_close_and_positive_cash_evidence_and_no_blocker():
     body = _quote_history()
-    tr = body[body.index("j.has_cash_evidence\n"):]
-    for clause in ("j.n_unresolved = 0", "j.n_pending = 0", "j.n_no_ex_close = 0"):
-        assert clause in tr, clause
-    assert "m.kind IN ('cash', 'no_ex_close')" in body
+    # A value only when no reason applies; the reasons run from the price
+    # adjustment's own status to every cash blocker.
+    assert "CASE WHEN v_tr AND r.tr_reason IS NULL THEN" in body
+    for clause in ("NOT c.has_cash_evidence", "c.n_unresolved > 0", "c.n_pending > 0", "c.n_no_ex_close > 0",
+                   "v_status.block_through", "NOT v_status.in_universe"):
+        assert clause in body, clause
+    assert "m.kind IN ('cash', 'no_ex_close')" in _cash_helper()
 
 
 def test_every_total_return_null_has_a_reason():

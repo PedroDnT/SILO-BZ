@@ -47,6 +47,8 @@ from .client import (
     SiloClient,
     SiloError,
     SiloOverCap,
+    SiloRefusals,
+    SiloRevisionChanged,
     SiloTimeout,
     SiloTruncated,
 )
@@ -54,13 +56,15 @@ from .client import (
 #: Kept equal to sdk/pyproject.toml's `version` by a test. 0.7.0 adds the five
 #: B3 securities-lending / investor-flow views and reconciles the two files,
 #: which had drifted to 0.6.0 here against 0.4.0 in the package metadata.
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 __all__ = [
     "SiloClient",
     "SiloError",
     "SiloTruncated",
     "SiloOverCap",
+    "SiloRefusals",
+    "SiloRevisionChanged",
     "SiloTimeout",
     "SiloCatalogDrift",
     "DEFAULT_ANON_KEY",

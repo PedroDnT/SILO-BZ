@@ -1,6 +1,6 @@
 # Research seam: SILO as the data layer for external quant research
 
-**Status: spec drafted 2026-09-29 from the wayfinder map ([#371](https://github.com/PedroDnT/SILO-BZ/issues/371), 11 of 11 tickets resolved). Approved 2026-09-29; the build tickets are under epic #410. The research universe (#411) is built (§4), and so are the price-adjusted close in `quote_history` with the per-issuer sweep proof (§3; #413, #417 without the pre-2019 refusal) the benchmark index `api.index_history` (§5; #412, #415, catalog v45) the total-return close in `quote_history` (§3; #418, catalog v46) and the as-of date on the fundamentals (§6; #414, catalog v47).**
+**Status: spec drafted 2026-09-29 from the wayfinder map ([#371](https://github.com/PedroDnT/SILO-BZ/issues/371), 11 of 11 tickets resolved). Approved 2026-09-29; the build tickets are under epic #410. The research universe (#411) is built (§4), and so are the benchmark index `api.index_history` (§5; #412, #415, catalog v45), the total-return close in `quote_history` (§3; #418, catalog v46) and the as-of date on the fundamentals (§6; #414, catalog v47). The price contract (§3) is built as amended by the owner on 2026-09-30 (catalog v48): `close_adj` is the default field of `quote_history` and the panel's default for shares and units, rows are JSON objects holding only the selected fields (`close_total_return` is one), the series follows the ISIN across boards, and every window it cannot serve whole is refused, the pre-2019 window included.**
 
 A *research caller* is an external repository that builds features, signals or
 backtests on SILO data (terms: `CONTEXT.md`, *Research data*). Its first
@@ -34,18 +34,40 @@ time out cold (`57014`). The cost today is caller complexity, not speed.
 
 ## 3. Market observations: extend `api.quote_history` (#377, #372, #387, #386)
 
-One ticker per call, the existing `p_after` date cursor, and the SDK fans out.
-No new function. `api.quotes`, the typed views (`adjusted` stays FALSE) and
-`api.panel` are unchanged.
+One ticker per call, the existing `p_after` date cursor, and the SDK fans out
+(`prices()`). No new function. `api.quotes` and the typed views (`adjusted`
+stays FALSE) are unchanged; `api.panel` gains `close_adj` as the default metric
+for shares and units (owner, 2026-09-30).
+
+**As built (2026-09-30, owner's amendment).** Rows are one JSON object per
+session holding only the fields named in `p_fields`; the default is `ticker`,
+`trade_date`, `close_adj`, and the raw close, OHLC and volume are explicit
+selections. `close_adj` is never NULL in disguise: a window it cannot adjust is
+refused (22023, `reason=adjustment_unavailable`) naming ticker, period and
+cause. Every stock event other than a split, grouping or bonus blocks the
+stretch on or before it: 17 of 639 universe pairs since 2019 (CIS RED CAP,
+INCORPORACAO, REST CAP ACOES). Subscription rights are outside a price-only
+adjustment, like dividends (owner, 2026-09-30); blocking them too would have
+refused 126 pairs, ETER3 before 2021-03-25 and MGLU3 before 2024-01-31 among
+them. Same-date events multiply by B3's documented rule, and all 10 same-date
+pairs on universe ISINs since 2019 sit closest to it on the tape (or tie with no
+adjustment where the net ratio is 1). A missing session inside the coverage is
+a no-trade session; the tape is the market calendar (all 91 weekdays without a
+tape since 2019 are B3 holidays), checked once against B3's published holidays
+in the §9 script. The total-return field
+leaves the row until #418 serves it. `data_revision` (field and header) names
+the data behind an answer, and the SDK never combines two revisions.
 
 1. **Two new fields:** a price-adjusted close and a total-return close. Adjustment
    is owned by SILO, never the caller. The raw close stays in the same row.
 2. **Backward adjustment, anchored to the latest session.** Returns are
    point-in-time, levels are not. A new event changes past levels. The glossary
    states this under *Price-adjusted close*.
-3. **Windows before the tape refuse.** A `p_from` before 2019-01-02 raises
-   `22023` naming the start date. `api.coverage()` publishes the tape start for `quotes`.
-4. **Both adjusted fields are NULL-with-reason until proven**, one reason column
+3. **Windows before the coverage refuse.** A `p_from` before the instrument's
+   first session (at most 2019-01-02) raises `22023` naming the start date.
+   `api.coverage()` publishes the tape start for `quotes`.
+4. *(Superseded 2026-09-30: an unavailable adjustment is refused, not NULL.)*
+   **Both adjusted fields are NULL-with-reason until proven**, one reason column
    per field (their coverage is independent):
    - price-adjusted: NULL until the issuer's corporate events are proven swept from 2019;
    - total-return: NULL until the ISIN has a resolved cash distribution in B3's history
@@ -56,9 +78,10 @@ No new function. `api.quotes`, the typed views (`adjusted` stays FALSE) and
      See `docs/reference/API.md`, "The total-return close".
 5. **Equity and unit only.** Every other asset class gets NULL with reason
    `outside research universe`.
-6. **Board default unchanged.** The verification script (§9) adds a query for
-   equity/unit tickers whose `codbdi` changed since 2019. If any exist, the
-   refusal rule is decided then.
+6. **The board default follows the ISIN** (owner, 2026-09-30). 62 share/unit
+   tickers changed `codbdi` since 2019 (ETER3 lost 1,396 sessions to the old
+   latest-board default) and none printed two rows on one session. Two rows on
+   a session, or two ISINs in a window, refuse; `p_board` still filters.
 
 **Price-adjusted, evidence (#372).** B3's rule reproduces 161 of 165 events. The
 regression pins are BBAS3 2024-04-15 (split) and MGLU3 2024-05-24 (grouping).

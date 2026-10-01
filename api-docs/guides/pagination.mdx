@@ -66,7 +66,7 @@ Three functions take a cursor, because walking the whole series is the normal th
 rows, cursor = [], ""
 while True:
     page = post("/rpc/quote_history", {
-        "p_ticker": "PETR4", "p_from": "2019-01-01", "p_after": cursor,
+        "p_ticker": "PETR4", "p_from": "2019-01-02", "p_after": cursor,
     })
     rows += page
     if len(page) < 1000:

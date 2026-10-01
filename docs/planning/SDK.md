@@ -22,6 +22,9 @@ Three shapes, because the server offers three:
 
 - `iter_quote_history` / `iter_fund_nav` / `iter_panel` — generators over the
   `p_after` cursors.
+- `prices(tickers, start, end, fields=None)` — every page of every ticker as one
+  polars DataFrame, from one `data_revision` (restarts when a load lands
+  mid-walk, `SiloRevisionChanged` after three tries).
 - `view_all(name, …)` — walks `offset` for the views.
 - `*_all` convenience wrappers that materialise the walk.
 

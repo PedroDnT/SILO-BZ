@@ -47,15 +47,30 @@ metric at a time. `iter_panel()` / `panel_all()` walk the panel, and
 `panel_all(None, [...], entity_type="fidc", min_nav=1e7, min_months=12)` walks
 a whole family for a signed-in caller.
 
+Prices for research: `prices(tickers, start, end, fields=None)` returns one
+polars DataFrame (`ticker`, `trade_date`, then the fields), sorted, from ONE data
+revision. It walks every page of every ticker; if a load lands mid-retrieval it
+restarts (`SiloRevisionChanged` after three tries), because adjusted levels from
+before and after an update must never be combined. The default field is
+`close_adj`, split-, grouping- and bonus-adjusted (shares and units only); ask
+for `fields=["close"]` for the raw close. A refusal (unknown ticker, window
+outside the coverage, a stretch `close_adj` cannot adjust) raises `SiloError`
+with the server's reason; nothing is dropped or filled in.
+
+```python
+df = silo.prices(["PETR4", "VALE3"], "2020-01-02", "2026-09-29")
+raw = silo.prices("PETR4", "2020-01-02", "2026-09-29", fields=["close", "volume"])
+```
+
 ```python
 from silo_client import SiloClient, SiloOverCap, SiloTruncated
 
 try:
-    rows = silo.quote_history("PETR4", start="2019-01-01")
+    rows = silo.quote_history("PETR4", start="2019-01-02")
 except SiloOverCap:
     # Since catalog v26 the server REFUSES rather than trims, and the three
     # long series page. A cursor walk, not a stitched guess:
-    rows = silo.quote_history_all("PETR4", start="2019-01-01")
+    rows = silo.quote_history_all("PETR4", start="2019-01-02")
 
 # fund_nav pages within ONE family: its cursor is a bare period, and 385 CNPJs
 # file under two families in the same month, so the family is not optional.

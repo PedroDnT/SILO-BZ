@@ -506,7 +506,23 @@ def test_representable_defaults_are_machine_readable(spec):
     assert not missing, "literal defaults not exposed as JSON Schema `default`: " + ", ".join(missing)
 
 
-def test_panel_metrics_default_is_a_real_list(spec):
-    """ARRAY['close'::text,'nav'::text] must survive as ["close","nav"]."""
+def test_panel_metrics_default_is_null_meaning_each_familys_price(spec):
+    """p_metrics NULL = each family's price (close_adj for shares and units,
+    close for other tickers, nav for funds, #410); the spec must say null, not
+    a list the server no longer applies."""
     props, _ = _rpc_properties(spec, "panel")
-    assert props["p_metrics"]["default"] == ["close", "nav"]
+    assert props["p_metrics"]["default"] is None
+
+
+def test_quote_history_rows_list_every_selectable_field(spec):
+    """quote_history returns jsonb rows holding only the selected fields; the
+    spec describes them from api.quote_history_fields() and lists the names
+    p_fields accepts, so a client validates a selection before calling."""
+    op = spec["paths"]["/rpc/quote_history"]["post"]
+    item = op["responses"]["200"]["content"]["application/json"]["schema"]["items"]
+    from serve.catalog import QUOTE_HISTORY_FIELDS
+    assert list(item["properties"]) == list(QUOTE_HISTORY_FIELDS)
+    assert item["additionalProperties"] is False
+    props, _ = _rpc_properties(spec, "quote_history")
+    assert props["p_fields"]["items"]["enum"] == list(QUOTE_HISTORY_FIELDS)
+    assert "ticker, trade_date, close_adj" in props["p_fields"]["description"]

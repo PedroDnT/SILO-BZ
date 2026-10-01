@@ -1008,3 +1008,147 @@ def test_iter_panel_normalises_the_same_way():
     seen, handler = _capture_panel_body()
     list(make_client(handler).iter_panel("PETR4", metrics="close"))
     assert seen["body"]["p_ids"] == ["PETR4"]
+
+
+# ---------------------------------------------------------------------------
+# v45 — prices(): many tickers, close_adj by default, one data revision
+# ---------------------------------------------------------------------------
+
+def _price_rows(ticker, n, start=0, rev="R1", field="close_adj"):
+    return [
+        {"ticker": ticker,
+         "trade_date": f"2020-{1 + (start + i) // 28 % 12:02d}-{1 + (start + i) % 28:02d}",
+         field: 10.0 + i, "data_revision": rev}
+        for i in range(n)
+    ]
+
+
+def test_prices_defaults_to_close_adj_and_returns_a_sorted_polars_frame():
+    pl = pytest.importorskip("polars")
+    bodies = []
+
+    def responder(request):
+        body = json.loads(request.content)
+        bodies.append(body)
+        return httpx.Response(200, json=_price_rows(body["p_ticker"], 3))
+
+    c = make_client(catalog_then(responder))
+    df = c.prices(["VALE3", "PETR4", "VALE3"], "2020-01-01", "2020-12-31")
+    assert isinstance(df, pl.DataFrame)
+    assert df.columns == ["ticker", "trade_date", "close_adj"]
+    assert df.schema["trade_date"] == pl.Date
+    assert df["ticker"].to_list() == ["PETR4"] * 3 + ["VALE3"] * 3
+    # One walk per distinct ticker; the revision is asked for and stripped.
+    assert [b["p_ticker"] for b in bodies] == ["VALE3", "PETR4"]
+    assert all(b["p_fields"] == ["close_adj", "data_revision"] for b in bodies)
+    assert all(b["p_after"] == "" for b in bodies)
+
+
+def test_prices_raw_close_is_an_explicit_selection():
+    bodies = []
+
+    def responder(request):
+        body = json.loads(request.content)
+        bodies.append(body)
+        return httpx.Response(200, json=_price_rows(body["p_ticker"], 2, field="close"))
+
+    c = make_client(catalog_then(responder))
+    df = c.prices("PETR4", "2020-01-01", "2020-12-31", fields=["close"])
+    assert df.columns == ["ticker", "trade_date", "close"]
+    assert bodies[0]["p_fields"] == ["close", "data_revision"]
+
+
+def test_prices_walks_every_page_of_every_ticker():
+    seen = []
+
+    def responder(request):
+        body = json.loads(request.content)
+        seen.append((body["p_ticker"], body["p_after"]))
+        if body["p_after"] == "":
+            return httpx.Response(200, json=_price_rows(body["p_ticker"], SERVER_ROW_CAP))
+        return httpx.Response(200, json=_price_rows(body["p_ticker"], 5, start=SERVER_ROW_CAP))
+
+    c = make_client(catalog_then(responder))
+    df = c.prices(["PETR4", "VALE3"], "2019-01-01", "2026-01-01")
+    assert df.height == 2 * (SERVER_ROW_CAP + 5)
+    assert [p for p in seen if p[0] == "PETR4"][1][1] != ""
+
+
+def test_prices_restarts_when_the_data_revision_changes_mid_walk():
+    """A load between pages can move every earlier close_adj; the pages must
+    never be combined. The first attempt sees R1 then R2, so the whole call
+    restarts and the retry is served from R2 alone."""
+    calls = {"n": 0}
+
+    def responder(request):
+        body = json.loads(request.content)
+        calls["n"] += 1
+        rev = "R1" if calls["n"] == 1 else "R2"
+        return httpx.Response(200, json=_price_rows(body["p_ticker"], 2, rev=rev))
+
+    c = make_client(catalog_then(responder))
+    df = c.prices(["PETR4", "VALE3"], "2020-01-01", "2020-12-31")
+    assert df.height == 4
+    assert calls["n"] == 4, "attempt 1: PETR4 (R1), VALE3 (R2) -> restart; attempt 2: both R2"
+
+
+def test_prices_gives_up_when_the_revision_never_settles():
+    from silo_client import SiloRevisionChanged
+    calls = {"n": 0}
+
+    def responder(request):
+        body = json.loads(request.content)
+        calls["n"] += 1
+        return httpx.Response(200, json=_price_rows(body["p_ticker"], 1, rev=f"R{calls['n']}"))
+
+    c = make_client(catalog_then(responder))
+    with pytest.raises(SiloRevisionChanged):
+        c.prices(["PETR4", "VALE3"], "2020-01-01", "2020-12-31")
+
+
+def test_prices_surfaces_a_refusal_instead_of_dropping_the_ticker():
+    def responder(request):
+        body = json.loads(request.content)
+        if body["p_ticker"] in ("SUBS3", "XXXX3"):
+            return httpx.Response(400, json={
+                "code": "22023",
+                "message": "quote_history: refused, close_adj is not available for SUBS3 from 2020-01-01 to 2020-08-13",
+                "details": "reason=adjustment_unavailable; cause=unsupported corporate event SUBSCRICAO",
+            })
+        return httpx.Response(200, json=_price_rows(body["p_ticker"], 2))
+
+    c = make_client(catalog_then(responder))
+    from silo_client import SiloRefusals
+    with pytest.raises(SiloRefusals) as exc:
+        c.prices(["SUBS3", "PETR4", "XXXX3"], "2020-01-01", "2020-12-31")
+    # Every ticker is walked; each refusal is reported, none is dropped.
+    assert set(exc.value.errors) == {"SUBS3", "XXXX3"}
+    assert "adjustment_unavailable" in exc.value.errors["SUBS3"].body
+
+
+def test_iter_quote_history_refuses_to_splice_two_revisions():
+    from silo_client import SiloRevisionChanged
+
+    def responder(request):
+        body = json.loads(request.content)
+        if body["p_after"] == "":
+            return httpx.Response(200, json=_price_rows("PETR4", SERVER_ROW_CAP, rev="R1"))
+        return httpx.Response(200, json=_price_rows("PETR4", 3, start=SERVER_ROW_CAP, rev="R2"))
+
+    c = make_client(catalog_then(responder))
+    with pytest.raises(SiloRevisionChanged):
+        list(c.iter_quote_history("PETR4", "2019-01-01", "2026-01-01"))
+
+
+def test_quote_history_passes_the_field_selection():
+    bodies = []
+
+    def responder(request):
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json=[])
+
+    c = make_client(catalog_then(responder))
+    c.quote_history("PETR4", "2020-01-01", "2020-02-01")
+    c.quote_history("PETR4", "2020-01-01", "2020-02-01", fields="close")
+    assert "p_fields" not in bodies[0], "no selection = the server's default"
+    assert bodies[1]["p_fields"] == ["close"]

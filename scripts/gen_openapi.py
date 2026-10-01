@@ -88,6 +88,13 @@ SELECT table_name, column_name, data_type, udt_name, ordinal_position
  ORDER BY table_name, ordinal_position
 """
 
+# A function whose rows are jsonb (api.quote_history: only the selected fields
+# come back) publishes its row shape through an internal api.<name>_fields()
+# helper: field, JSON type, whether it is in the default selection, meaning.
+JSONB_FIELDS_SQL = "SELECT field, json_type, is_default, description FROM api.{name}_fields()"
+
+_JSON_TYPE_TO_PG = {"string": "text", "date": "date", "number": "numeric", "integer": "integer"}
+
 # The internal helpers a granted function may delegate its ceilings to. Their
 # bodies are scanned alongside the caller's so a cap expressed one call away
 # (api.panel's id ceiling lives in api.assert_panel_ids) is still found.
@@ -489,12 +496,22 @@ def build_function_path(fn: dict[str, Any]) -> dict[str, Any]:
     props: dict[str, Any] = {}
     required: list[str] = []
     enums = fn.get("enums") or {}
+    jfields = fn.get("jsonb_fields")
     for arg in fn["arguments"]:
         schema = dict(pg_type_to_schema(arg["type"]))
         if arg["default"] is None:
             required.append(arg["name"])
         else:
             schema["description"] = f"Defaults to `{arg['default']}`."
+        if jfields and arg["name"] == "p_fields":
+            # The selectable names, so a client validates before calling; the
+            # server refuses anything else (22023) either way.
+            schema["items"] = {"type": "string", "enum": [f for f, _t, _d, _m in jfields]}
+            schema["description"] = (
+                "Fields to return; null or omitted = "
+                + ", ".join(f for f, _t, d, _m in jfields if d)
+                + ". ticker and trade_date are in every row."
+            )
         props[arg["name"]] = annotate_argument(schema, arg, enums)
 
     body_schema: dict[str, Any] = {"type": "object", "properties": props}
@@ -504,7 +521,24 @@ def build_function_path(fn: dict[str, Any]) -> dict[str, Any]:
         body_schema["description"] = "This function takes no arguments; send `{}`."
 
     cols = fn["result_columns"]
-    if cols is None:
+    if jfields:
+        props_out = {}
+        for field, json_type, _is_default, description in jfields:
+            prop = dict(pg_type_to_schema(_JSON_TYPE_TO_PG[json_type]))
+            prop["description"] = description
+            props_out[field] = prop
+        row = {
+            "type": "object",
+            "description": (
+                "One object per row holding only the selected fields (p_fields). "
+                "Omitted p_fields selects: "
+                + ", ".join(f for f, _t, d, _m in jfields if d) + "."
+            ),
+            "properties": props_out,
+            "additionalProperties": False,
+        }
+        ok_schema = {"type": "array", "items": row}
+    elif cols is None:
         ok_schema = pg_type_to_schema(fn["result"])
     else:
         row = {
@@ -526,6 +560,9 @@ def build_function_path(fn: dict[str, Any]) -> dict[str, Any]:
             "200": {
                 "description": (
                     f"The result set, {_ORDER.get(fn['name'], 'oldest first')}. "
+                    "An unknown ticker, or a window outside its coverage, is refused (22023), never an empty or guessed series."
+                    if jfields
+                    else f"The result set, {_ORDER.get(fn['name'], 'oldest first')}. "
                     "An unknown id is an empty array, not a 404 and never a guessed value."
                     if cols is not None
                     else "The result."
@@ -687,6 +724,11 @@ def build_spec(conn) -> dict[str, Any]:
                 "_helper_blob": helper_blob,
             }
         )
+
+    for fn in functions:
+        if fn["result"] == "SETOF jsonb" and f"{fn['name']}_fields" in helper_names:
+            cur.execute(JSONB_FIELDS_SQL.format(name=fn["name"]))
+            fn["jsonb_fields"] = cur.fetchall()
 
     cur.execute(VIEWS_SQL)
     views = [{"name": r[0], "comment": r[1]} for r in cur.fetchall()]

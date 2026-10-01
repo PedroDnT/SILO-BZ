@@ -46,7 +46,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   t("panel", "Panel (id, date, metric, value)"),
   // Quotes and derivatives.
   t("quote_latest", "Latest quote"),
-  t("quote_history", "Quote history"),
+  t("quote_history", "Quote history", "Daily prices for one ticker. Default fields: ticker, trade_date, close_adj (split/grouping/bonus-adjusted, shares and units only). Pass p_fields=[\"close\"] for the raw close; a close_adj window SILO cannot adjust is refused with the cause, never served raw."),
   t("option_chain", "Option chain"),
   t("option_history", "Option history"),
   t("option_exercises", "Option exercises"),
@@ -436,6 +436,11 @@ export async function callTool(
     Array.isArray(data) ? `rows: ${rows}` : `rows: ${rows} (a single JSON value)`,
     provenance(plan),
   ];
+  // quote_history (and anything else that sets it) names the data behind the
+  // answer; adjusted levels move when it changes, so pages from two revisions
+  // must not be combined.
+  const revision = res.headers.get("x-silo-data-revision");
+  if (revision) lines.push(`data_revision: ${revision} (do not combine pages or calls with different revisions)`);
   if (tool.kind === "view") {
     lines.push(`content-range: ${contentRange ?? "(absent)"}`);
     const total = contentRange?.split("/")[1];

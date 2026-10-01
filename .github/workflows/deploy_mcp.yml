@@ -51,29 +51,20 @@ jobs:
         run: supabase functions deploy silo-mcp --project-ref "$PROJECT_REF" --no-verify-jwt
 
       # The deploy command succeeding says the bundle uploaded, not that the
-      # endpoint answers with this commit's tool list. Ask it.
-      - name: Live tools/list matches tools.ts
+      # endpoint answers with this commit's contract. Ask it: versions (REST
+      # catalog, MCP server, MCP catalog tool), the tool list, every tool's
+      # arguments and defaults, and the same quote_history call over REST and
+      # through the MCP (scripts/check_live_contract.py). Retried while the new
+      # bundle propagates.
+      - name: Live contract matches this commit
         run: |
           set -euo pipefail
-          expected=$(grep -cE '^\s*t\("' supabase/functions/silo-mcp/tools.ts)
           for attempt in 1 2 3 4 5 6; do
-            body=$(curl -sS --fail-with-body -X POST \
-              "https://${PROJECT_REF}.supabase.co/functions/v1/silo-mcp" \
-              -H 'content-type: application/json' \
-              -H 'accept: application/json, text/event-stream' \
-              -H 'mcp-protocol-version: 2025-06-18' \
-              -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}') || body=""
-            got=$(printf '%s' "$body" | python3 -c '
-          import json, sys
-          t = sys.stdin.read().lstrip()
-          p = t if t.startswith("{") else "".join(l[5:] for l in t.splitlines() if l.startswith("data:"))
-          print(len(json.loads(p)["result"]["tools"]))' 2>/dev/null || echo "?")
-            if [ "$got" = "$expected" ]; then
-              echo "live silo-mcp serves $got tools, as tools.ts declares"
+            if python3 scripts/check_live_contract.py; then
               exit 0
             fi
-            echo "attempt $attempt: live endpoint reports $got tools, tools.ts has $expected; retrying"
+            echo "attempt $attempt: the live contract does not match yet; retrying"
             sleep 10
           done
-          echo "::error::silo-mcp did not serve the deployed tool list (got $got, expected $expected)"
+          echo "::error::the published REST/MCP contract does not match this commit (see the FAIL lines above)"
           exit 1

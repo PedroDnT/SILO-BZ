@@ -333,12 +333,13 @@ serves the daily level of a B3-published index from `b3_index_level` (migration
 
 ### The total-return close (catalog v46)
 
-`quote_history.close_total_return` is the price-adjusted close with cash
-distributions reinvested on the ex session, anchored to the latest session like
-`close_price_adjusted`: the level is divided by the product of
-`1 + cash / ex-session close` over every distribution that went ex after the
-session. The latest session equals the price-adjusted close, and an earlier level
-is lower by the cash paid since. It needs no new function and no new column.
+`close_total_return` is a `quote_history` field (select it in `p_fields`,
+catalog v48): `close_adj` with cash distributions reinvested on the ex session,
+anchored to the instrument's latest session like `close_adj`. The level is
+divided by the product of `1 + cash / ex-session close` over every distribution
+that went ex after the session. The latest session equals `close_adj`, and an
+earlier level is lower by the cash paid since. Unlike `close_adj` it never
+refuses: a session it cannot value is NULL with a reason.
 
 - **Cash** is B3's full history (`b3_cash_dividend`): `DIVIDENDO`, `JRS CAP PROPRIO`
   (gross of withholding tax), `RENDIMENTO` and `REST CAP DIN`. Installments are
@@ -349,8 +350,8 @@ is lower by the cash paid since. It needs no new function and no new column.
 - **The ex session** is the ISIN's first printed session after the last cum session,
   within 7 calendar days. A paper that does not print within a week has no price to
   reinvest at (189 events print 30+ days later, all in the research universe).
-- **Where it is NULL**, each with a reason in `close_total_return_null_reason`: the
-  price-adjusted close is NULL; the ISIN has no resolved distribution in B3's history
+- **Where it is NULL**, each with a reason in `close_total_return_null_reason`: `close_adj`
+  cannot be served for the session (the same causes it refuses for); the ISIN has no resolved distribution in B3's history
   (a non-payer, or an issuer B3's history does not match: the two look identical, so
   neither is given a price return labelled as a total return; 188 of 639 universe
   ISINs on 2026-09-30); a later distribution of the issuer's share class has no proven
