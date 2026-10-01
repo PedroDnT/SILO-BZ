@@ -23,8 +23,43 @@
 --     FROM cvm_etf_registry;
 --
 -- Found with the two frozen B3 matviews (docs/planning/OPEN_ITEMS.md item 16).
--- Idempotent: IF EXISTS makes it a no-op on every later apply and on a fresh
--- database, so schema.sql needs no change.
+-- Idempotent: a no-op on every later apply and on a fresh database, so
+-- schema.sql needs no change.
+--
+-- GUARDED (2026-10-01). The first apply, in the 03:00 UTC-3 daily run of
+-- 2026-10-01 (run 36822760975), failed with "cannot drop materialized view
+-- mv_etf_landscape because other objects depend on it". That run's ingest,
+-- ANALYZE, analytical apply and deploy were all skipped. Something on the
+-- live database now depends on the matview, and nothing in this repository
+-- defines it. So the drop runs only when nothing depends on it. Otherwise it
+-- raises a NOTICE naming each dependent and leaves everything in place. Never
+-- CASCADE: that would drop an object nobody has looked at.
 -- =============================================================================
 
-DROP MATERIALIZED VIEW IF EXISTS public.mv_etf_landscape;
+DO $$
+DECLARE
+    deps TEXT;
+BEGIN
+    IF to_regclass('public.mv_etf_landscape') IS NULL THEN
+        RETURN;
+    END IF;
+    -- Views and matviews depend through their rewrite rule (pg_rewrite);
+    -- anything else (a function's SQL body, a constraint) through pg_depend
+    -- directly.
+    SELECT string_agg(DISTINCT dep, ', ') INTO deps
+      FROM (
+        SELECT COALESCE(r.ev_class::regclass::text,
+                        pg_describe_object(d.classid, d.objid, d.objsubid)) AS dep
+          FROM pg_depend d
+          LEFT JOIN pg_rewrite r
+            ON d.classid = 'pg_rewrite'::regclass AND r.oid = d.objid
+         WHERE d.refobjid = 'public.mv_etf_landscape'::regclass
+           AND d.deptype = 'n'   -- an index or the row type is 'a'/'i', and DROP takes it
+           AND COALESCE(r.ev_class, 0) <> 'public.mv_etf_landscape'::regclass
+      ) s;
+    IF deps IS NOT NULL THEN
+        RAISE NOTICE 'mv_etf_landscape kept: % depend(s) on it (migration 54)', deps;
+        RETURN;
+    END IF;
+    DROP MATERIALIZED VIEW public.mv_etf_landscape;
+END $$;
