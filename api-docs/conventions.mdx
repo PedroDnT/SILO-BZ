@@ -37,7 +37,7 @@ Sign in with GitHub at [silo-bz-deloslabs.vercel.app/signin.html](https://silo-b
 | | anonymous | signed in |
 | --- | ---: | ---: |
 | `panel` ids per call | 3 | 50 |
-| `panel` universe mode (no ids + a family) | — | yes |
+| `panel` universe mode (no ids + a family) | no | yes |
 | `search_funds` rows | 25 | 200 |
 | `option_chain` rows | 200 | 2,000 |
 | `option_exercises` rows | 500 | 5,000 |
@@ -215,8 +215,8 @@ PostgREST returns a JSON array on success: no envelope, no `count`, no `kind`.
 | `401` | `Invalid API key` / `Invalid JWT` | Missing or wrong `apikey`, or a publishable/secret key sent as `Authorization: Bearer`. |
 | `404` | `PGRST202` | No function with that name **and argument set**. Check the `p_` names. |
 | `400` | `22023` | **A ceiling, or a window over one page.** The message names the limit, what you sent, and how to get past it. |
-| `401` | — | Landing tables are not reachable, by grant, for every caller. |
-| `406` | — | You asked for a single object and the result had zero or more than one row. |
+| `401` | n/a | Landing tables are not reachable, by grant, for every caller. |
+| `406` | n/a | You asked for a single object and the result had zero or more than one row. |
 | `500` | `57014` | **Statement timeout**, not a server fault. |
 
 An empty array does not say *why* it is empty. Confirm the identifier with [`lookup`](/api-docs/lookup) and the range with [`coverage`](/api-docs/coverage).
