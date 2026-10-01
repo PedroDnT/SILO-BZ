@@ -17,7 +17,7 @@ PAGES = ROOT / "dashboard" / "pages"
 ORDER = [
     # Industry backdrop and market structure first: /short and /flows sit with
     # /markets because they are all about the exchange, not about funds.
-    "industry", "macro", "markets", "short", "flows",
+    "industry", "macro", "rates", "markets", "short", "flows",
     "fi", "fidc", "fii", "securit", "etf",
     "managers", "fund", "performance", "suspicious", "dormant",
     "ops",

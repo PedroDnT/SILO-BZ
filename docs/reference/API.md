@@ -331,6 +331,18 @@ serves the daily level of a B3-published index from `b3_index_level` (migration
   from `PUBLIC`, granted to `anon` / `authenticated` / `silo_api`. No client
   role can read `b3_index_level`.
 
+### Using the research seam
+
+The caller-facing guide is [`api-docs/guides/research.mdx`](../../api-docs/guides/research.mdx)
+(published as "Pulling a research universe"): the survivorship rule
+(`first_observed <= T <= last_observed`, a pair inside a gap such as NATU3 still
+matches, a rename is two rows), `close_adj` and total-return prices with what each
+refuses or leaves NULL, the 2019-01-02 floor, the `index_history` warnings (BOVA11
+and IBOV11 are not the index, eleven divisor steps), the as-of fundamentals recipe
+and macro by date split. The SDK side is `prices()` (many tickers from one data
+revision, every refusal named), `research_universe(as_of=)` and
+`index_history` / `iter_index_history` / `index_history_all`.
+
 ### The total-return close (catalog v46)
 
 `close_total_return` is a `quote_history` field (select it in `p_fields`,
@@ -370,6 +382,29 @@ SELECT kind, count(*) FROM mv_b3_cash_event GROUP BY kind ORDER BY 2 DESC;
 SELECT issuing_company, isin, action, event_date FROM mv_b3_cash_event
 WHERE kind = 'pending' ORDER BY event_date DESC;
 ```
+
+### The tape starts at 2019-01-02
+
+`api.quote_history` refuses (`22023`, `DETAIL reason=outside_coverage`) a window
+that starts before the instrument's first session on the tape, and one that holds
+no session of it at all; for an instrument that traded on the first session of the
+tape, the message names the tape start (the research price contract, catalog v48).
+The refusal is read from the data, as the first session of the cash tape, not from
+a literal. Below that date the adjusted and total-return closes would be built on
+corporate events and cash distributions nobody swept, and a window that started
+earlier would come back beginning on 2019-01-02 and look complete.
+
+Three literals still have to agree with that first session, and
+`tests/test_quote_history_tape_window.py` pins them to one date: the corporate-event
+sweep (`B3Ingestor.TAPE_START`), `mv_b3_cash_event` (migration 56) and
+`mv_research_universe`.
+
+- **2019-01-01 is refused** for an instrument already trading on 2019-01-02. It is
+  a holiday with no session, so nothing would be lost, but the rule is the
+  instrument's first session. The documented examples use 2019-01-02.
+- **`api.coverage()` says so** in the notes of its `quotes` row, read from the tape.
+- **`api.index_history` is not bound by it:** IBOV is held from 1968-01-02.
+- `serve/` maps the `22023` to a caller error like every other refusal.
 
 ### Fundamentals as of a date (catalog v47)
 

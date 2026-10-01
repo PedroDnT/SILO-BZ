@@ -94,7 +94,7 @@ discovery. They are not a fixed dataset list for every research question.
 2. `panel` with `p_ids: ["PETR4", "<cnpj>", …]`, `p_metrics: ["close_return","delinquency","nav"]`, `p_freq: "month"`.
 3. Pivot locally keeping `asset_class` in the key. Correlate pairwise-complete. **No ffill.**
 4. `delinquency` is BRL outstanding, not a rate — divide by `nav`, which is why both are in the same call. For a FIDC the series **starts** at 2025-01 ([regime break](/api-docs/conventions#regime-breaks)).
-5. Quotes are unadjusted. A missing month is not a two-month return.
+5. `close` is unadjusted (a split reads as a jump in `panel` and `quotes`); `quote_history`'s `close_adj`, its default field, is continuous across splits and is refused where unproven. A missing month is not a two-month return.
 6. Before reading a null as a gap, call `coverage` and `metric_coverage`.
 
 There is no server-side `corr` — the catalog lists those as `notebook_reducers`. No RPC hands you a truncated result: functions page or refuse.

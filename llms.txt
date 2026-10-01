@@ -21,11 +21,12 @@ Start with Conventions & limits: it is the single source of truth for auth tiers
 - [Your first screen](https://octo-98895abd.mintlify.site/api-docs/guides/first-screen.md): From a publishable key to a real chart of Brazilian market data, in four calls.
 - [Paging without losing rows](https://octo-98895abd.mintlify.site/api-docs/guides/pagination.md): Three different ways a response gets cut, and only one of them tells you.
 - [Reading a fundamental](https://octo-98895abd.mintlify.site/api-docs/guides/fundamentals.md): A listed company's financial statements end to end — and the two conventions that will silently corrupt your numbers.
+- [Pulling a research universe](https://octo-98895abd.mintlify.site/api-docs/guides/research.md): The universe, adjusted and total-return prices, the benchmark, fundamentals as they were known and macro: the calls, in order, and where each one can quietly mislead.
 - [Sheets and Excel](https://octo-98895abd.mintlify.site/api-docs/spreadsheets.md): CSV into Google Sheets (Apps Script) and Excel (Power Query). `IMPORTDATA` does not work: it cannot ask for CSV. Server behaviour measured live; snippets marked where not run.
 
 ## Market data
 
-- [Quotes](https://octo-98895abd.mintlify.site/api-docs/quotes.md): Unadjusted B3 cash-market quotes — the api.quotes view plus the quote_history and quote_latest functions.
+- [Quotes](https://octo-98895abd.mintlify.site/api-docs/quotes.md): B3 cash-market quotes — the unadjusted api.quotes view plus quote_history (with adjusted and total-return closes) and quote_latest.
 - [Cash instruments](https://octo-98895abd.mintlify.site/api-docs/instruments.md): One endpoint per B3 cash instrument type — equities, BDRs, units, fund quotas and other cash paper, each with both lot sizes.
 - [Options](https://octo-98895abd.mintlify.site/api-docs/options.md): B3 equity options as published — one session's chain for a codneg prefix, or one series' daily history.
 - [Termo](https://octo-98895abd.mintlify.site/api-docs/termo.md): B3 forward (termo) contracts as published — one code's daily history, term included in the grain.

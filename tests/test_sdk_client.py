@@ -1152,3 +1152,97 @@ def test_quote_history_passes_the_field_selection():
     c.quote_history("PETR4", "2020-01-01", "2020-02-01", fields="close")
     assert "p_fields" not in bodies[0], "no selection = the server's default"
     assert bodies[1]["p_fields"] == ["close"]
+
+
+# ---------------------------------------------------------------------------
+# The research seam (#419): research_universe and index_history
+# ---------------------------------------------------------------------------
+
+UNIVERSE = [
+    # Rows as production held them on 2026-09-30.
+    {"ticker": "PETR4", "isin": "BRPETRACNPR6", "first_observed": "2019-01-02",
+     "last_observed": "2026-09-29", "n_sessions": 1900},
+    # NATU3: one ISIN, no sessions between 2019-12 and 2025-07 -- inside the gap
+    # the pair still matches the filter, by design.
+    {"ticker": "NATU3", "isin": "BRNATUACNOR6", "first_observed": "2019-01-02",
+     "last_observed": "2026-09-29", "n_sessions": 554},
+    {"ticker": "ELET3", "isin": "BRELETACNOR6", "first_observed": "2019-01-02",
+     "last_observed": "2025-11-07", "n_sessions": 1709},
+    {"ticker": "AXIA3", "isin": "BRAXIAACNOR0", "first_observed": "2025-11-10",
+     "last_observed": "2026-09-29", "n_sessions": 220},
+]
+
+
+def test_research_universe_is_one_call_and_returns_every_pair():
+    calls = []
+
+    def responder(request):
+        calls.append(request.url.path)
+        return httpx.Response(200, json=UNIVERSE)
+
+    c = make_client(catalog_then(responder))
+    rows = c.research_universe()
+    assert rows == UNIVERSE, "without as_of the survivors and the dead are all there"
+    assert calls == ["/rest/v1/rpc/research_universe"]
+
+
+def test_research_universe_as_of_is_the_survivorship_rule():
+    c = make_client(catalog_then(lambda r: httpx.Response(200, json=UNIVERSE)))
+    on = lambda d: sorted(r["ticker"] for r in c.research_universe(as_of=d))  # noqa: E731
+    # a rename is two rows and the pairs never overlap: ELET3 until 2025-11-07, AXIA3 from 2025-11-10
+    assert on("2024-06-03") == ["ELET3", "NATU3", "PETR4"]
+    assert on("2026-01-05") == ["AXIA3", "NATU3", "PETR4"]
+    # bounds are inclusive on both sides
+    assert on("2025-11-07") == ["ELET3", "NATU3", "PETR4"]
+    assert on("2025-11-10") == ["AXIA3", "NATU3", "PETR4"]
+    # before the tape nobody matches
+    assert on("2018-12-31") == []
+    # a date object works the same as a string
+    from datetime import date as _d
+
+    assert sorted(r["ticker"] for r in c.research_universe(as_of=_d(2024, 6, 3))) == ["ELET3", "NATU3", "PETR4"]
+
+
+def test_index_history_sends_the_spec_parameters_and_never_a_ticker_default():
+    sent = []
+
+    def responder(request):
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json=[{"index_code": "IBOV", "trade_date": "2025-12-30",
+                                          "level": 161125.37, "divisor_step": False,
+                                          "source": "b3_index_statistics"}])
+
+    c = make_client(catalog_then(responder))
+    rows = c.index_history("IBOV", start="2025-12-30", end="2025-12-30")
+    assert rows[0]["level"] == 161125.37
+    assert sent == [{"p_index": "IBOV", "p_from": "2025-12-30", "p_to": "2025-12-30"}]
+
+
+def test_iter_index_history_walks_pages_with_the_last_rows_trade_date():
+    seen = []
+
+    def level_rows(n, offset=0):
+        return [{"index_code": "IBOV", "trade_date": f"{1968 + (offset + i) // 250}-{1 + (offset + i) % 250 // 21:02d}-{1 + (offset + i) % 21:02d}",
+                 "level": 1.0 + offset + i, "divisor_step": False, "source": "b3_index_statistics"}
+                for i in range(n)]
+
+    page1, page2 = level_rows(SERVER_ROW_CAP), level_rows(7, SERVER_ROW_CAP)
+
+    def responder(request):
+        body = json.loads(request.content)
+        seen.append(body.get("p_after"))
+        rows = page1 if body.get("p_after") == "" else page2
+        return httpx.Response(200, json=rows, headers={"Content-Range": f"0-{len(rows) - 1}/*"})
+
+    c = make_client(catalog_then(responder))
+    rows = c.index_history_all("IBOV", start="1968-01-02")
+    assert len(rows) == SERVER_ROW_CAP + 7
+    assert seen == ["", page1[-1]["trade_date"]]
+
+
+def test_index_history_over_one_page_raises_over_cap_like_every_function():
+    body = ('{"code":"22023","message":"index_history: refused, this request would return '
+            'more than 1000 rows."}')
+    c = make_client(catalog_then(lambda r: httpx.Response(400, text=body)))
+    with pytest.raises(SiloOverCap):
+        c.index_history("IBOV", start="1968-01-02")

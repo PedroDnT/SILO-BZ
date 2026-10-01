@@ -6,8 +6,12 @@
 --   api.index_history   daily levels of a B3-published index, as published
 --
 -- WHY THIS IS NOT quote_history('IBOV11'). IBOV11 is the Ibovespa OPTIONS
--- settlement leg: it prints on expiry days only, in R$ per contract, and is
--- not the index close. BOVA11 is an ETF. Neither may stand in for the index,
+-- settlement code: each print is that session's settlement index, never the
+-- official close (in 2026 none of its 181 prints equals the close; they differ
+-- by 0.18% on average and by up to 1.07%). It printed on expiry days only
+-- through 2024, weekly in 2025 and on nearly every session since December
+-- 2025, so a dense IBOV11 series is not a sign that it is the index.
+-- BOVA11 is an ETF. Neither may stand in for the index,
 -- so this function takes an INDEX CODE and refuses everything else, which makes
 -- the substitution impossible by construction instead of by a warning.
 --
