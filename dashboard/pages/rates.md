@@ -90,10 +90,10 @@ select * from supabase.rates_ntnb_fund_holdings
 ```
 
 ```sql rates_ntnb_by_maturity
-select maturity_year, ntnb_bn, period
+select cast(maturity_year as varchar) as maturity_year, ntnb_bn, period
 from supabase.rates_ntnb_holders_latest
 where grain = 'maturity'
-order by maturity_year
+order by 1
 ```
 
 ```sql rates_ntnb_top_funds
