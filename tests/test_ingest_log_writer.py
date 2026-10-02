@@ -226,3 +226,92 @@ def test_cvm_finish_writes_no_extra_row_when_the_update_landed(monkeypatch):
     ing._log_finish("r1", 7)
 
     assert sent == []
+
+
+# ── Outcome: a unit of work that does not raise but is not simply "ok" ────────
+
+async def _run_audited(fn):
+    """audited() with the audit rows captured; returns (result, finish row)."""
+    rows, upsert = _capture()
+    result = await ingest_log.audited(MagicMock(), "b3", "events", fn, upsert=upsert)
+    running, finish_row = rows
+    assert running["status"] == "running"
+    return result, finish_row
+
+
+@pytest.mark.asyncio
+async def test_a_bare_row_count_is_still_an_ok_row():
+    async def work():
+        return 7
+
+    result, row = await _run_audited(work)
+    assert result == 7
+    assert (row["status"], row["rows_upserted"], row["error_msg"]) == ("ok", 7, None)
+
+
+@pytest.mark.asyncio
+async def test_an_ok_outcome_is_an_ok_row():
+    async def work():
+        return ingest_log.Outcome(5)
+
+    result, row = await _run_audited(work)
+    assert result == 5
+    assert (row["status"], row["rows_upserted"]) == ("ok", 5)
+
+
+@pytest.mark.asyncio
+async def test_a_skipped_outcome_returns_normally_and_logs_skipped():
+    """A month CVM has not published: not a failure, so nothing raises."""
+    async def work():
+        return ingest_log.Outcome(0, "skipped", "Data not found at http://x")
+
+    result, row = await _run_audited(work)
+    assert result == 0
+    assert (row["status"], row["rows_upserted"]) == ("skipped", 0)
+    assert row["error_msg"] == "Data not found at http://x"
+
+
+@pytest.mark.asyncio
+async def test_an_error_outcome_logs_error_without_raising():
+    """Some issuers failed but the step stays green: the row still says error."""
+    async def work():
+        return ingest_log.Outcome(3, "error", "2/10 issuers failed; first: boom")
+
+    result, row = await _run_audited(work)
+    assert result == 3
+    assert (row["status"], row["rows_upserted"]) == ("error", 3)
+    assert row["error_msg"] == "2/10 issuers failed; first: boom"
+
+
+def test_an_outcome_status_outside_the_three_is_refused():
+    """'success' is the status coverage and staleness checks silently ignore."""
+    with pytest.raises(ValueError, match="success"):
+        ingest_log.Outcome(1, "success")
+
+
+def test_an_ok_outcome_cannot_carry_an_error_message():
+    with pytest.raises(ValueError):
+        ingest_log.Outcome(1, "ok", "something went wrong")
+
+
+@pytest.mark.asyncio
+async def test_a_bad_outcome_inside_the_work_is_recorded_as_an_error_row_and_raised():
+    async def work():
+        return ingest_log.Outcome(1, "success")
+
+    rows, upsert = _capture()
+    with pytest.raises(ValueError, match="success"):
+        await ingest_log.audited(MagicMock(), "b3", "events", work, upsert=upsert)
+    assert [r["status"] for r in rows] == ["running", "error"]
+
+
+@pytest.mark.asyncio
+async def test_a_raise_is_still_an_error_row_and_is_reraised():
+    async def work():
+        raise RuntimeError("fetch failed")
+
+    rows, upsert = _capture()
+    with pytest.raises(RuntimeError, match="fetch failed"):
+        await ingest_log.audited(MagicMock(), "b3", "events", work, upsert=upsert)
+    assert rows[-1]["status"] == "error"
+    assert rows[-1]["error_msg"] == "RuntimeError: fetch failed"

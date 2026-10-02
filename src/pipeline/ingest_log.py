@@ -26,6 +26,10 @@ contract:
 * A source that landed some rows before failing raises
   ``PartialIngestError(rows=n)`` and the error row records ``n``, so the
   audit reconciles against the landing table.
+* A source that finishes without raising but wants a status other than
+  ``ok`` (a month CVM has not published is ``skipped``; some issuers failed
+  but the step stays green is ``error``) returns an ``Outcome`` instead of a
+  bare row count. A bare ``int`` still means ``ok``.
 
 Lineage (migration 44): every row this module writes — and CVM's own
 writer in ``cvm_pipeline`` — carries ``git_sha`` and ``parser_version``
@@ -47,8 +51,9 @@ import logging
 import os
 import re
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional, Union
 
 from src.store.pg_client import upsert_rows
 
@@ -105,6 +110,35 @@ class PartialIngestError(RuntimeError):
     def __init__(self, message: str, *, rows: int = 0) -> None:
         super().__init__(message)
         self.rows = int(rows)
+
+
+STATUSES = ("ok", "skipped", "error")
+
+
+@dataclass(frozen=True)
+class Outcome:
+    """How a unit of work that did NOT raise wants its audit row to end.
+
+    ``audited`` treats a bare ``int`` as ``Outcome(rows)`` (status ``ok``).
+    Return an ``Outcome`` when the work finishes normally but ``ok`` would be
+    wrong: ``skipped`` for a slice the source has not published, ``error``
+    for a run that recorded failures and still returns (the caller decides
+    whether that fails the step; the audit row says what happened).
+
+    The status is checked on construction, so a typo such as ``"success"``
+    (which coverage and staleness checks ignore) fails inside the work, is
+    recorded as an ``error`` row and is re-raised, instead of being written.
+    """
+
+    rows: int = 0
+    status: str = "ok"
+    error: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.status not in STATUSES:
+            raise ValueError(f"Outcome status must be one of {STATUSES}, got {self.status!r}")
+        if self.status == "ok" and self.error:
+            raise ValueError("an ok Outcome cannot carry an error message")
 
 
 def describe(exc: BaseException) -> str:
@@ -194,13 +228,13 @@ async def audited(
     client: Any,
     entity: str,
     doc_type: str,
-    fn: Callable[[], Awaitable[int]],
+    fn: Callable[[], Awaitable[Union[int, Outcome]]],
     *,
     period_year: Optional[int] = None,
     period_month: Optional[int] = None,
     upsert: Optional[Upsert] = None,
 ) -> int:
-    """Run ``fn()`` under an audit row: running → ok | error. Returns its rows.
+    """Run ``fn()`` under an audit row: running → ok | skipped | error. Returns its rows.
 
     ``fn`` is a zero-arg factory, called only after the start row is
     attempted, so no coroutine is ever created and left un-awaited.
@@ -219,8 +253,11 @@ async def audited(
 
     status, rows, error = "error", 0, None
     try:
-        rows = int(await fn() or 0)
-        status = "ok"
+        result = await fn()
+        if isinstance(result, Outcome):
+            rows, status, error = int(result.rows), result.status, result.error
+        else:
+            rows, status = int(result or 0), "ok"
         return rows
     except BaseException as exc:
         rows = int(getattr(exc, "rows", 0) or 0)
