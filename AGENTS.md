@@ -33,8 +33,8 @@ Single-context: root `CONTEXT.md` and `docs/adr/`. See `docs/agents/domain.md`.
 - One Vercel project (`silo-bz`, team `deloslabs`) exists, and it builds only
   `dashboard/`: root `vercel.json` hardcodes `cd dashboard`. It also disables
   git-triggered production deployments on `main`, so a merge publishes nothing:
-  only the deploy hook does, fired by a green scheduled daily run or by a dispatch
-  with `rebuild_dashboard=true`. `scripts/vercel_should_build.sh`
+  only the deploy hook does, fired by a scheduled daily run whose analytical apply
+  succeeded (a red source does not block it) or by a dispatch with `rebuild_dashboard=true`. `scripts/vercel_should_build.sh`
   builds a PR preview only when `dashboard/`, `vercel.json` or the script itself
   changed. `webapp/` has no Vercel deployment (`webapp/README.md`). Do not assume
   a second project.

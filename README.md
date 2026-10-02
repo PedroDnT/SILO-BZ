@@ -44,7 +44,7 @@ Where each dataset lands, at what grain and what is ingested but not yet served:
 
 Fetch (`src/fetchers/`, HTTP only), parse (`src/parsers/`, validated rows), store (`src/store/pg_client.py`, upsert on the natural key), orchestrated by `src/pipeline/`. Everything runs in GitHub Actions against Supabase; there is no server to keep up. Times are UTC-3, with UTC in parentheses.
 
-- **03:00 UTC-3 (06:00 UTC), `daily_ingest.yml`:** schema and migrations, `run_daily`, `ANALYZE`, analytical rebuild, dashboard deploy hook. If any source fails, the last three steps are skipped.
+- **03:00 UTC-3 (06:00 UTC), `daily_ingest.yml`:** schema and migrations, `run_daily`, `ANALYZE`, analytical rebuild, dashboard deploy hook. If a source fails the run goes red, but the last three steps still run; only a failed probe, schema apply or analytical apply holds them back.
 - **04:30 UTC-3 (07:30 UTC), `health.yml`:** reads the audit log and the tables, fails loudly when they disagree.
 - **05:00 UTC-3 (08:00 UTC), `watchdog.yml` and `publish_check.yml`:** re-run stale slices; confirm the public URL serves the new build.
 - **On demand, `backfill.yml`:** one entity and year range at a time.
