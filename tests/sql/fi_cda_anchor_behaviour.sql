@@ -11,6 +11,17 @@ BEGIN;
 \set fi_alloc `cat dashboard/sources/supabase/fi_allocation.sql`
 \set fi_top `cat dashboard/sources/supabase/fi_top_aplic.sql`
 
+-- The FI cap is pinned here. Earlier CI steps seed fi facts in 2024-12, so the
+-- real latest_complete_period('fi') would cap both sources there and the test
+-- would depend on what those steps seeded. In production the FI cap (2026-08)
+-- is LATER than the last complete CDA month (2026-05); this reproduces that.
+-- A function in pg_temp is never found by an unqualified call, so the real one
+-- is replaced for this transaction; the ROLLBACK at the end restores it.
+CREATE OR REPLACE FUNCTION public.latest_complete_period(p_entity_type TEXT DEFAULT NULL)
+RETURNS date LANGUAGE sql STABLE AS $f$
+  SELECT (date_trunc('month', current_date) - interval '2 months')::date
+$f$;
+
 CREATE TEMP TABLE cvm_fi_cda (
   period date, cnpj text, tp_aplic text, tp_ativo text, vl_merc_pos_final numeric
 );
