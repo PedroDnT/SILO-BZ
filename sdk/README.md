@@ -186,8 +186,9 @@ refuses: everything read off the catalog itself keeps working.
   server's clamp: fund metrics stop at each family's latest _complete_
   period. Pass an explicit `end` to see partial months verbatim.
 - **Unadjusted prices.** `close` is as published; a 2:1 split looks like
-  −50%. `close_return` is already null across session gaps > 7 days and
-  quotation-factor changes, but corporate actions are yours to handle.
+  −50%. `close_return` is null across session gaps > 7 days, quotation-factor
+  changes and splits, groupings and bonuses (the session is left out, not
+  adjusted); for a continuous series use `quote_history`'s `close_adj`.
 - **The panel is the primitive.** Correlation, ranking, spreads, factor
   models are reductions of the DataFrame this client hands you. The API will
   not compute them, and neither will this client.
