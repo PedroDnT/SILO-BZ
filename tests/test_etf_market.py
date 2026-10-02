@@ -7,8 +7,11 @@ parser is protected by the offline pre-push suite even though the live scrape is
 paid/rate-limited and never runs in tests.
 """
 
+import logging
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from src.pipeline import ingest_etf_market as m
 
@@ -178,12 +181,11 @@ def _only_log_rows(log):
 
 
 class TestIngestEtfMarket:
-    def test_scrape_to_upsert(self):
+    async def test_scrape_to_upsert(self, audit_log):
         captured = {}
 
         def _fake_upsert(conn, table, rows, **kw):
             if table == "cvm_ingest_log":
-                captured.setdefault("log", []).append(rows[0])
                 return len(rows)
             captured["table"] = table
             captured["rows"] = rows
@@ -195,66 +197,82 @@ class TestIngestEtfMarket:
         with patch.object(m.ApifyETFFetcher, "__init__", return_value=None), \
              patch.object(m.ApifyETFFetcher, "fetch", return_value=records), \
              patch("src.pipeline.ingest_etf_market.upsert_rows", side_effect=_fake_upsert):
-            n = m.ingest_etf_market(object(), tickers=["BOVA11"])
+            n = await m.ingest_etf_market(object(), tickers=["BOVA11"])
 
         assert n == 1
         assert captured["table"] == "etf_market_snapshot"
         assert captured["conflict"] == "ticker,snapshot_date"
         assert captured["rows"][0]["ticker"] == "BOVA11"
-        # Rule 3: one audit row, 'running' then 'ok' on the same run_id.
-        assert [r["status"] for r in captured["log"]] == ["running", "ok"]
-        assert {r["entity"] for r in captured["log"]} == {"etf_market"}
-        assert captured["log"][-1]["rows_upserted"] == 1
-        assert len({r["run_id"] for r in captured["log"]}) == 1
+        # Rule 3: one audit row via ingest_log.audited — 'running' then 'ok'.
+        assert len(audit_log.started) == 1
+        assert audit_log.started[0]["entity"] == "etf_market"
+        (fin,) = audit_log.finished
+        assert (fin["status"], fin["rows"], fin["error"]) == ("ok", 1, None)
 
-    def test_records_without_ticker_raise(self):
-        log = []
+    async def test_records_without_ticker_raise(self, audit_log):
         # Scrape returned rows but none usable → must raise, never upsert nothing silently.
         with patch.object(m.ApifyETFFetcher, "__init__", return_value=None), \
              patch.object(m.ApifyETFFetcher, "fetch", return_value=[{"text": "no ticker"}]), \
-             patch("src.pipeline.ingest_etf_market.upsert_rows",
-                   side_effect=_only_log_rows(log)):
-            try:
-                m.ingest_etf_market(object(), tickers=["BOVA11"])
-                assert False, "expected RuntimeError"
-            except RuntimeError as exc:
-                assert "usable ticker" in str(exc)
-        assert log[-1]["status"] == "error"
-        assert "usable ticker" in log[-1]["error_msg"]
+             patch("src.pipeline.ingest_etf_market.upsert_rows", return_value=0):
+            with pytest.raises(RuntimeError, match="usable ticker"):
+                await m.ingest_etf_market(object(), tickers=["BOVA11"])
+        (fin,) = audit_log.finished
+        assert fin["status"] == "error"
+        assert "usable ticker" in fin["error"]
 
-    def test_no_tickers_raises(self):
+    async def test_no_tickers_raises(self, audit_log):
         # Empty explicit list falls through to the registry lookup; with no active
         # ETFs it must raise (seed the registry first), never run an empty scrape.
-        log = []
         with patch("src.pipeline.ingest_etf_market._active_tickers", return_value=[]), \
-             patch("src.pipeline.ingest_etf_market.upsert_rows",
-                   side_effect=_only_log_rows(log)):
-            try:
-                m.ingest_etf_market(object(), tickers=[])
-                assert False, "expected RuntimeError"
-            except RuntimeError as exc:
-                assert "No ETF tickers" in str(exc)
-        assert log[-1]["status"] == "error"
+             patch("src.pipeline.ingest_etf_market.upsert_rows", return_value=0):
+            with pytest.raises(RuntimeError, match="No ETF tickers"):
+                await m.ingest_etf_market(object(), tickers=[])
+        (fin,) = audit_log.finished
+        assert fin["status"] == "error"
 
-    def test_apify_unavailable_is_logged_skipped_and_reraised(self):
-        # run_daily tolerates this class (no dataset, nothing to fabricate); the
-        # audit row must say 'skipped', not 'error', or DB Health goes red.
-        log = []
+    async def test_apify_unavailable_is_logged_skipped(self, audit_log, caplog):
+        """ApifyScrapeUnavailableError → skipped audit row, returns 0, does not raise.
+
+        run_daily no longer checks for this error class; ingest_etf_market absorbs
+        it as Outcome(0, "skipped"), logs loudly, and returns 0 so ANALYZE and
+        analytics still run on usage-limit days.
+        """
         boom = m.ApifyScrapeUnavailableError("403 usage hard limit")
         with patch.object(m.ApifyETFFetcher, "__init__", return_value=None), \
              patch.object(m.ApifyETFFetcher, "fetch", side_effect=boom), \
-             patch("src.pipeline.ingest_etf_market.upsert_rows",
-                   side_effect=_only_log_rows(log)):
-            try:
-                m.ingest_etf_market(object(), tickers=["BOVA11"])
-                assert False, "expected ApifyScrapeUnavailableError"
-            except m.ApifyScrapeUnavailableError:
-                pass
-        assert log[-1]["status"] == "skipped"
-        assert "403 usage hard limit" in log[-1]["error_msg"]
-        assert log[-1]["rows_upserted"] == 0
+             patch("src.pipeline.ingest_etf_market.upsert_rows", return_value=0), \
+             caplog.at_level(logging.ERROR, logger="src.pipeline.ingest_etf_market"):
+            n = await m.ingest_etf_market(object(), tickers=["BOVA11"])
+        assert n == 0
+        (fin,) = audit_log.finished
+        assert fin["status"] == "skipped"
+        assert "403 usage hard limit" in fin["error"]
+        assert fin["rows"] == 0
+        assert "did not return a dataset" in caplog.text
 
-    def test_a_failed_audit_write_does_not_mask_the_ingest(self):
+    @pytest.mark.parametrize("exc_cls,msg", [
+        ("ApifyActorNotApprovedError",
+         "approve at https://console.apify.com/actors/moJRLRc85AitArpNN"),
+        ("ApifyRunTimeoutError",
+         "HTTP 408 run-timeout-exceeded: Actor run exceeded the timeout"),
+        ("ApifyRunAbortedError",
+         "run d2UCTxohVY9IcQX9a was aborted (status=ABORTED) — no dataset"),
+        ("ApifyUsageLimitError",
+         "account usage limit exceeded (HTTP 403 platform-feature-disabled)"),
+    ])
+    async def test_apify_error_variants_are_skipped(self, exc_cls, msg, audit_log):
+        """All ApifyScrapeUnavailableError subclasses → skipped, not error."""
+        from src.fetchers import apify_etf_fetcher as aef
+        boom = getattr(aef, exc_cls)(msg)
+        with patch.object(m.ApifyETFFetcher, "__init__", return_value=None), \
+             patch.object(m.ApifyETFFetcher, "fetch", side_effect=boom), \
+             patch("src.pipeline.ingest_etf_market.upsert_rows", return_value=0):
+            n = await m.ingest_etf_market(object(), tickers=["BOVA11"])
+        assert n == 0
+        (fin,) = audit_log.finished
+        assert fin["status"] == "skipped"
+
+    async def test_a_failed_audit_write_does_not_mask_the_ingest(self):
         def _fake_upsert(conn, table, rows, **kw):
             if table == "cvm_ingest_log":
                 raise RuntimeError("audit table unavailable")
@@ -264,4 +282,4 @@ class TestIngestEtfMarket:
         with patch.object(m.ApifyETFFetcher, "__init__", return_value=None), \
              patch.object(m.ApifyETFFetcher, "fetch", return_value=records), \
              patch("src.pipeline.ingest_etf_market.upsert_rows", side_effect=_fake_upsert):
-            assert m.ingest_etf_market(object(), tickers=["BOVA11"]) == 1
+            assert await m.ingest_etf_market(object(), tickers=["BOVA11"]) == 1

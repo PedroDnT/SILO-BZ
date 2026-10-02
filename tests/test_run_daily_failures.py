@@ -149,7 +149,7 @@ async def test_etf_scrape_failure_exits_nonzero(monkeypatch):
     p1, p2, p3, p4, *_ = _patches()
     with p1, p2, p3, p4, \
          patch("src.pipeline.ingest_etf_market.ingest_etf_market",
-               side_effect=RuntimeError("scrape blocked")), \
+               new=AsyncMock(side_effect=RuntimeError("scrape blocked"))), \
          patch("src.store.pg_client.get_pg_client", return_value=MagicMock()):
         with pytest.raises(SystemExit) as exc:
             await rd.main()
@@ -157,113 +157,21 @@ async def test_etf_scrape_failure_exits_nonzero(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_etf_actor_not_approved_is_not_a_failure(monkeypatch, caplog):
-    """Apify 403 full-permission-actor-not-approved never started a scrape.
+async def test_etf_scrape_skipped_is_not_a_failure(monkeypatch):
+    """ingest_etf_market returns 0 when Apify skips (absorbs the error internally).
 
-    Daily CVM Ingest #209 ingested 3.1M CVM rows then exited 1 on this error,
-    which skipped ANALYZE and the analytical layer. Same class as an unset
-    APIFY_TOKEN: skip, do not fail the daily run.
+    All Apify unavailability variants (403 actor-not-approved, 403 usage hard
+    limit, 408 run-timeout-exceeded, ABORTED) are turned into Outcome(0,
+    "skipped") inside ingest_etf_market; run_daily sees 0 rows, no exception.
+    The detailed per-variant behaviour is tested in test_etf_market.py.
     """
-    from src.fetchers.apify_etf_fetcher import ApifyActorNotApprovedError
-
     monkeypatch.setenv("APIFY_TOKEN", "tok")
     p1, p2, p3, p4, *_ = _patches()
     with p1, p2, p3, p4, \
-         patch(
-             "src.pipeline.ingest_etf_market.ingest_etf_market",
-             side_effect=ApifyActorNotApprovedError(
-                 "approve at https://console.apify.com/actors/moJRLRc85AitArpNN"
-                 "?approvePermissions=true"
-             ),
-         ), \
-         patch("src.store.pg_client.get_pg_client", return_value=MagicMock()), \
-         caplog.at_level("ERROR"):
+         patch("src.pipeline.ingest_etf_market.ingest_etf_market",
+               new=AsyncMock(return_value=0)), \
+         patch("src.store.pg_client.get_pg_client", return_value=MagicMock()):
         await rd.main()  # no SystemExit
-    assert "did not return a dataset" in caplog.text
-
-
-@pytest.mark.asyncio
-async def test_etf_run_timeout_is_not_a_failure(monkeypatch, caplog):
-    """Apify 408 run-timeout-exceeded never delivered a dataset.
-
-    Daily CVM Ingest 33721538761 ingested 3.1M CVM rows then exited 1 on this
-    error, which skipped ANALYZE and the analytical layer. Same class as an
-    unset APIFY_TOKEN: skip, do not fail the daily run.
-    """
-    from src.fetchers.apify_etf_fetcher import ApifyRunTimeoutError
-
-    monkeypatch.setenv("APIFY_TOKEN", "tok")
-    p1, p2, p3, p4, *_ = _patches()
-    with p1, p2, p3, p4, \
-         patch(
-             "src.pipeline.ingest_etf_market.ingest_etf_market",
-             side_effect=ApifyRunTimeoutError(
-                 "HTTP 408 run-timeout-exceeded: Actor run exceeded the "
-                 "timeout of 300 seconds for this API endpoint"
-             ),
-         ), \
-         patch("src.store.pg_client.get_pg_client", return_value=MagicMock()), \
-         caplog.at_level("ERROR"):
-        await rd.main()  # no SystemExit
-    assert "did not return a dataset" in caplog.text
-
-
-@pytest.mark.asyncio
-async def test_etf_run_aborted_is_not_a_failure(monkeypatch, caplog):
-    """Apify ABORTED never delivered a dataset.
-
-    Daily CVM Ingest #219 (run 34015471961, 2026-09-06) ingested ~3.6M
-    CVM/BACEN/B3 rows then exited 1 on ended ABORTED after ~11 minutes
-    (run d2UCTxohVY9IcQX9a), which skipped ANALYZE and the analytical
-    layer. Same class as an unset APIFY_TOKEN: skip, do not fail the
-    daily run.
-    """
-    from src.fetchers.apify_etf_fetcher import ApifyRunAbortedError
-
-    monkeypatch.setenv("APIFY_TOKEN", "tok")
-    p1, p2, p3, p4, *_ = _patches()
-    with p1, p2, p3, p4, \
-         patch(
-             "src.pipeline.ingest_etf_market.ingest_etf_market",
-             side_effect=ApifyRunAbortedError(
-                 "Apify actor apify~playwright-scraper run "
-                 "d2UCTxohVY9IcQX9a was aborted (status=ABORTED) — no dataset"
-             ),
-         ), \
-         patch("src.store.pg_client.get_pg_client", return_value=MagicMock()), \
-         caplog.at_level("ERROR"):
-        await rd.main()  # no SystemExit
-    assert "did not return a dataset" in caplog.text
-    assert "ABORTED" in caplog.text
-
-
-@pytest.mark.asyncio
-async def test_etf_usage_limit_is_not_a_failure(monkeypatch, caplog):
-    """Apify 403 platform-feature-disabled / usage hard limit never started.
-
-    Daily CVM Ingest #220 / #221 ingested ~3.6M CVM/BACEN/B3 rows then
-    exited 1 on HTTP 403 Monthly usage hard limit exceeded, which skipped
-    ANALYZE and the analytical layer. Same class as an unset APIFY_TOKEN:
-    skip, do not fail the daily run. Other 403s (billing) still fail.
-    """
-    from src.fetchers.apify_etf_fetcher import ApifyUsageLimitError
-
-    monkeypatch.setenv("APIFY_TOKEN", "tok")
-    p1, p2, p3, p4, *_ = _patches()
-    with p1, p2, p3, p4, \
-         patch(
-             "src.pipeline.ingest_etf_market.ingest_etf_market",
-             side_effect=ApifyUsageLimitError(
-                 "Apify actor apify~playwright-scraper cannot start the "
-                 "etfsbrasil scrape: account usage limit exceeded "
-                 "(HTTP 403 platform-feature-disabled)"
-             ),
-         ), \
-         patch("src.store.pg_client.get_pg_client", return_value=MagicMock()), \
-         caplog.at_level("ERROR"):
-        await rd.main()  # no SystemExit
-    assert "did not return a dataset" in caplog.text
-    assert "usage limit exceeded" in caplog.text
 
 
 @pytest.mark.asyncio

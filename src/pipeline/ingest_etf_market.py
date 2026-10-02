@@ -20,7 +20,7 @@ import asyncio
 import json
 import logging
 import re
-import uuid
+import sys
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -204,38 +204,34 @@ LOG_ENTITY = "etf_market"
 LOG_DOC_TYPE = "snapshot"
 
 
-def ingest_etf_market(conn, tickers: Optional[List[str]] = None) -> int:
+async def ingest_etf_market(conn, tickers: Optional[List[str]] = None) -> int:
     """Scrape etfsbrasil for `tickers` (default: active registry ETFs) and upsert.
 
-    Writes one cvm_ingest_log row (integrity rule 3): ok, error, or skipped when
-    Apify never delivered a dataset. run_daily tolerates that case and the audit
-    row must too, or DB Health would go red on every Apify usage-limit day. The
-    audit writes are best-effort and never mask the ingest outcome.
+    Writes one cvm_ingest_log row (integrity rule 3) via ``ingest_log.audited``:
+    ``ok`` on success, ``error`` on an unexpected failure, or ``skipped`` when
+    Apify never returned a dataset (403 actor-not-approved, 403 usage hard limit,
+    408 run-timeout-exceeded, wait-budget miss, platform ABORTED). The audit
+    writes are best-effort and never mask the ingest outcome.
     """
-    run_id = str(uuid.uuid4())
-    try:
-        ingest_log.start(conn, run_id, LOG_ENTITY, LOG_DOC_TYPE, upsert=upsert_rows)
-    except Exception as exc:  # noqa: BLE001 - audit must not stop the ingest
-        logger.warning("etf_market: could not write the running row (%s); continuing",
-                       ingest_log.describe(exc))
 
-    status, rows, error = "error", 0, None
-    try:
-        rows = _scrape_and_upsert(conn, tickers)
-        status = "ok"
-        return rows
-    except BaseException as exc:
-        error = ingest_log.describe(exc)
-        if isinstance(exc, ApifyScrapeUnavailableError):
-            status = "skipped"
-        raise
-    finally:
+    async def work() -> ingest_log.Outcome | int:
         try:
-            ingest_log.finish(conn, run_id, LOG_ENTITY, LOG_DOC_TYPE,
-                              status=status, rows=rows, error=error, upsert=upsert_rows)
-        except Exception as log_exc:  # noqa: BLE001 - must not mask the ingest outcome
-            logger.warning("etf_market: could not write the %s row (%s)",
-                           status, ingest_log.describe(log_exc))
+            rows = await asyncio.to_thread(_scrape_and_upsert, conn, tickers)
+            return rows
+        except ApifyScrapeUnavailableError as exc:
+            # No dataset was delivered.  Log loudly for the GitHub Actions
+            # annotation, record a ``skipped`` audit row, and do not fail the
+            # daily run — a usage-limit day must not skip ANALYZE and analytics.
+            msg = ingest_log.describe(exc)
+            logger.error(
+                "ETF market scrape skipped — Apify did not return a dataset: %s", exc
+            )
+            print(f"::warning title=ETF scrape skipped::{exc}", flush=True, file=sys.stderr)
+            return ingest_log.Outcome(0, "skipped", msg)
+
+    return await ingest_log.audited(
+        conn, LOG_ENTITY, LOG_DOC_TYPE, work, upsert=upsert_rows
+    )
 
 
 def _scrape_and_upsert(conn, tickers: Optional[List[str]] = None) -> int:
