@@ -20,12 +20,14 @@ import asyncio
 import json
 import logging
 import re
+import uuid
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from psycopg2.extras import Json
 
-from src.fetchers.apify_etf_fetcher import ApifyETFFetcher
+from src.fetchers.apify_etf_fetcher import ApifyETFFetcher, ApifyScrapeUnavailableError
+from src.pipeline import ingest_log
 from src.store.pg_client import get_pg_client, upsert_rows
 
 logger = logging.getLogger(__name__)
@@ -198,8 +200,45 @@ def _active_tickers(conn) -> List[str]:
         return [r[0] for r in cur.fetchall()]
 
 
+LOG_ENTITY = "etf_market"
+LOG_DOC_TYPE = "snapshot"
+
+
 def ingest_etf_market(conn, tickers: Optional[List[str]] = None) -> int:
-    """Scrape etfsbrasil for `tickers` (default: active registry ETFs) and upsert."""
+    """Scrape etfsbrasil for `tickers` (default: active registry ETFs) and upsert.
+
+    Writes one cvm_ingest_log row (integrity rule 3): ok, error, or skipped when
+    Apify never delivered a dataset. run_daily tolerates that case and the audit
+    row must too, or DB Health would go red on every Apify usage-limit day. The
+    audit writes are best-effort and never mask the ingest outcome.
+    """
+    run_id = str(uuid.uuid4())
+    try:
+        ingest_log.start(conn, run_id, LOG_ENTITY, LOG_DOC_TYPE, upsert=upsert_rows)
+    except Exception as exc:  # noqa: BLE001 - audit must not stop the ingest
+        logger.warning("etf_market: could not write the running row (%s); continuing",
+                       ingest_log.describe(exc))
+
+    status, rows, error = "error", 0, None
+    try:
+        rows = _scrape_and_upsert(conn, tickers)
+        status = "ok"
+        return rows
+    except BaseException as exc:
+        error = ingest_log.describe(exc)
+        if isinstance(exc, ApifyScrapeUnavailableError):
+            status = "skipped"
+        raise
+    finally:
+        try:
+            ingest_log.finish(conn, run_id, LOG_ENTITY, LOG_DOC_TYPE,
+                              status=status, rows=rows, error=error, upsert=upsert_rows)
+        except Exception as log_exc:  # noqa: BLE001 - must not mask the ingest outcome
+            logger.warning("etf_market: could not write the %s row (%s)",
+                           status, ingest_log.describe(log_exc))
+
+
+def _scrape_and_upsert(conn, tickers: Optional[List[str]] = None) -> int:
     tickers = tickers or _active_tickers(conn)
     if not tickers:
         raise RuntimeError(
