@@ -23,8 +23,10 @@ already stripped are skipped.
     python scripts/strip_cda_fund_name.py                    # all three tables
     python scripts/strip_cda_fund_name.py --table cvm_fi_cda_cotas
     python scripts/strip_cda_fund_name.py --vacuum-full
+    python scripts/strip_cda_fund_name.py --vacuum-full-only   # no strip, just the rewrite
 
-Runs in GitHub Actions as `daily_ingest` mode=cda-fund-name.
+Runs in GitHub Actions as `daily_ingest` mode=cda-fund-name; the rewrite alone
+is mode=cda-vacuum-full (smallest table first, sizes logged before and after).
 """
 from __future__ import annotations
 
@@ -40,6 +42,9 @@ logger = logging.getLogger("strip_cda_fund_name")
 
 TABLES = ("cvm_fi_cda_cotas", "cvm_fi_cda_acoes", "cvm_fi_cda")
 NAME_TABLE = "cvm_fi_cda_fund_name"
+# The rewrite order: smallest first, so a problem shows on a cheap table. The
+# debentures table holds a few hundred rows in ~2.8 GB of dead space.
+REWRITE_TABLES = ("cvm_fi_cda_debentures", "cvm_fi_cda", "cvm_fi_cda_cotas", "cvm_fi_cda_acoes")
 PAGES_PER_BATCH = 20_000      # 160 MB of heap
 BATCHES_PER_VACUUM = 10
 
@@ -110,11 +115,28 @@ def strip_table(client, table: str) -> int:
     return stripped
 
 
+def rewrite_table(client, table: str) -> None:
+    """VACUUM FULL one table, logging its size before and after."""
+    if table not in REWRITE_TABLES:
+        raise ValueError(f"not a CDA table to rewrite: {table}")
+    with client.cursor() as cur:
+        cur.execute("SELECT pg_total_relation_size(%s::regclass)", (table,))
+        before = int(cur.fetchone()[0])
+        cur.execute("SET statement_timeout = 0")
+        cur.execute(f"VACUUM FULL {table}")
+        cur.execute("SELECT pg_total_relation_size(%s::regclass)", (table,))
+        after = int(cur.fetchone()[0])
+    logger.info("%s: rewritten, %.2f GB -> %.2f GB (%.2f GB returned)",
+                table, before / 2**30, after / 2**30, (before - after) / 2**30)
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--table", choices=TABLES, help="one table (default: all three)")
     ap.add_argument("--vacuum-full", action="store_true",
                     help="rewrite each table afterwards to return the space (needs free disk)")
+    ap.add_argument("--vacuum-full-only", action="store_true",
+                    help="skip the strip; VACUUM FULL the four CDA tables, smallest first")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
@@ -122,6 +144,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     client = get_pg_client()
     try:
+        if args.vacuum_full_only:
+            for table in ([args.table] if args.table else REWRITE_TABLES):
+                rewrite_table(client, table)
+            return 0
         for table in ([args.table] if args.table else TABLES):
             strip_table(client, table)
             if args.vacuum_full:
