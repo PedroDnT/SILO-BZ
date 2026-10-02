@@ -842,14 +842,10 @@ class AnbimaIngestor:
             logger.info("[anbima] Parsed %d records total", len(records))
 
             if not records:
-                # 'error', not 'ok': coverage and staleness count status='ok'
-                # even at 0 rows, which would hide a boletim we cannot read.
-                # Returns 0 rather than raising, as before: a raise would fail
-                # the daily run and skip analytics for the other sources.
-                msg = f"No records parsed from boletim {boletim_ref}"
-                logger.warning("[anbima] %s — skipping upsert", msg)
-                self._log_finish(self._pg, run_id, "error", 0, msg)
-                return {LOG_ENTITY: 0}
+                # A boletim we cannot read is a failed ingest, not an empty one
+                # (integrity rule 1: never return a plausible 0). Raising lands
+                # the 'error' row below and fails this source in run_daily.
+                raise RuntimeError(f"No records parsed from boletim {boletim_ref}")
 
             upsert_rows(
                 self._pg,

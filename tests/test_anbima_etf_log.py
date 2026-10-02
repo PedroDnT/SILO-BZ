@@ -182,9 +182,9 @@ class TestDailyUpdate:
         return [s["rows"][0] for s in sent if s["table"] == "cvm_ingest_log"]
 
     @pytest.mark.asyncio
-    async def test_empty_parse_returns_zero_and_logs_an_error_row(self):
-        """Rule 3: nothing parsed is still one audit row, and never 'ok'
-        (coverage and staleness count status='ok' even at 0 rows)."""
+    async def test_empty_parse_raises_and_logs_an_error_row(self):
+        """Rule 3 and rule 1: nothing parsed is one audit row, never 'ok'
+        (coverage counts status='ok' even at 0 rows), and not a silent 0."""
         ing = _ingestor()
         sent = []
 
@@ -197,7 +197,8 @@ class TestDailyUpdate:
              patch("src.pipeline.anbima_pipeline.download_xlsx", return_value=b"xx"), \
              patch("src.pipeline.anbima_pipeline.parse_boletim", return_value=[]), \
              patch("src.pipeline.anbima_pipeline.upsert_rows", side_effect=_fake_upsert):
-            assert await ing.daily_update() == {"anbima_etf": 0}
+            with pytest.raises(RuntimeError, match="No records parsed"):
+                await ing.daily_update()
 
         assert [s["table"] for s in sent] == ["cvm_ingest_log", "cvm_ingest_log"]
         last = self._log_rows(sent)[-1]
