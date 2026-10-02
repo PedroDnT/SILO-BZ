@@ -235,6 +235,7 @@ async def audited(
     period_year: Optional[int] = None,
     period_month: Optional[int] = None,
     upsert: Optional[Upsert] = None,
+    run_id: Optional[str] = None,
 ) -> int:
     """Run ``fn()`` under an audit row: running → ok | skipped | error. Returns its rows.
 
@@ -242,8 +243,10 @@ async def audited(
     attempted, so no coroutine is ever created and left un-awaited.
     The ingest exception — ``Exception`` or ``BaseException`` alike — is
     re-raised untouched; both audit writes are best-effort and off the loop.
+    ``run_id`` is for work that must store its own run's id as provenance;
+    left out, one is generated.
     """
-    run_id = str(uuid.uuid4())
+    run_id = run_id or str(uuid.uuid4())
     key = f"{entity}/{doc_type}"
     try:
         await asyncio.to_thread(

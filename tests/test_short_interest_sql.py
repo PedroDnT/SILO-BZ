@@ -439,7 +439,8 @@ def test_trade_ingest_is_per_session_because_b3_ignores_finaldate():
     loop, not span.
     """
     pipeline = (ROOT / "src" / "pipeline" / "b3_pipeline.py").read_text(encoding="utf-8")
-    body = pipeline.split("async def ingest_lending_trades")[1].split("async def ")[0]
+    # Split on the next method (4-space indent), not the nested `async def work`.
+    body = pipeline.split("async def ingest_lending_trades")[1].split("\n    async def ")[0]
     # The docstring names _ingest_bdi_span to explain why it is NOT used, so
     # match the call, not the prose.
     assert "self._ingest_bdi_span(" not in body, "BTBTrade cannot be range-fetched"

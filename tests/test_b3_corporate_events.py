@@ -274,22 +274,10 @@ def test_daily_job_wires_corporate_events():
 # --------------------------------------------------------------------------
 
 
-def _finish_recorder(ing):
-    recorded: list[dict] = []
-
-    def _finish(run_id, rows, error=None, *, skipped=False):
-        recorded.append(
-            {
-                "rows": rows,
-                "error": error,
-                "skipped": skipped,
-                "status": "skipped" if skipped else ("error" if error else "ok"),
-            }
-        )
-
-    ing._log_start = lambda *a, **k: None
-    ing._log_finish = _finish
-    return recorded
+@pytest.fixture(autouse=True)
+def _audit(audit_log):
+    """Every ingest here writes its audit row through the capture, never a database."""
+    return audit_log
 
 
 def _event_row(code: str = "PETR"):
@@ -303,7 +291,7 @@ def _event_row(code: str = "PETR"):
 
 
 @pytest.mark.asyncio
-async def test_empty_supplement_does_not_fail_the_slice_when_siblings_succeed():
+async def test_empty_supplement_does_not_fail_the_slice_when_siblings_succeed(audit_log):
     """Health #6: 35 empty-body issuers must not keep the slice unhealed."""
     with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
          patch("src.pipeline.ingest_b3_events.ingest_b3_corporate_events",
@@ -319,7 +307,7 @@ async def test_empty_supplement_does_not_fail_the_slice_when_siblings_succeed():
 
         fetcher.fetch_events.side_effect = _events
         ing = B3Ingestor(fetcher=MagicMock())
-        finishes = _finish_recorder(ing)
+        finishes = audit_log.finished
         n = await ing.ingest_corporate_events(issuers=["PETR", "ADMF", "VALE"])
 
     assert n == 11632
@@ -331,7 +319,7 @@ async def test_empty_supplement_does_not_fail_the_slice_when_siblings_succeed():
 
 
 @pytest.mark.asyncio
-async def test_all_empty_supplements_still_fail_the_slice():
+async def test_all_empty_supplements_still_fail_the_slice(audit_log):
     """A malformed token empties every issuer; that must not look like a clean sweep."""
     with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
          patch("src.pipeline.ingest_b3_events.ingest_b3_corporate_events") as ingest, \
@@ -339,7 +327,7 @@ async def test_all_empty_supplements_still_fail_the_slice():
          patch("src.fetchers.b3_corporate_events_fetcher.B3CorporateEventsFetcher") as Fetcher:
         Fetcher.return_value.fetch_events.side_effect = B3SupplementEmpty("empty")
         ing = B3Ingestor(fetcher=MagicMock())
-        finishes = _finish_recorder(ing)
+        finishes = audit_log.finished
         n = await ing.ingest_corporate_events(issuers=["ADMF", "XXXX"])
 
     assert n == 0
@@ -350,7 +338,7 @@ async def test_all_empty_supplements_still_fail_the_slice():
 
 
 @pytest.mark.asyncio
-async def test_transport_failure_still_fails_the_slice_when_siblings_succeed():
+async def test_transport_failure_still_fails_the_slice_when_siblings_succeed(audit_log):
     """SSL/timeout on one issuer must still mark the slice error — that can heal."""
     with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
          patch("src.pipeline.ingest_b3_events.ingest_b3_corporate_events",
@@ -366,7 +354,7 @@ async def test_transport_failure_still_fails_the_slice_when_siblings_succeed():
 
         fetcher.fetch_events.side_effect = _events
         ing = B3Ingestor(fetcher=MagicMock())
-        finishes = _finish_recorder(ing)
+        finishes = audit_log.finished
         n = await ing.ingest_corporate_events(issuers=["PETR", "VALE"])
 
     assert n == 10
@@ -391,7 +379,6 @@ async def test_the_sweep_covers_every_issuer_since_the_tape_start():
          patch("src.fetchers.b3_corporate_events_fetcher.B3CorporateEventsFetcher") as Fetcher:
         Fetcher.return_value.fetch_events.side_effect = lambda code: [_event_row(code)]
         ing = B3Ingestor(fetcher=MagicMock())
-        _finish_recorder(ing)
         ing._traded_issuers = MagicMock(return_value=["PETR"])
         await ing.ingest_corporate_events(full=True)
 
@@ -435,7 +422,6 @@ async def test_the_default_sweep_is_the_incremental_plan():
          patch("src.fetchers.b3_corporate_events_fetcher.B3CorporateEventsFetcher") as Fetcher:
         Fetcher.return_value.fetch_events.side_effect = lambda code: [_event_row(code)]
         ing = B3Ingestor(fetcher=MagicMock())
-        _finish_recorder(ing)
         ing._sweep_plan = MagicMock(return_value=["PETR"])
         await ing.ingest_corporate_events()
     ing._sweep_plan.assert_called_once()
@@ -453,7 +439,6 @@ async def test_a_proof_is_recorded_only_after_its_events_are_stored():
          patch("src.fetchers.b3_corporate_events_fetcher.B3CorporateEventsFetcher") as Fetcher:
         Fetcher.return_value.fetch_events.side_effect = lambda code: [_event_row(code)]
         ing = B3Ingestor(fetcher=MagicMock())
-        _finish_recorder(ing)
         await ing.ingest_corporate_events(issuers=["PETR"])
 
     assert order == ["events", "proofs"]
@@ -468,7 +453,6 @@ async def test_no_proof_survives_a_failed_event_upsert():
          patch("src.fetchers.b3_corporate_events_fetcher.B3CorporateEventsFetcher") as Fetcher:
         Fetcher.return_value.fetch_events.side_effect = lambda code: [_event_row(code)]
         ing = B3Ingestor(fetcher=MagicMock())
-        _finish_recorder(ing)
         with pytest.raises(RuntimeError):
             await ing.ingest_corporate_events(issuers=["PETR"])
 

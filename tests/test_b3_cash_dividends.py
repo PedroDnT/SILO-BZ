@@ -232,21 +232,14 @@ def test_backfill_flag_exists():
 
 
 # -- sweep status ---------------------------------------------------------------
-
-def _finish_recorder(ing):
-    recorded: list[dict] = []
-
-    def _finish(run_id, rows, error=None, *, skipped=False):
-        recorded.append({"rows": rows, "error": error,
-                         "status": "skipped" if skipped else ("error" if error else "ok")})
-
-    ing._log_start = lambda *a, **k: None
-    ing._log_finish = _finish
-    return recorded
+@pytest.fixture(autouse=True)
+def _audit(audit_log):
+    """Every ingest here writes its audit row through the capture, never a database."""
+    return audit_log
 
 
 @pytest.mark.asyncio
-async def test_sweep_upserts_parsed_rows_and_skips_codes_without_a_name():
+async def test_sweep_upserts_parsed_rows_and_skips_codes_without_a_name(audit_log):
     with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
          patch("src.pipeline.ingest_b3_cash_dividends.ingest_b3_cash_dividends",
                return_value=2) as ingest, \
@@ -255,7 +248,7 @@ async def test_sweep_upserts_parsed_rows_and_skips_codes_without_a_name():
         fetcher.trading_names.return_value = {"PETR": [_NAME_PETR]}
         fetcher.fetch_cash_dividends.return_value = [ROW_ON_2026, ROW_PN_1996]
         ing = B3Ingestor(fetcher=MagicMock())
-        finishes = _finish_recorder(ing)
+        finishes = audit_log.finished
         n = await ing.ingest_cash_dividends(issuers=["PETR", "ADMF"], full_history=True)
 
     assert n == 2
@@ -275,7 +268,6 @@ async def test_daily_window_drops_old_history_before_upsert():
         fetcher.trading_names.return_value = {"PETR": [_NAME_PETR]}
         fetcher.fetch_cash_dividends.return_value = [ROW_ON_2026, ROW_PN_1996]
         ing = B3Ingestor(fetcher=MagicMock())
-        _finish_recorder(ing)
         await ing.ingest_cash_dividends(issuers=["PETR"], since=date(2025, 1, 1))
 
     records = ingest.call_args.args[1]
@@ -283,7 +275,7 @@ async def test_daily_window_drops_old_history_before_upsert():
 
 
 @pytest.mark.asyncio
-async def test_one_company_failing_fails_the_slice_but_not_the_sweep():
+async def test_one_company_failing_fails_the_slice_but_not_the_sweep(audit_log):
     with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
          patch("src.pipeline.ingest_b3_cash_dividends.ingest_b3_cash_dividends",
                return_value=1) as ingest, \
@@ -300,7 +292,7 @@ async def test_one_company_failing_fails_the_slice_but_not_the_sweep():
 
         fetcher.fetch_cash_dividends.side_effect = _fetch
         ing = B3Ingestor(fetcher=MagicMock())
-        finishes = _finish_recorder(ing)
+        finishes = audit_log.finished
         n = await ing.ingest_cash_dividends(issuers=["PETR", "VALE"], full_history=True)
 
     assert n == 1 and ingest.called
@@ -309,13 +301,13 @@ async def test_one_company_failing_fails_the_slice_but_not_the_sweep():
 
 
 @pytest.mark.asyncio
-async def test_no_fetchable_company_is_an_error_not_a_clean_empty_run():
+async def test_no_fetchable_company_is_an_error_not_a_clean_empty_run(audit_log):
     with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
          patch("src.pipeline.ingest_b3_cash_dividends.ingest_b3_cash_dividends") as ingest, \
          patch("src.fetchers.b3_corporate_events_fetcher.B3CorporateEventsFetcher") as Fetcher:
         Fetcher.return_value.trading_names.return_value = {}
         ing = B3Ingestor(fetcher=MagicMock())
-        finishes = _finish_recorder(ing)
+        finishes = audit_log.finished
         n = await ing.ingest_cash_dividends(issuers=["XXXX"], full_history=True)
 
     assert n == 0
@@ -324,7 +316,7 @@ async def test_no_fetchable_company_is_an_error_not_a_clean_empty_run():
 
 
 @pytest.mark.asyncio
-async def test_a_company_reached_by_two_codes_is_fetched_once():
+async def test_a_company_reached_by_two_codes_is_fetched_once(audit_log):
     """A renamed issuer (ELET -> AXIA) must not be swept twice under one name."""
     with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
          patch("src.pipeline.ingest_b3_cash_dividends.ingest_b3_cash_dividends",
@@ -335,7 +327,6 @@ async def test_a_company_reached_by_two_codes_is_fetched_once():
         fetcher.trading_names.return_value = {"AXIA": [axia], "AXIB": [axia]}
         fetcher.fetch_cash_dividends.return_value = [ROW_ON_2026]
         ing = B3Ingestor(fetcher=MagicMock())
-        _finish_recorder(ing)
         await ing.ingest_cash_dividends(issuers=["AXIA", "AXIB", "ELET"], full_history=True)
 
     assert fetcher.fetch_cash_dividends.call_count == 1
@@ -359,7 +350,7 @@ def test_identical_installments_are_kept_apart_by_occurrence():
 _AXIA = {"trading_name": "AXIA ENERGIA", "cnpj": "00001180000126"}
 
 
-async def _sweep_with_tape(catalog, tape, issuers):
+async def _sweep_with_tape(catalog, tape, issuers, audit_log):
     """Run the sweep with B3's catalog and the tape lookup both faked."""
     with patch("src.pipeline.b3_pipeline.get_pg_client", return_value=MagicMock()), \
          patch("src.pipeline.ingest_b3_cash_dividends.ingest_b3_cash_dividends",
@@ -370,7 +361,7 @@ async def _sweep_with_tape(catalog, tape, issuers):
         fetcher.fetch_cash_dividends.return_value = [ROW_ON_2026]
         ing = B3Ingestor(fetcher=MagicMock())
         ing._tape_names = MagicMock(return_value=tape)
-        finishes = _finish_recorder(ing)
+        finishes = audit_log.finished
         await ing.ingest_cash_dividends(issuers=issuers, full_history=True)
     fetched = [c.args[0] for c in fetcher.fetch_cash_dividends.call_args_list]
     records = ingest.call_args.args[1] if ingest.called else []
@@ -378,13 +369,12 @@ async def _sweep_with_tape(catalog, tape, issuers):
 
 
 @pytest.mark.asyncio
-async def test_a_delisted_code_is_fetched_under_the_name_the_tape_printed():
+async def test_a_delisted_code_is_fetched_under_the_name_the_tape_printed(audit_log):
     """ENBR left B3's catalog in 2023; its COTAHIST name still answers (34 rows)."""
     fetched, records, finishes, _ = await _sweep_with_tape(
         {"PETR": [_NAME_PETR]},
         {"ENBR": ("ENERGIAS BR", ["99999999000191"])},
-        ["PETR", "ENBR"],
-    )
+        ["PETR", "ENBR"], audit_log)
     assert fetched == ["PETROBRAS", "ENERGIAS BR"]
     enbr = [r for r in records if r["issuing_company"] == "ENBR"]
     assert enbr and enbr[0]["trading_name"] == "ENERGIAS BR"
@@ -393,52 +383,48 @@ async def test_a_delisted_code_is_fetched_under_the_name_the_tape_printed():
 
 
 @pytest.mark.asyncio
-async def test_a_renamed_code_is_skipped_so_its_history_is_not_counted_twice():
+async def test_a_renamed_code_is_skipped_so_its_history_is_not_counted_twice(audit_log):
     """ELET's history arrives under AXIA ENERGIA; ELETROBRAS would repeat it."""
     fetched, _, _, tape = await _sweep_with_tape(
         {"AXIA": [_AXIA]},
         {"ELET": ("ELETROBRAS", ["00001180000126"])},
-        ["AXIA", "ELET"],
-    )
+        ["AXIA", "ELET"], audit_log)
     assert fetched == ["AXIA ENERGIA"]
     assert tape.call_args.args[0] == ["ELET"], "only codes missing from the catalog"
 
 
 @pytest.mark.asyncio
-async def test_a_tape_prefix_that_is_not_the_catalog_key_is_fetched_by_catalog_name():
+async def test_a_tape_prefix_that_is_not_the_catalog_key_is_fetched_by_catalog_name(audit_log):
     """ADMF3 trades as B100 S.A.: B100 is never a tape prefix, so without the
     CNPJ link its history would never be fetched at all."""
     fetched, records, _, _ = await _sweep_with_tape(
         {"B100": [{"trading_name": "B100", "cnpj": "88888888000188"}]},
         {"ADMF": ("B100 S.A.", ["88888888000188"])},
-        ["ADMF"],
-    )
+        ["ADMF"], audit_log)
     assert fetched == ["B100"]
     assert {(r["issuing_company"], r["cnpj"]) for r in records} == {("ADMF", "88888888000188")}
 
 
 @pytest.mark.asyncio
-async def test_several_cnpjs_for_a_tape_code_leave_the_cnpj_null():
+async def test_several_cnpjs_for_a_tape_code_leave_the_cnpj_null(audit_log):
     _, records, _, _ = await _sweep_with_tape(
-        {}, {"OLDX": ("OLD CO", ["11111111000111", "22222222000122"])}, ["OLDX"],
-    )
+        {}, {"OLDX": ("OLD CO", ["11111111000111", "22222222000122"])}, ["OLDX"], audit_log)
     assert [r["cnpj"] for r in records] == [None]
 
 
 @pytest.mark.asyncio
-async def test_a_tape_name_already_fetched_from_the_catalog_is_not_fetched_again():
+async def test_a_tape_name_already_fetched_from_the_catalog_is_not_fetched_again(audit_log):
     """Same name, normalized: KLABIN S/A from the catalog, KLABIN SA elsewhere."""
     fetched, _, _, _ = await _sweep_with_tape(
         {"KLBN": [{"trading_name": "KLABIN S/A", "cnpj": ""}]},
         {"KLBX": ("KLABIN SA", [])},
-        ["KLBN", "KLBX"],
-    )
+        ["KLBN", "KLBX"], audit_log)
     assert fetched == ["KLABIN S/A"]
 
 
 @pytest.mark.asyncio
-async def test_a_code_with_no_catalog_name_and_no_tape_name_is_reported_not_guessed():
-    fetched, _, finishes, _ = await _sweep_with_tape({}, {}, ["XXXX"])
+async def test_a_code_with_no_catalog_name_and_no_tape_name_is_reported_not_guessed(audit_log):
+    fetched, _, finishes, _ = await _sweep_with_tape({}, {}, ["XXXX"], audit_log)
     assert fetched == []
     assert finishes[-1]["status"] == "error"
 

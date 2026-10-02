@@ -321,3 +321,14 @@ async def test_a_raise_is_still_an_error_row_and_is_reraised():
         await ingest_log.audited(MagicMock(), "b3", "events", work, upsert=upsert)
     assert rows[-1]["status"] == "error"
     assert rows[-1]["error_msg"] == "RuntimeError: fetch failed"
+
+
+@pytest.mark.asyncio
+async def test_a_caller_supplied_run_id_keys_both_rows():
+    """Work that stores its own run's id as provenance (the sweep proofs) needs it up front."""
+    async def work():
+        return 1
+
+    rows, upsert = _capture()
+    await ingest_log.audited(MagicMock(), "b3", "events", work, upsert=upsert, run_id="run-xyz")
+    assert [r["run_id"] for r in rows] == ["run-xyz", "run-xyz"]

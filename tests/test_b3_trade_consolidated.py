@@ -266,45 +266,43 @@ def _ingestor(fetch: AsyncMock) -> B3Ingestor:
                           trade_consolidated_fetcher=fetcher)
 
 
-async def test_ingest_upserts_on_the_natural_key_and_logs_ok():
+async def test_ingest_upserts_on_the_natural_key_and_logs_ok(audit_log):
     ing = _ingestor(AsyncMock(return_value=FIXTURE.read_bytes()))
-    with patch("src.pipeline.b3_pipeline.upsert_rows", return_value=6) as up, \
-         patch.object(ing, "_log_start") as start, patch.object(ing, "_log_finish") as finish:
+    with patch("src.pipeline.b3_pipeline.upsert_rows", return_value=6) as up:
         assert await ing.ingest_trade_consolidated(SESSION) == 6
     _, table, rows = up.call_args.args
     assert table == "b3_trade_consolidated"
     assert up.call_args.kwargs["conflict_columns"] == "ticker,trade_date"
     assert len(rows) == 6
-    assert start.call_args.args[1] == "trade_consolidated"
-    assert finish.call_args.args[1] == 6 and finish.call_args.kwargs == {"note": None}
+    assert [r["doc_type"] for r in audit_log.started] == ["trade_consolidated"]
+    (row,) = audit_log.finished
+    assert (row["status"], row["rows"], row["error"]) == ("ok", 6, None)
 
 
-async def test_an_empty_session_is_logged_skipped_and_writes_nothing():
+async def test_an_empty_session_is_logged_skipped_and_writes_nothing(audit_log):
     ing = _ingestor(AsyncMock(side_effect=B3TradeConsolidatedEmpty("empty")))
-    with patch("src.pipeline.b3_pipeline.upsert_rows") as up, \
-         patch.object(ing, "_log_start"), patch.object(ing, "_log_finish") as finish:
+    with patch("src.pipeline.b3_pipeline.upsert_rows") as up:
         assert await ing.ingest_trade_consolidated(date(2025, 6, 9)) == 0
     up.assert_not_called()
-    assert finish.call_args.kwargs["skipped"] is True
+    assert audit_log.finished[-1]["status"] == "skipped"
 
 
-async def test_a_fetch_failure_is_logged_and_raised():
+async def test_a_fetch_failure_is_logged_and_raised(audit_log):
     ing = _ingestor(AsyncMock(side_effect=B3TradeConsolidatedFetchError("HTTP 500")))
-    with patch("src.pipeline.b3_pipeline.upsert_rows") as up, \
-         patch.object(ing, "_log_start"), patch.object(ing, "_log_finish") as finish:
+    with patch("src.pipeline.b3_pipeline.upsert_rows") as up:
         with pytest.raises(B3TradeConsolidatedFetchError):
             await ing.ingest_trade_consolidated(SESSION)
     up.assert_not_called()
-    assert "HTTP 500" in finish.call_args.args[2]
+    row = audit_log.finished[-1]
+    assert row["status"] == "error" and "HTTP 500" in row["error"]
 
 
-async def test_a_no_session_day_is_logged_skipped():
+async def test_a_no_session_day_is_logged_skipped(audit_log):
     ing = _ingestor(AsyncMock(side_effect=B3TradeConsolidatedNoSession("400")))
-    with patch("src.pipeline.b3_pipeline.upsert_rows") as up, \
-         patch.object(ing, "_log_start"), patch.object(ing, "_log_finish") as finish:
+    with patch("src.pipeline.b3_pipeline.upsert_rows") as up:
         assert await ing.ingest_trade_consolidated(date(2026, 9, 7)) == 0
     up.assert_not_called()
-    assert finish.call_args.kwargs["skipped"] is True
+    assert audit_log.finished[-1]["status"] == "skipped"
 
 
 _NO_PAUSE = patch("src.pipeline.b3_pipeline.asyncio.sleep", AsyncMock())
@@ -367,15 +365,14 @@ def test_a_file_missing_the_whole_cash_market_is_incomplete_not_a_format_change(
         tc.parse("\n".join(kept), SESSION)
 
 
-async def test_an_incomplete_file_is_logged_skipped():
+async def test_an_incomplete_file_is_logged_skipped(audit_log):
     lines = _text().splitlines()
     kept = lines[:2] + [l for l in lines[2:] if ";FORWARD;" not in l and ";CASH;" not in l]
     ing = _ingestor(AsyncMock(return_value="\n".join(kept).encode()))
-    with patch("src.pipeline.b3_pipeline.upsert_rows") as up, \
-         patch.object(ing, "_log_start"), patch.object(ing, "_log_finish") as finish:
+    with patch("src.pipeline.b3_pipeline.upsert_rows") as up:
         assert await ing.ingest_trade_consolidated(SESSION) == 0
     up.assert_not_called()
-    assert finish.call_args.kwargs["skipped"] is True
+    assert audit_log.finished[-1]["status"] == "skipped"
 
 
 async def test_the_backfill_continues_past_a_failed_session_then_raises():
