@@ -181,7 +181,16 @@ def test_the_workflow_also_runs_after_a_dispatch_and_waits_for_the_build():
     assert wf[True]["workflow_run"]["workflows"] == ["Daily CVM Ingest"]
     job = wf["jobs"]["publish-check"]
     assert "conclusion == 'success'" in job["if"]
-    run_step = next(s for s in job["steps"] if "run" in s)
+    # #473: a red run can still have fired the hook, so a failure is let in and
+    # the gate step checks the hook step's own conclusion.
+    assert "conclusion == 'failure'" in job["if"]
+    gate = next(s for s in job["steps"] if s.get("id") == "gate")
+    assert "Trigger dashboard rebuild (Vercel deploy hook)" in gate["run"]
+    assert '.conclusion == "success"' in gate["run"]
+    assert job["permissions"]["actions"] == "read"
+    gated = [s for s in job["steps"] if s.get("id") != "gate"]
+    assert gated and all("steps.gate.outputs.proceed" in s["if"] for s in gated)
+    run_step = next(s for s in job["steps"] if s.get("name") == "Promote and verify")
     assert "workflow_run" in run_step["env"]["WAIT_FOR_BUILD_MINUTES"]
     assert job["timeout-minutes"] >= 50
 
@@ -189,7 +198,7 @@ def test_the_workflow_also_runs_after_a_dispatch_and_waits_for_the_build():
 def test_the_workflow_runs_the_script_and_passes_the_token():
     wf = yaml.safe_load(WORKFLOW.read_text())
     steps = wf["jobs"]["publish-check"]["steps"]
-    run_step = next(s for s in steps if "run" in s)
+    run_step = next(s for s in steps if s.get("name") == "Promote and verify")
     assert "scripts/promote_dashboard.sh" in run_step["run"]
     assert "VERCEL_TOKEN" in run_step["env"]["VERCEL_TOKEN"]
     # After the 06:00 ingest and its 17-45 min build, never before.
