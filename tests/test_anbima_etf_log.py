@@ -177,13 +177,71 @@ class TestDailyUpdate:
                     "metric", "level"):
             assert self.RECORDS[0].get(col) is not None, col
 
+    @staticmethod
+    def _log_rows(sent):
+        return [s["rows"][0] for s in sent if s["table"] == "cvm_ingest_log"]
+
     @pytest.mark.asyncio
-    async def test_empty_parse_returns_zero_without_logging(self):
+    async def test_empty_parse_returns_zero_and_logs_an_error_row(self):
+        """Rule 3: nothing parsed is still one audit row, and never 'ok'
+        (coverage and staleness count status='ok' even at 0 rows)."""
         ing = _ingestor()
+        sent = []
+
+        def _fake_upsert(conn, table, rows, **kw):
+            sent.append({"table": table, "rows": rows})
+            return len(rows)
+
         with patch("src.pipeline.anbima_pipeline.fetch_latest_boletim_url",
                    return_value=("http://x/b.xlsx", "b.xlsx")), \
              patch("src.pipeline.anbima_pipeline.download_xlsx", return_value=b"xx"), \
              patch("src.pipeline.anbima_pipeline.parse_boletim", return_value=[]), \
-             patch("src.pipeline.anbima_pipeline.upsert_rows",
-                   side_effect=AssertionError("should not upsert")):
+             patch("src.pipeline.anbima_pipeline.upsert_rows", side_effect=_fake_upsert):
             assert await ing.daily_update() == {"anbima_etf": 0}
+
+        assert [s["table"] for s in sent] == ["cvm_ingest_log", "cvm_ingest_log"]
+        last = self._log_rows(sent)[-1]
+        assert last["status"] == "error"
+        assert last["rows_upserted"] == 0
+        assert "No records parsed" in last["error_msg"]
+
+    @pytest.mark.asyncio
+    async def test_fetch_failure_logs_an_error_row_and_reraises(self):
+        """Rule 3: a boletim that cannot be fetched used to leave no row."""
+        ing = _ingestor()
+        sent = []
+
+        def _fake_upsert(conn, table, rows, **kw):
+            sent.append({"table": table, "rows": rows})
+            return len(rows)
+
+        with patch("src.pipeline.anbima_pipeline.fetch_latest_boletim_url",
+                   side_effect=RuntimeError("boletim page is down")), \
+             patch("src.pipeline.anbima_pipeline.upsert_rows", side_effect=_fake_upsert):
+            with pytest.raises(RuntimeError, match="boletim page is down"):
+                await ing.daily_update()
+
+        last = self._log_rows(sent)[-1]
+        assert last["status"] == "error"
+        assert "RuntimeError: boletim page is down" == last["error_msg"]
+
+    @pytest.mark.asyncio
+    async def test_a_failed_start_write_does_not_stop_the_ingest(self):
+        """The start row is best-effort; finish upserts, so the row still lands."""
+        ing = _ingestor()
+        sent = []
+
+        def _fake_upsert(conn, table, rows, **kw):
+            if table == "cvm_ingest_log" and rows[0]["status"] == "running":
+                raise RuntimeError("audit table unavailable")
+            sent.append({"table": table, "rows": rows})
+            return len(rows)
+
+        with patch("src.pipeline.anbima_pipeline.fetch_latest_boletim_url",
+                   return_value=("http://x/b.xlsx", "b.xlsx")), \
+             patch("src.pipeline.anbima_pipeline.download_xlsx", return_value=b"xx"), \
+             patch("src.pipeline.anbima_pipeline.parse_boletim", return_value=self.RECORDS), \
+             patch("src.pipeline.anbima_pipeline.upsert_rows", side_effect=_fake_upsert):
+            assert await ing.daily_update() == {"anbima_etf": 1}
+
+        assert self._log_rows(sent)[-1]["status"] == "ok"
