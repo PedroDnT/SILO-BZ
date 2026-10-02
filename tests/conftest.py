@@ -225,3 +225,31 @@ def gnu_date():
     probe = subprocess.run(["bash", "-c", "date -u -d 2026-01-01 +%F"], capture_output=True, text=True)
     if probe.stdout.strip() != "2026-01-01":
         pytest.skip("needs bash + GNU date")
+
+
+@pytest.fixture
+def audit_log(monkeypatch):
+    """The audit rows a pipeline writes through src.pipeline.ingest_log.
+
+    Stands in for ``ingest_log.start`` / ``finish`` (the one writer, tested in
+    test_ingest_log_writer.py), so a test reads each run's terminal row
+    (``audit_log.finished``: doc_type, status, rows, error, period_*) without
+    a database or a mocked wrapper on the pipeline. ``started`` holds the
+    ``running`` rows.
+    """
+    from types import SimpleNamespace
+
+    from src.pipeline import ingest_log
+
+    log = SimpleNamespace(started=[], finished=[])
+
+    def start(client, run_id, entity, doc_type, **kw):
+        log.started.append({"run_id": run_id, "entity": entity, "doc_type": doc_type, **kw})
+
+    def finish(client, run_id, entity, doc_type, *, status, rows, error=None, **kw):
+        log.finished.append({"run_id": run_id, "entity": entity, "doc_type": doc_type,
+                             "status": status, "rows": rows, "error": error, **kw})
+
+    monkeypatch.setattr(ingest_log, "start", start)
+    monkeypatch.setattr(ingest_log, "finish", finish)
+    return log

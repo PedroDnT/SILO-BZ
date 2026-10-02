@@ -253,8 +253,6 @@ def _span_ingestor(delivered_dates):
     with patch.object(bp, "get_pg_client", return_value=MagicMock()):
         ing = bp.B3Ingestor(fetcher=MagicMock(), bdi_fetcher=MagicMock())
     ing._bdi.fetch_table = AsyncMock(return_value="csv")
-    ing._log_start = MagicMock()
-    ing._log_finish = MagicMock()
     parse = lambda _text: [{"trade_date": d} for d in delivered_dates]
     return ing, parse
 
@@ -271,7 +269,7 @@ def _run_span(ing, parse, targets):
     ))
 
 
-def test_a_missing_newest_session_is_ok_when_older_sessions_landed():
+def test_a_missing_newest_session_is_ok_when_older_sessions_landed(audit_log):
     """B3 publishes these tables on their own lags, and the cron runs at 03:03 BRT.
 
     Verified 2026-09-17 03:36 BRT: BTBTrade had 2026-09-16 (40,021 rows) while
@@ -287,39 +285,24 @@ def test_a_missing_newest_session_is_ok_when_older_sessions_landed():
     ing, parse = _span_ingestor([date(2026, 9, 15)])
     _run_span(ing, parse, targets)
 
-    _args, kwargs = ing._log_finish.call_args
-    assert not kwargs.get("skipped"), "rows landed: this run succeeded"
-    assert not kwargs.get("error"), "a not-yet-published newest session is not an error"
+    row = audit_log.finished[-1]
+    assert row["status"] == "ok", "rows landed: this run succeeded"
     # The fact must survive: provenance, not silence.
-    assert "2026-09-16" in str(kwargs.get("note", ""))
+    assert "2026-09-16" in row["error"]
 
 
-def test_a_span_of_only_the_unpublished_newest_session_is_skipped():
+def test_a_span_of_only_the_unpublished_newest_session_is_skipped(audit_log):
     """Nothing landed, so nothing succeeded: `skipped` keeps landed_at honest."""
     targets = [date(2026, 9, 16)]
     ing, parse = _span_ingestor([])
     _run_span(ing, parse, targets)
 
-    _args, kwargs = ing._log_finish.call_args
-    assert kwargs.get("skipped") is True
-    assert "2026-09-16" in " ".join(str(a) for a in _args)
+    row = audit_log.finished[-1]
+    assert row["status"] == "skipped"
+    assert "2026-09-16" in row["error"]
 
 
-def test_log_finish_writes_a_note_on_an_ok_row():
-    """`note` lands in error_msg while the status stays `ok`."""
-    from unittest.mock import MagicMock, patch
-    import src.pipeline.b3_pipeline as bp
-
-    with patch.object(bp, "get_pg_client", return_value=MagicMock()):
-        ing = bp.B3Ingestor(fetcher=MagicMock(), bdi_fetcher=MagicMock())
-    with patch.object(bp.ingest_log, "finish") as finish:
-        ing._log_finish("r1", 5, note="missing 2026-09-16")
-    kwargs = finish.call_args.kwargs
-    assert kwargs["status"] == "ok"
-    assert kwargs["error"] == "missing 2026-09-16"
-
-
-def test_a_missing_older_session_is_still_an_error():
+def test_a_missing_older_session_is_still_an_error(audit_log):
     """The silent-clamp guard must not be weakened by the lag allowance.
 
     An older session has had a full publication cycle. If it is absent, B3
@@ -330,12 +313,12 @@ def test_a_missing_older_session_is_still_an_error():
     ing, parse = _span_ingestor([date(2026, 9, 15), date(2026, 9, 16)])
     _run_span(ing, parse, targets)
 
-    _args, kwargs = ing._log_finish.call_args
-    assert not kwargs.get("skipped"), "an older missing session is a real shortfall"
-    assert "2026-09-11" in str(kwargs.get("error", ""))
+    row = audit_log.finished[-1]
+    assert row["status"] == "error", "an older missing session is a real shortfall"
+    assert "2026-09-11" in row["error"]
 
 
-def test_newest_plus_older_missing_is_an_error():
+def test_newest_plus_older_missing_is_an_error(audit_log):
     """A shortfall is only forgiven when it is EXACTLY the newest session.
 
     If the newest is missing AND something older is too, the older one decides:
@@ -345,19 +328,19 @@ def test_newest_plus_older_missing_is_an_error():
     ing, parse = _span_ingestor([date(2026, 9, 15)])
     _run_span(ing, parse, targets)
 
-    _args, kwargs = ing._log_finish.call_args
-    assert not kwargs.get("skipped")
-    assert "2026-09-11" in str(kwargs.get("error", ""))
+    row = audit_log.finished[-1]
+    assert row["status"] == "error"
+    assert "2026-09-11" in row["error"]
 
 
-def test_a_complete_span_is_plain_ok():
+def test_a_complete_span_is_plain_ok(audit_log):
     targets = [date(2026, 9, 15), date(2026, 9, 16)]
     ing, parse = _span_ingestor(targets)
     _run_span(ing, parse, targets)
 
-    _args, kwargs = ing._log_finish.call_args
-    assert not kwargs.get("skipped")
-    assert not kwargs.get("error")
+    row = audit_log.finished[-1]
+    assert row["status"] == "ok"
+    assert row["error"] is None
 
 # ── fetcher ───────────────────────────────────────────────────────────────
 

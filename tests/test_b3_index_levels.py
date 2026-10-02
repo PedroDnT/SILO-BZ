@@ -201,13 +201,10 @@ def test_only_the_current_year_in_early_january_may_be_empty(year, today, expect
     assert idx.year_may_be_empty(year, today) is expected
 
 
-def _finish_recorder(ing) -> list[dict]:
-    recorded: list[dict] = []
-    ing._log_start = lambda run_id, doc_type, *a, **k: recorded.append({"start": doc_type})
-    ing._log_finish = lambda run_id, rows, error=None, **k: recorded.append(
-        {"rows": rows, "error": error}
-    )
-    return recorded
+@pytest.fixture(autouse=True)
+def _audit(audit_log):
+    """Every ingest here writes its audit row through the capture, never a database."""
+    return audit_log
 
 
 def _ingestor() -> B3Ingestor:
@@ -230,14 +227,13 @@ def _fetcher_serving(payloads: dict[int, object]) -> MagicMock:
 
 
 @pytest.mark.asyncio
-async def test_every_year_is_fetched_and_one_log_row_is_written(monkeypatch):
+async def test_every_year_is_fetched_and_one_log_row_is_written(monkeypatch, audit_log):
     monkeypatch.setitem(idx.FIRST_YEAR, "IBOV", 2024)
     payloads = {
         2024: _grid({date(2024, 12, 30): "120.000,00"}),
         2025: _grid({date(2025, 12, 30): "161.125,37"}),
     }
     ing = _ingestor()
-    log = _finish_recorder(ing)
     with patch("src.fetchers.b3_index_fetcher.B3IndexFetcher",
                return_value=_fetcher_serving(payloads)) as cls, \
          patch("src.pipeline.ingest_b3_index.ingest_b3_index_levels", return_value=2) as up:
@@ -246,25 +242,27 @@ async def test_every_year_is_fetched_and_one_log_row_is_written(monkeypatch):
     assert [c.args[1] for c in cls.return_value.fetch_year.call_args_list] == [2024, 2025]
     written = up.call_args.args[1]
     assert [r["trade_date"] for r in written] == [date(2024, 12, 30), date(2025, 12, 30)]
-    assert log == [{"start": "index_levels"}, {"rows": 2, "error": None}]
+    assert [r["doc_type"] for r in audit_log.started] == ["index_levels"]
+    (row,) = audit_log.finished
+    assert (row["status"], row["rows"], row["error"]) == ("ok", 2, None)
 
 
 @pytest.mark.asyncio
-async def test_a_null_year_is_an_error_and_nothing_is_written(monkeypatch):
+async def test_a_null_year_is_an_error_and_nothing_is_written(monkeypatch, audit_log):
     monkeypatch.setitem(idx.FIRST_YEAR, "IBOV", 2024)
     payloads = {
         2024: B3IndexNoResults("results=null for IBOV 2024"),
         2025: _grid({date(2025, 12, 30): "161.125,37"}),
     }
     ing = _ingestor()
-    log = _finish_recorder(ing)
     with patch("src.fetchers.b3_index_fetcher.B3IndexFetcher",
                return_value=_fetcher_serving(payloads)), \
          patch("src.pipeline.ingest_b3_index.ingest_b3_index_levels") as up:
         with pytest.raises(B3IndexNoResults):
             await ing.ingest_index_levels(today=date(2025, 12, 31))
     up.assert_not_called()
-    assert log[-1]["rows"] == 0 and "results=null" in log[-1]["error"]
+    row = audit_log.finished[-1]
+    assert row["status"] == "error" and row["rows"] == 0 and "results=null" in row["error"]
 
 
 @pytest.mark.asyncio
@@ -275,7 +273,6 @@ async def test_the_current_year_may_be_null_in_the_first_days_of_january(monkeyp
         2027: B3IndexNoResults("results=null for IBOV 2027"),
     }
     ing = _ingestor()
-    _finish_recorder(ing)
     with patch("src.fetchers.b3_index_fetcher.B3IndexFetcher",
                return_value=_fetcher_serving(payloads)), \
          patch("src.pipeline.ingest_b3_index.ingest_b3_index_levels", return_value=1) as up:
@@ -284,21 +281,21 @@ async def test_the_current_year_may_be_null_in_the_first_days_of_january(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_an_unexplained_jump_stops_the_ingest_before_any_write(monkeypatch):
+async def test_an_unexplained_jump_stops_the_ingest_before_any_write(monkeypatch, audit_log):
     monkeypatch.setitem(idx.FIRST_YEAR, "IBOV", 2024)
     payloads = {
         2024: _grid({date(2024, 12, 30): "120.000,00"}),
         2025: _grid({date(2025, 1, 2): "12.000,00"}),
     }
     ing = _ingestor()
-    log = _finish_recorder(ing)
     with patch("src.fetchers.b3_index_fetcher.B3IndexFetcher",
                return_value=_fetcher_serving(payloads)), \
          patch("src.pipeline.ingest_b3_index.ingest_b3_index_levels") as up:
         with pytest.raises(ValueError, match="not a listed divisor step"):
             await ing.ingest_index_levels(today=date(2025, 6, 1))
     up.assert_not_called()
-    assert log[-1]["error"]
+    row = audit_log.finished[-1]
+    assert row["status"] == "error" and row["error"]
 
 
 def test_ingest_upserts_on_the_natural_key():

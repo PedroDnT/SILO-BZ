@@ -15,7 +15,7 @@ import os
 import time
 import zlib
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 from uuid import uuid4
 
 from src.fetchers.b3_bdi_fetcher import B3BdiEmpty, B3BdiFetcher
@@ -59,7 +59,6 @@ class B3Ingestor:
         self._bdi = bdi_fetcher or B3BdiFetcher()
         self._tc_fetcher = trade_consolidated_fetcher
         self._supabase = get_pg_client()
-        self._doc_type_of: Dict[str, str] = {}
 
     def _lookback_days(self) -> int:
         raw = os.getenv("B3_DAILY_LOOKBACK_DAYS", "7").strip()
@@ -69,35 +68,32 @@ class B3Ingestor:
             return 7
         return n if n >= 1 else 7
 
-    # Audit rows go through src/pipeline/ingest_log (the one writer). Both
-    # calls are best-effort: the audit table must not be able to stop ingest,
-    # and a failed write is logged, never swallowed. The doc_type is remembered
-    # per run so the finish upsert can INSERT a keyed row if the start never
-    # landed.
-    def _log_start(self, run_id: str, doc_type: str, year: Optional[int], month: Optional[int]) -> None:
-        self._doc_type_of[run_id] = doc_type
-        try:
-            ingest_log.start(self._supabase, run_id, "b3", doc_type,
-                             period_year=year, period_month=month, upsert=upsert_rows)
-        except Exception as exc:  # noqa: BLE001 — audit must not stop ingest
-            logger.warning("ingest_log start failed: %s", ingest_log.describe(exc))
-
-    def _log_finish(
+    # Audit rows go through src/pipeline/ingest_log.audited (the one writer).
+    # The work returns its row count, or an Outcome when the run ends skipped,
+    # or ends in error without raising (a partial sweep). An exception in
+    # ``skip_on`` is "B3 has nothing for this request": a skipped row and 0.
+    # Anything else is an error row and is re-raised.
+    async def _audited(
         self,
-        run_id: str,
-        rows: int,
-        error: Optional[str] = None,
+        doc_type: str,
+        work: Callable[[], Awaitable[Union[int, ingest_log.Outcome]]],
         *,
-        skipped: bool = False,
-        note: Optional[str] = None,
-    ) -> None:
-        # `note` records a shortfall on an `ok` row (error_msg, status ok).
-        status = "skipped" if skipped else ("error" if error else "ok")
-        try:
-            ingest_log.finish(self._supabase, run_id, "b3", self._doc_type_of.get(run_id, "unknown"),
-                              status=status, rows=rows, error=error or note, upsert=upsert_rows)
-        except Exception as exc:  # noqa: BLE001 — audit must not mask the outcome
-            logger.warning("ingest_log finish failed: %s", ingest_log.describe(exc))
+        year: Optional[int] = None,
+        month: Optional[int] = None,
+        skip_on: Tuple[type, ...] = (),
+        run_id: Optional[str] = None,
+    ) -> int:
+        async def guarded() -> Union[int, ingest_log.Outcome]:
+            try:
+                return await work()
+            except skip_on as exc:
+                logger.info("B3 %s skipped: %s", doc_type, ingest_log.describe(exc))
+                return ingest_log.Outcome(0, "skipped", ingest_log.describe(exc))
+
+        return await ingest_log.audited(
+            self._supabase, "b3", doc_type, guarded,
+            period_year=year, period_month=month, upsert=upsert_rows, run_id=run_id,
+        )
 
     def _upsert(self, rows: List[Dict[str, Any]]) -> int:
         total = 0
@@ -112,56 +108,31 @@ class B3Ingestor:
 
     async def ingest_daily(self, session: date) -> int:
         """Fetch one session's daily zip and upsert. 404 → skipped (returns 0)."""
-        run_id = str(uuid4())
-        self._log_start(run_id, "cotahist_daily", session.year, session.month)
         label = session.isoformat()
-        try:
+
+        async def work() -> int:
             payload = await self._fetcher.fetch_daily(session)
-        except B3CotahistNotFound as exc:
-            logger.info("B3 COTAHIST daily %s not published — skipped", label)
-            self._log_finish(run_id, 0, ingest_log.describe(exc), skipped=True)
-            return 0
-        except Exception as exc:
-            logger.error("B3 COTAHIST daily %s fetch failed: %s", label, exc)
-            self._log_finish(run_id, 0, ingest_log.describe(exc))
-            raise
+            n = self._upsert(parse_cotahist_bytes(payload, origin=label))
+            logger.info("B3 COTAHIST daily %s upserted %d rows", label, n)
+            return n
 
-        try:
-            rows = parse_cotahist_bytes(payload, origin=label)
-            n = self._upsert(rows)
-        except Exception as exc:
-            self._log_finish(run_id, 0, ingest_log.describe(exc))
-            raise
-
-        self._log_finish(run_id, n)
-        logger.info("B3 COTAHIST daily %s upserted %d rows", label, n)
-        return n
+        return await self._audited(
+            "cotahist_daily", work, year=session.year, month=session.month,
+            skip_on=(B3CotahistNotFound,),
+        )
 
     async def ingest_year(self, year: int) -> int:
         """Fetch one yearly zip and upsert. 404 → skipped (returns 0)."""
-        run_id = str(uuid4())
-        self._log_start(run_id, "cotahist_yearly", year, None)
-        try:
+
+        async def work() -> int:
             payload = await self._fetcher.fetch_year(year)
-        except B3CotahistNotFound as exc:
-            logger.info("B3 COTAHIST year %s not published — skipped", year)
-            self._log_finish(run_id, 0, ingest_log.describe(exc), skipped=True)
-            return 0
-        except Exception as exc:
-            logger.error("B3 COTAHIST year %s fetch failed: %s", year, exc)
-            self._log_finish(run_id, 0, ingest_log.describe(exc))
-            raise
+            n = self._upsert(parse_cotahist_bytes(payload, origin=str(year)))
+            logger.info("B3 COTAHIST year %s upserted %d rows", year, n)
+            return n
 
-        try:
-            rows = parse_cotahist_bytes(payload, origin=str(year))
-            n = self._upsert(rows)
-        except Exception as exc:
-            self._log_finish(run_id, 0, ingest_log.describe(exc))
-            raise
-
-        self._log_finish(run_id, n)
-        logger.info("B3 COTAHIST year %s upserted %d rows", year, n)
-        return n
+        return await self._audited(
+            "cotahist_yearly", work, year=year, skip_on=(B3CotahistNotFound,),
+        )
 
     def _traded_issuers(
         self, lookback_days: int = 400, since: Optional[date] = None
@@ -334,8 +305,8 @@ class B3Ingestor:
         )
 
         run_id = str(uuid4())
-        self._log_start(run_id, "corporate_events", None, None)
-        try:
+
+        async def work() -> Union[int, ingest_log.Outcome]:
             if issuers is not None:
                 codes = issuers
             elif full:
@@ -343,9 +314,8 @@ class B3Ingestor:
             else:
                 codes = self._sweep_plan(since=since, today=date.today())
             if not codes:
-                self._log_finish(run_id, 0, skipped=True)
                 logger.info("B3 corporate events: no traded issuers found, skipped")
-                return 0
+                return ingest_log.Outcome(0, "skipped")
 
             fetcher = B3CorporateEventsFetcher()
             rows: List[Dict[str, Any]] = []
@@ -386,7 +356,7 @@ class B3Ingestor:
                     f"{len(failures)}/{len(codes)} issuers failed; "
                     f"first: {failures[0][:200]}"
                 )
-                self._log_finish(run_id, total, error=msg)
+                outcome = ingest_log.Outcome(total, "error", msg)
                 logger.warning("B3 corporate events partial: %s", msg)
             elif fetched == 0:
                 # Every issuer returned empty — the path token is wrong or
@@ -396,19 +366,18 @@ class B3Ingestor:
                     f"all {len(codes)} issuers returned an empty supplement "
                     f"body; first: {missing[0] if missing else '?'}"
                 )
-                self._log_finish(run_id, total, error=msg)
+                outcome = ingest_log.Outcome(total, "error", msg)
                 logger.error("B3 corporate events: %s", msg)
             else:
-                self._log_finish(run_id, total)
+                outcome = ingest_log.Outcome(total, "ok")
             logger.info(
                 "B3 corporate events: %d rows from %d issuers "
                 "(%d failed, %d no supplement)",
                 total, len(codes), len(failures), len(missing),
             )
-            return total
-        except Exception as exc:
-            self._log_finish(run_id, 0, error=ingest_log.describe(exc))
-            raise
+            return outcome
+
+        return await self._audited("corporate_events", work, run_id=run_id)
 
     async def ingest_index_levels(
         self,
@@ -429,9 +398,9 @@ class B3Ingestor:
         from src.fetchers.b3_index_fetcher import B3IndexFetcher, B3IndexNoResults
         from src.pipeline import ingest_b3_index as idx
 
-        run_id = str(uuid4())
-        self._log_start(run_id, "index_levels", None, None)
-        try:
+
+        async def work() -> int:
+            nonlocal today
             today = today or date.today()
             fetcher = B3IndexFetcher()
             records: List[Dict[str, Any]] = []
@@ -452,13 +421,11 @@ class B3Ingestor:
                 idx.mark_divisor_steps(code, series)
                 records.extend(series)
             total = idx.ingest_b3_index_levels(self._supabase, records)
-            self._log_finish(run_id, total)
             logger.info("B3 index levels: %d sessions across %d index(es)", total,
                         len(indices or idx.INDEX_CODES))
             return total
-        except Exception as exc:
-            self._log_finish(run_id, 0, error=ingest_log.describe(exc))
-            raise
+
+        return await self._audited("index_levels", work)
 
     async def ingest_cash_dividends(
         self,
@@ -499,14 +466,12 @@ class B3Ingestor:
             parse_cash_dividends,
         )
 
-        run_id = str(uuid4())
-        self._log_start(run_id, "cash_dividends", None, None)
-        try:
+
+        async def work() -> Union[int, ingest_log.Outcome]:
             codes = issuers if issuers is not None else self._traded_issuers(lookback_days)
             if not codes:
-                self._log_finish(run_id, 0, skipped=True)
                 logger.info("B3 cash dividends: no traded issuers found, skipped")
-                return 0
+                return ingest_log.Outcome(0, "skipped")
 
             if full_history:
                 cutoff: Optional[date] = None
@@ -600,17 +565,17 @@ class B3Ingestor:
                     f"{len(failures)} company fetches failed; "
                     f"first: {failures[0][:200]}"
                 )
-                self._log_finish(run_id, total, error=msg)
+                outcome = ingest_log.Outcome(total, "error", msg)
                 logger.warning("B3 cash dividends partial: %s", msg)
             elif fetched == 0:
                 msg = (
                     f"no company in {len(codes)} issuers could be fetched "
                     f"(no tradingName for {len(missing)})"
                 )
-                self._log_finish(run_id, total, error=msg)
+                outcome = ingest_log.Outcome(total, "error", msg)
                 logger.error("B3 cash dividends: %s", msg)
             else:
-                self._log_finish(run_id, total)
+                outcome = ingest_log.Outcome(total, "ok")
             logger.info(
                 "B3 cash dividends: %d rows from %d companies "
                 "(%d named from the tape, %d via catalog CNPJ, %d failed, "
@@ -618,10 +583,9 @@ class B3Ingestor:
                 total, fetched, from_tape, len(renamed), len(failures),
                 len(missing), cutoff or "none",
             )
-            return total
-        except Exception as exc:
-            self._log_finish(run_id, 0, error=ingest_log.describe(exc))
-            raise
+            return outcome
+
+        return await self._audited("cash_dividends", work)
 
 
     # ── B3 BDI: securities lending, investor flow, free float, instruments ──
@@ -650,74 +614,64 @@ class B3Ingestor:
         """
         if not targets:
             return 0
-        run_id = str(uuid4())
         start, end = targets[0], targets[-1]
-        self._log_start(run_id, doc_type, start.year, start.month)
         label = f"{b3_table} {start.isoformat()}..{end.isoformat()}"
-        try:
-            text = await self._bdi.fetch_table(b3_table, start, end)
-        except B3BdiEmpty as exc:
-            # Outside retention, or none of these were sessions. Not an error —
-            # but if it keeps happening the staleness check must escalate it,
-            # because for these tables an unfetched session never comes back.
-            logger.info("B3 BDI %s returned no rows — skipped", label)
-            self._log_finish(run_id, 0, ingest_log.describe(exc), skipped=True)
-            return 0
-        except Exception as exc:
-            logger.error("B3 BDI %s fetch failed: %s", label, exc)
-            self._log_finish(run_id, 0, ingest_log.describe(exc))
-            raise
 
-        try:
+        async def work() -> Union[int, ingest_log.Outcome]:
+            text = await self._bdi.fetch_table(b3_table, start, end)
             rows = parse(text)
             n = upsert(self._supabase, rows)
             delivered, missing = bdi.reconcile_span(rows, date_field, targets)
-        except Exception as exc:
-            self._log_finish(run_id, 0, ingest_log.describe(exc))
-            raise
 
-        if missing:
-            # A 200 is not evidence the span arrived. Record the shortfall on
-            # the audit row rather than letting the run look clean while the
-            # series quietly has holes in it.
-            msg = (
-                f"B3 delivered {len(delivered)}/{len(targets)} requested sessions; "
-                f"missing {', '.join(d.isoformat() for d in missing[:8])}"
-                f"{' …' if len(missing) > 8 else ''}"
-            )
-            # ...but a shortfall confined to the NEWEST session is B3 not having
-            # published yet, not a hole. These tables publish on their own lags:
-            # verified 2026-09-17 03:36 BRT, BTBTrade had 2026-09-16 (40,021
-            # rows) while BTBLendingOpenPosition for the same session did not
-            # exist yet. The daily cron runs at 03:03 BRT and always re-requests
-            # the newest two sessions, so filing that as an error made DB Health
-            # red EVERY morning over a gap the next run heals by itself — and a
-            # gate that cries missing-data at a healthy warehouse is the false
-            # alarm the health script exists to avoid.
-            #
-            # Only the newest session gets this benefit. A session missing from
-            # anywhere older is the silent clamp, or a real hole, and stays an
-            # error: it has had a full publication cycle and did not arrive.
-            #
-            # When the older sessions DID land, the slice is `ok`: our run
-            # succeeded, and `coverage().landed_at` counts only `ok` rows, so
-            # `skipped` here made the source's calendar read as our staleness
-            # every morning. The shortfall stays on the row as a note. Only a
-            # span where nothing landed is `skipped`.
-            not_published_yet = missing == [targets[-1]]
-            if not_published_yet:
-                logger.info("B3 BDI %s: %s — newest session, not published yet", label, msg)
-                if delivered:
-                    self._log_finish(run_id, n, note=msg)
+            if missing:
+                # A 200 is not evidence the span arrived. Record the shortfall on
+                # the audit row rather than letting the run look clean while the
+                # series quietly has holes in it.
+                msg = (
+                    f"B3 delivered {len(delivered)}/{len(targets)} requested sessions; "
+                    f"missing {', '.join(d.isoformat() for d in missing[:8])}"
+                    f"{' …' if len(missing) > 8 else ''}"
+                )
+                # ...but a shortfall confined to the NEWEST session is B3 not having
+                # published yet, not a hole. These tables publish on their own lags:
+                # verified 2026-09-17 03:36 BRT, BTBTrade had 2026-09-16 (40,021
+                # rows) while BTBLendingOpenPosition for the same session did not
+                # exist yet. The daily cron runs at 03:03 BRT and always re-requests
+                # the newest two sessions, so filing that as an error made DB Health
+                # red EVERY morning over a gap the next run heals by itself — and a
+                # gate that cries missing-data at a healthy warehouse is the false
+                # alarm the health script exists to avoid.
+                #
+                # Only the newest session gets this benefit. A session missing from
+                # anywhere older is the silent clamp, or a real hole, and stays an
+                # error: it has had a full publication cycle and did not arrive.
+                #
+                # When the older sessions DID land, the slice is `ok`: our run
+                # succeeded, and `coverage().landed_at` counts only `ok` rows, so
+                # `skipped` here made the source's calendar read as our staleness
+                # every morning. The shortfall stays on the row as a note. Only a
+                # span where nothing landed is `skipped`.
+                not_published_yet = missing == [targets[-1]]
+                if not_published_yet:
+                    logger.info("B3 BDI %s: %s — newest session, not published yet", label, msg)
+                    if delivered:
+                        outcome = ingest_log.Outcome(n, "ok", msg)
+                    else:
+                        outcome = ingest_log.Outcome(n, "skipped", msg)
                 else:
-                    self._log_finish(run_id, n, msg, skipped=True)
+                    logger.warning("B3 BDI %s: %s", label, msg)
+                    outcome = ingest_log.Outcome(n, "error", msg)
             else:
-                logger.warning("B3 BDI %s: %s", label, msg)
-                self._log_finish(run_id, n, error=msg)
-        else:
-            self._log_finish(run_id, n)
-        logger.info("B3 BDI %s upserted %d rows over %d sessions", label, n, len(delivered))
-        return n
+                outcome = ingest_log.Outcome(n, "ok")
+            logger.info("B3 BDI %s upserted %d rows over %d sessions", label, n, len(delivered))
+            return outcome
+
+        # Outside retention, or none of these were sessions. Not an error, but
+        # if it keeps happening the staleness check must escalate it, because
+        # for these tables an unfetched session never comes back.
+        return await self._audited(
+            doc_type, work, year=start.year, month=start.month, skip_on=(B3BdiEmpty,),
+        )
 
     async def ingest_lending(self) -> Dict[str, int]:
         """Short balances and lending rates for every retrievable missing session."""
@@ -773,18 +727,9 @@ class B3Ingestor:
         total = 0
         failures: List[str] = []
         for session in targets:
-            run_id = str(uuid4())
-            self._log_start(run_id, "lending_trade", session.year, session.month)
-            try:
+
+            async def work() -> int:
                 text = await self._bdi.fetch_table("BTBTrade", session)
-            except B3BdiEmpty as exc:
-                self._log_finish(run_id, 0, ingest_log.describe(exc), skipped=True)
-                continue
-            except Exception as exc:  # noqa: BLE001 — counted, reported below
-                self._log_finish(run_id, 0, ingest_log.describe(exc))
-                failures.append(f"{session.isoformat()}: {exc}")
-                continue
-            try:
                 rows = bdi.parse_lending_trade(text, origin=session.isoformat())
                 # The export is single-session, so anything else in the body
                 # means B3 answered a different day than the one asked for.
@@ -794,12 +739,16 @@ class B3Ingestor:
                         f"BTBTrade for {session} returned sessions "
                         f"{sorted(d.isoformat() for d in wrong)}"
                     )
-                n = lending.upsert_lending_trades(self._supabase, rows)
+                return lending.upsert_lending_trades(self._supabase, rows)
+
+            try:
+                n = await self._audited(
+                    "lending_trade", work, year=session.year, month=session.month,
+                    skip_on=(B3BdiEmpty,),
+                )
             except Exception as exc:  # noqa: BLE001 — counted, reported below
-                self._log_finish(run_id, 0, ingest_log.describe(exc))
                 failures.append(f"{session.isoformat()}: {exc}")
                 continue
-            self._log_finish(run_id, n)
             total += n
             logger.info("B3 lending trades %s: %d rows", session, n)
 
@@ -832,25 +781,20 @@ class B3Ingestor:
         total = 0
         failures: List[str] = []
         for request_date in requests:
-            run_id = str(uuid4())
-            self._log_start(run_id, "investor_participation", request_date.year, request_date.month)
-            try:
+
+            async def work() -> int:
                 text = await self._bdi.fetch_table("SharesInvesVolum", request_date)
-            except B3BdiEmpty as exc:
-                self._log_finish(run_id, 0, ingest_log.describe(exc), skipped=True)
-                continue
-            except Exception as exc:  # noqa: BLE001 — counted, reported below
-                self._log_finish(run_id, 0, ingest_log.describe(exc))
-                failures.append(f"{request_date.isoformat()}: {exc}")
-                continue
-            try:
                 rows = bdi.parse_investor_participation(text, origin=request_date.isoformat())
-                n = lending.upsert_investor_participation(self._supabase, rows)
+                return lending.upsert_investor_participation(self._supabase, rows)
+
+            try:
+                n = await self._audited(
+                    "investor_participation", work,
+                    year=request_date.year, month=request_date.month, skip_on=(B3BdiEmpty,),
+                )
             except Exception as exc:  # noqa: BLE001 — counted, reported below
-                self._log_finish(run_id, 0, ingest_log.describe(exc))
                 failures.append(f"{request_date.isoformat()}: {exc}")
                 continue
-            self._log_finish(run_id, n)
             total += n
 
         if failures and total == 0:
@@ -876,30 +820,20 @@ class B3Ingestor:
         current date during a morning cron reliably returns "Nenhum
         resultado". Verified 2026-09-16 — 09-15 had data, 09-16 did not yet.
         """
-        run_id = str(uuid4())
         sessions = lending.known_sessions(self._supabase, limit=1)
         request_date = sessions[-1] if sessions else date.today()
-        self._log_start(
-            run_id, "investor_participation_monthly", request_date.year, request_date.month
-        )
-        try:
+
+        async def work() -> int:
             text = await self._bdi.fetch_table("SharesInvesVolumMonthly", request_date)
-        except B3BdiEmpty as exc:
-            self._log_finish(run_id, 0, ingest_log.describe(exc), skipped=True)
-            return 0
-        except Exception as exc:
-            self._log_finish(run_id, 0, ingest_log.describe(exc))
-            raise
-        try:
             rows = bdi.parse_investor_participation_monthly(
                 text, request_date=request_date, origin=request_date.isoformat()
             )
-            n = lending.upsert_investor_participation_monthly(self._supabase, rows)
-        except Exception as exc:
-            self._log_finish(run_id, 0, ingest_log.describe(exc))
-            raise
-        self._log_finish(run_id, n)
-        return n
+            return lending.upsert_investor_participation_monthly(self._supabase, rows)
+
+        return await self._audited(
+            "investor_participation_monthly", work,
+            year=request_date.year, month=request_date.month, skip_on=(B3BdiEmpty,),
+        )
 
     async def ingest_index_portfolios(self, indices: Optional[List[str]] = None) -> int:
         """Free float and B3 sector for the index universe.
@@ -910,11 +844,10 @@ class B3Ingestor:
         """
         codes = indices or [c.strip() for c in
                             os.getenv("B3_INDEX_CODES", "IBOV,IBRA,SMLL").split(",") if c.strip()]
-        run_id = str(uuid4())
-        self._log_start(run_id, "index_portfolio", None, None)
-        total = 0
-        failures: List[str] = []
-        try:
+
+        async def work() -> Union[int, ingest_log.Outcome]:
+            total = 0
+            failures: List[str] = []
             for code in codes:
                 try:
                     records = await self._bdi.fetch_index_portfolio(code)
@@ -922,22 +855,20 @@ class B3Ingestor:
                     total += lending.upsert_index_portfolio(self._supabase, rows)
                 except Exception as exc:  # noqa: BLE001 — counted, then reported
                     failures.append(f"{code}: {exc}")
-        except Exception as exc:
-            self._log_finish(run_id, total, ingest_log.describe(exc))
-            raise
 
-        if failures and total == 0:
-            msg = f"all {len(codes)} indices failed; first: {failures[0][:200]}"
-            self._log_finish(run_id, 0, error=msg)
-            raise RuntimeError(f"B3 index portfolios: {msg}")
-        if failures:
-            msg = f"{len(failures)}/{len(codes)} indices failed; first: {failures[0][:200]}"
-            self._log_finish(run_id, total, error=msg)
-            logger.warning("B3 index portfolios partial: %s", msg)
-        else:
-            self._log_finish(run_id, total)
-        logger.info("B3 index portfolios: %d rows from %s", total, ",".join(codes))
-        return total
+            if failures and total == 0:
+                raise RuntimeError(
+                    f"B3 index portfolios: all {len(codes)} indices failed; "
+                    f"first: {failures[0][:200]}"
+                )
+            logger.info("B3 index portfolios: %d rows from %s", total, ",".join(codes))
+            if failures:
+                msg = f"{len(failures)}/{len(codes)} indices failed; first: {failures[0][:200]}"
+                logger.warning("B3 index portfolios partial: %s", msg)
+                return ingest_log.Outcome(total, "error", msg)
+            return total
+
+        return await self._audited("index_portfolio", work)
 
     async def ingest_instruments(self) -> int:
         """Cash-market instrument registry (shares outstanding, ISIN, governance).
@@ -947,27 +878,20 @@ class B3Ingestor:
         """
         sessions = lending.known_sessions(self._supabase, limit=1)
         reference_date = sessions[-1] if sessions else date.today()
-        run_id = str(uuid4())
-        self._log_start(run_id, "instrument_registry", reference_date.year, reference_date.month)
-        try:
+
+        async def work() -> int:
             text = await self._bdi.fetch_table("InstrumentsEquities", reference_date)
-        except B3BdiEmpty as exc:
-            self._log_finish(run_id, 0, ingest_log.describe(exc), skipped=True)
-            return 0
-        except Exception as exc:
-            self._log_finish(run_id, 0, ingest_log.describe(exc))
-            raise
-        try:
             rows = bdi.parse_instrument_registry(
                 text, reference_date=reference_date, origin=reference_date.isoformat()
             )
             n = lending.upsert_instrument_registry(self._supabase, rows)
-        except Exception as exc:
-            self._log_finish(run_id, 0, ingest_log.describe(exc))
-            raise
-        self._log_finish(run_id, n)
-        logger.info("B3 instrument registry %s: %d rows", reference_date, n)
-        return n
+            logger.info("B3 instrument registry %s: %d rows", reference_date, n)
+            return n
+
+        return await self._audited(
+            "instrument_registry", work,
+            year=reference_date.year, month=reference_date.month, skip_on=(B3BdiEmpty,),
+        )
 
     async def daily_update_bdi(self) -> Dict[str, int]:
         """Every BDI-sourced table, in one call. Ratchet — see the fetcher."""
@@ -1008,33 +932,24 @@ class B3Ingestor:
         )
         from src.pipeline import ingest_b3_trade_consolidated as tc
 
-        run_id = str(uuid4())
-        self._log_start(run_id, "trade_consolidated", session.year, session.month)
         label = session.isoformat()
-        try:
+
+        async def work() -> Union[int, ingest_log.Outcome]:
             payload = await (self._tc_fetcher or B3TradeConsolidatedFetcher()).fetch(session)
             rows, dropped = tc.parse(tc.decode(payload), session)
-        except (
-            B3TradeConsolidatedEmpty,
-            tc.B3TradeConsolidatedNotFinal,
-            tc.B3TradeConsolidatedIncomplete,
-        ) as exc:
-            logger.info("B3 consolidated trades %s skipped: %s", label, exc)
-            self._log_finish(run_id, 0, ingest_log.describe(exc), skipped=True)
-            return 0
-        except Exception as exc:
-            logger.error("B3 consolidated trades %s failed: %s", label, exc)
-            self._log_finish(run_id, 0, ingest_log.describe(exc))
-            raise
-        try:
             n = upsert_rows(self._supabase, tc.TABLE, rows, conflict_columns=tc.CONFLICT_COLS)
-        except Exception as exc:
-            self._log_finish(run_id, 0, ingest_log.describe(exc))
-            raise
-        note = f"{dropped} row(s) dropped by validation" if dropped else None
-        self._log_finish(run_id, n, note=note)
-        logger.info("B3 consolidated trades %s: %d rows (%d dropped)", label, n, dropped)
-        return n
+            logger.info("B3 consolidated trades %s: %d rows (%d dropped)", label, n, dropped)
+            note = f"{dropped} row(s) dropped by validation" if dropped else None
+            return ingest_log.Outcome(n, "ok", note)
+
+        return await self._audited(
+            "trade_consolidated", work, year=session.year, month=session.month,
+            skip_on=(
+                B3TradeConsolidatedEmpty,
+                tc.B3TradeConsolidatedNotFinal,
+                tc.B3TradeConsolidatedIncomplete,
+            ),
+        )
 
     async def daily_update_trade_consolidated(self) -> Dict[str, int]:
         """The trailing calendar window, like COTAHIST's (B3_DAILY_LOOKBACK_DAYS).
