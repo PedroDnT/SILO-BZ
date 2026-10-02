@@ -170,3 +170,59 @@ def test_schema_and_migration_44_carry_the_lineage_columns(ingest_log_columns):
     assert alter in schema
     mig = Path("src/store/migrations/44_ingest_lineage.sql").read_text(encoding="utf-8")
     assert alter in mig
+
+
+def _cvm_with_cursor(monkeypatch, rowcount):
+    """A CVMIngestor whose finish UPDATE reports ``rowcount`` rows matched."""
+    from src.pipeline import cvm_pipeline
+    from src.pipeline.cvm_pipeline import CVMIngestor
+
+    sent: List[Dict[str, Any]] = []
+    monkeypatch.setattr(cvm_pipeline, "upsert_rows",
+                        lambda client, table, rows, *a, **k: sent.extend(rows) or len(rows))
+    ing = CVMIngestor.__new__(CVMIngestor)
+    cur = MagicMock()
+    cur.__enter__ = lambda s: s
+    cur.__exit__ = MagicMock(return_value=False)
+    cur.rowcount = rowcount
+    ing._supabase = MagicMock()
+    ing._supabase.cursor.return_value = cur
+    return ing, sent
+
+
+def test_cvm_finish_inserts_the_row_when_the_start_row_never_landed(monkeypatch):
+    """Rule 3: the start write is best-effort, so the finish UPDATE can match 0
+    rows; the slice must still end in a row, keyed with its period."""
+    ing, sent = _cvm_with_cursor(monkeypatch, rowcount=0)
+    ing._log_start("r1", "fidc", "inf_mensal", 2026, 8)
+    sent.clear()  # the start row "never landed"
+
+    ing._log_finish("r1", 7)
+
+    (row,) = sent
+    assert row["run_id"] == "r1" and row["status"] == "ok" and row["rows_upserted"] == 7
+    assert (row["entity"], row["doc_type"]) == ("fidc", "inf_mensal")
+    assert (row["period_year"], row["period_month"]) == (2026, 8)
+
+
+def test_cvm_finish_fallback_keeps_the_classified_status(monkeypatch):
+    """A not-yet-published month is 'skipped' on the fallback row too."""
+    ing, sent = _cvm_with_cursor(monkeypatch, rowcount=0)
+    ing._log_start("r1", "fi", "diario", 2026, 9)
+    sent.clear()
+
+    ing._log_finish("r1", 0, error="Data not found at http://x")
+
+    (row,) = sent
+    assert row["status"] == "skipped"
+    assert (row["period_year"], row["period_month"]) == (2026, 9)
+
+
+def test_cvm_finish_writes_no_extra_row_when_the_update_landed(monkeypatch):
+    ing, sent = _cvm_with_cursor(monkeypatch, rowcount=1)
+    ing._log_start("r1", "fidc", "inf_mensal", 2026, 8)
+    sent.clear()
+
+    ing._log_finish("r1", 7)
+
+    assert sent == []

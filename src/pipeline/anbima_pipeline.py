@@ -795,7 +795,7 @@ class AnbimaIngestor:
     # Provenance for the source file is not lost: every record carries boletim_ref.
 
     def _log_start(self, conn, run_id: str, boletim_ref: str) -> None:
-        logger.info("[anbima] run %s boletim=%s", run_id, boletim_ref)
+        logger.info("[anbima] run %s boletim=%s", run_id, boletim_ref or "pending")
         ingest_log.start(conn, run_id, LOG_ENTITY, LOG_DOC_TYPE, upsert=upsert_rows)
 
     def _log_finish(
@@ -822,21 +822,35 @@ class AnbimaIngestor:
         rows_upserted = 0
 
         logger.info("[anbima] Starting daily update (run_id=%s)", run_id)
-        download_url, boletim_ref = await fetch_latest_boletim_url()
-        logger.info("[anbima] Latest boletim: %s", boletim_ref)
-
-        xlsx_bytes = await download_xlsx(download_url)
-        logger.info("[anbima] Downloaded %d bytes", len(xlsx_bytes))
-
-        records = parse_boletim(xlsx_bytes, boletim_ref)
-        logger.info("[anbima] Parsed %d records total", len(records))
-
-        if not records:
-            logger.warning("[anbima] No records parsed — skipping upsert")
-            return {LOG_ENTITY: 0}
-
-        self._log_start(self._pg, run_id, boletim_ref)
+        # Integrity rule 3: the audit row exists before anything can fail, so a
+        # failed fetch or parse is recorded too. The start write is best-effort
+        # (ingest_log's contract): _log_finish upserts, so a start that never
+        # landed still ends in a row.
         try:
+            self._log_start(self._pg, run_id, None)
+        except Exception as exc:
+            logger.warning("[anbima] could not write the running row (%s); continuing",
+                           ingest_log.describe(exc))
+        try:
+            download_url, boletim_ref = await fetch_latest_boletim_url()
+            logger.info("[anbima] Latest boletim: %s", boletim_ref)
+
+            xlsx_bytes = await download_xlsx(download_url)
+            logger.info("[anbima] Downloaded %d bytes", len(xlsx_bytes))
+
+            records = parse_boletim(xlsx_bytes, boletim_ref)
+            logger.info("[anbima] Parsed %d records total", len(records))
+
+            if not records:
+                # 'error', not 'ok': coverage and staleness count status='ok'
+                # even at 0 rows, which would hide a boletim we cannot read.
+                # Returns 0 rather than raising, as before: a raise would fail
+                # the daily run and skip analytics for the other sources.
+                msg = f"No records parsed from boletim {boletim_ref}"
+                logger.warning("[anbima] %s — skipping upsert", msg)
+                self._log_finish(self._pg, run_id, "error", 0, msg)
+                return {LOG_ENTITY: 0}
+
             upsert_rows(
                 self._pg,
                 TABLE,
@@ -848,8 +862,12 @@ class AnbimaIngestor:
             self._log_finish(self._pg, run_id, "ok", rows_upserted)
             logger.info("[anbima] Upserted %d rows", rows_upserted)
         except Exception as exc:
-            self._log_finish(self._pg, run_id, "error", 0, ingest_log.describe(exc))
-            logger.error("[anbima] Upsert failed: %s", exc)
+            logger.error("[anbima] Daily update failed: %s", exc)
+            try:
+                self._log_finish(self._pg, run_id, "error", 0, ingest_log.describe(exc))
+            except Exception as log_exc:
+                logger.warning("[anbima] could not write the error row (%s)",
+                               ingest_log.describe(log_exc))
             raise
 
         return {LOG_ENTITY: rows_upserted}

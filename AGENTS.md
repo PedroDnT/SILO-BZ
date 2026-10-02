@@ -199,7 +199,8 @@ year, month)` is the single entry point; downloads ZIP/CSV from `dados.cvm.gov.b
   → DB column). CSV extraction is co-located with the fetcher because it needs URL/filename
   context.
 - **`src/store/`** — `pg_client.get_pg_client()` (one psycopg2 connection per run) and
-  `pg_client.upsert_rows(table, rows, conflict_cols)` (chunked at 1000, `ON CONFLICT DO
+  `pg_client.upsert_rows(client, table, rows, conflict_columns=)` (chunked at 500 by
+  default, `CVM_UPSERT_CHUNK_SIZE` overrides it and CI sets 5000; `ON CONFLICT DO
 UPDATE`). **Never open a raw DB connection elsewhere — always go through `pg_client`.**
   `schema.sql` is the canonical schema; `migrations/NNN_*.sql` are append-only.
 - **`src/pipeline/`** — `cvm_pipeline.CVMIngestor`, `bacen_pipeline.BacenIngestor`, and

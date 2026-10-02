@@ -35,7 +35,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.fetchers.cvm_fetcher import CVMFetcher
 from src.store.pg_client import get_pg_client, upsert_rows
-from src.pipeline.ingest_log import describe, lineage
+from src.pipeline.ingest_log import describe, finish as _finish_row, lineage
 
 # Per-entity ingest modules (parsing logic lives there)
 from src.pipeline.ingest_fi import (
@@ -668,6 +668,9 @@ class CVMIngestor:
                             run_id,
                         ),
                     )
+                    landed = getattr(cur, "rowcount", None)
+                if landed == 0:
+                    self._finish_without_start_row(run_id, rows, status, error)
                 return
             except Exception as e:
                 if attempt == 1:
@@ -683,6 +686,28 @@ class CVMIngestor:
                         return
                 else:
                     logger.warning("ingest_log finish failed after reconnect: %s", e)
+
+    def _finish_without_start_row(
+        self, run_id: str, rows: int, status: str, error: Optional[str]
+    ) -> None:
+        """Insert the terminal row when the UPDATE found no start row to finish.
+
+        The start write is best-effort (see _log_start), so after a failed one
+        the UPDATE above matches 0 rows and the slice would leave no audit row
+        at all (integrity rule 3). ingest_log.finish is an upsert for exactly
+        this case. The period key is passed: without it the row would carry a
+        NULL period that a later dated 'ok' never heals.
+        """
+        slice_ = self._slice_of_run.get(run_id)
+        if slice_ is None:
+            logger.warning("ingest_log finish: no start row and no slice for run %s", run_id)
+            return
+        entity, doc_type, year, month = slice_
+        _finish_row(
+            self._supabase, run_id, entity, doc_type,
+            status=status, rows=rows, error=error,
+            period_year=year, period_month=month, upsert=upsert_rows,
+        )
 
     def _monthly_targets(self, entity: str, doc_type: str, today: date) -> List[Tuple[int, int]]:
         """Months a daily run should fetch for a monthly (entity, doc_type).
