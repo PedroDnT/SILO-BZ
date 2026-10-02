@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from pathlib import Path
 
 from src.parsers.field_maps import cia_fca_valor_mobiliario as fm
@@ -141,3 +142,99 @@ def test_migration_25_bridge_is_published_mapping_only():
     assert "denom" not in sql.lower()
     assert "DISTINCT ON (t.cnpj_cia, t.codneg)" in sql
     assert "t.data_refer DESC, t.versao DESC" in sql
+
+
+# --- migration 63: is_active means "in the company's newest FCA filing" (#381) ---
+
+_M63 = Path("src/store/migrations/63_company_ticker_active.sql")
+_VIEW_COLUMNS = [
+    "cnpj_cia",
+    "codneg",
+    "valor_mobiliario",
+    "sigla_classe",
+    "mercado",
+    "segmento",
+    "dt_inicio_neg",
+    "dt_fim_neg",
+    "is_active",
+    "data_refer",
+    "versao",
+]
+
+
+def _output_columns(body: str) -> list[str]:
+    """The view's output column names, in order, from its SELECT list."""
+    select = body[body.index("\n", body.index("SELECT DISTINCT ON")) : body.index("FROM cia_ticker t")]
+    # An expression ends where the next "t.<col>," item starts: split on the
+    # top-level commas (the only parentheses here hold no commas).
+    items = [i.strip() for i in select.split(",") if i.strip()]
+    cols = []
+    for item in items:
+        m = re.search(r"AS\s+(\w+)\s*$", item)
+        cols.append(m.group(1) if m else item.rsplit(".", 1)[-1])
+    return cols
+
+
+def _view_body(sql: str) -> str:
+    start = sql.index("CREATE OR REPLACE VIEW vw_company_ticker")
+    end = sql.index(";", start)
+    return sql[start:end]
+
+
+def test_migration_63_keeps_the_view_shape_and_changes_only_is_active():
+    old = _view_body(
+        Path("src/store/migrations/25_cia_ticker.sql").read_text(encoding="utf-8")
+    )
+    new = _view_body(_M63.read_text(encoding="utf-8"))
+    # CREATE OR REPLACE VIEW needs the same columns, names and order.
+    assert _output_columns(old) == _VIEW_COLUMNS
+    assert _output_columns(new) == _VIEW_COLUMNS
+    assert "DISTINCT ON (t.cnpj_cia, t.codneg)" in new
+    assert "ORDER BY t.cnpj_cia, t.codneg, t.data_refer DESC, t.versao DESC" in new
+    assert "WHERE t.codneg IS NOT NULL" in new
+
+
+def test_migration_63_is_active_needs_the_newest_filing_of_the_company():
+    new = _view_body(_M63.read_text(encoding="utf-8"))
+    assert "t.dt_fim_neg IS NULL" in new
+    assert "t.data_refer = n.data_refer" in new
+    assert "t.versao = n.versao" in new
+    # The newest filing is taken over ALL of the company's rows, not only the
+    # ones that carry a ticker, and not per ticker.
+    assert "SELECT DISTINCT ON (cnpj_cia) cnpj_cia, data_refer, versao" in new
+    assert "ORDER BY cnpj_cia, data_refer DESC, versao DESC" in new
+    assert "FROM cia_ticker\n    ORDER BY" in new
+    # Still the published mapping only: no name matching, no ticker shapes.
+    sql = _M63.read_text(encoding="utf-8")
+    assert "ILIKE" not in sql and "denom" not in sql.lower()
+
+
+def test_migration_63_is_the_last_definition_and_is_never_a_second_edit_of_25():
+    # Migration 25 is historical and stays as shipped (the old is_active); every
+    # schema apply replays it and then 63, which puts the new definition back.
+    old = Path("src/store/migrations/25_cia_ticker.sql").read_text(encoding="utf-8")
+    assert "(t.dt_fim_neg IS NULL) AS is_active" in old
+    definers = sorted(
+        p.name
+        for p in Path("src/store/migrations").glob("*.sql")
+        if "CREATE OR REPLACE VIEW vw_company_ticker" in p.read_text(encoding="utf-8")
+    )
+    assert definers == ["25_cia_ticker.sql", "63_company_ticker_active.sql"]
+    # schema.sql and the analytical layer do not (re)define the view.
+    assert "vw_company_ticker" not in Path("src/store/schema.sql").read_text(
+        encoding="utf-8"
+    )
+    for p in Path("src/store/analytical").glob("*.sql"):
+        assert "VIEW public.vw_company_ticker" not in p.read_text(encoding="utf-8")
+        assert "VIEW vw_company_ticker" not in p.read_text(encoding="utf-8")
+
+
+def test_the_behaviour_file_runs_in_ci_and_covers_the_three_cases():
+    wf = Path(".github/workflows/test.yml").read_text(encoding="utf-8")
+    assert "tests/sql/company_ticker_active_behaviour.sql" in wf
+    sql = Path("tests/sql/company_ticker_active_behaviour.sql").read_text(
+        encoding="utf-8"
+    )
+    assert "BEGIN;" in sql and sql.rstrip().endswith("ROLLBACK;")
+    # absent from the newest filing, in it, and in it with an end date
+    assert "OLDA3=false" in sql and "KEPT3=true" in sql and "ENDD3=false" in sql

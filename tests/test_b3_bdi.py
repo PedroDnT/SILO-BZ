@@ -19,6 +19,7 @@ import pytest
 from src.fetchers.b3_bdi_fetcher import B3BdiEmpty, B3BdiFetchError, B3BdiFetcher
 from src.parsers.b3_bdi import (
     B3BdiParseError,
+    B3BdiStaleMonth,
     mtd_reference_date,
     monthly_reference_month,
     parse_index_portfolio,
@@ -191,6 +192,59 @@ def test_monthly_participation_rejects_a_month_that_contradicts_the_request():
 
 def test_monthly_participation_january_rolls_into_december():
     assert monthly_reference_month("(Dezembro)", request_date=date(2026, 1, 8)) == date(2025, 12, 1)
+
+
+def test_monthly_caption_a_month_behind_is_stale_not_drift():
+    """2026-10-01: B3 still captioned the export "Agosto" (expected Setembro).
+
+    That is B3 not having rolled over yet, so it must be told apart from drift.
+    It is still a B3BdiParseError, so any caller that treats it as one stays safe.
+    """
+    text = fixture("investor_participation_monthly.csv")
+    with pytest.raises(B3BdiStaleMonth, match="not rolled"):
+        monthly_reference_month(text, request_date=date(2026, 10, 1))
+    assert issubclass(B3BdiStaleMonth, B3BdiParseError)
+
+
+def test_monthly_caption_a_month_behind_in_january_is_stale():
+    with pytest.raises(B3BdiStaleMonth):
+        monthly_reference_month("(Novembro)", request_date=date(2026, 1, 8))
+
+
+@pytest.mark.parametrize("caption, request_date", [
+    ("(Agosto)", date(2026, 3, 10)),     # months behind: layout drift, not a lag
+    ("(Outubro)", date(2026, 9, 10)),    # ahead of the request
+    ("(Setembro)", date(2026, 9, 10)),   # the request's own month
+])
+def test_monthly_caption_other_mismatches_stay_hard_errors(caption, request_date):
+    """Only a caption exactly one month behind is a skip. Everything else must raise."""
+    with pytest.raises(B3BdiParseError) as exc:
+        monthly_reference_month(caption, request_date=request_date)
+    assert not isinstance(exc.value, B3BdiStaleMonth)
+
+
+def test_monthly_participation_with_a_stale_caption_is_skipped_not_failed(audit_log):
+    """The audit row is `skipped` and nothing is raised, so run_daily stays green.
+
+    Seen 2026-10-02: the raise turned the whole `Run daily update` red and held
+    back the analytical apply and the dashboard deploy.
+    """
+    import asyncio
+    import src.pipeline.b3_pipeline as bp
+
+    with patch.object(bp, "get_pg_client", return_value=MagicMock()):
+        ing = bp.B3Ingestor(fetcher=MagicMock(), bdi_fetcher=MagicMock())
+    ing._bdi.fetch_table = AsyncMock(return_value=fixture("investor_participation_monthly.csv"))
+    upsert = MagicMock()
+    with patch.object(lending, "known_sessions", return_value=[date(2026, 10, 1)]), \
+         patch.object(lending, "upsert_investor_participation_monthly", upsert):
+        assert asyncio.run(ing._ingest_investor_flow_monthly()) == 0
+
+    row = audit_log.finished[-1]
+    assert row["doc_type"] == "investor_participation_monthly"
+    assert row["status"] == "skipped"
+    assert "Agosto" in row["error"]
+    upsert.assert_not_called()
 
 
 # ── InstrumentsEquities ───────────────────────────────────────────────────

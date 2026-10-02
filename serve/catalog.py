@@ -405,7 +405,12 @@ __all__ = [
 # up to 1.07%), so the rule stands: index_history takes an index code and
 # refuses IBOV11, which is a settlement index, not the benchmark. A description
 # fixed, no behaviour changed.
-CATALOG_VERSION = 49
+# v50: panel's close_return is NULL on a session whose price comparison crosses a
+# share-count event (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO), #396 step 1: the
+# raw close read a split as a return (BBAS3's 2:1 split, 56.46 -> 27.91, served
+# -50.57%). It is the raw-close return with that session nulled, not an adjusted
+# return. Behaviour and descriptions change; no signature or column does.
+CATALOG_VERSION = 50
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -496,8 +501,13 @@ METRICS: Dict[str, Dict[str, Any]] = {
         "grain": ["day", "month"],
         "source": "b3_cotahist",
         "meaning": (
-            "p_t/p_{t-1}-1 from stored unadjusted closes. Corporate actions "
-            "appear as spurious jumps (a 2:1 split reports roughly -50%). "
+            "p_t/p_{t-1}-1 from the stored raw closes, which are not adjusted "
+            "for corporate actions. NULL (no row) when a split, grouping or "
+            "bonus (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO) lies between the "
+            "two prints, so a share-count change never reads as a return (a 2:1 "
+            "split would have reported roughly -50%); on the monthly grain the "
+            "event may sit anywhere between the two month-end prints. It is not "
+            "an adjusted return and not a total return. "
             "Daily: previous session. Monthly: previous calendar month else null."
         ),
         "derived": True,
@@ -651,7 +661,7 @@ CONSTRAINTS = [
     "Missing observations stay null; do not ffill or interpolate.",
     "freq=day is quotes only. Mix equity with fund fundamentals on freq=month.",
     "close_return across a missing month is null, not a multi-month return.",
-    "close_return is unadjusted: a 2:1 split reports roughly -50%. It is not a total return.",
+    "close_return is the return of the raw (unadjusted) closes with every share-count event removed: it is NULL (the panel emits no row) for a session whose comparison crosses a split, grouping or bonus (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO in B3's corporate-event history; monthly: anywhere between the two month-end prints), so a 2:1 split is no longer a -50% return. It is not an adjusted return and not a total return: dividends and JCP still move it, and the return across the event is missing, not computed. For an adjusted level use close_adj. The nulling reads the share-count events stored for the ISIN from B3's published history; an event the nightly corporate-event sweep has not stored yet (an issuer without a sweep proof) is not seen and still reads as a return.",
     "close is the price as published, which for a paper quoted per lot refers "
     "to 1000 shares; close_unit divides it by the published quotation_factor so "
     "levels are comparable. Neither is corporate-action adjusted, and `adjusted` "
@@ -707,7 +717,8 @@ CONSTRAINTS = [
     "Daily close_return is null when the previous session is more than 7 "
     "calendar days back (halts, listing gaps), and null across a quotation-"
     "factor change — a fatcot flip rescales the quote with no market move "
-    "behind it.",
+    "behind it. Both grains are also null across a split, grouping or bonus "
+    "between the two prints (#396).",
     "Default windows are honest: with no explicit `to`, fund metrics end at "
     "each family's latest COMPLETE period (coverage() reports it as "
     "complete_through) — a partially-filed trailing month is not served. An "

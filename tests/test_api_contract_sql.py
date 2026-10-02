@@ -894,11 +894,41 @@ def test_close_return_guards_adjacency_and_quotation_factor():
     ret = panel[panel.index("quote_ret AS ("):]
     ret = ret[: ret.index("option_month AS (")]
     assert (
-        "lag(quotation_factor) OVER w IS DISTINCT FROM quotation_factor" in ret
+        "lag(quotation_factor) OVER w AS prev_quotation_factor" in ret
+        and "r.prev_quotation_factor IS DISTINCT FROM r.quotation_factor" in ret
     ), "a fatcot flip must NULL the return"
-    assert "lag(obs_date) OVER w >= period - 7" in ret, (
+    assert "r.prev_obs_date >= r.period - 7" in ret, (
         "a daily return needs the previous session within 7 calendar days"
     )
+
+
+def test_close_return_is_null_across_a_share_count_event():
+    """#396 step 1: a split, grouping or bonus between the two prints NULLs the
+    return on both grains. Behaviour on rows is executed in
+    tests/sql/quote_history_behaviour.sql; this pins the shape."""
+    panel = _strip_comments(FUNCS["api.panel"])
+    ret = panel[panel.index("quote_ret AS ("):]
+    ret = ret[: ret.index("option_month AS (")]
+    # The two prints are the row and its predecessor, whatever the grain.
+    assert "lag(obs_date)         OVER w AS prev_obs_date" in ret
+    event = re.search(r"WHEN EXISTS \((.*?)\)\s*THEN NULL", ret, re.S)
+    assert event, "quote_ret must NULL the return when a share-count event lies between the prints"
+    body = re.sub(r"\s+", " ", event.group(1))
+    assert "FROM public.b3_corporate_event e" in body
+    assert "e.isin = r.isin" in body
+    assert "e.label IN ('DESDOBRAMENTO', 'GRUPAMENTO', 'BONIFICACAO')" in body, (
+        "the share-count labels api.close_adj_ratio adjusts, and no other"
+    )
+    # An event goes ex the session after last_date_prior: it lies between the
+    # prints when prev <= last_date_prior < current (close_adj_ratio's interval).
+    assert "e.last_date_prior >= r.prev_obs_date" in body
+    assert "e.last_date_prior < r.obs_date" in body
+    # The event guard sits before both grains' arithmetic, so it applies to both.
+    assert ret.index("WHEN EXISTS") < ret.index("r.prev_obs_date >= r.period - 7")
+    assert ret.index("WHEN EXISTS") < ret.index("r.prev_period =")
+    # NULL, not an adjusted return: the arithmetic stays the raw close ratio.
+    assert "r.close / NULLIF(r.prev_close, 0) - 1" in ret
+    assert "close_adj_ratio" not in ret
 
 
 def test_coverage_reports_completeness_and_per_family_rows():
