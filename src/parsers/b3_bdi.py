@@ -102,6 +102,14 @@ class B3BdiParseError(RuntimeError):
     """The export could not be interpreted — layout drift, or a missing band."""
 
 
+class B3BdiStaleMonth(B3BdiParseError):
+    """The monthly caption still names the month before the one asked for.
+
+    B3 has not rolled the caption over yet: the month it shows is one we asked
+    for in the previous month. That is "not published yet", not drift.
+    """
+
+
 # ── primitives ────────────────────────────────────────────────────────────
 
 
@@ -413,7 +421,9 @@ def monthly_reference_month(text: str, *, request_date: date) -> date:
     The caption names the month but never the year, so the year comes from
     the request date — and the caption is then checked against it. A mismatch
     raises: silently filing one month's numbers under another is precisely
-    the fabrication rule 1 forbids.
+    the fabrication rule 1 forbids. The one mismatch that is not drift is a
+    caption a month behind (B3 has not rolled it over yet, seen 2026-10-01 with
+    "Agosto"): that raises ``B3BdiStaleMonth`` so the ingest can skip it.
     """
     year, month = (request_date.year, request_date.month - 1) if request_date.month > 1 else (request_date.year - 1, 12)
     expected = date(year, month, 1)
@@ -424,10 +434,13 @@ def monthly_reference_month(text: str, *, request_date: date) -> date:
     if named is None:
         raise B3BdiParseError(f"SharesInvesVolumMonthly caption month {m.group(1)!r} is not a Portuguese month")
     if named != expected.month:
-        raise B3BdiParseError(
+        detail = (
             f"SharesInvesVolumMonthly caption says {m.group(1)!r} (month {named}) but the export was "
             f"requested for {request_date.isoformat()}, whose previous month is {expected.month}"
         )
+        if named == (expected.month - 2) % 12 + 1:
+            raise B3BdiStaleMonth(f"{detail}; B3 has not rolled the caption over yet")
+        raise B3BdiParseError(detail)
     return expected
 
 
