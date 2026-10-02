@@ -15,6 +15,7 @@ The column list below mirrors the live table, so sending a non-existent column
 fails a test instead of silently disabling the ingest in production.
 """
 
+import asyncio
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
@@ -35,73 +36,79 @@ def _ingestor():
         return AnbimaIngestor()
 
 
-def _capture(fn, *args, **kwargs):
-    """Run fn with upsert_rows mocked; return the list of row-dicts it sent."""
+RECORDS = [{
+    "reference_date": "2026-06-01",
+    "anbima_category": "ETF",
+    "anbima_type_id": None,
+    "anbima_type_name": "ETF",
+    "metric": "pl_brl_mm",
+    "value": 3747.24,
+    "level": "category",
+    "source_sheet": "Pág. 4 - PL por Classe",
+    "boletim_ref": "b.xlsx",
+}]
+
+
+def _run_daily_update(parsed=None, fetch_error=None):
+    """Run daily_update with network and DB mocked; return the cvm_ingest_log writes.
+
+    Each item is {"rows": [...], "conflict": <conflict_columns>}.
+    """
+    ing = _ingestor()
     sent = []
 
     def _fake_upsert(conn, table, rows, **kw):
-        sent.append({"table": table, "rows": rows, "conflict": kw.get("conflict_columns")})
+        if table == "cvm_ingest_log":
+            sent.append({"rows": rows, "conflict": kw.get("conflict_columns")})
         return len(rows)
 
-    with patch("src.pipeline.anbima_pipeline.upsert_rows", side_effect=_fake_upsert):
-        fn(*args, **kwargs)
+    fetch_kw = ({"side_effect": fetch_error} if fetch_error is not None
+                else {"return_value": ("http://x/b.xlsx", "b.xlsx")})
+    with patch("src.pipeline.anbima_pipeline.fetch_latest_boletim_url", **fetch_kw), \
+         patch("src.pipeline.anbima_pipeline.download_xlsx", return_value=b"xx"), \
+         patch("src.pipeline.anbima_pipeline.parse_boletim", return_value=parsed or RECORDS), \
+         patch("src.pipeline.anbima_pipeline.upsert_rows", side_effect=_fake_upsert):
+        try:
+            asyncio.run(ing.daily_update())
+        except RuntimeError:
+            pass
     return sent
 
 
 class TestLogColumns:
-    def test_log_start_sends_only_real_columns(self):
-        ing = _ingestor()
-        sent = _capture(ing._log_start, ing._pg, "11111111-1111-1111-1111-111111111111", "b.xlsx")
-        assert sent[0]["table"] == "cvm_ingest_log"
-        keys = set(sent[0]["rows"][0])
-        unknown = keys - INGEST_LOG_COLUMNS
-        assert not unknown, f"non-existent cvm_ingest_log column(s): {unknown}"
+    """The audit rows ANBIMA writes must satisfy the real cvm_ingest_log table."""
 
-    def test_log_finish_sends_only_real_columns(self):
-        ing = _ingestor()
-        sent = _capture(
-            ing._log_finish, ing._pg,
-            "11111111-1111-1111-1111-111111111111", "ok", 212,
-        )
-        keys = set(sent[0]["rows"][0])
-        unknown = keys - INGEST_LOG_COLUMNS
-        assert not unknown, f"non-existent cvm_ingest_log column(s): {unknown}"
+    def test_audit_rows_send_only_real_columns(self):
+        for write in _run_daily_update():
+            unknown = set(write["rows"][0]) - INGEST_LOG_COLUMNS
+            assert not unknown, f"non-existent cvm_ingest_log column(s): {unknown}"
 
-    def test_log_start_satisfies_not_null_columns(self):
+    def test_start_row_satisfies_not_null_columns(self):
         # entity, doc_type, rows_upserted, status, started_at are NOT NULL.
-        ing = _ingestor()
-        row = _capture(
-            ing._log_start, ing._pg,
-            "11111111-1111-1111-1111-111111111111", "b.xlsx",
-        )[0]["rows"][0]
+        row = _run_daily_update()[0]["rows"][0]
         for col in ("run_id", "entity", "doc_type", "rows_upserted", "status", "started_at"):
             assert row.get(col) is not None, f"{col} is NOT NULL in the table"
         assert row["status"] == "running"
 
-    def test_log_finish_does_not_clobber_started_at(self):
+    def test_finish_does_not_clobber_started_at(self):
         # ON CONFLICT DO UPDATE sets every supplied column, so sending started_at
         # here would overwrite the real start time and zero out every duration.
-        ing = _ingestor()
-        row = _capture(
-            ing._log_finish, ing._pg,
-            "11111111-1111-1111-1111-111111111111", "ok", 5,
-        )[0]["rows"][0]
+        row = _run_daily_update()[-1]["rows"][0]
+        assert row["status"] == "ok"
         assert "started_at" not in row
         assert row["finished_at"] is not None
 
-    def test_log_finish_carries_error_in_error_msg(self):
-        ing = _ingestor()
-        row = _capture(
-            ing._log_finish, ing._pg,
-            "11111111-1111-1111-1111-111111111111", "error", 0, "boom",
-        )[0]["rows"][0]
-        assert row["error_msg"] == "boom"
+    def test_a_failure_is_carried_in_error_msg(self):
+        row = _run_daily_update(fetch_error=RuntimeError("boom"))[-1]["rows"][0]
+        assert row["error_msg"] == "RuntimeError: boom"
         assert row["status"] == "error"
 
     def test_conflict_key_is_run_id(self):
-        ing = _ingestor()
-        sent = _capture(ing._log_start, ing._pg, "11111111-1111-1111-1111-111111111111", "b.xlsx")
-        assert sent[0]["conflict"] == "run_id"
+        assert {w["conflict"] for w in _run_daily_update()} == {"run_id"}
+
+    def test_the_start_and_finish_rows_share_one_run_id(self):
+        start, finish = (w["rows"][0] for w in _run_daily_update())
+        assert start["run_id"] == finish["run_id"]
 
 
 class TestDailyUpdate:
@@ -109,17 +116,7 @@ class TestDailyUpdate:
     run must be logged 'ok' (not the old 'success', which coverage checks ignore).
     """
 
-    RECORDS = [{
-        "reference_date": "2026-06-01",
-        "anbima_category": "ETF",
-        "anbima_type_id": None,
-        "anbima_type_name": "ETF",
-        "metric": "pl_brl_mm",
-        "value": 3747.24,
-        "level": "category",
-        "source_sheet": "Pág. 4 - PL por Classe",
-        "boletim_ref": "b.xlsx",
-    }]
+    RECORDS = RECORDS
 
     @pytest.mark.asyncio
     async def test_records_upserted_and_logged_ok(self):

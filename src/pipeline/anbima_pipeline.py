@@ -62,7 +62,6 @@ import sys
 import unicodedata
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
-import uuid
 
 import httpx
 import openpyxl
@@ -794,22 +793,6 @@ class AnbimaIngestor:
     # and ANBIMA silently skipped every day) cannot recur here or elsewhere.
     # Provenance for the source file is not lost: every record carries boletim_ref.
 
-    def _log_start(self, conn, run_id: str, boletim_ref: str) -> None:
-        logger.info("[anbima] run %s boletim=%s", run_id, boletim_ref or "pending")
-        ingest_log.start(conn, run_id, LOG_ENTITY, LOG_DOC_TYPE, upsert=upsert_rows)
-
-    def _log_finish(
-        self,
-        conn,
-        run_id: str,
-        status: str,
-        rows_upserted: int,
-        error: Optional[str] = None,
-    ) -> None:
-        ingest_log.finish(conn, run_id, LOG_ENTITY, LOG_DOC_TYPE,
-                          status=status, rows=rows_upserted, error=error,
-                          upsert=upsert_rows)
-
     async def daily_update(self) -> Dict[str, int]:
         """
         Fetch the latest published ANBIMA boletim and upsert every class metric.
@@ -817,21 +800,12 @@ class AnbimaIngestor:
 
         Returns: {'anbima_etf': <rows_upserted>}  (key kept for the daily-run
         totals dict and the log entity, both of which predate the widening)
-        """
-        run_id = str(uuid.uuid4())
-        rows_upserted = 0
 
-        logger.info("[anbima] Starting daily update (run_id=%s)", run_id)
-        # Integrity rule 3: the audit row exists before anything can fail, so a
-        # failed fetch or parse is recorded too. The start write is best-effort
-        # (ingest_log's contract): _log_finish upserts, so a start that never
-        # landed still ends in a row.
-        try:
-            self._log_start(self._pg, run_id, None)
-        except Exception as exc:
-            logger.warning("[anbima] could not write the running row (%s); continuing",
-                           ingest_log.describe(exc))
-        try:
+        Integrity rule 3: the whole run, fetch and parse included, is bracketed
+        by ``ingest_log.audited``, so a failed download or a boletim that parses
+        to nothing leaves an ``error`` row (and raises) instead of no row.
+        """
+        async def work() -> int:
             download_url, boletim_ref = await fetch_latest_boletim_url()
             logger.info("[anbima] Latest boletim: %s", boletim_ref)
 
@@ -843,8 +817,7 @@ class AnbimaIngestor:
 
             if not records:
                 # A boletim we cannot read is a failed ingest, not an empty one
-                # (integrity rule 1: never return a plausible 0). Raising lands
-                # the 'error' row below and fails this source in run_daily.
+                # (integrity rule 1: never return a plausible 0).
                 raise RuntimeError(f"No records parsed from boletim {boletim_ref}")
 
             upsert_rows(
@@ -853,19 +826,17 @@ class AnbimaIngestor:
                 records,
                 conflict_columns=CONFLICT_COLUMNS,
             )
-            rows_upserted = len(records)
-            # 'ok' (not 'success') — staleness/coverage checks count status='ok'.
-            self._log_finish(self._pg, run_id, "ok", rows_upserted)
-            logger.info("[anbima] Upserted %d rows", rows_upserted)
-        except Exception as exc:
-            logger.error("[anbima] Daily update failed: %s", exc)
-            try:
-                self._log_finish(self._pg, run_id, "error", 0, ingest_log.describe(exc))
-            except Exception as log_exc:
-                logger.warning("[anbima] could not write the error row (%s)",
-                               ingest_log.describe(log_exc))
-            raise
+            logger.info("[anbima] Upserted %d rows", len(records))
+            return len(records)
 
+        logger.info("[anbima] Starting daily update")
+        try:
+            rows_upserted = await ingest_log.audited(
+                self._pg, LOG_ENTITY, LOG_DOC_TYPE, work, upsert=upsert_rows
+            )
+        except Exception as exc:
+            logger.error("[anbima] Daily update failed: %s", ingest_log.describe(exc))
+            raise
         return {LOG_ENTITY: rows_upserted}
 
     async def backfill(self, start_year: int = 2006) -> Dict[str, int]:

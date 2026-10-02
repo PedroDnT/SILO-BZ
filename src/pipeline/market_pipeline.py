@@ -43,7 +43,6 @@ import os
 import sys
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
-from uuid import uuid4
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -121,41 +120,31 @@ class MarketIngestor:
         re-raised, so one bad session does not abandon the rest; ``run``
         fails the process at the end if any slice failed.
         """
-        run_id = str(uuid4())
-        year = period.year if period else None
-        month = period.month if period else None
-        try:
-            ingest_log.start(self._supabase, run_id, LOG_ENTITY, doc_type,
-                             period_year=year, period_month=month, upsert=upsert_rows)
-        except Exception as exc:  # noqa: BLE001 — audit must not stop ingest
-            logger.warning("%s: could not write the running row (%s)", label, ingest_log.describe(exc))
+        async def audited_work() -> ingest_log.Outcome:
+            try:
+                rows, note = await work()
+                return ingest_log.Outcome(rows, "ok", note)
+            except (B3FileNotPublished, ts.TaxaSwapStaleFile) as exc:
+                # No file of its own for that date: an empty archive, or an earlier
+                # session's file republished under it. Nothing is stored.
+                note = ingest_log.describe(exc)
+                self.skips.append(label)
+                logger.info("%s: not published for that date — skipped (%s)", label, note)
+                return ingest_log.Outcome(0, "skipped", note)
 
-        status, rows, error = "error", 0, None
         try:
-            rows, note = await work()
-            status, error = "ok", note
-        except (B3FileNotPublished, ts.TaxaSwapStaleFile) as exc:
-            # No file of its own for that date: an empty archive, or an earlier
-            # session's file republished under it. Nothing is stored.
-            status, error = "skipped", ingest_log.describe(exc)
-            self.skips.append(label)
-            logger.info("%s: not published for that date — skipped (%s)", label, error)
-        except Exception as exc:  # noqa: BLE001 — recorded, collected, raised by run()
+            return await ingest_log.audited(
+                self._supabase, LOG_ENTITY, doc_type, audited_work,
+                period_year=period.year if period else None,
+                period_month=period.month if period else None,
+                upsert=upsert_rows,
+            )
+        except Exception as exc:  # noqa: BLE001 — recorded by audited(), collected, raised by run()
             error = ingest_log.describe(exc)
             self.failures.append(f"{label}: {error}")
             logger.error("%s failed: %s", label, error, exc_info=exc)
-        except BaseException as exc:
-            # Cancellation or a job timeout: record it, then let it propagate.
-            error = ingest_log.describe(exc)
-            raise
-        finally:
-            try:
-                ingest_log.finish(self._supabase, run_id, LOG_ENTITY, doc_type, status=status,
-                                  rows=rows, error=error, period_year=year, period_month=month,
-                                  upsert=upsert_rows)
-            except Exception as exc:  # noqa: BLE001 — must not mask the outcome
-                logger.warning("%s: could not write the %s row (%s)", label, status, ingest_log.describe(exc))
-        return rows
+            return 0
+        # BaseException (cancellation, a job timeout) is recorded by audited() and propagates.
 
     # ── B3 files ─────────────────────────────────────────────────────────
     async def ingest_price_report(self, session: date) -> int:

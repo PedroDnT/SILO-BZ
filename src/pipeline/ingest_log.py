@@ -125,6 +125,10 @@ class Outcome:
     for a run that recorded failures and still returns (the caller decides
     whether that fails the step; the audit row says what happened).
 
+    ``error`` is the text written to ``error_msg``. On an ``ok`` row it is a
+    note (the market ingest records dropped tickers and revisions there), not
+    a failure.
+
     The status is checked on construction, so a typo such as ``"success"``
     (which coverage and staleness checks ignore) fails inside the work, is
     recorded as an ``error`` row and is re-raised, instead of being written.
@@ -137,8 +141,6 @@ class Outcome:
     def __post_init__(self) -> None:
         if self.status not in STATUSES:
             raise ValueError(f"Outcome status must be one of {STATUSES}, got {self.status!r}")
-        if self.status == "ok" and self.error:
-            raise ValueError("an ok Outcome cannot carry an error message")
 
 
 def describe(exc: BaseException) -> str:

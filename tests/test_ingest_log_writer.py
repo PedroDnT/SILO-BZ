@@ -289,9 +289,15 @@ def test_an_outcome_status_outside_the_three_is_refused():
         ingest_log.Outcome(1, "success")
 
 
-def test_an_ok_outcome_cannot_carry_an_error_message():
-    with pytest.raises(ValueError):
-        ingest_log.Outcome(1, "ok", "something went wrong")
+@pytest.mark.asyncio
+async def test_an_ok_outcome_can_carry_a_note():
+    """The market ingest records dropped tickers and revisions on the ok row."""
+    async def work():
+        return ingest_log.Outcome(4, "ok", "dropped 1 invalid ticker")
+
+    result, row = await _run_audited(work)
+    assert result == 4
+    assert (row["status"], row["error_msg"]) == ("ok", "dropped 1 invalid ticker")
 
 
 @pytest.mark.asyncio
