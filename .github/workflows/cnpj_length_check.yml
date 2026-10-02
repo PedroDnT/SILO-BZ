@@ -1,0 +1,101 @@
+name: CNPJ length check
+
+# One-off, read-only measurement. Question: does any CVM source file carry a
+# CNPJ with fewer than 14 digits? src/parsers/mapping.py coerce(.., "cnpj")
+# zero-pads such a value, and integrity rule 4 says never guess.
+#
+# It cannot touch the dashboard or the database: no secrets, no POSTGRES_URL,
+# no deploy hook, no schema or analytical apply, contents: read only. It
+# downloads public CVM files into the runner's temp dir and prints a table.
+# It has its own concurrency group, so it never queues behind or blocks the
+# daily ingest, and it triggers only by hand or by a change to this file.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/cnpj_length_check.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cnpj-length-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  count:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Count CNPJ digit lengths in CVM source files
+        run: |
+          python - <<'PY'
+          import collections, csv, io, re, sys, urllib.request, zipfile
+
+          sys.path.insert(0, ".")
+          from src.parsers.mapping import coerce
+
+          BASE = "https://dados.cvm.gov.br/dados"
+          FILES = [
+              "FI/CAD/DADOS/cad_fi.csv",
+              "FI/CAD/DADOS/registro_fundo_classe.zip",
+              "CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv",
+              "FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_202508.zip",
+              "FII/DOC/INF_MENSAL/DADOS/inf_mensal_fii_2025.zip",
+          ]
+
+
+          def csv_members(name, blob):
+              if name.endswith(".zip"):
+                  with zipfile.ZipFile(io.BytesIO(blob)) as z:
+                      for m in z.namelist():
+                          if m.lower().endswith(".csv"):
+                              yield m, z.read(m)
+              else:
+                  yield name, blob
+
+
+          failed = 0
+          for rel in FILES:
+              url = f"{BASE}/{rel}"
+              try:
+                  with urllib.request.urlopen(url, timeout=300) as r:
+                      blob = r.read()
+              except Exception as exc:  # reported, then the run goes red at the end
+                  print(f"FAIL {rel}: {type(exc).__name__}: {exc}")
+                  failed += 1
+                  continue
+              for member, data in csv_members(rel, blob):
+                  text = data.decode("latin-1")
+                  rows = csv.DictReader(io.StringIO(text), delimiter=";")
+                  cols = [c for c in (rows.fieldnames or []) if "CNPJ" in c.upper()]
+                  if not cols:
+                      continue
+                  lengths = {c: collections.Counter() for c in cols}
+                  padded = {c: 0 for c in cols}
+                  samples = {c: [] for c in cols}
+                  for row in rows:
+                      for c in cols:
+                          raw = (row.get(c) or "").strip()
+                          if not raw:
+                              lengths[c]["empty"] += 1
+                              continue
+                          digits = re.sub(r"\D", "", raw)
+                          lengths[c][len(digits)] += 1
+                          if 0 < len(digits) < 14:
+                              padded[c] += 1
+                              if len(samples[c]) < 3:
+                                  samples[c].append(raw)
+                  for c in cols:
+                      hist = sorted(lengths[c].items(), key=lambda kv: str(kv[0]))
+                      print(f"{rel} :: {member} :: {c}")
+                      print(f"    lengths {hist}")
+                      print(f"    would be zero-padded by coerce: {padded[c]}  samples {samples[c]}")
+          print("DONE" if not failed else f"DONE with {failed} failed download(s)")
+          sys.exit(1 if failed else 0)
+          PY
