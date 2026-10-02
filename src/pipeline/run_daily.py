@@ -143,39 +143,21 @@ async def main() -> None:
     # the deploy for data that had all landed. They still fail their own step.
 
     # ETF market snapshot: scrape etfsbrasil.com.br via Apify (NAV/price/cotistas
-    # the post-CVM-175 daily file no longer exposes). The scrape is paid + rate-
-    # limited, so it ONLY runs when APIFY_TOKEN is configured — an absent token
-    # skips it and never fails the daily run. ApifyScrapeUnavailableError is the
-    # same class (403 actor-not-approved, 403 usage hard limit, 408
-    # run-timeout-exceeded, wait-budget miss, platform ABORTED): we never got a
-    # dataset, so there is nothing to fabricate. A scrape that ran and returned
-    # bad/empty data still fails the daily run. One snapshot per ticker per UTC
-    # day; idempotent upsert on (ticker, snapshot_date).
+    # the post-CVM-175 daily file no longer exposes). Runs only when APIFY_TOKEN
+    # is set. ``ingest_etf_market`` writes a ``skipped`` audit row and returns 0
+    # when Apify never delivered a dataset (403/408/ABORTED/usage-limit) — it
+    # logs loudly there and does not re-raise, so a usage-limit day cannot skip
+    # ANALYZE and analytics. A scrape that ran and returned bad/empty data still
+    # raises, which adds to ``failures``.
     if os.getenv("APIFY_TOKEN"):
         try:
             from src.pipeline.ingest_etf_market import ingest_etf_market
             from src.store.pg_client import get_pg_client
-            etf_rows = ingest_etf_market(get_pg_client())
+            etf_rows = await ingest_etf_market(get_pg_client())
             totals["etf_market_snapshot"] = etf_rows
         except Exception as exc:
-            from src.fetchers.apify_etf_fetcher import ApifyScrapeUnavailableError
-            if isinstance(exc, ApifyScrapeUnavailableError):
-                # No dataset. Same class as an unset token: log loudly and
-                # continue so CVM/BACEN/B3 success still refreshes analytical.
-                # Daily CVM Ingest #209 (2026-09-02) exited 1 on 403; run
-                # 33721538761 (2026-09-03) did the same on 408 after 3.1M CVM
-                # rows; #219 (run 34015471961, 2026-09-06) did the same on
-                # ABORTED after 3.6M rows; #220/#221 (2026-09-07/08) did the
-                # same on 403 usage hard limit — all skipped ANALYZE and
-                # analytical.
-                logger.error(
-                    "ETF market scrape skipped — Apify did not return a dataset: %s",
-                    exc,
-                )
-                print(f"::warning title=ETF scrape skipped::{exc}", flush=True)
-            else:
-                logger.error("ETF market scrape failed: %s", exc, exc_info=True)
-                failures.append(("etf_market", exc))
+            logger.error("ETF market scrape failed: %s", exc, exc_info=True)
+            failures.append(("etf_market", exc))
     else:
         logger.info("APIFY_TOKEN unset — skipping ETF market scrape")
 
