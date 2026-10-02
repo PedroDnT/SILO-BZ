@@ -574,3 +574,61 @@ equally unowned object in schema `api`. Owner's call on 2026-10-01: drop both
 (migration 58, `claude/etf-universe-aum`), and show net assets, their date and
 the size rank on `/etf`'s "ETF Universe" from the live registry instead. Closed
 once migration 58's apply logs both drops.
+
+## 17. Audit protocol and the 2026-10-02 architecture review: resolved and open
+
+Written 2026-10-02 from an architecture review that found six deepening
+candidates. Candidate 02 (one audit protocol for ingest slices) is mostly built;
+the rest was looked at and deliberately left. Nothing here is broken in
+production. The code changes below deploy with the next daily ingest, not at
+merge.
+
+### Resolved
+
+| PR | What it settled |
+| --- | --- |
+| #495 | ANBIMA, ETF market and CVM could finish without a `cvm_ingest_log` row (integrity rule 3); they now always write one. `AGENTS.md` now states the real `upsert_rows` signature and chunk (500 by default, CI sets 5000). |
+| #496 | ANBIMA raises when a boletim parses to zero records (owner decision), instead of logging a clean empty run. `run_b3_events`'s docstring says what the step does. |
+| #497 | `cnpj_length_check.yml`, a read-only, manual workflow with no secrets, that measures CNPJ digit lengths in CVM source files. It cannot touch the database or the dashboard. |
+| #498 | Rule 4 says what `mapping.coerce("cnpj")` does (strip punctuation, zero-pad to 14). Measured 2026-10-02: every fund, class, company, FIDC and FII identity CNPJ already has 14 digits, so it pads nothing there. A column that can hold a CPF is typed `text`. |
+| #499 | `ingest_log.audited` can end a run `skipped`, or `error` without raising, through `Outcome(rows, status, error)`. A bare row count still means `ok`. |
+| #500 | Market and ANBIMA write their audit rows through `audited`; their own start and finish code is gone. |
+| #501 | All 14 `B3Ingestor` methods go through one `_audited` helper; `_log_start`, `_log_finish` and `_doc_type_of` are gone. A partial B3 failure still writes an `error` row and returns normally, so the step stays green (owner decision). `audited` takes an optional `run_id` for the corporate-event sweep's proof provenance. |
+
+Decisions taken by the owner on 2026-10-02: ANBIMA raises on an empty parse; B3
+partial failure keeps exit 0 and the docstring says so; measure the CNPJ padding
+before changing rule 4.
+
+### Open
+
+1. **Check the B3 audit rows after the next daily run.** The offline suite is
+   green, but no production run has used the new path yet. Look at the `b3` rows
+   in `cvm_ingest_log`: the same `doc_type` values and statuses as before, and
+   `b3_corporate_event_sweep.run_id` matching a real `corporate_events` row.
+2. **Phase 4 of candidate 02: CVM.** `CVMIngestor` still has its own start and
+   finish code. It is the largest writer and overlaps candidate 03, so plan it
+   with 03 before touching code. Not started.
+3. **ETF market is not migrated.** It is a synchronous call from `run_daily`;
+   folding it into the async `audited` would change `run_daily` and the event
+   loop. It already writes through `ingest_log.start` and `finish`.
+4. **Candidate 01, one home for each API endpoint's facts.** The inventory found
+   no drift across 67 endpoints, so the large refactor is not recommended. An
+   optional small version: generate the `catalog.postgrest` dict and pin the SDK
+   version. Owner has not decided.
+5. **Candidates 03 to 06, untouched:** the CVM dataset matrix in one place; one
+   source runner for the `run_*` entry points; row ingest as one module (parse,
+   drop, count); a read-side seam so SQL rules are not restated in Python.
+6. **Rule 4 says every record passes `DataValidator`, and the CVM ingests do not
+   all do it.** Rule and code disagree; which one changes is the owner's call.
+7. **The CNPJ measurement did not cover** CDA, securitization, FIP, the ETF
+   registry or company filings. The rule 4 sentence is true for the files
+   measured, not yet for those.
+8. **CVM skip versus error is a substring match** on `"Data not found"`, from
+   `ValueError(f"Data not found at {url}")` in `cvm_fetcher.py`. B3 and market use
+   typed exceptions. A reworded message would turn a skip into an error.
+9. **Smaller findings, not independently re-checked:** nine `tests/conftest.py`
+   fixtures with no users, and no pipeline-level test for
+   `ingest_etf_market.py`. (ANBIMA's log columns are now tested through
+   `daily_update`.)
+10. **Stale remote branch `claude/audit-row-gaps`** (merged as #495, with later
+    commits lost; the follow-up went out as #496). Delete only if the owner says so.
