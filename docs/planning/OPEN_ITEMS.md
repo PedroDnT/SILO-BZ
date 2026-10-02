@@ -263,7 +263,7 @@ URL and grep it for the thing you claim to have shipped.
 
 **Done 2026-09-25** (`fix/b3-landed-at`): `_ingest_bdi_span` now logs `ok` when
 older sessions landed and only the newest is missing, with the shortfall kept in
-`error_msg` as a note (`_log_finish(..., note=)`). A span where nothing landed
+`error_msg` as a note (today `Outcome(rows, "ok", note)` in `ingest_log.audited`). A span where nothing landed
 stays `skipped`; any older gap stays `error`. The PR #242 gate is unaffected:
 `check_staleness.py` and diagnostic 15 treat `ok` and `skipped` alike. Live
 `landed_at` moves on the first daily run after merge.
