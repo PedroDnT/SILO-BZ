@@ -15,9 +15,11 @@ The analytical apply reads neither table. api.quote_history reads
 b3_corporate_event (and its sweep) live, so a new event counts from the moment
 it lands, wherever in the job that happens.
 
-Contract, the same as run_daily: each source runs even if the other failed, and
-the process exits non-zero if either did. Each ingest writes its own
-cvm_ingest_log rows.
+Contract, the same as run_daily: each source runs even if another failed, and
+the process exits non-zero if any source raised. A source that finishes with
+issuers failed (corporate events, cash dividends) does not raise: it
+writes an `error` cvm_ingest_log row, which DB Health reads, and returns its
+count, so the step stays green. Each ingest writes its own cvm_ingest_log rows.
 
     python -m src.pipeline.run_b3_events
 
