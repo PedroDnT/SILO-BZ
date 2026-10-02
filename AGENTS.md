@@ -172,7 +172,12 @@ downstream metric. This list is authoritative:
    `cvm_ingest_log` row.
 4. **Validate before upsert.** All records pass `DataValidator` (`src/parsers/validation.py`):
    CNPJ = 14 digits, dates must parse, NAV/PL non-negative or explicitly nullable. A row that
-   fails validation is dropped and counted — never coerced into a guess.
+   fails validation is dropped and counted — never coerced into a guess. One normalisation is
+   allowed: `mapping.coerce("cnpj")` strips punctuation and zero-pads to 14 digits, which restores
+   the leading zero a CSV export drops. Measured 2026-10-02: every fund, class, company, FIDC and
+   FII identity CNPJ already has 14 digits, so it pads nothing there. A column that can hold a
+   CPF too (manager, originator, auditor) is typed `text`, never `cnpj`: padding an 11-digit CPF
+   would fabricate a CNPJ.
 5. **Idempotent by construction.** Every table has a named UNIQUE constraint on its natural
    key; upserts use `ON CONFLICT ... DO UPDATE`. Never plain `INSERT`.
 
