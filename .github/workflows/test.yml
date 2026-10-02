@@ -651,6 +651,13 @@ jobs:
           END $$;
           SQL
 
+      # The /fi CDA anchor (#476), executed: the two dashboard sources run over
+      # a temp cvm_fi_cda whose newest months are filed thin, and must stop at
+      # the last complete month, move up when CVM completes one, and still emit
+      # their safety row on an empty table. Rolled back.
+      - name: /fi CDA anchor behaves (executed, not just compiled)
+        run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/fi_cda_anchor_behaviour.sql
+
       # The research price contract (#410), executed on synthetic tickers:
       # the series crosses boards, close_adj adjusts splits / groupings /
       # bonuses and is the same in any window, every refusal carries its
@@ -658,6 +665,12 @@ jobs:
       # and asserts inside one transaction and rolls back.
       - name: quote_history behaves (executed, not just compiled)
         run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/quote_history_behaviour.sql
+
+      # vw_company_ticker.is_active (migration 63, #381): a ticker absent from
+      # the company's newest FCA filing is inactive. Synthetic CNPJs inside a
+      # transaction that is rolled back.
+      - name: vw_company_ticker.is_active behaves (executed, not just compiled)
+        run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/company_ticker_active_behaviour.sql
 
       # Own Python, not the runner's system one: Ubuntu's /usr/bin/python3 is
       # PEP 668 externally-managed, so a bare `pip install` there is one image

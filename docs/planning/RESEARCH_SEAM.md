@@ -125,8 +125,9 @@ A separate call, one row per ticker+ISIN pair traded since 2019-01-02.
   `segmento_current`: `cia_company.segmento` is CVM's registration category
   (Categoria A/B), not a market segment.
 - **No listing or delisting dates and no `is_active`.** FCA dates are not
-  historical (#373), and `vw_company_ticker.is_active` marks 241 dead tickers
-  active (#381).
+  historical (#373), and `vw_company_ticker.is_active` marked 241 dead tickers
+  active (#381; migration 63 now makes a ticker absent from its company's
+  newest FCA inactive, which says what the FCA lists, not that it trades).
 - **Company link with its basis:**
 
   | `cnpj_basis` | Meaning | Pairs today |
@@ -231,7 +232,7 @@ spin-offs, mergers, subscriptions and linking across renames; fundamentals befor
 recovering superseded ITR/DFP versions; a multi-ticker prices function; adjusted values
 for classes other than equity and unit; everything in the brief's non-goals.
 
-Recorded separately, off the route: #381 (`api.lookup` serves dead tickers as active),
+Recorded separately, off the route: #381 (`api.lookup` served dead tickers as active; migration 63),
 #382 (`cia_ticker` drops per-segment rows), #384 (four 2026 ITR filings lack
 year-to-date lines), #385 (`b3_corporate_event` collapses installments), #388
 (IBOV11 fatcot direction noted backwards), #396 (`api.panel` `close_return` shows
