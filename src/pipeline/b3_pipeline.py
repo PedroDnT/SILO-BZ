@@ -832,7 +832,8 @@ class B3Ingestor:
 
         return await self._audited(
             "investor_participation_monthly", work,
-            year=request_date.year, month=request_date.month, skip_on=(B3BdiEmpty,),
+            year=request_date.year, month=request_date.month,
+            skip_on=(B3BdiEmpty, bdi.B3BdiStaleMonth),
         )
 
     async def ingest_index_portfolios(self, indices: Optional[List[str]] = None) -> int:
