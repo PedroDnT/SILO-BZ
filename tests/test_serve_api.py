@@ -302,17 +302,27 @@ def test_panel_metrics_come_from_catalog():
         assert spec["asset_class"]
 
 
-def test_close_return_catalog_says_unadjusted():
-    """Splits must not look like total returns. Catalog v3 names the trap."""
+def test_close_return_catalog_says_null_on_a_share_count_event():
+    """A split must not read as a return (#396, catalog v50): close_return stays
+    the raw-close return but is NULL where a split, grouping or bonus lies
+    between the two prints. The catalog must say that, and must not claim the
+    old behaviour (a split reporting as a jump)."""
     from serve.catalog import CONSTRAINTS, CATALOG_VERSION, METRICS
 
-    assert CATALOG_VERSION >= 3
+    assert CATALOG_VERSION >= 50
     meaning = METRICS["close_return"]["meaning"].lower()
-    assert "unadjusted" in meaning
-    assert "split" in meaning
+    constraint = next(c for c in CONSTRAINTS if c.startswith("close_return is the return"))
+    for text in (meaning, constraint.lower()):
+        assert "null" in text
+        for label in ("desdobramento", "grupamento", "bonificacao"):
+            assert label in text
+        assert "not an adjusted return" in text
+        assert "not a total return" in text
+    assert "unadjusted" in constraint.lower()  # the closes it divides stay raw
     joined = " ".join(CONSTRAINTS).lower()
-    assert "unadjusted" in joined
-    assert "split" in joined
+    assert "appear as spurious jumps" not in meaning
+    assert "close_return is unadjusted: a 2:1 split reports roughly -50%" not in joined
+    assert "between the two prints (#396)" in joined  # the daily-guard constraint names it
 
 
 def test_b3_catalog_divides_cash_instruments_by_published_type():
