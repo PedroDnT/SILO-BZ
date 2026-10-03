@@ -44,6 +44,17 @@ including the trade-by-trade tape with the brokerage on each leg, investor-type
 flow, index free float and the cash instrument registry; `src/fetchers/b3_bdi_fetcher.py`
 carries the verified endpoint contract).
 
+**Index levels** (`b3_index_level`, migration 55; `src/fetchers/b3_index_fetcher.py` →
+`ingest_b3_index.py`, audit `b3` / `index_levels`) hold B3's published daily level for nine
+indices: IBOV (1968), IBXX, IBXL, SMLL, IDIV, UTIL, ICON, IMOB, IFIX. They are levels as
+published and not adjusted, and B3 labels each a total-return index (Manual, Feb 2023,
+section 1.2), so compare them with `close_total_return`, never `close_adj`. `divisor_step` marks a
+re-scaling session (IBOV has eleven); the ingest refuses any other one-session move beyond a
+factor of two. `run_b3_events` refetches every year of every code each night, so a new code is
+backfilled by the next run and there is no backfill mode. A null `results` is retried, and a
+persistent one raises. IEEX is held back (an unexplained 1999-03 move). Served by
+`api.index_history`, index codes only; IBOV11 and BOVA11 are not the index.
+
 **Fixed income ETFs are not in COTAHIST** (migration 57). B3 lists them in segment
 FORWARD, market FIXED INCOME, which the COTAHIST files do not carry, so they have no
 `b3_cotahist` row and no CODBDI. Their prints are `b3_trade_consolidated`, from B3's
