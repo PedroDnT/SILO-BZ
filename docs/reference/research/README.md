@@ -42,6 +42,16 @@ close), and records B3's own daily-close series as the candidate source. It
 printed on expiry days only through 2024 and on nearly every session since
 December 2025; the note's addendum of 2026-10-01 has the numbers.
 
+## Index candidates after IBOV (research seam)
+
+[`index-candidates-416.md`](index-candidates-416.md) (ticket #416) checks the nine
+indices B3's endpoint answered for on 2026-09-29 (IBXX, IBXL, SMLL, IFIX, IDIV,
+IEEX, ICON, IMOB, UTIL) against B3's daily bulletin and its methodology. The
+values hold and the history has no gap, but B3 labels every one of them, and IBOV
+itself, a total-return index, which the served text calls a price index, so none
+is added until the owner settles the label. It also records one `results=null`
+answer for a year B3 does serve.
+
 ## FCA listing dates (research seam)
 
 [`fca-listing-dates.md`](fca-listing-dates.md) answers ticket #373: whether the
