@@ -173,8 +173,18 @@ levels, from a closed, extensible list of index codes.
 - **Which indices ship first** is a build ticket. IBOV is verified (2025-12-30 =
   161,125.37, equal to B3's year-end news item). IBXX, IBXL, SMLL, IFIX, IDIV,
   IEEX, ICON, IMOB and UTIL answered with a 2025 grid but are unverified.
+  **Checked 2026-10-03 (#416, `docs/reference/research/index-candidates-416.md`):**
+  all nine match B3's published base value on its base date, IBXX, IBXL and IFIX
+  also match B3's daily bulletin, and none has a gap against IBOV's sessions (UTIL
+  answered `results=null` for 2012 once, IEEX has an unexplained move in 1999-03).
+  None is added yet, for the reason in the next bullet.
 - Price-index levels only. Whether any code is a total-return variant is checked in
   the build, and a price index is never labelled as total return. No return or adjusted columns.
+  **Checked 2026-10-03 (#416): B3 labels every candidate, and IBOV, a total-return
+  index** ("O Ibovespa é um índice de retorno total"), and names a price version
+  apart ("IDIV B3 Price Return"), none of which is on this endpoint. The wording
+  "a price index" above and in the served text is therefore the open question,
+  and the owner's to settle before another code is added.
 
 ## 6. Fundamentals: an as-of date (#375, #380)
 
