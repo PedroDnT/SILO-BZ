@@ -1,10 +1,11 @@
 name: Lamina header probe
 
-# THROWAWAY research branch (research/lamina-coverage, issue #514), never merged.
-# On this branch the file runs .github/research/lamina_coverage.py instead of the
-# header probe, because a workflow GitHub has not indexed on main cannot be
-# dispatched from another ref. Read-only: public CVM files in, aggregates to the
-# job log out. No secrets, no POSTGRES_URL, no deploy hook, contents: read only.
+# THROWAWAY research branch (research/verify-420, issue #420), never merged.
+# On this branch the file runs scripts/verify_research_seam.py against the live
+# public API, because a workflow GitHub has not indexed on main cannot be
+# dispatched from another ref. Read-only: the public SDK with the published
+# anon key (its default), aggregates to the job log. No secrets, no
+# POSTGRES_URL, no deploy hook, contents: read only.
 
 on:
   workflow_dispatch:
@@ -13,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: lamina-coverage-${{ github.ref }}
+  group: verify-420-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -25,5 +26,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Fold every lamina to the latest per fund and print aggregates
-        run: python -u .github/research/lamina_coverage.py
+      - name: Install the SDK's dependencies
+        run: pip install "httpx>=0.27" "pandas>=2.0" "polars>=1.0"
+      - name: Run the research seam verifier against production
+        run: python -u scripts/verify_research_seam.py
