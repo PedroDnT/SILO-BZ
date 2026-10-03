@@ -13,12 +13,6 @@ name: Deploy Cloudflare health
 
 on:
   workflow_dispatch:
-  # TEMPORARY (iteration before merge): removed before the PR is opened.
-  push:
-    branches: [claude/cloudflare-health]
-    paths:
-      - "deploy/cloudflare/**"
-      - ".github/workflows/deploy_cloudflare.yml"
 
 permissions:
   contents: read
