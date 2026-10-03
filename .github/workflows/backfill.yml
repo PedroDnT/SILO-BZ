@@ -58,6 +58,7 @@ on:
           - cda_debentures
           - perfil_mensal
           - lamina
+          - extrato
       fi_repair_gaps:
         description: "FI only: fetch ONLY the months missing from the fi_doc_type table (reads the table, not the audit log). Requires a specific fi_doc_type."
         type: boolean
@@ -392,6 +393,10 @@ jobs:
               # .get, not []: this runs outside the try/except above, so a doc
               # type the gate has not learned yet would abort the dispatch
               # instead of doing the work. Unknown means run the year.
+              # extrato is deliberately absent: its yearly files are re-filed
+              # weekly and logged with no month, so "ok months" says nothing and
+              # the year always runs (about 10 MB; years before 2021 are skipped
+              # inside the ingest).
               months = counts.get(requested_doc)
               if months is None:
                   print(f"RUN: {year} {requested_doc} (no coverage rule — not skipping)")

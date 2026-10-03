@@ -44,6 +44,7 @@ from src.pipeline.ingest_fi import (
     ingest_fi_cda_acoes,
     ingest_fi_cda_debentures,
     ingest_fi_lamina,
+    ingest_fi_extrato,
     ingest_fi_cda_cotas,
     ingest_fi_perfil,
     ingest_fi_balancete,
@@ -178,7 +179,7 @@ _PAGE_SIZE = 5000
 _ALL_TABLES: List[str] = [
     "cvm_fi_diario", "cvm_fi_cda", "cvm_fi_cda_acoes", "cvm_fi_cda_cotas",
     "cvm_fi_cda_debentures",
-    "cvm_fi_perfil", "cvm_fi_balancete_resumo", "cvm_fi_lamina",
+    "cvm_fi_perfil", "cvm_fi_balancete_resumo", "cvm_fi_lamina", "cvm_fi_extrato",
     "cvm_fidc_mensal", "cvm_fidc_tranche", "cvm_fidc_tranche_flows", "cvm_fidc_aging",
     "cvm_fidc_setor", "cvm_fidc_scr", "cvm_fidc_sacado", "cvm_fidc_cedente",
     "cvm_fidc_garantia",
@@ -214,6 +215,9 @@ _CIA_ITR_DFP_FIRST_YEAR = 2019
 # the floor is the answer, not more partitions.
 # A test pins this to the earliest partition actually declared in schema.sql.
 _FI_DIARIO_FIRST_YEAR = 2019
+# The Extrato das Informacoes yearly files (extrato_fi_YYYY.csv) are loaded from 2021
+# (owner decision, issue #515); the directory also holds 2015..2020, not read.
+_FI_EXTRATO_FIRST_YEAR = 2021
 
 
 @dataclass(frozen=True)
@@ -1057,6 +1061,56 @@ class CVMIngestor:
         return rows_inserted
 
     # ------------------------------------------------------------------
+    # FI - Extrato das Informacoes (CVM fi-doc-extrato): the fees and terms a fund files
+    # ------------------------------------------------------------------
+
+    async def ingest_fi_extrato(self) -> int:
+        """The current extrato_fi.csv: the latest version of every fund or class.
+
+        A snapshot with no year or month (one audit row, fi / extrato, period
+        NULL). CVM refreshes it daily, so the daily run reads it whole. A 404 is
+        logged `skipped` by _log_finish, not `error`. Only cvm_fi_extrato is
+        written; no other table is locked.
+        """
+        run_id = str(uuid4())
+        self._log_start(run_id, "fi", "extrato", None, None)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages("fi", "extrato", None, None)
+            rows_inserted = await self._store(
+                ingest_fi_extrato, self._supabase, raw_rows, "extrato_fi.csv",
+            )
+        except Exception as exc:
+            logger.warning("ingest_fi_extrato failed: %s", _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
+        logger.info("fi/extrato: %d rows", rows_inserted)
+        return rows_inserted
+
+    async def ingest_fi_extrato_ano(self, year: int) -> int:
+        """One extrato_fi_YYYY.csv: every version filed in that year.
+
+        Yearly, so the audit row carries period_year and a NULL month. The files
+        are refreshed weekly with re-filings; history from 2021 is backfill's job.
+        """
+        run_id = str(uuid4())
+        self._log_start(run_id, "fi", "extrato_ano", year, None)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages("fi", "extrato_ano", year, None)
+            rows_inserted = await self._store(
+                ingest_fi_extrato, self._supabase, raw_rows, f"extrato_fi_{year}.csv",
+            )
+        except Exception as exc:
+            logger.warning("ingest_fi_extrato_ano %d failed: %s", year, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
+        logger.info("fi/extrato_ano %d: %d rows", year, rows_inserted)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
     # FI — monthly balance sheet  (BALANCETE)
     # ------------------------------------------------------------------
 
@@ -1675,7 +1729,7 @@ class CVMIngestor:
         """Full historical backfill for all entities from start_year to today.
 
         Pass entity_filter to restrict to one entity. doc_type_filter is an
-        FI-only repair control: inf_diario | cda | perfil_mensal | balancete | lamina.
+        FI-only repair control: inf_diario | cda | perfil_mensal | balancete | lamina | extrato.
 
         months is an explicit [(year, month), ...] whitelist for the FI monthly
         loop — the gap-repair path. It replaces the generated year x month grid
@@ -1692,7 +1746,7 @@ class CVMIngestor:
         # the others is a dispatch that dies before fetching anything.
         fi_doc_types = {
             "inf_diario", "cda", "cda_acoes", "cda_cotas", "cda_debentures",
-            "perfil_mensal", "balancete", "lamina",
+            "perfil_mensal", "balancete", "lamina", "extrato",
         }
         if doc_type_filter not in fi_doc_types | {None}:
             raise ValueError(f"unsupported FI doc_type_filter: {doc_type_filter}")
@@ -1765,6 +1819,23 @@ class CVMIngestor:
                     totals["cvm_fi_cda_debentures"] += (
                         await self.ingest_fi_hist_cda_debentures(year)
                     )
+
+            # The Extrato is a snapshot plus yearly files of versions, not monthly:
+            # a named month has no file of its own, so a month repair refuses it
+            # instead of scheduling nothing. Yearly files first, the current file
+            # last, so the newest version of a (cnpj, dt_comptc) wins.
+            if _want_fi_doc("extrato"):
+                if months is not None:
+                    raise ValueError(
+                        "extrato has no monthly files: use the yearly backfill "
+                        "(extrato_fi_YYYY.csv), not --months or --repair-gaps"
+                    )
+                for year in (y for y in years if y >= _FI_EXTRATO_FIRST_YEAR):
+                    totals["cvm_fi_extrato"] += await self.ingest_fi_extrato_ano(year)
+                # backfill.yml runs one job per year: only the job that reaches
+                # the current year reads the 34 MB current file, not all of them.
+                if end_year >= today.year:
+                    totals["cvm_fi_extrato"] += await self.ingest_fi_extrato()
 
             month_pairs = (
                 sorted(set(months)) if months is not None
@@ -2259,6 +2330,15 @@ class CVMIngestor:
             totals["cvm_etf_registry"] += await self.ingest_etf_registry()
 
         tasks.extend(self._plan_daily_monthly_tasks(daily_entities, today))
+
+        # Extrato das Informacoes: the current file, a snapshot CVM refreshes daily.
+        # One slice (fi/extrato), whole file, its own table only.
+        if "fi" in daily_entities:
+            tasks.append(IngestTask(
+                "cvm_fi_extrato",
+                "fi/extrato",
+                self.ingest_fi_extrato(),
+            ))
 
         # Registry refresh is a sequential prerequisite for CIA slices.
         if "cia_aberta" in daily_entities:

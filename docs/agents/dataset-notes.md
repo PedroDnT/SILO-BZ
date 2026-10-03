@@ -80,6 +80,26 @@ Each month's file holds the lâminas filed that month, so read the current one t
 `vw_fi_lamina_latest` (newest `dt_comptc` per fund and subclass, with `age_months`). Fees are as filed,
 unit not stated by CVM; a NULL fee is "not filed", never zero. Not every active fund has a row.
 
+**The Extrato das Informacoes** (`cvm_fi_extrato`, migration 66, audit `fi` / `extrato` for the current
+file and `fi` / `extrato_ano` for a year) is the terms-and-fees sheet each fund or class files, and the
+primary disclosed-fee source (owner decision, issue #515; measured in #524: a `TAXA_ADM` for 84.3% of the
+26,046 active FI funds, against 15.9% for the lâmina). Two plain CSVs, latin-1, `;`, 117 columns:
+`extrato_fi.csv` is the current file, one row per fund or class CNPJ (38,796 rows, refreshed daily, read by
+the daily run), and `extrato_fi_YYYY.csv` holds every version filed that year (several rows per CNPJ,
+refreshed weekly; `backfill.yml` `fi_doc_type=extrato` reads 2021 onward, and only the job that reaches the
+current year also reads the current file; a month repair is refused). Key `(cnpj, dt_comptc)`; whether the
+pair repeats inside a yearly file was not measured, so the ingest keeps the last row and logs the count.
+Read the current version through `vw_fi_extrato_latest` (newest `dt_comptc` per CNPJ, with `age_days`).
+`taxa_adm` is stored exactly as filed, and the unit is not stated by CVM (percent a year, by CVM's XML
+standard and the balancete estimate): 16.7% of the values are exactly 0 and 115 are above 5 (maximum
+14,638.38). Neither is rewritten in the table. `api.portfolio_fees` reads a 0 as "not informed"
+(`filed_zero`) and withholds a value above 5 (`implausible_filed`, the value in `taxa_adm_filed_raw`). There
+is no subclass column: a CVM 175 row is the class. `taxa_perfm` is numeric here (text in the lâmina), with
+`param_taxa_perfm`, `calc_taxa_perfm` and `inf_taxa_perfm`; `taxa_saida_pagto_resgate` is an S/N flag, not a
+rate. The 70 `PR_*_MIN` / `PR_*_MAX` exposure limits stay in `raw`. `DT_COMPTC` is the date of the filed
+version, not how old the information is (median 597 days, and older rows agree with the balancete estimate
+better than recent ones). 4,084 active funds (5.9% of PL) never filed one.
+
 **FII filings keep every version** (migration 43): `versao` is part of the key of
 `cvm_fii_mensal` and `cvm_fii_periodic` (`UNIQUE NULLS NOT DISTINCT`), so a restatement
 lands beside the original instead of overwriting it. Read the current filing through
