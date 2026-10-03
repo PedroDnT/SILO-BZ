@@ -1,6 +1,6 @@
 -- =============================================================================
 -- 31_api_portfolio.sql
--- The portfolio-diagnosis engine's three set-based reads, served through schema
+-- The portfolio-diagnosis engine's four set-based reads, served through schema
 -- `api` (catalog v51, portfolio_fees v52; map #510, research note
 -- docs/reference/research/portfolio-diagnosis-phase0.md §2, §4, §8 slice 2-3).
 --
@@ -12,6 +12,10 @@
 --   api.portfolio_lookthrough  per CNPJ: what the fund holds through its fund
 --                              quotas (CDA block 2, recursively), down to the
 --                              assets of CDA blocks 1, 4 and 6.
+--   api.portfolio_movement     per CNPJ and month: the fund's monthly quota
+--                              return against its own ANBIMA class (winsorized
+--                              mean and sd, +-2 / +-3 sd), catalog v54; see the
+--                              section before the closing COMMIT.
 --
 -- RESOLVER (portfolio_resolve). Measured on production 2026-10-03: exact
 -- current names are unique (24,794 funds named since 2026-05, 0 duplicated),
@@ -1311,5 +1315,304 @@ GRANT EXECUTE ON FUNCTION api.portfolio_lookthrough(TEXT[], DATE, INT) TO silo_a
 
 COMMENT ON FUNCTION api.portfolio_lookthrough(TEXT[], DATE, INT) IS
     'What a set of funds holds, looked through their fund quotas. One CDA month (p_month, or by default the last complete one: the newest month whose block-2 filing count reaches 90% of the median of the 12 before it, the /holdings rule). From each root, CDA block 2 (fund quotas) is followed recursively, cycle-guarded and capped at p_max_depth levels (1..6, default 4); every fund on the way, root included, lists its own holdings from block 1 (government_bond; repo collateral served apart as repo), block 2 (fund_quota when looked through, else fund_quota_unfiled / fund_quota_depth_cap / fund_quota_cycle), block 4 (stock, debenture with issuer_code = ISIN chars 3-6, other_block4) and block 6 (private_credit with the issuer''s CNPJ when it is a PJ and the indexer as filed). weight_in_root = value / holder NAV times the weights down the path, NAV = fact_fund_monthly.vl_patrim_liq of the same month (not the CDA blocks'' total: blocks 3, 5, 7, 8 are not ingested); NULL when a NAV on the path is unknown. A fund reached by two paths appears once per path; sum weight_in_root over every row but fund_quota for the exposure. A root with no CDA that month returns one no_cda_filing row. More than 200 CNPJs or more than 1000 rows RAISES 22023 (never trimmed): send fewer funds per call or lower p_max_depth.';
+
+-- ---------------------------------------------------------------------------
+-- portfolio_movement - is a fund's month unusual for its own class?
+-- ---------------------------------------------------------------------------
+-- "Movimento incomum" (map #510, owner decisions of 2026-10-03). For each fund
+-- and ONE month, the fund's monthly QUOTA RETURN is set against the
+-- distribution of the same return over the funds of its own ANBIMA class:
+--
+--   own_value_pct  = (vl_quota(month) / vl_quota(previous month) - 1) x 100,
+--                    from fact_fund_monthly (FI, month-end quota of the one
+--                    stable subclass the matview follows, quota_subclass_id):
+--                    the same month-end quotas Phase 0 counted (note, query 7).
+--                    NAV is NOT used: a NAV change is mostly flows, not movement.
+--                    A fund with no positive quota in both months, or whose
+--                    quota subclass changed, has no return and is not evaluated.
+--   class          = the ANBIMA class AS FILED in the CVM Extrato das
+--                    Informacoes (vw_fi_extrato_latest.classe_anbima), the label
+--                    CVM publishes, e.g. 'AÇÕES - ATIVO - LIVRE'. The peer group
+--                    is that whole label (68 groups on 2026-09). `class` and
+--                    `subclass` split the same label at its first ' - ' for
+--                    display only ('AÇÕES' | 'ATIVO - LIVRE'; a label with no
+--                    ' - ' has a NULL subclass); nothing is parsed or inferred
+--                    from a fund name. The class is the Extrato's NEWEST filing,
+--                    not the class on the month's date (class_as_of says when).
+--                    The Extrato covers about 84% of the active FI funds: a fund
+--                    outside it, or with no classe_anbima, is not evaluated.
+--   peers          = every FI fund of the class with a return that month (the
+--                    fund itself included), read from the whole warehouse and
+--                    not from p_cnpjs: n_peers.
+--   class_mean_pct, class_sd_pct = mean and sample standard deviation of the
+--                    peers' returns WINSORIZED at the class's own 1st and 99th
+--                    percentile that month (class_p01_pct, class_p99_pct): a
+--                    value beyond a bound is replaced by the bound. The fund's
+--                    own value is NOT winsorized when it is compared.
+--   z              = (own_value_pct - class_mean_pct) / class_sd_pct.
+--   level          = 'forte' when |z| > 3, 'atencao' when |z| > 2, else
+--                    'normal' (strictly greater: exactly 2 is normal, exactly 3
+--                    is atencao); decided on the unrounded z by
+--                    public.portfolio_movement_level. investigator_trigger is
+--                    TRUE exactly when level = 'forte'.
+--   nao_avaliado   = not evaluated, never skipped and never zero: reason says
+--                    why. Fewer than min_peers (30) peers; a class with a zero
+--                    standard deviation; no class; no return; a month that is
+--                    not complete (mv_period_completeness). There is no fallback
+--                    to a wider class, and no fund-name guess.
+-- Measured on production 2026-10-03 (monthly FI funds with a return and a class
+-- of at least 30 peers; 20,869 of the 25,113 fund-months with a return in 2026-09,
+-- the rest having no class or too few peers): |z| > 2 flags 5.2% to 5.7% of
+-- fund-months and |z| > 3 2.4% to 2.9% over the six months 2025-12, 2026-03,
+-- 2026-04, 2026-06, 2026-08 and 2026-09 (5.6% and 2.7% in 2026-09). Nothing here
+-- is a forecast, a verdict or
+-- a recommendation: it states a number, a class, a sample size and a month.
+-- p_month = any day of the month; NULL = the last COMPLETE FI month
+-- (latest_complete_period('fi'), the serving rule). At most 200 CNPJs.
+-- Reads: fact_fund_monthly (two month probes by the CNPJ key), the Extrato
+-- view, and, for the peers, the two months of the funds of the requested
+-- classes. The anon role's 3 s statement_timeout is the budget.
+
+-- The thresholds in one place. IMMUTABLE and internal (no client grant): the
+-- boundary is tested by calling it with exactly 2 and exactly 3.
+CREATE OR REPLACE FUNCTION public.portfolio_movement_level(p_z NUMERIC)
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $fn$
+    SELECT CASE
+        WHEN p_z IS NULL THEN NULL
+        WHEN abs(p_z) > 3 THEN 'forte'
+        WHEN abs(p_z) > 2 THEN 'atencao'
+        ELSE 'normal'
+    END
+$fn$;
+
+REVOKE ALL ON FUNCTION public.portfolio_movement_level(NUMERIC) FROM PUBLIC;
+
+COMMENT ON FUNCTION public.portfolio_movement_level(NUMERIC) IS
+    'Internal (31_api_portfolio.sql). The movement thresholds: forte when |z| > 3, atencao when |z| > 2, else normal; strictly greater, so exactly 2 is normal and exactly 3 is atencao. NULL in, NULL out.';
+
+CREATE OR REPLACE FUNCTION api.portfolio_movement(
+    p_cnpjs TEXT[],              -- the funds, 14-digit CNPJs (punctuation ignored); at most 200
+    p_month DATE DEFAULT NULL    -- any day of the month to judge; NULL = the last complete FI month
+)
+RETURNS TABLE (
+    cnpj                 TEXT,
+    fund_name            TEXT,     -- the registry name; NULL = the CNPJ is not in the registry
+    month                DATE,     -- first day of the judged month
+    class                TEXT,     -- the first segment of the ANBIMA class as filed ('AÇÕES'); NULL = no class
+    subclass             TEXT,     -- the rest of the label ('ATIVO - LIVRE'); NULL = the label has no ' - ' or no class
+    class_as_filed       TEXT,     -- the whole ANBIMA class as filed: the peer group
+    class_as_of          DATE,     -- DT_COMPTC of the Extrato version the class comes from
+    n_peers              INT,      -- FI funds of the class with a return that month, the fund included; NULL when no class
+    own_value_pct        NUMERIC,  -- the fund's quota return in the month, % (not winsorized); NULL = none computable
+    class_mean_pct       NUMERIC,  -- mean of the class's winsorized returns, %
+    class_sd_pct         NUMERIC,  -- sample standard deviation of the class's winsorized returns, %
+    class_p01_pct        NUMERIC,  -- the 1st percentile the returns were winsorized at, %
+    class_p99_pct        NUMERIC,  -- the 99th percentile, %
+    z                    NUMERIC,  -- (own - mean) / sd, 4 decimals; level is decided on the unrounded value
+    level                TEXT,     -- normal | atencao (|z| > 2) | forte (|z| > 3) | nao_avaliado
+    investigator_trigger BOOLEAN,  -- TRUE exactly when level = 'forte'
+    min_peers            INT,      -- the smallest class evaluated (30)
+    reason               TEXT      -- Portuguese: why the fund is nao_avaliado; for an evaluated fund, what was compared
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+#variable_conflict use_column
+DECLARE
+    v_n        INT  := COALESCE(cardinality(p_cnpjs), 0);
+    v_min      INT  := 30;
+    v_bad      TEXT;
+    v_ids      TEXT[];
+    v_cur      DATE;
+    v_prev     DATE;
+    v_complete BOOLEAN;
+BEGIN
+    IF v_n = 0 THEN
+        RAISE EXCEPTION 'portfolio_movement needs p_cnpjs, the funds'' 14-digit CNPJs (resolve names with portfolio_resolve)'
+            USING ERRCODE = '22023';
+    END IF;
+    IF v_n > 200 THEN
+        RAISE EXCEPTION
+            'portfolio_movement: refused, % CNPJs is more than 200 per call. SILO caps a portfolio call at 200 funds. To fix: split the set into calls of at most 200.',
+            v_n
+            USING ERRCODE = '22023',
+                  HINT = 'Send at most 200 CNPJs per call.';
+    END IF;
+    SELECT x INTO v_bad
+    FROM unnest(p_cnpjs) AS u(x)
+    WHERE x IS NULL OR regexp_replace(x, '\D', '', 'g') !~ '^[0-9]{1,14}$'
+    LIMIT 1;
+    IF FOUND THEN
+        RAISE EXCEPTION 'portfolio_movement: every p_cnpjs entry must be a fund''s CNPJ (up to 14 digits, punctuation ignored); got %',
+            COALESCE(v_bad, 'NULL')
+            USING ERRCODE = '22023';
+    END IF;
+
+    SELECT array_agg(DISTINCT lpad(regexp_replace(x, '\D', '', 'g'), 14, '0'))
+      INTO v_ids
+    FROM unnest(p_cnpjs) AS u(x);
+
+    v_cur  := date_trunc('month', COALESCE(p_month, public.latest_complete_period('fi')))::date;
+    v_prev := (v_cur - INTERVAL '1 month')::date;
+    -- A month that is still running, or that fewer than 80% of the funds have
+    -- filed, has partial peers and a quota that is not a month-end one.
+    SELECT COALESCE(bool_or(pc.is_complete), FALSE) INTO v_complete
+    FROM public.mv_period_completeness pc
+    WHERE pc.entity_type = 'fi' AND pc.period = v_cur;
+
+    RETURN QUERY
+    WITH ids AS (
+        SELECT unnest(v_ids) AS cnpj
+    ),
+    reg AS (
+        SELECT r.cnpj,
+               COALESCE(min(r.fund_name) FILTER (WHERE r.entity_type = 'fi'), min(r.fund_name)) AS fund_name,
+               string_agg(DISTINCT r.entity_type, ',') AS types
+        FROM public.cvm_fund_registry r
+        WHERE r.cnpj = ANY (v_ids)
+        GROUP BY r.cnpj
+    ),
+    etf AS (
+        SELECT DISTINCT e.cnpj FROM public.cvm_etf_registry e WHERE e.cnpj = ANY (v_ids)
+    ),
+    -- The class of each requested fund: the Extrato's newest filing, as filed.
+    ext AS (
+        SELECT x.cnpj, NULLIF(btrim(x.classe_anbima), '') AS cls, x.dt_comptc
+        FROM public.vw_fi_extrato_latest x
+        WHERE x.cnpj = ANY (v_ids)
+    ),
+    -- The funds' own two month-end quotas (the matview's one stable subclass).
+    own AS (
+        SELECT i.cnpj,
+               (c.cnpj IS NOT NULL) AS has_cur,
+               (p.cnpj IS NOT NULL) AS has_prev,
+               c.vl_quota AS q1, p.vl_quota AS q0,
+               (c.quota_subclass_id IS NOT DISTINCT FROM p.quota_subclass_id) AS same_sub
+        FROM ids i
+        LEFT JOIN public.fact_fund_monthly c
+               ON c.cnpj = i.cnpj AND c.entity_type = 'fi' AND c.period = v_cur
+        LEFT JOIN public.fact_fund_monthly p
+               ON p.cnpj = i.cnpj AND p.entity_type = 'fi' AND p.period = v_prev
+    ),
+    -- The peers: every FI fund of the requested classes with a return in the month.
+    peers AS (
+        SELECT NULLIF(btrim(x.classe_anbima), '') AS cls,
+               (c.vl_quota / p.vl_quota - 1) * 100 AS ret
+        FROM public.vw_fi_extrato_latest x
+        JOIN public.fact_fund_monthly c
+          ON c.cnpj = x.cnpj AND c.entity_type = 'fi' AND c.period = v_cur AND c.vl_quota > 0
+        JOIN public.fact_fund_monthly p
+          ON p.cnpj = x.cnpj AND p.entity_type = 'fi' AND p.period = v_prev AND p.vl_quota > 0
+         AND p.quota_subclass_id IS NOT DISTINCT FROM c.quota_subclass_id
+        WHERE v_complete
+          AND NULLIF(btrim(x.classe_anbima), '') IN (SELECT e.cls FROM ext e WHERE e.cls IS NOT NULL)
+    ),
+    bounds AS (
+        SELECT q.cls, count(*)::int AS n,
+               percentile_cont(0.01) WITHIN GROUP (ORDER BY q.ret)::numeric AS p01,
+               percentile_cont(0.99) WITHIN GROUP (ORDER BY q.ret)::numeric AS p99
+        FROM peers q
+        GROUP BY q.cls
+    ),
+    stats AS (
+        SELECT b.cls, b.n, b.p01, b.p99,
+               avg(least(greatest(q.ret, b.p01), b.p99)) AS mean,
+               stddev_samp(least(greatest(q.ret, b.p01), b.p99)) AS sd
+        FROM peers q
+        JOIN bounds b ON b.cls = q.cls
+        GROUP BY b.cls, b.n, b.p01, b.p99
+    ),
+    j AS (
+        SELECT i.cnpj, g.fund_name, g.types, (et.cnpj IS NOT NULL) AS is_etf,
+               o.has_cur, o.has_prev, o.q1, o.q0, o.same_sub,
+               (x.cnpj IS NOT NULL) AS in_ext, x.cls, x.dt_comptc AS ext_dt,
+               CASE WHEN o.q1 > 0 AND o.q0 > 0 AND o.same_sub
+                    THEN (o.q1 / o.q0 - 1) * 100 END AS own_ret,
+               s.n, s.p01, s.p99, s.mean, s.sd
+        FROM ids i
+        LEFT JOIN reg g  ON g.cnpj = i.cnpj
+        LEFT JOIN etf et ON et.cnpj = i.cnpj
+        LEFT JOIN own o  ON o.cnpj = i.cnpj
+        LEFT JOIN ext x  ON x.cnpj = i.cnpj
+        LEFT JOIN stats s ON s.cls = x.cls
+    ),
+    scored AS (
+        SELECT j.*,
+               CASE WHEN j.own_ret IS NOT NULL AND j.n >= v_min AND j.sd > 0 AND v_complete
+                    THEN (j.own_ret - j.mean) / j.sd END AS zz
+        FROM j
+    ),
+    page AS (
+        SELECT d.cnpj, d.fund_name, v_cur AS month,
+               CASE WHEN d.cls IS NOT NULL THEN split_part(d.cls, ' - ', 1) END AS class,
+               CASE WHEN d.cls LIKE '% - %'
+                    THEN NULLIF(btrim(substr(d.cls, strpos(d.cls, ' - ') + 3)), '') END AS subclass,
+               d.cls AS class_as_filed,
+               CASE WHEN d.cls IS NOT NULL THEN d.ext_dt END AS class_as_of,
+               CASE WHEN d.cls IS NOT NULL AND v_complete THEN COALESCE(d.n, 0) END AS n_peers,
+               round(d.own_ret, 6) AS own_value_pct,
+               CASE WHEN d.n >= v_min THEN round(d.mean, 6) END AS class_mean_pct,
+               CASE WHEN d.n >= v_min THEN round(d.sd, 6) END AS class_sd_pct,
+               CASE WHEN d.n >= v_min THEN round(d.p01, 6) END AS class_p01_pct,
+               CASE WHEN d.n >= v_min THEN round(d.p99, 6) END AS class_p99_pct,
+               round(d.zz, 4) AS z,
+               COALESCE(public.portfolio_movement_level(d.zz), 'nao_avaliado') AS level,
+               COALESCE(public.portfolio_movement_level(d.zz) = 'forte', FALSE) AS investigator_trigger,
+               v_min AS min_peers,
+               CASE
+                   WHEN NOT v_complete THEN
+                       'mês ' || to_char(v_cur, 'YYYY-MM') || ' incompleto: o mês não terminou ou menos de 80% dos fundos FI já informaram; a comparação com a classe só vale para mês completo'
+                   WHEN NOT d.has_cur AND d.is_etf THEN
+                       'ETF: fora do universo mensal de fundos FI (o SILO o separa dos fundos); sem retorno de cota mensal comparável'
+                   WHEN NOT d.has_cur AND d.types IS NOT NULL AND NOT ('fi' = ANY (string_to_array(d.types, ','))) THEN
+                       'não é fundo FI com cota diária no SILO (' || d.types || '); sem retorno de cota mensal'
+                   WHEN NOT d.has_cur AND d.types IS NULL THEN
+                       'CNPJ não encontrado no cadastro de fundos do SILO'
+                   WHEN NOT d.has_cur THEN
+                       'sem informe diário do fundo em ' || to_char(v_cur, 'YYYY-MM')
+                   WHEN d.q1 IS NULL OR d.q1 <= 0 THEN
+                       'cota do mês ' || to_char(v_cur, 'YYYY-MM') || ' ausente ou não positiva'
+                   WHEN NOT d.has_prev OR d.q0 IS NULL OR d.q0 <= 0 THEN
+                       'sem cota no mês anterior (' || to_char(v_prev, 'YYYY-MM') || '); sem retorno mensal'
+                   WHEN NOT d.same_sub THEN
+                       'a subclasse que fornece a cota mudou entre ' || to_char(v_prev, 'YYYY-MM') || ' e ' || to_char(v_cur, 'YYYY-MM') || '; sem retorno comparável'
+                   WHEN NOT d.in_ext THEN
+                       'fundo fora do Extrato da CVM: sem classe ANBIMA informada'
+                   WHEN d.cls IS NULL THEN
+                       'classe ANBIMA não informada no Extrato da CVM'
+                   WHEN COALESCE(d.n, 0) < v_min THEN
+                       'apenas ' || COALESCE(d.n, 0) || ' fundos da classe ' || d.cls || ' têm retorno em ' || to_char(v_cur, 'YYYY-MM') || '; mínimo ' || v_min || ' para comparar'
+                   WHEN d.sd IS NULL OR d.sd = 0 THEN
+                       'desvio padrão da classe ' || d.cls || ' é zero em ' || to_char(v_cur, 'YYYY-MM') || '; sem escala para comparar'
+                   ELSE
+                       'retorno de cota de ' || to_char(v_cur, 'YYYY-MM') || ' comparado com ' || d.n || ' fundos da classe ' || d.cls
+                       || ' (média e desvio padrão winsorizados no 1º e 99º percentil)'
+               END AS reason
+        FROM scored d
+        ORDER BY d.cnpj
+        LIMIT 1001
+    )
+    SELECT g.cnpj, g.fund_name, g.month, g.class, g.subclass, g.class_as_filed, g.class_as_of,
+           g.n_peers, g.own_value_pct, g.class_mean_pct, g.class_sd_pct, g.class_p01_pct,
+           g.class_p99_pct, g.z, g.level, g.investigator_trigger, g.min_peers, g.reason
+    FROM page g
+    WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'portfolio_movement')
+    ORDER BY g.cnpj
+    LIMIT 1000;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION api.portfolio_movement(TEXT[], DATE) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION api.portfolio_movement(TEXT[], DATE) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION api.portfolio_movement(TEXT[], DATE) TO silo_api;
+
+COMMENT ON FUNCTION api.portfolio_movement(TEXT[], DATE) IS
+    'Is a fund''s month unusual for its own class (movimento incomum). Per CNPJ, for one month (p_month, or the last complete FI month): the fund''s monthly QUOTA RETURN, own_value_pct = (month-end vl_quota / previous month''s - 1) x 100 from fact_fund_monthly (the one stable quota subclass; a NAV change is not used), set against the same return over every FI fund of its ANBIMA class AS FILED in the CVM Extrato (class_as_filed, the newest Extrato filing, not the class on the month''s date; class and subclass split that label at its first '' - '' for display). class_mean_pct and class_sd_pct are the mean and sample standard deviation of the peers'' returns winsorized at the class''s own 1st and 99th percentile that month (class_p01_pct, class_p99_pct); the fund''s own value is not winsorized. z = (own - mean) / sd. level: forte when |z| > 3 (investigator_trigger TRUE), atencao when |z| > 2, normal otherwise (strictly greater: exactly 2 is normal); nao_avaliado with a Portuguese reason when the class has fewer than min_peers (30) peers with a return, its standard deviation is 0, the fund has no class (outside the Extrato, or no classe_anbima), no return (no quota in both months, a quota subclass change), is an ETF, FIDC, FII, FIP or FIAGRO, or the month is not complete; never skipped and never a zero. No fallback to a wider class. Measured on production 2026-10-03 over monthly FI funds in classes of 30 or more: |z| > 2 flags 5.2% to 5.7% of fund-months and |z| > 3 2.4% to 2.9% over six months from 2025-12 to 2026-09 (5.6% and 2.7% in 2026-09). It states a number, a class, a sample size and a month: not a forecast, a verdict or a recommendation. One row per distinct CNPJ; more than 200 CNPJs RAISES 22023.';
 
 COMMIT;

@@ -60,10 +60,10 @@ def test_fixture_regenerates_byte_for_byte(tmp_path):
 def test_top_level_schema_is_stable(doc):
     assert list(doc) == [
         "schema_version", "generated_at_utc", "engine", "statement", "identification", "fees", "look_through",
-        "indexer", "sector", "restatements", "risk_signals", "assumptions", "section_status", "provenance",
+        "indexer", "sector", "restatements", "risk_signals", "movement", "assumptions", "section_status", "provenance",
     ]
-    assert doc["schema_version"] == "1.2"
-    for sec in ("identification", "fees", "look_through", "indexer", "sector", "restatements", "risk_signals"):
+    assert doc["schema_version"] == "1.3"
+    for sec in ("identification", "fees", "look_through", "indexer", "sector", "restatements", "risk_signals", "movement"):
         assert {"status", "reason", "errors"} <= set(doc[sec])
 
 
@@ -386,7 +386,7 @@ def test_risk_signals_match_by_cnpj_and_pin_dormant(doc):
     ]
     assert isinstance(dormant[1]["args"]["p_min_nav"], int)
     assert "R$ 1 bilhão" in s["dormant_coverage_note"]
-    assert "estacionada" in s["abnormal_movement"]
+    assert "seção movement" in s["abnormal_movement"]
     assert {x["status"] for x in s["screens"] if x["screen"] in ("screen_overdue_securit", "screen_dormant_trend")} == {"not_applicable"}
 
 

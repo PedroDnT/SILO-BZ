@@ -34,6 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--fake-rows", default=str(DEFAULT_FAKE_ROWS), help="canned rows for --client fake")
     ap.add_argument("--cda-month", type=_month, help="CDA month (default: position month - 4)")
     ap.add_argument("--fee-month", type=_month, help="balancete month (default: position month - 1)")
+    ap.add_argument("--movement-month", type=_month, help="month judged against the class (default: the position month when the position is a month-end, else the month before)")
     ap.add_argument("--max-depth", type=int, help="look-through depth cap (default 5)")
     args = ap.parse_args(argv)
 
@@ -43,7 +44,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"erro no extrato: {exc}", file=sys.stderr)
         return 2
 
-    overrides = {"cda_month": args.cda_month, "fee_month": args.fee_month, "max_depth": args.max_depth}
+    overrides = {
+        "cda_month": args.cda_month,
+        "fee_month": args.fee_month,
+        "movement_month": args.movement_month,
+        "max_depth": args.max_depth,
+    }
     params = default_params(stmt.position_date, **overrides)
     if args.client == "mcp":
         client = McpClient()

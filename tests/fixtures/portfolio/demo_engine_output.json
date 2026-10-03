@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.2",
+  "schema_version": "1.3",
   "generated_at_utc": "2026-10-03T15:00:00Z",
   "engine": {
     "version": "0.1.0",
@@ -7,6 +7,7 @@
     "params": {
       "cda_month": "2026-05-01",
       "fee_month": "2026-08-01",
+      "movement_month": "2026-09-01",
       "max_depth": 4,
       "restatement_months": 12,
       "max_diff_docs_per_fund": 5,
@@ -12918,7 +12919,7 @@
       }
     ],
     "dormant_coverage_note": "Cobertura do screen de fundos dormentes: todas as cascas vazias (empty_shell) e os fundos parked com PL de última competência igual ou acima de R$ 1 bilhão. Um fundo parked abaixo disso NÃO foi avaliado (a chamada sem filtro é recusada pelo SILO por exceder uma página de 1.000 linhas).",
-    "abnormal_movement": "Movimento anormal: regra estacionada pelo dono; não avaliada nesta versão.",
+    "abnormal_movement": "Movimento incomum: avaliado na seção movement (retorno mensal da cota contra a classe ANBIMA do fundo), não neste bloco.",
     "lines": [
       {
         "line_no": 3,
@@ -13042,6 +13043,354 @@
       }
     ]
   },
+  "movement": {
+    "status": "partial",
+    "reason": "3 de 6 fundo(s) não avaliados contra a classe (o motivo de cada um está na seção de sinais de risco).",
+    "errors": [],
+    "month": "2026-09-01",
+    "definition": "Retorno mensal da cota do fundo (cota de fim de mês sobre a do mês anterior, de fact_fund_monthly) comparado com o mesmo retorno dos fundos FI da sua classe ANBIMA conforme arquivada no Extrato da CVM; média e desvio padrão da classe calculados sobre valores winsorizados no 1º e no 99º percentil da classe no mês (o valor do próprio fundo não é winsorizado); z = (retorno do fundo menos média da classe) dividido pelo desvio padrão da classe.",
+    "class_note": "A classe é a do arquivo mais recente do Extrato da CVM, não a da data do mês; fundos fora do Extrato ou sem classe ANBIMA informada não são avaliados.",
+    "levels_note": "Atenção: |z| acima de 2, só em tabela. Forte: |z| acima de 3, pode entrar no texto e aciona o Investigador. Estritamente acima: exatamente 2 é normal e exatamente 3 é atenção.",
+    "note": "Sinal estatístico sobre um mês passado: não é previsão de retorno, veredito nem recomendação.",
+    "thresholds": {
+      "atencao_abs_z": 2.0,
+      "forte_abs_z": 3.0,
+      "strictly_greater": true,
+      "min_peers": 30,
+      "winsorized_percentiles": [
+        1,
+        99
+      ]
+    },
+    "counts": {
+      "funds": 6,
+      "normal": 1,
+      "atencao": 1,
+      "forte": 1,
+      "nao_avaliado": 3
+    },
+    "investigator_trigger_line_nos": [
+      5
+    ],
+    "lines": [
+      {
+        "line_no": 3,
+        "cnpj": "08935128000159",
+        "fund_name": "GERACAO L. PAR FUNDO DE INVESTIMENTO EM ACOES",
+        "position_value_source": {
+          "tool": "statement",
+          "call_id": null,
+          "args": {
+            "line_no": 3
+          },
+          "data_date": "2026-09-30"
+        },
+        "month": "2026-09-01",
+        "class": "AÇÕES",
+        "subclass": "ATIVO - LIVRE",
+        "class_as_filed": "AÇÕES - ATIVO - LIVRE",
+        "class_as_of": "2026-09-12",
+        "n_peers": 1773,
+        "min_peers": 30,
+        "own_value_pct": 11.0,
+        "class_mean_pct": 4.360422,
+        "class_sd_pct": 3.081534,
+        "class_p01_pct": -4.60308,
+        "class_p99_pct": 16.36046,
+        "z": 2.1549,
+        "level": "atencao",
+        "level_label": "atenção",
+        "investigator_trigger": false,
+        "in_table": true,
+        "in_text": false,
+        "reason": "retorno de cota de 2026-09 comparado com 1773 fundos da classe AÇÕES - ATIVO - LIVRE (média e desvio padrão winsorizados no 1º e 99º percentil)",
+        "sources": [
+          {
+            "tool": "portfolio_movement",
+            "call_id": 36,
+            "args": {
+              "p_cnpjs": [
+                "08935128000159",
+                "11728688000147",
+                "32113885000121",
+                "42592315000115",
+                "50088190000119",
+                "51488342000133"
+              ],
+              "p_month": "2026-09-01"
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 4,
+        "cnpj": "50088190000119",
+        "fund_name": "XP BANCOS FIC FIF RENDA FIXA",
+        "position_value_source": {
+          "tool": "statement",
+          "call_id": null,
+          "args": {
+            "line_no": 4
+          },
+          "data_date": "2026-09-30"
+        },
+        "month": "2026-09-01",
+        "class": null,
+        "subclass": null,
+        "class_as_filed": null,
+        "class_as_of": null,
+        "n_peers": null,
+        "min_peers": 30,
+        "own_value_pct": 1.073045,
+        "class_mean_pct": null,
+        "class_sd_pct": null,
+        "class_p01_pct": null,
+        "class_p99_pct": null,
+        "z": null,
+        "level": "nao_avaliado",
+        "level_label": "não avaliado",
+        "investigator_trigger": false,
+        "in_table": false,
+        "in_text": false,
+        "reason": "fundo fora do Extrato da CVM: sem classe ANBIMA informada",
+        "sources": [
+          {
+            "tool": "portfolio_movement",
+            "call_id": 36,
+            "args": {
+              "p_cnpjs": [
+                "08935128000159",
+                "11728688000147",
+                "32113885000121",
+                "42592315000115",
+                "50088190000119",
+                "51488342000133"
+              ],
+              "p_month": "2026-09-01"
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 5,
+        "cnpj": "51488342000133",
+        "fund_name": "XP LIQUIDEZ FIC FIF RENDA FIXA",
+        "position_value_source": {
+          "tool": "statement",
+          "call_id": null,
+          "args": {
+            "line_no": 5
+          },
+          "data_date": "2026-09-30"
+        },
+        "month": "2026-09-01",
+        "class": "RENDA FIXA LIVRE DURAÇÃO",
+        "subclass": "CRÉDITO LIVRE",
+        "class_as_filed": "RENDA FIXA LIVRE DURAÇÃO - CRÉDITO LIVRE",
+        "class_as_of": "2026-09-12",
+        "n_peers": 2243,
+        "min_peers": 30,
+        "own_value_pct": -2.9,
+        "class_mean_pct": 0.535,
+        "class_sd_pct": 0.9566,
+        "class_p01_pct": -2.0,
+        "class_p99_pct": 3.1,
+        "z": -3.5911,
+        "level": "forte",
+        "level_label": "forte",
+        "investigator_trigger": true,
+        "in_table": true,
+        "in_text": true,
+        "reason": "retorno de cota de 2026-09 comparado com 2243 fundos da classe RENDA FIXA LIVRE DURAÇÃO - CRÉDITO LIVRE (média e desvio padrão winsorizados no 1º e 99º percentil)",
+        "sources": [
+          {
+            "tool": "portfolio_movement",
+            "call_id": 36,
+            "args": {
+              "p_cnpjs": [
+                "08935128000159",
+                "11728688000147",
+                "32113885000121",
+                "42592315000115",
+                "50088190000119",
+                "51488342000133"
+              ],
+              "p_month": "2026-09-01"
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 6,
+        "cnpj": "32113885000121",
+        "fund_name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
+        "position_value_source": {
+          "tool": "statement",
+          "call_id": null,
+          "args": {
+            "line_no": 6
+          },
+          "data_date": "2026-09-30"
+        },
+        "month": "2026-09-01",
+        "class": null,
+        "subclass": null,
+        "class_as_filed": null,
+        "class_as_of": null,
+        "n_peers": null,
+        "min_peers": 30,
+        "own_value_pct": null,
+        "class_mean_pct": null,
+        "class_sd_pct": null,
+        "class_p01_pct": null,
+        "class_p99_pct": null,
+        "z": null,
+        "level": "nao_avaliado",
+        "level_label": "não avaliado",
+        "investigator_trigger": false,
+        "in_table": false,
+        "in_text": false,
+        "reason": "não é fundo FI com cota diária no SILO (fidc); sem retorno de cota mensal",
+        "sources": [
+          {
+            "tool": "portfolio_movement",
+            "call_id": 36,
+            "args": {
+              "p_cnpjs": [
+                "08935128000159",
+                "11728688000147",
+                "32113885000121",
+                "42592315000115",
+                "50088190000119",
+                "51488342000133"
+              ],
+              "p_month": "2026-09-01"
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 7,
+        "cnpj": "42592315000115",
+        "fund_name": "BB RENDA FIXA CURTO PRAZO AUTOMATICO FIC FIF RESPONSABILIDADE LIMITADA",
+        "position_value_source": {
+          "tool": "statement",
+          "call_id": null,
+          "args": {
+            "line_no": 7
+          },
+          "data_date": "2026-09-30"
+        },
+        "month": "2026-09-01",
+        "class": "RENDA FIXA",
+        "subclass": "PASSIVO - ÍNDICES",
+        "class_as_filed": "RENDA FIXA - PASSIVO - ÍNDICES",
+        "class_as_of": "2026-09-12",
+        "n_peers": 193,
+        "min_peers": 30,
+        "own_value_pct": 1.95,
+        "class_mean_pct": 1.956172,
+        "class_sd_pct": 1.001702,
+        "class_p01_pct": -0.856962,
+        "class_p99_pct": 3.825901,
+        "z": -0.0062,
+        "level": "normal",
+        "level_label": "normal",
+        "investigator_trigger": false,
+        "in_table": false,
+        "in_text": false,
+        "reason": "retorno de cota de 2026-09 comparado com 193 fundos da classe RENDA FIXA - PASSIVO - ÍNDICES (média e desvio padrão winsorizados no 1º e 99º percentil)",
+        "sources": [
+          {
+            "tool": "portfolio_movement",
+            "call_id": 36,
+            "args": {
+              "p_cnpjs": [
+                "08935128000159",
+                "11728688000147",
+                "32113885000121",
+                "42592315000115",
+                "50088190000119",
+                "51488342000133"
+              ],
+              "p_month": "2026-09-01"
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      },
+      {
+        "line_no": 8,
+        "cnpj": "11728688000147",
+        "fund_name": "CSHG LOGISTICA FUNDO DE INVESTIMENTO IMOBILIARIO",
+        "position_value_source": {
+          "tool": "statement",
+          "call_id": null,
+          "args": {
+            "line_no": 8
+          },
+          "data_date": "2026-09-30"
+        },
+        "month": "2026-09-01",
+        "class": null,
+        "subclass": null,
+        "class_as_filed": null,
+        "class_as_of": null,
+        "n_peers": null,
+        "min_peers": 30,
+        "own_value_pct": null,
+        "class_mean_pct": null,
+        "class_sd_pct": null,
+        "class_p01_pct": null,
+        "class_p99_pct": null,
+        "z": null,
+        "level": "nao_avaliado",
+        "level_label": "não avaliado",
+        "investigator_trigger": false,
+        "in_table": false,
+        "in_text": false,
+        "reason": "não é fundo FI com cota diária no SILO (fii); sem retorno de cota mensal",
+        "sources": [
+          {
+            "tool": "portfolio_movement",
+            "call_id": 36,
+            "args": {
+              "p_cnpjs": [
+                "08935128000159",
+                "11728688000147",
+                "32113885000121",
+                "42592315000115",
+                "50088190000119",
+                "51488342000133"
+              ],
+              "p_month": "2026-09-01"
+            },
+            "data_date": "2026-09-30"
+          }
+        ]
+      }
+    ],
+    "not_applicable_lines": [
+      {
+        "line_no": 1,
+        "linha_extrato": "NTN-B 2035",
+        "level": "nao_avaliado",
+        "level_label": "não avaliado",
+        "reason": "título público direto: não é fundo"
+      },
+      {
+        "line_no": 2,
+        "linha_extrato": "PETROBRAS PN",
+        "level": "nao_avaliado",
+        "level_label": "não avaliado",
+        "reason": "ação, ETF ou cota listada identificada por ticker: sem CNPJ de fundo para comparar com a classe"
+      }
+    ]
+  },
   "assumptions": [
     {
       "id": "fee_units",
@@ -13069,7 +13418,11 @@
     },
     {
       "id": "abnormal_movement",
-      "text": "Movimento anormal e limiares de materialidade de reapresentação estão estacionados pelo dono."
+      "text": "Movimento incomum (esquema 1.3): o retorno mensal da cota do fundo é comparado com o da sua classe ANBIMA conforme arquivada no Extrato da CVM, nos limiares do dono (atenção acima de 2 desvios padrão, só em tabela; forte acima de 3, no texto). Os limiares de materialidade de reapresentação seguem estacionados pelo dono."
+    },
+    {
+      "id": "movement_class",
+      "text": "A classe do movimento é a do arquivo mais recente do Extrato da CVM, não a classe vigente na data do mês; o Extrato cobre cerca de 84% dos fundos FI ativos, e fundo fora dele ou sem classe informada é 'não avaliado'. Sem classe mais ampla de reserva: classe com menos de 30 fundos com retorno no mês também é 'não avaliado'."
     }
   ],
   "section_status": {
@@ -13100,6 +13453,10 @@
     "risk_signals": {
       "status": "complete",
       "reason": null
+    },
+    "movement": {
+      "status": "partial",
+      "reason": "3 de 6 fundo(s) não avaliados contra a classe (o motivo de cada um está na seção de sinais de risco)."
     }
   },
   "provenance": [
@@ -13568,6 +13925,25 @@
       "row_count": 1,
       "error": null,
       "id": "p35"
+    },
+    {
+      "call_id": 36,
+      "tool": "portfolio_movement",
+      "args": {
+        "p_cnpjs": [
+          "08935128000159",
+          "11728688000147",
+          "32113885000121",
+          "42592315000115",
+          "50088190000119",
+          "51488342000133"
+        ],
+        "p_month": "2026-09-01"
+      },
+      "requested_at_utc": "2026-10-03T15:00:00Z",
+      "row_count": 6,
+      "error": null,
+      "id": "p36"
     }
   ]
 }

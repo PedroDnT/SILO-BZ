@@ -22,6 +22,7 @@ from src.portfolio.fees import compute_fees
 from src.portfolio.identify import LineId, identify
 from src.portfolio.indexer import compute_indexer
 from src.portfolio.lookthrough import add_portfolio_shares, compute_lookthrough
+from src.portfolio.movement import compute_movement, default_movement_month
 from src.portfolio.restatements import compute_restatements
 from src.portfolio.sector import compute_sector
 from src.portfolio.signals import compute_signals
@@ -29,7 +30,7 @@ from src.portfolio.statement import Position, Statement
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "1.2"
+SCHEMA_VERSION = "1.3"
 ENGINE_VERSION = "0.1.0"
 # Documented fixed lags until a coverage()-driven default exists (see engine-output.md).
 CDA_LAG_MONTHS = 4
@@ -40,6 +41,7 @@ FEE_LAG_MONTHS = 1
 class EngineParams:
     cda_month: dt.date
     fee_month: dt.date
+    movement_month: dt.date
     max_depth: int = 4
     restatement_months: int = 12
     max_diff_docs: int = 5
@@ -49,6 +51,7 @@ class EngineParams:
         return {
             "cda_month": self.cda_month.isoformat(),
             "fee_month": self.fee_month.isoformat(),
+            "movement_month": self.movement_month.isoformat(),
             "max_depth": self.max_depth,
             "restatement_months": self.restatement_months,
             "max_diff_docs_per_fund": self.max_diff_docs,
@@ -63,6 +66,7 @@ def default_params(position_date: dt.date, **overrides: Any) -> EngineParams:
     p = {
         "cda_month": add_months(base, -CDA_LAG_MONTHS),
         "fee_month": add_months(base, -FEE_LAG_MONTHS),
+        "movement_month": default_movement_month(position_date),
     }
     p.update({k: v for k, v in overrides.items() if v is not None})
     return EngineParams(**p)
@@ -104,7 +108,19 @@ ASSUMPTIONS = [
     },
     {
         "id": "abnormal_movement",
-        "text": "Movimento anormal e limiares de materialidade de reapresentação estão estacionados pelo dono.",
+        "text": (
+            "Movimento incomum (esquema 1.3): o retorno mensal da cota do fundo é comparado com o da sua classe ANBIMA "
+            "conforme arquivada no Extrato da CVM, nos limiares do dono (atenção acima de 2 desvios padrão, só em tabela; "
+            "forte acima de 3, no texto). Os limiares de materialidade de reapresentação seguem estacionados pelo dono."
+        ),
+    },
+    {
+        "id": "movement_class",
+        "text": (
+            "A classe do movimento é a do arquivo mais recente do Extrato da CVM, não a classe vigente na data do mês; o "
+            "Extrato cobre cerca de 84% dos fundos FI ativos, e fundo fora dele ou sem classe informada é 'não avaliado'. "
+            "Sem classe mais ampla de reserva: classe com menos de 30 fundos com retorno no mês também é 'não avaliado'."
+        ),
     },
 ]
 
@@ -201,6 +217,7 @@ def run_engine(
         lines, client, stmt.position_date, months=params.restatement_months, max_diff_docs=params.max_diff_docs
     )
     signals = compute_signals(lines, client)
+    movement = compute_movement(lines, client, params.movement_month)
 
     doc = {
         "schema_version": SCHEMA_VERSION,
@@ -214,6 +231,7 @@ def run_engine(
         "sector": sector,
         "restatements": restatements,
         "risk_signals": signals,
+        "movement": movement,
         "assumptions": ASSUMPTIONS,
         "section_status": {
             k: {"status": v["status"], "reason": v["reason"]}
@@ -225,6 +243,7 @@ def run_engine(
                 ("sector", sector),
                 ("restatements", restatements),
                 ("risk_signals", signals),
+                ("movement", movement),
             )
         },
         "provenance": [{**e.as_dict(), "id": f"p{e.call_id}"} for e in client.provenance],

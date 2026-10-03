@@ -109,6 +109,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   t("portfolio_resolve", "Resolve statement lines to funds (name history, quota tie-break)"),
   t("portfolio_fees", "Fees: disclosed (Extrato, lamina, cad_fi) beside a balancete estimate"),
   t("portfolio_lookthrough", "Look-through of funds into their holdings (CDA blocks 1, 2, 4, 6)"),
+  t("portfolio_movement", "Is a fund's month unusual for its ANBIMA class (quota return, winsorized z, nao_avaliado with reason)"),
   // Views (GET, PostgREST filters). The B3 lending / flow group is a RATCHET.
   t("funds", "Fund registry (view)"),
   t("quotes", "Cash quotes (view)"),

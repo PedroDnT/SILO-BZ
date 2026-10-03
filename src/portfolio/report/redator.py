@@ -136,6 +136,7 @@ O que escrever, nesta ordem de importância:
 5. reapresentacoes: cada reapresentação, com o texto de avaliação que o JSON traz ("revisado, não avaliado"); não julgue materialidade.
 6. sinais_de_risco: telas de risco com ocorrência e telas que não puderam rodar.
 7. resumo: dois a quatro achados curtos para abrir o relatório.
+8. movimento incomum (movement): o retorno mensal da cota de um fundo contra os fundos da sua classe ANBIMA. No texto, cite SOMENTE movement.strong[i] (nível forte): o retorno do fundo (own_value_pct), o mês (month), a classe (class_as_filed), o número de fundos da classe (n_peers), a média e o desvio padrão da classe (class_mean_pct, class_sd_pct) e a distância em desvios padrão (z), sempre por marcador. O nível atenção (movement.table, movement.by_line) NUNCA entra no texto: fica só na tabela do relatório. Um fundo sem veredito (movement.not_evaluated[i]) é escrito como "não avaliado", com o motivo em movement.not_evaluated[i].reason por marcador, nunca como normal. Não é previsão nem recomendação.
 
 Regras:
 - citations lista os ids de provenance (campo "id" em provenance) que sustentam o achado; pelo menos um, só ids que existem.
@@ -397,6 +398,29 @@ def template_findings(engine: dict) -> dict:
             add("sinais_de_risco", "Tela que não rodou",
                 f"A tela {{{{risk_screens.not_run[{i}].screen}}}} não rodou: {{{{risk_screens.not_run[{i}].reason}}}}.",
                 rk.get("provenance"))
+
+    # movimento incomum: only the strong level goes in the text; atencao stays in the table
+    mv = engine.get("movement") or {}
+    if mv:
+        for i, s in enumerate(mv.get("strong") or []):
+            q = f"movement.strong[{i}]"
+            add("sinais_de_risco", "Movimento incomum forte",
+                f"O fundo {{{{{q}.fund_name}}}} teve retorno de cota de {{{{{q}.own_value_pct}}}} em {{{{{q}.month}}}}. "
+                f"Na classe {{{{{q}.class_as_filed}}}}, com {{{{{q}.n_peers}}}} fundos, a média foi {{{{{q}.class_mean_pct}}}} "
+                f"e o desvio padrão {{{{{q}.class_sd_pct}}}}: o fundo ficou a {{{{{q}.z}}}} desvios padrão da média da classe, "
+                "além do limite forte. É um sinal estatístico sobre um mês passado, não uma previsão nem uma recomendação.",
+                s.get("provenance"))
+        ne = mv.get("not_evaluated") or []
+        if ne:
+            add("sinais_de_risco", "Movimento incomum não avaliado",
+                "Movimento incomum: {{movement.counts.nao_avaliado}} fundo(s) da carteira não foram avaliados contra a classe "
+                "em {{movement.month}}; o motivo de cada um está na seção de sinais de risco.",
+                _ids(*[n.get("provenance") for n in ne]))
+        if not (mv.get("strong") or []) and (mv.get("counts") or {}).get("funds") and not ne:
+            add("sinais_de_risco", "Movimento incomum sem ocorrência forte",
+                "Em {{movement.month}}, nenhum fundo da carteira ficou além do limite forte de movimento contra a sua classe. "
+                "A seção de sinais de risco traz o detalhe de cada fundo.",
+                _ids(*[b.get("provenance") for b in mv.get("by_line") or []]))
 
     # resumo: the first identification line, the fee total, the first shared exposure
     if pf:

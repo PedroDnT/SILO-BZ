@@ -465,8 +465,16 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
 - The disclosed fund fee must be correct, not only the balancete estimate:
   slice A adds the `cad_fi` fee columns (migration 64) and the CVM lâmina.
 - Cost cap US$1.00 per report; investigator cap 20 searches per report.
-- **Parked:** the abnormal-movement and material-restatement thresholds below.
-  Restatements are reported as "revised, not assessed" until they are set.
+- **Parked:** the material-restatement thresholds below. Restatements are
+  reported as "revised, not assessed" until they are set. The abnormal-movement
+  rule is no longer parked: owner's decisions of 2026-10-03 are implemented as
+  `api.portfolio_movement` (catalog v54) and the engine's `movement` section
+  (schema 1.3), branch `demo/movement`: atenção beyond 2 class standard
+  deviations (table only), forte beyond 3 (text, Investigator trigger), class =
+  the ANBIMA class as filed in the Extrato, winsorized at the 1st and 99th
+  percentile, at least 30 peers. Live after an analytical apply and a
+  `deploy_mcp.yml` dispatch. Measured flag rates are 5.2% to 5.7% (beyond 2) and
+  2.4% to 2.9% (beyond 3), below the owner's 10% and 6%; see the CHANGELOG row.
 - **Served since catalog v51** (`31_api_portfolio.sql`): `api.portfolio_resolve`,
   `api.portfolio_fees`, `api.portfolio_lookthrough` (blocks 1, 3, 2, 10 of the
   engine). Live after the next analytical apply and a `deploy_mcp.yml` dispatch.

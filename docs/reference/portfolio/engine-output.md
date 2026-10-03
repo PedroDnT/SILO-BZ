@@ -1,4 +1,4 @@
-# Portfolio engine output (schema 1.2)
+# Portfolio engine output (schema 1.3)
 
 What `python -m src.portfolio.diagnose <statement> [--client mcp|postgrest|fake] [--out report.json]`
 writes: one JSON document. The report writer (Redator and Revisor, `src/portfolio/report/`)
@@ -22,6 +22,12 @@ regenerated in the same commit. The canned rows (`fake_silo_rows.json`, built by
 measurements of 2026-10-03 and on the merged `api.portfolio_*` contract: the values are not data.
 
 ## Changes since 1.0
+
+1.3 (catalog v54, *movimento incomum*, owner's decisions of 2026-10-03). Keys were added, none renamed, retyped or
+removed. New: the top-level section `movement` (below), `engine.params.movement_month`, `section_status.movement`, a
+`movement_class` assumption, `--movement-month` on the CLI. Reworded, same keys: the `abnormal_movement` assumption and
+`risk_signals.abnormal_movement` (a string) no longer say the rule is parked: they say it is the `movement` section.
+The movement rule is not a materiality threshold for restatements, which stay parked.
 
 1.2 (wording, owner on #515): a filed fee of 0 or above 5 % a.a. may be correct, so the engine never calls it wrong.
 Labels changed: `0 informado; a conferir` and `valor informado acima de 5% a.a.; a conferir` (a negative value:
@@ -67,15 +73,17 @@ two values changed meaning, as the owner decided on #515, and a consumer that re
 ## Top level
 
 `schema_version`, `generated_at_utc`, `engine` (`version`, `client`, `params`), `statement`,
-`identification`, `fees`, `look_through`, `indexer`, `sector`, `restatements`, `risk_signals`,
+`identification`, `fees`, `look_through`, `indexer`, `sector`, `restatements`, `risk_signals`, `movement`,
 `assumptions`, `section_status`, `provenance`.
 
 - `engine.params`: `cda_month` (default: position month - 4), `fee_month` (default: position
-  month - 1), `max_depth` (default 4, 1 to 6), `restatement_months`, `max_diff_docs_per_fund`,
-  `sector_lookthrough_top_tickers`. Fixed lags until a `coverage()`-driven default exists.
+  month - 1), `movement_month` (default: the position month when the position date is a month-end, else the
+  month before, because a month that is not over cannot be judged), `max_depth` (default 4, 1 to 6),
+  `restatement_months`, `max_diff_docs_per_fund`, `sector_lookthrough_top_tickers`. Fixed lags until a
+  `coverage()`-driven default exists.
 - `assumptions[]`: `{id, text}`, each a reading the engine could not verify (`fee_units`,
   `weight_in_root`, `position_date`, `valuation`, `direct_tesouro`, `economic_group`,
-  `abnormal_movement`). The report states the ones that touch what it says.
+  `abnormal_movement`, `movement_class`). The report states the ones that touch what it says.
 - `section_status`: `{section: {status, reason}}`, for a cover-page summary.
 - `provenance[]`: every tool call in order: `call_id`, `id` (`p<call_id>`), `tool`, `args`,
   `requested_at_utc`, `row_count` (null on error), `error` (verbatim, null on success). No retry,
@@ -238,10 +246,40 @@ says `reapresentado, não avaliado`: the engine makes no materiality judgement.
 
 `screens[]` (each tool call with `status` and `n_rows`; `screen_overdue_securit` and
 `screen_dormant_trend` are `not_applicable`: no fund CNPJ), `dormant_coverage_note`,
-`abnormal_movement` (parked), `lines[]` (`signals[]` with the screen's own row and `screen` /
+`abnormal_movement` (a pointer to `movement`), `lines[]` (`signals[]` with the screen's own row and `screen` /
 `params`, `unknown_screens`). A signal is not a verdict, and no signal is not a health
 certificate. `screen_dormant_funds` is called twice, pinned (`p_dormancy = empty_shell`;
 `p_min_nav = 1000000000`): a parked fund below R$1bn is not covered.
+
+## `movement`
+
+*Movimento incomum* (`src/portfolio/movement.py`, one `portfolio_movement` call per 200 funds, for ONE month). The SQL owns
+the statistics (`31_api_portfolio.sql`, `docs/reference/API.md`); the engine recomputes none of it, applies the owner's
+rules about where a level may appear, and checks the served level against the served `z`.
+
+* **Definition** (`definition`): the fund's monthly **quota return**, month-end `vl_quota` over the previous month's
+  (`fact_fund_monthly`, the one stable subclass; no NAV change), against the same return over every FI fund of its
+  **ANBIMA class as filed in the CVM Extrato** (its newest filing, `class_note`). The class mean and sample sd are taken on
+  values **winsorized** at the class's 1st and 99th percentile of the month; the fund's own value is not winsorized.
+  `z = (own - mean) / sd`.
+* **Levels** (`levels_note`, `thresholds`): `atencao` when `|z|` is strictly above 2 (**table only**), `forte` when strictly
+  above 3 (**text**, and `investigator_trigger` true for the later Investigator), `normal` otherwise (exactly 2 is normal,
+  exactly 3 is `atencao`), `nao_avaliado` when the fund could not be judged. Measured on production 2026-10-03, among
+  the evaluated fund-months: `atencao` or `forte` 5.2% to 5.7%, `forte` 2.4% to 2.9% (six months, 2025-12 to 2026-09).
+* `status`, `reason`, `errors`; `month`, `note` (not a forecast, verdict or recommendation), `counts`
+  (`funds`, `normal`, `atencao`, `forte`, `nao_avaliado`), `investigator_trigger_line_nos`.
+* `lines[]`, one per fund line with a CNPJ: `line_no`, `cnpj`, `fund_name`, `month`, `class` / `subclass` (the filed label
+  split at its first `' - '`, display only), `class_as_filed` (the peer group), `class_as_of`, `n_peers` (funds of the class
+  with a return that month, the fund included), `min_peers` (30), `own_value_pct`, `class_mean_pct`, `class_sd_pct`,
+  `class_p01_pct`, `class_p99_pct`, `z` (4 decimals), `level`, `level_label` (`normal`, `atenção`, `forte`, `não avaliado`),
+  `investigator_trigger`, `in_table` (atencao or forte), `in_text` (forte only), `reason` (Portuguese: what was compared, or
+  why the fund is `nao_avaliado`), `sources`.
+* **Not evaluated, never skipped**: fewer than 30 peers, a class with sd 0, no class (fund outside the Extrato, which covers
+  about 84% of the active FI funds, or no `classe_anbima`), no return (no quota in both months, a quota-subclass change), an
+  ETF, FIDC, FII, FIP or FIAGRO, a month that is not complete, a CNPJ the function did not return, a refused call (the
+  section is `unknown`, with the verbatim error). There is no fallback to a wider class. A level the served `z` contradicts
+  (beyond the 4-decimal rounding) becomes `nao_avaliado` and says so. Lines that are not funds with a CNPJ (shares, Tesouro,
+  cash, unidentified) are in `not_applicable_lines[]` with a reason.
 
 ## The report's view (mapping)
 
@@ -270,13 +308,16 @@ still renders. The view holds no holder, account or statement-file identifier. U
 | `indexer.buckets[i]`, `sector.buckets[i]` (`weight_pct`) | `indexer.classes[i]`, `sector.sectors[i]` (`portfolio_pct`) |
 | `restatements.items[i]` | `restatements.lines[i].restatements[j]`; the delinquency leaf is `leaves[leaf = VL_CRED_EXISTE_INAD]` (`old_num`, `new_num`, `delta`) |
 | `risk_screens` (`screens_run`, `hits`, `not_run`) | `risk_signals.screens` (complete count, unknown with reason), `risk_signals.lines[i].signals` |
-| `sections.<name>` | `section_status.<name>` (`lookthrough` is `look_through`, `risk_screens` is `risk_signals`); `abnormal_movement`, `material_restatement`, `economic_group` from the engine's own notes |
+| `sections.<name>` | `section_status.<name>` (`lookthrough` is `look_through`, `risk_screens` is `risk_signals`, `abnormal_movement` is `movement` from 1.3); `material_restatement`, `economic_group` from the engine's own notes |
+| `movement` (`status`, `month`, `definition`, `class_note`, `levels_note`, `note`, `min_peers`, `thresholds`, `counts`, `n_not_fund_lines`) | `movement.*` of the same names (`min_peers` from `thresholds`, `n_not_fund_lines` the length of `not_applicable_lines`); absent from the view for an engine document before 1.3 |
+| `movement.by_line[i]` (`line_id`, `fund_name`, `class`, `subclass`, `class_as_filed`, `n_peers`, `own_value_pct`, `class_mean_pct`, `class_sd_pct`, `z`, `level`, `level_label`, `investigator_trigger`, `reason`, `provenance`) | `movement.lines[i]`, copied |
+| `movement.table[i]`, `movement.strong[i]`, `movement.not_evaluated[i]` | the same lines filtered: atencao or forte (the table, the only place `atencao` is shown), forte (the only fund-level path the text may cite), nao_avaliado (with `reason`) |
 | `provenance[i]` (`id`, `endpoint`, `params`, `source`, `data_date`) | `provenance[i]` (`id` = `p<call_id>`, `tool`, `args`); `source` from the tool, `data_date` from the `sources` that cite the call |
 | `data_dates` | the newest `data_date` per source name |
 
 ## Tools the engine calls
 
-`portfolio_resolve`, `portfolio_fees` (catalog v52: the 21 columns of v51, then 25 appended), `portfolio_lookthrough` (merged; the canned
+`portfolio_movement` (catalog v54), `portfolio_resolve`, `portfolio_fees` (catalog v52: the 21 columns of v51, then 25 appended), `portfolio_lookthrough` (merged; the canned
 rows follow their documented columns and have not been run against the live functions), and the
 existing `lookup`, `quote_latest`, `company_financials`, `short_interest`, `fidc_portfolio`,
 `fund_restatements`, `fund_restatement_diff` and the `screen_*` tools. Default client: the public

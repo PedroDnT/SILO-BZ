@@ -303,10 +303,55 @@ def _restatements_section(engine: dict) -> str:
                    ("Modalidade", False), ("Campos alterados", True), ("Avaliação", False)], rows)
 
 
+def _movement_section(engine: dict) -> str:
+    """Movimento incomum: the table holds the funds at atenção or forte; the funds with no verdict say why."""
+    mv = engine.get("movement") or {}
+    out = [f"<p>Movimento incomum em <span class=v>{v(engine, 'movement.month')}</span>: retorno mensal da cota de cada fundo "
+           "contra o dos fundos da mesma classe ANBIMA. "
+           f"Em atenção: <span class=v>{v(engine, 'movement.counts.atencao')}</span>. "
+           f"Forte: <span class=v>{v(engine, 'movement.counts.forte')}</span>. "
+           f"Normal: <span class=v>{v(engine, 'movement.counts.normal')}</span>. "
+           f'<span class="tag unk">não avaliado</span>: <span class=v>{v(engine, "movement.counts.nao_avaliado")}</span>.</p>',
+           f"<p>{v(engine, 'movement.definition')} {v(engine, 'movement.class_note')}</p>",
+           f"<p>{v(engine, 'movement.levels_note')} {v(engine, 'movement.note')}</p>"]
+    rows = []
+    for i, x in enumerate(mv.get("by_line") or []):
+        if x.get("level") not in ("atencao", "forte"):
+            continue
+        q = f"movement.by_line[{i}]"
+        rows.append([
+            v(engine, f"{q}.fund_name"), v(engine, f"{q}.class_as_filed"), v(engine, f"{q}.n_peers"),
+            v(engine, f"{q}.own_value_pct"), v(engine, f"{q}.class_mean_pct"), v(engine, f"{q}.class_sd_pct"),
+            v(engine, f"{q}.z"), f'<span class="tag unk">{v(engine, f"{q}.level_label")}</span>',
+        ])
+    if rows:
+        out.append(_table([("Fundo", False), ("Classe ANBIMA", False), ("Pares", True), ("Retorno do mês", True),
+                           ("Média da classe", True), ("Desvio padrão da classe", True), ("z", True), ("Nível", False)], rows))
+    elif mv.get("status") != "unknown":
+        out.append("<p>Nenhum fundo da carteira ficou em atenção ou forte neste mês.</p>")
+    ne = mv.get("not_evaluated") or []
+    if ne:
+        items = "".join(
+            f"<li><strong>{v(engine, f'movement.not_evaluated[{i}].fund_name')}</strong> "
+            f'(<span class="tag unk">não avaliado</span>): {v(engine, f"movement.not_evaluated[{i}].reason")}.</li>'
+            for i in range(len(ne))
+        )
+        out.append(f"<ul>{items}</ul>")
+    if mv.get("status") == "unknown":
+        out.append(f'<p class="indisponivel">Não avaliado: {v(engine, "movement.reason")}.</p>')
+    if mv.get("n_not_fund_lines"):
+        out.append(f"<p>Linhas que não são fundos com CNPJ (sem classe para comparar): "
+                   f"<span class=v>{v(engine, 'movement.n_not_fund_lines')}</span>.</p>")
+    return "\n".join(out)
+
+
 def _risk_section(engine: dict) -> str:
     rk = engine.get("risk_screens") or {}
-    out = ['<p>Movimento anormal de cota ou de patrimônio: <span class="tag unk">não avaliado</span> '
-           "(a regra ainda não foi definida).</p>"]
+    if engine.get("movement"):
+        out = [_movement_section(engine)]
+    else:
+        out = ['<p>Movimento anormal de cota ou de patrimônio: <span class="tag unk">não avaliado</span> '
+               "(a regra ainda não foi definida).</p>"]
     if rk.get("screens_run") is not None:
         out.append(f"<p>Telas executadas: <span class=v>{v(engine, 'risk_screens.screens_run')}</span>. "
                    f"Ocorrências na carteira: <span class=v>{e(len(rk.get('hits') or []))}</span>.</p>")
@@ -337,7 +382,7 @@ def _unknowns_section(engine: dict, narrative: Narrative) -> str:
             items.append(f"<li><strong>Taxa da linha {v(engine, f'fees.by_line[{i}].line_id')}</strong> "
                          f"({v(engine, f'fees.by_line[{i}].fee_status') if b.get('fee_status') else 'desconhecida'}): "
                          f"{v(engine, f'fees.by_line[{i}].reason')}</li>")
-    if "abnormal_movement" not in (engine.get("sections") or {}):
+    if "abnormal_movement" not in (engine.get("sections") or {}) and not engine.get("movement"):
         items.append("<li><strong>abnormal_movement</strong> (não avaliado): regra de movimento anormal ainda não definida.</li>")
     for i, _n in enumerate((engine.get("risk_screens") or {}).get("not_run") or []):
         items.append(f"<li><strong>Tela {v(engine, f'risk_screens.not_run[{i}].screen')}</strong>: "

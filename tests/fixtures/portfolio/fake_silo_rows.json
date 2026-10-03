@@ -2884,6 +2884,143 @@
    "rows": []
   }
  ],
+ "portfolio_movement": [
+  {
+   "match": {
+    "p_cnpjs": [
+     "08935128000159",
+     "11728688000147",
+     "32113885000121",
+     "42592315000115",
+     "50088190000119",
+     "51488342000133"
+    ],
+    "p_month": "2026-09-01"
+   },
+   "rows": [
+    {
+     "cnpj": "08935128000159",
+     "fund_name": "GERACAO L. PAR FUNDO DE INVESTIMENTO EM ACOES",
+     "month": "2026-09-01",
+     "class": "AÇÕES",
+     "subclass": "ATIVO - LIVRE",
+     "class_as_filed": "AÇÕES - ATIVO - LIVRE",
+     "class_as_of": "2026-09-12",
+     "n_peers": 1773,
+     "own_value_pct": 11.0,
+     "class_mean_pct": 4.360422,
+     "class_sd_pct": 3.081534,
+     "class_p01_pct": -4.60308,
+     "class_p99_pct": 16.36046,
+     "z": 2.1549,
+     "level": "atencao",
+     "investigator_trigger": false,
+     "min_peers": 30,
+     "reason": "retorno de cota de 2026-09 comparado com 1773 fundos da classe AÇÕES - ATIVO - LIVRE (média e desvio padrão winsorizados no 1º e 99º percentil)"
+    },
+    {
+     "cnpj": "11728688000147",
+     "fund_name": "FII EXEMPLO",
+     "month": "2026-09-01",
+     "class": null,
+     "subclass": null,
+     "class_as_filed": null,
+     "class_as_of": null,
+     "n_peers": null,
+     "own_value_pct": null,
+     "class_mean_pct": null,
+     "class_sd_pct": null,
+     "class_p01_pct": null,
+     "class_p99_pct": null,
+     "z": null,
+     "level": "nao_avaliado",
+     "investigator_trigger": false,
+     "min_peers": 30,
+     "reason": "não é fundo FI com cota diária no SILO (fii); sem retorno de cota mensal"
+    },
+    {
+     "cnpj": "32113885000121",
+     "fund_name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
+     "month": "2026-09-01",
+     "class": null,
+     "subclass": null,
+     "class_as_filed": null,
+     "class_as_of": null,
+     "n_peers": null,
+     "own_value_pct": null,
+     "class_mean_pct": null,
+     "class_sd_pct": null,
+     "class_p01_pct": null,
+     "class_p99_pct": null,
+     "z": null,
+     "level": "nao_avaliado",
+     "investigator_trigger": false,
+     "min_peers": 30,
+     "reason": "não é fundo FI com cota diária no SILO (fidc); sem retorno de cota mensal"
+    },
+    {
+     "cnpj": "42592315000115",
+     "fund_name": "BB RENDA FIXA CURTO PRAZO AUTOMATICO FIC FIF RESPONSABILIDADE LIMITADA",
+     "month": "2026-09-01",
+     "class": "RENDA FIXA",
+     "subclass": "PASSIVO - ÍNDICES",
+     "class_as_filed": "RENDA FIXA - PASSIVO - ÍNDICES",
+     "class_as_of": "2026-09-12",
+     "n_peers": 193,
+     "own_value_pct": 1.95,
+     "class_mean_pct": 1.956172,
+     "class_sd_pct": 1.001702,
+     "class_p01_pct": -0.856962,
+     "class_p99_pct": 3.825901,
+     "z": -0.0062,
+     "level": "normal",
+     "investigator_trigger": false,
+     "min_peers": 30,
+     "reason": "retorno de cota de 2026-09 comparado com 193 fundos da classe RENDA FIXA - PASSIVO - ÍNDICES (média e desvio padrão winsorizados no 1º e 99º percentil)"
+    },
+    {
+     "cnpj": "50088190000119",
+     "fund_name": "XP BANCOS FIC FIF RENDA FIXA",
+     "month": "2026-09-01",
+     "class": null,
+     "subclass": null,
+     "class_as_filed": null,
+     "class_as_of": null,
+     "n_peers": null,
+     "own_value_pct": 1.073045,
+     "class_mean_pct": null,
+     "class_sd_pct": null,
+     "class_p01_pct": null,
+     "class_p99_pct": null,
+     "z": null,
+     "level": "nao_avaliado",
+     "investigator_trigger": false,
+     "min_peers": 30,
+     "reason": "fundo fora do Extrato da CVM: sem classe ANBIMA informada"
+    },
+    {
+     "cnpj": "51488342000133",
+     "fund_name": "XP LIQUIDEZ FIC FIF RENDA FIXA",
+     "month": "2026-09-01",
+     "class": "RENDA FIXA LIVRE DURAÇÃO",
+     "subclass": "CRÉDITO LIVRE",
+     "class_as_filed": "RENDA FIXA LIVRE DURAÇÃO - CRÉDITO LIVRE",
+     "class_as_of": "2026-09-12",
+     "n_peers": 2243,
+     "own_value_pct": -2.9,
+     "class_mean_pct": 0.535,
+     "class_sd_pct": 0.9566,
+     "class_p01_pct": -2.0,
+     "class_p99_pct": 3.1,
+     "z": -3.5911,
+     "level": "forte",
+     "investigator_trigger": true,
+     "min_peers": 30,
+     "reason": "retorno de cota de 2026-09 comparado com 2243 fundos da classe RENDA FIXA LIVRE DURAÇÃO - CRÉDITO LIVRE (média e desvio padrão winsorizados no 1º e 99º percentil)"
+    }
+   ]
+  }
+ ],
  "fidc_portfolio": [
   {
    "match": {
