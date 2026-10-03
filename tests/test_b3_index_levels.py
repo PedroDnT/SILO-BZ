@@ -55,15 +55,51 @@ def test_the_token_carries_index_language_and_year():
     }
 
 
-def test_a_null_result_raises_and_is_not_retried():
-    """IFNM answers 200 with results=null. For a configured index that is an
-    error, never an empty year, and retrying does not fill it."""
-    fetcher = B3IndexFetcher(sleep_between=0)
+def test_a_null_result_that_never_clears_raises_after_bounded_attempts():
+    """IFNM answers 200 with results=null on every try. For a configured index
+    that is an error, never an empty year: the retry is bounded and then raises."""
+    fetcher = B3IndexFetcher(max_retries=3, sleep_between=0)
     body = (FIXTURES / "IFNM_2025_null.json").read_text()
     with patch.object(fetcher.session, "get", return_value=_Response(body)) as get:
-        with pytest.raises(B3IndexNoResults):
+        with pytest.raises(B3IndexNoResults, match="all 3 attempts"):
             fetcher.fetch_year("IFNM", 2025)
-    assert get.call_count == 1
+    assert get.call_count == 3
+
+
+def test_a_null_once_then_data_succeeds():
+    """UTIL 2012 answered null once and data on every later fetch (2026-10-03)."""
+    fetcher = B3IndexFetcher(max_retries=3, sleep_between=0)
+    null = (FIXTURES / "IFNM_2025_null.json").read_text()
+    good = (FIXTURES / "IBOV_2025.json").read_text()
+    with patch.object(
+        fetcher.session, "get", side_effect=[_Response(null), _Response(good)]
+    ) as get:
+        payload = fetcher.fetch_year("UTIL", 2012)
+    assert payload["results"]
+    assert get.call_count == 2
+
+
+def test_two_nulls_then_data_still_succeeds_and_the_pause_backs_off():
+    fetcher = B3IndexFetcher(max_retries=3, sleep_between=0.5)
+    null = (FIXTURES / "IFNM_2025_null.json").read_text()
+    good = (FIXTURES / "IBOV_2025.json").read_text()
+    with patch.object(
+        fetcher.session, "get",
+        side_effect=[_Response(null), _Response(null), _Response(good)],
+    ) as get, patch("src.fetchers.b3_index_fetcher.time.sleep") as sleep:
+        assert fetcher.fetch_year("UTIL", 2012)["results"]
+    assert get.call_count == 3
+    assert [c.args[0] for c in sleep.call_args_list] == [1.0, 2.0]
+
+
+def test_a_null_then_a_transport_failure_raises_the_last_error_not_an_empty_year():
+    fetcher = B3IndexFetcher(max_retries=2, sleep_between=0)
+    null = (FIXTURES / "IFNM_2025_null.json").read_text()
+    with patch.object(
+        fetcher.session, "get", side_effect=[_Response(null), RuntimeError("SSL EOF")]
+    ):
+        with pytest.raises(RuntimeError, match="failed after 2 attempts"):
+            fetcher.fetch_year("UTIL", 2012)
 
 
 def test_a_transient_failure_is_retried_and_a_persistent_one_raises():
@@ -237,7 +273,7 @@ async def test_every_year_is_fetched_and_one_log_row_is_written(monkeypatch, aud
     with patch("src.fetchers.b3_index_fetcher.B3IndexFetcher",
                return_value=_fetcher_serving(payloads)) as cls, \
          patch("src.pipeline.ingest_b3_index.ingest_b3_index_levels", return_value=2) as up:
-        n = await ing.ingest_index_levels(today=date(2025, 12, 31))
+        n = await ing.ingest_index_levels(("IBOV",), today=date(2025, 12, 31))
     assert n == 2
     assert [c.args[1] for c in cls.return_value.fetch_year.call_args_list] == [2024, 2025]
     written = up.call_args.args[1]
@@ -245,6 +281,68 @@ async def test_every_year_is_fetched_and_one_log_row_is_written(monkeypatch, aud
     assert [r["doc_type"] for r in audit_log.started] == ["index_levels"]
     (row,) = audit_log.finished
     assert (row["status"], row["rows"], row["error"]) == ("ok", 2, None)
+
+
+def test_the_configured_indices_are_the_verified_eight_plus_ibov_and_never_ieex():
+    """#416: IBOV and the eight verified codes, each with its own first year.
+    IEEX stays out (unexplained +70% / -29% in 1999-03)."""
+    assert idx.INDEX_CODES == (
+        "IBOV", "IBXX", "IBXL", "IFIX", "SMLL", "IDIV", "ICON", "IMOB", "UTIL",
+    )
+    assert "IEEX" not in idx.INDEX_CODES and "IEEX" not in idx.FIRST_YEAR
+    assert idx.FIRST_YEAR == {
+        "IBOV": 1968, "IBXX": 1994, "IBXL": 1997, "IFIX": 2010, "SMLL": 2005,
+        "IDIV": 2005, "ICON": 2006, "IMOB": 2007, "UTIL": 2005,
+    }
+    assert set(idx.FIRST_YEAR) == set(idx.INDEX_CODES)
+    assert len(set(idx.INDEX_CODES)) == len(idx.INDEX_CODES)
+
+
+@pytest.mark.asyncio
+async def test_each_configured_index_is_fetched_from_its_own_first_year(monkeypatch):
+    """The depth of an index is its own history, not IBOV's 1968."""
+    monkeypatch.setattr(idx, "INDEX_DIVISOR_STEPS", {})  # one stub session a year
+    fetcher = MagicMock()
+    fetcher.sleep_between = 0
+    seen: dict[str, list[int]] = {}
+
+    def fetch_year(code, year):
+        seen.setdefault(code, []).append(year)
+        # one session per year, level 1,000 on the first and rising after
+        return _grid({date(year, 6, 1): "1.000,00"})
+
+    fetcher.fetch_year.side_effect = fetch_year
+    ing = _ingestor()
+    with patch("src.fetchers.b3_index_fetcher.B3IndexFetcher", return_value=fetcher), \
+         patch("src.pipeline.ingest_b3_index.ingest_b3_index_levels", return_value=0) as up:
+        await ing.ingest_index_levels(today=date(2026, 10, 3))
+    assert list(seen) == list(idx.INDEX_CODES)
+    for code, years in seen.items():
+        assert years == list(range(idx.FIRST_YEAR[code], 2027)), code
+    written = up.call_args.args[1]
+    first = {c: min(r["trade_date"] for r in written if r["index_code"] == c) for c in seen}
+    assert first["UTIL"].year == 2005 and first["IBXX"].year == 1994 and first["IFIX"].year == 2010
+
+
+@pytest.mark.asyncio
+async def test_one_index_that_stays_null_stops_the_ingest_before_any_write(monkeypatch, audit_log):
+    monkeypatch.setattr(idx, "INDEX_DIVISOR_STEPS", {})  # one stub session a year
+    fetcher = MagicMock()
+    fetcher.sleep_between = 0
+
+    def fetch_year(code, year):
+        if code == "IBXL":
+            raise B3IndexNoResults(f"results=null for {code} {year} on all 3 attempts")
+        return _grid({date(year, 6, 1): "1.000,00"})
+
+    fetcher.fetch_year.side_effect = fetch_year
+    ing = _ingestor()
+    with patch("src.fetchers.b3_index_fetcher.B3IndexFetcher", return_value=fetcher), \
+         patch("src.pipeline.ingest_b3_index.ingest_b3_index_levels") as up:
+        with pytest.raises(B3IndexNoResults):
+            await ing.ingest_index_levels(today=date(2026, 10, 3))
+    up.assert_not_called()
+    assert audit_log.finished[-1]["status"] == "error"
 
 
 @pytest.mark.asyncio
@@ -259,7 +357,7 @@ async def test_a_null_year_is_an_error_and_nothing_is_written(monkeypatch, audit
                return_value=_fetcher_serving(payloads)), \
          patch("src.pipeline.ingest_b3_index.ingest_b3_index_levels") as up:
         with pytest.raises(B3IndexNoResults):
-            await ing.ingest_index_levels(today=date(2025, 12, 31))
+            await ing.ingest_index_levels(("IBOV",), today=date(2025, 12, 31))
     up.assert_not_called()
     row = audit_log.finished[-1]
     assert row["status"] == "error" and row["rows"] == 0 and "results=null" in row["error"]
@@ -276,7 +374,7 @@ async def test_the_current_year_may_be_null_in_the_first_days_of_january(monkeyp
     with patch("src.fetchers.b3_index_fetcher.B3IndexFetcher",
                return_value=_fetcher_serving(payloads)), \
          patch("src.pipeline.ingest_b3_index.ingest_b3_index_levels", return_value=1) as up:
-        assert await ing.ingest_index_levels(today=date(2027, 1, 3)) == 1
+        assert await ing.ingest_index_levels(("IBOV",), today=date(2027, 1, 3)) == 1
     assert len(up.call_args.args[1]) == 1
 
 
@@ -292,7 +390,7 @@ async def test_an_unexplained_jump_stops_the_ingest_before_any_write(monkeypatch
                return_value=_fetcher_serving(payloads)), \
          patch("src.pipeline.ingest_b3_index.ingest_b3_index_levels") as up:
         with pytest.raises(ValueError, match="not a listed divisor step"):
-            await ing.ingest_index_levels(today=date(2025, 6, 1))
+            await ing.ingest_index_levels(("IBOV",), today=date(2025, 6, 1))
     up.assert_not_called()
     row = audit_log.finished[-1]
     assert row["status"] == "error" and row["error"]

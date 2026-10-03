@@ -13,9 +13,22 @@ UTC) and run 37138825101 at 13:59 (16:59 UTC), all dispatched from
 `lamina_header_probe.yml`, the one dispatch-only workflow main already had. The
 probe scripts are in git history of that branch, not here.
 
+## Status (2026-10-03, after the owner's decision)
+
+**Done in the follow-up PR (branch `claude/indices-416b`, catalog v53).** The owner
+took the recommendation of section 5 on 2026-10-03: the served wording now says
+IBOV and every candidate is a total-return index as B3 labels it (catalog, SQL
+comments, `openapi.json`, the MCP contract, the usage guide, the SDK docstring and
+`API.md`); the fetcher retries `results=null` (three attempts with backoff, and it
+still raises when all three are null); and IBXX, IBXL, IFIX, SMLL, IDIV, ICON, IMOB
+and UTIL are in `INDEX_CODES`, each from its own `FIRST_YEAR`. **IEEX is not added:**
+its +70% on 1999-03-15 and -29% on 1999-03-31 are still unexplained (section 3),
+so it stays listed here as held. No table or migration changed. The paragraphs
+below are the note as written before that decision.
+
 ## Answer
 
-**No candidate is added to `INDEX_CODES` by this ticket.** The one thing the ticket
+**No candidate was added to `INDEX_CODES` by this ticket's first PR.** The one thing the ticket
 asked to check, whether a code is a total-return variant, has an answer that
 changes what `index_history` may call its series:
 

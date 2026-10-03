@@ -1,6 +1,6 @@
 # Research seam: SILO as the data layer for external quant research
 
-**Status: spec drafted 2026-09-29 from the wayfinder map ([#371](https://github.com/PedroDnT/SILO-BZ/issues/371), 11 of 11 tickets resolved). Approved 2026-09-29; the build tickets are under epic #410. The research universe (#411) is built (§4), and so are the benchmark index `api.index_history` (§5; #412, #415, catalog v45), the total-return close in `quote_history` (§3; #418, catalog v46) and the as-of date on the fundamentals (§6; #414, catalog v47). The price contract (§3) is built as amended by the owner on 2026-09-30 (catalog v48): `close_adj` is the default field of `quote_history` and the panel's default for shares and units, rows are JSON objects holding only the selected fields (`close_total_return` is one), the series follows the ISIN across boards, and every window it cannot serve whole is refused, the pre-2019 window included. The SDK research clients (`research_universe(as_of)`, `index_history`) and the research usage guide are built (§7, §8; #419); the multi-ticker pull is `prices()`. The IBOV11 description is corrected (catalog v49).**
+**Status: spec drafted 2026-09-29 from the wayfinder map ([#371](https://github.com/PedroDnT/SILO-BZ/issues/371), 11 of 11 tickets resolved). Approved 2026-09-29; the build tickets are under epic #410. The research universe (#411) is built (§4), and so are the benchmark index `api.index_history` (§5; #412, #415, catalog v45), the total-return close in `quote_history` (§3; #418, catalog v46) and the as-of date on the fundamentals (§6; #414, catalog v47). The price contract (§3) is built as amended by the owner on 2026-09-30 (catalog v48): `close_adj` is the default field of `quote_history` and the panel's default for shares and units, rows are JSON objects holding only the selected fields (`close_total_return` is one), the series follows the ISIN across boards, and every window it cannot serve whole is refused, the pre-2019 window included. The SDK research clients (`research_universe(as_of)`, `index_history`) and the research usage guide are built (§7, §8; #419); the multi-ticker pull is `prices()`. The IBOV11 description is corrected (catalog v49). Eight more indices join IBOV and the series is labelled a total-return index, as B3 labels it (§5; #416, catalog v53).**
 
 A *research caller* is an external repository that builds features, signals or
 backtests on SILO data (terms: `CONTEXT.md`, *Research data*). Its first
@@ -172,19 +172,28 @@ levels, from a closed, extensible list of index codes.
   with `null` results for an unknown code (IFNM did on 2026-09-29).
 - **Which indices ship first** is a build ticket. IBOV is verified (2025-12-30 =
   161,125.37, equal to B3's year-end news item). IBXX, IBXL, SMLL, IFIX, IDIV,
-  IEEX, ICON, IMOB and UTIL answered with a 2025 grid but are unverified.
+  IEEX, ICON, IMOB and UTIL answered with a 2025 grid and were unverified when
+  this was written.
   **Checked 2026-10-03 (#416, `docs/reference/research/index-candidates-416.md`):**
   all nine match B3's published base value on its base date, IBXX, IBXL and IFIX
   also match B3's daily bulletin, and none has a gap against IBOV's sessions (UTIL
   answered `results=null` for 2012 once, IEEX has an unexplained move in 1999-03).
-  None is added yet, for the reason in the next bullet.
-- Price-index levels only. Whether any code is a total-return variant is checked in
-  the build, and a price index is never labelled as total return. No return or adjusted columns.
-  **Checked 2026-10-03 (#416): B3 labels every candidate, and IBOV, a total-return
-  index** ("O Ibovespa é um índice de retorno total"), and names a price version
-  apart ("IDIV B3 Price Return"), none of which is on this endpoint. The wording
-  "a price index" above and in the served text is therefore the open question,
-  and the owner's to settle before another code is added.
+  **Built 2026-10-03 (#416, catalog v53, owner's decision of the same day):**
+  IBXX, IBXL, IFIX, SMLL, IDIV, ICON, IMOB and UTIL join IBOV, each from its own
+  first session; IEEX stays held back for the 1999-03 move.
+- Levels as B3 publishes them, no return or adjusted columns. The spec said
+  "price-index levels only", checked in the build, and "a price index is never
+  labelled as total return". **Checked 2026-10-03 (#416): B3 labels every
+  candidate, and IBOV, a total-return index** ("O Ibovespa é um índice de retorno
+  total"), and names a price version apart ("IDIV B3 Price Return"), none of
+  which is on this endpoint. **Resolved the same day, the owner following the
+  evidence note:** the served text now says every code is a total-return index as
+  B3 labels it (catalog v53; v45 to v52 said "a price index"), and a caller
+  compares a level with `close_total_return` from `quote_history`, never with
+  `close_adj`. The ticket's "no total-return variant in a price series" rule is
+  met by the label, since no code on this endpoint is a price-return series. A
+  `results=null` for a served year is retried, three attempts, and still raises
+  when every attempt is null.
 
 ## 6. Fundamentals: an as-of date (#375, #380)
 
