@@ -130,7 +130,7 @@ Regra zero: todo número vem do JSON. Você nunca escreve um algarismo. Cada val
 
 O que escrever, nesta ordem de importância:
 1. identificacao: a carteira identificada fundo a fundo; linhas ambíguas e como foram desempatadas; fundos que mudaram de nome; linhas não identificadas e o motivo.
-2. taxas: a taxa de administração DIVULGADA de cada fundo (fees.by_line[i].disclosed_pct_year, com a origem e a data em disclosed_origin_label e disclosed_as_of); a estimativa do balancete só como comparação, sempre dita "estimativa, não divulgada" e nunca somada nem apresentada como a taxa; sem taxa divulgada, diga "taxa divulgada não encontrada"; um 0 informado é "valor 0 informado (provavelmente não preenchido)", nunca custo zero; um valor fora de 0 a 5% a.a. é "valor implausível descartado" (o valor informado fica em implausible_raw); taxa defasada (disclosed_stale) é dita defasada; é taxa da classe quando disclosed_scope_label diz; taxa de performance e demais termos como o JSON traz, sem interpretar; a taxa do master de um FIC nunca se soma à do FIC (fees.underlying é "não somada"); o total de despesas declarado (expense_ratio_pct) é outra coisa e nunca se soma.
+2. taxas: a taxa de administração DIVULGADA de cada fundo (fees.by_line[i].disclosed_pct_year, com a origem e a data em disclosed_origin_label e disclosed_as_of); a estimativa do balancete só como comparação, sempre dita "estimativa, não divulgada" e nunca somada nem apresentada como a taxa; sem taxa divulgada, diga "taxa divulgada não encontrada"; um 0 informado é "0 informado; a conferir" (filed_zero_label) e um valor acima de 5% a.a. é "valor informado acima de 5% a.a.; a conferir" (implausible_label, o valor informado fica em implausible_raw): nunca diga que estão errados, pois podem estar corretos, nunca os use como custo, some ou compare, e mostre o valor informado; taxa defasada (disclosed_stale) é dita defasada; é taxa da classe quando disclosed_scope_label diz; taxa de performance e demais termos como o JSON traz, sem interpretar; a taxa do master de um FIC nunca se soma à do FIC (fees.underlying é "não somada"); o total de despesas declarado (expense_ratio_pct) é outra coisa e nunca se soma.
 3. exposicao: onde a carteira se sobrepõe e o que está por baixo (look-through, exposição compartilhada, indexador, setor). Mostre "sem classificação" quando houver.
 4. achados: o que ninguém pegaria à mão (fundo renomeado, reapresentação, sinal de risco, linha ambígua, dois fundos com a mesma carteira por baixo).
 5. reapresentacoes: cada reapresentação, com o texto de avaliação que o JSON traz ("revisado, não avaliado"); não julgue materialidade.
@@ -288,12 +288,13 @@ def template_findings(engine: dict) -> dict:
                     f"a {{{{{q}.disclosed_max_pct_year}}}} ao ano.", b.get("provenance"))
             elif b.get("filed_zero_label"):
                 add("taxas", "Taxa zero informada",
-                    f"Na linha {{{{{q}.line_id}}}} a fonte traz {{{{{q}.filed_zero_label}}}}. Não é contado como custo zero nem somado.",
+                    f"Na linha {{{{{q}.line_id}}}} a fonte informou {{{{{q}.filed_zero_pct}}}} ao ano: {{{{{q}.filed_zero_label}}}}. "
+                    "O valor pode estar correto e não é contado como custo, nem somado, nem comparado.",
                     b.get("provenance"))
             elif b.get("implausible_label"):
-                add("taxas", "Valor implausível descartado",
-                    f"Na linha {{{{{q}.line_id}}}} a fonte traz um valor fora de 0 a 5% ao ano: {{{{{q}.implausible_label}}}}. "
-                    f"Valor informado: {{{{{q}.implausible_raw}}}}.", b.get("provenance"))
+                add("taxas", "Valor informado acima do limite, a conferir",
+                    f"Na linha {{{{{q}.line_id}}}} a fonte informou {{{{{q}.implausible_raw}}}}: {{{{{q}.implausible_label}}}}. "
+                    "O valor pode estar correto e não entra em nenhuma conta.", b.get("provenance"))
             else:
                 add("taxas", "Taxa divulgada não encontrada",
                     f"A linha {{{{{q}.line_id}}}}: {{{{{q}.fee_status}}}}. {{{{{q}.reason}}}}", _ids(b.get("provenance"), fee_prov))

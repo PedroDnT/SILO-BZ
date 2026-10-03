@@ -62,7 +62,7 @@ def test_top_level_schema_is_stable(doc):
         "schema_version", "generated_at_utc", "engine", "statement", "identification", "fees", "look_through",
         "indexer", "sector", "restatements", "risk_signals", "assumptions", "section_status", "provenance",
     ]
-    assert doc["schema_version"] == "1.1"
+    assert doc["schema_version"] == "1.2"
     for sec in ("identification", "fees", "look_through", "indexer", "sector", "restatements", "risk_signals"):
         assert {"status", "reason", "errors"} <= set(doc[sec])
 
@@ -166,10 +166,13 @@ def test_fees_headline_is_the_disclosed_fee_and_the_estimate_stays_apart(doc):
     assert (f4["headline"]["rate_min_pct_year"], f4["headline"]["rate_max_pct_year"]) == (0.15, 0.30)
     assert f4["disclosed"]["adm_rate_pct_year"] is None
     # a filed 0 is shown as such, never a zero cost: no rate, no R$, not summed, plus the attention finding
-    assert f5["fee_status"] == ZERO_LABEL == "valor 0 informado (provavelmente não preenchido)"
+    assert f5["fee_status"] == ZERO_LABEL == "0 informado; a conferir"
     assert f5["headline"]["kind"] == "zero_informado" and f5["headline"]["rate_pct_year"] is None
     assert f5["headline"]["per_year_brl"] is None and f5["headline"]["counted_as_cost"] is False
     assert f5["disclosed"]["filed_zero"] is True and f5["disclosed"]["adm_rate_pct_year"] == 0.0
+    assert f5["needs_manual_check"] is True and f5["headline"]["filed_pct_year"] == 0.0  # the filed value is shown
+    assert f3["needs_manual_check"] is False and f6["needs_manual_check"] is False
+    assert "pode estar correto" in f5["reason"] and "errado" not in f5["reason"].lower() and "erro" not in f5["reason"].lower()
     z = next(x for x in f5["findings"] if x["kind"] == "divulgado_zero_balancete_registra_despesa")
     assert z["level"] == "atenção" and z["text"] == "Divulgado 0, balancete registra despesa."
     # nothing disclosed anywhere: taxa divulgada não encontrada, the estimate is NOT substituted
@@ -211,8 +214,10 @@ def test_underlying_funds_keep_their_own_fee_and_are_not_added(doc):
 
 def test_an_implausible_filed_value_is_discarded_with_the_raw_value_apart(doc):
     u = next(u for u in doc["fees"]["underlying"] if u["fund_cnpj"] == "37525998000158" and u["line_no"] == 4)
-    assert u["fee_status"] == IMPLAUSIBLE_LABEL == "valor implausível descartado"
-    assert u["headline"] is None and u["disclosed"]["adm_rate_pct_year"] is None
+    assert u["fee_status"] == IMPLAUSIBLE_LABEL == "valor informado acima de 5% a.a.; a conferir"
+    assert u["headline"] is None and u["disclosed"]["adm_rate_pct_year"] is None and u["needs_manual_check"] is True
+    assert "pode estar correto" in u["reason"] and "erro" not in u["reason"].lower() and "descart" not in u["reason"].lower()
+    assert "descart" not in json.dumps(u, ensure_ascii=False).lower() or "rejected" in u["disclosed"]
     assert u["disclosed"]["implausible_filed"] is True and u["disclosed"]["adm_filed_raw"] == 14638.0
     assert u["disclosed"]["rejected"]["raw_value"] == 14638.0 and u["disclosed"]["scope_label"] == "taxa do fundo"
     assert "valor_implausivel_descartado" in {x["kind"] for x in u["findings"]}

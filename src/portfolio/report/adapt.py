@@ -153,6 +153,8 @@ def _fee_line_view(line_no: int, f: dict, names: dict[int, str]) -> dict:
         "disclosed_stale_label": d.get("stale_label"),
         "disclosed_scope_label": d.get("scope_label"),
         "filed_zero_label": d.get("filed_zero_label"),
+        "filed_zero_pct": h.get("filed_pct_year") if h.get("kind") == "zero_informado" else None,
+        "needs_manual_check": f.get("needs_manual_check"),
         "implausible_label": d.get("implausible_label"),
         "implausible_raw": d.get("adm_filed_raw") if d.get("implausible_filed") else None,
         "perf_as_filed": d.get("perf_as_filed"),

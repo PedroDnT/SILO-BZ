@@ -173,10 +173,12 @@ def _fee_row(engine: dict, q: str, b: dict) -> list[str]:
                      f"<span class=v>{v(engine, f'{q}.disclosed_max_pct_year')}</span> a.a.")
     elif b.get("filed_zero_label"):
         disclosed = f'<span class="tag unk">{v(engine, f"{q}.filed_zero_label")}</span>'
+        if b.get("filed_zero_pct") is not None:
+            disclosed += f"<br><span class=cit>valor informado: {v(engine, f'{q}.filed_zero_pct')} a.a.</span>"
     elif b.get("implausible_label"):
         disclosed = f'<span class="tag unk">{v(engine, f"{q}.implausible_label")}</span>'
         if b.get("implausible_raw") is not None:
-            disclosed += f"<br><span class=cit>valor informado: {v(engine, f'{q}.implausible_raw')}</span>"
+            disclosed += f"<br><span class=cit>valor informado: {v(engine, f'{q}.implausible_raw')} (a conferir; pode estar correto)</span>"
     else:
         disclosed = f'<span class="tag unk">{e(label)}</span>'
         if b.get("reason"):
@@ -354,7 +356,7 @@ def _method_section(engine: dict, narrative: Narrative) -> str:
         "Um Revisor independente confere cada frase: marcadores que não existem, algarismos fora de marcador, citações fora da "
         "proveniência e valores extremos sem confirmação removem a frase.",
         "A taxa de administração mostrada é a divulgada pelo fundo, na ordem Extrato CVM, lâmina, cadastro cad_fi; uma taxa 0 informada "
-        "é mostrada como tal e nunca somada como custo, e um valor fora de 0 a 5% a.a. é descartado. A estimativa vem do balancete do "
+        "é mostrada como tal, \"a conferir\", e um valor acima de 5% a.a. também; nenhum dos dois é usado como custo, somado ou comparado, e nenhum é dado como errado. A estimativa vem do balancete do "
         "fundo (contas COFI 8.1.7, acumuladas no exercício), fica em campo à parte, rotulada \"estimativa, não divulgada\", e nunca substitui "
         "nem se soma à taxa divulgada. A taxa de performance e os demais termos aparecem como o fundo os informou.",
         "Reapresentações são mostradas como \"revisado, não avaliado\": os limiares de materialidade ainda não foram definidos. Movimento anormal de cota e de patrimônio: não avaliado nesta versão.",

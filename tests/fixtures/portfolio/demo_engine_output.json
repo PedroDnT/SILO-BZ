@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "generated_at_utc": "2026-10-03T15:00:00Z",
   "engine": {
     "version": "0.1.0",
@@ -1241,7 +1241,7 @@
   },
   "fees": {
     "status": "partial",
-    "reason": "2 fundo(s) sem taxa divulgada encontrada. 1 fundo(s) com taxa informada que não é usada (valor 0 ou implausível).",
+    "reason": "2 fundo(s) sem taxa divulgada encontrada. 1 fundo(s) com taxa informada a conferir (0 ou acima de 5% a.a.), que não entra em nenhuma conta.",
     "errors": [],
     "month": "2026-08-01",
     "estimate_label": "estimativa, não divulgada",
@@ -1252,8 +1252,9 @@
       "lamina": 24,
       "cad_fi": null
     },
-    "zero_label": "valor 0 informado (provavelmente não preenchido)",
-    "implausible_label": "valor implausível descartado",
+    "zero_label": "0 informado; a conferir",
+    "implausible_label": "valor informado acima de 5% a.a.; a conferir",
+    "negative_label": "valor informado negativo; a conferir",
     "source_order": [
       "extrato",
       "lamina",
@@ -1275,6 +1276,7 @@
         },
         "fee_status": "divulgada",
         "reason": null,
+        "needs_manual_check": false,
         "fund_nav_brl": 6075735724.7,
         "disclosed": {
           "origin": "extrato",
@@ -1293,6 +1295,7 @@
           "filed_zero_label": null,
           "implausible_filed": false,
           "implausible_label": null,
+          "needs_manual_check": false,
           "adm_filed_raw": 2.0,
           "adm_rate_pct_year": 2.0,
           "adm_min_pct_year": 2.0,
@@ -1450,6 +1453,7 @@
         },
         "fee_status": "faixa divulgada",
         "reason": null,
+        "needs_manual_check": false,
         "fund_nav_brl": 1780000000.0,
         "disclosed": {
           "origin": "lamina",
@@ -1468,6 +1472,7 @@
           "filed_zero_label": null,
           "implausible_filed": false,
           "implausible_label": null,
+          "needs_manual_check": false,
           "adm_filed_raw": null,
           "adm_rate_pct_year": null,
           "adm_min_pct_year": 0.15,
@@ -1583,8 +1588,9 @@
           },
           "data_date": "2026-09-30"
         },
-        "fee_status": "valor 0 informado (provavelmente não preenchido)",
-        "reason": "A fonte informou taxa de administração igual a 0: lida como não informada, nunca como custo zero, e não somada.",
+        "fee_status": "0 informado; a conferir",
+        "reason": "A fonte informou taxa de administração igual a 0. O valor fica a conferir (pode estar correto): não é usado como custo, nem somado, nem comparado.",
+        "needs_manual_check": true,
         "fund_nav_brl": 3360184376.89,
         "disclosed": {
           "origin": "extrato",
@@ -1600,9 +1606,10 @@
           "n_classes": 1,
           "note": "the Extrato filed an administration fee of exactly 0: returned as filed (filed_zero); read it as not informed, never as a zero cost",
           "filed_zero": true,
-          "filed_zero_label": "valor 0 informado (provavelmente não preenchido)",
+          "filed_zero_label": "0 informado; a conferir",
           "implausible_filed": false,
           "implausible_label": null,
+          "needs_manual_check": true,
           "adm_filed_raw": 0.0,
           "adm_rate_pct_year": 0.0,
           "adm_min_pct_year": 0.0,
@@ -1656,7 +1663,7 @@
         },
         "headline": {
           "kind": "zero_informado",
-          "basis": "valor 0 informado (provavelmente não preenchido)",
+          "basis": "0 informado; a conferir",
           "rate_pct_year": null,
           "filed_pct_year": 0.0,
           "per_year_brl": null,
@@ -1768,6 +1775,7 @@
         },
         "fee_status": "taxa divulgada não encontrada",
         "reason": "portfolio_fees não devolveu linha para este CNPJ.",
+        "needs_manual_check": false,
         "disclosed": null,
         "headline": null,
         "estimate": null,
@@ -1796,6 +1804,7 @@
         },
         "fee_status": "divulgada",
         "reason": null,
+        "needs_manual_check": false,
         "fund_nav_brl": 198605786912.83,
         "disclosed": {
           "origin": "lamina",
@@ -1814,6 +1823,7 @@
           "filed_zero_label": null,
           "implausible_filed": false,
           "implausible_label": null,
+          "needs_manual_check": false,
           "adm_filed_raw": 1.5,
           "adm_rate_pct_year": 1.5,
           "adm_min_pct_year": null,
@@ -1982,6 +1992,7 @@
         },
         "fee_status": "taxa divulgada não encontrada",
         "reason": "portfolio_fees não devolveu linha para este CNPJ.",
+        "needs_manual_check": false,
         "disclosed": null,
         "headline": null,
         "estimate": null,
@@ -2009,8 +2020,9 @@
         "added_to_totals": false,
         "label": "não somada",
         "label_note": "Taxa do fundo investido, mostrada à parte: nunca somada à taxa do fundo de cima nem ao total.",
-        "fee_status": "valor 0 informado (provavelmente não preenchido)",
-        "reason": "A fonte informou taxa de administração igual a 0: lida como não informada, nunca como custo zero, e não somada.",
+        "fee_status": "0 informado; a conferir",
+        "reason": "A fonte informou taxa de administração igual a 0. O valor fica a conferir (pode estar correto): não é usado como custo, nem somado, nem comparado.",
+        "needs_manual_check": true,
         "fund_nav_brl": 7999802012.71,
         "disclosed": {
           "origin": "lamina",
@@ -2026,9 +2038,10 @@
           "n_classes": 1,
           "note": "the lâmina filed an administration fee of exactly 0: returned as filed (filed_zero); read it as not informed, never as a zero cost",
           "filed_zero": true,
-          "filed_zero_label": "valor 0 informado (provavelmente não preenchido)",
+          "filed_zero_label": "0 informado; a conferir",
           "implausible_filed": false,
           "implausible_label": null,
+          "needs_manual_check": true,
           "adm_filed_raw": 0.0,
           "adm_rate_pct_year": 0.0,
           "adm_min_pct_year": null,
@@ -2059,7 +2072,7 @@
         },
         "headline": {
           "kind": "zero_informado",
-          "basis": "valor 0 informado (provavelmente não preenchido)",
+          "basis": "0 informado; a conferir",
           "rate_pct_year": null,
           "filed_pct_year": 0.0,
           "per_year_brl": null,
@@ -2165,6 +2178,7 @@
         "label_note": "Taxa do fundo investido, mostrada à parte: nunca somada à taxa do fundo de cima nem ao total.",
         "fee_status": "divulgada",
         "reason": null,
+        "needs_manual_check": false,
         "fund_nav_brl": 839592972.0,
         "disclosed": {
           "origin": "extrato",
@@ -2183,6 +2197,7 @@
           "filed_zero_label": null,
           "implausible_filed": false,
           "implausible_label": null,
+          "needs_manual_check": false,
           "adm_filed_raw": 0.5,
           "adm_rate_pct_year": 0.5,
           "adm_min_pct_year": 0.5,
@@ -2313,8 +2328,9 @@
         "added_to_totals": false,
         "label": "não somada",
         "label_note": "Taxa do fundo investido, mostrada à parte: nunca somada à taxa do fundo de cima nem ao total.",
-        "fee_status": "valor implausível descartado",
-        "reason": "A fonte informou 14638.0: fora de 0 a 5% a.a., tratado como erro de escala e não usado; o valor informado fica em campo à parte.",
+        "fee_status": "valor informado acima de 5% a.a.; a conferir",
+        "reason": "A fonte informou 14638.0, fora do intervalo usual de 0 a 5% a.a. O valor fica a conferir (pode estar correto): não é usado como custo, nem somado, nem comparado; o valor informado está em campo à parte.",
+        "needs_manual_check": true,
         "fund_nav_brl": 3878630268.71,
         "disclosed": {
           "origin": "extrato",
@@ -2332,7 +2348,8 @@
           "filed_zero": false,
           "filed_zero_label": null,
           "implausible_filed": true,
-          "implausible_label": "valor implausível descartado",
+          "implausible_label": "valor informado acima de 5% a.a.; a conferir",
+          "needs_manual_check": true,
           "adm_filed_raw": 14638.0,
           "adm_rate_pct_year": null,
           "adm_min_pct_year": null,
@@ -2382,9 +2399,9 @@
             }
           ],
           "rejected": {
-            "label": "valor implausível descartado",
+            "label": "valor informado acima de 5% a.a.; a conferir",
             "raw_value": 14638.0,
-            "rule": "acima de 5% a.a. (ou abaixo de 0): tratado como erro de escala e não usado"
+            "rule": "fora de 0 a 5% a.a.: não usado como custo, não somado nem comparado, a conferir; pode estar correto"
           }
         },
         "headline": null,
@@ -2429,7 +2446,7 @@
           {
             "kind": "valor_implausivel_descartado",
             "level": "informação",
-            "text": "Valor implausível descartado: a fonte informou uma taxa fora de 0 a 5% a.a.",
+            "text": "Valor informado acima de 5% a.a.; a conferir: a fonte informou um valor fora do intervalo usual; pode estar correto e não entra em nenhuma conta.",
             "origin": "extrato",
             "raw_value": 14638.0,
             "sources": [
@@ -2465,6 +2482,7 @@
         "label_note": "Taxa do fundo investido, mostrada à parte: nunca somada à taxa do fundo de cima nem ao total.",
         "fee_status": "divulgada",
         "reason": null,
+        "needs_manual_check": false,
         "fund_nav_brl": 839592972.0,
         "disclosed": {
           "origin": "extrato",
@@ -2483,6 +2501,7 @@
           "filed_zero_label": null,
           "implausible_filed": false,
           "implausible_label": null,
+          "needs_manual_check": false,
           "adm_filed_raw": 0.5,
           "adm_rate_pct_year": 0.5,
           "adm_min_pct_year": 0.5,
@@ -2612,8 +2631,9 @@
         "added_to_totals": false,
         "label": "não somada",
         "label_note": "Taxa do fundo investido, mostrada à parte: nunca somada à taxa do fundo de cima nem ao total.",
-        "fee_status": "valor implausível descartado",
-        "reason": "A fonte informou 14638.0: fora de 0 a 5% a.a., tratado como erro de escala e não usado; o valor informado fica em campo à parte.",
+        "fee_status": "valor informado acima de 5% a.a.; a conferir",
+        "reason": "A fonte informou 14638.0, fora do intervalo usual de 0 a 5% a.a. O valor fica a conferir (pode estar correto): não é usado como custo, nem somado, nem comparado; o valor informado está em campo à parte.",
+        "needs_manual_check": true,
         "fund_nav_brl": 3878630268.71,
         "disclosed": {
           "origin": "extrato",
@@ -2631,7 +2651,8 @@
           "filed_zero": false,
           "filed_zero_label": null,
           "implausible_filed": true,
-          "implausible_label": "valor implausível descartado",
+          "implausible_label": "valor informado acima de 5% a.a.; a conferir",
+          "needs_manual_check": true,
           "adm_filed_raw": 14638.0,
           "adm_rate_pct_year": null,
           "adm_min_pct_year": null,
@@ -2681,9 +2702,9 @@
             }
           ],
           "rejected": {
-            "label": "valor implausível descartado",
+            "label": "valor informado acima de 5% a.a.; a conferir",
             "raw_value": 14638.0,
-            "rule": "acima de 5% a.a. (ou abaixo de 0): tratado como erro de escala e não usado"
+            "rule": "fora de 0 a 5% a.a.: não usado como custo, não somado nem comparado, a conferir; pode estar correto"
           }
         },
         "headline": null,
@@ -2728,7 +2749,7 @@
           {
             "kind": "valor_implausivel_descartado",
             "level": "informação",
-            "text": "Valor implausível descartado: a fonte informou uma taxa fora de 0 a 5% a.a.",
+            "text": "Valor informado acima de 5% a.a.; a conferir: a fonte informou um valor fora do intervalo usual; pode estar correto e não entra em nenhuma conta.",
             "origin": "extrato",
             "raw_value": 14638.0,
             "sources": [
@@ -2762,8 +2783,9 @@
         "added_to_totals": false,
         "label": "não somada",
         "label_note": "Taxa do fundo investido, mostrada à parte: nunca somada à taxa do fundo de cima nem ao total.",
-        "fee_status": "valor 0 informado (provavelmente não preenchido)",
-        "reason": "A fonte informou taxa de administração igual a 0: lida como não informada, nunca como custo zero, e não somada.",
+        "fee_status": "0 informado; a conferir",
+        "reason": "A fonte informou taxa de administração igual a 0. O valor fica a conferir (pode estar correto): não é usado como custo, nem somado, nem comparado.",
+        "needs_manual_check": true,
         "fund_nav_brl": 7999802012.71,
         "disclosed": {
           "origin": "lamina",
@@ -2779,9 +2801,10 @@
           "n_classes": 1,
           "note": "the lâmina filed an administration fee of exactly 0: returned as filed (filed_zero); read it as not informed, never as a zero cost",
           "filed_zero": true,
-          "filed_zero_label": "valor 0 informado (provavelmente não preenchido)",
+          "filed_zero_label": "0 informado; a conferir",
           "implausible_filed": false,
           "implausible_label": null,
+          "needs_manual_check": true,
           "adm_filed_raw": 0.0,
           "adm_rate_pct_year": 0.0,
           "adm_min_pct_year": null,
@@ -2812,7 +2835,7 @@
         },
         "headline": {
           "kind": "zero_informado",
-          "basis": "valor 0 informado (provavelmente não preenchido)",
+          "basis": "0 informado; a conferir",
           "rate_pct_year": null,
           "filed_pct_year": 0.0,
           "per_year_brl": null,
@@ -2918,6 +2941,7 @@
         "label_note": "Taxa do fundo investido, mostrada à parte: nunca somada à taxa do fundo de cima nem ao total.",
         "fee_status": "divulgada",
         "reason": null,
+        "needs_manual_check": false,
         "fund_nav_brl": 839592972.0,
         "disclosed": {
           "origin": "extrato",
@@ -2936,6 +2960,7 @@
           "filed_zero_label": null,
           "implausible_filed": false,
           "implausible_label": null,
+          "needs_manual_check": false,
           "adm_filed_raw": 0.5,
           "adm_rate_pct_year": 0.5,
           "adm_min_pct_year": 0.5,
@@ -3066,8 +3091,9 @@
         "added_to_totals": false,
         "label": "não somada",
         "label_note": "Taxa do fundo investido, mostrada à parte: nunca somada à taxa do fundo de cima nem ao total.",
-        "fee_status": "valor implausível descartado",
-        "reason": "A fonte informou 14638.0: fora de 0 a 5% a.a., tratado como erro de escala e não usado; o valor informado fica em campo à parte.",
+        "fee_status": "valor informado acima de 5% a.a.; a conferir",
+        "reason": "A fonte informou 14638.0, fora do intervalo usual de 0 a 5% a.a. O valor fica a conferir (pode estar correto): não é usado como custo, nem somado, nem comparado; o valor informado está em campo à parte.",
+        "needs_manual_check": true,
         "fund_nav_brl": 3878630268.71,
         "disclosed": {
           "origin": "extrato",
@@ -3085,7 +3111,8 @@
           "filed_zero": false,
           "filed_zero_label": null,
           "implausible_filed": true,
-          "implausible_label": "valor implausível descartado",
+          "implausible_label": "valor informado acima de 5% a.a.; a conferir",
+          "needs_manual_check": true,
           "adm_filed_raw": 14638.0,
           "adm_rate_pct_year": null,
           "adm_min_pct_year": null,
@@ -3135,9 +3162,9 @@
             }
           ],
           "rejected": {
-            "label": "valor implausível descartado",
+            "label": "valor informado acima de 5% a.a.; a conferir",
             "raw_value": 14638.0,
-            "rule": "acima de 5% a.a. (ou abaixo de 0): tratado como erro de escala e não usado"
+            "rule": "fora de 0 a 5% a.a.: não usado como custo, não somado nem comparado, a conferir; pode estar correto"
           }
         },
         "headline": null,
@@ -3182,7 +3209,7 @@
           {
             "kind": "valor_implausivel_descartado",
             "level": "informação",
-            "text": "Valor implausível descartado: a fonte informou uma taxa fora de 0 a 5% a.a.",
+            "text": "Valor informado acima de 5% a.a.; a conferir: a fonte informou um valor fora do intervalo usual; pode estar correto e não entra em nenhuma conta.",
             "origin": "extrato",
             "raw_value": 14638.0,
             "sources": [
@@ -3218,6 +3245,7 @@
         "label_note": "Taxa do fundo investido, mostrada à parte: nunca somada à taxa do fundo de cima nem ao total.",
         "fee_status": "divulgada",
         "reason": null,
+        "needs_manual_check": false,
         "fund_nav_brl": 839592972.0,
         "disclosed": {
           "origin": "extrato",
@@ -3236,6 +3264,7 @@
           "filed_zero_label": null,
           "implausible_filed": false,
           "implausible_label": null,
+          "needs_manual_check": false,
           "adm_filed_raw": 0.5,
           "adm_rate_pct_year": 0.5,
           "adm_min_pct_year": 0.5,
@@ -3365,8 +3394,9 @@
         "added_to_totals": false,
         "label": "não somada",
         "label_note": "Taxa do fundo investido, mostrada à parte: nunca somada à taxa do fundo de cima nem ao total.",
-        "fee_status": "valor implausível descartado",
-        "reason": "A fonte informou 14638.0: fora de 0 a 5% a.a., tratado como erro de escala e não usado; o valor informado fica em campo à parte.",
+        "fee_status": "valor informado acima de 5% a.a.; a conferir",
+        "reason": "A fonte informou 14638.0, fora do intervalo usual de 0 a 5% a.a. O valor fica a conferir (pode estar correto): não é usado como custo, nem somado, nem comparado; o valor informado está em campo à parte.",
+        "needs_manual_check": true,
         "fund_nav_brl": 3878630268.71,
         "disclosed": {
           "origin": "extrato",
@@ -3384,7 +3414,8 @@
           "filed_zero": false,
           "filed_zero_label": null,
           "implausible_filed": true,
-          "implausible_label": "valor implausível descartado",
+          "implausible_label": "valor informado acima de 5% a.a.; a conferir",
+          "needs_manual_check": true,
           "adm_filed_raw": 14638.0,
           "adm_rate_pct_year": null,
           "adm_min_pct_year": null,
@@ -3434,9 +3465,9 @@
             }
           ],
           "rejected": {
-            "label": "valor implausível descartado",
+            "label": "valor informado acima de 5% a.a.; a conferir",
             "raw_value": 14638.0,
-            "rule": "acima de 5% a.a. (ou abaixo de 0): tratado como erro de escala e não usado"
+            "rule": "fora de 0 a 5% a.a.: não usado como custo, não somado nem comparado, a conferir; pode estar correto"
           }
         },
         "headline": null,
@@ -3481,7 +3512,7 @@
           {
             "kind": "valor_implausivel_descartado",
             "level": "informação",
-            "text": "Valor implausível descartado: a fonte informou uma taxa fora de 0 a 5% a.a.",
+            "text": "Valor informado acima de 5% a.a.; a conferir: a fonte informou um valor fora do intervalo usual; pode estar correto e não entra em nenhuma conta.",
             "origin": "extrato",
             "raw_value": 14638.0,
             "sources": [
@@ -3517,6 +3548,7 @@
         "label_note": "Taxa do fundo investido, mostrada à parte: nunca somada à taxa do fundo de cima nem ao total.",
         "fee_status": "divulgada",
         "reason": null,
+        "needs_manual_check": false,
         "fund_nav_brl": 198595917706.26,
         "disclosed": {
           "origin": "lamina",
@@ -3535,6 +3567,7 @@
           "filed_zero_label": null,
           "implausible_filed": false,
           "implausible_label": null,
+          "needs_manual_check": false,
           "adm_filed_raw": 0.2,
           "adm_rate_pct_year": 0.2,
           "adm_min_pct_year": null,
@@ -13046,7 +13079,7 @@
     },
     "fees": {
       "status": "partial",
-      "reason": "2 fundo(s) sem taxa divulgada encontrada. 1 fundo(s) com taxa informada que não é usada (valor 0 ou implausível)."
+      "reason": "2 fundo(s) sem taxa divulgada encontrada. 1 fundo(s) com taxa informada a conferir (0 ou acima de 5% a.a.), que não entra em nenhuma conta."
     },
     "look_through": {
       "status": "partial",
