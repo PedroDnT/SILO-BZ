@@ -1,6 +1,6 @@
 -- Executed checks for the portfolio-diagnosis reads (31_api_portfolio.sql:
 -- api.portfolio_resolve, api.portfolio_fees, api.portfolio_lookthrough, catalog
--- v51; portfolio_fees v52, the Extrato first). Regex tests pin the SQL text; this proves it DOES the right thing on
+-- v51; portfolio_fees v52, the Extrato first; api.portfolio_movement, v54). Regex tests pin the SQL text; this proves it DOES the right thing on
 -- rows. Synthetic CNPJs, inside a transaction that is rolled back, so it runs
 -- on any database with the schema and the analytical layer applied (CI's
 -- sql-compile job, or a scratch copy):
@@ -558,6 +558,232 @@ BEGIN
     EXCEPTION WHEN sqlstate '22023' THEN NULL;
     END;
     RAISE NOTICE 'portfolio_lookthrough page edge OK';
+END $$;
+
+-- ===========================================================================
+-- portfolio_movement (catalog v54): a fund's month against its own ANBIMA class
+-- ===========================================================================
+-- Own months, so the completeness rule is true here whatever else the file seeded:
+-- 2019-12 (previous) and 2020-01 (judged) are the first periods of the family
+-- (no trailing window yet counts as complete), with the same number of funds.
+-- Fixture classes (the Extrato's classe_anbima, as filed):
+--   'TESTE - ALFA - LIVRE'  299 funds: 294 spread evenly around 1.00 % (core), ATT a
+--                           moderate outlier (2.10 %), two extreme funds on each side (+40 / +35 and
+--                           -40 / -35 %). The 1st / 99th percentile of 299 values sits inside the
+--                           core, so the extremes are clamped in the class's mean and sd and are NOT
+--                           clamped in their own value.
+--   'TESTE - POUCOS'        10 funds: under the minimum of 30 peers.
+--   'TESTE - ZERO'          31 funds that did not move: a zero standard deviation.
+--   NOCLASS (Extrato row, no classe_anbima), NOEXT (no Extrato row), NOPREV (no quota in
+--   the previous month), an ETF, a FIDC and an unknown CNPJ: each says why.
+INSERT INTO cvm_fi_diario (cnpj, id_subclasse, dt_comptc, vl_quota, vl_patrim_liq, raw)
+SELECT '81' || lpad(i::text, 12, '0'), '', d.dt, d.q, 1000000, '{}'
+FROM generate_series(1, 294) i
+CROSS JOIN LATERAL (VALUES
+    (DATE '2019-12-31', 1.0::numeric),
+    (DATE '2020-01-31', 1.0 + (1.00 + (i - 147.5) * 0.005) / 100)) AS d(dt, q);
+INSERT INTO cvm_fi_diario (cnpj, id_subclasse, dt_comptc, vl_quota, vl_patrim_liq, raw)
+SELECT f.cnpj, '', d.dt, CASE WHEN d.dt = DATE '2019-12-31' THEN 1.0 ELSE 1.0 + f.ret / 100 END, 1000000, '{}'
+FROM (VALUES ('82000000000001', 2.10::numeric), ('82000000000002', 40.00), ('82000000000003', -40.00),
+             ('82000000000004', 35.00), ('82000000000005', -35.00)) AS f(cnpj, ret)
+CROSS JOIN (VALUES (DATE '2019-12-31'), (DATE '2020-01-31')) AS d(dt);
+-- POUCOS (10), ZERO (31): previous quota 1, current 1 + ret / 100 (ZERO: unchanged).
+INSERT INTO cvm_fi_diario (cnpj, id_subclasse, dt_comptc, vl_quota, vl_patrim_liq, raw)
+SELECT '84' || lpad(i::text, 12, '0'), '', d.dt, CASE WHEN d.dt = DATE '2019-12-31' THEN 1.0 ELSE 1.0 + i / 100.0 END, 1000000, '{}'
+FROM generate_series(1, 10) i CROSS JOIN (VALUES (DATE '2019-12-31'), (DATE '2020-01-31')) AS d(dt);
+INSERT INTO cvm_fi_diario (cnpj, id_subclasse, dt_comptc, vl_quota, vl_patrim_liq, raw)
+SELECT '85' || lpad(i::text, 12, '0'), '', d.dt, 1.0, 1000000, '{}'
+FROM generate_series(1, 31) i CROSS JOIN (VALUES (DATE '2019-12-31'), (DATE '2020-01-31')) AS d(dt);
+-- NOCLASS, NOEXT, NOPREV (only the judged month), the ETF.
+INSERT INTO cvm_fi_diario (cnpj, id_subclasse, dt_comptc, vl_quota, vl_patrim_liq, raw) VALUES
+    ('83000000000001', '', '2019-12-31', 1.0, 1000000, '{}'), ('83000000000001', '', '2020-01-31', 1.01, 1000000, '{}'),
+    ('83000000000002', '', '2019-12-31', 1.0, 1000000, '{}'), ('83000000000002', '', '2020-01-31', 1.01, 1000000, '{}'),
+    ('83000000000003', '', '2020-01-31', 1.01, 1000000, '{}'),
+    ('83000000000004', '', '2019-12-31', 1.0, 1000000, '{}'), ('83000000000004', '', '2020-01-31', 1.01, 1000000, '{}');
+INSERT INTO cvm_etf_registry (ticker, cnpj, fund_name) VALUES ('MVTS11', '83000000000004', 'movement ETF');
+INSERT INTO cvm_fund_registry (cnpj, entity_type, fund_name, status) VALUES
+    ('82000000000001', 'fi', 'MOVEMENT ATT', 'Em Funcionamento Normal'),
+    ('83000000000005', 'fidc', 'MOVEMENT FIDC', 'Em Funcionamento Normal');
+
+INSERT INTO cvm_fi_extrato (cnpj, dt_comptc, source_file, tp_fundo_classe, classe_anbima, taxa_adm, raw)
+SELECT '81' || lpad(i::text, 12, '0'), CURRENT_DATE - 20, 'extrato_fi.csv', 'FI', 'TESTE - ALFA - LIVRE', 1.0, '{}'
+FROM generate_series(1, 294) i;
+INSERT INTO cvm_fi_extrato (cnpj, dt_comptc, source_file, tp_fundo_classe, classe_anbima, taxa_adm, raw) VALUES
+    ('82000000000001', CURRENT_DATE - 20, 'extrato_fi.csv', 'FI', 'TESTE - ALFA - LIVRE', 1.0, '{}'),
+    ('82000000000002', CURRENT_DATE - 20, 'extrato_fi.csv', 'FI', 'TESTE - ALFA - LIVRE', 1.0, '{}'),
+    ('82000000000003', CURRENT_DATE - 20, 'extrato_fi.csv', 'FI', 'TESTE - ALFA - LIVRE', 1.0, '{}'),
+    ('82000000000004', CURRENT_DATE - 20, 'extrato_fi.csv', 'FI', 'TESTE - ALFA - LIVRE', 1.0, '{}'),
+    ('82000000000005', CURRENT_DATE - 20, 'extrato_fi.csv', 'FI', 'TESTE - ALFA - LIVRE', 1.0, '{}'),
+    ('83000000000001', CURRENT_DATE - 20, 'extrato_fi.csv', 'FI', NULL, 1.0, '{}'),
+    ('83000000000003', CURRENT_DATE - 20, 'extrato_fi.csv', 'FI', 'TESTE - ALFA - LIVRE', 1.0, '{}');
+INSERT INTO cvm_fi_extrato (cnpj, dt_comptc, source_file, tp_fundo_classe, classe_anbima, taxa_adm, raw)
+SELECT '84' || lpad(i::text, 12, '0'), CURRENT_DATE - 20, 'extrato_fi.csv', 'FI', 'TESTE - POUCOS', 1.0, '{}'
+FROM generate_series(1, 10) i;
+INSERT INTO cvm_fi_extrato (cnpj, dt_comptc, source_file, tp_fundo_classe, classe_anbima, taxa_adm, raw)
+SELECT '85' || lpad(i::text, 12, '0'), CURRENT_DATE - 20, 'extrato_fi.csv', 'FI', 'TESTE - ZERO', 1.0, '{}'
+FROM generate_series(1, 31) i;
+
+REFRESH MATERIALIZED VIEW public.fact_fund_monthly;
+REFRESH MATERIALIZED VIEW public.mv_period_completeness;
+
+DO $$
+DECLARE
+    r        RECORD;
+    v_ids    TEXT[] := ARRAY['82000000000001', '82000000000002', '82000000000003', '81000000000001',
+                             '84000000000001', '85000000000001', '83000000000001', '83000000000002',
+                             '83000000000003', '83000000000004', '83000000000005', '83000000000099'];
+    e_sd     NUMERIC;
+    e_mean   NUMERIC;
+    raw_sd   NUMERIC;
+    n        INT;
+BEGIN
+    -- The month is complete by the serving rule, so every verdict below is about the data.
+    IF NOT (SELECT is_complete FROM public.mv_period_completeness WHERE entity_type = 'fi' AND period = DATE '2020-01-01') THEN
+        RAISE EXCEPTION 'fixture month 2020-01 is not complete: the test would prove nothing';
+    END IF;
+
+    -- The class statistics, recomputed here in plain SQL from the same quotas: winsorized
+    -- at the class's own 1st / 99th percentile, mean and sample sd of the clamped values.
+    WITH q AS (
+        SELECT c.cnpj, (c.vl_quota / p.vl_quota - 1) * 100 AS ret
+        FROM public.fact_fund_monthly c
+        JOIN public.fact_fund_monthly p ON p.cnpj = c.cnpj AND p.entity_type = 'fi' AND p.period = DATE '2019-12-01'
+        JOIN public.cvm_fi_extrato x ON x.cnpj = c.cnpj
+        WHERE c.entity_type = 'fi' AND c.period = DATE '2020-01-01' AND x.classe_anbima = 'TESTE - ALFA - LIVRE'
+    ), b AS (
+        SELECT percentile_cont(0.01) WITHIN GROUP (ORDER BY ret)::numeric AS p01,
+               percentile_cont(0.99) WITHIN GROUP (ORDER BY ret)::numeric AS p99 FROM q
+    )
+    SELECT avg(least(greatest(q.ret, b.p01), b.p99)), stddev_samp(least(greatest(q.ret, b.p01), b.p99)),
+           stddev_samp(q.ret), count(*)
+      INTO e_mean, e_sd, raw_sd, n
+    FROM q, b;
+    IF n <> 299 THEN RAISE EXCEPTION 'the fixture class should hold 299 funds with a return, has %', n; END IF;
+    -- Winsorizing really changed the scale: the four extreme funds alone more than double the raw sd.
+    IF NOT (e_sd * 2 < raw_sd) THEN
+        RAISE EXCEPTION 'winsorization did not matter in the fixture: winsorized sd %, raw sd %', e_sd, raw_sd;
+    END IF;
+
+    -- ATT: a moderate outlier. STR_HI / STR_LO: beyond 3 on either side, and their OWN value is not clamped.
+    SELECT * INTO r FROM api.portfolio_movement(ARRAY['82000000000001'], DATE '2020-01-20');
+    IF r.level <> 'atencao' OR r.investigator_trigger OR NOT (abs(r.z) > 2 AND abs(r.z) <= 3) THEN
+        RAISE EXCEPTION 'ATT should be atencao with 2 < |z| <= 3 and no trigger: %', row_to_json(r);
+    END IF;
+    IF r.month <> DATE '2020-01-01' OR r.class <> 'TESTE' OR r.subclass <> 'ALFA - LIVRE'
+       OR r.class_as_filed <> 'TESTE - ALFA - LIVRE' OR r.n_peers <> 299 OR r.min_peers <> 30
+       OR r.fund_name <> 'MOVEMENT ATT' OR r.own_value_pct <> 2.1 OR r.class_as_of IS NULL THEN
+        RAISE EXCEPTION 'ATT identity columns wrong: %', row_to_json(r);
+    END IF;
+    IF abs(r.class_sd_pct - e_sd) > 0.000001 OR abs(r.class_mean_pct - e_mean) > 0.000001 THEN
+        RAISE EXCEPTION 'class mean/sd are not the winsorized ones: served % / %, expected % / %',
+            r.class_mean_pct, r.class_sd_pct, e_mean, e_sd;
+    END IF;
+    IF abs(r.z - (r.own_value_pct - r.class_mean_pct) / r.class_sd_pct) > 0.0001 THEN
+        RAISE EXCEPTION 'z is not (own - mean) / sd: %', row_to_json(r);
+    END IF;
+    IF NOT (r.class_p01_pct < r.class_p99_pct) THEN RAISE EXCEPTION 'p01 / p99 not served: %', row_to_json(r); END IF;
+
+    SELECT * INTO r FROM api.portfolio_movement(ARRAY['82000000000002'], DATE '2020-01-20');
+    IF r.level <> 'forte' OR NOT r.investigator_trigger OR r.z <= 3 OR r.own_value_pct <> 40.0 THEN
+        RAISE EXCEPTION 'STR_HI should be forte, trigger, own value 40.0 (not winsorized): %', row_to_json(r);
+    END IF;
+    IF r.own_value_pct <= r.class_p99_pct THEN
+        RAISE EXCEPTION 'the fixture''s extreme is not above the winsorization bound: %', row_to_json(r);
+    END IF;
+    SELECT * INTO r FROM api.portfolio_movement(ARRAY['82000000000003'], DATE '2020-01-20');
+    IF r.level <> 'forte' OR NOT r.investigator_trigger OR r.z >= -3 THEN
+        RAISE EXCEPTION 'STR_LO should be forte with z < -3: %', row_to_json(r);
+    END IF;
+    SELECT * INTO r FROM api.portfolio_movement(ARRAY['81000000000001'], DATE '2020-01-20');
+    IF r.level <> 'normal' OR r.investigator_trigger OR r.reason NOT LIKE '%299 fundos da classe TESTE - ALFA - LIVRE%' THEN
+        RAISE EXCEPTION 'a core fund should be normal, with the sample in the reason: %', row_to_json(r);
+    END IF;
+
+    -- Every other shape is served, as nao_avaliado, with its reason; never skipped, never a zero.
+    SELECT count(*) INTO n FROM api.portfolio_movement(v_ids, DATE '2020-01-20');
+    IF n <> 12 THEN RAISE EXCEPTION 'one row per CNPJ expected (12), got %', n; END IF;
+    FOR r IN SELECT * FROM api.portfolio_movement(v_ids, DATE '2020-01-20')
+              WHERE cnpj IN ('84000000000001', '85000000000001', '83000000000001', '83000000000002',
+                             '83000000000003', '83000000000004', '83000000000005', '83000000000099')
+    LOOP
+        IF r.level <> 'nao_avaliado' OR r.z IS NOT NULL OR r.investigator_trigger OR r.reason IS NULL THEN
+            RAISE EXCEPTION 'expected nao_avaliado with a reason and no z: %', row_to_json(r);
+        END IF;
+        IF r.cnpj = '84000000000001' AND (r.n_peers <> 10 OR r.reason NOT LIKE 'apenas 10 fundos da classe TESTE - POUCOS%mínimo 30%'
+                                          OR r.class_sd_pct IS NOT NULL OR r.own_value_pct <> 1.0) THEN
+            RAISE EXCEPTION 'too few peers: %', row_to_json(r);
+        END IF;
+        IF r.cnpj = '85000000000001' AND (r.n_peers <> 31 OR r.reason NOT LIKE 'desvio padrão da classe TESTE - ZERO é zero%') THEN
+            RAISE EXCEPTION 'zero sd: %', row_to_json(r);
+        END IF;
+        IF r.cnpj = '83000000000001' AND (r.class_as_filed IS NOT NULL OR r.reason NOT LIKE 'classe ANBIMA não informada%') THEN
+            RAISE EXCEPTION 'no class: %', row_to_json(r);
+        END IF;
+        IF r.cnpj = '83000000000002' AND r.reason NOT LIKE 'fundo fora do Extrato%' THEN
+            RAISE EXCEPTION 'outside the Extrato: %', row_to_json(r);
+        END IF;
+        IF r.cnpj = '83000000000003' AND r.reason NOT LIKE 'sem cota no mês anterior%' THEN
+            RAISE EXCEPTION 'no previous quota: %', row_to_json(r);
+        END IF;
+        IF r.cnpj = '83000000000004' AND r.reason NOT LIKE 'ETF%' THEN
+            RAISE EXCEPTION 'an ETF: %', row_to_json(r);
+        END IF;
+        IF r.cnpj = '83000000000005' AND r.reason NOT LIKE 'não é fundo FI%fidc%' THEN
+            RAISE EXCEPTION 'a FIDC: %', row_to_json(r);
+        END IF;
+        IF r.cnpj = '83000000000099' AND r.reason NOT LIKE 'CNPJ não encontrado%' THEN
+            RAISE EXCEPTION 'an unknown CNPJ: %', row_to_json(r);
+        END IF;
+    END LOOP;
+
+    -- A month that is not complete is judged by nothing: every fund says so.
+    SELECT * INTO r FROM api.portfolio_movement(ARRAY['82000000000002'], DATE '2099-01-01');
+    IF r.level <> 'nao_avaliado' OR r.reason NOT LIKE '%incompleto%' OR r.n_peers IS NOT NULL OR r.z IS NOT NULL THEN
+        RAISE EXCEPTION 'an incomplete month must not be judged: %', row_to_json(r);
+    END IF;
+    -- The default month is the last complete FI month and the call runs.
+    SELECT count(*) INTO n FROM api.portfolio_movement(ARRAY['82000000000002']);
+    IF n <> 1 THEN RAISE EXCEPTION 'the default month returned % rows', n; END IF;
+
+    -- The thresholds, strictly greater: exactly 2 is normal, exactly 3 is atencao, on both signs.
+    IF public.portfolio_movement_level(2) <> 'normal' OR public.portfolio_movement_level(-2) <> 'normal'
+       OR public.portfolio_movement_level(3) <> 'atencao' OR public.portfolio_movement_level(-3) <> 'atencao'
+       OR public.portfolio_movement_level(2.0000001) <> 'atencao' OR public.portfolio_movement_level(-3.0000001) <> 'forte'
+       OR public.portfolio_movement_level(0) <> 'normal' OR public.portfolio_movement_level(NULL) IS NOT NULL THEN
+        RAISE EXCEPTION 'the thresholds are not strictly greater than 2 and 3';
+    END IF;
+
+    -- Input guards and the refusal shape.
+    BEGIN
+        PERFORM * FROM api.portfolio_movement(ARRAY[]::text[]);
+        RAISE EXCEPTION 'an empty set was served';
+    EXCEPTION WHEN sqlstate '22023' THEN NULL;
+    END;
+    BEGIN
+        PERFORM * FROM api.portfolio_movement(ARRAY['abc']);
+        RAISE EXCEPTION 'a non-CNPJ was served';
+    EXCEPTION WHEN sqlstate '22023' THEN NULL;
+    END;
+    BEGIN
+        PERFORM * FROM api.portfolio_movement(ARRAY(SELECT lpad(i::text, 14, '0') FROM generate_series(1, 201) i), DATE '2020-01-01');
+        RAISE EXCEPTION '201 CNPJs were served';
+    EXCEPTION WHEN sqlstate '22023' THEN
+        IF SQLERRM NOT LIKE '%more than 200%' OR SQLERRM NOT LIKE '%To fix%' THEN
+            RAISE EXCEPTION 'refusal without why/how: %', SQLERRM;
+        END IF;
+    END;
+    SELECT count(*) INTO n FROM api.portfolio_movement(ARRAY(SELECT lpad(i::text, 14, '0') FROM generate_series(1, 200) i), DATE '2020-01-01');
+    IF n <> 200 THEN RAISE EXCEPTION '200 CNPJs expected to be served, got %', n; END IF;
+
+    -- anon can call it and cannot call the internal threshold helper.
+    SET LOCAL ROLE anon;
+    SELECT count(*) INTO n FROM api.portfolio_movement(ARRAY['82000000000001'], DATE '2020-01-20');
+    IF n <> 1 THEN RAISE EXCEPTION 'anon portfolio_movement: %', n; END IF;
+    IF has_function_privilege('anon', 'public.portfolio_movement_level(numeric)', 'EXECUTE') THEN
+        RAISE EXCEPTION 'anon can execute the internal threshold helper';
+    END IF;
+    RESET ROLE;
+    RAISE NOTICE 'portfolio_movement OK';
 END $$;
 
 -- ===========================================================================

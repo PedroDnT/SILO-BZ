@@ -13,7 +13,8 @@ verdict (each row carries ``screen`` and ``params``).
   matched.
 * A refused screen makes that screen ``unknown`` with the verbatim error; the
   others still run.
-* The abnormal-movement rule is parked by the owner and is not here.
+* The abnormal-movement rule (movimento incomum, owner's decisions of 2026-10-03) lives in
+  ``src/portfolio/movement.py``; this block only points at it.
 """
 
 from __future__ import annotations
@@ -46,7 +47,10 @@ DORMANT_COVERAGE_NOTE = (
     "PL de última competência igual ou acima de R$ 1 bilhão. Um fundo parked abaixo disso NÃO foi avaliado "
     "(a chamada sem filtro é recusada pelo SILO por exceder uma página de 1.000 linhas)."
 )
-ABNORMAL_MOVEMENT_NOTE = "Movimento anormal: regra estacionada pelo dono; não avaliada nesta versão."
+ABNORMAL_MOVEMENT_NOTE = (
+    "Movimento incomum: avaliado na seção movement (retorno mensal da cota contra a classe ANBIMA do fundo), "
+    "não neste bloco."
+)
 SIGNAL_NOTE = "Sinal, não veredito: o fundo cruzou um limiar declarado em informes públicos."
 
 

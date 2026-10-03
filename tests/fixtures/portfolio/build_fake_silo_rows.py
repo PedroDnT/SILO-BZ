@@ -225,6 +225,35 @@ for root in ["08935128000159", "50088190000119", "51488342000133", "425923150001
 for root in ["32113885000121", "11728688000147"]:
     canned["portfolio_lookthrough"].append(dict(match={"p_cnpjs": [root]}, rows=[]))
 
+# --- movimento incomum (api.portfolio_movement, catalog v54), 2026-09, the 18 columns in the SQL's order. Synthetic z, class
+# mean and sd; the funds outside the Extrato / not FI follow what production answered on 2026-10-03.
+MOV_MONTH = "2026-09-01"
+
+
+def mov(cnpj, name, cls=None, n=None, own=None, mean=None, sd=None, p01=None, p99=None, z=None, level="nao_avaliado", reason=None):
+    head, sub = (None, None) if cls is None else (cls.split(" - ", 1) + [None])[:2]
+    return dict(cnpj=cnpj, fund_name=name, month=MOV_MONTH, **{"class": head}, subclass=sub, class_as_filed=cls,
+                class_as_of="2026-09-12" if cls else None, n_peers=n, own_value_pct=own, class_mean_pct=mean, class_sd_pct=sd,
+                class_p01_pct=p01, class_p99_pct=p99, z=z, level=level, investigator_trigger=level == "forte", min_peers=30, reason=reason)
+
+
+COMPARED = "retorno de cota de 2026-09 comparado com {n} fundos da classe {c} (média e desvio padrão winsorizados no 1º e 99º percentil)"
+mov_rows = [
+    # atenção: 2 < z <= 3, table only
+    mov("08935128000159", FUNDS["08935128000159"]["name"], "AÇÕES - ATIVO - LIVRE", 1773, 11.0, 4.360422, 3.081534, -4.60308, 16.36046, 2.1549, "atencao",
+        COMPARED.format(n=1773, c="AÇÕES - ATIVO - LIVRE")),
+    mov("42592315000115", FUNDS["42592315000115"]["name"], "RENDA FIXA - PASSIVO - ÍNDICES", 193, 1.95, 1.956172, 1.001702, -0.856962, 3.825901, -0.0062, "normal",
+        COMPARED.format(n=193, c="RENDA FIXA - PASSIVO - ÍNDICES")),
+    # forte: z < -3, goes in the text and sets the Investigator trigger
+    mov("51488342000133", FUNDS["51488342000133"]["name"], "RENDA FIXA LIVRE DURAÇÃO - CRÉDITO LIVRE", 2243, -2.9, 0.535, 0.9566, -2.0, 3.1, -3.5911, "forte",
+        COMPARED.format(n=2243, c="RENDA FIXA LIVRE DURAÇÃO - CRÉDITO LIVRE")),
+    # the XP FIC is absent from the Extrato on production (2026-10-03): not evaluated, with the reason
+    mov("50088190000119", FUNDS["50088190000119"]["name"], own=1.073045, reason="fundo fora do Extrato da CVM: sem classe ANBIMA informada"),
+    mov("32113885000121", "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS", reason="não é fundo FI com cota diária no SILO (fidc); sem retorno de cota mensal"),
+    mov("11728688000147", "FII EXEMPLO", reason="não é fundo FI com cota diária no SILO (fii); sem retorno de cota mensal"),
+]
+canned["portfolio_movement"] = [dict(match={"p_cnpjs": cnpjs_fee, "p_month": MOV_MONTH}, rows=sorted(mov_rows, key=lambda r: r["cnpj"]))]
+
 # --- block 11 (FIDC)
 fp = lambda code, parent, item, v: dict(cnpj="32113885000121", period="2026-08-01", kind="sector", code=code, parent=parent, item=item, value=v)
 canned["fidc_portfolio"] = [dict(match={"p_cnpj": "32113885000121"}, rows=[

@@ -22,7 +22,7 @@ SHARED_GROUPS_SHOWN = 12
 # The report names the source of each tool for its footer and the Revisor's citation rule.
 SOURCE_BY_TOOL = {
     "lookup": "CVM", "company_financials": "CVM", "portfolio_resolve": "CVM", "portfolio_fees": "CVM",
-    "portfolio_lookthrough": "CVM", "fidc_portfolio": "CVM", "quote_latest": "B3", "short_interest": "B3",
+    "portfolio_lookthrough": "CVM", "portfolio_movement": "CVM", "fidc_portfolio": "CVM", "quote_latest": "B3", "short_interest": "B3",
     "fund_restatements": "FNET", "fund_restatement_diff": "FNET", "screen_restatements": "FNET",
     "screen_late_filers": "FNET",
 }
@@ -330,13 +330,71 @@ def _risk_view(eng: dict) -> dict:
     }
 
 
+def _movement_line_view(ln: dict) -> dict:
+    return {
+        "line_id": f"L{ln['line_no']}",
+        "cnpj": ln.get("cnpj"),
+        "fund_name": ln.get("fund_name"),
+        "month": ln.get("month"),
+        "class": ln.get("class"),
+        "subclass": ln.get("subclass"),
+        "class_as_filed": ln.get("class_as_filed"),
+        "class_as_of": ln.get("class_as_of"),
+        "n_peers": ln.get("n_peers"),
+        "min_peers": ln.get("min_peers"),
+        "own_value_pct": ln.get("own_value_pct"),
+        "class_mean_pct": ln.get("class_mean_pct"),
+        "class_sd_pct": ln.get("class_sd_pct"),
+        "z": ln.get("z"),
+        "level": ln.get("level"),
+        "level_label": ln.get("level_label"),
+        "investigator_trigger": ln.get("investigator_trigger"),
+        "reason": ln.get("reason"),
+        "provenance": _prov(ln.get("sources")),
+    }
+
+
+def _movement_view(eng: dict) -> dict | None:
+    """Movimento incomum. ``by_line`` holds every fund; ``table`` the funds at atencao or forte (the only place
+    atencao appears); ``strong`` the funds at forte (the only fund-level path the text may cite);
+    ``not_evaluated`` the funds with no verdict and their reason. Engine documents before 1.3 have no section."""
+    mv = eng.get("movement")
+    if not isinstance(mv, dict):
+        return None
+    by_line = [_movement_line_view(ln) for ln in mv.get("lines") or []]
+    return {
+        "status": mv.get("status"),
+        "reason": mv.get("reason"),
+        "month": mv.get("month"),
+        "definition": mv.get("definition"),
+        "class_note": mv.get("class_note"),
+        "levels_note": mv.get("levels_note"),
+        "note": mv.get("note"),
+        "min_peers": (mv.get("thresholds") or {}).get("min_peers"),
+        "thresholds": mv.get("thresholds"),
+        "counts": mv.get("counts"),
+        "n_not_fund_lines": len(mv.get("not_applicable_lines") or []),
+        "by_line": by_line,
+        "table": [x for x in by_line if x["level"] in ("atencao", "forte")],
+        "strong": [x for x in by_line if x["level"] == "forte"],
+        "not_evaluated": [
+            {k: x[k] for k in ("line_id", "cnpj", "fund_name", "month", "class_as_filed", "n_peers", "min_peers", "reason", "provenance")}
+            for x in by_line
+            if x["level"] == "nao_avaliado"
+        ],
+    }
+
+
 def _sections_view(eng: dict, lines: list[dict]) -> dict:
     ss = eng["section_status"]
     mapping = {"identification": "identification", "fees": "fees", "lookthrough": "look_through", "indexer": "indexer",
                "sector": "sector", "restatements": "restatements", "risk_screens": "risk_signals"}
     out: dict[str, Any] = {k: {"status": ss[v]["status"], **({"reason": ss[v]["reason"]} if ss[v].get("reason") else {})}
                            for k, v in mapping.items()}
-    out["abnormal_movement"] = {"status": "unknown", "reason": eng["risk_signals"].get("abnormal_movement")}
+    if isinstance(eng.get("movement"), dict):
+        out["abnormal_movement"] = {"status": ss["movement"]["status"], **({"reason": ss["movement"]["reason"]} if ss["movement"].get("reason") else {})}
+    else:
+        out["abnormal_movement"] = {"status": "unknown", "reason": eng["risk_signals"].get("abnormal_movement")}
     out["material_restatement"] = {"status": "unknown", "reason": eng["restatements"].get("assessment")}
     out["economic_group"] = {"status": "unknown", "reason": eng["look_through"]["shared_exposure"].get("note")}
     out["benchmarks"] = {"status": "unknown", "reason": "fora do escopo desta versão (variância mínima e contribuição igual de risco ainda não calculadas)"}
@@ -362,7 +420,7 @@ def _provenance_view(eng: dict) -> tuple[list[dict], dict[str, str]]:
             for v in x:
                 walk(v)
 
-    for key in ("identification", "fees", "look_through", "indexer", "sector", "restatements", "risk_signals"):
+    for key in ("identification", "fees", "look_through", "indexer", "sector", "restatements", "risk_signals", "movement"):
         walk(eng.get(key))
     prov = []
     by_source: dict[str, str] = {}
@@ -414,4 +472,7 @@ def to_view(eng: dict) -> dict:
         "provenance": provenance,
         "data_dates": data_dates,
     }
+    movement = _movement_view(eng)
+    if movement is not None:
+        view["movement"] = movement
     return view

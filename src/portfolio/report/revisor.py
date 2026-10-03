@@ -54,6 +54,25 @@ SOURCE_NAMES = {
     "IBGE": ("IBGE",),
 }
 
+# Movimento incomum (owner, 2026-10-03): the text may cite the strong level, the funds with no verdict and the
+# section's own constants. The attention level lives in the table (movement.table, movement.by_line) and nowhere else.
+MOVEMENT_TEXT_PATHS = (
+    "movement.strong[",
+    "movement.not_evaluated[",
+    "movement.counts.",
+    "movement.month",
+    "movement.min_peers",
+    "movement.thresholds.",
+    "movement.note",
+    "movement.levels_note",
+    "movement.definition",
+    "movement.class_note",
+    "movement.status",
+    "movement.reason",
+    "movement.n_not_fund_lines",
+)
+_ATENCAO_WORD_RE = re.compile(r"aten[cç][aã]o", re.IGNORECASE)
+
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _DIGIT_RE = re.compile(r"\d")
 
@@ -93,6 +112,10 @@ def _extreme(engine: dict, path: str, value: Any) -> tuple[str, float] | None:
         return None
     key = last_key(path).lower()
     low_path = path.lower()
+    if low_path.startswith("movement."):
+        # A class-relative return, mean or sd is a sample statistic, not an exposure: it carries its own
+        # n_peers, class and month, and the section's level rule decides where it may appear.
+        return None
     parent = resolve(engine, parent_path(path))
     leaf = str(parent.get("leaf", "")).lower() if isinstance(parent, dict) else ""
     if "delinquency" in low_path or "inad" in leaf:
@@ -158,6 +181,12 @@ def check_sentence(engine: dict, sentence: str, sources: set[str]) -> str | None
     for name, aliases in SOURCE_NAMES.items():
         if name not in sources and any(re.search(rf"\b{re.escape(a)}\b", bare) for a in aliases):
             return f"fonte citada fora da proveniência: {name}"
+    movement_phs = [ph for ph in placeholders(sentence) if ph.lower().startswith("movement.")]
+    for ph in movement_phs:
+        if not ph.lower().startswith(MOVEMENT_TEXT_PATHS):
+            return f"movimento incomum: o nível atenção só aparece em tabela, não no texto: {{{{{ph}}}}}"
+    if movement_phs and _ATENCAO_WORD_RE.search(bare):
+        return "movimento incomum: o nível atenção só aparece em tabela, não no texto"
     for ph in placeholders(sentence):
         value = resolve(engine, ph)
         if value is MISSING:

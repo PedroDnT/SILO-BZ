@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "53";
+export const CONTRACT_VERSION = "54";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -3174,6 +3174,41 @@ export const CONTRACT: Record<string, ContractEntry> = {
           "format": "int32",
           "description": "Defaults to `4`.",
           "default": 4
+        }
+      },
+      "required": [
+        "p_cnpjs"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "portfolio_movement": {
+    "kind": "rpc",
+    "path": "/rpc/portfolio_movement",
+    "description": "Is a fund's month unusual for its own class (movimento incomum). Per CNPJ, for one month (p_month, or the last complete FI month): the fund's monthly QUOTA RETURN, own_value_pct = (month-end vl_quota / previous month's - 1) x 100 from fact_fund_monthly (the one stable quota subclass; a NAV change is not used), set against the same return over every FI fund of its ANBIMA class AS FILED in the CVM Extrato (class_as_filed, the newest Extrato filing, not the class on the month's date; class and subclass split that label at its first ' - ' for display). class_mean_pct and class_sd_pct are the mean and sample standard deviation of the peers' returns winsorized at the class's own 1st and 99th percentile that month (class_p01_pct, class_p99_pct); the fund's own value is not winsorized. z = (own - mean) / sd. level: forte when |z| > 3 (investigator_trigger TRUE), atencao when |z| > 2, normal otherwise (strictly greater: exactly 2 is normal); nao_avaliado with a Portuguese reason when the class has fewer than min_peers (30) peers with a return, its standard deviation is 0, the fund has no class (outside the Extrato, or no classe_anbima), no return (no quota in both months, a quota subclass change), is an ETF, FIDC, FII, FIP or FIAGRO, or the month is not complete; never skipped and never a zero. No fallback to a wider class. Measured on production 2026-10-03 over monthly FI funds in classes of 30 or more: |z| > 2 flags 5.2% to 5.7% of fund-months and |z| > 3 2.4% to 2.9% over six months from 2025-12 to 2026-09 (5.6% and 2.7% in 2026-09). It states a number, a class, a sample size and a month: not a forecast, a verdict or a recommendation. One row per distinct CNPJ; more than 200 CNPJs RAISES 22023.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_cnpjs": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "p_month": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
         }
       },
       "required": [

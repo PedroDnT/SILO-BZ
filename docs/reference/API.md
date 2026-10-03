@@ -425,6 +425,37 @@ take a set of funds or lines, never a name search that guesses.
   37525998000158), BB RF CP Automático FIC 42592315000115 is 1 level
   (R$198,595.9M); the recursion read 37 buffers. Every read of the 12 GB and 10 GB
   CDA tables is an index probe on `(cnpj, period, ...)`.
+- **`api.portfolio_movement(p_cnpjs, p_month)`** (catalog v54): is a fund's month
+  unusual for its own class (*movimento incomum*, owner's decisions of 2026-10-03).
+  Per CNPJ and one month (default: `latest_complete_period('fi')`, 2026-09 on
+  2026-10-03; an incomplete month is `nao_avaliado` for every fund), the fund's
+  monthly **quota return** `own_value_pct = (month-end vl_quota / previous month's - 1) x 100`
+  from `fact_fund_monthly` (the one stable quota subclass the matview follows; NAV
+  is not used, a NAV change is mostly flows) is set against the same return over
+  every FI fund of its **ANBIMA class as filed in the CVM Extrato**
+  (`vw_fi_extrato_latest.classe_anbima`, the Extrato's newest filing, not the class
+  on the month's date; `class_as_filed` is the peer group, `class` and `subclass`
+  split that label at its first `' - '` for display; nothing is read from a fund's
+  name). `class_mean_pct` and `class_sd_pct` are the mean and sample standard
+  deviation of the peers' returns **winsorized at the class's own 1st and 99th
+  percentile** of that month (`class_p01_pct`, `class_p99_pct`); the fund's own value
+  is not winsorized. `z = (own - mean) / sd`. `level` is `forte` when `|z| > 3`
+  (`investigator_trigger` TRUE, goes in the report's text), `atencao` when
+  `|z| > 2` (a table only) and `normal` otherwise, strictly greater (exactly 2 is
+  normal, exactly 3 is `atencao`); `nao_avaliado` with a Portuguese `reason` when
+  the class has fewer than `min_peers` (30) funds with a return, its standard
+  deviation is 0, the fund has no class (outside the Extrato, which covers about
+  84% of the active FI funds, or no `classe_anbima`), no return (no positive quota
+  in both months, or a quota-subclass change), is an ETF, a FIDC, FII, FIP or
+  FIAGRO, or the month is incomplete. There is no fallback to a wider class. One
+  row per distinct CNPJ, at most 200. Measured on production 2026-10-03 over six
+  months (2025-12 to 2026-09), among the roughly 20,900 fund-months evaluated
+  each month (about 83% of the FI funds with a return; the rest have no class,
+  0.9% too few peers): `|z| > 2` flags 5.2% to 5.7% and `|z| > 3` 2.4% to 2.9%
+  (5.6% and 2.7% in 2026-09), below the 10% and 6% of the owner's measurement of
+  the same day, whose query is not on record; the five largest classes answer in
+  0.5 s against anon's 3 s timeout. It states a number, a class, a sample size and
+  a month: not a forecast, a verdict or a recommendation.
 - A merge deploys nothing: the functions go live on the next analytical apply
   (`daily_ingest` `mode=analytics-only`), the MCP tools after `deploy_mcp.yml`.
 
@@ -719,7 +750,7 @@ cannot be paged" — that stopped being true two catalog versions ago. **`panel`
 `fund_documents`, `fund_restatements`, `fund_restatement_diff`,
 `company_events`, `macro_series`, `ptax`, `future_curve`, `future_series`,
 `curve`, `curve_history`, `research_universe`, `portfolio_resolve`, `portfolio_fees`,
-`portfolio_lookthrough` and the ten `screen_*` functions) have no cursor and
+`portfolio_lookthrough`, `portfolio_movement` and the ten `screen_*` functions) have no cursor and
 ask you to narrow the window or send fewer funds. `fund_nav` also
 requires `p_entity_type` to page, because its cursor is a bare period and 385
 CNPJs file under two families in the same month.

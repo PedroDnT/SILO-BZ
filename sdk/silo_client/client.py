@@ -37,7 +37,7 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 53  # v53 says index_history holds TOTAL-RETURN indices as B3 labels them and adds eight codes (#416); v52 reads the portfolio_fees disclosed fee from the Extrato first (25 columns appended, no SDK wrapper); v51 adds the portfolio_resolve / portfolio_fees / portfolio_lookthrough reads; v50 close_return is NULL across a split, grouping or bonus (#396); v49 corrects the IBOV11 description; v48 quote_history fields + close_adj default (#410); v47 p_as_of (#414); v46 close_total_return (#418); v45 index_history
+KNOWN_CATALOG_VERSION = 54  # v54 adds the portfolio_movement read (a fund's monthly quota return against its own ANBIMA class, no SDK wrapper); v53 says index_history holds TOTAL-RETURN indices as B3 labels them and adds eight codes (#416); v52 reads the portfolio_fees disclosed fee from the Extrato first (25 columns appended, no SDK wrapper); v51 adds the portfolio_resolve / portfolio_fees / portfolio_lookthrough reads; v50 close_return is NULL across a split, grouping or bonus (#396); v49 corrects the IBOV11 description; v48 quote_history fields + close_adj default (#410); v47 p_as_of (#414); v46 close_total_return (#418); v45 index_history
 
 #: How many times prices() / quote_history_all() restart a retrieval whose
 #: pages came back with different data revisions before giving up.
