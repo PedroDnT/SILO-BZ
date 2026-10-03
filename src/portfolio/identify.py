@@ -200,7 +200,7 @@ def identify(stmt: Statement, client: SiloClient) -> tuple[dict[str, Any], list[
         ticker_out[li.line_no] = _identify_ticker(li, code, client, sec, stmt.position_date)
 
     # --- ETFs by ticker: the CNPJ for the fee block (engine 1.5). -------------------
-    etf_out = _identify_etfs(lines, client, sec, stmt.position_date)
+    etf_out = _identify_etfs(lines, client, sec, stmt.position_date, resolve_out)
 
     # --- Tesouro and unsupported types. ---------------------------------------------
     for li in lines:
@@ -320,6 +320,16 @@ def _apply_resolve(li: LineId, cands: list[dict], src: dict) -> dict[str, Any]:
         li.status = "ambiguous"
         li.reason = top.get("reason") or "Mais de um fundo plausível; a cota não desempata."
         return out
+    if top.get("match_kind") == "etf_ticker":
+        # engine 1.5: a line named by an ETF's bare ticker. The ETF's CNPJ is for the fee block only: an ETF files no
+        # CDA (none of the registry's CNPJs in 2026, measured 2026-10-03), so the line stays a ticker, never a fund.
+        code = str(li.position.linha_extrato or "").strip().upper()
+        li.etf_cnpj = top.get("candidate_cnpj")
+        li.status, li.kind, li.ticker = "identified", "ticker", code
+        li.name = top.get("candidate_name")
+        li.reason = f"ETF {code} identificado pelo ticker no registro de ETFs do SILO (cvm_etf_registry)."
+        out["chosen"] = cand(top)
+        return out
     li.status, li.kind = "identified", "fund"
     li.cnpj = top.get("candidate_cnpj")
     li.name = top.get("candidate_name")
@@ -353,21 +363,32 @@ def _apply_resolve(li: LineId, cands: list[dict], src: dict) -> dict[str, Any]:
     return out
 
 
-def _identify_etfs(lines: list[LineId], client: SiloClient, sec: Section, pos_date: dt.date) -> dict[int, dict[str, Any]]:
+def _identify_etfs(
+    lines: list[LineId], client: SiloClient, sec: Section, pos_date: dt.date, resolve_out: dict[int, dict[str, Any]]
+) -> dict[int, dict[str, Any]]:
     """Ticker lines that may be ETFs: their CNPJ from SILO's ETF registry through portfolio_resolve (engine 1.5)."""
+    out: dict[int, dict[str, Any]] = {}
+    for li in lines:
+        if li.etf_cnpj:  # named by its bare ticker: the first portfolio_resolve call already matched it
+            fm = resolve_out.get(li.line_no) or {}
+            chosen = fm.get("chosen") or {}
+            out[li.line_no] = {"ticker": li.ticker, "cnpj": li.etf_cnpj, "name": chosen.get("name"), "match_kind": "etf_ticker",
+                               "reason": chosen.get("reason"),
+                               "use": "CNPJ do ETF usado só para a taxa; a linha continua identificada pelo ticker.",
+                               "sources": fm.get("sources") or []}
     probe = []
     for li in lines:
         code = (li.position.codigo or "").strip().upper()
-        if li.cnpj or not is_ticker(code):
+        if li.cnpj or li.etf_cnpj or not is_ticker(code):
             continue
         if li.position.tipo == "ETF" or (li.position.tipo == "outro" and li.asset_class != "equity"):
             probe.append((li, code))
     if not probe:
-        return {}
+        return out
     res = call_tool(client, "portfolio_resolve", {"p_names": [code for _, code in probe]}, sec.errors)
     if not res.ok:
         sec.degrade("portfolio_resolve falhou para os tickers que podem ser ETF; a taxa desses ETFs ficou desconhecida.")
-        return {}
+        return out
     by_line: dict[int, dict] = {}
     for row in res.rows or []:
         if row.get("match_kind") != "etf_ticker" or not row.get("candidate_cnpj"):
@@ -376,7 +397,6 @@ def _identify_etfs(lines: list[LineId], client: SiloClient, sec: Section, pos_da
             by_line.setdefault(int(row.get("line_no")), row)
         except (TypeError, ValueError):
             continue
-    out: dict[int, dict[str, Any]] = {}
     for idx, (li, code) in enumerate(probe, start=1):
         row = by_line.get(idx)
         if row is None:

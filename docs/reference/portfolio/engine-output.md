@@ -148,9 +148,10 @@ lines), `position_dates`, `notes[]` (which sum checks ran, date gaps, multi-titu
   `matched_name`, `matched_period`, `entity_type`, `match_kind`, `similarity`, `quota_on_date`,
   `quota_rel_diff`, `ambiguous`, `reason`), `chosen`, `quota_basis` (printed or implied by the
   statement), `sources`.
-- `etf_match` (1.5): for a ticker line typed `ETF`, or `outro` and not a share, with no fund CNPJ: the ETF's CNPJ
-  from `portfolio_resolve` (`match_kind = "etf_ticker"`, SILO's curated ETF registry), its `name`, `reason`,
-  `sources`; null otherwise. Used by the fee block only (`identity.etf_cnpj`); the line stays a ticker. A fixed
+- `etf_match` (1.5): for a ticker line typed `ETF`, or `outro` and not a share, with no fund CNPJ, and for a line
+  typed `ETF` named by its bare ticker (matched in the first call, it never becomes a fund: an ETF files no CDA):
+  the ETF's CNPJ from `portfolio_resolve` (`match_kind = "etf_ticker"`, SILO's curated ETF registry), its `name`,
+  `reason`, `sources`; null otherwise. Used by the fee block only (`identity.etf_cnpj`); the line stays a ticker. A fixed
   income ETF that `lookup` does not find (it is not in COTAHIST) is identified this way.
 - `ticker_match`: `lookup` row, `reference_quote` (close and date: reference only, never the
   position's value; its date can be after the position date), `issuer`. A ticker the statement
@@ -362,6 +363,7 @@ still renders. The view holds no holder, account or statement-file identifier. U
 | `fees.by_line[i]` `fee_resolution`, `lamina_newer_label`, `lamina_beside_*` (`label`, `check_label`, `pct_year`, `min_pct_year`, `max_pct_year`, `as_of`, `age_months`, `stale_label`), `extrato_beside_label`, `extrato_beside_value`, `extrato_beside_as_of`, `scale_flag_label`, `scale_factor`, `extrato_lamina_ratio` (1.4) | `fee_resolution`, `headline.basis` for `lamina_mais_recente`, `lamina_beside`, `extrato_beside` (`filed_value`, `as_of`), `scale_flag` (`label`, `factor`, `extrato_lamina_ratio`); `disclosed_pct_year` also holds a `lamina_mais_recente` rate, and since 1.5 its `disclosed_brl_year` too |
 | `fees.by_line[i]` `sources_differ_label`, `etf_ticker`, `etf_site_label`, `etf_site_check_label`, `etf_site_raw`; `disclosed_pct_year`, `disclosed_brl_year`, `disclosed_origin(_label)`, `disclosed_as_of` also for an ETF (1.5) | `headline.sources_differ_label`; for `headline.kind = "etf_site"`: `ticker`, `basis`, `check_label`, `filed_pct_year`, and `rate_pct_year`, `per_year_brl`, `origin`, `origin_label`, `as_of` |
 | `fees.total_etf_site_brl_year`, `total_etf_site_pct_year`, `total_fee_brl_year`, `total_fee_pct_year` (1.5) | `fees.totals.adm_etf_site_per_year_brl`, `adm_etf_site_portfolio_pct`, `adm_fee_per_year_brl`, `adm_fee_portfolio_pct` (null without a summed ETF fee; the last two also need a fixed disclosed fee) |
+| `data_dates.ETFSBRASIL` (1.5) | the newest `headline.as_of` of an `etf_site` fee line: the site is listed as its own source, never as CVM |
 | `fees.underlying[i]` | `fees.underlying[i]` (`parent_line_id` = its `line_no`, `label_not_added` = `label`) |
 | `lookthrough.shared_exposure[i]` (`key`, `level`, `total_brl`, `total_pct`, `legs`) | the 12 largest `look_through.shared_exposure.groups[i]` (`label`, `kind`, `total_exposure_brl`, `total_exposure_portfolio_pct`, `lines`) |
 | `lookthrough.top_underlying[i]` | `look_through.top_exposures[i]` |

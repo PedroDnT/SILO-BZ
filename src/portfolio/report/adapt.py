@@ -467,6 +467,14 @@ def _provenance_view(eng: dict) -> tuple[list[dict], dict[str, str]]:
                      "source": src, "data_date": when, "error": p.get("error")})
         if when and (src not in by_source or when > by_source[src]):
             by_source[src] = when
+    # engine 1.5: an ETF's fee comes through portfolio_fees but from etfsbrasil.com.br, a third-party site; it is
+    # listed as its own source with the snapshot date, so the report never dates or credits it as CVM's
+    fees = eng.get("fees") or {}
+    fee_lines = [*(fees.get("lines") or []), *(fees.get("underlying") or [])]
+    site_dates = [str(h["as_of"]) for h in ((ln.get("headline") or {}) for ln in fee_lines)
+                  if h.get("kind") == "etf_site" and h.get("as_of")]
+    if site_dates:
+        by_source["ETFSBRASIL"] = max(site_dates)
     return prov, by_source
 
 

@@ -42,6 +42,7 @@ SOURCE_LABELS = {
     "FNET": "B3 Fundos.NET (FNET)",
     "ANBIMA": "ANBIMA",
     "IBGE": "IBGE",
+    "ETFSBRASIL": "etfsbrasil.com.br (site de terceiros: taxa dos ETFs, não é documento da CVM)",
 }
 
 ASSET_LABELS = {

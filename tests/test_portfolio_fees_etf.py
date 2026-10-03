@@ -8,8 +8,9 @@ value with its date, summed apart from the CVM-disclosed fees.
 
 Offline: the demo statement plus three lines typed ``outro`` with a ticker, as the BTG PDF reader writes them:
 BOVA11 (0.10, in lookup), B5P211 (0.20, a fixed income ETF that lookup does not find because it is not in COTAHIST)
-and POSB11 (0.0 on the site: shown, to check, never summed). The ETF rows are canned in the shape of the v56
-columns; every number in the assertions comes from them.
+and POSB11 (0.0 on the site: shown, to check, never summed); and one spreadsheet line typed ``ETF`` and named by its
+bare ticker, IVVB11 (0.23), which the first portfolio_resolve call already matches. The ETF rows are canned in the
+shape of the v56 columns; every number in the assertions comes from them.
 """
 
 from __future__ import annotations
@@ -39,11 +40,23 @@ ETFS = {  # ticker: (CNPJ, registry name, site fee, value on the statement)
     "B5P211": ("38354864000184", "IT NOW IMA-B5 P2 FUNDO DE INDICE RESPONSABILIDADE LIMITADA", 0.20, Decimal("50000.00")),
     "POSB11": ("65180394000152", "POSB11 ETF (fee 0 on the site, 2026-10-03)", 0.0, Decimal("30000.00")),
 }
+NAMED = {  # a line typed ETF and named by its bare ticker (the spreadsheet template invites it)
+    "IVVB11": ("19909560000191", "ISHARES S&P 500 CLASSE DE ÍNDICE EM COTAS DE CLASSES DE ÍNDICE IE - RESPONSABILIDADE LIMITADA",
+               0.23, Decimal("80000.00")),
+}
+ALL = {**ETFS, **NAMED}
 SNAPSHOT = "2026-10-03"
 
 
+def _etf_resolve_row(line_no: int, t: str) -> dict:
+    return {"line_no": line_no, "input_name": t, "candidate_cnpj": ALL[t][0], "candidate_name": ALL[t][1],
+            "matched_name": ALL[t][1], "matched_period": None, "entity_type": "fii", "match_kind": "etf_ticker",
+            "similarity": 1.0, "rank": 1, "quota_on_date": None, "quota_rel_diff": None, "ambiguous": False,
+            "reason": "the name is the ticker of an ETF in SILO's curated ETF registry (cvm_etf_registry, ticker to CNPJ)"}
+
+
 def _fee_row(ticker: str) -> dict:
-    cnpj, name, fee, _ = ETFS[ticker]
+    cnpj, name, fee, _ = ALL[ticker]
     return {
         "cnpj": cnpj, "fund_name": name, "month": None, "nav": None, "adm_fee_flow": None, "adm_fee_pct_annual_est": None,
         "perf_fee_flow": None, "perf_fee_pct_annual_est": None, "fiscal_reset_suspect": False,
@@ -65,7 +78,7 @@ class EtfClient(FakeClient):
 
     def _request(self, tool: str, args: dict) -> list[dict]:
         if tool == "portfolio_fees":
-            by_cnpj = {v[0]: k for k, v in ETFS.items()}
+            by_cnpj = {v[0]: k for k, v in ALL.items()}
             etf = [c for c in args["p_cnpjs"] if c in by_cnpj]
             rest = [c for c in args["p_cnpjs"] if c not in by_cnpj]
             rows = super()._request(tool, {**args, "p_cnpjs": rest}) if rest else []
@@ -81,17 +94,17 @@ def _canned() -> dict:
         {"match": {"p_query": "B5P211"}, "rows": []},  # a fixed income ETF: not in COTAHIST, so not in api.quotes
         {"match": {"p_query": "POSB11"}, "rows": [{"id": "POSB11", "id_type": "ticker", "asset_class": "fund_quota",
                                                      "name": "POSB11 CI", "isin": None, "cnpj": None}]},
+        {"match": {"p_query": "IVVB11"}, "rows": [{"id": "IVVB11", "id_type": "ticker", "asset_class": "fund_quota",
+                                                     "name": "ISHARES SP500CI", "isin": "BRIVVBCTF007", "cnpj": None}]},
         *canned["lookup"],
     ]
-    canned["quote_latest"] = [{"match": {"p_ticker": "BOVA11"}, "rows": []}, {"match": {"p_ticker": "POSB11"}, "rows": []},
-                              *canned["quote_latest"]]
+    canned["quote_latest"] = [{"match": {"p_ticker": t}, "rows": []} for t in ("BOVA11", "POSB11", "IVVB11")] + canned["quote_latest"]
+    # the demo's fund lines plus IVVB11 in the first call; the three outro tickers in the ETF probe
+    first = canned["portfolio_resolve"][0]
+    names = [*first["match"]["p_names"], "IVVB11"]
     canned["portfolio_resolve"] = [
-        {"match": {"p_names": list(ETFS)}, "rows": [
-            {"line_no": i, "input_name": t, "candidate_cnpj": ETFS[t][0], "candidate_name": ETFS[t][1],
-             "matched_name": ETFS[t][1], "matched_period": None, "entity_type": "fii", "match_kind": "etf_ticker",
-             "similarity": 1.0, "rank": 1, "quota_on_date": None, "quota_rel_diff": None, "ambiguous": False,
-             "reason": "the name is the ticker of an ETF in SILO's curated ETF registry (cvm_etf_registry, ticker to CNPJ)"}
-            for i, t in enumerate(ETFS, start=1)]},
+        {"match": {"p_names": list(ETFS)}, "rows": [_etf_resolve_row(i, t) for i, t in enumerate(ETFS, start=1)]},
+        {"match": {"p_names": names}, "rows": [*first["rows"], _etf_resolve_row(len(names), "IVVB11")]},
         *canned["portfolio_resolve"],
     ]
     return canned
@@ -101,11 +114,11 @@ def _statement():
     stmt = read_statement(TEMPLATE)
     base = stmt.positions[-1]
     extra = tuple(
-        dataclasses.replace(base, line_no=base.line_no + i, source_row=base.source_row + i, linha_extrato=t, tipo="outro",
-                            codigo=t, quantidade=None, preco_unitario=None, valor=v[3])
-        for i, (t, v) in enumerate(ETFS.items(), start=1)
+        dataclasses.replace(base, line_no=base.line_no + i, source_row=base.source_row + i, linha_extrato=t,
+                            tipo="ETF" if t in NAMED else "outro", codigo=t, quantidade=None, preco_unitario=None, valor=v[3])
+        for i, (t, v) in enumerate(ALL.items(), start=1)
     )
-    added = sum(v[3] for v in ETFS.values())
+    added = sum(v[3] for v in ALL.values())
     return dataclasses.replace(stmt, positions=stmt.positions + extra, sum_of_lines=stmt.sum_of_lines + added,
                                stated_total=stmt.stated_total + added)
 
@@ -118,7 +131,7 @@ def doc() -> dict:
 
 
 def _fee_line(doc: dict, ticker: str) -> dict:
-    return next(ln for ln in doc["fees"]["lines"] if ln["cnpj"] == ETFS[ticker][0])
+    return next(ln for ln in doc["fees"]["lines"] if ln["cnpj"] == ALL[ticker][0])
 
 
 def test_etf_tickers_with_a_digit_in_the_root_are_tickers():
@@ -130,33 +143,39 @@ def test_etf_tickers_with_a_digit_in_the_root_are_tickers():
 
 def test_an_etf_bought_by_ticker_gets_its_cnpj_for_the_fee_only(doc):
     by_no = {ln["codigo"]: ln for ln in doc["identification"]["lines"]}
-    for t in ETFS:
+    for t in ALL:
         ln = by_no[t]
         assert ln["status"] == "identified" and ln["identity"]["kind"] == "ticker"  # still a ticker for look-through
-        assert ln["identity"]["etf_cnpj"] == ETFS[t][0]
-        assert ln["etf_match"]["match_kind"] == "etf_ticker" and ln["etf_match"]["cnpj"] == ETFS[t][0]
+        assert ln["identity"]["etf_cnpj"] == ALL[t][0]
+        assert ln["etf_match"]["match_kind"] == "etf_ticker" and ln["etf_match"]["cnpj"] == ALL[t][0]
         assert ln["identity"]["cnpj"] is None  # no fund CNPJ: movement, restatements and signals do not see it
+    # the line typed ETF and named by its ticker never becomes a fund: an ETF files no CDA (none in 2026, measured
+    # 2026-10-03), so look-through, movement and restatements must not open it
+    line_no = by_no["IVVB11"]["line_no"]
+    assert all(lt["line_no"] != line_no or lt.get("status") != "complete" for lt in doc["look_through"]["lines"])
+    assert line_no not in {m.get("line_no") for m in doc["movement"].get("lines") or []}
+    assert line_no not in {r.get("line_no") for r in doc["restatements"].get("lines") or []}
     # lookup does not know the fixed income ETF; the ETF registry does
     assert "lookup não o encontrou" in by_no["B5P211"]["reason"]
 
 
 def test_an_etf_carries_the_sites_fee_with_origin_and_date_and_enters_its_own_sum(doc):
-    for t in ("BOVA11", "B5P211"):
+    for t in ("BOVA11", "B5P211", "IVVB11"):
         ln = _fee_line(doc, t)
         h = ln["headline"]
-        fee, value = ETFS[t][2], float(ETFS[t][3])
+        fee, value = ALL[t][2], float(ALL[t][3])
         assert ln["fee_status"] == ETF_SITE_LABEL and ln["needs_manual_check"] is False
         assert h["kind"] == "etf_site" and h["origin"] == "etf_site" and h["as_of"] == SNAPSHOT and h["ticker"] == t
         assert h["rate_pct_year"] == fee and h["counted_as_cost"] is True
-        assert h["per_year_brl"] == round(value * fee / 100, 2) == 100.0
+        assert h["per_year_brl"] == round(value * fee / 100, 2) == {"IVVB11": 184.0}.get(t, 100.0)
         assert ln["disclosed"] is None  # never a CVM-disclosed fee
         assert ln["etf_site"]["used_as_fee"] is True and ln["etf_site"]["source"] == "etfsbrasil"
     t = doc["fees"]["totals"]
-    assert t["adm_etf_site_per_year_brl"] == 200.0
-    assert t["adm_fee_per_year_brl"] == pytest.approx(t["adm_disclosed_fixed_per_year_brl"] + 200.0, abs=0.01)
-    assert t["fund_value_with_etf_site_fee_brl"] == 150000.0
+    assert t["adm_etf_site_per_year_brl"] == 384.0
+    assert t["adm_fee_per_year_brl"] == pytest.approx(t["adm_disclosed_fixed_per_year_brl"] + 384.0, abs=0.01)
+    assert t["fund_value_with_etf_site_fee_brl"] == 230000.0
     total = float(_statement().sum_of_lines)
-    assert t["adm_etf_site_portfolio_pct"] == round(200.0 / total * 100, 4)
+    assert t["adm_etf_site_portfolio_pct"] == round(384.0 / total * 100, 4)
 
 
 def test_a_zero_on_the_site_is_shown_to_check_and_never_summed(doc):
@@ -167,7 +186,7 @@ def test_a_zero_on_the_site_is_shown_to_check_and_never_summed(doc):
     assert h["filed_pct_year"] == 0.0 and h["per_year_brl"] is None
     t = doc["fees"]["totals"]
     assert t["fund_value_with_etf_site_fee_to_check_brl"] == 30000.0
-    assert t["adm_etf_site_per_year_brl"] == 200.0  # BOVA11 and B5P211 only
+    assert t["adm_etf_site_per_year_brl"] == 384.0  # BOVA11, B5P211 and IVVB11 only
     assert t["fund_value_brl"] == pytest.approx(sum(x["position_value_brl"] for x in doc["fees"]["lines"]))
 
 
@@ -176,12 +195,17 @@ def test_the_report_says_the_fee_is_from_a_third_party_site(doc):
     bl = next(b for b in view["fees"]["by_line"] if b["cnpj"] == ETFS["BOVA11"][0])
     assert bl["disclosed_pct_year"] == 0.1 and bl["disclosed_brl_year"] == 100.0
     assert bl["disclosed_origin_label"] == "site etfsbrasil.com.br (terceiros)" and bl["disclosed_as_of"] == SNAPSHOT
-    assert view["fees"]["total_etf_site_brl_year"] == 200.0
+    assert view["fees"]["total_etf_site_brl_year"] == 384.0
     html_text, narrative = build.build(view, "fake")
     text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html_text))
-    assert "etfsbrasil.com.br (fonte de terceiros, não documento da CVM), somadas à parte: R$ 200,00 por ano" in text
+    assert "etfsbrasil.com.br (fonte de terceiros, não documento da CVM), somadas à parte: R$ 384,00 por ano" in text
     assert "0,10% a.a." in text and "03/10/2026" in text
+    # its own source with the snapshot date, never credited to the CVM
+    assert view["data_dates"]["ETFSBRASIL"] == SNAPSHOT
+    assert "etfsbrasil.com.br (site de terceiros: taxa dos ETFs, não é documento da CVM): dados até 03/10/2026" in text
     kept = [f for f in narrative.kept if f.section == "taxas"]
     assert any("etf_site_label" in f.text for f in kept)
+    # the summary says it too ("importante ressaltar que ETFs também têm taxa")
+    assert any(f.section == "resumo" and "total_etf_site_brl_year" in f.text for f in narrative.kept)
     for f in kept:
         assert not re.search(r"\d", re.sub(r"\{\{[^}]+\}\}", "", f.text))  # every number is a placeholder

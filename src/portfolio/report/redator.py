@@ -449,6 +449,10 @@ def template_findings(engine: dict) -> dict:
         add("resumo", "Custo", "As taxas de administração divulgadas custam {{fees.total_disclosed_brl_year}} por ano nos fundos com taxa fixa utilizável.", fee_prov)
     elif fees.get("total_estimated_brl_year") is not None:
         add("resumo", "Custo", "As taxas custam cerca de {{fees.total_estimated_brl_year}} por ano, por estimativa.", fee_prov)
+    if new_view and fees.get("total_etf_site_brl_year") is not None:
+        add("resumo", "Custo dos ETFs",
+            "Os ETFs também têm taxa: {{fees.total_etf_site_brl_year}} por ano, pela taxa que o site etfsbrasil.com.br informa "
+            "(fonte de terceiros, não documento da CVM), somada à parte.", fee_prov)
     if lt.get("shared_exposure"):
         add("resumo", "Sobreposição",
             "Parte da carteira se repete por baixo dos fundos; a seção de exposição mostra onde.",
