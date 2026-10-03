@@ -1,0 +1,516 @@
+{
+  "schema_version": "provisional-report-0",
+  "illustrative": true,
+  "illustrative_note": "Provisional fixture of slice D (demo/report), written before the engine's schema (slice C, docs/reference/portfolio/engine-output.md) existed. Fund names, CNPJs, the MN I FIDC restatement, the XP Bancos quotas, the BB rename and the BB fee are the phase 0 note's measured figures (docs/reference/research/portfolio-diagnosis-phase0.md section 6); position values, the other fees, weights and FNET ids are illustrative.",
+  "generated_at": "2026-10-03T16:00:00Z",
+  "valuation_date": "2026-09-30",
+  "masked": true,
+  "portfolio": {
+    "total_brl": 900000.0,
+    "n_lines": 8,
+    "n_identified": 7,
+    "n_ambiguous": 1,
+    "n_unknown": 1
+  },
+  "lines": [
+    {
+      "line_id": "L1",
+      "asset_type": "titulo_publico",
+      "instrument": "NTN-B 2035",
+      "cnpj": null,
+      "ticker": null,
+      "fund_name": null,
+      "value_brl": 150000.0,
+      "weight_pct": 16.67,
+      "identification": {
+        "status": "identified",
+        "method": "titulo_e_vencimento",
+        "renamed_from": null,
+        "candidates": []
+      },
+      "provenance": ["p1"]
+    },
+    {
+      "line_id": "L2",
+      "asset_type": "acao",
+      "instrument": "PETR4",
+      "cnpj": null,
+      "ticker": "PETR4",
+      "fund_name": null,
+      "value_brl": 80000.0,
+      "weight_pct": 8.89,
+      "identification": {
+        "status": "identified",
+        "method": "ticker",
+        "renamed_from": null,
+        "candidates": []
+      },
+      "provenance": ["p2"]
+    },
+    {
+      "line_id": "L3",
+      "asset_type": "fundo",
+      "instrument": "GERAÇÃO L. PAR FIA",
+      "cnpj": "08935128000159",
+      "ticker": null,
+      "fund_name": "GERAÇÃO L. PAR FUNDO DE INVESTIMENTO EM AÇÕES",
+      "value_brl": 120000.0,
+      "weight_pct": 13.33,
+      "identification": {
+        "status": "identified",
+        "method": "nome_exato",
+        "renamed_from": null,
+        "candidates": []
+      },
+      "provenance": ["p3"]
+    },
+    {
+      "line_id": "L4",
+      "asset_type": "fundo",
+      "instrument": "XP BANCOS FIC",
+      "cnpj": "50088190000119",
+      "ticker": null,
+      "fund_name": "XP BANCOS FIC FIF",
+      "value_brl": 100000.0,
+      "weight_pct": 11.11,
+      "identification": {
+        "status": "ambiguous",
+        "method": "nome_abreviado_desempate_por_cota",
+        "renamed_from": null,
+        "candidates": [
+          {
+            "cnpj": "50088190000119",
+            "fund_name": "XP BANCOS FIC FIF",
+            "quota": 1.542011,
+            "quota_date": "2026-09-30",
+            "chosen": true
+          },
+          {
+            "cnpj": "35377390000106",
+            "fund_name": "XP BANCOS MASTER FIF",
+            "quota": 1.952607,
+            "quota_date": "2026-09-30",
+            "chosen": false
+          }
+        ]
+      },
+      "provenance": ["p3", "p4"]
+    },
+    {
+      "line_id": "L5",
+      "asset_type": "fidc",
+      "instrument": "MN I FIDC",
+      "cnpj": "32113885000121",
+      "ticker": null,
+      "fund_name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITÓRIOS",
+      "value_brl": 60000.0,
+      "weight_pct": 6.67,
+      "identification": {
+        "status": "identified",
+        "method": "nome_exato",
+        "renamed_from": null,
+        "candidates": []
+      },
+      "provenance": ["p3"]
+    },
+    {
+      "line_id": "L6",
+      "asset_type": "fundo",
+      "instrument": "XP LIQUIDEZ FIC",
+      "cnpj": "51488342000133",
+      "ticker": null,
+      "fund_name": "XP LIQUIDEZ FIC FIF",
+      "value_brl": 140000.0,
+      "weight_pct": 15.56,
+      "identification": {
+        "status": "identified",
+        "method": "nome_exato",
+        "renamed_from": null,
+        "candidates": []
+      },
+      "provenance": ["p3"]
+    },
+    {
+      "line_id": "L7",
+      "asset_type": "fundo",
+      "instrument": "BB RF CP AUTOMÁTICO",
+      "cnpj": "42592315000115",
+      "ticker": null,
+      "fund_name": "BB RENDA FIXA CURTO PRAZO AUTOMÁTICO FIC FIF RESPONSABILIDADE LIMITADA",
+      "value_brl": 200000.0,
+      "weight_pct": 22.22,
+      "identification": {
+        "status": "identified",
+        "method": "historico_de_nomes",
+        "renamed_from": "BB RENDA FIXA CURTO PRAZO AUTOMÁTICO FUNDO DE INVESTIMENTO EM COTAS DE FUNDOS DE INVESTIMENTO",
+        "renamed_at": "2026-08-01",
+        "candidates": []
+      },
+      "provenance": ["p3"]
+    },
+    {
+      "line_id": "L8",
+      "asset_type": "desconhecido",
+      "instrument": "FUNDO NÃO IDENTIFICADO",
+      "cnpj": null,
+      "ticker": null,
+      "fund_name": null,
+      "value_brl": 50000.0,
+      "weight_pct": 5.56,
+      "identification": {
+        "status": "unknown",
+        "method": null,
+        "reason": "nome do extrato sem correspondência no histórico de nomes da CVM",
+        "renamed_from": null,
+        "candidates": []
+      },
+      "provenance": ["p3"]
+    }
+  ],
+  "fees": {
+    "status": "complete",
+    "basis": "estimativa pelo balancete (COFI 8.1.7), anualizada; taxa divulgada ausente no SILO",
+    "total_estimated_brl_year": 7140.0,
+    "total_disclosed_brl_year": null,
+    "weighted_estimated_pct_year": 0.79,
+    "by_line": [
+      {
+        "line_id": "L3",
+        "cnpj": "08935128000159",
+        "disclosed_pct_year": null,
+        "estimated_pct_year": 1.95,
+        "estimated_brl_year": 2340.0,
+        "label": "estimativa",
+        "month": "2026-08-01",
+        "provenance": ["p5"]
+      },
+      {
+        "line_id": "L4",
+        "cnpj": "50088190000119",
+        "disclosed_pct_year": null,
+        "estimated_pct_year": 0.8,
+        "estimated_brl_year": 800.0,
+        "label": "estimativa",
+        "month": "2026-08-01",
+        "provenance": ["p5"]
+      },
+      {
+        "line_id": "L5",
+        "cnpj": "32113885000121",
+        "disclosed_pct_year": null,
+        "estimated_pct_year": null,
+        "estimated_brl_year": null,
+        "label": "desconhecido",
+        "reason": "FIDC não entrega balancete FI",
+        "month": null,
+        "provenance": []
+      },
+      {
+        "line_id": "L6",
+        "cnpj": "51488342000133",
+        "disclosed_pct_year": null,
+        "estimated_pct_year": 0.5,
+        "estimated_brl_year": 700.0,
+        "label": "estimativa",
+        "month": "2026-08-01",
+        "provenance": ["p5"]
+      },
+      {
+        "line_id": "L7",
+        "cnpj": "42592315000115",
+        "disclosed_pct_year": null,
+        "estimated_pct_year": 1.65,
+        "estimated_pct_year_high": 1.97,
+        "estimated_brl_year": 3300.0,
+        "label": "estimativa",
+        "month": "2026-08-01",
+        "provenance": ["p5"]
+      }
+    ]
+  },
+  "lookthrough": {
+    "status": "complete",
+    "month": "2026-05-01",
+    "max_depth": 3,
+    "shared_exposure": [
+      {
+        "key": "PETR4",
+        "level": "ativo",
+        "total_brl": 126200.0,
+        "total_pct": 14.02,
+        "legs": [
+          { "line_id": "L2", "via": "direto", "value_brl": 80000.0 },
+          {
+            "line_id": "L3",
+            "via": "GERAÇÃO L. PAR FIA (CDA bloco 4)",
+            "value_brl": 46200.0
+          }
+        ],
+        "provenance": ["p2", "p6"]
+      },
+      {
+        "key": "35377390000106",
+        "name": "XP BANCOS MASTER FIF",
+        "level": "fundo",
+        "total_brl": 127960.0,
+        "total_pct": 14.22,
+        "legs": [
+          {
+            "line_id": "L4",
+            "via": "XP BANCOS FIC (CDA bloco 2)",
+            "value_brl": 98000.0
+          },
+          {
+            "line_id": "L6",
+            "via": "XP LIQUIDEZ FIC (CDA bloco 2)",
+            "value_brl": 29960.0
+          }
+        ],
+        "provenance": ["p6"]
+      }
+    ],
+    "top_underlying": [
+      {
+        "name": "BB master renda fixa (cotas)",
+        "value_brl": 199000.0,
+        "weight_pct": 22.11,
+        "provenance": ["p6"]
+      },
+      {
+        "name": "NTN-B 2035",
+        "value_brl": 150000.0,
+        "weight_pct": 16.67,
+        "provenance": ["p1"]
+      },
+      {
+        "name": "XP BANCOS MASTER FIF",
+        "value_brl": 127960.0,
+        "weight_pct": 14.22,
+        "provenance": ["p6"]
+      },
+      {
+        "name": "PETR4",
+        "value_brl": 126200.0,
+        "weight_pct": 14.02,
+        "provenance": ["p2", "p6"]
+      }
+    ]
+  },
+  "indexer": {
+    "status": "complete",
+    "rules_version": "provisional",
+    "buckets": [
+      {
+        "indexer": "Pós-fixado (CDI/Selic)",
+        "value_brl": 418000.0,
+        "weight_pct": 46.44
+      },
+      {
+        "indexer": "Renda variável",
+        "value_brl": 182000.0,
+        "weight_pct": 20.22
+      },
+      {
+        "indexer": "Inflação (IPCA)",
+        "value_brl": 150000.0,
+        "weight_pct": 16.67
+      },
+      {
+        "indexer": "sem classificação",
+        "value_brl": 150000.0,
+        "weight_pct": 16.67
+      }
+    ],
+    "provenance": ["p1", "p6"]
+  },
+  "sector": {
+    "status": "complete",
+    "buckets": [
+      { "sector": "Financeiro", "value_brl": 280000.0, "weight_pct": 31.11 },
+      {
+        "sector": "Governo federal",
+        "value_brl": 150000.0,
+        "weight_pct": 16.67
+      },
+      {
+        "sector": "Petróleo, gás e biocombustíveis",
+        "value_brl": 126200.0,
+        "weight_pct": 14.02
+      },
+      {
+        "sector": "Crédito (recebíveis de FIDC)",
+        "value_brl": 60000.0,
+        "weight_pct": 6.67
+      },
+      {
+        "sector": "sem classificação",
+        "value_brl": 283800.0,
+        "weight_pct": 31.53
+      }
+    ],
+    "provenance": ["p6", "p7"]
+  },
+  "restatements": {
+    "status": "complete",
+    "items": [
+      {
+        "line_id": "L5",
+        "cnpj": "32113885000121",
+        "fund_name": "MN I FIDC",
+        "document": "informe mensal",
+        "competencia": "2025-12-01",
+        "fnet_id_original": "900001",
+        "fnet_id_restatement": "900002",
+        "modalidade": "RE",
+        "delivered_at": "2026-01-16",
+        "n_fields_changed": 152,
+        "assessment": "revisado, não avaliado",
+        "delinquency_old_brl": 0.0,
+        "delinquency_new_brl": 187284652.71,
+        "delinquency_change_brl": 187284652.71,
+        "diff": [
+          {
+            "leaf": "VL_CRED_EXISTE_INAD",
+            "old_num": 0.0,
+            "new_num": 187284652.71,
+            "change_brl": 187284652.71,
+            "match_basis": "path"
+          }
+        ],
+        "provenance": ["p8"]
+      },
+      {
+        "line_id": "L5",
+        "cnpj": "32113885000121",
+        "fund_name": "MN I FIDC",
+        "document": "informe mensal",
+        "competencia": "2026-07-01",
+        "fnet_id_original": "900003",
+        "fnet_id_restatement": "900004",
+        "modalidade": "RE",
+        "delivered_at": "2026-08-20",
+        "n_fields_changed": 28,
+        "assessment": "revisado, não avaliado",
+        "delinquency_old_brl": null,
+        "delinquency_new_brl": null,
+        "delinquency_change_brl": null,
+        "diff": [],
+        "provenance": ["p8"]
+      }
+    ]
+  },
+  "risk_screens": {
+    "status": "partial",
+    "screens_run": 9,
+    "hits": [],
+    "not_run": [
+      {
+        "screen": "dormant",
+        "reason": "a tela recusou a consulta inteira (8.218 linhas acima do limite de uma página) e não aceita filtro por CNPJ"
+      }
+    ],
+    "provenance": ["p9"]
+  },
+  "sections": {
+    "identification": { "status": "complete" },
+    "fees": { "status": "complete" },
+    "lookthrough": { "status": "complete" },
+    "indexer": { "status": "complete" },
+    "sector": { "status": "complete" },
+    "restatements": { "status": "complete" },
+    "risk_screens": {
+      "status": "unknown",
+      "reason": "a tela de fundos dormentes recusou a consulta (acima de uma página) e não aceita filtro por CNPJ",
+      "affects": ["L3", "L4", "L5", "L6", "L7"]
+    },
+    "abnormal_movement": {"status": "unknown", "reason": "regra de movimento anormal ainda não definida pelo responsável"},
+    "ntnb_price": {
+      "status": "unknown",
+      "reason": "o SILO não tem série de preços do Tesouro Direto",
+      "affects": ["L1"]
+    },
+    "benchmarks": {
+      "status": "unknown",
+      "reason": "fora do escopo desta versão (variância mínima e contribuição igual de risco ainda não calculadas)"
+    },
+    "economic_group": {
+      "status": "unknown",
+      "reason": "grupo econômico não avaliado: não há fonte pública arquivada da estrutura de grupo"
+    },
+    "material_restatement": {
+      "status": "unknown",
+      "reason": "limiares de materialidade ainda não definidos pelo responsável; reapresentações listadas sem avaliação"
+    }
+  },
+  "provenance": [
+    {
+      "id": "p1",
+      "endpoint": "api.fund_holdings",
+      "params": { "kind": "tesouro", "month": "2026-05-01" },
+      "source": "CVM",
+      "data_date": "2026-05-31"
+    },
+    {
+      "id": "p2",
+      "endpoint": "api.quote",
+      "params": { "ticker": "PETR4" },
+      "source": "B3",
+      "data_date": "2026-10-02"
+    },
+    {
+      "id": "p3",
+      "endpoint": "api.portfolio_resolve",
+      "params": { "n_names": 8 },
+      "source": "CVM",
+      "data_date": "2026-08-31"
+    },
+    {
+      "id": "p4",
+      "endpoint": "api.fund_nav",
+      "params": { "cnpj": ["50088190000119", "35377390000106"] },
+      "source": "CVM",
+      "data_date": "2026-09-30"
+    },
+    {
+      "id": "p5",
+      "endpoint": "api.portfolio_fees",
+      "params": { "month": "2026-08-01" },
+      "source": "CVM",
+      "data_date": "2026-08-31"
+    },
+    {
+      "id": "p6",
+      "endpoint": "api.portfolio_lookthrough",
+      "params": { "month": "2026-05-01" },
+      "source": "CVM",
+      "data_date": "2026-05-31"
+    },
+    {
+      "id": "p7",
+      "endpoint": "api.macro_series",
+      "params": { "series": "CDI" },
+      "source": "BCB",
+      "data_date": "2026-10-02"
+    },
+    {
+      "id": "p8",
+      "endpoint": "api.fund_restatement_diff",
+      "params": { "cnpj": "32113885000121" },
+      "source": "FNET",
+      "data_date": "2026-08-20"
+    },
+    {
+      "id": "p9",
+      "endpoint": "api.screen_*",
+      "params": { "screens": 10 },
+      "source": "CVM",
+      "data_date": "2026-08-31"
+    }
+  ],
+  "data_dates": {
+    "CVM": "2026-08-31",
+    "FNET": "2026-08-20",
+    "B3": "2026-10-02",
+    "BCB": "2026-10-02"
+  }
+}
