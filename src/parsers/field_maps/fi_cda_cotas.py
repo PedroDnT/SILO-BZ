@@ -39,6 +39,8 @@ CVM starts populating it.
 
 TABLE = "cvm_fi_cda_cotas"
 CONFLICT = ("cnpj", "period", "tp_fundo", "cnpj_cota", "tp_aplic", "tp_negoc")
+# uq_fi_cda_cotas is NULLS NOT DISTINCT; the per-fund replace compares the same way.
+NULLS_DISTINCT = False
 
 FIELD_MAP = {
     "cnpj":                (["CNPJ_FUNDO_CLASSE", "CNPJ_FUNDO"],   "cnpj"),

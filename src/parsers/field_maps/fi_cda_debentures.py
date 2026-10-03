@@ -52,6 +52,10 @@ CONFLICT = (
     "cnpj", "period", "tp_fundo", "tp_aplic", "tp_ativo",
     "cpf_cnpj_emissor", "dt_venc", "tp_negoc", "row_hash",
 )
+# uq_fi_cda_debentures is NULLS NOT DISTINCT; the per-fund replace compares the
+# same way. A re-filed row has a new row_hash, so the replace is what removes
+# the old one.
+NULLS_DISTINCT = False
 
 FIELD_MAP = {
     "cnpj":                (["CNPJ_FUNDO_CLASSE", "CNPJ_FUNDO"], "cnpj"),

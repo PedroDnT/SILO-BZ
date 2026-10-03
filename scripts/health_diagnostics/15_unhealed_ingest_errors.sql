@@ -36,6 +36,9 @@
 -- health.yml's own expression. psql -f takes no variables here, so the constant
 -- is literal; tests/test_health_workflow.py asserts it against the workflow's
 -- env so the two cannot drift into disagreeing about what "the daily window" is.
+-- Likewise `5 * INTERVAL '1 month'` is CDA_REFRESH_MONTHS (the four CDA blocks
+-- are re-read until month M+5 ends) and `<= 3` is FII_PREVIOUS_YEAR_THROUGH_MONTH
+-- (last year's FII files are re-read from January to March), issue #551.
 
 -- 1. Rollup: what is outstanding, and how much of it the gate can see.
 WITH unhealed AS (
@@ -50,6 +53,14 @@ WITH unhealed AS (
                   AND make_date(e.period_year, e.period_month, 1)
                       >= (date_trunc('month', CURRENT_DATE)
                           - 3 * INTERVAL '1 month')::date)
+              OR (e.entity = 'fi' AND e.doc_type IN ('cda', 'cda_acoes', 'cda_cotas', 'cda_debentures')
+                  AND e.period_month IS NOT NULL
+                  AND make_date(e.period_year, e.period_month, 1)
+                      >= (date_trunc('month', CURRENT_DATE)
+                          - 5 * INTERVAL '1 month')::date)
+              OR (e.entity = 'fii' AND e.period_month IS NULL
+                  AND e.period_year = EXTRACT(YEAR FROM CURRENT_DATE)::int - 1
+                  AND EXTRACT(MONTH FROM CURRENT_DATE)::int <= 3)
            ) AS in_daily_window
       FROM cvm_ingest_log e
      WHERE e.status = 'error'
@@ -89,6 +100,14 @@ WITH unhealed AS (
                   AND make_date(e.period_year, e.period_month, 1)
                       >= (date_trunc('month', CURRENT_DATE)
                           - 3 * INTERVAL '1 month')::date)
+              OR (e.entity = 'fi' AND e.doc_type IN ('cda', 'cda_acoes', 'cda_cotas', 'cda_debentures')
+                  AND e.period_month IS NOT NULL
+                  AND make_date(e.period_year, e.period_month, 1)
+                      >= (date_trunc('month', CURRENT_DATE)
+                          - 5 * INTERVAL '1 month')::date)
+              OR (e.entity = 'fii' AND e.period_month IS NULL
+                  AND e.period_year = EXTRACT(YEAR FROM CURRENT_DATE)::int - 1
+                  AND EXTRACT(MONTH FROM CURRENT_DATE)::int <= 3)
            ) AS in_daily_window
       FROM cvm_ingest_log e
      WHERE e.status = 'error'
@@ -153,5 +172,13 @@ SELECT
               OR (e.period_month IS NOT NULL
                   AND make_date(e.period_year, e.period_month, 1)
                       >= (date_trunc('month', CURRENT_DATE)
-                          - 3 * INTERVAL '1 month')::date))
+                          - 3 * INTERVAL '1 month')::date)
+              OR (e.entity = 'fi' AND e.doc_type IN ('cda', 'cda_acoes', 'cda_cotas', 'cda_debentures')
+                  AND e.period_month IS NOT NULL
+                  AND make_date(e.period_year, e.period_month, 1)
+                      >= (date_trunc('month', CURRENT_DATE)
+                          - 5 * INTERVAL '1 month')::date)
+              OR (e.entity = 'fii' AND e.period_month IS NULL
+                  AND e.period_year = EXTRACT(YEAR FROM CURRENT_DATE)::int - 1
+                  AND EXTRACT(MONTH FROM CURRENT_DATE)::int <= 3))
      ) u)                                                      AS excluded_as_historical;

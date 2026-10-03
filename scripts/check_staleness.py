@@ -32,6 +32,7 @@ from typing import Any, Optional
 # Reuse the single sanctioned DB entry point — never open a raw connection here
 # (data-integrity rule: all DB access goes through pg_client).
 from src.store.pg_client import get_pg_client
+from src.pipeline import daily_window
 
 # Proxy slices. The daily FI snapshot is the canonical "did the daily run happen"
 # signal; re-running run_daily recovers every daily slice (FI/FIDC/FIAGRO/ETF
@@ -71,7 +72,12 @@ STUCK_RUNNING_HOURS = 6
 # Historical backfill errors outside this window cannot be healed by run_daily
 # (DB Health #14: 31 fi/cda_* hist slices). Watchdog must not re-run daily for
 # them either — that recovery never touches 2010.
-DAILY_LOOKBACK_MONTHS = 4
+DAILY_LOOKBACK_MONTHS = daily_window.DAILY_LOOKBACK_MONTHS
+# The slices daily_update retries: the lookback above, the four CDA blocks
+# through M+5 and, from January to March, last year's FII files (#551). One
+# predicate shared with the pipeline's own numbers (src/pipeline/daily_window.py)
+# and restated in health.yml as DAILY_WINDOW.
+_DAILY_WINDOW_SQL = daily_window.daily_window_sql("e")
 
 EXIT_FRESH = 0
 EXIT_DAILY_STALE = 10
@@ -109,8 +115,9 @@ def unhealed_error_slices(conn: Any, hours: float = UNHEALED_ERROR_HOURS) -> int
     Same predicate as ``.github/workflows/health.yml`` check 1: a later ``ok``
     or ``skipped`` heals; ``IS NOT DISTINCT FROM`` matches NULL period keys
     (yearly FII/SECURIT). Only slices ``daily_update`` would retry count —
-    undated, current-year yearly, and monthly periods inside
-    ``DAILY_LOOKBACK_MONTHS``. Watchdog recovery on 2026-08-29 no-op'd because
+    undated, current-year yearly, monthly periods inside
+    ``DAILY_LOOKBACK_MONTHS``, the CDA blocks through M+5 and last year's FII
+    files from January to March (``daily_window.daily_window_sql``). Watchdog recovery on 2026-08-29 no-op'd because
     ``fi/inf_diario`` still had Friday's ``ok`` and Saturday is weekday-gated,
     while DB Health failed on 44 unhealed ``CVMHostUnreachable`` slices from
     the 06:00 run (33237536770). Those are a failed cron, not a quiet weekend.
@@ -133,18 +140,10 @@ def unhealed_error_slices(conn: Any, hours: float = UNHEALED_ERROR_HOURS) -> int
                           AND s.period_year  IS NOT DISTINCT FROM e.period_year
                           AND s.period_month IS NOT DISTINCT FROM e.period_month
                           AND s.started_at   > e.started_at)
-                 AND (
-                       e.period_year IS NULL
-                    OR (e.period_month IS NULL
-                        AND e.period_year = EXTRACT(YEAR FROM CURRENT_DATE)::int)
-                    OR (e.period_month IS NOT NULL
-                        AND make_date(e.period_year, e.period_month, 1)
-                            >= (date_trunc('month', CURRENT_DATE)
-                                - (%s::int - 1) * INTERVAL '1 month')::date)
-                 )
+                 AND """ + _DAILY_WINDOW_SQL + """
             ) unhealed
             """,
-            (hours, DAILY_LOOKBACK_MONTHS),
+            (hours, *daily_window.daily_window_params()),
         )
         row = cur.fetchone()
     return int(row[0] if row and row[0] is not None else 0)
@@ -175,18 +174,10 @@ def stuck_running_slices(conn: Any, hours: float = STUCK_RUNNING_HOURS) -> int:
                           AND s.period_year  IS NOT DISTINCT FROM e.period_year
                           AND s.period_month IS NOT DISTINCT FROM e.period_month
                           AND s.started_at   > e.started_at)
-                 AND (
-                       e.period_year IS NULL
-                    OR (e.period_month IS NULL
-                        AND e.period_year = EXTRACT(YEAR FROM CURRENT_DATE)::int)
-                    OR (e.period_month IS NOT NULL
-                        AND make_date(e.period_year, e.period_month, 1)
-                            >= (date_trunc('month', CURRENT_DATE)
-                                - (%s::int - 1) * INTERVAL '1 month')::date)
-                 )
+                 AND """ + _DAILY_WINDOW_SQL + """
             ) stuck
             """,
-            (hours, DAILY_LOOKBACK_MONTHS),
+            (hours, *daily_window.daily_window_params()),
         )
         row = cur.fetchone()
     return int(row[0] if row and row[0] is not None else 0)

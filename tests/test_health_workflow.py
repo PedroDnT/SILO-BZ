@@ -68,6 +68,13 @@ def test_embedded_catalog_key_is_version_in_sql_and_python():
     assert '"catalog_version"' not in sql
 
 
+def _daily_window_definition() -> str:
+    """The DAILY_WINDOW shell variable checks 1 and 1b share."""
+    body = _step("Health checks")["run"]
+    start = body.index('DAILY_WINDOW="(')
+    return body[start: body.index(')"', start) + 2]
+
+
 def test_ingest_errors_ignore_historical_backfill_outside_daily_window():
     """DB Health #14: hist CDA backfill errors must not fail warehouse health.
 
@@ -84,13 +91,14 @@ def test_ingest_errors_ignore_historical_backfill_outside_daily_window():
         "miss in-window daily failures, a looser one re-counts hist backfill"
     )
     body = _step("Health checks")["run"]
-    assert "make_date(e.period_year, e.period_month, 1)" in body
-    assert "date_trunc('month', CURRENT_DATE)" in body
-    assert "EXTRACT(YEAR FROM CURRENT_DATE)::int" in body
-    assert "e.period_year IS NULL" in body
-    assert body.count("make_date(e.period_year, e.period_month, 1)") >= 2, (
-        "count query and the evidence SELECT must agree on the daily window"
-    )
+    window = _daily_window_definition()
+    assert "make_date(e.period_year, e.period_month, 1)" in window
+    assert "date_trunc('month', CURRENT_DATE)" in window
+    assert "EXTRACT(YEAR FROM CURRENT_DATE)::int" in window
+    assert "e.period_year IS NULL" in window
+    # One predicate, used by the count query, the evidence SELECT and check 1b,
+    # so they cannot disagree about the daily window.
+    assert body.count("AND ${DAILY_WINDOW}") == 3
     # The fail signal names the daily window so a future edit cannot silently
     # revert to counting every historical error row.
     assert "daily window" in body
@@ -630,11 +638,16 @@ def test_stuck_running_gate_uses_check_1s_slice_scope_and_heal_rule():
         "s.entity       IS NOT DISTINCT FROM e.entity",
         "s.period_month IS NOT DISTINCT FROM e.period_month",
         "s.started_at   > e.started_at",
+        "AND ${DAILY_WINDOW}",
+    ):
+        assert clause in section, f"check 1b is missing {clause!r}"
+    window = _daily_window_definition()
+    for clause in (
         "e.period_year IS NULL",
         "make_date(e.period_year, e.period_month, 1)",
         "${DAILY_LOOKBACK_MONTHS}::int - 1",
     ):
-        assert clause in section, f"check 1b is missing {clause!r}"
+        assert clause in window, f"DAILY_WINDOW is missing {clause!r}"
     assert "fail=1" in section
 
 

@@ -42,15 +42,17 @@ def test_two_names_for_one_fund_month_are_both_kept():
 def _ingest_holdings(rows):
     calls = []
 
-    def fake_upsert(conn, table, recs, conflict_columns=None):
+    def fake_upsert(conn, table, recs, conflict_columns=None, **kw):
         calls.append((table, [dict(r) for r in recs], conflict_columns))
         return len(recs)
 
-    ingest_fi.upsert_rows, saved = fake_upsert, ingest_fi.upsert_rows
+    # The holdings of a month go through the per-fund replace; same capture.
+    saved = ingest_fi.upsert_rows, ingest_fi.replace_scoped_rows
+    ingest_fi.upsert_rows = ingest_fi.replace_scoped_rows = fake_upsert
     try:
         ingest_fi.ingest_fi_cda_cotas(object(), rows, 2026, 5)
     finally:
-        ingest_fi.upsert_rows = saved
+        ingest_fi.upsert_rows, ingest_fi.replace_scoped_rows = saved
     return calls
 
 

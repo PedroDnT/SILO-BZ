@@ -24,7 +24,7 @@ from src.parsers.field_maps import fi_lamina as _lamina
 from src.parsers.field_maps import fi_extrato as _extrato
 from src.parsers.field_maps import fi_balancete as _balancete
 from src.parsers.field_maps import fund_registry as _reg
-from src.store.pg_client import upsert_rows
+from src.store.pg_client import replace_scoped_rows, upsert_rows
 from src.parsers.validation import DataValidator
 
 logger = logging.getLogger(__name__)
@@ -113,13 +113,20 @@ def ingest_fi_diario(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
 
 
 def ingest_fi_cda(
-    conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: Optional[int]
+    conn: Any,
+    raw_rows: List[Dict[str, Any]],
+    year: int,
+    month: Optional[int],
+    stats: Optional[Dict[str, int]] = None,
 ) -> int:
     """Parse and upsert FI portfolio composition rows.
 
     period is normalised to first-of-month (YYYY-MM-01). Pass month=None for a
     yearly HIST archive, where each row carries its own competency month and a
     single value for the file would collapse the year — see _period_for.
+
+    For a month, each fund in the file replaces its stored rows of that month
+    (_store_cda_block); `stats["rows_deleted"]` counts what that removed.
 
     Returns:
         number of rows upserted
@@ -155,12 +162,7 @@ def ingest_fi_cda(
     # The names go first: if the holdings upsert then fails, no row has lost
     # its name without it being stored (the strip script's order too).
     _upsert_fund_names(conn, take_fund_names(records))
-    return upsert_rows(
-        conn,
-        _cda.TABLE,
-        records,
-        conflict_columns=",".join(_cda.CONFLICT),
-    )
+    return _store_cda_block(conn, _cda, records, month, stats)
 
 
 FUND_NAME_TABLE = "cvm_fi_cda_fund_name"
@@ -192,6 +194,39 @@ def _upsert_fund_names(conn: Any, names: set) -> None:
             [{"cnpj": c, "period": p, "denom_social": d} for c, p, d in sorted(names)],
             conflict_columns=FUND_NAME_CONFLICT,
         )
+
+
+def _store_cda_block(
+    conn: Any,
+    field_map_module: Any,
+    records: List[Dict[str, Any]],
+    month: Optional[int],
+    stats: Optional[Dict[str, int]],
+) -> int:
+    """Write one parsed CDA block: per-fund replace for a month, upsert for a year.
+
+    A monthly archive is re-read until month M+5 ends (#551), and a fund may
+    re-file in that time: drop a position, or change a block-6 row (whose key
+    ends in row_hash, so the changed row would land beside the old one). So for
+    a month, every fund present in the new file ends up holding exactly the
+    rows the file carries for it (pg_client.replace_scoped_rows). A fund absent
+    from the file keeps every stored row: a partial or truncated file must
+    never erase data. Called only after the whole file has parsed and
+    validated, so a parse failure deletes nothing.
+
+    A yearly HIST archive (month None) is final and is only upserted.
+    """
+    conflict = ",".join(field_map_module.CONFLICT)
+    if month is None:
+        return upsert_rows(conn, field_map_module.TABLE, records, conflict_columns=conflict)
+    return replace_scoped_rows(
+        conn,
+        field_map_module.TABLE,
+        records,
+        conflict_columns=conflict,
+        nulls_distinct=field_map_module.NULLS_DISTINCT,
+        stats=stats,
+    )
 
 
 # The same position filed twice in one month, once per fund-type label.
@@ -245,6 +280,7 @@ def _ingest_cda_holdings(
     month: Optional[int],
     field_map_module: Any,
     required: str,
+    stats: Optional[Dict[str, int]] = None,
 ) -> int:
     """Shared body for the CDA holdings blocks (4 and 2).
 
@@ -293,38 +329,45 @@ def _ingest_cda_holdings(
         return 0
 
     _upsert_fund_names(conn, take_fund_names(records))   # names first, see ingest_fi_cda
-    return upsert_rows(
-        conn,
-        field_map_module.TABLE,
-        records,
-        conflict_columns=",".join(field_map_module.CONFLICT),
-    )
+    return _store_cda_block(conn, field_map_module, records, month, stats)
 
 
 def ingest_fi_cda_acoes(
-    conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: Optional[int]
+    conn: Any,
+    raw_rows: List[Dict[str, Any]],
+    year: int,
+    month: Optional[int],
+    stats: Optional[Dict[str, int]] = None,
 ) -> int:
     """Parse and upsert FI equity holdings (CDA block 4).
 
     cd_ativo is the published B3 ticker; it is what joins these rows to
     b3_cotahist, so a row without one is dropped rather than stored unjoinable.
     """
-    return _ingest_cda_holdings(conn, raw_rows, year, month, _cda_acoes, "cd_ativo")
+    return _ingest_cda_holdings(conn, raw_rows, year, month, _cda_acoes, "cd_ativo", stats)
 
 
 def ingest_fi_cda_cotas(
-    conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: Optional[int]
+    conn: Any,
+    raw_rows: List[Dict[str, Any]],
+    year: int,
+    month: Optional[int],
+    stats: Optional[Dict[str, int]] = None,
 ) -> int:
     """Parse and upsert FI fund-of-fund holdings (CDA block 2).
 
     cnpj_cota identifies the held fund and is NOT NULL in the target table, so a
     row without it cannot be written at all.
     """
-    return _ingest_cda_holdings(conn, raw_rows, year, month, _cda_cotas, "cnpj_cota")
+    return _ingest_cda_holdings(conn, raw_rows, year, month, _cda_cotas, "cnpj_cota", stats)
 
 
 def ingest_fi_cda_debentures(
-    conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: Optional[int]
+    conn: Any,
+    raw_rows: List[Dict[str, Any]],
+    year: int,
+    month: Optional[int],
+    stats: Optional[Dict[str, int]] = None,
 ) -> int:
     """Parse and upsert FI debenture holdings (CDA block 6).
 
@@ -374,12 +417,7 @@ def ingest_fi_cda_debentures(
     if not records:
         return 0
 
-    return upsert_rows(
-        conn,
-        _cda_deb.TABLE,
-        records,
-        conflict_columns=",".join(_cda_deb.CONFLICT),
-    )
+    return _store_cda_block(conn, _cda_deb, records, month, stats)
 
 
 def ingest_fi_perfil(conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: int) -> int:

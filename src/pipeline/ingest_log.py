@@ -195,6 +195,7 @@ def finish(
     period_year: Optional[int] = None,
     period_month: Optional[int] = None,
     upsert: Optional[Upsert] = None,
+    rows_deleted: Optional[int] = None,
 ) -> None:
     """Write the terminal row (``ok`` | ``error`` | ``skipped``). Raises on failure.
 
@@ -223,6 +224,10 @@ def finish(
     if period_year is not None or period_month is not None:
         row["period_year"] = period_year
         row["period_month"] = period_month
+    # Sent only by a slice that replaces rows (the monthly CDA blocks,
+    # migration 68), so every other writer leaves the column NULL.
+    if rows_deleted is not None:
+        row["rows_deleted"] = int(rows_deleted)
     (upsert or upsert_rows)(client, TABLE, [row], conflict_columns="run_id")
 
 

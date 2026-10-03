@@ -27,6 +27,9 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
   B3's consolidated trade file (in `run_b3_events`) 7 days, BACEN 30 days. Deep history is manual:
   `backfill.yml`, `market_backfill.yml`, `daily_ingest` `mode=b3-backfill` and
   `mode=b3-trade-consolidated` (B3 kept that file from 2025-06-10 only).
+- A re-read CDA month replaces the rows of each fund in the file, so a
+  dropped or re-filed position goes (`cvm_ingest_log.rows_deleted`). Funds
+  missing from the file keep theirs.
 - The B3 BDI group (lending, investor flow) has no backfill. See the ratchet in
   [SYSTEM](SYSTEM.md).
 

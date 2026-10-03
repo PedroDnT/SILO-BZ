@@ -89,6 +89,12 @@ def _stub_pipeline(captured: list):
         return len(rows)
 
     patches = [patch(t, side_effect=fake_upsert) for t in _UPSERT_PATCH_TARGETS]
+    # A monthly CDA block is written by the per-fund replace, not upsert_rows.
+    patches.append(patch(
+        "src.pipeline.ingest_fi.replace_scoped_rows",
+        side_effect=lambda client, table, rows, conflict_columns=None, **kw: fake_upsert(
+            client, table, rows, conflict_columns),
+    ))
     pg_patch = patch(_PG_CLIENT_PATCH, return_value=MagicMock())
     pg_patch.start()
     for p in patches:

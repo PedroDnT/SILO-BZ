@@ -36,6 +36,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from src.fetchers.cvm_fetcher import CVMFetcher
 from src.store.pg_client import get_pg_client, upsert_rows
 from src.pipeline.ingest_log import describe, finish as _finish_row, lineage
+from src.pipeline import daily_window
 
 # Per-entity ingest modules (parsing logic lives there)
 from src.pipeline.ingest_fi import (
@@ -336,7 +337,9 @@ def _daily_month_pairs(today: date) -> List[Tuple[int, int]]:
 # Parsed via _env_int (the house helper) so a misconfigured value warns and falls
 # back instead of crashing import; clamped to >= 2 so the window always covers at
 # least current + previous.
-_DAILY_LOOKBACK_MONTHS = max(2, _env_int("CVM_DAILY_LOOKBACK_MONTHS", 4))
+_DAILY_LOOKBACK_MONTHS = max(
+    2, _env_int("CVM_DAILY_LOOKBACK_MONTHS", daily_window.DAILY_LOOKBACK_MONTHS)
+)
 
 
 def _trailing_months(today: date, lookback: int) -> List[Tuple[int, int]]:
@@ -359,8 +362,11 @@ def _trailing_months(today: date, lookback: int) -> List[Tuple[int, int]]:
 # for every month up to M+5 (month M stays in until month M+5 ends): a fixed
 # floor, also kept when the gap check cannot reach the database. One archive per
 # month serves all four blocks (the fetcher's URL-keyed cache, per run).
-_CDA_DOC_TYPES = frozenset({"cda", "cda_acoes", "cda_cotas", "cda_debentures"})
-_CDA_REFRESH_MONTHS = max(1, _env_int("CVM_CDA_REFRESH_MONTHS", 5))
+# The defaults live in daily_window, which DB Health and the watchdog read too.
+_CDA_DOC_TYPES = daily_window.CDA_DOC_TYPES
+_CDA_REFRESH_MONTHS = max(
+    1, _env_int("CVM_CDA_REFRESH_MONTHS", daily_window.CDA_REFRESH_MONTHS)
+)
 
 
 def _cda_refresh_months(today: date) -> List[Tuple[int, int]]:
@@ -375,7 +381,7 @@ def _fii_daily_years(today: date) -> List[int]:
     monthly reports and the year's last periodic filings are delivered (and
     restated) early in the next year, into last year's file (issue #551).
     """
-    if today.month <= 3:
+    if today.month <= daily_window.FII_PREVIOUS_YEAR_THROUGH_MONTH:
         return [today.year - 1, today.year]
     return [today.year]
 
@@ -656,7 +662,12 @@ class CVMIngestor:
         rows: int,
         error: Optional[str] = None,
         fetched: Optional[int] = None,
+        deleted: Optional[int] = None,
     ) -> None:
+        # `deleted` is how many stored rows a per-fund replace removed (the
+        # monthly CDA blocks, migration 68). It is written only when given, so
+        # every other slice leaves rows_deleted NULL ("does not replace"), not 0.
+        #
         # A 404 for a not-yet-published month is an expected non-event, not a
         # failure. The daily window probes a trailing range (see _monthly_targets)
         # and CVM lags publication by 1-2 months, so the leading months 404. The
@@ -687,10 +698,13 @@ class CVMIngestor:
         lin = lineage()
         for attempt in (1, 2):
             try:
+                deleted_set = "" if deleted is None else ", rows_deleted=%s"
+                deleted_arg = () if deleted is None else (deleted,)
                 with self._supabase.cursor() as cur:
                     cur.execute(
                         "UPDATE cvm_ingest_log SET rows_upserted=%s, status=%s,"
                         " error_msg=%s, finished_at=%s, git_sha=%s, parser_version=%s"
+                        + deleted_set +
                         " WHERE run_id=%s",
                         (
                             rows,
@@ -699,12 +713,13 @@ class CVMIngestor:
                             datetime.now(timezone.utc).isoformat(),
                             lin["git_sha"],
                             lin["parser_version"],
+                            *deleted_arg,
                             run_id,
                         ),
                     )
                     landed = getattr(cur, "rowcount", None)
                 if landed == 0:
-                    self._finish_without_start_row(run_id, rows, status, error)
+                    self._finish_without_start_row(run_id, rows, status, error, deleted)
                 return
             except Exception as e:
                 if attempt == 1:
@@ -722,7 +737,8 @@ class CVMIngestor:
                     logger.warning("ingest_log finish failed after reconnect: %s", e)
 
     def _finish_without_start_row(
-        self, run_id: str, rows: int, status: str, error: Optional[str]
+        self, run_id: str, rows: int, status: str, error: Optional[str],
+        deleted: Optional[int] = None,
     ) -> None:
         """Insert the terminal row when the UPDATE found no start row to finish.
 
@@ -741,6 +757,7 @@ class CVMIngestor:
             self._supabase, run_id, entity, doc_type,
             status=status, rows=rows, error=error,
             period_year=year, period_month=month, upsert=upsert_rows,
+            rows_deleted=deleted,
         )
 
     def _monthly_targets(self, entity: str, doc_type: str, today: date) -> List[Tuple[int, int]]:
@@ -999,42 +1016,41 @@ class CVMIngestor:
     # ------------------------------------------------------------------
 
     async def ingest_fi_cda(self, year: int, month: int) -> int:
-        run_id = str(uuid4())
-        self._log_start(run_id, "fi", "cda", year, month)
-        rows_inserted = 0
-        try:
-            raw_rows = await self._fetch_all_pages("fi", "cda", year, month)
-            rows_inserted = await self._store(ingest_fi_cda, self._supabase, raw_rows, year, month)
-        except Exception as exc:
-            logger.warning("ingest_fi_cda %d-%02d failed: %s", year, month, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
-            return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fi/cda %d-%02d: %d rows", year, month, rows_inserted)
-        return rows_inserted
+        return await self._ingest_cda_block("cda", ingest_fi_cda, year, month)
 
     async def _ingest_cda_block(
         self, doc_type: str, fn: Any, year: int, month: int
     ) -> int:
-        """One CDA holdings block. Same archive as `cda`, a different member.
+        """One CDA block of one month: block 1 (`cda`) or a holdings block.
 
-        Kept separate from ingest_fi_cda rather than folded into it so each
-        block writes its own cvm_ingest_log row: if block 4 parses and block 2
-        does not, the audit log has to say so per slice, not report one blended
-        outcome.
+        All four are members of the same archive. Each block still writes its
+        own cvm_ingest_log row: if block 4 parses and block 2 does not, the
+        audit log has to say so per slice, not report one blended outcome.
         """
         run_id = str(uuid4())
         self._log_start(run_id, "fi", doc_type, year, month)
         rows_inserted = 0
+        # Each fund in the file replaces its stored rows of this month
+        # (ingest_fi._store_cda_block); the rows that removed go in the slice's
+        # rows_deleted, also when a later batch fails after earlier ones
+        # committed.
+        stats: Dict[str, int] = {"rows_deleted": 0}
         try:
             raw_rows = await self._fetch_all_pages("fi", doc_type, year, month)
-            rows_inserted = await self._store(fn, self._supabase, raw_rows, year, month)
+            rows_inserted = await self._store(fn, self._supabase, raw_rows, year, month, stats)
         except Exception as exc:
             logger.warning("ingest fi/%s %d-%02d failed: %s", doc_type, year, month, _describe(exc))
-            self._log_finish(run_id, 0, _describe(exc))
+            self._log_finish(
+                run_id, 0, _describe(exc), deleted=stats["rows_deleted"] or None
+            )
             return 0
-        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
-        logger.info("fi/%s %d-%02d: %d rows", doc_type, year, month, rows_inserted)
+        self._log_finish(
+            run_id, rows_inserted, fetched=len(raw_rows), deleted=stats["rows_deleted"]
+        )
+        logger.info(
+            "fi/%s %d-%02d: %d rows, %d stale removed",
+            doc_type, year, month, rows_inserted, stats["rows_deleted"],
+        )
         return rows_inserted
 
     async def ingest_fi_cda_acoes(self, year: int, month: int) -> int:

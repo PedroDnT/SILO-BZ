@@ -30,11 +30,15 @@ CREATE TABLE IF NOT EXISTS cvm_ingest_log (
     -- src.pipeline.ingest_log.PARSER_VERSION, bumped when a parser or field
     -- map changes what a stored value means.
     git_sha        TEXT,
-    parser_version TEXT
+    parser_version TEXT,
+    -- Stored rows a per-fund replace removed (migration 68, the monthly CDA
+    -- blocks). NULL when the slice does not replace.
+    rows_deleted   INT
 );
 -- An existing database never re-runs the CREATE TABLE above, so the lineage
 -- columns are also reachable from schema.sql alone (tests/test_schema_upgrade_path.py).
 ALTER TABLE cvm_ingest_log ADD COLUMN IF NOT EXISTS git_sha TEXT, ADD COLUMN IF NOT EXISTS parser_version TEXT;
+ALTER TABLE cvm_ingest_log ADD COLUMN IF NOT EXISTS rows_deleted INT;
 CREATE INDEX IF NOT EXISTS idx_ingest_log_entity_doc
     ON cvm_ingest_log (entity, doc_type, period_year DESC, period_month DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ingest_log_run

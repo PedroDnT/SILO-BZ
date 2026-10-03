@@ -363,7 +363,7 @@ counted at ingest, and an absent one stays NULL.
 
 | Gap                                      | Why                                                                                                                                                              |
 | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| FIDC tranche / flows / aging before 2025 | CVM publishes **no HIST equivalent** for tabs X2/X4/VI. The data does not exist upstream in a form we can fetch — this is an upstream limit, not a backlog item. |
+| FIDC tranche / flows / aging before 2025 | Not loaded yet, but published: CVM's yearly HIST archives carry tabs X_1 to X_6 (X2 and X4 among them) back to 2013-01, measured on every HIST archive 2013-2024 (migration 45). Whether HIST carries tab VI is not verified. Loading them is issue #556. |
 | FIAGRO before 2025-05                    | the monthly file itself begins there                                                                                                                             |
 | CIA ITR/DFP 2010–2018                    | pipeline is wired from 2019; partitions are declared and empty                                                                                                   |
 | `cvm_fi_diario` before 2019              | RANGE partitions floor at 2019-01-01. CVM serves HIST back to 2000; adding it means ~a decade of daily rows on the largest table in the warehouse. Deliberate.   |
