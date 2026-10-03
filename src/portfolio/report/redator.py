@@ -127,7 +127,7 @@ Regra zero: todo número vem do JSON. Você nunca escreve um algarismo. Cada val
 
 O que escrever, nesta ordem de importância:
 1. identificacao: a carteira identificada fundo a fundo; linhas ambíguas e como foram desempatadas; fundos que mudaram de nome; linhas não identificadas e o motivo.
-2. taxas: a taxa de administração DIVULGADA de cada fundo (fees.by_line[i].disclosed_pct_year, com a origem e a data em disclosed_origin_label e disclosed_as_of); a estimativa do balancete só como comparação, sempre dita "estimativa, não divulgada" e nunca somada nem apresentada como a taxa; sem taxa divulgada, diga "taxa divulgada não encontrada"; um 0 informado é "0 informado; a conferir" (filed_zero_label) e um valor acima de 5% a.a. é "valor informado acima de 5% a.a.; a conferir" (implausible_label, o valor informado fica em implausible_raw): nunca diga que estão errados, pois podem estar corretos, nunca os use como custo, some ou compare, e mostre o valor informado; taxa defasada (disclosed_stale) é dita defasada; é taxa da classe quando disclosed_scope_label diz; taxa de performance e demais termos como o JSON traz, sem interpretar; a taxa do master de um FIC nunca se soma à do FIC (fees.underlying é "não somada"); o total de despesas declarado (expense_ratio_pct) é outra coisa e nunca se soma.
+2. taxas: a taxa de administração DIVULGADA de cada fundo (fees.by_line[i].disclosed_pct_year, com a origem e a data em disclosed_origin_label e disclosed_as_of); a estimativa do balancete só como comparação, sempre dita "estimativa, não divulgada" e nunca somada nem apresentada como a taxa; sem taxa divulgada, diga "taxa divulgada não encontrada"; um 0 informado é "0 informado; a conferir" (filed_zero_label) e um valor acima de 5% a.a. é "valor informado acima de 5% a.a.; a conferir" (implausible_label, o valor informado fica em implausible_raw): nunca diga que estão errados, pois podem estar corretos, nunca os use como custo, some ou compare, e mostre o valor informado; taxa defasada (disclosed_stale) é dita defasada; é taxa da classe quando disclosed_scope_label diz; taxa de performance e demais termos como o JSON traz, sem interpretar; a taxa do master de um FIC nunca se soma à do FIC (fees.underlying é "não somada"); o total de despesas declarado (expense_ratio_pct) é outra coisa e nunca se soma; quando o Extrato informa 0 ou acima de 5% a.a., a taxa da outra fonte aparece ao lado (lamina_beside_label com lamina_beside_pct_year e lamina_beside_as_of, "lâmina informa X; a conferir"; ou, quando a lâmina é mais recente e vira a taxa mostrada, lamina_newer_label, com o Extrato ao lado em extrato_beside_value e extrato_beside_as_of): nenhuma das duas é somada, comparada ou dita certa, e scale_flag_label ("possível erro de escala no Extrato") é só um sinal, nunca uma correção.
 3. exposicao: onde a carteira se sobrepõe e o que está por baixo (look-through, exposição compartilhada, indexador, setor). Mostre "sem classificação" quando houver.
 4. achados: o que ninguém pegaria à mão (fundo renomeado, reapresentação, sinal de risco, linha ambígua, dois fundos com a mesma carteira por baixo).
 5. reapresentacoes: cada reapresentação, com o texto de avaliação que o JSON traz ("revisado, não avaliado"); não julgue materialidade.
@@ -257,7 +257,20 @@ def template_findings(engine: dict) -> dict:
                 "ou {{fees.weighted_estimated_pct_year}} ao ano sobre a carteira. Ela é um controle e não é somada à taxa divulgada.", fee_prov)
         for i, b in enumerate(by_line):
             q = f"fees.by_line[{i}]"
-            if b.get("disclosed_pct_year") is not None:
+            # engine 1.4 (#552): the other document's fee beside the Extrato, as filed, never summed
+            beside = ""
+            if b.get("lamina_beside_pct_year") is not None:
+                beside += (f" Ao lado, {{{{{q}.lamina_beside_label}}}} {{{{{q}.lamina_beside_pct_year}}}} ao ano "
+                           f"(referência {{{{{q}.lamina_beside_as_of}}}}); {{{{{q}.lamina_beside_check_label}}}}, sem entrar em soma.")
+            if b.get("scale_flag_label"):
+                beside += f" Sinal: {{{{{q}.scale_flag_label}}}}."
+            if b.get("lamina_newer_label") and b.get("disclosed_pct_year") is not None:
+                add("taxas", "Lâmina mais recente que o Extrato, a conferir",
+                    f"Na linha {{{{{q}.line_id}}}} a lâmina de {{{{{q}.disclosed_as_of}}}}, mais recente que o Extrato, informa "
+                    f"{{{{{q}.disclosed_pct_year}}}} ao ano: {{{{{q}.lamina_newer_label}}}}. "
+                    f"O Extrato de {{{{{q}.extrato_beside_as_of}}}} informa {{{{{q}.extrato_beside_value}}}}, mostrado ao lado como informado. "
+                    "Nenhum dos dois valores é somado nem comparado." + beside, b.get("provenance"))
+            elif b.get("disclosed_pct_year") is not None:
                 txt = (f"A taxa de administração divulgada da linha {{{{{q}.line_id}}}} é {{{{{q}.disclosed_pct_year}}}} ao ano, "
                        f"cerca de {{{{{q}.disclosed_brl_year}}}} por ano. Origem: {{{{{q}.disclosed_origin_label}}}}, "
                        f"data {{{{{q}.disclosed_as_of}}}}.")
@@ -276,12 +289,12 @@ def template_findings(engine: dict) -> dict:
             elif b.get("filed_zero_label"):
                 add("taxas", "Taxa zero informada",
                     f"Na linha {{{{{q}.line_id}}}} a fonte informou {{{{{q}.filed_zero_pct}}}} ao ano: {{{{{q}.filed_zero_label}}}}. "
-                    "O valor pode estar correto e não é contado como custo, nem somado, nem comparado.",
+                    "O valor pode estar correto e não é contado como custo, nem somado, nem comparado." + beside,
                     b.get("provenance"))
             elif b.get("implausible_label"):
                 add("taxas", "Valor informado acima do limite, a conferir",
                     f"Na linha {{{{{q}.line_id}}}} a fonte informou {{{{{q}.implausible_raw}}}}: {{{{{q}.implausible_label}}}}. "
-                    "O valor pode estar correto e não entra em nenhuma conta.", b.get("provenance"))
+                    "O valor pode estar correto e não entra em nenhuma conta." + beside, b.get("provenance"))
             else:
                 add("taxas", "Taxa divulgada não encontrada",
                     f"A linha {{{{{q}.line_id}}}}: {{{{{q}.fee_status}}}}. {{{{{q}.reason}}}}", _ids(b.get("provenance"), fee_prov))

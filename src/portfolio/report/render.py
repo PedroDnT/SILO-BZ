@@ -168,6 +168,8 @@ def _fee_row(engine: dict, q: str, b: dict) -> list[str]:
             disclosed += f"<br><span class=cit>{v(engine, f'{q}.disclosed_brl_year')} por ano</span>"
         if b.get("disclosed_scope_label"):
             disclosed += f"<br><span class=cit>{v(engine, f'{q}.disclosed_scope_label')}</span>"
+        if b.get("lamina_newer_label"):
+            disclosed += f'<br><span class="tag unk">{v(engine, f"{q}.lamina_newer_label")}</span>'
     elif b.get("disclosed_min_pct_year") is not None:
         disclosed = (f"faixa divulgada: <span class=v>{v(engine, f'{q}.disclosed_min_pct_year')}</span> a "
                      f"<span class=v>{v(engine, f'{q}.disclosed_max_pct_year')}</span> a.a.")
@@ -183,6 +185,7 @@ def _fee_row(engine: dict, q: str, b: dict) -> list[str]:
         disclosed = f'<span class="tag unk">{e(label)}</span>'
         if b.get("reason"):
             disclosed += f"<br><span class=cit>{v(engine, f'{q}.reason')}</span>"
+    disclosed += _beside_html(engine, q, b)
     origin = "—"
     if b.get("disclosed_origin"):
         origin = v(engine, f"{q}.disclosed_origin_label")
@@ -219,6 +222,31 @@ def _fee_row(engine: dict, q: str, b: dict) -> list[str]:
     return [
         v(engine, f"{q}.line_id"), v(engine, f"{q}.cnpj"), disclosed, origin, est, expense, "<br>".join(notes) or "—",
     ]
+
+
+def _beside_html(engine: dict, q: str, b: dict) -> str:
+    """The other document's fee beside the headline (engine 1.4, #552): as filed, never summed, never the fee."""
+    out = ""
+    if b.get("lamina_beside_label"):
+        if b.get("lamina_beside_pct_year") is not None:
+            value = f"<span class=v>{v(engine, f'{q}.lamina_beside_pct_year')}</span> a.a."
+        else:
+            value = (f"<span class=v>{v(engine, f'{q}.lamina_beside_min_pct_year')}</span> a "
+                     f"<span class=v>{v(engine, f'{q}.lamina_beside_max_pct_year')}</span> a.a.")
+        out += (f"<br><span class=cit>{v(engine, f'{q}.lamina_beside_label')} {value}; "
+                f"{v(engine, f'{q}.lamina_beside_check_label')}")
+        if b.get("lamina_beside_as_of"):
+            out += f" (lâmina de {v(engine, f'{q}.lamina_beside_as_of')})"
+        out += "</span>"
+        if b.get("lamina_beside_stale_label"):
+            out += f' <span class="tag unk">{v(engine, f"{q}.lamina_beside_stale_label")}</span>'
+    if b.get("extrato_beside_label"):
+        when = f" de {v(engine, f'{q}.extrato_beside_as_of')}" if b.get("extrato_beside_as_of") else ""
+        out += (f"<br><span class=cit>Extrato{when} informa <span class=v>{v(engine, f'{q}.extrato_beside_value')}</span> "
+                "(como informado; não somado)</span>")
+    if b.get("scale_flag_label"):
+        out += f'<br><span class="tag unk">{v(engine, f"{q}.scale_flag_label")}</span>'
+    return out
 
 
 _FEE_HEADERS = [("Linha", False), ("CNPJ", False), ("Taxa divulgada", False), ("Origem e data", False),

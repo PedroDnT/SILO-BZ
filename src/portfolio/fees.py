@@ -35,6 +35,16 @@ be CORRECT, so the rules are these:
    output as filed, with no reading.
 7. A feeder's fee is never added to its master's: every fund keeps its own. The funds a
    fund holds appear under ``underlying`` with their own fees, labelled ``não somada``.
+8. The Extrato and the lâmina disagree (catalog v55, issue #552). ``fee_resolution`` says which
+   rule the tool applied. When the Extrato filed 0 or above 5 % a.a. and the lâmina is older, has
+   no single fee or none in (0, 5] (``extrato_lamina_beside``), the Extrato stays the fee as filed
+   and the lâmina's own fee is shown beside it: ``lâmina informa X; a conferir``. When the lâmina's
+   single fee is in (0, 5] and NEWER than the Extrato (``lamina_newer``), the lâmina is the
+   headline (``headline.kind = "lamina_mais_recente"``) and the Extrato's value is shown beside it
+   as filed: ``Extrato de <data> informa X``. Either way ``needs_manual_check`` is true, neither
+   value is a cost, summed or compared, and nothing is rescaled. When the Extrato above 5 is
+   exactly 10 or 100 times the lâmina (``extrato_scale_factor``), ``scale_flag`` says ``possível
+   erro de escala no Extrato``: a flag only.
 
 Assumption, recorded in the output: ``disclosed_taxa_adm`` and the estimate are read as
 percent per year. CVM's metadata states no unit for TAXA_ADM (migration 64).
@@ -72,6 +82,23 @@ ORIGIN_LABEL = {"extrato": "Extrato CVM", "lamina": "lâmina CVM", "cad_fi": "ca
 ZERO_LABEL = "0 informado; a conferir"
 IMPLAUSIBLE_LABEL = "valor informado acima de 5% a.a.; a conferir"
 NEGATIVE_LABEL = "valor informado negativo; a conferir"
+# catalog v55, issue #552: the lâmina beside the Extrato, or the newer lâmina as the source
+LAMINA_BESIDE_LABEL = "lâmina informa"
+CHECK_LABEL = "a conferir"
+EXTRATO_BESIDE_LABEL = "Extrato informa"
+LAMINA_NEWER_LABEL = "lâmina mais recente que o Extrato; a conferir"
+SCALE_FLAG_LABEL = "possível erro de escala no Extrato"
+LAMINA_BESIDE_NOTE = (
+    "Taxa da lâmina mostrada ao lado da do Extrato, nunca no lugar dela: o Extrato informou 0 ou valor acima de 5% a.a. "
+    "e a lâmina é mais antiga ou não traz uma taxa única entre 0 e 5% a.a. Nenhum dos dois valores entra em soma ou comparação."
+)
+EXTRATO_BESIDE_NOTE = (
+    "Valor do Extrato como informado, mostrado ao lado da taxa da lâmina, que é mais recente: o Extrato informou 0 ou valor "
+    "acima de 5% a.a. Nenhum dos dois valores entra em soma ou comparação; nada é corrigido."
+)
+SCALE_FLAG_NOTE = (
+    "Sinal apenas: o valor do Extrato é exatamente 10 ou 100 vezes a taxa da lâmina. Nenhum valor é corrigido nem reescalado."
+)
 IMPLAUSIBLE_ABOVE_PCT = Decimal("5")
 EXPENSE_RATIO_NOTE = (
     "Total de despesas declarado na lâmina (PR_PL_DESPESA, % do patrimônio médio no período indicado): "
@@ -145,7 +172,7 @@ def compute_fees(
     if unknown and sec.status != "unknown":
         sec.degrade(f"{len(unknown)} fundo(s) sem taxa divulgada encontrada.")
     if unusable and sec.status != "unknown":
-        sec.degrade(f"{len(unusable)} fundo(s) com taxa informada a conferir (0 ou acima de 5% a.a.), que não entra em nenhuma conta.")
+        sec.degrade(f"{len(unusable)} fundo(s) com taxa informada a conferir (0 ou acima de 5% a.a. no Extrato, ou lâmina mais recente que o Extrato), que não entra em nenhuma conta.")
     return {
         **sec.head(),
         "month": fee_month.isoformat(),
@@ -156,6 +183,11 @@ def compute_fees(
         "zero_label": ZERO_LABEL,
         "implausible_label": IMPLAUSIBLE_LABEL,
         "negative_label": NEGATIVE_LABEL,
+        "lamina_beside_label": LAMINA_BESIDE_LABEL,
+        "extrato_beside_label": EXTRATO_BESIDE_LABEL,
+        "lamina_newer_label": LAMINA_NEWER_LABEL,
+        "scale_flag_label": SCALE_FLAG_LABEL,
+        "check_label": CHECK_LABEL,
         "source_order": ["extrato", "lamina", "cad_fi"],
         "lines": out_lines,
         "underlying": underlying,
@@ -170,6 +202,10 @@ def _empty_fee() -> dict[str, Any]:
         "headline": None,
         "estimate": None,
         "expense_ratio": _expense_ratio(),
+        "fee_resolution": None,
+        "lamina_beside": None,
+        "extrato_beside": None,
+        "scale_flag": None,
         "findings": [],
     }
 
@@ -211,6 +247,9 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
         stale = row["disclosed_age_days"] / 30.4375 > limit
     else:
         stale = False
+    resolution = row.get("fee_resolution")  # catalog v55; NULL on an older row
+    lamina_newer = resolution == "lamina_newer"
+    needs_check = filed_zero or implausible or lamina_newer
     tp = row.get("extrato_tp_fundo_classe")
     scope_label = "taxa da classe" if tp == "CLASSES - FIF" else ("taxa do fundo" if origin == "extrato" and tp else None)
 
@@ -238,7 +277,8 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
             "filed_zero_label": ZERO_LABEL if filed_zero else None,
             "implausible_filed": implausible,
             "implausible_label": (NEGATIVE_LABEL if raw_filed is not None and raw_filed < 0 else IMPLAUSIBLE_LABEL) if implausible else None,
-            "needs_manual_check": filed_zero or implausible,
+            "needs_manual_check": needs_check,
+            "fee_resolution": resolution,
             "adm_filed_raw": ratio(raw_filed, 6),  # as filed, unit read as % a year, plain number: never printed as a rate
             "adm_rate_pct_year": ratio(d_adm, 4),
             "adm_min_pct_year": ratio(d_min, 4),
@@ -267,6 +307,22 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
                 "basis": ZERO_LABEL,
                 "rate_pct_year": None,
                 "filed_pct_year": 0.0,
+                "per_year_brl": None,
+                "counted_as_cost": False,
+                "source": d_src,
+                "origin": origin,
+                "scope_label": scope_label,
+                "as_of": as_of,
+                "age_months": age,
+                "stale": stale,
+                "sources": [src],
+            }
+        elif lamina_newer and d_adm is not None:
+            # The newer of two filed, dated documents: the lâmina's fee is the headline, to check, never a cost.
+            headline = {
+                "kind": "lamina_mais_recente",
+                "basis": LAMINA_NEWER_LABEL,
+                "rate_pct_year": ratio(d_adm, 4),
                 "per_year_brl": None,
                 "counted_as_cost": False,
                 "source": d_src,
@@ -325,8 +381,10 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
         "sources": [src],
     }
 
+    lamina_beside, extrato_beside, scale_flag = _beside(row, resolution, src)
+
     findings: list[dict[str, Any]] = []
-    if d_adm is not None and est_adm is not None:
+    if d_adm is not None and est_adm is not None and not lamina_newer:
         if d_adm == 0 and est_adm > CLEARLY_ABOVE_ZERO_PCT:
             findings.append(
                 {
@@ -379,8 +437,46 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
             }
         )
 
+    if lamina_beside is not None:
+        findings.append(
+            {
+                "kind": "lamina_ao_lado_do_extrato",
+                "level": "informação",
+                "text": "A lâmina informa outra taxa, mostrada ao lado da do Extrato; a conferir. Nenhuma das duas entra em soma.",
+                "lamina_pct_year": lamina_beside["lamina_pct_year"],
+                "sources": [src],
+            }
+        )
+    if extrato_beside is not None:
+        findings.append(
+            {
+                "kind": "lamina_mais_recente_que_extrato",
+                "level": "informação",
+                "text": ("A lâmina, mais recente que o Extrato, é a fonte da taxa; o Extrato informou 0 ou valor acima de 5% a.a. "
+                         "e fica ao lado, como informado; a conferir. Nenhum dos dois valores entra em soma."),
+                "raw_value": extrato_beside["filed_value"],
+                "sources": [src],
+            }
+        )
+    if scale_flag is not None:
+        findings.append(
+            {
+                "kind": "possivel_erro_de_escala_no_extrato",
+                "level": "atenção",
+                "text": "Possível erro de escala no Extrato: o valor do Extrato é exatamente 10 ou 100 vezes a taxa da lâmina; nada foi corrigido.",
+                "factor": scale_flag["factor"],
+                "extrato_lamina_ratio": scale_flag["extrato_lamina_ratio"],
+                "sources": [src],
+            }
+        )
+
     # The reasons are the engine's own Portuguese; the tool's note (English, verbatim) stays in disclosed.note.
-    if headline is not None and headline["kind"] == "zero_informado":
+    if headline is not None and headline["kind"] == "lamina_mais_recente":
+        status = LAMINA_NEWER_LABEL
+        reason = ("O Extrato informou 0 ou valor acima de 5% a.a.; a lâmina, mais recente, informa outra taxa e é a fonte. "
+                  "Os documentos divergem: o valor fica a conferir, não é usado como custo, nem somado, nem comparado; "
+                  "o valor do Extrato fica ao lado, como informado.")
+    elif headline is not None and headline["kind"] == "zero_informado":
         status = ZERO_LABEL
         reason = "A fonte informou taxa de administração igual a 0. O valor fica a conferir (pode estar correto): não é usado como custo, nem somado, nem comparado."
     elif headline is not None:
@@ -400,14 +496,69 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
     return {
         "fee_status": status,
         "reason": reason,
-        "needs_manual_check": filed_zero or implausible,
+        "needs_manual_check": needs_check,
         "fund_nav_brl": brl(dec(row.get("nav"))),
         "disclosed": disclosed,
         "headline": headline,
         "estimate": estimate,
         "expense_ratio": _expense_ratio(row, src),
+        "fee_resolution": resolution,
+        "lamina_beside": lamina_beside,
+        "extrato_beside": extrato_beside,
+        "scale_flag": scale_flag,
         "findings": findings,
     }
+
+
+def _beside(row: dict, resolution: str | None, src: dict) -> tuple[dict | None, dict | None, dict | None]:
+    """The other document's fee, shown beside the headline as filed (catalog v55, #552). Never a cost, never summed."""
+    lamina_beside = extrato_beside = scale_flag = None
+    lam = dec(row.get("lamina_taxa_adm"))
+    lam_min = dec(row.get("lamina_taxa_adm_min"))
+    lam_max = dec(row.get("lamina_taxa_adm_max"))
+    if resolution == "extrato_lamina_beside" and (lam is not None or lam_min is not None):
+        lam_age = row.get("lamina_age_months")
+        limit = STALE_MONTHS_BY_ORIGIN["lamina"]
+        lam_stale = isinstance(lam_age, int) and lam_age > limit
+        lamina_beside = {
+            "label": LAMINA_BESIDE_LABEL,
+            "check_label": CHECK_LABEL,
+            "lamina_pct_year": ratio(lam, 4),
+            "lamina_min_pct_year": ratio(lam_min, 4) if lam is None else None,
+            "lamina_max_pct_year": ratio(lam_max, 4) if lam is None else None,
+            "n_classes": row.get("lamina_n_classes"),
+            "as_of": row.get("lamina_as_of"),
+            "age_months": lam_age,
+            "stale": lam_stale,
+            "stale_label": "defasada" if lam_stale else None,
+            "stale_after_months": limit,
+            "source": "cvm_fi_lamina",
+            "origin_label": ORIGIN_LABEL["lamina"],
+            "counted_as_cost": False,
+            "note": LAMINA_BESIDE_NOTE,
+            "sources": [src],
+        }
+    if resolution == "lamina_newer" and row.get("extrato_taxa_adm_filed") is not None:
+        extrato_beside = {
+            "label": EXTRATO_BESIDE_LABEL,
+            "filed_value": ratio(dec(row.get("extrato_taxa_adm_filed")), 6),  # as filed, plain number: never printed as a rate
+            "as_of": row.get("extrato_as_of"),
+            "source": "cvm_fi_extrato",
+            "origin_label": ORIGIN_LABEL["extrato"],
+            "counted_as_cost": False,
+            "note": EXTRATO_BESIDE_NOTE,
+            "sources": [src],
+        }
+    factor = row.get("extrato_scale_factor")
+    if factor in (10, 100):
+        scale_flag = {
+            "label": SCALE_FLAG_LABEL,
+            "factor": int(factor),
+            "extrato_lamina_ratio": ratio(dec(row.get("extrato_lamina_ratio")), 4),
+            "note": SCALE_FLAG_NOTE,
+            "sources": [src],
+        }
+    return lamina_beside, extrato_beside, scale_flag
 
 
 def _extrato_terms(row: dict) -> dict[str, Any]:
@@ -473,14 +624,16 @@ def _totals(lines: list[dict]) -> dict[str, Any]:
     range_hi = Decimal("0")
     est_adm = Decimal("0")
     est_perf = Decimal("0")
-    v_fixed = v_range = v_none = v_zero = v_implausible = Decimal("0")
+    v_fixed = v_range = v_none = v_zero = v_implausible = v_lamina_newer = Decimal("0")
     for o in lines:
         v = dec(o["position_value_brl"]) or Decimal("0")
         h = o.get("headline")
         if h and h["kind"] == "zero_informado":
             v_zero += v  # a filed 0 is not a fee: never counted as a zero cost, never summed
-        elif o.get("implausible_filed"):
-            v_implausible += v
+        elif (o.get("disclosed") or {}).get("implausible_filed"):
+            v_implausible += v  # the flag lives in disclosed (engine 1.3 read a top-level key the record never had, so this bucket stayed 0)
+        elif h and h["kind"] == "lamina_mais_recente":
+            v_lamina_newer += v  # the newer lâmina is the headline but the sources disagree: to check, never summed
         elif h and h["kind"] == "fixa":
             fixed += dec(h["per_year_brl"]) or Decimal("0")
             v_fixed += v
@@ -493,7 +646,7 @@ def _totals(lines: list[dict]) -> dict[str, Any]:
         e = o.get("estimate") or {}
         est_adm += dec(e.get("adm_per_year_brl")) or Decimal("0")
         est_perf += dec(e.get("perf_per_year_brl")) or Decimal("0")
-    total_value = v_fixed + v_range + v_none + v_zero + v_implausible
+    total_value = v_fixed + v_range + v_none + v_zero + v_implausible + v_lamina_newer
     return {
         "adm_disclosed_fixed_per_year_brl": brl(fixed),
         "adm_disclosed_range_low_per_year_brl": brl(range_lo),
@@ -509,8 +662,9 @@ def _totals(lines: list[dict]) -> dict[str, Any]:
         "fund_value_brl": brl(total_value),
         "fund_value_with_fixed_fee_brl": brl(v_fixed),
         "fund_value_with_fee_range_brl": brl(v_range),
-        "fund_value_without_disclosed_fee_brl": brl(v_none + v_zero + v_implausible),
+        "fund_value_without_disclosed_fee_brl": brl(v_none + v_zero + v_implausible + v_lamina_newer),
         "fund_value_with_filed_zero_brl": brl(v_zero),
         "fund_value_with_implausible_fee_brl": brl(v_implausible),
+        "fund_value_with_lamina_newer_fee_brl": brl(v_lamina_newer),
         "known_fee_fund_value_pct": pct(v_fixed + v_range, total_value) if total_value else None,
     }

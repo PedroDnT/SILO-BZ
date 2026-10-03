@@ -156,8 +156,9 @@ EST_OK = "estimate from the balancete accruals: (previous minus current accumula
 
 def fee(cnpj, name, nav, adm_est, perf_est=None, suspect=False, origin=None, adm=None, raw=None, d_min=None, d_max=None, d_perf=None,
         asof=None, age_m=None, age_d=None, ncls=None, note=None, est_label=None, month="2026-08-31", zero=False, implausible=False,
-        extrato=None, desp=None):
-    """One portfolio_fees row in the catalog v52 shape: the 21 v51 columns, then the 25 appended."""
+        extrato=None, desp=None, lam=None):
+    """One portfolio_fees row in the catalog v55 shape: the 21 v51 columns, the 25 of v52, then the 10 of v55.
+    ``lam`` is the lâmina beside an Extrato fee (adm, as_of, age_m), synthetic."""
     src = {"extrato": "cvm_fi_extrato", "lamina": "cvm_fi_lamina", "cad_fi": "cvm_fund_registry (cad_fi)"}.get(origin)
     ex = extrato or {}
     row = dict(cnpj=cnpj, fund_name=name, month=month, nav=nav, adm_fee_flow=None if adm_est is None else round(nav * adm_est / 1200, 2),
@@ -179,6 +180,24 @@ def fee(cnpj, name, nav, adm_est, perf_est=None, suspect=False, origin=None, adm
         lamina_as_of=(desp or {}).get("as_of"),
         lamina_expense_note=None if desp else "no lâmina filed an expense ratio for this fund",
     )
+    # catalog v55 (#552): the rule that applied and the other document's fee, as the SQL computes them
+    filed = raw if raw is not None else adm
+    lam_adm = (lam or {}).get("adm") if lam else (adm if origin == "lamina" else None)
+    lam_min = (lam or {}).get("adm") if lam else (d_min if d_min is not None else adm) if origin == "lamina" else None
+    lam_max = (lam or {}).get("adm") if lam else (d_max if d_max is not None else adm) if origin == "lamina" else None
+    to_check = origin == "extrato" and filed is not None and (filed == 0 or filed > 5)
+    ext_filed = filed if origin == "extrato" else None
+    row.update(
+        fee_resolution=("extrato_lamina_beside" if lam else "extrato_to_check") if to_check else origin,
+        lamina_taxa_adm=lam_adm, lamina_taxa_adm_min=lam_min, lamina_taxa_adm_max=lam_max,
+        lamina_n_classes=1 if lam else (ncls if origin == "lamina" else None),
+        lamina_age_months=(lam or {}).get("age_m") if lam else (age_m if origin == "lamina" else None),
+        extrato_taxa_adm_filed=ext_filed, extrato_as_of=asof if origin == "extrato" else None,
+        extrato_lamina_ratio=round(ext_filed / lam_adm, 4) if ext_filed and lam_adm else None,
+        extrato_scale_factor=None,
+    )
+    if lam:
+        row["lamina_as_of"] = lam["as_of"]
     return row
 
 
@@ -196,9 +215,11 @@ statement_rows = [
     fee("50088190000119", FUNDS["50088190000119"]["name"], 1780000000.0, 0.20, origin="lamina", d_min=0.15, d_max=0.30, asof="2026-07-31", age_m=1, age_d=64, ncls=2,
         note="the fund's 2 classes disclose different fees: the single value is NULL, read the min and max"),
     # Extrato filed 0 while the balancete books a fee: shown, never counted as a zero cost
+    # ... and a synthetic lâmina fee, older than the Extrato, shown beside it (catalog v55, #552)
     fee("51488342000133", FUNDS["51488342000133"]["name"], 3360184376.89, 0.35, origin="extrato", adm=0.0, zero=True, asof="2026-06-30", age_m=2, age_d=95, ncls=1,
         note="the Extrato filed an administration fee of exactly 0: returned as filed (filed_zero); read it as not informed, never as a zero cost",
-        extrato=dict(tp="CLASSES - FIF", classe="Renda Fixa", existe_perfm="N", existe_ing="N", existe_saida="N")),
+        extrato=dict(tp="CLASSES - FIF", classe="Renda Fixa", existe_perfm="N", existe_ing="N", existe_saida="N"),
+        lam=dict(adm=0.5, as_of="2026-03-31", age_m=5)),
 ]
 underlying_rows = [
     # lâmina filed 0 and the balancete books a fee: the attention finding

@@ -238,8 +238,9 @@ def test_the_extrato_is_read_first_then_the_lamina_then_cad_fi():
     order = body.index("WHEN a.use_ext THEN 'extrato'")
     assert order < body.index("WHEN a.use_lam THEN 'lamina'") < body.index("THEN 'cad_fi'")
     # An Extrato row without a parseable fee does not hide the lamina; a 0 or a value
-    # above 5 does not fall through (it is read, not skipped).
-    assert "(x.cnpj IS NOT NULL AND x.x_adm IS NOT NULL) AS use_ext" in body
+    # above 5 does not fall through to an OLDER source (it is read, not skipped). v55
+    # (#552): it gives way only to a NEWER lamina with a single fee in (0, 5].
+    assert "(x.cnpj IS NOT NULL AND x.x_adm IS NOT NULL AND NOT n.lam_newer) AS use_ext" in body
 
 
 def test_the_owners_reading_rules_are_applied_when_reading_not_when_storing():
@@ -263,3 +264,43 @@ def test_catalog_v52_says_extrato_first_and_names_the_flags():
                    "lamina_pr_pl_despesa"):
         assert needle in text, needle
     assert f'"version": {CATALOG_VERSION}' in SQL19
+
+
+# --- catalog v55: the lamina beside the Extrato, or the newer lamina (issue #552) ------
+
+V52_LAST = "lamina_expense_note"
+V55_COLUMNS = [
+    "fee_resolution", "lamina_taxa_adm", "lamina_taxa_adm_min", "lamina_taxa_adm_max",
+    "lamina_n_classes", "lamina_age_months", "extrato_taxa_adm_filed", "extrato_as_of",
+    "extrato_lamina_ratio", "extrato_scale_factor",
+]
+
+
+def test_v55_appends_after_the_v52_columns_without_touching_them():
+    cols = _fee_columns()
+    assert cols[: len(V51_COLUMNS)] == V51_COLUMNS
+    last = cols.index(V52_LAST)
+    assert last == 45, "the 46 columns of v52 keep their order"
+    assert cols[last + 1:] == V55_COLUMNS
+
+
+def test_v55_lamina_newer_needs_a_newer_plausible_lamina_and_never_rescales():
+    body = _strip(_function("portfolio_fees"))
+    rule = body[body.index("AS lam_newer") - 400: body.index("AS lam_newer")]
+    for needle in ("(x.x_adm = 0 OR x.x_adm > 5)", "s.lam_single > 0 AND s.lam_single <= 5",
+                   "l.dt_comptc > x.x_dt"):
+        assert needle in rule, needle
+    # The scale flag is a factor of exactly 10 or 100 within two-decimal rounding: a flag column, never a fee.
+    assert "abs(f.x_adm - 10 * f.lam_single) <= 10 * 0.005 + 0.005 THEN 10" in body
+    assert "abs(f.x_adm - 100 * f.lam_single) <= 100 * 0.005 + 0.005 THEN 100" in body
+    assert "x_adm / 100" not in body and "x_adm / 10" not in body  # no filed value is divided by a factor
+
+
+def test_catalog_v55_names_the_resolution_and_the_flag():
+    from serve.catalog import CATALOG_VERSION, catalog_payload
+
+    assert CATALOG_VERSION >= 55
+    text = str(catalog_payload())
+    for needle in ("fee_resolution", "lamina_newer", "extrato_lamina_beside", "extrato_scale_factor",
+                   "lamina_taxa_adm", "extrato_taxa_adm_filed"):
+        assert needle in text, needle

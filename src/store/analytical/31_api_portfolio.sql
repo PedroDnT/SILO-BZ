@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 31_api_portfolio.sql
 -- The portfolio-diagnosis engine's four set-based reads, served through schema
--- `api` (catalog v51, portfolio_fees v52; map #510, research note
+-- `api` (catalog v51, portfolio_fees v52 and v55; map #510, research note
 -- docs/reference/research/portfolio-diagnosis-phase0.md §2, §4, §8 slice 2-3).
 --
 --   api.portfolio_resolve      statement lines (names, optional CNPJs, quotas)
@@ -76,9 +76,20 @@
 --     cost); a filed value above 5 (115 of 21,962, maximum 14,638.38, scale
 --     errors) is NOT the fee: disclosed_taxa_adm is NULL, implausible_filed TRUE,
 --     the value as filed in taxa_adm_filed_raw. An Extrato row that exists is the
---     source even then: it does not fall through to an older source (about 150
---     funds whose Extrato says 0 have a lâmina fee that stays hidden; the owner's
---     rule, recorded in the PR).
+--     source even then: it does not fall through to an OLDER source. Catalog v55
+--     (issue #552, measured 2026-10-03: 180 funds with an Extrato 0 and 15 above 5
+--     have a lâmina fee in (0, 5], 115 and 14 of them newer than the Extrato):
+--     fee_resolution says which rule applied. When the Extrato filed exactly 0 or
+--     above 5, the lâmina's single fee is in (0, 5] and its reference month is
+--     NEWER than the Extrato's DT_COMPTC, the newer lâmina is the source
+--     ('lamina_newer'): the newer of two filed, dated documents, nothing
+--     rescaled. Otherwise the Extrato stays the source as filed and a lâmina fee,
+--     when there is one, is returned beside it ('extrato_lamina_beside'; none:
+--     'extrato_to_check'). Either way the other document's fee comes back as
+--     filed (lamina_taxa_adm*, extrato_taxa_adm_filed with extrato_as_of) and
+--     extrato_scale_factor flags an Extrato above 5 that is exactly 10 or 100
+--     times the lâmina within the two-decimal rounding of both. A flag only: the
+--     caller treats every such fund as to be checked and sums neither value.
 --     The Extrato also gives the performance fee as filed (extrato_taxa_perfm,
 --     numeric, with its benchmark, method and text), entry and exit fees and the
 --     custody fee. Its row is the CLASS for a CVM 175 fund: there is no subclass
@@ -588,7 +599,7 @@ COMMENT ON FUNCTION api.portfolio_resolve(TEXT[], TEXT[], NUMERIC[], DATE[]) IS
 -- ---------------------------------------------------------------------------
 -- portfolio_fees - the disclosed fee, and a separate estimate from the balancete
 -- ---------------------------------------------------------------------------
--- The return table grew (catalog v52): CREATE OR REPLACE cannot change a return
+-- The return table grew (catalog v52, again in v55): CREATE OR REPLACE cannot change a return
 -- type, so the function is dropped and created again inside this file's
 -- transaction. Nothing depends on it; its grants are issued below.
 DROP FUNCTION IF EXISTS api.portfolio_fees(TEXT[], DATE);
@@ -642,8 +653,19 @@ RETURNS TABLE (
     lamina_pr_pl_despesa     NUMERIC,  -- DECLARED total expense ratio (lâmina PR_PL_DESPESA, % of average NAV over the period below), whatever the fee source; NULL when none or classes differ; never added to the administration fee
     lamina_dt_ini_despesa    DATE,     -- start of the period behind lamina_pr_pl_despesa
     lamina_dt_fim_despesa    DATE,     -- end of that period
-    lamina_as_of             DATE,     -- the lâmina reference month read for the expense ratio; NULL = no lâmina
-    lamina_expense_note      TEXT      -- why lamina_pr_pl_despesa is NULL (none filed, classes differ), else NULL
+    lamina_as_of             DATE,     -- the lâmina's newest reference month, read for the expense ratio and the lamina_taxa_adm* columns; NULL = no lâmina
+    lamina_expense_note      TEXT,     -- why lamina_pr_pl_despesa is NULL (none filed, classes differ), else NULL
+    -- ---- appended in catalog v55 (issue #552; the existing columns above are unchanged) ----
+    fee_resolution           TEXT,     -- which rule set the disclosed_* columns: extrato | extrato_lamina_beside (the Extrato filed 0 or above 5 and a lâmina fee is shown beside it, older or not plausible) | extrato_to_check (the same, no lâmina fee) | lamina_newer (the Extrato filed 0 or above 5, the lâmina's single fee is in (0, 5] and NEWER: the lâmina is the source) | lamina | cad_fi; NULL = none
+    lamina_taxa_adm          NUMERIC,  -- the lâmina's single administration fee as filed at lamina_as_of, whatever the source; NULL when none or classes differ; never summed with the disclosed fee
+    lamina_taxa_adm_min      NUMERIC,  -- lowest administration fee the lâmina's classes disclose (taxa_adm_min, else taxa_adm)
+    lamina_taxa_adm_max      NUMERIC,  -- highest
+    lamina_n_classes         INT,      -- lâmina classes/subclasses at lamina_as_of
+    lamina_age_months        INT,      -- months from lamina_as_of to the end of the newest balancete month SILO holds (0 when later)
+    extrato_taxa_adm_filed   NUMERIC,  -- the Extrato's TAXA_ADM exactly as filed (newest version), whatever the source: 0 and values above 5 included, never rescaled
+    extrato_as_of            DATE,     -- that version's DT_COMPTC
+    extrato_lamina_ratio     NUMERIC,  -- extrato_taxa_adm_filed / lamina_taxa_adm, 4 decimals, when both are above 0; NULL otherwise
+    extrato_scale_factor     INT       -- 10 or 100: the Extrato filed above 5 and equals that factor times the lâmina's single fee within the two-decimal rounding of both (|extrato - k x lamina| <= k x 0.005 + 0.005); a flag ("possível erro de escala no Extrato"), never a correction; NULL otherwise
 )
 LANGUAGE plpgsql
 STABLE
@@ -801,14 +823,22 @@ BEGIN
     -- ONE disclosed source per fund, never a mix of two, in this order: the
     -- Extrato when it has a row with a parseable administration fee (a filed 0
     -- and a value above 5 count: they are read below, not skipped, so the
-    -- Extrato's word is not silently replaced by an older source's); else the
-    -- lâmina when it gives a fee; else cad_fi.
+    -- Extrato's word is not silently replaced by an OLDER source's); else the
+    -- lâmina when it gives a fee; else cad_fi. One exception (catalog v55, issue
+    -- #552): when the Extrato filed exactly 0 or above 5 AND the lâmina's single
+    -- fee is above 0 and at most 5 AND the lâmina's reference month is NEWER than
+    -- the Extrato's DT_COMPTC, the newer lâmina is the source (lam_newer,
+    -- fee_resolution 'lamina_newer'). That picks the newer of two filed, dated
+    -- documents; neither value is rescaled, and the Extrato value is returned
+    -- beside it as filed (extrato_taxa_adm_filed, extrato_as_of).
     disc AS (
         SELECT g.cnpj, g.fund_name, g.fetched_at, g.dt_ini_exerc,
-               (x.cnpj IS NOT NULL AND x.x_adm IS NOT NULL) AS use_ext,
-               ((x.cnpj IS NULL OR x.x_adm IS NULL)
-                AND l.cnpj IS NOT NULL AND (l.adm_min IS NOT NULL OR l.perfm IS NOT NULL
-                                            OR l.n_perfm > 1)) AS use_lam,
+               (x.cnpj IS NOT NULL AND x.x_adm IS NOT NULL AND NOT n.lam_newer) AS use_ext,
+               (n.lam_newer
+                OR ((x.cnpj IS NULL OR x.x_adm IS NULL)
+                    AND l.cnpj IS NOT NULL AND (l.adm_min IS NOT NULL OR l.perfm IS NOT NULL
+                                                OR l.n_perfm > 1))) AS use_lam,
+               n.lam_newer, s.lam_single,
                x.x_dt, x.x_age, x.x_tp, x.x_classe, x.x_adm, x.x_custodia, x.x_existe_perfm,
                x.x_perfm, x.x_param, x.x_calc, x.x_inf, x.x_existe_ing, x.x_ing_pr,
                x.x_ing_real, x.x_existe_saida, x.x_saida_pr, x.x_saida_real,
@@ -819,6 +849,16 @@ BEGIN
         FROM reg g
         LEFT JOIN ext x ON x.cnpj = g.cnpj
         LEFT JOIN lam l ON l.cnpj = g.cnpj
+        -- The lâmina's single administration fee: one value only when every class
+        -- discloses the same one (the rule the lâmina source itself follows).
+        CROSS JOIN LATERAL (
+            SELECT CASE WHEN l.n_adm = 1 AND NOT l.has_empty THEN l.adm_lo END AS lam_single
+        ) s
+        CROSS JOIN LATERAL (
+            SELECT COALESCE(x.x_adm IS NOT NULL AND (x.x_adm = 0 OR x.x_adm > 5)
+                            AND s.lam_single > 0 AND s.lam_single <= 5
+                            AND l.dt_comptc > x.x_dt, FALSE) AS lam_newer
+        ) n
     ),
     cur AS (
         SELECT i.cnpj, b.*
@@ -844,6 +884,7 @@ BEGIN
                d.x_existe_perfm, d.x_perfm, d.x_param, d.x_calc, d.x_inf, d.x_existe_ing,
                d.x_ing_pr, d.x_ing_real, d.x_existe_saida, d.x_saida_pr, d.x_saida_real,
                d.n_desp, d.desp, d.has_empty_desp, d.desp_ini, d.desp_fim,
+               d.lam_newer, d.lam_single,
                -- The calendar month before; a gap is no previous month.
                p.dt_comptc IS NOT NULL AS has_prev,
                (d.dt_ini_exerc IS NOT NULL AND c.dt_comptc IS NOT NULL
@@ -908,7 +949,10 @@ BEGIN
           extrato_existe_taxa_ingresso, extrato_taxa_ingresso_pr, extrato_taxa_ingresso_real,
           extrato_existe_taxa_saida, extrato_taxa_saida_pr, extrato_taxa_saida_real,
           extrato_taxa_custodia_max, lamina_pr_pl_despesa, lamina_dt_ini_despesa,
-          lamina_dt_fim_despesa, lamina_as_of, lamina_expense_note) AS (
+          lamina_dt_fim_despesa, lamina_as_of, lamina_expense_note,
+          fee_resolution, lamina_taxa_adm, lamina_taxa_adm_min, lamina_taxa_adm_max,
+          lamina_n_classes, lamina_age_months, extrato_taxa_adm_filed, extrato_as_of,
+          extrato_lamina_ratio, extrato_scale_factor) AS (
         SELECT f.cnpj, f.fund_name, f.dt_comptc, f.nav,
                f.adm_flow,
                round(f.adm_flow * 12 / NULLIF(f.nav, 0) * 100, 4),
@@ -937,11 +981,17 @@ BEGIN
                     GREATEST(0, ((extract(year FROM f.newest_month) - extract(year FROM f.x_dt)) * 12
                                  + extract(month FROM f.newest_month) - extract(month FROM f.x_dt))::int)
                     WHEN f.use_lam AND f.newest_month IS NOT NULL THEN
-                    ((extract(year FROM f.newest_month) - extract(year FROM f.lam_dt)) * 12
-                     + extract(month FROM f.newest_month) - extract(month FROM f.lam_dt))::int END,
+                    -- 0 when the lâmina is later than the newest balancete month (as the column says; clamped since v55)
+                    GREATEST(0, ((extract(year FROM f.newest_month) - extract(year FROM f.lam_dt)) * 12
+                                 + extract(month FROM f.newest_month) - extract(month FROM f.lam_dt))::int) END,
                CASE WHEN f.use_ext THEN 1
                     WHEN f.use_lam THEN f.n_classes END,
                CASE
+                   WHEN f.lam_newer THEN
+                       'the Extrato of ' || to_char(f.x_dt, 'YYYY-MM-DD') || ' filed an administration fee of '
+                       || trim_scale(f.x_adm)::text || ' (0 or above 5 % a year) and the lâmina of '
+                       || to_char(f.lam_dt, 'YYYY-MM-DD') || ', newer, discloses ' || trim_scale(f.lam_single)::text
+                       || ': the newer lâmina is the source (fee_resolution lamina_newer), to be checked; the Extrato value as filed is in extrato_taxa_adm_filed, never rescaled'
                    WHEN f.is_implausible THEN
                        'the ' || CASE f.origin WHEN 'extrato' THEN 'Extrato' WHEN 'lamina' THEN 'lâmina' ELSE 'cad_fi' END
                        || ' filed an administration fee of ' || trim_scale(f.fee_raw)::text
@@ -1016,6 +1066,27 @@ BEGIN
                        'the lâmina filed no expense ratio (PR_PL_DESPESA): NULL is not a zero'
                    WHEN f.has_empty_desp THEN
                        'at least one class filed no expense ratio: NULL is not a zero'
+               END,
+               -- ---- appended in v55 ----
+               CASE
+                   WHEN f.lam_newer THEN 'lamina_newer'
+                   WHEN f.use_ext AND (f.x_adm = 0 OR f.x_adm > 5) AND f.adm_min IS NOT NULL THEN 'extrato_lamina_beside'
+                   WHEN f.use_ext AND (f.x_adm = 0 OR f.x_adm > 5) THEN 'extrato_to_check'
+                   ELSE f.origin
+               END,
+               f.lam_single,
+               f.adm_min,
+               f.adm_max,
+               f.n_classes,
+               CASE WHEN f.lam_dt IS NOT NULL AND f.newest_month IS NOT NULL THEN
+                    GREATEST(0, ((extract(year FROM f.newest_month) - extract(year FROM f.lam_dt)) * 12
+                                 + extract(month FROM f.newest_month) - extract(month FROM f.lam_dt))::int) END,
+               f.x_adm,
+               f.x_dt,
+               CASE WHEN f.x_adm > 0 AND f.lam_single > 0 THEN round(f.x_adm / f.lam_single, 4) END,
+               CASE WHEN f.x_adm > 5 AND f.lam_single > 0 THEN
+                    CASE WHEN abs(f.x_adm - 10 * f.lam_single) <= 10 * 0.005 + 0.005 THEN 10
+                         WHEN abs(f.x_adm - 100 * f.lam_single) <= 100 * 0.005 + 0.005 THEN 100 END
                END
         FROM flag f
         ORDER BY f.cnpj
@@ -1034,7 +1105,10 @@ BEGIN
            g.extrato_existe_taxa_ingresso, g.extrato_taxa_ingresso_pr, g.extrato_taxa_ingresso_real,
            g.extrato_existe_taxa_saida, g.extrato_taxa_saida_pr, g.extrato_taxa_saida_real,
            g.extrato_taxa_custodia_max, g.lamina_pr_pl_despesa, g.lamina_dt_ini_despesa,
-           g.lamina_dt_fim_despesa, g.lamina_as_of, g.lamina_expense_note
+           g.lamina_dt_fim_despesa, g.lamina_as_of, g.lamina_expense_note,
+           g.fee_resolution, g.lamina_taxa_adm, g.lamina_taxa_adm_min, g.lamina_taxa_adm_max,
+           g.lamina_n_classes, g.lamina_age_months, g.extrato_taxa_adm_filed, g.extrato_as_of,
+           g.extrato_lamina_ratio, g.extrato_scale_factor
     FROM page g
     WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'portfolio_fees')
     ORDER BY g.cnpj
@@ -1047,7 +1121,7 @@ GRANT EXECUTE ON FUNCTION api.portfolio_fees(TEXT[], DATE) TO anon, authenticate
 GRANT EXECUTE ON FUNCTION api.portfolio_fees(TEXT[], DATE) TO silo_api;
 
 COMMENT ON FUNCTION api.portfolio_fees(TEXT[], DATE) IS
-    'Fees per fund, two kinds of number that are never mixed. DISCLOSED (disclosed_*): the fee the fund published, ONE source per fund in this order: the CVM Extrato das Informacoes (cvm_fi_extrato, newest version, one row per fund or class), else the lâmina (cvm_fi_lamina, newest reference month), else cad_fi (cvm_fund_registry taxa_adm / taxa_perfm / inf_taxa_*); disclosed_origin (extrato | lamina | cad_fi), disclosed_source, disclosed_as_of (the filing date), disclosed_age_months and disclosed_age_days say which and how old. Two reading rules on the single administration fee, % a year as filed: a filed 0 is returned as 0 with filed_zero TRUE (read it as not informed, never as a zero cost); a filed value above 5 (or below 0) is NOT returned as the fee: disclosed_taxa_adm is NULL, implausible_filed is TRUE and the value as filed is in taxa_adm_filed_raw. The stored value is never rewritten. A NULL disclosed part is not a zero fee; when the lâmina''s classes disclose different fees the single value is NULL and the min / max and disclosed_note say so. An Extrato row that exists is the source, even when its fee is 0 or above 5: it does not fall through to an older source. The Extrato''s performance fee (extrato_taxa_perfm numeric, extrato_param_taxa_perfm, extrato_calc_taxa_perfm, extrato_inf_taxa_perfm text), entry and exit fees (extrato_existe_* flags, _pr percent and _real reais), custody fee and class note are returned as filed; the row is the class for a CVM 175 fund (no subclass column, a subclass fee is not assumed). lamina_pr_pl_despesa is the declared total expense ratio from the lâmina (with its period and lamina_as_of), whatever the fee source, never added to the administration fee. ESTIMATE (adm_fee_flow, perf_fee_flow and the _pct_annual_est columns): from the balancete accruals (cvm_fi_balancete_resumo): the fee accounts accumulate from each fund''s fiscal-year start and are filed negative, so the month''s accrual is previous minus current accumulated value (served positive = cost; a negative performance accrual is a reversed provision), annualised x 12 / NAV x 100, NAV = groups 6 + 7 + 8 of the month. In the fiscal-year reset month the accumulated fee falls: fiscal_reset_suspect is TRUE and the estimate is NULL, unless cad_fi DT_INI_EXERC puts the fiscal-year start in that month, in which case the month''s accumulated value alone is the accrual. estimate_label says on every row that the estimate is an estimate and why one is missing; it is never presented as the disclosed fee. p_month = the balancete month (NULL = each fund''s newest). One row per distinct CNPJ; more than 200 CNPJs RAISES 22023.';
+    'Fees per fund, two kinds of number that are never mixed. DISCLOSED (disclosed_*): the fee the fund published, ONE source per fund in this order: the CVM Extrato das Informacoes (cvm_fi_extrato, newest version, one row per fund or class), else the lâmina (cvm_fi_lamina, newest reference month), else cad_fi (cvm_fund_registry taxa_adm / taxa_perfm / inf_taxa_*); disclosed_origin (extrato | lamina | cad_fi), disclosed_source, disclosed_as_of (the filing date), disclosed_age_months and disclosed_age_days say which and how old. Two reading rules on the single administration fee, % a year as filed: a filed 0 is returned as 0 with filed_zero TRUE (read it as not informed, never as a zero cost); a filed value above 5 (or below 0) is NOT returned as the fee: disclosed_taxa_adm is NULL, implausible_filed is TRUE and the value as filed is in taxa_adm_filed_raw. The stored value is never rewritten. A NULL disclosed part is not a zero fee; when the lâmina''s classes disclose different fees the single value is NULL and the min / max and disclosed_note say so. An Extrato row that exists is the source, even when its fee is 0 or above 5: it does not fall through to an OLDER source. One exception (v55): when the Extrato filed exactly 0 or above 5, the lâmina''s single fee is in (0, 5] and the lâmina is NEWER than the Extrato, the newer lâmina is the source. fee_resolution names the rule: extrato, extrato_lamina_beside (Extrato 0 or above 5, a lâmina fee beside it), extrato_to_check (the same with no lâmina fee), lamina_newer, lamina, cad_fi. The other document''s fee is returned as filed whatever the source (lamina_taxa_adm, _min, _max, lamina_n_classes, lamina_age_months; extrato_taxa_adm_filed with extrato_as_of), never rescaled and never a fee to sum; extrato_lamina_ratio is the Extrato over the lâmina when both are above 0, and extrato_scale_factor is 10 or 100 when an Extrato above 5 equals that factor times the lâmina within the two-decimal rounding of both, a flag only. The Extrato''s performance fee (extrato_taxa_perfm numeric, extrato_param_taxa_perfm, extrato_calc_taxa_perfm, extrato_inf_taxa_perfm text), entry and exit fees (extrato_existe_* flags, _pr percent and _real reais), custody fee and class note are returned as filed; the row is the class for a CVM 175 fund (no subclass column, a subclass fee is not assumed). lamina_pr_pl_despesa is the declared total expense ratio from the lâmina (with its period and lamina_as_of), whatever the fee source, never added to the administration fee. ESTIMATE (adm_fee_flow, perf_fee_flow and the _pct_annual_est columns): from the balancete accruals (cvm_fi_balancete_resumo): the fee accounts accumulate from each fund''s fiscal-year start and are filed negative, so the month''s accrual is previous minus current accumulated value (served positive = cost; a negative performance accrual is a reversed provision), annualised x 12 / NAV x 100, NAV = groups 6 + 7 + 8 of the month. In the fiscal-year reset month the accumulated fee falls: fiscal_reset_suspect is TRUE and the estimate is NULL, unless cad_fi DT_INI_EXERC puts the fiscal-year start in that month, in which case the month''s accumulated value alone is the accrual. estimate_label says on every row that the estimate is an estimate and why one is missing; it is never presented as the disclosed fee. p_month = the balancete month (NULL = each fund''s newest). One row per distinct CNPJ; more than 200 CNPJs RAISES 22023.';
 
 
 -- ---------------------------------------------------------------------------

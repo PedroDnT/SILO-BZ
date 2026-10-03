@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.3",
+  "schema_version": "1.4",
   "generated_at_utc": "2026-10-03T15:00:00Z",
   "engine": {
     "version": "0.1.0",
@@ -1242,7 +1242,7 @@
   },
   "fees": {
     "status": "partial",
-    "reason": "2 fundo(s) sem taxa divulgada encontrada. 1 fundo(s) com taxa informada a conferir (0 ou acima de 5% a.a.), que não entra em nenhuma conta.",
+    "reason": "2 fundo(s) sem taxa divulgada encontrada. 1 fundo(s) com taxa informada a conferir (0 ou acima de 5% a.a. no Extrato, ou lâmina mais recente que o Extrato), que não entra em nenhuma conta.",
     "errors": [],
     "month": "2026-08-01",
     "estimate_label": "estimativa, não divulgada",
@@ -1256,6 +1256,11 @@
     "zero_label": "0 informado; a conferir",
     "implausible_label": "valor informado acima de 5% a.a.; a conferir",
     "negative_label": "valor informado negativo; a conferir",
+    "lamina_beside_label": "lâmina informa",
+    "extrato_beside_label": "Extrato informa",
+    "lamina_newer_label": "lâmina mais recente que o Extrato; a conferir",
+    "scale_flag_label": "possível erro de escala no Extrato",
+    "check_label": "a conferir",
     "source_order": [
       "extrato",
       "lamina",
@@ -1297,6 +1302,7 @@
           "implausible_filed": false,
           "implausible_label": null,
           "needs_manual_check": false,
+          "fee_resolution": "extrato",
           "adm_filed_raw": 2.0,
           "adm_rate_pct_year": 2.0,
           "adm_min_pct_year": 2.0,
@@ -1437,6 +1443,10 @@
             }
           ]
         },
+        "fee_resolution": "extrato",
+        "lamina_beside": null,
+        "extrato_beside": null,
+        "scale_flag": null,
         "findings": []
       },
       {
@@ -1474,6 +1484,7 @@
           "implausible_filed": false,
           "implausible_label": null,
           "needs_manual_check": false,
+          "fee_resolution": "lamina",
           "adm_filed_raw": null,
           "adm_rate_pct_year": null,
           "adm_min_pct_year": 0.15,
@@ -1574,6 +1585,10 @@
           "note": "Sem total de despesas declarado na lâmina para este fundo.",
           "tool_note": "no lâmina filed an expense ratio for this fund"
         },
+        "fee_resolution": "lamina",
+        "lamina_beside": null,
+        "extrato_beside": null,
+        "scale_flag": null,
         "findings": []
       },
       {
@@ -1611,6 +1626,7 @@
           "implausible_filed": false,
           "implausible_label": null,
           "needs_manual_check": true,
+          "fee_resolution": "extrato_lamina_beside",
           "adm_filed_raw": 0.0,
           "adm_rate_pct_year": 0.0,
           "adm_min_pct_year": 0.0,
@@ -1728,11 +1744,49 @@
         "expense_ratio": {
           "declared_pct": null,
           "period": null,
-          "as_of": null,
+          "as_of": "2026-03-31",
           "source": null,
           "note": "Sem total de despesas declarado na lâmina para este fundo.",
           "tool_note": "no lâmina filed an expense ratio for this fund"
         },
+        "fee_resolution": "extrato_lamina_beside",
+        "lamina_beside": {
+          "label": "lâmina informa",
+          "check_label": "a conferir",
+          "lamina_pct_year": 0.5,
+          "lamina_min_pct_year": null,
+          "lamina_max_pct_year": null,
+          "n_classes": 1,
+          "as_of": "2026-03-31",
+          "age_months": 5,
+          "stale": false,
+          "stale_label": null,
+          "stale_after_months": 24,
+          "source": "cvm_fi_lamina",
+          "origin_label": "lâmina CVM",
+          "counted_as_cost": false,
+          "note": "Taxa da lâmina mostrada ao lado da do Extrato, nunca no lugar dela: o Extrato informou 0 ou valor acima de 5% a.a. e a lâmina é mais antiga ou não traz uma taxa única entre 0 e 5% a.a. Nenhum dos dois valores entra em soma ou comparação.",
+          "sources": [
+            {
+              "tool": "portfolio_fees",
+              "call_id": 13,
+              "args": {
+                "p_cnpjs": [
+                  "08935128000159",
+                  "11728688000147",
+                  "32113885000121",
+                  "42592315000115",
+                  "50088190000119",
+                  "51488342000133"
+                ],
+                "p_month": "2026-08-01"
+              },
+              "data_date": "2026-08-31"
+            }
+          ]
+        },
+        "extrato_beside": null,
+        "scale_flag": null,
         "findings": [
           {
             "kind": "divulgado_zero_balancete_registra_despesa",
@@ -1740,6 +1794,30 @@
             "text": "Divulgado 0, balancete registra despesa.",
             "disclosed_pct_year": 0.0,
             "estimate_pct_year": 0.35,
+            "sources": [
+              {
+                "tool": "portfolio_fees",
+                "call_id": 13,
+                "args": {
+                  "p_cnpjs": [
+                    "08935128000159",
+                    "11728688000147",
+                    "32113885000121",
+                    "42592315000115",
+                    "50088190000119",
+                    "51488342000133"
+                  ],
+                  "p_month": "2026-08-01"
+                },
+                "data_date": "2026-08-31"
+              }
+            ]
+          },
+          {
+            "kind": "lamina_ao_lado_do_extrato",
+            "level": "informação",
+            "text": "A lâmina informa outra taxa, mostrada ao lado da do Extrato; a conferir. Nenhuma das duas entra em soma.",
+            "lamina_pct_year": 0.5,
             "sources": [
               {
                 "tool": "portfolio_fees",
@@ -1788,6 +1866,10 @@
           "note": "Sem total de despesas declarado na lâmina para este fundo.",
           "tool_note": null
         },
+        "fee_resolution": null,
+        "lamina_beside": null,
+        "extrato_beside": null,
+        "scale_flag": null,
         "findings": []
       },
       {
@@ -1825,6 +1907,7 @@
           "implausible_filed": false,
           "implausible_label": null,
           "needs_manual_check": false,
+          "fee_resolution": "lamina",
           "adm_filed_raw": 1.5,
           "adm_rate_pct_year": 1.5,
           "adm_min_pct_year": null,
@@ -1924,6 +2007,10 @@
           "note": "Sem total de despesas declarado na lâmina para este fundo.",
           "tool_note": "no lâmina filed an expense ratio for this fund"
         },
+        "fee_resolution": "lamina",
+        "lamina_beside": null,
+        "extrato_beside": null,
+        "scale_flag": null,
         "findings": [
           {
             "kind": "estimativa_difere_da_divulgada",
@@ -2005,6 +2092,10 @@
           "note": "Sem total de despesas declarado na lâmina para este fundo.",
           "tool_note": null
         },
+        "fee_resolution": null,
+        "lamina_beside": null,
+        "extrato_beside": null,
+        "scale_flag": null,
         "findings": []
       }
     ],
@@ -2043,6 +2134,7 @@
           "implausible_filed": false,
           "implausible_label": null,
           "needs_manual_check": true,
+          "fee_resolution": "lamina",
           "adm_filed_raw": 0.0,
           "adm_rate_pct_year": 0.0,
           "adm_min_pct_year": null,
@@ -2138,6 +2230,10 @@
           "note": "Sem total de despesas declarado na lâmina para este fundo.",
           "tool_note": "no lâmina filed an expense ratio for this fund"
         },
+        "fee_resolution": "lamina",
+        "lamina_beside": null,
+        "extrato_beside": null,
+        "scale_flag": null,
         "findings": [
           {
             "kind": "divulgado_zero_balancete_registra_despesa",
@@ -2199,6 +2295,7 @@
           "implausible_filed": false,
           "implausible_label": null,
           "needs_manual_check": false,
+          "fee_resolution": "extrato",
           "adm_filed_raw": 0.5,
           "adm_rate_pct_year": 0.5,
           "adm_min_pct_year": 0.5,
@@ -2313,6 +2410,10 @@
           "note": "Sem total de despesas declarado na lâmina para este fundo.",
           "tool_note": "no lâmina filed an expense ratio for this fund"
         },
+        "fee_resolution": "extrato",
+        "lamina_beside": null,
+        "extrato_beside": null,
+        "scale_flag": null,
         "findings": []
       },
       {
@@ -2351,6 +2452,7 @@
           "implausible_filed": true,
           "implausible_label": "valor informado acima de 5% a.a.; a conferir",
           "needs_manual_check": true,
+          "fee_resolution": "extrato_to_check",
           "adm_filed_raw": 14638.0,
           "adm_rate_pct_year": null,
           "adm_min_pct_year": null,
@@ -2443,6 +2545,10 @@
           "note": "Sem total de despesas declarado na lâmina para este fundo.",
           "tool_note": "no lâmina filed an expense ratio for this fund"
         },
+        "fee_resolution": "extrato_to_check",
+        "lamina_beside": null,
+        "extrato_beside": null,
+        "scale_flag": null,
         "findings": [
           {
             "kind": "valor_implausivel_descartado",
@@ -2503,6 +2609,7 @@
           "implausible_filed": false,
           "implausible_label": null,
           "needs_manual_check": false,
+          "fee_resolution": "extrato",
           "adm_filed_raw": 0.5,
           "adm_rate_pct_year": 0.5,
           "adm_min_pct_year": 0.5,
@@ -2617,6 +2724,10 @@
           "note": "Sem total de despesas declarado na lâmina para este fundo.",
           "tool_note": "no lâmina filed an expense ratio for this fund"
         },
+        "fee_resolution": "extrato",
+        "lamina_beside": null,
+        "extrato_beside": null,
+        "scale_flag": null,
         "findings": []
       },
       {
@@ -2654,6 +2765,7 @@
           "implausible_filed": true,
           "implausible_label": "valor informado acima de 5% a.a.; a conferir",
           "needs_manual_check": true,
+          "fee_resolution": "extrato_to_check",
           "adm_filed_raw": 14638.0,
           "adm_rate_pct_year": null,
           "adm_min_pct_year": null,
@@ -2746,6 +2858,10 @@
           "note": "Sem total de despesas declarado na lâmina para este fundo.",
           "tool_note": "no lâmina filed an expense ratio for this fund"
         },
+        "fee_resolution": "extrato_to_check",
+        "lamina_beside": null,
+        "extrato_beside": null,
+        "scale_flag": null,
         "findings": [
           {
             "kind": "valor_implausivel_descartado",
@@ -2806,6 +2922,7 @@
           "implausible_filed": false,
           "implausible_label": null,
           "needs_manual_check": true,
+          "fee_resolution": "lamina",
           "adm_filed_raw": 0.0,
           "adm_rate_pct_year": 0.0,
           "adm_min_pct_year": null,
@@ -2901,6 +3018,10 @@
           "note": "Sem total de despesas declarado na lâmina para este fundo.",
           "tool_note": "no lâmina filed an expense ratio for this fund"
         },
+        "fee_resolution": "lamina",
+        "lamina_beside": null,
+        "extrato_beside": null,
+        "scale_flag": null,
         "findings": [
           {
             "kind": "divulgado_zero_balancete_registra_despesa",
@@ -2962,6 +3083,7 @@
           "implausible_filed": false,
           "implausible_label": null,
           "needs_manual_check": false,
+          "fee_resolution": "extrato",
           "adm_filed_raw": 0.5,
           "adm_rate_pct_year": 0.5,
           "adm_min_pct_year": 0.5,
@@ -3076,6 +3198,10 @@
           "note": "Sem total de despesas declarado na lâmina para este fundo.",
           "tool_note": "no lâmina filed an expense ratio for this fund"
         },
+        "fee_resolution": "extrato",
+        "lamina_beside": null,
+        "extrato_beside": null,
+        "scale_flag": null,
         "findings": []
       },
       {
@@ -3114,6 +3240,7 @@
           "implausible_filed": true,
           "implausible_label": "valor informado acima de 5% a.a.; a conferir",
           "needs_manual_check": true,
+          "fee_resolution": "extrato_to_check",
           "adm_filed_raw": 14638.0,
           "adm_rate_pct_year": null,
           "adm_min_pct_year": null,
@@ -3206,6 +3333,10 @@
           "note": "Sem total de despesas declarado na lâmina para este fundo.",
           "tool_note": "no lâmina filed an expense ratio for this fund"
         },
+        "fee_resolution": "extrato_to_check",
+        "lamina_beside": null,
+        "extrato_beside": null,
+        "scale_flag": null,
         "findings": [
           {
             "kind": "valor_implausivel_descartado",
@@ -3266,6 +3397,7 @@
           "implausible_filed": false,
           "implausible_label": null,
           "needs_manual_check": false,
+          "fee_resolution": "extrato",
           "adm_filed_raw": 0.5,
           "adm_rate_pct_year": 0.5,
           "adm_min_pct_year": 0.5,
@@ -3380,6 +3512,10 @@
           "note": "Sem total de despesas declarado na lâmina para este fundo.",
           "tool_note": "no lâmina filed an expense ratio for this fund"
         },
+        "fee_resolution": "extrato",
+        "lamina_beside": null,
+        "extrato_beside": null,
+        "scale_flag": null,
         "findings": []
       },
       {
@@ -3417,6 +3553,7 @@
           "implausible_filed": true,
           "implausible_label": "valor informado acima de 5% a.a.; a conferir",
           "needs_manual_check": true,
+          "fee_resolution": "extrato_to_check",
           "adm_filed_raw": 14638.0,
           "adm_rate_pct_year": null,
           "adm_min_pct_year": null,
@@ -3509,6 +3646,10 @@
           "note": "Sem total de despesas declarado na lâmina para este fundo.",
           "tool_note": "no lâmina filed an expense ratio for this fund"
         },
+        "fee_resolution": "extrato_to_check",
+        "lamina_beside": null,
+        "extrato_beside": null,
+        "scale_flag": null,
         "findings": [
           {
             "kind": "valor_implausivel_descartado",
@@ -3569,6 +3710,7 @@
           "implausible_filed": false,
           "implausible_label": null,
           "needs_manual_check": false,
+          "fee_resolution": "lamina",
           "adm_filed_raw": 0.2,
           "adm_rate_pct_year": 0.2,
           "adm_min_pct_year": null,
@@ -3662,6 +3804,10 @@
           "note": "Sem total de despesas declarado na lâmina para este fundo.",
           "tool_note": "no lâmina filed an expense ratio for this fund"
         },
+        "fee_resolution": "lamina",
+        "lamina_beside": null,
+        "extrato_beside": null,
+        "scale_flag": null,
         "findings": [
           {
             "kind": "estimativa_difere_da_divulgada",
@@ -3704,6 +3850,7 @@
       "fund_value_without_disclosed_fee_brl": 1828031.9,
       "fund_value_with_filed_zero_brl": 902591.9,
       "fund_value_with_implausible_fee_brl": 0.0,
+      "fund_value_with_lamina_newer_fee_brl": 0.0,
       "known_fee_fund_value_pct": 56.9983,
       "adm_disclosed_fixed_portfolio_pct": 0.2982,
       "estimate_adm_portfolio_pct": 0.4663
@@ -13432,7 +13579,7 @@
     },
     "fees": {
       "status": "partial",
-      "reason": "2 fundo(s) sem taxa divulgada encontrada. 1 fundo(s) com taxa informada a conferir (0 ou acima de 5% a.a.), que não entra em nenhuma conta."
+      "reason": "2 fundo(s) sem taxa divulgada encontrada. 1 fundo(s) com taxa informada a conferir (0 ou acima de 5% a.a. no Extrato, ou lâmina mais recente que o Extrato), que não entra em nenhuma conta."
     },
     "look_through": {
       "status": "partial",

@@ -115,7 +115,10 @@ Read the current version through `vw_fi_extrato_latest` (newest `dt_comptc` per 
 `taxa_adm` is stored exactly as filed, and the unit is not stated by CVM (percent a year, by CVM's XML
 standard and the balancete estimate): 16.7% of the values are exactly 0 and 115 are above 5 (maximum
 14,638.38). Neither is rewritten in the table. `api.portfolio_fees` reads a 0 as "not informed"
-(`filed_zero`) and withholds a value above 5 (`implausible_filed`, the value in `taxa_adm_filed_raw`). There
+(`filed_zero`) and withholds a value above 5 (`implausible_filed`, the value in `taxa_adm_filed_raw`); when
+such an Extrato is older than a lâmina with a single fee in (0, 5], the newer lâmina is the source
+(`fee_resolution = 'lamina_newer'`, catalog v55, #552), and either way the other document's fee is returned
+beside it as filed, never rescaled. There
 is no subclass column: a CVM 175 row is the class. `taxa_perfm` is numeric here (text in the lâmina), with
 `param_taxa_perfm`, `calc_taxa_perfm` and `inf_taxa_perfm`; `taxa_saida_pagto_resgate` is an S/N flag, not a
 rate. The 70 `PR_*_MIN` / `PR_*_MAX` exposure limits stay in `raw`. `DT_COMPTC` is the date of the filed
