@@ -88,8 +88,27 @@ def test_redator_sends_the_masked_engine_json_and_a_schema(engine):
     fake = llm.FakeProvider([{"findings": []}])
     redator.write(engine, fake)
     call = fake.calls[0]
-    assert "PETR4" in call["user"] and call["schema"] == redator.FINDINGS_SCHEMA
+    assert "PETR4" in call["user"] and call["schema"] is redator.FindingsOutput
     assert "nunca escreve um algarismo" in call["system"]
+
+
+@pytest.mark.parametrize("reply", [
+    {"findings": [{"id": "f1", "section": "opiniao", "title": "t", "text": "x", "citations": ["p1"]}]},  # off-enum
+    {"findings": [{"id": "f1", "section": "resumo", "title": "t", "text": "x"}]},  # citations missing
+    {"findings": [], "extra": True},  # a key the schema forbids
+    {"achados": []},  # no findings list
+])
+def test_redator_reply_that_fails_validation_becomes_unknown_like_a_refusal(engine, reply):
+    res = redator.write(engine, llm.FakeProvider([reply]))
+    assert res.status == "unknown" and res.findings == [] and "LLMValidationError" in res.reason
+
+
+def test_validation_failure_marks_the_narrative_unknown_and_tables_still_print(engine):
+    bad = llm.FakeProvider([{"findings": [{"id": "f1", "section": "x", "title": "t", "text": "x", "citations": []}]}])
+    narrative = build.make_narrative(engine, bad)
+    html_text = render.render_html(engine, narrative)
+    assert narrative.status == "unknown" and "LLMValidationError" in narrative.reason
+    assert "Texto interpretativo indisponível" in html_text and "R$ 150.000,00" in html_text
 
 
 def test_redator_failure_becomes_unknown_narrative(engine):
@@ -249,6 +268,26 @@ def test_llm_pass_failure_keeps_the_deterministic_result(engine):
     assert out.kept == base.kept and out.notes
 
 
+def test_llm_pass_reply_that_fails_validation_keeps_the_deterministic_result(engine):
+    bad = {"verdicts": [{"id": "f1", "action": "rewrite", "text": "", "reason": ""}]}  # action off the enum
+    base = _kept(engine)
+    out = revisor.llm_review(engine, base, llm.FakeProvider([bad]))
+    assert out.kept == base.kept
+    assert any("LLMValidationError" in n for n in out.notes)
+
+
+def test_llm_pass_validates_a_reply_even_from_a_provider_that_does_not():
+    class Raw:  # a provider that hands back an unvalidated dict
+        name = "raw"
+
+        def complete(self, *a, **k):
+            return {"verdicts": [{"id": "f1", "action": "keep"}]}  # text and reason missing
+
+    engine = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    out = revisor.llm_review(engine, _kept(engine), Raw())
+    assert any("LLMValidationError" in n for n in out.notes)
+
+
 # --- renderer ----------------------------------------------------------------
 
 
@@ -361,11 +400,12 @@ def test_cli_writes_pdf_offline(tmp_path):
     assert out_pdf.read_bytes()[:5] == b"%PDF-" and out_pdf.stat().st_size > 5_000
 
 
-def test_fake_path_does_not_import_anthropic_or_weasyprint():
+def test_fake_path_does_not_import_anthropic_openai_or_weasyprint():
     import subprocess, sys
     code = ("import sys, json; from src.portfolio.report import build; "
             f"e=json.load(open({str(FIXTURE)!r})); build.build(e, 'fake'); "
-            "assert 'anthropic' not in sys.modules and 'weasyprint' not in sys.modules")
+            "assert 'anthropic' not in sys.modules and 'weasyprint' not in sys.modules; "
+            "assert 'openai' not in sys.modules")
     subprocess.run([sys.executable, "-c", code], check=True, cwd=Path(__file__).parent.parent)
 
 

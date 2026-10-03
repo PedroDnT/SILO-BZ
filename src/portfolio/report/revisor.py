@@ -22,9 +22,11 @@ import json
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
-from src.portfolio.report.llm import LLMError, Provider
+from pydantic import BaseModel, ConfigDict
+
+from src.portfolio.report.llm import LLMError, Provider, validate_output
 from src.portfolio.report.redator import Finding
 from src.portfolio.report.values import (
     MISSING,
@@ -241,27 +243,22 @@ def check(engine: dict, findings: list[Finding]) -> RevisorResult:
     return result
 
 
-VERDICT_SCHEMA: dict = {
-    "type": "object",
-    "properties": {
-        "verdicts": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "id": {"type": "string"},
-                    "action": {"type": "string", "enum": ["keep", "delete", "reword"]},
-                    "text": {"type": "string"},
-                    "reason": {"type": "string"},
-                },
-                "required": ["id", "action", "text", "reason"],
-                "additionalProperties": False,
-            },
-        }
-    },
-    "required": ["verdicts"],
-    "additionalProperties": False,
-}
+# The Revisor's reply, requested as structured output and validated on return. One verdict
+# per finding, every field required, nothing extra. No docstrings on these models: Pydantic
+# would put them in the JSON schema the model is sent.
+class VerdictOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    action: Literal["keep", "delete", "reword"]
+    text: str
+    reason: str
+
+
+class VerdictsOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    verdicts: list[VerdictOut]
 
 SYSTEM_PROMPT = """Você é o Revisor do SILO. Recebe achados em português já verificados mecanicamente contra o JSON do motor e revisa tom e coerência.
 
@@ -279,23 +276,21 @@ def llm_review(engine: dict, result: RevisorResult, provider: Provider) -> Revis
     try:
         if hasattr(provider, "role"):
             provider.role = "revisor"
-        raw = provider.complete(SYSTEM_PROMPT, json.dumps(payload, ensure_ascii=False, sort_keys=True), VERDICT_SCHEMA)
+        raw = provider.complete(SYSTEM_PROMPT, json.dumps(payload, ensure_ascii=False, sort_keys=True), VerdictsOutput)
+        parsed = validate_output(VerdictsOutput, raw)
     except LLMError as exc:
         result.notes.append(f"revisão por LLM não executada ({type(exc).__name__}: {exc}); valem as regras determinísticas")
         return result
-    verdicts = {}
-    for v in (raw.get("verdicts") if isinstance(raw, dict) else None) or []:
-        if isinstance(v, dict) and v.get("id"):
-            verdicts[str(v["id"])] = v
+    verdicts = {v.id: v for v in parsed.verdicts if v.id}
     out = RevisorResult(kept=[], removed=list(result.removed), notes=list(result.notes))
     for f in result.kept:
         v = verdicts.get(f.id)
-        action = (v or {}).get("action", "keep")
+        action = v.action if v else "keep"
         if action == "delete":
-            out.removed.append(Removal(f.id, f.section, f.title, f.text, f"Revisor (LLM): {v.get('reason') or 'apagado'}", True))
+            out.removed.append(Removal(f.id, f.section, f.title, f.text, f"Revisor (LLM): {v.reason or 'apagado'}", True))
             continue
         if action == "reword":
-            new_text = str(v.get("text") or "")
+            new_text = v.text
             added = set(placeholders(new_text)) - set(placeholders(f.text))
             candidate = Finding(f.id, f.section, f.title, new_text, list(f.citations))
             rechecked, removals = check_finding(engine, candidate)
