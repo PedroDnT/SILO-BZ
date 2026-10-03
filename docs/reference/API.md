@@ -331,6 +331,61 @@ serves the daily level of a B3-published index from `b3_index_level` (migration
   from `PUBLIC`, granted to `anon` / `authenticated` / `silo_api`. No client
   role can read `b3_index_level`.
 
+### The portfolio reads (catalog v51)
+
+Three set-based functions for the portfolio-diagnosis engine (`31_api_portfolio.sql`;
+map #510, `docs/reference/research/portfolio-diagnosis-phase0.md`). All three are
+raise-only on the one 1000-row page, anon-callable like the rest of `api`, and
+take a set of funds or lines, never a name search that guesses.
+
+- **`api.portfolio_resolve(p_names, p_cnpjs, p_quotas, p_quota_dates)`**: one row
+  per line and candidate (up to 5, `rank`), arrays parallel, at most 200 lines
+  (more is `22023`). A CNPJ the line carries wins (`match_kind` `cnpj`); else an
+  exact match, case and accents ignored, on **any name the fund ever filed**
+  (`exact_current`, or `exact_history` for a former legal name); else trigram
+  over the whole name history (`similarity`, 0.25 floor). The history is
+  `mv_fund_name_history`: `cvm_fi_cda_fund_name` since 2005 plus the registry
+  name, rebuilt by every analytical apply. A current-names-only trigram found the
+  right fund 1 time in 10 on an obsolete name (Phase 0, 2026-10-03). A statement
+  quota with its date is compared with `cvm_fi_diario.vl_quota` on that exact
+  date; within 0.5% ranks first (the XP Bancos master and FIC, same words,
+  quotas 1.952607 and 1.542011 on 2026-09-30). `ambiguous` is TRUE on every row
+  of a line whose top two candidates are within 0.05 and the quota does not
+  separate them: the line is unresolved, `reason` says why, nothing is picked.
+  Unaccenting is a fixed `translate()` map (`unaccent` is not installed on
+  Supabase). No indexer, sector or economic group is ever inferred from a name.
+- **`api.portfolio_fees(p_cnpjs, p_month)`**: per CNPJ, the **disclosed** fee
+  (`disclosed_*`: the lâmina, `cvm_fi_lamina` newest reference month, else cad_fi
+  `taxa_adm` / `taxa_perfm` from `cvm_fund_registry`, one source per fund with
+  `disclosed_source`, `disclosed_as_of`, `disclosed_age_months`; NULL is not a
+  zero fee; classes with different fees give a NULL single value, a min, a max
+  and a note) beside a separate **estimate** from the balancete accruals
+  (`adm_fee_flow`, `perf_fee_flow`, `*_pct_annual_est`, `estimate_label`). The
+  fee accounts accumulate from each fund's fiscal-year start and are filed
+  negative: accrual = previous minus current accumulated value, times 12 over NAV
+  (groups 6 + 7 + 8), served positive. In the reset month the accumulated fee
+  falls: `fiscal_reset_suspect` is TRUE and the estimate NULL, unless cad_fi
+  `DT_INI_EXERC` confirms the fiscal year starts that month, when the month's
+  accumulated value alone is the accrual. The estimate is never the disclosed fee.
+- **`api.portfolio_lookthrough(p_cnpjs, p_month, p_max_depth)`**: one CDA month
+  (default: the last month whose block-2 filing count reaches 90% of the median
+  of the 12 before it, the `/holdings` rule; 2026-05 on 2026-10-03), block 2
+  followed recursively from each root (`WITH RECURSIVE ... CYCLE`, depth 1..6,
+  default 4) to the assets of blocks 1 (government bonds; repo collateral apart
+  as `repo`), 4 (stocks, debentures with `issuer_code` = ISIN characters 3-6) and
+  6 (private credit, `issuer_cnpj` only for a PJ, indexer as filed). Weights are
+  value over the holder's `fact_fund_monthly` NAV of the same month, multiplied
+  down the path; a fund reached by two paths appears once per path, sum
+  `weight_in_root` over every row but `fund_quota`. Blocks 3, 5, 7, 8 are not
+  ingested, so weights need not sum to 1. Measured on production 2026-10-03: XP
+  Bancos FIC 50088190000119 is 3 quota levels deep at 2026-05 (master
+  35377390000106 R$1,832.6M, XP Cash S1 54891935000134, Santander Cash Black
+  37525998000158), BB RF CP Automático FIC 42592315000115 is 1 level
+  (R$198,595.9M); the recursion read 37 buffers. Every read of the 12 GB and 10 GB
+  CDA tables is an index probe on `(cnpj, period, ...)`.
+- A merge deploys nothing: the functions go live on the next analytical apply
+  (`daily_ingest` `mode=analytics-only`), the MCP tools after `deploy_mcp.yml`.
+
 ### Using the research seam
 
 The caller-facing guide is [`api-docs/guides/research.mdx`](../../api-docs/guides/research.mdx)
@@ -620,8 +675,9 @@ cannot be paged" — that stopped being true two catalog versions ago. **`panel`
 `anbima_classes`, `inflation`, `inflation_items`, `fidc_tranches`, `fidc_aging`,
 `fund_documents`, `fund_restatements`, `fund_restatement_diff`,
 `company_events`, `macro_series`, `ptax`, `future_curve`, `future_series`,
-`curve`, `curve_history`, `research_universe` and the ten `screen_*` functions) have no cursor and
-ask you to narrow the window. `fund_nav` also
+`curve`, `curve_history`, `research_universe`, `portfolio_resolve`, `portfolio_fees`,
+`portfolio_lookthrough` and the ten `screen_*` functions) have no cursor and
+ask you to narrow the window or send fewer funds. `fund_nav` also
 requires `p_entity_type` to page, because its cursor is a bare period and 385
 CNPJs file under two families in the same month.
 

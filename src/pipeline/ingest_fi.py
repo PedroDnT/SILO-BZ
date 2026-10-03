@@ -20,11 +20,15 @@ from src.parsers.field_maps import fi_cda_acoes as _cda_acoes
 from src.parsers.field_maps import fi_cda_cotas as _cda_cotas
 from src.parsers.field_maps import fi_cda_debentures as _cda_deb
 from src.parsers.field_maps import fi_perfil as _perfil
+from src.parsers.field_maps import fi_lamina as _lamina
 from src.parsers.field_maps import fi_balancete as _balancete
 from src.parsers.field_maps import fund_registry as _reg
 from src.store.pg_client import upsert_rows
+from src.parsers.validation import DataValidator
 
 logger = logging.getLogger(__name__)
+
+_validator = DataValidator()
 
 
 def _period_for(row: Dict[str, Any], typed: Dict[str, Any], fallback: Optional[_date]) -> Optional[_date]:
@@ -410,6 +414,91 @@ def ingest_fi_perfil(conn: Any, raw_rows: List[Dict[str, Any]], year: int, month
         _perfil.TABLE,
         records,
         conflict_columns=",".join(_perfil.CONFLICT),
+    )
+
+
+def _unparsed_cells(row: Dict[str, Any], field_map: Dict[str, Any], typed: Dict[str, Any]) -> Dict[str, str]:
+    """Source cells a typed numeric or date column could not parse.
+
+    apply_map consumes a mapped header out of the residual `raw` whether or not
+    the value coerced, so a malformed number would vanish without trace. They are
+    returned here to be kept in `raw` under `_unparsed`, never guessed.
+    """
+    index = {k.strip().upper(): k for k in row}
+    out: Dict[str, str] = {}
+    for col, (candidates, type_) in field_map.items():
+        if type_ not in ("numeric", "int", "date") or typed.get(col) is not None:
+            continue
+        for cand in candidates:
+            real = index.get(cand.strip().upper())
+            if real is None:
+                continue
+            value = str(row.get(real) or "").strip()
+            if value and value.upper() not in ("NULL", "NA", "N/A", "-"):
+                out[real] = value
+            break
+    return out
+
+
+def ingest_fi_lamina(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
+    """Parse and upsert the main member of one monthly lamina zip.
+
+    Keyed on the source's own (CNPJ_FUNDO_CLASSE, DT_COMPTC, ID_SUBCLASSE); the
+    month comes from each row's DT_COMPTC, not from the file name. A row whose CNPJ
+    fails DataValidator or whose DT_COMPTC does not parse is dropped and counted.
+    Fee text is kept as filed: TAXA_PERFM is text, and a numeric cell that does
+    not parse lands in `raw["_unparsed"]` instead of being guessed.
+
+    Returns:
+        number of rows upserted
+    """
+    assert_map_matches(
+        raw_rows, _lamina.FIELD_MAP, dataset="fi/lamina",
+        required=("cnpj", "dt_comptc"),
+    )
+    records: List[Dict[str, Any]] = []
+    bad_cnpj = bad_date = n_unparsed = 0
+
+    for row in raw_rows:
+        typed, residual = apply_map(row, _lamina.FIELD_MAP)
+        if not typed.get("cnpj") or not _validator._validate_cnpj(typed["cnpj"])[0]:
+            bad_cnpj += 1
+            continue
+        if typed.get("dt_comptc") is None:
+            bad_date += 1
+            continue
+        unparsed = _unparsed_cells(row, _lamina.FIELD_MAP, typed)
+        if unparsed:
+            n_unparsed += 1
+            residual = {**residual, "_unparsed": unparsed}
+        typed["raw"] = residual
+        records.append(typed)
+
+    if bad_cnpj or bad_date:
+        logger.warning(
+            "cvm_fi_lamina: dropped %d row(s) with an invalid CNPJ and %d with no parseable "
+            "DT_COMPTC, of %d", bad_cnpj, bad_date, len(raw_rows),
+        )
+    if n_unparsed:
+        logger.warning(
+            "cvm_fi_lamina: %d row(s) have a numeric or date cell that did not parse; "
+            "kept as text in raw['_unparsed']", n_unparsed,
+        )
+    if not records:
+        return 0
+
+    keys = {(r["cnpj"], r["dt_comptc"], r["id_subclasse"]) for r in records}
+    if len(keys) < len(records):
+        logger.warning(
+            "cvm_fi_lamina: %d source row(s) share a (cnpj, dt_comptc, id_subclasse) key; "
+            "the last one in the file is kept", len(records) - len(keys),
+        )
+
+    return upsert_rows(
+        conn,
+        _lamina.TABLE,
+        records,
+        conflict_columns=",".join(_lamina.CONFLICT),
     )
 
 

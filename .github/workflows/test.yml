@@ -672,6 +672,15 @@ jobs:
       - name: vw_company_ticker.is_active behaves (executed, not just compiled)
         run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/company_ticker_active_behaviour.sql
 
+      # The portfolio-diagnosis reads (31_api_portfolio.sql, catalog v51),
+      # executed on synthetic funds: the resolver picks by quota and flags what
+      # it cannot separate, the fee estimate handles the fiscal-year reset and
+      # stays apart from the disclosed fee, the look-through recurses with a
+      # cycle guard and a depth cap, every call refuses at its page edge, and
+      # anon can call all three. Rolled back.
+      - name: portfolio reads behave (executed, not just compiled)
+        run: psql "$POSTGRES_URL" -v ON_ERROR_STOP=1 -f tests/sql/portfolio_behaviour.sql
+
       # Own Python, not the runner's system one: Ubuntu's /usr/bin/python3 is
       # PEP 668 externally-managed, so a bare `pip install` there is one image
       # bump away from failing.

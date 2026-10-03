@@ -1,0 +1,374 @@
+"""HTML (and PDF) report in Portuguese from the engine JSON and the kept findings.
+
+Every figure on the page is read from the engine JSON here: the tables walk
+it directly and the findings' ``{{placeholders}}`` are replaced by
+``values.format_value``. Engine strings are HTML-escaped. The page identifies
+no client. Templates are plain files in ``templates/`` filled with
+``{{name}}`` slots (no template engine dependency).
+"""
+
+from __future__ import annotations
+
+import html
+import os
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from src.portfolio.report.redator import SECTION_TITLES, Finding
+from src.portfolio.report.revisor import Removal
+from src.portfolio.report.values import PLACEHOLDER_RE, format_value, resolve
+
+TEMPLATES = Path(__file__).parent / "templates"
+DEFAULT_SIGNATURE = "Pedro Todescan, pesquisador independente"
+SIGNATURE_ENV = "SILO_REPORT_SIGNATURE"
+_SLOT_RE = re.compile(r"\{\{\s*([a-z_]+)\s*\}\}")
+
+DISCLAIMER_HTML = (
+    "<ul>"
+    "<li>Este relatório não é recomendação de investimento: não indica comprar, vender ou manter nenhum ativo.</li>"
+    "<li>Não há previsão de retorno em nenhuma parte.</li>"
+    "<li>Valores estimados aparecem sempre rotulados como estimativa.</li>"
+    "<li>Grupo econômico não avaliado.</li>"
+    "<li>Reapresentações aparecem como \"revisado, não avaliado\": os limiares de materialidade estão em definição.</li>"
+    "</ul>"
+)
+
+SOURCE_LABELS = {
+    "CVM": "CVM (dados.cvm.gov.br)",
+    "BCB": "Banco Central do Brasil (SGS)",
+    "B3": "B3",
+    "FNET": "B3 Fundos.NET (FNET)",
+    "ANBIMA": "ANBIMA",
+    "IBGE": "IBGE",
+}
+
+ASSET_LABELS = {
+    "titulo_publico": "título público", "acao": "ação", "fundo": "fundo", "fidc": "FIDC",
+    "fii": "FII", "etf": "ETF", "desconhecido": "não identificado",
+}
+SECTION_STATUS_LABELS = {"complete": "avaliada", "partial": "avaliada em parte", "unknown": "não avaliada"}
+
+STATUS_LABELS = {
+    "identified": "identificada",
+    "ambiguous": "ambígua, desempatada",
+    "unknown": "não identificada",
+    "complete": "completa",
+    "partial": "parcial",
+}
+
+
+@dataclass
+class Narrative:
+    status: str  # "complete" | "unknown"
+    kept: list[Finding] = field(default_factory=list)
+    removed: list[Removal] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    reason: str | None = None
+    provider: str = ""
+    model: str = ""
+    served_by: list[str] = field(default_factory=list)
+    cost_usd: float = 0.0
+    cost_cap_usd: float = 0.0
+
+
+def signature(cli_value: str | None = None) -> str:
+    return cli_value or os.environ.get(SIGNATURE_ENV) or DEFAULT_SIGNATURE
+
+
+def fill(template: str, slots: dict[str, str]) -> str:
+    """Replace ``{{name}}`` slots in one pass (inserted text is never rescanned)."""
+    return _SLOT_RE.sub(lambda m: slots.get(m.group(1), m.group(0)), template)
+
+
+def e(s: Any) -> str:
+    return html.escape("" if s is None else str(s))
+
+
+def v(engine: dict, path: str) -> str:
+    """Escaped, formatted value at ``path``."""
+    return e(format_value(engine, path))
+
+
+def substitute(engine: dict, text: str) -> str:
+    """Finding text to HTML: escape the prose, insert formatted placeholder values."""
+    out, pos = [], 0
+    for m in PLACEHOLDER_RE.finditer(text):
+        out.append(e(text[pos:m.start()]))
+        out.append(f'<span class="v">{v(engine, m.group(1).strip())}</span>')
+        pos = m.end()
+    out.append(e(text[pos:]))
+    return "".join(out)
+
+
+def _findings_html(engine: dict, narrative: Narrative, section: str) -> str:
+    if narrative.status != "complete":
+        return f'<p class="indisponivel">Texto interpretativo indisponível: {e(narrative.reason or "não gerado")}.</p>'
+    items = [f for f in narrative.kept if f.section == section]
+    if not items:
+        return ""
+    parts = []
+    for f in items:
+        cites = ", ".join(e(c) for c in f.citations)
+        parts.append(
+            f'<div class="achado"><strong>{substitute(engine, f.title)}</strong>'
+            f'{substitute(engine, f.text)} <span class="cit">[{cites}]</span></div>'
+        )
+    return "\n".join(parts)
+
+
+def _table(headers: list[tuple[str, bool]], rows: list[list[str]]) -> str:
+    if not rows:
+        return '<p class="indisponivel">Sem linhas.</p>'
+    th = "".join(f'<th{" class=n" if num else ""}>{e(h)}</th>' for h, num in headers)
+    body = []
+    for r in rows:
+        body.append("<tr>" + "".join(
+            f'<td{" class=n" if headers[i][1] else ""}>{c}</td>' for i, c in enumerate(r)) + "</tr>")
+    return f"<table><thead><tr>{th}</tr></thead><tbody>{''.join(body)}</tbody></table>"
+
+
+def _ident_section(engine: dict) -> str:
+    rows = []
+    for i, ln in enumerate(engine.get("lines") or []):
+        p = f"lines[{i}]"
+        ident = ln.get("identification") or {}
+        code = ln.get("cnpj") and v(engine, f"{p}.cnpj") or ln.get("ticker") and v(engine, f"{p}.ticker") or "—"
+        status = ident.get("status") or "unknown"
+        note = ""
+        if ident.get("renamed_from"):
+            note = f"<br><span class=cit>nome antigo: {v(engine, f'{p}.identification.renamed_from')}</span>"
+        if status == "unknown" and ident.get("reason"):
+            note = f"<br><span class=cit>{v(engine, f'{p}.identification.reason')}</span>"
+        tag = "unk" if status != "identified" else ""
+        rows.append([
+            v(engine, f"{p}.line_id"),
+            v(engine, f"{p}.instrument") + (f"<br><span class=cit>{v(engine, f'{p}.fund_name')}</span>" if ln.get("fund_name") else ""),
+            e(ASSET_LABELS.get(ln.get("asset_type"), ln.get("asset_type") or "—")),
+            code,
+            v(engine, f"{p}.value_brl"),
+            v(engine, f"{p}.weight_pct"),
+            f'<span class="tag {tag}">{e(STATUS_LABELS.get(status, status))}</span>{note}',
+        ])
+    return _table(
+        [("Linha", False), ("Ativo", False), ("Tipo", False), ("CNPJ / código", False),
+         ("Valor", True), ("Peso", True), ("Identificação", False)],
+        rows,
+    )
+
+
+def _fees_section(engine: dict) -> str:
+    fees = engine.get("fees") or {}
+    rows = []
+    for i, b in enumerate(fees.get("by_line") or []):
+        q = f"fees.by_line[{i}]"
+        label = b.get("label") or ""
+        tag = "est" if label == "estimativa" else ("unk" if label == "desconhecido" else "")
+        est = v(engine, f"{q}.estimated_pct_year")
+        if b.get("estimated_pct_year_high") is not None:
+            est += f" a {v(engine, f'{q}.estimated_pct_year_high')}"
+        rows.append([
+            v(engine, f"{q}.line_id"), v(engine, f"{q}.cnpj"),
+            v(engine, f"{q}.disclosed_pct_year"), est, v(engine, f"{q}.estimated_brl_year"),
+            f'<span class="tag {tag}">{e(label)}</span>' + (f"<br><span class=cit>{v(engine, f'{q}.reason')}</span>" if b.get("reason") else ""),
+            v(engine, f"{q}.month"),
+        ])
+    head = ""
+    if fees:
+        head = (f"<p>Total estimado: <span class=v>{v(engine, 'fees.total_estimated_brl_year')}</span> por ano "
+                f"(<span class=v>{v(engine, 'fees.weighted_estimated_pct_year')}</span> a.a. ponderado). "
+                f"Total divulgado: <span class=v>{v(engine, 'fees.total_disclosed_brl_year')}</span>. "
+                f"<span class=cit>Base: {v(engine, 'fees.basis')}</span></p>")
+    return head + _table(
+        [("Linha", False), ("CNPJ", False), ("Divulgada a.a.", True), ("Estimada a.a.", True),
+         ("Estimada R$/ano", True), ("Rótulo", False), ("Mês do balancete", False)],
+        rows,
+    )
+
+
+def _bucket_table(engine: dict, base: str, label_key: str, label: str) -> str:
+    rows = []
+    for i, _b in enumerate(resolve(engine, f"{base}.buckets") or []):
+        q = f"{base}.buckets[{i}]"
+        rows.append([v(engine, f"{q}.{label_key}"), v(engine, f"{q}.value_brl"), v(engine, f"{q}.weight_pct")])
+    return _table([(label, False), ("Valor", True), ("Peso", True)], rows)
+
+
+def _exposure_section(engine: dict) -> str:
+    lt = engine.get("lookthrough") or {}
+    out = []
+    if lt.get("month"):
+        out.append(f"<p class=cit>Carteiras dos fundos (CDA) de {v(engine, 'lookthrough.month')}; profundidade máxima {v(engine, 'lookthrough.max_depth')}.</p>")
+    out.append("<h3>Sobreposição</h3>")
+    rows = []
+    for i, s in enumerate(lt.get("shared_exposure") or []):
+        q = f"lookthrough.shared_exposure[{i}]"
+        legs = "<br>".join(
+            f"{v(engine, f'{q}.legs[{j}].line_id')}: {v(engine, f'{q}.legs[{j}].via')} — {v(engine, f'{q}.legs[{j}].value_brl')}"
+            for j in range(len(s.get("legs") or []))
+        )
+        name = v(engine, f"{q}.name") if s.get("name") else v(engine, f"{q}.key")
+        rows.append([name, v(engine, f"{q}.level"), legs, v(engine, f"{q}.total_brl"), v(engine, f"{q}.total_pct")])
+    out.append(_table([("Exposição", False), ("Nível", False), ("Caminhos", False), ("Total", True), ("Peso", True)], rows))
+    if lt.get("top_underlying"):
+        out.append("<h3>O que está por baixo (maiores exposições)</h3>")
+        rows = [[v(engine, f"lookthrough.top_underlying[{i}].name"), v(engine, f"lookthrough.top_underlying[{i}].value_brl"),
+                 v(engine, f"lookthrough.top_underlying[{i}].weight_pct")] for i in range(len(lt["top_underlying"]))]
+        out.append(_table([("Ativo subjacente", False), ("Valor", True), ("Peso", True)], rows))
+    out.append("<h3>Indexador</h3>")
+    out.append(_bucket_table(engine, "indexer", "indexer", "Indexador"))
+    out.append("<h3>Setor</h3>")
+    out.append(_bucket_table(engine, "sector", "sector", "Setor"))
+    return "\n".join(out)
+
+
+def _restatements_section(engine: dict) -> str:
+    rows = []
+    for i, _r in enumerate((engine.get("restatements") or {}).get("items") or []):
+        q = f"restatements.items[{i}]"
+        rows.append([
+            v(engine, f"{q}.fund_name"), v(engine, f"{q}.document"), v(engine, f"{q}.competencia"),
+            v(engine, f"{q}.delivered_at"), v(engine, f"{q}.modalidade"), v(engine, f"{q}.n_fields_changed"),
+            f'<span class="tag unk">{v(engine, f"{q}.assessment")}</span>',
+        ])
+    return _table([("Fundo", False), ("Documento", False), ("Competência", False), ("Entregue em", False),
+                   ("Modalidade", False), ("Campos alterados", True), ("Avaliação", False)], rows)
+
+
+def _risk_section(engine: dict) -> str:
+    rk = engine.get("risk_screens") or {}
+    out = ['<p>Movimento anormal de cota ou de patrimônio: <span class="tag unk">não avaliado</span> '
+           "(a regra ainda não foi definida).</p>"]
+    if rk.get("screens_run") is not None:
+        out.append(f"<p>Telas executadas: <span class=v>{v(engine, 'risk_screens.screens_run')}</span>. "
+                   f"Ocorrências na carteira: <span class=v>{e(len(rk.get('hits') or []))}</span>.</p>")
+    hits = rk.get("hits") or []
+    if hits:
+        rows = [[v(engine, f"risk_screens.hits[{i}].screen"), v(engine, f"risk_screens.hits[{i}].line_id"),
+                 v(engine, f"risk_screens.hits[{i}].cnpj")] for i in range(len(hits))]
+        out.append(_table([("Tela", False), ("Linha", False), ("CNPJ", False)], rows))
+    return "\n".join(out)
+
+
+def _unknowns_section(engine: dict, narrative: Narrative) -> str:
+    items = []
+    for name, sec in sorted((engine.get("sections") or {}).items()):
+        if isinstance(sec, dict) and sec.get("status") not in ("complete", None):
+            affects = sec.get("affects") or []
+            aff = f" Linhas afetadas: {e(', '.join(map(str, affects)))}." if affects else ""
+            items.append(f"<li><strong>{e(name)}</strong> ({e(SECTION_STATUS_LABELS.get(sec['status'], sec['status']))}): "
+                         f"{v(engine, f'sections.{name}.reason')}.{aff}</li>")
+    for i, ln in enumerate(engine.get("lines") or []):
+        ident = ln.get("identification") or {}
+        if ident.get("status") == "unknown":
+            items.append(f"<li><strong>Linha {v(engine, f'lines[{i}].line_id')}</strong> não identificada: "
+                         f"{v(engine, f'lines[{i}].identification.reason')}. Valor: {v(engine, f'lines[{i}].value_brl')}.</li>")
+    for i, b in enumerate((engine.get("fees") or {}).get("by_line") or []):
+        if b.get("label") == "desconhecido":
+            items.append(f"<li><strong>Taxa da linha {v(engine, f'fees.by_line[{i}].line_id')}</strong>: "
+                         f"{v(engine, f'fees.by_line[{i}].reason')}.</li>")
+    if "abnormal_movement" not in (engine.get("sections") or {}):
+        items.append("<li><strong>abnormal_movement</strong> (não avaliado): regra de movimento anormal ainda não definida.</li>")
+    for i, _n in enumerate((engine.get("risk_screens") or {}).get("not_run") or []):
+        items.append(f"<li><strong>Tela {v(engine, f'risk_screens.not_run[{i}].screen')}</strong>: "
+                     f"{v(engine, f'risk_screens.not_run[{i}].reason')}.</li>")
+    if narrative.status != "complete":
+        items.append(f"<li><strong>Texto interpretativo</strong>: {e(narrative.reason)}.</li>")
+    return "<ul>" + "".join(items) + "</ul>" if items else "<p>Nenhuma seção ficou sem avaliação.</p>"
+
+
+def _method_section(engine: dict, narrative: Narrative) -> str:
+    served = ", ".join(sorted(set(narrative.served_by)))
+    model = e(narrative.model or "—") + (f" (respondido por {e(served)} via fallback do provedor)" if served else "")
+    lines = [
+        "Todo número deste relatório vem do JSON do motor do SILO. O texto foi escrito por um modelo de linguagem (Redator) "
+        "que não digita algarismos: cada valor é um marcador ligado a um campo do JSON e é preenchido na montagem do relatório.",
+        "Um Revisor independente confere cada frase: marcadores que não existem, algarismos fora de marcador, citações fora da "
+        "proveniência e valores extremos sem confirmação removem a frase.",
+        "Taxas marcadas como estimativa vêm do balancete do fundo (contas COFI 8.1.7, acumuladas no exercício) e não são a taxa "
+        "contratual; a taxa divulgada só aparece quando o SILO a tem.",
+        "Reapresentações são mostradas como \"revisado, não avaliado\": os limiares de materialidade ainda não foram definidos. Movimento anormal de cota e de patrimônio: não avaliado nesta versão.",
+        "Grupo econômico não avaliado: não há fonte pública arquivada da estrutura de grupo, e o SILO não infere grupo por nome.",
+        "Sem previsão de retorno e sem recomendação de compra, venda ou manutenção de qualquer ativo.",
+        "Classificações por indexador e setor seguem regras versionadas; o que não tem regra aparece como \"sem classificação\".",
+        f"Modelo: {model}. Provedor: {e(narrative.provider or '—')}. Custo do texto: US$ {narrative.cost_usd:.4f} "
+        f"(teto de US$ {narrative.cost_cap_usd:.2f} por relatório).",
+    ]
+    out = "<ul>" + "".join(f"<li>{x}</li>" for x in lines) + "</ul>"
+    if narrative.removed or narrative.notes:
+        out += "<h3>Notas do Revisor</h3><ul>"
+        for r in narrative.removed:
+            scope = "achado removido" if r.whole_finding else "frase removida"
+            out += f"<li>{e(r.finding_id)} ({e(scope)}): {e(r.reason)}</li>"
+        for n in narrative.notes:
+            out += f"<li>{e(n)}</li>"
+        out += "</ul>"
+    return out
+
+
+def _sources(engine: dict) -> str:
+    dates: dict[str, str] = {}
+    for k, d in (engine.get("data_dates") or {}).items():
+        if d:
+            dates[str(k).upper()] = str(d)
+    for p in engine.get("provenance") or []:
+        src = str(p.get("source") or "").upper()
+        if src and p.get("data_date") and src not in dates:
+            dates[src] = str(p["data_date"])
+    used = {str(p.get("source") or "").upper() for p in engine.get("provenance") or []} | set(dates)
+    used.discard("")
+    items = []
+    for src in sorted(used):
+        key = next((k for k in (engine.get("data_dates") or {}) if str(k).upper() == src), None)
+        when = v(engine, f"data_dates.{key}") if key else e(format_value({}, "d", dates.get(src))) if dates.get(src) else "data não informada"
+        items.append(f"<li>{e(SOURCE_LABELS.get(src, src))}: dados até {when}</li>")
+    endpoints = sorted({str(p.get("endpoint")) for p in engine.get("provenance") or [] if p.get("endpoint")})
+    tail = f"<p class=nota>Consultas ao SILO: {e(', '.join(endpoints))}.</p>" if endpoints else ""
+    return "<ul>" + "".join(items) + "</ul>" + tail
+
+
+def render_html(engine: dict, narrative: Narrative, assinatura: str | None = None) -> str:
+    template = (TEMPLATES / "report.html").read_text(encoding="utf-8")
+    css = (TEMPLATES / "report.css").read_text(encoding="utf-8")
+
+    def section(title: str, body: str) -> str:
+        return f"<section><h2>{e(title)}</h2>\n{body}\n</section>"
+
+    corpo = [
+        section("Resumo", _findings_html(engine, narrative, "resumo")
+                + (f"<h3>{e(SECTION_TITLES['achados'])}</h3>" + _findings_html(engine, narrative, "achados")
+                   if narrative.status == "complete" and any(f.section == "achados" for f in narrative.kept) else "")),
+        section("Identificação linha a linha", _ident_section(engine) + _findings_html(engine, narrative, "identificacao")),
+        section("Custo em taxas", _fees_section(engine) + _findings_html(engine, narrative, "taxas")),
+        section("Exposição", _exposure_section(engine) + _findings_html(engine, narrative, "exposicao")),
+        section("Reapresentações", _restatements_section(engine) + _findings_html(engine, narrative, "reapresentacoes")),
+        section("Sinais de risco", _risk_section(engine) + _findings_html(engine, narrative, "sinais_de_risco")),
+        section("O que não foi possível avaliar", _unknowns_section(engine, narrative)),
+        section("Metodologia e limitações", _method_section(engine, narrative)),
+    ]
+    meta = (f"Data de referência da carteira: {v(engine, 'valuation_date')} · "
+            f"Diagnóstico gerado em {v(engine, 'generated_at')}")
+    aviso = ""
+    if engine.get("illustrative"):
+        aviso = ('<p class="aviso">Exemplo com dados ilustrativos: este relatório foi montado a partir de um JSON de teste '
+                 "e não é o diagnóstico de uma carteira real.</p>")
+    return fill(template, {
+        "titulo": "SILO · Diagnóstico de carteira",
+        "css": css,
+        "meta": meta,
+        "aviso": aviso,
+        "corpo": "\n".join(corpo),
+        "fontes": _sources(engine),
+        "assinatura": e(signature(assinatura)),
+        "aviso_legal": DISCLAIMER_HTML,
+    })
+
+
+def html_to_pdf(html_text: str, out_path: str | Path) -> Path:
+    """Render with WeasyPrint (imported here so HTML works where pango is absent)."""
+    from weasyprint import HTML
+
+    out = Path(out_path)
+    HTML(string=html_text, base_url=str(TEMPLATES)).write_pdf(str(out))
+    return out

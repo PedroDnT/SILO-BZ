@@ -103,6 +103,11 @@ export const TOOL_SPECS: ToolSpec[] = [
   t("research_universe", "Research universe: listed shares and units"),
   // The benchmark index: levels by B3 index code (IBOV), never a ticker.
   t("index_history", "Index levels (B3), by index code"),
+  // The portfolio-diagnosis reads: statement lines to funds (ambiguity flagged,
+  // never picked), disclosed fee beside a balancete estimate, look-through.
+  t("portfolio_resolve", "Resolve statement lines to funds (name history, quota tie-break)"),
+  t("portfolio_fees", "Fees: disclosed (lamina, cad_fi) beside a balancete estimate"),
+  t("portfolio_lookthrough", "Look-through of funds into their holdings (CDA blocks 1, 2, 4, 6)"),
   // Views (GET, PostgREST filters). The B3 lending / flow group is a RATCHET.
   t("funds", "Fund registry (view)"),
   t("quotes", "Cash quotes (view)"),

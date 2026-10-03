@@ -1021,6 +1021,66 @@ CREATE INDEX IF NOT EXISTS ix_fi_balancete_resumo_date
     ON cvm_fi_balancete_resumo (dt_comptc);
 
 -- ---------------------------------------------------------------------------
+-- FI - lamina (CVM fi-doc-lamina): fees, redemption terms, minimums (migration 65)
+-- Main member of lamina_fi_YYYYMM.zip. Key (cnpj, dt_comptc, id_subclasse),
+-- NULLS NOT DISTINCT: id_subclasse is empty on almost every row. Read the current
+-- filing through vw_fi_lamina_latest.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS cvm_fi_lamina (
+    id           BIGSERIAL,
+    cnpj         TEXT        NOT NULL CHECK (char_length(cnpj) = 14),
+    dt_comptc    DATE        NOT NULL,    -- DT_COMPTC as filed (a month end), not normalised
+    id_subclasse TEXT,                    -- NULL on most rows; part of the key, never filled in
+    tp_fundo_classe               TEXT,
+    denom_social                  TEXT,
+    nm_fantasia                   TEXT,
+    publico_alvo                  TEXT,
+    indice_refer                  TEXT,
+    classe_risco_admin            NUMERIC,
+    vl_patrim_liq                 NUMERIC,
+    tp_taxa_adm                   TEXT,
+    taxa_adm                      NUMERIC,
+    taxa_adm_min                  NUMERIC,
+    taxa_adm_max                  NUMERIC,
+    taxa_adm_obs                  TEXT,
+    taxa_perfm                    TEXT,
+    taxa_entr                     NUMERIC,
+    condic_entr                   TEXT,
+    taxa_saida                    NUMERIC,
+    qt_dia_saida                  NUMERIC,
+    condic_saida                  TEXT,
+    pr_pl_despesa                 NUMERIC,
+    dt_ini_despesa                DATE,
+    dt_fim_despesa                DATE,
+    invest_inicial_min            NUMERIC,
+    invest_adic                   NUMERIC,
+    resgate_min                   NUMERIC,
+    vl_min_perman                 NUMERIC,
+    hora_aplic_resgate            TEXT,
+    qt_dia_caren                  NUMERIC,
+    condic_caren                  TEXT,
+    conversao_cota_compra         TEXT,
+    qt_dia_conversao_cota_compra  NUMERIC,
+    conversao_cota_canc           TEXT,
+    qt_dia_conversao_cota_resgate NUMERIC,
+    tp_dia_pagto_resgate          TEXT,
+    qt_dia_pagto_resgate          NUMERIC,
+    raw          JSONB       NOT NULL,
+    fetched_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fi_lamina UNIQUE NULLS NOT DISTINCT (cnpj, dt_comptc, id_subclasse)
+);
+CREATE INDEX IF NOT EXISTS ix_fi_lamina_date ON cvm_fi_lamina (dt_comptc DESC);
+
+CREATE OR REPLACE VIEW vw_fi_lamina_latest
+WITH (security_invoker = true) AS
+SELECT DISTINCT ON (l.cnpj, l.id_subclasse)
+       l.*,
+       (EXTRACT(YEAR  FROM age(CURRENT_DATE, l.dt_comptc)) * 12
+      + EXTRACT(MONTH FROM age(CURRENT_DATE, l.dt_comptc)))::int AS age_months
+  FROM cvm_fi_lamina l
+ ORDER BY l.cnpj, l.id_subclasse, l.dt_comptc DESC, l.fetched_at DESC, l.id DESC;
+
+-- ---------------------------------------------------------------------------
 -- Additive column migrations for typed-field lifts (idempotent).
 -- ---------------------------------------------------------------------------
 
