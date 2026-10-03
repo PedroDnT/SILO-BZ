@@ -237,3 +237,42 @@ def test_pipeline_no_longer_swallows_sgs_failures():
     body = src[i: src.index("async def ingest_ptax(")]
     assert 'logger.error("SGS fetch failed' not in body
     assert "raise RuntimeError(f\"SGS fetch failed" in body
+
+
+@pytest.mark.asyncio
+async def test_the_sgs_base_url_defaults_to_api_bcb_gov_br(one_attempt, monkeypatch):
+    monkeypatch.delenv("BACEN_SGS_BASE_URL", raising=False)
+    handler, calls = _by_code({12: httpx.Response(200, json=_CDI)})
+    with patch("httpx.AsyncClient", _client_factory(handler)):
+        await BacenClient().get_sgs_series({"CDI": 12}, last=2)
+    assert calls[0].url.host == "api.bcb.gov.br"
+
+
+@pytest.mark.asyncio
+async def test_the_sgs_base_url_can_be_repointed_by_the_environment(one_attempt, monkeypatch):
+    monkeypatch.setenv("BACEN_SGS_BASE_URL", "https://sgs.example.test/dados/serie/")
+    handler, calls = _by_code({12: httpx.Response(200, json=_CDI)})
+    with patch("httpx.AsyncClient", _client_factory(handler)):
+        await BacenClient().get_sgs_series({"CDI": 12}, last=2)
+    assert calls[0].url.host == "sgs.example.test"
+    assert calls[0].url.path == "/dados/serie/bcdata.sgs.12/dados/ultimos/2"
+
+
+@pytest.mark.asyncio
+async def test_an_empty_sgs_base_url_counts_as_unset(one_attempt, monkeypatch):
+    monkeypatch.setenv("BACEN_SGS_BASE_URL", "")
+    handler, calls = _by_code({12: httpx.Response(200, json=_CDI)})
+    with patch("httpx.AsyncClient", _client_factory(handler)):
+        await BacenClient().get_sgs_series({"CDI": 12}, last=2)
+    assert calls[0].url.host == "api.bcb.gov.br"
+
+
+@pytest.mark.asyncio
+async def test_a_mistyped_sgs_base_url_raises_instead_of_falling_back(one_attempt, monkeypatch):
+    monkeypatch.setenv("BACEN_SGS_BASE_URL", "http://api.bcb.gov.br/dados/serie")
+    handler, calls = _by_code({12: httpx.Response(200, json=_CDI)})
+    with patch("httpx.AsyncClient", _client_factory(handler)):
+        with pytest.raises(Exception) as exc:
+            await BacenClient().get_sgs_series({"CDI": 12}, last=2)
+    assert "BACEN_SGS_BASE_URL" in str(exc.value)
+    assert calls == []

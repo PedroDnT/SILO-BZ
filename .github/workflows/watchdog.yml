@@ -43,6 +43,8 @@ jobs:
     env:
       POSTGRES_URL: "${{ secrets.POSTGRES_URL }}"
       CVM_DNS_NAMESERVERS: "1.1.1.1,8.8.8.8,9.9.9.9"
+      # Optional repository variable: re-points the BACEN SGS host (issue #537). Empty means the default.
+      BACEN_SGS_BASE_URL: "${{ vars.BACEN_SGS_BASE_URL }}"
       CVM_DAILY_SCOPE: "all"
       CVM_UPSERT_CHUNK_SIZE: "5000"
       CVM_INGEST_CONCURRENCY: "6"

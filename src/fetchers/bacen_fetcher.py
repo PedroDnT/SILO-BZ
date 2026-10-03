@@ -67,7 +67,8 @@ _SGS = "https://api.bcb.gov.br/dados/serie"
 # "[Errno -2] Name or service not known" on three runners. A resolver rotation like
 # the CVM fetcher's cannot heal a name that does not exist, so none is added: the
 # retry stays, an outage still raises BacenFetchError, and the daily run goes red
-# (issue #537).
+# (issue #537). The base can be re-pointed without a code change through
+# BACEN_SGS_BASE_URL (see _sgs_base), for the day BCB announces another host.
 
 _OLINDA_PAGE = 10_000
 _OLINDA_MAX_PAGES = 50
@@ -92,6 +93,22 @@ class BacenFetchError(RuntimeError):
     fetch look exactly like a quiet week. That confusion is what kept the Focus
     tables empty while every run reported success.
     """
+
+
+def _sgs_base() -> str:
+    """The SGS base URL: ``BACEN_SGS_BASE_URL`` when set, else ``_SGS``.
+
+    Read on every call, like the retry settings. An empty value counts as unset
+    (a GitHub variable that was never filled in arrives as ""). Anything that is
+    not an https URL raises: a mistyped override must fail loudly, never fall
+    back silently to a different host than the one the operator meant.
+    """
+    base = (os.getenv("BACEN_SGS_BASE_URL") or "").strip().rstrip("/")
+    if not base:
+        return _SGS
+    if not base.lower().startswith("https://"):
+        raise ValueError(f"BACEN_SGS_BASE_URL must start with https://, got {base!r}")
+    return base
 
 
 def _olinda_retry_config() -> Tuple[int, float]:
@@ -359,10 +376,10 @@ async def _sgs_request(
     quiet month.
     """
     if last is not None:
-        url = f"{_SGS}/bcdata.sgs.{code}/dados/ultimos/{int(last)}"
+        url = f"{_sgs_base()}/bcdata.sgs.{code}/dados/ultimos/{int(last)}"
         params: Dict[str, str] = {"formato": "json"}
     else:
-        url = f"{_SGS}/bcdata.sgs.{code}/dados"
+        url = f"{_sgs_base()}/bcdata.sgs.{code}/dados"
         params = {"formato": "json"}
         if start:
             params["dataInicial"] = _to_sgs_date(start) or ""
