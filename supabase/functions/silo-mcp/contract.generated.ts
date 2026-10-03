@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "52";
+export const CONTRACT_VERSION = "53";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -2658,7 +2658,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "index_history": {
     "kind": "rpc",
     "path": "/rpc/index_history",
-    "description": "Daily levels of one B3-published index (IBOV from 1968-01-02), as published, oldest first. p_index is an INDEX CODE: a ticker, including BOVA11 and IBOV11, raises 22023 naming the codes held, so the options settlement leg or an ETF can never stand in for the index. The series is NOT adjusted: B3 re-scaled it eleven times (divisor 100 on 1983-10-04, 10 on ten other sessions, the last 1997-03-03) and divisor_step is TRUE on the first session after each, where a level ratio is not a return. A price index only: no return, adjusted or total-return column. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '' = first page, then the last row's trade_date as 'YYYY-MM-DD'; a page shorter than 1000 is the last. Or narrow p_from/p_to. Depth per index is in api.coverage().",
+    "description": "Daily levels of one B3-published index (IBOV from 1968-01-02; IBXX, IBXL, IFIX, SMLL, IDIV, ICON, IMOB and UTIL each from its own first session), as published, oldest first. p_index is an INDEX CODE: a ticker, including BOVA11 and IBOV11, raises 22023 naming the codes held, so the options settlement leg or an ETF can never stand in for the index. The series is NOT adjusted: B3 re-scaled it eleven times (divisor 100 on 1983-10-04, 10 on ten other sessions, the last 1997-03-03) and divisor_step is TRUE on the first session after each, where a level ratio is not a return. Each code is a TOTAL-RETURN index as B3 publishes it (distributions reinvested, B3 Manual Feb 2023), so a level already includes dividends: compare it with close_total_return, not close_adj; levels before an index's publication date are B3's back-calculation, not marked. No return or adjusted column. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '' = first page, then the last row's trade_date as 'YYYY-MM-DD'; a page shorter than 1000 is the last. Or narrow p_from/p_to. Depth per index is in api.coverage().",
     "inputSchema": {
       "type": "object",
       "properties": {

@@ -28,8 +28,32 @@ SOURCE = "b3_index_statistics"
 
 # The indices SILO ingests, and the first year B3 publishes for each. A year
 # before it answers results=null, which is an error for a configured index.
-INDEX_CODES: Tuple[str, ...] = ("IBOV",)
-FIRST_YEAR: Dict[str, int] = {"IBOV": 1968}
+# Every one is a TOTAL-RETURN index by B3's own pages and Manual (Feb 2023,
+# section 1.2: dividends reinvested); none on this endpoint is a price-return
+# version. The eight added by #416 were checked on 2026-10-03 against B3's base
+# values (all), its daily bulletin (IBXX, IBXL, IFIX) and IBOV's session dates
+# (docs/reference/research/index-candidates-416.md). FIRST_YEAR is the year of
+# each one's first served session (IBXX 1994-12-29, IBXL 1997-12-30, SMLL
+# 2005-08-31, IFIX 2010-12-30, IDIV and UTIL 2005-12-29, ICON 2006-12-28, IMOB
+# 2007-12-28). Levels before an index's publication date are B3's own
+# back-calculation and the endpoint does not mark them.
+# IEEX (first served 1994-01-03) is deliberately NOT here: it moved +70% on
+# 1999-03-15 and -29% on 1999-03-31 with no divisor step and nothing in B3's
+# methodology history to explain it, so it stays held until that is sourced.
+INDEX_CODES: Tuple[str, ...] = (
+    "IBOV", "IBXX", "IBXL", "IFIX", "SMLL", "IDIV", "ICON", "IMOB", "UTIL",
+)
+FIRST_YEAR: Dict[str, int] = {
+    "IBOV": 1968,
+    "IBXX": 1994,
+    "IBXL": 1997,
+    "IFIX": 2010,
+    "SMLL": 2005,
+    "IDIV": 2005,
+    "ICON": 2006,
+    "IMOB": 2007,
+    "UTIL": 2005,
+}
 
 # The sessions on which B3 re-scaled a series, with the divisor. The published
 # history is not adjusted across them, so the level ratio on these days is not

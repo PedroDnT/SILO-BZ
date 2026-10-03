@@ -295,7 +295,7 @@ hard-coded ticker list. The operator half:
   above one page, and since nothing narrows it the message says it has no
   cursor and one must be added.
 
-### The benchmark index (catalog v45)
+### The benchmark index (catalog v45, v53)
 
 `api.index_history(p_index, p_from, p_to, p_after)` (`29_api_index.sql`;
 research-seam spec `docs/planning/RESEARCH_SEAM.md` §5, tickets #412 and #415)
@@ -306,14 +306,37 @@ serves the daily level of a B3-published index from `b3_index_level` (migration
   GetPortfolioDay`, one calendar year per call as a 31 x 12 grid with Brazilian
   decimals (`src/fetchers/b3_index_fetcher.py`). IBOV from 1968-01-02: 14,489
   sessions on 2026-09-30, 2025-12-30 = 161,125.37 (B3's year-end figure).
+- **The codes held (v53, #416).** IBOV, IBXX (first session 1994-12-29), IBXL
+  (1997-12-30), IFIX (2010-12-30), SMLL (2005-08-31), IDIV and UTIL (2005-12-29),
+  ICON (2006-12-28) and IMOB (2007-12-28), the list `INDEX_CODES` /
+  `FIRST_YEAR` in `src/pipeline/ingest_b3_index.py`. Each is checked against its
+  base value on its base date, and IBOV, IBXX, IBXL and IFIX against B3's daily
+  bulletin (`docs/reference/research/index-candidates-416.md`). **IEEX is held
+  back:** it moved +70% on 1999-03-15 and -29% on 1999-03-31 with no divisor
+  step and nothing in B3's methodology history to explain it. Levels before an
+  index's publication date are B3's back-calculation and the endpoint does not
+  mark them. `coverage()` reads each index's first date from the table, so it
+  reports every code's own depth with no SQL edit.
+- **Every code is a total-return index, as B3 labels it.** B3's pages and its
+  Manual (Feb 2023, section 1.2) call IBOV and each candidate an index of
+  *retorno total*: dividends are reinvested in the index, so a level already
+  includes them. Catalog v45 to v52 called the series "a price index, not total
+  return", which B3 contradicts; v53 corrects it. A caller who wants the
+  like-for-like stock series reads `close_total_return` from `quote_history`,
+  never `close_adj` (price only). A price-return version, where B3 has one
+  (IDIV B3 Price Return), carries its own name and is not on this endpoint.
 - **Ingest.** `B3Ingestor.ingest_index_levels`, the third source of
-  `run_b3_events` (audit `b3` / `index_levels`). It refetches every year every
-  night (59 calls, about a minute): the upsert rewrites only rows that changed,
-  so there is no backfill mode and a B3 correction heals itself. It validates the
-  whole series before any write. **A null `results` for a configured index is an
-  error** (B3 answers HTTP 200 for a code it does not publish, and for any year
-  it has nothing for); the one exception is the current year in the first ten
-  days of January, before its first session. It sits in `run_b3_events`, not
+  `run_b3_events` (audit `b3` / `index_levels`). It refetches every year of every
+  configured index every night (about 250 calls for the nine codes, a few
+  minutes): the upsert rewrites only rows that changed, so there is no backfill
+  mode, the first run after a code is added loads its whole history, and a B3
+  correction heals itself. It validates the whole series before any write.
+  **A null `results` is retried** (3 attempts with backoff, the fetcher's
+  `max_retries`) because B3 answered null once for a year it serves (UTIL 2012,
+  2026-10-03). **A null on every attempt for a configured index is an error**
+  (B3 answers HTTP 200 for a code it does not publish, and for any year it has
+  nothing for), never an empty year; the one exception is the current year in
+  the first ten days of January, before its first session. It sits in `run_b3_events`, not
   `run_daily`, for the reason #450 moved the other B3 calls there.
 - **Levels are as published and the series is not adjusted.** B3 re-scaled IBOV
   eleven times (divided by 100 on 1983-10-04 and by 10 on ten other sessions,
@@ -477,7 +500,8 @@ sweep (`B3Ingestor.TAPE_START`), `mv_b3_cash_event` (migration 56) and
   a holiday with no session, so nothing would be lost, but the rule is the
   instrument's first session. The documented examples use 2019-01-02.
 - **`api.coverage()` says so** in the notes of its `quotes` row, read from the tape.
-- **`api.index_history` is not bound by it:** IBOV is held from 1968-01-02.
+- **`api.index_history` is not bound by it:** IBOV is held from 1968-01-02, and
+  each other index from its own first session.
 - `serve/` maps the `22023` to a caller error like every other refusal.
 
 ### Fundamentals as of a date (catalog v47)

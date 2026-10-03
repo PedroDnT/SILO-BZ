@@ -48,9 +48,11 @@ December 2025; the note's addendum of 2026-10-01 has the numbers.
 indices B3's endpoint answered for on 2026-09-29 (IBXX, IBXL, SMLL, IFIX, IDIV,
 IEEX, ICON, IMOB, UTIL) against B3's daily bulletin and its methodology. The
 values hold and the history has no gap, but B3 labels every one of them, and IBOV
-itself, a total-return index, which the served text calls a price index, so none
-is added until the owner settles the label. It also records one `results=null`
-answer for a year B3 does serve.
+itself, a total-return index, which the served text called a price index. On
+2026-10-03 the owner followed the note: catalog v53 relabels the series, the
+retry on `results=null` is built, and eight codes are added (IEEX is held back for
+its 1999-03 move). It also records one `results=null` answer for a year B3 does
+serve.
 
 ## FCA listing dates (research seam)
 
