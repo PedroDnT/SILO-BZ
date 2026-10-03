@@ -930,6 +930,15 @@ CREATE TABLE IF NOT EXISTS cvm_fund_registry (
     -- without the date (migration 28).
     vl_patrim_liq NUMERIC(20,2),
     dt_patrim_liq DATE,
+    -- The fee as the legacy cad_fi.csv files it, unit as published (CVM's meta
+    -- states none). Legacy funds only; the CVM-175 registro files publish no
+    -- fee, so their ingest leaves these alone (migration 64).
+    taxa_adm       NUMERIC,
+    taxa_perfm     NUMERIC,
+    inf_taxa_adm   TEXT,
+    inf_taxa_perfm TEXT,
+    dt_ini_exerc   DATE,                     -- fiscal year start, as filed
+    dt_fim_exerc   DATE,                     -- fiscal year end, as filed
     raw          JSONB,
     fetched_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_fund_registry UNIQUE (cnpj, entity_type)

@@ -35,4 +35,15 @@ FIELD_MAP = {
     # reader never has to assume the figure is current.
     "vl_patrim_liq": (["Patrimonio_Liquido", "VL_PATRIM_LIQ"],           "numeric"),
     "dt_patrim_liq": (["Data_Patrimonio_Liquido", "DT_PATRIM_LIQ"],      "date"),
+    # The fee each fund discloses, published only by the legacy cad_fi.csv
+    # (meta_cad_fi.txt: TAXA_ADM / TAXA_PERFM real, INF_* varchar 400, the
+    # fiscal-year dates). Unit as published: CVM's meta states none. The
+    # CVM-175 registro files carry no fee column, so _columns_published_by
+    # keeps their ingest from writing NULL over these (migration 64).
+    "taxa_adm":       (["TAXA_ADM"],       "numeric"),
+    "taxa_perfm":     (["TAXA_PERFM"],     "numeric"),
+    "inf_taxa_adm":   (["INF_TAXA_ADM"],   "text"),
+    "inf_taxa_perfm": (["INF_TAXA_PERFM"], "text"),
+    "dt_ini_exerc":   (["DT_INI_EXERC"],   "date"),
+    "dt_fim_exerc":   (["DT_FIM_EXERC"],   "date"),
 }

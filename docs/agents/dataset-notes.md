@@ -65,6 +65,12 @@ The fee columns (`vl_taxa_administracao` and its parts, `vl_taxa_performance`, .
 fee in 81781001/81781056 and nothing in the management (`vl_taxa_gestao`) or distribution
 split, so a NULL part is not a zero fee.
 
+**The disclosed fee in the registry** (migration 64): `cvm_fund_registry.taxa_adm`,
+`taxa_perfm`, `inf_taxa_adm`, `inf_taxa_perfm`, `dt_ini_exerc`, `dt_fim_exerc` are
+`cad_fi.csv`'s columns as filed; CVM's meta states no unit (values read as percent). Only
+the legacy file publishes them, so they cover legacy funds: 7 of the 25,178 funds reporting
+NAV on 2026-09-15 carry one. A NULL fee is "not filed there", never a zero fee.
+
 **FII filings keep every version** (migration 43): `versao` is part of the key of
 `cvm_fii_mensal` and `cvm_fii_periodic` (`UNIQUE NULLS NOT DISTINCT`), so a restatement
 lands beside the original instead of overwriting it. Read the current filing through
@@ -101,20 +107,15 @@ bump it only when a parser or field map changes what a stored value means).
 
 The **analytical layer** (`src/store/analytical/`, applied by `scripts/apply_analytical.sh`
 after ingest) is the read side the dashboards query: `dim_fund` (a **materialized view**,
-rebuilt by the apply; the pg_cron jobs in `08_cron_schedules.sql` do not run, because the
+rebuilt by the apply; the pg*cron jobs in `08_cron_schedules.sql` do not run, because the
 live database has no pg_cron, checked 2026-09-29) plus `dim_fund_category` / `dim_administrator`
 / `dim_gestor`; the `fact_fund_monthly` / `fact_security_monthly` matviews; the
-`fraud_screen_*` suspicious-deal screens (15; served to API callers only as the
-`api.screen_*` wrappers in 23 — the public functions hold no client grant); and the `fund_performance_*` / `etf_*` ranking
-functions (16–17). ETFs are carved out of the fund universe and ranked separately —
-`etf_daily` is empty for post-CVM-175 share classes (see the ETF doc).
-`mv_savings_flow_monthly` / `api.mv_savings_flow_monthly` (18) is reproduced as-found so
-CASCADE recreates of `fact_fund_monthly` cannot destroy it; nothing in this repo reads it.
-`mv_fund_holdings_monthly` (30) is what funds hold per month from CDA blocks 4 and 2: stocks
+`fraud_screen*_`suspicious-deal screens (15; served to API callers only as the`api.screen\__`wrappers in 23 — the public functions hold no client grant); and the`fund*performance*_`/`etf\__`ranking
+functions (16–17). ETFs are carved out of the fund universe and ranked separately —`etf_daily`is empty for post-CVM-175 share classes (see the ETF doc).`mv_savings_flow_monthly`/`api.mv_savings_flow_monthly`(18) is reproduced as-found so
+CASCADE recreates of`fact_fund_monthly`cannot destroy it; nothing in this repo reads it.`mv_fund_holdings_monthly`(30) is what funds hold per month from CDA blocks 4 and 2: stocks
 by ticker, debentures by the issuer code in the ISIN (block 4 carries the debentures funds hold,
-R$789bn on 2026-05 against R$34bn in block 6), and fund-quota totals with the same-group part.
-`mv_b3_isin_subtype` and `mv_b3_monthly_activity` are created in `schema.sql`, not here,
-and `22_b3_tape_matviews.sql` refreshes them in the same apply.
-Schema `api` is 19 (the contract, `catalog()` / `coverage()`, `api.assert_row_cap`),
+R$789bn on 2026-05 against R$34bn in block 6), and fund-quota totals with the same-group part.`mv_b3_isin_subtype`and`mv_b3_monthly_activity`are created in`schema.sql`, not here,
+and `22_b3_tape_matviews.sql`refreshes them in the same apply.
+Schema`api`is 19 (the contract,`catalog()`/`coverage()`, `api.assert_row_cap`),
 20–21 (short interest, lending participants), 23 (screens) and 24 (FNET). The row cap
 and what a new endpoint needs are in `AGENTS.md`, "Adding an API endpoint".
