@@ -129,6 +129,50 @@ async def test_a_503_is_retried_then_succeeds(monkeypatch):
     assert n["calls"] == 2 and len(rows) == 2
 
 
+_DNS_ERRNO = "[Errno -2] Name or service not known"
+
+
+@pytest.mark.asyncio
+async def test_a_transient_dns_error_is_retried_then_succeeds(monkeypatch):
+    """A resolver hiccup on the runner heals on the next attempt (issue #537)."""
+    monkeypatch.setenv("BACEN_OLINDA_MAX_RETRIES", "2")
+    monkeypatch.setenv("BACEN_OLINDA_RETRY_DELAY", "0")
+    n = {"calls": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        n["calls"] += 1
+        if n["calls"] == 1:
+            raise httpx.ConnectError(_DNS_ERRNO, request=request)
+        return httpx.Response(200, json=_CDI)
+
+    with patch("httpx.AsyncClient", _client_factory(handler)):
+        rows = await BacenClient().get_sgs_series({"CDI": 12}, start="2026-08-04")
+    assert n["calls"] == 2 and len(rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_persistent_dns_error_raises_and_never_returns_rows(monkeypatch):
+    """api.bcb.gov.br was NXDOMAIN on 2026-10-03: every attempt fails, the fetch raises.
+
+    No fallback value and no empty window: the ingest turns this exception into a
+    `cvm_ingest_log` error row (tests/test_bacen_audit_log.py) and the run goes red.
+    """
+    monkeypatch.setenv("BACEN_OLINDA_MAX_RETRIES", "2")
+    monkeypatch.setenv("BACEN_OLINDA_RETRY_DELAY", "0")
+    n = {"calls": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        n["calls"] += 1
+        raise httpx.ConnectError(_DNS_ERRNO, request=request)
+
+    with patch("httpx.AsyncClient", _client_factory(handler)):
+        with pytest.raises(BacenFetchError) as exc:
+            await BacenClient().get_sgs_series({"SELIC_META": 432, "CDI": 12}, start="2026-08-04")
+    assert n["calls"] == 2, "bounded: two attempts on the first series, then it raises"
+    assert "SGS SELIC_META (432): failed after 2 attempts" in str(exc.value)
+    assert _DNS_ERRNO in str(exc.value)
+
+
 @pytest.mark.asyncio
 async def test_a_200_html_interstitial_is_retried_then_succeeds(monkeypatch):
     """Seen live 2026-09-03: series 432 answered HTTP 200 with an XHTML page once."""
@@ -193,3 +237,42 @@ def test_pipeline_no_longer_swallows_sgs_failures():
     body = src[i: src.index("async def ingest_ptax(")]
     assert 'logger.error("SGS fetch failed' not in body
     assert "raise RuntimeError(f\"SGS fetch failed" in body
+
+
+@pytest.mark.asyncio
+async def test_the_sgs_base_url_defaults_to_api_bcb_gov_br(one_attempt, monkeypatch):
+    monkeypatch.delenv("BACEN_SGS_BASE_URL", raising=False)
+    handler, calls = _by_code({12: httpx.Response(200, json=_CDI)})
+    with patch("httpx.AsyncClient", _client_factory(handler)):
+        await BacenClient().get_sgs_series({"CDI": 12}, last=2)
+    assert calls[0].url.host == "api.bcb.gov.br"
+
+
+@pytest.mark.asyncio
+async def test_the_sgs_base_url_can_be_repointed_by_the_environment(one_attempt, monkeypatch):
+    monkeypatch.setenv("BACEN_SGS_BASE_URL", "https://sgs.example.test/dados/serie/")
+    handler, calls = _by_code({12: httpx.Response(200, json=_CDI)})
+    with patch("httpx.AsyncClient", _client_factory(handler)):
+        await BacenClient().get_sgs_series({"CDI": 12}, last=2)
+    assert calls[0].url.host == "sgs.example.test"
+    assert calls[0].url.path == "/dados/serie/bcdata.sgs.12/dados/ultimos/2"
+
+
+@pytest.mark.asyncio
+async def test_an_empty_sgs_base_url_counts_as_unset(one_attempt, monkeypatch):
+    monkeypatch.setenv("BACEN_SGS_BASE_URL", "")
+    handler, calls = _by_code({12: httpx.Response(200, json=_CDI)})
+    with patch("httpx.AsyncClient", _client_factory(handler)):
+        await BacenClient().get_sgs_series({"CDI": 12}, last=2)
+    assert calls[0].url.host == "api.bcb.gov.br"
+
+
+@pytest.mark.asyncio
+async def test_a_mistyped_sgs_base_url_raises_instead_of_falling_back(one_attempt, monkeypatch):
+    monkeypatch.setenv("BACEN_SGS_BASE_URL", "http://api.bcb.gov.br/dados/serie")
+    handler, calls = _by_code({12: httpx.Response(200, json=_CDI)})
+    with patch("httpx.AsyncClient", _client_factory(handler)):
+        with pytest.raises(Exception) as exc:
+            await BacenClient().get_sgs_series({"CDI": 12}, last=2)
+    assert "BACEN_SGS_BASE_URL" in str(exc.value)
+    assert calls == []
