@@ -61,6 +61,13 @@ _OLINDA = "https://olinda.bcb.gov.br/olinda/servico"
 # request; python-bcb's sgs.get() wrapped the same endpoint but raised on the
 # first series that answered 404 and discarded every series fetched before it.
 _SGS = "https://api.bcb.gov.br/dados/serie"
+# 2026-10-03 (UTC-3): this host stopped resolving. 1.1.1.1, 8.8.8.8, 9.9.9.9 and
+# bcb.gov.br's own Azure DNS nameservers all answered NXDOMAIN (olinda., www3. and
+# dadosabertos.bcb.gov.br resolved), and Daily CVM Ingest failed on SGS 432 with
+# "[Errno -2] Name or service not known" on three runners. A resolver rotation like
+# the CVM fetcher's cannot heal a name that does not exist, so none is added: the
+# retry stays, an outage still raises BacenFetchError, and the daily run goes red
+# (issue #537).
 
 _OLINDA_PAGE = 10_000
 _OLINDA_MAX_PAGES = 50
