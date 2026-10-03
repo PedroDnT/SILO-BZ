@@ -1,11 +1,11 @@
 name: Lamina header probe
 
 # THROWAWAY research branch (research/verify-420, issue #420), never merged.
-# On this branch the file runs scripts/verify_research_seam.py against the live
-# public API, because a workflow GitHub has not indexed on main cannot be
-# dispatched from another ref. Read-only: the public SDK with the published
-# anon key (its default), aggregates to the job log. No secrets, no
-# POSTGRES_URL, no deploy hook, contents: read only.
+# On this branch the file runs a read-only probe of the live public API,
+# because a workflow GitHub has not indexed on main cannot be dispatched from
+# another ref. The public SDK with the published anon key (its default),
+# aggregates to the job log. No secrets, no POSTGRES_URL, no deploy hook,
+# contents: read only.
 
 on:
   workflow_dispatch:
@@ -28,5 +28,5 @@ jobs:
           python-version: "3.12"
       - name: Install the SDK's dependencies
         run: pip install "httpx>=0.27" "pandas>=2.0" "polars>=1.0"
-      - name: Run the research seam verifier against production
-        run: python -u scripts/verify_research_seam.py
+      - name: Probe the live API
+        run: python -u .github/research/probe_420.py
