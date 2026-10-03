@@ -1,12 +1,15 @@
 """CLI: engine JSON to a Portuguese report (HTML and PDF).
 
     python -m src.portfolio.report.build engine.json --out report.pdf \\
-        [--html report.html] [--provider fake|anthropic] [--signature TEXT]
+        [--html report.html] [--provider fake|anthropic|openai] [--signature TEXT]
 
 ``--provider fake`` writes the findings with the deterministic template writer
 and needs no network and no key. ``--provider anthropic`` (default, or
-``SILO_LLM_PROVIDER``) uses the Redator and Revisor over the Messages API,
-within the US$1.00 per report cap. Without ``--out`` only HTML is written.
+``SILO_LLM_PROVIDER``) uses the Redator and Revisor over the Messages API
+(``ANTHROPIC_API_KEY``); ``--provider openai`` over the Responses API
+(``OPENAI_API_KEY``, model ``SILO_LLM_MODEL``, default ``gpt-6-luna`` at medium
+reasoning). Both stay within the US$1.00 per report cap. Without ``--out`` only
+HTML is written.
 """
 
 from __future__ import annotations
@@ -69,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("engine", help="engine output JSON")
     ap.add_argument("--out", help="PDF output path")
     ap.add_argument("--html", help="HTML output path")
-    ap.add_argument("--provider", choices=["fake", "anthropic"], help="default: SILO_LLM_PROVIDER or anthropic")
+    ap.add_argument("--provider", choices=["fake", "anthropic", "openai"], help="default: SILO_LLM_PROVIDER or anthropic")
     ap.add_argument("--signature", help="signature line (default: SILO_REPORT_SIGNATURE or the owner's)")
     ap.add_argument("--no-llm-review", action="store_true", help="skip the optional LLM pass of the Revisor")
     args = ap.parse_args(argv)

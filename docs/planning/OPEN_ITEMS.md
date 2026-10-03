@@ -465,6 +465,9 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
 - The disclosed fund fee must be correct, not only the balancete estimate:
   slice A adds the `cad_fi` fee columns (migration 64) and the CVM lâmina.
 - Cost cap US$1.00 per report; investigator cap 20 searches per report.
+- Report LLM (owner, 2026-10-03): the Anthropic key has no credits, so the Redator and
+  Revisor run on OpenAI `gpt-6-luna` at medium reasoning (`SILO_LLM_PROVIDER=openai`,
+  branch `demo/openai-provider`); `anthropic` stays selectable, the cap is unchanged.
 - **Parked:** the material-restatement thresholds below. Restatements are
   reported as "revised, not assessed" until they are set. The abnormal-movement
   rule is no longer parked: owner's decisions of 2026-10-03 are implemented as

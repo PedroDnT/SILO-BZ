@@ -303,6 +303,9 @@ branch and label rules, slice conventions, the engine contract). And a refresh o
   the LLM without touching the engine. The Claude Agent SDK is not needed: it is
   a full coding harness, and these two roles make no tool calls. The Revisor
   returns a structured verdict per sentence (kept, removed, needs second path).
+  As built (`src/portfolio/report/llm.py`): `SILO_LLM_PROVIDER` is `anthropic`,
+  `openai` (Responses API, default `gpt-6-luna` at medium reasoning) or `fake`;
+  `schema` is a Pydantic model that every reply is validated against.
 - **Where they run:** inside the engine process. Sunday: the local CLI. Week: the
   same code inside the Container (§9 decision 1). Not in a GitHub Action (no upload
   path) and not as scheduled sessions (`docs/planning/AGENTS.md` is for the
