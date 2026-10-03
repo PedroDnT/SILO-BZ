@@ -458,7 +458,10 @@ planned on 2026-09-30. The demo is now map #510 (label `demo-diagnostico`),
 built on the Phase 0 note `docs/reference/research/portfolio-diagnosis-phase0.md`.
 The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
 
-- Hosting on Cloudflare (Pages, plus a Container for the Python engine).
+- Hosting on Cloudflare: revised on #519 to one Worker (static assets) plus a
+  Container for the Python engine, no Pages. The first safe deploy, a
+  health-only Worker and Container (`deploy/cloudflare/`,
+  `deploy_cloudflare.yml`), went green on 2026-10-03; the engine image is next.
 - Engine in Python `src/portfolio/`, set-based `api` functions in
   `31_api_portfolio.sql`, Supabase reached through the read-only `silo-mcp`.
 - Sunday scope: spreadsheet input, blocks 1, 3, 10, 11, 14 (screens), 4, 2, PDF.

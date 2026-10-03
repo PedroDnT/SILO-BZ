@@ -1,0 +1,40 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	// First safe Cloudflare deploy for map #510 (issue #519): a Worker and a
+	// health-only Container. No engine, no upload, no LLM key.
+	"name": "silo-demo-health",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-10-01",
+	"workers_dev": true,
+	"preview_urls": false,
+	// #519: invocation logs off (they carry the request URL and headers' metadata).
+	"observability": {
+		"enabled": true,
+		"logs": {
+			"enabled": true,
+			"invocation_logs": false
+		}
+	},
+	"containers": [
+		{
+			"class_name": "HealthContainer",
+			"image": "./container/Dockerfile",
+			"instance_type": "lite",
+			"max_instances": 1
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "HEALTH_CONTAINER",
+				"class_name": "HealthContainer"
+			}
+		]
+	},
+	"exports": {
+		"HealthContainer": {
+			"type": "durable-object",
+			"storage": "sqlite"
+		}
+	}
+}
