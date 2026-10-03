@@ -949,6 +949,65 @@ CREATE INDEX IF NOT EXISTS idx_fund_registry_admin  ON cvm_fund_registry (admin_
 CREATE INDEX IF NOT EXISTS idx_fund_registry_gestor ON cvm_fund_registry (gestor_name);
 
 -- ---------------------------------------------------------------------------
+-- CVM 175 levels fundo -> classe -> subclasse (migration 67, issue #543)
+-- One table per member of FI/CAD/DADOS/registro_fundo_classe.zip, keyed on the
+-- registry's own ids (TEXT, as filed). A class reaches its fund by
+-- id_registro_fundo, a subclass its class by id_registro_classe; never by CNPJ.
+-- cvm_fund_registry above cannot hold this: a class with its fund's CNPJ lands
+-- on the fund's (cnpj, entity_type) row, and a subclass has no CNPJ at all.
+-- No foreign keys: a class whose fund row is absent keeps its row as filed.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS cvm_registro_fundo (
+    id                 BIGSERIAL   PRIMARY KEY,
+    id_registro_fundo  TEXT        NOT NULL,
+    cnpj_fundo         TEXT        CHECK (cnpj_fundo IS NULL OR char_length(cnpj_fundo) = 14),
+    codigo_cvm         TEXT,
+    tipo_fundo         TEXT,
+    denominacao_social TEXT,
+    situacao           TEXT,
+    data_registro      DATE,
+    data_cancelamento  DATE,
+    raw                JSONB       NOT NULL,
+    fetched_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_registro_fundo UNIQUE (id_registro_fundo)
+);
+CREATE INDEX IF NOT EXISTS ix_registro_fundo_cnpj ON cvm_registro_fundo (cnpj_fundo);
+
+CREATE TABLE IF NOT EXISTS cvm_registro_classe (
+    id                   BIGSERIAL   PRIMARY KEY,
+    id_registro_classe   TEXT        NOT NULL,
+    id_registro_fundo    TEXT        NOT NULL,   -- parent: cvm_registro_fundo
+    cnpj_classe          TEXT        CHECK (cnpj_classe IS NULL OR char_length(cnpj_classe) = 14),
+    codigo_cvm           TEXT,
+    tipo_classe          TEXT,
+    denominacao_social   TEXT,
+    situacao             TEXT,
+    data_registro        DATE,
+    classificacao        TEXT,
+    classe_cotas         BOOLEAN,                -- Classe_Cotas S/N; NULL when empty
+    classificacao_anbima TEXT,
+    raw                  JSONB       NOT NULL,
+    fetched_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_registro_classe UNIQUE (id_registro_classe)
+);
+CREATE INDEX IF NOT EXISTS ix_registro_classe_fundo ON cvm_registro_classe (id_registro_fundo);
+CREATE INDEX IF NOT EXISTS ix_registro_classe_cnpj  ON cvm_registro_classe (cnpj_classe);
+
+CREATE TABLE IF NOT EXISTS cvm_registro_subclasse (
+    id                 BIGSERIAL   PRIMARY KEY,
+    id_registro_classe TEXT        NOT NULL,     -- parent: cvm_registro_classe
+    id_subclasse       TEXT        NOT NULL,     -- ID_SUBCLASSE of inf_diario / lamina / CDA
+    codigo_cvm         TEXT,
+    denominacao_social TEXT,
+    situacao           TEXT,
+    publico_alvo       TEXT,
+    raw                JSONB       NOT NULL,
+    fetched_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_registro_subclasse UNIQUE (id_registro_classe, id_subclasse)
+);
+CREATE INDEX IF NOT EXISTS ix_registro_subclasse_id ON cvm_registro_subclasse (id_subclasse);
+
+-- ---------------------------------------------------------------------------
 -- FI — monthly balance sheet  (BALANCETE, monthly ZIP)
 --
 -- CSV columns (actual 2025-01 sample):
