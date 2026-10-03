@@ -168,16 +168,14 @@ created none. So a documentation change to `dashboard/pages/` is live on GitHub
 immediately and on the public site the next morning, unless someone dispatches
 `daily_ingest` with `rebuild_dashboard=true`.
 
-## 7. The docs site is on Mintlify's generated subdomain
+## 7. ~~The docs site is on Mintlify's generated subdomain~~ (superseded)
 
-**Blocked 2026-09-25:** DNS record plus Mintlify plan; account action, no repo change.
+**Superseded 2026-10-03 (`docs/scalar-rewrite`):** documentation rewritten from
+scratch on Scalar. Mintlify is no longer the docs host. The `api-docs/` directory
+and `docs.json` remain in the repo but are no longer the source; `scalar/` and
+`scalar.config.json` are. Scalar syncs from GitHub on merge.
 
-`octo-98895abd.mintlify.site` works and is linked correctly from everywhere. But
-a hex-string hostname reads as provisional to a first-time visitor, which is the
-wrong signal for the one surface a stranger is most likely to open.
-
-A custom domain needs a DNS record and a Mintlify plan that allows one — an
-account change, not a repo change, so it cannot be done from here.
+~~**Blocked 2026-09-25:** DNS record plus Mintlify plan; account action, no repo change.~~
 
 ## 8. Production deployments stopped taking the public hostnames
 
@@ -414,7 +412,7 @@ Nothing in wave 2 that depends on these starts until each has an answer.
 | 2b  | Filing punctuality and silent funds, from FNET delivery timestamps                                                                                                                                                                                             | 1b                 |
 | 2c  | B4, field-level restatement diffs (`fnet_document_diff`): designed in [DOCUMENTS.md](DOCUMENTS.md), §11 decided 2026-09-26 (slice 1: FIDC mensal, 2026 backfill); built: ingest (migration 46, `fnet_diff`) and serving (`fund_restatement_diff`, catalog v40) | 1b                 |
 | 2d  | FII keys carry `versao`                                                                                                                                                                                                                                        | gate 1, yes to (2) |
-| 2e  | ~~`fidc_*` caps raise instead of trimming~~ (dropped: gate 1 answered no)                                                                                                                                                                                                                        | gate 1, yes to (1) |
+| 2e  | ~~`fidc_*` caps raise instead of trimming~~ (dropped: gate 1 answered no)                                                                                                                                                                                      | gate 1, yes to (1) |
 | 2f  | B4 backfill of 2025 and earlier: restatement diffs for older years, newest-first, one year per dispatch; depth and runner-time budget set from the 2026 run's runtime and FNET latency (DOCUMENTS.md §11, decision 6)                                          | 2c's 2026 run      |
 
 ### Wave 3
@@ -536,12 +534,12 @@ these two. Neither has changed since it was first populated around 2026-08-28.
 
 Measured 2026-09-29:
 
-| Observation                                  | Result                                                                                       |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `mv_b3_isin_subtype` rows                    | 897, the count the 2026-08-28 status snapshot recorded                                    |
-| Fund-quota ISINs traded in the last 60 days  | 627, of which **9** are not in the matview                                                   |
-| `mv_b3_monthly_activity`, newest period      | 2026-08-01; September is absent                                                              |
-| August, standard lot (`tpmerc = '010'`)      | **19** sessions and R$ 481.0 bn in the matview; **21** sessions and R$ 529.8 bn in `b3_cotahist` |
+| Observation                                 | Result                                                                                           |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `mv_b3_isin_subtype` rows                   | 897, the count the 2026-08-28 status snapshot recorded                                           |
+| Fund-quota ISINs traded in the last 60 days | 627, of which **9** are not in the matview                                                       |
+| `mv_b3_monthly_activity`, newest period     | 2026-08-01; September is absent                                                                  |
+| August, standard lot (`tpmerc = '010'`)     | **19** sessions and R$ 481.0 bn in the matview; **21** sessions and R$ 529.8 bn in `b3_cotahist` |
 
 What reads them:
 
