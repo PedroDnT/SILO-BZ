@@ -94,6 +94,12 @@ jobs:
       - name: Install research evaluation test dependency
         run: pip install "openai-agents==0.22.3"
 
+      # The report layer (src/portfolio/report/) imports pydantic and, for SILO_LLM_PROVIDER=openai,
+      # the openai SDK. Their pins live in requirements-report.txt (requirements.txt is the daily
+      # ingest's and does not carry them); only those two lines are installed, not WeasyPrint.
+      - name: Install report test dependencies (openai, pydantic)
+        run: pip install $(grep -E '^(openai|pydantic)==' requirements-report.txt)
+
       - name: Run tests
         run: python -m pytest tests/ -q --tb=short
 

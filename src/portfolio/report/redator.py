@@ -16,9 +16,11 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, Literal
 
-from src.portfolio.report.llm import LLMError, Provider
+from pydantic import BaseModel, ConfigDict
+
+from src.portfolio.report.llm import LLMError, Provider, validate_output
 
 SECTIONS = (
     "resumo",
@@ -101,28 +103,23 @@ class RedatorResult:
     reason: str | None = None
 
 
-FINDINGS_SCHEMA: dict = {
-    "type": "object",
-    "properties": {
-        "findings": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "id": {"type": "string"},
-                    "section": {"type": "string", "enum": list(SECTIONS)},
-                    "title": {"type": "string"},
-                    "text": {"type": "string"},
-                    "citations": {"type": "array", "items": {"type": "string"}},
-                },
-                "required": ["id", "section", "title", "text", "citations"],
-                "additionalProperties": False,
-            },
-        }
-    },
-    "required": ["findings"],
-    "additionalProperties": False,
-}
+# The Redator's reply, requested as structured output and validated on return. One finding
+# per item, every field required, nothing extra. No docstrings on these models: Pydantic
+# would put them in the JSON schema the model is sent.
+class FindingOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    section: Literal[SECTIONS]
+    title: str
+    text: str
+    citations: list[str]
+
+
+class FindingsOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    findings: list[FindingOut]
 
 SYSTEM_PROMPT = """Você é o Redator do SILO, um diagnóstico independente de carteira de investimentos feito só com dados públicos (CVM, BCB, B3, FNET). Você recebe um JSON produzido pelo motor do SILO e escreve achados em português do Brasil para o investidor.
 
@@ -155,23 +152,12 @@ def build_user_message(engine: dict) -> str:
 
 
 def _coerce_findings(raw: Any) -> list[Finding]:
-    if not isinstance(raw, dict) or not isinstance(raw.get("findings"), list):
-        raise LLMError("Redator output has no findings list")
-    out = []
-    for i, f in enumerate(raw["findings"], start=1):
-        if not isinstance(f, dict):
-            continue
-        section = f.get("section") if f.get("section") in SECTIONS else "achados"
-        out.append(
-            Finding(
-                id=str(f.get("id") or f"f{i}"),
-                section=section,
-                title=str(f.get("title") or ""),
-                text=str(f.get("text") or ""),
-                citations=[str(c) for c in (f.get("citations") or [])],
-            )
-        )
-    return out
+    """The reply as findings. One that does not validate raises ``LLMValidationError``."""
+    parsed = validate_output(FindingsOutput, raw)
+    return [
+        Finding(id=f.id or f"f{i}", section=f.section, title=f.title, text=f.text, citations=list(f.citations))
+        for i, f in enumerate(parsed.findings, start=1)
+    ]
 
 
 def write(engine: dict, provider: Provider) -> RedatorResult:
@@ -180,7 +166,7 @@ def write(engine: dict, provider: Provider) -> RedatorResult:
     try:
         if hasattr(provider, "role"):
             provider.role = "redator"
-        raw = provider.complete(SYSTEM_PROMPT, build_user_message(engine), FINDINGS_SCHEMA)
+        raw = provider.complete(SYSTEM_PROMPT, build_user_message(engine), FindingsOutput)
         return RedatorResult("complete", _coerce_findings(raw))
     except LLMError as exc:
         return RedatorResult("unknown", [], f"{type(exc).__name__}: {exc}")
