@@ -209,6 +209,23 @@ def test_the_history_resolves_the_company_before_it_reads_cia_account() -> None:
     )
 
 
+def test_the_statement_rows_resolve_the_company_before_they_read_cia_account() -> None:
+    """#536: the same shape #531 fixed in financial_statement_history.
+
+    api.cia_statement_rows (behind api.financials and api.company_financials)
+    joined cia_account to api.company_ref(p_id), a set the planner sizes at
+    1,000 rows, so the company could stay out of the index condition and a whole
+    cia_account partition be scanned. The lookup is materialised once and
+    cd_cvm is pinned with a scalar subquery.
+    """
+    body = _body("cia_statement_rows")
+    assert "WITH ref AS MATERIALIZED" in body, "the company lookup is no longer materialised"
+    assert "JOIN api.company_ref(" not in body, "company_ref is joined directly again (#536)"
+    assert "a.cd_cvm = (SELECT x.cd_cvm FROM ref x)" in body, (
+        "cd_cvm must be a scalar subquery so the planner can use the company index"
+    )
+
+
 def test_the_widened_functions_are_dropped_before_being_replaced() -> None:
     """CREATE OR REPLACE cannot widen a RETURNS TABLE.
 
