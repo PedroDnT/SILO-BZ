@@ -1,18 +1,10 @@
 name: Lamina header probe
 
-# One-off, read-only measurement. Question: what columns does CVM's FI lâmina
-# dataset (dados.cvm.gov.br/dataset/fi-doc-lamina) publish, which member holds
-# the fees and redemption terms, and what is its natural key? The field map
-# src/parsers/field_maps/fi_lamina.py is written from this output, never from a
-# guess. The agent sandbox cannot reach dados.cvm.gov.br; GitHub runners can.
-#
-# It cannot touch the dashboard or the database: no secrets, no POSTGRES_URL,
-# no deploy hook, no schema or analytical apply, contents: read only. It
-# downloads public CVM files into the runner's memory and prints them. It has
-# its own concurrency group, so it never queues behind or blocks the daily
-# ingest. Dispatch-only: it ran once on PR #511 (run 37084697408, 2026-10-02
-# 22:04 UTC-3 / 2026-10-03 01:04 UTC), and the field map was written from that
-# log. Re-run it by hand if CVM changes the lâmina layout.
+# THROWAWAY research branch (research/lamina-coverage, issue #514), never merged.
+# On this branch the file runs .github/research/lamina_coverage.py instead of the
+# header probe, because a workflow GitHub has not indexed on main cannot be
+# dispatched from another ref. Read-only: public CVM files in, aggregates to the
+# job log out. No secrets, no POSTGRES_URL, no deploy hook, contents: read only.
 
 on:
   workflow_dispatch:
@@ -21,100 +13,17 @@ permissions:
   contents: read
 
 concurrency:
-  group: lamina-header-probe-${{ github.ref }}
+  group: lamina-coverage-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Print the lamina dictionary, members, headers, samples and key counts
-        run: |
-          python - <<'PY'
-          import collections, csv, io, sys, urllib.request, zipfile
-
-          BASE = "https://dados.cvm.gov.br/dados/FI/DOC/LAMINA"
-          META = f"{BASE}/META/meta_lamina_fi_txt.zip"
-          # 202608 is the newest file; 202409 is the last ~3 MB file before the
-          # size drops to ~840 KB at 202410, to see whether the columns changed.
-          DATA = [f"{BASE}/DADOS/lamina_fi_202608.zip", f"{BASE}/DADOS/lamina_fi_202409.zip"]
-          csv.field_size_limit(sys.maxsize)
-
-          def get(url):
-              with urllib.request.urlopen(url, timeout=300) as r:
-                  return r.read()
-
-          failed = 0
-
-          print("=" * 100)
-          print("META", META)
-          try:
-              with zipfile.ZipFile(io.BytesIO(get(META))) as z:
-                  for m in z.namelist():
-                      print("-" * 100)
-                      print("META MEMBER", m, z.getinfo(m).file_size, "bytes")
-                      print("-" * 100)
-                      print(z.read(m).decode("latin-1"))
-          except Exception as exc:  # reported, then the run goes red at the end
-              print(f"FAIL {META}: {type(exc).__name__}: {exc}")
-              failed += 1
-
-          for url in DATA:
-              print("=" * 100)
-              print("DATA", url)
-              try:
-                  blob = get(url)
-              except Exception as exc:
-                  print(f"FAIL {url}: {type(exc).__name__}: {exc}")
-                  failed += 1
-                  continue
-              with zipfile.ZipFile(io.BytesIO(blob)) as z:
-                  names = z.namelist()
-                  print("MEMBERS")
-                  for m in names:
-                      print(f"    {m}  {z.getinfo(m).file_size} bytes")
-                  for m in names:
-                      text = z.read(m).decode("latin-1")
-                      lines = text.splitlines()
-                      print("-" * 100)
-                      print("MEMBER", m, "lines", len(lines))
-                      print("HEADER", lines[0] if lines else "<empty>")
-                      for i, line in enumerate(lines[1:4], 1):
-                          print(f"ROW{i}", line)
-                      rows = list(csv.DictReader(io.StringIO(text), delimiter=";"))
-                      cols = list(rows[0].keys()) if rows else []
-                      print("ROWS", len(rows))
-                      cnpj_cols = [c for c in cols if "CNPJ" in c.upper()]
-                      for c in cnpj_cols:
-                          print(f"DISTINCT {c}", len({r[c] for r in rows}))
-                      dt_cols = [c for c in cols if c.upper().startswith("DT_COMPTC")]
-                      for c in dt_cols:
-                          top = collections.Counter(r[c] for r in rows).most_common(6)
-                          print(f"VALUES {c} (top 6)", top)
-                      id_cols = [c for c in cols if c.upper().startswith("ID_")]
-                      # Duplicate-key counts for the key candidates the file offers.
-                      cands = []
-                      if cnpj_cols[:1] and dt_cols:
-                          cands.append(cnpj_cols[:1] + dt_cols)
-                      if cnpj_cols and dt_cols:
-                          cands.append(cnpj_cols + dt_cols)
-                      if cnpj_cols and dt_cols and id_cols:
-                          cands.append(cnpj_cols + dt_cols + id_cols)
-                      for key in cands:
-                          cnt = collections.Counter(tuple(r[k] for k in key) for r in rows)
-                          dup_keys = sum(1 for v in cnt.values() if v > 1)
-                          dup_rows = sum(v for v in cnt.values() if v > 1)
-                          print(f"KEY {key}: distinct {len(cnt)}, keys with >1 row {dup_keys}, rows in them {dup_rows}")
-                      # Per-column fill and samples, so types are read, not guessed.
-                      for c in cols:
-                          vals = [r[c] for r in rows if (r[c] or "").strip()]
-                          samples = list(dict.fromkeys(v[:60] for v in vals))[:4]
-                          print(f"COL {c}: filled {len(vals)}/{len(rows)} samples {samples}")
-
-          print("DONE" if not failed else f"DONE with {failed} failed download(s)")
-          sys.exit(1 if failed else 0)
-          PY
+      - name: Fold every lamina to the latest per fund and print aggregates
+        run: python -u .github/research/lamina_coverage.py
