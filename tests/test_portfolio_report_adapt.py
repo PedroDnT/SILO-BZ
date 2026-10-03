@@ -66,8 +66,9 @@ def test_fee_view_follows_the_owner_rules(view):
     assert l3["estimate_label"] == "estimativa, não divulgada" and l3["estimated_pct_year"] == 1.98  # apart, labelled
     # a filed 0: shown, no rate, no R$, not summed
     l5 = by["L5"]
-    assert l5["filed_zero_label"] == "valor 0 informado (provavelmente não preenchido)"
+    assert l5["filed_zero_label"] == "0 informado; a conferir"
     assert l5["disclosed_pct_year"] is None and l5["disclosed_brl_year"] is None
+    assert l5["filed_zero_pct"] == 0.0 and l5["needs_manual_check"] is True
     assert view["fees"]["total_disclosed_brl_year"] == pytest.approx(by["L3"]["disclosed_brl_year"] + by["L7"]["disclosed_brl_year"])
     # the lâmina's 24 months, and the Extrato's 36
     assert by["L7"]["disclosed_stale"] is True and by["L7"]["disclosed_stale_label"] == "defasada"
@@ -75,7 +76,7 @@ def test_fee_view_follows_the_owner_rules(view):
     cash = und[("L4", "54891935000134")]
     assert cash["disclosed_origin"] == "extrato" and cash["disclosed_age_months"] == 30 and cash["disclosed_stale"] is False
     bad = und[("L4", "37525998000158")]
-    assert bad["implausible_label"] == "valor implausível descartado" and bad["implausible_raw"] == 14638.0
+    assert bad["implausible_label"] == "valor informado acima de 5% a.a.; a conferir" and bad["implausible_raw"] == 14638.0
     assert bad["disclosed_pct_year"] is None
     assert all(u["label_not_added"] == "não somada" for u in und.values())
     # nothing says the estimate is the fee
@@ -91,7 +92,7 @@ def test_values_format_the_new_fields(view):
     assert f("fees.by_line[0].expense_ratio_pct") == "2,31%"
     assert f("fees.by_line[0].expense_ratio_period_from") == "01/07/2025"
     assert f("fees.by_line[0].disclosed_age_months") == "1"
-    assert f("fees.by_line[2].filed_zero_label") == "valor 0 informado (provavelmente não preenchido)"
+    assert f("fees.by_line[2].filed_zero_label") == "0 informado; a conferir"
     # a raw implausible value is a plain number, never printed as a rate or as reais
     und = next(i for i, u in enumerate(view["fees"]["underlying"]) if u["implausible_raw"] is not None)
     assert f(f"fees.underlying[{und}].implausible_raw") == "14.638,00" and "%" not in f(f"fees.underlying[{und}].implausible_raw")
@@ -102,14 +103,15 @@ def test_the_html_states_every_fee_rule(html_and_narrative):
     html_text, narrative = html_and_narrative
     assert narrative.status == "complete"
     for needle in (
-        "Extrato CVM", "taxa da classe", "valor 0 informado (provavelmente não preenchido)", "valor implausível descartado",
+        "Extrato CVM", "taxa da classe", "0 informado; a conferir", "valor informado acima de 5% a.a.; a conferir",
         "defasada", "estimativa, não divulgada", "não somada", "taxa divulgada não encontrada", "lâmina CVM",
-        "Divulgado 0, balancete registra despesa.", "Estimativa e divulgada divergem",
+        "Divulgado 0, balancete registra despesa.", "Estimativa e divulgada divergem", "a conferir; pode estar correto",
         "performance, como informado: 20% do que exceder 100% do Ibovespa", "Despesa declarada",
     ):
         assert needle in html_text, needle
-    # the raw implausible value is only ever labelled as the value as filed
-    assert re.findall(r"[^>]{0,25}14\.638,00[^<]{0,10}", html_text) == ["valor informado: 14.638,00"] * len(re.findall(r"14\.638,00", html_text))
+    # the raw high value is only ever shown as the value as filed, to be checked
+    shown = re.findall(r"[^>]{0,25}14\.638,00[^<]{0,40}", html_text)
+    assert shown and all(x.startswith("valor informado: 14.638,00 (a conferir") for x in shown)
     assert "{{" not in html_text and "}}" not in html_text
 
 
@@ -130,7 +132,7 @@ def test_cli_builds_html_from_an_engine_document(tmp_path):
     out = tmp_path / "r.html"
     assert build.main([str(ENGINE), "--provider", "fake", "--html", str(out)]) == 0
     text = out.read_text(encoding="utf-8")
-    assert "valor 0 informado (provavelmente não preenchido)" in text and "Extrato CVM" in text
+    assert "0 informado; a conferir" in text and "Extrato CVM" in text
     assert "[TITULAR]" not in text and "C1" not in text
 
 
@@ -138,3 +140,13 @@ def test_the_provisional_fixture_still_renders_with_the_old_fee_wording():
     prov = json.loads(PROVISIONAL.read_text(encoding="utf-8"))
     html_text, _ = build.build(prov, "fake")
     assert "estimativa" in html_text and "{{" not in html_text
+
+
+def test_the_report_never_calls_a_filed_zero_or_a_high_value_wrong(html_and_narrative):
+    html_text, narrative = html_and_narrative
+    visible = re.sub(r"<[^>]+>", " ", html_text).lower()
+    for old in ("provavelmente não preenchido", "implausível", "descartado", "erro de escala"):
+        assert old not in visible, old
+    assert "valor informado: 0,00% a.a." in re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html_text))
+    kept = " ".join(f.title + " " + f.text for f in narrative.kept if f.section == "taxas")
+    assert "implausível" not in kept.lower() and "descart" not in kept.lower()

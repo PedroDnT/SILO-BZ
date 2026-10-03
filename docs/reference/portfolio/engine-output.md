@@ -1,4 +1,4 @@
-# Portfolio engine output (schema 1.1)
+# Portfolio engine output (schema 1.2)
 
 What `python -m src.portfolio.diagnose <statement> [--client mcp|postgrest|fake] [--out report.json]`
 writes: one JSON document. The report writer (Redator and Revisor, `src/portfolio/report/`)
@@ -22,6 +22,17 @@ regenerated in the same commit. The canned rows (`fake_silo_rows.json`, built by
 measurements of 2026-10-03 and on the merged `api.portfolio_*` contract: the values are not data.
 
 ## Changes since 1.0
+
+1.2 (wording, owner on #515): a filed fee of 0 or above 5 % a.a. may be correct, so the engine never calls it wrong.
+Labels changed: `0 informado; a conferir` and `valor informado acima de 5% a.a.; a conferir` (a negative value:
+`valor informado negativo; a conferir`, `fees.negative_label`). Numeric handling is unchanged: neither value is a
+cost, summed or compared, the balancete estimate stays beside it, `filed_zero` and `implausible_filed` keep their
+meaning, and the filed value is shown (`headline.filed_pct_year` for a 0, `disclosed.adm_filed_raw` otherwise). New:
+`fees.lines[].needs_manual_check` (true for either case, false otherwise) and `disclosed.needs_manual_check`.
+The labels, the finding texts and the `reason` no longer say "descartado", "implausível" or "erro de escala"; the
+`kind` of the finding (`valor_implausivel_descartado`), the key `disclosed.rejected` and `implausible_*` are kept
+(append-only) and now mean "above the usual range, to be checked".
+
 
 1.1 (catalog v52, the CVM Extrato as the first fee source). Keys were added, none renamed or removed;
 two values changed meaning, as the owner decided on #515, and a consumer that read them must read the new rule:
@@ -118,7 +129,7 @@ lines), `position_dates`, `notes[]` (which sum checks ran, date gaps, multi-titu
 ## `fees`
 
 `month`, `estimate_label` (`estimativa, não divulgada`), `not_found_label` (`taxa divulgada não encontrada`),
-`zero_label` (`valor 0 informado (provavelmente não preenchido)`), `implausible_label` (`valor implausível
+`zero_label` (`0 informado; a conferir`), `implausible_label` (`valor implausível
 descartado`), `source_order` (`extrato`, `lamina`, `cad_fi`), `stale_after_months` (24, the lâmina's),
 `stale_after_months_by_origin` (`extrato` 36, `lamina` 24, `cad_fi` null), `lines[]`, `underlying[]`, `totals`.
 From `portfolio_fees` (catalog v52), one source per fund. The rules (owner, #515, 2026-10-03):
@@ -129,10 +140,10 @@ From `portfolio_fees` (catalog v52), one source per fund. The rules (owner, #515
    follows `disclosed.origin` (an Extrato fee is not a cad_fi fee); `disclosed.as_of_meaning` says what the date
    means for that origin (the Extrato's `DT_COMPTC`, the lâmina's reference month, or, for cad_fi, the day SILO
    read the row, with no age claimed). `fee_status` is `divulgada`, `faixa divulgada`, `valor 0 informado
-   (provavelmente não preenchido)`, `valor implausível descartado` or the not-found label.
-2. **A filed 0 is not a fee.** `headline.kind = "zero_informado"`, no rate, no R$, `counted_as_cost = false`,
+   (provavelmente não preenchido)`, `valor informado acima de 5% a.a.; a conferir` or the not-found label.
+2. **A filed 0 is not used as a fee, and not called wrong.** `headline.kind = "zero_informado"`, no rate, no R$, `counted_as_cost = false`,
    never summed; with the attention finding below when the estimate is above 0,05 % a.a.
-3. **An implausible value is discarded:** a filed fee above 5 % a.a. (or below 0). `headline` is null,
+3. **A value above 5 % a.a. (or below 0) is to be checked, not called wrong.** `headline` is null,
    `disclosed.implausible_filed = true`, the value as filed is in `disclosed.adm_filed_raw` and
    `disclosed.rejected.raw_value`: a plain number (named without `_pct`, so nothing prints it as a rate).
 4. **Age.** The filing date and age are always output (`disclosed.as_of`, `age_months`, `age_days`). `stale`

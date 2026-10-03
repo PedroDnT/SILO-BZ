@@ -10,9 +10,10 @@ be CORRECT, so the rules are these:
    CVM's cad_fi (``cad_fi``). When nothing is disclosed the line says ``taxa divulgada
    não encontrada`` and the estimate is NEVER substituted for it. The provenance sentence
    follows ``disclosed_origin`` (an Extrato fee is not a cad_fi fee).
-   A filed 0 is ``valor 0 informado (provavelmente não preenchido)``: shown, never counted
-   as a zero cost and never summed. A filed value above 5 % a.a. (or below 0) is ``valor
-   implausível descartado``: not the fee, the raw value kept in its own field.
+   A filed 0 is ``0 informado; a conferir`` and a filed value above 5 % a.a. is ``valor
+   informado acima de 5% a.a.; a conferir``: either may be correct, so the engine never says
+   it is wrong. Neither is used as a cost, summed or compared; the filed value is shown, the
+   balancete estimate stays beside it, and ``needs_manual_check`` is true.
 2. The balancete estimate is its own field, always labelled ``estimativa, não
    divulgada``, with its method, beside the disclosed fee or alone. It is never averaged
    with the disclosed fee and never presented as the fee. In the fiscal-year reset month
@@ -68,8 +69,9 @@ STALE_MONTHS = 24  # lâmina; the schema's historical top-level key
 STALE_MONTHS_BY_ORIGIN = {"extrato": 36, "lamina": 24, "cad_fi": None}
 ORIGIN_FROM_SOURCE = {"cvm_fi_extrato": "extrato", "cvm_fi_lamina": "lamina", "cvm_fund_registry (cad_fi)": "cad_fi"}
 ORIGIN_LABEL = {"extrato": "Extrato CVM", "lamina": "lâmina CVM", "cad_fi": "cadastro cad_fi da CVM"}
-ZERO_LABEL = "valor 0 informado (provavelmente não preenchido)"
-IMPLAUSIBLE_LABEL = "valor implausível descartado"
+ZERO_LABEL = "0 informado; a conferir"
+IMPLAUSIBLE_LABEL = "valor informado acima de 5% a.a.; a conferir"
+NEGATIVE_LABEL = "valor informado negativo; a conferir"
 IMPLAUSIBLE_ABOVE_PCT = Decimal("5")
 EXPENSE_RATIO_NOTE = (
     "Total de despesas declarado na lâmina (PR_PL_DESPESA, % do patrimônio médio no período indicado): "
@@ -139,11 +141,11 @@ def compute_fees(
 
     underlying = _underlying(fund_nodes or {}, client, fee_month, sec)
     unknown = [o for o in out_lines if o["fee_status"] == NOT_FOUND]
-    unusable = [o for o in out_lines if o["fee_status"] in (ZERO_LABEL, IMPLAUSIBLE_LABEL)]
+    unusable = [o for o in out_lines if o.get("needs_manual_check")]
     if unknown and sec.status != "unknown":
         sec.degrade(f"{len(unknown)} fundo(s) sem taxa divulgada encontrada.")
     if unusable and sec.status != "unknown":
-        sec.degrade(f"{len(unusable)} fundo(s) com taxa informada que não é usada (valor 0 ou implausível).")
+        sec.degrade(f"{len(unusable)} fundo(s) com taxa informada a conferir (0 ou acima de 5% a.a.), que não entra em nenhuma conta.")
     return {
         **sec.head(),
         "month": fee_month.isoformat(),
@@ -153,6 +155,7 @@ def compute_fees(
         "stale_after_months_by_origin": STALE_MONTHS_BY_ORIGIN,
         "zero_label": ZERO_LABEL,
         "implausible_label": IMPLAUSIBLE_LABEL,
+        "negative_label": NEGATIVE_LABEL,
         "source_order": ["extrato", "lamina", "cad_fi"],
         "lines": out_lines,
         "underlying": underlying,
@@ -162,6 +165,7 @@ def compute_fees(
 
 def _empty_fee() -> dict[str, Any]:
     return {
+        "needs_manual_check": False,
         "disclosed": None,
         "headline": None,
         "estimate": None,
@@ -233,7 +237,8 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
             "filed_zero": filed_zero,
             "filed_zero_label": ZERO_LABEL if filed_zero else None,
             "implausible_filed": implausible,
-            "implausible_label": IMPLAUSIBLE_LABEL if implausible else None,
+            "implausible_label": (NEGATIVE_LABEL if raw_filed is not None and raw_filed < 0 else IMPLAUSIBLE_LABEL) if implausible else None,
+            "needs_manual_check": filed_zero or implausible,
             "adm_filed_raw": ratio(raw_filed, 6),  # as filed, unit read as % a year, plain number: never printed as a rate
             "adm_rate_pct_year": ratio(d_adm, 4),
             "adm_min_pct_year": ratio(d_min, 4),
@@ -252,9 +257,9 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
         }
         if implausible:
             disclosed["rejected"] = {
-                "label": IMPLAUSIBLE_LABEL,
+                "label": disclosed["implausible_label"],
                 "raw_value": ratio(raw_filed, 6),
-                "rule": f"acima de {IMPLAUSIBLE_ABOVE_PCT}% a.a. (ou abaixo de 0): tratado como erro de escala e não usado",
+                "rule": f"fora de 0 a {IMPLAUSIBLE_ABOVE_PCT}% a.a.: não usado como custo, não somado nem comparado, a conferir; pode estar correto",
             }
         if filed_zero:
             headline = {
@@ -367,7 +372,7 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
             {
                 "kind": "valor_implausivel_descartado",
                 "level": "informação",
-                "text": f"{IMPLAUSIBLE_LABEL.capitalize()}: a fonte informou uma taxa fora de 0 a {IMPLAUSIBLE_ABOVE_PCT}% a.a.",
+                "text": f"{disclosed['implausible_label'].capitalize()}: a fonte informou um valor fora do intervalo usual; pode estar correto e não entra em nenhuma conta.",
                 "origin": origin,
                 "raw_value": ratio(raw_filed, 6),
                 "sources": [src],
@@ -377,14 +382,14 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
     # The reasons are the engine's own Portuguese; the tool's note (English, verbatim) stays in disclosed.note.
     if headline is not None and headline["kind"] == "zero_informado":
         status = ZERO_LABEL
-        reason = "A fonte informou taxa de administração igual a 0: lida como não informada, nunca como custo zero, e não somada."
+        reason = "A fonte informou taxa de administração igual a 0. O valor fica a conferir (pode estar correto): não é usado como custo, nem somado, nem comparado."
     elif headline is not None:
         status = "divulgada" if headline["kind"] == "fixa" else "faixa divulgada"
         reason = None
     elif implausible:
-        status = IMPLAUSIBLE_LABEL
-        reason = (f"A fonte informou {ratio(raw_filed, 6)}: fora de 0 a {IMPLAUSIBLE_ABOVE_PCT}% a.a., tratado como erro de "
-                  "escala e não usado; o valor informado fica em campo à parte.")
+        status = disclosed["implausible_label"]
+        reason = (f"A fonte informou {ratio(raw_filed, 6)}, fora do intervalo usual de 0 a {IMPLAUSIBLE_ABOVE_PCT}% a.a. O valor fica a conferir "
+                  "(pode estar correto): não é usado como custo, nem somado, nem comparado; o valor informado está em campo à parte.")
     else:
         status = NOT_FOUND
         reason = (
@@ -395,6 +400,7 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
     return {
         "fee_status": status,
         "reason": reason,
+        "needs_manual_check": filed_zero or implausible,
         "fund_nav_brl": brl(dec(row.get("nav"))),
         "disclosed": disclosed,
         "headline": headline,
@@ -473,7 +479,7 @@ def _totals(lines: list[dict]) -> dict[str, Any]:
         h = o.get("headline")
         if h and h["kind"] == "zero_informado":
             v_zero += v  # a filed 0 is not a fee: never counted as a zero cost, never summed
-        elif o.get("fee_status") == IMPLAUSIBLE_LABEL:
+        elif o.get("implausible_filed"):
             v_implausible += v
         elif h and h["kind"] == "fixa":
             fixed += dec(h["per_year_brl"]) or Decimal("0")
