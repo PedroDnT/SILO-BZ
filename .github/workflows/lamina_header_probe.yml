@@ -10,13 +10,12 @@ name: Lamina header probe
 # no deploy hook, no schema or analytical apply, contents: read only. It
 # downloads public CVM files into the runner's memory and prints them. It has
 # its own concurrency group, so it never queues behind or blocks the daily
-# ingest, and it triggers only by hand or by a change to this file.
+# ingest. Dispatch-only: it ran once on PR #511 (run 37084697408, 2026-10-02
+# 22:04 UTC-3 / 2026-10-03 01:04 UTC), and the field map was written from that
+# log. Re-run it by hand if CVM changes the lâmina layout.
 
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - ".github/workflows/lamina_header_probe.yml"
 
 permissions:
   contents: read
