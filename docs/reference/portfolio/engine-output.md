@@ -1,4 +1,4 @@
-# Portfolio engine output (schema 1.4)
+# Portfolio engine output (schema 1.5)
 
 What `python -m src.portfolio.diagnose <statement> [--client mcp|postgrest|fake] [--out report.json]`
 writes: one JSON document. The report writer (Redator and Revisor, `src/portfolio/report/`)
@@ -22,6 +22,22 @@ regenerated in the same commit. The canned rows (`fake_silo_rows.json`, built by
 measurements of 2026-10-03 and on the merged `api.portfolio_*` contract: the values are not data.
 
 ## Changes since 1.0
+
+1.5 (catalog v56, owner's decisions of 2026-10-03: "a taxa sim" for the newer lâmina, and "ETFs também têm taxa").
+Keys were added, none renamed, retyped or removed; one value changed meaning. **Changed:** a `lamina_newer` line
+(`headline.kind = "lamina_mais_recente"`) is now a cost: `per_year_brl` is the position value x the lâmina's rate,
+`counted_as_cost` is true, it is summed in `totals.adm_disclosed_fixed_per_year_brl` and counted in
+`fund_value_with_fixed_fee_brl` (so `fund_value_with_lamina_newer_fee_brl` is now a subset of it and no longer part
+of `fund_value_without_disclosed_fee_brl`), and it is compared with the balancete estimate
+(`estimativa_difere_da_divulgada`). It stays `needs_manual_check` with the new `headline.sources_differ_label`
+(`fontes divergem`); the Extrato value beside it is never summed. `extrato_lamina_beside` and `extrato_to_check` are
+unchanged. **New, ETFs:** `identification.lines[].etf_match` and `identity.etf_cnpj` (a ticker line typed `ETF`, or
+`outro` and not a share, mapped to the ETF's CNPJ by `portfolio_resolve` `match_kind = "etf_ticker"`; the line stays a
+ticker for the other blocks); `headline.kind` can be `etf_site` (rule 12); every fee line has `etf_site`; `fees.
+sources_differ_label`, `etf_site_label`; `totals.adm_etf_site_per_year_brl`, `adm_etf_site_portfolio_pct`,
+`adm_fee_per_year_brl`, `adm_fee_portfolio_pct`, `fund_value_with_etf_site_fee_brl`,
+`fund_value_with_etf_site_fee_to_check_brl`, `known_fee_incl_etf_site_fund_value_pct`. A ticker's four-character root
+may now hold digits (B5P211, 5PRE11, TD3511, B3SA3), in the engine and in the PDF reader.
 
 1.4 (catalog v55, issue #552: the Extrato and the lâmina disagree). Keys were added, none renamed, retyped or
 removed. New on every fee line (`lines[]` and `underlying[]`): `fee_resolution` (the tool's rule: `extrato`,
@@ -132,6 +148,11 @@ lines), `position_dates`, `notes[]` (which sum checks ran, date gaps, multi-titu
   `matched_name`, `matched_period`, `entity_type`, `match_kind`, `similarity`, `quota_on_date`,
   `quota_rel_diff`, `ambiguous`, `reason`), `chosen`, `quota_basis` (printed or implied by the
   statement), `sources`.
+- `etf_match` (1.5): for a ticker line typed `ETF`, or `outro` and not a share, with no fund CNPJ, and for a line
+  typed `ETF` named by its bare ticker (matched in the first call, it never becomes a fund: an ETF files no CDA):
+  the ETF's CNPJ from `portfolio_resolve` (`match_kind = "etf_ticker"`, SILO's curated ETF registry), its `name`,
+  `reason`, `sources`; null otherwise. Used by the fee block only (`identity.etf_cnpj`); the line stays a ticker. A fixed
+  income ETF that `lookup` does not find (it is not in COTAHIST) is identified this way.
 - `ticker_match`: `lookup` row, `reference_quote` (close and date: reference only, never the
   position's value; its date can be after the position date), `issuer`. A ticker the statement
   types as `outro` is told share or fund quota by `lookup.asset_class`, never by the engine.
@@ -191,22 +212,37 @@ From `portfolio_fees` (catalog v52), one source per fund. The rules (owner, #515
     stays the headline as filed and `lamina_beside` carries the lâmina's own fee (`lamina_pct_year`, or the min and
     max), its `as_of`, `age_months`, `stale` (24 months), `label` `lâmina informa` and `check_label` `a conferir`.
     When the lâmina's single fee is in (0, 5] and NEWER than the Extrato (`lamina_newer`), the lâmina is the headline
-    (`headline.kind = "lamina_mais_recente"`, its rate and date, `per_year_brl` null, `counted_as_cost` false,
-    `fee_status` `lâmina mais recente que o Extrato; a conferir`) and `extrato_beside` carries the Extrato's value as
-    filed (`filed_value`, a plain number) with its `as_of`. Either way `needs_manual_check` is true, neither value
-    is a cost, summed or compared, and nothing is rescaled. `scale_flag` (`label` `possível erro de escala no
+    (`headline.kind = "lamina_mais_recente"`, its rate and date, `fee_status` `lâmina mais recente que o Extrato; a
+    conferir`) and `extrato_beside` carries the Extrato's value as filed (`filed_value`, a plain number) with its
+    `as_of`. Since 1.5 (owner, 2026-10-03) the newer lâmina's fee is a disclosed fee like any other: `per_year_brl` is
+    set, `counted_as_cost` is true, it is summed and compared with the estimate; the line keeps `needs_manual_check`
+    and `headline.sources_differ_label` (`fontes divergem`), and the Extrato value beside it is never summed. In
+    `extrato_lamina_beside` `needs_manual_check` is true and neither value is a cost, summed or compared. Nothing is
+    rescaled. `scale_flag` (`label` `possível erro de escala no
     Extrato`, `factor` 10 or 100, `extrato_lamina_ratio`) is present when the tool's `extrato_scale_factor` is set:
     a flag only. With no lâmina fee (`extrato_to_check`) nothing is shown beside.
+12. **ETFs** (1.5, catalog v56). CVM's Extrato, lâmina and cad_fi hold no fee for any of the 178 active ETFs in
+    `cvm_etf_registry` (measured 2026-10-03). When no CVM source discloses anything for the CNPJ, the headline is the
+    tool's `etf_site_*`: the "Taxa de administração total" etfsbrasil.com.br prints, a third-party site
+    (`headline.kind = "etf_site"`, `origin` `etf_site`, `origin_label` `site etfsbrasil.com.br (terceiros)`, `ticker`,
+    `as_of` the snapshot date, `fee_status` and `basis` `taxa informada pelo site etfsbrasil.com.br (fonte de
+    terceiros, não é documento da CVM)`; `disclosed` stays null). A value in (0, 5] is a cost, summed apart in
+    `totals.adm_etf_site_per_year_brl` and, with the disclosed fees, in `adm_fee_per_year_brl`; a 0, a negative or a
+    value above 5 is `filed_pct_year` with `check_label` (`0 informado; a conferir`, ...), `needs_manual_check`, never
+    summed (`fund_value_with_etf_site_fee_to_check_brl`). `etf_site` on every line carries the site's value, date,
+    source and the tool's note; a CVM source, when one exists, always comes first.
 
 A line: `line_no`, `cnpj`, `fund_name`, `position_value_brl`, `fee_status`, `reason`, `fund_nav_brl`, `disclosed`,
-`headline` (`kind` `fixa` | `faixa` | `zero_informado`, `rate_pct_year` or the range, `per_year_brl` = position
+`headline` (`kind` `fixa` | `faixa` | `zero_informado` | `lamina_mais_recente` | `etf_site`, `rate_pct_year` or the range, `per_year_brl` = position
 value x rate, `origin`, `scope_label`, `as_of`, `age_months`, `stale`), `estimate` (`adm_pct_year`,
 `adm_per_year_brl`, `perf_pct_year`, `perf_per_year_brl`, `fiscal_reset_suspect`, `month`), `expense_ratio`,
 `findings[]`. `totals`: `adm_disclosed_fixed_per_year_brl` and `adm_disclosed_fixed_portfolio_pct`, the range low
 and high, `estimate_adm_per_year_brl` and `estimate_adm_portfolio_pct` (kept apart), `fund_value_with_fixed_fee_brl`,
 `fund_value_with_fee_range_brl`, `fund_value_with_filed_zero_brl`, `fund_value_with_implausible_fee_brl`,
-`fund_value_with_lamina_newer_fee_brl`, `fund_value_without_disclosed_fee_brl` (every line with no usable fee: none,
-a filed 0, above 5, or a newer lâmina to check). Assumption: the rates are percent a year (`fee_units`; CVM's XML
+`fund_value_with_lamina_newer_fee_brl` (a subset of the fixed since 1.5), `fund_value_without_disclosed_fee_brl` (every
+line with no usable fee: none, a filed 0, above 5, or an ETF site value to check), and since 1.5 the ETF keys of rule 12
+(`adm_etf_site_per_year_brl`, `adm_etf_site_portfolio_pct`, `adm_fee_per_year_brl`, `adm_fee_portfolio_pct`,
+`fund_value_with_etf_site_fee_brl`, `fund_value_with_etf_site_fee_to_check_brl`, `known_fee_incl_etf_site_fund_value_pct`). Assumption: the rates are percent a year (`fee_units`; CVM's XML
 specification says so for the Extrato).
 
 ## `look_through`
@@ -324,7 +360,10 @@ still renders. The view holds no holder, account or statement-file identifier. U
 | `fees.by_line[i]` `fee_status`, `label`, `reason`, `filed_zero_label`, `implausible_label`, `implausible_raw` | `fee_status`, `reason`, `disclosed.filed_zero_label`, `implausible_label`, `adm_filed_raw` |
 | `fees.by_line[i]` `estimated_pct_year`, `estimated_brl_year`, `estimate_label`, `month` | `fees.lines[i].estimate` (`adm_pct_year`, `adm_per_year_brl`, `label`, `month`) |
 | `fees.by_line[i]` `expense_ratio_pct`, `expense_ratio_period_from/to`, `perf_as_filed`, `terms_as_filed`, `findings` | `expense_ratio`, `disclosed.perf_as_filed`, `disclosed.terms_as_filed`, `findings` |
-| `fees.by_line[i]` `fee_resolution`, `lamina_newer_label`, `lamina_beside_*` (`label`, `check_label`, `pct_year`, `min_pct_year`, `max_pct_year`, `as_of`, `age_months`, `stale_label`), `extrato_beside_label`, `extrato_beside_value`, `extrato_beside_as_of`, `scale_flag_label`, `scale_factor`, `extrato_lamina_ratio` (1.4) | `fee_resolution`, `headline.basis` for `lamina_mais_recente`, `lamina_beside`, `extrato_beside` (`filed_value`, `as_of`), `scale_flag` (`label`, `factor`, `extrato_lamina_ratio`); `disclosed_pct_year` also holds a `lamina_mais_recente` rate, never `disclosed_brl_year` |
+| `fees.by_line[i]` `fee_resolution`, `lamina_newer_label`, `lamina_beside_*` (`label`, `check_label`, `pct_year`, `min_pct_year`, `max_pct_year`, `as_of`, `age_months`, `stale_label`), `extrato_beside_label`, `extrato_beside_value`, `extrato_beside_as_of`, `scale_flag_label`, `scale_factor`, `extrato_lamina_ratio` (1.4) | `fee_resolution`, `headline.basis` for `lamina_mais_recente`, `lamina_beside`, `extrato_beside` (`filed_value`, `as_of`), `scale_flag` (`label`, `factor`, `extrato_lamina_ratio`); `disclosed_pct_year` also holds a `lamina_mais_recente` rate, and since 1.5 its `disclosed_brl_year` too |
+| `fees.by_line[i]` `sources_differ_label`, `etf_ticker`, `etf_site_label`, `etf_site_check_label`, `etf_site_raw`; `disclosed_pct_year`, `disclosed_brl_year`, `disclosed_origin(_label)`, `disclosed_as_of` also for an ETF (1.5) | `headline.sources_differ_label`; for `headline.kind = "etf_site"`: `ticker`, `basis`, `check_label`, `filed_pct_year`, and `rate_pct_year`, `per_year_brl`, `origin`, `origin_label`, `as_of` |
+| `fees.total_etf_site_brl_year`, `total_etf_site_pct_year`, `total_fee_brl_year`, `total_fee_pct_year` (1.5) | `fees.totals.adm_etf_site_per_year_brl`, `adm_etf_site_portfolio_pct`, `adm_fee_per_year_brl`, `adm_fee_portfolio_pct` (null without a summed ETF fee; the last two also need a fixed disclosed fee) |
+| `data_dates.ETFSBRASIL` (1.5) | the newest `headline.as_of` of an `etf_site` fee line: the site is listed as its own source, never as CVM |
 | `fees.underlying[i]` | `fees.underlying[i]` (`parent_line_id` = its `line_no`, `label_not_added` = `label`) |
 | `lookthrough.shared_exposure[i]` (`key`, `level`, `total_brl`, `total_pct`, `legs`) | the 12 largest `look_through.shared_exposure.groups[i]` (`label`, `kind`, `total_exposure_brl`, `total_exposure_portfolio_pct`, `lines`) |
 | `lookthrough.top_underlying[i]` | `look_through.top_exposures[i]` |
@@ -340,7 +379,7 @@ still renders. The view holds no holder, account or statement-file identifier. U
 
 ## Tools the engine calls
 
-`portfolio_movement` (catalog v54), `portfolio_resolve`, `portfolio_fees` (catalog v52: the 21 columns of v51, then 25 appended), `portfolio_lookthrough` (merged; the canned
+`portfolio_movement` (catalog v54), `portfolio_resolve` (`etf_ticker` since catalog v56), `portfolio_fees` (catalog v52: the 21 columns of v51, then 25 appended; 10 more in v55, 5 in v56), `portfolio_lookthrough` (merged; the canned
 rows follow their documented columns and have not been run against the live functions), and the
 existing `lookup`, `quote_latest`, `company_financials`, `short_interest`, `fidc_portfolio`,
 `fund_restatements`, `fund_restatement_diff` and the `screen_*` tools. Default client: the public

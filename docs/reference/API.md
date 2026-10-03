@@ -378,8 +378,11 @@ take a set of funds or lines, never a name search that guesses.
 
 - **`api.portfolio_resolve(p_names, p_cnpjs, p_quotas, p_quota_dates)`**: one row
   per line and candidate (up to 5, `rank`), arrays parallel, at most 200 lines
-  (more is `22023`). A CNPJ the line carries wins (`match_kind` `cnpj`); else an
-  exact match, case and accents ignored, on **any name the fund ever filed**
+  (more is `22023`). A CNPJ the line carries wins (`match_kind` `cnpj`); else
+  (catalog v56) a name that is exactly a ticker of the curated ETF registry
+  (`cvm_etf_registry`) gives that ETF's CNPJ (`etf_ticker`, one candidate, never
+  ambiguous: `api.lookup` returns no CNPJ for a ticker, and a fixed income ETF is
+  not in COTAHIST); else an exact match, case and accents ignored, on **any name the fund ever filed**
   (`exact_current`, or `exact_history` for a former legal name); else trigram
   over the whole name history (`similarity`, 0.25 floor). The history is
   `mv_fund_name_history`: `cvm_fi_cda_fund_name` since 2005 plus the registry
@@ -416,8 +419,19 @@ take a set of funds or lines, never a name search that guesses.
   with `extrato_as_of`), with `extrato_lamina_ratio` and `extrato_scale_factor` (10 or
   100 when an Extrato above 5 equals that factor times the lâmina within two-decimal
   rounding: a flag, never a correction). A fund whose `fee_resolution` is
-  `extrato_lamina_beside`, `extrato_to_check` or `lamina_newer` is to be checked: sum
-  neither value. These 10 columns are appended after `lamina_expense_note`.
+  `extrato_lamina_beside` or `extrato_to_check` is to be checked: sum neither value.
+  For `lamina_newer` the newer lâmina's fee is a disclosed fee like any other: use it
+  as the cost, sum it and compare it with the estimate (owner, 2026-10-03, catalog
+  v56); keep the fund flagged because the two documents disagree, and never sum the
+  Extrato value beside it. These 10 columns are appended after `lamina_expense_note`.
+  Catalog v56, ETFs: CVM's Extrato, lâmina and cad_fi hold no fee for any of the 178
+  active registry ETFs (measured 2026-10-03), so five columns follow
+  `extrato_scale_factor`: `etf_ticker` (the CNPJ's ticker in `cvm_etf_registry`) and
+  `etf_site_taxa_adm`, `etf_site_as_of`, `etf_site_source`, `etf_site_note`, the
+  "Taxa de administração total" etfsbrasil.com.br prints (`etf_market_snapshot`, the
+  newest snapshot with a fee, joined by ticker; 171 of 178 tickers on 2026-10-03,
+  BOVA11 0.10, IVVB11 0.23, B5P211 0.20). A third-party value, never in
+  `disclosed_*`, returned as published.
   The Extrato's own fields come back as filed (`extrato_taxa_perfm` numeric with
   `extrato_param_taxa_perfm`, `extrato_calc_taxa_perfm`, `extrato_inf_taxa_perfm`;
   `extrato_existe_taxa_ingresso` / `_saida` with `_pr` percent and `_real` reais;

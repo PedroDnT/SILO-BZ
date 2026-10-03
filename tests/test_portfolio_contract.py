@@ -281,7 +281,7 @@ def test_v55_appends_after_the_v52_columns_without_touching_them():
     assert cols[: len(V51_COLUMNS)] == V51_COLUMNS
     last = cols.index(V52_LAST)
     assert last == 45, "the 46 columns of v52 keep their order"
-    assert cols[last + 1:] == V55_COLUMNS
+    assert cols[last + 1: last + 1 + len(V55_COLUMNS)] == V55_COLUMNS
 
 
 def test_v55_lamina_newer_needs_a_newer_plausible_lamina_and_never_rescales():
@@ -304,3 +304,49 @@ def test_catalog_v55_names_the_resolution_and_the_flag():
     for needle in ("fee_resolution", "lamina_newer", "extrato_lamina_beside", "extrato_scale_factor",
                    "lamina_taxa_adm", "extrato_taxa_adm_filed"):
         assert needle in text, needle
+
+
+# --- catalog v56: ETFs carry a fee; a newer lamina's fee is summed (owner, 2026-10-03) ------
+
+V56_COLUMNS = ["etf_ticker", "etf_site_taxa_adm", "etf_site_as_of", "etf_site_source", "etf_site_note"]
+
+
+def test_v56_appends_the_etf_columns_after_the_v55_ones():
+    cols = _fee_columns()
+    last = cols.index(V55_COLUMNS[-1])
+    assert cols[: last + 1][-len(V55_COLUMNS):] == V55_COLUMNS
+    assert cols[last + 1:] == V56_COLUMNS
+    assert len(cols) == len(set(cols))
+
+
+def test_v56_the_etf_site_fee_is_never_a_disclosed_fee():
+    body = _strip(_function("portfolio_fees"))
+    # read dynamically, joined by the registry's ticker, the newest snapshot with a fee
+    assert "to_regclass('public.etf_market_snapshot')" in body
+    assert "JOIN public.cvm_etf_registry r ON r.ticker = x.ticker" in body
+    assert "x.taxa_adm_pct IS NOT NULL" in body and "ORDER BY x.ticker, x.snapshot_date DESC" in body
+    # the disclosed_* origin list is unchanged: the site is not one of them
+    origin = body[body.index("WHEN a.use_ext THEN 'extrato'"): body.index("END AS origin")]
+    assert "etf" not in origin
+    fn = _function("portfolio_fees")
+    assert "a third-party site, not a CVM filing" in fn and "never in disclosed_*" in fn
+
+
+def test_v56_resolver_matches_an_etf_ticker_exactly_and_never_ambiguously():
+    fn = _strip(_function("portfolio_resolve"))
+    assert "'etf_ticker'" in fn
+    assert "JOIN public.cvm_etf_registry e ON e.ticker = upper(btrim(l.input_name))" in fn
+    assert "WHEN r1.kind IN ('cnpj', 'etf_ticker') OR r1.n_cand = 1 THEN FALSE" in fn
+    # exact and trigram skip a line the ETF registry matched
+    assert fn.count("NOT EXISTS (SELECT 1 FROM by_etf b WHERE b.line_no = l.line_no)") == 2
+
+
+def test_catalog_v56_names_the_etf_columns_and_the_lamina_newer_sum():
+    from serve.catalog import CATALOG_VERSION, catalog_payload
+
+    assert CATALOG_VERSION >= 56
+    text = str(catalog_payload())
+    for needle in ("etf_ticker", "etf_site_taxa_adm", "etf_site_note", "match_kind etf_ticker",
+                   "For lamina_newer the newer lamina's fee in disclosed_taxa_adm is a disclosed fee like any other"):
+        assert needle in text, needle
+    assert f'"version": {CATALOG_VERSION}' in SQL19

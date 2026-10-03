@@ -30,7 +30,7 @@ from src.portfolio.statement import Position, Statement
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "1.4"
+SCHEMA_VERSION = "1.5"
 ENGINE_VERSION = "0.1.0"
 # Documented fixed lags until a coverage()-driven default exists (see engine-output.md).
 CDA_LAG_MONTHS = 4
@@ -256,6 +256,8 @@ def _fee_totals_as_portfolio_pct(fees: dict[str, Any], total: Decimal) -> None:
     """Totals as a percent of the whole portfolio (kept apart: disclosed and estimate are never combined)."""
     t = fees["totals"]
     for src, dst in (("adm_disclosed_fixed_per_year_brl", "adm_disclosed_fixed_portfolio_pct"),
+                     ("adm_etf_site_per_year_brl", "adm_etf_site_portfolio_pct"),
+                     ("adm_fee_per_year_brl", "adm_fee_portfolio_pct"),
                      ("estimate_adm_per_year_brl", "estimate_adm_portfolio_pct")):
         t[dst] = float((Decimal(str(t[src])) / total * 100).quantize(Decimal("0.0001"))) if total else None
 

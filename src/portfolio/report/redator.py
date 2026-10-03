@@ -127,7 +127,7 @@ Regra zero: todo número vem do JSON. Você nunca escreve um algarismo. Cada val
 
 O que escrever, nesta ordem de importância:
 1. identificacao: a carteira identificada fundo a fundo; linhas ambíguas e como foram desempatadas; fundos que mudaram de nome; linhas não identificadas e o motivo.
-2. taxas: a taxa de administração DIVULGADA de cada fundo (fees.by_line[i].disclosed_pct_year, com a origem e a data em disclosed_origin_label e disclosed_as_of); a estimativa do balancete só como comparação, sempre dita "estimativa, não divulgada" e nunca somada nem apresentada como a taxa; sem taxa divulgada, diga "taxa divulgada não encontrada"; um 0 informado é "0 informado; a conferir" (filed_zero_label) e um valor acima de 5% a.a. é "valor informado acima de 5% a.a.; a conferir" (implausible_label, o valor informado fica em implausible_raw): nunca diga que estão errados, pois podem estar corretos, nunca os use como custo, some ou compare, e mostre o valor informado; taxa defasada (disclosed_stale) é dita defasada; é taxa da classe quando disclosed_scope_label diz; taxa de performance e demais termos como o JSON traz, sem interpretar; a taxa do master de um FIC nunca se soma à do FIC (fees.underlying é "não somada"); o total de despesas declarado (expense_ratio_pct) é outra coisa e nunca se soma; quando o Extrato informa 0 ou acima de 5% a.a., a taxa da outra fonte aparece ao lado (lamina_beside_label com lamina_beside_pct_year e lamina_beside_as_of, "lâmina informa X; a conferir"; ou, quando a lâmina é mais recente e vira a taxa mostrada, lamina_newer_label, com o Extrato ao lado em extrato_beside_value e extrato_beside_as_of): nenhuma das duas é somada, comparada ou dita certa, e scale_flag_label ("possível erro de escala no Extrato") é só um sinal, nunca uma correção.
+2. taxas: a taxa de administração DIVULGADA de cada fundo (fees.by_line[i].disclosed_pct_year, com a origem e a data em disclosed_origin_label e disclosed_as_of); a estimativa do balancete só como comparação, sempre dita "estimativa, não divulgada" e nunca somada nem apresentada como a taxa; sem taxa divulgada, diga "taxa divulgada não encontrada"; um 0 informado é "0 informado; a conferir" (filed_zero_label) e um valor acima de 5% a.a. é "valor informado acima de 5% a.a.; a conferir" (implausible_label, o valor informado fica em implausible_raw): nunca diga que estão errados, pois podem estar corretos, nunca os use como custo, some ou compare, e mostre o valor informado; taxa defasada (disclosed_stale) é dita defasada; é taxa da classe quando disclosed_scope_label diz; taxa de performance e demais termos como o JSON traz, sem interpretar; a taxa do master de um FIC nunca se soma à do FIC (fees.underlying é "não somada"); o total de despesas declarado (expense_ratio_pct) é outra coisa e nunca se soma; quando o Extrato informa 0 ou acima de 5% a.a., a taxa da outra fonte aparece ao lado (lamina_beside_label com lamina_beside_pct_year e lamina_beside_as_of, "lâmina informa X; a conferir"; ou, quando a lâmina é mais recente e vira a taxa mostrada, lamina_newer_label, com o Extrato ao lado em extrato_beside_value e extrato_beside_as_of): no primeiro caso nenhuma das duas é somada, comparada ou dita certa; no segundo a taxa da lâmina é somada e comparada como qualquer taxa divulgada (disclosed_brl_year), a linha continua a conferir (sources_differ_label, "fontes divergem") e o valor do Extrato ao lado nunca é somado; scale_flag_label ("possível erro de escala no Extrato") é só um sinal, nunca uma correção. ETFs também têm taxa: quando etf_site_label está presente, a taxa da linha é a informada pelo site etfsbrasil.com.br (fonte de terceiros, não documento da CVM), com a data em disclosed_as_of; diga sempre que é do site, nunca "divulgada pela CVM"; ela é somada à parte (fees.total_etf_site_brl_year, e fees.total_fee_brl_year com as divulgadas); um 0 ou valor acima de 5% a.a. do site (etf_site_check_label, etf_site_raw) fica a conferir e não é somado.
 3. exposicao: onde a carteira se sobrepõe e o que está por baixo (look-through, exposição compartilhada, indexador, setor). Mostre "sem classificação" quando houver.
 4. achados: o que ninguém pegaria à mão (fundo renomeado, reapresentação, sinal de risco, linha ambígua, dois fundos com a mesma carteira por baixo).
 5. reapresentacoes: cada reapresentação, com o texto de avaliação que o JSON traz ("revisado, não avaliado"); não julgue materialidade.
@@ -251,6 +251,12 @@ def template_findings(engine: dict) -> dict:
         else:
             add("taxas", "Taxa divulgada ausente",
                 "Nenhum fundo da carteira tem taxa de administração fixa e utilizável divulgada nos dados do SILO.", fee_prov)
+        if fees.get("total_etf_site_brl_year") is not None:
+            txt = ("As taxas dos ETFs, informadas pelo site etfsbrasil.com.br (fonte de terceiros), somam à parte "
+                   "{{fees.total_etf_site_brl_year}} por ano, ou {{fees.total_etf_site_pct_year}} ao ano sobre a carteira.")
+            if fees.get("total_fee_brl_year") is not None:
+                txt += " Com as taxas divulgadas, o total é {{fees.total_fee_brl_year}} por ano."
+            add("taxas", "Taxas de ETF", txt, fee_prov)
         if fees.get("total_estimated_brl_year") is not None:
             add("taxas", "Estimativa do balancete, à parte",
                 "A estimativa do balancete, {{fees.estimate_label}}, soma {{fees.total_estimated_brl_year}} por ano, "
@@ -265,11 +271,24 @@ def template_findings(engine: dict) -> dict:
             if b.get("scale_flag_label"):
                 beside += f" Sinal: {{{{{q}.scale_flag_label}}}}."
             if b.get("lamina_newer_label") and b.get("disclosed_pct_year") is not None:
-                add("taxas", "Lâmina mais recente que o Extrato, a conferir",
-                    f"Na linha {{{{{q}.line_id}}}} a lâmina de {{{{{q}.disclosed_as_of}}}}, mais recente que o Extrato, informa "
-                    f"{{{{{q}.disclosed_pct_year}}}} ao ano: {{{{{q}.lamina_newer_label}}}}. "
-                    f"O Extrato de {{{{{q}.extrato_beside_as_of}}}} informa {{{{{q}.extrato_beside_value}}}}, mostrado ao lado como informado. "
-                    "Nenhum dos dois valores é somado nem comparado." + beside, b.get("provenance"))
+                txt = (f"Na linha {{{{{q}.line_id}}}} a lâmina de {{{{{q}.disclosed_as_of}}}}, mais recente que o Extrato, informa "
+                       f"{{{{{q}.disclosed_pct_year}}}} ao ano: {{{{{q}.lamina_newer_label}}}}. ")
+                if b.get("disclosed_brl_year") is not None:
+                    txt += f"Essa taxa entra na soma, cerca de {{{{{q}.disclosed_brl_year}}}} por ano, e na comparação com o balancete. "
+                txt += (f"O Extrato de {{{{{q}.extrato_beside_as_of}}}} informa {{{{{q}.extrato_beside_value}}}}, mostrado ao lado como informado "
+                        "e fora de qualquer conta.")
+                if b.get("sources_differ_label"):
+                    txt += f" Marca: {{{{{q}.sources_differ_label}}}}."
+                add("taxas", "Lâmina mais recente que o Extrato, a conferir", txt + beside, b.get("provenance"))
+            elif b.get("etf_site_label") and b.get("disclosed_pct_year") is not None:
+                add("taxas", "Taxa do ETF, informada por site de terceiros",
+                    f"A taxa de administração do ETF da linha {{{{{q}.line_id}}}} é {{{{{q}.disclosed_pct_year}}}} ao ano, "
+                    f"cerca de {{{{{q}.disclosed_brl_year}}}} por ano: {{{{{q}.etf_site_label}}}}, em {{{{{q}.disclosed_as_of}}}}. "
+                    "Ela é somada à parte das taxas divulgadas em documento da CVM.", b.get("provenance"))
+            elif b.get("etf_site_check_label"):
+                add("taxas", "Taxa do ETF a conferir",
+                    f"Na linha {{{{{q}.line_id}}}} o site informa {{{{{q}.etf_site_raw}}}} ao ano para o ETF: {{{{{q}.etf_site_check_label}}}}. "
+                    "O valor pode estar correto e não é somado.", b.get("provenance"))
             elif b.get("disclosed_pct_year") is not None:
                 txt = (f"A taxa de administração divulgada da linha {{{{{q}.line_id}}}} é {{{{{q}.disclosed_pct_year}}}} ao ano, "
                        f"cerca de {{{{{q}.disclosed_brl_year}}}} por ano. Origem: {{{{{q}.disclosed_origin_label}}}}, "
@@ -430,6 +449,10 @@ def template_findings(engine: dict) -> dict:
         add("resumo", "Custo", "As taxas de administração divulgadas custam {{fees.total_disclosed_brl_year}} por ano nos fundos com taxa fixa utilizável.", fee_prov)
     elif fees.get("total_estimated_brl_year") is not None:
         add("resumo", "Custo", "As taxas custam cerca de {{fees.total_estimated_brl_year}} por ano, por estimativa.", fee_prov)
+    if new_view and fees.get("total_etf_site_brl_year") is not None:
+        add("resumo", "Custo dos ETFs",
+            "Os ETFs também têm taxa: {{fees.total_etf_site_brl_year}} por ano, pela taxa que o site etfsbrasil.com.br informa "
+            "(fonte de terceiros, não documento da CVM), somada à parte.", fee_prov)
     if lt.get("shared_exposure"):
         add("resumo", "Sobreposição",
             "Parte da carteira se repete por baixo dos fundos; a seção de exposição mostra onde.",

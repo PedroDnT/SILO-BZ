@@ -498,6 +498,12 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
   fee in (0, 5] the source (`fee_resolution`), and flags a factor of exactly 10 or 100
   (`extrato_scale_factor`). Nothing is rescaled or summed. Live after an analytical apply and a
   `deploy_mcp.yml` dispatch.
+- **Catalog v56, engine 1.5** (branch `feat/fee-totals-lamina-etf`, owner's decisions of 2026-10-03): a
+  `lamina_newer` fee is summed and compared like any disclosed fee, still flagged "fontes divergem". ETFs carry
+  a fee: `portfolio_resolve` maps an ETF ticker to its CNPJ (`etf_ticker`) and `portfolio_fees` serves the
+  etfsbrasil.com.br fee (`etf_site_*`), summed apart in the engine. Live after an analytical apply and a
+  `deploy_mcp.yml` dispatch. Open: the ETF fee is a third-party scrape that self-skips without `APIFY_TOKEN`;
+  a CVM-filed ETF fee source (the regulamento) is not ingested.
 - **CVM 175 levels** (#543, branch `claude/cvm175-levels-543`, migration 67):
   `cvm_registro_fundo` / `_classe` / `_subclasse` let a class reach its fund by
   `ID_Registro_Fundo` and a subclass its class by `ID_Registro_Classe`. Empty until
