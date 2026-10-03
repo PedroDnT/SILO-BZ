@@ -467,6 +467,9 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
 - Cost cap US$1.00 per report; investigator cap 20 searches per report.
 - **Parked:** the abnormal-movement and material-restatement thresholds below.
   Restatements are reported as "revised, not assessed" until they are set.
+- **Served since catalog v51** (`31_api_portfolio.sql`): `api.portfolio_resolve`,
+  `api.portfolio_fees`, `api.portfolio_lookthrough` (blocks 1, 3, 2, 10 of the
+  engine). Live after the next analytical apply and a `deploy_mcp.yml` dispatch.
 
 The list below is the 2026-09-26 state, kept for the parked thresholds and the
 other open points. Design: `PORTFOLIO_DIAGNOSIS.md`. Old tickets: map #340

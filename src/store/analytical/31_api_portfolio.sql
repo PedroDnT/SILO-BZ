@@ -285,16 +285,7 @@ CREATE INDEX ix_mv_fund_name_history_trgm
 
 -- Supabase's default privileges grant new relations in public to the client
 -- roles; this one is internal to the resolver.
-DO $revoke$
-DECLARE r TEXT;
-BEGIN
-    FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
-            EXECUTE format('REVOKE ALL ON public.mv_fund_name_history FROM %I', r);
-        END IF;
-    END LOOP;
-END
-$revoke$;
+REVOKE ALL ON public.mv_fund_name_history FROM PUBLIC, anon, authenticated;
 
 COMMENT ON MATERIALIZED VIEW public.mv_fund_name_history IS
     'Internal (31_api_portfolio.sql): every name a fund filed, one row per (cnpj, normalised name), from cvm_fi_cda_fund_name (CDA DENOM_SOCIAL, first/last month filed) and cvm_fund_registry.fund_name (the current registry name, no period). is_current = the registry name or the name of the fund''s newest CDA month. Read by api.portfolio_resolve through its GiST trigram index.';

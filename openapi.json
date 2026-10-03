@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SILO Data API",
-    "version": "50",
+    "version": "51",
     "summary": "Read-only Brazilian public financial data: CVM filings, BACEN series, B3 quotes and the B3 BDI group.",
-    "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Forty-five set-returning functions raise SQLSTATE\n  `22023` when the window they were handed would produce more than 1000 rows.\n  Nothing is trimmed, and the error says why and how to fix it (the message,\n  plus PostgREST's `details` and `hint`). Four of them (`panel`,\n  `quote_history`, `fund_nav`, `index_history`) take a `p_after` cursor so you\n  can walk the series; the other forty-one ask you to narrow the window. `fund_nav` paging\n  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which\n  is unique only within one family, and CNPJs that file under both `fi` and\n  `fidc` in the same month would otherwise be ambiguous.\n* **The tier ceiling clamps.** Three other functions (`search_funds`,\n  `option_chain`, `option_exercises`) silently lower `p_limit` to a per-tier maximum. No error is raised, so the\n  only way to know the result was cut is to know the ceiling. Signing in\n  raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
+    "description": "Schema `api` over PostgREST. Views are `GET /<view>`; functions are\n`POST /rpc/<function>` with a JSON body.\n\n**This document is generated** from the live Postgres catalog by\n`scripts/gen_openapi.py` — `pg_get_function_arguments` for the RPC signatures,\n`information_schema.columns` for the view columns, and the granted-to-`anon`\nprivilege set for which objects exist at all. It is not hand-maintained, and\n`tests/test_openapi_spec.py` fails the build when it drifts from the SQL.\n\n### Two different ceilings\n\nReading one for the other is the most expensive mistake on this API.\n\n* **The row cap refuses.** Forty-eight set-returning functions raise SQLSTATE\n  `22023` when the window they were handed would produce more than 1000 rows.\n  Nothing is trimmed, and the error says why and how to fix it (the message,\n  plus PostgREST's `details` and `hint`). Four of them (`panel`,\n  `quote_history`, `fund_nav`, `index_history`) take a `p_after` cursor so you\n  can walk the series; the other forty-four ask you to narrow the window. `fund_nav` paging\n  additionally REQUIRES `p_entity_type` — its cursor is a bare period, which\n  is unique only within one family, and CNPJs that file under both `fi` and\n  `fidc` in the same month would otherwise be ambiguous.\n* **The tier ceiling clamps.** Three other functions (`search_funds`,\n  `option_chain`, `option_exercises`) silently lower `p_limit` to a per-tier maximum. No error is raised, so the\n  only way to know the result was cut is to know the ceiling. Signing in\n  raises it.\n\nSeparately from both, PostgREST's server-wide `db-max-rows = 1000` cuts every\nresponse, on every endpoint, for every tier. On the GET views `Content-Range`\nis the signal (`0-999/*`); `Prefer: count=exact` turns the `*` into a total.\n\n### Retention\n\nMost of this warehouse is append-only history. The **B3 BDI group** —\n`short_interest`, `short_interest_by_sector`, `investor_flow`,\n`lending_trades`, `lending_participants` — is not: B3 keeps roughly 21 business\ndays and publishes no archive. A missed session cannot be bought back. See\nMarket Coverage.\n",
     "license": {
       "name": "See repository",
       "url": "https://github.com/PedroDnT/SILO-BZ"
@@ -66,6 +66,9 @@
     },
     {
       "name": "Panel"
+    },
+    {
+      "name": "Portfolio"
     },
     {
       "name": "Quotes"
@@ -10946,6 +10949,675 @@
                         ]
                       },
                       "source": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. Contract violations raise SQLSTATE `22023` with a message naming the limit or the argument at fault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rpc/portfolio_fees": {
+      "post": {
+        "operationId": "rpc_portfolio_fees",
+        "summary": "portfolio_fees",
+        "description": "Fees per fund, two kinds of number that are never mixed. DISCLOSED (disclosed_*): the fee the fund published, from the lâmina (cvm_fi_lamina, newest reference month) first and cad_fi (cvm_fund_registry taxa_adm / taxa_perfm / inf_taxa_*) as the fallback, ONE source per fund; disclosed_source and disclosed_as_of say which and when (the lâmina also gives disclosed_age_months). A NULL disclosed part is not a zero fee; when the fund's classes disclose different fees the single value is NULL and the min / max and disclosed_note say so. ESTIMATE (adm_fee_flow, perf_fee_flow and the _pct_annual_est columns): from the balancete accruals (cvm_fi_balancete_resumo): the fee accounts accumulate from each fund's own fiscal-year start and are filed negative, so the month's accrual is previous minus current accumulated value (served positive = cost; a negative performance accrual is a reversed provision), annualised x 12 / NAV x 100, NAV = groups 6 + 7 + 8 of the month. In the fiscal-year reset month the accumulated fee falls: fiscal_reset_suspect is TRUE and the estimate is NULL, unless cad_fi DT_INI_EXERC puts the fiscal-year start in that month, in which case the month's accumulated value alone is the accrual. estimate_label says on every row that the estimate is an estimate and why one is missing; it is never presented as the disclosed fee. p_month = the balancete month (NULL = each fund's newest). One row per distinct CNPJ; more than 200 CNPJs RAISES 22023.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "tags": [
+          "Portfolio"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "p_cnpjs": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "p_month": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
+                  }
+                },
+                "required": [
+                  "p_cnpjs"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result set, oldest first. An unknown id is an empty array, not a 404 and never a guessed value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "cnpj": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "fund_name": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "month": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "nav": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "adm_fee_flow": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "adm_fee_pct_annual_est": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "perf_fee_flow": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "perf_fee_pct_annual_est": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "fiscal_reset_suspect": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "disclosed_taxa_adm": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "disclosed_taxa_adm_min": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "disclosed_taxa_adm_max": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "disclosed_taxa_perfm": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "disclosed_taxa_adm_info": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "disclosed_taxa_perfm_info": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "disclosed_source": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "disclosed_as_of": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "disclosed_age_months": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "disclosed_n_classes": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "disclosed_note": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "estimate_label": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. Contract violations raise SQLSTATE `22023` with a message naming the limit or the argument at fault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rpc/portfolio_lookthrough": {
+      "post": {
+        "operationId": "rpc_portfolio_lookthrough",
+        "summary": "portfolio_lookthrough",
+        "description": "What a set of funds holds, looked through their fund quotas. One CDA month (p_month, or by default the last complete one: the newest month whose block-2 filing count reaches 90% of the median of the 12 before it, the /holdings rule). From each root, CDA block 2 (fund quotas) is followed recursively, cycle-guarded and capped at p_max_depth levels (1..6, default 4); every fund on the way, root included, lists its own holdings from block 1 (government_bond; repo collateral served apart as repo), block 2 (fund_quota when looked through, else fund_quota_unfiled / fund_quota_depth_cap / fund_quota_cycle), block 4 (stock, debenture with issuer_code = ISIN chars 3-6, other_block4) and block 6 (private_credit with the issuer's CNPJ when it is a PJ and the indexer as filed). weight_in_root = value / holder NAV times the weights down the path, NAV = fact_fund_monthly.vl_patrim_liq of the same month (not the CDA blocks' total: blocks 3, 5, 7, 8 are not ingested); NULL when a NAV on the path is unknown. A fund reached by two paths appears once per path; sum weight_in_root over every row but fund_quota for the exposure. A root with no CDA that month returns one no_cda_filing row. More than 200 CNPJs or more than 1000 rows RAISES 22023 (never trimmed): send fewer funds per call or lower p_max_depth.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "tags": [
+          "Portfolio"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "p_cnpjs": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "p_month": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date",
+                    "description": "Defaults to `NULL::date`.",
+                    "default": null
+                  },
+                  "p_max_depth": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "format": "int32",
+                    "description": "Defaults to `4`.",
+                    "default": 4
+                  }
+                },
+                "required": [
+                  "p_cnpjs"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result set, oldest first. An unknown id is an empty array, not a 404 and never a guessed value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "root_cnpj": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "path": {
+                        "type": [
+                          "array",
+                          "null"
+                        ],
+                        "items": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "depth": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "holder_cnpj": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "block": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "asset_kind": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "asset_key": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "asset_name": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "isin": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "issuer_cnpj": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "issuer_code": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "tp_aplic": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "tp_ativo": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "tp_titpub": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "indexer_code": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "maturity": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "value_brl": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "weight_in_root": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "period": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "is_cycle": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request. Contract violations raise SQLSTATE `22023` with a message naming the limit or the argument at fault.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No usable `apikey`, or a request for a schema outside `api`. `Accept-Profile: public` and any `cvm_*` / `b3_cotahist` / `cia_*` path answer 401 for every caller, by grant — schema `api` is the entire public surface.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such endpoint in schema `api`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rpc/portfolio_resolve": {
+      "post": {
+        "operationId": "rpc_portfolio_resolve",
+        "summary": "portfolio_resolve",
+        "description": "Statement lines to candidate funds. One row per line and candidate (up to 5), ranked: a CNPJ the line carries wins (match_kind cnpj); else an exact match on any name the fund ever filed, case, accents and whitespace ignored (exact_current: the registry name or the newest CDA name; exact_history: a former name, matched_period = the last CDA month it was filed under); else trigram over the whole name history (CDA DENOM_SOCIAL since 2005 plus the registry), similarity = greatest(similarity, word_similarity), so an abbreviation scores high. With p_quotas and p_quota_dates the candidate's cvm_fi_diario quota on that exact date is compared, and one within 0.5% ranks first: that is how the XP Bancos master and FIC (same words, quotas 1.952607 and 1.542011 on 2026-09-30) are told apart. ambiguous is TRUE on every row of a line whose top two candidates score within 0.05 and the quota does not separate them: SILO never picks silently, the caller decides. Arrays are parallel, one entry per line. More than 200 lines RAISES 22023; the result is at most one 1000-row page.\n\n**Row cap.** A window producing more than 1000 rows raises SQLSTATE `22023` naming this function. Nothing is trimmed to fit — PostgREST would silently cut the response at 1000 and a cut-short series is indistinguishable from one that simply ends. This function does not page — narrow the window instead.",
+        "tags": [
+          "Portfolio"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "p_names": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "p_cnpjs": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "description": "Defaults to `NULL::text[]`.",
+                    "default": null
+                  },
+                  "p_quotas": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "description": "Defaults to `NULL::numeric[]`.",
+                    "default": null
+                  },
+                  "p_quota_dates": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date"
+                    },
+                    "description": "Defaults to `NULL::date[]`.",
+                    "default": null
+                  }
+                },
+                "required": [
+                  "p_names"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result set, oldest first. An unknown id is an empty array, not a 404 and never a guessed value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "line_no": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "input_name": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "candidate_cnpj": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "candidate_name": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "matched_name": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "matched_period": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "entity_type": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "match_kind": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "similarity": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "rank": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "format": "int32"
+                      },
+                      "quota_on_date": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "quota_rel_diff": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "ambiguous": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      },
+                      "reason": {
                         "type": [
                           "string",
                           "null"

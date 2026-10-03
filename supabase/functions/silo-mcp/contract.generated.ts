@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "50";
+export const CONTRACT_VERSION = "51";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -3099,6 +3099,154 @@ export const CONTRACT: Record<string, ContractEntry> = {
       },
       "required": [
         "p_ids"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "portfolio_fees": {
+    "kind": "rpc",
+    "path": "/rpc/portfolio_fees",
+    "description": "Fees per fund, two kinds of number that are never mixed. DISCLOSED (disclosed_*): the fee the fund published, from the lâmina (cvm_fi_lamina, newest reference month) first and cad_fi (cvm_fund_registry taxa_adm / taxa_perfm / inf_taxa_*) as the fallback, ONE source per fund; disclosed_source and disclosed_as_of say which and when (the lâmina also gives disclosed_age_months). A NULL disclosed part is not a zero fee; when the fund's classes disclose different fees the single value is NULL and the min / max and disclosed_note say so. ESTIMATE (adm_fee_flow, perf_fee_flow and the _pct_annual_est columns): from the balancete accruals (cvm_fi_balancete_resumo): the fee accounts accumulate from each fund's own fiscal-year start and are filed negative, so the month's accrual is previous minus current accumulated value (served positive = cost; a negative performance accrual is a reversed provision), annualised x 12 / NAV x 100, NAV = groups 6 + 7 + 8 of the month. In the fiscal-year reset month the accumulated fee falls: fiscal_reset_suspect is TRUE and the estimate is NULL, unless cad_fi DT_INI_EXERC puts the fiscal-year start in that month, in which case the month's accumulated value alone is the accrual. estimate_label says on every row that the estimate is an estimate and why one is missing; it is never presented as the disclosed fee. p_month = the balancete month (NULL = each fund's newest). One row per distinct CNPJ; more than 200 CNPJs RAISES 22023.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_cnpjs": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "p_month": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_cnpjs"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "portfolio_lookthrough": {
+    "kind": "rpc",
+    "path": "/rpc/portfolio_lookthrough",
+    "description": "What a set of funds holds, looked through their fund quotas. One CDA month (p_month, or by default the last complete one: the newest month whose block-2 filing count reaches 90% of the median of the 12 before it, the /holdings rule). From each root, CDA block 2 (fund quotas) is followed recursively, cycle-guarded and capped at p_max_depth levels (1..6, default 4); every fund on the way, root included, lists its own holdings from block 1 (government_bond; repo collateral served apart as repo), block 2 (fund_quota when looked through, else fund_quota_unfiled / fund_quota_depth_cap / fund_quota_cycle), block 4 (stock, debenture with issuer_code = ISIN chars 3-6, other_block4) and block 6 (private_credit with the issuer's CNPJ when it is a PJ and the indexer as filed). weight_in_root = value / holder NAV times the weights down the path, NAV = fact_fund_monthly.vl_patrim_liq of the same month (not the CDA blocks' total: blocks 3, 5, 7, 8 are not ingested); NULL when a NAV on the path is unknown. A fund reached by two paths appears once per path; sum weight_in_root over every row but fund_quota for the exposure. A root with no CDA that month returns one no_cda_filing row. More than 200 CNPJs or more than 1000 rows RAISES 22023 (never trimmed): send fewer funds per call or lower p_max_depth.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_cnpjs": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "p_month": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_max_depth": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "description": "Defaults to `4`.",
+          "default": 4
+        }
+      },
+      "required": [
+        "p_cnpjs"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "portfolio_resolve": {
+    "kind": "rpc",
+    "path": "/rpc/portfolio_resolve",
+    "description": "Statement lines to candidate funds. One row per line and candidate (up to 5), ranked: a CNPJ the line carries wins (match_kind cnpj); else an exact match on any name the fund ever filed, case, accents and whitespace ignored (exact_current: the registry name or the newest CDA name; exact_history: a former name, matched_period = the last CDA month it was filed under); else trigram over the whole name history (CDA DENOM_SOCIAL since 2005 plus the registry), similarity = greatest(similarity, word_similarity), so an abbreviation scores high. With p_quotas and p_quota_dates the candidate's cvm_fi_diario quota on that exact date is compared, and one within 0.5% ranks first: that is how the XP Bancos master and FIC (same words, quotas 1.952607 and 1.542011 on 2026-09-30) are told apart. ambiguous is TRUE on every row of a line whose top two candidates score within 0.05 and the quota does not separate them: SILO never picks silently, the caller decides. Arrays are parallel, one entry per line. More than 200 lines RAISES 22023; the result is at most one 1000-row page.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_names": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "p_cnpjs": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": "Defaults to `NULL::text[]`.",
+          "default": null
+        },
+        "p_quotas": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "description": "Defaults to `NULL::numeric[]`.",
+          "default": null
+        },
+        "p_quota_dates": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "description": "Defaults to `NULL::date[]`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_names"
       ],
       "additionalProperties": false
     }
