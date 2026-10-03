@@ -37,7 +37,7 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 52  # v52 reads the portfolio_fees disclosed fee from the Extrato first (25 columns appended, no SDK wrapper); v51 adds the portfolio_resolve / portfolio_fees / portfolio_lookthrough reads; v50 close_return is NULL across a split, grouping or bonus (#396); v49 corrects the IBOV11 description; v48 quote_history fields + close_adj default (#410); v47 p_as_of (#414); v46 close_total_return (#418); v45 index_history
+KNOWN_CATALOG_VERSION = 53  # v53 says index_history holds TOTAL-RETURN indices as B3 labels them and adds eight codes (#416); v52 reads the portfolio_fees disclosed fee from the Extrato first (25 columns appended, no SDK wrapper); v51 adds the portfolio_resolve / portfolio_fees / portfolio_lookthrough reads; v50 close_return is NULL across a split, grouping or bonus (#396); v49 corrects the IBOV11 description; v48 quote_history fields + close_adj default (#410); v47 p_as_of (#414); v46 close_total_return (#418); v45 index_history
 
 #: How many times prices() / quote_history_all() restart a retrieval whose
 #: pages came back with different data revisions before giving up.
@@ -637,13 +637,17 @@ class SiloClient:
     ) -> List[Dict[str, Any]]:
         """Daily levels of a B3-published index **as published**: columns
         index_code, trade_date, level, divisor_step, source. IBOV from
-        1968-01-02.
+        1968-01-02; IBXX, IBXL, IFIX, SMLL, IDIV, ICON, IMOB and UTIL each
+        from its own first session (`coverage()` has the depth).
 
         `index` is an INDEX CODE ("IBOV"), never a ticker: BOVA11 (an ETF) and
         IBOV11 (the Ibovespa options settlement code, whose price is each
         print's settlement index and never the official close) are refused
-        with `SiloError` (22023) naming the codes held. The series is a price index and is not adjusted: B3
-        re-scaled it eleven times and `divisor_step` is True on the first
+        with `SiloError` (22023) naming the codes held. Every code is a
+        total-return index as B3 labels it (distributions reinvested), so a
+        level already includes dividends: compare it with `close_total_return`
+        from `quote_history`, not `close_adj`. The series is not adjusted: B3
+        re-scaled IBOV eleven times and `divisor_step` is True on the first
         session after each, where a level ratio is not a return. One page of
         at most 1000 rows; more raises `SiloOverCap`, so use
         `index_history_all` for a long window. `start=None` is the last 365

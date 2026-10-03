@@ -21,7 +21,11 @@ sessions, no duplicate date, no weekend, no cell that is not a number.
 The endpoint answers HTTP 200 with ``"results": null`` for a code B3 does not
 publish here (IFNM did on 2026-09-29), and for any year it has nothing for.
 That is B3 saying "no such series", and returning it as an empty year would
-publish a fabricated gap, so it raises ``B3IndexNoResults``.
+publish a fabricated gap, so it raises ``B3IndexNoResults``. It also answered
+null once for a year it does serve (UTIL 2012, 2026-10-03; 837 later requests
+for served years were all non-null), so a null is retried like any transient
+failure, ``max_retries`` attempts with backoff, and raises only when every
+attempt answers null.
 
 Parsing and validation are in src/pipeline/ingest_b3_index.py; this module is
 transport only.
@@ -59,7 +63,9 @@ class B3IndexNoResults(LookupError):
 
     For a code SILO has configured this is an error, never an empty year: it
     means the code is not published by this endpoint, or B3 has no series for
-    that year. Retrying does not fill it.
+    that year. The fetcher retries a null a bounded number of times (one null
+    in about 1,140 requests was a transient answer for a served year) and
+    raises this only when every attempt answered null.
     """
 
 
@@ -89,7 +95,9 @@ class B3IndexFetcher:
         """The decoded year grid for one index. Raises; never returns a stub.
 
         A failed fetch raises after ``max_retries`` so the caller logs an error
-        row. A null ``results`` raises B3IndexNoResults at once.
+        row. A null ``results`` is retried inside the same budget and raises
+        B3IndexNoResults when every attempt answered null, never an empty
+        year.
         """
         url = f"{BASE_URL}/GetPortfolioDay/{self._token(index_code, year)}"
         last_error: Optional[Exception] = None
@@ -116,12 +124,15 @@ class B3IndexFetcher:
                         f"{index_code} {year}"
                     )
                 return payload
-            except B3IndexNoResults:
-                raise
             except Exception as exc:  # noqa: BLE001 - re-raised below
                 last_error = exc
                 if attempt < self.max_retries:
                     time.sleep(self.sleep_between * (2 ** attempt))
+        if isinstance(last_error, B3IndexNoResults):
+            raise B3IndexNoResults(
+                f"GetPortfolioDay returned results=null for {index_code} "
+                f"{year} on all {self.max_retries} attempts"
+            ) from last_error
         raise RuntimeError(
             f"B3 GetPortfolioDay failed after {self.max_retries} attempts for "
             f"{index_code} {year}: {last_error}"

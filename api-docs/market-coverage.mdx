@@ -48,7 +48,7 @@ Four date columns meaning four different things. Reading one for another is the 
 | **ANBIMA classes** | `anbima_classes` | 2019 | monthly, on publication |
 | **Macro & FX** | `macro_series`, `ptax` | as far back as each SGS series / PTAX history has been loaded — read `coverage()` | daily (monthly for IGP-M, INPC, GDP) |
 | **Rates** | `future_curve`, `future_series`, `curve`, `curve_history` | DI1 contracts from 2018-01-02, B3 reference curves from 2008-01-02, as loaded — read `coverage()` | daily |
-| **Benchmark index** | `index_history` | B3's own published daily levels of IBOV from 1968-01-02, a price index as published, not adjusted: `divisor_step` marks the eleven sessions B3 re-scaled it, the last on 1997-03-03 — read `coverage()` for the depth | daily |
+| **Benchmark index** | `index_history` | B3's own published daily levels of IBOV from 1968-01-02 and of IBXX, IBXL, IFIX, SMLL, IDIV, ICON, IMOB and UTIL, each from its own first session. B3 calls every one a total-return index (distributions reinvested), as published and not adjusted: `divisor_step` marks the eleven sessions B3 re-scaled IBOV, the last on 1997-03-03 — read `coverage()` for the depth | daily |
 | **Research universe** | `research_universe` | listed shares and units on the B3 cash tape from 2019-01-02; refreshed daily, so `last_observed` lags by up to a day | daily |
 | **Inflation** | `inflation`, `inflation_items` | IPCA 1980; BCB cores and IBGE groups 1991; IPCA-15 2000; the item tree with weights 2012 | monthly, on IBGE's release (~10th of the following month) |
 | **B3 BDI — lending & flows** | `short_interest`, `short_interest_by_sector`, `investor_flow`, `lending_trades`, `lending_participants` | **first capture only — see below** | daily, T+2 for `investor_flow` |

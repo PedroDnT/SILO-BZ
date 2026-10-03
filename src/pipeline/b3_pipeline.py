@@ -386,12 +386,13 @@ class B3Ingestor:
     ) -> int:
         """Fetch every published year of each configured index and upsert the levels.
 
-        One call per calendar year (59 for IBOV, about a minute), refetched in
-        full every night: the upsert rewrites only a row that changed, so a
+        One call per calendar year (59 for IBOV, about 250 for the nine
+        configured indices, a few minutes), refetched in full every night: the upsert rewrites only a row that changed, so a
         B3 correction or an intraday level stored earlier heals with no
         backfill mode. The whole series is validated before anything is
         written, because the divisor-step check compares neighbouring sessions
-        across year boundaries. A null result for a configured index is an
+        across year boundaries. A null result for a configured index is retried
+        by the fetcher and, when every attempt is null, an
         error (B3IndexNoResults), except for the current year in the first days
         of January, before its first session. One cvm_ingest_log row.
         """
