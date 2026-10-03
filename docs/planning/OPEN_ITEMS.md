@@ -493,6 +493,13 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
 - **Engine and report on catalog v52** (branch `demo/engine-extrato`): `src/portfolio/fees.py` reads the
   Extrato columns and follows `disclosed_origin`; the report reads the engine through `report/adapt.py`.
   Both were tested offline against canned rows, not against the live function.
+- **CVM 175 levels** (#543, branch `claude/cvm175-levels-543`, migration 67):
+  `cvm_registro_fundo` / `_classe` / `_subclasse` let a class reach its fund by
+  `ID_Registro_Fundo` and a subclass its class by `ID_Registro_Classe`. Empty until
+  the next `daily_ingest` applies the migration and loads the registry; then check
+  that class → fund links resolve (132 of 36,770 did in `cvm_fund_registry`). Not
+  served yet: `api.portfolio_resolve` / `portfolio_lookthrough` would need a view
+  over the three tables.
 
 The list below is the 2026-09-26 state, kept for the parked thresholds and the
 other open points. Design: `PORTFOLIO_DIAGNOSIS.md`. Old tickets: map #340

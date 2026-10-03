@@ -1472,27 +1472,42 @@ class CVMIngestor:
         return rows_inserted
 
     async def ingest_fund_registry_cvm175(self) -> int:
-        """Ingest the CVM-175 unified registry (registro_fundo + registro_classe).
+        """Ingest the CVM-175 unified registry: registro_fundo, registro_classe
+        and registro_subclasse, three members of one zip (one download, cached).
 
         Covers the post-2023 active universe across all fund families; entity_type
         and is_active are derived per row. Runs after the legacy cad ingest so the
         current CVM-175 status wins for any shared CNPJ.
+
+        Each member is one slice and one cvm_ingest_log row. registro_fundo and
+        registro_classe are written twice from the same parsed file: to
+        cvm_fund_registry (keyed on cnpj, entity_type, what the dashboards and
+        api read) and to their level table cvm_registro_fundo / _classe (keyed on
+        the registry ids, migration 67), so a class can be walked to its fund. A
+        failure in either write logs the slice 'error'; rows_upserted counts the
+        level-table rows, the measure of what this slice made walkable.
+        registro_subclasse has no CNPJ and goes to cvm_registro_subclasse only.
         """
-        from src.pipeline.ingest_misc import ingest_fund_registry_cvm175
+        from src.pipeline.ingest_misc import (
+            ingest_fund_registry_cvm175, ingest_registro_level,
+        )
 
         total = 0
-        for doc_type in ("registro_fundo", "registro_classe"):
+        for doc_type in ("registro_fundo", "registro_classe", "registro_subclasse"):
             run_id = str(uuid4())
             self._log_start(run_id, "fi", doc_type, None, None)
             rows = 0
+            raw_rows: List[Dict[str, Any]] = []
             try:
                 raw_rows = await self._fetch_all_pages("fi", doc_type, None, None)
-                rows = ingest_fund_registry_cvm175(self._supabase, raw_rows)
+                if doc_type != "registro_subclasse":
+                    ingest_fund_registry_cvm175(self._supabase, raw_rows)
+                rows = ingest_registro_level(self._supabase, raw_rows, doc_type)
             except Exception as exc:
                 logger.warning("ingest_fund_registry_cvm175 %s failed: %s", doc_type, _describe(exc))
                 self._log_finish(run_id, 0, _describe(exc))
                 continue
-            self._log_finish(run_id, rows)
+            self._log_finish(run_id, rows, fetched=len(raw_rows))
             logger.info("fi/%s: %d rows", doc_type, rows)
             total += rows
         return total

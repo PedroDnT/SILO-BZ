@@ -76,6 +76,17 @@ The fee columns (`vl_taxa_administracao` and its parts, `vl_taxa_performance`, .
 fee in 81781001/81781056 and nothing in the management (`vl_taxa_gestao`) or distribution
 split, so a NULL part is not a zero fee.
 
+**The CVM 175 levels** (migration 67, #543): `cvm_registro_fundo`, `cvm_registro_classe` and
+`cvm_registro_subclasse` are the three members of `registro_fundo_classe.zip`, one table each,
+keyed on CVM's own ids (TEXT, as filed). Walk class → fund by `cvm_registro_classe.id_registro_fundo`
+and subclass → class by `id_registro_classe`, never by CNPJ. `cvm_fund_registry` cannot do it: a
+class that reuses its fund's CNPJ lands on the fund's `(cnpj, entity_type)` row and replaces its
+`raw` (132 of 36,770 class rows found their fund there on 2026-10-03). A subclass has no CNPJ
+(the file publishes none) and none is stamped on it; `id_subclasse` is the `ID_SUBCLASSE` of the
+informe diário, lâmina and CDA. `classe_cotas` is `Classe_Cotas` S/N as TRUE/FALSE (NULL outside
+FIF classes; another value fails the slice). Each member is one `cvm_ingest_log` row
+(`fi` / `registro_*`).
+
 **The disclosed fee in the registry** (migration 64): `cvm_fund_registry.taxa_adm`,
 `taxa_perfm`, `inf_taxa_adm`, `inf_taxa_perfm`, `dt_ini_exerc`, `dt_fim_exerc` are
 `cad_fi.csv`'s columns as filed; CVM's meta states no unit (values read as percent). Only

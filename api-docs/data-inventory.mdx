@@ -24,6 +24,7 @@ Sources are CVM, B3, BACEN, IBGE and ANBIMA, all public except the ETF market fe
 | FI | `cvm_fi_cda_cotas` | fund × month × **held fund** | CDA block 2 | 2005 |
 | FI | `cvm_fi_cda_debentures` | fund × month × **issuer** × maturity | CDA block 6 | 2005 |
 | FI | `cvm_fund_registry` | fund (static) | CVM-175 registry ZIP | current |
+| FI | `cvm_registro_fundo`, `cvm_registro_classe`, `cvm_registro_subclasse` | CVM 175 fund / class / subclass, keyed on the registry ids | the same CVM-175 registry ZIP, three members | current |
 | FIDC | `cvm_fidc_mensal` | fund × month | monthly 2025+, yearly HIST ≤2024 | 2019 |
 | FIDC | `cvm_fidc_tranche` | fund × month × tranche | monthly (tab X2/X3/X6) | **2025** |
 | FIDC | `cvm_fidc_tranche_flows` | fund × month × tranche | monthly (tab X4) | **2025** |

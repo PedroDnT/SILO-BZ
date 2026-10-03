@@ -119,6 +119,17 @@ class DatasetConfig:
             "csv_name_pattern": "registro_fundo.csv",
             "description": "CVM-175 fund registry (CNPJ_Fundo) — fund-level name/status/cancel date",
         },
+        # Third member of the same zip (the 24 h on-disk cache serves it from the
+        # download the two above already made). It has no CNPJ column: a subclass
+        # is keyed by (ID_Registro_Classe, ID_Subclasse). Columns per CVM's
+        # novidades page (2024-10-07, 2025-08-20, 2026-01-26); see
+        # src/parsers/field_maps/registro_subclasse.py.
+        "registro_subclasse": {
+            "url_pattern": "{base_url}/FI/CAD/DADOS/registro_fundo_classe.zip",
+            "is_zip": True,
+            "csv_name_pattern": "registro_subclasse.csv",
+            "description": "CVM-175 subclass registry (ID_Subclasse, no CNPJ) — links to its class by ID_Registro_Classe",
+        },
         "inf_diario": {
             "url_pattern": "{base_url}/FI/DOC/INF_DIARIO/DADOS/inf_diario_fi_{year}{month:02d}.zip",
             "is_zip": True,
