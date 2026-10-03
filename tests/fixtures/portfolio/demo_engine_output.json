@@ -13045,7 +13045,7 @@
   },
   "movement": {
     "status": "partial",
-    "reason": "3 de 6 fundo(s) não avaliados (o motivo de cada um está em lines[].reason).",
+    "reason": "3 de 6 fundo(s) não avaliados contra a classe (o motivo de cada um está na seção de sinais de risco).",
     "errors": [],
     "month": "2026-09-01",
     "definition": "Retorno mensal da cota do fundo (cota de fim de mês sobre a do mês anterior, de fact_fund_monthly) comparado com o mesmo retorno dos fundos FI da sua classe ANBIMA conforme arquivada no Extrato da CVM; média e desvio padrão da classe calculados sobre valores winsorizados no 1º e no 99º percentil da classe no mês (o valor do próprio fundo não é winsorizado); z = (retorno do fundo menos média da classe) dividido pelo desvio padrão da classe.",
@@ -13456,7 +13456,7 @@
     },
     "movement": {
       "status": "partial",
-      "reason": "3 de 6 fundo(s) não avaliados (o motivo de cada um está em lines[].reason)."
+      "reason": "3 de 6 fundo(s) não avaliados contra a classe (o motivo de cada um está na seção de sinais de risco)."
     }
   },
   "provenance": [

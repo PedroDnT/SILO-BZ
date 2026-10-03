@@ -254,7 +254,7 @@ def compute_movement(lines: list[LineId], client: SiloClient, month: dt.date) ->
     counts = _counts(out_lines)
     if sec.status != "unknown" and counts[NOT_EVALUATED]:
         sec.degrade(
-            f"{counts[NOT_EVALUATED]} de {len(out_lines)} fundo(s) não avaliados (o motivo de cada um está em lines[].reason)."
+            f"{counts[NOT_EVALUATED]} de {len(out_lines)} fundo(s) não avaliados contra a classe (o motivo de cada um está na seção de sinais de risco)."
         )
     return {
         **sec.head(),

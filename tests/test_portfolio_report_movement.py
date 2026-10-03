@@ -131,6 +131,16 @@ def test_a_movement_sentence_that_says_atencao_is_removed(view):
     assert kept is None and any("só aparece em tabela" in r.reason for r in removals)
 
 
+def test_a_sentence_that_names_the_attention_fund_through_a_line_placeholder_is_removed(view):
+    # no movement. placeholder at all: the fund is named through lines[i].fund_name, the claim is the same
+    f = F("O movimento do fundo {{lines[2].fund_name}} contra a classe merece atenção neste mês.")
+    kept, removals = revisor.check_finding(view, f)
+    assert kept is None and any("só aparece em tabela" in r.reason for r in removals)
+    # the word atenção alone, in the fee findings, is untouched
+    kept, removals = revisor.check_finding(view, F("A taxa da linha {{fees.by_line[0].line_id}} pede atenção.", section="taxas", cites=("p1",)))
+    assert kept is not None and not removals
+
+
 def test_a_digit_in_a_movement_sentence_outside_a_placeholder_is_removed(view):
     kept, removals = revisor.check_finding(view, F("O fundo {{movement.strong[0].fund_name}} passou de 3 desvios padrão."))
     assert kept is None and any("algarismo fora de marcador" in r.reason for r in removals)

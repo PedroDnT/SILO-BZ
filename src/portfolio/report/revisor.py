@@ -72,6 +72,9 @@ MOVEMENT_TEXT_PATHS = (
     "movement.n_not_fund_lines",
 )
 _ATENCAO_WORD_RE = re.compile(r"aten[cç][aã]o", re.IGNORECASE)
+# A sentence about the movement that names the attention level without a movement placeholder (a fund named through
+# lines[i].fund_name, say) is the same claim: the attention level is a table row, not a finding.
+_MOVEMENT_WORD_RE = re.compile(r"movimento", re.IGNORECASE)
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _DIGIT_RE = re.compile(r"\d")
@@ -185,7 +188,7 @@ def check_sentence(engine: dict, sentence: str, sources: set[str]) -> str | None
     for ph in movement_phs:
         if not ph.lower().startswith(MOVEMENT_TEXT_PATHS):
             return f"movimento incomum: o nível atenção só aparece em tabela, não no texto: {{{{{ph}}}}}"
-    if movement_phs and _ATENCAO_WORD_RE.search(bare):
+    if (movement_phs or _MOVEMENT_WORD_RE.search(bare)) and _ATENCAO_WORD_RE.search(bare):
         return "movimento incomum: o nível atenção só aparece em tabela, não no texto"
     for ph in placeholders(sentence):
         value = resolve(engine, ph)
