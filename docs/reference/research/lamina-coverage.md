@@ -27,7 +27,10 @@ Nothing was written to any database. This file lives on the throwaway branch
    empty, the estimate lands on `TAXA_ADM_MIN` (median ratio 1.00).
 4. **A lâmina `TAXA_ADM` of 0 is not a zero fee.** 1,290 of 4,135 latest fees
    (31%) are exactly 0, and for those funds with an estimate the balancete
-   charges a median 0.62% a year (90% above 0.10%).
+   charges a median 0.62% a year (90% above 0.10%). Of the 742 zeros among band A
+   funds with an estimate, 392 are "Variável" funds (the 0 is a placeholder and
+   `TAXA_ADM_MIN` carries the fee) and 350 are "Fixa" funds (a fixed fee of 0
+   while the balancete books a fee: the real anomaly).
 5. **Demo funds:** all five have a lâmina, all five last in 2024-09 (23 months
    old); only 08935128000159 has a `TAXA_ADM` (0.03). The other four are
    "Variável" with a min/max range only.
@@ -108,12 +111,14 @@ By PL bucket (DADOS 2019+ only; PL shares are of the universe PL in the bucket):
 | >= 1bn      |  1,891 |   11,576.8 |                     622 / 43% |                               100 / 6% |
 
 (The PL sum is the sum of fund PL and double-counts funds held by funds; it is
-only a weight, not an industry size.) A fund with a `TAXA_ADM` or a min/max range
+only a weight, not an industry size. The buckets add to 26,007: the other 39
+universe funds have a negative PL, confirmed by a count, and are in band B but in
+no bucket here; the 5,137 below inherits that gap.) A fund with a `TAXA_ADM` or a min/max range
 on its latest lâmina, at any age: 5,137 of 26,046 (19.7%).
 
 Larger funds are somewhat likelier to have any lâmina (43% of PL at >= R$1bn),
-but the last-12-months coverage is 4% to 8% in every bucket. The bucket PL share
-was computed from percentages the script printed to three decimals.
+but the last-12-months coverage is 4% to 8% in every bucket. The bucket PL shares
+come from ratios the script printed to three decimals.
 
 ## 4. How stale the latest lâmina is
 
@@ -167,6 +172,8 @@ over all 92 files, 10,429 with HIST. The 2026-08 file has 1,051 rows, 994 with
   The 2024-09 file mixes `FI` and `CLASSES - FIF`.
 - The class CNPJ in the lâmina is the CNPJ `fact_fund_monthly` uses: 1,046 of the
   1,050 distinct CNPJs of the 2026-08 file are in the universe (99.6%).
+  The 2026-08 file's age-0 bucket is 1,046 in the all-universe table and also 1,046
+  in segment D, so every matched CNPJ also has NAV in `cvm_fi_diario` in 2026-09.
   Across all files, 5,158 of 8,462 lâmina CNPJs are in the universe; the other
   3,304 are funds without a `vl_quota` in 2026-07..09 (closed, merged, or not
   an FI; not broken down).
@@ -230,11 +237,19 @@ a typo). Of the zero funds with an estimate (756): median 0.62%, 90% above 0.10%
 (the fee booked elsewhere in a master or investee fund is one possibility, not
 tested), the fee the fund pays is not zero.
 
+The zeros split by fee type, among band A funds with an estimate (from the
+difference between the set sizes and the ratio sizes in the run-2 log):
+"Variável" with `TAXA_ADM` filled: 458 rows, ratio computed on 66, so 392 zeros;
+"Fixa" with `TAXA_ADM` filled: 2,968 rows, ratio on 2,618, so 350 zeros; 742 in all
+(the 756 above also counts band B and rows without a type). For the Variável zeros
+the 0 is a placeholder and `TAXA_ADM_MIN` carries the fee (section 8). The 350 Fixa
+zeros are the genuine mismatch: a fixed fee of 0 against a booked fee.
+
 ## 8. TAXA_PERFM, PR_PL_DESPESA, fee type
 
 - `TP_TAXA_ADM`, universe latest rows with a `TAXA_ADM`: Fixa 3,634, Variável 501.
   Variável rows usually leave `TAXA_ADM` empty and file `TAXA_ADM_MIN/MAX`: 881
-  such rows in band A (age <=12m: 49). The estimate lies inside [min x 0.75,
+  such rows in band A with an estimate (age <=12m: 49). The estimate lies inside [min x 0.75,
   max x 1.25] for 83.5% of them and sits at the minimum (median 0.996).
 - `TAXA_PERFM` (text) on the universe's 5,158 latest rows: 2,577 say "no
   performance fee" (starts with "Não há" and variants), 824 are empty, 1,757
@@ -290,6 +305,29 @@ for 08935128000159; they were not checked against the regulation.
   patrimônio líquido ao ano"; one `TAXA_ADM` of `0.015` and 61 values below 0.05
   suggest some fractions).
 
+## What this means for the fee-precedence decision (#515)
+
+Evidence for the owner, not a decision. The disclosed fee is the lâmina's, so any
+balancete number must be labelled "estimated from the fund's own balancete", never
+"disclosed".
+
+- **Coverage.** Lâmina `TAXA_ADM` within 12 months: 1,200 funds, 4.6% of the 26,046
+  universe. At any age: 4,135 (15.9%), mostly 23 months old. The balancete estimate
+  exists for 22,802 (87.5%). `cad_fi` `TAXA_ADM`: 7 funds (migration 64).
+- **Agreement.** Where both exist, estimate over `TAXA_ADM` has a median of 0.99 and
+  about 80% fall within +-25% (74% for the <=12m Fixa set). The estimate is noisy
+  month to month (about 10%).
+- **Options the evidence supports.** (a) Use the lâmina value and show its
+  `DT_COMPTC` age. (b) For a Variável fund, or a `TAXA_ADM` of 0, show
+  `TAXA_ADM_MIN` / `TAXA_ADM_MAX` (the estimate lands on the minimum). (c) Treat a
+  Fixa 0 as not disclosed. (d) Otherwise show the balancete estimate, labelled as
+  an estimate, with the month it covers.
+- **Staleness is the problem to price in.** "Latest per fund" means the last month a
+  fund appeared in a snapshot, not a recent filing. Funds whose lâmina stops at
+  2024-09 (3,596 with a lâmina) may have changed their fee since.
+- **The demo funds are the concrete case.** Four of five have only a min/max range,
+  all five are 23 months old, and the estimate matches the range minimum in each.
+
 ## What was not verified
 
 - Why the file drops from 5,606 to 1,347 funds in 2024-10, and whether the
@@ -303,6 +341,8 @@ for 08935128000159; they were not checked against the regulation.
   `fact_fund_monthly` (its definition was not re-read); fund-of-funds fees
   and performance fees were not separated. The `est_jul` / `est_aug`
   disagreement (median 1.09 against 0.99) shows the noise.
+- Zeros without an estimate, and zeros in band B, were not split by fee type; the
+  Variável / Fixa split above covers band A funds with an estimate only.
 - `PR_PL_DESPESA` against the balancete, and whether it is a better "custo" for the
   demo: only its relation to `TAXA_ADM` was measured.
 - HIST files were not checked for `DT_COMPTC` consistency; the script's mismatch
