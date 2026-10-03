@@ -4979,7 +4979,17 @@ BEGIN
     END IF;
 
     RETURN QUERY
-    WITH page AS (
+    WITH ref AS MATERIALIZED (
+        -- Resolve the company once, before cia_account is touched (#531).
+        -- api.company_ref is a set-returning function the planner estimates
+        -- at 1,000 rows, so joined directly it never reached the index: a
+        -- merge join scanned a whole cia_account partition (504 at 3 s).
+        -- The scalar subquery below hands the planner one cd_cvm to put in
+        -- the index condition. Zero or one row either way, same rows out.
+        SELECT r0.cd_cvm, r0.cnpj, r0.company, r0.ticker
+        FROM api.company_ref(p_id) r0
+    ),
+    page AS (
         SELECT
             r.cd_cvm AS id,
             'cd_cvm'::text AS id_type,
@@ -5009,7 +5019,8 @@ BEGIN
             f.dt_receb AS filing_received_date,
             f.link_doc AS filing_link
         FROM public.cia_account a
-        JOIN api.company_ref(p_id) r ON r.cd_cvm = a.cd_cvm
+        JOIN ref r ON r.cd_cvm = a.cd_cvm
+                  AND a.cd_cvm = (SELECT x.cd_cvm FROM ref x)
         LEFT JOIN public.cia_filing f
           ON f.cd_cvm = a.cd_cvm
          AND f.doc_type = a.doc_type

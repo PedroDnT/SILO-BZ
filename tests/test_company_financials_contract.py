@@ -193,6 +193,22 @@ def test_the_sector_is_resolved_through_company_ref_not_re_joined() -> None:
     )
 
 
+def test_the_history_resolves_the_company_before_it_reads_cia_account() -> None:
+    """#531: api.company_ref returns a set the planner sizes at 1,000 rows.
+
+    Joined directly, the company never reached the index condition and the plan
+    scanned a whole cia_account partition (504 at the anonymous 3 s budget). The
+    history resolves it once, materialised, and pins cd_cvm with a scalar
+    subquery so the company index is used.
+    """
+    body = _body("financial_statement_history")
+    assert "WITH ref AS MATERIALIZED" in body, "the company lookup is no longer materialised"
+    assert "JOIN api.company_ref(" not in body, "company_ref is joined directly again (#531)"
+    assert "a.cd_cvm = (SELECT x.cd_cvm FROM ref x)" in body, (
+        "cd_cvm must be a scalar subquery so the planner can use the company index"
+    )
+
+
 def test_the_widened_functions_are_dropped_before_being_replaced() -> None:
     """CREATE OR REPLACE cannot widen a RETURNS TABLE.
 
