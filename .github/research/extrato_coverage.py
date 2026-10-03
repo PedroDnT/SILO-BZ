@@ -424,6 +424,90 @@ def main():
           f"extrato OR lamina fee {len(ext_fee|lam_fee)} ({len(ext_fee|lam_fee)/N:.3f}); lamina<=12m fee but extrato empty/absent {len(lam_fee12-ext_fee)}; "
           f"extrato fee but no lamina fee {len(ext_fee-lam_fee)}")
 
+    # ---- run 2: does age or type explain disagreement with the estimate; zeros; outliers; absent funds ----
+    print("=" * 80)
+
+    def abucket(r):
+        d = days_old(r.get("DT_COMPTC") or "")
+        return "<=365d" if d is not None and d <= 365 else ("366-730d" if d is not None and d <= 730 else ">730d")
+
+    def plb(u):
+        pl = u["pl"] or 0
+        return "<10M" if pl < 1e7 else ("10M-100M" if pl < 1e8 else ("100M-1bn" if pl < 1e9 else ">=1bn"))
+
+    groups = {"age": abucket, "TP_FUNDO_CLASSE": lambda r: r.get("TP_FUNDO_CLASSE"), "FUNDO_COTAS": lambda r: r.get("FUNDO_COTAS"),
+              "EXISTE_TAXA_PERFM": lambda r: r.get("EXISTE_TAXA_PERFM")}
+    print("AGREEMENT of TAXA_ADM>0 with the balancete estimate e8 (A band): group,value,n,median est/TAXA_ADM,within+-25%,est/TAXA>2,est/TAXA<0.5")
+    for gname, gf in list(groups.items()) + [("PL bucket", None)]:
+        acc = collections.defaultdict(list)
+        for c in inter:
+            u = uni[c]; r = cur[c]; t = num(r.get("TAXA_ADM"))
+            if u["band"] != "A" or u["e8"] is None or t is None or t <= 0:
+                continue
+            k = plb(u) if gf is None else gf(r)
+            acc[k].append(u["e8"] / t)
+        for k, v in sorted(acc.items(), key=lambda kv: str(kv[0])):
+            v.sort(); n = len(v)
+            print(f"  {gname},{k},{n},{v[n//2]:.3f},{sum(1 for x in v if 0.75<=x<=1.25)/n:.3f},{sum(1 for x in v if x>2)/n:.3f},{sum(1 for x in v if x<0.5)/n:.3f}")
+    print("ZEROS (TAXA_ADM = 0, A band, est_aug present): group,value,n,median est,share est>0.10")
+    for gname, gf in (("age", abucket), ("FUNDO_COTAS", lambda r: r.get("FUNDO_COTAS")), ("TP_FUNDO_CLASSE", lambda r: r.get("TP_FUNDO_CLASSE"))):
+        acc = collections.defaultdict(list)
+        for c in inter:
+            u = uni[c]; r = cur[c]
+            if u["band"] != "A" or u["e8"] is None or num(r.get("TAXA_ADM")) != 0:
+                continue
+            acc[gf(r)].append(u["e8"])
+        for k, v in sorted(acc.items(), key=lambda kv: str(kv[0])):
+            v.sort(); n = len(v)
+            print(f"  {gname},{k},{n},{v[n//2]:.3f},{sum(1 for x in v if x>0.10)/n:.3f}")
+    big = [c for c in inter if (num(cur[c].get("TAXA_ADM")) or 0) > 5]
+    rr = sorted(uni[c]["e8"] / num(cur[c].get("TAXA_ADM")) for c in big if uni[c]["e8"] is not None)
+    print(f"OUTLIERS TAXA_ADM>5: n={len(big)} >10={sum(1 for c in big if num(cur[c].get('TAXA_ADM'))>10)} >100={sum(1 for c in big if num(cur[c].get('TAXA_ADM'))>100)} "
+          f">1000={sum(1 for c in big if num(cur[c].get('TAXA_ADM'))>1000)} band A={sum(1 for c in big if uni[c]['band']=='A')} "
+          f"TP={dict(collections.Counter(cur[c].get('TP_FUNDO_CLASSE') for c in big))} est/TAXA median={rr[len(rr)//2] if rr else None} (n={len(rr)}) "
+          f"age={dict(collections.Counter(abucket(cur[c]) for c in big))}")
+    # which source is closer to the estimate when extrato and lamina disagree
+    dis = ext_closer = lam_closer = tie = 0
+    dis12 = ext12 = lam12 = 0
+    for c in both:
+        t = num(cur[c].get("TAXA_ADM")); l = lam[c]["taxa"]; e = uni[c]["e8"]
+        if e is None or abs(t - l) <= 0.05 * max(l, t, 1e-9):
+            continue
+        dis += 1
+        a, b = abs(e - t), abs(e - l)
+        young = lam_age(lam[c]["dt"]) <= 12
+        dis12 += young
+        if a < b:
+            ext_closer += 1; ext12 += young
+        elif b < a:
+            lam_closer += 1; lam12 += young
+        else:
+            tie += 1
+    print(f"EXTRATO vs LAMINA disagree (>5%, est present): n={dis}; extrato closer to est {ext_closer}, lamina closer {lam_closer}, tie {tie}; "
+          f"lamina <=12m subset n={dis12}: extrato closer {ext12}, lamina closer {lam12}")
+    # universe funds absent from the current file
+    absent = [c for c in uni if c not in cur]
+    apl = sum(uni[c]["pl"] or 0 for c in absent)
+    tot_pl = sum(u["pl"] or 0 for u in uni.values())
+    print(f"ABSENT from current file: n={len(absent)} band A={sum(1 for c in absent if uni[c]['band']=='A')} in cvm_diario 2026-09 (D)={sum(1 for c in absent if uni[c]['diario']=='D')} "
+          f"PL={apl/1e9:.1f}bn of {tot_pl/1e9:.1f}bn ({apl/max(1,tot_pl):.3f}) with est_aug={sum(1 for c in absent if uni[c]['e8'] is not None)} "
+          f"with a lamina TAXA_ADM={sum(1 for c in absent if c in lam and lam[c]['taxa'] is not None)} any lamina={sum(1 for c in absent if c in lam)} "
+          f"PL buckets={dict(collections.Counter(plb(uni[c]) for c in absent))}")
+    ae = [uni[c]["e8"] for c in absent if uni[c]["e8"] is not None]
+    print("  absent funds est_aug (% a.a.):", json.dumps(pct(ae)))
+    hist_hit = set()
+    for y in range(2015, 2024):
+        b = get(EXT_BASE + f"extrato_fi_{y}.csv")
+        if b is None:
+            print(f"  FAILED extrato_fi_{y}.csv"); continue
+        hc, hr, hm = read_csv(f"extrato_fi_{y}.csv", b)
+        hcn = "CNPJ_FUNDO_CLASSE" if "CNPJ_FUNDO_CLASSE" in hc else next((x for x in hc if "CNPJ" in x), None)
+        ys = {norm(r.get(hcn)) for r in hr}
+        hit = {c for c in absent if c in ys}
+        hist_hit |= hit
+        print(f"  extrato_fi_{y}.csv rows={hm['rows']} header_same={hc == cols} distinct CNPJ={len(ys)} absent-from-current funds found here: {len(hit)}")
+    print(f"  absent funds found in any yearly file 2015..2023: {len(hist_hit)} of {len(absent)}")
+
     # ---- samples: 20 rows of public registry facts ----
     print("=" * 80)
     print("SAMPLE (20 rows): tag | cnpj | denom | tp | dt_comptc | TAXA_ADM | TAXA_PERFM | CLASSE_ANBIMA | lamina TAXA_ADM (dt) | est_aug | PL")
@@ -439,7 +523,7 @@ def main():
     for c in DEMO:
         if c in uni:
             print(line("demo", c) if c in cur else f"  demo | {c} | not in current extrato | lamina={(lam.get(c) or {}).get('taxa')}")
-    for tag, pred in (("top PL, fee>0", lambda t: t is not None and t > 0), ("top PL, fee=0", lambda t: t == 0), ("top PL, fee empty", lambda t: t is None)):
+    for tag, pred in (("top PL, fee>0", lambda t: t is not None and t > 0), ("top PL, fee=0", lambda t: t == 0)):
         k = 0
         for c in by_pl:
             if pred(num(cur[c].get("TAXA_ADM"))) and c not in DEMO:
@@ -447,6 +531,10 @@ def main():
                 if k == 5:
                     break
 
+    print("  ABSENT top-PL universe funds (cnpj | lamina TAXA_ADM (dt) | est_aug | PL; no name: it is in no file read here):")
+    for c in sorted(absent, key=lambda c: -(uni[c]["pl"] or 0))[:5]:
+        l = lam.get(c)
+        print(f"  absent | {c} | {(l['taxa'], l['dt']) if l else None} | {uni[c]['e8']} | {uni[c]['pl']}")
     print("=" * 80)
     if FAILED:
         print("FAILED DOWNLOADS/PARSES:")
