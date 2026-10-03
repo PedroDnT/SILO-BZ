@@ -134,6 +134,9 @@ def _fee_line_view(line_no: int, f: dict, names: dict[int, str]) -> dict:
     h = f.get("headline") or {}
     e = f.get("estimate") or {}
     x = f.get("expense_ratio") or {}
+    lb = f.get("lamina_beside") or {}
+    xb = f.get("extrato_beside") or {}
+    sf = f.get("scale_flag") or {}
     out = {
         "line_id": f"L{line_no}",
         "cnpj": f.get("cnpj"),
@@ -141,7 +144,8 @@ def _fee_line_view(line_no: int, f: dict, names: dict[int, str]) -> dict:
         "fee_status": f.get("fee_status"),
         "label": f.get("fee_status"),
         "reason": f.get("reason"),
-        "disclosed_pct_year": h.get("rate_pct_year") if h.get("kind") == "fixa" else None,
+        # a newer lâmina's fee is the headline (to check, never summed: disclosed_brl_year stays null)
+        "disclosed_pct_year": h.get("rate_pct_year") if h.get("kind") in ("fixa", "lamina_mais_recente") else None,
         "disclosed_min_pct_year": h.get("rate_min_pct_year"),
         "disclosed_max_pct_year": h.get("rate_max_pct_year"),
         "disclosed_brl_year": h.get("per_year_brl"),
@@ -157,6 +161,23 @@ def _fee_line_view(line_no: int, f: dict, names: dict[int, str]) -> dict:
         "needs_manual_check": f.get("needs_manual_check"),
         "implausible_label": d.get("implausible_label"),
         "implausible_raw": d.get("adm_filed_raw") if d.get("implausible_filed") else None,
+        # engine 1.4 (catalog v55, #552): the other document's fee beside the headline, as filed, never summed
+        "fee_resolution": f.get("fee_resolution"),
+        "lamina_newer_label": h.get("basis") if h.get("kind") == "lamina_mais_recente" else None,
+        "lamina_beside_label": lb.get("label"),
+        "lamina_beside_check_label": lb.get("check_label"),
+        "lamina_beside_pct_year": lb.get("lamina_pct_year"),
+        "lamina_beside_min_pct_year": lb.get("lamina_min_pct_year"),
+        "lamina_beside_max_pct_year": lb.get("lamina_max_pct_year"),
+        "lamina_beside_as_of": lb.get("as_of"),
+        "lamina_beside_age_months": lb.get("age_months"),
+        "lamina_beside_stale_label": lb.get("stale_label"),
+        "extrato_beside_label": xb.get("label"),
+        "extrato_beside_value": xb.get("filed_value"),
+        "extrato_beside_as_of": xb.get("as_of"),
+        "scale_flag_label": sf.get("label"),
+        "scale_factor": sf.get("factor"),
+        "extrato_lamina_ratio": sf.get("extrato_lamina_ratio"),
         "perf_as_filed": d.get("perf_as_filed"),
         "terms_as_filed": d.get("terms_as_filed"),
         "estimate_label": e.get("label"),
@@ -169,11 +190,13 @@ def _fee_line_view(line_no: int, f: dict, names: dict[int, str]) -> dict:
         "expense_ratio_period_to": (x.get("period") or {}).get("to"),
         "expense_ratio_note": x.get("note"),
         "findings": [
-            {k: fi.get(k) for k in ("kind", "level", "text", "disclosed_pct_year", "estimate_pct_year", "difference_pp", "age_months", "raw_value")
+            {k: fi.get(k) for k in ("kind", "level", "text", "disclosed_pct_year", "estimate_pct_year", "difference_pp", "age_months", "raw_value",
+                                    "lamina_pct_year", "factor", "extrato_lamina_ratio")
              if fi.get(k) is not None}
             for fi in f.get("findings") or []
         ],
-        "provenance": _prov(f.get("position_value_source") and [f["position_value_source"]], h.get("sources"), d.get("sources"), e.get("sources")),
+        "provenance": _prov(f.get("position_value_source") and [f["position_value_source"]], h.get("sources"), d.get("sources"), e.get("sources"),
+                            lb.get("sources"), xb.get("sources"), sf.get("sources")),
     }
     return out
 

@@ -150,6 +150,17 @@ UPDATE public.zz_lamina_stub SET pr_pl_despesa = 0.13, dt_ini_despesa = '2025-07
 --   EXT2  a filed 0, and a lamina with a fee: the Extrato still wins, the 0 is flagged.
 --   EXT3  14638.38 (a real scale error): withheld, the raw value in its own column.
 --   EXT4  an Extrato row whose fee cell was not a number (NULL): falls to the lamina.
+-- Catalog v55 (issue #552), the lâmina beside or after an Extrato of 0 or above 5:
+--   EXT5  the Inter Corporate shape measured 2026-10-03 (36443522000105): Extrato
+--         25.0 of 2024-05-03, lâmina 0.25 of 2026-08-31, newer: the lâmina is the
+--         source (lamina_newer), the Extrato's 25 beside it, factor 100 flagged.
+--   EXT6  Extrato 15 newer than a lâmina of 1.5: the Extrato stays the source (to
+--         check), the lâmina beside it, factor 10 flagged.
+--   EXT7  Extrato 15.3 against a lâmina of 1.5: ratio 10.2, no factor.
+--   EXT8  the Inter BB FIC shape (50197313000150): Extrato 45.0 of 2024-05-03,
+--         lâmina 0.06 of 2026-08-31: lamina_newer, ratio 750, no factor.
+--   EXT9  the CFIN shape (08212681000163): Extrato 0 filed recently, lâmina 0.023
+--         of 2024-08-31, older: the Extrato stays, the lâmina beside, no ratio.
 INSERT INTO cvm_fi_extrato
     (cnpj, dt_comptc, source_file, tp_fundo_classe, classe_anbima, taxa_adm, taxa_custodia_max,
      existe_taxa_perfm, taxa_perfm, param_taxa_perfm, calc_taxa_perfm, inf_taxa_perfm,
@@ -159,11 +170,21 @@ VALUES
     ('71000000000191', CURRENT_DATE - 100, 'extrato_fi.csv',      'CLASSES - FIF', 'AÇÕES - ATIVO - LIVRE', 1.2, 0.05, 'S', 20.0, 'IBOVESPA', 'LINEAR', '20% sobre o que exceder o IBOVESPA', 'N', 'S', 1.5, NULL, '{}'),
     ('72000000000191', CURRENT_DATE - 30,  'extrato_fi.csv',      'FI',            'RENDA FIXA',            0.0, 0.0, 'N', NULL, NULL, NULL, NULL, 'N', 'N', NULL, NULL, '{}'),
     ('73000000000191', CURRENT_DATE - 400, 'extrato_fi.csv',      'FI',            'MULTIMERCADO',          14638.38, 0.0, 'N', NULL, NULL, NULL, NULL, 'N', 'N', NULL, NULL, '{}'),
-    ('74000000000191', CURRENT_DATE - 10,  'extrato_fi.csv',      'FI',            'RENDA FIXA',            NULL, 0.0, 'N', NULL, NULL, NULL, NULL, 'N', 'N', NULL, NULL, '{}');
+    ('74000000000191', CURRENT_DATE - 10,  'extrato_fi.csv',      'FI',            'RENDA FIXA',            NULL, 0.0, 'N', NULL, NULL, NULL, NULL, 'N', 'N', NULL, NULL, '{}'),
+    ('75000000000191', DATE '2024-05-03',  'extrato_fi_2024.csv', 'FI',            'RENDA FIXA',            25.0, 0.0, 'N', NULL, NULL, NULL, NULL, 'N', 'N', NULL, NULL, '{}'),
+    ('76000000000191', CURRENT_DATE - 5,   'extrato_fi.csv',      'FI',            'RENDA FIXA',            15, 0.0, 'N', NULL, NULL, NULL, NULL, 'N', 'N', NULL, NULL, '{}'),
+    ('77000000000191', CURRENT_DATE - 5,   'extrato_fi.csv',      'FI',            'RENDA FIXA',            15.3, 0.0, 'N', NULL, NULL, NULL, NULL, 'N', 'N', NULL, NULL, '{}'),
+    ('78000000000191', DATE '2024-05-03',  'extrato_fi_2024.csv', 'FI',            'RENDA FIXA',            45.0, 0.0, 'N', NULL, NULL, NULL, NULL, 'N', 'N', NULL, NULL, '{}'),
+    ('79000000000191', CURRENT_DATE - 1,   'extrato_fi.csv',      'FI',            'RENDA FIXA',            0.0, 0.0, 'N', NULL, NULL, NULL, NULL, 'N', 'N', NULL, NULL, '{}');
 INSERT INTO public.zz_lamina_stub VALUES
     ('71000000000191', NULL, '2026-03-01', 0.9, NULL, NULL, 'lamina text', 1.5, '2025-04-01', '2025-09-30'),
     ('72000000000191', NULL, '2026-03-01', 0.5, NULL, NULL, NULL, NULL, NULL, NULL),
-    ('74000000000191', NULL, '2026-03-01', 0.7, NULL, NULL, NULL, 0.4, '2025-04-01', '2025-09-30');
+    ('74000000000191', NULL, '2026-03-01', 0.7, NULL, NULL, NULL, 0.4, '2025-04-01', '2025-09-30'),
+    ('75000000000191', NULL, '2026-08-31', 0.25, NULL, NULL, NULL, NULL, NULL, NULL),
+    ('76000000000191', NULL, '2026-03-01', 1.5, NULL, NULL, NULL, NULL, NULL, NULL),
+    ('77000000000191', NULL, '2026-03-01', 1.5, NULL, NULL, NULL, NULL, NULL, NULL),
+    ('78000000000191', NULL, '2026-08-31', 0.06, NULL, NULL, NULL, 0.48, '2025-09-01', '2026-08-31'),
+    ('79000000000191', NULL, '2024-08-31', 0.023, NULL, NULL, NULL, NULL, NULL, NULL);
 
 -- ===========================================================================
 -- portfolio_resolve
@@ -408,10 +429,76 @@ BEGIN
         RAISE EXCEPTION 'EXT4 fallback to the lamina: % % %', r.disclosed_origin, r.disclosed_taxa_adm, r.extrato_tp_fundo_classe;
     END IF;
 
+    -- v55 (#552): which rule applied, and the other document's fee beside, as filed.
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['71000000000191']);
+    IF r.fee_resolution <> 'extrato' OR r.lamina_taxa_adm <> 0.9 OR r.extrato_taxa_adm_filed <> 1.2
+       OR r.extrato_as_of <> CURRENT_DATE - 100 OR r.extrato_lamina_ratio <> 1.3333 OR r.extrato_scale_factor IS NOT NULL
+       OR r.lamina_n_classes <> 1 THEN
+        RAISE EXCEPTION 'EXT1 v55: % % % % %', r.fee_resolution, r.lamina_taxa_adm, r.extrato_taxa_adm_filed, r.extrato_lamina_ratio, r.extrato_scale_factor;
+    END IF;
+    -- EXT2: the 0 stays the Extrato's (the lamina of 2026-03-01 is older), the lamina's 0.5 beside it.
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['72000000000191']);
+    IF r.fee_resolution <> 'extrato_lamina_beside' OR r.lamina_taxa_adm <> 0.5 OR r.extrato_taxa_adm_filed <> 0
+       OR r.extrato_lamina_ratio IS NOT NULL OR r.extrato_scale_factor IS NOT NULL THEN
+        RAISE EXCEPTION 'EXT2 v55: % % % %', r.fee_resolution, r.lamina_taxa_adm, r.extrato_lamina_ratio, r.extrato_scale_factor;
+    END IF;
+    -- EXT3: no lamina at all: still to check, nothing beside, no ratio.
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['73000000000191']);
+    IF r.fee_resolution <> 'extrato_to_check' OR r.lamina_taxa_adm IS NOT NULL OR r.lamina_taxa_adm_min IS NOT NULL
+       OR r.extrato_taxa_adm_filed <> 14638.38 OR r.extrato_lamina_ratio IS NOT NULL OR r.extrato_scale_factor IS NOT NULL THEN
+        RAISE EXCEPTION 'EXT3 v55: % % %', r.fee_resolution, r.lamina_taxa_adm, r.extrato_scale_factor;
+    END IF;
+    -- EXT5 (Inter Corporate shape): the newer lamina is the source; the Extrato's 25 beside it, as filed.
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['75000000000191']);
+    IF r.fee_resolution <> 'lamina_newer' OR r.disclosed_origin <> 'lamina' OR r.disclosed_source <> 'cvm_fi_lamina'
+       OR r.disclosed_taxa_adm <> 0.25 OR r.disclosed_as_of <> DATE '2026-08-31' OR r.taxa_adm_filed_raw <> 0.25
+       OR r.filed_zero OR r.implausible_filed
+       OR r.extrato_taxa_adm_filed <> 25.0 OR r.extrato_as_of <> DATE '2024-05-03'
+       OR r.extrato_tp_fundo_classe IS NOT NULL OR r.extrato_class_note IS NOT NULL
+       OR r.lamina_taxa_adm <> 0.25 OR r.extrato_lamina_ratio <> 100 OR r.extrato_scale_factor <> 100
+       -- the lamina (2026-08) is later than the newest balancete month here (2026-05): age 0, never negative
+       OR r.disclosed_age_months <> 0 OR r.lamina_age_months <> 0
+       OR r.disclosed_note NOT LIKE 'the Extrato of 2024-05-03 filed an administration fee of 25 %lâmina of 2026-08-31, newer, discloses 0.25%lamina_newer%never rescaled' THEN
+        RAISE EXCEPTION 'EXT5 lamina newer: % % % % % % % %', r.fee_resolution, r.disclosed_origin, r.disclosed_taxa_adm, r.disclosed_as_of,
+            r.extrato_taxa_adm_filed, r.extrato_lamina_ratio, r.extrato_scale_factor, r.disclosed_note;
+    END IF;
+    -- EXT6: Extrato 15 newer than the lamina's 1.5: the Extrato stays (withheld, to check), factor 10 flagged.
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['76000000000191']);
+    IF r.fee_resolution <> 'extrato_lamina_beside' OR r.disclosed_origin <> 'extrato' OR r.disclosed_taxa_adm IS NOT NULL
+       OR NOT r.implausible_filed OR r.taxa_adm_filed_raw <> 15 OR r.lamina_taxa_adm <> 1.5
+       OR r.lamina_as_of <> DATE '2026-03-01' OR r.extrato_lamina_ratio <> 10 OR r.extrato_scale_factor <> 10 THEN
+        RAISE EXCEPTION 'EXT6 factor 10: % % % % %', r.fee_resolution, r.disclosed_origin, r.lamina_taxa_adm, r.extrato_lamina_ratio, r.extrato_scale_factor;
+    END IF;
+    -- EXT7: 15.3 against 1.5 is not a factor of 10 within the rounding of two decimals.
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['77000000000191']);
+    IF r.fee_resolution <> 'extrato_lamina_beside' OR r.extrato_lamina_ratio <> 10.2 OR r.extrato_scale_factor IS NOT NULL THEN
+        RAISE EXCEPTION 'EXT7 near miss: % % %', r.fee_resolution, r.extrato_lamina_ratio, r.extrato_scale_factor;
+    END IF;
+    -- EXT8 (Inter BB FIC shape): the newer lamina's 0.06 is the source; ratio 750, no factor.
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['78000000000191']);
+    IF r.fee_resolution <> 'lamina_newer' OR r.disclosed_taxa_adm <> 0.06 OR r.extrato_taxa_adm_filed <> 45.0
+       OR r.extrato_lamina_ratio <> 750 OR r.extrato_scale_factor IS NOT NULL OR r.lamina_pr_pl_despesa <> 0.48 THEN
+        RAISE EXCEPTION 'EXT8: % % % %', r.fee_resolution, r.disclosed_taxa_adm, r.extrato_lamina_ratio, r.extrato_scale_factor;
+    END IF;
+    -- EXT9 (CFIN shape): a fresh Extrato 0 and an older lamina 0.023: the Extrato stays, the lamina beside.
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['79000000000191']);
+    IF r.fee_resolution <> 'extrato_lamina_beside' OR r.disclosed_origin <> 'extrato' OR NOT r.filed_zero
+       OR r.lamina_taxa_adm <> 0.023 OR r.lamina_as_of <> DATE '2024-08-31'
+       OR r.extrato_lamina_ratio IS NOT NULL OR r.extrato_scale_factor IS NOT NULL THEN
+        RAISE EXCEPTION 'EXT9: % % % %', r.fee_resolution, r.disclosed_origin, r.lamina_taxa_adm, r.lamina_as_of;
+    END IF;
+    -- A fund with only a lamina: its own fee is the source and the lamina_* columns repeat it.
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['74000000000191']);
+    IF r.fee_resolution <> 'lamina' OR r.lamina_taxa_adm <> 0.7 OR r.extrato_taxa_adm_filed IS NOT NULL THEN
+        RAISE EXCEPTION 'EXT4 v55: % % %', r.fee_resolution, r.lamina_taxa_adm, r.extrato_taxa_adm_filed;
+    END IF;
+
     -- A fund in no source: nothing disclosed, origin NULL, no flag raised, no invented number.
     SELECT * INTO r FROM api.portfolio_fees(ARRAY['62000000000191']);
     IF r.disclosed_origin IS NOT NULL OR r.filed_zero OR r.implausible_filed OR r.taxa_adm_filed_raw IS NOT NULL
-       OR r.lamina_as_of IS NOT NULL OR r.lamina_expense_note IS NOT NULL THEN
+       OR r.lamina_as_of IS NOT NULL OR r.lamina_expense_note IS NOT NULL
+       OR r.fee_resolution IS NOT NULL OR r.lamina_taxa_adm IS NOT NULL OR r.extrato_taxa_adm_filed IS NOT NULL
+       OR r.extrato_lamina_ratio IS NOT NULL OR r.extrato_scale_factor IS NOT NULL THEN
         RAISE EXCEPTION 'no source: % % %', r.disclosed_origin, r.filed_zero, r.taxa_adm_filed_raw;
     END IF;
 

@@ -406,7 +406,18 @@ take a set of funds or lines, never a name search that guesses.
   most of those funds), and a filed value **above 5** (or below 0) is not the fee:
   `disclosed_taxa_adm` is NULL, `implausible_filed` is TRUE and the value as filed is
   in `taxa_adm_filed_raw`. The stored value is never rewritten. An Extrato row that
-  exists is the source even then; it does not fall through to an older source.
+  exists is the source even then; it does not fall through to an OLDER source.
+  Catalog v55 (#552): when the Extrato filed exactly 0 or above 5, the lâmina's single
+  fee is in (0, 5] and the lâmina is NEWER than the Extrato, the newer lâmina is the
+  source. `fee_resolution` names the rule that applied (`extrato`,
+  `extrato_lamina_beside`, `extrato_to_check`, `lamina_newer`, `lamina`, `cad_fi`).
+  The other document's fee comes back as filed for every fund (`lamina_taxa_adm`,
+  `_min`, `_max`, `lamina_n_classes`, `lamina_age_months`; `extrato_taxa_adm_filed`
+  with `extrato_as_of`), with `extrato_lamina_ratio` and `extrato_scale_factor` (10 or
+  100 when an Extrato above 5 equals that factor times the lâmina within two-decimal
+  rounding: a flag, never a correction). A fund whose `fee_resolution` is
+  `extrato_lamina_beside`, `extrato_to_check` or `lamina_newer` is to be checked: sum
+  neither value. These 10 columns are appended after `lamina_expense_note`.
   The Extrato's own fields come back as filed (`extrato_taxa_perfm` numeric with
   `extrato_param_taxa_perfm`, `extrato_calc_taxa_perfm`, `extrato_inf_taxa_perfm`;
   `extrato_existe_taxa_ingresso` / `_saida` with `_pr` percent and `_real` reais;

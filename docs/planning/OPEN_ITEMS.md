@@ -493,6 +493,11 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
 - **Engine and report on catalog v52** (branch `demo/engine-extrato`): `src/portfolio/fees.py` reads the
   Extrato columns and follows `disclosed_origin`; the report reads the engine through `report/adapt.py`.
   Both were tested offline against canned rows, not against the live function.
+- **Catalog v55, engine 1.4** (#552, branch `feat/lamina-beside-extrato-552`): when the Extrato files 0 or
+  above 5% a.a., `api.portfolio_fees` returns the lâmina's fee beside it, or makes a NEWER lâmina with a
+  fee in (0, 5] the source (`fee_resolution`), and flags a factor of exactly 10 or 100
+  (`extrato_scale_factor`). Nothing is rescaled or summed. Live after an analytical apply and a
+  `deploy_mcp.yml` dispatch.
 - **CVM 175 levels** (#543, branch `claude/cvm175-levels-543`, migration 67):
   `cvm_registro_fundo` / `_classe` / `_subclasse` let a class reach its fund by
   `ID_Registro_Fundo` and a subclass its class by `ID_Registro_Classe`. Empty until

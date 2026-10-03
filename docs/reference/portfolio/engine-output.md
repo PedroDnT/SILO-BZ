@@ -1,4 +1,4 @@
-# Portfolio engine output (schema 1.3)
+# Portfolio engine output (schema 1.4)
 
 What `python -m src.portfolio.diagnose <statement> [--client mcp|postgrest|fake] [--out report.json]`
 writes: one JSON document. The report writer (Redator and Revisor, `src/portfolio/report/`)
@@ -22,6 +22,16 @@ regenerated in the same commit. The canned rows (`fake_silo_rows.json`, built by
 measurements of 2026-10-03 and on the merged `api.portfolio_*` contract: the values are not data.
 
 ## Changes since 1.0
+
+1.4 (catalog v55, issue #552: the Extrato and the lâmina disagree). Keys were added, none renamed, retyped or
+removed. New on every fee line (`lines[]` and `underlying[]`): `fee_resolution` (the tool's rule: `extrato`,
+`extrato_lamina_beside`, `extrato_to_check`, `lamina_newer`, `lamina`, `cad_fi`), `lamina_beside`,
+`extrato_beside` and `scale_flag` (rule 11 below), `disclosed.fee_resolution`; `headline.kind` can be
+`lamina_mais_recente`; three findings (`lamina_ao_lado_do_extrato`, `lamina_mais_recente_que_extrato`,
+`possivel_erro_de_escala_no_extrato`); `fees.lamina_beside_label`, `extrato_beside_label`, `lamina_newer_label`,
+`scale_flag_label`, `check_label`; `totals.fund_value_with_lamina_newer_fee_brl`. Fixed:
+`totals.fund_value_with_implausible_fee_brl` read a top-level key the line never had, so it stayed 0; it now
+holds the lines above 5 % a.a. `needs_manual_check` is also true for `lamina_newer`.
 
 1.3 (catalog v54, *movimento incomum*, owner's decisions of 2026-10-03). Keys were added, none renamed, retyped or
 removed. New: the top-level section `movement` (below), `engine.params.movement_month`, `section_status.movement`, a
@@ -176,6 +186,17 @@ From `portfolio_fees` (catalog v52), one source per fund. The rules (owner, #515
    to a fee, whatever the fee's source.
 10. **A master's fee is never added to a feeder's.** `underlying[]` lists the funds a statement fund holds (every
     path), each with its own fee record and `label = "não somada"`, `added_to_totals = false`.
+11. **The Extrato and the lâmina disagree** (catalog v55, #552). When the Extrato filed 0 or above 5 % a.a. and the
+    lâmina is older, has no single fee, or none in (0, 5] (`fee_resolution = "extrato_lamina_beside"`), the Extrato
+    stays the headline as filed and `lamina_beside` carries the lâmina's own fee (`lamina_pct_year`, or the min and
+    max), its `as_of`, `age_months`, `stale` (24 months), `label` `lâmina informa` and `check_label` `a conferir`.
+    When the lâmina's single fee is in (0, 5] and NEWER than the Extrato (`lamina_newer`), the lâmina is the headline
+    (`headline.kind = "lamina_mais_recente"`, its rate and date, `per_year_brl` null, `counted_as_cost` false,
+    `fee_status` `lâmina mais recente que o Extrato; a conferir`) and `extrato_beside` carries the Extrato's value as
+    filed (`filed_value`, a plain number) with its `as_of`. Either way `needs_manual_check` is true, neither value
+    is a cost, summed or compared, and nothing is rescaled. `scale_flag` (`label` `possível erro de escala no
+    Extrato`, `factor` 10 or 100, `extrato_lamina_ratio`) is present when the tool's `extrato_scale_factor` is set:
+    a flag only. With no lâmina fee (`extrato_to_check`) nothing is shown beside.
 
 A line: `line_no`, `cnpj`, `fund_name`, `position_value_brl`, `fee_status`, `reason`, `fund_nav_brl`, `disclosed`,
 `headline` (`kind` `fixa` | `faixa` | `zero_informado`, `rate_pct_year` or the range, `per_year_brl` = position
@@ -184,7 +205,8 @@ value x rate, `origin`, `scope_label`, `as_of`, `age_months`, `stale`), `estimat
 `findings[]`. `totals`: `adm_disclosed_fixed_per_year_brl` and `adm_disclosed_fixed_portfolio_pct`, the range low
 and high, `estimate_adm_per_year_brl` and `estimate_adm_portfolio_pct` (kept apart), `fund_value_with_fixed_fee_brl`,
 `fund_value_with_fee_range_brl`, `fund_value_with_filed_zero_brl`, `fund_value_with_implausible_fee_brl`,
-`fund_value_without_disclosed_fee_brl`. Assumption: the rates are percent a year (`fee_units`; CVM's XML
+`fund_value_with_lamina_newer_fee_brl`, `fund_value_without_disclosed_fee_brl` (every line with no usable fee: none,
+a filed 0, above 5, or a newer lâmina to check). Assumption: the rates are percent a year (`fee_units`; CVM's XML
 specification says so for the Extrato).
 
 ## `look_through`
@@ -302,6 +324,7 @@ still renders. The view holds no holder, account or statement-file identifier. U
 | `fees.by_line[i]` `fee_status`, `label`, `reason`, `filed_zero_label`, `implausible_label`, `implausible_raw` | `fee_status`, `reason`, `disclosed.filed_zero_label`, `implausible_label`, `adm_filed_raw` |
 | `fees.by_line[i]` `estimated_pct_year`, `estimated_brl_year`, `estimate_label`, `month` | `fees.lines[i].estimate` (`adm_pct_year`, `adm_per_year_brl`, `label`, `month`) |
 | `fees.by_line[i]` `expense_ratio_pct`, `expense_ratio_period_from/to`, `perf_as_filed`, `terms_as_filed`, `findings` | `expense_ratio`, `disclosed.perf_as_filed`, `disclosed.terms_as_filed`, `findings` |
+| `fees.by_line[i]` `fee_resolution`, `lamina_newer_label`, `lamina_beside_*` (`label`, `check_label`, `pct_year`, `min_pct_year`, `max_pct_year`, `as_of`, `age_months`, `stale_label`), `extrato_beside_label`, `extrato_beside_value`, `extrato_beside_as_of`, `scale_flag_label`, `scale_factor`, `extrato_lamina_ratio` (1.4) | `fee_resolution`, `headline.basis` for `lamina_mais_recente`, `lamina_beside`, `extrato_beside` (`filed_value`, `as_of`), `scale_flag` (`label`, `factor`, `extrato_lamina_ratio`); `disclosed_pct_year` also holds a `lamina_mais_recente` rate, never `disclosed_brl_year` |
 | `fees.underlying[i]` | `fees.underlying[i]` (`parent_line_id` = its `line_no`, `label_not_added` = `label`) |
 | `lookthrough.shared_exposure[i]` (`key`, `level`, `total_brl`, `total_pct`, `legs`) | the 12 largest `look_through.shared_exposure.groups[i]` (`label`, `kind`, `total_exposure_brl`, `total_exposure_portfolio_pct`, `lines`) |
 | `lookthrough.top_underlying[i]` | `look_through.top_exposures[i]` |

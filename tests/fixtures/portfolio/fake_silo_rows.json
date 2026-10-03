@@ -393,7 +393,17 @@
      "lamina_dt_ini_despesa": "2025-07-01",
      "lamina_dt_fim_despesa": "2026-06-30",
      "lamina_as_of": "2026-06-30",
-     "lamina_expense_note": null
+     "lamina_expense_note": null,
+     "fee_resolution": "extrato",
+     "lamina_taxa_adm": null,
+     "lamina_taxa_adm_min": null,
+     "lamina_taxa_adm_max": null,
+     "lamina_n_classes": null,
+     "lamina_age_months": null,
+     "extrato_taxa_adm_filed": 2.0,
+     "extrato_as_of": "2026-07-31",
+     "extrato_lamina_ratio": null,
+     "extrato_scale_factor": null
     },
     {
      "cnpj": "42592315000115",
@@ -441,7 +451,17 @@
      "lamina_dt_ini_despesa": null,
      "lamina_dt_fim_despesa": null,
      "lamina_as_of": null,
-     "lamina_expense_note": "no lâmina filed an expense ratio for this fund"
+     "lamina_expense_note": "no lâmina filed an expense ratio for this fund",
+     "fee_resolution": "lamina",
+     "lamina_taxa_adm": 1.5,
+     "lamina_taxa_adm_min": 1.5,
+     "lamina_taxa_adm_max": 1.5,
+     "lamina_n_classes": 1,
+     "lamina_age_months": 29,
+     "extrato_taxa_adm_filed": null,
+     "extrato_as_of": null,
+     "extrato_lamina_ratio": null,
+     "extrato_scale_factor": null
     },
     {
      "cnpj": "50088190000119",
@@ -489,7 +509,17 @@
      "lamina_dt_ini_despesa": null,
      "lamina_dt_fim_despesa": null,
      "lamina_as_of": null,
-     "lamina_expense_note": "no lâmina filed an expense ratio for this fund"
+     "lamina_expense_note": "no lâmina filed an expense ratio for this fund",
+     "fee_resolution": "lamina",
+     "lamina_taxa_adm": null,
+     "lamina_taxa_adm_min": 0.15,
+     "lamina_taxa_adm_max": 0.3,
+     "lamina_n_classes": 2,
+     "lamina_age_months": 1,
+     "extrato_taxa_adm_filed": null,
+     "extrato_as_of": null,
+     "extrato_lamina_ratio": null,
+     "extrato_scale_factor": null
     },
     {
      "cnpj": "51488342000133",
@@ -536,8 +566,18 @@
      "lamina_pr_pl_despesa": null,
      "lamina_dt_ini_despesa": null,
      "lamina_dt_fim_despesa": null,
-     "lamina_as_of": null,
-     "lamina_expense_note": "no lâmina filed an expense ratio for this fund"
+     "lamina_as_of": "2026-03-31",
+     "lamina_expense_note": "no lâmina filed an expense ratio for this fund",
+     "fee_resolution": "extrato_lamina_beside",
+     "lamina_taxa_adm": 0.5,
+     "lamina_taxa_adm_min": 0.5,
+     "lamina_taxa_adm_max": 0.5,
+     "lamina_n_classes": 1,
+     "lamina_age_months": 5,
+     "extrato_taxa_adm_filed": 0.0,
+     "extrato_as_of": "2026-06-30",
+     "extrato_lamina_ratio": null,
+     "extrato_scale_factor": null
     }
    ]
   },
@@ -598,7 +638,17 @@
      "lamina_dt_ini_despesa": null,
      "lamina_dt_fim_despesa": null,
      "lamina_as_of": null,
-     "lamina_expense_note": "no lâmina filed an expense ratio for this fund"
+     "lamina_expense_note": "no lâmina filed an expense ratio for this fund",
+     "fee_resolution": "lamina",
+     "lamina_taxa_adm": 0.0,
+     "lamina_taxa_adm_min": 0.0,
+     "lamina_taxa_adm_max": 0.0,
+     "lamina_n_classes": 1,
+     "lamina_age_months": 1,
+     "extrato_taxa_adm_filed": null,
+     "extrato_as_of": null,
+     "extrato_lamina_ratio": null,
+     "extrato_scale_factor": null
     },
     {
      "cnpj": "37525998000158",
@@ -646,7 +696,17 @@
      "lamina_dt_ini_despesa": null,
      "lamina_dt_fim_despesa": null,
      "lamina_as_of": null,
-     "lamina_expense_note": "no lâmina filed an expense ratio for this fund"
+     "lamina_expense_note": "no lâmina filed an expense ratio for this fund",
+     "fee_resolution": "extrato_to_check",
+     "lamina_taxa_adm": null,
+     "lamina_taxa_adm_min": null,
+     "lamina_taxa_adm_max": null,
+     "lamina_n_classes": null,
+     "lamina_age_months": null,
+     "extrato_taxa_adm_filed": 14638.0,
+     "extrato_as_of": "2025-12-31",
+     "extrato_lamina_ratio": null,
+     "extrato_scale_factor": null
     },
     {
      "cnpj": "46133770000103",
@@ -694,7 +754,17 @@
      "lamina_dt_ini_despesa": null,
      "lamina_dt_fim_despesa": null,
      "lamina_as_of": null,
-     "lamina_expense_note": "no lâmina filed an expense ratio for this fund"
+     "lamina_expense_note": "no lâmina filed an expense ratio for this fund",
+     "fee_resolution": "lamina",
+     "lamina_taxa_adm": 0.2,
+     "lamina_taxa_adm_min": 0.2,
+     "lamina_taxa_adm_max": 0.2,
+     "lamina_n_classes": 1,
+     "lamina_age_months": 1,
+     "extrato_taxa_adm_filed": null,
+     "extrato_as_of": null,
+     "extrato_lamina_ratio": null,
+     "extrato_scale_factor": null
     },
     {
      "cnpj": "54891935000134",
@@ -742,7 +812,17 @@
      "lamina_dt_ini_despesa": null,
      "lamina_dt_fim_despesa": null,
      "lamina_as_of": null,
-     "lamina_expense_note": "no lâmina filed an expense ratio for this fund"
+     "lamina_expense_note": "no lâmina filed an expense ratio for this fund",
+     "fee_resolution": "extrato",
+     "lamina_taxa_adm": null,
+     "lamina_taxa_adm_min": null,
+     "lamina_taxa_adm_max": null,
+     "lamina_n_classes": null,
+     "lamina_age_months": null,
+     "extrato_taxa_adm_filed": 0.5,
+     "extrato_as_of": "2024-02-29",
+     "extrato_lamina_ratio": null,
+     "extrato_scale_factor": null
     }
    ]
   }
