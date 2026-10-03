@@ -78,7 +78,7 @@ COLUMN_HEADER_KEYS = ("posicaobruta", "%total")
 _MONEY = re.compile(r"^-?\d{1,3}(?:\.\d{3})*,\d{2}$|^-?\d+,\d{2}$")
 _PCT = re.compile(r"^-?\d+(?:,\d+)?%$")
 _DATE_RANGE = re.compile(r"(\d{2}/\d{2}/\d{4})\s*(?:a|à|até|-|–)\s*(\d{2}/\d{2}/\d{4})")
-_TICKER = re.compile(r"^[A-Z]{4}\d{1,2}$")
+_TICKER = re.compile(r"^(?=[A-Z0-9]*[A-Z])[A-Z0-9]{4}\d{1,2}$")  # a root of letters or digits: B3SA3, B5P211, 5PRE11
 _REGISTRY = re.compile(r"(?<![A-Z0-9])(CRA|CRI|CDB|DEB|CDCA|LCA|LCI|LF|LIG|NC)-([A-Z0-9]+)\*?\s*$")
 _BACEN = re.compile(r"^BACEN\b.*?\b(NTNB|NTNF|NTNC|NTNI|LTN|LFT)\*?\s*$")
 REGISTRY_TIPO = {"CRA": "CRA", "CRI": "CRI", "CDB": "CDB", "DEB": "debênture", "LCA": "LCA", "LCI": "LCI"}

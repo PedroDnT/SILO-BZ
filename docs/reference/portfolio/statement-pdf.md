@@ -50,7 +50,8 @@ Position typing uses only what the statement prints: a registry code at the end 
 (`CRA-`, `CRI-`, `CDB-`, `DEB-`, `LCA-`, `LCI-`; `CDCA-` and the like are `outro`) sets the type and
 the `codigo` (the part after the hyphen); `BACEN-... - NTNB|NTNF|NTNC|NTNI|LTN|LFT` is `tesouro`
 (code `NTN-B 2035-05-15` once the detail gives the maturity); the `Fundo de Investimento` section
-is `fundo`; a ticker (`^[A-Z]{4}[0-9]{1,2}$`) is `outro` with `codigo` = ticker, because the
+is `fundo`; a ticker (`^[A-Z0-9]{4}[0-9]{1,2}$` with at least one letter, so B3SA3 and fixed income ETFs such as
+B5P211 count) is `outro` with `codigo` = ticker, because the
 statement does not say share or ETF (the identification step asks `lookup`); anything else is
 `outro` with no code. The indexer is never read from a name: it is the printed `taxa_texto`, read
 by the regex rules of `src/portfolio/rules/indexer_rules.csv`.

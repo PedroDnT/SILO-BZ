@@ -137,6 +137,7 @@ def _fee_line_view(line_no: int, f: dict, names: dict[int, str]) -> dict:
     lb = f.get("lamina_beside") or {}
     xb = f.get("extrato_beside") or {}
     sf = f.get("scale_flag") or {}
+    etf = h if h.get("kind") == "etf_site" else {}
     out = {
         "line_id": f"L{line_no}",
         "cnpj": f.get("cnpj"),
@@ -144,14 +145,15 @@ def _fee_line_view(line_no: int, f: dict, names: dict[int, str]) -> dict:
         "fee_status": f.get("fee_status"),
         "label": f.get("fee_status"),
         "reason": f.get("reason"),
-        # a newer lâmina's fee is the headline (to check, never summed: disclosed_brl_year stays null)
-        "disclosed_pct_year": h.get("rate_pct_year") if h.get("kind") in ("fixa", "lamina_mais_recente") else None,
+        # engine 1.5: a newer lâmina's fee is the headline and a cost (summed, still to check); an ETF's fee from
+        # etfsbrasil.com.br is the headline when no CVM source has one, with its own origin label (never "CVM")
+        "disclosed_pct_year": h.get("rate_pct_year") if h.get("kind") in ("fixa", "lamina_mais_recente", "etf_site") else None,
         "disclosed_min_pct_year": h.get("rate_min_pct_year"),
         "disclosed_max_pct_year": h.get("rate_max_pct_year"),
         "disclosed_brl_year": h.get("per_year_brl"),
-        "disclosed_origin": d.get("origin"),
-        "disclosed_origin_label": d.get("origin_label"),
-        "disclosed_as_of": d.get("as_of"),
+        "disclosed_origin": d.get("origin") or etf.get("origin"),
+        "disclosed_origin_label": d.get("origin_label") or etf.get("origin_label"),
+        "disclosed_as_of": d.get("as_of") or etf.get("as_of"),
         "disclosed_age_months": d.get("age_months"),
         "disclosed_stale": d.get("stale"),
         "disclosed_stale_label": d.get("stale_label"),
@@ -164,6 +166,11 @@ def _fee_line_view(line_no: int, f: dict, names: dict[int, str]) -> dict:
         # engine 1.4 (catalog v55, #552): the other document's fee beside the headline, as filed, never summed
         "fee_resolution": f.get("fee_resolution"),
         "lamina_newer_label": h.get("basis") if h.get("kind") == "lamina_mais_recente" else None,
+        "sources_differ_label": h.get("sources_differ_label"),
+        "etf_ticker": etf.get("ticker"),
+        "etf_site_label": etf.get("basis"),
+        "etf_site_check_label": etf.get("check_label"),
+        "etf_site_raw": etf.get("filed_pct_year") if etf.get("check_label") else None,
         "lamina_beside_label": lb.get("label"),
         "lamina_beside_check_label": lb.get("check_label"),
         "lamina_beside_pct_year": lb.get("lamina_pct_year"),
@@ -207,7 +214,8 @@ def _fees_view(eng: dict, names: dict[int, str]) -> dict:
     lines = fees.get("lines") or []
     by_line = [_fee_line_view(ln["line_no"], ln, names) for ln in lines]
     fixed_total = t.get("adm_disclosed_fixed_per_year_brl")
-    has_fixed = any((ln.get("headline") or {}).get("kind") == "fixa" for ln in lines)
+    has_fixed = any((ln.get("headline") or {}).get("kind") in ("fixa", "lamina_mais_recente") for ln in lines)
+    has_etf = any((ln.get("headline") or {}).get("kind") == "etf_site" and (ln.get("headline") or {}).get("counted_as_cost") for ln in lines)
     findings = []
     for bl in by_line:
         for fi in bl["findings"]:
@@ -223,6 +231,11 @@ def _fees_view(eng: dict, names: dict[int, str]) -> dict:
         "source_order": fees.get("source_order"),
         "total_disclosed_brl_year": fixed_total if has_fixed else None,
         "total_disclosed_pct_year": t.get("adm_disclosed_fixed_portfolio_pct") if has_fixed else None,
+        # engine 1.5: ETF fees from etfsbrasil.com.br, summed apart, and the total of both
+        "total_etf_site_brl_year": t.get("adm_etf_site_per_year_brl") if has_etf else None,
+        "total_etf_site_pct_year": t.get("adm_etf_site_portfolio_pct") if has_etf else None,
+        "total_fee_brl_year": t.get("adm_fee_per_year_brl") if has_etf and has_fixed else None,
+        "total_fee_pct_year": t.get("adm_fee_portfolio_pct") if has_etf and has_fixed else None,
         "total_estimated_brl_year": t.get("estimate_adm_per_year_brl"),
         "weighted_estimated_pct_year": t.get("estimate_adm_portfolio_pct"),
         "estimate_label": fees.get("estimate_label"),

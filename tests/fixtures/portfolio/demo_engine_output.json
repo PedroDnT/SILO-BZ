@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.4",
+  "schema_version": "1.5",
   "generated_at_utc": "2026-10-03T15:00:00Z",
   "engine": {
     "version": "0.1.0",
@@ -283,7 +283,8 @@
           "asset_class": null,
           "issuer_cnpj": null,
           "tesouro_title": "NTN-B",
-          "tesouro_maturity": "2035-05-15"
+          "tesouro_maturity": "2035-05-15",
+          "etf_cnpj": null
         },
         "statement_facts": {
           "vencimento": null,
@@ -295,6 +296,7 @@
         },
         "fund_match": null,
         "ticker_match": null,
+        "etf_match": null,
         "valuation": {
           "value_brl": 412351.0,
           "basis": "statement",
@@ -329,7 +331,8 @@
           "asset_class": "equity",
           "issuer_cnpj": "33000167000101",
           "tesouro_title": null,
-          "tesouro_maturity": null
+          "tesouro_maturity": null,
+          "etf_cnpj": null
         },
         "statement_facts": {
           "vencimento": null,
@@ -398,6 +401,7 @@
             ]
           }
         },
+        "etf_match": null,
         "valuation": {
           "value_brl": 988000.0,
           "basis": "statement",
@@ -432,7 +436,8 @@
           "asset_class": null,
           "issuer_cnpj": null,
           "tesouro_title": null,
-          "tesouro_maturity": null
+          "tesouro_maturity": null,
+          "etf_cnpj": null
         },
         "statement_facts": {
           "vencimento": null,
@@ -518,6 +523,7 @@
           }
         },
         "ticker_match": null,
+        "etf_match": null,
         "valuation": {
           "value_brl": 264615.0,
           "basis": "statement",
@@ -552,7 +558,8 @@
           "asset_class": null,
           "issuer_cnpj": null,
           "tesouro_title": null,
-          "tesouro_maturity": null
+          "tesouro_maturity": null,
+          "etf_cnpj": null
         },
         "statement_facts": {
           "vencimento": null,
@@ -652,6 +659,7 @@
           }
         },
         "ticker_match": null,
+        "etf_match": null,
         "valuation": {
           "value_brl": 1387809.9,
           "basis": "statement",
@@ -686,7 +694,8 @@
           "asset_class": null,
           "issuer_cnpj": null,
           "tesouro_title": null,
-          "tesouro_maturity": null
+          "tesouro_maturity": null,
+          "etf_cnpj": null
         },
         "statement_facts": {
           "vencimento": null,
@@ -772,6 +781,7 @@
           }
         },
         "ticker_match": null,
+        "etf_match": null,
         "valuation": {
           "value_brl": 902591.9,
           "basis": "statement",
@@ -806,7 +816,8 @@
           "asset_class": null,
           "issuer_cnpj": null,
           "tesouro_title": null,
-          "tesouro_maturity": null
+          "tesouro_maturity": null,
+          "etf_cnpj": null
         },
         "statement_facts": {
           "vencimento": null,
@@ -892,6 +903,7 @@
           }
         },
         "ticker_match": null,
+        "etf_match": null,
         "valuation": {
           "value_brl": 750000.0,
           "basis": "statement",
@@ -926,7 +938,8 @@
           "asset_class": null,
           "issuer_cnpj": null,
           "tesouro_title": null,
-          "tesouro_maturity": null
+          "tesouro_maturity": null,
+          "etf_cnpj": null
         },
         "statement_facts": {
           "vencimento": null,
@@ -1012,6 +1025,7 @@
           }
         },
         "ticker_match": null,
+        "etf_match": null,
         "valuation": {
           "value_brl": 770616.5,
           "basis": "statement",
@@ -1095,7 +1109,8 @@
           "asset_class": "fund_quota",
           "issuer_cnpj": null,
           "tesouro_title": null,
-          "tesouro_maturity": null
+          "tesouro_maturity": null,
+          "etf_cnpj": null
         },
         "statement_facts": {
           "vencimento": null,
@@ -1221,6 +1236,7 @@
             ]
           }
         },
+        "etf_match": null,
         "valuation": {
           "value_brl": 175440.0,
           "basis": "statement",
@@ -1242,7 +1258,7 @@
   },
   "fees": {
     "status": "partial",
-    "reason": "2 fundo(s) sem taxa divulgada encontrada. 1 fundo(s) com taxa informada a conferir (0 ou acima de 5% a.a. no Extrato, ou lâmina mais recente que o Extrato), que não entra em nenhuma conta.",
+    "reason": "2 fundo(s) sem taxa divulgada encontrada. 1 fundo(s) com taxa informada a conferir (0 ou acima de 5% a.a.), que não entra em nenhuma conta.",
     "errors": [],
     "month": "2026-08-01",
     "estimate_label": "estimativa, não divulgada",
@@ -1259,6 +1275,8 @@
     "lamina_beside_label": "lâmina informa",
     "extrato_beside_label": "Extrato informa",
     "lamina_newer_label": "lâmina mais recente que o Extrato; a conferir",
+    "sources_differ_label": "fontes divergem",
+    "etf_site_label": "taxa informada pelo site etfsbrasil.com.br (fonte de terceiros, não é documento da CVM)",
     "scale_flag_label": "possível erro de escala no Extrato",
     "check_label": "a conferir",
     "source_order": [
@@ -1447,6 +1465,7 @@
         "lamina_beside": null,
         "extrato_beside": null,
         "scale_flag": null,
+        "etf_site": null,
         "findings": []
       },
       {
@@ -1589,6 +1608,7 @@
         "lamina_beside": null,
         "extrato_beside": null,
         "scale_flag": null,
+        "etf_site": null,
         "findings": []
       },
       {
@@ -1787,6 +1807,7 @@
         },
         "extrato_beside": null,
         "scale_flag": null,
+        "etf_site": null,
         "findings": [
           {
             "kind": "divulgado_zero_balancete_registra_despesa",
@@ -1870,6 +1891,7 @@
         "lamina_beside": null,
         "extrato_beside": null,
         "scale_flag": null,
+        "etf_site": null,
         "findings": []
       },
       {
@@ -2011,6 +2033,7 @@
         "lamina_beside": null,
         "extrato_beside": null,
         "scale_flag": null,
+        "etf_site": null,
         "findings": [
           {
             "kind": "estimativa_difere_da_divulgada",
@@ -2096,6 +2119,7 @@
         "lamina_beside": null,
         "extrato_beside": null,
         "scale_flag": null,
+        "etf_site": null,
         "findings": []
       }
     ],
@@ -2234,6 +2258,7 @@
         "lamina_beside": null,
         "extrato_beside": null,
         "scale_flag": null,
+        "etf_site": null,
         "findings": [
           {
             "kind": "divulgado_zero_balancete_registra_despesa",
@@ -2414,6 +2439,7 @@
         "lamina_beside": null,
         "extrato_beside": null,
         "scale_flag": null,
+        "etf_site": null,
         "findings": []
       },
       {
@@ -2549,6 +2575,7 @@
         "lamina_beside": null,
         "extrato_beside": null,
         "scale_flag": null,
+        "etf_site": null,
         "findings": [
           {
             "kind": "valor_implausivel_descartado",
@@ -2728,6 +2755,7 @@
         "lamina_beside": null,
         "extrato_beside": null,
         "scale_flag": null,
+        "etf_site": null,
         "findings": []
       },
       {
@@ -2862,6 +2890,7 @@
         "lamina_beside": null,
         "extrato_beside": null,
         "scale_flag": null,
+        "etf_site": null,
         "findings": [
           {
             "kind": "valor_implausivel_descartado",
@@ -3022,6 +3051,7 @@
         "lamina_beside": null,
         "extrato_beside": null,
         "scale_flag": null,
+        "etf_site": null,
         "findings": [
           {
             "kind": "divulgado_zero_balancete_registra_despesa",
@@ -3202,6 +3232,7 @@
         "lamina_beside": null,
         "extrato_beside": null,
         "scale_flag": null,
+        "etf_site": null,
         "findings": []
       },
       {
@@ -3337,6 +3368,7 @@
         "lamina_beside": null,
         "extrato_beside": null,
         "scale_flag": null,
+        "etf_site": null,
         "findings": [
           {
             "kind": "valor_implausivel_descartado",
@@ -3516,6 +3548,7 @@
         "lamina_beside": null,
         "extrato_beside": null,
         "scale_flag": null,
+        "etf_site": null,
         "findings": []
       },
       {
@@ -3650,6 +3683,7 @@
         "lamina_beside": null,
         "extrato_beside": null,
         "scale_flag": null,
+        "etf_site": null,
         "findings": [
           {
             "kind": "valor_implausivel_descartado",
@@ -3808,6 +3842,7 @@
         "lamina_beside": null,
         "extrato_beside": null,
         "scale_flag": null,
+        "etf_site": null,
         "findings": [
           {
             "kind": "estimativa_difere_da_divulgada",
@@ -3840,7 +3875,9 @@
       "adm_disclosed_fixed_per_year_brl": 16851.55,
       "adm_disclosed_range_low_per_year_brl": 2081.71,
       "adm_disclosed_range_high_per_year_brl": 4163.43,
-      "total_note": "Só taxas divulgadas entram aqui: a soma das fixas e, à parte, a faixa das linhas com taxas diferentes entre classes. A estimativa do balancete fica no campo próprio, nunca somada à divulgada. Taxas de fundos investidos não entram (não somada).",
+      "total_note": "Só taxas divulgadas entram aqui: a soma das fixas (inclusive a da lâmina mais recente que o Extrato, a conferir porque as fontes divergem; o valor do Extrato ao lado nunca entra) e, à parte, a faixa das linhas com taxas diferentes entre classes. A taxa de ETF informada pelo site etfsbrasil.com.br (fonte de terceiros) é somada à parte, em adm_etf_site_per_year_brl, e as duas juntas estão em adm_fee_per_year_brl. A estimativa do balancete fica no campo próprio, nunca somada à divulgada. Taxas de fundos investidos não entram (não somada).",
+      "adm_etf_site_per_year_brl": 0.0,
+      "adm_fee_per_year_brl": 16851.55,
       "estimate_adm_per_year_brl": 26355.22,
       "estimate_perf_per_year_brl": 926.15,
       "estimate_label": "estimativa, não divulgada",
@@ -3851,8 +3888,13 @@
       "fund_value_with_filed_zero_brl": 902591.9,
       "fund_value_with_implausible_fee_brl": 0.0,
       "fund_value_with_lamina_newer_fee_brl": 0.0,
+      "fund_value_with_etf_site_fee_brl": 0.0,
+      "fund_value_with_etf_site_fee_to_check_brl": 0.0,
       "known_fee_fund_value_pct": 56.9983,
+      "known_fee_incl_etf_site_fund_value_pct": 56.9983,
       "adm_disclosed_fixed_portfolio_pct": 0.2982,
+      "adm_etf_site_portfolio_pct": 0.0,
+      "adm_fee_portfolio_pct": 0.2982,
       "estimate_adm_portfolio_pct": 0.4663
     }
   },
@@ -13579,7 +13621,7 @@
     },
     "fees": {
       "status": "partial",
-      "reason": "2 fundo(s) sem taxa divulgada encontrada. 1 fundo(s) com taxa informada a conferir (0 ou acima de 5% a.a. no Extrato, ou lâmina mais recente que o Extrato), que não entra em nenhuma conta."
+      "reason": "2 fundo(s) sem taxa divulgada encontrada. 1 fundo(s) com taxa informada a conferir (0 ou acima de 5% a.a.), que não entra em nenhuma conta."
     },
     "look_through": {
       "status": "partial",

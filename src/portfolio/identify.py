@@ -10,6 +10,10 @@ Input: a masked ``Statement`` and a ``SiloClient``. Output: the
   (exact id match only) and ``quote_latest`` (a reference quote, never used to
   revalue the line). For ``ação`` lines ``company_financials`` gives the
   issuer's CNPJ and CVM setor (``lookup`` returns ``cnpj = null`` for tickers).
+* ETFs by ticker (engine 1.5): a ticker line typed ``ETF``, or ``outro`` and not a share, with no
+  fund CNPJ yet, is sent to ``portfolio_resolve`` by its ticker; only a ``match_kind = "etf_ticker"``
+  row (the ticker in SILO's curated ETF registry) is accepted. It gives the ETF's CNPJ for the fee
+  block only (``etf_cnpj``): the line stays a ticker for look-through, movement and sector.
 * Tesouro: title and maturity parsed from ``codigo``; SILO has no price series,
   so the value is the statement's, labelled.
 * Everything else: unknown, with the reason.
@@ -111,6 +115,7 @@ class LineId:
     tesouro_title: str | None = None
     tesouro_maturity: str | None = None
     tesouro_tp_titpub: str | None = None
+    etf_cnpj: str | None = None  # engine 1.5: the ETF's CNPJ from the ETF registry, read by the fee block only
     statement_facts: dict[str, Any] = field(default_factory=dict)
     findings: list[dict] = field(default_factory=list)
 
@@ -194,6 +199,9 @@ def identify(stmt: Statement, client: SiloClient) -> tuple[dict[str, Any], list[
             continue
         ticker_out[li.line_no] = _identify_ticker(li, code, client, sec, stmt.position_date)
 
+    # --- ETFs by ticker: the CNPJ for the fee block (engine 1.5). -------------------
+    etf_out = _identify_etfs(lines, client, sec, stmt.position_date)
+
     # --- Tesouro and unsupported types. ---------------------------------------------
     for li in lines:
         p = li.position
@@ -251,10 +259,12 @@ def identify(stmt: Statement, client: SiloClient) -> tuple[dict[str, Any], list[
                     "issuer_cnpj": li.issuer_cnpj,
                     "tesouro_title": li.tesouro_title,
                     "tesouro_maturity": li.tesouro_maturity,
+                    "etf_cnpj": li.etf_cnpj,
                 },
                 "statement_facts": li.statement_facts,
                 "fund_match": resolve_out.get(li.line_no),
                 "ticker_match": ticker_out.get(li.line_no),
+                "etf_match": etf_out.get(li.line_no),
                 "valuation": {
                     "value_brl": brl(p.valor),
                     "basis": "statement",
@@ -340,6 +350,53 @@ def _apply_resolve(li: LineId, cands: list[dict], src: dict) -> dict[str, Any]:
                 "sources": [src],
             }
         )
+    return out
+
+
+def _identify_etfs(lines: list[LineId], client: SiloClient, sec: Section, pos_date: dt.date) -> dict[int, dict[str, Any]]:
+    """Ticker lines that may be ETFs: their CNPJ from SILO's ETF registry through portfolio_resolve (engine 1.5)."""
+    probe = []
+    for li in lines:
+        code = (li.position.codigo or "").strip().upper()
+        if li.cnpj or not is_ticker(code):
+            continue
+        if li.position.tipo == "ETF" or (li.position.tipo == "outro" and li.asset_class != "equity"):
+            probe.append((li, code))
+    if not probe:
+        return {}
+    res = call_tool(client, "portfolio_resolve", {"p_names": [code for _, code in probe]}, sec.errors)
+    if not res.ok:
+        sec.degrade("portfolio_resolve falhou para os tickers que podem ser ETF; a taxa desses ETFs ficou desconhecida.")
+        return {}
+    by_line: dict[int, dict] = {}
+    for row in res.rows or []:
+        if row.get("match_kind") != "etf_ticker" or not row.get("candidate_cnpj"):
+            continue  # only the ETF registry's exact ticker counts; a name match on a ticker is never used
+        try:
+            by_line.setdefault(int(row.get("line_no")), row)
+        except (TypeError, ValueError):
+            continue
+    out: dict[int, dict[str, Any]] = {}
+    for idx, (li, code) in enumerate(probe, start=1):
+        row = by_line.get(idx)
+        if row is None:
+            continue
+        li.etf_cnpj = str(row["candidate_cnpj"])
+        out[li.line_no] = {
+            "ticker": code,
+            "cnpj": li.etf_cnpj,
+            "name": row.get("candidate_name"),
+            "match_kind": "etf_ticker",
+            "reason": row.get("reason"),
+            "use": "CNPJ do ETF usado só para a taxa; a linha continua identificada pelo ticker.",
+            "sources": [res.src(pos_date)],
+        }
+        if li.status != "identified":
+            # a fixed income ETF is not in COTAHIST, so lookup does not find its ticker; the ETF registry does
+            li.status, li.kind, li.ticker = "identified", "ticker", code
+            li.name = li.name or row.get("candidate_name")
+            li.reason = (f"ETF {code} identificado pelo ticker no registro de ETFs do SILO (cvm_etf_registry); "
+                         "lookup não o encontrou (ETFs de renda fixa não estão no COTAHIST).")
     return out
 
 

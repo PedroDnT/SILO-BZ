@@ -141,7 +141,9 @@ class Section:
         self.reason = reason
 
 
-_TICKER_RE = re.compile(r"^[A-Z]{4}\d{1,2}[A-Z]?$")
+# B3's root is four letters OR digits (B3SA3, and ETFs such as B5P211, 5PRE11 and TD3511: 8 of the 187 tickers in
+# the ETF registry on 2026-10-03), then 1 or 2 digits; at least one letter, so no number is read as a ticker.
+_TICKER_RE = re.compile(r"^(?=[A-Z0-9]*[A-Z])[A-Z0-9]{4}\d{1,2}[A-Z]?$")
 
 
 def is_ticker(code: str | None) -> bool:

@@ -41,10 +41,23 @@ be CORRECT, so the rules are these:
    and the lâmina's own fee is shown beside it: ``lâmina informa X; a conferir``. When the lâmina's
    single fee is in (0, 5] and NEWER than the Extrato (``lamina_newer``), the lâmina is the
    headline (``headline.kind = "lamina_mais_recente"``) and the Extrato's value is shown beside it
-   as filed: ``Extrato de <data> informa X``. Either way ``needs_manual_check`` is true, neither
-   value is a cost, summed or compared, and nothing is rescaled. When the Extrato above 5 is
-   exactly 10 or 100 times the lâmina (``extrato_scale_factor``), ``scale_flag`` says ``possível
-   erro de escala no Extrato``: a flag only.
+   as filed: ``Extrato de <data> informa X``. Owner's decision of 2026-10-03 (engine 1.5): the
+   newer lâmina's fee is a disclosed fee like any other, so it is a cost (``per_year_brl``), enters
+   the fixed sum and is compared with the balancete estimate; the line stays flagged
+   (``needs_manual_check``, "fontes divergem") and the Extrato's value beside it is never summed.
+   In ``extrato_lamina_beside`` and ``extrato_to_check`` neither value is a cost, summed or
+   compared. Nothing is rescaled. When the Extrato above 5 is exactly 10 or 100 times the lâmina
+   (``extrato_scale_factor``), ``scale_flag`` says ``possível erro de escala no Extrato``: a flag
+   only.
+9. ETFs (engine 1.5). An ETF line reaches this block with its CNPJ from ``portfolio_resolve``
+   (``match_kind = "etf_ticker"``: the ticker in SILO's curated ETF registry). CVM's Extrato,
+   lâmina and cad_fi carry no fee for an ETF (measured 2026-10-03: 0 of the 178 active ETFs), so
+   when no CVM source discloses one the fee is ``portfolio_fees``' ``etf_site_*``: the "Taxa de
+   administração total" printed on etfsbrasil.com.br, a third-party site, with its snapshot date.
+   It is labelled as such (``headline.kind = "etf_site"``, never "divulgada" by the CVM), applies
+   the same reading rules (a 0 or above 5 % a.a. is shown, to check, never a cost), and enters
+   its own sum (``totals.adm_etf_site_per_year_brl``) and the total of both
+   (``totals.adm_fee_per_year_brl``). A CVM source, when one exists, always comes first.
 
 Assumption, recorded in the output: ``disclosed_taxa_adm`` and the estimate are read as
 percent per year. CVM's metadata states no unit for TAXA_ADM (migration 64).
@@ -87,6 +100,7 @@ LAMINA_BESIDE_LABEL = "lâmina informa"
 CHECK_LABEL = "a conferir"
 EXTRATO_BESIDE_LABEL = "Extrato informa"
 LAMINA_NEWER_LABEL = "lâmina mais recente que o Extrato; a conferir"
+SOURCES_DIFFER_LABEL = "fontes divergem"
 SCALE_FLAG_LABEL = "possível erro de escala no Extrato"
 LAMINA_BESIDE_NOTE = (
     "Taxa da lâmina mostrada ao lado da do Extrato, nunca no lugar dela: o Extrato informou 0 ou valor acima de 5% a.a. "
@@ -94,7 +108,16 @@ LAMINA_BESIDE_NOTE = (
 )
 EXTRATO_BESIDE_NOTE = (
     "Valor do Extrato como informado, mostrado ao lado da taxa da lâmina, que é mais recente: o Extrato informou 0 ou valor "
-    "acima de 5% a.a. Nenhum dos dois valores entra em soma ou comparação; nada é corrigido."
+    "acima de 5% a.a. A taxa da lâmina entra na soma e na comparação com o balancete; o valor do Extrato não entra em "
+    "nenhuma conta. Fontes divergem: a conferir. Nada é corrigido."
+)
+# engine 1.5: an ETF's fee from etfsbrasil.com.br when no CVM source discloses one (portfolio_fees etf_site_*, catalog v56)
+ETF_SITE_LABEL = "taxa informada pelo site etfsbrasil.com.br (fonte de terceiros, não é documento da CVM)"
+ETF_SITE_ORIGIN_LABEL = "site etfsbrasil.com.br (terceiros)"
+ETF_SITE_NOTE = (
+    "Taxa de administração total impressa na página do ETF em etfsbrasil.com.br, lida na data indicada. O Extrato, a lâmina "
+    "e o cad_fi da CVM não trazem taxa para ETFs; quando trazem, a fonte da CVM vem primeiro. Somada à parte das taxas "
+    "divulgadas em documento da CVM."
 )
 SCALE_FLAG_NOTE = (
     "Sinal apenas: o valor do Extrato é exatamente 10 ou 100 vezes a taxa da lâmina. Nenhum valor é corrigido nem reescalado."
@@ -132,13 +155,13 @@ def compute_fees(
     fund_nodes: dict[int, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     sec = Section()
-    fund_lines = [li for li in lines if li.kind == "fund" and li.cnpj and li.position.tipo in FEE_TIPOS]
+    fund_lines = [li for li in lines if _fee_cnpj(li)]
     if not fund_lines:
         sec.status = STATUS_NOT_APPLICABLE
         sec.reason = "Nenhuma linha de fundo identificada."
         return {**sec.head(), "month": fee_month.isoformat(), "lines": [], "underlying": [], "totals": _totals([])}
 
-    cnpjs = sorted({li.cnpj for li in fund_lines if li.cnpj})
+    cnpjs = sorted({c for c in (_fee_cnpj(li) for li in fund_lines) if c})
     found, calls = _fetch(client, cnpjs, fee_month, sec.errors)
     failed_calls = [c for c in calls if not c.ok]
     if failed_calls and len(failed_calls) == len(calls):
@@ -148,10 +171,11 @@ def compute_fees(
 
     out_lines = []
     for li in fund_lines:
-        entry = found.get(li.cnpj or "")
+        cnpj = _fee_cnpj(li)
+        entry = found.get(cnpj or "")
         base = {
             "line_no": li.line_no,
-            "cnpj": li.cnpj,
+            "cnpj": cnpj,
             "fund_name": li.name,
             "position_value_brl": brl(li.position.valor),
             "position_value_source": statement_source(li.position.line_no, li.position.data_posicao),
@@ -168,11 +192,14 @@ def compute_fees(
 
     underlying = _underlying(fund_nodes or {}, client, fee_month, sec)
     unknown = [o for o in out_lines if o["fee_status"] == NOT_FOUND]
-    unusable = [o for o in out_lines if o.get("needs_manual_check")]
+    unusable = [o for o in out_lines if o.get("needs_manual_check") and not (o.get("headline") or {}).get("counted_as_cost")]
+    differ = [o for o in out_lines if o.get("needs_manual_check") and (o.get("headline") or {}).get("counted_as_cost")]
     if unknown and sec.status != "unknown":
         sec.degrade(f"{len(unknown)} fundo(s) sem taxa divulgada encontrada.")
     if unusable and sec.status != "unknown":
-        sec.degrade(f"{len(unusable)} fundo(s) com taxa informada a conferir (0 ou acima de 5% a.a. no Extrato, ou lâmina mais recente que o Extrato), que não entra em nenhuma conta.")
+        sec.degrade(f"{len(unusable)} fundo(s) com taxa informada a conferir (0 ou acima de 5% a.a.), que não entra em nenhuma conta.")
+    if differ and sec.status != "unknown":
+        sec.degrade(f"{len(differ)} fundo(s) com a lâmina mais recente que o Extrato como fonte: fontes divergem, a conferir; a taxa da lâmina entra na soma.")
     return {
         **sec.head(),
         "month": fee_month.isoformat(),
@@ -186,6 +213,8 @@ def compute_fees(
         "lamina_beside_label": LAMINA_BESIDE_LABEL,
         "extrato_beside_label": EXTRATO_BESIDE_LABEL,
         "lamina_newer_label": LAMINA_NEWER_LABEL,
+        "sources_differ_label": SOURCES_DIFFER_LABEL,
+        "etf_site_label": ETF_SITE_LABEL,
         "scale_flag_label": SCALE_FLAG_LABEL,
         "check_label": CHECK_LABEL,
         "source_order": ["extrato", "lamina", "cad_fi"],
@@ -206,8 +235,16 @@ def _empty_fee() -> dict[str, Any]:
         "lamina_beside": None,
         "extrato_beside": None,
         "scale_flag": None,
+        "etf_site": None,
         "findings": [],
     }
+
+
+def _fee_cnpj(li: LineId) -> str | None:
+    """The CNPJ whose fee the line carries: a fund's own, or an ETF's from the ETF registry (engine 1.5)."""
+    if li.kind == "fund" and li.cnpj and li.position.tipo in FEE_TIPOS:
+        return li.cnpj
+    return li.etf_cnpj
 
 
 def _expense_ratio(row: dict | None = None, src: dict | None = None) -> dict[str, Any]:
@@ -318,13 +355,15 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
                 "sources": [src],
             }
         elif lamina_newer and d_adm is not None:
-            # The newer of two filed, dated documents: the lâmina's fee is the headline, to check, never a cost.
+            # The newer of two filed, dated documents: the lâmina's fee is the headline and, by the owner's decision of
+            # 2026-10-03 (engine 1.5), a cost like any disclosed fee: summed and compared. The line stays to check.
             headline = {
                 "kind": "lamina_mais_recente",
                 "basis": LAMINA_NEWER_LABEL,
+                "sources_differ_label": SOURCES_DIFFER_LABEL,
                 "rate_pct_year": ratio(d_adm, 4),
-                "per_year_brl": None,
-                "counted_as_cost": False,
+                "per_year_brl": brl(value * d_adm / 100),
+                "counted_as_cost": True,
                 "source": d_src,
                 "origin": origin,
                 "scope_label": scope_label,
@@ -383,8 +422,31 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
 
     lamina_beside, extrato_beside, scale_flag = _beside(row, resolution, src)
 
+    # engine 1.5: an ETF's fee from etfsbrasil.com.br, only when no CVM source discloses anything for the fund.
+    etf_site = _etf_site(row, src)
+    etf_fee = dec(row.get("etf_site_taxa_adm"))
+    if etf_site is not None and not has_disclosed and headline is None and etf_fee is not None:
+        usable = Decimal("0") < etf_fee <= IMPLAUSIBLE_ABOVE_PCT
+        needs_check = not usable
+        headline = {
+            "kind": "etf_site",
+            "basis": ETF_SITE_LABEL,
+            "rate_pct_year": ratio(etf_fee, 4) if usable else None,
+            "filed_pct_year": ratio(etf_fee, 4),  # as published by the site, never rescaled
+            "per_year_brl": brl(value * etf_fee / 100) if usable else None,
+            "counted_as_cost": usable,
+            "check_label": None if usable else (ZERO_LABEL if etf_fee == 0 else (NEGATIVE_LABEL if etf_fee < 0 else IMPLAUSIBLE_LABEL)),
+            "source": "etf_market_snapshot",
+            "origin": "etf_site",
+            "origin_label": ETF_SITE_ORIGIN_LABEL,
+            "ticker": row.get("etf_ticker"),
+            "as_of": row.get("etf_site_as_of"),
+            "sources": [src],
+        }
+        etf_site["used_as_fee"] = usable
+
     findings: list[dict[str, Any]] = []
-    if d_adm is not None and est_adm is not None and not lamina_newer:
+    if d_adm is not None and est_adm is not None:
         if d_adm == 0 and est_adm > CLEARLY_ABOVE_ZERO_PCT:
             findings.append(
                 {
@@ -452,8 +514,9 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
             {
                 "kind": "lamina_mais_recente_que_extrato",
                 "level": "informação",
-                "text": ("A lâmina, mais recente que o Extrato, é a fonte da taxa; o Extrato informou 0 ou valor acima de 5% a.a. "
-                         "e fica ao lado, como informado; a conferir. Nenhum dos dois valores entra em soma."),
+                "text": ("Fontes divergem: a lâmina, mais recente que o Extrato, é a fonte da taxa e entra na soma e na comparação "
+                         "com o balancete; o Extrato informou 0 ou valor acima de 5% a.a. e fica ao lado, como informado, fora de "
+                         "qualquer conta; a conferir."),
                 "raw_value": extrato_beside["filed_value"],
                 "sources": [src],
             }
@@ -474,8 +537,14 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
     if headline is not None and headline["kind"] == "lamina_mais_recente":
         status = LAMINA_NEWER_LABEL
         reason = ("O Extrato informou 0 ou valor acima de 5% a.a.; a lâmina, mais recente, informa outra taxa e é a fonte. "
-                  "Os documentos divergem: o valor fica a conferir, não é usado como custo, nem somado, nem comparado; "
-                  "o valor do Extrato fica ao lado, como informado.")
+                  "Fontes divergem: a taxa da lâmina é usada como custo, somada e comparada com o balancete, e a linha fica a "
+                  "conferir; o valor do Extrato fica ao lado, como informado, fora de qualquer conta.")
+    elif headline is not None and headline["kind"] == "etf_site":
+        status = ETF_SITE_LABEL if headline["counted_as_cost"] else headline["check_label"]
+        reason = ("ETF: o Extrato, a lâmina e o cad_fi da CVM não trazem taxa para este fundo; a taxa é a informada pelo site "
+                  "etfsbrasil.com.br, fonte de terceiros, na data indicada"
+                  + (", somada à parte das taxas divulgadas em documento da CVM." if headline["counted_as_cost"]
+                     else ". O valor fica a conferir (pode estar correto): não é usado como custo, nem somado."))
     elif headline is not None and headline["kind"] == "zero_informado":
         status = ZERO_LABEL
         reason = "A fonte informou taxa de administração igual a 0. O valor fica a conferir (pode estar correto): não é usado como custo, nem somado, nem comparado."
@@ -506,7 +575,26 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
         "lamina_beside": lamina_beside,
         "extrato_beside": extrato_beside,
         "scale_flag": scale_flag,
+        "etf_site": etf_site,
         "findings": findings,
+    }
+
+
+def _etf_site(row: dict, src: dict) -> dict[str, Any] | None:
+    """An ETF's fee as etfsbrasil.com.br prints it (portfolio_fees etf_*, catalog v56); None when the CNPJ is no ETF."""
+    if not row.get("etf_ticker"):
+        return None
+    return {
+        "label": ETF_SITE_LABEL,
+        "origin_label": ETF_SITE_ORIGIN_LABEL,
+        "ticker": row.get("etf_ticker"),
+        "rate_as_published": ratio(dec(row.get("etf_site_taxa_adm")), 4),  # as the site prints it, never rescaled
+        "as_of": row.get("etf_site_as_of"),
+        "source": row.get("etf_site_source"),
+        "tool_note": row.get("etf_site_note"),
+        "note": ETF_SITE_NOTE,
+        "used_as_fee": False,  # set below when it is the headline
+        "sources": [src],
     }
 
 
@@ -620,11 +708,12 @@ def _underlying(fund_nodes: dict[int, list[dict[str, Any]]], client: SiloClient,
 
 def _totals(lines: list[dict]) -> dict[str, Any]:
     fixed = Decimal("0")
+    etf = Decimal("0")
     range_lo = Decimal("0")
     range_hi = Decimal("0")
     est_adm = Decimal("0")
     est_perf = Decimal("0")
-    v_fixed = v_range = v_none = v_zero = v_implausible = v_lamina_newer = Decimal("0")
+    v_fixed = v_range = v_none = v_zero = v_implausible = v_lamina_newer = v_etf = v_etf_check = Decimal("0")
     for o in lines:
         v = dec(o["position_value_brl"]) or Decimal("0")
         h = o.get("headline")
@@ -632,11 +721,17 @@ def _totals(lines: list[dict]) -> dict[str, Any]:
             v_zero += v  # a filed 0 is not a fee: never counted as a zero cost, never summed
         elif (o.get("disclosed") or {}).get("implausible_filed"):
             v_implausible += v  # the flag lives in disclosed (engine 1.3 read a top-level key the record never had, so this bucket stayed 0)
-        elif h and h["kind"] == "lamina_mais_recente":
-            v_lamina_newer += v  # the newer lâmina is the headline but the sources disagree: to check, never summed
-        elif h and h["kind"] == "fixa":
+        elif h and h["kind"] in ("fixa", "lamina_mais_recente"):
+            # engine 1.5 (owner, 2026-10-03): the newer lâmina's fee is summed like any disclosed fee; the line stays to check
             fixed += dec(h["per_year_brl"]) or Decimal("0")
             v_fixed += v
+            if h["kind"] == "lamina_mais_recente":
+                v_lamina_newer += v  # a subset of fund_value_with_fixed_fee_brl since 1.5
+        elif h and h["kind"] == "etf_site" and h.get("counted_as_cost"):
+            etf += dec(h["per_year_brl"]) or Decimal("0")  # a third-party site's fee: its own sum, never under "divulgada"
+            v_etf += v
+        elif h and h["kind"] == "etf_site":
+            v_etf_check += v  # the site printed 0 or above 5: shown, to check, never summed
         elif h and h["kind"] == "faixa":
             range_lo += dec(h["per_year_min_brl"]) or Decimal("0")
             range_hi += dec(h["per_year_max_brl"]) or Decimal("0")
@@ -646,25 +741,32 @@ def _totals(lines: list[dict]) -> dict[str, Any]:
         e = o.get("estimate") or {}
         est_adm += dec(e.get("adm_per_year_brl")) or Decimal("0")
         est_perf += dec(e.get("perf_per_year_brl")) or Decimal("0")
-    total_value = v_fixed + v_range + v_none + v_zero + v_implausible + v_lamina_newer
+    total_value = v_fixed + v_range + v_none + v_zero + v_implausible + v_etf + v_etf_check
     return {
         "adm_disclosed_fixed_per_year_brl": brl(fixed),
         "adm_disclosed_range_low_per_year_brl": brl(range_lo),
         "adm_disclosed_range_high_per_year_brl": brl(range_hi),
         "total_note": (
-            "Só taxas divulgadas entram aqui: a soma das fixas e, à parte, a faixa das linhas com taxas diferentes entre "
-            "classes. A estimativa do balancete fica no campo próprio, nunca somada à divulgada. Taxas de fundos "
-            "investidos não entram (não somada)."
+            "Só taxas divulgadas entram aqui: a soma das fixas (inclusive a da lâmina mais recente que o Extrato, a conferir "
+            "porque as fontes divergem; o valor do Extrato ao lado nunca entra) e, à parte, a faixa das linhas com taxas "
+            "diferentes entre classes. A taxa de ETF informada pelo site etfsbrasil.com.br (fonte de terceiros) é somada à "
+            "parte, em adm_etf_site_per_year_brl, e as duas juntas estão em adm_fee_per_year_brl. A estimativa do balancete "
+            "fica no campo próprio, nunca somada à divulgada. Taxas de fundos investidos não entram (não somada)."
         ),
+        "adm_etf_site_per_year_brl": brl(etf),
+        "adm_fee_per_year_brl": brl(fixed + etf),
         "estimate_adm_per_year_brl": brl(est_adm),
         "estimate_perf_per_year_brl": brl(est_perf),
         "estimate_label": ESTIMATE_LABEL,
         "fund_value_brl": brl(total_value),
         "fund_value_with_fixed_fee_brl": brl(v_fixed),
         "fund_value_with_fee_range_brl": brl(v_range),
-        "fund_value_without_disclosed_fee_brl": brl(v_none + v_zero + v_implausible + v_lamina_newer),
+        "fund_value_without_disclosed_fee_brl": brl(v_none + v_zero + v_implausible + v_etf_check),
         "fund_value_with_filed_zero_brl": brl(v_zero),
         "fund_value_with_implausible_fee_brl": brl(v_implausible),
         "fund_value_with_lamina_newer_fee_brl": brl(v_lamina_newer),
+        "fund_value_with_etf_site_fee_brl": brl(v_etf),
+        "fund_value_with_etf_site_fee_to_check_brl": brl(v_etf_check),
         "known_fee_fund_value_pct": pct(v_fixed + v_range, total_value) if total_value else None,
+        "known_fee_incl_etf_site_fund_value_pct": pct(v_fixed + v_range + v_etf, total_value) if total_value else None,
     }

@@ -170,6 +170,15 @@ def _fee_row(engine: dict, q: str, b: dict) -> list[str]:
             disclosed += f"<br><span class=cit>{v(engine, f'{q}.disclosed_scope_label')}</span>"
         if b.get("lamina_newer_label"):
             disclosed += f'<br><span class="tag unk">{v(engine, f"{q}.lamina_newer_label")}</span>'
+        if b.get("sources_differ_label"):
+            disclosed += f'<br><span class="tag unk">{v(engine, f"{q}.sources_differ_label")}</span>'
+        if b.get("etf_site_label"):
+            disclosed += f"<br><span class=cit>{v(engine, f'{q}.etf_site_label')}</span>"
+    elif b.get("etf_site_check_label"):
+        disclosed = f'<span class="tag unk">{v(engine, f"{q}.etf_site_check_label")}</span>'
+        if b.get("etf_site_raw") is not None:
+            disclosed += f"<br><span class=cit>valor informado pelo site: {v(engine, f'{q}.etf_site_raw')} a.a. (a conferir; pode estar correto)</span>"
+        disclosed += f"<br><span class=cit>{v(engine, f'{q}.etf_site_label')}</span>"
     elif b.get("disclosed_min_pct_year") is not None:
         disclosed = (f"faixa divulgada: <span class=v>{v(engine, f'{q}.disclosed_min_pct_year')}</span> a "
                      f"<span class=v>{v(engine, f'{q}.disclosed_max_pct_year')}</span> a.a.")
@@ -264,6 +273,11 @@ def _fees_section(engine: dict) -> str:
             parts.append(f"Taxas divulgadas somadas (só valores fixos utilizáveis): <span class=v>{v(engine, 'fees.total_disclosed_brl_year')}</span> por ano.")
         else:
             parts.append("Nenhuma taxa divulgada fixa utilizável para somar.")
+        if fees.get("total_etf_site_brl_year") is not None:
+            parts.append("Taxas de ETF informadas pelo site etfsbrasil.com.br (fonte de terceiros, não documento da CVM), somadas à parte: "
+                         f"<span class=v>{v(engine, 'fees.total_etf_site_brl_year')}</span> por ano.")
+        if fees.get("total_fee_brl_year") is not None:
+            parts.append(f"As duas juntas: <span class=v>{v(engine, 'fees.total_fee_brl_year')}</span> por ano.")
         if fees.get("total_estimated_brl_year") is not None:
             parts.append(f"Estimativa do balancete, à parte e nunca somada à divulgada: <span class=v>{v(engine, 'fees.total_estimated_brl_year')}</span> por ano "
                          f"(<span class=v>{v(engine, 'fees.weighted_estimated_pct_year')}</span> a.a. sobre a carteira).")
@@ -429,7 +443,10 @@ def _method_section(engine: dict, narrative: Narrative) -> str:
         "Um Revisor independente confere cada frase: marcadores que não existem, algarismos fora de marcador, citações fora da "
         "proveniência e valores extremos sem confirmação removem a frase.",
         "A taxa de administração mostrada é a divulgada pelo fundo, na ordem Extrato CVM, lâmina, cadastro cad_fi; uma taxa 0 informada "
-        "é mostrada como tal, \"a conferir\", e um valor acima de 5% a.a. também; nenhum dos dois é usado como custo, somado ou comparado, e nenhum é dado como errado. A estimativa vem do balancete do "
+        "é mostrada como tal, \"a conferir\", e um valor acima de 5% a.a. também; nenhum dos dois é usado como custo, somado ou comparado, e nenhum é dado como errado. "
+        "Quando a lâmina é mais recente que o Extrato e o Extrato informou 0 ou acima de 5% a.a., a taxa da lâmina é a mostrada e entra na soma, "
+        "com a marca \"fontes divergem\" e o valor do Extrato ao lado, fora de qualquer conta. Para ETFs, que não têm taxa no Extrato, na lâmina "
+        "nem no cad_fi, a taxa é a informada pelo site etfsbrasil.com.br (fonte de terceiros), com a data, somada à parte. A estimativa vem do balancete do "
         "fundo (contas COFI 8.1.7, acumuladas no exercício), fica em campo à parte, rotulada \"estimativa, não divulgada\", e nunca substitui "
         "nem se soma à taxa divulgada. A taxa de performance e os demais termos aparecem como o fundo os informou.",
         "Reapresentações são mostradas como \"revisado, não avaliado\": os limiares de materialidade ainda não foram definidos. Movimento anormal de cota e de patrimônio: não avaliado nesta versão.",

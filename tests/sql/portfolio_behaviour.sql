@@ -1,6 +1,6 @@
 -- Executed checks for the portfolio-diagnosis reads (31_api_portfolio.sql:
 -- api.portfolio_resolve, api.portfolio_fees, api.portfolio_lookthrough, catalog
--- v51; portfolio_fees v52, the Extrato first; api.portfolio_movement, v54). Regex tests pin the SQL text; this proves it DOES the right thing on
+-- v51; portfolio_fees v52, the Extrato first; api.portfolio_movement, v54; ETFs, v56). Regex tests pin the SQL text; this proves it DOES the right thing on
 -- rows. Synthetic CNPJs, inside a transaction that is rolled back, so it runs
 -- on any database with the schema and the analytical layer applied (CI's
 -- sql-compile job, or a scratch copy):
@@ -871,6 +871,74 @@ BEGIN
     END IF;
     RESET ROLE;
     RAISE NOTICE 'portfolio_movement OK';
+END $$;
+
+-- ===========================================================================
+-- ETFs (catalog v56). The shapes measured 2026-10-03: CVM's Extrato, lâmina and
+-- cad_fi carry no fee for any of the 178 active registry ETFs; etfsbrasil.com.br
+-- prints one (BOVA11 0.10, IVVB11 0.23, B5P211 0.20, a fixed income ETF that is
+-- not in COTAHIST); WRLD11's page prints another CNPJ than the registry's.
+--   ETFA11  two snapshots: the newest fee (0.10) is served with its date.
+--   ETFB11  the newest snapshot has no fee: the older one (0.50) is served; the
+--           site's CNPJ differs from the registry's and the note says so.
+--   ETFC11  no snapshot: NULL, the note says it is not a zero fee.
+-- ===========================================================================
+INSERT INTO cvm_etf_registry (ticker, cnpj, fund_name, is_active) VALUES
+    ('ETFA11', '86000000000001', 'ETF ALFA CLASSE DE ÍNDICE', TRUE),
+    ('ETFB11', '86000000000002', 'ETF BETA CLASSE DE ÍNDICE', TRUE),
+    ('ETFC11', '86000000000003', 'ETF GAMA CLASSE DE ÍNDICE', TRUE);
+INSERT INTO etf_market_snapshot (ticker, snapshot_date, source, cnpj, taxa_adm_pct) VALUES
+    ('ETFA11', '2026-09-30', 'etfsbrasil', '86000000000001', 0.30),
+    ('ETFA11', '2026-10-03', 'etfsbrasil', '86000000000001', 0.10),
+    ('ETFB11', '2026-10-01', 'etfsbrasil', '86999999000199', 0.50),
+    ('ETFB11', '2026-10-03', 'etfsbrasil', '86999999000199', NULL);
+
+DO $$
+DECLARE
+    r RECORD;
+    n INT;
+BEGIN
+    -- portfolio_resolve: a name that is exactly an ETF ticker gives the registry's CNPJ, never ambiguous.
+    SELECT * INTO r FROM api.portfolio_resolve(ARRAY[' etfa11 ']) WHERE rank = 1;
+    IF r.candidate_cnpj IS DISTINCT FROM '86000000000001' OR r.match_kind <> 'etf_ticker' OR r.ambiguous
+       OR r.candidate_name IS DISTINCT FROM 'ETF ALFA CLASSE DE ÍNDICE' OR r.reason NOT LIKE '%ETF registry%' THEN
+        RAISE EXCEPTION 'etf_ticker: % % % % %', r.candidate_cnpj, r.match_kind, r.ambiguous, r.candidate_name, r.reason;
+    END IF;
+    SELECT count(*) INTO n FROM api.portfolio_resolve(ARRAY['ETFA11']);
+    IF n <> 1 THEN RAISE EXCEPTION 'etf_ticker: one candidate expected, got %', n; END IF;
+    -- A supplied CNPJ still wins over a ticker-shaped name.
+    SELECT * INTO r FROM api.portfolio_resolve(ARRAY['ETFA11'], ARRAY['22222222000191']) WHERE rank = 1;
+    IF r.candidate_cnpj IS DISTINCT FROM '22222222000191' OR r.match_kind <> 'cnpj' THEN
+        RAISE EXCEPTION 'cnpj over etf_ticker: % %', r.candidate_cnpj, r.match_kind;
+    END IF;
+    -- A ticker that is no ETF is not matched as one.
+    SELECT count(*) INTO n FROM api.portfolio_resolve(ARRAY['PETR4']) WHERE match_kind = 'etf_ticker';
+    IF n <> 0 THEN RAISE EXCEPTION 'PETR4 matched as an ETF'; END IF;
+
+    -- portfolio_fees: no CVM source, so disclosed_* stay NULL; the site's fee comes in its own columns.
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['86000000000001']);
+    IF r.etf_ticker <> 'ETFA11' OR r.etf_site_taxa_adm <> 0.10 OR r.etf_site_as_of <> DATE '2026-10-03'
+       OR r.etf_site_source <> 'etfsbrasil' OR r.disclosed_origin IS NOT NULL OR r.disclosed_taxa_adm IS NOT NULL
+       OR r.fee_resolution IS NOT NULL OR r.etf_site_note NOT LIKE '%third-party site, not a CVM filing%'
+       OR r.etf_site_note LIKE '%the site prints CNPJ%' THEN
+        RAISE EXCEPTION 'ETFA11 fees: % % % % % %', r.etf_ticker, r.etf_site_taxa_adm, r.etf_site_as_of, r.disclosed_origin, r.fee_resolution, r.etf_site_note;
+    END IF;
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['86000000000002']);
+    IF r.etf_site_taxa_adm <> 0.50 OR r.etf_site_as_of <> DATE '2026-10-01'
+       OR r.etf_site_note NOT LIKE '%the site prints CNPJ 86999999000199 for this ticker%' THEN
+        RAISE EXCEPTION 'ETFB11 fees: % % %', r.etf_site_taxa_adm, r.etf_site_as_of, r.etf_site_note;
+    END IF;
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['86000000000003']);
+    IF r.etf_ticker <> 'ETFC11' OR r.etf_site_taxa_adm IS NOT NULL OR r.etf_site_as_of IS NOT NULL
+       OR r.etf_site_note NOT LIKE '%NULL is not a zero fee' THEN
+        RAISE EXCEPTION 'ETFC11 fees: % % %', r.etf_ticker, r.etf_site_taxa_adm, r.etf_site_note;
+    END IF;
+    -- A fund that is no ETF: every etf_* column NULL.
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['61000000000191']);
+    IF r.etf_ticker IS NOT NULL OR r.etf_site_taxa_adm IS NOT NULL OR r.etf_site_note IS NOT NULL THEN
+        RAISE EXCEPTION 'non-ETF etf columns: % % %', r.etf_ticker, r.etf_site_taxa_adm, r.etf_site_note;
+    END IF;
+    RAISE NOTICE 'portfolio ETFs OK';
 END $$;
 
 -- ===========================================================================

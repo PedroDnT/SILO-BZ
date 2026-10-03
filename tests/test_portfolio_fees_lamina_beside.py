@@ -1,4 +1,4 @@
-"""The lâmina beside the Extrato, and the newer lâmina (catalog v55, engine 1.4, issue #552).
+"""The lâmina beside the Extrato, and the newer lâmina (catalog v55, engine 1.4, issue #552; summed since engine 1.5).
 
 The SQL is executed in tests/sql/portfolio_behaviour.sql (EXT1 to EXT9). Here the engine, the report view and
 the HTML are run offline on the canned rows with one statement fund (line 3, 08935128000159) edited into each
@@ -22,6 +22,7 @@ from src.portfolio.fees import (
     LAMINA_BESIDE_LABEL,
     LAMINA_NEWER_LABEL,
     SCALE_FLAG_LABEL,
+    SOURCES_DIFFER_LABEL,
     ZERO_LABEL,
 )
 from src.portfolio.report import adapt, build, render
@@ -168,30 +169,48 @@ def test_an_extrato_zero_without_a_lamina_has_no_line_and_is_still_to_check(runs
     assert doc["fees"]["totals"]["adm_disclosed_fixed_per_year_brl"] == _others_fixed_total(doc)
 
 
-def test_a_newer_lamina_is_the_headline_with_the_extrato_beside_and_still_to_check(runs):
+def test_a_newer_lamina_is_the_headline_summed_and_compared_and_still_to_check(runs):
+    """Owner's decision of 2026-10-03 (engine 1.5): the newer lâmina's fee is a disclosed fee like any other."""
     doc = runs["lamina_newer"]
     ln = _line(doc)
     assert ln["fee_resolution"] == "lamina_newer" and ln["fee_status"] == LAMINA_NEWER_LABEL
+    # still flagged for review: the two documents disagree
     assert ln["needs_manual_check"] is True and ln["disclosed"]["needs_manual_check"] is True
     h = ln["headline"]
     assert h["kind"] == "lamina_mais_recente" and h["rate_pct_year"] == 0.25 and h["origin"] == "lamina"
-    assert h["as_of"] == "2026-08-31" and h["per_year_brl"] is None and h["counted_as_cost"] is False
+    assert h["sources_differ_label"] == SOURCES_DIFFER_LABEL == "fontes divergem"
+    # a cost: the statement's value (264.615,00) times the lâmina's 0,25% a.a., from the canned rows
+    assert h["as_of"] == "2026-08-31" and h["counted_as_cost"] is True
+    assert h["per_year_brl"] == round(ln["position_value_brl"] * 0.25 / 100, 2) == 661.54
     xb = ln["extrato_beside"]
     assert xb["filed_value"] == 25.0 and xb["as_of"] == "2024-05-03" and xb["counted_as_cost"] is False
     assert ln["lamina_beside"] is None
     assert ln["scale_flag"]["factor"] == 100
-    # not compared with the balancete estimate either
-    assert not any(f["kind"] == "estimativa_difere_da_divulgada" for f in ln["findings"])
+    # compared with the balancete estimate (1,98% a.a. in the canned row) like any disclosed fee
+    diff = next(f for f in ln["findings"] if f["kind"] == "estimativa_difere_da_divulgada")
+    assert diff["disclosed_pct_year"] == 0.25 and diff["estimate_pct_year"] == 1.98
+    note = next(f for f in ln["findings"] if f["kind"] == "lamina_mais_recente_que_extrato")
+    assert "Fontes divergem" in note["text"] and "entra na soma" in note["text"]
     t = doc["fees"]["totals"]
-    assert t["adm_disclosed_fixed_per_year_brl"] == _others_fixed_total(doc)
+    # summed: the other fixed fees plus this one; the Extrato's 25 is never summed
+    assert t["adm_disclosed_fixed_per_year_brl"] == pytest.approx(_others_fixed_total(doc) + 661.54, abs=0.01)
     assert t["fund_value_with_lamina_newer_fee_brl"] == ln["position_value_brl"]
+    assert t["fund_value_with_fixed_fee_brl"] >= ln["position_value_brl"]  # a subset of it since 1.5
+    # counted once: not in the bucket of lines without a usable fee
+    zero_check = runs["zero_lamina"]["fees"]["totals"]
+    assert t["fund_value_without_disclosed_fee_brl"] == pytest.approx(
+        zero_check["fund_value_without_disclosed_fee_brl"] - ln["position_value_brl"], abs=0.01)
     assert t["fund_value_brl"] == pytest.approx(sum(x["position_value_brl"] for x in doc["fees"]["lines"]))
+    assert any("fontes divergem" in d for d in [doc["fees"].get("reason") or ""])
     view = adapt.to_view(doc)
     bl = next(b for b in view["fees"]["by_line"] if b["cnpj"] == CNPJ)
-    assert bl["disclosed_pct_year"] == 0.25 and bl["disclosed_brl_year"] is None
+    assert bl["disclosed_pct_year"] == 0.25 and bl["disclosed_brl_year"] == 661.54
     assert bl["extrato_beside_value"] == 25.0 and bl["lamina_newer_label"] == LAMINA_NEWER_LABEL
+    assert bl["sources_differ_label"] == "fontes divergem"
+    assert view["fees"]["total_disclosed_brl_year"] == t["adm_disclosed_fixed_per_year_brl"]
     text = _html(doc)
-    assert "0,25% a.a." in text and LAMINA_NEWER_LABEL in text
+    assert "0,25% a.a." in text and LAMINA_NEWER_LABEL in text and "fontes divergem" in text
+    assert "R$ 661,54 por ano" in text
     assert "Extrato de 03/05/2024 informa 25,00 (como informado; não somado)" in text
     assert "possível erro de escala no Extrato" in text
 

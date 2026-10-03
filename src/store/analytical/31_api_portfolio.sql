@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 31_api_portfolio.sql
 -- The portfolio-diagnosis engine's four set-based reads, served through schema
--- `api` (catalog v51, portfolio_fees v52 and v55; map #510, research note
+-- `api` (catalog v51, portfolio_fees v52, v55 and v56; map #510, research note
 -- docs/reference/research/portfolio-diagnosis-phase0.md §2, §4, §8 slice 2-3).
 --
 --   api.portfolio_resolve      statement lines (names, optional CNPJs, quotas)
@@ -30,6 +30,11 @@
 -- extension is NOT installed on Supabase, checked 2026-10-03) and runs of
 -- whitespace, nothing else. Per line, in order:
 --   1. a supplied CNPJ wins: match_kind 'cnpj', one candidate, never ambiguous;
+--      1b. (catalog v56) else a name that is exactly a ticker of SILO's curated
+--      ETF registry (cvm_etf_registry, ticker to CNPJ, case and outer spaces
+--      ignored): match_kind 'etf_ticker', one candidate, never ambiguous. An ETF
+--      bought by ticker has no other route to its CNPJ: api.lookup returns
+--      cnpj NULL for a ticker, and a fixed income ETF is not in COTAHIST;
 --   2. else an exact normalised name: 'exact_current' (the registry name or the
 --      name of the fund's newest CDA month) or 'exact_history' (a former name);
 --   3. else trigram: the 25 nearest names by word distance and the 25 nearest
@@ -113,6 +118,11 @@
 --     Bancos master: -8,791,158.76 in April, -700,478.38 in May, its first
 --     fiscal month). The previous month must be the calendar month before;
 --     a gap leaves the estimate NULL.
+--   * ETF (catalog v56): CVM's Extrato, lâmina and cad_fi hold no fee for an
+--     ETF (0 of the 178 active registry ETFs, measured 2026-10-03), so a CNPJ in
+--     cvm_etf_registry gets its ticker (etf_ticker) and the fee etfsbrasil.com.br
+--     prints (etf_site_*, from etf_market_snapshot): a third-party value with its
+--     date, in its own columns, never in disclosed_*.
 -- estimate_label says, on every row, that the estimate is an estimate and why
 -- one is missing. The estimate is never presented as the disclosed fee.
 --
@@ -344,7 +354,7 @@ RETURNS TABLE (
     matched_name   TEXT,     -- the name in the history that matched, as filed
     matched_period DATE,     -- last CDA month that name was filed under; NULL for a registry-only name
     entity_type    TEXT,     -- fi | fidc | fii | fip | fiagro (registry family; CDA-only names are fi)
-    match_kind     TEXT,     -- cnpj | exact_current | exact_history | trigram
+    match_kind     TEXT,     -- cnpj | etf_ticker (v56) | exact_current | exact_history | trigram
     similarity     NUMERIC,  -- greatest(similarity, word_similarity) of the normalised names, 0..1; NULL when no name was sent
     rank           INT,      -- 1 = best candidate of the line
     quota_on_date  NUMERIC,  -- the candidate's vl_quota on p_quota_dates[line]; NULL when not sent or not filed that day
@@ -417,6 +427,16 @@ BEGIN
         ) best ON TRUE
         WHERE l.in_cnpj IS NOT NULL
     ),
+    -- 1b. An ETF ticker (catalog v56): the name is exactly a ticker of SILO's
+    --     curated ETF registry. One candidate per line; exact and trigram skip it.
+    by_etf AS (
+        SELECT l.line_no, e.cnpj, 'etf_ticker'::text AS kind,
+               e.fund_name AS matched_name, NULL::date AS matched_period,
+               1.0::numeric AS sim
+        FROM lines l
+        JOIN public.cvm_etf_registry e ON e.ticker = upper(btrim(l.input_name))
+        WHERE l.in_cnpj IS NULL AND l.nn IS NOT NULL AND e.cnpj IS NOT NULL
+    ),
     -- 2. An exact normalised name, anywhere in the history.
     exact AS (
         SELECT l.line_no, h.cnpj,
@@ -426,6 +446,7 @@ BEGIN
         FROM lines l
         JOIN public.mv_fund_name_history h ON h.name_norm = l.nn
         WHERE l.in_cnpj IS NULL AND l.nn IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM by_etf b WHERE b.line_no = l.line_no)
         GROUP BY l.line_no, h.cnpj
     ),
     -- 3. Trigram, only where nothing matched exactly.
@@ -457,6 +478,7 @@ BEGIN
         ) f
         WHERE l.in_cnpj IS NULL AND l.nn IS NOT NULL
           AND NOT EXISTS (SELECT 1 FROM exact e WHERE e.line_no = l.line_no)
+          AND NOT EXISTS (SELECT 1 FROM by_etf b WHERE b.line_no = l.line_no)
     ),
     fuzzy_top AS (
         SELECT z.line_no, z.cnpj, z.kind, z.matched_name, z.matched_period, z.sim
@@ -469,12 +491,15 @@ BEGIN
     ),
     cand AS (
         SELECT * FROM by_cnpj
+        UNION ALL SELECT * FROM by_etf
         UNION ALL SELECT * FROM exact
         UNION ALL SELECT * FROM fuzzy_top
     ),
     scored AS (
         SELECT c.line_no, c.cnpj, c.kind, c.matched_name, c.matched_period, c.sim,
-               cur.name AS candidate_name,
+               -- an ETF the name history does not hold keeps the registry's name (v56)
+               CASE WHEN c.kind = 'etf_ticker' THEN COALESCE(cur.name, c.matched_name)
+                    ELSE cur.name END AS candidate_name,
                cur.entity_type,
                qq.vl_quota AS quota_on_date,
                CASE WHEN l.q IS NULL OR l.q = 0 OR qq.vl_quota IS NULL THEN NULL
@@ -519,7 +544,7 @@ BEGIN
     verdict AS (
         SELECT r1.line_no,
                CASE
-                   WHEN r1.kind = 'cnpj' OR r1.n_cand = 1 THEN FALSE
+                   WHEN r1.kind IN ('cnpj', 'etf_ticker') OR r1.n_cand = 1 THEN FALSE
                    WHEN r1.quota_ok AND NOT COALESCE(r2.quota_ok, FALSE) THEN FALSE
                    ELSE (COALESCE(r1.sim, 0) - COALESCE(r2.sim, 0)) < 0.05
                END AS ambiguous,
@@ -544,6 +569,8 @@ BEGIN
                        'CNPJ supplied by the statement; SILO holds no registry or CDA name for it'
                    WHEN r.kind = 'cnpj' THEN
                        'CNPJ supplied by the statement'
+                   WHEN r.kind = 'etf_ticker' THEN
+                       'the name is the ticker of an ETF in SILO''s curated ETF registry (cvm_etf_registry, ticker to CNPJ)'
                    WHEN r.kind = 'exact_current' THEN
                        'exact match on the fund''s current name'
                    WHEN r.kind = 'exact_history' THEN
@@ -594,7 +621,7 @@ GRANT EXECUTE ON FUNCTION api.portfolio_resolve(TEXT[], TEXT[], NUMERIC[], DATE[
 GRANT EXECUTE ON FUNCTION api.portfolio_resolve(TEXT[], TEXT[], NUMERIC[], DATE[]) TO silo_api;
 
 COMMENT ON FUNCTION api.portfolio_resolve(TEXT[], TEXT[], NUMERIC[], DATE[]) IS
-    'Statement lines to candidate funds. One row per line and candidate (up to 5), ranked: a CNPJ the line carries wins (match_kind cnpj); else an exact match on any name the fund ever filed, case, accents and whitespace ignored (exact_current: the registry name or the newest CDA name; exact_history: a former name, matched_period = the last CDA month it was filed under); else trigram over the whole name history (CDA DENOM_SOCIAL since 2005 plus the registry), similarity = greatest(similarity, word_similarity), so an abbreviation scores high. With p_quotas and p_quota_dates the candidate''s cvm_fi_diario quota on that exact date is compared, and one within 0.5% ranks first: that is how the XP Bancos master and FIC (same words, quotas 1.952607 and 1.542011 on 2026-09-30) are told apart. ambiguous is TRUE on every row of a line whose top two candidates score within 0.05 and the quota does not separate them: SILO never picks silently, the caller decides. Arrays are parallel, one entry per line. More than 200 lines RAISES 22023; the result is at most one 1000-row page.';
+    'Statement lines to candidate funds. One row per line and candidate (up to 5), ranked: a CNPJ the line carries wins (match_kind cnpj); else a name that is exactly a ticker of SILO''s curated ETF registry (cvm_etf_registry) gives that ETF''s CNPJ (etf_ticker, v56: api.lookup returns no CNPJ for a ticker); else an exact match on any name the fund ever filed, case, accents and whitespace ignored (exact_current: the registry name or the newest CDA name; exact_history: a former name, matched_period = the last CDA month it was filed under); else trigram over the whole name history (CDA DENOM_SOCIAL since 2005 plus the registry), similarity = greatest(similarity, word_similarity), so an abbreviation scores high. With p_quotas and p_quota_dates the candidate''s cvm_fi_diario quota on that exact date is compared, and one within 0.5% ranks first: that is how the XP Bancos master and FIC (same words, quotas 1.952607 and 1.542011 on 2026-09-30) are told apart. ambiguous is TRUE on every row of a line whose top two candidates score within 0.05 and the quota does not separate them: SILO never picks silently, the caller decides. Arrays are parallel, one entry per line. More than 200 lines RAISES 22023; the result is at most one 1000-row page.';
 
 -- ---------------------------------------------------------------------------
 -- portfolio_fees - the disclosed fee, and a separate estimate from the balancete
@@ -665,7 +692,13 @@ RETURNS TABLE (
     extrato_taxa_adm_filed   NUMERIC,  -- the Extrato's TAXA_ADM exactly as filed (newest version), whatever the source: 0 and values above 5 included, never rescaled
     extrato_as_of            DATE,     -- that version's DT_COMPTC
     extrato_lamina_ratio     NUMERIC,  -- extrato_taxa_adm_filed / lamina_taxa_adm, 4 decimals, when both are above 0; NULL otherwise
-    extrato_scale_factor     INT       -- 10 or 100: the Extrato filed above 5 and equals that factor times the lâmina's single fee within the two-decimal rounding of both (|extrato - k x lamina| <= k x 0.005 + 0.005); a flag ("possível erro de escala no Extrato"), never a correction; NULL otherwise
+    extrato_scale_factor     INT,      -- 10 or 100: the Extrato filed above 5 and equals that factor times the lâmina's single fee within the two-decimal rounding of both (|extrato - k x lamina| <= k x 0.005 + 0.005); a flag ("possível erro de escala no Extrato"), never a correction; NULL otherwise
+    -- ---- appended in catalog v56 (ETFs; the existing columns above are unchanged) ----
+    etf_ticker               TEXT,     -- the ticker of this CNPJ in SILO's curated ETF registry (cvm_etf_registry); NULL = not an ETF SILO lists
+    etf_site_taxa_adm        NUMERIC,  -- the ETF's 'Taxa de administração total' as etfsbrasil.com.br prints it (etf_market_snapshot.taxa_adm_pct, % a year), newest snapshot that has one; a THIRD-PARTY site, not a CVM filing, never in disclosed_*; NULL = none (not a zero fee)
+    etf_site_as_of           DATE,     -- that snapshot's date
+    etf_site_source          TEXT,     -- etf_market_snapshot.source (etfsbrasil); NULL with no snapshot
+    etf_site_note            TEXT      -- what the etf_site_* value is and is not, and why it is NULL; NULL for a CNPJ that is no ETF
 )
 LANGUAGE plpgsql
 STABLE
@@ -681,6 +714,7 @@ DECLARE
     v_ids   TEXT[];
     v_lam   JSONB := '[]'::jsonb;
     v_ext   JSONB := '[]'::jsonb;
+    v_etf   JSONB := '[]'::jsonb;
 BEGIN
     IF v_n = 0 THEN
         RAISE EXCEPTION 'portfolio_fees needs p_cnpjs, the funds'' 14-digit CNPJs (resolve names with portfolio_resolve)'
@@ -733,6 +767,26 @@ BEGIN
              || '''taxa_saida_real'', v.taxa_saida_real)), ''[]''::jsonb) '
              || 'FROM public.vw_fi_extrato_latest v WHERE v.cnpj = ANY ($1)'
         INTO v_ext USING v_ids;
+    END IF;
+    -- ETFs (catalog v56). CVM's Extrato, lâmina and cad_fi carry no fee for an ETF
+    -- (measured 2026-10-03: 0 of the 178 active registry ETFs in any of the three,
+    -- and cvm_etf_registry.taxa_adm, lifted from cad_fi, is 0 of 187). The only fee
+    -- SILO holds is the etfsbrasil.com.br scrape (etf_market_snapshot, 171 of 178
+    -- tickers on 2026-10-03), served in its own etf_site_* columns, never in
+    -- disclosed_*. Read dynamically, like the views: a database without the table
+    -- returns NULL there. Joined by the registry's TICKER, because the site's CNPJ
+    -- can differ from the registry's (WRLD11 on 2026-10-03); the newest snapshot
+    -- that has a fee.
+    IF to_regclass('public.etf_market_snapshot') IS NOT NULL THEN
+        EXECUTE 'SELECT COALESCE(jsonb_agg(jsonb_build_object('
+             || '''ticker'', s.ticker, ''snapshot_date'', s.snapshot_date, '
+             || '''taxa_adm_pct'', s.taxa_adm_pct, ''source'', s.source, ''site_cnpj'', s.cnpj)), ''[]''::jsonb) '
+             || 'FROM (SELECT DISTINCT ON (x.ticker) x.ticker, x.snapshot_date, x.taxa_adm_pct, x.source, x.cnpj '
+             || 'FROM public.etf_market_snapshot x '
+             || 'JOIN public.cvm_etf_registry r ON r.ticker = x.ticker '
+             || 'WHERE r.cnpj = ANY ($1) AND x.taxa_adm_pct IS NOT NULL '
+             || 'ORDER BY x.ticker, x.snapshot_date DESC) s'
+        INTO v_etf USING v_ids;
     END IF;
 
     RETURN QUERY
@@ -936,6 +990,25 @@ BEGIN
                COALESCE(e.fee_raw > 5 OR e.fee_raw < 0, FALSE) AS is_implausible
         FROM est e
     ),
+    -- The ETF registry's ticker for each CNPJ (v56), and the site's fee by that ticker.
+    etf AS (
+        SELECT i.cnpj, t.ticker
+        FROM ids i
+        JOIN LATERAL (
+            SELECT r.ticker FROM public.cvm_etf_registry r
+            WHERE r.cnpj = i.cnpj
+            ORDER BY r.is_active DESC NULLS LAST, r.ticker
+            LIMIT 1
+        ) t ON TRUE
+    ),
+    etf_site AS (
+        SELECT e ->> 'ticker' AS ticker,
+               (e ->> 'snapshot_date')::date AS s_dt,
+               (e ->> 'taxa_adm_pct')::numeric AS s_fee,
+               NULLIF(btrim(e ->> 'source'), '') AS s_source,
+               NULLIF(btrim(e ->> 'site_cnpj'), '') AS s_cnpj
+        FROM jsonb_array_elements(v_etf) AS j(e)
+    ),
     page (cnpj, fund_name, month, nav, adm_fee_flow, adm_fee_pct_annual_est,
           perf_fee_flow, perf_fee_pct_annual_est, fiscal_reset_suspect,
           disclosed_taxa_adm, disclosed_taxa_adm_min, disclosed_taxa_adm_max,
@@ -952,7 +1025,8 @@ BEGIN
           lamina_dt_fim_despesa, lamina_as_of, lamina_expense_note,
           fee_resolution, lamina_taxa_adm, lamina_taxa_adm_min, lamina_taxa_adm_max,
           lamina_n_classes, lamina_age_months, extrato_taxa_adm_filed, extrato_as_of,
-          extrato_lamina_ratio, extrato_scale_factor) AS (
+          extrato_lamina_ratio, extrato_scale_factor,
+          etf_ticker, etf_site_taxa_adm, etf_site_as_of, etf_site_source, etf_site_note) AS (
         SELECT f.cnpj, f.fund_name, f.dt_comptc, f.nav,
                f.adm_flow,
                round(f.adm_flow * 12 / NULLIF(f.nav, 0) * 100, 4),
@@ -1087,8 +1161,27 @@ BEGIN
                CASE WHEN f.x_adm > 5 AND f.lam_single > 0 THEN
                     CASE WHEN abs(f.x_adm - 10 * f.lam_single) <= 10 * 0.005 + 0.005 THEN 10
                          WHEN abs(f.x_adm - 100 * f.lam_single) <= 100 * 0.005 + 0.005 THEN 100 END
+               END,
+               -- ---- appended in v56 ----
+               et.ticker,
+               es.s_fee,
+               es.s_dt,
+               es.s_source,
+               CASE
+                   WHEN et.ticker IS NULL THEN NULL
+                   WHEN es.s_fee IS NULL THEN
+                       'ETF ' || et.ticker || ' in SILO''s ETF registry: no etfsbrasil.com.br snapshot with a fee for this ticker; NULL is not a zero fee'
+                   ELSE
+                       'ETF ' || et.ticker || ': ''Taxa de administração total'' as printed on etfsbrasil.com.br on '
+                       || to_char(es.s_dt, 'YYYY-MM-DD')
+                       || ', a third-party site, not a CVM filing; returned as published, never rescaled, never in disclosed_* (CVM''s Extrato, lâmina and cad_fi carry no ETF fee)'
+                       || CASE WHEN es.s_cnpj IS NOT NULL AND es.s_cnpj <> f.cnpj THEN
+                               '; the site prints CNPJ ' || es.s_cnpj || ' for this ticker, SILO''s ETF registry has ' || f.cnpj
+                          ELSE '' END
                END
         FROM flag f
+        LEFT JOIN etf et ON et.cnpj = f.cnpj
+        LEFT JOIN etf_site es ON es.ticker = et.ticker
         ORDER BY f.cnpj
         LIMIT 1001
     )
@@ -1108,7 +1201,8 @@ BEGIN
            g.lamina_dt_fim_despesa, g.lamina_as_of, g.lamina_expense_note,
            g.fee_resolution, g.lamina_taxa_adm, g.lamina_taxa_adm_min, g.lamina_taxa_adm_max,
            g.lamina_n_classes, g.lamina_age_months, g.extrato_taxa_adm_filed, g.extrato_as_of,
-           g.extrato_lamina_ratio, g.extrato_scale_factor
+           g.extrato_lamina_ratio, g.extrato_scale_factor,
+           g.etf_ticker, g.etf_site_taxa_adm, g.etf_site_as_of, g.etf_site_source, g.etf_site_note
     FROM page g
     WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'portfolio_fees')
     ORDER BY g.cnpj
@@ -1121,7 +1215,7 @@ GRANT EXECUTE ON FUNCTION api.portfolio_fees(TEXT[], DATE) TO anon, authenticate
 GRANT EXECUTE ON FUNCTION api.portfolio_fees(TEXT[], DATE) TO silo_api;
 
 COMMENT ON FUNCTION api.portfolio_fees(TEXT[], DATE) IS
-    'Fees per fund, two kinds of number that are never mixed. DISCLOSED (disclosed_*): the fee the fund published, ONE source per fund in this order: the CVM Extrato das Informacoes (cvm_fi_extrato, newest version, one row per fund or class), else the lâmina (cvm_fi_lamina, newest reference month), else cad_fi (cvm_fund_registry taxa_adm / taxa_perfm / inf_taxa_*); disclosed_origin (extrato | lamina | cad_fi), disclosed_source, disclosed_as_of (the filing date), disclosed_age_months and disclosed_age_days say which and how old. Two reading rules on the single administration fee, % a year as filed: a filed 0 is returned as 0 with filed_zero TRUE (read it as not informed, never as a zero cost); a filed value above 5 (or below 0) is NOT returned as the fee: disclosed_taxa_adm is NULL, implausible_filed is TRUE and the value as filed is in taxa_adm_filed_raw. The stored value is never rewritten. A NULL disclosed part is not a zero fee; when the lâmina''s classes disclose different fees the single value is NULL and the min / max and disclosed_note say so. An Extrato row that exists is the source, even when its fee is 0 or above 5: it does not fall through to an OLDER source. One exception (v55): when the Extrato filed exactly 0 or above 5, the lâmina''s single fee is in (0, 5] and the lâmina is NEWER than the Extrato, the newer lâmina is the source. fee_resolution names the rule: extrato, extrato_lamina_beside (Extrato 0 or above 5, a lâmina fee beside it), extrato_to_check (the same with no lâmina fee), lamina_newer, lamina, cad_fi. The other document''s fee is returned as filed whatever the source (lamina_taxa_adm, _min, _max, lamina_n_classes, lamina_age_months; extrato_taxa_adm_filed with extrato_as_of), never rescaled and never a fee to sum; extrato_lamina_ratio is the Extrato over the lâmina when both are above 0, and extrato_scale_factor is 10 or 100 when an Extrato above 5 equals that factor times the lâmina within the two-decimal rounding of both, a flag only. The Extrato''s performance fee (extrato_taxa_perfm numeric, extrato_param_taxa_perfm, extrato_calc_taxa_perfm, extrato_inf_taxa_perfm text), entry and exit fees (extrato_existe_* flags, _pr percent and _real reais), custody fee and class note are returned as filed; the row is the class for a CVM 175 fund (no subclass column, a subclass fee is not assumed). lamina_pr_pl_despesa is the declared total expense ratio from the lâmina (with its period and lamina_as_of), whatever the fee source, never added to the administration fee. ESTIMATE (adm_fee_flow, perf_fee_flow and the _pct_annual_est columns): from the balancete accruals (cvm_fi_balancete_resumo): the fee accounts accumulate from each fund''s fiscal-year start and are filed negative, so the month''s accrual is previous minus current accumulated value (served positive = cost; a negative performance accrual is a reversed provision), annualised x 12 / NAV x 100, NAV = groups 6 + 7 + 8 of the month. In the fiscal-year reset month the accumulated fee falls: fiscal_reset_suspect is TRUE and the estimate is NULL, unless cad_fi DT_INI_EXERC puts the fiscal-year start in that month, in which case the month''s accumulated value alone is the accrual. estimate_label says on every row that the estimate is an estimate and why one is missing; it is never presented as the disclosed fee. p_month = the balancete month (NULL = each fund''s newest). One row per distinct CNPJ; more than 200 CNPJs RAISES 22023.';
+    'Fees per fund, two kinds of number that are never mixed. DISCLOSED (disclosed_*): the fee the fund published, ONE source per fund in this order: the CVM Extrato das Informacoes (cvm_fi_extrato, newest version, one row per fund or class), else the lâmina (cvm_fi_lamina, newest reference month), else cad_fi (cvm_fund_registry taxa_adm / taxa_perfm / inf_taxa_*); disclosed_origin (extrato | lamina | cad_fi), disclosed_source, disclosed_as_of (the filing date), disclosed_age_months and disclosed_age_days say which and how old. Two reading rules on the single administration fee, % a year as filed: a filed 0 is returned as 0 with filed_zero TRUE (read it as not informed, never as a zero cost); a filed value above 5 (or below 0) is NOT returned as the fee: disclosed_taxa_adm is NULL, implausible_filed is TRUE and the value as filed is in taxa_adm_filed_raw. The stored value is never rewritten. A NULL disclosed part is not a zero fee; when the lâmina''s classes disclose different fees the single value is NULL and the min / max and disclosed_note say so. An Extrato row that exists is the source, even when its fee is 0 or above 5: it does not fall through to an OLDER source. One exception (v55): when the Extrato filed exactly 0 or above 5, the lâmina''s single fee is in (0, 5] and the lâmina is NEWER than the Extrato, the newer lâmina is the source. fee_resolution names the rule: extrato, extrato_lamina_beside (Extrato 0 or above 5, a lâmina fee beside it), extrato_to_check (the same with no lâmina fee), lamina_newer, lamina, cad_fi. The other document''s fee is returned as filed whatever the source (lamina_taxa_adm, _min, _max, lamina_n_classes, lamina_age_months; extrato_taxa_adm_filed with extrato_as_of), never rescaled and never a fee to sum; extrato_lamina_ratio is the Extrato over the lâmina when both are above 0, and extrato_scale_factor is 10 or 100 when an Extrato above 5 equals that factor times the lâmina within the two-decimal rounding of both, a flag only. The Extrato''s performance fee (extrato_taxa_perfm numeric, extrato_param_taxa_perfm, extrato_calc_taxa_perfm, extrato_inf_taxa_perfm text), entry and exit fees (extrato_existe_* flags, _pr percent and _real reais), custody fee and class note are returned as filed; the row is the class for a CVM 175 fund (no subclass column, a subclass fee is not assumed). lamina_pr_pl_despesa is the declared total expense ratio from the lâmina (with its period and lamina_as_of), whatever the fee source, never added to the administration fee. ESTIMATE (adm_fee_flow, perf_fee_flow and the _pct_annual_est columns): from the balancete accruals (cvm_fi_balancete_resumo): the fee accounts accumulate from each fund''s fiscal-year start and are filed negative, so the month''s accrual is previous minus current accumulated value (served positive = cost; a negative performance accrual is a reversed provision), annualised x 12 / NAV x 100, NAV = groups 6 + 7 + 8 of the month. In the fiscal-year reset month the accumulated fee falls: fiscal_reset_suspect is TRUE and the estimate is NULL, unless cad_fi DT_INI_EXERC puts the fiscal-year start in that month, in which case the month''s accumulated value alone is the accrual. estimate_label says on every row that the estimate is an estimate and why one is missing; it is never presented as the disclosed fee. ETFs (v56): CVM''s Extrato, lâmina and cad_fi carry no fee for an ETF, so for a CNPJ in SILO''s curated ETF registry etf_ticker names the ticker and etf_site_taxa_adm, etf_site_as_of and etf_site_source give the ''Taxa de administração total'' etfsbrasil.com.br prints (etf_market_snapshot, the newest snapshot with a fee, joined by ticker): a third-party site, not a CVM filing, never in disclosed_*, returned as published; etf_site_note says so and why a value is NULL. p_month = the balancete month (NULL = each fund''s newest). One row per distinct CNPJ; more than 200 CNPJs RAISES 22023.';
 
 
 -- ---------------------------------------------------------------------------
