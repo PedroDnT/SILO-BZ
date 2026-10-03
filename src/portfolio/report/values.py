@@ -15,7 +15,7 @@ only place a figure becomes text, and it formats by the path's last key:
 | ``old_num`` / ``new_num`` / ``change_brl`` of a ``VL_*`` leaf | reais | as ``_brl`` |
 
 This table is the report's one dependency on the engine's unit convention
-(``docs/reference/portfolio/report.md``); change it here when the engine's
+(``docs/reference/portfolio/redator-revisor.md``); change it here when the engine's
 schema doc says otherwise.
 """
 
