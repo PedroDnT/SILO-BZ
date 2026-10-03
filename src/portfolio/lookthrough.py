@@ -90,7 +90,8 @@ class Exposure:
             "via": self.via,
             "depth": self.depth,
             "block": self.block,
-            "asset_kind": "fundo_sem_look_through" if self.opaque_fund else self.asset_kind,
+            "asset_kind": self.asset_kind,
+            "not_opened_fund": self.opaque_fund,
             "asset_key": self.asset_key,
             "asset_name": self.asset_name,
             "isin": self.isin,
@@ -148,8 +149,27 @@ def compute_lookthrough(
             )
             exposures[li.line_no] = []
             continue
-        rows = [r for r in res.rows or [] if not r.get("is_cycle")]
-        cycles = [r for r in res.rows or [] if r.get("is_cycle")]
+        all_rows = res.rows or []
+        cycles = [r for r in all_rows if r.get("is_cycle") or r.get("asset_kind") == "fund_quota_cycle"]
+        no_cda = [r for r in all_rows if r.get("asset_kind") == "no_cda_filing"]
+        rows = [r for r in all_rows if r not in cycles and r not in no_cda]
+        if no_cda and not rows:
+            out_lines.append(
+                {
+                    "line_no": li.line_no,
+                    "cnpj": li.cnpj,
+                    "status": "no_holdings",
+                    "reason": (
+                        f"O fundo não entregou CDA em {cda_month.strftime('%Y-%m')} (no_cda_filing): "
+                        "sem carteira para abrir (FIDC e FII não entregam CDA)."
+                    ),
+                    "n_rows": len(all_rows),
+                    "exposures": [],
+                    "sources": [res.src(cda_month)],
+                }
+            )
+            exposures[li.line_no] = []
+            continue
         if not rows:
             out_lines.append(
                 {
@@ -167,16 +187,22 @@ def compute_lookthrough(
             )
             exposures[li.line_no] = []
             continue
-        exp, nodes, weight_sum = _expand(li, rows, res)
+        exp, nodes, weight_sum, no_weight = _expand(li, rows, res)
         exposures[li.line_no] = exp
         fund_nodes[li.line_no] = nodes
         out_lines.append(
             {
                 "line_no": li.line_no,
                 "cnpj": li.cnpj,
-                "status": "complete",
-                "reason": None,
-                "n_rows": len(res.rows or []),
+                "status": "partial" if no_weight else "complete",
+                "reason": (
+                    f"{len(no_weight)} linha(s) sem peso (patrimônio de um fundo no caminho desconhecido): "
+                    "fora das exposições e da soma, valores em rows_without_weight."
+                    if no_weight
+                    else None
+                ),
+                "rows_without_weight": no_weight,
+                "n_rows": len(all_rows),
                 "n_cycle_rows_skipped": len(cycles),
                 "max_depth_seen": max((int(r.get("depth") or 0) for r in rows), default=0),
                 "explained_weight": ratio(weight_sum),
@@ -201,6 +227,9 @@ def compute_lookthrough(
     empty = [o for o in out_lines if o["status"] == "no_holdings"]
     if empty and sec.status == "complete":
         sec.degrade(f"{len(empty)} fundo(s) sem carteira na CDA do mês.")
+    partial_lines = [o for o in out_lines if o["status"] == "partial"]
+    if partial_lines and sec.status == "complete":
+        sec.degrade(f"{len(partial_lines)} fundo(s) com linhas sem peso.")
 
     shared = shared_exposure(lines, exposures, fund_nodes)
     section = {
@@ -290,34 +319,47 @@ def _direct_exposures(li: LineId) -> list[Exposure]:
     return []
 
 
-def _expand(li: LineId, rows: list[dict], res) -> tuple[list[Exposure], list[dict], Decimal]:
+def _expand(li: LineId, rows: list[dict], res) -> tuple[list[Exposure], list[dict], Decimal, list[dict]]:
+    """Leaves, fund nodes, the leaves' weight sum and the rows with no weight.
+
+    The tool's rule: sum ``weight_in_root`` over every row but ``fund_quota`` (a fund looked
+    through, whose own holdings are the rows below it). ``fund_quota_unfiled`` and
+    ``fund_quota_depth_cap`` are funds that could not be opened: leaves, with the reason.
+    """
     p = li.position
-    holders = {str(r.get("holder_cnpj")) for r in rows if r.get("holder_cnpj")}
     exposures: list[Exposure] = []
     nodes: list[dict[str, Any]] = []
+    no_weight: list[dict] = []
     weight_sum = Decimal("0")
     for r in rows:
+        kind = r.get("asset_kind")
         block = block_number(r.get("block"))
         key = r.get("asset_key")
-        w = dec(r.get("weight_in_root")) or Decimal("0")
-        is_fund_row = block == "2"
-        has_children = is_fund_row and key is not None and str(key) in holders
+        w = dec(r.get("weight_in_root"))
         src = [res.src(r.get("period"))]
-        if is_fund_row:
+        is_quota = kind in ("fund_quota", "fund_quota_unfiled", "fund_quota_depth_cap")
+        if is_quota:
             nodes.append(
                 {
                     "fund_cnpj": key,
                     "fund_name": r.get("asset_name"),
                     "depth": r.get("depth"),
                     "path": r.get("path"),
-                    "weight_in_line": ratio(w),
-                    "value_brl": brl(p.valor * w),
-                    "expanded": has_children,
+                    "weight_in_line": ratio(w) if w is not None else None,
+                    "value_brl": brl(p.valor * w) if w is not None else None,
+                    "expanded": kind == "fund_quota",
+                    "not_expanded_reason": {
+                        "fund_quota_unfiled": "o fundo investido não entregou CDA no mês",
+                        "fund_quota_depth_cap": "limite de profundidade do look-through",
+                    }.get(kind),
                     "period": r.get("period"),
                     "sources": src,
                 }
             )
-        if has_children:
+        if kind == "fund_quota":
+            continue
+        if w is None:
+            no_weight.append({"asset_kind": kind, "asset_key": key, "value_brl_as_filed": brl(dec(r.get("value_brl"))), "path": r.get("path")})
             continue
         weight_sum += w
         exposures.append(
@@ -326,7 +368,7 @@ def _expand(li: LineId, rows: list[dict], res) -> tuple[list[Exposure], list[dic
                 via=_via(r.get("path")),
                 depth=int(r.get("depth") or 0),
                 block=block,
-                asset_kind=r.get("asset_kind"),
+                asset_kind=kind,
                 asset_key=str(key) if key is not None else None,
                 asset_name=r.get("asset_name"),
                 isin=r.get("isin"),
@@ -340,11 +382,11 @@ def _expand(li: LineId, rows: list[dict], res) -> tuple[list[Exposure], list[dic
                 weight=w,
                 value_brl=p.valor * w,
                 period=str(r.get("period"))[:10] if r.get("period") else None,
-                opaque_fund=is_fund_row,
+                opaque_fund=is_quota,
                 sources=src,
             )
         )
-    return exposures, nodes, weight_sum
+    return exposures, nodes, weight_sum, no_weight
 
 
 def _via(path: Any) -> str:

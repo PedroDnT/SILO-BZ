@@ -90,7 +90,7 @@ def compute_sector(
     inside: dict[str, Decimal] = defaultdict(Decimal)
     for ln, exps in exposures.items():
         for e in exps:
-            if e.depth > 0 and e.block == "4" and e.tp_aplic in STOCK_TP_APLIC and is_ticker(e.asset_key):
+            if e.via != "direto" and e.block == "4" and e.tp_aplic in STOCK_TP_APLIC and is_ticker(e.asset_key):
                 inside[e.asset_key.upper()] += abs(e.value_brl)
     to_query = [t for t, _ in sorted(inside.items(), key=lambda kv: -kv[1]) if t not in ticker_sector][:top_tickers]
     skipped = {t for t in inside if t not in ticker_sector and t not in to_query}
@@ -148,12 +148,12 @@ def compute_sector(
         "lookthrough_ticker_limit": top_tickers,
         "portfolio_value_brl": brl(total),
         "sectors": [
-            {"sector": k[0], "taxonomy": k[1], "value_brl": brl(v), "pct_of_portfolio": pct(v, total)}
+            {"sector": k[0], "taxonomy": k[1], "value_brl": brl(v), "portfolio_pct": pct(v, total)}
             for k, v in ordered
         ],
         "sum_check_brl": brl(sum(by_sector.values(), Decimal("0")) - total),
         "unclassified_breakdown": [
-            {"reason": k, "value_brl": brl(v), "pct_of_portfolio": pct(v, total)}
+            {"reason": k, "value_brl": brl(v), "portfolio_pct": pct(v, total)}
             for k, v in sorted(unclassified_reasons.items(), key=lambda kv: -kv[1])
         ],
         "items": items,

@@ -40,7 +40,7 @@ FEE_LAG_MONTHS = 1
 class EngineParams:
     cda_month: dt.date
     fee_month: dt.date
-    max_depth: int = 5
+    max_depth: int = 4
     restatement_months: int = 12
     max_diff_docs: int = 5
     sector_top_tickers: int = 10
@@ -120,7 +120,7 @@ def _position_dict(p: Position, total: Decimal) -> dict[str, Any]:
         "preco_unitario": float(p.preco_unitario) if p.preco_unitario is not None else None,
         "preco_implicito": p.preco_implicito,
         "valor_brl": brl(p.valor),
-        "pct_of_portfolio": float(round(p.valor / total * 100, 4)) if total else None,
+        "portfolio_pct": float(round(p.valor / total * 100, 4)) if total else None,
         "data_posicao": iso(p.data_posicao),
         "vencimento": iso(p.vencimento),
         "taxa_texto": p.taxa_texto,
@@ -187,8 +187,9 @@ def run_engine(
     log.info("engine start: %d lines, client=%s", len(stmt.positions), client.kind)
 
     ident, lines = identify(stmt, client)
-    fees = compute_fees(lines, client, params.fee_month)
     look, exposures = compute_lookthrough(lines, client, params.cda_month, params.max_depth)
+    fund_nodes = {ln["line_no"]: ln.get("fund_nodes", []) for ln in look["lines"]}
+    fees = compute_fees(lines, client, params.fee_month, fund_nodes)
     unexplained = _unexplained_values(lines, look)
     indexer = compute_indexer(lines, exposures, unexplained)
     sector = compute_sector(
@@ -224,7 +225,7 @@ def run_engine(
                 ("risk_signals", signals),
             )
         },
-        "provenance": [e.as_dict() for e in client.provenance],
+        "provenance": [{**e.as_dict(), "id": f"p{e.call_id}"} for e in client.provenance],
     }
     log.info("engine done: %d tool calls", len(client.provenance))
     return doc

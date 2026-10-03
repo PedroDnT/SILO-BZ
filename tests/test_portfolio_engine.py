@@ -14,7 +14,7 @@ import pytest
 from src.portfolio.client import FakeClient, load_fake_rows
 from src.portfolio.diagnose import FAKE_CLOCK, main
 from src.portfolio.engine import default_params, dumps, run_engine
-from src.portfolio.fees import ESTIMATE_LABEL, UNKNOWN_FEE, compute_fees
+from src.portfolio.fees import ESTIMATE_LABEL, NOT_ADDED, NOT_FOUND
 from src.portfolio.identify import identify, parse_tesouro
 from src.portfolio.indexer import classify, load_rules
 from src.portfolio.lookthrough import Exposure, compute_lookthrough
@@ -134,30 +134,61 @@ def test_parse_tesouro_titles():
     assert parse_tesouro("TITULO QUALQUER 2035") is None
 
 
-def test_fees_prefer_disclosed_label_estimate_and_refuse_suspect(doc):
+def test_fees_headline_is_the_disclosed_fee_and_the_estimate_stays_apart(doc):
     by = {ln["line_no"]: ln for ln in doc["fees"]["lines"]}
-    f3, f4, f5, f6, f7 = by[3], by[4], by[5], by[6], by[7]
-    # disclosed wins over the estimate; R$/year = value x rate
-    assert f3["adm"]["basis"] == "divulgada" and f3["adm"]["rate_pct_per_year"] == 2.0
-    assert f3["adm"]["per_year_brl"] == round(264615.00 * 0.02, 2)
-    # a disclosed performance fee is a share of excess return: never converted to R$
-    assert f3["perf"]["disclosed"]["per_year_brl"] is None and f3["perf"]["disclosed"]["rate_as_filed"] == 20.0
-    assert f3["perf"]["estimate"]["basis"] == ESTIMATE_LABEL
-    # estimate is labelled
-    assert f4["adm"]["basis"] == ESTIMATE_LABEL and f7["adm"]["basis"] == ESTIMATE_LABEL
-    # fiscal-reset suspect: no number
-    assert f5["fee_status"] == UNKNOWN_FEE and f5["adm"]["per_year_brl"] is None and f5["fiscal_reset_suspect"] is True
-    # funds with no row: unknown with the reason
-    assert f6["fee_status"] == UNKNOWN_FEE and "não devolveu linha" in f6["reason"]
+    f3, f4, f5, f6, f7, f8 = (by[n] for n in (3, 4, 5, 6, 7, 8))
+    # a fixed disclosed fee: headline, R$/year = position value x rate, source and date
+    h = f3["headline"]
+    assert (h["kind"], h["rate_pct_year"], h["source"], h["as_of"], h["age_months"], h["stale"]) == ("fixa", 2.0, "cvm_fi_lamina", "2026-07-31", 1, False)
+    assert h["per_year_brl"] == round(264615.00 * 0.02, 2)
+    # the estimate is its own field, labelled, never the headline and never averaged with it
+    e = f3["estimate"]
+    assert e["label"] == ESTIMATE_LABEL == "estimativa, não divulgada" and e["adm_pct_year"] == 1.98 and e["method"]
+    assert h["rate_pct_year"] != e["adm_pct_year"] and "média" not in str(f3)
+    # the performance fee is the source's own text: verbatim, never parsed, never R$
+    assert f3["disclosed"]["perf_as_filed"] == "20% do que exceder 100% do Ibovespa"
+    assert not any(k.startswith("perf_per_year") for k in f3["disclosed"])
+    # classes that differ: the range as filed, no single value
+    assert f4["fee_status"] == "faixa divulgada" and f4["headline"]["kind"] == "faixa"
+    assert (f4["headline"]["rate_min_pct_year"], f4["headline"]["rate_max_pct_year"]) == (0.15, 0.30)
+    assert f4["disclosed"]["adm_rate_pct_year"] is None
+    # nothing disclosed (and a reset month with no estimate): taxa divulgada não encontrada, estimate NOT substituted
+    assert f5["fee_status"] == NOT_FOUND and f5["headline"] is None
+    assert f5["estimate"]["available"] is False and f5["estimate"]["adm_pct_year"] is None and f5["estimate"]["fiscal_reset_suspect"] is True
+    assert f6["fee_status"] == NOT_FOUND and f6["headline"] is None and f6["estimate"] is None  # FIDC: no row at all
+    assert f8["fee_status"] == NOT_FOUND
+    # the lâmina date and age are always there; older than 24 months is flagged defasada
+    assert f7["disclosed"]["stale"] is True and f7["disclosed"]["stale_label"] == "defasada" and f7["disclosed"]["age_months"] == 29
+    assert "lamina_defasada" in {x["kind"] for x in f7["findings"]}
+    # estimate vs a fixed fee: attention when it differs by more than max(0.25 p.p., 25%)
+    diff = next(x for x in f7["findings"] if x["kind"] == "estimativa_difere_da_divulgada")
+    assert diff["level"] == "atenção" and diff["difference_pp"] == pytest.approx(0.47)
+    assert not any(x["kind"] == "estimativa_difere_da_divulgada" for x in f3["findings"])  # 0.02 p.p. is within tolerance
+    # the declared total expense ratio is a separate field, never added
+    assert f3["expense_ratio"]["declared_pct"] is None and "PR_PL_DESPESA" in f3["expense_ratio"]["note"]
     t = doc["fees"]["totals"]
-    assert t["adm_disclosed_per_year_brl"] == f3["adm"]["per_year_brl"]
-    assert t["adm_estimated_per_year_brl"] == round(f4["adm"]["per_year_brl"] + f7["adm"]["per_year_brl"], 2)
-    assert "fee_units" in {a["id"] for a in doc["assumptions"]}
+    assert t["adm_disclosed_fixed_per_year_brl"] == round(f3["headline"]["per_year_brl"] + f7["headline"]["per_year_brl"], 2)
+    assert t["adm_disclosed_range_low_per_year_brl"] == f4["headline"]["per_year_min_brl"]
+    assert t["estimate_label"] == ESTIMATE_LABEL and "fee_units" in {a["id"] for a in doc["assumptions"]}
+
+
+def test_underlying_funds_keep_their_own_fee_and_are_not_added(doc):
+    und = doc["fees"]["underlying"]
+    assert und and all(u["label"] == NOT_ADDED and u["added_to_totals"] is False for u in und)
+    master = next(u for u in und if u["fund_cnpj"] == "35377390000106" and u["line_no"] == 4)
+    # a disclosed 0 stays a disclosed 0, plus a finding because the balancete registers an expense
+    assert master["headline"]["rate_pct_year"] == 0.0
+    f = next(x for x in master["findings"] if x["kind"] == "divulgado_zero_balancete_registra_despesa")
+    assert f["level"] == "atenção" and f["text"] == "Divulgado 0, balancete registra despesa."
+    # the feeder's own fee is untouched by its master's
+    feeder = next(l for l in doc["fees"]["lines"] if l["line_no"] == 4)
+    assert feeder["headline"]["kind"] == "faixa"
+    assert doc["fees"]["totals"]["fund_value_brl"] == pytest.approx(sum(l["position_value_brl"] for l in doc["fees"]["lines"]))
 
 
 def test_lookthrough_three_levels_and_overlap(doc):
     lt = {ln["line_no"]: ln for ln in doc["look_through"]["lines"]}
-    assert lt[4]["status"] == "complete" and lt[4]["max_depth_seen"] >= 4
+    assert lt[4]["status"] == "complete" and lt[4]["max_depth_seen"] >= 3  # root's own holdings are depth 0
     kinds = {g["kind"] for g in doc["look_through"]["shared_exposure"]["groups"]}
     assert {"mesmo_ativo", "mesmo_emissor_raiz_cnpj", "mesmo_codigo_emissor_b3", "mesmo_fundo_investido"} <= kinds
     assert doc["look_through"]["shared_exposure"]["economic_group_assessed"] is False
@@ -181,7 +212,7 @@ def test_lookthrough_exposure_is_value_times_weight(doc):
 def test_cycle_rows_are_not_followed():
     canned = load_fake_rows(FAKE_ROWS)
     rows = copy.deepcopy(canned["portfolio_lookthrough"][0]["rows"])
-    cyc = dict(rows[0], is_cycle=True)
+    cyc = dict(rows[0], is_cycle=True, asset_kind="fund_quota_cycle")
     canned["portfolio_lookthrough"][0]["rows"] = rows + [cyc]
     d = run(canned)
     ln = next(l for l in d["look_through"]["lines"] if l["line_no"] == 3)
@@ -193,7 +224,7 @@ def test_indexer_rules_and_unclassified_always_shown(doc):
     classes = {c["indexer_class"]: c for c in idx["classes"]}
     assert "sem classificação" in classes and idx["classes"][-1]["indexer_class"] == "sem classificação"
     assert abs(idx["sum_check_brl"]) < 0.02
-    assert sum(c["pct_of_portfolio"] for c in idx["classes"]) == pytest.approx(100.0, abs=0.01)
+    assert sum(c["portfolio_pct"] for c in idx["classes"]) == pytest.approx(100.0, abs=0.01)
     assert {"pós-fixado (Selic)", "renda variável", "inflação (IPCA)", "pós-fixado (CDI)"} <= set(classes)
     assert idx["never_inferred_from_name"] is True and len(idx["rules_sha256"]) == 64
     reasons = " ".join(u["reason"] for u in idx["unclassified_breakdown"])
@@ -241,7 +272,7 @@ def test_indexer_classification_rules(kw, expected):
 
 def test_indexer_rules_csv_has_no_duplicates_and_known_columns():
     rules = load_rules()
-    assert {k[0] for k in rules} == {"block1", "block4", "block6", "direct_tesouro", "direct"}
+    assert {k[0] for k in rules} == {"block1", "block4", "block6", "direct_tesouro", "direct", "statement_taxa"}
     first = (ROOT / "src/portfolio/rules/indexer_rules.csv").read_text(encoding="utf-8").splitlines()[0]
     assert first == "source,field,value,indexer_class,note"
 
@@ -300,7 +331,7 @@ def test_refused_fees_makes_fees_unknown_only():
     canned["portfolio_fees"] = [{"match": {}, "error": REFUSAL}]
     d = run(canned)
     assert d["fees"]["status"] == "unknown" and d["fees"]["errors"][0]["error"] == REFUSAL
-    assert all(l["fee_status"] == UNKNOWN_FEE for l in d["fees"]["lines"])
+    assert all(l["fee_status"] == NOT_FOUND for l in d["fees"]["lines"])
     for sec in ("identification", "look_through", "indexer", "sector", "restatements", "risk_signals"):
         assert d[sec]["status"] != "unknown", sec
     assert any(p["error"] == REFUSAL for p in d["provenance"])

@@ -169,7 +169,7 @@ def compute_indexer(
         {
             "indexer_class": k,
             "value_brl": brl(v),
-            "pct_of_portfolio": pct(v, total),
+            "portfolio_pct": pct(v, total),
             "n_items": n_items.get(k, 0),
         }
         for k, v in ordered
@@ -187,7 +187,7 @@ def compute_indexer(
         "classes": classes,
         "sum_check_brl": brl(check),
         "unclassified_breakdown": [
-            {"reason": k, "value_brl": brl(v), "pct_of_portfolio": pct(v, total)}
+            {"reason": k, "value_brl": brl(v), "portfolio_pct": pct(v, total)}
             for k, v in sorted(unclassified_reasons.items(), key=lambda kv: -kv[1])
         ],
         "by_position": [
