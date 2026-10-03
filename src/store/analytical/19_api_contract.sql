@@ -4785,12 +4785,20 @@ STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-    WITH ref AS (
+    WITH ref AS MATERIALIZED (
         -- setor/segmento ride along from company_ref because CVM's chart of
         -- accounts is sector-specific: the same cd_conta is a different
         -- quantity for a bank and an industrial filer. A caller computing a
         -- median, rank or percentile needs the partition key on the row, not
         -- a second round trip. It is a partition key, not a display label.
+        --
+        -- Resolve the company once, before cia_account is touched (#536, the
+        -- shape fixed in api.financial_statement_history by #531).
+        -- api.company_ref is a set-returning function the planner estimates
+        -- at 1,000 rows, so joined directly the company never reached the
+        -- index condition and a whole cia_account partition could be scanned.
+        -- The scalar subquery below hands the planner one cd_cvm. Zero or one
+        -- row either way, same rows out.
         SELECT r.cd_cvm, r.cnpj, r.company, r.ticker, r.setor, r.segmento
         FROM api.company_ref(p_id) r
     ),
@@ -4816,6 +4824,7 @@ AS $$
             ) AS latest_versao
         FROM public.cia_account a
         JOIN ref r ON r.cd_cvm = a.cd_cvm
+                  AND a.cd_cvm = (SELECT x.cd_cvm FROM ref x)
         JOIN win w ON TRUE
         WHERE
             -- 'ÚLTIMO' is the period the document is FOR; 'PENÚLTIMO' is the
