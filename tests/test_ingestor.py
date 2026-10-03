@@ -733,7 +733,8 @@ class TestBacenIngestorSGS:
             upserted.extend(rows)
             return len(rows)
 
-        with patch("src.pipeline.bacen_pipeline.BacenClient") as mock_client_cls, \
+        with patch("src.pipeline.bacen_pipeline.BacenIngestor._last_sgs_landing", return_value=None), \
+             patch("src.pipeline.bacen_pipeline.BacenClient") as mock_client_cls, \
              patch("src.pipeline.bacen_pipeline.get_pg_client", return_value=MagicMock()), \
              patch("src.pipeline.bacen_pipeline.upsert_rows", side_effect=_fake_upsert):
             mock_client = mock_client_cls.return_value
@@ -753,7 +754,8 @@ class TestBacenIngestorSGS:
     async def test_ingest_sgs_empty_response_returns_zero(self):
         from src.pipeline.bacen_pipeline import BacenIngestor
 
-        with patch("src.pipeline.bacen_pipeline.BacenClient") as mock_client_cls, \
+        with patch("src.pipeline.bacen_pipeline.BacenIngestor._last_sgs_landing", return_value=None), \
+             patch("src.pipeline.bacen_pipeline.BacenClient") as mock_client_cls, \
              patch("src.pipeline.bacen_pipeline.get_pg_client", return_value=MagicMock()), \
              patch("src.pipeline.bacen_pipeline.upsert_rows", return_value=0):
             mock_client = mock_client_cls.return_value
@@ -772,7 +774,8 @@ class TestBacenIngestorSGS:
         """
         from src.pipeline.bacen_pipeline import BacenIngestor
 
-        with patch("src.pipeline.bacen_pipeline.BacenClient") as mock_client_cls, \
+        with patch("src.pipeline.bacen_pipeline.BacenIngestor._last_sgs_landing", return_value=None), \
+             patch("src.pipeline.bacen_pipeline.BacenClient") as mock_client_cls, \
              patch("src.pipeline.bacen_pipeline.get_pg_client", return_value=MagicMock()), \
              patch("src.pipeline.bacen_pipeline.upsert_rows", return_value=0) as up:
             mock_client = mock_client_cls.return_value
