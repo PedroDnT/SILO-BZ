@@ -1,7 +1,7 @@
 # CVM 175: fund levels, master funds and fees without double counting
 
-Research for map #510 (portfolio-diagnosis demo). Read on 2026-10-03 between
-16:30 and 18:10 UTC-3 (19:30 to 21:10 UTC). Primary sources only: the
+Research for map #510 (portfolio-diagnosis demo). Read on 2026-10-03 (UTC-3),
+finished 18:10 UTC-3 (21:10 UTC). Primary sources only: the
 consolidated text of Resolução CVM 175 on `conteudo.cvm.gov.br` and CVM's
 open-data dictionaries on `dados.cvm.gov.br`, both fetched through Firecrawl
 (the agent's proxy refuses both hosts directly). Read-only, bounded SELECTs
@@ -19,8 +19,9 @@ was dispatched.
    speaks of "inscrições no CNPJ" for classes (Art. 37 § 1 II). It gives no
    CNPJ to a subclass anywhere I read. A _classe de investimento em cotas_
    must hold at least 95% of its PL in quotas of other classes (Anexo I
-   Art. 2 VI). Res. 175 never uses the words "master", "feeder" or "espelho".
-   The open data does: the Extrato has `FUNDO_ESPELHO`, "Indica se é
+   Art. 2 VI). The Parte Geral, Anexo I and the Suplementos never use the
+   words "master", "feeder" or "espelho" (Anexos II to XII were not
+   searched). The open data does: the Extrato has `FUNDO_ESPELHO`, "Indica se é
    fundo-espelho".
 2. **Fees.** **Parte Geral Art. 98** is the key article. Any class that may
    buy quotas of other funds "deve estabelecer em seu regulamento que suas
@@ -56,8 +57,12 @@ was dispatched.
      PL in fund quotas in CDA 2026-08, against a median of 63% for `N`.
    - No file names the master. The link is CDA block 2 (`cnpj_cota`).
    - **For FICs with a fee range, the Extrato `TAXA_ADM` equals the lâmina
-     maximum in 596 of 993 cases and the minimum in 218.** It is mostly the
-     all-in figure, so adding the master's fee to it mostly double counts.
+     maximum in 596 of 993 cases and the minimum in 218.** That fits the
+     Art. 98 § 1 reading (the filed fee includes the investees'), but it does
+     not prove it: non-FIC classes show the same pattern (341 of 602), so a
+     range may also be a PL-tier fee (Art. 48 § 2 XIX b). Whether feeder plus
+     master double counts depends on whether the master is unlisted and run
+     by a related manager. The open data does not state that relation.
    - SILO cannot walk fundo → classe today. Only 132 of 36,770 class rows
      find their parent fund's row, because both land on the same
      `(cnpj, entity_type)` key. Subclasses are not ingested.
@@ -174,14 +179,14 @@ Around it:
 
 What the data shows:
 
-| Fact                                                                                           | Evidence (read-only SQL, 2026-10-03 about 17:30 to 18:05 UTC-3, 20:30 to 21:05 UTC)                                                                                                                                                                                                                                                       |
+| Fact                                                                                           | Evidence (read-only SQL, 2026-10-03, before 18:10 UTC-3 / 21:10 UTC)                                                                                                                                                                                                                                                       |
 | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Classe_Cotas` takes S/N on FIF classes and is empty on FIDC, FII, FIP, FIAGRO classes         | `fi`: N 15,888 active + 869 cancelled, S 9,497 + 412; every other entity type NULL                                                                                                                                                                                                                                                        |
 | `Classe_Cotas = S` means a classe de investimento em cotas (inferred from data; meta not read) | CDA 2026-08, fund quotas summed by held CNPJ over `fact_fund_monthly.vl_patrim_liq` for 2026-08: of 7,011 `S` classes, 6,856 (97.8%) hold >= 95% of PL in fund quotas (median 100%). Of 6,841 `N` classes, 2,308 do (median 62.6%)                                                                                                        |
-| One dominant investee is common but not universal among `S`                                    | `S`: 4,720 have one investee > 90% of PL, 4,596 >= 95%. So 2,291 `S` classes at >= 95% in quotas spread them over several funds. `N`: 728 have one investee > 90%                                                                                                                                                                         |
+| One dominant investee is common but not universal among `S`                                    | `S`: 4,720 have one investee > 90% of PL, 4,596 >= 95%. So the > 90%-in-one rule misses 2,291 of the 7,011 `S` classes (155 of them hold less than 95% in quotas altogether). `N`: 728 have one investee > 90%                                                                                                                                                                         |
 | The dominant investee is often outside the group                                               | Classes with one investee >= 95% of PL, by that row's `emissor_ligado`: `S` 2,472 S / 2,124 N; `N` 425 S / 214 N. **Not verified:** that `emissor_ligado` equals Art. 98 § 2 II's "parte relacionada ao gestor"; the CDA dictionary was not readable here (zip). Use it only as a candidate proxy                                         |
 | `FUNDO_ESPELHO` is the feeder flag in the data                                                 | latest Extrato row per CNPJ: filled only when `FUNDO_COTAS = S`; S on 1,902 `FI` + 533 `CLASSES - FIF` rows                                                                                                                                                                                                                               |
-| **The Extrato fee of a FIC with a range is mostly the maximum**                                | latest Extrato row joined to the latest lâmina row (class-level row preferred), lâmina `Variável` with distinct min and max, Extrato `FUNDO_COTAS = S`: 993 funds; Extrato `TAXA_ADM` = lâmina max 596, = min 218, neither 179. Same for non-FIC `Variável`: 602 with a range, max 341, min 144. The two rows can be from different dates |
+| **The Extrato fee of a FIC with a range is usually the maximum**                                | latest Extrato row joined to the latest lâmina row (class-level row preferred), lâmina `Variável` with distinct min and max, Extrato `FUNDO_COTAS = S`: 993 funds; Extrato `TAXA_ADM` = lâmina max 596, = min 218, neither 179. Same for non-FIC `Variável`: 602 with a range, max 341, min 144. The two rows can be from different dates. Because non-FICs show the same pattern, this does not by itself show that the range is the Art. 98 § 1 range |
 | SILO cannot walk fundo → classe as stored                                                      | class rows whose `raw->>'ID_Registro_Fundo'` matches a fund-level row: **132 of 36,770**. Cause: both files upsert into `cvm_fund_registry` on `(cnpj, entity_type)` and the class CNPJ is the fund CNPJ, so whichever loads last owns `raw`                                                                                              |
 | Caveat on the CDA month                                                                        | rows in `cvm_fi_cda_cotas`: 129,399 in 2026-03, 128,994 in 2026-05, then 81,899 / 81,015 / 81,006 in 2026-06..08. The cause was not investigated, so the 2026-08 shares above may cover fewer classes than earlier months                                                                                                                 |
 
@@ -190,10 +195,10 @@ What the data shows:
 | Claim                                                        | Verdict                                                      | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | ------------------------------------------------------------ | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | "Use cad_fi (inf_cadastral_fi) as the definitive fee source" | **Not supported**                                            | CVM's dataset page lists `cad_fi.csv` as "Fundos de Investimento – Não Adaptados RCVM175". In SILO, 14,120 registry rows carry a `cad_fi` `TAXA_ADM`; 14,115 of them are cancelled, and **8** are among the 26,046 FI funds with a `vl_quota` in `fact_fund_monthly` 2026-07..09 (the dataset notes' figure, 7 of 25,178 funds reporting NAV on 2026-09-15, was measured on another denominator). The Extrato covers 21,962 of the same 26,046 (`extrato-coverage.md`)                               |
-| "Because sites like StatusInvest use it"                     | **Not verified for StatusInvest; contradicted for one site** | StatusInvest was not checked. etfsbrasil.com.br shows "Taxa de administração total 45,00%" for CNPJ 50197313000150 (read 2026-10-03 about 18:00 UTC-3, 21:00 UTC). SILO holds no `cad_fi` fee for that CNPJ (`taxa_adm` NULL, row is a class row with `Classe_Cotas = S`). The Extrato value is 45.0 (`DT_COMPTC` 2024-05-03). The site's figure matches the Extrato, not `cad_fi`. Which file the site reads is not known                                                                           |
-| "If a fee is > 10%, divide by 100"                           | **Fits 2 of the 6 test funds**                               | Extrato → lâmina: 49995610000161 25 → 0.25, 36443522000105 25 → 0.25 (fit); 09720710000160 8 → 0.8 (left at 8 by the rule); 39540780000106 7 → 0.07 (left at 7); 50197313000150 45 → 0.06 (rule gives 0.45); 47423757000151 65 → 0.45 (rule gives 0.65). Over all 18 funds with an Extrato `TAXA_ADM` in (5, 100] and a lâmina fee, the ratio is 10 (3 funds), 15, 100 (7), 144, 160, 228, 750, and 1.00 (4 funds at 7 to 8.5 where both documents agree). One lâmina is 0. No constant divisor fits |
+| "Because sites like StatusInvest use it"                     | **Not verified for StatusInvest; contradicted for one site** | StatusInvest was not checked. etfsbrasil.com.br shows "Taxa de administração total 45,00%" for CNPJ 50197313000150 (read 2026-10-03). SILO holds no `cad_fi` fee for that CNPJ (`taxa_adm` NULL, row is a class row with `Classe_Cotas = S`). The Extrato value is 45.0 (`DT_COMPTC` 2024-05-03). The site's figure matches the Extrato, not `cad_fi`. Which file the site reads is not known                                                                           |
+| "If a fee is > 10%, divide by 100"                           | **Fits 2 of the 6 test funds**                               | Extrato → lâmina: 49995610000161 25 → 0.25, 36443522000105 25 → 0.25 (fit); 09720710000160 8 → 0.8 (left at 8 by the rule); 39540780000106 7 → 0.07 (left at 7); 50197313000150 45 → 0.06 (rule gives 0.45); 47423757000151 65 → 0.45 (rule gives 0.65). Over all 18 funds with an Extrato `TAXA_ADM` in (5, 100] and a lâmina fee, the ratio is 100 (7 funds), 10 (2), 1.00 (3, at 7, 7.5 and 8.5, where both documents agree), and 15, 144, 160, 228 and 750 (1 each). One lâmina is 0 (18 in all). No constant divisor fits |
 | "A fund with > 90% of PL in one other fund is a shell"       | **Not the regulatory test**                                  | The legal category is the classe de investimento em cotas, >= 95% in quotas of _any number_ of classes (Anexo I Art. 2 VI). CVM publishes it as `Classe_Cotas` / `FUNDO_COTAS`. The 90%-in-one rule misses 2,291 `S` classes and flags 728 `N` classes (section 3). Art. 98 applies to any class that _may_ hold fund quotas, so a concentration threshold is not what decides the fee treatment                                                                                                     |
-| "Effective fee = shell fee + master fee"                     | **Double counts where Art. 98 applies**                      | Art. 98 caput and § 1 (section 2). For FICs with a range, the Extrato `TAXA_ADM` equals the lâmina maximum in 596 of 993 cases (section 3). The sum is correct only for § 2 investees (listed, or an unrelated manager) and for performance/distribution fees                                                                                                                                                                                                                                        |
+| "Effective fee = shell fee + master fee"                     | **Double counts where Art. 98 applies**                      | Art. 98 caput and § 1 (section 2). For FICs with a range, the Extrato `TAXA_ADM` equals the lâmina maximum in 596 of 993 cases (section 3), consistent with an all-in filed fee. Among FICs with one investee >= 95% of PL, 2,124 of 4,596 have that investee flagged `emissor_ligado = N`; if that flag tracks § 2 II (not verified), summing is correct for them. The sum is correct only for § 2 investees (listed, or an unrelated manager) and for performance/distribution fees                                                                                                                                                                                                                                        |
 
 Two cautions on the scale-error rows:
 
@@ -218,8 +223,8 @@ Two cautions on the scale-error rows:
   fundos investidos (Art. 98 § 1)" and the minimum "da própria classe". Add
   investee adm/gestão fees only for listed or unrelated-manager investees,
   weighted by the CDA share. Add investee performance fees always, as a
-  separate line. Never apply a fixed divisor. Flag values above 5 as
-  "escala suspeita" as `extrato-coverage.md` recommends.
+  separate line. Never apply a fixed divisor. `extrato-coverage.md`
+  recommends dropping Extrato values above 5 as scale errors.
 
 ## Sources
 
@@ -234,17 +239,15 @@ All accessed 2026-10-03 (UTC-3) through Firecrawl unless noted.
   8, 9, 37, 48, 56, 97 to 100, 117 and 140.
 - Anexo Normativo I (FIF), consolidated:
   <https://conteudo.cvm.gov.br/export/sites/cvm/legislacao/resolucoes/anexos/100/resol175consolid_Anexo01.pdf>
-  (49 pages, live fetch about 16:45 UTC-3). Arts. 2, 3, 14, 15, 28 to 31, 44,
+  (49 pages, live fetch). Arts. 2, 3, 14, 15, 28 to 31, 44,
   71 and 72.
 - Suplementos, consolidated:
   <https://conteudo.cvm.gov.br/export/sites/cvm/legislacao/resolucoes/anexos/100/resol175consolid_Suplementos.pdf>
-  (104 pages, live fetch about 17:05 UTC-3). Suplemento B (lâmina) item 4 and
+  (104 pages, live fetch). Suplemento B (lâmina) item 4 and
   Suplemento C (demonstração de desempenho) expense table and notes.
 - Resolução CVM 240 page:
-  <https://conteudo.cvm.gov.br/legislacao/resolucoes/resol240.html> (live,
-  about 18:05 UTC-3).
-- FI/CAD dataset page: <https://dados.cvm.gov.br/dataset/fi-cad> (live, about
-  17:40 UTC-3; "Última Atualização 3 de outubro de 2026, 07:00 (UTC-04:00)").
+  <https://conteudo.cvm.gov.br/legislacao/resolucoes/resol240.html> (live).
+- FI/CAD dataset page: <https://dados.cvm.gov.br/dataset/fi-cad> (live; "Última Atualização 3 de outubro de 2026, 07:00 (UTC-04:00)").
 - FI/CAD META directory and `meta_cad_fi.txt`:
   <https://dados.cvm.gov.br/dados/FI/CAD/META/>,
   <https://dados.cvm.gov.br/dados/FI/CAD/META/meta_cad_fi.txt> (live).
@@ -259,8 +262,7 @@ All accessed 2026-10-03 (UTC-3) through Firecrawl unless noted.
   zip, not read here; the lâmina dictionary is quoted from
   `lamina-coverage.md` § 1).
 - etfsbrasil.com.br fund page:
-  <https://www.etfsbrasil.com.br/fundos/50197313000150> (live, about 18:00
-  UTC-3). Secondary site, used only to test claim d.
+  <https://www.etfsbrasil.com.br/fundos/50197313000150> (live). Secondary site, used only to test claim d.
 - SILO warehouse, read-only: `cvm_fund_registry`, `cvm_fi_extrato`,
   `cvm_fi_lamina`, `cvm_fi_cda_cotas`, `fact_fund_monthly` (Supabase project
   `zcjbtpxuhdekpwcxmepn`). Code read: `src/pipeline/ingest_misc.py`,

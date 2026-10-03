@@ -103,5 +103,6 @@ de investimento em cotas (at least 95% in other classes) and Art. 98. Art. 98
 makes a fund-of-funds' adm and gestão fees include its investees', except
 listed funds and unrelated managers' funds. The note also maps which CVM open
 data carries each fee and the fund-of-funds flag, and checks an external fee
-proposal against the warehouse. For FICs with a fee range, the Extrato fee is
-mostly the lâmina maximum, so adding the master's fee would mostly double count.
+proposal against the warehouse. For FICs with a fee range, the Extrato fee usually
+equals the lâmina maximum. Adding the master's fee double counts only when the
+master is unlisted and run by a related manager, which the open data does not state.
