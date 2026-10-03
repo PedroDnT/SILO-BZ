@@ -21,6 +21,7 @@ from src.parsers.field_maps import fi_cda_cotas as _cda_cotas
 from src.parsers.field_maps import fi_cda_debentures as _cda_deb
 from src.parsers.field_maps import fi_perfil as _perfil
 from src.parsers.field_maps import fi_lamina as _lamina
+from src.parsers.field_maps import fi_extrato as _extrato
 from src.parsers.field_maps import fi_balancete as _balancete
 from src.parsers.field_maps import fund_registry as _reg
 from src.store.pg_client import upsert_rows
@@ -499,6 +500,75 @@ def ingest_fi_lamina(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
         _lamina.TABLE,
         records,
         conflict_columns=",".join(_lamina.CONFLICT),
+    )
+
+
+def ingest_fi_extrato(conn: Any, raw_rows: List[Dict[str, Any]], source_file: str) -> int:
+    """Parse and upsert one Extrato das Informacoes CSV (current file or one year).
+
+    Keyed on the source's own (CNPJ_FUNDO_CLASSE, DT_COMPTC). A row whose CNPJ
+    fails DataValidator or whose DT_COMPTC does not parse is dropped and counted.
+    TAXA_ADM is stored exactly as filed: a 0 and a value above 5 are kept (the API
+    reads them, this never rewrites them), and a cell that is not a number lands in
+    `raw["_unparsed"]` instead of being guessed. A repeated (cnpj, dt_comptc) keeps
+    the last row in the file and says so: whether a yearly file repeats the pair
+    was not measured.
+
+    Args:
+        source_file: the CSV name (extrato_fi.csv or extrato_fi_YYYY.csv), stored
+            on every row as its provenance.
+
+    Returns:
+        number of rows upserted
+    """
+    assert_map_matches(
+        raw_rows, _extrato.FIELD_MAP, dataset="fi/extrato",
+        required=("cnpj", "dt_comptc"),
+    )
+    records: List[Dict[str, Any]] = []
+    bad_cnpj = bad_date = n_unparsed = 0
+
+    for row in raw_rows:
+        typed, residual = apply_map(row, _extrato.FIELD_MAP)
+        if not typed.get("cnpj") or not _validator._validate_cnpj(typed["cnpj"])[0]:
+            bad_cnpj += 1
+            continue
+        if typed.get("dt_comptc") is None:
+            bad_date += 1
+            continue
+        unparsed = _unparsed_cells(row, _extrato.FIELD_MAP, typed)
+        if unparsed:
+            n_unparsed += 1
+            residual = {**residual, "_unparsed": unparsed}
+        typed["source_file"] = source_file
+        typed["raw"] = residual
+        records.append(typed)
+
+    if bad_cnpj or bad_date:
+        logger.warning(
+            "cvm_fi_extrato %s: dropped %d row(s) with an invalid CNPJ and %d with no "
+            "parseable DT_COMPTC, of %d", source_file, bad_cnpj, bad_date, len(raw_rows),
+        )
+    if n_unparsed:
+        logger.warning(
+            "cvm_fi_extrato %s: %d row(s) have a numeric or date cell that did not parse; "
+            "kept as text in raw['_unparsed']", source_file, n_unparsed,
+        )
+    if not records:
+        return 0
+
+    keys = {(r["cnpj"], r["dt_comptc"]) for r in records}
+    if len(keys) < len(records):
+        logger.warning(
+            "cvm_fi_extrato %s: %d source row(s) repeat a (cnpj, dt_comptc) key; "
+            "the last one in the file is kept", source_file, len(records) - len(keys),
+        )
+
+    return upsert_rows(
+        conn,
+        _extrato.TABLE,
+        records,
+        conflict_columns=",".join(_extrato.CONFLICT),
     )
 
 

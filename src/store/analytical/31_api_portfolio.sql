@@ -1,13 +1,14 @@
 -- =============================================================================
 -- 31_api_portfolio.sql
 -- The portfolio-diagnosis engine's three set-based reads, served through schema
--- `api` (catalog v51; map #510, research note
+-- `api` (catalog v51, portfolio_fees v52; map #510, research note
 -- docs/reference/research/portfolio-diagnosis-phase0.md §2, §4, §8 slice 2-3).
 --
 --   api.portfolio_resolve      statement lines (names, optional CNPJs, quotas)
 --                              -> candidate funds, scored, with an ambiguity flag.
 --   api.portfolio_fees         per CNPJ: the fee ESTIMATED from the balancete
---                              accruals, next to the fee the fund DISCLOSED.
+--                              accruals, next to the fee the fund DISCLOSED (the
+--                              CVM Extrato first, then the lâmina, then cad_fi).
 --   api.portfolio_lookthrough  per CNPJ: what the fund holds through its fund
 --                              quotas (CDA block 2, recursively), down to the
 --                              assets of CDA blocks 1, 4 and 6.
@@ -49,16 +50,37 @@
 -- of an ambiguous line.
 --
 -- FEES (portfolio_fees). Two kinds of number, in separate columns, never mixed:
---   * DISCLOSED (disclosed_*): the fee the fund published. From the lâmina
---     (cvm_fi_lamina through vw_fi_lamina_latest, newest reference month, slice
---     A) when it gives a fee, else from cad_fi (cvm_fund_registry taxa_adm,
---     taxa_perfm, inf_taxa_adm, inf_taxa_perfm; migration 64). ONE source per
---     fund, named in disclosed_source with its date (disclosed_as_of; the
---     lâmina also gives disclosed_age_months). A part the source did not file is
---     NULL, never a zero fee; classes that disclose different fees give a NULL
---     single value, the min and max, and a note. The view is read dynamically
---     and by key name, so the file applies before the lâmina exists (then every
---     lâmina column is NULL and cad_fi is the source).
+--   * DISCLOSED (disclosed_*): the fee the fund published, ONE source per fund in
+--     this order (catalog v52, owner decision on issue #515 after the coverage
+--     measurement of #524): the CVM Extrato das Informacoes (cvm_fi_extrato
+--     through vw_fi_extrato_latest, migration 66: a TAXA_ADM for 84.3% of the
+--     active FI funds, one row per fund or class), else the lâmina (cvm_fi_lamina
+--     through vw_fi_lamina_latest, newest reference month, migration 65: 15.9%),
+--     else cad_fi (cvm_fund_registry taxa_adm, taxa_perfm, inf_taxa_adm,
+--     inf_taxa_perfm; migration 64). The source is named in disclosed_origin
+--     (extrato | lamina | cad_fi) and disclosed_source, with the filing date
+--     (disclosed_as_of) and its age (disclosed_age_months, disclosed_age_days). A
+--     part the source did not file is NULL, never a zero fee; lâmina classes that
+--     disclose different fees give a NULL single value, the min and max, and a
+--     note. Both views are read dynamically, so the file applies before they
+--     exist (then the columns of the missing source are NULL and the fee falls to
+--     the next source).
+--     Two reading rules on the single administration fee (% a year as filed),
+--     applied here and never to the stored value: a filed 0 comes back as 0 with
+--     filed_zero TRUE (16.7% of the Extrato's values are 0 and the balancete books
+--     a fee for most of those funds: read it as "not informed", never as a zero
+--     cost); a filed value above 5 (115 of 21,962, maximum 14,638.38, scale
+--     errors) is NOT the fee: disclosed_taxa_adm is NULL, implausible_filed TRUE,
+--     the value as filed in taxa_adm_filed_raw. An Extrato row that exists is the
+--     source even then: it does not fall through to an older source (about 150
+--     funds whose Extrato says 0 have a lâmina fee that stays hidden; the owner's
+--     rule, recorded in the PR).
+--     The Extrato also gives the performance fee as filed (extrato_taxa_perfm,
+--     numeric, with its benchmark, method and text), entry and exit fees and the
+--     custody fee. Its row is the CLASS for a CVM 175 fund: there is no subclass
+--     column, so a subclass fee is not assumed (extrato_class_note). The declared
+--     total expense ratio (lamina_pr_pl_despesa, with its period) comes from the
+--     lâmina whatever the fee source and is never added to the administration fee.
 --   * ESTIMATE from the balancete accruals (cvm_fi_balancete_resumo). The fee
 --     accounts (vl_taxa_administracao = COFI 81781001, vl_taxa_performance =
 --     81782000) ACCUMULATE from each fund's own fiscal-year start and are filed
@@ -562,6 +584,10 @@ COMMENT ON FUNCTION api.portfolio_resolve(TEXT[], TEXT[], NUMERIC[], DATE[]) IS
 -- ---------------------------------------------------------------------------
 -- portfolio_fees - the disclosed fee, and a separate estimate from the balancete
 -- ---------------------------------------------------------------------------
+-- The return table grew (catalog v52): CREATE OR REPLACE cannot change a return
+-- type, so the function is dropped and created again inside this file's
+-- transaction. Nothing depends on it; its grants are issued below.
+DROP FUNCTION IF EXISTS api.portfolio_fees(TEXT[], DATE);
 CREATE OR REPLACE FUNCTION api.portfolio_fees(
     p_cnpjs TEXT[],              -- the funds, 14-digit CNPJs (punctuation ignored); at most 200
     p_month DATE DEFAULT NULL    -- the balancete month (any day of it); NULL = each fund's newest balancete
@@ -576,18 +602,44 @@ RETURNS TABLE (
     perf_fee_flow            NUMERIC,  -- ESTIMATE: R$ performance fee accrued in the month; negative = a provision reversed
     perf_fee_pct_annual_est  NUMERIC,  -- ESTIMATE: perf_fee_flow x 12 / nav x 100, % a year
     fiscal_reset_suspect     BOOLEAN,  -- TRUE: the accumulated fee fell (or cad_fi says the fiscal year starts this month)
-    disclosed_taxa_adm       NUMERIC,  -- DISCLOSED administration fee, % a year as published; NULL = not disclosed (never zero)
-    disclosed_taxa_adm_min   NUMERIC,  -- lowest administration fee disclosed across the fund's classes (lâmina taxa_adm_min, else taxa_adm)
+    disclosed_taxa_adm       NUMERIC,  -- DISCLOSED administration fee, % a year as filed; NULL = not disclosed (never zero) or a filed value above 5 (implausible_filed); a filed 0 stays 0 (filed_zero)
+    disclosed_taxa_adm_min   NUMERIC,  -- lowest administration fee disclosed across the fund's classes (lâmina taxa_adm_min, else taxa_adm; Extrato: the fee itself)
     disclosed_taxa_adm_max   NUMERIC,  -- highest administration fee disclosed across the fund's classes
-    disclosed_taxa_perfm     TEXT,     -- DISCLOSED performance fee as published (text in the lâmina); NULL = not disclosed
+    disclosed_taxa_perfm     TEXT,     -- DISCLOSED performance fee as filed, text (lâmina taxa_perfm; Extrato inf_taxa_perfm, its numeric parts are the extrato_* columns); NULL = not disclosed
     disclosed_taxa_adm_info  TEXT,     -- cad_fi INF_TAXA_ADM, free text, as published (cad_fi source only)
     disclosed_taxa_perfm_info TEXT,    -- cad_fi INF_TAXA_PERFM, free text, as published (cad_fi source only)
-    disclosed_source         TEXT,     -- cvm_fi_lamina | cvm_fund_registry (cad_fi); NULL = nothing disclosed in either
-    disclosed_as_of          DATE,     -- lâmina: the reference month (dt_comptc); cad_fi: the day SILO read the row (UTC-3)
-    disclosed_age_months     INT,      -- months from disclosed_as_of to the end of the newest month SILO holds; NULL for cad_fi
-    disclosed_n_classes      INT,      -- lâmina classes/subclasses at that reference month; NULL for cad_fi
-    disclosed_note           TEXT,     -- why a disclosed number is NULL or a range (classes differ), else NULL
-    estimate_label           TEXT      -- says the estimate is an estimate, and why one is missing
+    disclosed_source         TEXT,     -- cvm_fi_extrato | cvm_fi_lamina | cvm_fund_registry (cad_fi); NULL = nothing disclosed in any
+    disclosed_as_of          DATE,     -- Extrato: DT_COMPTC of the filed version; lâmina: the reference month (dt_comptc); cad_fi: the day SILO read the row (UTC-3)
+    disclosed_age_months     INT,      -- months from disclosed_as_of to the end of the newest balancete month SILO holds (0 when later); NULL for cad_fi
+    disclosed_n_classes      INT,      -- lâmina classes/subclasses at that reference month; Extrato: 1 (one row per fund or class); NULL for cad_fi
+    disclosed_note           TEXT,     -- why a disclosed number is NULL, zero, rejected or a range, else NULL
+    estimate_label           TEXT,     -- says the estimate is an estimate, and why one is missing
+    -- ---- appended in catalog v52 (the existing columns above are unchanged) ----
+    disclosed_origin         TEXT,     -- extrato | lamina | cad_fi: which source the disclosed_* columns came from (one per fund); NULL = none
+    disclosed_age_days       INT,      -- days from disclosed_as_of to today (UTC); NULL for cad_fi
+    filed_zero               BOOLEAN,  -- TRUE: the source filed an administration fee of exactly 0 - returned as 0, read it as "not informed", never as a zero cost
+    implausible_filed        BOOLEAN,  -- TRUE: the source filed a fee above 5 (% a year) or below 0 - NOT returned as the fee (disclosed_taxa_adm is NULL); the value is in taxa_adm_filed_raw
+    taxa_adm_filed_raw       NUMERIC,  -- the source's single administration fee exactly as filed, before the zero and above-5 rules; NULL when none or classes differ
+    extrato_tp_fundo_classe  TEXT,     -- Extrato TP_FUNDO_CLASSE: FI (ICVM 555 fund) | CLASSES - FIF (CVM 175 class); only when the source is extrato
+    extrato_classe_anbima    TEXT,     -- Extrato CLASSE_ANBIMA, as filed
+    extrato_class_note       TEXT,     -- the scope of the Extrato row: a class fee (no subclass column) or a fund fee
+    extrato_existe_taxa_perfm TEXT,    -- Extrato EXISTE_TAXA_PERFM: S | N
+    extrato_taxa_perfm       NUMERIC,  -- Extrato TAXA_PERFM as filed
+    extrato_param_taxa_perfm TEXT,     -- Extrato PARAM_TAXA_PERFM as filed (the benchmark)
+    extrato_calc_taxa_perfm  TEXT,     -- Extrato CALC_TAXA_PERFM as filed (the method)
+    extrato_inf_taxa_perfm   TEXT,     -- Extrato INF_TAXA_PERFM as filed (free text)
+    extrato_existe_taxa_ingresso TEXT, -- Extrato EXISTE_TAXA_INGRESSO: S | N
+    extrato_taxa_ingresso_pr NUMERIC,  -- Extrato TAXA_INGRESSO_PR as filed (%)
+    extrato_taxa_ingresso_real NUMERIC, -- Extrato TAXA_INGRESSO_REAL as filed (R$)
+    extrato_existe_taxa_saida TEXT,    -- Extrato EXISTE_TAXA_SAIDA: S | N
+    extrato_taxa_saida_pr    NUMERIC,  -- Extrato TAXA_SAIDA_PR as filed (%)
+    extrato_taxa_saida_real  NUMERIC,  -- Extrato TAXA_SAIDA_REAL as filed (R$)
+    extrato_taxa_custodia_max NUMERIC, -- Extrato TAXA_CUSTODIA_MAX as filed
+    lamina_pr_pl_despesa     NUMERIC,  -- DECLARED total expense ratio (lâmina PR_PL_DESPESA, % of average NAV over the period below), whatever the fee source; NULL when none or classes differ; never added to the administration fee
+    lamina_dt_ini_despesa    DATE,     -- start of the period behind lamina_pr_pl_despesa
+    lamina_dt_fim_despesa    DATE,     -- end of that period
+    lamina_as_of             DATE,     -- the lâmina reference month read for the expense ratio; NULL = no lâmina
+    lamina_expense_note      TEXT      -- why lamina_pr_pl_despesa is NULL (none filed, classes differ), else NULL
 )
 LANGUAGE plpgsql
 STABLE
@@ -602,6 +654,7 @@ DECLARE
     v_bad   TEXT;
     v_ids   TEXT[];
     v_lam   JSONB := '[]'::jsonb;
+    v_ext   JSONB := '[]'::jsonb;
 BEGIN
     IF v_n = 0 THEN
         RAISE EXCEPTION 'portfolio_fees needs p_cnpjs, the funds'' 14-digit CNPJs (resolve names with portfolio_resolve)'
@@ -629,13 +682,31 @@ BEGIN
     FROM unnest(p_cnpjs) AS u(x);
 
     -- The lâmina (vw_fi_lamina_latest: newest dt_comptc per cnpj and subclass,
-    -- slice A, branch demo/lamina) is read dynamically and by key name, so this
-    -- function applies on a database that does not hold the view yet - every
-    -- lâmina column is then NULL and the fee falls back to cad_fi.
+    -- slice A, migration 65) and the Extrato (vw_fi_extrato_latest: newest
+    -- dt_comptc per cnpj, migration 66) are read dynamically, so this function
+    -- applies on a database that does not hold a view yet - the columns of the
+    -- missing source are then NULL and the fee falls to the next source. The
+    -- lâmina is read by key name (to_jsonb); the Extrato by an explicit column
+    -- list, only the columns this function serves (its `raw` is not carried).
     IF to_regclass('public.vw_fi_lamina_latest') IS NOT NULL THEN
         EXECUTE 'SELECT COALESCE(jsonb_agg(to_jsonb(v)), ''[]''::jsonb) '
              || 'FROM public.vw_fi_lamina_latest v WHERE v.cnpj = ANY ($1)'
         INTO v_lam USING v_ids;
+    END IF;
+    IF to_regclass('public.vw_fi_extrato_latest') IS NOT NULL THEN
+        EXECUTE 'SELECT COALESCE(jsonb_agg(jsonb_build_object('
+             || '''cnpj'', v.cnpj, ''dt_comptc'', v.dt_comptc, ''age_days'', v.age_days, '
+             || '''tp_fundo_classe'', v.tp_fundo_classe, ''classe_anbima'', v.classe_anbima, '
+             || '''taxa_adm'', v.taxa_adm, ''taxa_custodia_max'', v.taxa_custodia_max, '
+             || '''existe_taxa_perfm'', v.existe_taxa_perfm, ''taxa_perfm'', v.taxa_perfm, '
+             || '''param_taxa_perfm'', v.param_taxa_perfm, ''calc_taxa_perfm'', v.calc_taxa_perfm, '
+             || '''inf_taxa_perfm'', v.inf_taxa_perfm, '
+             || '''existe_taxa_ingresso'', v.existe_taxa_ingresso, ''taxa_ingresso_pr'', v.taxa_ingresso_pr, '
+             || '''taxa_ingresso_real'', v.taxa_ingresso_real, '
+             || '''existe_taxa_saida'', v.existe_taxa_saida, ''taxa_saida_pr'', v.taxa_saida_pr, '
+             || '''taxa_saida_real'', v.taxa_saida_real)), ''[]''::jsonb) '
+             || 'FROM public.vw_fi_extrato_latest v WHERE v.cnpj = ANY ($1)'
+        INTO v_ext USING v_ids;
     END IF;
 
     RETURN QUERY
@@ -654,7 +725,13 @@ BEGIN
                     THEN (e ->> 'taxa_adm_min')::numeric END AS taxa_adm_min,
                CASE WHEN e ->> 'taxa_adm_max' ~ '^-?[0-9]+(\.[0-9]+)?$'
                     THEN (e ->> 'taxa_adm_max')::numeric END AS taxa_adm_max,
-               NULLIF(btrim(e ->> 'taxa_perfm'), '') AS taxa_perfm
+               NULLIF(btrim(e ->> 'taxa_perfm'), '') AS taxa_perfm,
+               CASE WHEN e ->> 'pr_pl_despesa' ~ '^-?[0-9]+(\.[0-9]+)?$'
+                    THEN (e ->> 'pr_pl_despesa')::numeric END AS pr_pl_despesa,
+               CASE WHEN e ->> 'dt_ini_despesa' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+                    THEN left(e ->> 'dt_ini_despesa', 10)::date END AS dt_ini_despesa,
+               CASE WHEN e ->> 'dt_fim_despesa' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+                    THEN left(e ->> 'dt_fim_despesa', 10)::date END AS dt_fim_despesa
         FROM jsonb_array_elements(v_lam) AS j(e)
     ),
     lam AS (
@@ -667,10 +744,39 @@ BEGIN
                max(COALESCE(r.taxa_adm_max, r.taxa_adm)) AS adm_max,
                count(DISTINCT r.taxa_perfm) AS n_perfm,
                min(r.taxa_perfm) AS perfm,
-               bool_or(r.taxa_adm IS NULL AND r.taxa_perfm IS NULL) AS has_empty
+               bool_or(r.taxa_adm IS NULL AND r.taxa_perfm IS NULL) AS has_empty,
+               -- The declared expense ratio: one value only when every class
+               -- filed the same one, with the period it covers.
+               count(DISTINCT r.pr_pl_despesa) AS n_desp,
+               min(r.pr_pl_despesa) AS desp,
+               bool_or(r.pr_pl_despesa IS NULL) AS has_empty_desp,
+               min(r.dt_ini_despesa) FILTER (WHERE r.pr_pl_despesa IS NOT NULL) AS desp_ini,
+               max(r.dt_fim_despesa) FILTER (WHERE r.pr_pl_despesa IS NOT NULL) AS desp_fim
         FROM lam_rows r
         WHERE r.dt_comptc = (SELECT max(q.dt_comptc) FROM lam_rows q WHERE q.cnpj = r.cnpj)
         GROUP BY r.cnpj, r.dt_comptc
+    ),
+    -- The Extrato: one row per fund or class (the view's newest DT_COMPTC).
+    ext AS (
+        SELECT e ->> 'cnpj' AS cnpj,
+               (e ->> 'dt_comptc')::date AS x_dt,
+               (e ->> 'age_days')::int AS x_age,
+               NULLIF(btrim(e ->> 'tp_fundo_classe'), '') AS x_tp,
+               NULLIF(btrim(e ->> 'classe_anbima'), '') AS x_classe,
+               (e ->> 'taxa_adm')::numeric AS x_adm,
+               (e ->> 'taxa_custodia_max')::numeric AS x_custodia,
+               NULLIF(btrim(e ->> 'existe_taxa_perfm'), '') AS x_existe_perfm,
+               (e ->> 'taxa_perfm')::numeric AS x_perfm,
+               NULLIF(btrim(e ->> 'param_taxa_perfm'), '') AS x_param,
+               NULLIF(btrim(e ->> 'calc_taxa_perfm'), '') AS x_calc,
+               NULLIF(btrim(e ->> 'inf_taxa_perfm'), '') AS x_inf,
+               NULLIF(btrim(e ->> 'existe_taxa_ingresso'), '') AS x_existe_ing,
+               (e ->> 'taxa_ingresso_pr')::numeric AS x_ing_pr,
+               (e ->> 'taxa_ingresso_real')::numeric AS x_ing_real,
+               NULLIF(btrim(e ->> 'existe_taxa_saida'), '') AS x_existe_saida,
+               (e ->> 'taxa_saida_pr')::numeric AS x_saida_pr,
+               (e ->> 'taxa_saida_real')::numeric AS x_saida_real
+        FROM jsonb_array_elements(v_ext) AS j(e)
     ),
     reg AS (
         -- The FI row first: cad_fi is the FI registry.
@@ -688,16 +794,26 @@ BEGIN
             LIMIT 1
         ) rr ON TRUE
     ),
-    -- ONE disclosed source per fund, never a mix of two: the lâmina when it
-    -- gives a fee, else cad_fi.
+    -- ONE disclosed source per fund, never a mix of two, in this order: the
+    -- Extrato when it has a row with a parseable administration fee (a filed 0
+    -- and a value above 5 count: they are read below, not skipped, so the
+    -- Extrato's word is not silently replaced by an older source's); else the
+    -- lâmina when it gives a fee; else cad_fi.
     disc AS (
         SELECT g.cnpj, g.fund_name, g.fetched_at, g.dt_ini_exerc,
-               (l.cnpj IS NOT NULL AND (l.adm_min IS NOT NULL OR l.perfm IS NOT NULL
-                                        OR l.n_perfm > 1)) AS use_lam,
+               (x.cnpj IS NOT NULL AND x.x_adm IS NOT NULL) AS use_ext,
+               ((x.cnpj IS NULL OR x.x_adm IS NULL)
+                AND l.cnpj IS NOT NULL AND (l.adm_min IS NOT NULL OR l.perfm IS NOT NULL
+                                            OR l.n_perfm > 1)) AS use_lam,
+               x.x_dt, x.x_age, x.x_tp, x.x_classe, x.x_adm, x.x_custodia, x.x_existe_perfm,
+               x.x_perfm, x.x_param, x.x_calc, x.x_inf, x.x_existe_ing, x.x_ing_pr,
+               x.x_ing_real, x.x_existe_saida, x.x_saida_pr, x.x_saida_real,
                l.dt_comptc AS lam_dt, l.n_classes, l.n_adm, l.n_perfm, l.has_empty,
                l.adm_lo, l.adm_hi, l.adm_min, l.adm_max, l.perfm AS lam_perfm,
+               l.n_desp, l.desp, l.has_empty_desp, l.desp_ini, l.desp_fim,
                g.taxa_adm, g.taxa_perfm, g.inf_taxa_adm, g.inf_taxa_perfm
         FROM reg g
+        LEFT JOIN ext x ON x.cnpj = g.cnpj
         LEFT JOIN lam l ON l.cnpj = g.cnpj
     ),
     cur AS (
@@ -720,6 +836,10 @@ BEGIN
                d.fund_name, d.fetched_at, d.dt_ini_exerc, d.use_lam, d.lam_dt, d.n_classes,
                d.n_adm, d.n_perfm, d.has_empty, d.adm_lo, d.adm_hi, d.adm_min, d.adm_max,
                d.lam_perfm, d.taxa_adm, d.taxa_perfm, d.inf_taxa_adm, d.inf_taxa_perfm,
+               d.use_ext, d.x_dt, d.x_age, d.x_tp, d.x_classe, d.x_adm, d.x_custodia,
+               d.x_existe_perfm, d.x_perfm, d.x_param, d.x_calc, d.x_inf, d.x_existe_ing,
+               d.x_ing_pr, d.x_ing_real, d.x_existe_saida, d.x_saida_pr, d.x_saida_real,
+               d.n_desp, d.desp, d.has_empty_desp, d.desp_ini, d.desp_fim,
                -- The calendar month before; a gap is no previous month.
                p.dt_comptc IS NOT NULL AS has_prev,
                (d.dt_ini_exerc IS NOT NULL AND c.dt_comptc IS NOT NULL
@@ -749,75 +869,152 @@ BEGIN
                    WHEN a.has_prev AND a.adm_acc > a.adm_prev THEN NULL
                    WHEN a.has_prev THEN a.perf_prev - a.perf_acc
                END AS perf_flow,
-               -- The newest month SILO holds for the age; never today's date.
-               (SELECT max(z.dt_comptc) FROM public.cvm_fi_balancete_resumo z) AS newest_month
+               -- The newest month SILO holds for the age in months; never today's date.
+               (SELECT max(z.dt_comptc) FROM public.cvm_fi_balancete_resumo z) AS newest_month,
+               -- Which source, and the single administration fee exactly as it filed it.
+               CASE WHEN a.use_ext THEN 'extrato'
+                    WHEN a.use_lam THEN 'lamina'
+                    WHEN COALESCE(a.taxa_adm, a.taxa_perfm) IS NOT NULL
+                         OR COALESCE(a.inf_taxa_adm, a.inf_taxa_perfm) IS NOT NULL
+                    THEN 'cad_fi' END AS origin,
+               CASE WHEN a.use_ext THEN a.x_adm
+                    WHEN a.use_lam THEN (CASE WHEN a.n_adm = 1 AND NOT a.has_empty THEN a.adm_lo END)
+                    ELSE a.taxa_adm END AS fee_raw
         FROM pair a
+    ),
+    -- The owner's reading rules (issue #515, #524): a filed 0 is not a fee and a
+    -- filed value above 5 is a scale error. The stored value is never rewritten;
+    -- the 0 is returned as filed with a flag, the implausible value is withheld.
+    flag AS (
+        SELECT e.*,
+               COALESCE(e.fee_raw = 0, FALSE) AS is_zero,
+               COALESCE(e.fee_raw > 5 OR e.fee_raw < 0, FALSE) AS is_implausible
+        FROM est e
     ),
     page (cnpj, fund_name, month, nav, adm_fee_flow, adm_fee_pct_annual_est,
           perf_fee_flow, perf_fee_pct_annual_est, fiscal_reset_suspect,
           disclosed_taxa_adm, disclosed_taxa_adm_min, disclosed_taxa_adm_max,
           disclosed_taxa_perfm, disclosed_taxa_adm_info, disclosed_taxa_perfm_info,
           disclosed_source, disclosed_as_of, disclosed_age_months,
-          disclosed_n_classes, disclosed_note, estimate_label) AS (
-        SELECT e.cnpj, e.fund_name, e.dt_comptc, e.nav,
-               e.adm_flow,
-               round(e.adm_flow * 12 / NULLIF(e.nav, 0) * 100, 4),
-               e.perf_flow,
-               round(e.perf_flow * 12 / NULLIF(e.nav, 0) * 100, 4),
-               COALESCE(e.reset_suspect, FALSE),
+          disclosed_n_classes, disclosed_note, estimate_label,
+          disclosed_origin, disclosed_age_days, filed_zero, implausible_filed,
+          taxa_adm_filed_raw, extrato_tp_fundo_classe, extrato_classe_anbima,
+          extrato_class_note, extrato_existe_taxa_perfm, extrato_taxa_perfm,
+          extrato_param_taxa_perfm, extrato_calc_taxa_perfm, extrato_inf_taxa_perfm,
+          extrato_existe_taxa_ingresso, extrato_taxa_ingresso_pr, extrato_taxa_ingresso_real,
+          extrato_existe_taxa_saida, extrato_taxa_saida_pr, extrato_taxa_saida_real,
+          extrato_taxa_custodia_max, lamina_pr_pl_despesa, lamina_dt_ini_despesa,
+          lamina_dt_fim_despesa, lamina_as_of, lamina_expense_note) AS (
+        SELECT f.cnpj, f.fund_name, f.dt_comptc, f.nav,
+               f.adm_flow,
+               round(f.adm_flow * 12 / NULLIF(f.nav, 0) * 100, 4),
+               f.perf_flow,
+               round(f.perf_flow * 12 / NULLIF(f.nav, 0) * 100, 4),
+               COALESCE(f.reset_suspect, FALSE),
+               -- Extrato: the fee as filed (the 0 kept, a value above 5 withheld).
                -- Lâmina: one fee only when every class discloses the same one.
-               CASE WHEN e.use_lam THEN (CASE WHEN e.n_adm = 1 AND NOT e.has_empty THEN e.adm_lo END)
-                    ELSE e.taxa_adm END,
-               CASE WHEN e.use_lam THEN e.adm_min END,
-               CASE WHEN e.use_lam THEN e.adm_max END,
-               CASE WHEN e.use_lam THEN (CASE WHEN e.n_perfm = 1 AND NOT e.has_empty THEN e.lam_perfm END)
-                    ELSE e.taxa_perfm::text END,
-               CASE WHEN e.use_lam THEN NULL ELSE e.inf_taxa_adm END,
-               CASE WHEN e.use_lam THEN NULL ELSE e.inf_taxa_perfm END,
-               CASE WHEN e.use_lam THEN 'cvm_fi_lamina'
-                    WHEN COALESCE(e.taxa_adm, e.taxa_perfm) IS NOT NULL
-                         OR COALESCE(e.inf_taxa_adm, e.inf_taxa_perfm) IS NOT NULL
-                    THEN 'cvm_fund_registry (cad_fi)' END,
-               CASE WHEN e.use_lam THEN e.lam_dt
-                    WHEN COALESCE(e.taxa_adm, e.taxa_perfm) IS NOT NULL
-                         OR COALESCE(e.inf_taxa_adm, e.inf_taxa_perfm) IS NOT NULL
-                    THEN (e.fetched_at AT TIME ZONE 'America/Sao_Paulo')::date END,
-               CASE WHEN e.use_lam AND e.newest_month IS NOT NULL THEN
-                    ((extract(year FROM e.newest_month) - extract(year FROM e.lam_dt)) * 12
-                     + extract(month FROM e.newest_month) - extract(month FROM e.lam_dt))::int END,
-               CASE WHEN e.use_lam THEN e.n_classes END,
+               CASE WHEN f.is_implausible THEN NULL ELSE f.fee_raw END,
+               CASE WHEN f.use_ext THEN (CASE WHEN f.is_implausible THEN NULL ELSE f.x_adm END)
+                    WHEN f.use_lam THEN f.adm_min END,
+               CASE WHEN f.use_ext THEN (CASE WHEN f.is_implausible THEN NULL ELSE f.x_adm END)
+                    WHEN f.use_lam THEN f.adm_max END,
+               CASE WHEN f.use_ext THEN f.x_inf
+                    WHEN f.use_lam THEN (CASE WHEN f.n_perfm = 1 AND NOT f.has_empty THEN f.lam_perfm END)
+                    ELSE f.taxa_perfm::text END,
+               CASE WHEN f.use_ext OR f.use_lam THEN NULL ELSE f.inf_taxa_adm END,
+               CASE WHEN f.use_ext OR f.use_lam THEN NULL ELSE f.inf_taxa_perfm END,
+               CASE f.origin WHEN 'extrato' THEN 'cvm_fi_extrato'
+                             WHEN 'lamina' THEN 'cvm_fi_lamina'
+                             WHEN 'cad_fi' THEN 'cvm_fund_registry (cad_fi)' END,
+               CASE f.origin WHEN 'extrato' THEN f.x_dt
+                             WHEN 'lamina' THEN f.lam_dt
+                             WHEN 'cad_fi' THEN (f.fetched_at AT TIME ZONE 'America/Sao_Paulo')::date END,
+               CASE WHEN f.use_ext AND f.newest_month IS NOT NULL THEN
+                    GREATEST(0, ((extract(year FROM f.newest_month) - extract(year FROM f.x_dt)) * 12
+                                 + extract(month FROM f.newest_month) - extract(month FROM f.x_dt))::int)
+                    WHEN f.use_lam AND f.newest_month IS NOT NULL THEN
+                    ((extract(year FROM f.newest_month) - extract(year FROM f.lam_dt)) * 12
+                     + extract(month FROM f.newest_month) - extract(month FROM f.lam_dt))::int END,
+               CASE WHEN f.use_ext THEN 1
+                    WHEN f.use_lam THEN f.n_classes END,
                CASE
-                   WHEN e.use_lam AND (e.n_adm > 1 OR e.n_perfm > 1) THEN
-                       'the fund''s ' || e.n_classes || ' classes disclose different fees: the single value is NULL, read the min and max'
-                   WHEN e.use_lam AND e.has_empty THEN
+                   WHEN f.is_implausible THEN
+                       'the ' || CASE f.origin WHEN 'extrato' THEN 'Extrato' WHEN 'lamina' THEN 'lâmina' ELSE 'cad_fi' END
+                       || ' filed an administration fee of ' || trim_scale(f.fee_raw)::text
+                       || ', outside 0 to 5 % a year: treated as a scale error and not used; the value as filed is in taxa_adm_filed_raw'
+                   WHEN f.is_zero THEN
+                       'the ' || CASE f.origin WHEN 'extrato' THEN 'Extrato' WHEN 'lamina' THEN 'lâmina' ELSE 'cad_fi' END
+                       || ' filed an administration fee of exactly 0: returned as filed (filed_zero); read it as not informed, never as a zero cost'
+                   WHEN f.use_lam AND (f.n_adm > 1 OR f.n_perfm > 1) THEN
+                       'the fund''s ' || f.n_classes || ' classes disclose different fees: the single value is NULL, read the min and max'
+                   WHEN f.use_lam AND f.has_empty THEN
                        'at least one class filed no fee: NULL is not a zero fee'
-                   WHEN e.use_lam AND e.n_adm = 0 THEN
+                   WHEN f.use_lam AND f.n_adm = 0 THEN
                        'the lâmina filed no administration fee: NULL is not a zero fee'
-                   WHEN NOT e.use_lam AND e.taxa_adm IS NULL
-                        AND (e.taxa_perfm IS NOT NULL OR e.inf_taxa_adm IS NOT NULL
-                             OR e.inf_taxa_perfm IS NOT NULL) THEN
+                   WHEN NOT f.use_ext AND NOT f.use_lam AND f.taxa_adm IS NULL
+                        AND (f.taxa_perfm IS NOT NULL OR f.inf_taxa_adm IS NOT NULL
+                             OR f.inf_taxa_perfm IS NOT NULL) THEN
                        'cad_fi filed no administration fee rate: NULL is not a zero fee'
-                   WHEN NOT e.use_lam AND e.taxa_adm IS NULL AND e.taxa_perfm IS NULL
-                        AND e.inf_taxa_adm IS NULL AND e.inf_taxa_perfm IS NULL THEN
-                       'no disclosed fee in the lâmina or in cad_fi: NULL is not a zero fee'
+                   WHEN NOT f.use_ext AND NOT f.use_lam AND f.taxa_adm IS NULL AND f.taxa_perfm IS NULL
+                        AND f.inf_taxa_adm IS NULL AND f.inf_taxa_perfm IS NULL THEN
+                       'no disclosed fee in the Extrato, the lâmina or cad_fi: NULL is not a zero fee'
                END,
                CASE
-                   WHEN e.dt_comptc IS NULL THEN
+                   WHEN f.dt_comptc IS NULL THEN
                        'no estimate: no balancete filed'
                        || CASE WHEN v_month IS NULL THEN '' ELSE ' for ' || to_char(v_month, 'YYYY-MM') END
-                   WHEN e.reset_confirmed THEN
+                   WHEN f.reset_confirmed THEN
                        'estimate from the balancete accruals: this month''s accumulated fee alone, because cad_fi DT_INI_EXERC puts the fiscal-year start in this month; x 12 / NAV'
-                   WHEN NOT e.has_prev THEN
+                   WHEN NOT f.has_prev THEN
                        'no estimate: no balancete for the previous month, so the month''s accrual is unknown'
-                   WHEN e.reset_suspect THEN
+                   WHEN f.reset_suspect THEN
                        'no estimate: the accumulated administration fee fell, the fund''s fiscal-year reset month, and no cad_fi DT_INI_EXERC confirms it'
-                   WHEN e.adm_acc IS NULL THEN
+                   WHEN f.adm_acc IS NULL THEN
                        'estimate from the balancete accruals; no administration fee account filed this month'
                    ELSE
                        'estimate from the balancete accruals: (previous minus current accumulated fee) x 12 / NAV, not the disclosed fee'
+               END,
+               -- ---- appended in v52 ----
+               f.origin,
+               CASE f.origin WHEN 'extrato' THEN f.x_age
+                             WHEN 'lamina' THEN (CURRENT_DATE - f.lam_dt)::int END,
+               f.is_zero,
+               f.is_implausible,
+               f.fee_raw,
+               CASE WHEN f.use_ext THEN f.x_tp END,
+               CASE WHEN f.use_ext THEN f.x_classe END,
+               CASE WHEN f.use_ext AND f.x_tp = 'CLASSES - FIF' THEN
+                        'class-level row (CVM 175): the Extrato has no subclass column, so this is the class''s fee; a fee that differs by subclass is not visible and no subclass fee is assumed'
+                    WHEN f.use_ext AND f.x_tp IS NOT NULL THEN
+                        'fund-level row (ICVM 555): the fee of the fund as filed'
+               END,
+               CASE WHEN f.use_ext THEN f.x_existe_perfm END,
+               CASE WHEN f.use_ext THEN f.x_perfm END,
+               CASE WHEN f.use_ext THEN f.x_param END,
+               CASE WHEN f.use_ext THEN f.x_calc END,
+               CASE WHEN f.use_ext THEN f.x_inf END,
+               CASE WHEN f.use_ext THEN f.x_existe_ing END,
+               CASE WHEN f.use_ext THEN f.x_ing_pr END,
+               CASE WHEN f.use_ext THEN f.x_ing_real END,
+               CASE WHEN f.use_ext THEN f.x_existe_saida END,
+               CASE WHEN f.use_ext THEN f.x_saida_pr END,
+               CASE WHEN f.use_ext THEN f.x_saida_real END,
+               CASE WHEN f.use_ext THEN f.x_custodia END,
+               CASE WHEN f.lam_dt IS NOT NULL AND f.n_desp = 1 AND NOT f.has_empty_desp THEN f.desp END,
+               CASE WHEN f.lam_dt IS NOT NULL AND f.n_desp = 1 AND NOT f.has_empty_desp THEN f.desp_ini END,
+               CASE WHEN f.lam_dt IS NOT NULL AND f.n_desp = 1 AND NOT f.has_empty_desp THEN f.desp_fim END,
+               f.lam_dt,
+               CASE
+                   WHEN f.lam_dt IS NULL THEN NULL
+                   WHEN f.n_desp > 1 THEN
+                       'the fund''s ' || f.n_classes || ' classes declare different expense ratios: the single value is NULL'
+                   WHEN f.n_desp = 0 THEN
+                       'the lâmina filed no expense ratio (PR_PL_DESPESA): NULL is not a zero'
+                   WHEN f.has_empty_desp THEN
+                       'at least one class filed no expense ratio: NULL is not a zero'
                END
-        FROM est e
-        ORDER BY e.cnpj
+        FROM flag f
+        ORDER BY f.cnpj
         LIMIT 1001
     )
     SELECT g.cnpj, g.fund_name, g.month, g.nav, g.adm_fee_flow, g.adm_fee_pct_annual_est,
@@ -825,7 +1022,15 @@ BEGIN
            g.disclosed_taxa_adm, g.disclosed_taxa_adm_min, g.disclosed_taxa_adm_max,
            g.disclosed_taxa_perfm, g.disclosed_taxa_adm_info, g.disclosed_taxa_perfm_info,
            g.disclosed_source, g.disclosed_as_of, g.disclosed_age_months,
-           g.disclosed_n_classes, g.disclosed_note, g.estimate_label
+           g.disclosed_n_classes, g.disclosed_note, g.estimate_label,
+           g.disclosed_origin, g.disclosed_age_days, g.filed_zero, g.implausible_filed,
+           g.taxa_adm_filed_raw, g.extrato_tp_fundo_classe, g.extrato_classe_anbima,
+           g.extrato_class_note, g.extrato_existe_taxa_perfm, g.extrato_taxa_perfm,
+           g.extrato_param_taxa_perfm, g.extrato_calc_taxa_perfm, g.extrato_inf_taxa_perfm,
+           g.extrato_existe_taxa_ingresso, g.extrato_taxa_ingresso_pr, g.extrato_taxa_ingresso_real,
+           g.extrato_existe_taxa_saida, g.extrato_taxa_saida_pr, g.extrato_taxa_saida_real,
+           g.extrato_taxa_custodia_max, g.lamina_pr_pl_despesa, g.lamina_dt_ini_despesa,
+           g.lamina_dt_fim_despesa, g.lamina_as_of, g.lamina_expense_note
     FROM page g
     WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'portfolio_fees')
     ORDER BY g.cnpj
@@ -838,7 +1043,7 @@ GRANT EXECUTE ON FUNCTION api.portfolio_fees(TEXT[], DATE) TO anon, authenticate
 GRANT EXECUTE ON FUNCTION api.portfolio_fees(TEXT[], DATE) TO silo_api;
 
 COMMENT ON FUNCTION api.portfolio_fees(TEXT[], DATE) IS
-    'Fees per fund, two kinds of number that are never mixed. DISCLOSED (disclosed_*): the fee the fund published, from the lâmina (cvm_fi_lamina, newest reference month) first and cad_fi (cvm_fund_registry taxa_adm / taxa_perfm / inf_taxa_*) as the fallback, ONE source per fund; disclosed_source and disclosed_as_of say which and when (the lâmina also gives disclosed_age_months). A NULL disclosed part is not a zero fee; when the fund''s classes disclose different fees the single value is NULL and the min / max and disclosed_note say so. ESTIMATE (adm_fee_flow, perf_fee_flow and the _pct_annual_est columns): from the balancete accruals (cvm_fi_balancete_resumo): the fee accounts accumulate from each fund''s own fiscal-year start and are filed negative, so the month''s accrual is previous minus current accumulated value (served positive = cost; a negative performance accrual is a reversed provision), annualised x 12 / NAV x 100, NAV = groups 6 + 7 + 8 of the month. In the fiscal-year reset month the accumulated fee falls: fiscal_reset_suspect is TRUE and the estimate is NULL, unless cad_fi DT_INI_EXERC puts the fiscal-year start in that month, in which case the month''s accumulated value alone is the accrual. estimate_label says on every row that the estimate is an estimate and why one is missing; it is never presented as the disclosed fee. p_month = the balancete month (NULL = each fund''s newest). One row per distinct CNPJ; more than 200 CNPJs RAISES 22023.';
+    'Fees per fund, two kinds of number that are never mixed. DISCLOSED (disclosed_*): the fee the fund published, ONE source per fund in this order: the CVM Extrato das Informacoes (cvm_fi_extrato, newest version, one row per fund or class), else the lâmina (cvm_fi_lamina, newest reference month), else cad_fi (cvm_fund_registry taxa_adm / taxa_perfm / inf_taxa_*); disclosed_origin (extrato | lamina | cad_fi), disclosed_source, disclosed_as_of (the filing date), disclosed_age_months and disclosed_age_days say which and how old. Two reading rules on the single administration fee, % a year as filed: a filed 0 is returned as 0 with filed_zero TRUE (read it as not informed, never as a zero cost); a filed value above 5 (or below 0) is NOT returned as the fee: disclosed_taxa_adm is NULL, implausible_filed is TRUE and the value as filed is in taxa_adm_filed_raw. The stored value is never rewritten. A NULL disclosed part is not a zero fee; when the lâmina''s classes disclose different fees the single value is NULL and the min / max and disclosed_note say so. An Extrato row that exists is the source, even when its fee is 0 or above 5: it does not fall through to an older source. The Extrato''s performance fee (extrato_taxa_perfm numeric, extrato_param_taxa_perfm, extrato_calc_taxa_perfm, extrato_inf_taxa_perfm text), entry and exit fees (extrato_existe_* flags, _pr percent and _real reais), custody fee and class note are returned as filed; the row is the class for a CVM 175 fund (no subclass column, a subclass fee is not assumed). lamina_pr_pl_despesa is the declared total expense ratio from the lâmina (with its period and lamina_as_of), whatever the fee source, never added to the administration fee. ESTIMATE (adm_fee_flow, perf_fee_flow and the _pct_annual_est columns): from the balancete accruals (cvm_fi_balancete_resumo): the fee accounts accumulate from each fund''s fiscal-year start and are filed negative, so the month''s accrual is previous minus current accumulated value (served positive = cost; a negative performance accrual is a reversed provision), annualised x 12 / NAV x 100, NAV = groups 6 + 7 + 8 of the month. In the fiscal-year reset month the accumulated fee falls: fiscal_reset_suspect is TRUE and the estimate is NULL, unless cad_fi DT_INI_EXERC puts the fiscal-year start in that month, in which case the month''s accumulated value alone is the accrual. estimate_label says on every row that the estimate is an estimate and why one is missing; it is never presented as the disclosed fee. p_month = the balancete month (NULL = each fund''s newest). One row per distinct CNPJ; more than 200 CNPJs RAISES 22023.';
 
 
 -- ---------------------------------------------------------------------------

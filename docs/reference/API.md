@@ -355,11 +355,30 @@ take a set of funds or lines, never a name search that guesses.
   Unaccenting is a fixed `translate()` map (`unaccent` is not installed on
   Supabase). No indexer, sector or economic group is ever inferred from a name.
 - **`api.portfolio_fees(p_cnpjs, p_month)`**: per CNPJ, the **disclosed** fee
-  (`disclosed_*`: the lâmina, `cvm_fi_lamina` newest reference month, else cad_fi
-  `taxa_adm` / `taxa_perfm` from `cvm_fund_registry`, one source per fund with
-  `disclosed_source`, `disclosed_as_of`, `disclosed_age_months`; NULL is not a
-  zero fee; classes with different fees give a NULL single value, a min, a max
-  and a note) beside a separate **estimate** from the balancete accruals
+  (`disclosed_*`: the CVM **Extrato** first, `cvm_fi_extrato` newest version, a fee
+  for 84.3% of active FI funds; else the lâmina, `cvm_fi_lamina` newest reference
+  month; else cad_fi `taxa_adm` / `taxa_perfm` from `cvm_fund_registry`. One source
+  per fund, named in `disclosed_origin` (`extrato` | `lamina` | `cad_fi`) and
+  `disclosed_source`, with `disclosed_as_of` (the filing date),
+  `disclosed_age_months` and `disclosed_age_days`; NULL is not a zero fee; lâmina
+  classes with different fees give a NULL single value, a min, a max and a note).
+  Two reading rules on the single administration fee (% a year as filed): a filed
+  **0** is returned as 0 with `filed_zero` TRUE (read it as "not informed", never as
+  a zero cost; 16.7% of the Extrato's values are 0 and the balancete books a fee for
+  most of those funds), and a filed value **above 5** (or below 0) is not the fee:
+  `disclosed_taxa_adm` is NULL, `implausible_filed` is TRUE and the value as filed is
+  in `taxa_adm_filed_raw`. The stored value is never rewritten. An Extrato row that
+  exists is the source even then; it does not fall through to an older source.
+  The Extrato's own fields come back as filed (`extrato_taxa_perfm` numeric with
+  `extrato_param_taxa_perfm`, `extrato_calc_taxa_perfm`, `extrato_inf_taxa_perfm`;
+  `extrato_existe_taxa_ingresso` / `_saida` with `_pr` percent and `_real` reais;
+  `extrato_taxa_custodia_max`; `extrato_tp_fundo_classe`, `extrato_classe_anbima` and
+  `extrato_class_note`: a CVM 175 row is the class, there is no subclass column).
+  `lamina_pr_pl_despesa` (with `lamina_dt_ini_despesa`, `lamina_dt_fim_despesa`,
+  `lamina_as_of`) is the lâmina's declared total expense ratio, whatever the fee
+  source, never added to the administration fee. Catalog v52 appended these 25
+  columns after `estimate_label`; the 21 before it are unchanged. Beside them sits
+  a separate **estimate** from the balancete accruals
   (`adm_fee_flow`, `perf_fee_flow`, `*_pct_annual_est`, `estimate_label`). The
   fee accounts accumulate from each fund's fiscal-year start and are filed
   negative: accrual = previous minus current accumulated value, times 12 over NAV
