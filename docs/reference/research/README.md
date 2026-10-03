@@ -95,3 +95,13 @@ measure how much of the fund universe has a disclosed fee in the CVM lâmina and
 in the CVM Extrato das Informações. The Extrato covers far more funds, so it is
 the first source of the disclosed fee (migration 66, `api.portfolio_fees`).
 
+## CVM 175 structure and fees
+
+[`cvm175-structure-and-fees.md`](cvm175-structure-and-fees.md) (map #510)
+quotes Resolução CVM 175 on the fundo, classe and subclasse levels, the classe
+de investimento em cotas (at least 95% in other classes) and Art. 98. Art. 98
+makes a fund-of-funds' adm and gestão fees include its investees', except
+listed funds and unrelated managers' funds. The note also maps which CVM open
+data carries each fee and the fund-of-funds flag, and checks an external fee
+proposal against the warehouse. For FICs with a fee range, the Extrato fee is
+mostly the lâmina maximum, so adding the master's fee would mostly double count.
