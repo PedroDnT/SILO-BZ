@@ -1,7 +1,7 @@
-# Portfolio engine output (schema 1.0)
+# Portfolio engine output (schema 1.1)
 
 What `python -m src.portfolio.diagnose <statement> [--client mcp|postgrest|fake] [--out report.json]`
-writes: one JSON document. The report writer (Redator and Revisor, `docs/reference/portfolio/report.md`)
+writes: one JSON document. The report writer (Redator and Revisor, `src/portfolio/report/`)
 builds on it, and every number in a report must be a key of this document.
 
 ```
@@ -12,7 +12,7 @@ python -m src.portfolio.diagnose docs/reference/portfolio/statement-template.xls
 The input is the spreadsheet template (`statement-template.md`) or, for the BTG performance report,
 the PDF reader and consolidation (`statement-pdf.md`); both give the engine the same `Statement`.
 
-**The schema is stable and append-only within `schema_version` 1.0.** Keys are added, never
+**The schema is stable and append-only within major version 1.** A minor bump (1.0 to 1.1) only adds keys (see "Changes since 1.0") Keys are added, never
 renamed, retyped or removed. A breaking change bumps `schema_version`. The fixture
 `tests/fixtures/portfolio/demo_engine_output.json` is the engine run on the demo template with
 the `FakeClient` and a fixed clock; `tests/test_portfolio_engine.py` regenerates it and compares
@@ -20,6 +20,24 @@ byte for byte, so a change to the engine that moves the fixture fails CI until t
 regenerated in the same commit. The canned rows (`fake_silo_rows.json`, built by
 `tests/fixtures/portfolio/build_fake_silo_rows.py`) are synthetic, shaped on production
 measurements of 2026-10-03 and on the merged `api.portfolio_*` contract: the values are not data.
+
+## Changes since 1.0
+
+1.1 (catalog v52, the CVM Extrato as the first fee source). Keys were added, none renamed or removed;
+two values changed meaning, as the owner decided on #515, and a consumer that read them must read the new rule:
+
+* `fees.lines[].headline` can be `kind = "zero_informado"`: a filed 0 is no longer `rate_pct_year = 0.0`; it
+  has `rate_pct_year = null`, `filed_pct_year = 0.0` and is never counted as a cost or summed. The tool's 0
+  is still visible as `disclosed.adm_rate_pct_year = 0.0` with `disclosed.filed_zero = true`.
+* `fees.totals.fund_value_without_disclosed_fee_brl` now also holds the lines with a filed 0 or an implausible
+  value (new keys split them out).
+* `fees.lines[].disclosed.source` can be `cvm_fi_extrato`; the provenance wording follows `disclosed.origin`.
+* `fees.lines[].reason` is now always the engine's Portuguese; the tool's English note stays in `disclosed.note`.
+* New: `fees.source_order`, `stale_after_months_by_origin`, `zero_label`, `implausible_label`;
+  `disclosed.*` (origin, age_days, filed_zero, implausible_filed, adm_filed_raw, scope_label, class_note,
+  terms_as_filed, rejected, ...); `expense_ratio` filled; `fees.totals.*_portfolio_pct`;
+  `look_through.top_exposures`, `exposures[].portfolio_pct`, `groups[].total_exposure_portfolio_pct`;
+  `identification.lines[].fund_match.tiebroken_by_quota`; `restatements...tipo_documento`, `reference_date`.
 
 ## Conventions
 
@@ -99,43 +117,56 @@ lines), `position_dates`, `notes[]` (which sum checks ran, date gaps, multi-titu
 
 ## `fees`
 
-`month`, `estimate_label` (`estimativa, não divulgada`), `not_found_label`
-(`taxa divulgada não encontrada`), `stale_after_months` (24), `lines[]`, `underlying[]`, `totals`.
-The rules (owner, 2026-10-03):
+`month`, `estimate_label` (`estimativa, não divulgada`), `not_found_label` (`taxa divulgada não encontrada`),
+`zero_label` (`valor 0 informado (provavelmente não preenchido)`), `implausible_label` (`valor implausível
+descartado`), `source_order` (`extrato`, `lamina`, `cad_fi`), `stale_after_months` (24, the lâmina's),
+`stale_after_months_by_origin` (`extrato` 36, `lamina` 24, `cad_fi` null), `lines[]`, `underlying[]`, `totals`.
+From `portfolio_fees` (catalog v52), one source per fund. The rules (owner, #515, 2026-10-03):
 
-1. **Headline = the disclosed administration fee as filed**, % a year: the lâmina
-   (`cvm_fi_lamina`, newest reference month), then cad_fi (`cvm_fund_registry.taxa_adm`), then
-   none: `fee_status = "taxa divulgada não encontrada"` (about 84 % of funds). The estimate is
-   never substituted. `fee_status` is `divulgada`, `faixa divulgada` or the not-found label.
-2. **The estimate is a separate field**, `estimate`, always labelled `estimativa, não divulgada`
-   with its `method`, beside the disclosed fee or alone, never averaged, never the fee.
-   `estimate.available` is false when the tool gave none (a fiscal-year reset month, no balancete).
-3. **`expense_ratio`** (PR_PL_DESPESA, the declared total expense ratio) is a separate field with
-   its period, never added. `portfolio_fees` does not return it yet: `declared_pct` is null and
-   the note says so.
-4. The lâmina date and age are always output (`disclosed.as_of`, `age_months`); `stale` and
-   `stale_label = "defasada"` when older than 24 months. For cad_fi `as_of` is the day SILO read
-   the row (the field `as_of_meaning` says which).
-5. A disclosed 0 is `rate_pct_year = 0.0`, with a finding `Divulgado 0, balancete registra
-despesa.` (level `atenção`) when the estimate is above 0,05 % a.a. With no single value but a
-   min and max, `headline.kind = "faixa"` and the range is output as filed. Another `atenção`
-   finding when the estimate differs from a fixed disclosed fee by more than max(0,25 p.p. a.a.;
-   25 % of the disclosed value).
-6. **`disclosed.perf_as_filed` is the source's text, verbatim, never parsed**, and never R$ (a
-   share of the excess return, not of the NAV).
-7. **A master's fee is never added to a feeder's.** Each fund keeps its own. `underlying[]` lists
-   the funds a statement fund holds (every path), each with its own fee record and
-   `label = "não somada"`, `added_to_totals = false`.
+1. **Headline = the disclosed administration fee as filed**, % a year, from ONE source in this order: the CVM
+   Extrato (`disclosed.origin = "extrato"`), the lâmina (`"lamina"`), cad_fi (`"cad_fi"`), else none:
+   `fee_status = "taxa divulgada não encontrada"`. The estimate is never substituted. The provenance sentence
+   follows `disclosed.origin` (an Extrato fee is not a cad_fi fee); `disclosed.as_of_meaning` says what the date
+   means for that origin (the Extrato's `DT_COMPTC`, the lâmina's reference month, or, for cad_fi, the day SILO
+   read the row, with no age claimed). `fee_status` is `divulgada`, `faixa divulgada`, `valor 0 informado
+   (provavelmente não preenchido)`, `valor implausível descartado` or the not-found label.
+2. **A filed 0 is not a fee.** `headline.kind = "zero_informado"`, no rate, no R$, `counted_as_cost = false`,
+   never summed; with the attention finding below when the estimate is above 0,05 % a.a.
+3. **An implausible value is discarded:** a filed fee above 5 % a.a. (or below 0). `headline` is null,
+   `disclosed.implausible_filed = true`, the value as filed is in `disclosed.adm_filed_raw` and
+   `disclosed.rejected.raw_value`: a plain number (named without `_pct`, so nothing prints it as a rate).
+4. **Age.** The filing date and age are always output (`disclosed.as_of`, `age_months`, `age_days`). `stale`
+   and `stale_label = "defasada"` when older than 36 months for the Extrato (age does not predict error there)
+   and 24 for the lâmina (`disclosed.stale_after_months`).
+5. **The estimate is a separate field**, `estimate`, always labelled `estimativa, não divulgada` with its
+   `method`, beside the disclosed fee or alone, never averaged, never the fee. `estimate.available` is false
+   when the tool gave none (a fiscal-year reset month, no balancete).
+6. **Findings** (`findings[]`, level `atenção` unless stated): `divulgado_zero_balancete_registra_despesa`
+   ("Divulgado 0, balancete registra despesa."); `estimativa_difere_da_divulgada` when the estimate differs
+   from a fixed disclosed fee by more than max(0,25 p.p. a.a.; 25 % of it), worded "Estimativa e divulgada
+   divergem", not that either is wrong; `lamina_defasada` / `taxa_defasada` and `valor_implausivel_descartado`
+   at level `informação`.
+7. **Terms as filed.** `disclosed.perf_as_filed` is the performance fee as text, verbatim, never parsed, never
+   R$. For an Extrato fee `disclosed.terms_as_filed` carries `tp_fundo_classe`, `classe_anbima`, `performance`
+   (`exists`, `taxa_perfm_as_filed`, `param_as_filed`, `calc_as_filed`, `info_as_filed`), `entry` and `exit`
+   (`exists`, `pct_as_filed`, `real_brl_as_filed`) and `custody_max_as_filed`: shown as filed, no reading.
+8. **Class scope.** An Extrato row of a CVM 175 class is `disclosed.scope_label = "taxa da classe"` (an ICVM 555
+   fund: `taxa do fundo`); no subclass fee is assumed.
+9. **`expense_ratio`** (the lâmina's declared total expense ratio, PR_PL_DESPESA) is its own field: `declared_pct`
+   (% of average NAV), `period` (`from`, `to`), `as_of`, `source`, `note`; null with a note when none. Never added
+   to a fee, whatever the fee's source.
+10. **A master's fee is never added to a feeder's.** `underlying[]` lists the funds a statement fund holds (every
+    path), each with its own fee record and `label = "não somada"`, `added_to_totals = false`.
 
-A line: `line_no`, `cnpj`, `fund_name`, `position_value_brl`, `fee_status`, `reason`,
-`fund_nav_brl`, `disclosed` (`source`, `as_of`, `age_months`, `stale`, `n_classes`, `note`,
-`adm_rate_pct_year`, `adm_min_pct_year`, `adm_max_pct_year`, `adm_info_text`, `perf_as_filed`,
-`perf_info_text`), `headline` (`kind` `fixa` | `faixa`, `rate_pct_year` or the range, `per_year_brl`
-= position value x rate), `estimate` (`adm_pct_year`, `adm_per_year_brl`, `perf_pct_year`,
-`perf_per_year_brl`, `fiscal_reset_suspect`, `month`), `expense_ratio`, `findings[]`.
-`totals`: `adm_disclosed_fixed_per_year_brl`, the range low and high, `estimate_adm_per_year_brl`
-and `estimate_perf_per_year_brl` (kept apart), and the fund value with a fixed fee, a range, none.
-Assumption: the rates are read as percent a year (`fee_units`).
+A line: `line_no`, `cnpj`, `fund_name`, `position_value_brl`, `fee_status`, `reason`, `fund_nav_brl`, `disclosed`,
+`headline` (`kind` `fixa` | `faixa` | `zero_informado`, `rate_pct_year` or the range, `per_year_brl` = position
+value x rate, `origin`, `scope_label`, `as_of`, `age_months`, `stale`), `estimate` (`adm_pct_year`,
+`adm_per_year_brl`, `perf_pct_year`, `perf_per_year_brl`, `fiscal_reset_suspect`, `month`), `expense_ratio`,
+`findings[]`. `totals`: `adm_disclosed_fixed_per_year_brl` and `adm_disclosed_fixed_portfolio_pct`, the range low
+and high, `estimate_adm_per_year_brl` and `estimate_adm_portfolio_pct` (kept apart), `fund_value_with_fixed_fee_brl`,
+`fund_value_with_fee_range_brl`, `fund_value_with_filed_zero_brl`, `fund_value_with_implausible_fee_brl`,
+`fund_value_without_disclosed_fee_brl`. Assumption: the rates are percent a year (`fee_units`; CVM's XML
+specification says so for the Extrato).
 
 ## `look_through`
 
@@ -146,7 +177,7 @@ fund: `depth` 0 is the fund's own holdings, a row is a leaf unless its `asset_ki
 - `lines[]`: `status` (`complete`, `partial`, `no_holdings`, `unknown`), `exposures[]` (`via`
   path, `depth`, `block`, `asset_kind`, `asset_key`, `asset_name`, `isin`, `issuer_cnpj`,
   `issuer_code`, `tp_aplic`, `tp_titpub`, `indexer_code`, `taxa_texto`, `maturity`,
-  `weight_in_line`, `exposure_brl` = position value x `weight_in_root`, `not_opened_fund`,
+  `weight_in_line`, `exposure_brl` = position value x `weight_in_root`, `portfolio_pct`, `not_opened_fund`,
   `period`, `sources`), `fund_nodes[]` (the funds on the way, with `expanded` and
   `not_expanded_reason`), `explained_weight` and `unexplained_weight` (what no ingested CDA block
   explains: cash, derivatives, blocks 3, 5, 7, 8; negative when liabilities and derivatives sum
@@ -156,8 +187,10 @@ fund: `depth` 0 is the fund's own holdings, a row is a leaf unless its `asset_ki
   `kind` (`mesmo_ativo`: same asset key or ISIN; `mesmo_emissor_raiz_cnpj`: same 8-digit CNPJ
   root; `mesmo_codigo_emissor_b3`: same ISIN characters 3 to 6; `mesmo_fundo_investido`: the
   same fund held by two lines), `label`, `line_nos`, `lines[]` (`exposure_brl` per line,
-  `direct`), `total_exposure_brl`. Totals of different kinds describe the same positions: do not
-  add them.
+  `direct`), `total_exposure_brl`, `total_exposure_portfolio_pct`. Totals of different kinds describe the same positions: do not
+  add them. The Treasury is not an issuer group (its ISIN code and repo collateral are left out of `mesmo_codigo_emissor_b3`).
+* `top_exposures[]`: the same asset summed across lines (direct included), funds not opened and the current account
+  left out: `asset_key`, `asset_name`, `isin`, `exposure_brl`, `portfolio_pct`, `line_nos`, `sources`.
 
 ## `indexer` and `sector`
 
@@ -199,37 +232,40 @@ says `reapresentado, não avaliado`: the engine makes no materiality judgement.
 certificate. `screen_dormant_funds` is called twice, pinned (`p_dormancy = empty_shell`;
 `p_min_nav = 1000000000`): a parked fund below R$1bn is not covered.
 
-## Mapping to the report's provisional fixture (slice D)
+## The report's view (mapping)
 
-The report was built against `report_provisional_engine_output.json`, written before this schema.
-The paths differ; this table is the follow-up to update `src/portfolio/report/values.py`, the
-Redator's placeholders and that fixture together. Units already agree (`_brl` reais, `_pct`
-percent).
+`src/portfolio/report/adapt.py` is this table as code: `python -m src.portfolio.report.build engine.json` maps an
+engine document (schema 1.x) to the view the Redator, the Revisor and the renderer read, and it computes no
+figure (every percent it uses is an engine field). The provisional fixture
+`tests/fixtures/portfolio/report_provisional_engine_output.json` is the view's original hand-written shape and
+still renders. The view holds no holder, account or statement-file identifier. Units agree (`_brl` reais,
+`_pct` percent, plain numbers such as `adm_filed_raw` and `age_months` print without a unit).
 
-| Report (provisional)                                                | Engine (this schema)                                                                                                                  |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `generated_at`, `valuation_date`                                    | `generated_at_utc`, `statement.position_date`                                                                                         |
-| `portfolio.total_brl`, `n_lines`                                    | `statement.sum_of_lines_brl`, `statement.n_lines`                                                                                     |
-| `portfolio.n_identified` / `n_ambiguous` / `n_unknown`              | `identification.counts.identified` / `ambiguous` / `unknown`                                                                          |
-| `lines[i].value_brl`, `weight_pct`                                  | `statement.positions[i].valor_brl`, `portfolio_pct`                                                                                   |
-| `lines[i].identification.status`, `candidates`                      | `identification.lines[i].status`, `fund_match.candidates`                                                                             |
-| `lines[i].identification.renamed_from`                              | `identification.lines[i].findings[kind = renamed].matched_name`                                                                       |
-| `fees.by_line[i].disclosed_pct_year`                                | `fees.lines[i].headline.rate_pct_year`                                                                                                |
-| `fees.by_line[i].estimated_pct_year`, `estimated_brl_year`, `label` | `fees.lines[i].estimate.adm_pct_year`, `adm_per_year_brl`, `label`                                                                    |
-| `fees.total_estimated_brl_year`, `total_disclosed_brl_year`         | `fees.totals.estimate_adm_per_year_brl`, `adm_disclosed_fixed_per_year_brl`                                                           |
-| `lookthrough.shared_exposure[i]` (`key`, `total_brl`, `legs`)       | `look_through.shared_exposure.groups[i]` (`label`, `total_exposure_brl`, `lines`)                                                     |
-| `lookthrough.top_underlying`                                        | not output: take `look_through.lines[i].exposures` sorted by `exposure_brl`                                                           |
-| `indexer.buckets[i]` (`indexer`, `weight_pct`)                      | `indexer.classes[i]` (`indexer_class`, `portfolio_pct`)                                                                               |
-| `sector.buckets[i]` (`sector`, `weight_pct`)                        | `sector.sectors[i]` (`sector`, `portfolio_pct`)                                                                                       |
-| `restatements.items[i]`                                             | `restatements.lines[i].restatements[j]`; the delinquency leaf is `leaves[leaf = VL_CRED_EXISTE_INAD]` (`old_num`, `new_num`, `delta`) |
-| `risk_screens` (`hits`, `not_run`)                                  | `risk_signals.lines[i].signals`, `risk_signals.screens[status = unknown]`                                                             |
-| `sections.<name>`                                                   | `section_status.<name>` (`look_through`, `risk_signals` for `lookthrough`, `risk_screens`)                                            |
-| `provenance[i].id` (`p1`)                                           | `provenance[i].id` (`p<call_id>`); `sources[].call_id` is the number                                                                  |
-| `data_dates`                                                        | per source: `sources[].data_date`                                                                                                     |
+| Report view | Engine (this schema) |
+| --- | --- |
+| `generated_at`, `valuation_date`, `illustrative` | `generated_at_utc`, `statement.position_date`, `engine.client == "fake"` |
+| `portfolio.total_brl`, `n_lines`, `n_identified` / `n_ambiguous` / `n_unknown` | `statement.sum_of_lines_brl`, `n_lines`, `identification.counts.*` |
+| `lines[i]` (`line_id` L<line_no>, `instrument`, `value_brl`, `weight_pct`) | `statement.positions[i]` (`linha_extrato`, `valor_brl`, `portfolio_pct`) joined to `identification.lines[i]` |
+| `lines[i].identification` (`status`, `method`, `renamed_from`, `renamed_at`, `candidates`) | `status` (an `identified` line the quota separated is `ambiguous`, from `fund_match.tiebroken_by_quota`), `fund_match.chosen.match_kind`, the `renamed` finding, `fund_match.candidates` |
+| `fees.total_disclosed_brl_year`, `total_disclosed_pct_year` | `fees.totals.adm_disclosed_fixed_per_year_brl`, `adm_disclosed_fixed_portfolio_pct` (null without a fixed fee) |
+| `fees.total_estimated_brl_year`, `weighted_estimated_pct_year` | `fees.totals.estimate_adm_per_year_brl`, `estimate_adm_portfolio_pct` |
+| `fees.by_line[i]` `disclosed_pct_year`, `disclosed_brl_year`, `disclosed_origin(_label)`, `disclosed_as_of`, `disclosed_age_months`, `disclosed_stale(_label)`, `disclosed_scope_label` | `fees.lines[i].headline` and `.disclosed` (`rate_pct_year`, `per_year_brl`, `origin`, `origin_label`, `as_of`, `age_months`, `stale`, `stale_label`, `scope_label`) |
+| `fees.by_line[i]` `fee_status`, `label`, `reason`, `filed_zero_label`, `implausible_label`, `implausible_raw` | `fee_status`, `reason`, `disclosed.filed_zero_label`, `implausible_label`, `adm_filed_raw` |
+| `fees.by_line[i]` `estimated_pct_year`, `estimated_brl_year`, `estimate_label`, `month` | `fees.lines[i].estimate` (`adm_pct_year`, `adm_per_year_brl`, `label`, `month`) |
+| `fees.by_line[i]` `expense_ratio_pct`, `expense_ratio_period_from/to`, `perf_as_filed`, `terms_as_filed`, `findings` | `expense_ratio`, `disclosed.perf_as_filed`, `disclosed.terms_as_filed`, `findings` |
+| `fees.underlying[i]` | `fees.underlying[i]` (`parent_line_id` = its `line_no`, `label_not_added` = `label`) |
+| `lookthrough.shared_exposure[i]` (`key`, `level`, `total_brl`, `total_pct`, `legs`) | the 12 largest `look_through.shared_exposure.groups[i]` (`label`, `kind`, `total_exposure_brl`, `total_exposure_portfolio_pct`, `lines`) |
+| `lookthrough.top_underlying[i]` | `look_through.top_exposures[i]` |
+| `indexer.buckets[i]`, `sector.buckets[i]` (`weight_pct`) | `indexer.classes[i]`, `sector.sectors[i]` (`portfolio_pct`) |
+| `restatements.items[i]` | `restatements.lines[i].restatements[j]`; the delinquency leaf is `leaves[leaf = VL_CRED_EXISTE_INAD]` (`old_num`, `new_num`, `delta`) |
+| `risk_screens` (`screens_run`, `hits`, `not_run`) | `risk_signals.screens` (complete count, unknown with reason), `risk_signals.lines[i].signals` |
+| `sections.<name>` | `section_status.<name>` (`lookthrough` is `look_through`, `risk_screens` is `risk_signals`); `abnormal_movement`, `material_restatement`, `economic_group` from the engine's own notes |
+| `provenance[i]` (`id`, `endpoint`, `params`, `source`, `data_date`) | `provenance[i]` (`id` = `p<call_id>`, `tool`, `args`); `source` from the tool, `data_date` from the `sources` that cite the call |
+| `data_dates` | the newest `data_date` per source name |
 
 ## Tools the engine calls
 
-`portfolio_resolve`, `portfolio_fees`, `portfolio_lookthrough` (merged, catalog v51; the canned
+`portfolio_resolve`, `portfolio_fees` (catalog v52: the 21 columns of v51, then 25 appended), `portfolio_lookthrough` (merged; the canned
 rows follow their documented columns and have not been run against the live functions), and the
 existing `lookup`, `quote_latest`, `company_financials`, `short_interest`, `fidc_portfolio`,
 `fund_restatements`, `fund_restatement_diff` and the `screen_*` tools. Default client: the public

@@ -148,30 +148,71 @@ cnpjs_fee = sorted(["08935128000159", "50088190000119", "51488342000133", "32113
 label = "estimativa a partir do balancete"
 
 
-def fee(cnpj, name, nav, adm_est, perf_est=None, suspect=False, d_adm=None, d_min=None, d_max=None, d_perf=None, src=None, asof=None, age=None,
-        ncls=None, note=None, est_label=None, month="2026-08-31"):
-    return dict(cnpj=cnpj, fund_name=name, month=month, nav=nav, adm_fee_flow=None if adm_est is None else round(nav * adm_est / 1200, 2),
-                adm_fee_pct_annual_est=adm_est, perf_fee_flow=None, perf_fee_pct_annual_est=perf_est, fiscal_reset_suspect=suspect,
-                disclosed_taxa_adm=d_adm, disclosed_taxa_adm_min=d_min, disclosed_taxa_adm_max=d_max, disclosed_taxa_perfm=d_perf,
-                disclosed_taxa_adm_info=None, disclosed_taxa_perfm_info=None, disclosed_source=src, disclosed_as_of=asof, disclosed_age_months=age,
-                disclosed_n_classes=ncls, disclosed_note=note,
-                estimate_label=est_label or "estimate from the balancete accruals: (previous minus current accumulated fee) x 12 / NAV, not the disclosed fee")
+EXTRATO_NOTE_CLASS = ("class-level row (CVM 175): the Extrato has no subclass column, so this is the class's fee; "
+                      "a fee that differs by subclass is not visible and no subclass fee is assumed")
+EXTRATO_NOTE_FUND = "fund-level row (ICVM 555): the fee of the fund as filed"
+EST_OK = "estimate from the balancete accruals: (previous minus current accumulated fee) x 12 / NAV, not the disclosed fee"
 
 
-NO_DISC = "no disclosed fee in the lâmina or in cad_fi: NULL is not a zero fee"
+def fee(cnpj, name, nav, adm_est, perf_est=None, suspect=False, origin=None, adm=None, raw=None, d_min=None, d_max=None, d_perf=None,
+        asof=None, age_m=None, age_d=None, ncls=None, note=None, est_label=None, month="2026-08-31", zero=False, implausible=False,
+        extrato=None, desp=None):
+    """One portfolio_fees row in the catalog v52 shape: the 21 v51 columns, then the 25 appended."""
+    src = {"extrato": "cvm_fi_extrato", "lamina": "cvm_fi_lamina", "cad_fi": "cvm_fund_registry (cad_fi)"}.get(origin)
+    ex = extrato or {}
+    row = dict(cnpj=cnpj, fund_name=name, month=month, nav=nav, adm_fee_flow=None if adm_est is None else round(nav * adm_est / 1200, 2),
+               adm_fee_pct_annual_est=adm_est, perf_fee_flow=None, perf_fee_pct_annual_est=perf_est, fiscal_reset_suspect=suspect,
+               disclosed_taxa_adm=None if implausible else adm, disclosed_taxa_adm_min=d_min if d_min is not None else (None if implausible else adm if origin == "extrato" else None),
+               disclosed_taxa_adm_max=d_max if d_max is not None else (None if implausible else adm if origin == "extrato" else None),
+               disclosed_taxa_perfm=d_perf, disclosed_taxa_adm_info=None, disclosed_taxa_perfm_info=None, disclosed_source=src,
+               disclosed_as_of=asof, disclosed_age_months=age_m, disclosed_n_classes=ncls, disclosed_note=note, estimate_label=est_label or EST_OK)
+    row.update(
+        disclosed_origin=origin, disclosed_age_days=age_d, filed_zero=zero, implausible_filed=implausible,
+        taxa_adm_filed_raw=raw if raw is not None else adm,
+        extrato_tp_fundo_classe=ex.get("tp"), extrato_classe_anbima=ex.get("classe"),
+        extrato_class_note=(EXTRATO_NOTE_CLASS if ex.get("tp") == "CLASSES - FIF" else EXTRATO_NOTE_FUND if ex.get("tp") else None),
+        extrato_existe_taxa_perfm=ex.get("existe_perfm"), extrato_taxa_perfm=ex.get("perfm"), extrato_param_taxa_perfm=ex.get("param"),
+        extrato_calc_taxa_perfm=ex.get("calc"), extrato_inf_taxa_perfm=ex.get("inf"), extrato_existe_taxa_ingresso=ex.get("existe_ing"),
+        extrato_taxa_ingresso_pr=ex.get("ing_pr"), extrato_taxa_ingresso_real=None, extrato_existe_taxa_saida=ex.get("existe_saida"),
+        extrato_taxa_saida_pr=ex.get("saida_pr"), extrato_taxa_saida_real=None, extrato_taxa_custodia_max=ex.get("custodia"),
+        lamina_pr_pl_despesa=(desp or {}).get("pct"), lamina_dt_ini_despesa=(desp or {}).get("ini"), lamina_dt_fim_despesa=(desp or {}).get("fim"),
+        lamina_as_of=(desp or {}).get("as_of"),
+        lamina_expense_note=None if desp else "no lâmina filed an expense ratio for this fund",
+    )
+    return row
+
+
+NO_DISC = "no disclosed fee in the Extrato, the lâmina or cad_fi: NULL is not a zero fee"
 statement_rows = [
-    fee("08935128000159", FUNDS["08935128000159"]["name"], 6075735724.70, 1.98, 0.35, d_adm=2.0, d_perf="20% do que exceder 100% do Ibovespa", src="cvm_fi_lamina", asof="2026-07-31", age=1, ncls=1),
-    fee("42592315000115", FUNDS["42592315000115"]["name"], 198605786912.83, 1.97, d_adm=1.5, src="cvm_fi_lamina", asof="2024-03-31", age=29, ncls=1),
-    fee("50088190000119", FUNDS["50088190000119"]["name"], 1780000000.0, 0.20, src="cvm_fi_lamina", d_min=0.15, d_max=0.30, asof="2026-07-31", age=1, ncls=2,
+    # Extrato fee, CVM 175 class, performance fee as filed text, expense ratio from the lâmina
+    fee("08935128000159", FUNDS["08935128000159"]["name"], 6075735724.70, 1.98, 0.35, origin="extrato", adm=2.0, asof="2026-07-31", age_m=1, age_d=64, ncls=1,
+        d_perf="20% do que exceder 100% do Ibovespa",
+        extrato=dict(tp="CLASSES - FIF", classe="Ações", existe_perfm="S", perfm=20.0, param="Ibovespa", calc="semestral", inf="20% do que exceder 100% do Ibovespa",
+                     existe_ing="N", existe_saida="N", custodia=0.05),
+        desp=dict(pct=2.31, ini="2025-07-01", fim="2026-06-30", as_of="2026-06-30")),
+    # lâmina older than 24 months: defasada
+    fee("42592315000115", FUNDS["42592315000115"]["name"], 198605786912.83, 1.97, origin="lamina", adm=1.5, asof="2024-03-31", age_m=29, age_d=915, ncls=1),
+    # lâmina with classes that differ: the range as filed
+    fee("50088190000119", FUNDS["50088190000119"]["name"], 1780000000.0, 0.20, origin="lamina", d_min=0.15, d_max=0.30, asof="2026-07-31", age_m=1, age_d=64, ncls=2,
         note="the fund's 2 classes disclose different fees: the single value is NULL, read the min and max"),
-    fee("51488342000133", FUNDS["51488342000133"]["name"], 3360184376.89, None, suspect=True, note=NO_DISC,
-        est_label="no estimate: the accumulated administration fee fell, the fund's fiscal-year reset month, and no cad_fi DT_INI_EXERC confirms it"),
+    # Extrato filed 0 while the balancete books a fee: shown, never counted as a zero cost
+    fee("51488342000133", FUNDS["51488342000133"]["name"], 3360184376.89, 0.35, origin="extrato", adm=0.0, zero=True, asof="2026-06-30", age_m=2, age_d=95, ncls=1,
+        note="the Extrato filed an administration fee of exactly 0: returned as filed (filed_zero); read it as not informed, never as a zero cost",
+        extrato=dict(tp="CLASSES - FIF", classe="Renda Fixa", existe_perfm="N", existe_ing="N", existe_saida="N")),
 ]
 underlying_rows = [
-    fee("35377390000106", FUNDS["35377390000106"]["name"], 7999802012.71, 0.11, d_adm=0.0, src="cvm_fi_lamina", asof="2026-07-31", age=1, ncls=1),
-    fee("37525998000158", FUNDS["37525998000158"]["name"], 3878630268.71, 0.05, note=NO_DISC),
-    fee("46133770000103", FUNDS["46133770000103"]["name"], 198595917706.26, 1.41, d_adm=0.20, src="cvm_fi_lamina", asof="2026-07-31", age=1, ncls=1),
-    fee("54891935000134", FUNDS["54891935000134"]["name"], 839592972.0, 0.51, d_adm=0.50, src="cvm_fi_lamina", asof="2026-07-31", age=1, ncls=1),
+    # lâmina filed 0 and the balancete books a fee: the attention finding
+    fee("35377390000106", FUNDS["35377390000106"]["name"], 7999802012.71, 0.11, origin="lamina", adm=0.0, zero=True, asof="2026-07-31", age_m=1, age_d=64, ncls=1,
+        note="the lâmina filed an administration fee of exactly 0: returned as filed (filed_zero); read it as not informed, never as a zero cost"),
+    # Extrato value above 5: scale error, withheld, raw kept
+    fee("37525998000158", FUNDS["37525998000158"]["name"], 3878630268.71, 0.05, origin="extrato", adm=14638.0, raw=14638.0, implausible=True, asof="2025-12-31", age_m=8, age_d=276, ncls=1,
+        note="the Extrato filed an administration fee of 14638, outside 0 to 5 % a year: treated as a scale error and not used; the value as filed is in taxa_adm_filed_raw",
+        extrato=dict(tp="FI", classe="Renda Fixa", existe_perfm="N")),
+    fee("46133770000103", FUNDS["46133770000103"]["name"], 198595917706.26, 1.41, origin="lamina", adm=0.20, asof="2026-07-31", age_m=1, age_d=64, ncls=1),
+    # Extrato 30 months old: not defasada (the Extrato threshold is 36), fiscal-year reset month: no estimate
+    fee("54891935000134", FUNDS["54891935000134"]["name"], 839592972.0, None, suspect=True, origin="extrato", adm=0.50, asof="2024-02-29", age_m=30, age_d=947, ncls=1,
+        est_label="no estimate: the accumulated administration fee fell, the fund's fiscal-year reset month, and no cad_fi DT_INI_EXERC confirms it",
+        extrato=dict(tp="CLASSES - FIF", classe="Renda Fixa", existe_perfm="N", existe_ing="N", existe_saida="N")),
 ]
 canned["portfolio_fees"] = [
     dict(match={"p_cnpjs": cnpjs_fee, "p_month": "2026-08-01"}, rows=statement_rows),

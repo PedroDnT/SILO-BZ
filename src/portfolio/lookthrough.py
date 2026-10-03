@@ -242,6 +242,50 @@ def compute_lookthrough(
     return section, exposures
 
 
+def add_portfolio_shares(section: dict[str, Any], exposures: dict[int, list[Exposure]], total: Decimal, top_n: int = 10) -> None:
+    """Percent of the WHOLE portfolio for every exposure and group, and the largest exposures across lines.
+
+    ``top_exposures`` sums the same asset (asset key, else ISIN) across lines, direct positions
+    included; funds that were not opened, and the current account, are left out.
+    """
+    if not total:
+        section["top_exposures"] = []
+        return
+
+    def share(v: Decimal) -> float:
+        return float((v / total * 100).quantize(Decimal("0.0001")))
+
+    for ln in section["lines"]:
+        for e in ln.get("exposures", []):
+            e["portfolio_pct"] = share(dec(e["exposure_brl"]) or Decimal("0"))
+    for g in section["shared_exposure"]["groups"]:
+        g["total_exposure_portfolio_pct"] = share(dec(g["total_exposure_brl"]) or Decimal("0"))
+    agg: dict[str, dict[str, Any]] = {}
+    for line_no, exps in exposures.items():
+        for e in exps:
+            if e.opaque_fund or e.asset_kind == "caixa" or not (e.asset_key or e.isin):
+                continue
+            k = (e.asset_key or e.isin or "").upper()
+            row = agg.setdefault(k, {"asset_key": e.asset_key, "asset_name": e.asset_name, "isin": e.isin, "value": Decimal("0"), "line_nos": set(), "sources": []})
+            row["value"] += e.value_brl
+            row["line_nos"].add(line_no)
+            row["sources"].extend(e.sources[:2])
+            row["asset_name"] = row["asset_name"] or e.asset_name
+    top = sorted(agg.values(), key=lambda r: -abs(r["value"]))[:top_n]
+    section["top_exposures"] = [
+        {
+            "asset_key": r["asset_key"],
+            "asset_name": r["asset_name"],
+            "isin": r["isin"],
+            "exposure_brl": brl(r["value"]),
+            "portfolio_pct": share(r["value"]),
+            "line_nos": sorted(r["line_nos"]),
+            "sources": r["sources"][:4],
+        }
+        for r in top
+    ]
+
+
 def _direct_exposures(li: LineId) -> list[Exposure]:
     """The line itself as an exposure, for the lines that are not opened as funds."""
     p = li.position
@@ -464,7 +508,8 @@ def shared_exposure(
     # (c) same B3 issuer code (ISIN characters 3 to 6).
     by_code: dict[str, list[Exposure]] = defaultdict(list)
     for e in all_exp:
-        if e.issuer_code and not e.opaque_fund and (e.asset_kind != "titulo_publico_direto"):
+        # the sovereign (Tesouro) is not an issuer concentration: its ISIN code is left out
+        if e.issuer_code and not e.opaque_fund and e.asset_kind not in ("titulo_publico_direto", "government_bond", "repo", "other_block1"):
             by_code[e.issuer_code.upper()].append(e)
     for code, members in sorted(by_code.items()):
         g = _group("mesmo_codigo_emissor_b3", members, names, label=f"código de emissor B3 {code}")

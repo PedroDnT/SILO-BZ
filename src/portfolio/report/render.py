@@ -46,7 +46,8 @@ SOURCE_LABELS = {
 
 ASSET_LABELS = {
     "titulo_publico": "título público", "acao": "ação", "fundo": "fundo", "fidc": "FIDC",
-    "fii": "FII", "etf": "ETF", "desconhecido": "não identificado",
+    "fii": "FII", "etf": "ETF", "desconhecido": "não identificado", "caixa": "conta corrente",
+    "cota_listada": "cota de fundo listada", "credito_privado": "crédito privado direto",
 }
 SECTION_STATUS_LABELS = {"complete": "avaliada", "partial": "avaliada em parte", "unknown": "não avaliada"}
 
@@ -158,33 +159,97 @@ def _ident_section(engine: dict) -> str:
     )
 
 
+def _fee_row(engine: dict, q: str, b: dict) -> list[str]:
+    """One fee line: the disclosed fee first, where it comes from, the estimate apart, the declared expense ratio."""
+    label = b.get("fee_status") or b.get("label") or ""
+    if b.get("disclosed_pct_year") is not None:
+        disclosed = f"<span class=v>{v(engine, f'{q}.disclosed_pct_year')}</span> a.a."
+        if b.get("disclosed_brl_year") is not None:
+            disclosed += f"<br><span class=cit>{v(engine, f'{q}.disclosed_brl_year')} por ano</span>"
+        if b.get("disclosed_scope_label"):
+            disclosed += f"<br><span class=cit>{v(engine, f'{q}.disclosed_scope_label')}</span>"
+    elif b.get("disclosed_min_pct_year") is not None:
+        disclosed = (f"faixa divulgada: <span class=v>{v(engine, f'{q}.disclosed_min_pct_year')}</span> a "
+                     f"<span class=v>{v(engine, f'{q}.disclosed_max_pct_year')}</span> a.a.")
+    elif b.get("filed_zero_label"):
+        disclosed = f'<span class="tag unk">{v(engine, f"{q}.filed_zero_label")}</span>'
+    elif b.get("implausible_label"):
+        disclosed = f'<span class="tag unk">{v(engine, f"{q}.implausible_label")}</span>'
+        if b.get("implausible_raw") is not None:
+            disclosed += f"<br><span class=cit>valor informado: {v(engine, f'{q}.implausible_raw')}</span>"
+    else:
+        disclosed = f'<span class="tag unk">{e(label)}</span>'
+        if b.get("reason"):
+            disclosed += f"<br><span class=cit>{v(engine, f'{q}.reason')}</span>"
+    origin = "—"
+    if b.get("disclosed_origin"):
+        origin = v(engine, f"{q}.disclosed_origin_label")
+        if b.get("disclosed_as_of"):
+            origin += f"<br><span class=cit>data: {v(engine, f'{q}.disclosed_as_of')}</span>"
+        if b.get("disclosed_age_months") is not None:
+            origin += f"<br><span class=cit>idade: {v(engine, f'{q}.disclosed_age_months')} meses</span>"
+        if b.get("disclosed_stale"):
+            origin += f' <span class="tag unk">{v(engine, f"{q}.disclosed_stale_label")}</span>'
+    if b.get("estimated_pct_year") is not None:
+        est = f"<span class=v>{v(engine, f'{q}.estimated_pct_year')}</span> a.a."
+        if b.get("estimated_pct_year_high") is not None:
+            est += f" a <span class=v>{v(engine, f'{q}.estimated_pct_year_high')}</span>"
+        if b.get("estimated_brl_year") is not None:
+            est += f"<br><span class=cit>{v(engine, f'{q}.estimated_brl_year')} por ano</span>"
+        est += f'<br><span class="tag est">{v(engine, f"{q}.estimate_label") if b.get("estimate_label") else "estimativa"}</span>'
+        if b.get("month"):
+            est += f"<br><span class=cit>balancete de {v(engine, f'{q}.month')}</span>"
+    elif b.get("estimate_available") is False:
+        est = '<span class=cit>sem estimativa (mês do balancete sem base de cálculo)</span>'
+    else:
+        est = "—"
+    expense = "—"
+    if b.get("expense_ratio_pct") is not None:
+        expense = f"<span class=v>{v(engine, f'{q}.expense_ratio_pct')}</span> a.a."
+        if b.get("expense_ratio_period_from"):
+            expense += (f"<br><span class=cit>{v(engine, f'{q}.expense_ratio_period_from')} a "
+                        f"{v(engine, f'{q}.expense_ratio_period_to')}</span>")
+    notes = []
+    for j, fi in enumerate(b.get("findings") or []):
+        notes.append(f"<span class=cit>{v(engine, f'{q}.findings[{j}].level')}: {v(engine, f'{q}.findings[{j}].text')}</span>")
+    if b.get("perf_as_filed"):
+        notes.append(f"<span class=cit>performance, como informado: {v(engine, f'{q}.perf_as_filed')}</span>")
+    return [
+        v(engine, f"{q}.line_id"), v(engine, f"{q}.cnpj"), disclosed, origin, est, expense, "<br>".join(notes) or "—",
+    ]
+
+
+_FEE_HEADERS = [("Linha", False), ("CNPJ", False), ("Taxa divulgada", False), ("Origem e data", False),
+                ("Estimativa do balancete (à parte)", False), ("Despesa declarada (lâmina)", True), ("Observações", False)]
+
+
 def _fees_section(engine: dict) -> str:
     fees = engine.get("fees") or {}
-    rows = []
-    for i, b in enumerate(fees.get("by_line") or []):
-        q = f"fees.by_line[{i}]"
-        label = b.get("label") or ""
-        tag = "est" if label == "estimativa" else ("unk" if label == "desconhecido" else "")
-        est = v(engine, f"{q}.estimated_pct_year")
-        if b.get("estimated_pct_year_high") is not None:
-            est += f" a {v(engine, f'{q}.estimated_pct_year_high')}"
-        rows.append([
-            v(engine, f"{q}.line_id"), v(engine, f"{q}.cnpj"),
-            v(engine, f"{q}.disclosed_pct_year"), est, v(engine, f"{q}.estimated_brl_year"),
-            f'<span class="tag {tag}">{e(label)}</span>' + (f"<br><span class=cit>{v(engine, f'{q}.reason')}</span>" if b.get("reason") else ""),
-            v(engine, f"{q}.month"),
-        ])
+    by_line = fees.get("by_line") or []
+    rows = [_fee_row(engine, f"fees.by_line[{i}]", b) for i, b in enumerate(by_line)]
     head = ""
     if fees:
-        head = (f"<p>Total estimado: <span class=v>{v(engine, 'fees.total_estimated_brl_year')}</span> por ano "
-                f"(<span class=v>{v(engine, 'fees.weighted_estimated_pct_year')}</span> a.a. ponderado). "
-                f"Total divulgado: <span class=v>{v(engine, 'fees.total_disclosed_brl_year')}</span>. "
-                f"<span class=cit>Base: {v(engine, 'fees.basis')}</span></p>")
-    return head + _table(
-        [("Linha", False), ("CNPJ", False), ("Divulgada a.a.", True), ("Estimada a.a.", True),
-         ("Estimada R$/ano", True), ("Rótulo", False), ("Mês do balancete", False)],
-        rows,
-    )
+        parts = []
+        if fees.get("total_disclosed_brl_year") is not None:
+            parts.append(f"Taxas divulgadas somadas (só valores fixos utilizáveis): <span class=v>{v(engine, 'fees.total_disclosed_brl_year')}</span> por ano.")
+        else:
+            parts.append("Nenhuma taxa divulgada fixa utilizável para somar.")
+        if fees.get("total_estimated_brl_year") is not None:
+            parts.append(f"Estimativa do balancete, à parte e nunca somada à divulgada: <span class=v>{v(engine, 'fees.total_estimated_brl_year')}</span> por ano "
+                         f"(<span class=v>{v(engine, 'fees.weighted_estimated_pct_year')}</span> a.a. sobre a carteira).")
+        head = f"<p>{' '.join(parts)} <span class=cit>Base: {v(engine, 'fees.basis')}</span></p>"
+    out = head + _table(_FEE_HEADERS, rows)
+    und = fees.get("underlying") or []
+    if und:
+        urows = []
+        for i, u in enumerate(und):
+            row = _fee_row(engine, f"fees.underlying[{i}]", u)
+            urows.append([v(engine, f"fees.underlying[{i}].parent_line_id"), v(engine, f"fees.underlying[{i}].fund_name"), *row[2:6],
+                          f'<span class="tag unk">{v(engine, f"fees.underlying[{i}].label_not_added")}</span>'])
+        out += ("<h3>Fundos por baixo (taxa própria de cada um, não somada à do fundo de cima)</h3>"
+                + _table([("Linha", False), ("Fundo investido", False), ("Taxa divulgada", False), ("Origem e data", False),
+                          ("Estimativa do balancete (à parte)", False), ("Despesa declarada (lâmina)", True), ("Soma", False)], urows))
+    return out
 
 
 def _bucket_table(engine: dict, base: str, label_key: str, label: str) -> str:
@@ -265,9 +330,11 @@ def _unknowns_section(engine: dict, narrative: Narrative) -> str:
             items.append(f"<li><strong>Linha {v(engine, f'lines[{i}].line_id')}</strong> não identificada: "
                          f"{v(engine, f'lines[{i}].identification.reason')}. Valor: {v(engine, f'lines[{i}].value_brl')}.</li>")
     for i, b in enumerate((engine.get("fees") or {}).get("by_line") or []):
-        if b.get("label") == "desconhecido":
-            items.append(f"<li><strong>Taxa da linha {v(engine, f'fees.by_line[{i}].line_id')}</strong>: "
-                         f"{v(engine, f'fees.by_line[{i}].reason')}.</li>")
+        if b.get("label") == "desconhecido" or (b.get("fee_status") and b.get("disclosed_pct_year") is None
+                                                  and b.get("disclosed_min_pct_year") is None):
+            items.append(f"<li><strong>Taxa da linha {v(engine, f'fees.by_line[{i}].line_id')}</strong> "
+                         f"({v(engine, f'fees.by_line[{i}].fee_status') if b.get('fee_status') else 'desconhecida'}): "
+                         f"{v(engine, f'fees.by_line[{i}].reason')}</li>")
     if "abnormal_movement" not in (engine.get("sections") or {}):
         items.append("<li><strong>abnormal_movement</strong> (não avaliado): regra de movimento anormal ainda não definida.</li>")
     for i, _n in enumerate((engine.get("risk_screens") or {}).get("not_run") or []):
@@ -286,8 +353,10 @@ def _method_section(engine: dict, narrative: Narrative) -> str:
         "que não digita algarismos: cada valor é um marcador ligado a um campo do JSON e é preenchido na montagem do relatório.",
         "Um Revisor independente confere cada frase: marcadores que não existem, algarismos fora de marcador, citações fora da "
         "proveniência e valores extremos sem confirmação removem a frase.",
-        "Taxas marcadas como estimativa vêm do balancete do fundo (contas COFI 8.1.7, acumuladas no exercício) e não são a taxa "
-        "contratual; a taxa divulgada só aparece quando o SILO a tem.",
+        "A taxa de administração mostrada é a divulgada pelo fundo, na ordem Extrato CVM, lâmina, cadastro cad_fi; uma taxa 0 informada "
+        "é mostrada como tal e nunca somada como custo, e um valor fora de 0 a 5% a.a. é descartado. A estimativa vem do balancete do "
+        "fundo (contas COFI 8.1.7, acumuladas no exercício), fica em campo à parte, rotulada \"estimativa, não divulgada\", e nunca substitui "
+        "nem se soma à taxa divulgada. A taxa de performance e os demais termos aparecem como o fundo os informou.",
         "Reapresentações são mostradas como \"revisado, não avaliado\": os limiares de materialidade ainda não foram definidos. Movimento anormal de cota e de patrimônio: não avaliado nesta versão.",
         "Grupo econômico não avaliado: não há fonte pública arquivada da estrutura de grupo, e o SILO não infere grupo por nome.",
         "Sem previsão de retorno e sem recomendação de compra, venda ou manutenção de qualquer ativo.",
@@ -300,7 +369,7 @@ def _method_section(engine: dict, narrative: Narrative) -> str:
         out += "<h3>Notas do Revisor</h3><ul>"
         for r in narrative.removed:
             scope = "achado removido" if r.whole_finding else "frase removida"
-            out += f"<li>{e(r.finding_id)} ({e(scope)}): {e(r.reason)}</li>"
+            out += f"<li>{e(r.finding_id)} ({e(scope)}): {e(r.reason.replace('{{', '').replace('}}', ''))}</li>"
         for n in narrative.notes:
             out += f"<li>{e(n)}</li>"
         out += "</ul>"

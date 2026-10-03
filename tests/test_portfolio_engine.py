@@ -14,7 +14,7 @@ import pytest
 from src.portfolio.client import FakeClient, load_fake_rows
 from src.portfolio.diagnose import FAKE_CLOCK, main
 from src.portfolio.engine import default_params, dumps, run_engine
-from src.portfolio.fees import ESTIMATE_LABEL, NOT_ADDED, NOT_FOUND
+from src.portfolio.fees import ESTIMATE_LABEL, IMPLAUSIBLE_LABEL, NOT_ADDED, NOT_FOUND, ZERO_LABEL
 from src.portfolio.identify import identify, parse_tesouro
 from src.portfolio.indexer import classify, load_rules
 from src.portfolio.lookthrough import Exposure, compute_lookthrough
@@ -62,7 +62,7 @@ def test_top_level_schema_is_stable(doc):
         "schema_version", "generated_at_utc", "engine", "statement", "identification", "fees", "look_through",
         "indexer", "sector", "restatements", "risk_signals", "assumptions", "section_status", "provenance",
     ]
-    assert doc["schema_version"] == "1.0"
+    assert doc["schema_version"] == "1.1"
     for sec in ("identification", "fees", "look_through", "indexer", "sector", "restatements", "risk_signals"):
         assert {"status", "reason", "errors"} <= set(doc[sec])
 
@@ -137,53 +137,119 @@ def test_parse_tesouro_titles():
 def test_fees_headline_is_the_disclosed_fee_and_the_estimate_stays_apart(doc):
     by = {ln["line_no"]: ln for ln in doc["fees"]["lines"]}
     f3, f4, f5, f6, f7, f8 = (by[n] for n in (3, 4, 5, 6, 7, 8))
-    # a fixed disclosed fee: headline, R$/year = position value x rate, source and date
+    # an Extrato fee: headline, R$/year = position value x rate, the origin named, the class scope said
     h = f3["headline"]
-    assert (h["kind"], h["rate_pct_year"], h["source"], h["as_of"], h["age_months"], h["stale"]) == ("fixa", 2.0, "cvm_fi_lamina", "2026-07-31", 1, False)
-    assert h["per_year_brl"] == round(264615.00 * 0.02, 2)
+    assert (h["kind"], h["rate_pct_year"], h["origin"], h["as_of"], h["age_months"], h["stale"]) == ("fixa", 2.0, "extrato", "2026-07-31", 1, False)
+    assert h["per_year_brl"] == round(264615.00 * 0.02, 2) and h["scope_label"] == "taxa da classe"
+    d3 = f3["disclosed"]
+    assert d3["origin"] == "extrato" and d3["origin_label"] == "Extrato CVM" and d3["source"] == "cvm_fi_extrato"
+    assert "DT_COMPTC" in d3["as_of_meaning"] and "cad_fi" not in d3["as_of_meaning"]  # not the cad_fi provenance sentence
+    assert d3["class_note"].startswith("class-level row")
     # the estimate is its own field, labelled, never the headline and never averaged with it
     e = f3["estimate"]
     assert e["label"] == ESTIMATE_LABEL == "estimativa, não divulgada" and e["adm_pct_year"] == 1.98 and e["method"]
     assert h["rate_pct_year"] != e["adm_pct_year"] and "média" not in str(f3)
-    # the performance fee is the source's own text: verbatim, never parsed, never R$
-    assert f3["disclosed"]["perf_as_filed"] == "20% do que exceder 100% do Ibovespa"
-    assert not any(k.startswith("perf_per_year") for k in f3["disclosed"])
-    # classes that differ: the range as filed, no single value
-    assert f4["fee_status"] == "faixa divulgada" and f4["headline"]["kind"] == "faixa"
+    # performance fee and the other terms: as filed, nothing parsed, never R$ from the performance fee
+    assert d3["perf_as_filed"] == "20% do que exceder 100% do Ibovespa"
+    t3 = d3["terms_as_filed"]
+    assert t3["performance"] == {"exists": "S", "taxa_perfm_as_filed": 20.0, "param_as_filed": "Ibovespa", "calc_as_filed": "semestral",
+                                 "info_as_filed": "20% do que exceder 100% do Ibovespa"}
+    assert t3["entry"]["exists"] == "N" and t3["exit"]["exists"] == "N" and t3["custody_max_as_filed"] == 0.05
+    assert not any(k.startswith("perf_per_year") for k in d3)
+    # the declared total expense ratio: its own field, with its period, never added to the fee
+    x = f3["expense_ratio"]
+    assert x["declared_pct"] == 2.31 and x["period"] == {"from": "2025-07-01", "to": "2026-06-30"} and x["source"] == "cvm_fi_lamina"
+    assert h["rate_pct_year"] != x["declared_pct"] and f3["estimate"]["adm_pct_year"] != x["declared_pct"]
+    assert f4["expense_ratio"]["declared_pct"] is None and "lâmina" in f4["expense_ratio"]["note"]
+    # classes that differ (lâmina): the range as filed, no single value
+    assert f4["fee_status"] == "faixa divulgada" and f4["headline"]["kind"] == "faixa" and f4["disclosed"]["origin"] == "lamina"
     assert (f4["headline"]["rate_min_pct_year"], f4["headline"]["rate_max_pct_year"]) == (0.15, 0.30)
     assert f4["disclosed"]["adm_rate_pct_year"] is None
-    # nothing disclosed (and a reset month with no estimate): taxa divulgada não encontrada, estimate NOT substituted
-    assert f5["fee_status"] == NOT_FOUND and f5["headline"] is None
-    assert f5["estimate"]["available"] is False and f5["estimate"]["adm_pct_year"] is None and f5["estimate"]["fiscal_reset_suspect"] is True
-    assert f6["fee_status"] == NOT_FOUND and f6["headline"] is None and f6["estimate"] is None  # FIDC: no row at all
+    # a filed 0 is shown as such, never a zero cost: no rate, no R$, not summed, plus the attention finding
+    assert f5["fee_status"] == ZERO_LABEL == "valor 0 informado (provavelmente não preenchido)"
+    assert f5["headline"]["kind"] == "zero_informado" and f5["headline"]["rate_pct_year"] is None
+    assert f5["headline"]["per_year_brl"] is None and f5["headline"]["counted_as_cost"] is False
+    assert f5["disclosed"]["filed_zero"] is True and f5["disclosed"]["adm_rate_pct_year"] == 0.0
+    z = next(x for x in f5["findings"] if x["kind"] == "divulgado_zero_balancete_registra_despesa")
+    assert z["level"] == "atenção" and z["text"] == "Divulgado 0, balancete registra despesa."
+    # nothing disclosed anywhere: taxa divulgada não encontrada, the estimate is NOT substituted
+    assert f6["fee_status"] == NOT_FOUND and f6["headline"] is None and f6["estimate"] is None  # FIDC: no row
     assert f8["fee_status"] == NOT_FOUND
-    # the lâmina date and age are always there; older than 24 months is flagged defasada
-    assert f7["disclosed"]["stale"] is True and f7["disclosed"]["stale_label"] == "defasada" and f7["disclosed"]["age_months"] == 29
+    # the lâmina's staleness limit is 24 months; the finding names the origin
+    assert f7["disclosed"]["origin"] == "lamina" and f7["disclosed"]["stale"] is True and f7["disclosed"]["stale_after_months"] == 24
+    assert f7["disclosed"]["stale_label"] == "defasada" and f7["disclosed"]["age_months"] == 29
     assert "lamina_defasada" in {x["kind"] for x in f7["findings"]}
-    # estimate vs a fixed fee: attention when it differs by more than max(0.25 p.p., 25%)
+    # estimate vs a fixed fee: attention, worded as divergence, not as one of them being wrong
     diff = next(x for x in f7["findings"] if x["kind"] == "estimativa_difere_da_divulgada")
     assert diff["level"] == "atenção" and diff["difference_pp"] == pytest.approx(0.47)
+    assert diff["text"].startswith("Estimativa e divulgada divergem") and "qual das duas está errada" in diff["text"]
     assert not any(x["kind"] == "estimativa_difere_da_divulgada" for x in f3["findings"])  # 0.02 p.p. is within tolerance
-    # the declared total expense ratio is a separate field, never added
-    assert f3["expense_ratio"]["declared_pct"] is None and "PR_PL_DESPESA" in f3["expense_ratio"]["note"]
+    # totals: only usable disclosed fees are summed; the zero is not
     t = doc["fees"]["totals"]
     assert t["adm_disclosed_fixed_per_year_brl"] == round(f3["headline"]["per_year_brl"] + f7["headline"]["per_year_brl"], 2)
     assert t["adm_disclosed_range_low_per_year_brl"] == f4["headline"]["per_year_min_brl"]
+    assert t["fund_value_with_filed_zero_brl"] == f5["position_value_brl"]
+    assert t["fund_value_without_disclosed_fee_brl"] == pytest.approx(f5["position_value_brl"] + f6["position_value_brl"] + f8["position_value_brl"])
     assert t["estimate_label"] == ESTIMATE_LABEL and "fee_units" in {a["id"] for a in doc["assumptions"]}
+    assert doc["fees"]["source_order"] == ["extrato", "lamina", "cad_fi"]
+    assert doc["fees"]["stale_after_months_by_origin"] == {"extrato": 36, "lamina": 24, "cad_fi": None}
 
 
 def test_underlying_funds_keep_their_own_fee_and_are_not_added(doc):
     und = doc["fees"]["underlying"]
     assert und and all(u["label"] == NOT_ADDED and u["added_to_totals"] is False for u in und)
     master = next(u for u in und if u["fund_cnpj"] == "35377390000106" and u["line_no"] == 4)
-    # a disclosed 0 stays a disclosed 0, plus a finding because the balancete registers an expense
-    assert master["headline"]["rate_pct_year"] == 0.0
+    # a filed 0 (lâmina) is not a cost; the balancete shows an expense, hence the finding
+    assert master["fee_status"] == ZERO_LABEL and master["headline"]["rate_pct_year"] is None
     f = next(x for x in master["findings"] if x["kind"] == "divulgado_zero_balancete_registra_despesa")
     assert f["level"] == "atenção" and f["text"] == "Divulgado 0, balancete registra despesa."
     # the feeder's own fee is untouched by its master's
     feeder = next(l for l in doc["fees"]["lines"] if l["line_no"] == 4)
     assert feeder["headline"]["kind"] == "faixa"
     assert doc["fees"]["totals"]["fund_value_brl"] == pytest.approx(sum(l["position_value_brl"] for l in doc["fees"]["lines"]))
+
+
+def test_an_implausible_filed_value_is_discarded_with_the_raw_value_apart(doc):
+    u = next(u for u in doc["fees"]["underlying"] if u["fund_cnpj"] == "37525998000158" and u["line_no"] == 4)
+    assert u["fee_status"] == IMPLAUSIBLE_LABEL == "valor implausível descartado"
+    assert u["headline"] is None and u["disclosed"]["adm_rate_pct_year"] is None
+    assert u["disclosed"]["implausible_filed"] is True and u["disclosed"]["adm_filed_raw"] == 14638.0
+    assert u["disclosed"]["rejected"]["raw_value"] == 14638.0 and u["disclosed"]["scope_label"] == "taxa do fundo"
+    assert "valor_implausivel_descartado" in {x["kind"] for x in u["findings"]}
+    # the raw value is a plain field, not a _pct one: nothing prints 14638 as a rate
+    assert not any("14638" in k for k in u["disclosed"]) and "adm_pct" not in "".join(u["disclosed"])
+
+
+def test_the_extrato_is_defasada_after_36_months_not_24(doc):
+    u = next(u for u in doc["fees"]["underlying"] if u["fund_cnpj"] == "54891935000134" and u["line_no"] == 4)
+    assert u["disclosed"]["origin"] == "extrato" and u["disclosed"]["age_months"] == 30
+    assert u["disclosed"]["stale"] is False and u["disclosed"]["stale_after_months"] == 36
+    assert u["estimate"]["available"] is False and u["estimate"]["fiscal_reset_suspect"] is True
+
+
+def _fees_run(row_edits):
+    canned = load_fake_rows(FAKE_ROWS)
+    for entry in canned["portfolio_fees"]:
+        for row in entry["rows"]:
+            row.update(row_edits.get(row["cnpj"], {}))
+    return run(canned)
+
+
+def test_provenance_sentence_follows_disclosed_origin_not_source():
+    d = _fees_run({"08935128000159": {"disclosed_origin": "cad_fi", "disclosed_source": "cvm_fund_registry (cad_fi)"}})
+    f3 = next(l for l in d["fees"]["lines"] if l["line_no"] == 3)
+    assert f3["disclosed"]["origin"] == "cad_fi" and "cad_fi" in f3["disclosed"]["as_of_meaning"]
+    assert f3["disclosed"]["stale_after_months"] is None and f3["disclosed"]["stale"] is False
+    # an old v51 row (no disclosed_origin) still gets the right origin from disclosed_source
+    d = _fees_run({"08935128000159": {"disclosed_origin": None}})
+    assert next(l for l in d["fees"]["lines"] if l["line_no"] == 3)["disclosed"]["origin"] == "extrato"
+
+
+def test_extrato_age_falls_back_to_days_and_the_threshold_is_36_months():
+    d = _fees_run({"08935128000159": {"disclosed_age_months": None, "disclosed_age_days": 1200}})
+    assert next(l for l in d["fees"]["lines"] if l["line_no"] == 3)["disclosed"]["stale"] is True  # 39 months
+    d = _fees_run({"08935128000159": {"disclosed_age_months": 37}})
+    assert next(l for l in d["fees"]["lines"] if l["line_no"] == 3)["disclosed"]["stale_label"] == "defasada"
 
 
 def test_lookthrough_three_levels_and_overlap(doc):
