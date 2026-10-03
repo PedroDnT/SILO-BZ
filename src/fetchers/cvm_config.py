@@ -157,6 +157,18 @@ class DatasetConfig:
             "is_zip": False,
             "description": "Monthly investor profile (type, concentration) — monthly CSV",
         },
+        # The lamina (fi-doc-lamina): the summary sheet each fund files with its
+        # fees, redemption terms and minimums. One zip a month, four members; only
+        # the main one (one row per fund or class and optional subclass) holds
+        # fees. The others (lamina_fi_carteira_, _rentab_ano_, _rentab_mes_) are
+        # not ingested. Probed 2026-10-03 (run 37084697408): 2019-01 onward as
+        # monthly files, header identical in 202409 and 202608.
+        "lamina": {
+            "url_pattern": "{base_url}/FI/DOC/LAMINA/DADOS/lamina_fi_{year}{month:02d}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "lamina_fi_{year}{month:02d}.csv",
+            "description": "Fund lamina (fees, redemption terms, minimums) - monthly ZIP, main member only",
+        },
         "balancete": {
             "url_pattern": "{base_url}/FI/DOC/BALANCETE/DADOS/balancete_fi_{year}{month:02d}.zip",
             "is_zip": True,
