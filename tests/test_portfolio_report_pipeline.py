@@ -345,15 +345,28 @@ def test_figures_in_html_all_come_from_the_engine(engine):
             assert values.format_value(engine, ph) in allowed or not values.is_number(values.resolve(engine, ph))
 
 
-def test_cli_writes_html_and_pdf_offline(engine, tmp_path):
-    out_html, out_pdf = tmp_path / "r.html", tmp_path / "r.pdf"
-    rc = build.main([str(FIXTURE), "--provider", "fake", "--html", str(out_html), "--out", str(out_pdf)])
-    assert rc == 0 and out_html.read_text(encoding="utf-8").startswith("<!doctype html>")
-    try:
+def test_cli_writes_html_offline(tmp_path):
+    out_html = tmp_path / "r.html"
+    assert build.main([str(FIXTURE), "--provider", "fake", "--html", str(out_html)]) == 0
+    assert out_html.read_text(encoding="utf-8").startswith("<!doctype html>")
+
+
+def test_cli_writes_pdf_offline(tmp_path):
+    try:  # an OSError, not an ImportError, when pango is missing
         import weasyprint  # noqa: F401
     except (ImportError, OSError):
-        pytest.skip("weasyprint or its system libraries (pango) are not installed here")
+        pytest.skip("weasyprint or its system libraries (pango) are not installed here (requirements-report.txt)")
+    out_pdf = tmp_path / "r.pdf"
+    assert build.main([str(FIXTURE), "--provider", "fake", "--out", str(out_pdf)]) == 0
     assert out_pdf.read_bytes()[:5] == b"%PDF-" and out_pdf.stat().st_size > 5_000
+
+
+def test_fake_path_does_not_import_anthropic_or_weasyprint():
+    import subprocess, sys
+    code = ("import sys, json; from src.portfolio.report import build; "
+            f"e=json.load(open({str(FIXTURE)!r})); build.build(e, 'fake'); "
+            "assert 'anthropic' not in sys.modules and 'weasyprint' not in sys.modules")
+    subprocess.run([sys.executable, "-c", code], check=True, cwd=Path(__file__).parent.parent)
 
 
 def test_cli_refuses_an_unmasked_engine_json(tmp_path, engine, capsys):

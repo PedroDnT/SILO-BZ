@@ -1,0 +1,5 @@
+# Portfolio-diagnosis report (src/portfolio/report/). Not in requirements.txt: the daily
+# ingest and every workflow install that file, and WeasyPrint needs native pango and
+# cairo libraries. Install with: pip install -r requirements.txt -r requirements-report.txt
+anthropic==1.11.0
+weasyprint==70.0

@@ -100,8 +100,14 @@ def test_missing_key_is_a_config_error(monkeypatch):
 
 
 def test_key_is_never_in_repr(monkeypatch):
+    import sys
+
+    seen = {}
+    fake_sdk = SimpleNamespace(Anthropic=lambda api_key: seen.setdefault("key", api_key) and SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "anthropic", fake_sdk)  # the SDK is not in requirements.txt
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-secret-123")
     p = llm.AnthropicProvider(fallbacks="off")
+    assert seen["key"] == "sk-test-secret-123"  # the key is passed explicitly, from the env only
     assert "sk-test-secret-123" not in repr(p)
 
 
