@@ -87,6 +87,17 @@ Workers Paid, instance sizes and limits, secrets and egress, cost per report
 with the idle window, the Python Workers alternative, Pages versus a separate
 Worker, what is not verified, and the owner's checklist for #519.
 
+## Base dos Dados as an ingestion reference
+
+[`basedosdados-br-cvm-fi.md`](basedosdados-br-cvm-fi.md) (map #510, owner's request
+of 2026-10-03) reads Base dos Dados' `br_cvm_fi` pipeline and dbt models at a fixed
+commit as a reference, not a source. BD covers six ICVM 555 tables (no FIDC, FII,
+FIP, lâmina or CVM-175 registry). It reads all eight CDA blocks, so it has blocks
+3, 5, 7 and 8, which SILO lacks. Its cleaning (`SAFE_CAST`, lowercased codes, a
+`replace('.0','')` to integer cast on quantities) breaks SILO's integrity rules, so
+none of its code should be copied. The note lists three reference items, the gap
+table and the licence (pipelines GPL-3.0 declared, SDK MIT).
+
 ## Where the disclosed fee comes from
 
 [`lamina-coverage.md`](lamina-coverage.md) (#514) and
