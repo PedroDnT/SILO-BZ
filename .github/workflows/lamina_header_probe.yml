@@ -1,10 +1,11 @@
 name: Lamina header probe
 
-# THROWAWAY research branch (research/lamina-coverage, issue #514), never merged.
-# On this branch the file runs .github/research/lamina_coverage.py instead of the
-# header probe, because a workflow GitHub has not indexed on main cannot be
+# THROWAWAY research branch (research/extrato-coverage, issue #524), never merged.
+# On this branch the file runs .github/research/extrato_coverage.py instead of the
+# lamina probe, because a workflow GitHub has not indexed on main cannot be
 # dispatched from another ref. Read-only: public CVM files in, aggregates to the
 # job log out. No secrets, no POSTGRES_URL, no deploy hook, contents: read only.
+# workflow_dispatch only: no schedule, no push trigger.
 
 on:
   workflow_dispatch:
@@ -13,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: lamina-coverage-${{ github.ref }}
+  group: extrato-coverage-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -25,5 +26,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Fold every lamina to the latest per fund and print aggregates
-        run: python -u .github/research/lamina_coverage.py
+      - name: Fold the Extrato to one row per fund and print aggregates
+        run: python -u .github/research/extrato_coverage.py
