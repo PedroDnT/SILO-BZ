@@ -476,6 +476,9 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
   analytical apply and a `deploy_mcp.yml` dispatch; the table is empty until a
   `daily_ingest` run (current file) or a `backfill.yml` `fi_doc_type=extrato`
   dispatch (yearly files, 2021 onward) loads it.
+- **Engine and report on catalog v52** (branch `demo/engine-extrato`): `src/portfolio/fees.py` reads the
+  Extrato columns and follows `disclosed_origin`; the report reads the engine through `report/adapt.py`.
+  Both were tested offline against canned rows, not against the live function.
 
 The list below is the 2026-09-26 state, kept for the parked thresholds and the
 other open points. Design: `PORTFOLIO_DIAGNOSIS.md`. Old tickets: map #340
