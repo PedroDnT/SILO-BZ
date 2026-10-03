@@ -42,6 +42,9 @@ FI_MONTHLY_TABLES: Dict[str, Tuple[str, str, Optional[int]]] = {
     "balancete":     ("cvm_fi_balancete_resumo", "dt_comptc", None),
     "inf_diario":    ("cvm_fi_diario",    "dt_comptc", 2021),
     "perfil_mensal": ("cvm_fi_perfil",    "period",    None),
+    # The CVM lamina (migration 65). DT_COMPTC is the month end, so the month
+    # window test below still finds the month; published monthly from 2019-01.
+    "lamina":        ("cvm_fi_lamina",    "dt_comptc", None),
     "cda":           ("cvm_fi_cda",       "period",    2023),
     # CDA blocks 4 and 2 — holdings, not the aggregate. Same competency grain as
     # `cda` (first-of-month `period`) and the same 2023 cutoff, since they are

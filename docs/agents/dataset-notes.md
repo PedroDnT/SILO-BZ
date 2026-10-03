@@ -71,6 +71,15 @@ split, so a NULL part is not a zero fee.
 the legacy file publishes them, so they cover legacy funds: 7 of the 25,178 funds reporting
 NAV on 2026-09-15 carry one. A NULL fee is "not filed there", never a zero fee.
 
+**The lâmina** (`cvm_fi_lamina`, migration 65, audit `fi` / `lamina`) is the summary sheet each
+fund files: `taxa_adm` (+ min/max/obs), `taxa_perfm` (TEXT in the source, never parsed), entry and exit
+fees, `pr_pl_despesa`, minimums and the redemption terms (`qt_dia_conversao_cota_resgate`,
+`qt_dia_pagto_resgate` + `tp_dia_pagto_resgate`). Only the main member of `lamina_fi_YYYYMM.zip` is read.
+Key `(cnpj, dt_comptc, id_subclasse)`, `id_subclasse` NULL on almost every row (`NULLS NOT DISTINCT`).
+Each month's file holds the lâminas filed that month, so read the current one through
+`vw_fi_lamina_latest` (newest `dt_comptc` per fund and subclass, with `age_months`). Fees are as filed,
+unit not stated by CVM; a NULL fee is "not filed", never zero. Not every active fund has a row.
+
 **FII filings keep every version** (migration 43): `versao` is part of the key of
 `cvm_fii_mensal` and `cvm_fii_periodic` (`UNIQUE NULLS NOT DISTINCT`), so a restatement
 lands beside the original instead of overwriting it. Read the current filing through
