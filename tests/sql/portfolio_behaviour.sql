@@ -1,6 +1,6 @@
 -- Executed checks for the portfolio-diagnosis reads (31_api_portfolio.sql:
 -- api.portfolio_resolve, api.portfolio_fees, api.portfolio_lookthrough, catalog
--- v51). Regex tests pin the SQL text; this proves it DOES the right thing on
+-- v51; portfolio_fees v52, the Extrato first). Regex tests pin the SQL text; this proves it DOES the right thing on
 -- rows. Synthetic CNPJs, inside a transaction that is rolled back, so it runs
 -- on any database with the schema and the analytical layer applied (CI's
 -- sql-compile job, or a scratch copy):
@@ -18,12 +18,16 @@ BEGIN;
 -- The lâmina view (slice A, demo/lamina) may or may not exist on this branch
 -- yet. The test pins the contract portfolio_fees reads, so it installs its own
 -- stand-in for the transaction: cnpj, id_subclasse, dt_comptc, taxa_adm,
--- taxa_adm_min, taxa_adm_max, taxa_perfm (text). Rolled back with the rest.
+-- taxa_adm_min, taxa_adm_max, taxa_perfm (text), and the declared expense ratio
+-- (pr_pl_despesa and its period). Rolled back with the rest. The Extrato is NOT
+-- stubbed: its rows go into the real cvm_fi_extrato (migration 66) so the view
+-- vw_fi_extrato_latest is exercised too.
 -- ---------------------------------------------------------------------------
 DROP VIEW IF EXISTS public.vw_fi_lamina_latest;
 CREATE TABLE public.zz_lamina_stub (
     cnpj text, id_subclasse text, dt_comptc date,
-    taxa_adm numeric, taxa_adm_min numeric, taxa_adm_max numeric, taxa_perfm text
+    taxa_adm numeric, taxa_adm_min numeric, taxa_adm_max numeric, taxa_perfm text,
+    pr_pl_despesa numeric, dt_ini_despesa date, dt_fim_despesa date
 );
 CREATE VIEW public.vw_fi_lamina_latest AS SELECT * FROM public.zz_lamina_stub;
 
@@ -131,6 +135,35 @@ INSERT INTO public.zz_lamina_stub VALUES
     ('67000000000191', 'A', '2026-02-01', 0.5, NULL, NULL, NULL),
     ('67000000000191', 'B', '2026-02-01', 2.0, NULL, NULL, NULL),
     ('65000000000191', 'A', '2026-01-01', NULL, NULL, NULL, NULL);
+-- Two classes of LAM2 declare different expense ratios; LAM1 declares one for both.
+UPDATE public.zz_lamina_stub SET pr_pl_despesa = 0.10, dt_ini_despesa = '2025-07-01', dt_fim_despesa = '2025-12-31'
+ WHERE cnpj = '67000000000191' AND id_subclasse = 'A';
+UPDATE public.zz_lamina_stub SET pr_pl_despesa = 0.20, dt_ini_despesa = '2025-07-01', dt_fim_despesa = '2025-12-31'
+ WHERE cnpj = '67000000000191' AND id_subclasse = 'B';
+UPDATE public.zz_lamina_stub SET pr_pl_despesa = 0.13, dt_ini_despesa = '2025-07-01', dt_fim_despesa = '2025-12-31'
+ WHERE cnpj = '66000000000191';
+
+-- The Extrato (real table, real view). Dates are relative to today so the ages are
+-- exact whatever day this runs.
+--   EXT1  a fee, a performance fee, an exit fee, an older version beside the newest,
+--         and a lamina with a DIFFERENT fee and an expense ratio: the Extrato wins.
+--   EXT2  a filed 0, and a lamina with a fee: the Extrato still wins, the 0 is flagged.
+--   EXT3  14638.38 (a real scale error): withheld, the raw value in its own column.
+--   EXT4  an Extrato row whose fee cell was not a number (NULL): falls to the lamina.
+INSERT INTO cvm_fi_extrato
+    (cnpj, dt_comptc, source_file, tp_fundo_classe, classe_anbima, taxa_adm, taxa_custodia_max,
+     existe_taxa_perfm, taxa_perfm, param_taxa_perfm, calc_taxa_perfm, inf_taxa_perfm,
+     existe_taxa_ingresso, existe_taxa_saida, taxa_saida_pr, taxa_saida_real, raw)
+VALUES
+    ('71000000000191', CURRENT_DATE - 900, 'extrato_fi_2024.csv', 'CLASSES - FIF', 'AÇÕES - ATIVO - LIVRE', 2.0, 0.0, 'N', NULL, NULL, NULL, NULL, 'N', 'N', NULL, NULL, '{}'),
+    ('71000000000191', CURRENT_DATE - 100, 'extrato_fi.csv',      'CLASSES - FIF', 'AÇÕES - ATIVO - LIVRE', 1.2, 0.05, 'S', 20.0, 'IBOVESPA', 'LINEAR', '20% sobre o que exceder o IBOVESPA', 'N', 'S', 1.5, NULL, '{}'),
+    ('72000000000191', CURRENT_DATE - 30,  'extrato_fi.csv',      'FI',            'RENDA FIXA',            0.0, 0.0, 'N', NULL, NULL, NULL, NULL, 'N', 'N', NULL, NULL, '{}'),
+    ('73000000000191', CURRENT_DATE - 400, 'extrato_fi.csv',      'FI',            'MULTIMERCADO',          14638.38, 0.0, 'N', NULL, NULL, NULL, NULL, 'N', 'N', NULL, NULL, '{}'),
+    ('74000000000191', CURRENT_DATE - 10,  'extrato_fi.csv',      'FI',            'RENDA FIXA',            NULL, 0.0, 'N', NULL, NULL, NULL, NULL, 'N', 'N', NULL, NULL, '{}');
+INSERT INTO public.zz_lamina_stub VALUES
+    ('71000000000191', NULL, '2026-03-01', 0.9, NULL, NULL, 'lamina text', 1.5, '2025-04-01', '2025-09-30'),
+    ('72000000000191', NULL, '2026-03-01', 0.5, NULL, NULL, NULL, NULL, NULL, NULL),
+    ('74000000000191', NULL, '2026-03-01', 0.7, NULL, NULL, NULL, 0.4, '2025-04-01', '2025-09-30');
 
 -- ===========================================================================
 -- portfolio_resolve
@@ -235,6 +268,7 @@ END $$;
 DO $$
 DECLARE
     r RECORD;
+    n INT;
 BEGIN
     -- FEE1: steady accrual. (1800 - 1000) x 12 / 120000 = 8% a year; performance 150.
     SELECT * INTO r FROM api.portfolio_fees(ARRAY['61000000000191']);
@@ -304,6 +338,86 @@ BEGIN
     IF r.cnpj <> '68000000000191' OR r.month IS NOT NULL OR r.estimate_label NOT LIKE 'no estimate: no balancete filed%' THEN
         RAISE EXCEPTION 'no balancete: % % %', r.cnpj, r.month, r.estimate_label;
     END IF;
+    -- The existing sources name themselves in the appended columns.
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['61000000000191']);
+    IF r.disclosed_origin <> 'cad_fi' OR r.filed_zero OR r.implausible_filed OR r.taxa_adm_filed_raw <> 1.5
+       OR r.disclosed_age_days IS NOT NULL OR r.extrato_taxa_perfm IS NOT NULL OR r.lamina_pr_pl_despesa IS NOT NULL THEN
+        RAISE EXCEPTION 'cad_fi origin: % % % % %', r.disclosed_origin, r.filed_zero, r.implausible_filed, r.taxa_adm_filed_raw, r.disclosed_age_days;
+    END IF;
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['66000000000191']);
+    IF r.disclosed_origin <> 'lamina' OR r.disclosed_age_days <> CURRENT_DATE - DATE '2026-03-01'
+       OR r.lamina_pr_pl_despesa <> 0.13 OR r.lamina_dt_ini_despesa <> DATE '2025-07-01'
+       OR r.lamina_dt_fim_despesa <> DATE '2025-12-31' OR r.lamina_as_of <> DATE '2026-03-01'
+       OR r.lamina_expense_note IS NOT NULL THEN
+        RAISE EXCEPTION 'lamina origin and expense ratio: % % % % % %', r.disclosed_origin, r.disclosed_age_days, r.lamina_pr_pl_despesa, r.lamina_dt_ini_despesa, r.lamina_as_of, r.lamina_expense_note;
+    END IF;
+    -- Classes that declare different expense ratios: no single value, a note.
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['67000000000191']);
+    IF r.lamina_pr_pl_despesa IS NOT NULL OR r.lamina_expense_note NOT LIKE '%different expense ratios%'
+       OR r.disclosed_origin <> 'lamina' THEN
+        RAISE EXCEPTION 'LAM2 expense: % % %', r.lamina_pr_pl_despesa, r.lamina_expense_note, r.disclosed_origin;
+    END IF;
+
+    -- EXT1: the Extrato is the source, with the NEWEST version (1.2, not the older 2.0),
+    -- ahead of the lamina's 0.9; performance, exit fees and the class note as filed;
+    -- the expense ratio still comes from the lamina; the age is exact.
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['71000000000191']);
+    IF r.disclosed_origin <> 'extrato' OR r.disclosed_source <> 'cvm_fi_extrato'
+       OR r.disclosed_taxa_adm <> 1.2 OR r.taxa_adm_filed_raw <> 1.2 OR r.filed_zero OR r.implausible_filed
+       OR r.disclosed_taxa_adm_min <> 1.2 OR r.disclosed_taxa_adm_max <> 1.2
+       OR r.disclosed_as_of <> CURRENT_DATE - 100 OR r.disclosed_age_days <> 100
+       OR r.disclosed_n_classes <> 1 OR r.disclosed_note IS NOT NULL
+       OR r.disclosed_taxa_perfm <> '20% sobre o que exceder o IBOVESPA'
+       OR r.extrato_existe_taxa_perfm <> 'S' OR r.extrato_taxa_perfm <> 20 OR r.extrato_param_taxa_perfm <> 'IBOVESPA'
+       OR r.extrato_calc_taxa_perfm <> 'LINEAR' OR r.extrato_inf_taxa_perfm <> '20% sobre o que exceder o IBOVESPA'
+       OR r.extrato_existe_taxa_saida <> 'S' OR r.extrato_taxa_saida_pr <> 1.5
+       OR r.extrato_existe_taxa_ingresso <> 'N' OR r.extrato_taxa_custodia_max <> 0.05
+       OR r.extrato_tp_fundo_classe <> 'CLASSES - FIF' OR r.extrato_classe_anbima <> 'AÇÕES - ATIVO - LIVRE'
+       OR r.extrato_class_note NOT LIKE 'class-level row (CVM 175)%no subclass fee is assumed' THEN
+        RAISE EXCEPTION 'EXT1: % % % % % % % %', r.disclosed_origin, r.disclosed_taxa_adm, r.disclosed_as_of, r.disclosed_age_days, r.disclosed_taxa_perfm, r.extrato_taxa_perfm, r.extrato_class_note, r.disclosed_note;
+    END IF;
+    IF r.lamina_pr_pl_despesa <> 1.5 OR r.lamina_dt_fim_despesa <> DATE '2025-09-30' OR r.lamina_as_of <> DATE '2026-03-01' THEN
+        RAISE EXCEPTION 'EXT1 expense ratio from the lamina: % % %', r.lamina_pr_pl_despesa, r.lamina_dt_fim_despesa, r.lamina_as_of;
+    END IF;
+    -- The estimate stays a separate, labelled column (no balancete here: nothing invented).
+    IF r.adm_fee_pct_annual_est IS NOT NULL OR r.estimate_label NOT LIKE 'no estimate: no balancete filed%' THEN
+        RAISE EXCEPTION 'EXT1 estimate: % %', r.adm_fee_pct_annual_est, r.estimate_label;
+    END IF;
+
+    -- EXT2: a filed 0 comes back as 0 with the flag, from the Extrato, NOT from the lamina's 0.5.
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['72000000000191']);
+    IF r.disclosed_origin <> 'extrato' OR r.disclosed_taxa_adm IS DISTINCT FROM 0 OR NOT r.filed_zero
+       OR r.implausible_filed OR r.taxa_adm_filed_raw IS DISTINCT FROM 0
+       OR r.disclosed_note NOT LIKE '%exactly 0%filed_zero%not informed%'
+       OR r.extrato_class_note NOT LIKE 'fund-level row (ICVM 555)%' THEN
+        RAISE EXCEPTION 'EXT2 filed zero: % % % % %', r.disclosed_origin, r.disclosed_taxa_adm, r.filed_zero, r.taxa_adm_filed_raw, r.disclosed_note;
+    END IF;
+
+    -- EXT3: 14638.38 is withheld (NULL fee, NULL range), flagged, the raw value kept apart.
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['73000000000191']);
+    IF r.disclosed_origin <> 'extrato' OR r.disclosed_taxa_adm IS NOT NULL OR NOT r.implausible_filed OR r.filed_zero
+       OR r.taxa_adm_filed_raw <> 14638.38 OR r.disclosed_taxa_adm_min IS NOT NULL OR r.disclosed_taxa_adm_max IS NOT NULL
+       OR r.disclosed_note NOT LIKE '%14638.38%scale error%taxa_adm_filed_raw%' THEN
+        RAISE EXCEPTION 'EXT3 implausible: % % % % %', r.disclosed_origin, r.disclosed_taxa_adm, r.implausible_filed, r.taxa_adm_filed_raw, r.disclosed_note;
+    END IF;
+
+    -- EXT4: an Extrato row with no usable fee does not hide the lamina's 0.7.
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['74000000000191']);
+    IF r.disclosed_origin <> 'lamina' OR r.disclosed_taxa_adm <> 0.7 OR r.extrato_taxa_perfm IS NOT NULL
+       OR r.extrato_tp_fundo_classe IS NOT NULL OR r.lamina_pr_pl_despesa <> 0.4 THEN
+        RAISE EXCEPTION 'EXT4 fallback to the lamina: % % %', r.disclosed_origin, r.disclosed_taxa_adm, r.extrato_tp_fundo_classe;
+    END IF;
+
+    -- A fund in no source: nothing disclosed, origin NULL, no flag raised, no invented number.
+    SELECT * INTO r FROM api.portfolio_fees(ARRAY['62000000000191']);
+    IF r.disclosed_origin IS NOT NULL OR r.filed_zero OR r.implausible_filed OR r.taxa_adm_filed_raw IS NOT NULL
+       OR r.lamina_as_of IS NOT NULL OR r.lamina_expense_note IS NOT NULL THEN
+        RAISE EXCEPTION 'no source: % % %', r.disclosed_origin, r.filed_zero, r.taxa_adm_filed_raw;
+    END IF;
+
+    -- Several funds at once: one row each, every source in its own row.
+    SELECT count(*) INTO n FROM api.portfolio_fees(ARRAY['71000000000191','72000000000191','73000000000191','74000000000191','66000000000191','61000000000191']);
+    IF n <> 6 THEN RAISE EXCEPTION 'six funds, six rows expected, got %', n; END IF;
     RAISE NOTICE 'portfolio_fees OK';
 END $$;
 

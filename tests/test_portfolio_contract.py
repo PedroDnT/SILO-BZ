@@ -186,3 +186,79 @@ def test_catalog_v51_publishes_the_three_functions_as_raise_only():
 def test_behaviour_test_is_wired_into_ci():
     assert "psql \"$POSTGRES_URL\" -v ON_ERROR_STOP=1 -f tests/sql/portfolio_behaviour.sql" in WORKFLOW
     assert (ROOT / "tests" / "sql" / "portfolio_behaviour.sql").is_file()
+
+
+# --- catalog v52: the Extrato first (map #510; owner decision on issue #515) -----
+
+# The 21 columns v51 shipped, in order. v52 appends after estimate_label and never
+# renames, retypes or reorders these (the engine reads them by name).
+V51_COLUMNS = [
+    "cnpj", "fund_name", "month", "nav", "adm_fee_flow", "adm_fee_pct_annual_est",
+    "perf_fee_flow", "perf_fee_pct_annual_est", "fiscal_reset_suspect",
+    "disclosed_taxa_adm", "disclosed_taxa_adm_min", "disclosed_taxa_adm_max",
+    "disclosed_taxa_perfm", "disclosed_taxa_adm_info", "disclosed_taxa_perfm_info",
+    "disclosed_source", "disclosed_as_of", "disclosed_age_months", "disclosed_n_classes",
+    "disclosed_note", "estimate_label",
+]
+
+
+def _fee_columns() -> list:
+    fn = _function("portfolio_fees")
+    out = _strip(fn[fn.index("RETURNS TABLE ("): fn.index("LANGUAGE plpgsql")])
+    return re.findall(r"^\s*(\w+)\s+(?:TEXT|NUMERIC|DATE|INT|BOOLEAN)\b", out, re.M)
+
+
+def test_v52_appends_to_the_v51_columns_without_touching_them():
+    cols = _fee_columns()
+    assert cols[: len(V51_COLUMNS)] == V51_COLUMNS
+    appended = cols[len(V51_COLUMNS):]
+    for name in (
+        "disclosed_origin", "disclosed_age_days", "filed_zero", "implausible_filed",
+        "taxa_adm_filed_raw", "extrato_taxa_perfm", "extrato_param_taxa_perfm",
+        "extrato_calc_taxa_perfm", "extrato_inf_taxa_perfm", "extrato_taxa_ingresso_pr",
+        "extrato_taxa_saida_pr", "extrato_class_note", "lamina_pr_pl_despesa",
+        "lamina_dt_ini_despesa", "lamina_dt_fim_despesa",
+    ):
+        assert name in appended, name
+    assert len(cols) == len(set(cols)), "a duplicated output column"
+
+
+def test_v52_changes_the_return_type_so_the_function_is_dropped_first():
+    body = _strip(SQL31)
+    drop = body.index("DROP FUNCTION IF EXISTS api.portfolio_fees(TEXT[], DATE);")
+    assert drop < body.index("CREATE OR REPLACE FUNCTION api.portfolio_fees(")
+    assert "GRANT EXECUTE ON FUNCTION api.portfolio_fees(TEXT[], DATE) TO anon, authenticated" in body
+
+
+def test_the_extrato_is_read_first_then_the_lamina_then_cad_fi():
+    body = _strip(_function("portfolio_fees"))
+    assert "to_regclass('public.vw_fi_extrato_latest')" in body
+    assert "FROM public.vw_fi_extrato_latest" in body
+    order = body.index("WHEN a.use_ext THEN 'extrato'")
+    assert order < body.index("WHEN a.use_lam THEN 'lamina'") < body.index("THEN 'cad_fi'")
+    # An Extrato row without a parseable fee does not hide the lamina; a 0 or a value
+    # above 5 does not fall through (it is read, not skipped).
+    assert "(x.cnpj IS NOT NULL AND x.x_adm IS NOT NULL) AS use_ext" in body
+
+
+def test_the_owners_reading_rules_are_applied_when_reading_not_when_storing():
+    body = _strip(_function("portfolio_fees"))
+    assert "COALESCE(e.fee_raw = 0, FALSE) AS is_zero" in body
+    assert "COALESCE(e.fee_raw > 5 OR e.fee_raw < 0, FALSE) AS is_implausible" in body
+    assert "CASE WHEN f.is_implausible THEN NULL ELSE f.fee_raw END" in body
+    # The ingest stores TAXA_ADM as filed: no clip or zero-fix in the field map or the ingest.
+    ingest = (ROOT / "src" / "pipeline" / "ingest_fi.py").read_text(encoding="utf-8")
+    block = ingest[ingest.index("def ingest_fi_extrato("): ingest.index("def ingest_fi_balancete(")]
+    assert "> 5" not in block and "min(" not in block and "max(" not in block
+
+
+def test_catalog_v52_says_extrato_first_and_names_the_flags():
+    from serve.catalog import CATALOG_VERSION, catalog_payload
+
+    assert CATALOG_VERSION >= 52
+    text = str(catalog_payload()["constraints"]) if "constraints" in catalog_payload() else ""
+    text += str(catalog_payload())
+    for needle in ("disclosed_origin", "filed_zero", "implausible_filed", "taxa_adm_filed_raw",
+                   "lamina_pr_pl_despesa"):
+        assert needle in text, needle
+    assert f'"version": {CATALOG_VERSION}' in SQL19
