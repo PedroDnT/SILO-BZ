@@ -65,3 +65,12 @@ class, the blockers, a candidate demo portfolio, the slice plan for Sunday
 current names, the disclosed fee is not in SILO, the spike's FIDCs are still
 unlinked, the dormant screen refuses whole. The same queries are
 `scripts/health_diagnostics/19_portfolio_phase0.sql`.
+
+## Cloudflare Containers for the diagnosis engine
+
+[`cloudflare-container.md`](cloudflare-container.md) (ticket #518, map #510)
+records, from Cloudflare's own docs read on 2026-10-02 (UTC-3), whether the
+Python engine can run in a Container behind a Worker: GA since 2026-04-13 on
+Workers Paid, instance sizes and limits, secrets and egress, cost per report
+with the idle window, the Python Workers alternative, Pages versus a separate
+Worker, what is not verified, and the owner's checklist for #519.
