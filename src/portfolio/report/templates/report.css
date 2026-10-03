@@ -1,0 +1,35 @@
+@page {
+  size: A4;
+  margin: 18mm 16mm 20mm 16mm;
+  @bottom-left { content: "SILO · diagnóstico de carteira"; font-size: 8pt; color: #6b7280; }
+  @bottom-right { content: counter(page) " / " counter(pages); font-size: 8pt; color: #6b7280; }
+}
+:root { --ink: #111827; --muted: #4b5563; --line: #d1d5db; --accent: #0f4c5c; --warn: #92400e; --warn-bg: #fef3c7; }
+* { box-sizing: border-box; }
+body { margin: 0 auto; max-width: 860px; padding: 0 16px; background: #ffffff; color: var(--ink);
+  font-family: "DejaVu Sans", "Helvetica Neue", Arial, sans-serif; font-size: 10pt; line-height: 1.45; }
+.capa { border-bottom: 2px solid var(--accent); padding: 12px 0 10px; margin-bottom: 14px; }
+.marca { margin: 0; font-weight: 700; letter-spacing: 0.2em; color: var(--accent); font-size: 11pt; }
+h1 { margin: 2px 0 4px; font-size: 18pt; }
+h2 { font-size: 13pt; color: var(--accent); border-bottom: 1px solid var(--line); padding-bottom: 3px; margin: 20px 0 8px; break-after: avoid; }
+h3 { font-size: 11pt; margin: 14px 0 6px; break-after: avoid; }
+.meta { margin: 0; color: var(--muted); font-size: 9pt; }
+.aviso { background: var(--warn-bg); color: var(--warn); border: 1px solid #f59e0b; padding: 6px 10px; margin: 10px 0 0; font-size: 9pt; }
+.achado { margin: 0 0 8px; break-inside: avoid; }
+.achado strong { display: block; }
+.achado .cit { color: var(--muted); font-size: 8pt; }
+.v { font-weight: 600; }
+.indisponivel { color: var(--warn); font-style: italic; }
+table { width: 100%; border-collapse: collapse; margin: 6px 0 10px; font-size: 8.5pt; }
+th, td { border-bottom: 1px solid var(--line); padding: 4px 5px; text-align: left; vertical-align: top; }
+th { background: #f3f4f6; font-weight: 600; }
+td.n, th.n { text-align: right; white-space: nowrap; }
+.tag { display: inline-block; padding: 0 5px; border-radius: 3px; font-size: 7.5pt; background: #e5e7eb; }
+.tag.est { background: #dbeafe; }
+.tag.unk { background: var(--warn-bg); color: var(--warn); }
+ul { margin: 4px 0 8px; padding-left: 18px; }
+.rodape { border-top: 2px solid var(--accent); margin-top: 20px; padding-top: 6px; font-size: 9pt; }
+.rodape h2 { border: 0; margin-top: 4px; }
+.assinatura { margin-top: 12px; font-weight: 600; }
+.nota { color: var(--muted); font-size: 8pt; }
+@media (max-width: 600px) { table { display: block; overflow-x: auto; } }
