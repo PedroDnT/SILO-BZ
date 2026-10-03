@@ -304,8 +304,23 @@ serves the daily level of a B3-published index from `b3_index_level` (migration
 
 - **Source.** B3's index statistics proxy, `indexStatisticsProxy/IndexCall/
   GetPortfolioDay`, one calendar year per call as a 31 x 12 grid with Brazilian
-  decimals (`src/fetchers/b3_index_fetcher.py`). IBOV from 1968-01-02: 14,489
-  sessions on 2026-09-30, 2025-12-30 = 161,125.37 (B3's year-end figure).
+  decimals (`src/fetchers/b3_index_fetcher.py`). IBOV from 1968-01-02: 14,491
+  sessions through 2026-10-02, 2025-12-30 = 161,125.37 (B3's year-end figure).
+  Rows held, read from `b3_index_level` on 2026-10-03, all ending 2026-10-02:
+
+  | Code | First session | Rows |
+  | ---- | ------------- | ---- |
+  | IBOV | 1968-01-02    | 14,491 |
+  | IBXX | 1994-12-29    | 7,868 |
+  | IBXL | 1997-12-30    | 7,126 |
+  | SMLL | 2005-08-31    | 5,225 |
+  | IDIV | 2005-12-29    | 5,143 |
+  | UTIL | 2005-12-29    | 5,143 |
+  | ICON | 2006-12-28    | 4,897 |
+  | IMOB | 2007-12-28    | 4,652 |
+  | IFIX | 2010-12-30    | 3,910 |
+
+  The counts grow one per session; `api.coverage()` is the live figure.
 - **The codes held (v53, #416).** IBOV, IBXX (first session 1994-12-29), IBXL
   (1997-12-30), IFIX (2010-12-30), SMLL (2005-08-31), IDIV and UTIL (2005-12-29),
   ICON (2006-12-28) and IMOB (2007-12-28), the list `INDEX_CODES` /
