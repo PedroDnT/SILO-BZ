@@ -81,6 +81,8 @@ class Exposure:
     opaque_fund: bool = False  # a fund quota with no holdings expanded
     sources: list[dict] = field(default_factory=list)
     ticker: str | None = None
+    taxa_texto: str | None = None  # the rate as the statement prints it (direct credit lines)
+    tesouro_title: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -98,6 +100,7 @@ class Exposure:
             "tp_ativo": self.tp_ativo,
             "tp_titpub": self.tp_titpub,
             "indexer_code": self.indexer_code,
+            "taxa_texto": self.taxa_texto,
             "maturity": self.maturity,
             "weight_in_line": ratio(self.weight),
             "exposure_brl": brl(self.value_brl),
@@ -215,13 +218,14 @@ def _direct_exposures(li: LineId) -> list[Exposure]:
     p = li.position
     src = [statement_source(p.line_no, p.data_posicao)]
     if li.kind == "ticker":
+        equity = p.tipo == "ação" or li.asset_class == "equity"
         return [
             Exposure(
                 line_no=li.line_no,
                 via="direto",
                 depth=0,
                 block=None,
-                asset_kind="acao_direta" if p.tipo == "ação" else "cota_listada",
+                asset_kind="acao_direta" if equity else "cota_listada",
                 asset_key=li.ticker,
                 asset_name=li.name,
                 isin=li.isin,
@@ -247,8 +251,8 @@ def _direct_exposures(li: LineId) -> list[Exposure]:
                 depth=0,
                 block=None,
                 asset_kind="titulo_publico_direto",
-                asset_key=f"{li.tesouro_title} {li.tesouro_maturity}",
-                asset_name=li.name,
+                asset_key=f"{li.tesouro_title} {li.tesouro_maturity}" if li.tesouro_maturity else li.tesouro_title,
+                asset_name=li.name or li.tesouro_title,
                 isin=None,
                 issuer_cnpj=None,
                 issuer_code=None,
@@ -261,6 +265,26 @@ def _direct_exposures(li: LineId) -> list[Exposure]:
                 value_brl=p.valor,
                 period=p.data_posicao.isoformat(),
                 sources=src,
+                tesouro_title=li.tesouro_title,
+            )
+        ]
+    if p.tipo == "caixa":
+        return [
+            Exposure(
+                line_no=li.line_no, via="direto", depth=0, block=None, asset_kind="caixa", asset_key="conta corrente",
+                asset_name="Conta corrente", isin=None, issuer_cnpj=None, issuer_code=None, tp_aplic=None, tp_ativo=None,
+                tp_titpub=None, indexer_code=None, maturity=None, weight=Decimal(1), value_brl=p.valor,
+                period=p.data_posicao.isoformat(), sources=src,
+            )
+        ]
+    if li.kind is None and p.taxa_texto and p.tipo in ("CRI", "CRA", "CDB", "LCI", "LCA", "debênture", "outro"):
+        # a direct credit line: not identified in SILO, but the statement prints its rate and maturity
+        return [
+            Exposure(
+                line_no=li.line_no, via="direto", depth=0, block=None, asset_kind="credito_direto", asset_key=p.codigo,
+                asset_name=p.linha_extrato, isin=None, issuer_cnpj=None, issuer_code=None, tp_aplic=None, tp_ativo=None,
+                tp_titpub=None, indexer_code=None, maturity=p.vencimento.isoformat() if p.vencimento else None,
+                weight=Decimal(1), value_brl=p.valor, period=p.data_posicao.isoformat(), sources=src, taxa_texto=p.taxa_texto,
             )
         ]
     return []

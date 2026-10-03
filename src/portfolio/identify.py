@@ -86,8 +86,9 @@ UNSUPPORTED_REASON = {
     "debênture": "Debênture detida diretamente: o SILO não tem cadastro nem preço de debêntures.",
     "CRI": "CRI detido diretamente: identificação por código ainda não implementada nesta versão.",
     "CRA": "CRA detido diretamente: identificação por código ainda não implementada nesta versão.",
-    "outro": "Tipo 'outro': sem regra de identificação.",
+    "outro": "Tipo 'outro' sem ticker: o SILO não identifica pelo nome nem pelo código do registro.",
 }
+CREDIT_TIPOS = ("CRI", "CRA", "CDB", "LCI", "LCA", "debênture", "outro")
 
 
 @dataclass
@@ -110,6 +111,7 @@ class LineId:
     tesouro_title: str | None = None
     tesouro_maturity: str | None = None
     tesouro_tp_titpub: str | None = None
+    statement_facts: dict[str, Any] = field(default_factory=dict)
     findings: list[dict] = field(default_factory=list)
 
     @property
@@ -182,7 +184,9 @@ def identify(stmt: Statement, client: SiloClient) -> tuple[dict[str, Any], list[
     for li in lines:
         p = li.position
         code = (p.codigo or "").strip().upper()
-        if p.tipo not in TICKER_TIPOS:
+        if p.tipo == "outro" and is_ticker(code):
+            pass  # the statement gave a ticker and no type: the lookup says what it is
+        elif p.tipo not in TICKER_TIPOS:
             continue
         if not is_ticker(code):
             if p.tipo == "ação":
@@ -193,9 +197,19 @@ def identify(stmt: Statement, client: SiloClient) -> tuple[dict[str, Any], list[
     # --- Tesouro and unsupported types. ---------------------------------------------
     for li in lines:
         p = li.position
+        li.statement_facts = _statement_facts(p)
+        if p.tipo == "caixa":
+            li.status, li.kind, li.name = "identified", "caixa", "Conta corrente"
+            li.reason = "Saldo em conta corrente lido do extrato; sem identificação a fazer."
+            continue
         if p.tipo == "tesouro":
             parsed = parse_tesouro(p.codigo)
             if not parsed:
+                title = TESOURO_TITLES.get(_norm(p.codigo or ""))
+                if title:
+                    # the statement prints the title but not the maturity: exposure by title, line stays unidentified
+                    li.kind, li.tesouro_title = "tesouro", title
+                    li.tesouro_tp_titpub = TESOURO_TP_TITPUB.get(title)
                 li.status = "unknown"
                 li.reason = (
                     "Título do Tesouro sem título e vencimento reconhecíveis no campo código "
@@ -208,8 +222,10 @@ def identify(stmt: Statement, client: SiloClient) -> tuple[dict[str, Any], list[
             li.tesouro_tp_titpub = TESOURO_TP_TITPUB.get(fam)
             li.name = f"{fam} {mat}"
             li.reason = "Identificado por título e vencimento; o SILO não tem série de preços do Tesouro."
-        elif p.tipo in UNSUPPORTED_REASON:
+        elif p.tipo in UNSUPPORTED_REASON and li.status != "identified":
             li.status, li.reason = "unknown", UNSUPPORTED_REASON[p.tipo]
+            if p.tipo in CREDIT_TIPOS and p.codigo:
+                li.reason += f" Código do registro lido do extrato: {p.codigo}."
 
     out_lines = []
     for li in lines:
@@ -236,6 +252,7 @@ def identify(stmt: Statement, client: SiloClient) -> tuple[dict[str, Any], list[
                     "tesouro_title": li.tesouro_title,
                     "tesouro_maturity": li.tesouro_maturity,
                 },
+                "statement_facts": li.statement_facts,
                 "fund_match": resolve_out.get(li.line_no),
                 "ticker_match": ticker_out.get(li.line_no),
                 "valuation": {
@@ -273,7 +290,11 @@ def _apply_resolve(li: LineId, cands: list[dict], src: dict) -> dict[str, Any]:
             "reason": r.get("reason"),
         }
 
-    out: dict[str, Any] = {"candidates": [cand(r) for r in cands], "sources": [src]}
+    out: dict[str, Any] = {
+        "candidates": [cand(r) for r in cands],
+        "quota_basis": "implícita (valor / quantidade do extrato)" if li.position.preco_implicito else "impressa no extrato",
+        "sources": [src],
+    }
     if not cands:
         li.status = "unknown"
         li.reason = "portfolio_resolve não encontrou candidato pelo nome (histórico) nem pelo CNPJ."
@@ -355,7 +376,7 @@ def _identify_ticker(li: LineId, code: str, client: SiloClient, sec: Section, po
     else:
         sec.degrade(f"quote_latest falhou para {code}.")
 
-    if li.position.tipo == "ação":
+    if li.position.tipo == "ação" or li.asset_class == "equity":
         args = {"p_id": code, "p_from": (pos_date - dt.timedelta(days=548)).isoformat(), "p_to": pos_date.isoformat()}
         cf = call_tool(client, "company_financials", args, sec.errors)
         if cf.ok and cf.rows:
@@ -376,5 +397,13 @@ def _identify_ticker(li: LineId, code: str, client: SiloClient, sec: Section, po
     return out
 
 
-def _unused(_: Decimal) -> None:  # keep Decimal import explicit for type readers
-    return None
+def _statement_facts(p: Position) -> dict[str, Any]:
+    """What the statement itself prints about the line, beyond name and value (all null for a spreadsheet)."""
+    return {
+        "vencimento": iso(p.vencimento),
+        "taxa_texto": p.taxa_texto,
+        "estrategia_corretora": p.estrategia_corretora,
+        "classe_corretora": p.classe_corretora,
+        "conta_ref": p.conta_ref,
+        "preco_implicito": p.preco_implicito,
+    }

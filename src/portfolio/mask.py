@@ -12,9 +12,11 @@ stored on a returned object and its ``repr`` says nothing about them.
 
 from __future__ import annotations
 
+import hashlib
 import re
+import secrets
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 TOKEN_TITULAR = "[TITULAR]"
 TOKEN_CPF = "[CPF]"
@@ -26,6 +28,19 @@ TOKEN_CONTA = "[CONTA]"
 _FORMATTED_CPF = re.compile(r"(?<!\d)\d{3}\.\d{3}\.\d{3}-\d{2}(?!\d)")
 
 
+# A per-process random salt: fingerprints compare holders and accounts across the
+# statements read in ONE run (multi-titular and duplicate-account checks) and
+# mean nothing outside it. They are never written to the output.
+_SALT = secrets.token_bytes(16)
+
+
+def _fingerprint(kind: str, value: str | None) -> str | None:
+    if not value:
+        return None
+    norm = re.sub(r"\s+", " ", _strip_accents(value)).strip().upper() if kind == "titular" else _digits(value) or value
+    return hashlib.sha256(_SALT + kind.encode() + norm.encode("utf-8")).hexdigest()[:16]
+
+
 @dataclass(frozen=True)
 class MaskedHolder:
     """The holder as the engine sees it: tokens, or None when the field was empty."""
@@ -33,6 +48,9 @@ class MaskedHolder:
     titular: str | None
     cpf: str | None
     conta: str | None
+    # Salted one-way fingerprints, in-process only; excluded from repr and as_dict.
+    titular_fp: str | None = field(default=None, repr=False, compare=False)
+    conta_fp: str | None = field(default=None, repr=False, compare=False)
 
     def as_dict(self) -> dict[str, str | None]:
         return {"titular": self.titular, "cpf": self.cpf, "conta": self.conta}
@@ -94,6 +112,8 @@ class Masker:
             titular=TOKEN_TITULAR if tit else None,
             cpf=cpf_token,
             conta=TOKEN_CONTA if conta_s else None,
+            titular_fp=_fingerprint("titular", tit),
+            conta_fp=_fingerprint("conta", conta_s),
         )
 
     def __repr__(self) -> str:  # never print the originals

@@ -41,3 +41,11 @@ direct_tesouro,title,NTN-C,inflação (IGP-M),
 direct_tesouro,title,NTN-I,câmbio,"NTN-I: indexada ao dólar, confirmar"
 direct,tipo,ação,renda variável,Ação detida diretamente
 direct,tipo,FII,renda variável,Cota de FII negociada em bolsa
+direct,tipo,caixa,caixa (conta corrente),"Linha Conta corrente impressa no extrato"
+"statement_taxa","regex","^\d+(,\d+)?% do cdi$","pós-fixado (CDI)","Taxa impressa no extrato"
+"statement_taxa","regex","^cdi \+","pós-fixado (CDI)","Taxa impressa no extrato"
+"statement_taxa","regex","^\d+(,\d+)?% do selic$","pós-fixado (Selic)","Taxa impressa no extrato"
+"statement_taxa","regex","^selic \+","pós-fixado (Selic)","Taxa impressa no extrato"
+"statement_taxa","regex","^ipca \+","inflação (IPCA)","Taxa impressa no extrato"
+"statement_taxa","regex","^igp-?m \+","inflação (IGP-M)","Taxa impressa no extrato"
+"statement_taxa","regex","^\d+(,\d+)?% a\.?a\.?$","pré-fixado","Taxa impressa no extrato"

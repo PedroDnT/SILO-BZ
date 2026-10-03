@@ -25,7 +25,7 @@ from src.portfolio.lookthrough import compute_lookthrough
 from src.portfolio.restatements import compute_restatements
 from src.portfolio.sector import compute_sector
 from src.portfolio.signals import compute_signals
-from src.portfolio.statement import Statement
+from src.portfolio.statement import Position, Statement
 
 log = logging.getLogger(__name__)
 
@@ -109,7 +109,43 @@ ASSUMPTIONS = [
 ]
 
 
+def _position_dict(p: Position, total: Decimal) -> dict[str, Any]:
+    return {
+        "line_no": p.line_no,
+        "source_row": p.source_row,
+        "linha_extrato": p.linha_extrato,
+        "tipo": p.tipo,
+        "codigo": p.codigo,
+        "quantidade": float(p.quantidade) if p.quantidade is not None else None,
+        "preco_unitario": float(p.preco_unitario) if p.preco_unitario is not None else None,
+        "preco_implicito": p.preco_implicito,
+        "valor_brl": brl(p.valor),
+        "pct_of_portfolio": float(round(p.valor / total * 100, 4)) if total else None,
+        "data_posicao": iso(p.data_posicao),
+        "vencimento": iso(p.vencimento),
+        "taxa_texto": p.taxa_texto,
+        "estrategia_corretora": p.estrategia_corretora,
+        "classe_corretora": p.classe_corretora,
+        "conta_ref": p.conta_ref,
+        "contas": [
+            {
+                "conta_ref": c.conta_ref,
+                "titular_ref": c.titular_ref,
+                "source_row": c.source_row,
+                "linha_extrato": c.linha_extrato,
+                "quantidade": float(c.quantidade) if c.quantidade is not None else None,
+                "preco_unitario": float(c.preco_unitario) if c.preco_unitario is not None else None,
+                "valor_brl": brl(c.valor),
+                "data_posicao": iso(c.data_posicao),
+            }
+            for c in p.contas
+        ],
+        "source": statement_source(p.line_no, p.data_posicao),
+    }
+
+
 def statement_section(stmt: Statement) -> dict[str, Any]:
+    total = stmt.sum_of_lines
     return {
         "holder": stmt.holder.as_dict(),
         "corretora": stmt.corretora,
@@ -123,21 +159,20 @@ def statement_section(stmt: Statement) -> dict[str, Any]:
         "position_date": iso(stmt.position_date),
         "position_dates": [iso(d) for d in stmt.position_dates],
         "notes": list(stmt.notes),
-        "positions": [
+        "positions": [_position_dict(p, total) for p in stmt.positions],
+        "consolidated": bool(stmt.accounts),
+        "accounts": [
             {
-                "line_no": p.line_no,
-                "source_row": p.source_row,
-                "linha_extrato": p.linha_extrato,
-                "tipo": p.tipo,
-                "codigo": p.codigo,
-                "quantidade": float(p.quantidade) if p.quantidade is not None else None,
-                "preco_unitario": float(p.preco_unitario) if p.preco_unitario is not None else None,
-                "valor_brl": brl(p.valor),
-                "pct_of_portfolio": float(round(p.valor / stmt.sum_of_lines * 100, 4)) if stmt.sum_of_lines else None,
-                "data_posicao": iso(p.data_posicao),
-                "source": statement_source(p.line_no, p.data_posicao),
+                "conta_ref": a.conta_ref,
+                "titular_ref": a.titular_ref,
+                "n_lines": a.n_lines,
+                "stated_total_brl": brl(a.stated_total),
+                "sum_of_lines_brl": brl(a.sum_of_lines),
+                "position_date": iso(a.position_date),
+                "source_format": a.source_format,
+                "positions": [_position_dict(p, a.sum_of_lines) for p in a.positions],
             }
-            for p in stmt.positions
+            for a in stmt.accounts
         ],
     }
 

@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import re
+import unicodedata
 from collections import defaultdict
 from decimal import Decimal
 from pathlib import Path
@@ -45,6 +47,14 @@ def rules_sha256(path: Path = RULES_PATH) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _norm_taxa(text: str | None) -> str:
+    """The rate text as printed, accent-stripped, lowercase, one space between words."""
+    if not text:
+        return ""
+    t = "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", t).strip().lower()
+
+
 def classify(e: Exposure, rules: dict) -> tuple[str, str, str | None]:
     """(indexer class, rule that decided it, reason when unclassified)."""
 
@@ -52,8 +62,20 @@ def classify(e: Exposure, rules: dict) -> tuple[str, str, str | None]:
         r = rules.get((source, field, value if value is not None else NULL_TOKEN))
         return r
 
+    if e.asset_kind == "caixa":
+        r = hit("direct", "tipo", "caixa")
+        if r:
+            return r["indexer_class"], "direct/tipo=caixa", r["note"] or None
+    if e.asset_kind == "credito_direto":
+        taxa = _norm_taxa(e.taxa_texto)
+        if not taxa:
+            return UNCLASSIFIED, "", "crédito direto sem taxa impressa no extrato"
+        for (src, fld, pattern), r in rules.items():
+            if src == "statement_taxa" and re.search(pattern, taxa):
+                return r["indexer_class"], f"statement_taxa/regex={pattern}", None
+        return UNCLASSIFIED, "", "taxa impressa no extrato sem regra (o texto da taxa só é lido pela tabela de regras)"
     if e.asset_kind == "titulo_publico_direto":
-        title = (e.asset_key or "").rsplit(" ", 1)[0]
+        title = e.tesouro_title or (e.asset_key or "").rsplit(" ", 1)[0]
         r = hit("direct_tesouro", "title", title)
         if r:
             return r["indexer_class"], f"direct_tesouro/title={title}", None

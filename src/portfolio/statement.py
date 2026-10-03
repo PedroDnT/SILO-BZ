@@ -90,7 +90,11 @@ class StatementTotalMismatch(StatementError):
         tolerance: Decimal,
         n_rows: int,
         unreadable_rows: list[UnreadableRow],
+        check: str | None = None,
+        failures: list[str] | None = None,
     ):
+        self.check = check
+        self.failures = list(failures or [])
         self.stated_total = stated_total
         self.sum_of_lines = sum_of_lines
         self.difference = sum_of_lines - stated_total
@@ -98,10 +102,12 @@ class StatementTotalMismatch(StatementError):
         self.n_rows = n_rows
         self.unreadable_rows = list(unreadable_rows)
         rows = "; ".join(f"row {u.source_row}: {u.reason}" for u in self.unreadable_rows) or "none"
+        head = f"[{check}] " if check else ""
+        extra = (" Checks failed: " + " | ".join(self.failures) + ".") if self.failures else ""
         super().__init__(
-            f"statement does not reconcile: sum of readable lines R$ {sum_of_lines} vs stated total "
+            f"{head}statement does not reconcile: sum of readable lines R$ {sum_of_lines} vs stated total "
             f"R$ {stated_total}, difference R$ {self.difference} (tolerance R$ {tolerance} = "
-            f"R$ 0.01 x {n_rows} rows). Rows not read: {rows}."
+            f"R$ 0.01 x {n_rows} rows). Rows not read: {rows}.{extra}"
         )
 
 
@@ -116,6 +122,40 @@ class Position:
     preco_unitario: Decimal | None
     valor: Decimal
     data_posicao: dt.date
+    # Optional, filled by the PDF reader and by consolidation; the spreadsheet reader leaves them empty.
+    vencimento: dt.date | None = None
+    taxa_texto: str | None = None  # the rate exactly as the statement prints it
+    estrategia_corretora: str | None = None  # the broker's own labels, never ours
+    classe_corretora: str | None = None
+    conta_ref: str | None = None  # an ordinal token (C1, C2...), never the real account
+    preco_implicito: bool = False  # preco_unitario was derived as valor / quantidade
+    contas: tuple["ContaLine", ...] = ()  # per-account lines of a consolidated position
+
+
+@dataclass(frozen=True)
+class ContaLine:
+    """One account's share of a consolidated position."""
+
+    conta_ref: str
+    titular_ref: str | None
+    source_row: int
+    linha_extrato: str
+    quantidade: Decimal | None
+    preco_unitario: Decimal | None
+    valor: Decimal
+    data_posicao: dt.date
+
+
+@dataclass(frozen=True)
+class AccountSummary:
+    conta_ref: str
+    titular_ref: str | None
+    n_lines: int
+    stated_total: Decimal
+    sum_of_lines: Decimal
+    position_date: dt.date
+    source_format: str
+    positions: tuple["Position", ...] = ()  # this account's own positions (conta_ref set), the per-account view
 
 
 @dataclass(frozen=True)
@@ -128,8 +168,9 @@ class Statement:
     positions: tuple[Position, ...]
     position_date: dt.date
     position_dates: tuple[dt.date, ...]
-    source_format: str  # "xlsx" or "csv"; the file name is not kept (it may name the client)
+    source_format: str  # "xlsx", "csv" or "pdf"; the file name is not kept (it may name the client)
     notes: tuple[str, ...] = field(default_factory=tuple)
+    accounts: tuple[AccountSummary, ...] = ()  # one per consolidated statement; empty for a single file
 
 
 # ---------------------------------------------------------------------------

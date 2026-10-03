@@ -81,7 +81,7 @@ def compute_sector(
     # Sector per ticker, cached: direct share lines first, then the biggest inside funds.
     ticker_sector: dict[str, dict[str, Any]] = {}
     for li in lines:
-        if li.kind == "ticker" and li.position.tipo == "ação" and li.ticker:
+        if li.kind == "ticker" and (li.position.tipo == "ação" or li.asset_class == "equity") and li.ticker:
             ticker_sector[li.ticker] = {
                 "sector": li.issuer_setor,
                 "taxonomy": "CVM (cia_company.setor)",
@@ -161,6 +161,12 @@ def compute_sector(
 
 
 def _non_equity_reason(e: Exposure) -> str:
+    if e.asset_kind == "caixa":
+        return "conta corrente: sem setor"
+    if e.asset_kind == "credito_direto":
+        return "crédito privado direto: o extrato não traz o setor do emissor"
+    if e.asset_kind == "cota_listada":
+        return FII_ETF_REASON
     if e.opaque_fund:
         return "fundo investido sem carteira disponível na CDA"
     if e.block == "1" or e.asset_kind == "titulo_publico_direto":
