@@ -29,7 +29,10 @@ joins to `cia_*` with no bridge. It is not where most fund debentures are: block
 under `tp_aplic = 'Debêntures'` (R$788.9bn on 2026-05, against R$34.4bn in block 6), keyed by
 `cd_ativo` and the ISIN, with no issuer CNPJ. Block 6 has no `CD_ATIVO`, so its
 key ends in `row_hash` after (fund, month, issuer, maturity) — see migration 35 for
-the audit. Blocks 3, 5, 7 and 8 are not ingested; the filing fund's name, DENOM_SOCIAL, is
+the audit. A monthly CDA read replaces, per fund in the file, that fund's rows of the month
+in all four blocks (`pg_client.replace_scoped_rows`, count in `cvm_ingest_log.rows_deleted`),
+so a re-filed block-6 row does not land beside the old one; a fund missing from the file keeps
+its rows, and a yearly HIST read only upserts. Blocks 3, 5, 7 and 8 are not ingested; the filing fund's name, DENOM_SOCIAL, is
 `cvm_fi_cda_fund_name`, once per fund and month, not in each row's `raw`, migration 60),
 `anbima_class_monthly` (every ANBIMA class/type; `anbima_etf_class_monthly`
 survives as an ETF-only compat view), `etf_market_snapshot` (scraped ETF NAV/cotistas — wired

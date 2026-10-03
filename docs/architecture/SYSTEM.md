@@ -41,6 +41,9 @@ it read-only. Three infrastructures, three products.
    data and publishes no archive. A missed session is lost.
 5. **Shared database.** Another application's tables (`messages`, `profiles`,
    `threads`) live in `public`. RLS protects them; this repo does not own them.
+6. **Upsert vs replace.** Writes upsert on the natural key and never delete,
+   except a re-read CDA month: each fund in the file replaces its rows for that
+   month in one transaction. A fund missing from the file keeps its rows.
 
 `webapp/` exists but is not deployed.
 

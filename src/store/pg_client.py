@@ -10,7 +10,7 @@ import os
 import threading
 import time
 from contextlib import contextmanager
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import psycopg2
 import psycopg2.extras
@@ -295,10 +295,45 @@ def upsert_rows(
     if not rows:
         return 0
 
+    rows, cols, sql = _prepare_upsert(table, rows, conflict_columns)
+    chunk_size = _get_upsert_chunk_size()
+
+    total = 0
+    for i in range(0, len(rows), chunk_size):
+        chunk = rows[i : i + chunk_size]
+        values = [tuple(_adapt(r.get(c)) for c in cols) for r in chunk]
+
+        def _write(cur, values=values):
+            psycopg2.extras.execute_values(cur, sql, values, page_size=chunk_size)
+
+        _with_retry(client, table, i, len(chunk), _write)
+        total += len(chunk)
+
+    return total
+
+
+def _adapt(v):
+    if isinstance(v, (dict, list)):
+        return Json(v)
+    return v
+
+
+def _conflict_keys(conflict_columns: Optional[str]) -> List[str]:
+    return [c.strip() for c in (conflict_columns or "").split(",") if c.strip()]
+
+
+def _prepare_upsert(
+    table: str, rows: List[Dict[str, Any]], conflict_columns: Optional[str]
+):
+    """Dedup on the conflict key and build the INSERT ... ON CONFLICT statement.
+
+    Returns (rows, cols, sql). Shared by upsert_rows and replace_scoped_rows so
+    the two write exactly the same statement.
+    """
     _strip_raw_duplicates(rows)
 
+    keys = _conflict_keys(conflict_columns)
     if conflict_columns:
-        keys = [c.strip() for c in conflict_columns.split(",") if c.strip()]
         seen: Dict[tuple, int] = {}
         deduped: List[Dict[str, Any]] = []
         for row in rows:
@@ -353,66 +388,173 @@ def upsert_rows(
         conflict_clause = "ON CONFLICT DO NOTHING"
 
     sql = f"INSERT INTO {table} ({', '.join(cols)}) VALUES %s {conflict_clause}"
+    return rows, cols, sql
+
+
+def _with_retry(client: Any, table: str, offset: int, size: int, work) -> Any:
+    """Run `work(cur)` on a pooled cursor, retrying transient connection errors.
+
+    A transient error (dropped connection, cancelled statement) is retried with
+    a fresh connection after the _RETRY_DELAYS back-off; anything else raises at
+    once, and so does the last transient error once the retries are spent.
+    """
+    started = time.monotonic()
+    last_exc: Optional[Exception] = None
+    for attempt, delay in enumerate((0, *_RETRY_DELAYS)):
+        if delay:
+            logger.warning(
+                "upsert retry in %ds (table=%s chunk_offset=%d chunk_size=%d attempt=%d): %s",
+                delay, table, offset, size, attempt, last_exc,
+            )
+            time.sleep(delay)
+            client.reconnect()
+        try:
+            with client.cursor() as cur:
+                result = work(cur)
+            logger.debug(
+                "upsert ok table=%s chunk_offset=%d rows=%d elapsed=%.2fs",
+                table, offset, size, time.monotonic() - started,
+            )
+            return result
+        except Exception as exc:
+            if _is_transient_db_error(exc):
+                last_exc = exc
+            else:
+                logger.error(
+                    "Upsert failed table=%s chunk_offset=%d chunk_size=%d elapsed=%.2fs: %s",
+                    table, offset, size, time.monotonic() - started, exc,
+                )
+                raise
+
+    logger.error(
+        "Upsert exhausted retries table=%s chunk_offset=%d chunk_size=%d elapsed=%.2fs: %s",
+        table, offset, size, time.monotonic() - started, last_exc,
+    )
+    raise last_exc
+
+
+def replace_scoped_rows(
+    client: Any,
+    table: str,
+    rows: List[Dict[str, Any]],
+    conflict_columns: str,
+    *,
+    nulls_distinct: bool,
+    scope_columns: Sequence[str] = ("cnpj", "period"),
+    stats: Optional[Dict[str, int]] = None,
+) -> int:
+    """Make each scope present in `rows` hold exactly `rows`, then report.
+
+    A scope is one value of `scope_columns`: for the CDA blocks, one fund in
+    one month. For every scope that appears in `rows`, the stored rows of that
+    scope whose conflict key is not among the new rows are deleted, and the new
+    rows are upserted exactly as upsert_rows would write them. A scope that
+    does not appear in `rows` is not touched at all, so a partial or truncated
+    file can never erase the funds it does not carry.
+
+    The delete and the upsert of a scope run in ONE transaction, and a scope
+    never straddles two: scopes are packed whole into batches of about the
+    upsert chunk size (a scope bigger than that is a batch of its own). If a
+    batch fails it rolls back whole and the stored rows of its scopes are as
+    they were. A transient error retries the whole batch.
+
+    `nulls_distinct` must match the arbiter of `conflict_columns`. A stored row
+    survives exactly when the upsert will land on it: under NULLS DISTINCT a
+    key with a NULL never conflicts, so such a row is compared with `=`, is
+    deleted, and the new copy is inserted in its place (without this it would
+    be re-inserted beside itself on every read). Under NULLS NOT DISTINCT the
+    comparison is IS NOT DISTINCT FROM.
+
+    `stats["rows_deleted"]` is increased after each committed batch, so a run
+    that fails midway still reports what its committed batches removed.
+
+    Returns the number of rows processed, as upsert_rows does.
+    """
+    if not rows:
+        return 0
+    keys = _conflict_keys(conflict_columns)
+    missing = [c for c in scope_columns if c not in keys]
+    if missing:
+        raise ValueError(f"scope columns {missing} are not in the conflict key of {table}")
+
+    rows, cols, upsert_sql = _prepare_upsert(table, rows, conflict_columns)
+    for r in rows:
+        if any(r.get(c) is None for c in scope_columns):
+            raise ValueError(f"{table}: a row has no {'/'.join(scope_columns)}; refusing to replace")
+
+    scopes: Dict[tuple, List[Dict[str, Any]]] = {}
+    for r in rows:
+        scopes.setdefault(tuple(r.get(c) for c in scope_columns), []).append(r)
+
     chunk_size = _get_upsert_chunk_size()
+    batches: List[List[Dict[str, Any]]] = []
+    current: List[Dict[str, Any]] = []
+    for scope_rows in scopes.values():
+        if current and len(current) + len(scope_rows) > chunk_size:
+            batches.append(current)
+            current = []
+        current.extend(scope_rows)
+    if current:
+        batches.append(current)
+
+    key_list = ", ".join(keys)
+    scope_list = ", ".join(scope_columns)
+    rest = [c for c in keys if c not in scope_columns]
+    op = "=" if nulls_distinct else "IS NOT DISTINCT FROM"
+    same_key = " AND ".join(
+        [f"k.{c} = t.{c}" for c in scope_columns] + [f"k.{c} {op} t.{c}" for c in rest]
+    )
+    same_scope = " AND ".join(f"t.{c} = s.{c}" for c in scope_columns)
+    create_sql = (
+        f"CREATE TEMP TABLE _replace_keys ON COMMIT DROP AS"
+        f" SELECT {key_list} FROM {table} WITH NO DATA"
+    )
+    keys_sql = f"INSERT INTO _replace_keys ({key_list}) VALUES %s"
+    delete_sql = (
+        f"DELETE FROM {table} AS t"
+        f" USING (SELECT DISTINCT {scope_list} FROM _replace_keys) AS s"
+        f" WHERE {same_scope}"
+        f" AND NOT EXISTS (SELECT 1 FROM _replace_keys AS k WHERE {same_key})"
+    )
 
     total = 0
-    def _adapt(v):
-        if isinstance(v, (dict, list)):
-            return Json(v)
-        return v
+    offset = 0
+    for batch in batches:
+        key_values = [tuple(_adapt(r.get(c)) for c in keys) for r in batch]
+        values = [tuple(_adapt(r.get(c)) for c in cols) for r in batch]
 
-    for i in range(0, len(rows), chunk_size):
-        chunk = rows[i : i + chunk_size]
-        values = [tuple(_adapt(r.get(c)) for c in cols) for r in chunk]
-        last_exc: Optional[Exception] = None
-        chunk_started = time.monotonic()
-
-        for attempt, delay in enumerate((0, *_RETRY_DELAYS)):
-            if delay:
-                logger.warning(
-                    "upsert retry in %ds (table=%s chunk_offset=%d chunk_size=%d attempt=%d): %s",
-                    delay, table, i, len(chunk), attempt, last_exc,
-                )
-                time.sleep(delay)
-                client.reconnect()
+        def _replace(cur, key_values=key_values, values=values):
+            cur.execute("BEGIN")
             try:
-                with client.cursor() as cur:
-                    psycopg2.extras.execute_values(
-                        cur, sql, values, page_size=chunk_size
-                    )
-                total += len(chunk)
-                logger.debug(
-                    "upsert ok table=%s chunk_offset=%d rows=%d elapsed=%.2fs",
-                    table,
-                    i,
-                    len(chunk),
-                    time.monotonic() - chunk_started,
+                cur.execute(create_sql)
+                psycopg2.extras.execute_values(
+                    cur, keys_sql, key_values, page_size=len(key_values)
                 )
-                last_exc = None
-                break
-            except Exception as exc:
-                if _is_transient_db_error(exc):
-                    last_exc = exc
-                else:
-                    logger.error(
-                        "Upsert failed table=%s chunk_offset=%d chunk_size=%d elapsed=%.2fs: %s",
-                        table,
-                        i,
-                        len(chunk),
-                        time.monotonic() - chunk_started,
-                        exc,
-                    )
-                    raise
+                cur.execute("ANALYZE _replace_keys")
+                cur.execute(delete_sql)
+                deleted = cur.rowcount if isinstance(cur.rowcount, int) and cur.rowcount > 0 else 0
+                psycopg2.extras.execute_values(cur, upsert_sql, values, page_size=len(values))
+                cur.execute("COMMIT")
+            except BaseException:
+                # The pool discards this connection on the way out, which also
+                # ends the transaction; the ROLLBACK just says so first. Its own
+                # failure is logged, and the original error is what propagates.
+                try:
+                    cur.execute("ROLLBACK")
+                except Exception as rb_exc:
+                    logger.warning("replace %s: ROLLBACK failed: %s", table, rb_exc)
+                raise
+            return deleted
 
-        if last_exc is not None:
-            logger.error(
-                "Upsert exhausted retries table=%s chunk_offset=%d chunk_size=%d elapsed=%.2fs: %s",
-                table,
-                i,
-                len(chunk),
-                time.monotonic() - chunk_started,
-                last_exc,
+        deleted = _with_retry(client, table, offset, len(batch), _replace)
+        if stats is not None:
+            stats["rows_deleted"] = stats.get("rows_deleted", 0) + deleted
+        if deleted:
+            logger.info(
+                "replace %s: removed %d stored row(s) the new file no longer carries"
+                " (%d scope rows offset %d)", table, deleted, len(batch), offset,
             )
-            raise last_exc
+        total += len(batch)
+        offset += len(batch)
 
     return total

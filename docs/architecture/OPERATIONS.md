@@ -35,6 +35,8 @@ after a run    publish_check  also runs when a Daily CVM Ingest run ends green, 
 - A GitHub issue titled "Daily ingest is failing" is opened, or commented on.
 - The watchdog heals data only. It runs neither the analytical apply nor the
   deploy hook.
+- Health and the watchdog count errors only for slices the daily run re-reads
+  (`src/pipeline/daily_window.py`). Older ones are backfill work.
 
 ## Changes
 

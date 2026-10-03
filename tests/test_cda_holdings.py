@@ -43,6 +43,8 @@ def captured(monkeypatch):
         return len(rows)
 
     monkeypatch.setattr("src.pipeline.ingest_fi.upsert_rows", fake_upsert)
+    # A monthly archive goes through the per-fund replace; same capture.
+    monkeypatch.setattr("src.pipeline.ingest_fi.replace_scoped_rows", fake_upsert)
     return seen
 
 

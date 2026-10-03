@@ -48,6 +48,8 @@ the monthly files alone report the shipped key as UNIQUE and will mislead you.
 
 TABLE = "cvm_fi_cda_acoes"
 CONFLICT = ("cnpj", "period", "tp_fundo", "tp_aplic", "tp_ativo", "cd_ativo", "tp_negoc")
+# uq_fi_cda_acoes is NULLS NOT DISTINCT; the per-fund replace compares the same way.
+NULLS_DISTINCT = False
 
 FIELD_MAP = {
     "cnpj":                (["CNPJ_FUNDO_CLASSE", "CNPJ_FUNDO"], "cnpj"),
