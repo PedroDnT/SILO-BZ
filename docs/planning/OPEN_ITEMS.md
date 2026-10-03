@@ -414,7 +414,7 @@ Nothing in wave 2 that depends on these starts until each has an answer.
 | 2b  | Filing punctuality and silent funds, from FNET delivery timestamps                                                                                                                                                                                             | 1b                 |
 | 2c  | B4, field-level restatement diffs (`fnet_document_diff`): designed in [DOCUMENTS.md](DOCUMENTS.md), §11 decided 2026-09-26 (slice 1: FIDC mensal, 2026 backfill); built: ingest (migration 46, `fnet_diff`) and serving (`fund_restatement_diff`, catalog v40) | 1b                 |
 | 2d  | FII keys carry `versao`                                                                                                                                                                                                                                        | gate 1, yes to (2) |
-| 2e  | ~~`fidc_*` caps raise instead of trimming~~ (dropped: gate 1 answered no)                                                                                                                                                                                                                        | gate 1, yes to (1) |
+| 2e  | ~~`fidc_*` caps raise instead of trimming~~ (dropped: gate 1 answered no)                                                                                                                                                                                      | gate 1, yes to (1) |
 | 2f  | B4 backfill of 2025 and earlier: restatement diffs for older years, newest-first, one year per dispatch; depth and runner-time budget set from the 2026 run's runtime and FNET latency (DOCUMENTS.md §11, decision 6)                                          | 2c's 2026 run      |
 
 ### Wave 3
@@ -453,10 +453,24 @@ Nothing in wave 2 that depends on these starts until each has an answer.
 
 ## 15. Portfolio diagnosis: decisions still open (2026-09-26)
 
-**Paused 2026-09-28 (owner):** the active map is #371, and this map's tickets
-are labelled `P2-later`.
+**Superseded by map #510 (2026-10-03).** #340 and #341–#345 were closed as not
+planned on 2026-09-30. The demo is now map #510 (label `demo-diagnostico`),
+built on the Phase 0 note `docs/reference/research/portfolio-diagnosis-phase0.md`.
+The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
 
-Design: `PORTFOLIO_DIAGNOSIS.md`. Tickets: map #340 (#341–#345).
+- Hosting on Cloudflare (Pages, plus a Container for the Python engine).
+- Engine in Python `src/portfolio/`, set-based `api` functions in
+  `31_api_portfolio.sql`, Supabase reached through the read-only `silo-mcp`.
+- Sunday scope: spreadsheet input, blocks 1, 3, 10, 11, 14 (screens), 4, 2, PDF.
+- The disclosed fund fee must be correct, not only the balancete estimate:
+  slice A adds the `cad_fi` fee columns (migration 64) and the CVM lâmina.
+- Cost cap US$1.00 per report; investigator cap 20 searches per report.
+- **Parked:** the abnormal-movement and material-restatement thresholds below.
+  Restatements are reported as "revised, not assessed" until they are set.
+
+The list below is the 2026-09-26 state, kept for the parked thresholds and the
+other open points. Design: `PORTFOLIO_DIAGNOSIS.md`. Old tickets: map #340
+(#341–#345), closed.
 
 Data blockers:
 
@@ -536,12 +550,12 @@ these two. Neither has changed since it was first populated around 2026-08-28.
 
 Measured 2026-09-29:
 
-| Observation                                  | Result                                                                                       |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `mv_b3_isin_subtype` rows                    | 897, the count the 2026-08-28 status snapshot recorded                                    |
-| Fund-quota ISINs traded in the last 60 days  | 627, of which **9** are not in the matview                                                   |
-| `mv_b3_monthly_activity`, newest period      | 2026-08-01; September is absent                                                              |
-| August, standard lot (`tpmerc = '010'`)      | **19** sessions and R$ 481.0 bn in the matview; **21** sessions and R$ 529.8 bn in `b3_cotahist` |
+| Observation                                 | Result                                                                                           |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `mv_b3_isin_subtype` rows                   | 897, the count the 2026-08-28 status snapshot recorded                                           |
+| Fund-quota ISINs traded in the last 60 days | 627, of which **9** are not in the matview                                                       |
+| `mv_b3_monthly_activity`, newest period     | 2026-08-01; September is absent                                                                  |
+| August, standard lot (`tpmerc = '010'`)     | **19** sessions and R$ 481.0 bn in the matview; **21** sessions and R$ 529.8 bn in `b3_cotahist` |
 
 What reads them:
 
@@ -585,14 +599,14 @@ merge.
 
 ### Resolved
 
-| PR | What it settled |
-| --- | --- |
-| #495 | ANBIMA, ETF market and CVM could finish without a `cvm_ingest_log` row (integrity rule 3); they now always write one. `AGENTS.md` now states the real `upsert_rows` signature and chunk (500 by default, CI sets 5000). |
-| #496 | ANBIMA raises when a boletim parses to zero records (owner decision), instead of logging a clean empty run. `run_b3_events`'s docstring says what the step does. |
-| #497 | `cnpj_length_check.yml`, a read-only, manual workflow with no secrets, that measures CNPJ digit lengths in CVM source files. It cannot touch the database or the dashboard. |
-| #498 | Rule 4 says what `mapping.coerce("cnpj")` does (strip punctuation, zero-pad to 14). Measured 2026-10-02: every fund, class, company, FIDC and FII identity CNPJ already has 14 digits, so it pads nothing there. A column that can hold a CPF is typed `text`. |
-| #499 | `ingest_log.audited` can end a run `skipped`, or `error` without raising, through `Outcome(rows, status, error)`. A bare row count still means `ok`. |
-| #500 | Market and ANBIMA write their audit rows through `audited`; their own start and finish code is gone. |
+| PR   | What it settled                                                                                                                                                                                                                                                                                                                |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| #495 | ANBIMA, ETF market and CVM could finish without a `cvm_ingest_log` row (integrity rule 3); they now always write one. `AGENTS.md` now states the real `upsert_rows` signature and chunk (500 by default, CI sets 5000).                                                                                                        |
+| #496 | ANBIMA raises when a boletim parses to zero records (owner decision), instead of logging a clean empty run. `run_b3_events`'s docstring says what the step does.                                                                                                                                                               |
+| #497 | `cnpj_length_check.yml`, a read-only, manual workflow with no secrets, that measures CNPJ digit lengths in CVM source files. It cannot touch the database or the dashboard.                                                                                                                                                    |
+| #498 | Rule 4 says what `mapping.coerce("cnpj")` does (strip punctuation, zero-pad to 14). Measured 2026-10-02: every fund, class, company, FIDC and FII identity CNPJ already has 14 digits, so it pads nothing there. A column that can hold a CPF is typed `text`.                                                                 |
+| #499 | `ingest_log.audited` can end a run `skipped`, or `error` without raising, through `Outcome(rows, status, error)`. A bare row count still means `ok`.                                                                                                                                                                           |
+| #500 | Market and ANBIMA write their audit rows through `audited`; their own start and finish code is gone.                                                                                                                                                                                                                           |
 | #501 | All 14 `B3Ingestor` methods go through one `_audited` helper; `_log_start`, `_log_finish` and `_doc_type_of` are gone. A partial B3 failure still writes an `error` row and returns normally, so the step stays green (owner decision). `audited` takes an optional `run_id` for the corporate-event sweep's proof provenance. |
 
 Decisions taken by the owner on 2026-10-02: ANBIMA raises on an empty parse; B3

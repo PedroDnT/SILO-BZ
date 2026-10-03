@@ -185,9 +185,10 @@ SELECT 'Q4' AS q,
 --      CAVEAT: in the fund's fiscal-year reset month the accumulator restarts,
 --      the subtraction is wrong once a year, and the sign flips; reset_suspect
 --      flags that (the accumulated negative became less negative).
---      Compared with cvm_fund_registry.raw->>'TAXA_ADM' (the residual of the
---      legacy cad_fi.csv; NULL when the row came from registro_fundo_classe
---      with another key - see Q5b) and cvm_etf_registry.taxa_adm.
+--      Compared with cvm_fund_registry.taxa_adm (the legacy cad_fi.csv
+--      TAXA_ADM, typed since migration 64; it used to sit in raw and was lost
+--      whenever registro_fundo_classe rewrote raw - see Q5b) and
+--      cvm_etf_registry.taxa_adm.
 -- ---------------------------------------------------------------------------
 WITH months AS (
     SELECT max(dt_comptc) AS cur FROM cvm_fi_balancete_resumo
@@ -230,7 +231,7 @@ SELECT 'Q5' AS q,
        round((-t.fee_flow * 12) / NULLIF((t.nav_cur + t.nav_prev) / 2, 0) * 100, 4)
                                                                     AS fee_annualised_pct,
        (t.fee_flow > 0)                                             AS reset_suspect,
-       r.raw ->> 'TAXA_ADM'                                         AS registry_taxa_adm,
+       r.taxa_adm                                                   AS registry_taxa_adm,
        e.taxa_adm                                                   AS etf_taxa_adm
   FROM top3 t
   LEFT JOIN cvm_fund_registry r
