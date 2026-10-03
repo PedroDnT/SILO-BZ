@@ -3,3 +3,8 @@
 # cairo libraries. Install with: pip install -r requirements.txt -r requirements-report.txt
 anthropic==1.11.0
 weasyprint==70.0
+# Statement PDF reader (src/portfolio/statement_pdf.py): pypdf is the text extractor when poppler
+# (pdftotext) is absent; reportlab only builds the synthetic PDFs of the offline tests, which skip
+# without it.
+pypdf>=4.0
+reportlab>=4.0

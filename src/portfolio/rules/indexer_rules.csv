@@ -1,0 +1,51 @@
+source,field,value,indexer_class,note
+block1,tp_aplic,Operações Compromissadas,sem classificação,"Compromissada: rende a taxa da operação, não o indexador do título lastro; não classificada"
+block1,tp_titpub,LETRAS FINANCEIRAS DO TESOURO,pós-fixado (Selic),LFT
+block1,tp_titpub,LETRAS DO TESOURO NACIONAL,pré-fixado,LTN
+block1,tp_titpub,NOTAS DO TESOURO NACIONAL - SERIE F,pré-fixado,NTN-F
+block1,tp_titpub,NOTAS DO TESOURO NACIONAL SERIE B,inflação (IPCA),NTN-B (a CDA não separa NTN-B Principal)
+block1,tp_titpub,NOTAS DO TESOURO NACIONAL SERIE C,inflação (IGP-M),NTN-C
+block1,tp_titpub,NOTAS DO TESOURO NACIONAL SERIE I,câmbio,"NTN-I: indexada ao dólar, confirmar"
+block6,cd_indexador_posfx,DI1,pós-fixado (CDI),DI de um dia
+block6,cd_indexador_posfx,SEL,pós-fixado (Selic),
+block6,cd_indexador_posfx,IAP,inflação (IPCA),
+block6,cd_indexador_posfx,IGM,inflação (IGP-M),
+block6,cd_indexador_posfx,IGP,inflação (IGP),
+block6,cd_indexador_posfx,IPC,inflação (IPC-FIPE),
+block6,cd_indexador_posfx,INP,inflação (INPC),
+block6,cd_indexador_posfx,PRE,pré-fixado,
+block6,cd_indexador_posfx,DOL,câmbio,
+block6,cd_indexador_posfx,TR,pós-fixado (TR),
+block6,cd_indexador_posfx,TJL,pós-fixado (TJLP),
+block6,cd_indexador_posfx,OUT,sem classificação,"OUTROS na fonte: indexador não declarado"
+block6,cd_indexador_posfx,NULL,sem classificação,Indexador nulo na fonte
+block4,tp_aplic,Ações,renda variável,
+block4,tp_aplic,Ações e outros TVM cedidos em empréstimo,renda variável,Ação emprestada pelo fundo (segue na carteira)
+block4,tp_aplic,Brazilian Depository Receipt - BDR,renda variável,BDR
+block4,tp_aplic,Certificado ou recibo de depósito de valores mobiliários,renda variável,Units e certificados de depósito
+block4,tp_aplic,Debêntures,sem classificação,"Bloco 4 não traz indexador da debênture"
+block4,tp_aplic,Obrigações por ações e outros TVM recebidos em empréstimo,sem classificação,"Obrigação (posição vendida): sinal econômico não verificado"
+block4,tp_aplic,Opções - Posições titulares,sem classificação,Derivativo
+block4,tp_aplic,Opções - Posições lançadas,sem classificação,Derivativo (obrigação)
+block4,tp_aplic,Compras a termo a receber,sem classificação,Derivativo
+block4,tp_aplic,Vendas a termo a receber,sem classificação,Derivativo
+block4,tp_aplic,Mercado Futuro - Posições compradas,sem classificação,Derivativo
+block4,tp_aplic,Mercado Futuro - Posições vendidas,sem classificação,Derivativo
+direct_tesouro,title,LFT,pós-fixado (Selic),Tesouro Selic
+direct_tesouro,title,LTN,pré-fixado,Tesouro Prefixado
+direct_tesouro,title,NTN-F,pré-fixado,Tesouro Prefixado com Juros Semestrais
+direct_tesouro,title,NTN-B,inflação (IPCA),Tesouro IPCA+ com Juros Semestrais
+direct_tesouro,title,NTN-B PRINCIPAL,inflação (IPCA),Tesouro IPCA+
+direct_tesouro,title,NTN-B1,inflação (IPCA),Tesouro Renda+ / Educa+
+direct_tesouro,title,NTN-C,inflação (IGP-M),
+direct_tesouro,title,NTN-I,câmbio,"NTN-I: indexada ao dólar, confirmar"
+direct,tipo,ação,renda variável,Ação detida diretamente
+direct,tipo,FII,renda variável,Cota de FII negociada em bolsa
+direct,tipo,caixa,caixa (conta corrente),"Linha Conta corrente impressa no extrato"
+"statement_taxa","regex","^\d+(,\d+)?% do cdi$","pós-fixado (CDI)","Taxa impressa no extrato"
+"statement_taxa","regex","^cdi \+","pós-fixado (CDI)","Taxa impressa no extrato"
+"statement_taxa","regex","^\d+(,\d+)?% do selic$","pós-fixado (Selic)","Taxa impressa no extrato"
+"statement_taxa","regex","^selic \+","pós-fixado (Selic)","Taxa impressa no extrato"
+"statement_taxa","regex","^ipca \+","inflação (IPCA)","Taxa impressa no extrato"
+"statement_taxa","regex","^igp-?m \+","inflação (IGP-M)","Taxa impressa no extrato"
+"statement_taxa","regex","^\d+(,\d+)?% a\.?a\.?$","pré-fixado","Taxa impressa no extrato"

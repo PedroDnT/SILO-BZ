@@ -1,0 +1,3155 @@
+{
+ "_note": "Synthetic canned rows for FakeClient. Shapes follow the silo-mcp contract; values are modelled on production measurements of 2026-10-03 (CDA 2026-05) but names marked FIF / EXEMPLO / ESTRANHO, aggregate 'linha agregada sintética' LFT rows, fee, sector and screen rows are invented. Never read as data.",
+ "portfolio_resolve": [
+  {
+   "match": {
+    "p_names": [
+     "GERAÇÃO L. PAR FIA",
+     "XP BANCOS FIC",
+     "XP LIQUIDEZ FIC",
+     "MN I FIDC",
+     "BB RENDA FIXA CURTO PRAZO AUTOMÁTICO FUNDO DE INVESTIMENTO EM COTAS DE FUNDOS DE INVESTIMENTO",
+     "HGLG11 CSHG LOGISTICA FII"
+    ]
+   },
+   "rows": [
+    {
+     "line_no": 1,
+     "input_name": "GERAÇÃO L. PAR FIA",
+     "candidate_cnpj": "08935128000159",
+     "candidate_name": "GERACAO L. PAR FUNDO DE INVESTIMENTO EM ACOES",
+     "matched_name": "GERACAO L. PAR FUNDO DE INVESTIMENTO EM ACOES",
+     "matched_period": "2026-05-01",
+     "entity_type": "fi",
+     "match_kind": "name_history",
+     "similarity": 0.62,
+     "rank": 1,
+     "quota_on_date": 176.38,
+     "quota_rel_diff": 0.0002,
+     "ambiguous": false,
+     "reason": "Nome abreviado no extrato; a cota na data confirma."
+    },
+    {
+     "line_no": 2,
+     "input_name": "XP BANCOS FIC",
+     "candidate_cnpj": "50088190000119",
+     "candidate_name": "XP BANCOS FIC FIF RENDA FIXA",
+     "matched_name": "XP BANCOS FIC FIF RENDA FIXA",
+     "matched_period": "2026-05-01",
+     "entity_type": "fi",
+     "match_kind": "name_history",
+     "similarity": 0.74,
+     "rank": 1,
+     "quota_on_date": 1.542011,
+     "quota_rel_diff": 0.0,
+     "ambiguous": false,
+     "reason": "Nome abreviado; dois fundos plausíveis (FIC e master); a cota na data desempata."
+    },
+    {
+     "line_no": 2,
+     "input_name": "XP BANCOS FIC",
+     "candidate_cnpj": "35377390000106",
+     "candidate_name": "XP BANCOS MASTER FIF RENDA FIXA",
+     "matched_name": "XP BANCOS MASTER FIF RENDA FIXA",
+     "matched_period": "2026-05-01",
+     "entity_type": "fi",
+     "match_kind": "name_history",
+     "similarity": 0.71,
+     "rank": 2,
+     "quota_on_date": 1.952607,
+     "quota_rel_diff": 0.2662,
+     "ambiguous": false,
+     "reason": "A cota na data é 26,6% diferente da informada: descartado."
+    },
+    {
+     "line_no": 3,
+     "input_name": "XP LIQUIDEZ FIC",
+     "candidate_cnpj": "51488342000133",
+     "candidate_name": "XP LIQUIDEZ FIC FIF RENDA FIXA",
+     "matched_name": "XP LIQUIDEZ FIC FIF RENDA FIXA",
+     "matched_period": "2026-05-01",
+     "entity_type": "fi",
+     "match_kind": "cnpj",
+     "similarity": 1.0,
+     "rank": 1,
+     "quota_on_date": 1.289417,
+     "quota_rel_diff": 0.0,
+     "ambiguous": false,
+     "reason": "CNPJ informado no extrato."
+    },
+    {
+     "line_no": 4,
+     "input_name": "MN I FIDC",
+     "candidate_cnpj": "32113885000121",
+     "candidate_name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
+     "matched_name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
+     "matched_period": "2026-05-31",
+     "entity_type": "fidc",
+     "match_kind": "cnpj",
+     "similarity": 1.0,
+     "rank": 1,
+     "quota_on_date": null,
+     "quota_rel_diff": null,
+     "ambiguous": false,
+     "reason": "CNPJ informado no extrato."
+    },
+    {
+     "line_no": 5,
+     "input_name": "BB RENDA FIXA CURTO PRAZO AUTOMÁTICO FUNDO DE INVESTIMENTO EM COTAS DE FUNDOS DE INVESTIMENTO",
+     "candidate_cnpj": "42592315000115",
+     "candidate_name": "BB RENDA FIXA CURTO PRAZO AUTOMATICO FIC FIF RESPONSABILIDADE LIMITADA",
+     "matched_name": "BB RENDA FIXA CURTO PRAZO AUTOMÁTICO FUNDO DE INVESTIMENTO EM COTAS DE FUNDOS DE INVESTIMENTO",
+     "matched_period": "2024-01-01",
+     "entity_type": "fi",
+     "match_kind": "name_history",
+     "similarity": 0.98,
+     "rank": 1,
+     "quota_on_date": 1.541233,
+     "quota_rel_diff": 0.0,
+     "ambiguous": false,
+     "reason": "O nome do extrato é um nome antigo do fundo."
+    },
+    {
+     "line_no": 6,
+     "input_name": "HGLG11 CSHG LOGISTICA FII",
+     "candidate_cnpj": "11728688000147",
+     "candidate_name": "CSHG LOGISTICA FUNDO DE INVESTIMENTO IMOBILIARIO",
+     "matched_name": "CSHG LOGISTICA FUNDO DE INVESTIMENTO IMOBILIARIO",
+     "matched_period": "2026-05-01",
+     "entity_type": "fii",
+     "match_kind": "name_history",
+     "similarity": 0.55,
+     "rank": 1,
+     "quota_on_date": null,
+     "quota_rel_diff": null,
+     "ambiguous": false,
+     "reason": "Nome abreviado; candidato único."
+    }
+   ]
+  }
+ ],
+ "lookup": [
+  {
+   "match": {
+    "p_query": "PETR4"
+   },
+   "rows": [
+    {
+     "id": "PETR4",
+     "id_type": "ticker",
+     "asset_class": "equity",
+     "name": "PETROBRAS",
+     "isin": "BRPETRACNPR6",
+     "cnpj": null,
+     "tickers": null
+    }
+   ]
+  },
+  {
+   "match": {
+    "p_query": "HGLG11"
+   },
+   "rows": [
+    {
+     "id": "HGLG11",
+     "id_type": "ticker",
+     "asset_class": "fund_quota",
+     "name": "FII HGLG PAX",
+     "isin": "BRHGLGCTF004",
+     "cnpj": null,
+     "tickers": null
+    }
+   ]
+  }
+ ],
+ "quote_latest": [
+  {
+   "match": {
+    "p_ticker": "PETR4"
+   },
+   "rows": [
+    {
+     "ticker": "PETR4",
+     "trade_date": "2026-10-01",
+     "board": "02",
+     "short_name": "PETROBRAS",
+     "close": 49.77,
+     "isin": "BRPETRACNPR6",
+     "source": "b3_cotahist",
+     "asset_class": "equity"
+    }
+   ]
+  },
+  {
+   "match": {
+    "p_ticker": "HGLG11"
+   },
+   "rows": [
+    {
+     "ticker": "HGLG11",
+     "trade_date": "2026-10-01",
+     "board": "12",
+     "short_name": "FII HGLG PAX",
+     "close": 146.99,
+     "isin": "BRHGLGCTF004",
+     "source": "b3_cotahist",
+     "asset_class": "fund_quota"
+    }
+   ]
+  }
+ ],
+ "company_financials": [
+  {
+   "match": {
+    "p_id": "PETR4"
+   },
+   "rows": [
+    {
+     "id": "PETR4",
+     "id_type": "ticker",
+     "cnpj": "33000167000101",
+     "company": "PETROLEO BRASILEIRO S.A. PETROBRAS",
+     "ticker": "PETR4",
+     "doc_type": "DFP",
+     "scope": "con",
+     "ref_date": "2026-06-30",
+     "setor": "Petróleo e Gás",
+     "segmento": "Categoria A"
+    }
+   ]
+  },
+  {
+   "match": {
+    "p_id": "AXIA7"
+   },
+   "rows": [
+    {
+     "id": "AXIA7",
+     "id_type": "ticker",
+     "cnpj": "00001180000126",
+     "company": "AXIA ENERGIA S.A.",
+     "ticker": "AXIA7",
+     "doc_type": "DFP",
+     "scope": "con",
+     "ref_date": "2026-06-30",
+     "setor": "Energia Elétrica",
+     "segmento": "Categoria A"
+    }
+   ]
+  },
+  {
+   "match": {
+    "p_id": "BRAP4"
+   },
+   "rows": [
+    {
+     "id": "BRAP4",
+     "id_type": "ticker",
+     "cnpj": "03847461000192",
+     "company": "BRADESPAR S.A.",
+     "ticker": "BRAP4",
+     "doc_type": "DFP",
+     "scope": "con",
+     "ref_date": "2026-06-30",
+     "setor": "Emp. Adm. Part. - Extração Mineral",
+     "segmento": "Categoria A"
+    }
+   ]
+  },
+  {
+   "match": {
+    "p_id": "VALE3"
+   },
+   "rows": [
+    {
+     "id": "VALE3",
+     "id_type": "ticker",
+     "cnpj": "33592510000154",
+     "company": "VALE S.A.",
+     "ticker": "VALE3",
+     "doc_type": "DFP",
+     "scope": "con",
+     "ref_date": "2026-06-30",
+     "setor": "Extração Mineral",
+     "segmento": "Categoria A"
+    }
+   ]
+  },
+  {
+   "match": {
+    "p_id": "USIM5"
+   },
+   "rows": [
+    {
+     "id": "USIM5",
+     "id_type": "ticker",
+     "cnpj": "60894730000105",
+     "company": "USINAS SIDERURGICAS DE MINAS GERAIS S.A. USIMINAS",
+     "ticker": "USIM5",
+     "doc_type": "DFP",
+     "scope": "con",
+     "ref_date": "2026-06-30",
+     "setor": "Metalurgia e Siderurgia",
+     "segmento": "Categoria A"
+    }
+   ]
+  },
+  {
+   "match": {
+    "p_id": "CLSC4"
+   },
+   "rows": [
+    {
+     "id": "CLSC4",
+     "id_type": "ticker",
+     "cnpj": "83878892000155",
+     "company": "CENTRAIS ELETRICAS DE SANTA CATARINA S.A.",
+     "ticker": "CLSC4",
+     "doc_type": "DFP",
+     "scope": "con",
+     "ref_date": "2026-06-30",
+     "setor": "Energia Elétrica",
+     "segmento": "Categoria A"
+    }
+   ]
+  },
+  {
+   "match": {
+    "p_id": "HYPE3"
+   },
+   "rows": [
+    {
+     "id": "HYPE3",
+     "id_type": "ticker",
+     "cnpj": "02932074000191",
+     "company": "HYPERA S.A.",
+     "ticker": "HYPE3",
+     "doc_type": "DFP",
+     "scope": "con",
+     "ref_date": "2026-06-30",
+     "setor": "Saúde",
+     "segmento": "Categoria A"
+    }
+   ]
+  }
+ ],
+ "portfolio_fees": [
+  {
+   "match": {
+    "p_cnpjs": [
+     "08935128000159",
+     "11728688000147",
+     "32113885000121",
+     "42592315000115",
+     "50088190000119",
+     "51488342000133"
+    ],
+    "p_month": "2026-08-01"
+   },
+   "rows": [
+    {
+     "cnpj": "08935128000159",
+     "fund_name": "GERACAO L. PAR FUNDO DE INVESTIMENTO EM ACOES",
+     "month": "2026-08-31",
+     "nav": 6075735724.7,
+     "adm_fee_flow": 10024963.95,
+     "adm_fee_pct_annual_est": 1.98,
+     "perf_fee_flow": null,
+     "perf_fee_pct_annual_est": 0.35,
+     "fiscal_reset_suspect": false,
+     "disclosed_taxa_adm": 2.0,
+     "disclosed_taxa_adm_min": null,
+     "disclosed_taxa_adm_max": null,
+     "disclosed_taxa_perfm": "20% do que exceder 100% do Ibovespa",
+     "disclosed_taxa_adm_info": null,
+     "disclosed_taxa_perfm_info": null,
+     "disclosed_source": "cvm_fi_lamina",
+     "disclosed_as_of": "2026-07-31",
+     "disclosed_age_months": 1,
+     "disclosed_n_classes": 1,
+     "disclosed_note": null,
+     "estimate_label": "estimate from the balancete accruals: (previous minus current accumulated fee) x 12 / NAV, not the disclosed fee"
+    },
+    {
+     "cnpj": "42592315000115",
+     "fund_name": "BB RENDA FIXA CURTO PRAZO AUTOMATICO FIC FIF RESPONSABILIDADE LIMITADA",
+     "month": "2026-08-31",
+     "nav": 198605786912.83,
+     "adm_fee_flow": 326044500.18,
+     "adm_fee_pct_annual_est": 1.97,
+     "perf_fee_flow": null,
+     "perf_fee_pct_annual_est": null,
+     "fiscal_reset_suspect": false,
+     "disclosed_taxa_adm": 1.5,
+     "disclosed_taxa_adm_min": null,
+     "disclosed_taxa_adm_max": null,
+     "disclosed_taxa_perfm": null,
+     "disclosed_taxa_adm_info": null,
+     "disclosed_taxa_perfm_info": null,
+     "disclosed_source": "cvm_fi_lamina",
+     "disclosed_as_of": "2024-03-31",
+     "disclosed_age_months": 29,
+     "disclosed_n_classes": 1,
+     "disclosed_note": null,
+     "estimate_label": "estimate from the balancete accruals: (previous minus current accumulated fee) x 12 / NAV, not the disclosed fee"
+    },
+    {
+     "cnpj": "50088190000119",
+     "fund_name": "XP BANCOS FIC FIF RENDA FIXA",
+     "month": "2026-08-31",
+     "nav": 1780000000.0,
+     "adm_fee_flow": 296666.67,
+     "adm_fee_pct_annual_est": 0.2,
+     "perf_fee_flow": null,
+     "perf_fee_pct_annual_est": null,
+     "fiscal_reset_suspect": false,
+     "disclosed_taxa_adm": null,
+     "disclosed_taxa_adm_min": 0.15,
+     "disclosed_taxa_adm_max": 0.3,
+     "disclosed_taxa_perfm": null,
+     "disclosed_taxa_adm_info": null,
+     "disclosed_taxa_perfm_info": null,
+     "disclosed_source": "cvm_fi_lamina",
+     "disclosed_as_of": "2026-07-31",
+     "disclosed_age_months": 1,
+     "disclosed_n_classes": 2,
+     "disclosed_note": "the fund's 2 classes disclose different fees: the single value is NULL, read the min and max",
+     "estimate_label": "estimate from the balancete accruals: (previous minus current accumulated fee) x 12 / NAV, not the disclosed fee"
+    },
+    {
+     "cnpj": "51488342000133",
+     "fund_name": "XP LIQUIDEZ FIC FIF RENDA FIXA",
+     "month": "2026-08-31",
+     "nav": 3360184376.89,
+     "adm_fee_flow": null,
+     "adm_fee_pct_annual_est": null,
+     "perf_fee_flow": null,
+     "perf_fee_pct_annual_est": null,
+     "fiscal_reset_suspect": true,
+     "disclosed_taxa_adm": null,
+     "disclosed_taxa_adm_min": null,
+     "disclosed_taxa_adm_max": null,
+     "disclosed_taxa_perfm": null,
+     "disclosed_taxa_adm_info": null,
+     "disclosed_taxa_perfm_info": null,
+     "disclosed_source": null,
+     "disclosed_as_of": null,
+     "disclosed_age_months": null,
+     "disclosed_n_classes": null,
+     "disclosed_note": "no disclosed fee in the lâmina or in cad_fi: NULL is not a zero fee",
+     "estimate_label": "no estimate: the accumulated administration fee fell, the fund's fiscal-year reset month, and no cad_fi DT_INI_EXERC confirms it"
+    }
+   ]
+  },
+  {
+   "match": {
+    "p_cnpjs": [
+     "35377390000106",
+     "37525998000158",
+     "46133770000103",
+     "54891935000134"
+    ],
+    "p_month": "2026-08-01"
+   },
+   "rows": [
+    {
+     "cnpj": "35377390000106",
+     "fund_name": "XP BANCOS MASTER FIF RENDA FIXA",
+     "month": "2026-08-31",
+     "nav": 7999802012.71,
+     "adm_fee_flow": 733315.18,
+     "adm_fee_pct_annual_est": 0.11,
+     "perf_fee_flow": null,
+     "perf_fee_pct_annual_est": null,
+     "fiscal_reset_suspect": false,
+     "disclosed_taxa_adm": 0.0,
+     "disclosed_taxa_adm_min": null,
+     "disclosed_taxa_adm_max": null,
+     "disclosed_taxa_perfm": null,
+     "disclosed_taxa_adm_info": null,
+     "disclosed_taxa_perfm_info": null,
+     "disclosed_source": "cvm_fi_lamina",
+     "disclosed_as_of": "2026-07-31",
+     "disclosed_age_months": 1,
+     "disclosed_n_classes": 1,
+     "disclosed_note": null,
+     "estimate_label": "estimate from the balancete accruals: (previous minus current accumulated fee) x 12 / NAV, not the disclosed fee"
+    },
+    {
+     "cnpj": "37525998000158",
+     "fund_name": "SANTANDER CASH BLACK FIF RENDA FIXA",
+     "month": "2026-08-31",
+     "nav": 3878630268.71,
+     "adm_fee_flow": 161609.59,
+     "adm_fee_pct_annual_est": 0.05,
+     "perf_fee_flow": null,
+     "perf_fee_pct_annual_est": null,
+     "fiscal_reset_suspect": false,
+     "disclosed_taxa_adm": null,
+     "disclosed_taxa_adm_min": null,
+     "disclosed_taxa_adm_max": null,
+     "disclosed_taxa_perfm": null,
+     "disclosed_taxa_adm_info": null,
+     "disclosed_taxa_perfm_info": null,
+     "disclosed_source": null,
+     "disclosed_as_of": null,
+     "disclosed_age_months": null,
+     "disclosed_n_classes": null,
+     "disclosed_note": "no disclosed fee in the lâmina or in cad_fi: NULL is not a zero fee",
+     "estimate_label": "estimate from the balancete accruals: (previous minus current accumulated fee) x 12 / NAV, not the disclosed fee"
+    },
+    {
+     "cnpj": "46133770000103",
+     "fund_name": "BB TOP RF CP AUTOMATICO II FIF RESPONSABILIDADE LIMITADA",
+     "month": "2026-08-31",
+     "nav": 198595917706.26,
+     "adm_fee_flow": 233350203.3,
+     "adm_fee_pct_annual_est": 1.41,
+     "perf_fee_flow": null,
+     "perf_fee_pct_annual_est": null,
+     "fiscal_reset_suspect": false,
+     "disclosed_taxa_adm": 0.2,
+     "disclosed_taxa_adm_min": null,
+     "disclosed_taxa_adm_max": null,
+     "disclosed_taxa_perfm": null,
+     "disclosed_taxa_adm_info": null,
+     "disclosed_taxa_perfm_info": null,
+     "disclosed_source": "cvm_fi_lamina",
+     "disclosed_as_of": "2026-07-31",
+     "disclosed_age_months": 1,
+     "disclosed_n_classes": 1,
+     "disclosed_note": null,
+     "estimate_label": "estimate from the balancete accruals: (previous minus current accumulated fee) x 12 / NAV, not the disclosed fee"
+    },
+    {
+     "cnpj": "54891935000134",
+     "fund_name": "XP CASH S1 FIF RENDA FIXA",
+     "month": "2026-08-31",
+     "nav": 839592972.0,
+     "adm_fee_flow": 356827.01,
+     "adm_fee_pct_annual_est": 0.51,
+     "perf_fee_flow": null,
+     "perf_fee_pct_annual_est": null,
+     "fiscal_reset_suspect": false,
+     "disclosed_taxa_adm": 0.5,
+     "disclosed_taxa_adm_min": null,
+     "disclosed_taxa_adm_max": null,
+     "disclosed_taxa_perfm": null,
+     "disclosed_taxa_adm_info": null,
+     "disclosed_taxa_perfm_info": null,
+     "disclosed_source": "cvm_fi_lamina",
+     "disclosed_as_of": "2026-07-31",
+     "disclosed_age_months": 1,
+     "disclosed_n_classes": 1,
+     "disclosed_note": null,
+     "estimate_label": "estimate from the balancete accruals: (previous minus current accumulated fee) x 12 / NAV, not the disclosed fee"
+    }
+   ]
+  }
+ ],
+ "portfolio_lookthrough": [
+  {
+   "match": {
+    "p_cnpjs": [
+     "08935128000159"
+    ]
+   },
+   "rows": [
+    {
+     "root_cnpj": "08935128000159",
+     "path": [
+      "08935128000159"
+     ],
+     "depth": 0,
+     "holder_cnpj": "08935128000159",
+     "block": 4,
+     "asset_kind": "stock",
+     "asset_key": "AXIA7",
+     "asset_name": "AXIA7",
+     "isin": null,
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Ações",
+     "tp_ativo": "Ações",
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 1491223000.0,
+     "weight_in_root": 0.2454390711,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "08935128000159",
+     "path": [
+      "08935128000159"
+     ],
+     "depth": 0,
+     "holder_cnpj": "08935128000159",
+     "block": 4,
+     "asset_kind": "stock",
+     "asset_key": "PETR4",
+     "asset_name": "PETR4",
+     "isin": null,
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Ações",
+     "tp_ativo": "Ações",
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 1007855000.0,
+     "weight_in_root": 0.1658819606,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "08935128000159",
+     "path": [
+      "08935128000159"
+     ],
+     "depth": 0,
+     "holder_cnpj": "08935128000159",
+     "block": 4,
+     "asset_kind": "stock",
+     "asset_key": "BRAP4",
+     "asset_name": "BRAP4",
+     "isin": null,
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Ações",
+     "tp_ativo": "Ações",
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 929524000.0,
+     "weight_in_root": 0.1529895308,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "08935128000159",
+     "path": [
+      "08935128000159"
+     ],
+     "depth": 0,
+     "holder_cnpj": "08935128000159",
+     "block": 4,
+     "asset_kind": "stock",
+     "asset_key": "VALE3",
+     "asset_name": "VALE3",
+     "isin": null,
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Ações",
+     "tp_ativo": "Ações",
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 471036000.0,
+     "weight_in_root": 0.0775273975,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "08935128000159",
+     "path": [
+      "08935128000159"
+     ],
+     "depth": 0,
+     "holder_cnpj": "08935128000159",
+     "block": 4,
+     "asset_kind": "stock",
+     "asset_key": "VALE3",
+     "asset_name": "VALE3",
+     "isin": null,
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Ações e outros TVM cedidos em empréstimo",
+     "tp_ativo": "Ações",
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 439984000.0,
+     "weight_in_root": 0.0724165764,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "08935128000159",
+     "path": [
+      "08935128000159"
+     ],
+     "depth": 0,
+     "holder_cnpj": "08935128000159",
+     "block": 4,
+     "asset_kind": "stock",
+     "asset_key": "USIM5",
+     "asset_name": "USIM5",
+     "isin": null,
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Ações",
+     "tp_ativo": "Ações",
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 422285000.0,
+     "weight_in_root": 0.0695035136,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "08935128000159",
+     "path": [
+      "08935128000159"
+     ],
+     "depth": 0,
+     "holder_cnpj": "08935128000159",
+     "block": 4,
+     "asset_kind": "stock",
+     "asset_key": "CLSC4",
+     "asset_name": "CLSC4",
+     "isin": null,
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Ações",
+     "tp_ativo": "Ações",
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 397292000.0,
+     "weight_in_root": 0.0653899379,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "08935128000159",
+     "path": [
+      "08935128000159"
+     ],
+     "depth": 0,
+     "holder_cnpj": "08935128000159",
+     "block": 4,
+     "asset_kind": "stock",
+     "asset_key": "HYPE3",
+     "asset_name": "HYPE3",
+     "isin": null,
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Ações",
+     "tp_ativo": "Ações",
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 328650000.0,
+     "weight_in_root": 0.054092212,
+     "period": "2026-05-01",
+     "is_cycle": false
+    }
+   ]
+  },
+  {
+   "match": {
+    "p_cnpjs": [
+     "50088190000119"
+    ]
+   },
+   "rows": [
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119"
+     ],
+     "depth": 0,
+     "holder_cnpj": "50088190000119",
+     "block": 2,
+     "asset_kind": "fund_quota",
+     "asset_key": "35377390000106",
+     "asset_name": "XP BANCOS MASTER FIF RENDA FIXA",
+     "isin": null,
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Cotas de Fundos",
+     "tp_ativo": null,
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 1832556000.0,
+     "weight_in_root": 0.9962743468,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1S08",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2032-03-01",
+     "isin": "BRSTNCLF1S08",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2032-03-01",
+     "value_brl": 475112000.0,
+     "weight_in_root": 0.0591692016,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RO9",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2030-03-01",
+     "isin": "BRSTNCLF1RO9",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2030-03-01",
+     "value_brl": 381322000.0,
+     "weight_in_root": 0.0474888412,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RK7",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2028-09-01",
+     "isin": "BRSTNCLF1RK7",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2028-09-01",
+     "value_brl": 95482000.0,
+     "weight_in_root": 0.0118910777,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RM3",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2029-09-01",
+     "isin": "BRSTNCLF1RM3",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2029-09-01",
+     "value_brl": 95377000.0,
+     "weight_in_root": 0.0118780013,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 6,
+     "asset_kind": "private_credit",
+     "asset_key": "PETRDBS0X2",
+     "asset_name": "DEBENTURE EXEMPLO PETROBRAS",
+     "isin": "BRPETRDBS0X2",
+     "issuer_cnpj": "33000167000101",
+     "issuer_code": "PETR",
+     "tp_aplic": "Debêntures",
+     "tp_ativo": "Debênture",
+     "tp_titpub": null,
+     "indexer_code": "DI1",
+     "maturity": "2031-06-15",
+     "value_brl": 300000000.0,
+     "weight_in_root": 0.0373612127,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 6,
+     "asset_kind": "private_credit",
+     "asset_key": "ENEVDBS0Y1",
+     "asset_name": "DEBENTURE EXEMPLO ENEVA",
+     "isin": "BRENEVDBS0Y1",
+     "issuer_cnpj": null,
+     "issuer_code": "ENEV",
+     "tp_aplic": "Debêntures",
+     "tp_ativo": "Debênture",
+     "tp_titpub": null,
+     "indexer_code": "IAP",
+     "maturity": "2034-03-15",
+     "value_brl": 120000000.0,
+     "weight_in_root": 0.0149444851,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 6,
+     "asset_kind": "private_credit",
+     "asset_key": "XXXXDBS0Z9",
+     "asset_name": "DEBENTURE EXEMPLO SEM INDEXADOR",
+     "isin": "BRXXXXDBS0Z9",
+     "issuer_cnpj": null,
+     "issuer_code": "XXXX",
+     "tp_aplic": "Debêntures",
+     "tp_ativo": "Debênture",
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": "2029-01-15",
+     "value_brl": 50000000.0,
+     "weight_in_root": 0.0062268688,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 4,
+     "asset_kind": "debenture",
+     "asset_key": "VALEDBS000",
+     "asset_name": "VALE DEBENTURE BLOCO 4",
+     "isin": "BRVALEDBS000",
+     "issuer_cnpj": null,
+     "issuer_code": "VALE",
+     "tp_aplic": "Debêntures",
+     "tp_ativo": "Debêntures",
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 150000000.0,
+     "weight_in_root": 0.0186806063,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RS0",
+     "asset_name": "LFT (linha agregada sintética)",
+     "isin": "BRSTNCLF1RS0",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2031-09-01",
+     "value_brl": 6087898594.0,
+     "weight_in_root": 0.7581709141,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 2,
+     "asset_kind": "fund_quota",
+     "asset_key": "54891935000134",
+     "asset_name": "XP CASH S1 FIF RENDA FIXA",
+     "isin": null,
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Cotas de Fundos",
+     "tp_ativo": null,
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 220611000.0,
+     "weight_in_root": 0.027474315,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106",
+      "54891935000134"
+     ],
+     "depth": 2,
+     "holder_cnpj": "54891935000134",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RQ4",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2030-06-01",
+     "isin": "BRSTNCLF1RQ4",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2030-06-01",
+     "value_brl": 142991000.0,
+     "weight_in_root": 0.0046791478,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106",
+      "54891935000134"
+     ],
+     "depth": 2,
+     "holder_cnpj": "54891935000134",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RO9",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2030-03-01",
+     "isin": "BRSTNCLF1RO9",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2030-03-01",
+     "value_brl": 81508000.0,
+     "weight_in_root": 0.0026672167,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106",
+      "54891935000134"
+     ],
+     "depth": 2,
+     "holder_cnpj": "54891935000134",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RI1",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2028-03-01",
+     "isin": "BRSTNCLF1RI1",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2028-03-01",
+     "value_brl": 58266000.0,
+     "weight_in_root": 0.0019066601,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106",
+      "54891935000134"
+     ],
+     "depth": 2,
+     "holder_cnpj": "54891935000134",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RS0",
+     "asset_name": "LFT (linha agregada sintética)",
+     "isin": "BRSTNCLF1RS0",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2031-09-01",
+     "value_brl": 124351221.0,
+     "weight_in_root": 0.0040691914,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106",
+      "54891935000134"
+     ],
+     "depth": 2,
+     "holder_cnpj": "54891935000134",
+     "block": 2,
+     "asset_kind": "fund_quota",
+     "asset_key": "37525998000158",
+     "asset_name": "SANTANDER CASH BLACK FIF RENDA FIXA",
+     "isin": null,
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Cotas de Fundos",
+     "tp_ativo": null,
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 429958000.0,
+     "weight_in_root": 0.014069676,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 3,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RK7",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2028-09-01",
+     "isin": "BRSTNCLF1RK7",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2028-09-01",
+     "value_brl": 1566981000.0,
+     "weight_in_root": 0.0056842016,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 3,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "repo",
+     "asset_key": "BRSTNCNTB0A6",
+     "asset_name": "NOTAS DO TESOURO NACIONAL SERIE B 2045-05-15",
+     "isin": "BRSTNCNTB0A6",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Operações Compromissadas",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "NOTAS DO TESOURO NACIONAL SERIE B",
+     "indexer_code": null,
+     "maturity": "2045-05-15",
+     "value_brl": 764857000.0,
+     "weight_in_root": 0.0027745081,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 3,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RI1",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2028-03-01",
+     "isin": "BRSTNCLF1RI1",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2028-03-01",
+     "value_brl": 584930000.0,
+     "weight_in_root": 0.0021218254,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 3,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RQ4",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2030-06-01",
+     "isin": "BRSTNCLF1RQ4",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2030-06-01",
+     "value_brl": 575091000.0,
+     "weight_in_root": 0.0020861346,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 3,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RS0",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2031-09-01",
+     "isin": "BRSTNCLF1RS0",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2031-09-01",
+     "value_brl": 387419000.0,
+     "weight_in_root": 0.001405357,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "35377390000106",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 3,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RS0",
+     "asset_name": "LFT (linha agregada sintética)",
+     "isin": "BRSTNCLF1RS0",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2031-09-01",
+     "value_brl": -12283890.0,
+     "weight_in_root": -4.45596e-05,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119"
+     ],
+     "depth": 0,
+     "holder_cnpj": "50088190000119",
+     "block": 2,
+     "asset_kind": "fund_quota",
+     "asset_key": "54891935000134",
+     "asset_name": "XP CASH S1 FIF RENDA FIXA",
+     "isin": null,
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Cotas de Fundos",
+     "tp_ativo": null,
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 19229000.0,
+     "weight_in_root": 0.0104539012,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "54891935000134"
+     ],
+     "depth": 1,
+     "holder_cnpj": "54891935000134",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RQ4",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2030-06-01",
+     "isin": "BRSTNCLF1RQ4",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2030-06-01",
+     "value_brl": 142991000.0,
+     "weight_in_root": 0.0017804029,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "54891935000134"
+     ],
+     "depth": 1,
+     "holder_cnpj": "54891935000134",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RO9",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2030-03-01",
+     "isin": "BRSTNCLF1RO9",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2030-03-01",
+     "value_brl": 81508000.0,
+     "weight_in_root": 0.0010148686,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "54891935000134"
+     ],
+     "depth": 1,
+     "holder_cnpj": "54891935000134",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RI1",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2028-03-01",
+     "isin": "BRSTNCLF1RI1",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2028-03-01",
+     "value_brl": 58266000.0,
+     "weight_in_root": 0.0007254789,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "54891935000134"
+     ],
+     "depth": 1,
+     "holder_cnpj": "54891935000134",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RS0",
+     "asset_name": "LFT (linha agregada sintética)",
+     "isin": "BRSTNCLF1RS0",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2031-09-01",
+     "value_brl": 124351221.0,
+     "weight_in_root": 0.0015483161,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "54891935000134"
+     ],
+     "depth": 1,
+     "holder_cnpj": "54891935000134",
+     "block": 2,
+     "asset_kind": "fund_quota",
+     "asset_key": "37525998000158",
+     "asset_name": "SANTANDER CASH BLACK FIF RENDA FIXA",
+     "isin": null,
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Cotas de Fundos",
+     "tp_ativo": null,
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 429958000.0,
+     "weight_in_root": 0.005353473,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 2,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RK7",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2028-09-01",
+     "isin": "BRSTNCLF1RK7",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2028-09-01",
+     "value_brl": 1566981000.0,
+     "weight_in_root": 0.0021628231,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 2,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "repo",
+     "asset_key": "BRSTNCNTB0A6",
+     "asset_name": "NOTAS DO TESOURO NACIONAL SERIE B 2045-05-15",
+     "isin": "BRSTNCNTB0A6",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Operações Compromissadas",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "NOTAS DO TESOURO NACIONAL SERIE B",
+     "indexer_code": null,
+     "maturity": "2045-05-15",
+     "value_brl": 764857000.0,
+     "weight_in_root": 0.0010556927,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 2,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RI1",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2028-03-01",
+     "isin": "BRSTNCLF1RI1",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2028-03-01",
+     "value_brl": 584930000.0,
+     "weight_in_root": 0.0008073487,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 2,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RQ4",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2030-06-01",
+     "isin": "BRSTNCLF1RQ4",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2030-06-01",
+     "value_brl": 575091000.0,
+     "weight_in_root": 0.0007937685,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 2,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RS0",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2031-09-01",
+     "isin": "BRSTNCLF1RS0",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2031-09-01",
+     "value_brl": 387419000.0,
+     "weight_in_root": 0.0005347345,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "50088190000119",
+     "path": [
+      "50088190000119",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 2,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RS0",
+     "asset_name": "LFT (linha agregada sintética)",
+     "isin": "BRSTNCLF1RS0",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2031-09-01",
+     "value_brl": -12283890.0,
+     "weight_in_root": -1.69548e-05,
+     "period": "2026-05-01",
+     "is_cycle": false
+    }
+   ]
+  },
+  {
+   "match": {
+    "p_cnpjs": [
+     "51488342000133"
+    ]
+   },
+   "rows": [
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133"
+     ],
+     "depth": 0,
+     "holder_cnpj": "51488342000133",
+     "block": 2,
+     "asset_kind": "fund_quota",
+     "asset_key": "35377390000106",
+     "asset_name": "XP BANCOS MASTER FIF RENDA FIXA",
+     "isin": null,
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Cotas de Fundos",
+     "tp_ativo": null,
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 3358500000.0,
+     "weight_in_root": 0.999498837,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1S08",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2032-03-01",
+     "isin": "BRSTNCLF1S08",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2032-03-01",
+     "value_brl": 475112000.0,
+     "weight_in_root": 0.0593607056,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RO9",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2030-03-01",
+     "isin": "BRSTNCLF1RO9",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2030-03-01",
+     "value_brl": 381322000.0,
+     "weight_in_root": 0.0476425411,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RK7",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2028-09-01",
+     "isin": "BRSTNCLF1RK7",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2028-09-01",
+     "value_brl": 95482000.0,
+     "weight_in_root": 0.0119295638,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RM3",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2029-09-01",
+     "isin": "BRSTNCLF1RM3",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2029-09-01",
+     "value_brl": 95377000.0,
+     "weight_in_root": 0.011916445,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 6,
+     "asset_kind": "private_credit",
+     "asset_key": "PETRDBS0X2",
+     "asset_name": "DEBENTURE EXEMPLO PETROBRAS",
+     "isin": "BRPETRDBS0X2",
+     "issuer_cnpj": "33000167000101",
+     "issuer_code": "PETR",
+     "tp_aplic": "Debêntures",
+     "tp_ativo": "Debênture",
+     "tp_titpub": null,
+     "indexer_code": "DI1",
+     "maturity": "2031-06-15",
+     "value_brl": 300000000.0,
+     "weight_in_root": 0.0374821341,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 6,
+     "asset_kind": "private_credit",
+     "asset_key": "ENEVDBS0Y1",
+     "asset_name": "DEBENTURE EXEMPLO ENEVA",
+     "isin": "BRENEVDBS0Y1",
+     "issuer_cnpj": null,
+     "issuer_code": "ENEV",
+     "tp_aplic": "Debêntures",
+     "tp_ativo": "Debênture",
+     "tp_titpub": null,
+     "indexer_code": "IAP",
+     "maturity": "2034-03-15",
+     "value_brl": 120000000.0,
+     "weight_in_root": 0.0149928536,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 6,
+     "asset_kind": "private_credit",
+     "asset_key": "XXXXDBS0Z9",
+     "asset_name": "DEBENTURE EXEMPLO SEM INDEXADOR",
+     "isin": "BRXXXXDBS0Z9",
+     "issuer_cnpj": null,
+     "issuer_code": "XXXX",
+     "tp_aplic": "Debêntures",
+     "tp_ativo": "Debênture",
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": "2029-01-15",
+     "value_brl": 50000000.0,
+     "weight_in_root": 0.0062470223,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 4,
+     "asset_kind": "debenture",
+     "asset_key": "VALEDBS000",
+     "asset_name": "VALE DEBENTURE BLOCO 4",
+     "isin": "BRVALEDBS000",
+     "issuer_cnpj": null,
+     "issuer_code": "VALE",
+     "tp_aplic": "Debêntures",
+     "tp_ativo": "Debêntures",
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 150000000.0,
+     "weight_in_root": 0.018741067,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RS0",
+     "asset_name": "LFT (linha agregada sintética)",
+     "isin": "BRSTNCLF1RS0",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2031-09-01",
+     "value_brl": 6087898594.0,
+     "weight_in_root": 0.760624771,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106"
+     ],
+     "depth": 1,
+     "holder_cnpj": "35377390000106",
+     "block": 2,
+     "asset_kind": "fund_quota",
+     "asset_key": "54891935000134",
+     "asset_name": "XP CASH S1 FIF RENDA FIXA",
+     "isin": null,
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Cotas de Fundos",
+     "tp_ativo": null,
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 220611000.0,
+     "weight_in_root": 0.0275632369,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106",
+      "54891935000134"
+     ],
+     "depth": 2,
+     "holder_cnpj": "54891935000134",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RQ4",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2030-06-01",
+     "isin": "BRSTNCLF1RQ4",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2030-06-01",
+     "value_brl": 142991000.0,
+     "weight_in_root": 0.0046942921,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106",
+      "54891935000134"
+     ],
+     "depth": 2,
+     "holder_cnpj": "54891935000134",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RO9",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2030-03-01",
+     "isin": "BRSTNCLF1RO9",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2030-03-01",
+     "value_brl": 81508000.0,
+     "weight_in_root": 0.0026758493,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106",
+      "54891935000134"
+     ],
+     "depth": 2,
+     "holder_cnpj": "54891935000134",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RI1",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2028-03-01",
+     "isin": "BRSTNCLF1RI1",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2028-03-01",
+     "value_brl": 58266000.0,
+     "weight_in_root": 0.0019128311,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106",
+      "54891935000134"
+     ],
+     "depth": 2,
+     "holder_cnpj": "54891935000134",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RS0",
+     "asset_name": "LFT (linha agregada sintética)",
+     "isin": "BRSTNCLF1RS0",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2031-09-01",
+     "value_brl": 124351221.0,
+     "weight_in_root": 0.0040823615,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106",
+      "54891935000134"
+     ],
+     "depth": 2,
+     "holder_cnpj": "54891935000134",
+     "block": 2,
+     "asset_kind": "fund_quota",
+     "asset_key": "37525998000158",
+     "asset_name": "SANTANDER CASH BLACK FIF RENDA FIXA",
+     "isin": null,
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Cotas de Fundos",
+     "tp_ativo": null,
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 429958000.0,
+     "weight_in_root": 0.0141152132,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 3,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RK7",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2028-09-01",
+     "isin": "BRSTNCLF1RK7",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2028-09-01",
+     "value_brl": 1566981000.0,
+     "weight_in_root": 0.0057025988,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 3,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "repo",
+     "asset_key": "BRSTNCNTB0A6",
+     "asset_name": "NOTAS DO TESOURO NACIONAL SERIE B 2045-05-15",
+     "isin": "BRSTNCNTB0A6",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Operações Compromissadas",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "NOTAS DO TESOURO NACIONAL SERIE B",
+     "indexer_code": null,
+     "maturity": "2045-05-15",
+     "value_brl": 764857000.0,
+     "weight_in_root": 0.0027834879,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 3,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RI1",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2028-03-01",
+     "isin": "BRSTNCLF1RI1",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2028-03-01",
+     "value_brl": 584930000.0,
+     "weight_in_root": 0.0021286928,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 3,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RQ4",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2030-06-01",
+     "isin": "BRSTNCLF1RQ4",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2030-06-01",
+     "value_brl": 575091000.0,
+     "weight_in_root": 0.0020928864,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 3,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RS0",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2031-09-01",
+     "isin": "BRSTNCLF1RS0",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2031-09-01",
+     "value_brl": 387419000.0,
+     "weight_in_root": 0.0014099055,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "35377390000106",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 3,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RS0",
+     "asset_name": "LFT (linha agregada sintética)",
+     "isin": "BRSTNCLF1RS0",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2031-09-01",
+     "value_brl": -12283890.0,
+     "weight_in_root": -4.47039e-05,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133"
+     ],
+     "depth": 0,
+     "holder_cnpj": "51488342000133",
+     "block": 2,
+     "asset_kind": "fund_quota",
+     "asset_key": "54891935000134",
+     "asset_name": "XP CASH S1 FIF RENDA FIXA",
+     "isin": null,
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Cotas de Fundos",
+     "tp_ativo": null,
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 24265000.0,
+     "weight_in_root": 0.0072213307,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "54891935000134"
+     ],
+     "depth": 1,
+     "holder_cnpj": "54891935000134",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RQ4",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2030-06-01",
+     "isin": "BRSTNCLF1RQ4",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2030-06-01",
+     "value_brl": 142991000.0,
+     "weight_in_root": 0.0012298641,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "54891935000134"
+     ],
+     "depth": 1,
+     "holder_cnpj": "54891935000134",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RO9",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2030-03-01",
+     "isin": "BRSTNCLF1RO9",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2030-03-01",
+     "value_brl": 81508000.0,
+     "weight_in_root": 0.0007010495,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "54891935000134"
+     ],
+     "depth": 1,
+     "holder_cnpj": "54891935000134",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RI1",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2028-03-01",
+     "isin": "BRSTNCLF1RI1",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2028-03-01",
+     "value_brl": 58266000.0,
+     "weight_in_root": 0.0005011453,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "54891935000134"
+     ],
+     "depth": 1,
+     "holder_cnpj": "54891935000134",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RS0",
+     "asset_name": "LFT (linha agregada sintética)",
+     "isin": "BRSTNCLF1RS0",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2031-09-01",
+     "value_brl": 124351221.0,
+     "weight_in_root": 0.0010695436,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "54891935000134"
+     ],
+     "depth": 1,
+     "holder_cnpj": "54891935000134",
+     "block": 2,
+     "asset_kind": "fund_quota",
+     "asset_key": "37525998000158",
+     "asset_name": "SANTANDER CASH BLACK FIF RENDA FIXA",
+     "isin": null,
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Cotas de Fundos",
+     "tp_ativo": null,
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 429958000.0,
+     "weight_in_root": 0.0036980643,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 2,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RK7",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2028-09-01",
+     "isin": "BRSTNCLF1RK7",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2028-09-01",
+     "value_brl": 1566981000.0,
+     "weight_in_root": 0.0014940318,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 2,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "repo",
+     "asset_key": "BRSTNCNTB0A6",
+     "asset_name": "NOTAS DO TESOURO NACIONAL SERIE B 2045-05-15",
+     "isin": "BRSTNCNTB0A6",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Operações Compromissadas",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "NOTAS DO TESOURO NACIONAL SERIE B",
+     "indexer_code": null,
+     "maturity": "2045-05-15",
+     "value_brl": 764857000.0,
+     "weight_in_root": 0.0007292499,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 2,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RI1",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2028-03-01",
+     "isin": "BRSTNCLF1RI1",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2028-03-01",
+     "value_brl": 584930000.0,
+     "weight_in_root": 0.0005576992,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 2,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RQ4",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2030-06-01",
+     "isin": "BRSTNCLF1RQ4",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2030-06-01",
+     "value_brl": 575091000.0,
+     "weight_in_root": 0.0005483182,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 2,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RS0",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2031-09-01",
+     "isin": "BRSTNCLF1RS0",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2031-09-01",
+     "value_brl": 387419000.0,
+     "weight_in_root": 0.0003693831,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "51488342000133",
+     "path": [
+      "51488342000133",
+      "54891935000134",
+      "37525998000158"
+     ],
+     "depth": 2,
+     "holder_cnpj": "37525998000158",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RS0",
+     "asset_name": "LFT (linha agregada sintética)",
+     "isin": "BRSTNCLF1RS0",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2031-09-01",
+     "value_brl": -12283890.0,
+     "weight_in_root": -1.1712e-05,
+     "period": "2026-05-01",
+     "is_cycle": false
+    }
+   ]
+  },
+  {
+   "match": {
+    "p_cnpjs": [
+     "42592315000115"
+    ]
+   },
+   "rows": [
+    {
+     "root_cnpj": "42592315000115",
+     "path": [
+      "42592315000115"
+     ],
+     "depth": 0,
+     "holder_cnpj": "42592315000115",
+     "block": 2,
+     "asset_kind": "fund_quota",
+     "asset_key": "46133770000103",
+     "asset_name": "BB TOP RF CP AUTOMATICO II FIF RESPONSABILIDADE LIMITADA",
+     "isin": null,
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Cotas de Fundos",
+     "tp_ativo": null,
+     "tp_titpub": null,
+     "indexer_code": null,
+     "maturity": null,
+     "value_brl": 198595918000.0,
+     "weight_in_root": 0.9999503086,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "42592315000115",
+     "path": [
+      "42592315000115",
+      "46133770000103"
+     ],
+     "depth": 1,
+     "holder_cnpj": "46133770000103",
+     "block": 1,
+     "asset_kind": "repo",
+     "asset_key": "BRSTNCLF1RR2",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2030-09-01",
+     "isin": "BRSTNCLF1RR2",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Operações Compromissadas",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2030-09-01",
+     "value_brl": 61322450000.0,
+     "weight_in_root": 0.3087646686,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "42592315000115",
+     "path": [
+      "42592315000115",
+      "46133770000103"
+     ],
+     "depth": 1,
+     "holder_cnpj": "46133770000103",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RG5",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2027-03-01",
+     "isin": "BRSTNCLF1RG5",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2027-03-01",
+     "value_brl": 18806471000.0,
+     "weight_in_root": 0.0946924623,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "42592315000115",
+     "path": [
+      "42592315000115",
+      "46133770000103"
+     ],
+     "depth": 1,
+     "holder_cnpj": "46133770000103",
+     "block": 1,
+     "asset_kind": "repo",
+     "asset_key": "BRSTNCLF1RM3",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2029-09-01",
+     "isin": "BRSTNCLF1RM3",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Operações Compromissadas",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2029-09-01",
+     "value_brl": 18517316000.0,
+     "weight_in_root": 0.093236538,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "42592315000115",
+     "path": [
+      "42592315000115",
+      "46133770000103"
+     ],
+     "depth": 1,
+     "holder_cnpj": "46133770000103",
+     "block": 1,
+     "asset_kind": "repo",
+     "asset_key": "BRSTNCLF1RQ4",
+     "asset_name": "LETRAS FINANCEIRAS DO TESOURO 2030-06-01",
+     "isin": "BRSTNCLF1RQ4",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Operações Compromissadas",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2030-06-01",
+     "value_brl": 11374094000.0,
+     "weight_in_root": 0.0572697008,
+     "period": "2026-05-01",
+     "is_cycle": false
+    },
+    {
+     "root_cnpj": "42592315000115",
+     "path": [
+      "42592315000115",
+      "46133770000103"
+     ],
+     "depth": 1,
+     "holder_cnpj": "46133770000103",
+     "block": 1,
+     "asset_kind": "government_bond",
+     "asset_key": "BRSTNCLF1RS0",
+     "asset_name": "LFT (linha agregada sintética)",
+     "isin": "BRSTNCLF1RS0",
+     "issuer_cnpj": null,
+     "issuer_code": null,
+     "tp_aplic": "Títulos Públicos",
+     "tp_ativo": "Título público federal",
+     "tp_titpub": "LETRAS FINANCEIRAS DO TESOURO",
+     "indexer_code": null,
+     "maturity": "2031-09-01",
+     "value_brl": 87979799246.0,
+     "weight_in_root": 0.442987088,
+     "period": "2026-05-01",
+     "is_cycle": false
+    }
+   ]
+  },
+  {
+   "match": {
+    "p_cnpjs": [
+     "32113885000121"
+    ]
+   },
+   "rows": []
+  },
+  {
+   "match": {
+    "p_cnpjs": [
+     "11728688000147"
+    ]
+   },
+   "rows": []
+  }
+ ],
+ "fidc_portfolio": [
+  {
+   "match": {
+    "p_cnpj": "32113885000121"
+   },
+   "rows": [
+    {
+     "cnpj": "32113885000121",
+     "period": "2026-08-01",
+     "kind": "sector",
+     "code": "TOTAL",
+     "parent": null,
+     "item": "Total",
+     "value": 480000000.0
+    },
+    {
+     "cnpj": "32113885000121",
+     "period": "2026-08-01",
+     "kind": "sector",
+     "code": "A",
+     "parent": null,
+     "item": "Indústria",
+     "value": 96000000.0
+    },
+    {
+     "cnpj": "32113885000121",
+     "period": "2026-08-01",
+     "kind": "sector",
+     "code": "B",
+     "parent": null,
+     "item": "Comércio",
+     "value": 72000000.0
+    },
+    {
+     "cnpj": "32113885000121",
+     "period": "2026-08-01",
+     "kind": "sector",
+     "code": "C",
+     "parent": null,
+     "item": "Serviços",
+     "value": 120000000.0
+    },
+    {
+     "cnpj": "32113885000121",
+     "period": "2026-08-01",
+     "kind": "sector",
+     "code": "C1",
+     "parent": "C",
+     "item": "Serviços - transporte",
+     "value": 40000000.0
+    },
+    {
+     "cnpj": "32113885000121",
+     "period": "2026-08-01",
+     "kind": "sector",
+     "code": "D",
+     "parent": null,
+     "item": "Agronegócio",
+     "value": 150000000.0
+    }
+   ]
+  }
+ ],
+ "fund_restatements": [
+  {
+   "match": {
+    "p_cnpj": "32113885000121"
+   },
+   "rows": [
+    {
+     "fnet_id": 1298163,
+     "cnpj": "32113885000121",
+     "tipo_fundo": "FIDC",
+     "fund_name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
+     "tipo_documento": "Informe Mensal Estruturado",
+     "reference_raw": "07/2026",
+     "reference_date": "2026-07-31",
+     "versao": 2,
+     "modalidade": "RE",
+     "delivered_at": "2026-08-21 13:04:00",
+     "previous_fnet_id": 1293383,
+     "previous_delivered_at": "2026-08-14 17:34:00",
+     "lag_days": 7,
+     "n_fields_changed": 2,
+     "diff_status": "compared"
+    },
+    {
+     "fnet_id": 1120221,
+     "cnpj": "32113885000121",
+     "tipo_fundo": "FIDC",
+     "fund_name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
+     "tipo_documento": "Informe Mensal Estruturado",
+     "reference_raw": "01/2026",
+     "reference_date": "2026-01-31",
+     "versao": 2,
+     "modalidade": "RE",
+     "delivered_at": "2026-02-24 16:13:00",
+     "previous_fnet_id": 1113801,
+     "previous_delivered_at": "2026-02-13 13:32:00",
+     "lag_days": 11,
+     "n_fields_changed": 2,
+     "diff_status": "compared"
+    },
+    {
+     "fnet_id": 1086024,
+     "cnpj": "32113885000121",
+     "tipo_fundo": "FIDC",
+     "fund_name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
+     "tipo_documento": "Informe Mensal Estruturado",
+     "reference_raw": "12/2025",
+     "reference_date": "2025-12-31",
+     "versao": 2,
+     "modalidade": "RE",
+     "delivered_at": "2026-01-16 11:16:00",
+     "previous_fnet_id": 1085168,
+     "previous_delivered_at": "2026-01-15 19:38:00",
+     "lag_days": 1,
+     "n_fields_changed": 2,
+     "diff_status": "compared"
+    }
+   ]
+  },
+  {
+   "match": {
+    "p_cnpj": "11728688000147"
+   },
+   "rows": []
+  }
+ ],
+ "fund_restatement_diff": [
+  {
+   "match": {
+    "p_fnet_id": 1298163
+   },
+   "rows": [
+    {
+     "fnet_id": 1298163,
+     "previous_fnet_id": 1293383,
+     "cnpj": "32113885000121",
+     "tipo_documento": "Informe Mensal Estruturado",
+     "reference_raw": "07/2026",
+     "versao": 2,
+     "modalidade": "RE",
+     "delivered_at": "2026-08-21 13:04:00",
+     "previous_delivered_at": "2026-08-14 17:34:00",
+     "lag_days": 7,
+     "field_path": "LISTA_INFORM/APLIC_ATIVO/CRED_EXISTE/VL_CRED_EXISTE_INAD",
+     "block": "APLIC_ATIVO",
+     "leaf": "VL_CRED_EXISTE_INAD",
+     "change_kind": "changed",
+     "old_value": "234716701,70",
+     "new_value": "255281411,73",
+     "old_num": 234716701.7,
+     "new_num": 255281411.73,
+     "delta": 20564710.03,
+     "match_basis": "path",
+     "cvm_column": null,
+     "diff_version": 1,
+     "source_url": "https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1298163",
+     "previous_source_url": "https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1293383"
+    },
+    {
+     "fnet_id": 1298163,
+     "previous_fnet_id": 1293383,
+     "cnpj": "32113885000121",
+     "tipo_documento": "Informe Mensal Estruturado",
+     "reference_raw": "07/2026",
+     "versao": 2,
+     "modalidade": "RE",
+     "delivered_at": "2026-08-21 13:04:00",
+     "previous_delivered_at": "2026-08-14 17:34:00",
+     "lag_days": 7,
+     "field_path": "LISTA_INFORM/PATRLIQ/VL_PATRIM_LIQ",
+     "block": "PATRLIQ",
+     "leaf": "VL_PATRIM_LIQ",
+     "change_kind": "changed",
+     "old_value": "549614285,94",
+     "new_value": "96794048,98",
+     "old_num": 549614285.94,
+     "new_num": 96794048.98,
+     "delta": -452820236.96,
+     "match_basis": "path",
+     "cvm_column": null,
+     "diff_version": 1,
+     "source_url": "https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1298163",
+     "previous_source_url": "https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1293383"
+    }
+   ]
+  },
+  {
+   "match": {
+    "p_fnet_id": 1120221
+   },
+   "rows": [
+    {
+     "fnet_id": 1120221,
+     "previous_fnet_id": 1113801,
+     "cnpj": "32113885000121",
+     "tipo_documento": "Informe Mensal Estruturado",
+     "reference_raw": "01/2026",
+     "versao": 2,
+     "modalidade": "RE",
+     "delivered_at": "2026-02-24 16:13:00",
+     "previous_delivered_at": "2026-02-13 13:32:00",
+     "lag_days": 11,
+     "field_path": "LISTA_INFORM/APLIC_ATIVO/CRED_EXISTE/VL_CRED_EXISTE_INAD",
+     "block": "APLIC_ATIVO",
+     "leaf": "VL_CRED_EXISTE_INAD",
+     "change_kind": "changed",
+     "old_value": "187284652,71",
+     "new_value": "195818556,47",
+     "old_num": 187284652.71,
+     "new_num": 195818556.47,
+     "delta": 8533903.76,
+     "match_basis": "path",
+     "cvm_column": null,
+     "diff_version": 1,
+     "source_url": "https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1120221",
+     "previous_source_url": "https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1113801"
+    },
+    {
+     "fnet_id": 1120221,
+     "previous_fnet_id": 1113801,
+     "cnpj": "32113885000121",
+     "tipo_documento": "Informe Mensal Estruturado",
+     "reference_raw": "01/2026",
+     "versao": 2,
+     "modalidade": "RE",
+     "delivered_at": "2026-02-24 16:13:00",
+     "previous_delivered_at": "2026-02-13 13:32:00",
+     "lag_days": 11,
+     "field_path": "LISTA_INFORM/PATRLIQ/VL_PATRIM_LIQ",
+     "block": "PATRLIQ",
+     "leaf": "VL_PATRIM_LIQ",
+     "change_kind": "changed",
+     "old_value": "506043487,89",
+     "new_value": "514904640,02",
+     "old_num": 506043487.89,
+     "new_num": 514904640.02,
+     "delta": 8861152.13,
+     "match_basis": "path",
+     "cvm_column": null,
+     "diff_version": 1,
+     "source_url": "https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1120221",
+     "previous_source_url": "https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1113801"
+    }
+   ]
+  },
+  {
+   "match": {
+    "p_fnet_id": 1086024
+   },
+   "rows": [
+    {
+     "fnet_id": 1086024,
+     "previous_fnet_id": 1085168,
+     "cnpj": "32113885000121",
+     "tipo_documento": "Informe Mensal Estruturado",
+     "reference_raw": "12/2025",
+     "versao": 2,
+     "modalidade": "RE",
+     "delivered_at": "2026-01-16 11:16:00",
+     "previous_delivered_at": "2026-01-15 19:38:00",
+     "lag_days": 1,
+     "field_path": "LISTA_INFORM/APLIC_ATIVO/CRED_EXISTE/VL_CRED_EXISTE_INAD",
+     "block": "APLIC_ATIVO",
+     "leaf": "VL_CRED_EXISTE_INAD",
+     "change_kind": "changed",
+     "old_value": "0,00",
+     "new_value": "187284652,71",
+     "old_num": 0.0,
+     "new_num": 187284652.71,
+     "delta": 187284652.71,
+     "match_basis": "path",
+     "cvm_column": null,
+     "diff_version": 1,
+     "source_url": "https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1086024",
+     "previous_source_url": "https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1085168"
+    },
+    {
+     "fnet_id": 1086024,
+     "previous_fnet_id": 1085168,
+     "cnpj": "32113885000121",
+     "tipo_documento": "Informe Mensal Estruturado",
+     "reference_raw": "12/2025",
+     "versao": 2,
+     "modalidade": "RE",
+     "delivered_at": "2026-01-16 11:16:00",
+     "previous_delivered_at": "2026-01-15 19:38:00",
+     "lag_days": 1,
+     "field_path": "LISTA_INFORM/PATRLIQ/VL_PATRIM_LIQ",
+     "block": "PATRLIQ",
+     "leaf": "VL_PATRIM_LIQ",
+     "change_kind": "changed",
+     "old_value": "0,00",
+     "new_value": "506043487,89",
+     "old_num": 0.0,
+     "new_num": 506043487.89,
+     "delta": 506043487.89,
+     "match_basis": "path",
+     "cvm_column": null,
+     "diff_version": 1,
+     "source_url": "https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1086024",
+     "previous_source_url": "https://fnet.bmfbovespa.com.br/fnet/publico/downloadDocumento?id=1085168"
+    }
+   ]
+  }
+ ],
+ "screen_zombie_growth": [
+  {
+   "match": {},
+   "rows": [
+    {
+     "cnpj": "00000000000191",
+     "fund_name": "FUNDO ESTRANHO A",
+     "period": "2026-08-01",
+     "nav_mm": 12.5,
+     "delinquency_pct": 31.2,
+     "screen": "zombie_growth",
+     "params": {
+      "p_min_delinq_pct": 5,
+      "p_min_aum": 1000000
+     }
+    }
+   ]
+  }
+ ],
+ "screen_captive_vehicles": [
+  {
+   "match": {},
+   "rows": [
+    {
+     "cnpj": "00000000000272",
+     "fund_name": "FUNDO ESTRANHO B",
+     "latest_period": "2026-08-01",
+     "max_nav_mm": 80.0,
+     "min_quotaholders": 1,
+     "screen": "captive_vehicles",
+     "params": {
+      "p_lookback_months": 3
+     }
+    }
+   ]
+  }
+ ],
+ "screen_evergreen_aging": [
+  {
+   "match": {},
+   "rows": []
+  }
+ ],
+ "screen_delinquency_drivers": [
+  {
+   "match": {},
+   "rows": [
+    {
+     "cnpj": "32113885000121",
+     "fund_name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
+     "status": "complete",
+     "window_from": "2025-09-01",
+     "window_to": "2026-08-01",
+     "n_months": 12,
+     "months_missing": 0,
+     "first_month": "2025-09-01",
+     "last_month": "2026-08-01",
+     "delinquency_start": 0.0,
+     "delinquency_end": 255281411.73,
+     "delta_brl": 255281411.73,
+     "nav_start": 506043487.89,
+     "nav_end": 96794048.98,
+     "delta_nav": -409249438.91,
+     "rate_start": 0.0,
+     "rate_end": 263.7,
+     "delta_pp": 263.7,
+     "stopped_reporting": false,
+     "driver": "delinquency_up",
+     "screen": "delinquency_drivers",
+     "params": {
+      "p_months": 12
+     }
+    }
+   ]
+  }
+ ],
+ "screen_restatements": [
+  {
+   "match": {},
+   "rows": [
+    {
+     "cnpj": "32113885000121",
+     "tipo_fundo": "FIDC",
+     "fund_name": "MN I FUNDO DE INVESTIMENTO EM DIREITOS CREDITORIOS",
+     "window_from": "2025-09-01",
+     "window_to": "2026-08-01",
+     "documents": 12,
+     "restatements": 3,
+     "restatements_re": 3,
+     "restatements_rc": 0,
+     "restatement_pct": 25.0,
+     "last_restated_at": "2026-08-21 13:04:00",
+     "screen": "restatements",
+     "params": {
+      "p_months": 12,
+      "p_min_restatements": 3,
+      "p_min_rate_pct": 20
+     }
+    }
+   ]
+  }
+ ],
+ "screen_late_filers": [
+  {
+   "match": {},
+   "rows": []
+  }
+ ],
+ "screen_silent_filers": [
+  {
+   "match": {},
+   "rows": []
+  }
+ ],
+ "screen_dormant_funds": [
+  {
+   "match": {
+    "p_dormancy": "empty_shell"
+   },
+   "rows": [
+    {
+     "cnpj": "00000000000353",
+     "fund_name": "FUNDO ESTRANHO C",
+     "administrator": "ADM X",
+     "window_from": "2026-05-01",
+     "window_to": "2026-07-01",
+     "months_observed": 3,
+     "max_quotaholders": 0,
+     "last_nav": 1000.0,
+     "dormancy": "empty_shell",
+     "screen": "dormant_funds",
+     "params": {
+      "p_dormancy": "empty_shell"
+     }
+    }
+   ]
+  },
+  {
+   "match": {
+    "p_min_nav": 1000000000
+   },
+   "rows": [
+    {
+     "cnpj": "00000000000434",
+     "fund_name": "FUNDO ESTRANHO D",
+     "administrator": "ADM Y",
+     "window_from": "2026-05-01",
+     "window_to": "2026-07-01",
+     "months_observed": 3,
+     "max_quotaholders": 5,
+     "last_nav": 2500000000.0,
+     "dormancy": "parked",
+     "screen": "dormant_funds",
+     "params": {
+      "p_min_nav": 1000000000
+     }
+    }
+   ]
+  }
+ ]
+}
