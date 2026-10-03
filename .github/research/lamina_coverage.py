@@ -162,6 +162,7 @@ def main():
     store = Store()
     month_rows = []
     cols_by_file = {}
+    cnpj_sets = {}
     all_cnpj = set()
     year_cnpj = collections.defaultdict(set)
     nonpunct = 0
@@ -246,6 +247,7 @@ def main():
         all_cnpj.update(cn) if grp == "DADOS" else None
         if grp == "DADOS":
             year_cnpj[n[10:14]].update(cn)
+            cnpj_sets[n[10:16]] = cn
         for k, v in tp.items():
             tp_totals[k] += v
 
@@ -442,6 +444,88 @@ def main():
     print("SAMPLE (15 largest-PL overlaps): cnpj | denom | dt_comptc | TAXA_ADM | PR_PL_DESPESA | est_aug | est_jul | PL")
     for pl, c, r, a, u in samples[:15]:
         print(f"  {c} | {r['denom']} | {r['dt']} | {r['taxa_adm']} | {r['pr_desp']} | {u['e8']} | {u['e7']} | {pl:.0f}")
+
+
+    # ---- EXTRA (run 2): snapshot semantics, PL-weighted coverage, fee range vs estimate ----
+    print("=" * 80)
+    print("MONTH-OVER-MONTH: month,n_cnpj,in_prev_month,share_in_prev,in_universe")
+    ms = sorted(cnpj_sets)
+    for i, m in enumerate(ms):
+        cur = cnpj_sets[m]
+        prev = cnpj_sets[ms[i - 1]] if i else set()
+        ov = len(cur & prev)
+        print(f"  {m},{len(cur)},{ov},{ov / max(1, len(cur)):.3f},{len(cur & set(uni))}")
+    if "202409" in cnpj_sets and "202410" in cnpj_sets:
+        a, b = cnpj_sets["202409"], cnpj_sets["202410"]
+        later = set().union(*[cnpj_sets[m] for m in ms if m > "202410"])
+        print(f"202409 funds {len(a)}: still in 202410 {len(a & b)}, in any later month {len(a & later)}, in universe {len(a & set(uni))}; "
+              f"202410 funds not in 202409: {len(b - a)}")
+
+    print("=" * 80)
+    print("PL-BUCKET COVERAGE (universe, DADOS 2019+): bucket, n, PL_sum, any_lamina(n/PL), latest<=12m(n/PL), latest<=12m_with_TAXA_ADM(n/PL), any_with_range_or_fee_latest(n)")
+    for label, lo, hi in (("1M-10M", 1e6, 1e7), ("10M-100M", 1e7, 1e8), ("100M-1bn", 1e8, 1e9), (">=1bn", 1e9, 1e99), ("<1M", 0, 1e6)):
+        n = 0; plsum = 0.0
+        a_n = a_pl = f_n = f_pl = t_n = t_pl = r_n = 0
+        for c, u in uni.items():
+            pl = u["pl"] or 0
+            if not (lo <= pl < hi):
+                continue
+            n += 1; plsum += pl
+            lr = store.latest_rows.get(c)
+            if lr:
+                a_n += 1; a_pl += pl
+                row = pick(lr[1])
+                if row["taxa_adm"] is not None or (row["tmin"] is not None and row["tmax"] is not None):
+                    r_n += 1
+                if months_between(lr[0]) <= 12:
+                    f_n += 1; f_pl += pl
+                    if row["taxa_adm"] is not None:
+                        t_n += 1; t_pl += pl
+        d = max(1.0, plsum)
+        print(f"  {label}: n={n} PL={plsum/1e9:.1f}bn any={a_n}/{a_pl/d:.3f} le12m={f_n}/{f_pl/d:.3f} le12m_taxa={t_n}/{t_pl/d:.3f} fee_or_range_any_age={r_n}")
+
+    print("=" * 80)
+    print("TAXA_ADM = 0 rows (universe latest): n, est_aug median, share est_aug>0.10, share PR_PL_DESPESA>0.10")
+    zs, zd = [], []
+    nz = 0
+    for c, u in uni.items():
+        lr = store.latest_rows.get(c)
+        if not lr:
+            continue
+        r = pick(lr[1])
+        if r["taxa_adm"] == 0:
+            nz += 1
+            if u["e8"] is not None:
+                zs.append(u["e8"])
+            if r["pr_desp"] is not None:
+                zd.append(r["pr_desp"])
+    print(f"  n={nz} est n={len(zs)} {json.dumps(pct(zs))} share>0.10={sum(1 for x in zs if x>0.10)/max(1,len(zs)):.3f}; PR n={len(zd)} share>0.10={sum(1 for x in zd if x>0.10)/max(1,len(zd)):.3f}")
+
+    print("=" * 80)
+    print("FEE RANGE vs ESTIMATE (universe, latest lamina any age, est_aug present)")
+    for label, f in (
+        ("Variavel, TAXA_ADM empty, MIN/MAX present", lambda r: r["tp_taxa"] == "Variável" and r["taxa_adm"] is None and r["tmin"] is not None and r["tmax"] is not None),
+        ("Variavel, TAXA_ADM filled, MIN/MAX present", lambda r: r["tp_taxa"] == "Variável" and r["taxa_adm"] is not None and r["tmin"] is not None and r["tmax"] is not None),
+        ("Fixa, TAXA_ADM filled", lambda r: r["tp_taxa"] == "Fixa" and r["taxa_adm"] is not None),
+    ):
+        rows_ = []
+        for c, u in uni.items():
+            lr = store.latest_rows.get(c)
+            if not lr or u["e8"] is None or u["band"] != "A":
+                continue
+            r = pick(lr[1])
+            if f(r):
+                rows_.append((c, u, r, months_between(lr[0])))
+        n = len(rows_)
+        if not n:
+            print(f"  {label}: n=0"); continue
+        inside = sum(1 for c, u, r, a in rows_ if r["tmin"] is not None and r["tmax"] is not None and r["tmin"] * 0.75 <= u["e8"] <= r["tmax"] * 1.25)
+        rmin = [u["e8"] / r["tmin"] for c, u, r, a in rows_ if r["tmin"]]
+        rmid = [u["e8"] / r["taxa_adm"] for c, u, r, a in rows_ if r["taxa_adm"]]
+        w_min = sum(1 for x in rmin if 0.75 <= x <= 1.25) / max(1, len(rmin))
+        w_mid = sum(1 for x in rmid if 0.75 <= x <= 1.25) / max(1, len(rmid))
+        print(f"  {label}: n={n} (age<=12m: {sum(1 for x in rows_ if x[3] <= 12)}) est inside [min*0.75,max*1.25]={inside/n:.3f} "
+              f"est/MIN {json.dumps(pct(rmin))} within25%={w_min:.3f}; est/TAXA_ADM {json.dumps(pct(rmid))} within25%={w_mid:.3f}")
 
     # ---- demo funds ----
     print("=" * 80)
