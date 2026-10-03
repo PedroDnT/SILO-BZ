@@ -60,6 +60,8 @@ the portfolio-diagnosis demo against what schema `api` and the warehouse hold on
 balancete fee summary, the screens take no CNPJ, Tesouro has no price series, CDA
 blocks 3, 5, 7 and 8 are not ingested. It gives the coverage matrix by asset
 class, the blockers, a candidate demo portfolio, the slice plan for Sunday
-2026-10-04 and eight decisions for the owner. Every live count is marked not
-measured (the session could not reach the database); the SQL that measures them
-is `scripts/health_diagnostics/19_portfolio_phase0.sql`.
+2026-10-04 and eight decisions for the owner. The measurements ran live on
+2026-10-03 (UTC-3): a renamed fund is found 1 time in 10 by trigram against
+current names, the disclosed fee is not in SILO, the spike's FIDCs are still
+unlinked, the dormant screen refuses whole. The same queries are
+`scripts/health_diagnostics/19_portfolio_phase0.sql`.
