@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import os
+import socket
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import quote, urlencode
@@ -66,8 +67,9 @@ _SGS = "https://api.bcb.gov.br/dados/serie"
 # dadosabertos.bcb.gov.br resolved), and Daily CVM Ingest failed on SGS 432 with
 # "[Errno -2] Name or service not known" on three runners. A resolver rotation like
 # the CVM fetcher's cannot heal a name that does not exist, so none is added: the
-# retry stays, an outage still raises BacenFetchError, and the daily run goes red
-# (issue #537). The base can be re-pointed without a code change through
+# retry stays and an outage still raises: BacenHostUnresolved (a BacenFetchError)
+# for a name that is not there, which BacenIngestor.ingest_sgs may tolerate for a
+# few days and heal by catching up from the last good load (issue #537). The base can be re-pointed without a code change through
 # BACEN_SGS_BASE_URL (see _sgs_base), for the day BCB announces another host.
 
 _OLINDA_PAGE = 10_000
@@ -93,6 +95,30 @@ class BacenFetchError(RuntimeError):
     fetch look exactly like a quiet week. That confusion is what kept the Focus
     tables empty while every run reported success.
     """
+
+
+class BacenHostUnresolved(BacenFetchError):
+    """The SGS host name does not exist in DNS ("[Errno -2] Name or service not known").
+
+    A name that is not there is the source's outage, not a blip of ours: no
+    retry and no resolver rotation heals it (issue #537). Kept apart from every
+    other failure (timeouts, HTTP 5xx, a body that is not JSON, and also
+    EAI_AGAIN, a resolver that is only unavailable for a moment) so the
+    ingest can tell "BCB is not there today" from "something is broken", and
+    tolerate only the first. It is still a BacenFetchError: anything that does
+    not know about it fails exactly as before.
+    """
+
+
+def _is_name_not_found(exc: Optional[BaseException]) -> bool:
+    """True when ``exc`` or anything it was raised from is a gaierror EAI_NONAME."""
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, socket.gaierror) and exc.errno == socket.EAI_NONAME:
+            return True
+        exc = exc.__cause__ or exc.__context__
+    return False
 
 
 def _sgs_base() -> str:
@@ -434,7 +460,10 @@ async def _sgs_request(
             )
         return payload
 
-    raise BacenFetchError(f"{where}: failed after {attempts} attempts: {last_exc}")
+    message = f"{where}: failed after {attempts} attempts: {last_exc}"
+    if _is_name_not_found(last_exc):
+        raise BacenHostUnresolved(message)
+    raise BacenFetchError(message)
 
 # ---------------------------------------------------------------------------
 # Client

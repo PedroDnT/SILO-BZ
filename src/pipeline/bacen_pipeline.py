@@ -11,12 +11,12 @@ import logging
 import os
 import sys
 from datetime import date, datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from src.fetchers.bacen_fetcher import BacenClient
-from src.pipeline.ingest_log import PartialIngestError, audited, describe
+from src.fetchers.bacen_fetcher import BacenClient, BacenHostUnresolved
+from src.pipeline.ingest_log import Outcome, PartialIngestError, audited, describe
 from src.store.pg_client import get_pg_client, upsert_rows
 
 logger = logging.getLogger(__name__)
@@ -118,6 +118,48 @@ PTAX_CURRENCIES: List[str] = ["USD", "EUR", "GBP", "JPY", "ARS"]
 # and how to run it. Nothing else may zip parallel lists.
 LOG_ENTITY = "bacen"
 
+# SGS outage policy (issue #537). api.bcb.gov.br stopped resolving on 2026-10-03.
+# A name that is not in DNS is the source's outage, and no retry heals it, so the
+# SGS slice may end `skipped` instead of failing the whole daily run, but only
+# while the last successful SGS load is recent. After SGS_TOLERATE_DAYS_DEFAULT
+# days without one it raises again, so a source that is gone for good cannot go
+# quiet. When the host comes back the next load starts at the last successful
+# one (capped), so the days missed are fetched; the upsert is keyed on
+# (series_code, reference_date) and a re-read changes nothing it already has.
+SGS_TOLERATE_DAYS_DEFAULT = 7      # BACEN_SGS_TOLERATE_DAYS; 0 = never tolerate
+SGS_CATCHUP_MAX_DAYS_DEFAULT = 366  # BACEN_SGS_CATCHUP_MAX_DAYS; deeper gaps: run_backfill
+
+
+def _env_days(name: str, default: int) -> int:
+    """A non-negative day count from the environment. A mistyped value raises."""
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        days = int(raw)
+    except ValueError:
+        raise ValueError(f"{name} must be a whole number of days, got {raw!r}") from None
+    if days < 0:
+        raise ValueError(f"{name} must not be negative, got {days}")
+    return days
+
+
+def sgs_catchup_start(start: str, last_ok: Optional[date], today: date) -> str:
+    """The SGS window start, moved back to the last successful load when that is older.
+
+    ``start`` is returned unchanged on a normal day (last load yesterday, inside
+    the 30-day window), for a historical ``run_backfill`` start that is already
+    older, and when no successful load is on record (nothing to catch up to, and
+    never an automatic 46-year read). The move is capped at
+    ``BACEN_SGS_CATCHUP_MAX_DAYS`` days back.
+    """
+    if last_ok is None:
+        return start
+    window_start = date.fromisoformat(start[:10])
+    floor = today - timedelta(days=_env_days("BACEN_SGS_CATCHUP_MAX_DAYS", SGS_CATCHUP_MAX_DAYS_DEFAULT))
+    gap_start = max(last_ok - timedelta(days=1), floor)
+    return start if window_start <= gap_start else gap_start.isoformat()
+
 EXPECTATIVAS_ENDPOINTS: List[str] = [
     "ExpectativasMercadoAnuais",
     # NOTE the singular "Expectativa": that is BACEN's actual resource name.
@@ -160,7 +202,22 @@ class BacenIngestor:
     # SGS time series
     # ------------------------------------------------------------------
 
-    async def ingest_sgs(self, start: str, end: Optional[str] = None) -> int:
+    def _last_sgs_landing(self) -> Optional[date]:
+        """UTC date of the newest successful SGS load that wrote rows, else None.
+
+        A failed read raises: the caller decides on a tolerance and a catch-up
+        window from it, and neither may be guessed.
+        """
+        with self._supabase.cursor() as cur:
+            cur.execute(
+                "SELECT max(finished_at) FROM cvm_ingest_log"
+                " WHERE entity=%s AND doc_type='sgs' AND status='ok' AND rows_upserted > 0",
+                (LOG_ENTITY,),
+            )
+            (when,) = cur.fetchone()
+        return when.astimezone(timezone.utc).date() if when else None
+
+    async def ingest_sgs(self, start: str, end: Optional[str] = None) -> Union[int, Outcome]:
         """
         Fetch all configured SGS series for the given date range and upsert.
 
@@ -169,10 +226,19 @@ class BacenIngestor:
             end:   ISO date "YYYY-MM-DD" (defaults to today)
 
         Returns:
-            Total rows upserted across all series.
+            Total rows upserted across all series, or an ``Outcome`` ending the
+            audit row ``skipped`` when the SGS host does not exist in DNS and the
+            last successful load is within ``BACEN_SGS_TOLERATE_DAYS``.
+
+        The window starts at the last successful load when that is older than
+        ``start`` (``sgs_catchup_start``), so the days missed during an outage
+        are fetched once the host answers again.
         """
+        today = datetime.now(timezone.utc).date()
         if end is None:
-            end = date.today().isoformat()
+            end = today.isoformat()
+        last_ok = self._last_sgs_landing()
+        start = sgs_catchup_start(start, last_ok, today)
 
         series = {**SGS_SERIES, **RESEARCH_SGS_SERIES}
         logger.info("SGS: start=%s end=%s series=%d", start, end, len(series))
@@ -185,6 +251,19 @@ class BacenIngestor:
                 start=start,
                 end=end,
             )
+        except BacenHostUnresolved as exc:
+            # The one failure that is the source's and not ours: the host name
+            # does not exist. Tolerated only while the last good load is recent;
+            # otherwise it raises like any other broken fetch.
+            tolerate = _env_days("BACEN_SGS_TOLERATE_DAYS", SGS_TOLERATE_DAYS_DEFAULT)
+            if tolerate > 0 and last_ok is not None and (today - last_ok).days <= tolerate:
+                note = (
+                    f"SGS host does not resolve; last good load {last_ok.isoformat()}, "
+                    f"tolerated for {tolerate} days, the next load starts there: {describe(exc)}"
+                )
+                logger.warning("SGS skipped: %s", note)
+                return Outcome(0, "skipped", note)
+            raise RuntimeError(f"SGS fetch failed: {exc}") from exc
         except Exception as exc:
             # Fatal, like PTAX and Expectativas. This used to log and return
             # 0, and the daily run stayed green with bacen_sgs=0 (2026-09-03,

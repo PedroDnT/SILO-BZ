@@ -608,7 +608,8 @@ def test_icbr_is_fetched_with_sgs_but_kept_out_of_the_served_registry():
 
     assert set(bp.RESEARCH_SGS_SERIES.values()) == {27574, 27575, 27576, 27577}
     assert not set(bp.RESEARCH_SGS_SERIES) & set(bp.SGS_SERIES)
-    with patch.object(bp, "get_pg_client"), patch.object(bp, "upsert_rows", return_value=0):
+    with patch.object(bp, "get_pg_client"), patch.object(bp, "upsert_rows", return_value=0), \
+         patch.object(bp.BacenIngestor, "_last_sgs_landing", return_value=None):
         ing = bp.BacenIngestor()
         seen = {}
 
