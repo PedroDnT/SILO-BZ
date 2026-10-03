@@ -269,3 +269,131 @@ def test_the_script_uses_only_the_public_sdk_and_never_a_database():
     assert "from silo_client import" in src
     for forbidden in ("psycopg2", "POSTGRES_URL", "cur.execute", "requests.post("):
         assert forbidden not in src
+
+
+# -- the first list (#461's sections 1 to 7) and the other-classes section ---------
+#
+# The first live run of the whole script (2026-10-03, #420) stopped at section 4 with an
+# IndexError, which hid sections 5 to 7, and the MGLU3 line then raised a TypeError of its
+# own. These tests keep both fixed, and keep the sections isolated from each other.
+
+SECTIONS = ["eter3", "prices_two", "page_edge", "hundred_tickers", "close_adj", "refusals", "ibov", "other_classes"]
+
+
+def _pull(rows):
+    import polars as pl
+    return pl.DataFrame({"ticker": [r[0] for r in rows], "trade_date": [r[1] for r in rows],
+                         "prior_no_trade_sessions": [r[2] for r in rows]})
+
+
+TAPE = ["2020-01-02", "2020-01-03", "2020-01-06", "2020-01-07"]
+
+
+def test_a_name_with_no_print_in_the_window_is_silent_only_when_its_own_walk_agrees():
+    big = _pull([("AAAA3", d, 0) for d in TAPE])
+    # BPAR3 traded twice in all (2019-02-21 and 2026-05-04): known ticker, empty window
+    walk = {"BPAR3": ["2019-02-21", "2026-05-04"], "LOST3": ["2021-03-01"]}
+    unexplained, silent = vrs.absences(["AAAA3", "BPAR3", "LOST3"], big, TAPE, lambda t: walk[t])
+    assert silent == ["BPAR3"]
+    assert unexplained == ["LOST3"], "a session the pull lost is an absence nothing explains"
+
+
+def test_a_missing_session_between_prints_is_still_unexplained():
+    big = _pull([("AAAA3", "2020-01-02", 0), ("AAAA3", "2020-01-07", 0)])   # two sessions skipped, none counted
+    assert vrs.absences(["AAAA3"], big, TAPE, lambda t: [])[0] == ["AAAA3"]
+    counted = _pull([("AAAA3", "2020-01-02", 0), ("AAAA3", "2020-01-07", 2)])
+    assert vrs.absences(["AAAA3"], counted, TAPE, lambda t: [])[0] == []
+
+
+def test_a_crash_in_any_first_list_section_is_its_own_fail_line_and_the_next_still_runs():
+    class Boom:
+        def __getattr__(self, name):
+            def call(*a, **k):
+                raise RuntimeError("boom")
+            return call
+
+    vrs.problems.clear()
+    vrs.run_sections(Boom())
+    for name in SECTIONS:
+        assert any(p.startswith(f"{name}: stopped by RuntimeError: boom") for p in vrs.problems), (name, vrs.problems)
+    assert len(vrs.problems) == len(SECTIONS)
+
+
+class CloseSilo:
+    """BBAS3's split, MGLU3's grouping and PETR4's raw close, as the live API serves them."""
+
+    def __init__(self, grouping=True):
+        self.grouping = grouping
+
+    def quote_history(self, ticker, start=None, end=None, board=None, fields=None):
+        days = [d for d in weekdays(str(start), str(end))]
+        if ticker == "BBAS3":
+            out = []
+            for d in days:
+                close = 56.0 if d < "2024-04-15" else (56.46 if d == "2024-04-15" else 27.91)
+                adj = close / 2 if d <= "2024-04-15" else close
+                out.append({"ticker": ticker, "trade_date": d, "close": close, "close_adj": adj})
+            keep = set(fields or ["ticker", "trade_date", "close_adj"]) | {"ticker", "trade_date"}
+            return [{k: v for k, v in r.items() if k in keep} for r in out]
+        if ticker == "MGLU3":
+            return [{"ticker": ticker, "trade_date": d, "close": 1.9 if d <= "2024-05-24" else 9.4,
+                     "close_adj": (1.9 * 8 if self.grouping else 1.9) if d <= "2024-05-24" else 9.4} for d in days]
+        if ticker == "PETR4":
+            return [{"ticker": ticker, "trade_date": d, "close": 31.0} for d in days]
+        raise AssertionError(ticker)
+
+
+def test_the_close_adj_section_reads_the_next_session_by_date_not_by_comparing_rows():
+    vrs.problems.clear()
+    vrs._close_adj(CloseSilo(), {})
+    assert vrs.problems == []
+
+
+def test_the_close_adj_section_fails_when_the_grouping_is_not_adjusted():
+    vrs.problems.clear()
+    vrs._close_adj(CloseSilo(grouping=False), {})
+    assert any("MGLU3 grouping 2024-05-24 lifts the earlier level" in p for p in vrs.problems)
+
+
+class ClassSilo:
+    """A fund quota, an index and a BDR: no close_adj, the raw close when selected."""
+
+    CLASSES = {"BOVA11": "fund_quota", "IBOV11": "index", "AAPL34": "bdr"}
+
+    def __init__(self, serves_default=False, wrong_class=False):
+        self.serves_default, self.wrong_class = serves_default, wrong_class
+
+    def quote_history(self, ticker, start=None, end=None, board=None, fields=None):
+        if fields is None:
+            if self.serves_default:
+                return [{"ticker": ticker, "trade_date": "2025-12-01", "close_adj": 1.0}]
+            raise SiloError(400, '{"code":"22023","details":"reason=adjustment_unavailable; cause=outside research universe"}', "u")
+        cls = "equity" if self.wrong_class else self.CLASSES[ticker]
+        return [{"ticker": ticker, "trade_date": "2025-12-01", "close": 10.0, "asset_class": cls}]
+
+
+def test_the_other_classes_section_passes_on_the_documented_behaviour():
+    vrs.problems.clear()
+    vrs._other_classes(ClassSilo(), {})
+    assert vrs.problems == []
+
+
+@pytest.mark.parametrize("kwargs,needle", [
+    ({"serves_default": True}, "the default series refuses naming the cause"),
+    ({"wrong_class": True}, "raw close is served when selected"),
+])
+def test_the_other_classes_section_fails_on_each_defect(kwargs, needle):
+    vrs.problems.clear()
+    vrs._other_classes(ClassSilo(**kwargs), {})
+    assert any(needle in p for p in vrs.problems), vrs.problems
+
+
+def test_a_failing_history_read_fails_only_the_leak_line_and_the_other_as_of_lines_still_run():
+    from silo_client import SiloTimeout
+
+    class SlowHistory(FakeSilo):
+        def financial_statement_history(self, *a, **k):
+            raise SiloTimeout('{"code":"57014"}', "u")
+
+    problems = run(SlowHistory())
+    assert len(problems) == 1 and problems[0].startswith("as_of_leak: stopped by SiloTimeout"), problems
