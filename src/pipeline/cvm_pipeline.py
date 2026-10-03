@@ -351,6 +351,35 @@ def _trailing_months(today: date, lookback: int) -> List[Tuple[int, int]]:
     return list(reversed(months))
 
 
+# The four CDA blocks (issue #551). CVM publishes a CDA month partial and
+# completes it about 90 days after month-end (measured 2026-10-03, #549: block 1
+# of 2026-06 held ~7.3k funds against 11.5k-12.6k in a complete month). A month
+# that landed partial has an ok log row, so the gap-aware window never re-reads
+# it. These doc types are therefore re-fetched on every daily run, loaded or not,
+# for every month up to M+5 (month M stays in until month M+5 ends): a fixed
+# floor, also kept when the gap check cannot reach the database. One archive per
+# month serves all four blocks (the fetcher's URL-keyed cache, per run).
+_CDA_DOC_TYPES = frozenset({"cda", "cda_acoes", "cda_cotas", "cda_debentures"})
+_CDA_REFRESH_MONTHS = max(1, _env_int("CVM_CDA_REFRESH_MONTHS", 5))
+
+
+def _cda_refresh_months(today: date) -> List[Tuple[int, int]]:
+    """Months M with M <= today's month <= M + _CDA_REFRESH_MONTHS, oldest first."""
+    return _trailing_months(today, _CDA_REFRESH_MONTHS + 1)
+
+
+def _fii_daily_years(today: date) -> List[int]:
+    """Years whose FII yearly files the daily run re-fetches.
+
+    The current year, plus the previous one from January to March: December's
+    monthly reports and the year's last periodic filings are delivered (and
+    restated) early in the next year, into last year's file (issue #551).
+    """
+    if today.month <= 3:
+        return [today.year - 1, today.year]
+    return [today.year]
+
+
 # FIDC tabs I, II, VIII, X and X_7: HIST/ yearly ZIPs cover 2013-2024 and the
 # monthly ZIPs start 2025-01 — the same boundary backfill() splits
 # cvm_fidc_mensal on. The header is identical across that boundary, but not
@@ -726,8 +755,14 @@ class CVMIngestor:
         recent lag without re-fetching deep history. The (entity, doc_type) pair
         must match the strings the ingest method logs via _log_start. On any DB
         error it degrades to current + previous only.
+
+        The four CDA blocks also always get every month up to M+5
+        (_cda_refresh_months), loaded or not, because CVM completes them late;
+        that floor holds on a DB error too.
         """
         base = set(_daily_month_pairs(today))
+        if entity == "fi" and doc_type in _CDA_DOC_TYPES:
+            base |= set(_cda_refresh_months(today))
         window = _trailing_months(today, _DAILY_LOOKBACK_MONTHS)
         try:
             years = sorted({y for y, _ in window})
@@ -2239,10 +2274,15 @@ class CVMIngestor:
         return tasks
 
     def _plan_daily_annual_tasks(
-        self, daily_entities: Set[str], year: int
+        self, daily_entities: Set[str], year: int, today: Optional[date] = None
     ) -> List[IngestTask]:
-        """Plan current-year slices without executing or auditing them."""
+        """Plan current-year slices without executing or auditing them.
+
+        FII also gets the previous year from January to March when `today` is
+        given (_fii_daily_years).
+        """
         tasks: List[IngestTask] = []
+        fii_years = _fii_daily_years(today) if today is not None else [year]
         # FIP — refresh current year
         if "fip" in daily_entities:
             for _, doc_type in FIP_PERIODIC_CONFIGS:
@@ -2252,25 +2292,26 @@ class CVMIngestor:
                     self.ingest_fip_periodic(doc_type, year),
                 ))
 
-        # FII — refresh current year
+        # FII: the current year, plus the previous one in Q1 (issue #551)
         if "fii" in daily_entities:
-            for doc_type in FII_MENSAL_DOC_TYPES:
+            for fii_year in fii_years:
+                for doc_type in FII_MENSAL_DOC_TYPES:
+                    tasks.append(IngestTask(
+                        "cvm_fii_mensal",
+                        f"fii/{doc_type} {fii_year}",
+                        self.ingest_fii_mensal(doc_type, fii_year),
+                    ))
+                for doc_type in FII_PERIODIC_DOC_TYPES:
+                    tasks.append(IngestTask(
+                        "cvm_fii_periodic",
+                        f"fii/{doc_type} {fii_year}",
+                        self.ingest_fii_periodic(doc_type, fii_year),
+                    ))
                 tasks.append(IngestTask(
-                    "cvm_fii_mensal",
-                    f"fii/{doc_type} {year}",
-                    self.ingest_fii_mensal(doc_type, year),
+                    "cvm_fii_imovel",
+                    f"fii/trimestral_imovel {fii_year}",
+                    self.ingest_fii_imovel(fii_year),
                 ))
-            for doc_type in FII_PERIODIC_DOC_TYPES:
-                tasks.append(IngestTask(
-                    "cvm_fii_periodic",
-                    f"fii/{doc_type} {year}",
-                    self.ingest_fii_periodic(doc_type, year),
-                ))
-            tasks.append(IngestTask(
-                "cvm_fii_imovel",
-                f"fii/trimestral_imovel {year}",
-                self.ingest_fii_imovel(year),
-            ))
 
         # CIA_ABERTA — current-year IPE, FCA, ITR, and DFP slices.
         if "cia_aberta" in daily_entities:
@@ -2359,7 +2400,7 @@ class CVMIngestor:
         if "cia_aberta" in daily_entities:
             await self.ingest_cia_cad()
 
-        tasks.extend(self._plan_daily_annual_tasks(daily_entities, year))
+        tasks.extend(self._plan_daily_annual_tasks(daily_entities, year, today))
 
         await self._run_task_batches(
             tasks,
