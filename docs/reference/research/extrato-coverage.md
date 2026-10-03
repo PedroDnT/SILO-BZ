@@ -3,7 +3,7 @@
 Wayfinder research ticket #524, part of map #510 (portfolio-diagnosis demo).
 Measured 2026-10-02 23:38 to 23:44 UTC-3 (2026-10-03 02:38 to 02:44 UTC). Every
 HTTP call is a public GET of a CVM file, run on a GitHub Actions runner. Two
-read-only, bounded SELECTs against the production Supabase project
+read-only, bounded SELECTs (one errored) against the production Supabase project
 `zcjbtpxuhdekpwcxmepn` (section 6). Nothing was written to any database. This
 file lives on the throwaway branch `research/extrato-coverage` and is never
 merged. It builds on `research/lamina-coverage` (#514, same universe, same
@@ -41,7 +41,7 @@ balancete-derived estimate).
    and where they differ by more than 5% neither is closer to the estimate in a
    way that holds up: 582 extrato, 809 lâmina overall (the lâmina rows are mostly
    the 2024-09 snapshot), 160 against 158 on lâminas from the last 12 months.
-7. **Recommendation: Extrato primary, lâmina second.** The Extrato adds 17,939
+7. **Recommendation: Extrato primary, lâmina second.** The Extrato adds 18,150
    funds to the lâmina's fee coverage (22,285 funds have either, 85.6%; the lâmina
    adds only 323 the Extrato lacks) and is one row per fund. Show the value
    "as filed on DT_COMPTC", treat 0 as unknown, drop values above 5, and keep the
@@ -55,7 +55,7 @@ balancete-derived estimate).
 | Page shows "Última Atualização 2 de outubro de 2026, 07:00 (UTC-04:00)", i.e. 08:00 UTC-3 (11:00 UTC) if the label is right. The page lists resources for the current file and 2021..2026 | same | same |
 | The directory also has `extrato_fi_2015.csv` .. `extrato_fi_2020.csv` (not on the page's resource list), so "yearly files since 2021" in the ticket understates it. `extrato_fi.csv` is listed as 33M, last modified "02-Oct-2026 01:21" (timezone of the listing not stated); the 2022..2026 yearly files all "26-Sep-2026 11:29..11:31" | <https://dados.cvm.gov.br/dados/FI/DOC/EXTRATO/DADOS/> | 2026-10-02 about 23:36 UTC-3 (2026-10-03 about 02:36 UTC), live (`cacheState: miss`) |
 | Dictionary: `TAXA_ADM` decimal(15,6) "Taxa de administração" (no unit stated); `TAXA_PERFM` numeric(27,12); `DT_COMPTC` "Data de competência do documento"; `CNPJ_FUNDO_CLASSE` varchar(18) "CNPJ do fundo/classe"; `CLASSE_ANBIMA`, `EXISTE_TAXA_*`, `TAXA_INGRESSO_*`, `TAXA_SAIDA_*`, `TAXA_CUSTODIA_MAX` are defined as the ticket lists them | <https://dados.cvm.gov.br/dados/FI/DOC/EXTRATO/META/meta_extrato_fi.txt> | same (file is ISO-8859-1, accents arrive as U+FFFD through Firecrawl; the runner decoded it correctly) |
-| The XML standard behind the file says `TX_ADM` "para fundos destinados a investidores não qualificados, esse campo deve ser numérico e preenchido com % ao ano (base 252); para fundos destinados exclusivamente a investidores qualificados, preencha conforme estabelecida em regulamento (limitado a 400 caracteres)" | <https://cvmweb.cvm.gov.br/SWB/Sistemas/SCW/PadroesXML/PadraoXMLInfExtratoV2.asp> (linked from the dataset page) | 2026-10-03 about 00:00 UTC-3 (03:00 UTC), through Firecrawl |
+| The XML standard behind the file says `TX_ADM` "para fundos destinados a investidores não qualificados, esse campo deve ser numérico e preenchido com % ao ano (base 252); para fundos destinados exclusivamente a investidores qualificados, preencha conforme estabelecida em regulamento (limitado a 400 caracteres)" | <https://cvmweb.cvm.gov.br/SWB/Sistemas/SCW/PadroesXML/PadraoXMLInfExtratoV2.asp> (linked from the dataset page) | 2026-10-02 about 23:55 UTC-3 (2026-10-03 about 02:55 UTC), through Firecrawl |
 
 ## 2. Method
 
@@ -200,7 +200,7 @@ n = 3,812). Exactly equal: 2,264 (59.4%); within 5%: 60.8%. Both exactly 0:
 lâmina age: 12 months or less, n = 991, 62.0% equal; older, n = 2,821, 58.5%
 equal. Where the lâmina `TAXA_ADM` is empty and it gives a min/max (variable
 fee) but the Extrato has a value (n = 960): Extrato inside [min, max] for 84.9%
-(of the 772 with a positive min), median Extrato/min 1.22.
+of the 960; median Extrato/min 1.22 (n = 772 with a positive min).
 
 **Which is closer to the balancete estimate when they differ by more than 5%**
 (n = 1,391 with an estimate): Extrato closer for 582, lâmina for 809. On lâminas of
@@ -215,7 +215,7 @@ a year). 377 have any lâmina and 323 have a lâmina `TAXA_ADM`. None is in
 `extrato_fi_2015..2026`: they never filed an Extrato in these files. I checked
 the names of the five largest absent funds and the two absent demo funds with
 two bounded SELECTs on `cvm_fund_registry` (columns `cnpj`, `fund_name`,
-`status`, `tp_fundo`, `dt_reg`; 2026-10-03 about 00:00 UTC-3, 03:00 UTC): six of
+`status`, `tp_fundo`, `dt_reg`; 2026-10-02 about 23:50 UTC-3, 2026-10-03 about 02:50 UTC): six of
 the seven are "Classes de Cotas de Fundos FIF" registered 2023-11 to 2025-12
 (Bradesco Ultra Previdência FIE II 2025-06, Health Cash 2023-11, Bradesco
 Debêntures Incentivadas CDI II 2024-04, MT Global II 2025-12, XP Bancos FIC FIF
@@ -236,7 +236,7 @@ estimate and the lâmina is not). 50088190000119 and 51488342000133 are absent
 ## 7. Recommendation, and what was not verified
 
 **Should the Extrato be the primary disclosed-fee source, the lâmina second?**
-Yes, for a fund-coverage reason, with three rules:
+Yes, for a fund-coverage reason, with four rules:
 
 1. Coverage decides it: 84.3% against 15.9% (4.6% from the last year), one row
    per fund, class CNPJ, current as of the day.
