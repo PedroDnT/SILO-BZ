@@ -50,3 +50,16 @@ They do not. CVM keeps only the latest version, dates are rewritten between
 years and follow the segment spell rather than the ticker code, and most
 delisted tickers vanish with no end date. Tape first/last observed stays the
 primitive.
+
+## Portfolio diagnosis demo, phase 0
+
+[`portfolio-diagnosis-phase0.md`](portfolio-diagnosis-phase0.md) (design
+`docs/planning/PORTFOLIO_DIAGNOSIS.md`, original map #340) maps the 14 blocks of
+the portfolio-diagnosis demo against what schema `api` and the warehouse hold on
+2026-10-02: none of the three set-based functions exists, nothing reads the
+balancete fee summary, the screens take no CNPJ, Tesouro has no price series, CDA
+blocks 3, 5, 7 and 8 are not ingested. It gives the coverage matrix by asset
+class, the blockers, a candidate demo portfolio, the slice plan for Sunday
+2026-10-04 and eight decisions for the owner. Every live count is marked not
+measured (the session could not reach the database); the SQL that measures them
+is `scripts/health_diagnostics/19_portfolio_phase0.sql`.
