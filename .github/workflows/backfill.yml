@@ -57,6 +57,7 @@ on:
           - cda_cotas
           - cda_debentures
           - perfil_mensal
+          - lamina
       fi_repair_gaps:
         description: "FI only: fetch ONLY the months missing from the fi_doc_type table (reads the table, not the audit log). Requires a specific fi_doc_type."
         type: boolean
@@ -337,6 +338,7 @@ jobs:
                   cda_acoes_months = ok_months(cur, "cda_acoes", year)
                   cda_cotas_months = ok_months(cur, "cda_cotas", year)
                   cda_deb_months = ok_months(cur, "cda_debentures", year)
+                  lamina_months = ok_months(cur, "lamina", year)
                   yearly_status = None
                   requested_doc_for_query = "${{ inputs.fi_doc_type }}"
                   if requested_doc_for_query != "all":
@@ -385,6 +387,7 @@ jobs:
                   "cda_acoes": cda_acoes_months,
                   "cda_cotas": cda_cotas_months,
                   "cda_debentures": cda_deb_months,
+                  "lamina": lamina_months,
               }
               # .get, not []: this runs outside the try/except above, so a doc
               # type the gate has not learned yet would abort the dispatch

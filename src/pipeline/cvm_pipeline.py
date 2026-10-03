@@ -43,6 +43,7 @@ from src.pipeline.ingest_fi import (
     ingest_fi_cda,
     ingest_fi_cda_acoes,
     ingest_fi_cda_debentures,
+    ingest_fi_lamina,
     ingest_fi_cda_cotas,
     ingest_fi_perfil,
     ingest_fi_balancete,
@@ -177,7 +178,7 @@ _PAGE_SIZE = 5000
 _ALL_TABLES: List[str] = [
     "cvm_fi_diario", "cvm_fi_cda", "cvm_fi_cda_acoes", "cvm_fi_cda_cotas",
     "cvm_fi_cda_debentures",
-    "cvm_fi_perfil", "cvm_fi_balancete_resumo",
+    "cvm_fi_perfil", "cvm_fi_balancete_resumo", "cvm_fi_lamina",
     "cvm_fidc_mensal", "cvm_fidc_tranche", "cvm_fidc_tranche_flows", "cvm_fidc_aging",
     "cvm_fidc_setor", "cvm_fidc_scr", "cvm_fidc_sacado", "cvm_fidc_cedente",
     "cvm_fidc_garantia",
@@ -1031,6 +1032,31 @@ class CVMIngestor:
         return rows_inserted
 
     # ------------------------------------------------------------------
+    # FI — lamina (CVM fi-doc-lamina): the fees and redemption terms a fund files
+    # ------------------------------------------------------------------
+
+    async def ingest_fi_lamina(self, year: int, month: int) -> int:
+        """One monthly lamina_fi_YYYYMM.zip, its main member only.
+
+        The zip also holds lamina_fi_carteira_, _rentab_ano_ and _rentab_mes_
+        members; they are not ingested. A month CVM has not published 404s and is
+        logged `skipped` by _log_finish, not `error`.
+        """
+        run_id = str(uuid4())
+        self._log_start(run_id, "fi", "lamina", year, month)
+        rows_inserted = 0
+        try:
+            raw_rows = await self._fetch_all_pages("fi", "lamina", year, month)
+            rows_inserted = await self._store(ingest_fi_lamina, self._supabase, raw_rows)
+        except Exception as exc:
+            logger.warning("ingest_fi_lamina %d-%02d failed: %s", year, month, _describe(exc))
+            self._log_finish(run_id, 0, _describe(exc))
+            return 0
+        self._log_finish(run_id, rows_inserted, fetched=len(raw_rows))
+        logger.info("fi/lamina %d-%02d: %d rows", year, month, rows_inserted)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
     # FI — monthly balance sheet  (BALANCETE)
     # ------------------------------------------------------------------
 
@@ -1649,7 +1675,7 @@ class CVMIngestor:
         """Full historical backfill for all entities from start_year to today.
 
         Pass entity_filter to restrict to one entity. doc_type_filter is an
-        FI-only repair control: inf_diario | cda | perfil_mensal | balancete.
+        FI-only repair control: inf_diario | cda | perfil_mensal | balancete | lamina.
 
         months is an explicit [(year, month), ...] whitelist for the FI monthly
         loop — the gap-repair path. It replaces the generated year x month grid
@@ -1666,7 +1692,7 @@ class CVMIngestor:
         # the others is a dispatch that dies before fetching anything.
         fi_doc_types = {
             "inf_diario", "cda", "cda_acoes", "cda_cotas", "cda_debentures",
-            "perfil_mensal", "balancete",
+            "perfil_mensal", "balancete", "lamina",
         }
         if doc_type_filter not in fi_doc_types | {None}:
             raise ValueError(f"unsupported FI doc_type_filter: {doc_type_filter}")
@@ -1790,6 +1816,14 @@ class CVMIngestor:
                         "cvm_fi_perfil",
                         f"fi/perfil_mensal {year}-{month:02d}",
                         self.ingest_fi_perfil(year, month),
+                    ))
+                # Monthly files from 2019-01 (HIST/ holds 2014-2018 as other zips
+                # that this dataset does not read).
+                if year >= 2019 and _want_fi_doc("lamina"):
+                    fi_tasks.append(IngestTask(
+                        "cvm_fi_lamina",
+                        f"fi/lamina {year}-{month:02d}",
+                        self.ingest_fi_lamina(year, month),
                     ))
                 if _want_fi_doc("balancete"):
                     fi_tasks.append(IngestTask(
@@ -2079,6 +2113,9 @@ class CVMIngestor:
                 ("cvm_fi_cda_debentures", "fi", "cda_debentures", "cda_debentures", self.ingest_fi_cda_debentures),
                 ("cvm_fi_cda_cotas", "fi", "cda_cotas", "cda_cotas", self.ingest_fi_cda_cotas),
                 ("cvm_fi_perfil", "fi", "perfil_mensal", "perfil_mensal", self.ingest_fi_perfil),
+                # CVM updates the lamina zips weekly; the trailing window re-reads
+                # the current and previous month and probes any month with no ok row.
+                ("cvm_fi_lamina", "fi", "lamina", "lamina", self.ingest_fi_lamina),
                 # balancete used to live only on the deleted ingest Flask and
                 # sat empty in production. It is now on the daily/backfill specs.
                 # CVM publishes it monthly from 2019 (verified by ranged GET
