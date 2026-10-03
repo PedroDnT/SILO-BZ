@@ -16,7 +16,7 @@ import json
 import sys
 from pathlib import Path
 
-from src.portfolio.report import llm, redator, revisor
+from src.portfolio.report import adapt, llm, redator, revisor
 from src.portfolio.report.render import Narrative, html_to_pdf, render_html
 
 
@@ -77,6 +77,8 @@ def main(argv: list[str] | None = None) -> int:
         ap.error("give --out and/or --html")
 
     engine = json.loads(Path(args.engine).read_text(encoding="utf-8"))
+    if adapt.is_engine_output(engine):
+        engine = adapt.to_view(engine)  # the engine's schema 1.x, mapped to the report's view
     try:
         html_text, narrative = build(engine, args.provider, args.signature, not args.no_llm_review)
     except (llm.LLMError, redator.UnmaskedInputError) as exc:

@@ -300,6 +300,12 @@ def _apply_resolve(li: LineId, cands: list[dict], src: dict) -> dict[str, Any]:
         li.reason = "portfolio_resolve não encontrou candidato pelo nome (histórico) nem pelo CNPJ."
         return out
     top = cands[0]
+    out["tiebroken_by_quota"] = bool(
+        len(cands) > 1
+        and not top.get("ambiguous")
+        and "quota" in str(top.get("reason") or "").lower()
+        and (cands[1].get("quota_rel_diff") is None or (dec(cands[1].get("quota_rel_diff")) or 0) > (dec(top.get("quota_rel_diff")) or 0))
+    )
     if top.get("ambiguous"):
         li.status = "ambiguous"
         li.reason = top.get("reason") or "Mais de um fundo plausível; a cota não desempata."

@@ -21,7 +21,7 @@ from src.portfolio.common import add_months, brl, iso, month_start, statement_so
 from src.portfolio.fees import compute_fees
 from src.portfolio.identify import LineId, identify
 from src.portfolio.indexer import compute_indexer
-from src.portfolio.lookthrough import compute_lookthrough
+from src.portfolio.lookthrough import add_portfolio_shares, compute_lookthrough
 from src.portfolio.restatements import compute_restatements
 from src.portfolio.sector import compute_sector
 from src.portfolio.signals import compute_signals
@@ -29,7 +29,7 @@ from src.portfolio.statement import Position, Statement
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 ENGINE_VERSION = "0.1.0"
 # Documented fixed lags until a coverage()-driven default exists (see engine-output.md).
 CDA_LAG_MONTHS = 4
@@ -188,8 +188,10 @@ def run_engine(
 
     ident, lines = identify(stmt, client)
     look, exposures = compute_lookthrough(lines, client, params.cda_month, params.max_depth)
+    add_portfolio_shares(look, exposures, stmt.sum_of_lines)
     fund_nodes = {ln["line_no"]: ln.get("fund_nodes", []) for ln in look["lines"]}
     fees = compute_fees(lines, client, params.fee_month, fund_nodes)
+    _fee_totals_as_portfolio_pct(fees, stmt.sum_of_lines)
     unexplained = _unexplained_values(lines, look)
     indexer = compute_indexer(lines, exposures, unexplained)
     sector = compute_sector(
@@ -229,6 +231,14 @@ def run_engine(
     }
     log.info("engine done: %d tool calls", len(client.provenance))
     return doc
+
+
+def _fee_totals_as_portfolio_pct(fees: dict[str, Any], total: Decimal) -> None:
+    """Totals as a percent of the whole portfolio (kept apart: disclosed and estimate are never combined)."""
+    t = fees["totals"]
+    for src, dst in (("adm_disclosed_fixed_per_year_brl", "adm_disclosed_fixed_portfolio_pct"),
+                     ("estimate_adm_per_year_brl", "estimate_adm_portfolio_pct")):
+        t[dst] = float((Decimal(str(t[src])) / total * 100).quantize(Decimal("0.0001"))) if total else None
 
 
 def _unexplained_values(lines: list[LineId], look: dict[str, Any]) -> dict[int, Decimal]:

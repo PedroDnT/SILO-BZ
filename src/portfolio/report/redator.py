@@ -130,7 +130,7 @@ Regra zero: todo número vem do JSON. Você nunca escreve um algarismo. Cada val
 
 O que escrever, nesta ordem de importância:
 1. identificacao: a carteira identificada fundo a fundo; linhas ambíguas e como foram desempatadas; fundos que mudaram de nome; linhas não identificadas e o motivo.
-2. taxas: quanto a carteira custa em taxas, sempre dizendo se é taxa divulgada ou estimativa pelo balancete.
+2. taxas: a taxa de administração DIVULGADA de cada fundo (fees.by_line[i].disclosed_pct_year, com a origem e a data em disclosed_origin_label e disclosed_as_of); a estimativa do balancete só como comparação, sempre dita "estimativa, não divulgada" e nunca somada nem apresentada como a taxa; sem taxa divulgada, diga "taxa divulgada não encontrada"; um 0 informado é "valor 0 informado (provavelmente não preenchido)", nunca custo zero; um valor fora de 0 a 5% a.a. é "valor implausível descartado" (o valor informado fica em implausible_raw); taxa defasada (disclosed_stale) é dita defasada; é taxa da classe quando disclosed_scope_label diz; taxa de performance e demais termos como o JSON traz, sem interpretar; a taxa do master de um FIC nunca se soma à do FIC (fees.underlying é "não somada"); o total de despesas declarado (expense_ratio_pct) é outra coisa e nunca se soma.
 3. exposicao: onde a carteira se sobrepõe e o que está por baixo (look-through, exposição compartilhada, indexador, setor). Mostre "sem classificação" quando houver.
 4. achados: o que ninguém pegaria à mão (fundo renomeado, reapresentação, sinal de risco, linha ambígua, dois fundos com a mesma carteira por baixo).
 5. reapresentacoes: cada reapresentação, com o texto de avaliação que o JSON traz ("revisado, não avaliado"); não julgue materialidade.
@@ -254,29 +254,78 @@ def template_findings(engine: dict) -> dict:
     fees = engine.get("fees") or {}
     by_line = fees.get("by_line") or []
     fee_prov = _ids(*[b.get("provenance") for b in by_line])
-    if fees.get("total_estimated_brl_year") is not None:
-        add("taxas", "Custo estimado em taxas",
-            "O custo anual estimado em taxas é de {{fees.total_estimated_brl_year}}, "
-            "ou {{fees.weighted_estimated_pct_year}} ao ano sobre a carteira. "
-            "Base do cálculo: {{fees.basis}}.", fee_prov)
-    if fees.get("total_disclosed_brl_year") is None and by_line:
-        add("taxas", "Taxa divulgada ausente",
-            "Nenhuma linha tem a taxa divulgada nos dados do SILO, então o custo acima é estimado e não declarado pelo fundo.",
-            fee_prov)
-    known = [(i, b) for i, b in enumerate(by_line) if b.get("estimated_pct_year") is not None]
-    if known:
-        i, b = max(known, key=lambda t: t[1]["estimated_pct_year"])
-        q = f"fees.by_line[{i}]"
-        txt = (f"A taxa estimada mais alta é a da linha {{{{{q}.line_id}}}}, CNPJ {{{{{q}.cnpj}}}}: "
-               f"{{{{{q}.estimated_pct_year}}}} ao ano, cerca de {{{{{q}.estimated_brl_year}}}} por ano.")
-        if b.get("estimated_pct_year_high") is not None:
-            txt += f" Conforme o mês de referência, a estimativa chega a {{{{{q}.estimated_pct_year_high}}}}."
-        add("taxas", "Maior custo estimado", txt, b.get("provenance"))
-    for i, b in enumerate(by_line):
-        if b.get("label") == "desconhecido":
-            add("taxas", "Taxa não estimada",
-                f"A taxa da linha {{{{fees.by_line[{i}].line_id}}}} não foi estimada: {{{{fees.by_line[{i}].reason}}}}.",
-                _ids(b.get("provenance"), fee_prov))
+    new_view = any("fee_status" in b for b in by_line)
+    if new_view:
+        # catalog v52 view: the disclosed fee first, the estimate beside it and labelled
+        if fees.get("total_disclosed_brl_year") is not None:
+            add("taxas", "Custo em taxas divulgadas",
+                "As taxas de administração divulgadas somam {{fees.total_disclosed_brl_year}} por ano, "
+                "ou {{fees.total_disclosed_pct_year}} ao ano sobre a carteira, nos fundos com taxa fixa utilizável.", fee_prov)
+        else:
+            add("taxas", "Taxa divulgada ausente",
+                "Nenhum fundo da carteira tem taxa de administração fixa e utilizável divulgada nos dados do SILO.", fee_prov)
+        if fees.get("total_estimated_brl_year") is not None:
+            add("taxas", "Estimativa do balancete, à parte",
+                "A estimativa do balancete, {{fees.estimate_label}}, soma {{fees.total_estimated_brl_year}} por ano, "
+                "ou {{fees.weighted_estimated_pct_year}} ao ano sobre a carteira. Ela é um controle e não é somada à taxa divulgada.", fee_prov)
+        for i, b in enumerate(by_line):
+            q = f"fees.by_line[{i}]"
+            if b.get("disclosed_pct_year") is not None:
+                txt = (f"A taxa de administração divulgada da linha {{{{{q}.line_id}}}} é {{{{{q}.disclosed_pct_year}}}} ao ano, "
+                       f"cerca de {{{{{q}.disclosed_brl_year}}}} por ano. Origem: {{{{{q}.disclosed_origin_label}}}}, "
+                       f"data {{{{{q}.disclosed_as_of}}}}.")
+                if b.get("disclosed_scope_label"):
+                    txt += f" É {{{{{q}.disclosed_scope_label}}}}."
+                if b.get("disclosed_stale"):
+                    txt += f" Está {{{{{q}.disclosed_stale_label}}}}."
+                if b.get("estimated_pct_year") is not None:
+                    txt += (f" Estimativa do balancete, à parte: {{{{{q}.estimated_pct_year}}}} ao ano "
+                            f"({{{{{q}.estimate_label}}}}).")
+                add("taxas", "Taxa de administração divulgada", txt, b.get("provenance"))
+            elif b.get("disclosed_min_pct_year") is not None:
+                add("taxas", "Faixa de taxa divulgada",
+                    f"A linha {{{{{q}.line_id}}}} tem classes com taxas diferentes: faixa divulgada de {{{{{q}.disclosed_min_pct_year}}}} "
+                    f"a {{{{{q}.disclosed_max_pct_year}}}} ao ano.", b.get("provenance"))
+            elif b.get("filed_zero_label"):
+                add("taxas", "Taxa zero informada",
+                    f"Na linha {{{{{q}.line_id}}}} a fonte traz {{{{{q}.filed_zero_label}}}}. Não é contado como custo zero nem somado.",
+                    b.get("provenance"))
+            elif b.get("implausible_label"):
+                add("taxas", "Valor implausível descartado",
+                    f"Na linha {{{{{q}.line_id}}}} a fonte traz um valor fora de 0 a 5% ao ano: {{{{{q}.implausible_label}}}}. "
+                    f"Valor informado: {{{{{q}.implausible_raw}}}}.", b.get("provenance"))
+            else:
+                add("taxas", "Taxa divulgada não encontrada",
+                    f"A linha {{{{{q}.line_id}}}}: {{{{{q}.fee_status}}}}. {{{{{q}.reason}}}}", _ids(b.get("provenance"), fee_prov))
+        for i, fi in enumerate(fees.get("findings") or []):
+            if fi.get("level") == "atenção":
+                q = f"fees.findings[{i}]"
+                add("achados", "Taxa: sinal de atenção",
+                    f"Linha {{{{{q}.line_id}}}}: {{{{{q}.text}}}}", fi.get("provenance"))
+    else:
+        if fees.get("total_estimated_brl_year") is not None:
+            add("taxas", "Custo estimado em taxas",
+                "O custo anual estimado em taxas é de {{fees.total_estimated_brl_year}}, "
+                "ou {{fees.weighted_estimated_pct_year}} ao ano sobre a carteira. "
+                "Base do cálculo: {{fees.basis}}.", fee_prov)
+        if fees.get("total_disclosed_brl_year") is None and by_line:
+            add("taxas", "Taxa divulgada ausente",
+                "Nenhuma linha tem a taxa divulgada nos dados do SILO, então o custo acima é estimado e não declarado pelo fundo.",
+                fee_prov)
+        known = [(i, b) for i, b in enumerate(by_line) if b.get("estimated_pct_year") is not None]
+        if known:
+            i, b = max(known, key=lambda t: t[1]["estimated_pct_year"])
+            q = f"fees.by_line[{i}]"
+            txt = (f"A taxa estimada mais alta é a da linha {{{{{q}.line_id}}}}, CNPJ {{{{{q}.cnpj}}}}: "
+                   f"{{{{{q}.estimated_pct_year}}}} ao ano, cerca de {{{{{q}.estimated_brl_year}}}} por ano.")
+            if b.get("estimated_pct_year_high") is not None:
+                txt += f" Conforme o mês de referência, a estimativa chega a {{{{{q}.estimated_pct_year_high}}}}."
+            add("taxas", "Maior custo estimado", txt, b.get("provenance"))
+        for i, b in enumerate(by_line):
+            if b.get("label") == "desconhecido":
+                add("taxas", "Taxa não estimada",
+                    f"A taxa da linha {{{{fees.by_line[{i}].line_id}}}} não foi estimada: {{{{fees.by_line[{i}].reason}}}}.",
+                    _ids(b.get("provenance"), fee_prov))
 
     # exposicao
     lt = engine.get("lookthrough") or {}
@@ -353,7 +402,9 @@ def template_findings(engine: dict) -> dict:
         add("resumo", "A carteira em uma frase",
             "Das {{portfolio.n_lines}} linhas do extrato, {{portfolio.n_identified}} foram identificadas nos dados públicos.",
             line_prov)
-    if fees.get("total_estimated_brl_year") is not None:
+    if new_view and fees.get("total_disclosed_brl_year") is not None:
+        add("resumo", "Custo", "As taxas de administração divulgadas custam {{fees.total_disclosed_brl_year}} por ano nos fundos com taxa fixa utilizável.", fee_prov)
+    elif fees.get("total_estimated_brl_year") is not None:
         add("resumo", "Custo", "As taxas custam cerca de {{fees.total_estimated_brl_year}} por ano, por estimativa.", fee_prov)
     if lt.get("shared_exposure"):
         add("resumo", "Sobreposição",

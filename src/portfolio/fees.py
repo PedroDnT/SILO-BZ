@@ -4,11 +4,15 @@ Tool ``portfolio_fees(p_cnpjs, p_month)``: one batched call for the statement's 
 one for the funds they hold (the look-through's fund nodes). The owner insists the fee
 be CORRECT, so the rules are these:
 
-1. The headline is the DISCLOSED administration fee as filed, % a year, from the lâmina
-   (``cvm_fi_lamina``, newest reference month) and, when the lâmina gives none, from
-   CVM's cad_fi (``cvm_fund_registry``). The tool picks one source per fund. When
-   nothing is disclosed the line says ``taxa divulgada não encontrada`` and the estimate
-   is NEVER substituted for it.
+1. The headline is the DISCLOSED administration fee as filed, % a year. The tool picks ONE
+   source per fund, in this order, and names it in ``disclosed_origin``: the CVM Extrato
+   (``extrato``, ``cvm_fi_extrato``), the lâmina (``lamina``, newest reference month),
+   CVM's cad_fi (``cad_fi``). When nothing is disclosed the line says ``taxa divulgada
+   não encontrada`` and the estimate is NEVER substituted for it. The provenance sentence
+   follows ``disclosed_origin`` (an Extrato fee is not a cad_fi fee).
+   A filed 0 is ``valor 0 informado (provavelmente não preenchido)``: shown, never counted
+   as a zero cost and never summed. A filed value above 5 % a.a. (or below 0) is ``valor
+   implausível descartado``: not the fee, the raw value kept in its own field.
 2. The balancete estimate is its own field, always labelled ``estimativa, não
    divulgada``, with its method, beside the disclosed fee or alone. It is never averaged
    with the disclosed fee and never presented as the fee. In the fiscal-year reset month
@@ -16,14 +20,18 @@ be CORRECT, so the rules are these:
 3. ``PR_PL_DESPESA`` (the declared total expense ratio) is a separate field with its
    period, never added to the fee. ``portfolio_fees`` does not return it yet, so the field
    is present, empty, and says why.
-4. The lâmina date and ``age_months`` are always output; ``defasada`` when older than 24
-   months. For cad_fi the date is the day SILO read the row, not a filing date.
+4. The filing date and age are always output; ``defasada`` when older than 36 months for
+   the Extrato (age does not predict error there) and 24 for the lâmina. For cad_fi the date
+   is the day SILO read the row, not a filing date, and no age is claimed. An Extrato row is
+   a class fee for a CVM 175 class (``taxa da classe``): no subclass fee is assumed.
 5. A disclosed 0 is a disclosed 0 (never a missing fee), plus a finding when the
    balancete shows a clear expense. When there is no single value but a min and max, the
    range is output as filed. A finding (attention level) is raised when the estimate
    differs from a fixed disclosed fee by more than max(0.25 p.p. a.a., 25 % of it).
 6. The performance fee is text in the source: passed through verbatim, never parsed, and
-   never converted to R$ (it is a share of the excess return, not of the NAV).
+   never converted to R$ (it is a share of the excess return, not of the NAV). The Extrato's
+   other terms (performance parameters and method, entry and exit fees, custody fee) are
+   output as filed, with no reading.
 7. A feeder's fee is never added to its master's: every fund keeps its own. The funds a
    fund holds appear under ``underlying`` with their own fees, labelled ``não somada``.
 
@@ -56,11 +64,18 @@ ESTIMATE_LABEL = "estimativa, não divulgada"
 NOT_FOUND = "taxa divulgada não encontrada"
 NOT_ADDED = "não somada"
 FEE_TIPOS = ("fundo", "FIDC", "FII", "ETF")
-STALE_MONTHS = 24
+STALE_MONTHS = 24  # lâmina; the schema's historical top-level key
+STALE_MONTHS_BY_ORIGIN = {"extrato": 36, "lamina": 24, "cad_fi": None}
+ORIGIN_FROM_SOURCE = {"cvm_fi_extrato": "extrato", "cvm_fi_lamina": "lamina", "cvm_fund_registry (cad_fi)": "cad_fi"}
+ORIGIN_LABEL = {"extrato": "Extrato CVM", "lamina": "lâmina CVM", "cad_fi": "cadastro cad_fi da CVM"}
+ZERO_LABEL = "valor 0 informado (provavelmente não preenchido)"
+IMPLAUSIBLE_LABEL = "valor implausível descartado"
+IMPLAUSIBLE_ABOVE_PCT = Decimal("5")
 EXPENSE_RATIO_NOTE = (
-    "O total de despesas declarado (PR_PL_DESPESA, % do patrimônio médio no período) não é devolvido por "
-    "portfolio_fees nesta versão do contrato; quando for, entra aqui, com o período, e nunca é somado à taxa."
+    "Total de despesas declarado na lâmina (PR_PL_DESPESA, % do patrimônio médio no período indicado): "
+    "campo à parte, nunca somado à taxa de administração."
 )
+EXPENSE_RATIO_MISSING = "Sem total de despesas declarado na lâmina para este fundo."
 # 'clearly above zero' for the finding on a disclosed zero (percent a year of the estimate)
 CLEARLY_ABOVE_ZERO_PCT = Decimal("0.05")
 DIFF_ABS_PCT = Decimal("0.25")
@@ -124,14 +139,21 @@ def compute_fees(
 
     underlying = _underlying(fund_nodes or {}, client, fee_month, sec)
     unknown = [o for o in out_lines if o["fee_status"] == NOT_FOUND]
+    unusable = [o for o in out_lines if o["fee_status"] in (ZERO_LABEL, IMPLAUSIBLE_LABEL)]
     if unknown and sec.status != "unknown":
         sec.degrade(f"{len(unknown)} fundo(s) sem taxa divulgada encontrada.")
+    if unusable and sec.status != "unknown":
+        sec.degrade(f"{len(unusable)} fundo(s) com taxa informada que não é usada (valor 0 ou implausível).")
     return {
         **sec.head(),
         "month": fee_month.isoformat(),
         "estimate_label": ESTIMATE_LABEL,
         "not_found_label": NOT_FOUND,
         "stale_after_months": STALE_MONTHS,
+        "stale_after_months_by_origin": STALE_MONTHS_BY_ORIGIN,
+        "zero_label": ZERO_LABEL,
+        "implausible_label": IMPLAUSIBLE_LABEL,
+        "source_order": ["extrato", "lamina", "cad_fi"],
         "lines": out_lines,
         "underlying": underlying,
         "totals": _totals(out_lines),
@@ -148,8 +170,19 @@ def _empty_fee() -> dict[str, Any]:
     }
 
 
-def _expense_ratio() -> dict[str, Any]:
-    return {"declared_pct": None, "period": None, "source": None, "note": EXPENSE_RATIO_NOTE}
+def _expense_ratio(row: dict | None = None, src: dict | None = None) -> dict[str, Any]:
+    """The lâmina's declared total expense ratio, its own field with its period; never added to a fee."""
+    if row is None or row.get("lamina_pr_pl_despesa") is None:
+        return {"declared_pct": None, "period": None, "as_of": (row or {}).get("lamina_as_of"), "source": None,
+                "note": EXPENSE_RATIO_MISSING, "tool_note": (row or {}).get("lamina_expense_note")}
+    return {
+        "declared_pct": ratio(dec(row.get("lamina_pr_pl_despesa")), 4),
+        "period": {"from": row.get("lamina_dt_ini_despesa"), "to": row.get("lamina_dt_fim_despesa")},
+        "as_of": row.get("lamina_as_of"),
+        "source": "cvm_fi_lamina",
+        "note": EXPENSE_RATIO_NOTE,
+        "sources": [src] if src else [],
+    }
 
 
 def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> dict[str, Any]:
@@ -161,24 +194,47 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
     d_src = row.get("disclosed_source")
     as_of = row.get("disclosed_as_of")
     age = row.get("disclosed_age_months")
-    is_lamina = d_src == "cvm_fi_lamina"
-    has_disclosed = d_src is not None
-    stale = bool(is_lamina and isinstance(age, int) and age > STALE_MONTHS)
+    # The provenance follows disclosed_origin (catalog v52); a v51 row has only disclosed_source.
+    origin = row.get("disclosed_origin") or ORIGIN_FROM_SOURCE.get(d_src)
+    has_disclosed = d_src is not None or origin is not None
+    filed_zero = bool(row.get("filed_zero"))
+    implausible = bool(row.get("implausible_filed"))
+    raw_filed = dec(row.get("taxa_adm_filed_raw"))
+    limit = STALE_MONTHS_BY_ORIGIN.get(origin)
+    if isinstance(age, int) and limit is not None:
+        stale = age > limit
+    elif origin == "extrato" and isinstance(row.get("disclosed_age_days"), int):
+        stale = row["disclosed_age_days"] / 30.4375 > limit
+    else:
+        stale = False
+    tp = row.get("extrato_tp_fundo_classe")
+    scope_label = "taxa da classe" if tp == "CLASSES - FIF" else ("taxa do fundo" if origin == "extrato" and tp else None)
 
     disclosed: dict[str, Any] | None = None
     headline: dict[str, Any] | None = None
     if has_disclosed:
         disclosed = {
+            "origin": origin,
+            "origin_label": ORIGIN_LABEL.get(origin),
             "source": d_src,
             "as_of": as_of,
-            "as_of_meaning": (
-                "mês de referência da lâmina (dt_comptc)" if is_lamina else "dia em que o SILO leu o cad_fi, não data de entrega do fundo"
-            ),
+            "as_of_meaning": {
+                "extrato": "data de competência (DT_COMPTC) da versão mais recente do Extrato das Informações",
+                "lamina": "mês de referência da lâmina (dt_comptc)",
+                "cad_fi": "dia em que o SILO leu o cad_fi, não data de entrega do fundo",
+            }.get(origin),
             "age_months": age,
+            "age_days": row.get("disclosed_age_days"),
             "stale": stale,
             "stale_label": "defasada" if stale else None,
+            "stale_after_months": limit,
             "n_classes": row.get("disclosed_n_classes"),
             "note": row.get("disclosed_note"),
+            "filed_zero": filed_zero,
+            "filed_zero_label": ZERO_LABEL if filed_zero else None,
+            "implausible_filed": implausible,
+            "implausible_label": IMPLAUSIBLE_LABEL if implausible else None,
+            "adm_filed_raw": ratio(raw_filed, 6),  # as filed, unit read as % a year, plain number: never printed as a rate
             "adm_rate_pct_year": ratio(d_adm, 4),
             "adm_min_pct_year": ratio(d_min, 4),
             "adm_max_pct_year": ratio(d_max, 4),
@@ -189,21 +245,48 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
                 "Taxa de performance divulgada, em texto, como no documento de origem: percentual sobre o excedente "
                 "acima do referencial do regulamento. Não é % do patrimônio e o SILO não converte em R$."
             ),
+            "scope_label": scope_label,
+            "class_note": row.get("extrato_class_note"),
+            "terms_as_filed": _extrato_terms(row) if origin == "extrato" else None,
             "sources": [src],
         }
-        if d_adm is not None:
+        if implausible:
+            disclosed["rejected"] = {
+                "label": IMPLAUSIBLE_LABEL,
+                "raw_value": ratio(raw_filed, 6),
+                "rule": f"acima de {IMPLAUSIBLE_ABOVE_PCT}% a.a. (ou abaixo de 0): tratado como erro de escala e não usado",
+            }
+        if filed_zero:
+            headline = {
+                "kind": "zero_informado",
+                "basis": ZERO_LABEL,
+                "rate_pct_year": None,
+                "filed_pct_year": 0.0,
+                "per_year_brl": None,
+                "counted_as_cost": False,
+                "source": d_src,
+                "origin": origin,
+                "scope_label": scope_label,
+                "as_of": as_of,
+                "age_months": age,
+                "stale": stale,
+                "sources": [src],
+            }
+        elif d_adm is not None:
             headline = {
                 "kind": "fixa",
                 "basis": "taxa de administração divulgada",
                 "rate_pct_year": ratio(d_adm, 4),
                 "per_year_brl": brl(value * d_adm / 100),
                 "source": d_src,
+                "origin": origin,
+                "scope_label": scope_label,
                 "as_of": as_of,
                 "age_months": age,
                 "stale": stale,
                 "sources": [src],
             }
-        elif d_min is not None and d_max is not None:
+        elif d_min is not None and d_max is not None and not implausible:
             headline = {
                 "kind": "faixa",
                 "basis": "faixa de taxa de administração divulgada (classes com taxas diferentes)",
@@ -212,6 +295,7 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
                 "per_year_min_brl": brl(value * d_min / 100),
                 "per_year_max_brl": brl(value * d_max / 100),
                 "source": d_src,
+                "origin": origin,
                 "as_of": as_of,
                 "age_months": age,
                 "stale": stale,
@@ -255,8 +339,8 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
                     "kind": "estimativa_difere_da_divulgada",
                     "level": "atenção",
                     "text": (
-                        "A estimativa do balancete difere da taxa divulgada por mais de "
-                        "max(0,25 p.p. a.a.; 25% do valor divulgado)."
+                        "Estimativa e divulgada divergem por mais de max(0,25 p.p. a.a.; 25% do valor divulgado); "
+                        "isso não diz qual das duas está errada."
                     ),
                     "disclosed_pct_year": ratio(d_adm, 4),
                     "estimate_pct_year": ratio(est_adm, 4),
@@ -267,20 +351,47 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
     if stale:
         findings.append(
             {
-                "kind": "lamina_defasada",
+                "kind": "lamina_defasada" if origin == "lamina" else "taxa_defasada",
                 "level": "informação",
-                "text": f"A lâmina tem {age} meses de defasagem (mais de {STALE_MONTHS}).",
+                "text": (
+                    f"A taxa divulgada ({ORIGIN_LABEL.get(origin, origin)}) tem {age if age is not None else '?'} meses "
+                    f"de defasagem (mais de {limit})."
+                ),
+                "origin": origin,
                 "age_months": age,
                 "sources": [src],
             }
         )
+    if implausible:
+        findings.append(
+            {
+                "kind": "valor_implausivel_descartado",
+                "level": "informação",
+                "text": f"{IMPLAUSIBLE_LABEL.capitalize()}: a fonte informou uma taxa fora de 0 a {IMPLAUSIBLE_ABOVE_PCT}% a.a.",
+                "origin": origin,
+                "raw_value": ratio(raw_filed, 6),
+                "sources": [src],
+            }
+        )
 
-    if headline is not None:
+    # The reasons are the engine's own Portuguese; the tool's note (English, verbatim) stays in disclosed.note.
+    if headline is not None and headline["kind"] == "zero_informado":
+        status = ZERO_LABEL
+        reason = "A fonte informou taxa de administração igual a 0: lida como não informada, nunca como custo zero, e não somada."
+    elif headline is not None:
         status = "divulgada" if headline["kind"] == "fixa" else "faixa divulgada"
         reason = None
+    elif implausible:
+        status = IMPLAUSIBLE_LABEL
+        reason = (f"A fonte informou {ratio(raw_filed, 6)}: fora de 0 a {IMPLAUSIBLE_ABOVE_PCT}% a.a., tratado como erro de "
+                  "escala e não usado; o valor informado fica em campo à parte.")
     else:
         status = NOT_FOUND
-        reason = row.get("disclosed_note") or "nenhuma taxa de administração divulgada na lâmina nem no cad_fi"
+        reason = (
+            "Nenhuma taxa de administração única divulgada: as classes do fundo informam taxas diferentes ou nenhuma."
+            if has_disclosed
+            else "Nenhuma taxa de administração divulgada no Extrato, na lâmina nem no cad_fi."
+        )
     return {
         "fee_status": status,
         "reason": reason,
@@ -288,8 +399,34 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
         "disclosed": disclosed,
         "headline": headline,
         "estimate": estimate,
-        "expense_ratio": _expense_ratio(),
+        "expense_ratio": _expense_ratio(row, src),
         "findings": findings,
+    }
+
+
+def _extrato_terms(row: dict) -> dict[str, Any]:
+    """The Extrato's other terms exactly as filed: no reading, no conversion."""
+    return {
+        "tp_fundo_classe": row.get("extrato_tp_fundo_classe"),
+        "classe_anbima": row.get("extrato_classe_anbima"),
+        "performance": {
+            "exists": row.get("extrato_existe_taxa_perfm"),
+            "taxa_perfm_as_filed": ratio(dec(row.get("extrato_taxa_perfm")), 6),
+            "param_as_filed": row.get("extrato_param_taxa_perfm"),
+            "calc_as_filed": row.get("extrato_calc_taxa_perfm"),
+            "info_as_filed": row.get("extrato_inf_taxa_perfm"),
+        },
+        "entry": {
+            "exists": row.get("extrato_existe_taxa_ingresso"),
+            "pct_as_filed": ratio(dec(row.get("extrato_taxa_ingresso_pr")), 6),
+            "real_brl_as_filed": brl(dec(row.get("extrato_taxa_ingresso_real"))),
+        },
+        "exit": {
+            "exists": row.get("extrato_existe_taxa_saida"),
+            "pct_as_filed": ratio(dec(row.get("extrato_taxa_saida_pr")), 6),
+            "real_brl_as_filed": brl(dec(row.get("extrato_taxa_saida_real"))),
+        },
+        "custody_max_as_filed": ratio(dec(row.get("extrato_taxa_custodia_max")), 6),
     }
 
 
@@ -330,11 +467,15 @@ def _totals(lines: list[dict]) -> dict[str, Any]:
     range_hi = Decimal("0")
     est_adm = Decimal("0")
     est_perf = Decimal("0")
-    v_fixed = v_range = v_none = Decimal("0")
+    v_fixed = v_range = v_none = v_zero = v_implausible = Decimal("0")
     for o in lines:
         v = dec(o["position_value_brl"]) or Decimal("0")
         h = o.get("headline")
-        if h and h["kind"] == "fixa":
+        if h and h["kind"] == "zero_informado":
+            v_zero += v  # a filed 0 is not a fee: never counted as a zero cost, never summed
+        elif o.get("fee_status") == IMPLAUSIBLE_LABEL:
+            v_implausible += v
+        elif h and h["kind"] == "fixa":
             fixed += dec(h["per_year_brl"]) or Decimal("0")
             v_fixed += v
         elif h and h["kind"] == "faixa":
@@ -346,7 +487,7 @@ def _totals(lines: list[dict]) -> dict[str, Any]:
         e = o.get("estimate") or {}
         est_adm += dec(e.get("adm_per_year_brl")) or Decimal("0")
         est_perf += dec(e.get("perf_per_year_brl")) or Decimal("0")
-    total_value = v_fixed + v_range + v_none
+    total_value = v_fixed + v_range + v_none + v_zero + v_implausible
     return {
         "adm_disclosed_fixed_per_year_brl": brl(fixed),
         "adm_disclosed_range_low_per_year_brl": brl(range_lo),
@@ -362,6 +503,8 @@ def _totals(lines: list[dict]) -> dict[str, Any]:
         "fund_value_brl": brl(total_value),
         "fund_value_with_fixed_fee_brl": brl(v_fixed),
         "fund_value_with_fee_range_brl": brl(v_range),
-        "fund_value_without_disclosed_fee_brl": brl(v_none),
+        "fund_value_without_disclosed_fee_brl": brl(v_none + v_zero + v_implausible),
+        "fund_value_with_filed_zero_brl": brl(v_zero),
+        "fund_value_with_implausible_fee_brl": brl(v_implausible),
         "known_fee_fund_value_pct": pct(v_fixed + v_range, total_value) if total_value else None,
     }
