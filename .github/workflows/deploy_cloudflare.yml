@@ -1,0 +1,127 @@
+name: Deploy Cloudflare health
+
+# First safe Cloudflare deploy for the portfolio-diagnosis demo (map #510,
+# issue #519): deploys deploy/cloudflare/ — a Worker that answers GET /health
+# itself and GET /container/health by starting a health-only Container — then
+# proves both from the public *.workers.dev address. No engine, no upload, no
+# LLM key: the only runtime secret copied into the Worker is DEMO_ACCESS_TOKEN.
+# Manual on purpose, like deploy_mcp.yml: a merge deploys nothing.
+#
+# Needs the repository secrets CLOUDFLARE_API_TOKEN (account-owned, "Edit
+# Cloudflare Workers"), CLOUDFLARE_ACCOUNT_ID and DEMO_ACCESS_TOKEN, and the
+# account on Workers Paid. Prints status codes only, never a secret.
+
+on:
+  workflow_dispatch:
+  # TEMPORARY (iteration before merge): removed before the PR is opened.
+  push:
+    branches: [claude/cloudflare-health]
+    paths:
+      - "deploy/cloudflare/**"
+      - ".github/workflows/deploy_cloudflare.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-cloudflare-health
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy and verify silo-demo-health
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      DEMO_ACCESS_TOKEN: ${{ secrets.DEMO_ACCESS_TOKEN }}
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - name: Refuse without the secrets
+        run: |
+          missing=""
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          [ -n "$DEMO_ACCESS_TOKEN" ] || missing="$missing DEMO_ACCESS_TOKEN"
+          if [ -n "$missing" ]; then
+            echo "::error::Set the repository secret(s):$missing (issue #519)."
+            exit 1
+          fi
+
+      # Wrangler builds the Container image with the local Docker CLI.
+      - name: Docker on the runner
+        run: docker version --format 'client {{.Client.Version}}, server {{.Server.Version}}'
+
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install the pinned wrangler
+        working-directory: deploy/cloudflare
+        run: npm ci --no-audit --no-fund
+
+      - name: Deploy
+        id: deploy
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: deploy/cloudflare
+          command: deploy
+          secrets: |
+            DEMO_ACCESS_TOKEN
+
+      # Status codes only. /health is the Worker alone; /container/health
+      # starts the Container, so it is retried through the cold start.
+      - name: Verify the live Worker and Container
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: |
+          set -euo pipefail
+          base="${DEPLOYMENT_URL%/}"
+          if [ -z "$base" ]; then
+            echo "::error::wrangler reported no deployment URL (is a workers.dev subdomain registered on the account?)"
+            exit 1
+          fi
+          echo "Worker address: $base"
+          code() { curl -s -o /dev/null -w '%{http_code}' --max-time 60 "$@" || true; }
+
+          ok=""
+          for attempt in $(seq 1 12); do
+            c=$(code "$base/health")
+            echo "GET /health (attempt $attempt): $c"
+            if [ "$c" = 200 ]; then ok=1; break; fi
+            sleep 10
+          done
+          [ -n "$ok" ] || { echo "::error::/health never answered 200"; exit 1; }
+
+          c=$(code "$base/container/health")
+          echo "GET /container/health without the token: $c"
+          case "$c" in 401|403) ;; *) echo "::error::expected 401 or 403 without the token"; exit 1 ;; esac
+
+          c=$(code -H "x-demo-token: wrong" "$base/container/health")
+          echo "GET /container/health with a wrong token: $c"
+          case "$c" in 401|403) ;; *) echo "::error::expected 401 or 403 with a wrong token"; exit 1 ;; esac
+
+          c=$(code "$base/anything-else")
+          echo "GET /anything-else: $c"
+          [ "$c" = 404 ] || { echo "::error::expected 404 for an unknown path"; exit 1; }
+
+          start=$(date +%s)
+          ok=""
+          for attempt in $(seq 1 40); do
+            c=$(code -H "x-demo-token: $DEMO_ACCESS_TOKEN" "$base/container/health")
+            elapsed=$(( $(date +%s) - start ))
+            echo "GET /container/health with the token (attempt $attempt, ${elapsed}s): $c"
+            if [ "$c" = 200 ]; then ok=1; break; fi
+            sleep 10
+          done
+          [ -n "$ok" ] || { echo "::error::the Container never answered 200 within the retry window"; exit 1; }
+          echo "Container answered 200 after ${elapsed}s (first request after this deploy)."
+
+          c=$(code -H "x-demo-token: $DEMO_ACCESS_TOKEN" "$base/container/health")
+          echo "GET /container/health with the token, warm: $c"
+          [ "$c" = 200 ] || { echo "::error::the warm request did not answer 200"; exit 1; }
