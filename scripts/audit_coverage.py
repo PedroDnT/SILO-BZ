@@ -40,6 +40,7 @@ TABLES: List[Tuple[str, Optional[str]]] = [
     ("cvm_fi_perfil",            "period"),
     ("cvm_fi_balancete_resumo",  "dt_comptc"),
     ("cvm_fi_lamina",            "dt_comptc"),
+    ("cvm_fi_extrato",           "dt_comptc"),
     ("cvm_fidc_mensal",          "period"),
     ("cvm_fidc_tranche",         "period"),
     ("cvm_fidc_tranche_flows",   "period"),

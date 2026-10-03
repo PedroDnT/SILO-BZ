@@ -169,6 +169,26 @@ class DatasetConfig:
             "csv_name_pattern": "lamina_fi_{year}{month:02d}.csv",
             "description": "Fund lamina (fees, redemption terms, minimums) - monthly ZIP, main member only",
         },
+        # The Extrato das Informacoes (fi-doc-extrato): the terms and fees each fund
+        # or class files (TAXA_ADM, TAXA_PERFM, entry and exit fees, redemption
+        # terms, CLASSE_ANBIMA). Two plain CSVs, latin-1, ';', 117 columns, no zip.
+        # `extrato` is the current file, a snapshot: the latest version of every
+        # fund or class, one row per CNPJ, refreshed daily (34,155,539 bytes and
+        # 38,796 rows on 2026-10-03). It has no year or month, like `cad`.
+        # `extrato_ano` is one calendar year of versions (extrato_fi_2021.csv ..),
+        # refreshed weekly with re-filings: several rows per CNPJ, one per
+        # DT_COMPTC. Both probed 2026-10-03 (issue #524, run 37090491647); the
+        # header is identical in the current file and the 2020..2026 yearly files.
+        "extrato": {
+            "url_pattern": "{base_url}/FI/DOC/EXTRATO/DADOS/extrato_fi.csv",
+            "is_zip": False,
+            "description": "Fund extrato (fees, terms) - current snapshot, one row per CNPJ (static file, no year/month)",
+        },
+        "extrato_ano": {
+            "url_pattern": "{base_url}/FI/DOC/EXTRATO/DADOS/extrato_fi_{year}.csv",
+            "is_zip": False,
+            "description": "Fund extrato (fees, terms) - yearly file of every version filed that year",
+        },
         "balancete": {
             "url_pattern": "{base_url}/FI/DOC/BALANCETE/DADOS/balancete_fi_{year}{month:02d}.zip",
             "is_zip": True,

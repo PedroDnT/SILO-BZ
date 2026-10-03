@@ -1081,6 +1081,60 @@ SELECT DISTINCT ON (l.cnpj, l.id_subclasse)
  ORDER BY l.cnpj, l.id_subclasse, l.dt_comptc DESC, l.fetched_at DESC, l.id DESC;
 
 -- ---------------------------------------------------------------------------
+-- FI - Extrato das Informacoes (CVM fi-doc-extrato): fees and terms (migration 66)
+-- extrato_fi.csv (current, one row per CNPJ) and extrato_fi_YYYY.csv (versions).
+-- Key (cnpj, dt_comptc). taxa_adm is stored as filed (0 and values above 5
+-- included); the API applies the rules when reading. Read the current version
+-- through vw_fi_extrato_latest.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS cvm_fi_extrato (
+    id           BIGSERIAL,
+    cnpj         TEXT        NOT NULL CHECK (char_length(cnpj) = 14),
+    dt_comptc    DATE        NOT NULL,    -- DT_COMPTC as filed, not normalised
+    source_file  TEXT,                    -- extrato_fi.csv or extrato_fi_YYYY.csv
+    tp_fundo_classe              TEXT,
+    denom_social                 TEXT,
+    condom                       TEXT,
+    publico_alvo                 TEXT,
+    reg_anbima                   TEXT,
+    classe_anbima                TEXT,
+    fundo_cotas                  TEXT,
+    taxa_adm                     NUMERIC,
+    taxa_custodia_max            NUMERIC,
+    existe_taxa_perfm            TEXT,
+    taxa_perfm                   NUMERIC,
+    param_taxa_perfm             TEXT,
+    pr_indice_refer_taxa_perfm   NUMERIC,
+    calc_taxa_perfm              TEXT,
+    inf_taxa_perfm               TEXT,
+    existe_taxa_ingresso         TEXT,
+    taxa_ingresso_real           NUMERIC,
+    taxa_ingresso_pr             NUMERIC,
+    existe_taxa_saida            TEXT,
+    taxa_saida_real              NUMERIC,
+    taxa_saida_pr                NUMERIC,
+    taxa_saida_pagto_resgate     TEXT,
+    aplic_min                    NUMERIC,
+    qt_dia_conversao_cota        NUMERIC,
+    qt_dia_pagto_cota            NUMERIC,
+    qt_dia_resgate_cotas         NUMERIC,
+    qt_dia_pagto_resgate         NUMERIC,
+    tp_dia_pagto_resgate         TEXT,
+    raw          JSONB       NOT NULL,
+    fetched_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fi_extrato UNIQUE (cnpj, dt_comptc)
+);
+CREATE INDEX IF NOT EXISTS ix_fi_extrato_date ON cvm_fi_extrato (dt_comptc DESC);
+
+CREATE OR REPLACE VIEW vw_fi_extrato_latest
+WITH (security_invoker = true) AS
+SELECT DISTINCT ON (e.cnpj)
+       e.*,
+       (CURRENT_DATE - e.dt_comptc)::int AS age_days
+  FROM cvm_fi_extrato e
+ ORDER BY e.cnpj, e.dt_comptc DESC, e.fetched_at DESC, e.id DESC;
+
+-- ---------------------------------------------------------------------------
 -- Additive column migrations for typed-field lifts (idempotent).
 -- ---------------------------------------------------------------------------
 
