@@ -7,7 +7,7 @@
 and needs no network and no key. ``--provider anthropic`` (default, or
 ``SILO_LLM_PROVIDER``) uses the Redator and Revisor over the Messages API
 (``ANTHROPIC_API_KEY``); ``--provider openai`` over the Responses API
-(``OPENAI_API_KEY``, model ``SILO_LLM_MODEL``, default ``gpt-6-luna`` at medium
+(``OPENAI_API_KEY``, model ``SILO_LLM_MODEL``, default ``gpt-5.1`` at medium
 reasoning). Both stay within the US$1.00 per report cap. Without ``--out`` only
 HTML is written.
 """

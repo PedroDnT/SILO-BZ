@@ -29,7 +29,7 @@ health-only image of the first deploy, no longer referenced.
 
 `DEMO_ACCESS_TOKEN` and `OPENAI_API_KEY` are Worker secrets, copied from the
 repository secrets by the deploy, and handed to the Container as environment
-variables at start with `SILO_LLM_PROVIDER=openai`, `SILO_LLM_MODEL=gpt-6-luna`,
+variables at start with `SILO_LLM_PROVIDER=openai`, `SILO_LLM_MODEL=gpt-5.1`,
 `SILO_LLM_EFFORT=medium`. The US$1.00 cost cap per report is in the engine
 (`COST_CAP_USD`, `src/portfolio/report/llm.py`).
 
@@ -58,10 +58,11 @@ in this directory (a full dry run builds the image and needs Docker).
 ## Status (2026-10-04)
 
 Deployed; `/health`, the page, the 401s and the 404 pass, and the engine reaches
-silo-mcp and api.openai.com through the allow-list. The report is blocked by
+silo-mcp and api.openai.com through the allow-list. The report was blocked by
 OpenAI's 403 `model_not_found` for `gpt-6-luna` on the key in `OPENAI_API_KEY`
-(an OpenAI project setting, see `docs/planning/OPEN_ITEMS.md` item 15), so no
-end-to-end report and no privacy probe has passed yet.
+(every gpt-6 model is refused for that key), so the owner switched the model to
+`gpt-5.1` on 2026-10-04 (`docs/planning/OPEN_ITEMS.md` item 15). The end-to-end
+report and the privacy probe are pending the next deploy.
 
 ## Not covered
 
