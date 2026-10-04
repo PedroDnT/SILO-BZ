@@ -491,7 +491,22 @@ __all__ = [
 # null for funds with no tab VI row before, on every row from. delinquency's
 # `since` becomes 2013-01-31. Text only: no column, no endpoint, no behaviour
 # change (fidc_delinquency_drivers still refuses a window before 2025-01).
-CATALOG_VERSION = 58
+# v59: panel's close_return is ADJUSTED across a share-count event (#396 step 2,
+# owner decision 2026-10-04) instead of NULL: the previous close is divided by
+# the event's share ratio (B3's rule, the one api.close_adj_ratio uses) before
+# the return is taken, so a 1:4 split from 100.00 to 26.00 is +4% and BBAS3's
+# 2:1 split is -1.13%. An unreadable factor or one label on one date with two
+# factors still nulls it. Behaviour and descriptions change; no signature or
+# column does.
+# v60: quote_history follows a ticker's lineage across an ISIN change (#381
+# follow-up, owner decision 2026-10-04, docs/adr/0002-ticker-activity-and-lineage.md):
+# api.ticker_lineage splices an older (ticker, ISIN) only for the same company
+# (same ticker or one FCA CNPJ), the same share class, adjacent sessions with no
+# overlap, no stock event at the seam and one candidate. Rows keep their own
+# ticker and ISIN; close_adj is continuous across the seam; close_total_return is
+# NULL before it. coverage_start/coverage_end and isin_change say so. No
+# signature or column change.
+CATALOG_VERSION = 60
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -582,13 +597,16 @@ METRICS: Dict[str, Dict[str, Any]] = {
         "grain": ["day", "month"],
         "source": "b3_cotahist",
         "meaning": (
-            "p_t/p_{t-1}-1 from the stored raw closes, which are not adjusted "
-            "for corporate actions. NULL (no row) when a split, grouping or "
-            "bonus (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO) lies between the "
-            "two prints, so a share-count change never reads as a return (a 2:1 "
-            "split would have reported roughly -50%); on the monthly grain the "
-            "event may sit anywhere between the two month-end prints. It is not "
-            "an adjusted return and not a total return. "
+            "p_t/p'_{t-1}-1, where p' is the previous stored close divided by "
+            "the share ratio of every split, grouping or bonus (DESDOBRAMENTO, "
+            "GRUPAMENTO, BONIFICACAO) between the two prints: 1 + factor/100 "
+            "for DESDOBRAMENTO and BONIFICACAO, factor for GRUPAMENTO. A share-"
+            "count change never reads as a return: 100.00 before a 1:4 split is "
+            "25.00, so a 26.00 close is +4%, not -74%. On the monthly grain the "
+            "event may sit anywhere between the two month-end prints. NULL (no "
+            "row) across an event whose factor is unreadable or published twice "
+            "with two factors. Price only: dividends and JCP still move it, so it "
+            "is not a total return. "
             "Daily: previous session. Monthly: previous calendar month else null."
         ),
         "derived": True,
@@ -744,7 +762,7 @@ CONSTRAINTS = [
     "Missing observations stay null; do not ffill or interpolate.",
     "freq=day is quotes only. Mix equity with fund fundamentals on freq=month.",
     "close_return across a missing month is null, not a multi-month return.",
-    "close_return is the return of the raw (unadjusted) closes with every share-count event removed: it is NULL (the panel emits no row) for a session whose comparison crosses a split, grouping or bonus (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO in B3's corporate-event history; monthly: anywhere between the two month-end prints), so a 2:1 split is no longer a -50% return. It is not an adjusted return and not a total return: dividends and JCP still move it, and the return across the event is missing, not computed. For an adjusted level use close_adj. The nulling reads the share-count events stored for the ISIN from B3's published history; an event the nightly corporate-event sweep has not stored yet (an issuer without a sweep proof) is not seen and still reads as a return.",
+    "close_return is adjusted for splits, groupings and bonus shares: across one (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO in B3's corporate-event history; monthly: anywhere between the two month-end prints) the previous close is divided by the event's share ratio, B3's rule (1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for GRUPAMENTO, events multiplied), before the return is taken, so a 1:4 split from 100.00 to a 26.00 close is +4% and BBAS3's 2:1 split (56.46 to 27.91) is -1.13%, not -50.57%. An event with an unreadable factor, or one label on one date published with two factors, makes that return NULL (no row), never a guess. It is a price return, not a total return: dividends and JCP still move it. The adjustment reads the share-count events stored for the ISIN from B3's published history; an event the nightly corporate-event sweep has not stored yet (an issuer without a sweep proof) is not seen and still reads as a return.",
     "close is the price as published, which for a paper quoted per lot refers "
     "to 1000 shares; close_unit divides it by the published quotation_factor so "
     "levels are comparable. Neither is corporate-action adjusted, and `adjusted` "
@@ -776,12 +794,13 @@ CONSTRAINTS = [
     "outside_coverage (no session in the window, or the window starts before "
     "the instrument's first session; the tape starts 2019-01-02, see "
     "coverage()); isin_change (the ticker printed under two ISINs in the "
-    "window; a reused receipt code is a new instrument and is never joined); "
+    "window that its lineage does not splice; a reused receipt code is a new "
+    "instrument and is never joined); "
     "ambiguous_session (two rows on one session; pass p_board); invalid_field; "
     "adjustment_unavailable. Inside the coverage a missing session is a session "
     "with no trade (COTAHIST lists only papers that traded; "
     "prior_no_trade_sessions counts them), holidays are not sessions, and a "
-    "field with no value is a JSON null.",
+    "field with no value is a JSON null. A ticker whose company changed its trading code or ISIN runs through its older instrument (ticker lineage, #381): an older (ticker, ISIN) is spliced in front only when it is the same company (the same ticker, or one CNPJ in CVM's FCA map), the same share class (ISIN characters 7-11), its last cash session is the one right before the newer first session with no overlap, no stock event goes ex at the seam, and exactly one candidate qualifies; every row keeps its own ticker and ISIN, close_adj divides older rows by the later instruments' share ratios too, and close_total_return is NULL before a seam (VIIA3 BRVIIAACNOR7 to BHIA3 BRBHIAACNOR1 on 2023-09-20).",
     "close_total_return (SELECT IT IN p_fields) IS close_adj with cash distributions reinvested at the ex-date "
     "close, also anchored to the latest session: the level is divided by the "
     "product of (1 + cash / ex-session close) over every distribution that went "
@@ -800,8 +819,8 @@ CONSTRAINTS = [
     "Daily close_return is null when the previous session is more than 7 "
     "calendar days back (halts, listing gaps), and null across a quotation-"
     "factor change — a fatcot flip rescales the quote with no market move "
-    "behind it. Both grains are also null across a split, grouping or bonus "
-    "between the two prints (#396).",
+    "behind it. Across a split, grouping or bonus between the two prints both "
+    "grains adjust the previous close by the event's share ratio (#396).",
     "Default windows are honest: with no explicit `to`, fund metrics end at "
     "each family's latest COMPLETE period (coverage() reports it as "
     "complete_through) — a partially-filed trailing month is not served. An "
