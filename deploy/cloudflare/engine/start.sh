@@ -12,15 +12,20 @@ set -eu
 
 CF_CA=/etc/cloudflare/certs/cloudflare-containers-ca.crt
 BUNDLE=/tmp/silo-ca-bundle.pem
-ROOTS=$(python -c 'import certifi; print(certifi.where())')
-cp "$ROOTS" "$BUNDLE"
-export SSL_CERT_FILE="$BUNDLE"
+# certifi's roots when installed, else Debian's system bundle. Never fatal: a
+# missing bundle must not keep the server from starting.
+ROOTS=$(python -c 'import certifi; print(certifi.where())' 2>/dev/null || echo /etc/ssl/certs/ca-certificates.crt)
+if [ -s "$ROOTS" ] && cp "$ROOTS" "$BUNDLE"; then
+  export SSL_CERT_FILE="$BUNDLE"
+else
+  echo "no CA bundle found; SSL_CERT_FILE left unset"
+fi
 
 if [ "${SILO_TRUST_CF_CA:-0}" = 1 ]; then
   (
     i=0
     while [ "$i" -lt 240 ]; do
-      if [ -s "$CF_CA" ]; then
+      if [ -s "$CF_CA" ] && [ -s "$ROOTS" ]; then
         cat "$ROOTS" "$CF_CA" > "$BUNDLE.new" && mv "$BUNDLE.new" "$BUNDLE"
         echo "egress CA trusted"
         exit 0
