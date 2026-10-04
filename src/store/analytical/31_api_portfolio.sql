@@ -122,7 +122,9 @@
 --     ETF (0 of the 178 active registry ETFs, measured 2026-10-03), so a CNPJ in
 --     cvm_etf_registry gets its ticker (etf_ticker) and the fee etfsbrasil.com.br
 --     prints (etf_site_*, from etf_market_snapshot): a third-party value with its
---     date, in its own columns, never in disclosed_*.
+--     date, in its own columns, never in disclosed_*. Since v57 the same
+--     snapshot also gives the site's cotistas and PL (etf_site_nr_cotistas,
+--     etf_site_pl): descriptive facts, never summed.
 -- estimate_label says, on every row, that the estimate is an estimate and why
 -- one is missing. The estimate is never presented as the disclosed fee.
 --
@@ -698,7 +700,10 @@ RETURNS TABLE (
     etf_site_taxa_adm        NUMERIC,  -- the ETF's 'Taxa de administração total' as etfsbrasil.com.br prints it (etf_market_snapshot.taxa_adm_pct, % a year), newest snapshot that has one; a THIRD-PARTY site, not a CVM filing, never in disclosed_*; NULL = none (not a zero fee)
     etf_site_as_of           DATE,     -- that snapshot's date
     etf_site_source          TEXT,     -- etf_market_snapshot.source (etfsbrasil); NULL with no snapshot
-    etf_site_note            TEXT      -- what the etf_site_* value is and is not, and why it is NULL; NULL for a CNPJ that is no ETF
+    etf_site_note            TEXT,     -- what the etf_site_* value is and is not, and why it is NULL; NULL for a CNPJ that is no ETF
+    -- ---- appended in catalog v57 (ETF facts; the existing columns above are unchanged) ----
+    etf_site_nr_cotistas     INT,      -- the ETF's 'Número de cotistas' as etfsbrasil.com.br prints it (etf_market_snapshot.cotistas), from the SAME snapshot as etf_site_taxa_adm (etf_site_as_of, etf_site_source); a THIRD-PARTY site, not a CVM filing; descriptive, never summed; NULL = the site printed none (not zero)
+    etf_site_pl              NUMERIC   -- the ETF's 'Patrimônio líquido' in R$ as etfsbrasil.com.br prints it (etf_market_snapshot.nav: the site prints R$ MM with two decimals, stored x 1e6 by the ingest, so it resolves to R$ 10 mil), same snapshot; a THIRD-PARTY value, not a CVM filing; descriptive, never a fee base or a total; NULL = none
 )
 LANGUAGE plpgsql
 STABLE
@@ -776,12 +781,18 @@ BEGIN
     -- disclosed_*. Read dynamically, like the views: a database without the table
     -- returns NULL there. Joined by the registry's TICKER, because the site's CNPJ
     -- can differ from the registry's (WRLD11 on 2026-10-03); the newest snapshot
-    -- that has a fee.
+    -- that has a fee. Catalog v57 (owner, 2026-10-03) carries the site's
+    -- 'Número de cotistas' and 'Patrimônio líquido' from that SAME row, so the
+    -- three share etf_site_as_of (on 2026-10-03 fee, cotistas and nav are filled
+    -- for the same 171 of 178 tickers). CVM has no 2026 diário row for any
+    -- registry ETF, so these are the only cotistas and PL SILO holds for one.
     IF to_regclass('public.etf_market_snapshot') IS NOT NULL THEN
         EXECUTE 'SELECT COALESCE(jsonb_agg(jsonb_build_object('
              || '''ticker'', s.ticker, ''snapshot_date'', s.snapshot_date, '
-             || '''taxa_adm_pct'', s.taxa_adm_pct, ''source'', s.source, ''site_cnpj'', s.cnpj)), ''[]''::jsonb) '
-             || 'FROM (SELECT DISTINCT ON (x.ticker) x.ticker, x.snapshot_date, x.taxa_adm_pct, x.source, x.cnpj '
+             || '''taxa_adm_pct'', s.taxa_adm_pct, ''source'', s.source, ''site_cnpj'', s.cnpj, '
+             || '''cotistas'', s.cotistas, ''nav'', s.nav)), ''[]''::jsonb) '
+             || 'FROM (SELECT DISTINCT ON (x.ticker) x.ticker, x.snapshot_date, x.taxa_adm_pct, x.source, x.cnpj, '
+             || 'x.cotistas, x.nav '
              || 'FROM public.etf_market_snapshot x '
              || 'JOIN public.cvm_etf_registry r ON r.ticker = x.ticker '
              || 'WHERE r.cnpj = ANY ($1) AND x.taxa_adm_pct IS NOT NULL '
@@ -1006,7 +1017,9 @@ BEGIN
                (e ->> 'snapshot_date')::date AS s_dt,
                (e ->> 'taxa_adm_pct')::numeric AS s_fee,
                NULLIF(btrim(e ->> 'source'), '') AS s_source,
-               NULLIF(btrim(e ->> 'site_cnpj'), '') AS s_cnpj
+               NULLIF(btrim(e ->> 'site_cnpj'), '') AS s_cnpj,
+               (e ->> 'cotistas')::int AS s_cotistas,
+               (e ->> 'nav')::numeric AS s_pl
         FROM jsonb_array_elements(v_etf) AS j(e)
     ),
     page (cnpj, fund_name, month, nav, adm_fee_flow, adm_fee_pct_annual_est,
@@ -1026,7 +1039,8 @@ BEGIN
           fee_resolution, lamina_taxa_adm, lamina_taxa_adm_min, lamina_taxa_adm_max,
           lamina_n_classes, lamina_age_months, extrato_taxa_adm_filed, extrato_as_of,
           extrato_lamina_ratio, extrato_scale_factor,
-          etf_ticker, etf_site_taxa_adm, etf_site_as_of, etf_site_source, etf_site_note) AS (
+          etf_ticker, etf_site_taxa_adm, etf_site_as_of, etf_site_source, etf_site_note,
+          etf_site_nr_cotistas, etf_site_pl) AS (
         SELECT f.cnpj, f.fund_name, f.dt_comptc, f.nav,
                f.adm_flow,
                round(f.adm_flow * 12 / NULLIF(f.nav, 0) * 100, 4),
@@ -1178,7 +1192,11 @@ BEGIN
                        || CASE WHEN es.s_cnpj IS NOT NULL AND es.s_cnpj <> f.cnpj THEN
                                '; the site prints CNPJ ' || es.s_cnpj || ' for this ticker, SILO''s ETF registry has ' || f.cnpj
                           ELSE '' END
-               END
+                       || '; etf_site_nr_cotistas and etf_site_pl are the site''s ''Número de cotistas'' and ''Patrimônio líquido'' (R$) of the same snapshot, descriptive facts, never summed'
+               END,
+               -- ---- appended in v57: the same snapshot row as the fee ----
+               es.s_cotistas,
+               es.s_pl
         FROM flag f
         LEFT JOIN etf et ON et.cnpj = f.cnpj
         LEFT JOIN etf_site es ON es.ticker = et.ticker
@@ -1202,7 +1220,8 @@ BEGIN
            g.fee_resolution, g.lamina_taxa_adm, g.lamina_taxa_adm_min, g.lamina_taxa_adm_max,
            g.lamina_n_classes, g.lamina_age_months, g.extrato_taxa_adm_filed, g.extrato_as_of,
            g.extrato_lamina_ratio, g.extrato_scale_factor,
-           g.etf_ticker, g.etf_site_taxa_adm, g.etf_site_as_of, g.etf_site_source, g.etf_site_note
+           g.etf_ticker, g.etf_site_taxa_adm, g.etf_site_as_of, g.etf_site_source, g.etf_site_note,
+           g.etf_site_nr_cotistas, g.etf_site_pl
     FROM page g
     WHERE api.assert_row_cap((SELECT count(*) FROM page), FALSE, 'portfolio_fees')
     ORDER BY g.cnpj
@@ -1215,7 +1234,7 @@ GRANT EXECUTE ON FUNCTION api.portfolio_fees(TEXT[], DATE) TO anon, authenticate
 GRANT EXECUTE ON FUNCTION api.portfolio_fees(TEXT[], DATE) TO silo_api;
 
 COMMENT ON FUNCTION api.portfolio_fees(TEXT[], DATE) IS
-    'Fees per fund, two kinds of number that are never mixed. DISCLOSED (disclosed_*): the fee the fund published, ONE source per fund in this order: the CVM Extrato das Informacoes (cvm_fi_extrato, newest version, one row per fund or class), else the lâmina (cvm_fi_lamina, newest reference month), else cad_fi (cvm_fund_registry taxa_adm / taxa_perfm / inf_taxa_*); disclosed_origin (extrato | lamina | cad_fi), disclosed_source, disclosed_as_of (the filing date), disclosed_age_months and disclosed_age_days say which and how old. Two reading rules on the single administration fee, % a year as filed: a filed 0 is returned as 0 with filed_zero TRUE (read it as not informed, never as a zero cost); a filed value above 5 (or below 0) is NOT returned as the fee: disclosed_taxa_adm is NULL, implausible_filed is TRUE and the value as filed is in taxa_adm_filed_raw. The stored value is never rewritten. A NULL disclosed part is not a zero fee; when the lâmina''s classes disclose different fees the single value is NULL and the min / max and disclosed_note say so. An Extrato row that exists is the source, even when its fee is 0 or above 5: it does not fall through to an OLDER source. One exception (v55): when the Extrato filed exactly 0 or above 5, the lâmina''s single fee is in (0, 5] and the lâmina is NEWER than the Extrato, the newer lâmina is the source. fee_resolution names the rule: extrato, extrato_lamina_beside (Extrato 0 or above 5, a lâmina fee beside it), extrato_to_check (the same with no lâmina fee), lamina_newer, lamina, cad_fi. The other document''s fee is returned as filed whatever the source (lamina_taxa_adm, _min, _max, lamina_n_classes, lamina_age_months; extrato_taxa_adm_filed with extrato_as_of), never rescaled and never a fee to sum; extrato_lamina_ratio is the Extrato over the lâmina when both are above 0, and extrato_scale_factor is 10 or 100 when an Extrato above 5 equals that factor times the lâmina within the two-decimal rounding of both, a flag only. The Extrato''s performance fee (extrato_taxa_perfm numeric, extrato_param_taxa_perfm, extrato_calc_taxa_perfm, extrato_inf_taxa_perfm text), entry and exit fees (extrato_existe_* flags, _pr percent and _real reais), custody fee and class note are returned as filed; the row is the class for a CVM 175 fund (no subclass column, a subclass fee is not assumed). lamina_pr_pl_despesa is the declared total expense ratio from the lâmina (with its period and lamina_as_of), whatever the fee source, never added to the administration fee. ESTIMATE (adm_fee_flow, perf_fee_flow and the _pct_annual_est columns): from the balancete accruals (cvm_fi_balancete_resumo): the fee accounts accumulate from each fund''s fiscal-year start and are filed negative, so the month''s accrual is previous minus current accumulated value (served positive = cost; a negative performance accrual is a reversed provision), annualised x 12 / NAV x 100, NAV = groups 6 + 7 + 8 of the month. In the fiscal-year reset month the accumulated fee falls: fiscal_reset_suspect is TRUE and the estimate is NULL, unless cad_fi DT_INI_EXERC puts the fiscal-year start in that month, in which case the month''s accumulated value alone is the accrual. estimate_label says on every row that the estimate is an estimate and why one is missing; it is never presented as the disclosed fee. ETFs (v56): CVM''s Extrato, lâmina and cad_fi carry no fee for an ETF, so for a CNPJ in SILO''s curated ETF registry etf_ticker names the ticker and etf_site_taxa_adm, etf_site_as_of and etf_site_source give the ''Taxa de administração total'' etfsbrasil.com.br prints (etf_market_snapshot, the newest snapshot with a fee, joined by ticker): a third-party site, not a CVM filing, never in disclosed_*, returned as published; etf_site_note says so and why a value is NULL. p_month = the balancete month (NULL = each fund''s newest). One row per distinct CNPJ; more than 200 CNPJs RAISES 22023.';
+    'Fees per fund, two kinds of number that are never mixed. DISCLOSED (disclosed_*): the fee the fund published, ONE source per fund in this order: the CVM Extrato das Informacoes (cvm_fi_extrato, newest version, one row per fund or class), else the lâmina (cvm_fi_lamina, newest reference month), else cad_fi (cvm_fund_registry taxa_adm / taxa_perfm / inf_taxa_*); disclosed_origin (extrato | lamina | cad_fi), disclosed_source, disclosed_as_of (the filing date), disclosed_age_months and disclosed_age_days say which and how old. Two reading rules on the single administration fee, % a year as filed: a filed 0 is returned as 0 with filed_zero TRUE (read it as not informed, never as a zero cost); a filed value above 5 (or below 0) is NOT returned as the fee: disclosed_taxa_adm is NULL, implausible_filed is TRUE and the value as filed is in taxa_adm_filed_raw. The stored value is never rewritten. A NULL disclosed part is not a zero fee; when the lâmina''s classes disclose different fees the single value is NULL and the min / max and disclosed_note say so. An Extrato row that exists is the source, even when its fee is 0 or above 5: it does not fall through to an OLDER source. One exception (v55): when the Extrato filed exactly 0 or above 5, the lâmina''s single fee is in (0, 5] and the lâmina is NEWER than the Extrato, the newer lâmina is the source. fee_resolution names the rule: extrato, extrato_lamina_beside (Extrato 0 or above 5, a lâmina fee beside it), extrato_to_check (the same with no lâmina fee), lamina_newer, lamina, cad_fi. The other document''s fee is returned as filed whatever the source (lamina_taxa_adm, _min, _max, lamina_n_classes, lamina_age_months; extrato_taxa_adm_filed with extrato_as_of), never rescaled and never a fee to sum; extrato_lamina_ratio is the Extrato over the lâmina when both are above 0, and extrato_scale_factor is 10 or 100 when an Extrato above 5 equals that factor times the lâmina within the two-decimal rounding of both, a flag only. The Extrato''s performance fee (extrato_taxa_perfm numeric, extrato_param_taxa_perfm, extrato_calc_taxa_perfm, extrato_inf_taxa_perfm text), entry and exit fees (extrato_existe_* flags, _pr percent and _real reais), custody fee and class note are returned as filed; the row is the class for a CVM 175 fund (no subclass column, a subclass fee is not assumed). lamina_pr_pl_despesa is the declared total expense ratio from the lâmina (with its period and lamina_as_of), whatever the fee source, never added to the administration fee. ESTIMATE (adm_fee_flow, perf_fee_flow and the _pct_annual_est columns): from the balancete accruals (cvm_fi_balancete_resumo): the fee accounts accumulate from each fund''s fiscal-year start and are filed negative, so the month''s accrual is previous minus current accumulated value (served positive = cost; a negative performance accrual is a reversed provision), annualised x 12 / NAV x 100, NAV = groups 6 + 7 + 8 of the month. In the fiscal-year reset month the accumulated fee falls: fiscal_reset_suspect is TRUE and the estimate is NULL, unless cad_fi DT_INI_EXERC puts the fiscal-year start in that month, in which case the month''s accumulated value alone is the accrual. estimate_label says on every row that the estimate is an estimate and why one is missing; it is never presented as the disclosed fee. ETFs (v56): CVM''s Extrato, lâmina and cad_fi carry no fee for an ETF, so for a CNPJ in SILO''s curated ETF registry etf_ticker names the ticker and etf_site_taxa_adm, etf_site_as_of and etf_site_source give the ''Taxa de administração total'' etfsbrasil.com.br prints (etf_market_snapshot, the newest snapshot with a fee, joined by ticker): a third-party site, not a CVM filing, never in disclosed_*, returned as published; etf_site_note says so and why a value is NULL. Since v57 etf_site_nr_cotistas and etf_site_pl (R$) are the ''Número de cotistas'' and ''Patrimônio líquido'' the same site prints in the SAME snapshot (etf_site_as_of): third-party descriptive facts, never summed, never a fee base. p_month = the balancete month (NULL = each fund''s newest). One row per distinct CNPJ; more than 200 CNPJs RAISES 22023.';
 
 
 -- ---------------------------------------------------------------------------

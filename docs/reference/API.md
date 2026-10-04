@@ -432,6 +432,13 @@ take a set of funds or lines, never a name search that guesses.
   newest snapshot with a fee, joined by ticker; 171 of 178 tickers on 2026-10-03,
   BOVA11 0.10, IVVB11 0.23, B5P211 0.20). A third-party value, never in
   `disclosed_*`, returned as published.
+  Catalog v57: CVM has no 2026 daily report row (no cotistas, no PL) for any registry
+  ETF either, so two columns follow `etf_site_note`: `etf_site_nr_cotistas` and
+  `etf_site_pl` (R$), the site's "Número de cotistas" and "Patrimônio líquido" from
+  the SAME snapshot row as the fee, dated by `etf_site_as_of` (on 2026-10-03: BOVA11
+  106,027 and R$ 15.32 bn; IVVB11 241,779 and R$ 7.78 bn; B5P211 43,321 and
+  R$ 4.33 bn). The site prints PL in R$ millions with two decimals, so it resolves to
+  R$ 10 thousand. Descriptive third-party facts: never summed, never a fee base.
   The Extrato's own fields come back as filed (`extrato_taxa_perfm` numeric with
   `extrato_param_taxa_perfm`, `extrato_calc_taxa_perfm`, `extrato_inf_taxa_perfm`;
   `extrato_existe_taxa_ingresso` / `_saida` with `_pr` percent and `_real` reais;
