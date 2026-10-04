@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.5",
+  "schema_version": "1.6",
   "generated_at_utc": "2026-10-03T15:00:00Z",
   "engine": {
     "version": "0.1.0",
@@ -1277,6 +1277,7 @@
     "lamina_newer_label": "lâmina mais recente que o Extrato; a conferir",
     "sources_differ_label": "fontes divergem",
     "etf_site_label": "taxa informada pelo site etfsbrasil.com.br (fonte de terceiros, não é documento da CVM)",
+    "etf_facts_label": "etfsbrasil.com.br, site de terceiro",
     "scale_flag_label": "possível erro de escala no Extrato",
     "check_label": "a conferir",
     "source_order": [

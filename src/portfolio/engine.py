@@ -30,7 +30,7 @@ from src.portfolio.statement import Position, Statement
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "1.5"
+SCHEMA_VERSION = "1.6"
 ENGINE_VERSION = "0.1.0"
 # Documented fixed lags until a coverage()-driven default exists (see engine-output.md).
 CDA_LAG_MONTHS = 4

@@ -1,0 +1,92 @@
+{
+  "$schema": "https://registry.scalar.com/@scalar/schemas/config",
+  "scalar": "2.0.0",
+  "info": {
+    "title": "SILO — Brazilian Financial Data"
+  },
+  "siteConfig": {
+    "subdomain": "silo-bz",
+    "theme": "default",
+    "favicon": "scalar/favicon.ico"
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "title": "Guides",
+        "to": "/",
+        "icon": "phosphor/regular/book-open"
+      },
+      {
+        "title": "API Reference",
+        "to": "/api",
+        "icon": "phosphor/regular/plug"
+      }
+    ],
+    "routes": {
+      "/": {
+        "type": "group",
+        "title": "Getting Started",
+        "mode": "flat",
+        "children": {
+          "": {
+            "type": "page",
+            "title": "Introduction",
+            "filepath": "scalar/introduction.md"
+          },
+          "/quickstart": {
+            "type": "page",
+            "title": "Quickstart",
+            "filepath": "scalar/quickstart.md"
+          },
+          "/authentication": {
+            "type": "page",
+            "title": "Authentication",
+            "filepath": "scalar/auth.md"
+          },
+          "/concepts": {
+            "type": "page",
+            "title": "Core concepts",
+            "filepath": "scalar/concepts.md"
+          }
+        }
+      },
+      "/guides": {
+        "type": "group",
+        "title": "Research guides",
+        "children": {
+          "/guides/research-universe": {
+            "type": "page",
+            "title": "Research universe",
+            "filepath": "scalar/guides/research-universe.md"
+          },
+          "/guides/point-in-time": {
+            "type": "page",
+            "title": "Point-in-time fundamentals",
+            "filepath": "scalar/guides/point-in-time.md"
+          },
+          "/guides/total-return": {
+            "type": "page",
+            "title": "Total-return prices",
+            "filepath": "scalar/guides/total-return.md"
+          },
+          "/guides/macro": {
+            "type": "page",
+            "title": "Macro and inflation",
+            "filepath": "scalar/guides/macro.md"
+          },
+          "/guides/fidc": {
+            "type": "page",
+            "title": "FIDC credit analysis",
+            "filepath": "scalar/guides/fidc.md"
+          }
+        }
+      },
+      "/api": {
+        "type": "openapi",
+        "title": "API Reference",
+        "filepath": "openapi.json",
+        "mode": "nested"
+      }
+    }
+  }
+}

@@ -58,6 +58,12 @@ be CORRECT, so the rules are these:
    the same reading rules (a 0 or above 5 % a.a. is shown, to check, never a cost), and enters
    its own sum (``totals.adm_etf_site_per_year_brl``) and the total of both
    (``totals.adm_fee_per_year_brl``). A CVM source, when one exists, always comes first.
+10. ETF facts (engine 1.6, catalog v57, owner's decision of 2026-10-03). CVM has no 2026 daily
+   report row (no cotistas, no PL) for any registry ETF, so ``etf_site`` also carries the number of
+   cotistas and the PL (R$) etfsbrasil.com.br prints in the SAME snapshot as the fee
+   (``nr_cotistas``, ``pl_brl``, dated by ``as_of``), labelled as the fee is: a third-party site.
+   They are descriptive facts: never summed, never a fee base, never in any total, and never the
+   fund NAV the balancete estimate divides by (``fund_nav_brl``).
 
 Assumption, recorded in the output: ``disclosed_taxa_adm`` and the estimate are read as
 percent per year. CVM's metadata states no unit for TAXA_ADM (migration 64).
@@ -118,6 +124,12 @@ ETF_SITE_NOTE = (
     "Taxa de administração total impressa na página do ETF em etfsbrasil.com.br, lida na data indicada. O Extrato, a lâmina "
     "e o cad_fi da CVM não trazem taxa para ETFs; quando trazem, a fonte da CVM vem primeiro. Somada à parte das taxas "
     "divulgadas em documento da CVM."
+)
+# engine 1.6: the ETF's cotistas and PL from the same etfsbrasil.com.br snapshot (portfolio_fees v57)
+ETF_FACTS_LABEL = "etfsbrasil.com.br, site de terceiro"
+ETF_FACTS_NOTE = (
+    "Número de cotistas e patrimônio líquido impressos na página do ETF em etfsbrasil.com.br, na mesma coleta da taxa. A CVM "
+    "não tem informe diário de 2026 para nenhum ETF do registro. Dados descritivos: nunca somados, nunca base de taxa nem de total."
 )
 SCALE_FLAG_NOTE = (
     "Sinal apenas: o valor do Extrato é exatamente 10 ou 100 vezes a taxa da lâmina. Nenhum valor é corrigido nem reescalado."
@@ -215,6 +227,7 @@ def compute_fees(
         "lamina_newer_label": LAMINA_NEWER_LABEL,
         "sources_differ_label": SOURCES_DIFFER_LABEL,
         "etf_site_label": ETF_SITE_LABEL,
+        "etf_facts_label": ETF_FACTS_LABEL,
         "scale_flag_label": SCALE_FLAG_LABEL,
         "check_label": CHECK_LABEL,
         "source_order": ["extrato", "lamina", "cad_fi"],
@@ -581,7 +594,7 @@ def _fee_record(row: dict, value: Decimal, call: Call, fee_month: dt.date) -> di
 
 
 def _etf_site(row: dict, src: dict) -> dict[str, Any] | None:
-    """An ETF's fee as etfsbrasil.com.br prints it (portfolio_fees etf_*, catalog v56); None when the CNPJ is no ETF."""
+    """An ETF's fee, cotistas and PL as etfsbrasil.com.br prints them (portfolio_fees etf_*, catalog v56 and v57); None when the CNPJ is no ETF."""
     if not row.get("etf_ticker"):
         return None
     return {
@@ -594,8 +607,21 @@ def _etf_site(row: dict, src: dict) -> dict[str, Any] | None:
         "tool_note": row.get("etf_site_note"),
         "note": ETF_SITE_NOTE,
         "used_as_fee": False,  # set below when it is the headline
+        # engine 1.6 (catalog v57): the same snapshot's cotistas and PL, descriptive only, never summed or a fee base
+        "nr_cotistas": _int_or_none(row.get("etf_site_nr_cotistas")),
+        "pl_brl": brl(dec(row.get("etf_site_pl"))),
+        "facts_label": ETF_FACTS_LABEL,
+        "facts_note": ETF_FACTS_NOTE,
         "sources": [src],
     }
+
+
+def _int_or_none(value: Any) -> int | None:
+    """A count as an int (so the report prints 106.027, never 106.027,00); None stays None, never 0."""
+    d = dec(value)
+    if d is None or d != d.to_integral_value():
+        return None
+    return int(d)
 
 
 def _beside(row: dict, resolution: str | None, src: dict) -> tuple[dict | None, dict | None, dict | None]:
