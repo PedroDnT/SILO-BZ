@@ -88,3 +88,53 @@ count). The engine output carries both views (`statement.positions` and `stateme
 The real layout. Likely first failures: a heading spelled differently from the keys above, a
 column the reader reads as a continuation, a name wrapped in a way the prefix and tail rules get
 wrong, the summary rows being worded differently. The runner's shapes say which.
+
+## BTG "Extrato da Conta Investimento": the second reader
+
+`src/portfolio/statement_pdf_extrato.py` reads the other BTG layout, the "Extrato da Conta
+Investimento" (co-branded "One Investimentos | BTG Pactual", landscape), into the same `Statement`
+under the same rules: masking at read time, sum checks against the statement's own total, no row
+dropped silently, nothing fabricated. **It was written from a description of the owner's files and
+tested only on synthetic pages** (`tests/portfolio_extrato_fixtures.py`, also round-tripped through a
+real PDF and both extractors). The runner says what it gets right on a real file:
+
+```
+python -m src.portfolio.statement_pdf_extrato FILE.pdf [FILE2.pdf ...] [--consolidate]
+```
+
+The format is picked by content, per file: a first page with "Extrato da Conta Investimento" goes
+to this reader, anything else to the performance reader (`read_any_pdf_bytes`). The server's
+`POST /diagnose` uses the same detection, and accepts several multipart `file` parts (one statement
+per account, 10 MB in all), consolidated before the engine runs. The runner prints, per file, the
+sections found (and the first two segments of any unknown heading), positions by type, every sum
+check with its gap, the coverage of `codigo`, CNPJ, `vencimento`, `taxa_texto`, `emissor` and
+`quantidade`, how wrapped lines were attached (and how many were ambiguous) and the rows not read
+by page, line and shape (`L` text, `D` date, `N` number, `P` percent, `C` CNPJ, `-` missing). A
+failed read prints the same aggregates. It never prints a name, CPF, account, address, plan
+certificate or asset name.
+
+| Layout fact | How it is used |
+| --- | --- |
+| Cover: "Informações detalhadas sobre investimentos", then the holder name (no label), "Conta investimento N", "CPF ...", the address, "Período de DD/MM/YY a DD/MM/YY" | Read only to mask: name, account and CPF through `Masker`, the address line, its street part and CEP as `[ENDERECO]`. No name line: nothing is read. The period's second date is the position date. |
+| Every page: "Extrato da Conta Investimento", "Período ...", the SAC footer, perhaps the holder | Furniture. A line with a mask token is dropped only among a page's first four and last three lines; elsewhere it stays (an exclusive fund may carry the holder's name). |
+| "Sumário - Distribuição em DD/MM/YY": `Mercados` and four Saldo columns | The third value (end-date Saldo Bruto) of each class row is that class's subtotal; `Total`'s is the statement's own total. A row without four values is a row not read. No `Total`: a format error. |
+| "Fundo de Investimento - Posição": a title line `<name> - Classe CNPJ: <cnpj> [- Cód. Subclasse: ...]` (may wrap), then a data line `<date> <8 values>`, then `Total em fundos` | `codigo` = the CNPJ, `quantidade`, the quota as `preco_unitario`, Saldo Bruto as `valor`; `FIDC` when the name has FIDC or ends in DC, `FII` when it has FII, else `fundo`. The position date stays the period's; a different quota date is counted and noted. The subclass code is not kept. |
+| "Renda fixa - Posição - <KIND>": `Emissor, Ativo, Emissão, Vencimento, Liquidez, Carência, Data inicial, Taxa, Quantidade, Preço, Saldo Bruto, IR, IOF, Saldo Líquido`, then a subtotal row with no label | Emissor, Ativo and Taxa may wrap. A data line is the one with the dates and six trailing values; the other lines are attached by column (Emissor left of the Ativo column, Taxa between "Data inicial" and Quantidade; text anywhere else is a row not read). Ativo pieces join with no space, Emissor pieces with one. `CRA-/CRI-/DEB-/CDB-/LCA-/LCI-` set the type (other prefixes `outro`), `codigo` is the part after the hyphen; BACEN rows and `NTNB-P/NTNB/LTN/LFT/NTNF/...` are `tesouro` with `codigo` `NTN-B Principal 2035-05-15` (`identify.parse_tesouro`). `emissor` is stored on the position (a new optional field; not yet in the engine output). |
+| How wrapped cells sit around their row | Read once for the whole document: text before a table's first row means cells wrap upwards, text after its last row (or an Ativo ending in `-` on the row) downwards, both means centred, where each row has as many lines above as below and the chain must close at the table's end. No evidence: downwards is assumed and every line between rows is counted as ambiguous. |
+| "Renda fixa - Posição Consolidada Por Emissor" | An extra check: its rows (or its `Total`) against the renda fixa positions. Skipped, and said so, when a line is not `<name> <value>`. |
+| "Previdência Individual/Interna - Posição - <cert>/PGBL": `Fundo, CNPJ, Data, Quantidade, Cotação, Saldo Bruto`, then `Total`; one table per plan | Each row a `fundo` with the CNPJ as `codigo` and `Previdência PGBL` (or VGBL) as the broker's strategy. The certificate is never kept or printed. |
+| "Renda variável - Posição - <KIND>": `Código, Ativo, Qtde., Preço Fechamento, Preço Médio, Saldo Bruto`, then `Total em ...` | `codigo` = ticker, closing price as `preco_unitario`; type by section: ETF, Ações (`ação`), FII, else `outro`. |
+| "Conta corrente - Posição": `Data, Valor financeiro` | A `caixa` position, so the totals tie. |
+| Detalhamento, Movimentação, Rentabilidade, plan metadata, "Posições abertas por alíquota", Índice, the distribution legends, Perfil de Risco, Disclaimers, Fale Conosco | Skipped. A title-case heading with a dash that matches nothing is skipped and counted; if it held money, the Sumário check fails and names the class it has no reader for. |
+| Dates `dd/mm/yy`, money `1.234,56`, prices with up to 9 decimals, quantities `1.725` or `30,0`, missing `-` or `–` | Parsed as printed; the sum checks use Saldo Bruto. |
+
+Sum checks, all within R$ 0,01 x the number of rows: every table's own subtotal against its rows;
+each Sumário class against the positions of its sections; the positions against the Sumário
+`Total`; the per-emissor table against renda fixa. A failure or a row not read raises
+`StatementTotalMismatch`.
+
+**Not verified** (no real file was opened): the column positions `pdftotext` gives the real file
+(wrapped text is placed by column, with two characters of slack), whether a heading wraps or repeats
+on a continuation page, Sumário rows for classes not listed here (COE, derivatives), the spelling of
+other renda variável and renda fixa kinds, and how the Emissor wraps (`ARTESANA` / `L` is joined as
+`ARTESANA L`).

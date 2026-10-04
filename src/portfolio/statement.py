@@ -130,6 +130,7 @@ class Position:
     conta_ref: str | None = None  # an ordinal token (C1, C2...), never the real account
     preco_implicito: bool = False  # preco_unitario was derived as valor / quantidade
     contas: tuple["ContaLine", ...] = ()  # per-account lines of a consolidated position
+    emissor: str | None = None  # the issuer as the statement prints it (BTG extrato), for issuer concentration
 
 
 @dataclass(frozen=True)

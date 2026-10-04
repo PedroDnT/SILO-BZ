@@ -246,6 +246,7 @@ def _aggregate(line_no: int, members: list[tuple[int, Position]], titular_refs: 
         conta_ref=first.conta_ref if len(ps) == 1 else None,
         preco_implicito=implicit,
         contas=contas,
+        emissor=first.emissor if _all_equal([p.emissor for p in ps]) else None,
     )
 
 

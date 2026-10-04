@@ -227,12 +227,12 @@ button[disabled] { opacity: .6; cursor: wait; }
 <body>
 <main>
 <h1>Diagnóstico de carteira</h1>
-<p>Envie o extrato (planilha modelo .xlsx ou relatório de performance do BTG em PDF, até 10 MB). O arquivo é processado em memória e não é guardado. O relatório leva alguns minutos.</p>
+<p>Envie o extrato: o PDF do BTG ("Extrato da Conta Investimento" ou relatório de performance) ou a planilha modelo .xlsx. Com mais de uma conta, selecione um arquivo por conta: eles são somados num diagnóstico só. Até 10 MB no total. Os arquivos são processados em memória e não são guardados. O relatório leva alguns minutos.</p>
 <form id="f">
 <label for="token">Código de acesso</label>
 <input id="token" type="password" autocomplete="off" required>
-<label for="file">Extrato</label>
-<input id="file" type="file" accept=".xlsx,.pdf" required>
+<label for="file">Extratos (um por conta)</label>
+<input id="file" type="file" accept=".xlsx,.pdf" multiple required>
 <button id="go" type="submit">Gerar diagnóstico</button>
 </form>
 <div id="status" role="status" aria-live="polite"></div>
@@ -241,14 +241,18 @@ button[disabled] { opacity: .6; cursor: wait; }
 const f = document.getElementById("f"), go = document.getElementById("go"), st = document.getElementById("status");
 f.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const file = document.getElementById("file").files[0];
+  const files = Array.from(document.getElementById("file").files);
   const token = document.getElementById("token").value;
-  if (!file) return;
-  if (file.size > 10 * 1024 * 1024) { st.textContent = "Arquivo grande demais: o limite é 10 MB."; return; }
+  if (!files.length) return;
+  const total = files.reduce((n, f) => n + f.size, 0);
+  if (total > 10 * 1024 * 1024) { st.textContent = "Arquivos grandes demais: o limite é 10 MB no total."; return; }
+  const body = new FormData();
+  for (const f of files) body.append("file", f);
   go.disabled = true;
   st.textContent = "Gerando o diagnóstico. Isso leva alguns minutos; mantenha esta página aberta.";
   try {
-    const r = await fetch("/diagnose", { method: "POST", headers: { "x-demo-token": token, "content-type": "application/octet-stream" }, body: file });
+    // multipart: the browser sets the content-type with its boundary, and the Worker forwards it.
+    const r = await fetch("/diagnose", { method: "POST", headers: { "x-demo-token": token }, body });
     if (r.ok) {
       const blob = await r.blob();
       const a = document.createElement("a");
