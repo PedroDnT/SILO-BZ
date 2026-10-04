@@ -351,7 +351,7 @@ def test_openai_defaults_to_the_owners_model_and_medium_reasoning(monkeypatch):
     assert kind == "parse" and kw["text_format"] is Ok  # native structured output, the Pydantic model
     assert kw["model"] == "gpt-5.1" and kw["reasoning"] == {"effort": "medium"}
     assert kw["instructions"] == "sys" and kw["input"] == [{"role": "user", "content": "user"}]
-    assert kw["store"] is False and kw["max_output_tokens"] == llm.DEFAULT_MAX_TOKENS
+    assert kw["store"] is False and kw["max_output_tokens"] == llm.OPENAI_DEFAULT_MAX_TOKENS == 32000
     assert "tools" not in kw and "text" not in kw and "service_tier" not in kw  # no hosted tool, Standard tier
 
 
@@ -439,7 +439,7 @@ def test_openai_missing_usage_books_the_worst_case():
     body["usage"] = None
     meter = llm.CostMeter()
     llm.OpenAIProvider(client=FakeOpenAI(body), meter=meter).complete("s", "u", Ok)
-    assert meter.spent_usd == pytest.approx(llm.tokens_cost_usd("gpt-5.1", input_tokens=1, output_tokens=16000))
+    assert meter.spent_usd == pytest.approx(llm.tokens_cost_usd("gpt-5.1", input_tokens=1, output_tokens=32000))
 
 
 def test_openai_cap_refuses_before_the_call():
