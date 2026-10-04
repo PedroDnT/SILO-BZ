@@ -92,6 +92,33 @@ def _error(status: int, stage: str | None = None, exc: BaseException | None = No
     return resp, status
 
 
+_IDENT = re.compile(r"^[A-Za-z_]+$")
+
+
+def narrative_headers(narrative) -> dict[str, str]:
+    """Why a narrative is unknown and what each LLM call used, safe for a header.
+
+    ``X-Silo-Narrative-Reason`` is a bare identifier (an LLMError class name or
+    ``revisor_removed_all``), never the exception message, which can quote the
+    model. ``X-Silo-Llm-Calls`` is ``role:out=N:reasoning=N`` per call, numbers and
+    fixed role names only: an output at the provider's max_output_tokens shows a
+    truncation.
+    """
+    out: dict[str, str] = {}
+    code = getattr(narrative, "reason_code", None)
+    if code and _IDENT.match(str(code)):
+        out["X-Silo-Narrative-Reason"] = str(code)
+    parts = []
+    for call in getattr(narrative, "calls", None) or []:
+        role = str(call.get("role") or "llm")
+        if not _IDENT.match(role):
+            role = "llm"
+        parts.append(f"{role}:out={int(call.get('output_tokens') or 0)}:reasoning={int(call.get('reasoning_tokens') or 0)}")
+    if parts:
+        out["X-Silo-Llm-Calls"] = ",".join(parts)
+    return out
+
+
 def default_client() -> SiloClient:
     kind = (os.environ.get(CLIENT_ENV) or "mcp").strip().lower()
     if kind == "mcp":
@@ -237,6 +264,7 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client) -> Fla
                     "X-Silo-Provider": str(narrative.provider),
                     "X-Silo-Cost-Usd": f"{narrative.cost_usd:.4f}",
                     "X-Silo-Seconds": f"{t3 - t0:.1f}",
+                    **narrative_headers(narrative),
                 },
             )
         except _Refusal as r:

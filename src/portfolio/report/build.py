@@ -30,6 +30,7 @@ def make_narrative(engine: dict, provider: llm.Provider, llm_review: bool = True
     narrative = Narrative(
         status=drafted.status,
         reason=drafted.reason,
+        reason_code=drafted.reason_code,
         provider=provider.name,
         model=getattr(provider, "model", ""),
         cost_cap_usd=meter.cap_usd,
@@ -42,6 +43,7 @@ def make_narrative(engine: dict, provider: llm.Provider, llm_review: bool = True
         if not result.kept:
             narrative.status = "unknown"
             narrative.reason = "o Revisor removeu todos os achados"
+            narrative.reason_code = "revisor_removed_all"
     narrative.served_by = list(getattr(provider, "served_by", []))
     narrative.cost_usd = meter.spent_usd
     return narrative
@@ -57,6 +59,7 @@ def build(
     name = (provider_name or "").strip().lower() or None
     provider = llm.get_provider(name, meter=meter, fake_responses=lambda s, u, sch: redator.template_findings(_engine_from_user(u)))
     narrative = make_narrative(engine, provider, llm_review)
+    narrative.calls = list(meter.calls)
     return render_html(engine, narrative, signature), narrative
 
 

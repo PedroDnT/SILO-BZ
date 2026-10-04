@@ -151,7 +151,7 @@ jobs:
               break
             done
             echo "$label: answered after $(( $(date +%s) - start ))s since the first attempt; the answering request took $((t1 - t0))s"
-            echo "  engine rev=$(hdr x-silo-engine-rev "$tmp/h") stage=$(hdr x-silo-stage "$tmp/h") error=$(hdr x-silo-error "$tmp/h") error_status=$(hdr x-silo-error-status "$tmp/h") error_code=$(hdr x-silo-error-code "$tmp/h") narrative=$(hdr x-silo-narrative "$tmp/h") provider=$(hdr x-silo-provider "$tmp/h") cost_usd=$(hdr x-silo-cost-usd "$tmp/h") engine_s=$(hdr x-silo-seconds "$tmp/h")"
+            echo "  engine rev=$(hdr x-silo-engine-rev "$tmp/h") stage=$(hdr x-silo-stage "$tmp/h") error=$(hdr x-silo-error "$tmp/h") error_status=$(hdr x-silo-error-status "$tmp/h") error_code=$(hdr x-silo-error-code "$tmp/h") narrative=$(hdr x-silo-narrative "$tmp/h") provider=$(hdr x-silo-provider "$tmp/h") cost_usd=$(hdr x-silo-cost-usd "$tmp/h") engine_s=$(hdr x-silo-seconds "$tmp/h") narrative_reason=$(hdr x-silo-narrative-reason "$tmp/h") llm_calls=$(hdr x-silo-llm-calls "$tmp/h")"
             [ "$c" = 200 ] || { echo "::error::$label: expected 200, got $c"; return 1; }
             case "$(hdr content-type "$tmp/h")" in application/pdf*) ;; *) echo "::error::$label: not application/pdf"; return 1 ;; esac
             [ "$(head -c 5 "$tmp/out" 2>/dev/null)" = "%PDF-" ] || { echo "::error::$label: the body does not start with %PDF-"; return 1; }
@@ -213,7 +213,9 @@ jobs:
 
           # Second request: a new Durable Object and a new instance (one per upload),
           # with the image already on Cloudflare.
-          report "POST /diagnose, second (multipart, marked)" -X POST -F "file=@$tmp/$marker.xlsx"
+          # A failed marked report must not skip the marker check below: record it, fail after.
+          marked_failed=""
+          report "POST /diagnose, second (multipart, marked)" -X POST -F "file=@$tmp/$marker.xlsx" || marked_failed=1
 
           sleep 15
           pkill -f "wrangler tail" 2>/dev/null || true
@@ -227,3 +229,4 @@ jobs:
             echo "::warning::privacy probe inconclusive: wrangler tail captured nothing or reported an error (first line: $(grep -m1 -iE 'error|denied|forbidden|unauthori' "$tmp/tail.err" 2>/dev/null | cut -c1-160))"
           fi
           rm -rf "$tmp"
+          [ -z "$marked_failed" ] || { echo "::error::the marked report failed (see above); the privacy check above still ran"; exit 1; }
