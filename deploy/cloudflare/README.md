@@ -67,6 +67,9 @@ produced a complete report, but the marked second one came back with narrative
 `X-Silo-Narrative-Reason` (an error class name or `revisor_removed_all`, never
 the message) and `X-Silo-Llm-Calls` (`role:out=N:reasoning=N` per call), and the
 smoke runs the privacy probe before failing on the marked report.
+Run 37230811125 read those headers: `LLMOutputError`, `redator:out=16000:reasoning=11091`,
+so gpt-5.1's reasoning used most of the 16,000-token output limit and the reply was
+cut. The OpenAI provider's limit is 32,000 since (owner's choice, 2026-10-04).
 
 ## Not covered
 

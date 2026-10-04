@@ -53,6 +53,11 @@ DEFAULT_EFFORT = "medium"
 OPENAI_DEFAULT_MODEL = "gpt-5.1"
 OPENAI_DEFAULT_EFFORT = "medium"
 DEFAULT_MAX_TOKENS = 16000
+# gpt-5.1's reasoning tokens count against max_output_tokens: deploy run 37230811125
+# had the Redator stop at 16,000 output tokens, 11,091 of them reasoning, so the reply
+# was cut (LLMOutputError). The owner chose 32,000 (2026-10-04): worst case US$0.32 of
+# output per call, inside the US$1.00 cap for the Redator plus the Revisor's pass.
+OPENAI_DEFAULT_MAX_TOKENS = 32000
 COST_CAP_USD = 1.00
 
 # US$ per million tokens: (input, output, cache write, cache read). Taken from
@@ -436,7 +441,7 @@ class OpenAIProvider:
         meter: CostMeter | None = None,
         model: str | None = None,
         effort: str | None = None,
-        max_tokens: int = DEFAULT_MAX_TOKENS,
+        max_tokens: int = OPENAI_DEFAULT_MAX_TOKENS,
         role: str = "llm",
     ):
         self.model = model or os.environ.get("SILO_LLM_MODEL") or OPENAI_DEFAULT_MODEL

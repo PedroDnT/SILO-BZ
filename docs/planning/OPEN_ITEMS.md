@@ -470,7 +470,9 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
   Deploy run 37226627623 then produced a complete report (US$0.31, 218 s), but
   the marked one came back with narrative `unknown` and the privacy probe did
   not run; `fix/narrative-reason-header` names the cause in a header and runs
-  the probe before failing. Next: redeploy, read the header. OpenAI marks
+  the probe before failing. Run 37230811125 showed the Redator cut at 16,000
+  output tokens (11,091 reasoning), so the OpenAI limit is 32,000
+  (`fix/llm-max-tokens-32k`). Next: redeploy. OpenAI marks
   gpt-5.1 deprecated (shutdown 2027-04-01, replacement gpt-6-sol), so the model
   has to move again before then.
 - Engine in Python `src/portfolio/`, set-based `api` functions in
