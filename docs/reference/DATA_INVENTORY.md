@@ -299,9 +299,12 @@ one that is knowingly wrong. So the key itself widened to
 `(cnpj, period, tp_fundo, tp_aplic, tp_ativo, cd_isin, tp_negoc)`, NULLS NOT
 DISTINCT, measured at 0 duplicates on HIST 2005, 2010, 2015, 2020 and monthly
 202306, 202608. The dropped bonds come back only through a block-1 re-ingest
-(`backfill.yml` `fi_doc_type`, one year per dispatch). Until a year is
-re-ingested it still holds the collapsed rows, and the dashboard caveats stay
-true for it.
+(`backfill.yml` `fi_doc_type`, one year per dispatch). Measured on 2026-10-04:
+`cvm_fi_cda` holds 29,139 rows for `period = 2026-08-01`, against 28,740 in the
+source file when it was measured and about 9,900 if the rows still collided, so
+block 1's levels are sums and the dashboard carries no lower-bound caveat (#477).
+The ~400 extra rows were not verified; the hypothesis is the month's re-read by
+#554. A year not re-ingested since migration 49 would still hold collapsed rows.
 
 ### `cia_event` cannot key an IPE filing that has no protocol — and before 2015 none do
 
