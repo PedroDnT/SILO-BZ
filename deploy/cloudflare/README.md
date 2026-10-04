@@ -55,6 +55,14 @@ A merge deploys nothing.
 Offline check: `npm ci && npx wrangler deploy --dry-run --containers-rollout=none`
 in this directory (a full dry run builds the image and needs Docker).
 
+## Status (2026-10-04)
+
+Deployed; `/health`, the page, the 401s and the 404 pass, and the engine reaches
+silo-mcp and api.openai.com through the allow-list. The report is blocked by
+OpenAI's 403 `model_not_found` for `gpt-6-luna` on the key in `OPENAI_API_KEY`
+(an OpenAI project setting, see `docs/planning/OPEN_ITEMS.md` item 15), so no
+end-to-end report and no privacy probe has passed yet.
+
 ## Not covered
 
 - Workers Logs (persisted) cannot be searched from the workflow; the tail probe

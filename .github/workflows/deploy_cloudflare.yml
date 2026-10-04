@@ -82,11 +82,9 @@ jobs:
       - name: Image size
         run: docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep -i healthcontainer || true
 
-      # Status codes, sizes and timings only. The end-to-end POST is retried only
-      # while no engine work was done: the Worker itself says the Container is
-      # not up yet (503 from the Worker), or an instance still runs the previous
-      # image during the rollout (an answer that is neither JSON nor a PDF).
-      # Never after the engine answered, so each report is paid for once.
+      # Status codes, sizes and timings only. A paid report is retried only while
+      # the Worker itself says the Container is not up yet (503 from the Worker),
+      # never after the engine answered, so each report is paid for once.
       - name: Verify the live Worker and engine end to end
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
@@ -146,16 +144,10 @@ jobs:
               t1=$(date +%s)
               origin=$(hdr x-silo-origin "$tmp/h")
               echo "$label (attempt $attempt): $c from ${origin:-?} in $((t1 - t0))s, $(cat "$tmp/out" 2>/dev/null | wc -c) bytes"
+              # Only the Worker's own 503 (no instance yet) is retried: the rollout
+              # probe above already waited for this commit's image, and any other
+              # answer may follow paid LLM work.
               if [ "$c" = 503 ] && [ "$origin" = worker ]; then sleep 20; continue; fi
-              # The rollout does not wait for instances: until it lands, a new
-              # instance can still run the previous image (busybox httpd answered
-              # 501 text/html on run 37221129945). The engine server always answers
-              # JSON or a PDF, so anything else did no engine work and cost nothing.
-              ct=$(hdr content-type "$tmp/h")
-              case "$ct" in
-                application/json*|application/pdf*) ;;
-                *) echo "  not the engine server yet (content type ${ct:-none}); waiting for the rollout"; sleep 30; continue ;;
-              esac
               break
             done
             echo "$label: answered after $(( $(date +%s) - start ))s since the first attempt; the answering request took $((t1 - t0))s"
@@ -227,6 +219,11 @@ jobs:
           pkill -f "wrangler tail" 2>/dev/null || true
           kill "$tail_pid" 2>/dev/null || true
           wait "$tail_pid" 2>/dev/null || true
-          echo "wrangler tail: $(wc -l < "$tmp/tail.json") lines captured, $(grep -c "$marker" "$tmp/tail.json" || true) carry the marker"
-          if grep -q "$marker" "$tmp/tail.json"; then echo "::error::the privacy marker reached the Worker's tail"; exit 1; fi
+          lines=$(cat "$tmp/tail.json" 2>/dev/null | wc -l)
+          echo "wrangler tail: $lines lines captured, $(grep -c "$marker" "$tmp/tail.json" 2>/dev/null || true) carry the marker"
+          if grep -q "$marker" "$tmp/tail.json" 2>/dev/null; then echo "::error::the privacy marker reached the Worker's tail"; exit 1; fi
+          # Zero lines or a tail error means tail never listened: not a pass.
+          if [ "$lines" -eq 0 ] || grep -qiE "error|denied|forbidden|unauthori" "$tmp/tail.err" 2>/dev/null; then
+            echo "::warning::privacy probe inconclusive: wrangler tail captured nothing or reported an error (first line: $(grep -m1 -iE 'error|denied|forbidden|unauthori' "$tmp/tail.err" 2>/dev/null | cut -c1-160))"
+          fi
           rm -rf "$tmp"
