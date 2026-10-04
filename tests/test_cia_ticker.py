@@ -219,7 +219,11 @@ def test_migration_63_is_the_last_definition_and_is_never_a_second_edit_of_25():
         for p in Path("src/store/migrations").glob("*.sql")
         if "CREATE OR REPLACE VIEW vw_company_ticker" in p.read_text(encoding="utf-8")
     )
-    assert definers == ["25_cia_ticker.sql", "63_company_ticker_active.sql"]
+    assert definers == [
+        "25_cia_ticker.sql",
+        "63_company_ticker_active.sql",
+        "69_company_ticker_liquidity.sql",
+    ]
     # schema.sql and the analytical layer do not (re)define the view.
     assert "vw_company_ticker" not in Path("src/store/schema.sql").read_text(
         encoding="utf-8"
@@ -238,3 +242,42 @@ def test_the_behaviour_file_runs_in_ci_and_covers_the_three_cases():
     assert "BEGIN;" in sql and sql.rstrip().endswith("ROLLBACK;")
     # absent from the newest filing, in it, and in it with an end date
     assert "OLDA3=false" in sql and "KEPT3=true" in sql and "ENDD3=false" in sql
+
+
+# --- migration 69: is_active also needs the ticker to trade (#381 follow-up) ---
+
+_M69 = Path("src/store/migrations/69_company_ticker_liquidity.sql")
+
+
+def test_migration_69_keeps_the_view_shape_and_migration_63_conditions():
+    new = _view_body(_M69.read_text(encoding="utf-8"))
+    assert _output_columns(new) == _VIEW_COLUMNS
+    assert "DISTINCT ON (t.cnpj_cia, t.codneg)" in new
+    assert "ORDER BY t.cnpj_cia, t.codneg, t.data_refer DESC, t.versao DESC" in new
+    assert "WHERE t.codneg IS NOT NULL" in new
+    # Migration 63's newest-filing rule stays.
+    assert "t.dt_fim_neg IS NULL" in new
+    assert "t.data_refer = n.data_refer" in new and "t.versao = n.versao" in new
+    assert "SELECT DISTINCT ON (cnpj_cia) cnpj_cia, data_refer, versao" in new
+
+
+def test_migration_69_is_active_needs_five_sessions_in_thirty_days():
+    """The owner's threshold (2026-10-04): at least 5 distinct cash-market
+    sessions with trades in the last 30 calendar days. Rows are executed in
+    tests/sql/company_ticker_active_behaviour.sql; this pins the text."""
+    new = re.sub(r"\s+", " ", _view_body(_M69.read_text(encoding="utf-8")))
+    assert "SELECT count(DISTINCT b.trade_date) FROM b3_cotahist b" in new
+    assert "b.codneg = t.codneg" in new
+    assert "b.tpmerc = '010'" in new, "cash market only, the partial index's predicate"
+    assert "b.negocios > 0" in new
+    assert "b.trade_date > current_date - 30" in new
+    assert ") >= 5) AS is_active" in new
+    # Still the published mapping only: no name matching.
+    sql = _M69.read_text(encoding="utf-8")
+    assert "ILIKE" not in sql and "denom" not in sql.lower()
+
+
+def test_the_behaviour_file_covers_the_liquidity_cases():
+    sql = Path("tests/sql/company_ticker_active_behaviour.sql").read_text(encoding="utf-8")
+    for case in ("LIQ53=true", "THIN3=false", "STAL3=false", "ZERO3=false", "BRDS3=true", "NOTP3=false"):
+        assert case in sql

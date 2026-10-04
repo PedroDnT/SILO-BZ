@@ -789,14 +789,14 @@ AS $$
         ('volume',           'number',  FALSE, 'Financial volume in currency.'),
         ('quotation_factor', 'integer', FALSE, 'FATCOT: how many shares the quoted prices refer to (1 or 1000).'),
         ('board',            'string',  FALSE, 'BDI board code (CODBDI) the session printed on; 02 is the standard lot.'),
-        ('isin',             'string',  FALSE, 'ISIN of the instrument (the series identity).'),
+        ('isin',             'string',  FALSE, 'ISIN of the instrument this row printed under. One ISIN per series, except across an ISIN change the ticker''s lineage splices (api.ticker_lineage), where each row keeps its own.'),
         ('short_name',       'string',  FALSE, 'Issuer short name as printed.'),
         ('spec',             'string',  FALSE, 'Share specification (ESPECI) as printed.'),
         ('currency',         'string',  FALSE, 'Price currency.'),
         ('asset_class',      'string',  FALSE, 'Instrument class from published TPMERC/ESPECI.'),
         ('source',           'string',  FALSE, 'Source file of the row.'),
-        ('coverage_start',   'date',    FALSE, 'First session this ticker printed under this ISIN on the tape (the tape starts 2019-01-02).'),
-        ('coverage_end',     'date',    FALSE, 'Last session this ticker printed under this ISIN on the tape.'),
+        ('coverage_start',   'date',    FALSE, 'First session of the series on the tape: this ticker under this ISIN, or the oldest instrument of its spliced lineage when the window reaches back to it (the tape starts 2019-01-02).'),
+        ('coverage_end',     'date',    FALSE, 'Last session of the series on the tape (the current instrument''s last print).'),
         ('prior_no_trade_sessions', 'integer', FALSE, 'Market sessions (days the B3 cash tape printed) since this ticker''s previous row in which it printed nothing. COTAHIST lists only papers that traded, so a missing session is a session with no trade; holidays are not sessions.'),
         ('events_proven_at', 'string',  FALSE, 'When the issuer''s corporate-event history was last proven complete (b3_corporate_event_sweep), ISO 8601 UTC. Null outside shares and units or when not proven.'),
         ('data_revision',    'string',  FALSE, 'Revision of the data behind this response: the latest successful load of the B3 cash tape, the corporate events or their proof, ISO 8601 UTC. It changes when adjusted levels can change; pages with different revisions must not be combined.'),
@@ -1067,6 +1067,124 @@ REVOKE ALL ON FUNCTION api.close_total_return_cash(TEXT, TEXT, TEXT, DATE, DATE)
 DROP FUNCTION IF EXISTS api.quote_history(TEXT, DATE, DATE, TEXT);
 DROP FUNCTION IF EXISTS api.quote_history(TEXT, DATE, DATE, TEXT, TEXT);
 
+-- Internal. The instruments a ticker's history runs through (#381 follow-up,
+-- owner decision 2026-10-04, docs/adr/0002-ticker-activity-and-lineage.md).
+-- A ticker can follow an older instrument when a company changes its trading
+-- code or B3 issues a new ISIN (VIIA3 BRVIIAACNOR7, last session 2023-09-19 at
+-- 0.75, then BHIA3 BRBHIAACNOR1, first session 2023-09-20 at 0.75). An older
+-- (ticker, ISIN) is spliced in front of the current one only when ALL hold:
+--   1. same company: it is the same ticker, or CVM's FCA map (cia_ticker)
+--      lists both tickers under one company CNPJ;
+--   2. same share class: ISIN characters 7-11 match (type + class, e.g. ACNOR);
+--   3. adjacent: its last cash session is the cash session immediately before
+--      the newer instrument's first one (no session in between);
+--   4. no overlap: the older ISIN never prints on or after that first session;
+--   5. no stock corporate event on either ISIN goes ex at the boundary
+--      (last_date_prior from the older last session to the day before the
+--      newer first one), so nothing at the seam needs an adjustment;
+--   6. exactly one candidate qualifies; two or more is ambiguous and stops.
+-- Anything else stops the chain: the history is refused there, never guessed.
+-- Each row keeps its own ticker and ISIN. seq 1 is the oldest instrument; the
+-- last row is the ticker's current instrument (its latest cash print). At most
+-- 10 instruments. Nothing is matched by name.
+CREATE OR REPLACE FUNCTION api.ticker_lineage(p_ticker TEXT)
+RETURNS TABLE (seq INT, ticker TEXT, isin TEXT, first_session DATE, last_session DATE)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_t   TEXT := upper(btrim(COALESCE(p_ticker, '')));
+    v_i   TEXT;
+    v_f   DATE;
+    v_l   DATE;
+    v_ct  TEXT[] := '{}';
+    v_ci  TEXT[] := '{}';
+    v_cf  DATE[] := '{}';
+    v_cl  DATE[] := '{}';
+    v_n   INT;
+    c_t   TEXT;
+    c_i   TEXT;
+    c_l   DATE;
+BEGIN
+    SELECT b.isin, b.trade_date INTO v_i, v_l
+    FROM public.b3_cotahist b
+    WHERE b.codneg = v_t AND b.tpmerc = '010'
+    ORDER BY b.trade_date DESC
+    LIMIT 1;
+    IF v_i IS NULL THEN
+        RETURN;
+    END IF;
+    SELECT min(b.trade_date) INTO v_f
+    FROM public.b3_cotahist b
+    WHERE b.codneg = v_t AND b.tpmerc = '010' AND b.isin = v_i;
+
+    LOOP
+        v_ct := v_t || v_ct;
+        v_ci := v_i || v_ci;
+        v_cf := v_f || v_cf;
+        v_cl := v_l || v_cl;
+        EXIT WHEN cardinality(v_ct) >= 10;
+
+        SELECT count(*), min(x.codneg), min(x.isin), min(x.last_print)
+        INTO v_n, c_t, c_i, c_l
+        FROM (
+            SELECT cand.codneg, p.isin, p.trade_date AS last_print
+            FROM (
+                SELECT v_t AS codneg
+                UNION
+                SELECT o.codneg
+                FROM public.cia_ticker o
+                WHERE o.codneg IS NOT NULL
+                  AND o.cnpj_cia IN (SELECT x.cnpj_cia FROM public.cia_ticker x WHERE x.codneg = v_t)
+            ) cand
+            CROSS JOIN LATERAL (
+                SELECT b.isin, b.trade_date
+                FROM public.b3_cotahist b
+                WHERE b.codneg = cand.codneg AND b.tpmerc = '010' AND b.trade_date < v_f
+                ORDER BY b.trade_date DESC
+                LIMIT 1
+            ) p
+            WHERE p.isin IS NOT NULL
+              AND p.isin <> v_i
+              AND substr(p.isin, 7, 5) = substr(v_i, 7, 5)
+              AND NOT EXISTS (
+                  SELECT 1 FROM public.b3_cotahist s
+                  WHERE s.tpmerc = '010' AND s.trade_date > p.trade_date AND s.trade_date < v_f)
+              AND NOT EXISTS (
+                  SELECT 1 FROM public.b3_cotahist o
+                  WHERE o.isin = p.isin AND o.tpmerc = '010' AND o.trade_date >= v_f)
+              AND NOT EXISTS (
+                  SELECT 1 FROM public.b3_corporate_event e
+                  WHERE e.isin IN (p.isin, v_i)
+                    AND e.event_class = 'stock'
+                    AND e.last_date_prior >= p.trade_date
+                    AND e.last_date_prior < v_f)
+        ) x;
+        EXIT WHEN v_n <> 1;
+        EXIT WHEN c_i = ANY (v_ci);
+
+        v_t := c_t;
+        v_i := c_i;
+        v_l := c_l;
+        SELECT min(b.trade_date) INTO v_f
+        FROM public.b3_cotahist b
+        WHERE b.codneg = v_t AND b.tpmerc = '010' AND b.isin = v_i;
+    END LOOP;
+
+    RETURN QUERY
+    SELECT g.n::int, v_ct[g.n], v_ci[g.n], v_cf[g.n], v_cl[g.n]
+    FROM generate_subscripts(v_ct, 1) AS g(n)
+    ORDER BY g.n;
+END;
+$$;
+
+COMMENT ON FUNCTION api.ticker_lineage(TEXT) IS
+    'Internal. The (ticker, ISIN) instruments a ticker''s history runs through, oldest first, spliced only when they are the same company (same ticker, or one CNPJ in CVM''s FCA map), the same share class (ISIN characters 7-11), adjacent sessions with no overlap, no stock event at the seam, and exactly one candidate (docs/adr/0002-ticker-activity-and-lineage.md). Used by api.quote_history.';
+
+REVOKE ALL ON FUNCTION api.ticker_lineage(TEXT) FROM PUBLIC;
+
 CREATE OR REPLACE FUNCTION api.quote_history(
     p_ticker TEXT,
     -- NULL = from the instrument's first session on the tape.
@@ -1111,6 +1229,23 @@ DECLARE
     v_rev       TEXT;
     v_tr        BOOLEAN;
     v_status    RECORD;
+    -- The instruments the window runs through (api.ticker_lineage, #381):
+    -- one entry per (ticker, ISIN), oldest first. One entry unless the
+    -- window reaches back across a spliced ISIN change.
+    v_lin_t     TEXT[];
+    v_lin_i     TEXT[];
+    v_lin_f     DATE[];
+    v_lin_l     DATE[];
+    v_seg_t     TEXT[];
+    v_seg_i     TEXT[];
+    v_seg_f     DATE[];
+    v_seg_l     DATE[];
+    v_seg_anchor DATE[] := '{}';
+    v_seg_tail  NUMERIC[] := '{}';
+    v_tail      NUMERIC := 1;
+    v_k         INT;
+    v_lineage   BOOLEAN := FALSE;
+    v_cur_first DATE;
 BEGIN
     -- 1. The selection. An unknown name refuses; nothing is silently dropped.
     SELECT string_agg(f.field, ', ' ORDER BY f.field) INTO v_valid
@@ -1167,24 +1302,69 @@ BEGIN
     END IF;
 
     -- 3. Coverage. Exactly one ISIN may meet the window, and the window may not
-    -- start before that ISIN's first session on the tape.
-    SELECT count(*), max(s.isin), min(s.f), max(s.l)
-    INTO v_n, v_isin, v_cov_start, v_cov_end
-    FROM (
-        SELECT b.isin, min(b.trade_date) AS f, max(b.trade_date) AS l
+    -- start before that ISIN's first session on the tape, unless the window
+    -- reaches back across an ISIN change api.ticker_lineage splices (#381):
+    -- then the series runs through each instrument in turn, and every row
+    -- keeps its own ticker and ISIN. With p_board, no splice is attempted.
+    -- Only a window that starts before the current instrument's first session
+    -- can reach a splice, so the lineage is looked up only then.
+    IF v_board IS NULL AND v_from IS NOT NULL THEN
+        SELECT min(b.trade_date) INTO v_cur_first
         FROM public.b3_cotahist b
         WHERE b.codneg = v_ticker AND b.tpmerc = '010'
-          AND (v_board IS NULL OR b.codbdi = v_board)
-        GROUP BY b.isin
-    ) s
-    WHERE s.f <= v_to AND (v_from IS NULL OR s.l >= v_from);
-    IF v_n = 0 THEN
-        RAISE EXCEPTION 'quote_history: refused, % has no coverage from % to %. Its coverage: %. To fix: ask for a window inside it.', v_ticker, COALESCE(v_from::text, 'the start'), v_to, v_spans
-            USING ERRCODE = '22023', DETAIL = 'reason=outside_coverage', HINT = 'Coverage: ' || v_spans;
+          AND b.isin IS NOT DISTINCT FROM (
+              SELECT b2.isin FROM public.b3_cotahist b2
+              WHERE b2.codneg = v_ticker AND b2.tpmerc = '010'
+              ORDER BY b2.trade_date DESC LIMIT 1);
     END IF;
-    IF v_n > 1 THEN
-        RAISE EXCEPTION 'quote_history: refused, from % to % % printed under more than one ISIN (%). A new ISIN is a new instrument and is never joined to the old one. To fix: narrow p_from/p_to to one ISIN''s span.', COALESCE(v_from::text, 'the start'), v_to, v_ticker, v_spans
-            USING ERRCODE = '22023', DETAIL = 'reason=isin_change', HINT = 'Coverage: ' || v_spans;
+    IF v_board IS NULL AND (v_from IS NULL OR v_from < v_cur_first) THEN
+        SELECT array_agg(l.ticker ORDER BY l.seq), array_agg(l.isin ORDER BY l.seq),
+               array_agg(l.first_session ORDER BY l.seq), array_agg(l.last_session ORDER BY l.seq)
+        INTO v_lin_t, v_lin_i, v_lin_f, v_lin_l
+        FROM api.ticker_lineage(v_ticker) l;
+        v_lineage := cardinality(v_lin_t) > 1
+                     AND (v_from IS NULL OR v_from < v_lin_f[cardinality(v_lin_f)]);
+    END IF;
+
+    IF v_lineage THEN
+        v_spans := (SELECT string_agg(format('%s %s %s..%s', v_lin_t[g], v_lin_i[g], v_lin_f[g], v_lin_l[g]), '; ' ORDER BY g)
+                    FROM generate_subscripts(v_lin_t, 1) g);
+        -- An instrument of this ticker outside the splice still refuses.
+        SELECT count(*) INTO v_n
+        FROM (
+            SELECT b.isin, min(b.trade_date) AS f, max(b.trade_date) AS l
+            FROM public.b3_cotahist b
+            WHERE b.codneg = v_ticker AND b.tpmerc = '010'
+            GROUP BY b.isin
+        ) s
+        WHERE s.f <= v_to AND (v_from IS NULL OR s.l >= v_from)
+          AND NOT (s.isin IS NOT NULL AND s.isin = ANY (v_lin_i));
+        IF v_n > 0 THEN
+            RAISE EXCEPTION 'quote_history: refused, from % to % % printed under an ISIN its lineage does not splice (%). A new ISIN is joined to the old one only by the lineage rule. To fix: narrow p_from/p_to to one ISIN''s span.', COALESCE(v_from::text, 'the start'), v_to, v_ticker, v_spans
+                USING ERRCODE = '22023', DETAIL = 'reason=isin_change', HINT = 'Coverage: ' || v_spans;
+        END IF;
+        v_cov_start := v_lin_f[1];
+        v_cov_end   := v_lin_l[cardinality(v_lin_l)];
+        v_isin      := v_lin_i[cardinality(v_lin_i)];
+    ELSE
+        SELECT count(*), max(s.isin), min(s.f), max(s.l)
+        INTO v_n, v_isin, v_cov_start, v_cov_end
+        FROM (
+            SELECT b.isin, min(b.trade_date) AS f, max(b.trade_date) AS l
+            FROM public.b3_cotahist b
+            WHERE b.codneg = v_ticker AND b.tpmerc = '010'
+              AND (v_board IS NULL OR b.codbdi = v_board)
+            GROUP BY b.isin
+        ) s
+        WHERE s.f <= v_to AND (v_from IS NULL OR s.l >= v_from);
+        IF v_n = 0 THEN
+            RAISE EXCEPTION 'quote_history: refused, % has no coverage from % to %. Its coverage: %. To fix: ask for a window inside it.', v_ticker, COALESCE(v_from::text, 'the start'), v_to, v_spans
+                USING ERRCODE = '22023', DETAIL = 'reason=outside_coverage', HINT = 'Coverage: ' || v_spans;
+        END IF;
+        IF v_n > 1 THEN
+            RAISE EXCEPTION 'quote_history: refused, from % to % % printed under more than one ISIN (%). A new ISIN is joined to the old one only when api.ticker_lineage splices them, and these are not spliced. To fix: narrow p_from/p_to to one ISIN''s span.', COALESCE(v_from::text, 'the start'), v_to, v_ticker, v_spans
+                USING ERRCODE = '22023', DETAIL = 'reason=isin_change', HINT = 'Coverage: ' || v_spans;
+        END IF;
     END IF;
     IF v_from IS NULL THEN
         v_from := v_cov_start;
@@ -1201,32 +1381,71 @@ BEGIN
             USING ERRCODE = '22023', DETAIL = 'reason=outside_coverage', HINT = 'Coverage: ' || v_spans;
     END IF;
 
-    -- 4. One row per session, or a refusal.
-    SELECT string_agg(format('%s (boards %s)', d.trade_date, d.boards), ', ' ORDER BY d.trade_date)
-    INTO v_dup
-    FROM (
-        SELECT b.trade_date, string_agg(b.codbdi, '/' ORDER BY b.codbdi) AS boards
-        FROM public.b3_cotahist b
-        WHERE b.codneg = v_ticker AND b.tpmerc = '010' AND b.isin IS NOT DISTINCT FROM v_isin
-          AND (v_board IS NULL OR b.codbdi = v_board)
-          AND b.trade_date BETWEEN v_from AND v_to
-        GROUP BY b.trade_date
-        HAVING count(*) > 1
-        ORDER BY b.trade_date
-        LIMIT 5
-    ) d;
-    IF v_dup IS NOT NULL THEN
-        RAISE EXCEPTION 'quote_history: refused, % printed more than one row on a session: %. SILO does not choose between them. To fix: pass p_board to pick one board.', v_ticker, v_dup
-            USING ERRCODE = '22023', DETAIL = 'reason=ambiguous_session';
+    -- The instruments the series runs through, oldest first: the whole
+    -- lineage when the window reaches back across a splice (rows outside the
+    -- window are filtered later; later instruments still adjust earlier rows),
+    -- else the one instrument the window meets.
+    IF v_lineage THEN
+        v_seg_t := v_lin_t;
+        v_seg_i := v_lin_i;
+        v_seg_f := v_lin_f;
+        v_seg_l := v_lin_l;
+    ELSE
+        v_seg_t := ARRAY[v_ticker];
+        v_seg_i := ARRAY[v_isin];
+        v_seg_f := ARRAY[v_cov_start];
+        v_seg_l := ARRAY[v_cov_end];
     END IF;
 
+    -- 4. One row per session, or a refusal.
+    FOR v_k IN 1 .. cardinality(v_seg_t) LOOP
+        CONTINUE WHEN v_seg_f[v_k] > v_to OR v_seg_l[v_k] < v_from;
+        SELECT string_agg(format('%s (boards %s)', d.trade_date, d.boards), ', ' ORDER BY d.trade_date)
+        INTO v_dup
+        FROM (
+            SELECT b.trade_date, string_agg(b.codbdi, '/' ORDER BY b.codbdi) AS boards
+            FROM public.b3_cotahist b
+            WHERE b.codneg = v_seg_t[v_k] AND b.tpmerc = '010' AND b.isin IS NOT DISTINCT FROM v_seg_i[v_k]
+              AND (v_board IS NULL OR b.codbdi = v_board)
+              AND b.trade_date BETWEEN GREATEST(v_from, v_seg_f[v_k]) AND LEAST(v_to, v_seg_l[v_k])
+            GROUP BY b.trade_date
+            HAVING count(*) > 1
+            ORDER BY b.trade_date
+            LIMIT 5
+        ) d;
+        IF v_dup IS NOT NULL THEN
+            RAISE EXCEPTION 'quote_history: refused, % printed more than one row on a session: %. SILO does not choose between them. To fix: pass p_board to pick one board.', v_seg_t[v_k], v_dup
+                USING ERRCODE = '22023', DETAIL = 'reason=ambiguous_session';
+        END IF;
+    END LOOP;
+
     -- 5. The adjusted close, or a refusal naming ticker, period and cause.
-    IF v_adj THEN
-        PERFORM api.assert_close_adj('quote_history', v_ticker, v_isin, v_from, v_to);
-    END IF;
-    SELECT * INTO v_status FROM api.close_adj_status(v_isin, v_ticker);
+    -- Each instrument is checked on its own stretch of the window, and every
+    -- later instrument on its whole span, because its share-count events
+    -- divide the earlier rows too. A row is divided by its own ISIN's later
+    -- share ratios up to that ISIN's last session, times every later
+    -- instrument's (v_seg_tail); the lineage rule leaves no stock event at a
+    -- seam.
+    FOR v_k IN 1 .. cardinality(v_seg_t) LOOP
+        IF v_adj AND v_seg_l[v_k] >= v_from THEN
+            PERFORM api.assert_close_adj('quote_history', v_seg_t[v_k], v_seg_i[v_k],
+                                         GREATEST(v_from, v_seg_f[v_k]),
+                                         CASE WHEN v_seg_f[v_k] > v_to THEN v_seg_l[v_k]
+                                              ELSE LEAST(v_to, v_seg_l[v_k]) END);
+        END IF;
+        SELECT * INTO v_status FROM api.close_adj_status(v_seg_i[v_k], v_seg_t[v_k]);
+        v_seg_anchor := v_seg_anchor || v_status.anchor;
+    END LOOP;
+    -- The current instrument's status drives events_proven_at and the total return.
     v_anchor := v_status.anchor;
     v_proven := v_status.proven_at;
+    v_seg_tail := array_fill(1::numeric, ARRAY[cardinality(v_seg_t)]);
+    FOR v_k IN REVERSE cardinality(v_seg_t) .. 1 LOOP
+        v_seg_tail[v_k] := v_tail;
+        IF v_k > 1 AND v_adj THEN
+            v_tail := v_tail * api.close_adj_ratio(v_seg_i[v_k], v_seg_f[v_k], v_seg_anchor[v_k]);
+        END IF;
+    END LOOP;
 
     v_rev := api.quote_data_revision();
     -- Also on every response as a header, for callers that keep only rows.
@@ -1235,12 +1454,20 @@ BEGIN
                        TRUE);
 
     RETURN QUERY
-    WITH RECURSIVE page AS (
-        SELECT q.*
-        FROM api.quotes q
-        WHERE q.ticker = v_ticker
-          AND q.isin IS NOT DISTINCT FROM v_isin
-          AND (v_board IS NULL OR q.board = v_board)
+    WITH RECURSIVE seg AS (
+        SELECT g AS k, v_seg_t[g] AS t, v_seg_i[g] AS i, v_seg_f[g] AS f, v_seg_l[g] AS l,
+               v_seg_anchor[g] AS anchor, v_seg_tail[g] AS tail,
+               g = cardinality(v_seg_t) AS is_current
+        FROM generate_subscripts(v_seg_t, 1) g
+    ),
+    page AS (
+        SELECT q.*, s.i AS seg_isin, s.anchor AS seg_anchor, s.tail AS seg_tail, s.is_current
+        FROM seg s
+        JOIN api.quotes q
+          ON q.ticker = s.t
+         AND q.isin IS NOT DISTINCT FROM s.i
+         AND q.trade_date BETWEEN s.f AND s.l
+        WHERE (v_board IS NULL OR q.board = v_board)
           AND q.trade_date BETWEEN v_from AND v_to
           AND (v_after IS NULL OR q.trade_date > v_after)
         ORDER BY q.trade_date
@@ -1248,13 +1475,18 @@ BEGIN
         -- detectable, and assert_row_cap then refuses instead of trimming.
         LIMIT 1001
     ),
+    -- The previous print of the same series: across a spliced seam when the
+    -- window runs through a lineage, else the same (ticker, ISIN) as before.
     prev AS (
         SELECT max(b.trade_date) AS d
         FROM public.b3_cotahist b
+        JOIN generate_subscripts(CASE WHEN v_lineage THEN v_lin_t ELSE v_seg_t END, 1) g ON TRUE
         WHERE 'prior_no_trade_sessions' = ANY (v_fields)
-          AND b.codneg = v_ticker AND b.tpmerc = '010' AND b.isin IS NOT DISTINCT FROM v_isin
+          AND b.codneg = (CASE WHEN v_lineage THEN v_lin_t ELSE v_seg_t END)[g]
+          AND b.isin IS NOT DISTINCT FROM (CASE WHEN v_lineage THEN v_lin_i ELSE v_seg_i END)[g]
+          AND b.tpmerc = '010'
           AND (v_board IS NULL OR b.codbdi = v_board)
-          AND b.trade_date < (SELECT min(g.trade_date) FROM page g)
+          AND b.trade_date < (SELECT min(g2.trade_date) FROM page g2)
     ),
     -- The market calendar over the page (sessions = days the cash tape
     -- printed), by skip scan: one index probe per session, ~34 ms for the
@@ -1289,6 +1521,8 @@ BEGIN
         LEFT JOIN LATERAL (
             SELECT
                 CASE
+                    WHEN NOT g.is_current
+                        THEN 'before an ISIN change the ticker''s lineage splices; the total return is not computed across it'
                     WHEN NOT v_status.in_universe THEN 'outside research universe'
                     WHEN v_status.proven_at IS NULL THEN 'issuer corporate events not proven swept'
                     WHEN (v_status.proven_at AT TIME ZONE 'America/Sao_Paulo')::date < v_status.anchor
@@ -1312,7 +1546,7 @@ BEGIN
             'ticker',           r.ticker,
             'trade_date',       r.trade_date,
             'close_adj',        CASE WHEN v_adj THEN
-                                    round(r.close_unit / api.close_adj_ratio(v_isin, r.trade_date, v_anchor), 6)
+                                    round(r.close_unit / (api.close_adj_ratio(r.seg_isin, r.trade_date, r.seg_anchor) * r.seg_tail), 6)
                                 END,
             'close',            r.close,
             'open',             r.open,
@@ -1361,7 +1595,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT, TEXT[]) IS
-    'Daily price series for one ticker, oldest first, one JSON object per session holding only the selected fields. Default (p_fields omitted): ticker, trade_date, close_adj. close_adj is the close per single share, backward-adjusted for splits, groupings and bonus shares by B3''s rule and anchored to the instrument''s latest session (past levels change when an event lands; returns do not); no dividend, JCP or subscription-right adjustment; shares and units only; 6 decimal places. It is never null and never the raw close: a window it cannot cover is REFUSED (22023, DETAIL reason=adjustment_unavailable) naming ticker, period and cause. The raw close, OHLC and volume are an explicit selection (p_fields = {close, ...}); fields are listed in catalog(). The series follows the ISIN across boards; p_board restricts it. Refusals (22023, DETAIL reason=...): unknown_ticker; outside_coverage (a window with no coverage, or starting before the instrument''s first session; the tape starts 2019-01-02); isin_change (two ISINs in the window); ambiguous_session (two rows on one session); invalid_field; adjustment_unavailable. A session missing inside the coverage is a session with no trade (prior_no_trade_sessions counts them); a field with no value is a null. close_total_return (with close_total_return_null_reason) is selectable too: close_adj with B3''s cash distributions reinvested at the ex-date close (#418), NULL with a reason wherever a distribution cannot be valued, never the price return in disguise. data_revision (field, and header X-Silo-Data-Revision) identifies the data; do not combine pages with different revisions. Row cap: more than 1000 rows RAISES 22023 unless p_after pages: '''' = first page, then the last row''s trade_date as ''YYYY-MM-DD''; a page shorter than 1000 is the last.';
+    'Daily price series for one ticker, oldest first, one JSON object per session holding only the selected fields. Default (p_fields omitted): ticker, trade_date, close_adj. close_adj is the close per single share, backward-adjusted for splits, groupings and bonus shares by B3''s rule and anchored to the instrument''s latest session (past levels change when an event lands; returns do not); no dividend, JCP or subscription-right adjustment; shares and units only; 6 decimal places. It is never null and never the raw close: a window it cannot cover is REFUSED (22023, DETAIL reason=adjustment_unavailable) naming ticker, period and cause. The raw close, OHLC and volume are an explicit selection (p_fields = {close, ...}); fields are listed in catalog(). The series follows the ISIN across boards; p_board restricts it. Refusals (22023, DETAIL reason=...): unknown_ticker; outside_coverage (a window with no coverage, or starting before the instrument''s first session; the tape starts 2019-01-02); isin_change (two ISINs in the window that the ticker''s lineage does not splice); ambiguous_session (two rows on one session); invalid_field; adjustment_unavailable. A session missing inside the coverage is a session with no trade (prior_no_trade_sessions counts them); a field with no value is a null. A ticker whose company changed its trading code or ISIN runs through its older instrument (ticker lineage, #381): an older (ticker, ISIN) is spliced in front only when it is the same company (the same ticker, or one CNPJ in CVM''s FCA map), the same share class (ISIN characters 7-11), its last cash session is the one right before the newer first session with no overlap, no stock event goes ex at the seam, and exactly one candidate qualifies; every row keeps its own ticker and ISIN, close_adj divides older rows by the later instruments'' share ratios too, and close_total_return is NULL before a seam (VIIA3 BRVIIAACNOR7 to BHIA3 BRBHIAACNOR1 on 2023-09-20). close_total_return (with close_total_return_null_reason) is selectable too: close_adj with B3''s cash distributions reinvested at the ex-date close (#418), NULL with a reason wherever a distribution cannot be valued, never the price return in disguise. data_revision (field, and header X-Silo-Data-Revision) identifies the data; do not combine pages with different revisions. Row cap: more than 1000 rows RAISES 22023 unless p_after pages: '''' = first page, then the last row''s trade_date as ''YYYY-MM-DD''; a page shorter than 1000 is the last.';
 
 REVOKE ALL ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT, TEXT[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT, TEXT[]) TO anon, authenticated;
@@ -2039,7 +2273,7 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT, TEXT) IS
-    'Monthly NAV/flows series for one CNPJ, oldest first. Default window (p_to NULL) ends at the family''s latest COMPLETE period per mv_period_completeness; an explicit p_to serves the window verbatim, partial months included. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '''' = first page, then the last row''s period as ''YYYY-MM-DD''. PAGING REQUIRES p_entity_type — one CNPJ can file under two families in the same month (385 do), so a bare period is unique only within one family; whole-result mode serves both and labels each row. period is CVM''s filed month-END date; the trailing period_month is the same month as api.panel keys it (first of month). Columns are per family (fact_fund_monthly arms): fi files quota, quotaholders, inflows, redemptions; fidc and fiagro file delinquency; fii files quotaholders, monthly_yield, assets; fip files nav only — a null outside that list is not applicable, not missing (catalog().applicability). fidc delinquency is null through 2024-12 and filed from 2025-01 (regime break; catalog().regime_breaks).';
+    'Monthly NAV/flows series for one CNPJ, oldest first. Default window (p_to NULL) ends at the family''s latest COMPLETE period per mv_period_completeness; an explicit p_to serves the window verbatim, partial months included. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '''' = first page, then the last row''s period as ''YYYY-MM-DD''. PAGING REQUIRES p_entity_type — one CNPJ can file under two families in the same month (385 do), so a bare period is unique only within one family; whole-result mode serves both and labels each row. period is CVM''s filed month-END date; the trailing period_month is the same month as api.panel keys it (first of month). Columns are per family (fact_fund_monthly arms): fi files quota, quotaholders, inflows, redemptions; fidc and fiagro file delinquency; fii files quotaholders, monthly_yield, assets; fip files nav only — a null outside that list is not applicable, not missing (catalog().applicability). fidc delinquency is filed from 2013-01, null for a fund with no tab VI row before 2020-11 and on every row from 2020-11 (regime break; catalog().regime_breaks).';
 
 REVOKE ALL ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.fund_nav(TEXT, DATE, DATE, TEXT, TEXT) TO anon, authenticated;
@@ -2764,21 +2998,22 @@ COMMENT ON FUNCTION api.fidc_portfolio(TEXT, TEXT, DATE, DATE, INT) IS
 --                  overdue (by days past due), and overdue_total, which is
 --                  CVM's FILED total, never a sum of the buckets here.
 --
--- HISTORY BEGINS IN 2025. These tabs are ingested from the current-format
--- informe only; CVM's pre-2025 HIST archive publishes no equivalent member for
--- X_2 / X_4 / VI, so an earlier month has no rows — an upstream limit, not a
--- gap to backfill. coverage()'s fidc_tranches / fidc_aging rows say so.
+-- HISTORY BEGINS IN 2013-01. These tabs are ingested from CVM's yearly HIST
+-- archive through 2024-12 and from the monthly informe from 2025-01 (#556,
+-- #569); the value columns have the same names in both. coverage()'s
+-- fidc_tranches / fidc_aging rows say so.
 --
 -- Neither function derives anything: no performance gap, no subordination
 -- ratio, no bucket sums. vw_fidc_tranche_detail / fidc_tranche_performance
 -- (the dashboard's read) compute those on the same rows; a caller does the
 -- arithmetic in the notebook, where it can see it. Percent fields are dirty
--- the way CVM's percentage fields are (schema.sql: raw values up to 1.6e8) —
+-- the way CVM's percentage fields are (filed magnitudes of 1e14 and more;
+-- migration 70 made the columns unconstrained numeric) —
 -- served as filed, never clipped, never nulled.
 --
 -- Row cap: one page + one, then api.assert_row_cap REFUSES (22023). No
--- cursor: a fund's whole post-2025 history is tens of rows, so a window over
--- 1000 is a mistake to narrow, not a series to walk. Default window verbatim,
+-- cursor: a window over 1000 rows is narrowed by date or p_series, not
+-- walked (the history now starts in 2013-01, so a long window can pass one page). Default window verbatim,
 -- like the other fidc_* functions.
 
 CREATE OR REPLACE FUNCTION api.fidc_tranches(
@@ -2882,7 +3117,7 @@ GRANT EXECUTE ON FUNCTION api.fidc_tranches(TEXT, DATE, DATE, TEXT)
     TO anon, authenticated;
 
 COMMENT ON FUNCTION api.fidc_tranches(TEXT, DATE, DATE, TEXT) IS
-    'One FIDC''s tranches, month by month, oldest first: one row per (fund, month, classe_serie) from informe tabs X_2 / X_3 / X_6 — quotas, quota_value, return_month, and performance_expected vs performance_realised (what the series promised vs delivered, percent) — all AS FILED, with the dirty outliers CVM''s percentage fields carry (never clipped; range-check in the notebook). flows is the tranche''s tab X_4 operations as a JSON array [{tp_oper, value, quotas}], labels verbatim (e.g. Captações no Mês, Resgates no Mês, Amortizações) and never bucketed; NULL when none were filed. tranche_filed = FALSE marks a series with flows but no X_2 row. Nothing is derived: no performance gap, no subordination ratio. HISTORY BEGINS IN 2025 — CVM''s HIST archive has no equivalent member, so an earlier month has no rows (an upstream limit, not a gap). p_series pins one tranche label exactly. More than 1000 rows RAISES 22023 (never trimmed): narrow the window.';
+    'One FIDC''s tranches, month by month, oldest first: one row per (fund, month, classe_serie) from informe tabs X_2 / X_3 / X_6 — quotas, quota_value, return_month, and performance_expected vs performance_realised (what the series promised vs delivered, percent) — all AS FILED, with the dirty outliers CVM''s percentage fields carry (never clipped; range-check in the notebook). flows is the tranche''s tab X_4 operations as a JSON array [{tp_oper, value, quotas}], labels verbatim (e.g. Captações no Mês, Resgates no Mês, Amortizações) and never bucketed; NULL when none were filed. tranche_filed = FALSE marks a series with flows but no X_2 row. Nothing is derived: no performance gap, no subordination ratio. HISTORY BEGINS IN 2013-01: CVM''s yearly HIST archive through 2024-12, the monthly informe from 2025-01. p_series pins one tranche label exactly. More than 1000 rows RAISES 22023 (never trimmed): narrow the window.';
 
 CREATE OR REPLACE FUNCTION api.fidc_aging(
     p_cnpj TEXT,
@@ -2962,7 +3197,7 @@ GRANT EXECUTE ON FUNCTION api.fidc_aging(TEXT, DATE, DATE)
     TO anon, authenticated;
 
 COMMENT ON FUNCTION api.fidc_aging(TEXT, DATE, DATE) IS
-    'One FIDC''s receivables aging ladder from informe tab VI, long, oldest first: 21 rows per month — kind=to_maturity (credits not yet due, by days to maturity, ten bands 1-30 .. >1080), kind=overdue (by days past due, the same ten bands), and kind=overdue_total, CVM''s FILED total of overdue credits, which is not a sum of the buckets and can disagree with one. Values in BRL as filed; a blank in the filing is NULL, never 0. item names the source column. Tab VI covers the credits acquired WITHOUT substantial retention of risk by the originator (tab V, the with-risk twin, is not ingested). HISTORY BEGINS IN 2025 — CVM''s HIST archive has no equivalent member, so an earlier month has no rows (an upstream limit, not a gap). The panel''s delinquency metric is the fund-level total; this is the ladder under it. More than 1000 rows RAISES 22023 (never trimmed): narrow the window.';
+    'One FIDC''s receivables aging ladder from informe tab VI, long, oldest first: 21 rows per month — kind=to_maturity (credits not yet due, by days to maturity, ten bands 1-30 .. >1080), kind=overdue (by days past due, the same ten bands), and kind=overdue_total, CVM''s FILED total of overdue credits, which is not a sum of the buckets and can disagree with one. Values in BRL as filed; a blank in the filing is NULL, never 0. item names the source column. Tab VI covers the credits acquired WITHOUT substantial retention of risk by the originator (tab V, the with-risk twin, is not ingested). HISTORY BEGINS IN 2013-01: CVM''s yearly HIST archive through 2024-12, the monthly informe from 2025-01. The panel''s delinquency metric is the fund-level total; this is the ladder under it. More than 1000 rows RAISES 22023 (never trimmed): narrow the window.';
 
 -- ---------------------------------------------------------------------------
 -- ANBIMA class aggregates — the industry benchmark series, as published
@@ -3694,7 +3929,7 @@ AS $$
                public.latest_complete_period(fam.entity_type), 'cvm'::text,
                CASE fam.entity_type
                    WHEN 'fidc' THEN
-                       'regime break at 2025-01-31: delinquency is null on every row through 2024-12-31 (CVM''s pre-2025 tab II/III monthly file carries no delinquency field) and filed on every row from 2025-01-31 (tab IV/VI). Not zero, not clean books — never chain-link across 2024-12 → 2025-01. See catalog().regime_breaks.'
+                       'regime break at 2020-11-30: delinquency (tab VI''s filed total, from 2013-01) is null through 2020-10-31 for a fund with no tab VI row that month, and filed on every row from 2020-11-30. A null is not zero, not clean books — never read it as zero or compare counts of reporting funds across 2020-10 → 2020-11. See catalog().regime_breaks.'
                    WHEN 'fip' THEN
                        'files annually, keyed to 31-December: newest_period is a year-end key that can sit in the future, as_of is the newest period that has actually elapsed. Never read newest_period as freshness.'
                END::text,
@@ -3802,19 +4037,18 @@ AS $$
         UNION ALL
         -- FIDC structure tabs (v31): tranches (X_2/X_3/X_6 + X_4) and the
         -- tab VI aging ladder. Same informe, same fidc completeness clamp.
-        -- The note carries the one thing a short span invites a caller to
-        -- misread: it starts in 2025 because CVM publishes no archive of
-        -- these members, not because ingest missed anything.
+        -- The note says where the span comes from: CVM's yearly HIST archive
+        -- through 2024-12 and the monthly informe from 2025-01.
         SELECT 'fidc_tranches'::text,
                (SELECT MAX(t2.period) FROM public.cvm_fidc_tranche t2 WHERE t2.period <= CURRENT_DATE),
                public.latest_complete_period('fidc'), 'cvm'::text,
-               'tabs X_2/X_3/X_6 (+ X_4 flows) exist from 2025-01 only: CVM''s pre-2025 HIST archive publishes no equivalent member, so an earlier month has no rows — an upstream limit, not a gap to backfill. Quotas, quota value, return and promised vs realised performance are as filed (percent fields carry CVM''s outliers); flows keep CVM''s TP_OPER labels verbatim'::text,
+               'tabs X_2/X_3/X_6 (+ X_4 flows) from 2013-01: CVM''s yearly HIST archive through 2024-12, the monthly informe from 2025-01. Quotas, quota value, return and promised vs realised performance are as filed (percent fields carry CVM''s outliers, 1e14 and more, never rescaled); flows keep CVM''s TP_OPER labels verbatim'::text,
                (SELECT MAX(t2.period) FROM public.cvm_fidc_tranche t2), 'fidc'::text
         UNION ALL
         SELECT 'fidc_aging'::text,
                (SELECT MAX(a2.period) FROM public.cvm_fidc_aging a2 WHERE a2.period <= CURRENT_DATE),
                public.latest_complete_period('fidc'), 'cvm'::text,
-               'tab VI exists from 2025-01 only: CVM''s pre-2025 HIST archive publishes no equivalent member, so an earlier month has no rows — an upstream limit, not a gap to backfill. to_maturity and overdue ladders in ten day-bands each, BRL as filed; overdue_total is CVM''s filed total, not a sum of the bands'::text,
+               'tab VI from 2013-01: CVM''s yearly HIST archive through 2024-12, the monthly informe from 2025-01. to_maturity and overdue ladders in ten day-bands each, BRL as filed; overdue_total is CVM''s filed total, not a sum of the bands'::text,
                (SELECT MAX(a2.period) FROM public.cvm_fidc_aging a2), 'fidc'::text
         UNION ALL
         -- The B3 securities-lending and investor-flow group (#235, #240-#245),
@@ -3982,7 +4216,7 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION api.coverage() IS
-    'Freshness AND honesty per dataset. as_of = the newest period that has landed and has actually ELAPSED (bounded by today); complete_through = the newest COMPLETE period, which is what default windows serve; newest_period = the newest period KEY present, which can sit in the future when a family files forward-dated (FIP is keyed 31-December); landed_at = when ingest last SUCCEEDED for that source, from cvm_ingest_log (status ok with a finish time, so a later failed run never advances it); landed_git_sha = the git commit of THAT run — which code produced this data — NULL when the run recorded none (before migration 44, or run outside GitHub Actions), never borrowed from an older run. funds_<family> rows report each filing cadence separately. notes carries a caveat the dates cannot: the quotes row states where the cash tape starts (quote_history refuses a window before an instrument''s first session); the funds_fidc row states the 2025-01 delinquency regime break (null on every row before, filed on every row after — never chain-link through it); funds_fip states why its newest_period runs ahead; fund_nav points at catalog().applicability and api.metric_coverage(); the fidc_tranches and fidc_aging rows state that those informe tabs begin in 2025-01 because CVM publishes no archive of them (an upstream limit, not a gap); the fnet_documents row (the FNET register behind fund_documents and fund_restatements) is keyed on the DELIVERY day, with complete_through the day before as_of, and states that its history begins at first capture / backfill and that fund links come from a fortnightly sweep, so recent documents may have no cnpj yet; the company_events row (IPE filings, keyed on the delivery date, complete_through NULL as on financials) states that history starts in 2015 and that filings CVM published without a protocol number are not held; the macro_series and ptax rows carry their units and cadences (SELIC_META is published ahead, so its newest_period can sit in the future); the di_futures and reference_curves rows (B3 Price Report DI1 contracts from 2018, B3 reference curves from 2008) state where each history starts and that the long curve vertices are B3''s extrapolation, not prices; and the five B3 lending / flow rows (short_interest, short_interest_by_sector, lending_trades, lending_participants, investor_flow) state the RATCHET — B3 keeps ~21 business days and publishes no archive, so their span starts at first capture and no backfill exists — along with the float_basis, brokerage-not-owner and first-difference traps that make those series easy to read wrongly. Their landed_at is split by ingest doc_type, so a COTAHIST run never reports as the lending group''s freshness.';
+    'Freshness AND honesty per dataset. as_of = the newest period that has landed and has actually ELAPSED (bounded by today); complete_through = the newest COMPLETE period, which is what default windows serve; newest_period = the newest period KEY present, which can sit in the future when a family files forward-dated (FIP is keyed 31-December); landed_at = when ingest last SUCCEEDED for that source, from cvm_ingest_log (status ok with a finish time, so a later failed run never advances it); landed_git_sha = the git commit of THAT run — which code produced this data — NULL when the run recorded none (before migration 44, or run outside GitHub Actions), never borrowed from an older run. funds_<family> rows report each filing cadence separately. notes carries a caveat the dates cannot: the quotes row states where the cash tape starts (quote_history refuses a window before an instrument''s first session); the funds_fidc row states the 2020-11 delinquency regime break (null for a fund with no tab VI row before, filed on every row after — never read that null as zero); funds_fip states why its newest_period runs ahead; fund_nav points at catalog().applicability and api.metric_coverage(); the fidc_tranches and fidc_aging rows state that those informe tabs come from CVM''s yearly HIST archive through 2024-12 and the monthly informe from 2025-01; the fnet_documents row (the FNET register behind fund_documents and fund_restatements) is keyed on the DELIVERY day, with complete_through the day before as_of, and states that its history begins at first capture / backfill and that fund links come from a fortnightly sweep, so recent documents may have no cnpj yet; the company_events row (IPE filings, keyed on the delivery date, complete_through NULL as on financials) states that history starts in 2015 and that filings CVM published without a protocol number are not held; the macro_series and ptax rows carry their units and cadences (SELIC_META is published ahead, so its newest_period can sit in the future); the di_futures and reference_curves rows (B3 Price Report DI1 contracts from 2018, B3 reference curves from 2008) state where each history starts and that the long curve vertices are B3''s extrapolation, not prices; and the five B3 lending / flow rows (short_interest, short_interest_by_sector, lending_trades, lending_participants, investor_flow) state the RATCHET — B3 keeps ~21 business days and publishes no archive, so their span starts at first capture and no backfill exists — along with the float_basis, brokerage-not-owner and first-difference traps that make those series easy to read wrongly. Their landed_at is split by ingest doc_type, so a COTAHIST run never reports as the lending group''s freshness.';
 
 REVOKE ALL ON FUNCTION api.coverage() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.coverage() TO anon, authenticated;
@@ -4241,21 +4475,25 @@ adj_ok AS (
 --     two prints. A fatcot flip (measured live: GOLL2 1000->1, IBOV11
 --     1->100, on 2025-03-05) rescales the quote by that factor and reports a ~±99.9%
 --     "return" with no market move behind it.
---   * both grains: no share-count event may lie between the two prints (#396,
---     owner decision 2026-09-28, step 1). A DESDOBRAMENTO, GRUPAMENTO or
---     BONIFICACAO changes how many shares there are, not what they are worth,
---     and the raw close reads it as a return (BBAS3's 2:1 split, 56.46 ->
---     27.91, was served as -50.57%). An event goes ex the session after its
---     last_date_prior, so one lies between prev_obs_date and obs_date when
---     prev_obs_date <= last_date_prior < obs_date: the same interval
---     api.close_adj_ratio(isin, prev_obs_date, obs_date) multiplies over. Any
---     such row nulls the return, whatever its factor (an unreadable or a net
---     ratio of 1 is still a share-count event), and on the monthly grain the
---     event may sit anywhere between the two month-end prints. The return is
---     NULL, not an adjusted return: that is a later step. Only events
---     b3_corporate_event holds can null a return; the sweep that fills it is
---     per issuer since the tape start, and an issuer it has not proven stays
---     as exposed as before (api.close_adj_status reports the proof).
+--   * both grains: a share-count event between the two prints adjusts the
+--     previous close (#396 step 2, owner decision 2026-10-04). A DESDOBRAMENTO,
+--     GRUPAMENTO or BONIFICACAO changes how many shares there are, not what
+--     they are worth, so the previous close is divided by the event's share
+--     ratio (1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for
+--     GRUPAMENTO, events between the prints multiplied: B3's rule, the one
+--     api.close_adj_ratio uses) and the return is close / adjusted previous
+--     close - 1. The owner's example: 100.00 the day before a 1:4 split
+--     (factor 300) is 25.00 adjusted, so a 26.00 close is +4%, not -74%;
+--     BBAS3's 2:1 split, 56.46 -> 27.91, is -1.13%, not -50.57%. An event goes
+--     ex the session after its last_date_prior, so it lies between
+--     prev_obs_date and obs_date when prev_obs_date <= last_date_prior <
+--     obs_date. On the monthly grain the event may sit anywhere between the
+--     two month-end prints. Still NULL, never a guess: an event with an
+--     unreadable factor (NULL or a ratio <= 0), and one label on one date
+--     published with two factors (the rows cannot say which applies). Only
+--     events b3_corporate_event holds adjust a return; the sweep that fills
+--     it is per issuer since the tape start, and an event it has not stored
+--     yet still reads as a return (api.close_adj_status reports the proof).
 quote_ret AS (
     SELECT
         r.ticker,
@@ -4264,21 +4502,14 @@ quote_ret AS (
         CASE
             WHEN r.prev_quotation_factor IS DISTINCT FROM r.quotation_factor
             THEN NULL
-            WHEN EXISTS (
-                SELECT 1
-                FROM public.b3_corporate_event e
-                WHERE e.isin = r.isin
-                  AND e.label IN ('DESDOBRAMENTO', 'GRUPAMENTO', 'BONIFICACAO')
-                  AND e.last_date_prior >= r.prev_obs_date
-                  AND e.last_date_prior < r.obs_date
-            )
+            WHEN ev.n_events > ev.n_readable OR ev.n_events > ev.n_label_dates
             THEN NULL
             WHEN (SELECT freq FROM params) = 'day'
              AND r.prev_obs_date >= r.period - 7
-            THEN r.close / NULLIF(r.prev_close, 0) - 1
+            THEN r.close * ev.share_ratio / NULLIF(r.prev_close, 0) - 1
             WHEN (SELECT freq FROM params) = 'month'
              AND r.prev_period = (r.period - INTERVAL '1 month')::date
-            THEN r.close / NULLIF(r.prev_close, 0) - 1
+            THEN r.close * ev.share_ratio / NULLIF(r.prev_close, 0) - 1
             ELSE NULL
         END AS close_return
     FROM (
@@ -4297,6 +4528,27 @@ quote_ret AS (
         FROM quote_px
         WINDOW w AS (PARTITION BY ticker ORDER BY period)
     ) r
+    -- The share-count events between the two prints. DISTINCT: a republished
+    -- event can come back as a second row that differs only in approved_on.
+    -- No event gives share_ratio 1 and leaves the return as it was.
+    CROSS JOIN LATERAL (
+        SELECT
+            count(*) AS n_events,
+            count(*) FILTER (WHERE x.share_ratio > 0) AS n_readable,
+            count(DISTINCT (x.label, x.last_date_prior)) AS n_label_dates,
+            COALESCE(exp(sum(ln(CASE WHEN x.share_ratio > 0 THEN x.share_ratio END))), 1) AS share_ratio
+        FROM (
+            SELECT DISTINCT
+                e.label,
+                e.last_date_prior,
+                CASE e.label WHEN 'GRUPAMENTO' THEN e.factor ELSE 1 + e.factor / 100 END AS share_ratio
+            FROM public.b3_corporate_event e
+            WHERE e.isin = r.isin
+              AND e.label IN ('DESDOBRAMENTO', 'GRUPAMENTO', 'BONIFICACAO')
+              AND e.last_date_prior >= r.prev_obs_date
+              AND e.last_date_prior < r.obs_date
+        ) x
+    ) ev
 ),
 -- Derivative segments (options tpmerc 070/080, termo 030). Disjoint from the
 -- vista arms by tpmerc, so existing arm output is untouched — before these
@@ -4581,7 +4833,7 @@ LIMIT 1000;
 $$;
 
 COMMENT ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT, TEXT, NUMERIC, INT, TEXT) IS
-    'Long panel for correlation/factor work. Mix tickers, option/termo codnegs, + CNPJs. Grain is (id, asset_class, date, metric): a CNPJ filing under two families yields one row per family unless p_entity_type narrows it. No ffill. p_metrics NULL = each family''s default: close_adj for shares and units, close for other tickers, options and termo, nav for funds. close_adj is quote_history''s adjusted close (splits, groupings, bonus shares; anchored to the latest session) and a window it cannot adjust REFUSES 22023 naming ticker, period and cause; close stays raw. Quotes follow the instrument across boards. close_return is p_t/p_{t-1}-1 from the raw closes, cash tickers only. It is NULL across calendar gaps, across a quotation-factor change and across a split, grouping or bonus (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO) between the two prints, so a share-count change never reads as a return; it is not an adjusted return and not a total return (close_adj holds the adjusted level). Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '''' = first page, ''date|id|metric|asset_class'' = next; a page shorter than 1000 is the last. Universe mode: p_ids empty + p_entity_type walks a whole family (optionally p_min_nav, p_min_months), signed-in callers only.';
+    'Long panel for correlation/factor work. Mix tickers, option/termo codnegs, + CNPJs. Grain is (id, asset_class, date, metric): a CNPJ filing under two families yields one row per family unless p_entity_type narrows it. No ffill. p_metrics NULL = each family''s default: close_adj for shares and units, close for other tickers, options and termo, nav for funds. close_adj is quote_history''s adjusted close (splits, groupings, bonus shares; anchored to the latest session) and a window it cannot adjust REFUSES 22023 naming ticker, period and cause; close stays raw. Quotes follow the instrument across boards. close_return is p_t/p_{t-1}-1, cash tickers only, with the previous close divided by the share ratio of any split, grouping or bonus (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO) between the two prints, so a share-count change never reads as a return (a 1:4 split from 100.00 to 26.00 is +4%). It is NULL across calendar gaps, across a quotation-factor change and across an event whose factor is unreadable or published twice with two factors; it is a price return, not a total return (close_adj holds the adjusted level). Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '''' = first page, ''date|id|metric|asset_class'' = next; a page shorter than 1000 is the last. Universe mode: p_ids empty + p_entity_type walks a whole family (optionally p_min_nav, p_min_months), signed-in callers only.';
 
 REVOKE ALL ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT, TEXT, NUMERIC, INT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.panel(TEXT[], TEXT[], DATE, DATE, TEXT, TEXT, NUMERIC, INT, TEXT) TO anon, authenticated;
@@ -5689,7 +5941,7 @@ STABLE
 AS $fn$
 SELECT $json${
   "kind": "catalog",
-  "version": 57,
+  "version": 60,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, the B3 securities-lending and investor-flow group, B3's DI1 futures and reference-rate curves, and Brazilian inflation — BACEN's IPCA series and IBGE's item tree with weights). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close_adj` (split-, grouping- and bonus-adjusted) for share and unit tickers, `close` for other tickers and `nav` for CNPJs, and quote_history with no p_fields returns ticker, trade_date and close_adj; that is the call to make unless you actually need another measure — name metrics or fields explicitly only when you will use them (p_fields=['close'] for the raw close). A close_adj window SILO cannot adjust is refused with the cause, never served raw. The wide endpoints are the exception and behave the other way round: quote_latest and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -5861,7 +6113,7 @@ SELECT $json${
         "month"
       ],
       "source": "b3_cotahist",
-      "meaning": "p_t/p_{t-1}-1 from the stored raw closes, which are not adjusted for corporate actions. NULL (no row) when a split, grouping or bonus (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO) lies between the two prints, so a share-count change never reads as a return (a 2:1 split would have reported roughly -50%); on the monthly grain the event may sit anywhere between the two month-end prints. It is not an adjusted return and not a total return. Daily: previous session. Monthly: previous calendar month else null.",
+      "meaning": "p_t/p'_{t-1}-1, where p' is the previous stored close divided by the share ratio of every split, grouping or bonus (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO) between the two prints: 1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for GRUPAMENTO. A share-count change never reads as a return: 100.00 before a 1:4 split is 25.00, so a 26.00 close is +4%, not -74%. On the monthly grain the event may sit anywhere between the two month-end prints. NULL (no row) across an event whose factor is unreadable or published twice with two factors. Price only: dividends and JCP still move it, so it is not a total return. Daily: previous session. Monthly: previous calendar month else null.",
       "derived": true
     },
     "nav": {
@@ -5910,7 +6162,7 @@ SELECT $json${
       "source": "cvm",
       "meaning": "Delinquent portfolio value (not a rate unless you divide by nav).",
       "since": {
-        "fidc": "2025-01-31"
+        "fidc": "2013-01-31"
       },
       "coverage": "api.metric_coverage()"
     },
@@ -6024,10 +6276,10 @@ SELECT $json${
     "FIDC SACADOS ARE ANONYMIZED RANKS. fidc_sacados and the sacado_top1 / sacado_top25 metrics come from tab VIII, which publishes the 25 largest debtors as (rank, value) with no identity — CVM's dictionary describes neither column. seq is CVM's rank as filed and is never recomputed from valor (65 of 3,043 funds filed a non-descending series in 2026-07; they are served as filed). sacado_top25 sums the ranks the fund filed, which may be fewer than 25. Concentration = sacado_top1 / receivables (or top25 / receivables) is a notebook division, not a served number — and it can exceed 1: tab VIII and tab II do not share a base for every fund (2026-07: the top-25 sum exceeds the receivables total for 1.9% of funds, rank 1 alone for 0.5%), served as filed and never capped.",
     "FIDC PORTFOLIO ROWS ARE A HIERARCHY. fidc_portfolio kind=sector serves tab II as one row per code: TOTAL is the whole receivables book, a lettered code (A..K) a sector, and a code with a digit (C1, F3) a member of its lettered parent (`parent`). Sum leaves or sum parents, never both. kind=scr_debtor and kind=scr_operation are the BACEN SCR grade ladders AA..H for the same receivables, graded by debtor and by operation respectively — two views of one book, not two books. tab X exists from 2023-10 only; earlier months have no scr rows, not zero-graded ones.",
     "WHICH CODE PRODUCED THIS DATA. coverage().landed_git_sha is the git commit of the very ingest run that set landed_at — the code that parsed and stored the newest data for that dataset — read from GITHUB_SHA on the run. It is NULL when that run recorded none (a run from before lineage existed, 2026-09-24, or one started outside GitHub Actions), and it is never borrowed from an older run, because an older run's code did not produce the newest rows. The audit log behind it also records parser_version, bumped only when a parser or field map changes what a stored value means; neither is a property of the SOURCE, so neither says anything about how much CVM, B3 or BACEN have published (that is complete_through).",
-    "FIDC TRANCHES AND AGING BEGIN IN 2025, AND ARE SERVED AS FILED. fidc_tranches (informe tabs X_2/X_3/X_6 + X_4) and fidc_aging (tab VI) exist from 2025-01 only: CVM's pre-2025 HIST archive publishes no equivalent member, so an earlier month has no rows — an upstream limit, not a gap and not a backfill to ask for. fidc_tranches is one row per (fund, month, classe_serie): quotas, quota_value, return_month, and performance_expected vs performance_realised (what the series promised vs delivered, percent), dirty the way CVM's percentage fields are — never clipped, range-check in the notebook. Its `flows` array carries tab X_4's operations with CVM's TP_OPER label verbatim (e.g. Captações no Mês, Resgates no Mês, Amortizações); the vocabulary has drifted, so match labels yourself and never read a label you did not find as zero. tranche_filed = FALSE marks a series with flows but no X_2 row. fidc_aging is long: kind=to_maturity (not yet due, by days to maturity) and kind=overdue (by days past due), ten day-bands each, plus kind=overdue_total — CVM's FILED total, not a sum of the bands, and the two can disagree. Nothing is derived by either function: no performance gap, no subordination ratio, no band sums.",
+    "FIDC TRANCHES AND AGING BEGIN IN 2013-01, AND ARE SERVED AS FILED. fidc_tranches (informe tabs X_2/X_3/X_6 + X_4) and fidc_aging (tab VI) are loaded from 2013-01: CVM's yearly HIST archive through 2024-12, the monthly informe from 2025-01. The value columns have the same names in both; only the fund identifier column changes (coverage() measures the span). fidc_tranches is one row per (fund, month, classe_serie): quotas, quota_value, return_month, and performance_expected vs performance_realised (what the series promised vs delivered, percent), dirty the way CVM's percentage fields are (CVM files magnitudes of 1e14 and more) — never rescaled, never clipped, range-check in the notebook. Its `flows` array carries tab X_4's operations with CVM's TP_OPER label verbatim (e.g. Captações no Mês, Resgates no Mês, Amortizações); the vocabulary has drifted, so match labels yourself and never read a label you did not find as zero. tranche_filed = FALSE marks a series with flows but no X_2 row. fidc_aging is long: kind=to_maturity (not yet due, by days to maturity) and kind=overdue (by days past due), ten day-bands each, plus kind=overdue_total — CVM's FILED total, not a sum of the bands, and the two can disagree. Nothing is derived by either function: no performance gap, no subordination ratio, no band sums.",
     "THE FNET REGISTER KNOWS A DOCUMENT'S FUND ONLY BY LINK, AND LINKS NO VERSIONS. fund_documents and fund_restatements serve B3 Fundos.NET's document register as published, metadata only: each version is its own fnet_id, versao counts the filings, modalidade is AP (original), RE (voluntary restatement) or RC (a restatement CVM required), and status is AC / IC (superseded) / CC (cancelled) AS OF fetched_at, not live. FNET rows carry NO CNPJ: a document belongs to a fund because FNET returned it when SILO queried cnpjFundo = that CNPJ, in a sweep that reaches every FII/FIDC once a fortnight — so a document delivered since the fund's last sweep is not in fund_documents yet, and fund_restatements serves it with cnpj NULL rather than dropping it. fund_name is FNET's label and is never joined on. Because FNET does not say which document a re-filing replaces, fund_restatements PAIRS each versao > 1 with the document in the same group — (cnpj link, categoria, tipo_documento, especie, reference_raw) — carrying the highest lower versao, the greatest fnet_id winning a tie (a group can legitimately hold several v1 documents, e.g. assemblies); an unlinked document or one with no reference text is never paired, so its previous_fnet_id and lag_days are NULL — not 'no predecessor', just not pairable. lag_days is days between deliveries. source_url is FNET's own download link for the id. History starts at SILO's first crawl or backfill, not at FNET's; coverage() reports the fnet_documents span.",
     "A RESTATEMENT DIFF COMPARES FNET'S TWO VERSIONS OF ONE DOCUMENT, FIELD BY FIELD, AND ONLY WHERE SILO HAS DIFFED THEM. fund_restatement_diff returns one row per field that differs between a re-filed document and the version fund_restatements pairs it with (previous_fnet_id): for now the FIDC informe mensal only, restatements delivered from 2026 on. field_path is the XML path; a repeated block (a tranche, a cedente) is addressed by its declared key, CLASSE_SENIOR[SERIE=Série 1], and one with no usable key by position, [#2] — match_basis says which, and position rows are approximate by construction (a dropped duplicate block reads as removed fields). old_value / new_value are the text exactly as printed, comma decimals included; NULL is nil or absent and change_kind says which (changed, added, removed, nil_to_value, value_to_nil). old_num / new_num / delta exist only on numeric leaves (amounts, quantities, percentages, rates): an identifier such as a CNPJ is compared as text, and nothing is coerced. cvm_column stays NULL until an XML-to-CVM-column crosswalk exists, so do not assume a path maps onto a SILO column. A document with no rows was re-filed with nothing changed OR was not diffed: read fund_restatements' diff_status (compared, or why not — unlinked, no predecessor yet, not XML, a declared key or a stored body hash that disagrees; NULL = not diffed) and n_fields_changed, which counts this function's rows for the pair. The diff is of FNET's documents, not of CVM's CSVs (republished in place), and tab VIII (debtors) is not in the XML, so its restatements are invisible here.",
-    "FIDC DELINQUENCY STARTS IN 2025-01. CVM's pre-2025 monthly FIDC file (tab II/III) carried no delinquency field, so `delinquency` is null on every fidc row through 2024-12-31 — not zero, not clean books, not a missing month. From 2025-01-31 the tab IV/VI format is ingested and delinquency is filed on every row. Never chain-link, difference or average a FIDC delinquency series across 2024-12 → 2025-01; the series begins there. Machine-readable in `regime_breaks`, and on the funds_fidc coverage row's `notes`.",
+    "FIDC DELINQUENCY STARTS IN 2013-01 AND IS ON EVERY ROW FROM 2020-11. `delinquency` is tab VI's total of overdue credits (TAB_VI_B_VL_DIRCRED_INAD) as filed: from CVM's yearly HIST archive through 2024-12, from the monthly informe from 2025-01, the same field on both. Through 2020-10-31 a fund with no tab VI row that month, or a blank cell, is null (about 70% to 93% of fidc rows carry a value); from 2020-11-30 it is filed on every row, and a fund with no delinquent receivables files 0. A null is not zero and not clean books: never read it as zero or fill it, and never compare a count of reporting funds across 2020-10 → 2020-11. Machine-readable in `regime_breaks`, and on the funds_fidc coverage row's `notes`.",
     "A FUND'S DEBENTURE HOLDINGS ARE A DIFFERENT SHAPE FROM ITS EQUITY HOLDINGS. api.fund_debentures (CDA block 6) is one row per (fund, month, issuer, maturity, rate structure, application type), as filed and never summed — two series of one issuer maturing the same day at different coupons are different securities. The issuer is its own filed CPF/CNPJ (issuer_id); p_issuer also takes a listed company's ticker or CVM code, resolved only through CVM's published FCA map, and issuer_tickers carries the issuer's active listed codes back (NULL when not listed — most debenture issuers are not). Nothing is matched by name.",
     "ANBIMA CLASS ROWS ARE INDUSTRY AGGREGATES, NOT FUNDS. api.anbima_classes serves the Boletim de Fundos de Investimento as published — R$ milhões (unit brl_mm) and percentage points (unit pct) — per class, ANBIMA type or industry total (`level`; class aggregates by default). No fund in this warehouse is mapped to an ANBIMA class: CVM's `classe` is CVM's taxonomy, so never join a fund to a class by name, and there is no panel arm because these rows carry no id. An unknown category, metric or level raises 22023 listing what exists rather than returning an empty array.",
     "INFLATION IS SERVED AS PUBLISHED, IN PERCENT, WITH ONE DERIVED COLUMN PER FUNCTION. api.inflation is BACEN's SGS, long: value is the change in the month (unit pct_month) except IPCA_12M — BACEN's own 12-month accumulation, code 13522 (pct_12m) — and IPCA_DIFUSAO, the share of items that rose (pct_items). acc_12m is DERIVED: the trailing twelve monthly changes chained, ((Π(1+v/100))−1)×100, NULL unless all twelve months are present and consecutive — never a shorter chain, never filled; it reproduces IPCA_12M exactly for the headline, which is served beside it so you can check. IPCA15 is the mid-month preview, not a revision of IPCA. Group rows (family = group) are VARIATIONS, not contributions: the weights live only in api.inflation_items, whose contribution column is weight × change_month / 100 in percentage points of the headline — sum contributions within ONE level only (a group and its subgroups are the same money twice). BACEN's group codes are NOT in IBGE's order (1640 is Comunicação, 1641 Saúde, 1642 Despesas pessoais, 1643 Educação; measured against IBGE SIDRA, do not reorder by intuition). SIDRA's item codes changed with the 2020-01 structure; item_number is the continuity and sidra_table says which. Neither function has a panel arm — the rows carry no id — and an unknown series, family, level or item raises 22023 rather than returning an empty array.",
@@ -6056,12 +6308,12 @@ SELECT $json${
     "Missing observations stay null; do not ffill or interpolate.",
     "freq=day is quotes only. Mix equity with fund fundamentals on freq=month.",
     "close_return across a missing month is null, not a multi-month return.",
-    "close_return is the return of the raw (unadjusted) closes with every share-count event removed: it is NULL (the panel emits no row) for a session whose comparison crosses a split, grouping or bonus (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO in B3's corporate-event history; monthly: anywhere between the two month-end prints), so a 2:1 split is no longer a -50% return. It is not an adjusted return and not a total return: dividends and JCP still move it, and the return across the event is missing, not computed. For an adjusted level use close_adj. The nulling reads the share-count events stored for the ISIN from B3's published history; an event the nightly corporate-event sweep has not stored yet (an issuer without a sweep proof) is not seen and still reads as a return.",
+    "close_return is adjusted for splits, groupings and bonus shares: across one (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO in B3's corporate-event history; monthly: anywhere between the two month-end prints) the previous close is divided by the event's share ratio, B3's rule (1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for GRUPAMENTO, events multiplied), before the return is taken, so a 1:4 split from 100.00 to a 26.00 close is +4% and BBAS3's 2:1 split (56.46 to 27.91) is -1.13%, not -50.57%. An event with an unreadable factor, or one label on one date published with two factors, makes that return NULL (no row), never a guess. It is a price return, not a total return: dividends and JCP still move it. The adjustment reads the share-count events stored for the ISIN from B3's published history; an event the nightly corporate-event sweep has not stored yet (an issuer without a sweep proof) is not seen and still reads as a return.",
     "close is the price as published, which for a paper quoted per lot refers to 1000 shares; close_unit divides it by the published quotation_factor so levels are comparable. Neither is corporate-action adjusted, and `adjusted` is FALSE on every view row because it describes close. The adjusted price is close_adj (quote_history's default field, the panel's default metric for shares and units; see the next constraint).",
     "close_adj IS CONTINUOUS ACROSS SPLITS, GROUPINGS AND BONUS SHARES ONLY, AND IT IS ANCHORED TO THE INSTRUMENT'S LATEST SESSION. It is the close per single share divided by the share ratio of every later event, by B3's rule: 1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for GRUPAMENTO, distinct events on one date multiplied. Past levels change when a new event lands and returns do not, so never read a past level as the price seen that day, and never combine pages with different data_revision values. Dividends, JCP and subscription rights are not adjusted in this version (they move value to holders and change no share count; total return is separate). A window close_adj cannot cover is REFUSED (22023, DETAIL reason=adjustment_unavailable; cause=...) naming ticker, period and cause, never served as the raw close: outside shares (ISIN code ACN) and units (CDA/UNT, ticker ending 11); issuer events not proven swept, or the proof older than the last session; a stretch on or before a stock event this version does not adjust (spin-off CIS RED CAP, INCORPORACAO, REST CAP ACOES, RESG TOTAL RV, any new stock label), an unreadable factor, or one label on one date published with two factors. The absence of events is never taken as proof: the sweep proof is. Select close explicitly for the raw close.",
-    "quote_history IS KEYED ON THE ISIN AND REFUSES WHAT IT CANNOT SERVE WHOLE. The series follows the instrument across BDI boards (p_board restricts it). 22023 with DETAIL reason=: unknown_ticker (never printed on the cash tape); outside_coverage (no session in the window, or the window starts before the instrument's first session; the tape starts 2019-01-02, see coverage()); isin_change (the ticker printed under two ISINs in the window; a reused receipt code is a new instrument and is never joined); ambiguous_session (two rows on one session; pass p_board); invalid_field; adjustment_unavailable. Inside the coverage a missing session is a session with no trade (COTAHIST lists only papers that traded; prior_no_trade_sessions counts them), holidays are not sessions, and a field with no value is a JSON null.",
+    "quote_history IS KEYED ON THE ISIN AND REFUSES WHAT IT CANNOT SERVE WHOLE. The series follows the instrument across BDI boards (p_board restricts it). 22023 with DETAIL reason=: unknown_ticker (never printed on the cash tape); outside_coverage (no session in the window, or the window starts before the instrument's first session; the tape starts 2019-01-02, see coverage()); isin_change (the ticker printed under two ISINs in the window that its lineage does not splice; a reused receipt code is a new instrument and is never joined); ambiguous_session (two rows on one session; pass p_board); invalid_field; adjustment_unavailable. Inside the coverage a missing session is a session with no trade (COTAHIST lists only papers that traded; prior_no_trade_sessions counts them), holidays are not sessions, and a field with no value is a JSON null. A ticker whose company changed its trading code or ISIN runs through its older instrument (ticker lineage, #381): an older (ticker, ISIN) is spliced in front only when it is the same company (the same ticker, or one CNPJ in CVM's FCA map), the same share class (ISIN characters 7-11), its last cash session is the one right before the newer first session with no overlap, no stock event goes ex at the seam, and exactly one candidate qualifies; every row keeps its own ticker and ISIN, close_adj divides older rows by the later instruments' share ratios too, and close_total_return is NULL before a seam (VIIA3 BRVIIAACNOR7 to BHIA3 BRBHIAACNOR1 on 2023-09-20).",
     "close_total_return (SELECT IT IN p_fields) IS close_adj with cash distributions reinvested at the ex-date close, also anchored to the latest session: the level is divided by the product of (1 + cash / ex-session close) over every distribution that went ex after the session, so the latest session equals close_adj and earlier levels are lower by the cash paid since. Cash is B3's full history (DIVIDENDO, JRS CAP PROPRIO gross of withholding tax, RENDIMENTO, REST CAP DIN), counted only where its ISIN is proven against the tape. It is NULL, with close_total_return_null_reason saying why, where close_adj cannot be served for that session; where the ISIN has no resolved distribution in B3's history (a non-payer, or one B3's history does not match: the two look the same, so neither gets a price return labelled as a total return); where a later distribution of the issuer's share class has no proven ISIN; where a distribution B3's supplement lists is missing from the history; and where a later distribution has no ex-date close within 7 days. A NULL is never the price return in disguise.",
-    "Daily close_return is null when the previous session is more than 7 calendar days back (halts, listing gaps), and null across a quotation-factor change — a fatcot flip rescales the quote with no market move behind it. Both grains are also null across a split, grouping or bonus between the two prints (#396).",
+    "Daily close_return is null when the previous session is more than 7 calendar days back (halts, listing gaps), and null across a quotation-factor change — a fatcot flip rescales the quote with no market move behind it. Across a split, grouping or bonus between the two prints both grains adjust the previous close by the event's share ratio (#396).",
     "Default windows are honest: with no explicit `to`, fund metrics end at each family's latest COMPLETE period (coverage() reports it as complete_through) — a partially-filed trailing month is not served. An explicit `to` serves the window verbatim, partial months included.",
     "Company↔ticker IS joined — via CVM's published FCA valores-mobiliários map only (lookup returns a tickers array on company rows). Nothing is matched by name; a company with no active published listing has tickers null.",
     "Analysis (corr, OLS, copulas, event studies) is a reduction of a panel. Fetch the panel first.",
@@ -6281,10 +6533,10 @@ SELECT $json${
     {
       "dataset": "funds_fidc",
       "column": "delinquency",
-      "boundary": "2025-01-31",
-      "before": "CVM's monthly FIDC file (tab II/III, ingested for 2019-01..2024-12) carries no delinquency field: delinquency is null on every fidc row through 2024-12-31 — not zero, not clean books, not a missing month",
-      "after": "from 2025-01-31 the inf_mensal tab IV/VI format is ingested; delinquency is tab VI's total, filed on every row (a fund with no delinquent receivables files 0)",
-      "never": "chain-link, difference or average delinquency across 2024-12 → 2025-01, or read a pre-2025 null as zero; a FIDC delinquency series starts at 2025-01"
+      "boundary": "2020-11-30",
+      "before": "through 2020-10-31 delinquency comes from CVM's HIST tab VI, which has no row for some funds in some months: such a fund, or a blank cell, is null (about 70% to 93% of fidc rows carry a value) — not zero, not clean books, not a missing month",
+      "after": "from 2020-11-30 tab VI is filed for every fund and delinquency is on every row (a fund with no delinquent receivables files 0). It is the same filed field from 2013-01 to date: TAB_VI_B_VL_DIRCRED_INAD, from the HIST archive through 2024-12 and the monthly informe from 2025-01",
+      "never": "read a pre-2020-11 null as zero or fill it, or compare a count of reporting funds across 2020-10 → 2020-11; the filed values on both sides are the same measure"
     }
   ],
   "screens": {
@@ -6522,7 +6774,7 @@ SELECT $json${
     {
       "ask": "Did this FIDC's senior tranche deliver what it promised?",
       "call": "POST /rest/v1/rpc/fidc_tranches {\"p_cnpj\": \"<cnpj>\", \"p_from\": \"2025-01-01\"}",
-      "then": "Compare performance_realised with performance_expected per classe_serie in the notebook; both are as filed and can carry CVM's outliers. History starts 2025-01 — there is no earlier tranche data anywhere. Read the aging ladder under it with fidc_aging; overdue_total is CVM's filed total, not a sum."
+      "then": "Compare performance_realised with performance_expected per classe_serie in the notebook; both are as filed and can carry CVM's outliers. History starts 2013-01 (CVM's HIST archive through 2024-12). Read the aging ladder under it with fidc_aging; overdue_total is CVM's filed total, not a sum."
     },
     {
       "ask": "Which FIDCs restated a filing this month, and how late?",

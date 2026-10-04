@@ -483,7 +483,30 @@ __all__ = [
 # etf_site_source). Descriptive third-party facts, never summed. The existing
 # columns keep their names, order and types. No new endpoint: capped count stays
 # forty-nine.
-CATALOG_VERSION = 57
+# v58: FIDC history text (#556). Tranches (tabs X_2/X_3/X_6 + X_4), the aging
+# ladder (tab VI) and fund-level delinquency are loaded from CVM's yearly HIST
+# archive back to 2013-01 (#569), so the notes that said they begin in 2025
+# because CVM publishes no archive are rewritten. The delinquency regime break
+# moves from 2025-01-31 to 2020-11-30: the same filed field on both sides,
+# null for funds with no tab VI row before, on every row from. delinquency's
+# `since` becomes 2013-01-31. Text only: no column, no endpoint, no behaviour
+# change (fidc_delinquency_drivers still refuses a window before 2025-01).
+# v59: panel's close_return is ADJUSTED across a share-count event (#396 step 2,
+# owner decision 2026-10-04) instead of NULL: the previous close is divided by
+# the event's share ratio (B3's rule, the one api.close_adj_ratio uses) before
+# the return is taken, so a 1:4 split from 100.00 to 26.00 is +4% and BBAS3's
+# 2:1 split is -1.13%. An unreadable factor or one label on one date with two
+# factors still nulls it. Behaviour and descriptions change; no signature or
+# column does.
+# v60: quote_history follows a ticker's lineage across an ISIN change (#381
+# follow-up, owner decision 2026-10-04, docs/adr/0002-ticker-activity-and-lineage.md):
+# api.ticker_lineage splices an older (ticker, ISIN) only for the same company
+# (same ticker or one FCA CNPJ), the same share class, adjacent sessions with no
+# overlap, no stock event at the seam and one candidate. Rows keep their own
+# ticker and ISIN; close_adj is continuous across the seam; close_total_return is
+# NULL before it. coverage_start/coverage_end and isin_change say so. No
+# signature or column change.
+CATALOG_VERSION = 60
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -574,13 +597,16 @@ METRICS: Dict[str, Dict[str, Any]] = {
         "grain": ["day", "month"],
         "source": "b3_cotahist",
         "meaning": (
-            "p_t/p_{t-1}-1 from the stored raw closes, which are not adjusted "
-            "for corporate actions. NULL (no row) when a split, grouping or "
-            "bonus (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO) lies between the "
-            "two prints, so a share-count change never reads as a return (a 2:1 "
-            "split would have reported roughly -50%); on the monthly grain the "
-            "event may sit anywhere between the two month-end prints. It is not "
-            "an adjusted return and not a total return. "
+            "p_t/p'_{t-1}-1, where p' is the previous stored close divided by "
+            "the share ratio of every split, grouping or bonus (DESDOBRAMENTO, "
+            "GRUPAMENTO, BONIFICACAO) between the two prints: 1 + factor/100 "
+            "for DESDOBRAMENTO and BONIFICACAO, factor for GRUPAMENTO. A share-"
+            "count change never reads as a return: 100.00 before a 1:4 split is "
+            "25.00, so a 26.00 close is +4%, not -74%. On the monthly grain the "
+            "event may sit anywhere between the two month-end prints. NULL (no "
+            "row) across an event whose factor is unreadable or published twice "
+            "with two factors. Price only: dividends and JCP still move it, so it "
+            "is not a total return. "
             "Daily: previous session. Monthly: previous calendar month else null."
         ),
         "derived": True,
@@ -607,11 +633,12 @@ METRICS: Dict[str, Dict[str, Any]] = {
         "grain": ["month"],
         "source": "cvm",
         "meaning": "Delinquent portfolio value (not a rate unless you divide by nav).",
-        # The one `since` this catalog states as a constant, because it is a
-        # published regime boundary (see `regime_breaks`) and a lockstep test
-        # pins it. Every other span is MEASURED — call api.metric_coverage()
-        # rather than trusting a date written here once.
-        "since": {"fidc": "2025-01-31"},
+        # The one `since` this catalog states as a constant: the first month of
+        # CVM's FIDC HIST archive, where the series starts (the 2020-11 coverage
+        # boundary is in `regime_breaks`), and a lockstep test pins it. Every
+        # other span is MEASURED — call api.metric_coverage() rather than
+        # trusting a date written here once.
+        "since": {"fidc": "2013-01-31"},
         "coverage": "api.metric_coverage()",
     },
     "yield": {
@@ -703,10 +730,10 @@ CONSTRAINTS = [
     "FIDC SACADOS ARE ANONYMIZED RANKS. fidc_sacados and the sacado_top1 / sacado_top25 metrics come from tab VIII, which publishes the 25 largest debtors as (rank, value) with no identity — CVM''s dictionary describes neither column. seq is CVM''s rank as filed and is never recomputed from valor (65 of 3,043 funds filed a non-descending series in 2026-07; they are served as filed). sacado_top25 sums the ranks the fund filed, which may be fewer than 25. Concentration = sacado_top1 / receivables (or top25 / receivables) is a notebook division, not a served number — and it can exceed 1: tab VIII and tab II do not share a base for every fund (2026-07: the top-25 sum exceeds the receivables total for 1.9% of funds, rank 1 alone for 0.5%), served as filed and never capped.".replace("''", "'"),
     "FIDC PORTFOLIO ROWS ARE A HIERARCHY. fidc_portfolio kind=sector serves tab II as one row per code: TOTAL is the whole receivables book, a lettered code (A..K) a sector, and a code with a digit (C1, F3) a member of its lettered parent (`parent`). Sum leaves or sum parents, never both. kind=scr_debtor and kind=scr_operation are the BACEN SCR grade ladders AA..H for the same receivables, graded by debtor and by operation respectively — two views of one book, not two books. tab X exists from 2023-10 only; earlier months have no scr rows, not zero-graded ones.",
     "WHICH CODE PRODUCED THIS DATA. coverage().landed_git_sha is the git commit of the very ingest run that set landed_at — the code that parsed and stored the newest data for that dataset — read from GITHUB_SHA on the run. It is NULL when that run recorded none (a run from before lineage existed, 2026-09-24, or one started outside GitHub Actions), and it is never borrowed from an older run, because an older run's code did not produce the newest rows. The audit log behind it also records parser_version, bumped only when a parser or field map changes what a stored value means; neither is a property of the SOURCE, so neither says anything about how much CVM, B3 or BACEN have published (that is complete_through).",
-    "FIDC TRANCHES AND AGING BEGIN IN 2025, AND ARE SERVED AS FILED. fidc_tranches (informe tabs X_2/X_3/X_6 + X_4) and fidc_aging (tab VI) exist from 2025-01 only: CVM's pre-2025 HIST archive publishes no equivalent member, so an earlier month has no rows — an upstream limit, not a gap and not a backfill to ask for. fidc_tranches is one row per (fund, month, classe_serie): quotas, quota_value, return_month, and performance_expected vs performance_realised (what the series promised vs delivered, percent), dirty the way CVM's percentage fields are — never clipped, range-check in the notebook. Its `flows` array carries tab X_4's operations with CVM's TP_OPER label verbatim (e.g. Captações no Mês, Resgates no Mês, Amortizações); the vocabulary has drifted, so match labels yourself and never read a label you did not find as zero. tranche_filed = FALSE marks a series with flows but no X_2 row. fidc_aging is long: kind=to_maturity (not yet due, by days to maturity) and kind=overdue (by days past due), ten day-bands each, plus kind=overdue_total — CVM's FILED total, not a sum of the bands, and the two can disagree. Nothing is derived by either function: no performance gap, no subordination ratio, no band sums.",
+    "FIDC TRANCHES AND AGING BEGIN IN 2013-01, AND ARE SERVED AS FILED. fidc_tranches (informe tabs X_2/X_3/X_6 + X_4) and fidc_aging (tab VI) are loaded from 2013-01: CVM's yearly HIST archive through 2024-12, the monthly informe from 2025-01. The value columns have the same names in both; only the fund identifier column changes (coverage() measures the span). fidc_tranches is one row per (fund, month, classe_serie): quotas, quota_value, return_month, and performance_expected vs performance_realised (what the series promised vs delivered, percent), dirty the way CVM's percentage fields are (CVM files magnitudes of 1e14 and more) — never rescaled, never clipped, range-check in the notebook. Its `flows` array carries tab X_4's operations with CVM's TP_OPER label verbatim (e.g. Captações no Mês, Resgates no Mês, Amortizações); the vocabulary has drifted, so match labels yourself and never read a label you did not find as zero. tranche_filed = FALSE marks a series with flows but no X_2 row. fidc_aging is long: kind=to_maturity (not yet due, by days to maturity) and kind=overdue (by days past due), ten day-bands each, plus kind=overdue_total — CVM's FILED total, not a sum of the bands, and the two can disagree. Nothing is derived by either function: no performance gap, no subordination ratio, no band sums.",
     "THE FNET REGISTER KNOWS A DOCUMENT'S FUND ONLY BY LINK, AND LINKS NO VERSIONS. fund_documents and fund_restatements serve B3 Fundos.NET's document register as published, metadata only: each version is its own fnet_id, versao counts the filings, modalidade is AP (original), RE (voluntary restatement) or RC (a restatement CVM required), and status is AC / IC (superseded) / CC (cancelled) AS OF fetched_at, not live. FNET rows carry NO CNPJ: a document belongs to a fund because FNET returned it when SILO queried cnpjFundo = that CNPJ, in a sweep that reaches every FII/FIDC once a fortnight — so a document delivered since the fund's last sweep is not in fund_documents yet, and fund_restatements serves it with cnpj NULL rather than dropping it. fund_name is FNET's label and is never joined on. Because FNET does not say which document a re-filing replaces, fund_restatements PAIRS each versao > 1 with the document in the same group — (cnpj link, categoria, tipo_documento, especie, reference_raw) — carrying the highest lower versao, the greatest fnet_id winning a tie (a group can legitimately hold several v1 documents, e.g. assemblies); an unlinked document or one with no reference text is never paired, so its previous_fnet_id and lag_days are NULL — not 'no predecessor', just not pairable. lag_days is days between deliveries. source_url is FNET's own download link for the id. History starts at SILO's first crawl or backfill, not at FNET's; coverage() reports the fnet_documents span.",
     "A RESTATEMENT DIFF COMPARES FNET'S TWO VERSIONS OF ONE DOCUMENT, FIELD BY FIELD, AND ONLY WHERE SILO HAS DIFFED THEM. fund_restatement_diff returns one row per field that differs between a re-filed document and the version fund_restatements pairs it with (previous_fnet_id): for now the FIDC informe mensal only, restatements delivered from 2026 on. field_path is the XML path; a repeated block (a tranche, a cedente) is addressed by its declared key, CLASSE_SENIOR[SERIE=Série 1], and one with no usable key by position, [#2] — match_basis says which, and position rows are approximate by construction (a dropped duplicate block reads as removed fields). old_value / new_value are the text exactly as printed, comma decimals included; NULL is nil or absent and change_kind says which (changed, added, removed, nil_to_value, value_to_nil). old_num / new_num / delta exist only on numeric leaves (amounts, quantities, percentages, rates): an identifier such as a CNPJ is compared as text, and nothing is coerced. cvm_column stays NULL until an XML-to-CVM-column crosswalk exists, so do not assume a path maps onto a SILO column. A document with no rows was re-filed with nothing changed OR was not diffed: read fund_restatements' diff_status (compared, or why not — unlinked, no predecessor yet, not XML, a declared key or a stored body hash that disagrees; NULL = not diffed) and n_fields_changed, which counts this function's rows for the pair. The diff is of FNET's documents, not of CVM's CSVs (republished in place), and tab VIII (debtors) is not in the XML, so its restatements are invisible here.",
-    "FIDC DELINQUENCY STARTS IN 2025-01. CVM's pre-2025 monthly FIDC file (tab II/III) carried no delinquency field, so `delinquency` is null on every fidc row through 2024-12-31 — not zero, not clean books, not a missing month. From 2025-01-31 the tab IV/VI format is ingested and delinquency is filed on every row. Never chain-link, difference or average a FIDC delinquency series across 2024-12 → 2025-01; the series begins there. Machine-readable in `regime_breaks`, and on the funds_fidc coverage row's `notes`.",
+    "FIDC DELINQUENCY STARTS IN 2013-01 AND IS ON EVERY ROW FROM 2020-11. `delinquency` is tab VI's total of overdue credits (TAB_VI_B_VL_DIRCRED_INAD) as filed: from CVM's yearly HIST archive through 2024-12, from the monthly informe from 2025-01, the same field on both. Through 2020-10-31 a fund with no tab VI row that month, or a blank cell, is null (about 70% to 93% of fidc rows carry a value); from 2020-11-30 it is filed on every row, and a fund with no delinquent receivables files 0. A null is not zero and not clean books: never read it as zero or fill it, and never compare a count of reporting funds across 2020-10 → 2020-11. Machine-readable in `regime_breaks`, and on the funds_fidc coverage row's `notes`.",
     "A FUND'S DEBENTURE HOLDINGS ARE A DIFFERENT SHAPE FROM ITS EQUITY HOLDINGS. api.fund_debentures (CDA block 6) is one row per (fund, month, issuer, maturity, rate structure, application type), as filed and never summed — two series of one issuer maturing the same day at different coupons are different securities. The issuer is its own filed CPF/CNPJ (issuer_id); p_issuer also takes a listed company's ticker or CVM code, resolved only through CVM's published FCA map, and issuer_tickers carries the issuer's active listed codes back (NULL when not listed — most debenture issuers are not). Nothing is matched by name.",
     "ANBIMA CLASS ROWS ARE INDUSTRY AGGREGATES, NOT FUNDS. api.anbima_classes serves the Boletim de Fundos de Investimento as published — R$ milhões (unit brl_mm) and percentage points (unit pct) — per class, ANBIMA type or industry total (`level`; class aggregates by default). No fund in this warehouse is mapped to an ANBIMA class: CVM's `classe` is CVM's taxonomy, so never join a fund to a class by name, and there is no panel arm because these rows carry no id. An unknown category, metric or level raises 22023 listing what exists rather than returning an empty array.",
     "INFLATION IS SERVED AS PUBLISHED, IN PERCENT, WITH ONE DERIVED COLUMN PER FUNCTION. api.inflation is BACEN's SGS, long: value is the change in the month (unit pct_month) except IPCA_12M — BACEN's own 12-month accumulation, code 13522 (pct_12m) — and IPCA_DIFUSAO, the share of items that rose (pct_items). acc_12m is DERIVED: the trailing twelve monthly changes chained, ((Π(1+v/100))−1)×100, NULL unless all twelve months are present and consecutive — never a shorter chain, never filled; it reproduces IPCA_12M exactly for the headline, which is served beside it so you can check. IPCA15 is the mid-month preview, not a revision of IPCA. Group rows (family = group) are VARIATIONS, not contributions: the weights live only in api.inflation_items, whose contribution column is weight × change_month / 100 in percentage points of the headline — sum contributions within ONE level only (a group and its subgroups are the same money twice). BACEN's group codes are NOT in IBGE's order (1640 is Comunicação, 1641 Saúde, 1642 Despesas pessoais, 1643 Educação; measured against IBGE SIDRA, do not reorder by intuition). SIDRA's item codes changed with the 2020-01 structure; item_number is the continuity and sidra_table says which. Neither function has a panel arm — the rows carry no id — and an unknown series, family, level or item raises 22023 rather than returning an empty array.",
@@ -735,7 +762,7 @@ CONSTRAINTS = [
     "Missing observations stay null; do not ffill or interpolate.",
     "freq=day is quotes only. Mix equity with fund fundamentals on freq=month.",
     "close_return across a missing month is null, not a multi-month return.",
-    "close_return is the return of the raw (unadjusted) closes with every share-count event removed: it is NULL (the panel emits no row) for a session whose comparison crosses a split, grouping or bonus (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO in B3's corporate-event history; monthly: anywhere between the two month-end prints), so a 2:1 split is no longer a -50% return. It is not an adjusted return and not a total return: dividends and JCP still move it, and the return across the event is missing, not computed. For an adjusted level use close_adj. The nulling reads the share-count events stored for the ISIN from B3's published history; an event the nightly corporate-event sweep has not stored yet (an issuer without a sweep proof) is not seen and still reads as a return.",
+    "close_return is adjusted for splits, groupings and bonus shares: across one (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO in B3's corporate-event history; monthly: anywhere between the two month-end prints) the previous close is divided by the event's share ratio, B3's rule (1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for GRUPAMENTO, events multiplied), before the return is taken, so a 1:4 split from 100.00 to a 26.00 close is +4% and BBAS3's 2:1 split (56.46 to 27.91) is -1.13%, not -50.57%. An event with an unreadable factor, or one label on one date published with two factors, makes that return NULL (no row), never a guess. It is a price return, not a total return: dividends and JCP still move it. The adjustment reads the share-count events stored for the ISIN from B3's published history; an event the nightly corporate-event sweep has not stored yet (an issuer without a sweep proof) is not seen and still reads as a return.",
     "close is the price as published, which for a paper quoted per lot refers "
     "to 1000 shares; close_unit divides it by the published quotation_factor so "
     "levels are comparable. Neither is corporate-action adjusted, and `adjusted` "
@@ -767,12 +794,13 @@ CONSTRAINTS = [
     "outside_coverage (no session in the window, or the window starts before "
     "the instrument's first session; the tape starts 2019-01-02, see "
     "coverage()); isin_change (the ticker printed under two ISINs in the "
-    "window; a reused receipt code is a new instrument and is never joined); "
+    "window that its lineage does not splice; a reused receipt code is a new "
+    "instrument and is never joined); "
     "ambiguous_session (two rows on one session; pass p_board); invalid_field; "
     "adjustment_unavailable. Inside the coverage a missing session is a session "
     "with no trade (COTAHIST lists only papers that traded; "
     "prior_no_trade_sessions counts them), holidays are not sessions, and a "
-    "field with no value is a JSON null.",
+    "field with no value is a JSON null. A ticker whose company changed its trading code or ISIN runs through its older instrument (ticker lineage, #381): an older (ticker, ISIN) is spliced in front only when it is the same company (the same ticker, or one CNPJ in CVM's FCA map), the same share class (ISIN characters 7-11), its last cash session is the one right before the newer first session with no overlap, no stock event goes ex at the seam, and exactly one candidate qualifies; every row keeps its own ticker and ISIN, close_adj divides older rows by the later instruments' share ratios too, and close_total_return is NULL before a seam (VIIA3 BRVIIAACNOR7 to BHIA3 BRBHIAACNOR1 on 2023-09-20).",
     "close_total_return (SELECT IT IN p_fields) IS close_adj with cash distributions reinvested at the ex-date "
     "close, also anchored to the latest session: the level is divided by the "
     "product of (1 + cash / ex-session close) over every distribution that went "
@@ -791,8 +819,8 @@ CONSTRAINTS = [
     "Daily close_return is null when the previous session is more than 7 "
     "calendar days back (halts, listing gaps), and null across a quotation-"
     "factor change — a fatcot flip rescales the quote with no market move "
-    "behind it. Both grains are also null across a split, grouping or bonus "
-    "between the two prints (#396).",
+    "behind it. Across a split, grouping or bonus between the two prints both "
+    "grains adjust the previous close by the event's share ratio (#396).",
     "Default windows are honest: with no explicit `to`, fund metrics end at "
     "each family's latest COMPLETE period (coverage() reports it as "
     "complete_through) — a partially-filed trailing month is not served. An "
@@ -948,8 +976,8 @@ EXAMPLES = [
         "then": (
             "Compare performance_realised with performance_expected per "
             "classe_serie in the notebook; both are as filed and can carry "
-            "CVM's outliers. History starts 2025-01 — there is no earlier "
-            "tranche data anywhere. Read the aging ladder under it with "
+            "CVM's outliers. History starts 2013-01 (CVM's HIST archive "
+            "through 2024-12). Read the aging ladder under it with "
             "fidc_aging; overdue_total is CVM's filed total, not a sum."
         ),
     },
@@ -1475,21 +1503,23 @@ REGIME_BREAKS = [
     {
         "dataset": "funds_fidc",
         "column": "delinquency",
-        "boundary": "2025-01-31",
+        "boundary": "2020-11-30",
         "before": (
-            "CVM's monthly FIDC file (tab II/III, ingested for 2019-01..2024-12) "
-            "carries no delinquency field: delinquency is null on every fidc row "
-            "through 2024-12-31 — not zero, not clean books, not a missing month"
+            "through 2020-10-31 delinquency comes from CVM's HIST tab VI, which "
+            "has no row for some funds in some months: such a fund, or a blank "
+            "cell, is null (about 70% to 93% of fidc rows carry a value) — not "
+            "zero, not clean books, not a missing month"
         ),
         "after": (
-            "from 2025-01-31 the inf_mensal tab IV/VI format is ingested; "
-            "delinquency is tab VI's total, filed on every row (a fund with no "
-            "delinquent receivables files 0)"
+            "from 2020-11-30 tab VI is filed for every fund and delinquency is on "
+            "every row (a fund with no delinquent receivables files 0). It is the "
+            "same filed field from 2013-01 to date: TAB_VI_B_VL_DIRCRED_INAD, from "
+            "the HIST archive through 2024-12 and the monthly informe from 2025-01"
         ),
         "never": (
-            "chain-link, difference or average delinquency across 2024-12 → "
-            "2025-01, or read a pre-2025 null as zero; a FIDC delinquency series "
-            "starts at 2025-01"
+            "read a pre-2020-11 null as zero or fill it, or compare a count of "
+            "reporting funds across 2020-10 → 2020-11; the filed values on both "
+            "sides are the same measure"
         ),
     },
 ]
@@ -1875,7 +1905,7 @@ def catalog_payload() -> Dict[str, Any]:
             "screen_restatements": "POST /rest/v1/rpc/screen_restatements",
             "screen_late_filers": "POST /rest/v1/rpc/screen_late_filers",
             "screen_silent_filers": "POST /rest/v1/rpc/screen_silent_filers",
-            # FIDC structure (v32): tranches and the aging ladder, 2025-01 on.
+            # FIDC structure (v32): tranches and the aging ladder, 2013-01 on (v58).
             "fidc_tranches": "POST /rest/v1/rpc/fidc_tranches",
             "fidc_aging": "POST /rest/v1/rpc/fidc_aging",
             # The FNET document register (v33): one fund's documents, and

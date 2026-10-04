@@ -459,7 +459,17 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
 - Hosting on Cloudflare: revised on #519 to one Worker (static assets) plus a
   Container for the Python engine, no Pages. The first safe deploy, a
   health-only Worker and Container (`deploy/cloudflare/`,
-  `deploy_cloudflare.yml`), went green on 2026-10-03; the engine image is next.
+  `deploy_cloudflare.yml`), went green on 2026-10-03. The engine image
+  (`deploy/cloudflare/engine/`, built and smoked by `engine_image.yml`) is
+  step 1 of slice E; step 2 (#572) runs it as the Worker's Container behind
+  `POST /diagnose` and an upload page, deployed on 2026-10-04, with silo-mcp and
+  api.openai.com reached through the egress allow-list. **The report is blocked:**
+  OpenAI answers 403 `model_not_found` for `gpt-6-luna` with the key in
+  `OPENAI_API_KEY` (every gpt-6 model, per `probe_openai_models.yml`). Owner's
+  choice of 2026-10-04: `gpt-5.1` at medium reasoning (branch
+  `demo/llm-gpt-5-1`), then dispatch `deploy_cloudflare.yml` again. OpenAI marks
+  gpt-5.1 deprecated (shutdown 2027-04-01, replacement gpt-6-sol), so the model
+  has to move again before then.
 - Engine in Python `src/portfolio/`, set-based `api` functions in
   `31_api_portfolio.sql`, Supabase reached through the read-only `silo-mcp`.
 - Sunday scope: spreadsheet input, blocks 1, 3, 10, 11, 14 (screens), 4, 2, PDF.
@@ -467,8 +477,8 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
   slice A adds the `cad_fi` fee columns (migration 64) and the CVM lâmina.
 - Cost cap US$1.00 per report; investigator cap 20 searches per report.
 - Report LLM (owner, 2026-10-03): the Anthropic key has no credits, so the Redator and
-  Revisor run on OpenAI `gpt-6-luna` at medium reasoning (`SILO_LLM_PROVIDER=openai`,
-  branch `demo/openai-provider`); `anthropic` stays selectable, the cap is unchanged.
+  Revisor run on OpenAI at medium reasoning (`SILO_LLM_PROVIDER=openai`, branch
+  `demo/openai-provider`), `gpt-5.1` since 2026-10-04 (was `gpt-6-luna`); `anthropic` stays selectable, the cap is unchanged.
 - **Parked:** the material-restatement thresholds below. Restatements are
   reported as "revised, not assessed" until they are set. The abnormal-movement
   rule is no longer parked: owner's decisions of 2026-10-03 are implemented as

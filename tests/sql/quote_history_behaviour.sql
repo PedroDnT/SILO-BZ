@@ -87,14 +87,19 @@ INSERT INTO b3_cotahist (codneg, trade_date, tpmerc, codbdi, especi, preco_fecha
     ('CTRL3', '2024-04-30', '010', '02', 'ON', 12.10, 1, 'BRCTRLACNOR1', '{}'),
     ('CTRL3', '2024-05-31', '010', '02', 'ON', 12.60, 1, 'BRCTRLACNOR1', '{}'),
     ('NULF3', '2024-04-15', '010', '02', 'ON', 10.00, 1, 'BRNULFACNOR1', '{}'),
-    ('NULF3', '2024-04-16', '010', '02', 'ON',  5.00, 1, 'BRNULFACNOR1', '{}');
+    ('NULF3', '2024-04-16', '010', '02', 'ON',  5.00, 1, 'BRNULFACNOR1', '{}'),
+    -- QUAD3: the owner's example (2026-10-04), 100.00 the day before a 1:4
+    -- split, 26.00 on the split day: +4%, not -74%.
+    ('QUAD3', '2024-04-15', '010', '02', 'ON', 100.00, 1, 'BRQUADACNOR1', '{}'),
+    ('QUAD3', '2024-04-16', '010', '02', 'ON',  26.00, 1, 'BRQUADACNOR1', '{}');
 
 INSERT INTO b3_corporate_event (issuing_company, isin, event_class, label, last_date_prior, factor, raw) VALUES
     ('BBAS', 'BRBBASACNOR3', 'stock', 'DESDOBRAMENTO', '2024-04-15', 100, '{}'),
     ('MGLU', 'BRMGLUACNOR3', 'stock', 'GRUPAMENTO',    '2024-05-23', 0.1, '{}'),
     ('CTRL', 'BRCTRLACNOR1', 'cash',  'DIVIDENDO',     '2024-04-12', NULL, '{}'),
     ('CTRL', 'BRCTRLACNOR1', 'stock', 'DESDOBRAMENTO', '2020-01-10', 100, '{}'),
-    ('NULF', 'BRNULFACNOR1', 'stock', 'DESDOBRAMENTO', '2024-04-15', NULL, '{}');
+    ('NULF', 'BRNULFACNOR1', 'stock', 'DESDOBRAMENTO', '2024-04-15', NULL, '{}'),
+    ('QUAD', 'BRQUADACNOR1', 'stock', 'DESDOBRAMENTO', '2024-04-15', 300, '{}');
 
 INSERT INTO b3_corporate_event (issuing_company, isin, event_class, label, last_date_prior, factor, raw) VALUES
     ('SPLT', 'BRSPLTACNOR1', 'stock', 'DESDOBRAMENTO', '2024-08-07', 100, '{}'),
@@ -111,6 +116,52 @@ SELECT c, 0, '2024-09-02 06:00+00'
 FROM unnest(ARRAY['REFR', 'ETER', 'SPLT', 'CMPD', 'SPIN', 'SUBS', 'AMBG', 'DUPL', 'UNIT', 'LOTS', 'LONG']) c;
 INSERT INTO b3_corporate_event_sweep (issuing_company, n_events, proven_at)
 VALUES ('STAL', 0, '2024-08-20 06:00+00');
+
+-- Ticker lineage (#381 follow-up, docs/adr/0002-ticker-activity-and-lineage.md).
+-- A week of March 2024 is its own calendar: no other fixture prints there.
+-- OLDL3 -> NEWL3: same company in the FCA, same class, adjacent, no event at
+-- the seam: spliced. A 10:1 grouping later on the NEW ISIN divides the old
+-- rows too. The four others must not splice:
+--   DIFO3 -> DIFN3  different company CNPJs
+--   CLSO4 -> CLSN3  same company, PN ISIN then ON ISIN (another class)
+--   GAPO3 -> GAPN3  a cash session (2024-03-08) between the two
+--   BNDO3 -> BNDN3  a stock event on the old ISIN goes ex at the seam
+INSERT INTO cia_ticker (cnpj_cia, data_refer, versao, valor_mobiliario, codneg, mercado, dt_fim_neg) VALUES
+    ('99000000000101', '2022-01-01', 1, 'Ações Ordinárias', 'OLDL3', 'Bolsa', NULL),
+    ('99000000000101', '2025-01-01', 1, 'Ações Ordinárias', 'NEWL3', 'Bolsa', NULL),
+    ('99000000000102', '2022-01-01', 1, 'Ações Ordinárias', 'DIFO3', 'Bolsa', NULL),
+    ('99000000000103', '2025-01-01', 1, 'Ações Ordinárias', 'DIFN3', 'Bolsa', NULL),
+    ('99000000000104', '2022-01-01', 1, 'Ações Preferenciais', 'CLSO4', 'Bolsa', NULL),
+    ('99000000000104', '2025-01-01', 1, 'Ações Ordinárias', 'CLSN3', 'Bolsa', NULL),
+    ('99000000000105', '2022-01-01', 1, 'Ações Ordinárias', 'GAPO3', 'Bolsa', NULL),
+    ('99000000000105', '2025-01-01', 1, 'Ações Ordinárias', 'GAPN3', 'Bolsa', NULL),
+    ('99000000000106', '2022-01-01', 1, 'Ações Ordinárias', 'BNDO3', 'Bolsa', NULL),
+    ('99000000000106', '2025-01-01', 1, 'Ações Ordinárias', 'BNDN3', 'Bolsa', NULL);
+INSERT INTO b3_cotahist (codneg, trade_date, tpmerc, codbdi, especi, preco_fechamento, fator_cotacao, isin, raw) VALUES
+    ('OLDL3', '2024-03-04', '010', '02', 'ON', 0.96, 1, 'BROLDLACNOR1', '{}'),
+    ('OLDL3', '2024-03-05', '010', '02', 'ON', 0.97, 1, 'BROLDLACNOR1', '{}'),
+    ('OLDL3', '2024-03-06', '010', '02', 'ON', 0.98, 1, 'BROLDLACNOR1', '{}'),
+    ('OLDL3', '2024-03-07', '010', '02', 'ON', 0.99, 1, 'BROLDLACNOR1', '{}'),
+    ('OLDL3', '2024-03-08', '010', '02', 'ON', 1.00, 1, 'BROLDLACNOR1', '{}'),
+    ('NEWL3', '2024-03-11', '010', '02', 'ON', 1.00, 1, 'BRNEWLACNOR1', '{}'),
+    ('NEWL3', '2024-03-12', '010', '02', 'ON', 1.02, 1, 'BRNEWLACNOR1', '{}'),
+    ('NEWL3', '2024-03-13', '010', '02', 'ON', 1.04, 1, 'BRNEWLACNOR1', '{}'),
+    ('NEWL3', '2024-03-14', '010', '02', 'ON', 10.40, 1, 'BRNEWLACNOR1', '{}'),
+    ('NEWL3', '2024-03-15', '010', '02', 'ON', 10.50, 1, 'BRNEWLACNOR1', '{}'),
+    ('DIFO3', '2024-03-08', '010', '02', 'ON', 5, 1, 'BRDIFOACNOR1', '{}'),
+    ('DIFN3', '2024-03-11', '010', '02', 'ON', 5, 1, 'BRDIFNACNOR1', '{}'),
+    ('CLSO4', '2024-03-08', '010', '02', 'PN', 5, 1, 'BRCLSOACNPR1', '{}'),
+    ('CLSN3', '2024-03-11', '010', '02', 'ON', 5, 1, 'BRCLSNACNOR1', '{}'),
+    ('GAPO3', '2024-03-07', '010', '02', 'ON', 5, 1, 'BRGAPOACNOR1', '{}'),
+    ('GAPN3', '2024-03-11', '010', '02', 'ON', 5, 1, 'BRGAPNACNOR1', '{}'),
+    ('BNDO3', '2024-03-08', '010', '02', 'ON', 5, 1, 'BRBNDOACNOR1', '{}'),
+    ('BNDN3', '2024-03-11', '010', '02', 'ON', 5, 1, 'BRBNDNACNOR1', '{}');
+INSERT INTO b3_corporate_event (issuing_company, isin, event_class, label, last_date_prior, factor, raw) VALUES
+    ('NEWL', 'BRNEWLACNOR1', 'stock', 'GRUPAMENTO',  '2024-03-13', 0.1, '{}'),
+    ('BNDO', 'BRBNDOACNOR1', 'stock', 'INCORPORACAO', '2024-03-08', 1, '{}');
+INSERT INTO b3_corporate_event_sweep (issuing_company, n_events, proven_at)
+SELECT c, 0, '2024-09-02 06:00+00'
+FROM unnest(ARRAY['OLDL', 'NEWL', 'DIFO', 'DIFN', 'CLSO', 'CLSN', 'GAPO', 'GAPN', 'BNDO', 'BNDN']) c;
 
 REFRESH MATERIALIZED VIEW mv_b3_isin_subtype;
 
@@ -206,7 +257,11 @@ INSERT INTO cases VALUES
     ('not a share or unit',   $s$SELECT * FROM api.quote_history('FUND11', '2024-08-01', '2024-08-30')$s$, 'reason=adjustment_unavailable; cause=outside research universe'),
     ('over the page',         $s$SELECT * FROM api.quote_history('LONG3', '2020-01-01', '2024-07-31', NULL, NULL, ARRAY['close'])$s$, NULL),
     ('panel unsupported',     $s$SELECT * FROM api.panel(ARRAY['SPIN3'], NULL, '2024-08-01', '2024-08-30', 'month')$s$, 'reason=adjustment_unavailable'),
-    ('panel explicit fund',   $s$SELECT * FROM api.panel(ARRAY['FUND11'], ARRAY['close_adj'], '2024-08-01', '2024-08-30', 'month')$s$, 'reason=adjustment_unavailable');
+    ('panel explicit fund',   $s$SELECT * FROM api.panel(ARRAY['FUND11'], ARRAY['close_adj'], '2024-08-01', '2024-08-30', 'month')$s$, 'reason=adjustment_unavailable'),
+    ('lineage: another CNPJ', $s$SELECT * FROM api.quote_history('DIFN3', '2024-03-08', '2024-03-15', NULL, NULL, ARRAY['close'])$s$, 'reason=outside_coverage'),
+    ('lineage: another class', $s$SELECT * FROM api.quote_history('CLSN3', '2024-03-08', '2024-03-15', NULL, NULL, ARRAY['close'])$s$, 'reason=outside_coverage'),
+    ('lineage: session gap',  $s$SELECT * FROM api.quote_history('GAPN3', '2024-03-07', '2024-03-15', NULL, NULL, ARRAY['close'])$s$, 'reason=outside_coverage'),
+    ('lineage: seam event',   $s$SELECT * FROM api.quote_history('BNDN3', '2024-03-08', '2024-03-15', NULL, NULL, ARRAY['close'])$s$, 'reason=outside_coverage');
 
 DO $$
 DECLARE
@@ -257,40 +312,70 @@ BEGIN
     RAISE NOTICE 'close_total_return OK';
 END $$;
 
--- close_return across a share-count event is NULL (#396, step 1): a split, a
--- grouping or a bonus changes the share count, not the value, so it must not
--- be served as a return. The panel emits no row where the return is NULL, so
--- "NULL" reads as "no close_return row for that session".
+-- close_return across a share-count event is ADJUSTED (#396 step 2, owner
+-- decision 2026-10-04): the previous close is divided by the event's share
+-- ratio (1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for
+-- GRUPAMENTO) and the return is close / adjusted previous close - 1. An
+-- unreadable or ambiguous factor still nulls it. The panel emits no row where
+-- the return is NULL, so "NULL" reads as "no close_return row for that session".
 DO $$
 DECLARE
     d DATE[];
     v NUMERIC;
 BEGIN
-    -- BBAS3, daily: the first ex session (04-16, 56.46 -> 27.91, -50.57% raw)
-    -- is NULL; the cum-date session before it and the session after it are not.
+    -- The owner's example: 100.00 the day before a 1:4 split is 25.00 adjusted,
+    -- so a 26.00 close is +4%.
+    SELECT value INTO v
+    FROM api.panel(ARRAY['QUAD3'], ARRAY['close_return'], '2024-04-01', '2024-04-17', 'day')
+    WHERE date = '2024-04-16';
+    ASSERT round(v, 6) = 0.04, format('QUAD3 split-day return: %s, expected 0.04', v);
+
+    -- BBAS3, daily: the first ex session (04-16, 56.46 -> 27.91) is the
+    -- adjusted -1.13%, not the raw -50.57%; the sessions around it are plain.
     SELECT array_agg(date ORDER BY date) INTO d
     FROM api.panel(ARRAY['BBAS3'], ARRAY['close_return'], '2024-04-01', '2024-04-17', 'day');
-    ASSERT d = ARRAY['2024-04-12', '2024-04-15', '2024-04-17']::date[],
+    ASSERT d = ARRAY['2024-04-12', '2024-04-15', '2024-04-16', '2024-04-17']::date[],
         format('BBAS3 daily close_return dates: %s', d);
+    SELECT value INTO v
+    FROM api.panel(ARRAY['BBAS3'], ARRAY['close_return'], '2024-04-01', '2024-04-17', 'day')
+    WHERE date = '2024-04-16';
+    ASSERT round(v, 6) = round(27.91 / (56.46 / 2) - 1, 6), format('BBAS3 ex session: %s', v);
     SELECT value INTO v
     FROM api.panel(ARRAY['BBAS3'], ARRAY['close_return'], '2024-04-01', '2024-04-17', 'day')
     WHERE date = '2024-04-17';
     ASSERT round(v, 6) = round(28.05 / 27.91 - 1, 6), format('BBAS3 after the event: %s', v);
 
     -- BBAS3, monthly: the split sits mid-April, between the March and April
-    -- month-end prints, so April is NULL; May compares two post-event prints.
+    -- month-end prints, so April's previous close (March) is halved.
     SELECT array_agg(date ORDER BY date) INTO d
     FROM api.panel(ARRAY['BBAS3'], ARRAY['close_return'], '2024-03-01', '2024-05-31', 'month');
-    ASSERT d = ARRAY['2024-05-01']::date[], format('BBAS3 monthly close_return dates: %s', d);
+    ASSERT d = ARRAY['2024-04-01', '2024-05-01']::date[], format('BBAS3 monthly close_return dates: %s', d);
+    SELECT value INTO v
+    FROM api.panel(ARRAY['BBAS3'], ARRAY['close_return'], '2024-03-01', '2024-05-31', 'month')
+    WHERE date = '2024-04-01';
+    ASSERT round(v, 6) = round(28.40 / (55.00 / 2) - 1, 6), format('BBAS3 April: %s', v);
 
-    -- MGLU3 grouping (last cum date 05-23, first ex session 05-24): daily
-    -- NULL on 05-24 only; monthly NULL for May (April print to May print).
+    -- MGLU3 grouping 10:1 (factor 0.1, last cum date 05-23): the previous
+    -- close 1.32 becomes 13.20, so 05-24's 13.15 is -0.38%; monthly May
+    -- compares 13.50 with April's 1.40 grouped to 14.00.
     SELECT array_agg(date ORDER BY date) INTO d
     FROM api.panel(ARRAY['MGLU3'], ARRAY['close_return'], '2024-05-20', '2024-05-28', 'day');
-    ASSERT d = ARRAY['2024-05-23', '2024-05-27']::date[], format('MGLU3 daily close_return dates: %s', d);
-    SELECT count(*) INTO v
-    FROM api.panel(ARRAY['MGLU3'], ARRAY['close_return'], '2024-04-01', '2024-05-31', 'month');
-    ASSERT v = 0, format('MGLU3 monthly close_return rows: %s, expected none', v);
+    ASSERT d = ARRAY['2024-05-23', '2024-05-24', '2024-05-27']::date[], format('MGLU3 daily close_return dates: %s', d);
+    SELECT value INTO v
+    FROM api.panel(ARRAY['MGLU3'], ARRAY['close_return'], '2024-05-20', '2024-05-28', 'day')
+    WHERE date = '2024-05-24';
+    ASSERT round(v, 6) = round(13.15 / (1.32 / 0.1) - 1, 6), format('MGLU3 ex session: %s', v);
+    SELECT value INTO v
+    FROM api.panel(ARRAY['MGLU3'], ARRAY['close_return'], '2024-04-01', '2024-05-31', 'month')
+    WHERE date = '2024-05-01';
+    ASSERT round(v, 6) = round(13.50 / (1.40 / 0.1) - 1, 6), format('MGLU3 May: %s', v);
+
+    -- CMPD3: a 10:1 grouping and a 10% bonus on one cum date multiply
+    -- (0.1 x 1.1 = 0.11): 1.10 becomes 10.00, so the 10.00 close is 0%.
+    SELECT value INTO v
+    FROM api.panel(ARRAY['CMPD3'], ARRAY['close_return'], '2024-08-01', '2024-08-30', 'day')
+    WHERE date = '2024-08-16';
+    ASSERT round(v, 6) = 0, format('CMPD3 compound event: %s', v);
 
     -- A share-count event whose factor B3 published unreadable is still a
     -- share-count event: NULL, not a guess.
@@ -298,8 +383,14 @@ BEGIN
     FROM api.panel(ARRAY['NULF3'], ARRAY['close_return'], '2024-04-01', '2024-04-17', 'day');
     ASSERT v = 0, format('NULF3 close_return rows: %s, expected none', v);
 
+    -- One label on one date published with two factors: NULL on the ex
+    -- session only; the sessions around it are plain.
+    SELECT array_agg(date ORDER BY date) INTO d
+    FROM api.panel(ARRAY['AMBG3'], ARRAY['close_return'], '2024-08-05', '2024-08-09', 'day');
+    ASSERT d = ARRAY['2024-08-06', '2024-08-08', '2024-08-09']::date[], format('AMBG3 daily close_return dates: %s', d);
+
     -- A normal ticker is unchanged: a cash distribution and a split years
-    -- before the window null nothing, daily or monthly.
+    -- before the window adjust nothing, daily or monthly.
     SELECT array_agg(date ORDER BY date) INTO d
     FROM api.panel(ARRAY['CTRL3'], ARRAY['close_return'], '2024-04-01', '2024-04-17', 'day');
     ASSERT d = ARRAY['2024-04-12', '2024-04-15', '2024-04-16']::date[], format('CTRL3 daily close_return dates: %s', d);
@@ -316,6 +407,58 @@ BEGIN
     ASSERT round(v, 6) = round(12.10 / 9.50 - 1, 6), format('CTRL3 monthly value: %s', v);
 
     RAISE NOTICE 'close_return across share-count events OK';
+END $$;
+
+
+-- A spliced lineage serves the whole history, each row with its own ticker
+-- and ISIN, and close_adj continuous across the seam.
+DO $$
+DECLARE
+    j   jsonb;
+    n   INT;
+    got TEXT;
+BEGIN
+    SELECT count(*), string_agg(q ->> 'ticker' || ' ' || (q ->> 'isin'), ',' ORDER BY q ->> 'trade_date')
+    INTO n, got
+    FROM api.quote_history('NEWL3', '2024-03-04', '2024-03-15', NULL, NULL, ARRAY['close', 'isin', 'close_adj']) q;
+    ASSERT n = 10, format('lineage rows: %s, expected 10', n);
+    ASSERT got LIKE 'OLDL3 BROLDLACNOR1,%NEWL3 BRNEWLACNOR1', format('lineage rows: %s', got);
+
+    -- 1.00 before a later 10:1 grouping on the NEW ISIN is 10.00 adjusted.
+    SELECT q INTO j FROM api.quote_history('NEWL3', '2024-03-08', '2024-03-08', NULL, NULL, ARRAY['close', 'close_adj']) q;
+    ASSERT (j ->> 'ticker') = 'OLDL3' AND (j ->> 'close_adj')::numeric = 10.000000, format('old row: %s', j);
+    SELECT q INTO j FROM api.quote_history('NEWL3', '2024-03-13', '2024-03-13', NULL, NULL, ARRAY['close_adj']) q;
+    ASSERT (j ->> 'close_adj')::numeric = 10.400000, format('new row before the grouping: %s', j);
+    SELECT q INTO j FROM api.quote_history('NEWL3', '2024-03-15', '2024-03-15', NULL, NULL, ARRAY['close_adj']) q;
+    ASSERT (j ->> 'close_adj')::numeric = 10.500000, format('new row after the grouping: %s', j);
+
+    -- p_from NULL starts at the oldest instrument; coverage says so.
+    SELECT q INTO j FROM api.quote_history('NEWL3', NULL, '2024-03-15', NULL, NULL, ARRAY['coverage_start', 'coverage_end']) q
+    ORDER BY q ->> 'trade_date' LIMIT 1;
+    ASSERT (j ->> 'trade_date') = '2024-03-04' AND (j ->> 'coverage_start') = '2024-03-04'
+           AND (j ->> 'coverage_end') = '2024-03-15', format('coverage: %s', j);
+
+    -- The session count runs across the seam (03-08 -> 03-11 is adjacent).
+    SELECT q INTO j FROM api.quote_history('NEWL3', '2024-03-11', '2024-03-11', NULL, NULL, ARRAY['prior_no_trade_sessions']) q;
+    ASSERT (j ->> 'prior_no_trade_sessions')::int = 0, format('seam gap: %s', j);
+
+    -- The total return is not computed before the seam, and says why.
+    SELECT q INTO j FROM api.quote_history('NEWL3', '2024-03-08', '2024-03-08', NULL, NULL, ARRAY['close_total_return_null_reason']) q;
+    ASSERT (j ->> 'close_total_return_null_reason') LIKE 'before an ISIN change%', format('total return: %s', j);
+
+    -- A window inside the current instrument is unchanged: NEWL3 rows only.
+    SELECT count(*) INTO n FROM api.quote_history('NEWL3', '2024-03-11', '2024-03-15', NULL, NULL, ARRAY['close']) q
+    WHERE q ->> 'ticker' = 'NEWL3';
+    ASSERT n = 5, format('current-only window: %s', n);
+
+    -- The old ticker asked directly is its own history, never the successor's.
+    SELECT count(*) INTO n FROM api.quote_history('OLDL3', '2024-03-04', '2024-03-15', NULL, NULL, ARRAY['close']) q;
+    ASSERT n = 5, format('old ticker rows: %s', n);
+
+    SELECT string_agg(l.ticker || ':' || l.isin, ',' ORDER BY l.seq) INTO got FROM api.ticker_lineage('NEWL3') l;
+    ASSERT got = 'OLDL3:BROLDLACNOR1,NEWL3:BRNEWLACNOR1', format('ticker_lineage: %s', got);
+
+    RAISE NOTICE 'ticker lineage OK';
 END $$;
 
 ROLLBACK;

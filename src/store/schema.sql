@@ -399,9 +399,9 @@ CREATE TABLE IF NOT EXISTS cvm_fidc_tranche (
     classe_serie       TEXT         NOT NULL,
     qt_cota            NUMERIC(28,8),  -- raw CVM TAB_X_QT_COTA reaches 6.9e13
     vl_cota            NUMERIC(28,8),  -- kept parallel to qt_cota
-    vl_rentab_mes      NUMERIC(20,6),  -- raw CVM has dirty values up to 1.6e8 (validate downstream)
-    pr_desemp_esperado NUMERIC(20,6),  -- same: raw CVM percentage fields contain garbage outliers
-    pr_desemp_real     NUMERIC(20,6),  -- same
+    vl_rentab_mes      NUMERIC,  -- percent as filed; CVM files dirty values of 1e14 and more (migration 70), never rescaled
+    pr_desemp_esperado NUMERIC,  -- same: unconstrained so an implausible filed value is stored, not an overflow
+    pr_desemp_real     NUMERIC,  -- same
     raw                JSONB,
     fetched_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_fidc_tranche UNIQUE (cnpj, period, classe_serie)

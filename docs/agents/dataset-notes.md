@@ -9,7 +9,9 @@ Storage layout: ~30 tables named `cvm_<entity>_<doctype>` or `bacen_<series>` (p
 `cia_*` and ETF tables and the `cvm_ingest_log` audit table). Trust `src/store/schema.sql`,
 `migrations/` and `src/pipeline/` (`CVMIngestor.daily_update` / `backfill`) as the source
 of truth, not the README's CSV table.
-Wired ingest datasets include `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_fidc_cedente` /
+Wired ingest datasets include `cvm_fidc_tranche`, `cvm_fidc_tranche_flows`, `cvm_fidc_aging`
+(tabs X_2/X_3/X_6, X_4, VI, from 2013-01: the HIST archives carry them, and
+`cvm_fidc_mensal.vl_inadimpl` is tab VI's filed total in both eras, issue #556), `cvm_fidc_cedente` /
 `cvm_fidc_sacado` / `cvm_fidc_setor` / `cvm_fidc_scr` (FIDC informe tabs I, VIII, II, X —
 named originators, anonymized top-25 debtors, sector, SCR ladder; migration 38, with
 per-tab first months in `_FIDC_TAB_FIRST_PERIOD`; served by `api.fidc_cedentes` /
@@ -61,6 +63,11 @@ factor of two. `run_b3_events` refetches every year of every code each night, so
 backfilled by the next run and there is no backfill mode. A null `results` is retried, and a
 persistent one raises. IEEX is held back (an unexplained 1999-03 move). Served by
 `api.index_history`, index codes only; IBOV11 and BOVA11 are not the index.
+
+**FIDC tranche percentages are stored as filed** (migration 70): `cvm_fidc_tranche.vl_rentab_mes`,
+`pr_desemp_esperado` and `pr_desemp_real` are unconstrained `numeric` because CVM files implausible
+magnitudes there (1e14 and more in 2019-08, 2020-01, 2020-07, 2022-04 and 2023-12, #556). Never
+rescale, clip or null them; a reader filters by magnitude in its own query and says so.
 
 **Fixed income ETFs are not in COTAHIST** (migration 57). B3 lists them in segment
 FORWARD, market FIXED INCOME, which the COTAHIST files do not carry, so they have no

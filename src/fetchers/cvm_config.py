@@ -347,6 +347,43 @@ class DatasetConfig:
             "csv_name_pattern": "inf_mensal_fidc_tab_X_7_{year}{month:02d}.csv",
             "description": "FIDC historical tab X_7 (2019-11..2024) — collateral backing the receivables",
         },
+        # Tabs VI, X_2, X_3, X_4 and X_6 are in every HIST archive from 2013-01,
+        # twelve months each, with the same value columns as the monthly era
+        # (probe_cvm_headers.yml, runs 37217592901 and 37218127539, issue #556).
+        # Only the fund id changes: CNPJ_FUNDO until 2020-10 in tab VI and
+        # until 2023-09 in X_2..X_6, then TP_FUNDO_CLASSE + CNPJ_FUNDO_CLASSE.
+        # The field maps take both. `tab_VI_` cannot match tab_VII/tab_VIII,
+        # and `tab_X_2_` cannot match tab_X_ or any other tab_X_n member.
+        "hist_mensal_tab_vi": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/HIST/inf_mensal_fidc_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_VI_{year}{month:02d}.csv",
+            "description": "FIDC historical tab VI (2013-2024): maturity aging and delinquency buckets",
+        },
+        "hist_mensal_tab_x2": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/HIST/inf_mensal_fidc_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_X_2_{year}{month:02d}.csv",
+            "description": "FIDC historical tab X_2 (2013-2024): quota quantity and price per tranche",
+        },
+        "hist_mensal_tab_x3": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/HIST/inf_mensal_fidc_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_X_3_{year}{month:02d}.csv",
+            "description": "FIDC historical tab X_3 (2013-2024): monthly return % per tranche",
+        },
+        "hist_mensal_tab_x4": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/HIST/inf_mensal_fidc_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_X_4_{year}{month:02d}.csv",
+            "description": "FIDC historical tab X_4 (2013-2024): subscriptions and redemptions per tranche",
+        },
+        "hist_mensal_tab_x6": {
+            "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/HIST/inf_mensal_fidc_{year}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "inf_mensal_fidc_tab_X_6_{year}{month:02d}.csv",
+            "description": "FIDC historical tab X_6 (2013-2024): expected vs actual performance % per tranche",
+        },
         "mensal": {
             "url_pattern": "{base_url}/FIDC/DOC/INF_MENSAL/DADOS/inf_mensal_fidc_{year}{month:02d}.zip",
             "is_zip": True,
