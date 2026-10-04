@@ -564,6 +564,11 @@ def _gaps_view(eng: dict, sections: dict, fees: dict, risk: dict, movement: dict
     failed_screens = [n["screen"] for n in risk.get("not_run") or []]
     if failed_screens:
         add("Telas de risco", SCREEN_FAILED + ": " + ", ".join(failed_screens))
+    if any(str(sc.get("screen", "")).startswith("screen_dormant") for sc in (eng.get("risk_signals") or {}).get("screens") or []):
+        # a permanent coverage limit of the dormant-funds screen, a fixed engine text (never an error)
+        note = (eng.get("risk_signals") or {}).get("dormant_coverage_note")
+        if note:
+            add("Fundos dormentes", note)
     if movement and (movement.get("counts") or {}).get("nao_avaliado"):
         add("Movimento incomum", reason_text("fundos_nao_avaliados"),
             [x["line_id"] for x in movement.get("not_evaluated") or []])

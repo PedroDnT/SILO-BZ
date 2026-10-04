@@ -320,3 +320,11 @@ def test_codeless_fund_lines_merge_only_with_the_same_name_type_and_printed_quot
     merged, n = merge_same_identity(s)
     assert n == 1 and [p.valor for p in merged.positions] == [Decimal("45.0"), Decimal("1.7")]
     assert merged.positions[0].quantidade == 30 and merged.positions[0].preco_unitario == Decimal("1.5")
+
+
+def test_the_gaps_keep_the_dormant_screen_coverage_limit(demo):
+    view = adapt.to_view(demo)
+    dormant = [g for g in view["gaps"] if g["title"] == "Fundos dormentes"]
+    assert len(dormant) == 1 and "R$ 1 bilhão" in dormant[0]["text"]
+    html, _ = build.build(view, "fake")
+    assert "Fundos dormentes" in html.split("O que não foi possível avaliar")[1]
