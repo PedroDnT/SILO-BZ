@@ -223,6 +223,7 @@ INTERNAL_FUNCTIONS = {
     "api.quote_data_revision",
     "api.close_adj_status",
     "api.close_adj_ratio",
+    "api.ticker_lineage",
     "api.assert_close_adj",
     "api.close_total_return_cash",
 }

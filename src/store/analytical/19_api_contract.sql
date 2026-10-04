@@ -789,14 +789,14 @@ AS $$
         ('volume',           'number',  FALSE, 'Financial volume in currency.'),
         ('quotation_factor', 'integer', FALSE, 'FATCOT: how many shares the quoted prices refer to (1 or 1000).'),
         ('board',            'string',  FALSE, 'BDI board code (CODBDI) the session printed on; 02 is the standard lot.'),
-        ('isin',             'string',  FALSE, 'ISIN of the instrument (the series identity).'),
+        ('isin',             'string',  FALSE, 'ISIN of the instrument this row printed under. One ISIN per series, except across an ISIN change the ticker''s lineage splices (api.ticker_lineage), where each row keeps its own.'),
         ('short_name',       'string',  FALSE, 'Issuer short name as printed.'),
         ('spec',             'string',  FALSE, 'Share specification (ESPECI) as printed.'),
         ('currency',         'string',  FALSE, 'Price currency.'),
         ('asset_class',      'string',  FALSE, 'Instrument class from published TPMERC/ESPECI.'),
         ('source',           'string',  FALSE, 'Source file of the row.'),
-        ('coverage_start',   'date',    FALSE, 'First session this ticker printed under this ISIN on the tape (the tape starts 2019-01-02).'),
-        ('coverage_end',     'date',    FALSE, 'Last session this ticker printed under this ISIN on the tape.'),
+        ('coverage_start',   'date',    FALSE, 'First session of the series on the tape: this ticker under this ISIN, or the oldest instrument of its spliced lineage when the window reaches back to it (the tape starts 2019-01-02).'),
+        ('coverage_end',     'date',    FALSE, 'Last session of the series on the tape (the current instrument''s last print).'),
         ('prior_no_trade_sessions', 'integer', FALSE, 'Market sessions (days the B3 cash tape printed) since this ticker''s previous row in which it printed nothing. COTAHIST lists only papers that traded, so a missing session is a session with no trade; holidays are not sessions.'),
         ('events_proven_at', 'string',  FALSE, 'When the issuer''s corporate-event history was last proven complete (b3_corporate_event_sweep), ISO 8601 UTC. Null outside shares and units or when not proven.'),
         ('data_revision',    'string',  FALSE, 'Revision of the data behind this response: the latest successful load of the B3 cash tape, the corporate events or their proof, ISO 8601 UTC. It changes when adjusted levels can change; pages with different revisions must not be combined.'),
@@ -1067,6 +1067,124 @@ REVOKE ALL ON FUNCTION api.close_total_return_cash(TEXT, TEXT, TEXT, DATE, DATE)
 DROP FUNCTION IF EXISTS api.quote_history(TEXT, DATE, DATE, TEXT);
 DROP FUNCTION IF EXISTS api.quote_history(TEXT, DATE, DATE, TEXT, TEXT);
 
+-- Internal. The instruments a ticker's history runs through (#381 follow-up,
+-- owner decision 2026-10-04, docs/adr/0002-ticker-activity-and-lineage.md).
+-- A ticker can follow an older instrument when a company changes its trading
+-- code or B3 issues a new ISIN (VIIA3 BRVIIAACNOR7, last session 2023-09-19 at
+-- 0.75, then BHIA3 BRBHIAACNOR1, first session 2023-09-20 at 0.75). An older
+-- (ticker, ISIN) is spliced in front of the current one only when ALL hold:
+--   1. same company: it is the same ticker, or CVM's FCA map (cia_ticker)
+--      lists both tickers under one company CNPJ;
+--   2. same share class: ISIN characters 7-11 match (type + class, e.g. ACNOR);
+--   3. adjacent: its last cash session is the cash session immediately before
+--      the newer instrument's first one (no session in between);
+--   4. no overlap: the older ISIN never prints on or after that first session;
+--   5. no stock corporate event on either ISIN goes ex at the boundary
+--      (last_date_prior from the older last session to the day before the
+--      newer first one), so nothing at the seam needs an adjustment;
+--   6. exactly one candidate qualifies; two or more is ambiguous and stops.
+-- Anything else stops the chain: the history is refused there, never guessed.
+-- Each row keeps its own ticker and ISIN. seq 1 is the oldest instrument; the
+-- last row is the ticker's current instrument (its latest cash print). At most
+-- 10 instruments. Nothing is matched by name.
+CREATE OR REPLACE FUNCTION api.ticker_lineage(p_ticker TEXT)
+RETURNS TABLE (seq INT, ticker TEXT, isin TEXT, first_session DATE, last_session DATE)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_t   TEXT := upper(btrim(COALESCE(p_ticker, '')));
+    v_i   TEXT;
+    v_f   DATE;
+    v_l   DATE;
+    v_ct  TEXT[] := '{}';
+    v_ci  TEXT[] := '{}';
+    v_cf  DATE[] := '{}';
+    v_cl  DATE[] := '{}';
+    v_n   INT;
+    c_t   TEXT;
+    c_i   TEXT;
+    c_l   DATE;
+BEGIN
+    SELECT b.isin, b.trade_date INTO v_i, v_l
+    FROM public.b3_cotahist b
+    WHERE b.codneg = v_t AND b.tpmerc = '010'
+    ORDER BY b.trade_date DESC
+    LIMIT 1;
+    IF v_i IS NULL THEN
+        RETURN;
+    END IF;
+    SELECT min(b.trade_date) INTO v_f
+    FROM public.b3_cotahist b
+    WHERE b.codneg = v_t AND b.tpmerc = '010' AND b.isin = v_i;
+
+    LOOP
+        v_ct := v_t || v_ct;
+        v_ci := v_i || v_ci;
+        v_cf := v_f || v_cf;
+        v_cl := v_l || v_cl;
+        EXIT WHEN cardinality(v_ct) >= 10;
+
+        SELECT count(*), min(x.codneg), min(x.isin), min(x.last_print)
+        INTO v_n, c_t, c_i, c_l
+        FROM (
+            SELECT cand.codneg, p.isin, p.trade_date AS last_print
+            FROM (
+                SELECT v_t AS codneg
+                UNION
+                SELECT o.codneg
+                FROM public.cia_ticker o
+                WHERE o.codneg IS NOT NULL
+                  AND o.cnpj_cia IN (SELECT x.cnpj_cia FROM public.cia_ticker x WHERE x.codneg = v_t)
+            ) cand
+            CROSS JOIN LATERAL (
+                SELECT b.isin, b.trade_date
+                FROM public.b3_cotahist b
+                WHERE b.codneg = cand.codneg AND b.tpmerc = '010' AND b.trade_date < v_f
+                ORDER BY b.trade_date DESC
+                LIMIT 1
+            ) p
+            WHERE p.isin IS NOT NULL
+              AND p.isin <> v_i
+              AND substr(p.isin, 7, 5) = substr(v_i, 7, 5)
+              AND NOT EXISTS (
+                  SELECT 1 FROM public.b3_cotahist s
+                  WHERE s.tpmerc = '010' AND s.trade_date > p.trade_date AND s.trade_date < v_f)
+              AND NOT EXISTS (
+                  SELECT 1 FROM public.b3_cotahist o
+                  WHERE o.isin = p.isin AND o.tpmerc = '010' AND o.trade_date >= v_f)
+              AND NOT EXISTS (
+                  SELECT 1 FROM public.b3_corporate_event e
+                  WHERE e.isin IN (p.isin, v_i)
+                    AND e.event_class = 'stock'
+                    AND e.last_date_prior >= p.trade_date
+                    AND e.last_date_prior < v_f)
+        ) x;
+        EXIT WHEN v_n <> 1;
+        EXIT WHEN c_i = ANY (v_ci);
+
+        v_t := c_t;
+        v_i := c_i;
+        v_l := c_l;
+        SELECT min(b.trade_date) INTO v_f
+        FROM public.b3_cotahist b
+        WHERE b.codneg = v_t AND b.tpmerc = '010' AND b.isin = v_i;
+    END LOOP;
+
+    RETURN QUERY
+    SELECT g.n::int, v_ct[g.n], v_ci[g.n], v_cf[g.n], v_cl[g.n]
+    FROM generate_subscripts(v_ct, 1) AS g(n)
+    ORDER BY g.n;
+END;
+$$;
+
+COMMENT ON FUNCTION api.ticker_lineage(TEXT) IS
+    'Internal. The (ticker, ISIN) instruments a ticker''s history runs through, oldest first, spliced only when they are the same company (same ticker, or one CNPJ in CVM''s FCA map), the same share class (ISIN characters 7-11), adjacent sessions with no overlap, no stock event at the seam, and exactly one candidate (docs/adr/0002-ticker-activity-and-lineage.md). Used by api.quote_history.';
+
+REVOKE ALL ON FUNCTION api.ticker_lineage(TEXT) FROM PUBLIC;
+
 CREATE OR REPLACE FUNCTION api.quote_history(
     p_ticker TEXT,
     -- NULL = from the instrument's first session on the tape.
@@ -1111,6 +1229,23 @@ DECLARE
     v_rev       TEXT;
     v_tr        BOOLEAN;
     v_status    RECORD;
+    -- The instruments the window runs through (api.ticker_lineage, #381):
+    -- one entry per (ticker, ISIN), oldest first. One entry unless the
+    -- window reaches back across a spliced ISIN change.
+    v_lin_t     TEXT[];
+    v_lin_i     TEXT[];
+    v_lin_f     DATE[];
+    v_lin_l     DATE[];
+    v_seg_t     TEXT[];
+    v_seg_i     TEXT[];
+    v_seg_f     DATE[];
+    v_seg_l     DATE[];
+    v_seg_anchor DATE[] := '{}';
+    v_seg_tail  NUMERIC[] := '{}';
+    v_tail      NUMERIC := 1;
+    v_k         INT;
+    v_lineage   BOOLEAN := FALSE;
+    v_cur_first DATE;
 BEGIN
     -- 1. The selection. An unknown name refuses; nothing is silently dropped.
     SELECT string_agg(f.field, ', ' ORDER BY f.field) INTO v_valid
@@ -1167,24 +1302,69 @@ BEGIN
     END IF;
 
     -- 3. Coverage. Exactly one ISIN may meet the window, and the window may not
-    -- start before that ISIN's first session on the tape.
-    SELECT count(*), max(s.isin), min(s.f), max(s.l)
-    INTO v_n, v_isin, v_cov_start, v_cov_end
-    FROM (
-        SELECT b.isin, min(b.trade_date) AS f, max(b.trade_date) AS l
+    -- start before that ISIN's first session on the tape, unless the window
+    -- reaches back across an ISIN change api.ticker_lineage splices (#381):
+    -- then the series runs through each instrument in turn, and every row
+    -- keeps its own ticker and ISIN. With p_board, no splice is attempted.
+    -- Only a window that starts before the current instrument's first session
+    -- can reach a splice, so the lineage is looked up only then.
+    IF v_board IS NULL AND v_from IS NOT NULL THEN
+        SELECT min(b.trade_date) INTO v_cur_first
         FROM public.b3_cotahist b
         WHERE b.codneg = v_ticker AND b.tpmerc = '010'
-          AND (v_board IS NULL OR b.codbdi = v_board)
-        GROUP BY b.isin
-    ) s
-    WHERE s.f <= v_to AND (v_from IS NULL OR s.l >= v_from);
-    IF v_n = 0 THEN
-        RAISE EXCEPTION 'quote_history: refused, % has no coverage from % to %. Its coverage: %. To fix: ask for a window inside it.', v_ticker, COALESCE(v_from::text, 'the start'), v_to, v_spans
-            USING ERRCODE = '22023', DETAIL = 'reason=outside_coverage', HINT = 'Coverage: ' || v_spans;
+          AND b.isin IS NOT DISTINCT FROM (
+              SELECT b2.isin FROM public.b3_cotahist b2
+              WHERE b2.codneg = v_ticker AND b2.tpmerc = '010'
+              ORDER BY b2.trade_date DESC LIMIT 1);
     END IF;
-    IF v_n > 1 THEN
-        RAISE EXCEPTION 'quote_history: refused, from % to % % printed under more than one ISIN (%). A new ISIN is a new instrument and is never joined to the old one. To fix: narrow p_from/p_to to one ISIN''s span.', COALESCE(v_from::text, 'the start'), v_to, v_ticker, v_spans
-            USING ERRCODE = '22023', DETAIL = 'reason=isin_change', HINT = 'Coverage: ' || v_spans;
+    IF v_board IS NULL AND (v_from IS NULL OR v_from < v_cur_first) THEN
+        SELECT array_agg(l.ticker ORDER BY l.seq), array_agg(l.isin ORDER BY l.seq),
+               array_agg(l.first_session ORDER BY l.seq), array_agg(l.last_session ORDER BY l.seq)
+        INTO v_lin_t, v_lin_i, v_lin_f, v_lin_l
+        FROM api.ticker_lineage(v_ticker) l;
+        v_lineage := cardinality(v_lin_t) > 1
+                     AND (v_from IS NULL OR v_from < v_lin_f[cardinality(v_lin_f)]);
+    END IF;
+
+    IF v_lineage THEN
+        v_spans := (SELECT string_agg(format('%s %s %s..%s', v_lin_t[g], v_lin_i[g], v_lin_f[g], v_lin_l[g]), '; ' ORDER BY g)
+                    FROM generate_subscripts(v_lin_t, 1) g);
+        -- An instrument of this ticker outside the splice still refuses.
+        SELECT count(*) INTO v_n
+        FROM (
+            SELECT b.isin, min(b.trade_date) AS f, max(b.trade_date) AS l
+            FROM public.b3_cotahist b
+            WHERE b.codneg = v_ticker AND b.tpmerc = '010'
+            GROUP BY b.isin
+        ) s
+        WHERE s.f <= v_to AND (v_from IS NULL OR s.l >= v_from)
+          AND NOT (s.isin IS NOT NULL AND s.isin = ANY (v_lin_i));
+        IF v_n > 0 THEN
+            RAISE EXCEPTION 'quote_history: refused, from % to % % printed under an ISIN its lineage does not splice (%). A new ISIN is joined to the old one only by the lineage rule. To fix: narrow p_from/p_to to one ISIN''s span.', COALESCE(v_from::text, 'the start'), v_to, v_ticker, v_spans
+                USING ERRCODE = '22023', DETAIL = 'reason=isin_change', HINT = 'Coverage: ' || v_spans;
+        END IF;
+        v_cov_start := v_lin_f[1];
+        v_cov_end   := v_lin_l[cardinality(v_lin_l)];
+        v_isin      := v_lin_i[cardinality(v_lin_i)];
+    ELSE
+        SELECT count(*), max(s.isin), min(s.f), max(s.l)
+        INTO v_n, v_isin, v_cov_start, v_cov_end
+        FROM (
+            SELECT b.isin, min(b.trade_date) AS f, max(b.trade_date) AS l
+            FROM public.b3_cotahist b
+            WHERE b.codneg = v_ticker AND b.tpmerc = '010'
+              AND (v_board IS NULL OR b.codbdi = v_board)
+            GROUP BY b.isin
+        ) s
+        WHERE s.f <= v_to AND (v_from IS NULL OR s.l >= v_from);
+        IF v_n = 0 THEN
+            RAISE EXCEPTION 'quote_history: refused, % has no coverage from % to %. Its coverage: %. To fix: ask for a window inside it.', v_ticker, COALESCE(v_from::text, 'the start'), v_to, v_spans
+                USING ERRCODE = '22023', DETAIL = 'reason=outside_coverage', HINT = 'Coverage: ' || v_spans;
+        END IF;
+        IF v_n > 1 THEN
+            RAISE EXCEPTION 'quote_history: refused, from % to % % printed under more than one ISIN (%). A new ISIN is joined to the old one only when api.ticker_lineage splices them, and these are not spliced. To fix: narrow p_from/p_to to one ISIN''s span.', COALESCE(v_from::text, 'the start'), v_to, v_ticker, v_spans
+                USING ERRCODE = '22023', DETAIL = 'reason=isin_change', HINT = 'Coverage: ' || v_spans;
+        END IF;
     END IF;
     IF v_from IS NULL THEN
         v_from := v_cov_start;
@@ -1201,32 +1381,71 @@ BEGIN
             USING ERRCODE = '22023', DETAIL = 'reason=outside_coverage', HINT = 'Coverage: ' || v_spans;
     END IF;
 
-    -- 4. One row per session, or a refusal.
-    SELECT string_agg(format('%s (boards %s)', d.trade_date, d.boards), ', ' ORDER BY d.trade_date)
-    INTO v_dup
-    FROM (
-        SELECT b.trade_date, string_agg(b.codbdi, '/' ORDER BY b.codbdi) AS boards
-        FROM public.b3_cotahist b
-        WHERE b.codneg = v_ticker AND b.tpmerc = '010' AND b.isin IS NOT DISTINCT FROM v_isin
-          AND (v_board IS NULL OR b.codbdi = v_board)
-          AND b.trade_date BETWEEN v_from AND v_to
-        GROUP BY b.trade_date
-        HAVING count(*) > 1
-        ORDER BY b.trade_date
-        LIMIT 5
-    ) d;
-    IF v_dup IS NOT NULL THEN
-        RAISE EXCEPTION 'quote_history: refused, % printed more than one row on a session: %. SILO does not choose between them. To fix: pass p_board to pick one board.', v_ticker, v_dup
-            USING ERRCODE = '22023', DETAIL = 'reason=ambiguous_session';
+    -- The instruments the series runs through, oldest first: the whole
+    -- lineage when the window reaches back across a splice (rows outside the
+    -- window are filtered later; later instruments still adjust earlier rows),
+    -- else the one instrument the window meets.
+    IF v_lineage THEN
+        v_seg_t := v_lin_t;
+        v_seg_i := v_lin_i;
+        v_seg_f := v_lin_f;
+        v_seg_l := v_lin_l;
+    ELSE
+        v_seg_t := ARRAY[v_ticker];
+        v_seg_i := ARRAY[v_isin];
+        v_seg_f := ARRAY[v_cov_start];
+        v_seg_l := ARRAY[v_cov_end];
     END IF;
 
+    -- 4. One row per session, or a refusal.
+    FOR v_k IN 1 .. cardinality(v_seg_t) LOOP
+        CONTINUE WHEN v_seg_f[v_k] > v_to OR v_seg_l[v_k] < v_from;
+        SELECT string_agg(format('%s (boards %s)', d.trade_date, d.boards), ', ' ORDER BY d.trade_date)
+        INTO v_dup
+        FROM (
+            SELECT b.trade_date, string_agg(b.codbdi, '/' ORDER BY b.codbdi) AS boards
+            FROM public.b3_cotahist b
+            WHERE b.codneg = v_seg_t[v_k] AND b.tpmerc = '010' AND b.isin IS NOT DISTINCT FROM v_seg_i[v_k]
+              AND (v_board IS NULL OR b.codbdi = v_board)
+              AND b.trade_date BETWEEN GREATEST(v_from, v_seg_f[v_k]) AND LEAST(v_to, v_seg_l[v_k])
+            GROUP BY b.trade_date
+            HAVING count(*) > 1
+            ORDER BY b.trade_date
+            LIMIT 5
+        ) d;
+        IF v_dup IS NOT NULL THEN
+            RAISE EXCEPTION 'quote_history: refused, % printed more than one row on a session: %. SILO does not choose between them. To fix: pass p_board to pick one board.', v_seg_t[v_k], v_dup
+                USING ERRCODE = '22023', DETAIL = 'reason=ambiguous_session';
+        END IF;
+    END LOOP;
+
     -- 5. The adjusted close, or a refusal naming ticker, period and cause.
-    IF v_adj THEN
-        PERFORM api.assert_close_adj('quote_history', v_ticker, v_isin, v_from, v_to);
-    END IF;
-    SELECT * INTO v_status FROM api.close_adj_status(v_isin, v_ticker);
+    -- Each instrument is checked on its own stretch of the window, and every
+    -- later instrument on its whole span, because its share-count events
+    -- divide the earlier rows too. A row is divided by its own ISIN's later
+    -- share ratios up to that ISIN's last session, times every later
+    -- instrument's (v_seg_tail); the lineage rule leaves no stock event at a
+    -- seam.
+    FOR v_k IN 1 .. cardinality(v_seg_t) LOOP
+        IF v_adj AND v_seg_l[v_k] >= v_from THEN
+            PERFORM api.assert_close_adj('quote_history', v_seg_t[v_k], v_seg_i[v_k],
+                                         GREATEST(v_from, v_seg_f[v_k]),
+                                         CASE WHEN v_seg_f[v_k] > v_to THEN v_seg_l[v_k]
+                                              ELSE LEAST(v_to, v_seg_l[v_k]) END);
+        END IF;
+        SELECT * INTO v_status FROM api.close_adj_status(v_seg_i[v_k], v_seg_t[v_k]);
+        v_seg_anchor := v_seg_anchor || v_status.anchor;
+    END LOOP;
+    -- The current instrument's status drives events_proven_at and the total return.
     v_anchor := v_status.anchor;
     v_proven := v_status.proven_at;
+    v_seg_tail := array_fill(1::numeric, ARRAY[cardinality(v_seg_t)]);
+    FOR v_k IN REVERSE cardinality(v_seg_t) .. 1 LOOP
+        v_seg_tail[v_k] := v_tail;
+        IF v_k > 1 AND v_adj THEN
+            v_tail := v_tail * api.close_adj_ratio(v_seg_i[v_k], v_seg_f[v_k], v_seg_anchor[v_k]);
+        END IF;
+    END LOOP;
 
     v_rev := api.quote_data_revision();
     -- Also on every response as a header, for callers that keep only rows.
@@ -1235,12 +1454,20 @@ BEGIN
                        TRUE);
 
     RETURN QUERY
-    WITH RECURSIVE page AS (
-        SELECT q.*
-        FROM api.quotes q
-        WHERE q.ticker = v_ticker
-          AND q.isin IS NOT DISTINCT FROM v_isin
-          AND (v_board IS NULL OR q.board = v_board)
+    WITH RECURSIVE seg AS (
+        SELECT g AS k, v_seg_t[g] AS t, v_seg_i[g] AS i, v_seg_f[g] AS f, v_seg_l[g] AS l,
+               v_seg_anchor[g] AS anchor, v_seg_tail[g] AS tail,
+               g = cardinality(v_seg_t) AS is_current
+        FROM generate_subscripts(v_seg_t, 1) g
+    ),
+    page AS (
+        SELECT q.*, s.i AS seg_isin, s.anchor AS seg_anchor, s.tail AS seg_tail, s.is_current
+        FROM seg s
+        JOIN api.quotes q
+          ON q.ticker = s.t
+         AND q.isin IS NOT DISTINCT FROM s.i
+         AND q.trade_date BETWEEN s.f AND s.l
+        WHERE (v_board IS NULL OR q.board = v_board)
           AND q.trade_date BETWEEN v_from AND v_to
           AND (v_after IS NULL OR q.trade_date > v_after)
         ORDER BY q.trade_date
@@ -1248,13 +1475,18 @@ BEGIN
         -- detectable, and assert_row_cap then refuses instead of trimming.
         LIMIT 1001
     ),
+    -- The previous print of the same series: across a spliced seam when the
+    -- window runs through a lineage, else the same (ticker, ISIN) as before.
     prev AS (
         SELECT max(b.trade_date) AS d
         FROM public.b3_cotahist b
+        JOIN generate_subscripts(CASE WHEN v_lineage THEN v_lin_t ELSE v_seg_t END, 1) g ON TRUE
         WHERE 'prior_no_trade_sessions' = ANY (v_fields)
-          AND b.codneg = v_ticker AND b.tpmerc = '010' AND b.isin IS NOT DISTINCT FROM v_isin
+          AND b.codneg = (CASE WHEN v_lineage THEN v_lin_t ELSE v_seg_t END)[g]
+          AND b.isin IS NOT DISTINCT FROM (CASE WHEN v_lineage THEN v_lin_i ELSE v_seg_i END)[g]
+          AND b.tpmerc = '010'
           AND (v_board IS NULL OR b.codbdi = v_board)
-          AND b.trade_date < (SELECT min(g.trade_date) FROM page g)
+          AND b.trade_date < (SELECT min(g2.trade_date) FROM page g2)
     ),
     -- The market calendar over the page (sessions = days the cash tape
     -- printed), by skip scan: one index probe per session, ~34 ms for the
@@ -1289,6 +1521,8 @@ BEGIN
         LEFT JOIN LATERAL (
             SELECT
                 CASE
+                    WHEN NOT g.is_current
+                        THEN 'before an ISIN change the ticker''s lineage splices; the total return is not computed across it'
                     WHEN NOT v_status.in_universe THEN 'outside research universe'
                     WHEN v_status.proven_at IS NULL THEN 'issuer corporate events not proven swept'
                     WHEN (v_status.proven_at AT TIME ZONE 'America/Sao_Paulo')::date < v_status.anchor
@@ -1312,7 +1546,7 @@ BEGIN
             'ticker',           r.ticker,
             'trade_date',       r.trade_date,
             'close_adj',        CASE WHEN v_adj THEN
-                                    round(r.close_unit / api.close_adj_ratio(v_isin, r.trade_date, v_anchor), 6)
+                                    round(r.close_unit / (api.close_adj_ratio(r.seg_isin, r.trade_date, r.seg_anchor) * r.seg_tail), 6)
                                 END,
             'close',            r.close,
             'open',             r.open,
@@ -1361,7 +1595,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT, TEXT[]) IS
-    'Daily price series for one ticker, oldest first, one JSON object per session holding only the selected fields. Default (p_fields omitted): ticker, trade_date, close_adj. close_adj is the close per single share, backward-adjusted for splits, groupings and bonus shares by B3''s rule and anchored to the instrument''s latest session (past levels change when an event lands; returns do not); no dividend, JCP or subscription-right adjustment; shares and units only; 6 decimal places. It is never null and never the raw close: a window it cannot cover is REFUSED (22023, DETAIL reason=adjustment_unavailable) naming ticker, period and cause. The raw close, OHLC and volume are an explicit selection (p_fields = {close, ...}); fields are listed in catalog(). The series follows the ISIN across boards; p_board restricts it. Refusals (22023, DETAIL reason=...): unknown_ticker; outside_coverage (a window with no coverage, or starting before the instrument''s first session; the tape starts 2019-01-02); isin_change (two ISINs in the window); ambiguous_session (two rows on one session); invalid_field; adjustment_unavailable. A session missing inside the coverage is a session with no trade (prior_no_trade_sessions counts them); a field with no value is a null. close_total_return (with close_total_return_null_reason) is selectable too: close_adj with B3''s cash distributions reinvested at the ex-date close (#418), NULL with a reason wherever a distribution cannot be valued, never the price return in disguise. data_revision (field, and header X-Silo-Data-Revision) identifies the data; do not combine pages with different revisions. Row cap: more than 1000 rows RAISES 22023 unless p_after pages: '''' = first page, then the last row''s trade_date as ''YYYY-MM-DD''; a page shorter than 1000 is the last.';
+    'Daily price series for one ticker, oldest first, one JSON object per session holding only the selected fields. Default (p_fields omitted): ticker, trade_date, close_adj. close_adj is the close per single share, backward-adjusted for splits, groupings and bonus shares by B3''s rule and anchored to the instrument''s latest session (past levels change when an event lands; returns do not); no dividend, JCP or subscription-right adjustment; shares and units only; 6 decimal places. It is never null and never the raw close: a window it cannot cover is REFUSED (22023, DETAIL reason=adjustment_unavailable) naming ticker, period and cause. The raw close, OHLC and volume are an explicit selection (p_fields = {close, ...}); fields are listed in catalog(). The series follows the ISIN across boards; p_board restricts it. Refusals (22023, DETAIL reason=...): unknown_ticker; outside_coverage (a window with no coverage, or starting before the instrument''s first session; the tape starts 2019-01-02); isin_change (two ISINs in the window that the ticker''s lineage does not splice); ambiguous_session (two rows on one session); invalid_field; adjustment_unavailable. A session missing inside the coverage is a session with no trade (prior_no_trade_sessions counts them); a field with no value is a null. A ticker whose company changed its trading code or ISIN runs through its older instrument (ticker lineage, #381): an older (ticker, ISIN) is spliced in front only when it is the same company (the same ticker, or one CNPJ in CVM''s FCA map), the same share class (ISIN characters 7-11), its last cash session is the one right before the newer first session with no overlap, no stock event goes ex at the seam, and exactly one candidate qualifies; every row keeps its own ticker and ISIN, close_adj divides older rows by the later instruments'' share ratios too, and close_total_return is NULL before a seam (VIIA3 BRVIIAACNOR7 to BHIA3 BRBHIAACNOR1 on 2023-09-20). close_total_return (with close_total_return_null_reason) is selectable too: close_adj with B3''s cash distributions reinvested at the ex-date close (#418), NULL with a reason wherever a distribution cannot be valued, never the price return in disguise. data_revision (field, and header X-Silo-Data-Revision) identifies the data; do not combine pages with different revisions. Row cap: more than 1000 rows RAISES 22023 unless p_after pages: '''' = first page, then the last row''s trade_date as ''YYYY-MM-DD''; a page shorter than 1000 is the last.';
 
 REVOKE ALL ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT, TEXT[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION api.quote_history(TEXT, DATE, DATE, TEXT, TEXT, TEXT[]) TO anon, authenticated;
@@ -5707,7 +5941,7 @@ STABLE
 AS $fn$
 SELECT $json${
   "kind": "catalog",
-  "version": 58,
+  "version": 59,
   "primitive": "panel",
   "agent": "You are querying Silo, a Brazilian public-markets warehouse (CVM funds, B3 COTAHIST cash quotes, options and termo, the B3 securities-lending and investor-flow group, B3's DI1 futures and reference-rate curves, and Brazilian inflation — BACEN's IPCA series and IBGE's item tree with weights). Call catalog once and cache it. Resolve names with lookup, then fetch a panel. The primitive is a panel (id, date, metric, value). Correlation, ranking, spreads, regressions and other relations are reductions of that panel — compute them in the notebook. Do not fabricate ids, fills, or ticker-CNPJ matches. TWO SURFACES, AND THEY DIFFER: the DEPLOYED api is Supabase PostgREST — POST /rest/v1/rpc/<function> with a JSON body of p_-prefixed named arguments (arrays stay arrays), views at GET /rest/v1/<view>, header `apikey`. The /v1/* routes in `endpoints` are an optional local Flask adapter (serve/app.py) that is not necessarily deployed; its query-string form and its `format=wide` envelope exist ONLY there. Prefer the postgrest section unless you know the /v1 adapter is running. Read the row-cap constraint: EVERY function REFUSES (SQLSTATE 22023) a window over 1000 rows instead of trimming it — page panel, quote_history and fund_nav with p_after, narrow the rest. fund_nav also needs p_entity_type to page. The GET views still cut at 1000 and keep the OLDEST rows, so READ THE Content-Range RESPONSE HEADER on those: `0-999/*` is the only thing that tells you. BEFORE READING A NULL AS A GAP, call coverage() and metric_coverage(): a null outside a family's column set is not applicable, and a metric absent from metric_coverage() is one that family never files. coverage().as_of is the newest ELAPSED period; newest_period can sit in the future when a family files forward-dated (FIP is keyed 31-December), so never read it as freshness. PRICE IS THE DEFAULT, everything else is opt-in: panel with no p_metrics returns `close_adj` (split-, grouping- and bonus-adjusted) for share and unit tickers, `close` for other tickers and `nav` for CNPJs, and quote_history with no p_fields returns ticker, trade_date and close_adj; that is the call to make unless you actually need another measure — name metrics or fields explicitly only when you will use them (p_fields=['close'] for the raw close). A close_adj window SILO cannot adjust is refused with the cause, never served raw. The wide endpoints are the exception and behave the other way round: quote_latest and the views return their full OHLCV/identity row every time, so trim them with PostgREST `?select=` (e.g. `?select=ticker,trade_date,close`) rather than pulling 22 columns to read one. See `defaults`.",
   "defaults": {
@@ -6077,7 +6311,7 @@ SELECT $json${
     "close_return is adjusted for splits, groupings and bonus shares: across one (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO in B3's corporate-event history; monthly: anywhere between the two month-end prints) the previous close is divided by the event's share ratio, B3's rule (1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for GRUPAMENTO, events multiplied), before the return is taken, so a 1:4 split from 100.00 to a 26.00 close is +4% and BBAS3's 2:1 split (56.46 to 27.91) is -1.13%, not -50.57%. An event with an unreadable factor, or one label on one date published with two factors, makes that return NULL (no row), never a guess. It is a price return, not a total return: dividends and JCP still move it. The adjustment reads the share-count events stored for the ISIN from B3's published history; an event the nightly corporate-event sweep has not stored yet (an issuer without a sweep proof) is not seen and still reads as a return.",
     "close is the price as published, which for a paper quoted per lot refers to 1000 shares; close_unit divides it by the published quotation_factor so levels are comparable. Neither is corporate-action adjusted, and `adjusted` is FALSE on every view row because it describes close. The adjusted price is close_adj (quote_history's default field, the panel's default metric for shares and units; see the next constraint).",
     "close_adj IS CONTINUOUS ACROSS SPLITS, GROUPINGS AND BONUS SHARES ONLY, AND IT IS ANCHORED TO THE INSTRUMENT'S LATEST SESSION. It is the close per single share divided by the share ratio of every later event, by B3's rule: 1 + factor/100 for DESDOBRAMENTO and BONIFICACAO, factor for GRUPAMENTO, distinct events on one date multiplied. Past levels change when a new event lands and returns do not, so never read a past level as the price seen that day, and never combine pages with different data_revision values. Dividends, JCP and subscription rights are not adjusted in this version (they move value to holders and change no share count; total return is separate). A window close_adj cannot cover is REFUSED (22023, DETAIL reason=adjustment_unavailable; cause=...) naming ticker, period and cause, never served as the raw close: outside shares (ISIN code ACN) and units (CDA/UNT, ticker ending 11); issuer events not proven swept, or the proof older than the last session; a stretch on or before a stock event this version does not adjust (spin-off CIS RED CAP, INCORPORACAO, REST CAP ACOES, RESG TOTAL RV, any new stock label), an unreadable factor, or one label on one date published with two factors. The absence of events is never taken as proof: the sweep proof is. Select close explicitly for the raw close.",
-    "quote_history IS KEYED ON THE ISIN AND REFUSES WHAT IT CANNOT SERVE WHOLE. The series follows the instrument across BDI boards (p_board restricts it). 22023 with DETAIL reason=: unknown_ticker (never printed on the cash tape); outside_coverage (no session in the window, or the window starts before the instrument's first session; the tape starts 2019-01-02, see coverage()); isin_change (the ticker printed under two ISINs in the window; a reused receipt code is a new instrument and is never joined); ambiguous_session (two rows on one session; pass p_board); invalid_field; adjustment_unavailable. Inside the coverage a missing session is a session with no trade (COTAHIST lists only papers that traded; prior_no_trade_sessions counts them), holidays are not sessions, and a field with no value is a JSON null.",
+    "quote_history IS KEYED ON THE ISIN AND REFUSES WHAT IT CANNOT SERVE WHOLE. The series follows the instrument across BDI boards (p_board restricts it). 22023 with DETAIL reason=: unknown_ticker (never printed on the cash tape); outside_coverage (no session in the window, or the window starts before the instrument's first session; the tape starts 2019-01-02, see coverage()); isin_change (the ticker printed under two ISINs in the window that its lineage does not splice; a reused receipt code is a new instrument and is never joined); ambiguous_session (two rows on one session; pass p_board); invalid_field; adjustment_unavailable. Inside the coverage a missing session is a session with no trade (COTAHIST lists only papers that traded; prior_no_trade_sessions counts them), holidays are not sessions, and a field with no value is a JSON null. A ticker whose company changed its trading code or ISIN runs through its older instrument (ticker lineage, #381): an older (ticker, ISIN) is spliced in front only when it is the same company (the same ticker, or one CNPJ in CVM's FCA map), the same share class (ISIN characters 7-11), its last cash session is the one right before the newer first session with no overlap, no stock event goes ex at the seam, and exactly one candidate qualifies; every row keeps its own ticker and ISIN, close_adj divides older rows by the later instruments' share ratios too, and close_total_return is NULL before a seam (VIIA3 BRVIIAACNOR7 to BHIA3 BRBHIAACNOR1 on 2023-09-20).",
     "close_total_return (SELECT IT IN p_fields) IS close_adj with cash distributions reinvested at the ex-date close, also anchored to the latest session: the level is divided by the product of (1 + cash / ex-session close) over every distribution that went ex after the session, so the latest session equals close_adj and earlier levels are lower by the cash paid since. Cash is B3's full history (DIVIDENDO, JRS CAP PROPRIO gross of withholding tax, RENDIMENTO, REST CAP DIN), counted only where its ISIN is proven against the tape. It is NULL, with close_total_return_null_reason saying why, where close_adj cannot be served for that session; where the ISIN has no resolved distribution in B3's history (a non-payer, or one B3's history does not match: the two look the same, so neither gets a price return labelled as a total return); where a later distribution of the issuer's share class has no proven ISIN; where a distribution B3's supplement lists is missing from the history; and where a later distribution has no ex-date close within 7 days. A NULL is never the price return in disguise.",
     "Daily close_return is null when the previous session is more than 7 calendar days back (halts, listing gaps), and null across a quotation-factor change — a fatcot flip rescales the quote with no market move behind it. Across a split, grouping or bonus between the two prints both grains adjust the previous close by the event's share ratio (#396).",
     "Default windows are honest: with no explicit `to`, fund metrics end at each family's latest COMPLETE period (coverage() reports it as complete_through) — a partially-filed trailing month is not served. An explicit `to` serves the window verbatim, partial months included.",

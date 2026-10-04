@@ -490,7 +490,15 @@ __all__ = [
 # 2:1 split is -1.13%. An unreadable factor or one label on one date with two
 # factors still nulls it. Behaviour and descriptions change; no signature or
 # column does.
-CATALOG_VERSION = 58
+# v59: quote_history follows a ticker's lineage across an ISIN change (#381
+# follow-up, owner decision 2026-10-04, docs/adr/0002-ticker-activity-and-lineage.md):
+# api.ticker_lineage splices an older (ticker, ISIN) only for the same company
+# (same ticker or one FCA CNPJ), the same share class, adjacent sessions with no
+# overlap, no stock event at the seam and one candidate. Rows keep their own
+# ticker and ISIN; close_adj is continuous across the seam; close_total_return is
+# NULL before it. coverage_start/coverage_end and isin_change say so. No
+# signature or column change.
+CATALOG_VERSION = 59
 
 B3_CASH_ASSET_CLASSES = [
     "equity",
@@ -777,12 +785,13 @@ CONSTRAINTS = [
     "outside_coverage (no session in the window, or the window starts before "
     "the instrument's first session; the tape starts 2019-01-02, see "
     "coverage()); isin_change (the ticker printed under two ISINs in the "
-    "window; a reused receipt code is a new instrument and is never joined); "
+    "window that its lineage does not splice; a reused receipt code is a new "
+    "instrument and is never joined); "
     "ambiguous_session (two rows on one session; pass p_board); invalid_field; "
     "adjustment_unavailable. Inside the coverage a missing session is a session "
     "with no trade (COTAHIST lists only papers that traded; "
     "prior_no_trade_sessions counts them), holidays are not sessions, and a "
-    "field with no value is a JSON null.",
+    "field with no value is a JSON null. A ticker whose company changed its trading code or ISIN runs through its older instrument (ticker lineage, #381): an older (ticker, ISIN) is spliced in front only when it is the same company (the same ticker, or one CNPJ in CVM's FCA map), the same share class (ISIN characters 7-11), its last cash session is the one right before the newer first session with no overlap, no stock event goes ex at the seam, and exactly one candidate qualifies; every row keeps its own ticker and ISIN, close_adj divides older rows by the later instruments' share ratios too, and close_total_return is NULL before a seam (VIIA3 BRVIIAACNOR7 to BHIA3 BRBHIAACNOR1 on 2023-09-20).",
     "close_total_return (SELECT IT IN p_fields) IS close_adj with cash distributions reinvested at the ex-date "
     "close, also anchored to the latest session: the level is divided by the "
     "product of (1 + cash / ex-session close) over every distribution that went "

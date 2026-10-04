@@ -61,6 +61,7 @@ from src.pipeline.ingest_fidc import (
     ingest_fidc_sacado,
     ingest_fidc_cedente,
     ingest_fidc_garantia,
+    inadimpl_by_key,
     seed_fund_registry_from_hist,
 )
 from src.pipeline.ingest_fii import (
@@ -398,6 +399,13 @@ def _fii_daily_years(today: date) -> List[int]:
 #   tab_X    2023-10 →  the member does not exist before this month
 #   tab_X_7  2019-11 →  the member does not exist before this month (migration
 #                       45); key column is CNPJ_FUNDO through 2020-10
+#   tab_VI   2013-01 →  same value columns throughout; key column is
+#                       CNPJ_FUNDO through 2020-10 (map fallback)
+#   tab_X_2, X_3, X_4, X_6
+#            2013-01 →  same value columns throughout; key column is
+#                       CNPJ_FUNDO through 2023-09 (map fallback). Measured on
+#                       every HIST archive 2013-2024 by probe_cvm_headers.yml
+#                       (issue #556).
 # Asking for a month before a tab exists is not a gap to heal, it is a
 # member that was never published, so backfill bounds each tab here.
 _FIDC_HIST_LAST_YEAR = 2024
@@ -407,11 +415,16 @@ _FIDC_TAB_FIRST_PERIOD: Dict[str, date] = {
     "viii": date(2013, 1, 1),
     "x":    date(2023, 10, 1),
     "x7":   date(2019, 11, 1),
+    "vi":   date(2013, 1, 1),
+    "x2":   date(2013, 1, 1),
+    "x3":   date(2013, 1, 1),
+    "x4":   date(2013, 1, 1),
+    "x6":   date(2013, 1, 1),
 }
 
 
 def _fidc_tab_doc_type(tab: str, year: int) -> str:
-    """The cvm_config key for one of the two-era FIDC tabs (i, ii, viii, x, x7)."""
+    """The cvm_config key for one of the two-era FIDC tabs (i, ii, vi, viii, x, x2..x7)."""
     return f"hist_mensal_tab_{tab}" if year <= _FIDC_HIST_LAST_YEAR else f"mensal_tab_{tab}"
 
 
@@ -1240,6 +1253,23 @@ class CVMIngestor:
                 # Seed fund registry from tab_II DENOM_SOCIAL
                 seed_fund_registry_from_hist(self._supabase, rows_ii)
 
+                # Delinquency as filed in tab_VI (TAB_VI_B_VL_DIRCRED_INAD),
+                # the same column and helper as the 2025+ path. Its own fetch,
+                # so a tab_VI failure costs only vl_inadimpl (NULL, never a
+                # guess), not the month's PL; ingest_fidc_aging logs the same
+                # member's failure under mensal_tab_vi.
+                try:
+                    rows_vi = await self._fetch_all_pages(
+                        "fidc", "hist_mensal_tab_vi", year, month,
+                    )
+                except Exception as vi_exc:
+                    logger.warning(
+                        "ingest_fidc_hist_mensal %d-%02d: tab_VI unavailable, "
+                        "vl_inadimpl stays NULL: %s", year, month, _describe(vi_exc),
+                    )
+                    rows_vi = []
+                inadimpl = inadimpl_by_key(rows_vi)
+
                 # Build liabilities index from tab_III for PL approximation
                 from src.parsers.mapping import apply_map
                 from src.parsers.field_maps import fidc_mensal as _fm_mensal
@@ -1278,7 +1308,7 @@ class CVMIngestor:
                         "vl_total":      vl_carteira if vl_carteira else None,
                         "vl_quota":      None,
                         "vl_patrim_liq": vl_pl,
-                        "vl_inadimpl":   None,
+                        "vl_inadimpl":   inadimpl.get((cnpj, period)),
                         "nr_cotst":      None,
                         "raw":           residual,
                     })
@@ -1299,6 +1329,9 @@ class CVMIngestor:
     # ------------------------------------------------------------------
     # FIDC — tranche-level data (tabs X_2 + X_3 + X_6, flows X_4, aging VI)
     # ------------------------------------------------------------------
+    # Both eras: the archive is picked by year (_fidc_tab_doc_type), the log
+    # doc_type stays the current-format key so one (entity, doc_type) series
+    # covers 2013-present, as for the concentration tabs below.
 
     async def ingest_fidc_tranche(self, year: int, month: int) -> int:
         run_id = str(uuid4())
@@ -1306,9 +1339,9 @@ class CVMIngestor:
         rows_inserted = 0
         try:
             rows_x2, rows_x3, rows_x6 = await asyncio.gather(
-                self._fetch_all_pages("fidc", "mensal_tab_X2", year, month),
-                self._fetch_all_pages("fidc", "mensal_tab_X3", year, month),
-                self._fetch_all_pages("fidc", "mensal_tab_X6", year, month),
+                self._fetch_all_pages("fidc", _fidc_tab_doc_type("x2", year), year, month),
+                self._fetch_all_pages("fidc", _fidc_tab_doc_type("x3", year), year, month),
+                self._fetch_all_pages("fidc", _fidc_tab_doc_type("x6", year), year, month),
             )
             rows_inserted = ingest_fidc_tranche(
                 self._supabase, rows_x2, rows_x3, rows_x6, year, month
@@ -1329,7 +1362,7 @@ class CVMIngestor:
         self._log_start(run_id, "fidc", "mensal_tab_x4", year, month)
         rows_inserted = 0
         try:
-            raw_rows = await self._fetch_all_pages("fidc", "mensal_tab_X4", year, month)
+            raw_rows = await self._fetch_all_pages("fidc", _fidc_tab_doc_type("x4", year), year, month)
             rows_inserted = ingest_fidc_tranche_flows(self._supabase, raw_rows)
         except Exception as exc:
             logger.warning("ingest_fidc_tranche_flows %d-%02d failed: %s", year, month, _describe(exc))
@@ -1344,7 +1377,9 @@ class CVMIngestor:
         self._log_start(run_id, "fidc", "mensal_tab_vi", year, month)
         rows_inserted = 0
         try:
-            raw_rows = await self._fetch_all_pages("fidc", "mensal_tab_VI", year, month)
+            raw_rows = await self._fetch_all_pages(
+                "fidc", _fidc_tab_doc_type("vi", year), year, month,
+            )
             rows_inserted = ingest_fidc_aging(self._supabase, raw_rows)
         except Exception as exc:
             logger.warning("ingest_fidc_aging %d-%02d failed: %s", year, month, _describe(exc))
@@ -1998,42 +2033,43 @@ class CVMIngestor:
 
             if current_years:
                 mensal_tasks: List[IngestTask] = []
-                tranche_tasks: List[IngestTask] = []
                 for year, month in _iter_month_pairs(current_years, today):
                     mensal_tasks.append(IngestTask(
                         "cvm_fidc_mensal",
                         f"fidc/mensal {year}-{month:02d}",
                         self.ingest_fidc_mensal(year, month),
                     ))
-                    tranche_tasks.extend([
-                        IngestTask(
-                            "cvm_fidc_tranche",
-                            f"fidc/tranche {year}-{month:02d}",
-                            self.ingest_fidc_tranche(year, month),
-                        ),
-                        IngestTask(
-                            "cvm_fidc_tranche_flows",
-                            f"fidc/tranche_flows {year}-{month:02d}",
-                            self.ingest_fidc_tranche_flows(year, month),
-                        ),
-                        IngestTask(
-                            "cvm_fidc_aging",
-                            f"fidc/aging {year}-{month:02d}",
-                            self.ingest_fidc_aging(year, month),
-                        ),
-                    ])
                 await self._run_task_batches(
                     mensal_tasks,
                     _get_concurrency("fidc", 4),
                     totals,
                     "FIDC current mensal backfill",
                 )
-                await self._run_task_batches(
-                    tranche_tasks,
-                    _get_concurrency("fidc_tranche", 3),
-                    totals,
-                    "FIDC tranche backfill",
-                )
+
+            # Tranche (X_2+X_3+X_6), flows (X_4) and aging (VI) exist in both
+            # eras from 2013-01 (issue #556), so like the concentration tabs
+            # below they run for every requested year; the method picks the
+            # archive by year.
+            tranche_tasks: List[IngestTask] = []
+            for tab, table, label, method in (
+                ("x2", "cvm_fidc_tranche",       "tranche",       self.ingest_fidc_tranche),
+                ("x4", "cvm_fidc_tranche_flows", "tranche_flows", self.ingest_fidc_tranche_flows),
+                ("vi", "cvm_fidc_aging",         "aging",         self.ingest_fidc_aging),
+            ):
+                for year, month in _iter_month_pairs(
+                    years, today, available_from=_FIDC_TAB_FIRST_PERIOD[tab],
+                ):
+                    tranche_tasks.append(IngestTask(
+                        table,
+                        f"fidc/{label} {year}-{month:02d}",
+                        method(year, month),
+                    ))
+            await self._run_task_batches(
+                tranche_tasks,
+                _get_concurrency("fidc_tranche", 3),
+                totals,
+                "FIDC tranche backfill",
+            )
 
             # Tabs I, II, VIII, X, X_7 exist in both eras, so these run for every
             # requested year from each tab's first published month

@@ -459,7 +459,15 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
 - Hosting on Cloudflare: revised on #519 to one Worker (static assets) plus a
   Container for the Python engine, no Pages. The first safe deploy, a
   health-only Worker and Container (`deploy/cloudflare/`,
-  `deploy_cloudflare.yml`), went green on 2026-10-03; the engine image is next.
+  `deploy_cloudflare.yml`), went green on 2026-10-03. The engine image
+  (`deploy/cloudflare/engine/`, built and smoked by `engine_image.yml`) is
+  step 1 of slice E; step 2 (#572) runs it as the Worker's Container behind
+  `POST /diagnose` and an upload page, deployed on 2026-10-04, with silo-mcp and
+  api.openai.com reached through the egress allow-list. **The report is blocked:**
+  OpenAI answers 403 `model_not_found` for `gpt-6-luna` with the key in
+  `OPENAI_API_KEY`. Owner: give that key's project access to the model (OpenAI
+  dashboard, project model limits or organization verification) or choose
+  another model, then dispatch `deploy_cloudflare.yml` again.
 - Engine in Python `src/portfolio/`, set-based `api` functions in
   `31_api_portfolio.sql`, Supabase reached through the read-only `silo-mcp`.
 - Sunday scope: spreadsheet input, blocks 1, 3, 10, 11, 14 (screens), 4, 2, PDF.

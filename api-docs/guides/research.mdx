@@ -61,7 +61,7 @@ rows = silo.quote_history_all(
 )
 ```
 
-**The series follows the ISIN across boards** (62 share and unit tickers changed board since 2019, and a default that followed only the latest board used to drop the earlier sessions of ETER3 without a word). It refuses what it cannot serve whole, each with a `reason=`: `unknown_ticker`, `outside_coverage`, `isin_change` (a reused receipt code is a new instrument and is never joined), `ambiguous_session`, `invalid_field` and `adjustment_unavailable`. **The tape starts on 2019-01-02**, and a window that starts before an instrument's first session is `outside_coverage`, even when it would hold no rows. Inside the coverage a missing session is a session with no trade (COTAHIST lists only papers that traded); `prior_no_trade_sessions` counts them.
+**The series follows the ISIN across boards** (62 share and unit tickers changed board since 2019, and a default that followed only the latest board used to drop the earlier sessions of ETER3 without a word). It refuses what it cannot serve whole, each with a `reason=`: `unknown_ticker`, `outside_coverage`, `isin_change` (two ISINs the ticker's lineage does not splice; a reused receipt code is a new instrument and is never joined), `ambiguous_session`, `invalid_field` and `adjustment_unavailable`. **The tape starts on 2019-01-02**, and a window that starts before an instrument's first session is `outside_coverage`, even when it would hold no rows. Inside the coverage a missing session is a session with no trade (COTAHIST lists only papers that traded); `prior_no_trade_sessions` counts them.
 
 #### Many tickers: `prices`
 
