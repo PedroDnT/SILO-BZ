@@ -103,7 +103,9 @@ def test_lookthrough_diagram_has_only_the_engine_paths(view):
 
 
 def test_fee_chart_one_bar_per_fund_with_a_fee_and_the_etf_site_bar_outlined(view):
-    root = svg_of(charts.fee_chart(view))
+    fig = charts.fee_chart(view)
+    assert "Barras contornadas" not in fig  # no ETF bar, no ETF clause
+    root = svg_of(fig)
     with_fee = [i for i, b in enumerate(view["fees"]["by_line"]) if b.get("disclosed_brl_year")]
     labels = texts(root)
     for i in with_fee:
@@ -114,7 +116,9 @@ def test_fee_chart_one_bar_per_fund_with_a_fee_and_the_etf_site_bar_outlined(vie
     etf.update(fund_name="ETF EXEMPLO", disclosed_brl_year=321.0, disclosed_pct_year=0.3,
                etf_site_label="taxa informada pelo site etfsbrasil.com.br (fonte de terceiros, não é documento da CVM)")
     view["fees"]["by_line"].append(etf)
-    root = svg_of(charts.fee_chart(view))
+    fig = charts.fee_chart(view)
+    assert "Barras contornadas: taxa de ETF do site etfsbrasil.com.br (terceiros), somada à parte" in fig
+    root = svg_of(fig)
     assert any(p.get("stroke") == charts.THIRD_PARTY and p.get("fill") == charts.THIRD_PARTY_FILL for p in root.iter(f"{SVG_NS}path"))
     labels = texts(root)
     assert any("site de terceiros" in t and t.startswith("R$ 321,00") for t in labels)

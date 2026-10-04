@@ -313,6 +313,9 @@ def fee_chart(view: dict) -> str:
     if "third_party" in kinds:
         legend.append(("third_party", "ETF: taxa do site etfsbrasil.com.br (terceiros)"))
     svg = hbars(view, rows, "Custo da taxa de administração por fundo, em R$ por ano", legend=legend)
-    return figure(svg, "Taxa de administração por fundo, em R$ por ano (valor da posição x taxa)",
-                  "Os mesmos fundos e valores da soma divulgada; uma taxa a conferir aparece marcada na tabela. Faixas e "
-                  "estimativas do balancete não entram no gráfico.")
+    note = ("Barras cheias: os mesmos fundos e valores da soma divulgada; uma taxa a conferir aparece marcada na tabela. "
+            "Faixas e estimativas do balancete não entram no gráfico.")
+    if "third_party" in kinds:
+        note += (" Barras contornadas: taxa de ETF do site etfsbrasil.com.br (terceiros), somada à parte e fora da soma "
+                 "divulgada.")
+    return figure(svg, "Taxa de administração por fundo, em R$ por ano (valor da posição x taxa)", note)

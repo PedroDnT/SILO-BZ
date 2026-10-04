@@ -1,0 +1,1 @@
+| 2026-10-04 | fix/portfolio-fee-chart-caption | **The portfolio report's fee chart caption names the outlined ETF bars.** Follow-up to #594: the caption said every bar was a value of the disclosed sum, but an ETF's fee from etfsbrasil.com.br is also drawn, as an outlined bar, and is summed apart. When the chart draws one, the caption now says so. Sample PDF regenerated. |
