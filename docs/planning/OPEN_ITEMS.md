@@ -466,8 +466,11 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
   api.openai.com reached through the egress allow-list. **The report is blocked:**
   OpenAI answers 403 `model_not_found` for `gpt-6-luna` with the key in
   `OPENAI_API_KEY` (every gpt-6 model, per `probe_openai_models.yml`). Owner's
-  choice of 2026-10-04: `gpt-5.1` at medium reasoning (branch
-  `demo/llm-gpt-5-1`), then dispatch `deploy_cloudflare.yml` again. OpenAI marks
+  choice of 2026-10-04: `gpt-5.1` at medium reasoning (`demo/llm-gpt-5-1`).
+  Deploy run 37226627623 then produced a complete report (US$0.31, 218 s), but
+  the marked one came back with narrative `unknown` and the privacy probe did
+  not run; `fix/narrative-reason-header` names the cause in a header and runs
+  the probe before failing. Next: redeploy, read the header. OpenAI marks
   gpt-5.1 deprecated (shutdown 2027-04-01, replacement gpt-6-sol), so the model
   has to move again before then.
 - Engine in Python `src/portfolio/`, set-based `api` functions in
