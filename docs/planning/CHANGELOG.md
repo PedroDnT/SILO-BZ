@@ -1,6 +1,8 @@
 # Changelog
 
 Older rows are in [docs/archive/changelog/](../archive/changelog/), frozen.
+Rows newer than this table are one file per branch in [changelog.d/](changelog.d/):
+add yours there, never here. `scripts/roll_changelog.py` folds them in (#587).
 
 | Date | Branch | Change |
 | --- | --- | --- |

@@ -32,18 +32,28 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 CHANGELOG = ROOT / "docs/planning/CHANGELOG.md"
+FRAGMENTS = ROOT / "docs/planning/changelog.d"
 ARCHIVE = ROOT / "docs/archive/changelog"
 
 
-def _files() -> list[Path]:
+def _fragments() -> list[Path]:
+    """One file per branch, `changelog.d/<date>_<branch>.md`, not yet folded in (#587)."""
+    return sorted(FRAGMENTS.glob("*.md"), reverse=True)
+
+
+def _tables() -> list[Path]:
     """The live file, then the frozen archive files, newest range first.
 
-    The live file keeps the newest rows; `scripts/roll_changelog.py` moves the
-    rest, byte for byte, into `docs/archive/changelog/<oldest>_to_<newest>.md`.
-    Every property below is about the rows of all of them read in this order,
-    as one changelog.
+    The live file keeps the newest rows; `scripts/roll_changelog.py` folds the
+    fragments into it and moves the rest, byte for byte, into
+    `docs/archive/changelog/<oldest>_to_<newest>.md`.
     """
     return [CHANGELOG, *sorted(ARCHIVE.glob("*.md"), reverse=True)]
+
+
+def _files() -> list[Path]:
+    """Every file that holds rows. The row properties below read them as one changelog."""
+    return [*_fragments(), *_tables()]
 
 
 def _lines_of(path: Path) -> list[str]:
@@ -77,7 +87,7 @@ def test_there_are_no_duplicate_rows() -> None:
 
 
 def test_there_is_exactly_one_table_header_per_file() -> None:
-    for path in _files():
+    for path in _tables():
         headers = [line for line in _lines_of(path) if _is_header(line)]
         assert len(headers) == 1, (
             f"{path.name}: found {len(headers)} `| Date |` header rows; expected "
@@ -98,7 +108,9 @@ def test_an_archive_file_is_named_for_the_rows_it_holds() -> None:
 
 
 def test_rows_are_newest_first() -> None:
-    dates = [row.split("|")[1].strip() for row in _rows()]
+    """In the table and its archive. Fragments carry their date; the fold places them."""
+    rows = [line for path in _tables() for line in _lines_of(path) if line.startswith("| 20")]
+    dates = [row.split("|")[1].strip() for row in rows]
     out_of_order = [
         (i, dates[i], dates[i + 1])
         for i in range(len(dates) - 1)
@@ -150,3 +162,25 @@ def test_dates_and_branches_are_well_formed(cell: int) -> None:
         if cell == 2 and (" " in value.strip() and "/" not in value):
             bad.append(value)
     assert not bad, f"malformed cell {cell}: {bad[:5]}"
+
+
+def test_a_fragment_holds_rows_and_nothing_else() -> None:
+    """No header, no prose: `roll_changelog.py` folds its lines into the table as they are."""
+    for path in _fragments():
+        lines = [line for line in _lines_of(path) if line.strip()]
+        assert lines, f"{path.name} holds no row; delete it"
+        stray = [line for line in lines if not line.startswith("| 20")]
+        assert not stray, (
+            f"{path.name}: a fragment holds changelog rows only (no `| Date |` header, "
+            f"no prose): {stray[0][:120]!r}"
+        )
+
+
+def test_a_fragment_is_named_for_its_date_and_branch() -> None:
+    """`<date>_<branch with / as ->.md`, so two branches never write the same file."""
+    for path in _fragments():
+        dates = {line.split("|")[1].strip() for line in _lines_of(path) if line.startswith("| 20")}
+        assert re.fullmatch(r"\d{4}-\d{2}-\d{2}_[A-Za-z0-9._-]+\.md", path.name), (
+            f"{path.name}: name a fragment <date>_<branch>.md, e.g. 2026-10-04_claude-some-fix.md"
+        )
+        assert path.name[:10] in dates, f"{path.name}: its date is not the date of any row it holds"

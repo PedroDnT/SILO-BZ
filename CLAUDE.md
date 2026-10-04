@@ -20,9 +20,9 @@ The hooks in `.claude/settings.json`:
   are not swallowed.
 - **PreToolUse on `git push`** (`.claude/hooks/pre-push-docs.sh`) enforces the
   "Every branch carries its own docs" rule of `AGENTS.md`. It holds a push until
-  the branch adds its `docs/planning/CHANGELOG.md` row (or a
-  `No-changelog: <reason>` commit trailer), holds it while any row main had at the
-  merge base, in `CHANGELOG.md` or its archive `docs/archive/changelog/`, is missing or reworded (or a `Changelog-removes: <reason>` trailer),
+  the branch adds its changelog row as a fragment, `docs/planning/changelog.d/<date>_<branch>.md`
+  (or a `No-changelog: <reason>` commit trailer), holds it while any row main had at the
+  merge base, in a fragment, `CHANGELOG.md` or its archive `docs/archive/changelog/`, is missing or reworded (or a `Changelog-removes: <reason>` trailer),
   and once per branch, unless it edits `README.md`, asks for a README /
   planning-index / `OPEN_ITEMS.md` staleness check before publishing. It also
   holds a push that changes files one of the four `docs/architecture/` pages
