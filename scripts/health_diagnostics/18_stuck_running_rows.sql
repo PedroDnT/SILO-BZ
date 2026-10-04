@@ -39,6 +39,15 @@ SELECT e.started_at,
               AND make_date(e.period_year, e.period_month, 1)
                   >= (date_trunc('month', CURRENT_DATE) - 3 * INTERVAL '1 month')::date
               THEN 'daily window'
+         WHEN e.entity = 'fi' AND e.doc_type IN ('cda', 'cda_acoes', 'cda_cotas', 'cda_debentures')
+              AND e.period_month IS NOT NULL
+              AND make_date(e.period_year, e.period_month, 1)
+                  >= (date_trunc('month', CURRENT_DATE) - 5 * INTERVAL '1 month')::date
+              THEN 'CDA refresh (M+5)'
+         WHEN e.entity = 'fii' AND e.period_month IS NULL
+              AND e.period_year = EXTRACT(YEAR FROM CURRENT_DATE)::int - 1
+              AND EXTRACT(MONTH FROM CURRENT_DATE)::int <= 3
+              THEN 'previous-year FII (Q1)'
          ELSE 'historical'
        END                                                           AS scope
   FROM cvm_ingest_log e

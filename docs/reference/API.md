@@ -295,7 +295,7 @@ hard-coded ticker list. The operator half:
   above one page, and since nothing narrows it the message says it has no
   cursor and one must be added.
 
-### The benchmark index (catalog v45)
+### The benchmark index (catalog v45, v53)
 
 `api.index_history(p_index, p_from, p_to, p_after)` (`29_api_index.sql`;
 research-seam spec `docs/planning/RESEARCH_SEAM.md` §5, tickets #412 and #415)
@@ -304,16 +304,54 @@ serves the daily level of a B3-published index from `b3_index_level` (migration
 
 - **Source.** B3's index statistics proxy, `indexStatisticsProxy/IndexCall/
   GetPortfolioDay`, one calendar year per call as a 31 x 12 grid with Brazilian
-  decimals (`src/fetchers/b3_index_fetcher.py`). IBOV from 1968-01-02: 14,489
-  sessions on 2026-09-30, 2025-12-30 = 161,125.37 (B3's year-end figure).
+  decimals (`src/fetchers/b3_index_fetcher.py`). IBOV from 1968-01-02: 14,491
+  sessions through 2026-10-02, 2025-12-30 = 161,125.37 (B3's year-end figure).
+  Rows held, read from `b3_index_level` on 2026-10-03, all ending 2026-10-02:
+
+  | Code | First session | Rows |
+  | ---- | ------------- | ---- |
+  | IBOV | 1968-01-02    | 14,491 |
+  | IBXX | 1994-12-29    | 7,868 |
+  | IBXL | 1997-12-30    | 7,126 |
+  | SMLL | 2005-08-31    | 5,225 |
+  | IDIV | 2005-12-29    | 5,143 |
+  | UTIL | 2005-12-29    | 5,143 |
+  | ICON | 2006-12-28    | 4,897 |
+  | IMOB | 2007-12-28    | 4,652 |
+  | IFIX | 2010-12-30    | 3,910 |
+
+  The counts grow one per session; `api.coverage()` is the live figure.
+- **The codes held (v53, #416).** IBOV, IBXX (first session 1994-12-29), IBXL
+  (1997-12-30), IFIX (2010-12-30), SMLL (2005-08-31), IDIV and UTIL (2005-12-29),
+  ICON (2006-12-28) and IMOB (2007-12-28), the list `INDEX_CODES` /
+  `FIRST_YEAR` in `src/pipeline/ingest_b3_index.py`. Each is checked against its
+  base value on its base date, and IBOV, IBXX, IBXL and IFIX against B3's daily
+  bulletin (`docs/reference/research/index-candidates-416.md`). **IEEX is held
+  back:** it moved +70% on 1999-03-15 and -29% on 1999-03-31 with no divisor
+  step and nothing in B3's methodology history to explain it. Levels before an
+  index's publication date are B3's back-calculation and the endpoint does not
+  mark them. `coverage()` reads each index's first date from the table, so it
+  reports every code's own depth with no SQL edit.
+- **Every code is a total-return index, as B3 labels it.** B3's pages and its
+  Manual (Feb 2023, section 1.2) call IBOV and each candidate an index of
+  *retorno total*: dividends are reinvested in the index, so a level already
+  includes them. Catalog v45 to v52 called the series "a price index, not total
+  return", which B3 contradicts; v53 corrects it. A caller who wants the
+  like-for-like stock series reads `close_total_return` from `quote_history`,
+  never `close_adj` (price only). A price-return version, where B3 has one
+  (IDIV B3 Price Return), carries its own name and is not on this endpoint.
 - **Ingest.** `B3Ingestor.ingest_index_levels`, the third source of
-  `run_b3_events` (audit `b3` / `index_levels`). It refetches every year every
-  night (59 calls, about a minute): the upsert rewrites only rows that changed,
-  so there is no backfill mode and a B3 correction heals itself. It validates the
-  whole series before any write. **A null `results` for a configured index is an
-  error** (B3 answers HTTP 200 for a code it does not publish, and for any year
-  it has nothing for); the one exception is the current year in the first ten
-  days of January, before its first session. It sits in `run_b3_events`, not
+  `run_b3_events` (audit `b3` / `index_levels`). It refetches every year of every
+  configured index every night (about 250 calls for the nine codes, a few
+  minutes): the upsert rewrites only rows that changed, so there is no backfill
+  mode, the first run after a code is added loads its whole history, and a B3
+  correction heals itself. It validates the whole series before any write.
+  **A null `results` is retried** (3 attempts with backoff, the fetcher's
+  `max_retries`) because B3 answered null once for a year it serves (UTIL 2012,
+  2026-10-03). **A null on every attempt for a configured index is an error**
+  (B3 answers HTTP 200 for a code it does not publish, and for any year it has
+  nothing for), never an empty year; the one exception is the current year in
+  the first ten days of January, before its first session. It sits in `run_b3_events`, not
   `run_daily`, for the reason #450 moved the other B3 calls there.
 - **Levels are as published and the series is not adjusted.** B3 re-scaled IBOV
   eleven times (divided by 100 on 1983-10-04 and by 10 on ten other sessions,
@@ -330,6 +368,136 @@ serves the daily level of a B3-published index from `b3_index_level` (migration
 - Grants follow `quote_history`: DEFINER with an empty `search_path`, revoked
   from `PUBLIC`, granted to `anon` / `authenticated` / `silo_api`. No client
   role can read `b3_index_level`.
+
+### The portfolio reads (catalog v51)
+
+Three set-based functions for the portfolio-diagnosis engine (`31_api_portfolio.sql`;
+map #510, `docs/reference/research/portfolio-diagnosis-phase0.md`). All three are
+raise-only on the one 1000-row page, anon-callable like the rest of `api`, and
+take a set of funds or lines, never a name search that guesses.
+
+- **`api.portfolio_resolve(p_names, p_cnpjs, p_quotas, p_quota_dates)`**: one row
+  per line and candidate (up to 5, `rank`), arrays parallel, at most 200 lines
+  (more is `22023`). A CNPJ the line carries wins (`match_kind` `cnpj`); else
+  (catalog v56) a name that is exactly a ticker of the curated ETF registry
+  (`cvm_etf_registry`) gives that ETF's CNPJ (`etf_ticker`, one candidate, never
+  ambiguous: `api.lookup` returns no CNPJ for a ticker, and a fixed income ETF is
+  not in COTAHIST); else an exact match, case and accents ignored, on **any name the fund ever filed**
+  (`exact_current`, or `exact_history` for a former legal name); else trigram
+  over the whole name history (`similarity`, 0.25 floor). The history is
+  `mv_fund_name_history`: `cvm_fi_cda_fund_name` since 2005 plus the registry
+  name, rebuilt by every analytical apply. A current-names-only trigram found the
+  right fund 1 time in 10 on an obsolete name (Phase 0, 2026-10-03). A statement
+  quota with its date is compared with `cvm_fi_diario.vl_quota` on that exact
+  date; within 0.5% ranks first (the XP Bancos master and FIC, same words,
+  quotas 1.952607 and 1.542011 on 2026-09-30). `ambiguous` is TRUE on every row
+  of a line whose top two candidates are within 0.05 and the quota does not
+  separate them: the line is unresolved, `reason` says why, nothing is picked.
+  Unaccenting is a fixed `translate()` map (`unaccent` is not installed on
+  Supabase). No indexer, sector or economic group is ever inferred from a name.
+- **`api.portfolio_fees(p_cnpjs, p_month)`**: per CNPJ, the **disclosed** fee
+  (`disclosed_*`: the CVM **Extrato** first, `cvm_fi_extrato` newest version, a fee
+  for 84.3% of active FI funds; else the lâmina, `cvm_fi_lamina` newest reference
+  month; else cad_fi `taxa_adm` / `taxa_perfm` from `cvm_fund_registry`. One source
+  per fund, named in `disclosed_origin` (`extrato` | `lamina` | `cad_fi`) and
+  `disclosed_source`, with `disclosed_as_of` (the filing date),
+  `disclosed_age_months` and `disclosed_age_days`; NULL is not a zero fee; lâmina
+  classes with different fees give a NULL single value, a min, a max and a note).
+  Two reading rules on the single administration fee (% a year as filed): a filed
+  **0** is returned as 0 with `filed_zero` TRUE (read it as "not informed", never as
+  a zero cost; 16.7% of the Extrato's values are 0 and the balancete books a fee for
+  most of those funds), and a filed value **above 5** (or below 0) is not the fee:
+  `disclosed_taxa_adm` is NULL, `implausible_filed` is TRUE and the value as filed is
+  in `taxa_adm_filed_raw`. The stored value is never rewritten. An Extrato row that
+  exists is the source even then; it does not fall through to an OLDER source.
+  Catalog v55 (#552): when the Extrato filed exactly 0 or above 5, the lâmina's single
+  fee is in (0, 5] and the lâmina is NEWER than the Extrato, the newer lâmina is the
+  source. `fee_resolution` names the rule that applied (`extrato`,
+  `extrato_lamina_beside`, `extrato_to_check`, `lamina_newer`, `lamina`, `cad_fi`).
+  The other document's fee comes back as filed for every fund (`lamina_taxa_adm`,
+  `_min`, `_max`, `lamina_n_classes`, `lamina_age_months`; `extrato_taxa_adm_filed`
+  with `extrato_as_of`), with `extrato_lamina_ratio` and `extrato_scale_factor` (10 or
+  100 when an Extrato above 5 equals that factor times the lâmina within two-decimal
+  rounding: a flag, never a correction). A fund whose `fee_resolution` is
+  `extrato_lamina_beside` or `extrato_to_check` is to be checked: sum neither value.
+  For `lamina_newer` the newer lâmina's fee is a disclosed fee like any other: use it
+  as the cost, sum it and compare it with the estimate (owner, 2026-10-03, catalog
+  v56); keep the fund flagged because the two documents disagree, and never sum the
+  Extrato value beside it. These 10 columns are appended after `lamina_expense_note`.
+  Catalog v56, ETFs: CVM's Extrato, lâmina and cad_fi hold no fee for any of the 178
+  active registry ETFs (measured 2026-10-03), so five columns follow
+  `extrato_scale_factor`: `etf_ticker` (the CNPJ's ticker in `cvm_etf_registry`) and
+  `etf_site_taxa_adm`, `etf_site_as_of`, `etf_site_source`, `etf_site_note`, the
+  "Taxa de administração total" etfsbrasil.com.br prints (`etf_market_snapshot`, the
+  newest snapshot with a fee, joined by ticker; 171 of 178 tickers on 2026-10-03,
+  BOVA11 0.10, IVVB11 0.23, B5P211 0.20). A third-party value, never in
+  `disclosed_*`, returned as published.
+  The Extrato's own fields come back as filed (`extrato_taxa_perfm` numeric with
+  `extrato_param_taxa_perfm`, `extrato_calc_taxa_perfm`, `extrato_inf_taxa_perfm`;
+  `extrato_existe_taxa_ingresso` / `_saida` with `_pr` percent and `_real` reais;
+  `extrato_taxa_custodia_max`; `extrato_tp_fundo_classe`, `extrato_classe_anbima` and
+  `extrato_class_note`: a CVM 175 row is the class, there is no subclass column).
+  `lamina_pr_pl_despesa` (with `lamina_dt_ini_despesa`, `lamina_dt_fim_despesa`,
+  `lamina_as_of`) is the lâmina's declared total expense ratio, whatever the fee
+  source, never added to the administration fee. Catalog v52 appended these 25
+  columns after `estimate_label`; the 21 before it are unchanged. Beside them sits
+  a separate **estimate** from the balancete accruals
+  (`adm_fee_flow`, `perf_fee_flow`, `*_pct_annual_est`, `estimate_label`). The
+  fee accounts accumulate from each fund's fiscal-year start and are filed
+  negative: accrual = previous minus current accumulated value, times 12 over NAV
+  (groups 6 + 7 + 8), served positive. In the reset month the accumulated fee
+  falls: `fiscal_reset_suspect` is TRUE and the estimate NULL, unless cad_fi
+  `DT_INI_EXERC` confirms the fiscal year starts that month, when the month's
+  accumulated value alone is the accrual. The estimate is never the disclosed fee.
+- **`api.portfolio_lookthrough(p_cnpjs, p_month, p_max_depth)`**: one CDA month
+  (default: the last month whose block-2 filing count reaches 90% of the median
+  of the 12 before it, the `/holdings` rule; 2026-05 on 2026-10-03), block 2
+  followed recursively from each root (`WITH RECURSIVE ... CYCLE`, depth 1..6,
+  default 4) to the assets of blocks 1 (government bonds; repo collateral apart
+  as `repo`), 4 (stocks, debentures with `issuer_code` = ISIN characters 3-6) and
+  6 (private credit, `issuer_cnpj` only for a PJ, indexer as filed). Weights are
+  value over the holder's `fact_fund_monthly` NAV of the same month, multiplied
+  down the path; a fund reached by two paths appears once per path, sum
+  `weight_in_root` over every row but `fund_quota`. Blocks 3, 5, 7, 8 are not
+  ingested, so weights need not sum to 1. Measured on production 2026-10-03: XP
+  Bancos FIC 50088190000119 is 3 quota levels deep at 2026-05 (master
+  35377390000106 R$1,832.6M, XP Cash S1 54891935000134, Santander Cash Black
+  37525998000158), BB RF CP Automático FIC 42592315000115 is 1 level
+  (R$198,595.9M); the recursion read 37 buffers. Every read of the 12 GB and 10 GB
+  CDA tables is an index probe on `(cnpj, period, ...)`.
+- **`api.portfolio_movement(p_cnpjs, p_month)`** (catalog v54): is a fund's month
+  unusual for its own class (*movimento incomum*, owner's decisions of 2026-10-03).
+  Per CNPJ and one month (default: `latest_complete_period('fi')`, 2026-09 on
+  2026-10-03; an incomplete month is `nao_avaliado` for every fund), the fund's
+  monthly **quota return** `own_value_pct = (month-end vl_quota / previous month's - 1) x 100`
+  from `fact_fund_monthly` (the one stable quota subclass the matview follows; NAV
+  is not used, a NAV change is mostly flows) is set against the same return over
+  every FI fund of its **ANBIMA class as filed in the CVM Extrato**
+  (`vw_fi_extrato_latest.classe_anbima`, the Extrato's newest filing, not the class
+  on the month's date; `class_as_filed` is the peer group, `class` and `subclass`
+  split that label at its first `' - '` for display; nothing is read from a fund's
+  name). `class_mean_pct` and `class_sd_pct` are the mean and sample standard
+  deviation of the peers' returns **winsorized at the class's own 1st and 99th
+  percentile** of that month (`class_p01_pct`, `class_p99_pct`); the fund's own value
+  is not winsorized. `z = (own - mean) / sd`. `level` is `forte` when `|z| > 3`
+  (`investigator_trigger` TRUE, goes in the report's text), `atencao` when
+  `|z| > 2` (a table only) and `normal` otherwise, strictly greater (exactly 2 is
+  normal, exactly 3 is `atencao`); `nao_avaliado` with a Portuguese `reason` when
+  the class has fewer than `min_peers` (30) funds with a return, its standard
+  deviation is 0, the fund has no class (outside the Extrato, which covers about
+  84% of the active FI funds, or no `classe_anbima`), no return (no positive quota
+  in both months, or a quota-subclass change), is an ETF, a FIDC, FII, FIP or
+  FIAGRO, or the month is incomplete. There is no fallback to a wider class. One
+  row per distinct CNPJ, at most 200. Measured on production 2026-10-03 over six
+  months (2025-12 to 2026-09), among the roughly 20,900 fund-months evaluated
+  each month (about 83% of the FI funds with a return; the rest have no class,
+  0.9% too few peers): `|z| > 2` flags 5.2% to 5.7% and `|z| > 3` 2.4% to 2.9%
+  (5.6% and 2.7% in 2026-09), below the 10% and 6% of the owner's measurement of
+  the same day, whose query is not on record; the five largest classes answer in
+  0.5 s against anon's 3 s timeout. It states a number, a class, a sample size and
+  a month: not a forecast, a verdict or a recommendation.
+- A merge deploys nothing: the functions go live on the next analytical apply
+  (`daily_ingest` `mode=analytics-only`), the MCP tools after `deploy_mcp.yml`.
 
 ### Using the research seam
 
@@ -403,7 +571,8 @@ sweep (`B3Ingestor.TAPE_START`), `mv_b3_cash_event` (migration 56) and
   a holiday with no session, so nothing would be lost, but the rule is the
   instrument's first session. The documented examples use 2019-01-02.
 - **`api.coverage()` says so** in the notes of its `quotes` row, read from the tape.
-- **`api.index_history` is not bound by it:** IBOV is held from 1968-01-02.
+- **`api.index_history` is not bound by it:** IBOV is held from 1968-01-02, and
+  each other index from its own first session.
 - `serve/` maps the `22023` to a caller error like every other refusal.
 
 ### Fundamentals as of a date (catalog v47)
@@ -620,8 +789,9 @@ cannot be paged" — that stopped being true two catalog versions ago. **`panel`
 `anbima_classes`, `inflation`, `inflation_items`, `fidc_tranches`, `fidc_aging`,
 `fund_documents`, `fund_restatements`, `fund_restatement_diff`,
 `company_events`, `macro_series`, `ptax`, `future_curve`, `future_series`,
-`curve`, `curve_history`, `research_universe` and the ten `screen_*` functions) have no cursor and
-ask you to narrow the window. `fund_nav` also
+`curve`, `curve_history`, `research_universe`, `portfolio_resolve`, `portfolio_fees`,
+`portfolio_lookthrough`, `portfolio_movement` and the ten `screen_*` functions) have no cursor and
+ask you to narrow the window or send fewer funds. `fund_nav` also
 requires `p_entity_type` to page, because its cursor is a bare period and 385
 CNPJs file under two families in the same month.
 

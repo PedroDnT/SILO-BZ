@@ -154,13 +154,13 @@ tenor_days)`.
 
 ### 6. Indexes — IBOV et al., composition and history
 
-**Not ingested.** Two honest grains, two tables:
-`b3_index_composition (index, date, ticker, weight)` and
-`b3_index_history (index, date, points)`. History joins the panel
-(`id_type='index'`, metric `points`/`return`); composition is typed-only
-(`api.index_composition(p_index, p_date)`) — membership lists are not a time
-series. Lowest priority: IBOV level is already obtainable via BACEN SGS, and
-composition mainly serves benchmark-attribution work we don't do yet.
+**History is built (2026-10-03, #416):** `b3_index_level` and `api.index_history`
+serve nine indices as B3 publishes them (`docs/reference/API.md`, "The benchmark index"),
+not through the panel. BACEN SGS 7 is discontinued, so it was never the source.
+**Composition is not ingested** beyond `b3_index_portfolio` (free-float counts, four
+indices, no weights history); an `api.index_composition(p_index, p_date)` would be
+typed-only, since membership lists are not a time series. It mainly serves
+benchmark-attribution work we don't do yet.
 
 ### 7. Funds and securitization (CVM side)
 

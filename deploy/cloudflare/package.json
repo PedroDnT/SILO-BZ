@@ -1,0 +1,16 @@
+{
+  "name": "silo-demo-health",
+  "private": true,
+  "description": "First safe Cloudflare deploy for map #510: a Worker and a health-only Container (issue #519). No engine, no upload, no LLM key.",
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "check": "wrangler deploy --dry-run"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "0.3.7"
+  },
+  "devDependencies": {
+    "wrangler": "4.147.0"
+  }
+}

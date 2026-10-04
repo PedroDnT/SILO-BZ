@@ -223,6 +223,11 @@ class TestYearlyArchivesKeepTheirMonths:
             "src.pipeline.ingest_fi.upsert_rows",
             lambda conn, table, rows, **kw: seen.setdefault("rows", rows) and 0 or len(rows),
         )
+        # A monthly archive goes through the per-fund replace; same capture.
+        monkeypatch.setattr(
+            "src.pipeline.ingest_fi.replace_scoped_rows",
+            lambda conn, table, rows, **kw: seen.setdefault("rows", rows) and 0 or len(rows),
+        )
         return seen
 
     def test_month_none_keeps_all_twelve(self, monkeypatch):

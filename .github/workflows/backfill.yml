@@ -57,6 +57,8 @@ on:
           - cda_cotas
           - cda_debentures
           - perfil_mensal
+          - lamina
+          - extrato
       fi_repair_gaps:
         description: "FI only: fetch ONLY the months missing from the fi_doc_type table (reads the table, not the audit log). Requires a specific fi_doc_type."
         type: boolean
@@ -337,6 +339,7 @@ jobs:
                   cda_acoes_months = ok_months(cur, "cda_acoes", year)
                   cda_cotas_months = ok_months(cur, "cda_cotas", year)
                   cda_deb_months = ok_months(cur, "cda_debentures", year)
+                  lamina_months = ok_months(cur, "lamina", year)
                   yearly_status = None
                   requested_doc_for_query = "${{ inputs.fi_doc_type }}"
                   if requested_doc_for_query != "all":
@@ -385,10 +388,15 @@ jobs:
                   "cda_acoes": cda_acoes_months,
                   "cda_cotas": cda_cotas_months,
                   "cda_debentures": cda_deb_months,
+                  "lamina": lamina_months,
               }
               # .get, not []: this runs outside the try/except above, so a doc
               # type the gate has not learned yet would abort the dispatch
               # instead of doing the work. Unknown means run the year.
+              # extrato is deliberately absent: its yearly files are re-filed
+              # weekly and logged with no month, so "ok months" says nothing and
+              # the year always runs (about 10 MB; years before 2021 are skipped
+              # inside the ingest).
               months = counts.get(requested_doc)
               if months is None:
                   print(f"RUN: {year} {requested_doc} (no coverage rule — not skipping)")

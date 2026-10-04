@@ -30,11 +30,15 @@ CREATE TABLE IF NOT EXISTS cvm_ingest_log (
     -- src.pipeline.ingest_log.PARSER_VERSION, bumped when a parser or field
     -- map changes what a stored value means.
     git_sha        TEXT,
-    parser_version TEXT
+    parser_version TEXT,
+    -- Stored rows a per-fund replace removed (migration 68, the monthly CDA
+    -- blocks). NULL when the slice does not replace.
+    rows_deleted   INT
 );
 -- An existing database never re-runs the CREATE TABLE above, so the lineage
 -- columns are also reachable from schema.sql alone (tests/test_schema_upgrade_path.py).
 ALTER TABLE cvm_ingest_log ADD COLUMN IF NOT EXISTS git_sha TEXT, ADD COLUMN IF NOT EXISTS parser_version TEXT;
+ALTER TABLE cvm_ingest_log ADD COLUMN IF NOT EXISTS rows_deleted INT;
 CREATE INDEX IF NOT EXISTS idx_ingest_log_entity_doc
     ON cvm_ingest_log (entity, doc_type, period_year DESC, period_month DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ingest_log_run
@@ -930,6 +934,15 @@ CREATE TABLE IF NOT EXISTS cvm_fund_registry (
     -- without the date (migration 28).
     vl_patrim_liq NUMERIC(20,2),
     dt_patrim_liq DATE,
+    -- The fee as the legacy cad_fi.csv files it, unit as published (CVM's meta
+    -- states none). Legacy funds only; the CVM-175 registro files publish no
+    -- fee, so their ingest leaves these alone (migration 64).
+    taxa_adm       NUMERIC,
+    taxa_perfm     NUMERIC,
+    inf_taxa_adm   TEXT,
+    inf_taxa_perfm TEXT,
+    dt_ini_exerc   DATE,                     -- fiscal year start, as filed
+    dt_fim_exerc   DATE,                     -- fiscal year end, as filed
     raw          JSONB,
     fetched_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_fund_registry UNIQUE (cnpj, entity_type)
@@ -938,6 +951,65 @@ CREATE INDEX IF NOT EXISTS idx_fund_registry_cnpj   ON cvm_fund_registry (cnpj);
 CREATE INDEX IF NOT EXISTS idx_fund_registry_entity ON cvm_fund_registry (entity_type, status);
 CREATE INDEX IF NOT EXISTS idx_fund_registry_admin  ON cvm_fund_registry (admin_name);
 CREATE INDEX IF NOT EXISTS idx_fund_registry_gestor ON cvm_fund_registry (gestor_name);
+
+-- ---------------------------------------------------------------------------
+-- CVM 175 levels fundo -> classe -> subclasse (migration 67, issue #543)
+-- One table per member of FI/CAD/DADOS/registro_fundo_classe.zip, keyed on the
+-- registry's own ids (TEXT, as filed). A class reaches its fund by
+-- id_registro_fundo, a subclass its class by id_registro_classe; never by CNPJ.
+-- cvm_fund_registry above cannot hold this: a class with its fund's CNPJ lands
+-- on the fund's (cnpj, entity_type) row, and a subclass has no CNPJ at all.
+-- No foreign keys: a class whose fund row is absent keeps its row as filed.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS cvm_registro_fundo (
+    id                 BIGSERIAL   PRIMARY KEY,
+    id_registro_fundo  TEXT        NOT NULL,
+    cnpj_fundo         TEXT        CHECK (cnpj_fundo IS NULL OR char_length(cnpj_fundo) = 14),
+    codigo_cvm         TEXT,
+    tipo_fundo         TEXT,
+    denominacao_social TEXT,
+    situacao           TEXT,
+    data_registro      DATE,
+    data_cancelamento  DATE,
+    raw                JSONB       NOT NULL,
+    fetched_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_registro_fundo UNIQUE (id_registro_fundo)
+);
+CREATE INDEX IF NOT EXISTS ix_registro_fundo_cnpj ON cvm_registro_fundo (cnpj_fundo);
+
+CREATE TABLE IF NOT EXISTS cvm_registro_classe (
+    id                   BIGSERIAL   PRIMARY KEY,
+    id_registro_classe   TEXT        NOT NULL,
+    id_registro_fundo    TEXT        NOT NULL,   -- parent: cvm_registro_fundo
+    cnpj_classe          TEXT        CHECK (cnpj_classe IS NULL OR char_length(cnpj_classe) = 14),
+    codigo_cvm           TEXT,
+    tipo_classe          TEXT,
+    denominacao_social   TEXT,
+    situacao             TEXT,
+    data_registro        DATE,
+    classificacao        TEXT,
+    classe_cotas         BOOLEAN,                -- Classe_Cotas S/N; NULL when empty
+    classificacao_anbima TEXT,
+    raw                  JSONB       NOT NULL,
+    fetched_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_registro_classe UNIQUE (id_registro_classe)
+);
+CREATE INDEX IF NOT EXISTS ix_registro_classe_fundo ON cvm_registro_classe (id_registro_fundo);
+CREATE INDEX IF NOT EXISTS ix_registro_classe_cnpj  ON cvm_registro_classe (cnpj_classe);
+
+CREATE TABLE IF NOT EXISTS cvm_registro_subclasse (
+    id                 BIGSERIAL   PRIMARY KEY,
+    id_registro_classe TEXT        NOT NULL,     -- parent: cvm_registro_classe
+    id_subclasse       TEXT        NOT NULL,     -- ID_SUBCLASSE of inf_diario / lamina / CDA
+    codigo_cvm         TEXT,
+    denominacao_social TEXT,
+    situacao           TEXT,
+    publico_alvo       TEXT,
+    raw                JSONB       NOT NULL,
+    fetched_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_registro_subclasse UNIQUE (id_registro_classe, id_subclasse)
+);
+CREATE INDEX IF NOT EXISTS ix_registro_subclasse_id ON cvm_registro_subclasse (id_subclasse);
 
 -- ---------------------------------------------------------------------------
 -- FI — monthly balance sheet  (BALANCETE, monthly ZIP)
@@ -1010,6 +1082,120 @@ CREATE TABLE IF NOT EXISTS cvm_fi_balancete_resumo (
 );
 CREATE INDEX IF NOT EXISTS ix_fi_balancete_resumo_date
     ON cvm_fi_balancete_resumo (dt_comptc);
+
+-- ---------------------------------------------------------------------------
+-- FI - lamina (CVM fi-doc-lamina): fees, redemption terms, minimums (migration 65)
+-- Main member of lamina_fi_YYYYMM.zip. Key (cnpj, dt_comptc, id_subclasse),
+-- NULLS NOT DISTINCT: id_subclasse is empty on almost every row. Read the current
+-- filing through vw_fi_lamina_latest.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS cvm_fi_lamina (
+    id           BIGSERIAL,
+    cnpj         TEXT        NOT NULL CHECK (char_length(cnpj) = 14),
+    dt_comptc    DATE        NOT NULL,    -- DT_COMPTC as filed (a month end), not normalised
+    id_subclasse TEXT,                    -- NULL on most rows; part of the key, never filled in
+    tp_fundo_classe               TEXT,
+    denom_social                  TEXT,
+    nm_fantasia                   TEXT,
+    publico_alvo                  TEXT,
+    indice_refer                  TEXT,
+    classe_risco_admin            NUMERIC,
+    vl_patrim_liq                 NUMERIC,
+    tp_taxa_adm                   TEXT,
+    taxa_adm                      NUMERIC,
+    taxa_adm_min                  NUMERIC,
+    taxa_adm_max                  NUMERIC,
+    taxa_adm_obs                  TEXT,
+    taxa_perfm                    TEXT,
+    taxa_entr                     NUMERIC,
+    condic_entr                   TEXT,
+    taxa_saida                    NUMERIC,
+    qt_dia_saida                  NUMERIC,
+    condic_saida                  TEXT,
+    pr_pl_despesa                 NUMERIC,
+    dt_ini_despesa                DATE,
+    dt_fim_despesa                DATE,
+    invest_inicial_min            NUMERIC,
+    invest_adic                   NUMERIC,
+    resgate_min                   NUMERIC,
+    vl_min_perman                 NUMERIC,
+    hora_aplic_resgate            TEXT,
+    qt_dia_caren                  NUMERIC,
+    condic_caren                  TEXT,
+    conversao_cota_compra         TEXT,
+    qt_dia_conversao_cota_compra  NUMERIC,
+    conversao_cota_canc           TEXT,
+    qt_dia_conversao_cota_resgate NUMERIC,
+    tp_dia_pagto_resgate          TEXT,
+    qt_dia_pagto_resgate          NUMERIC,
+    raw          JSONB       NOT NULL,
+    fetched_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fi_lamina UNIQUE NULLS NOT DISTINCT (cnpj, dt_comptc, id_subclasse)
+);
+CREATE INDEX IF NOT EXISTS ix_fi_lamina_date ON cvm_fi_lamina (dt_comptc DESC);
+
+CREATE OR REPLACE VIEW vw_fi_lamina_latest
+WITH (security_invoker = true) AS
+SELECT DISTINCT ON (l.cnpj, l.id_subclasse)
+       l.*,
+       (EXTRACT(YEAR  FROM age(CURRENT_DATE, l.dt_comptc)) * 12
+      + EXTRACT(MONTH FROM age(CURRENT_DATE, l.dt_comptc)))::int AS age_months
+  FROM cvm_fi_lamina l
+ ORDER BY l.cnpj, l.id_subclasse, l.dt_comptc DESC, l.fetched_at DESC, l.id DESC;
+
+-- ---------------------------------------------------------------------------
+-- FI - Extrato das Informacoes (CVM fi-doc-extrato): fees and terms (migration 66)
+-- extrato_fi.csv (current, one row per CNPJ) and extrato_fi_YYYY.csv (versions).
+-- Key (cnpj, dt_comptc). taxa_adm is stored as filed (0 and values above 5
+-- included); the API applies the rules when reading. Read the current version
+-- through vw_fi_extrato_latest.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS cvm_fi_extrato (
+    id           BIGSERIAL,
+    cnpj         TEXT        NOT NULL CHECK (char_length(cnpj) = 14),
+    dt_comptc    DATE        NOT NULL,    -- DT_COMPTC as filed, not normalised
+    source_file  TEXT,                    -- extrato_fi.csv or extrato_fi_YYYY.csv
+    tp_fundo_classe              TEXT,
+    denom_social                 TEXT,
+    condom                       TEXT,
+    publico_alvo                 TEXT,
+    reg_anbima                   TEXT,
+    classe_anbima                TEXT,
+    fundo_cotas                  TEXT,
+    taxa_adm                     NUMERIC,
+    taxa_custodia_max            NUMERIC,
+    existe_taxa_perfm            TEXT,
+    taxa_perfm                   NUMERIC,
+    param_taxa_perfm             TEXT,
+    pr_indice_refer_taxa_perfm   NUMERIC,
+    calc_taxa_perfm              TEXT,
+    inf_taxa_perfm               TEXT,
+    existe_taxa_ingresso         TEXT,
+    taxa_ingresso_real           NUMERIC,
+    taxa_ingresso_pr             NUMERIC,
+    existe_taxa_saida            TEXT,
+    taxa_saida_real              NUMERIC,
+    taxa_saida_pr                NUMERIC,
+    taxa_saida_pagto_resgate     TEXT,
+    aplic_min                    NUMERIC,
+    qt_dia_conversao_cota        NUMERIC,
+    qt_dia_pagto_cota            NUMERIC,
+    qt_dia_resgate_cotas         NUMERIC,
+    qt_dia_pagto_resgate         NUMERIC,
+    tp_dia_pagto_resgate         TEXT,
+    raw          JSONB       NOT NULL,
+    fetched_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_fi_extrato UNIQUE (cnpj, dt_comptc)
+);
+CREATE INDEX IF NOT EXISTS ix_fi_extrato_date ON cvm_fi_extrato (dt_comptc DESC);
+
+CREATE OR REPLACE VIEW vw_fi_extrato_latest
+WITH (security_invoker = true) AS
+SELECT DISTINCT ON (e.cnpj)
+       e.*,
+       (CURRENT_DATE - e.dt_comptc)::int AS age_days
+  FROM cvm_fi_extrato e
+ ORDER BY e.cnpj, e.dt_comptc DESC, e.fetched_at DESC, e.id DESC;
 
 -- ---------------------------------------------------------------------------
 -- Additive column migrations for typed-field lifts (idempotent).

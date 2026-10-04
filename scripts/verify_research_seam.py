@@ -35,7 +35,14 @@ section isolated so one crash does not hide the others:
  11. fundamentals as known (#414): as of 2024-02-29 PETR's DFP 2023 is absent
      and no line comes from a filing received on or after the date;
  12. macro: CDI from 2019 in three date-split calls, the whole window refused;
- 13. coverage(): the index row names its depth, the quotes row the tape start.
+ 13. coverage(): the index row names its depth, the quotes row the tape start;
+ 14. other classes: a fund quota, an index and a BDR have no close_adj (the default
+     series refuses, naming the cause) and serve the raw close when it is selected.
+
+Every section is isolated, the first seven too: a crash or a timeout in one is a
+FAIL line and the sections after it still run. The no-look-ahead line has its own
+section, because its only public source (financial_statement_history) can fail
+on its own.
 """
 
 from __future__ import annotations
@@ -43,7 +50,7 @@ from __future__ import annotations
 import datetime as dt
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "sdk"))
@@ -78,27 +85,43 @@ def refused(fn, reason: str) -> bool:
 
 def main() -> int:
     silo = SiloClient()
-    try:
-        _checks(silo)
-    except Exception as exc:  # noqa: BLE001 — a crash is a FAIL line, not a traceback
-        check(False, f"verification stopped: {type(exc).__name__}: {str(exc)[:300]}")
+    run_sections(silo)
     run_extras(silo)
     print(f"\n{len(problems)} problem(s)")
     return 1 if problems else 0
 
 
-def _checks(silo: SiloClient) -> None:
+def run_sections(silo: Any) -> None:
+    """The #410 acceptance list, each section on its own like `run_extras`: a crash
+    (or a timeout) in one is a FAIL line and the sections after it still run."""
+    ctx: Dict[str, Any] = {}
+    for section in (_eter3, _prices_two, _page_edge, _hundred_tickers, _close_adj, _refusals, _ibov, _other_classes):
+        try:
+            section(silo, ctx)
+        except Exception as exc:  # noqa: BLE001 — a crash is a FAIL line, not a traceback
+            check(False, f"{section.__name__.lstrip('_')}: stopped by {type(exc).__name__}: {str(exc)[:300]}")
+
+
+def _tape(silo: Any, ctx: Dict[str, Any]) -> List[str]:
+    """PETR4 prints on every session, so its dates are the market calendar (read once)."""
+    if "tape" not in ctx:
+        ctx["tape"] = [r["trade_date"] for r in silo.quote_history_all("PETR4", TAPE_START, None, fields=["close"])]
+    return ctx["tape"]
+
+
+def _eter3(silo: Any, ctx: Dict[str, Any]) -> None:
     # 1. ETER3 across boards.
     rows = silo.quote_history_all("ETER3", "2019-01-02", "2026-12-31", fields=["close", "board", "prior_no_trade_sessions"])
     boards = {r["board"] for r in rows}
     check({"08", "02"} <= boards and rows[0]["trade_date"] == "2019-01-02",
           f"ETER3 crosses boards {sorted(boards)} from {rows[0]['trade_date'] if rows else None}, {len(rows)} sessions")
-    # PETR4 prints on every session, so its dates are the market calendar.
-    tape = [r["trade_date"] for r in silo.quote_history_all("PETR4", "2019-01-02", rows[-1]["trade_date"], fields=["close"])]
+    tape = [d for d in _tape(silo, ctx) if d <= rows[-1]["trade_date"]]
     missing = len(tape) - len(rows)
     explained = sum(r["prior_no_trade_sessions"] for r in rows)
     check(missing == explained, f"ETER3: {missing} sessions without a print, {explained} explained as no-trade")
 
+
+def _prices_two(silo: Any, ctx: Dict[str, Any]) -> None:
     # 2. PETR4 + VALE3 through prices().
     df = silo.prices(["PETR4", "VALE3"], START6, END6)
     dup = df.height - df.unique(["ticker", "trade_date"]).height
@@ -106,8 +129,11 @@ def _checks(silo: SiloClient) -> None:
           f"prices(PETR4, VALE3): {df.height} rows, {dup} duplicates, columns {df.columns}")
     check(df.equals(df.sort(["ticker", "trade_date"])), "prices() is sorted by ticker, trade_date")
 
+
+def _page_edge(silo: Any, ctx: Dict[str, Any]) -> None:
     # 3. The page edge.
-    d999, d1000, d1001 = tape[0], tape[999 - 1], tape[1000]
+    tape = _tape(silo, ctx)
+    d999, d1001 = tape[0], tape[1000]
     # Through the raw page call: the SDK's truncation guard cannot tell a
     # 1000-row answer from a cut one unless the server sends a total.
     def whole(to):
@@ -120,23 +146,49 @@ def _checks(silo: SiloClient) -> None:
     paged = silo.quote_history_all("PETR4", d999, d1001, fields=["close"])
     check([r["trade_date"] for r in paged] == tape[:1001], "the 1001 window pages to exactly its sessions")
 
+
+def absences(names: List[str], big: Any, tape: List[str], walk_dates: Any) -> Tuple[List[str], List[str]]:
+    """Split the names into (unexplained, silent) for a pull over START6..END6.
+
+    A name with prints: every session between its first and last print is a print
+    or a counted no-trade session (the first row's run starts before START6).
+    A name with no print in the window is `silent`, and only when its own full
+    walk (`walk_dates(name)`) has no session inside the window either: a ticker
+    that traded in 2019 and again in 2026 is a known ticker with an empty window
+    (an empty series, not a refusal), while a walk that has sessions the pull lost
+    is unexplained."""
+    unexplained, silent = [], []
+    for t in names:
+        sub = big.filter(big["ticker"] == t)
+        if sub.height == 0:
+            inside = [d for d in walk_dates(t) if START6 <= d <= END6]
+            (unexplained if inside else silent).append(t)
+            continue
+        first, last = str(sub["trade_date"][0]), str(sub["trade_date"][-1])
+        span = len([d for d in tape if first <= d <= last])
+        if sub.height + int(sub["prior_no_trade_sessions"][1:].sum()) != span:
+            unexplained.append(t)
+    return unexplained, silent
+
+
+def _hundred_tickers(silo: Any, ctx: Dict[str, Any]) -> None:
     # 4. 100 tickers over six years.
+    tape = _tape(silo, ctx)
     universe = [u for u in silo._rpc("research_universe", {})
                 if u["first_observed"] <= START6 and u["last_observed"] >= END6]
     names = sorted({u["ticker"] for u in universe})[:100]
+    first_seen = {u["ticker"]: u["first_observed"] for u in universe}
     big = silo.prices(names, START6, END6, fields=["close", "prior_no_trade_sessions"])
     check(big.height == big.unique(["ticker", "trade_date"]).height, f"100 tickers: {big.height} rows, no duplicate")
-    unexplained = []
-    for t in names:
-        sub = big.filter(big["ticker"] == t)
-        first, last = str(sub["trade_date"][0]), str(sub["trade_date"][-1])
-        span = len([d for d in tape if first <= d <= last])
-        # Every session between the first and last print is a print or a
-        # counted no-trade session (the first row's run starts before START6).
-        if sub.height + int(sub["prior_no_trade_sessions"][1:].sum()) != span:
-            unexplained.append(t)
-    check(not unexplained, f"every absence inside the coverage is a no-trade session ({len(unexplained)} unexplained: {unexplained[:5]})")
+    unexplained, silent = absences(
+        names, big, tape,
+        lambda t: [str(r["trade_date"]) for r in silo.quote_history_all(t, first_seen[t], None, fields=["close"])])
+    check(not unexplained,
+          f"every absence inside the coverage is a no-trade session ({len(unexplained)} unexplained: {unexplained[:5]}; "
+          f"{len(silent)} name(s) with no session at all in the window, each confirmed by its own walk: {silent[:5]})")
 
+
+def _close_adj(silo: Any, ctx: Dict[str, Any]) -> None:
     # 5. close_adj regressions.
     b = {r["trade_date"]: r for r in silo.quote_history("BBAS3", "2024-04-12", "2024-04-17", fields=["close", "close_adj"])}
     check(abs(float(b["2024-04-15"]["close_adj"]) - float(b["2024-04-15"]["close"]) / 2) < 1e-6
@@ -145,17 +197,23 @@ def _checks(silo: SiloClient) -> None:
     wide = {r["trade_date"]: r["close_adj"] for r in silo.quote_history("BBAS3", "2024-01-02", "2024-06-28")}
     check(wide["2024-04-15"] == b["2024-04-15"]["close_adj"], "close_adj is the same in two windows")
     m = {r["trade_date"]: r for r in silo.quote_history("MGLU3", "2024-05-20", "2024-05-29", fields=["close", "close_adj"])}
-    pre, post = m["2024-05-24"], min(r for r in m.values() if r["trade_date"] > "2024-05-24")
+    pre = m["2024-05-24"]
+    post = min((r for r in m.values() if r["trade_date"] > "2024-05-24"), key=lambda r: r["trade_date"])
     check(float(pre["close_adj"]) > 5 * float(pre["close"]),
           f"MGLU3 grouping 2024-05-24 lifts the earlier level ({pre['close']} -> {pre['close_adj']}; next {post['close']} -> {post['close_adj']})")
     raw = silo.quote_history("PETR4", "2025-12-01", "2025-12-05", fields=["close"])
-    check(all(set(r) == {"ticker", "trade_date", "close"} for r in raw), "fields=[close] returns the raw close only")
+    check(bool(raw) and all(set(r) == {"ticker", "trade_date", "close"} for r in raw), "fields=[close] returns the raw close only")
 
+
+def _refusals(silo: Any, ctx: Dict[str, Any]) -> None:
     # 6. Refusals.
     check(refused(lambda: silo.quote_history("XXXX3", "2025-01-02", "2025-01-10"), "reason=unknown_ticker"), "unknown ticker refused")
     check(refused(lambda: silo.quote_history("PETR4", "2018-06-01", "2019-06-01"), "reason=outside_coverage"), "window before the tape refused")
 
+
+def _ibov(silo: Any, ctx: Dict[str, Any]) -> None:
     # 7. IBOV.
+    tape = _tape(silo, ctx)
     # Paged with the server's cursor directly, so the check needs no SDK
     # wrapper for index_history.
     ibov, after = [], ""
@@ -170,6 +228,23 @@ def _checks(silo: SiloClient) -> None:
     check(float(by_date.get("2025-12-30", 0)) == 161125.37, f"IBOV 2025-12-30 = {by_date.get('2025-12-30')}")
     tape20 = {d for d in tape if d >= "2020-01-02"}
     check(set(by_date) == tape20, f"IBOV sessions equal the tape's from 2020 ({len(by_date)} vs {len(tape20)})")
+
+
+#: One ticker per class the research universe leaves out (spec section 3, items 4 and 5, as
+#: built 2026-09-30): the adjusted close is refused with its cause, never NULL and never the raw close.
+OTHER_CLASSES = (("BOVA11", "fund_quota"), ("IBOV11", "index"), ("AAPL34", "bdr"))
+
+
+def _other_classes(silo: Any, ctx: Dict[str, Any]) -> None:
+    # 8. Other classes.
+    for ticker, asset_class in OTHER_CLASSES:
+        check(refused(lambda t=ticker: silo.quote_history(t, "2025-12-01", "2025-12-05"),
+                      "cause=outside research universe"),
+              f"other classes: {ticker} ({asset_class}) has no close_adj, the default series refuses naming the cause")
+        raw = silo.quote_history(ticker, "2025-12-01", "2025-12-05", fields=["close", "asset_class"])
+        check(len(raw) > 0 and {r.get("asset_class") for r in raw} == {asset_class},
+              f"other classes: {ticker} raw close is served when selected (asset_class "
+              f"{sorted({str(r.get('asset_class')) for r in raw})}, {len(raw)} rows)")
 
 
 # --- the rest of the spec's test list (#420) ---------------------------------
@@ -189,7 +264,7 @@ def _business_days(a: str, b: str) -> float:
 
 def run_extras(silo: Any) -> None:
     """Each section on its own: a crash in one is a FAIL line, and the rest run."""
-    for section in (_universe, _total_return, _benchmark, _as_of, _macro, _coverage):
+    for section in (_universe, _total_return, _benchmark, _as_of, _as_of_leak, _macro, _coverage):
         try:
             section(silo)
         except Exception as exc:  # noqa: BLE001 — reported as a FAIL line, never swallowed
@@ -292,17 +367,26 @@ def _as_of(silo: Any) -> None:
     refs = sorted({str(r["ref_date"]) for r in rows})
     check(bool(refs) and refs[-1] == "2023-09-30" and "2023-12-31" not in refs,
           f"as-of: as of {t} PETR's newest period is {refs[-1] if refs else None} and the DFP 2023 is absent")
+    latest = {str(r["ref_date"]) for r in silo.financials("PETR4", "DRE", **window)}
+    check("2023-12-31" in latest, "as-of: without as_of the DFP 2023 is read at its latest version (not point-in-time)")
+    for name, call in (("company_financials", silo.company_financials), ("income_statements", silo.income_statements)):
+        got = {str(r["ref_date"]) for r in call("PETR4", as_of=t, **window)}
+        check(bool(got) and "2023-12-31" not in got, f"as-of: {name} honours as_of ({sorted(got)})")
+
+
+def _as_of_leak(silo: Any) -> None:
+    """No line comes from a filing received on or after the date. Its own section:
+    the only public source of `filing_received_date` is financial_statement_history,
+    and a failure to read it (a 504 on 2026-10-03) must not hide the other as-of lines."""
+    window = dict(start="2023-01-01", end="2024-06-30")
+    t = "2024-02-29"
+    rows = silo.financials("PETR4", "DRE", as_of=t, **window)
     received = {(str(h["ref_date"]), h["doc_type"], h["version"]): h.get("filing_received_date")
                 for h in silo.financial_statement_history("PETR4", "DRE", **window)}
     leaks = [k for k in ((str(r["ref_date"]), r["doc_type"], r["version"]) for r in rows)
              if received.get(k) is None or str(received[k]) >= t]
     check(bool(rows) and not leaks, f"as-of: {len(rows)} lines, none from a filing received on or after {t}"
           + (f" ({len(leaks)} leaks, first {leaks[0]})" if leaks else ""))
-    latest = {str(r["ref_date"]) for r in silo.financials("PETR4", "DRE", **window)}
-    check("2023-12-31" in latest, "as-of: without as_of the DFP 2023 is read at its latest version (not point-in-time)")
-    for name, call in (("company_financials", silo.company_financials), ("income_statements", silo.income_statements)):
-        got = {str(r["ref_date"]) for r in call("PETR4", as_of=t, **window)}
-        check(bool(got) and "2023-12-31" not in got, f"as-of: {name} honours as_of ({sorted(got)})")
 
 
 def _macro(silo: Any) -> None:

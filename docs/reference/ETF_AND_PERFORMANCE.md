@@ -42,7 +42,7 @@ plain view timed out on the full-universe call. It is refreshed by the 06:15 cro
 | Gap | Detail | Unblocks |
 | --- | --- | --- |
 | **`etf_daily` is empty** | The 187 registry ETFs' fund-level CNPJs have **zero** overlap with 2026 `cvm_fi_diario` (CVM-175 keys the daily file on share-**class** CNPJs). So ETF price/NAV/return/AUM/flow series can't come from CVM today. | Fix registry↔class-CNPJ linkage, or wire an external ETF price feed (etfsbrasil.com / FMP), or ingest ANBIMA ETF class series. |
-| **ETF registry quant fields sparse** | `vl_patrim_liq` populated for only 8/187; `taxa_adm` 0/187. Identity (provider/segment/index) is complete for ~all. | cad_fi enrichment refresh / external feed. |
+| **ETF registry quant fields sparse** | `vl_patrim_liq` populated for only 8/187; `taxa_adm` 0/187. Identity (provider/segment/index) is complete for ~all. | cad_fi enrichment refresh / external feed. The fee: CVM's Extrato, lâmina and cad_fi hold none for the 178 active ETFs (checked 2026-10-03); `etf_market_snapshot.taxa_adm_pct` (etfsbrasil.com.br) is the only one, served by `api.portfolio_fees` as `etf_site_*` (catalog v56). |
 | **`anbima_class_monthly` empty** | Table exists; the ANBIMA ingest hasn't run on this DB. | Run the ANBIMA pipeline (`python -m src.pipeline.anbima_pipeline`). |
 | **Fund history is 2026-only** | FI daily, FII (Q1), FIP present; FIDC/FIAGRO and `cvm_fund_registry` are empty. With the registry empty, FI funds fall into the coarse `Other FI` class. | Historical backfill + registry ingest (migration 11 already applied). |
 

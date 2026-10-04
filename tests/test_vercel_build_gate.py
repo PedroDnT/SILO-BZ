@@ -305,7 +305,11 @@ def test_daily_ingest_rebuilds_dashboard_after_scheduled_runs():
     assert hook, f"no deploy-hook step in: {[s.get('name') for s in steps]}"
     step = hook[0]
     condition = step.get("if", "")
-    assert "success()" in condition, "a failed ingest must not publish"
+    # #473: a red source no longer blocks the hook, a failed apply still does.
+    assert "steps.analytical.outcome == 'success'" in condition, (
+        "a run whose analytical apply failed must not publish"
+    )
+    assert "!cancelled()" in condition
     assert "github.event_name == 'schedule'" in condition
     assert "github.event_name == 'workflow_dispatch'" in condition
     assert "rebuild_dashboard == 'true'" in condition

@@ -261,6 +261,12 @@ REFUSING_FUNCTIONS = {
     "curve_history",
     # v43: the research universe (28_api_research.sql).
     "research_universe",
+    # v51: the portfolio-diagnosis reads (31_api_portfolio.sql).
+    "portfolio_resolve",
+    "portfolio_fees",
+    "portfolio_lookthrough",
+    # v54: the movement of a fund against its class (31_api_portfolio.sql).
+    "portfolio_movement",
 }
 PAGED_FUNCTIONS = {"panel", "quote_history", "fund_nav"}
 

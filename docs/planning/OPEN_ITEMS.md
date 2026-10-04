@@ -451,10 +451,68 @@ Nothing in wave 2 that depends on these starts until each has an answer.
 
 ## 15. Portfolio diagnosis: decisions still open (2026-09-26)
 
-**Paused 2026-09-28 (owner):** the active map is #371, and this map's tickets
-are labelled `P2-later`.
+**Superseded by map #510 (2026-10-03).** #340 and #341–#345 were closed as not
+planned on 2026-09-30. The demo is now map #510 (label `demo-diagnostico`),
+built on the Phase 0 note `docs/reference/research/portfolio-diagnosis-phase0.md`.
+The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
 
-Design: `PORTFOLIO_DIAGNOSIS.md`. Tickets: map #340 (#341–#345).
+- Hosting on Cloudflare: revised on #519 to one Worker (static assets) plus a
+  Container for the Python engine, no Pages. The first safe deploy, a
+  health-only Worker and Container (`deploy/cloudflare/`,
+  `deploy_cloudflare.yml`), went green on 2026-10-03; the engine image is next.
+- Engine in Python `src/portfolio/`, set-based `api` functions in
+  `31_api_portfolio.sql`, Supabase reached through the read-only `silo-mcp`.
+- Sunday scope: spreadsheet input, blocks 1, 3, 10, 11, 14 (screens), 4, 2, PDF.
+- The disclosed fund fee must be correct, not only the balancete estimate:
+  slice A adds the `cad_fi` fee columns (migration 64) and the CVM lâmina.
+- Cost cap US$1.00 per report; investigator cap 20 searches per report.
+- Report LLM (owner, 2026-10-03): the Anthropic key has no credits, so the Redator and
+  Revisor run on OpenAI `gpt-6-luna` at medium reasoning (`SILO_LLM_PROVIDER=openai`,
+  branch `demo/openai-provider`); `anthropic` stays selectable, the cap is unchanged.
+- **Parked:** the material-restatement thresholds below. Restatements are
+  reported as "revised, not assessed" until they are set. The abnormal-movement
+  rule is no longer parked: owner's decisions of 2026-10-03 are implemented as
+  `api.portfolio_movement` (catalog v54) and the engine's `movement` section
+  (schema 1.3), branch `demo/movement`: atenção beyond 2 class standard
+  deviations (table only), forte beyond 3 (text, Investigator trigger), class =
+  the ANBIMA class as filed in the Extrato, winsorized at the 1st and 99th
+  percentile, at least 30 peers. Live after an analytical apply and a
+  `deploy_mcp.yml` dispatch. Measured flag rates are 5.2% to 5.7% (beyond 2) and
+  2.4% to 2.9% (beyond 3), below the owner's 10% and 6%; see the CHANGELOG row.
+- **Served since catalog v51** (`31_api_portfolio.sql`): `api.portfolio_resolve`,
+  `api.portfolio_fees`, `api.portfolio_lookthrough` (blocks 1, 3, 2, 10 of the
+  engine). Live after the next analytical apply and a `deploy_mcp.yml` dispatch.
+- **Catalog v52** (branch `demo/extrato`): the disclosed fee is read from the CVM
+  Extrato first (`cvm_fi_extrato`, migration 66), then the lâmina, then cad_fi,
+  with `filed_zero` and `implausible_filed`. Live after the schema apply, an
+  analytical apply and a `deploy_mcp.yml` dispatch; the table is empty until a
+  `daily_ingest` run (current file) or a `backfill.yml` `fi_doc_type=extrato`
+  dispatch (yearly files, 2021 onward) loads it.
+- **Engine and report on catalog v52** (branch `demo/engine-extrato`): `src/portfolio/fees.py` reads the
+  Extrato columns and follows `disclosed_origin`; the report reads the engine through `report/adapt.py`.
+  Both were tested offline against canned rows, not against the live function.
+- **Catalog v55, engine 1.4** (#552, branch `feat/lamina-beside-extrato-552`): when the Extrato files 0 or
+  above 5% a.a., `api.portfolio_fees` returns the lâmina's fee beside it, or makes a NEWER lâmina with a
+  fee in (0, 5] the source (`fee_resolution`), and flags a factor of exactly 10 or 100
+  (`extrato_scale_factor`). Nothing is rescaled or summed. Live after an analytical apply and a
+  `deploy_mcp.yml` dispatch.
+- **Catalog v56, engine 1.5** (branch `feat/fee-totals-lamina-etf`, owner's decisions of 2026-10-03): a
+  `lamina_newer` fee is summed and compared like any disclosed fee, still flagged "fontes divergem". ETFs carry
+  a fee: `portfolio_resolve` maps an ETF ticker to its CNPJ (`etf_ticker`) and `portfolio_fees` serves the
+  etfsbrasil.com.br fee (`etf_site_*`), summed apart in the engine. Live after an analytical apply and a
+  `deploy_mcp.yml` dispatch. Open: the ETF fee is a third-party scrape that self-skips without `APIFY_TOKEN`;
+  a CVM-filed ETF fee source (the regulamento) is not ingested.
+- **CVM 175 levels** (#543, branch `claude/cvm175-levels-543`, migration 67):
+  `cvm_registro_fundo` / `_classe` / `_subclasse` let a class reach its fund by
+  `ID_Registro_Fundo` and a subclass its class by `ID_Registro_Classe`. Empty until
+  the next `daily_ingest` applies the migration and loads the registry; then check
+  that class → fund links resolve (132 of 36,770 did in `cvm_fund_registry`). Not
+  served yet: `api.portfolio_resolve` / `portfolio_lookthrough` would need a view
+  over the three tables.
+
+The list below is the 2026-09-26 state, kept for the parked thresholds and the
+other open points. Design: `PORTFOLIO_DIAGNOSIS.md`. Old tickets: map #340
+(#341–#345), closed.
 
 Data blockers:
 
@@ -572,3 +630,61 @@ equally unowned object in schema `api`. Owner's call on 2026-10-01: drop both
 (migration 58, `claude/etf-universe-aum`), and show net assets, their date and
 the size rank on `/etf`'s "ETF Universe" from the live registry instead. Closed
 once migration 58's apply logs both drops.
+
+## 17. Audit protocol and the 2026-10-02 architecture review: resolved and open
+
+Written 2026-10-02 from an architecture review that found six deepening
+candidates. Candidate 02 (one audit protocol for ingest slices) is mostly built;
+the rest was looked at and deliberately left. Nothing here is broken in
+production. The code changes below deploy with the next daily ingest, not at
+merge.
+
+### Resolved
+
+| PR   | What it settled                                                                                                                                                                                                                                                                                                                |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| #495 | ANBIMA, ETF market and CVM could finish without a `cvm_ingest_log` row (integrity rule 3); they now always write one. `AGENTS.md` now states the real `upsert_rows` signature and chunk (500 by default, CI sets 5000).                                                                                                        |
+| #496 | ANBIMA raises when a boletim parses to zero records (owner decision), instead of logging a clean empty run. `run_b3_events`'s docstring says what the step does.                                                                                                                                                               |
+| #497 | `cnpj_length_check.yml`, a read-only, manual workflow with no secrets, that measures CNPJ digit lengths in CVM source files. It cannot touch the database or the dashboard.                                                                                                                                                    |
+| #498 | Rule 4 says what `mapping.coerce("cnpj")` does (strip punctuation, zero-pad to 14). Measured 2026-10-02: every fund, class, company, FIDC and FII identity CNPJ already has 14 digits, so it pads nothing there. A column that can hold a CPF is typed `text`.                                                                 |
+| #499 | `ingest_log.audited` can end a run `skipped`, or `error` without raising, through `Outcome(rows, status, error)`. A bare row count still means `ok`.                                                                                                                                                                           |
+| #500 | Market and ANBIMA write their audit rows through `audited`; their own start and finish code is gone.                                                                                                                                                                                                                           |
+| #501 | All 14 `B3Ingestor` methods go through one `_audited` helper; `_log_start`, `_log_finish` and `_doc_type_of` are gone. A partial B3 failure still writes an `error` row and returns normally, so the step stays green (owner decision). `audited` takes an optional `run_id` for the corporate-event sweep's proof provenance. |
+
+Decisions taken by the owner on 2026-10-02: ANBIMA raises on an empty parse; B3
+partial failure keeps exit 0 and the docstring says so; measure the CNPJ padding
+before changing rule 4.
+
+### Open
+
+1. **Check the B3 audit rows after the next daily run.** The offline suite is
+   green, but no production run has used the new path yet. Look at the `b3` rows
+   in `cvm_ingest_log`: the same `doc_type` values and statuses as before, and
+   `b3_corporate_event_sweep.run_id` matching a real `corporate_events` row.
+2. **Phase 4 of candidate 02: CVM.** `CVMIngestor` still has its own start and
+   finish code. It is the largest writer and overlaps candidate 03, so plan it
+   with 03 before touching code. Not started.
+3. **ETF market is not migrated.** It is a synchronous call from `run_daily`;
+   folding it into the async `audited` would change `run_daily` and the event
+   loop. It already writes through `ingest_log.start` and `finish`.
+4. **Candidate 01, one home for each API endpoint's facts.** The inventory found
+   no drift across 67 endpoints, so the large refactor is not recommended. An
+   optional small version: generate the `catalog.postgrest` dict and pin the SDK
+   version. Owner has not decided.
+5. **Candidates 03 to 06, untouched:** the CVM dataset matrix in one place; one
+   source runner for the `run_*` entry points; row ingest as one module (parse,
+   drop, count); a read-side seam so SQL rules are not restated in Python.
+6. **Rule 4 says every record passes `DataValidator`, and the CVM ingests do not
+   all do it.** Rule and code disagree; which one changes is the owner's call.
+7. **The CNPJ measurement did not cover** CDA, securitization, FIP, the ETF
+   registry or company filings. The rule 4 sentence is true for the files
+   measured, not yet for those.
+8. **CVM skip versus error is a substring match** on `"Data not found"`, from
+   `ValueError(f"Data not found at {url}")` in `cvm_fetcher.py`. B3 and market use
+   typed exceptions. A reworded message would turn a skip into an error.
+9. **Smaller findings, not independently re-checked:** nine `tests/conftest.py`
+   fixtures with no users, and no pipeline-level test for
+   `ingest_etf_market.py`. (ANBIMA's log columns are now tested through
+   `daily_update`.)
+10. **Stale remote branch `claude/audit-row-gaps`** (merged as #495, with later
+    commits lost; the follow-up went out as #496). Delete only if the owner says so.

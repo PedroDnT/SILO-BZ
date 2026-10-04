@@ -9,7 +9,7 @@ icon: "flask"
 A backtest needs five things: a universe that includes the names that died, prices you can take returns from, fundamentals as they were known on the day, a benchmark, and macro. Each has a call. Each also has one way to produce a plausible wrong answer, and this page names it.
 
 <Warning>
-  **Two calls look interchangeable and are not.** `panel`'s `close_return` and `quote_history`'s raw `close` are **unadjusted**: a 2:1 split reads as a −50% return. Take returns from `quote_history`'s `close_adj` (its default field) or `close_total_return`. And `IBOV11` is not the index: use `index_history`.
+  **Two calls look interchangeable and are not.** `panel`'s `close_return` and `quote_history`'s raw `close` are **unadjusted**: `close` reads a 2:1 split as a −50% move, and `close_return` leaves the split session out (absent, not computed) instead of adjusting it. Take returns from `quote_history`'s `close_adj` (its default field) or `close_total_return`. And `IBOV11` is not the index: use `index_history`.
 </Warning>
 
 ### 1. The universe: `research_universe`
@@ -99,10 +99,11 @@ Do not forward-fill the levels first: a missing level then becomes a zero return
 ibov = silo.index_history_all("IBOV", start="1968-01-02")    # 15 pages; or pass a window
 ```
 
-B3's own published daily levels, **as published**: `index_code`, `trade_date`, `level`, `divisor_step`, `source`. IBOV is held from 1968-01-02.
+B3's own published daily levels, **as published**: `index_code`, `trade_date`, `level`, `divisor_step`, `source`. IBOV is held from 1968-01-02; IBXX, IBXL, IFIX, SMLL, IDIV, ICON, IMOB and UTIL each from its own first session (`coverage()` has the depth of each).
 
 - **It takes an index code, never a ticker.** `BOVA11` is an ETF; `IBOV11` is the Ibovespa **options** settlement code: its `asset_class` is `index`, and each print is that day's settlement index, **never the official close** (in 2026 none of its 181 prints equals the close; they differ by 0.18% on average and by up to 1.07%). It printed on expiry days only, 12 a year, through 2024, weekly in 2025, and on nearly every session since December 2025 (181 of 187 sessions of 2026), so a dense `IBOV11` series is not a sign that it is the index. Neither is the index, so both are refused with `22023`, naming the codes held.
-- **It is a price index, not total return**, and it is not adjusted. B3 re-scaled it eleven times (1983-10-04 by 100 and ten sessions by 10, the last on 1997-03-03). `divisor_step` is true on the first session after each, where a level ratio is not a return. Exclude or splice those sessions.
+- **Every code is a total-return index, as B3 labels it.** B3's own pages and its Manual (Feb 2023, section 1.2) call IBOV, IBXX, IBXL, IFIX, SMLL, IDIV, ICON, IMOB and UTIL indices of *retorno total*: distributions are reinvested in the index, so a level already includes dividends. Compare it with `close_total_return` from `quote_history`, never with `close_adj`, which is price only. Where B3 has a price-return version (IDIV B3 Price Return) it carries its own name and is not served. Levels before an index's publication date are B3's back-calculation, and the endpoint does not mark them.
+- **It is not adjusted.** B3 re-scaled IBOV eleven times (1983-10-04 by 100 and ten sessions by 10, the last on 1997-03-03). `divisor_step` is true on the first session after each, where a level ratio is not a return. Exclude or splice those sessions.
 - `start=None` is the last 365 days, not the whole history.
 
 ### 4. Fundamentals as they were known: `as_of`

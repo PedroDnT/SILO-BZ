@@ -20,11 +20,16 @@ from src.parsers.field_maps import fi_cda_acoes as _cda_acoes
 from src.parsers.field_maps import fi_cda_cotas as _cda_cotas
 from src.parsers.field_maps import fi_cda_debentures as _cda_deb
 from src.parsers.field_maps import fi_perfil as _perfil
+from src.parsers.field_maps import fi_lamina as _lamina
+from src.parsers.field_maps import fi_extrato as _extrato
 from src.parsers.field_maps import fi_balancete as _balancete
 from src.parsers.field_maps import fund_registry as _reg
-from src.store.pg_client import upsert_rows
+from src.store.pg_client import replace_scoped_rows, upsert_rows
+from src.parsers.validation import DataValidator
 
 logger = logging.getLogger(__name__)
+
+_validator = DataValidator()
 
 
 def _period_for(row: Dict[str, Any], typed: Dict[str, Any], fallback: Optional[_date]) -> Optional[_date]:
@@ -108,13 +113,20 @@ def ingest_fi_diario(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
 
 
 def ingest_fi_cda(
-    conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: Optional[int]
+    conn: Any,
+    raw_rows: List[Dict[str, Any]],
+    year: int,
+    month: Optional[int],
+    stats: Optional[Dict[str, int]] = None,
 ) -> int:
     """Parse and upsert FI portfolio composition rows.
 
     period is normalised to first-of-month (YYYY-MM-01). Pass month=None for a
     yearly HIST archive, where each row carries its own competency month and a
     single value for the file would collapse the year — see _period_for.
+
+    For a month, each fund in the file replaces its stored rows of that month
+    (_store_cda_block); `stats["rows_deleted"]` counts what that removed.
 
     Returns:
         number of rows upserted
@@ -150,12 +162,7 @@ def ingest_fi_cda(
     # The names go first: if the holdings upsert then fails, no row has lost
     # its name without it being stored (the strip script's order too).
     _upsert_fund_names(conn, take_fund_names(records))
-    return upsert_rows(
-        conn,
-        _cda.TABLE,
-        records,
-        conflict_columns=",".join(_cda.CONFLICT),
-    )
+    return _store_cda_block(conn, _cda, records, month, stats)
 
 
 FUND_NAME_TABLE = "cvm_fi_cda_fund_name"
@@ -187,6 +194,39 @@ def _upsert_fund_names(conn: Any, names: set) -> None:
             [{"cnpj": c, "period": p, "denom_social": d} for c, p, d in sorted(names)],
             conflict_columns=FUND_NAME_CONFLICT,
         )
+
+
+def _store_cda_block(
+    conn: Any,
+    field_map_module: Any,
+    records: List[Dict[str, Any]],
+    month: Optional[int],
+    stats: Optional[Dict[str, int]],
+) -> int:
+    """Write one parsed CDA block: per-fund replace for a month, upsert for a year.
+
+    A monthly archive is re-read until month M+5 ends (#551), and a fund may
+    re-file in that time: drop a position, or change a block-6 row (whose key
+    ends in row_hash, so the changed row would land beside the old one). So for
+    a month, every fund present in the new file ends up holding exactly the
+    rows the file carries for it (pg_client.replace_scoped_rows). A fund absent
+    from the file keeps every stored row: a partial or truncated file must
+    never erase data. Called only after the whole file has parsed and
+    validated, so a parse failure deletes nothing.
+
+    A yearly HIST archive (month None) is final and is only upserted.
+    """
+    conflict = ",".join(field_map_module.CONFLICT)
+    if month is None:
+        return upsert_rows(conn, field_map_module.TABLE, records, conflict_columns=conflict)
+    return replace_scoped_rows(
+        conn,
+        field_map_module.TABLE,
+        records,
+        conflict_columns=conflict,
+        nulls_distinct=field_map_module.NULLS_DISTINCT,
+        stats=stats,
+    )
 
 
 # The same position filed twice in one month, once per fund-type label.
@@ -240,6 +280,7 @@ def _ingest_cda_holdings(
     month: Optional[int],
     field_map_module: Any,
     required: str,
+    stats: Optional[Dict[str, int]] = None,
 ) -> int:
     """Shared body for the CDA holdings blocks (4 and 2).
 
@@ -288,38 +329,45 @@ def _ingest_cda_holdings(
         return 0
 
     _upsert_fund_names(conn, take_fund_names(records))   # names first, see ingest_fi_cda
-    return upsert_rows(
-        conn,
-        field_map_module.TABLE,
-        records,
-        conflict_columns=",".join(field_map_module.CONFLICT),
-    )
+    return _store_cda_block(conn, field_map_module, records, month, stats)
 
 
 def ingest_fi_cda_acoes(
-    conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: Optional[int]
+    conn: Any,
+    raw_rows: List[Dict[str, Any]],
+    year: int,
+    month: Optional[int],
+    stats: Optional[Dict[str, int]] = None,
 ) -> int:
     """Parse and upsert FI equity holdings (CDA block 4).
 
     cd_ativo is the published B3 ticker; it is what joins these rows to
     b3_cotahist, so a row without one is dropped rather than stored unjoinable.
     """
-    return _ingest_cda_holdings(conn, raw_rows, year, month, _cda_acoes, "cd_ativo")
+    return _ingest_cda_holdings(conn, raw_rows, year, month, _cda_acoes, "cd_ativo", stats)
 
 
 def ingest_fi_cda_cotas(
-    conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: Optional[int]
+    conn: Any,
+    raw_rows: List[Dict[str, Any]],
+    year: int,
+    month: Optional[int],
+    stats: Optional[Dict[str, int]] = None,
 ) -> int:
     """Parse and upsert FI fund-of-fund holdings (CDA block 2).
 
     cnpj_cota identifies the held fund and is NOT NULL in the target table, so a
     row without it cannot be written at all.
     """
-    return _ingest_cda_holdings(conn, raw_rows, year, month, _cda_cotas, "cnpj_cota")
+    return _ingest_cda_holdings(conn, raw_rows, year, month, _cda_cotas, "cnpj_cota", stats)
 
 
 def ingest_fi_cda_debentures(
-    conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: Optional[int]
+    conn: Any,
+    raw_rows: List[Dict[str, Any]],
+    year: int,
+    month: Optional[int],
+    stats: Optional[Dict[str, int]] = None,
 ) -> int:
     """Parse and upsert FI debenture holdings (CDA block 6).
 
@@ -369,12 +417,7 @@ def ingest_fi_cda_debentures(
     if not records:
         return 0
 
-    return upsert_rows(
-        conn,
-        _cda_deb.TABLE,
-        records,
-        conflict_columns=",".join(_cda_deb.CONFLICT),
-    )
+    return _store_cda_block(conn, _cda_deb, records, month, stats)
 
 
 def ingest_fi_perfil(conn: Any, raw_rows: List[Dict[str, Any]], year: int, month: int) -> int:
@@ -410,6 +453,160 @@ def ingest_fi_perfil(conn: Any, raw_rows: List[Dict[str, Any]], year: int, month
         _perfil.TABLE,
         records,
         conflict_columns=",".join(_perfil.CONFLICT),
+    )
+
+
+def _unparsed_cells(row: Dict[str, Any], field_map: Dict[str, Any], typed: Dict[str, Any]) -> Dict[str, str]:
+    """Source cells a typed numeric or date column could not parse.
+
+    apply_map consumes a mapped header out of the residual `raw` whether or not
+    the value coerced, so a malformed number would vanish without trace. They are
+    returned here to be kept in `raw` under `_unparsed`, never guessed.
+    """
+    index = {k.strip().upper(): k for k in row}
+    out: Dict[str, str] = {}
+    for col, (candidates, type_) in field_map.items():
+        if type_ not in ("numeric", "int", "date") or typed.get(col) is not None:
+            continue
+        for cand in candidates:
+            real = index.get(cand.strip().upper())
+            if real is None:
+                continue
+            value = str(row.get(real) or "").strip()
+            if value and value.upper() not in ("NULL", "NA", "N/A", "-"):
+                out[real] = value
+            break
+    return out
+
+
+def ingest_fi_lamina(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
+    """Parse and upsert the main member of one monthly lamina zip.
+
+    Keyed on the source's own (CNPJ_FUNDO_CLASSE, DT_COMPTC, ID_SUBCLASSE); the
+    month comes from each row's DT_COMPTC, not from the file name. A row whose CNPJ
+    fails DataValidator or whose DT_COMPTC does not parse is dropped and counted.
+    Fee text is kept as filed: TAXA_PERFM is text, and a numeric cell that does
+    not parse lands in `raw["_unparsed"]` instead of being guessed.
+
+    Returns:
+        number of rows upserted
+    """
+    assert_map_matches(
+        raw_rows, _lamina.FIELD_MAP, dataset="fi/lamina",
+        required=("cnpj", "dt_comptc"),
+    )
+    records: List[Dict[str, Any]] = []
+    bad_cnpj = bad_date = n_unparsed = 0
+
+    for row in raw_rows:
+        typed, residual = apply_map(row, _lamina.FIELD_MAP)
+        if not typed.get("cnpj") or not _validator._validate_cnpj(typed["cnpj"])[0]:
+            bad_cnpj += 1
+            continue
+        if typed.get("dt_comptc") is None:
+            bad_date += 1
+            continue
+        unparsed = _unparsed_cells(row, _lamina.FIELD_MAP, typed)
+        if unparsed:
+            n_unparsed += 1
+            residual = {**residual, "_unparsed": unparsed}
+        typed["raw"] = residual
+        records.append(typed)
+
+    if bad_cnpj or bad_date:
+        logger.warning(
+            "cvm_fi_lamina: dropped %d row(s) with an invalid CNPJ and %d with no parseable "
+            "DT_COMPTC, of %d", bad_cnpj, bad_date, len(raw_rows),
+        )
+    if n_unparsed:
+        logger.warning(
+            "cvm_fi_lamina: %d row(s) have a numeric or date cell that did not parse; "
+            "kept as text in raw['_unparsed']", n_unparsed,
+        )
+    if not records:
+        return 0
+
+    keys = {(r["cnpj"], r["dt_comptc"], r["id_subclasse"]) for r in records}
+    if len(keys) < len(records):
+        logger.warning(
+            "cvm_fi_lamina: %d source row(s) share a (cnpj, dt_comptc, id_subclasse) key; "
+            "the last one in the file is kept", len(records) - len(keys),
+        )
+
+    return upsert_rows(
+        conn,
+        _lamina.TABLE,
+        records,
+        conflict_columns=",".join(_lamina.CONFLICT),
+    )
+
+
+def ingest_fi_extrato(conn: Any, raw_rows: List[Dict[str, Any]], source_file: str) -> int:
+    """Parse and upsert one Extrato das Informacoes CSV (current file or one year).
+
+    Keyed on the source's own (CNPJ_FUNDO_CLASSE, DT_COMPTC). A row whose CNPJ
+    fails DataValidator or whose DT_COMPTC does not parse is dropped and counted.
+    TAXA_ADM is stored exactly as filed: a 0 and a value above 5 are kept (the API
+    reads them, this never rewrites them), and a cell that is not a number lands in
+    `raw["_unparsed"]` instead of being guessed. A repeated (cnpj, dt_comptc) keeps
+    the last row in the file and says so: whether a yearly file repeats the pair
+    was not measured.
+
+    Args:
+        source_file: the CSV name (extrato_fi.csv or extrato_fi_YYYY.csv), stored
+            on every row as its provenance.
+
+    Returns:
+        number of rows upserted
+    """
+    assert_map_matches(
+        raw_rows, _extrato.FIELD_MAP, dataset="fi/extrato",
+        required=("cnpj", "dt_comptc"),
+    )
+    records: List[Dict[str, Any]] = []
+    bad_cnpj = bad_date = n_unparsed = 0
+
+    for row in raw_rows:
+        typed, residual = apply_map(row, _extrato.FIELD_MAP)
+        if not typed.get("cnpj") or not _validator._validate_cnpj(typed["cnpj"])[0]:
+            bad_cnpj += 1
+            continue
+        if typed.get("dt_comptc") is None:
+            bad_date += 1
+            continue
+        unparsed = _unparsed_cells(row, _extrato.FIELD_MAP, typed)
+        if unparsed:
+            n_unparsed += 1
+            residual = {**residual, "_unparsed": unparsed}
+        typed["source_file"] = source_file
+        typed["raw"] = residual
+        records.append(typed)
+
+    if bad_cnpj or bad_date:
+        logger.warning(
+            "cvm_fi_extrato %s: dropped %d row(s) with an invalid CNPJ and %d with no "
+            "parseable DT_COMPTC, of %d", source_file, bad_cnpj, bad_date, len(raw_rows),
+        )
+    if n_unparsed:
+        logger.warning(
+            "cvm_fi_extrato %s: %d row(s) have a numeric or date cell that did not parse; "
+            "kept as text in raw['_unparsed']", source_file, n_unparsed,
+        )
+    if not records:
+        return 0
+
+    keys = {(r["cnpj"], r["dt_comptc"]) for r in records}
+    if len(keys) < len(records):
+        logger.warning(
+            "cvm_fi_extrato %s: %d source row(s) repeat a (cnpj, dt_comptc) key; "
+            "the last one in the file is kept", source_file, len(records) - len(keys),
+        )
+
+    return upsert_rows(
+        conn,
+        _extrato.TABLE,
+        records,
+        conflict_columns=",".join(_extrato.CONFLICT),
     )
 
 

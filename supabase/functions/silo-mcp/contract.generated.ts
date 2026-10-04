@@ -9,7 +9,7 @@ export interface ContractEntry {
   inputSchema: Record<string, unknown>;
 }
 
-export const CONTRACT_VERSION = "49";
+export const CONTRACT_VERSION = "56";
 
 export const CONTRACT: Record<string, ContractEntry> = {
   "auctions": {
@@ -2658,7 +2658,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "index_history": {
     "kind": "rpc",
     "path": "/rpc/index_history",
-    "description": "Daily levels of one B3-published index (IBOV from 1968-01-02), as published, oldest first. p_index is an INDEX CODE: a ticker, including BOVA11 and IBOV11, raises 22023 naming the codes held, so the options settlement leg or an ETF can never stand in for the index. The series is NOT adjusted: B3 re-scaled it eleven times (divisor 100 on 1983-10-04, 10 on ten other sessions, the last 1997-03-03) and divisor_step is TRUE on the first session after each, where a level ratio is not a return. A price index only: no return, adjusted or total-return column. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '' = first page, then the last row's trade_date as 'YYYY-MM-DD'; a page shorter than 1000 is the last. Or narrow p_from/p_to. Depth per index is in api.coverage().",
+    "description": "Daily levels of one B3-published index (IBOV from 1968-01-02; IBXX, IBXL, IFIX, SMLL, IDIV, ICON, IMOB and UTIL each from its own first session), as published, oldest first. p_index is an INDEX CODE: a ticker, including BOVA11 and IBOV11, raises 22023 naming the codes held, so the options settlement leg or an ETF can never stand in for the index. The series is NOT adjusted: B3 re-scaled it eleven times (divisor 100 on 1983-10-04, 10 on ten other sessions, the last 1997-03-03) and divisor_step is TRUE on the first session after each, where a level ratio is not a return. Each code is a TOTAL-RETURN index as B3 publishes it (distributions reinvested, B3 Manual Feb 2023), so a level already includes dividends: compare it with close_total_return, not close_adj; levels before an index's publication date are B3's back-calculation, not marked. No return or adjusted column. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '' = first page, then the last row's trade_date as 'YYYY-MM-DD'; a page shorter than 1000 is the last. Or narrow p_from/p_to. Depth per index is in api.coverage().",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2996,7 +2996,7 @@ export const CONTRACT: Record<string, ContractEntry> = {
   "panel": {
     "kind": "rpc",
     "path": "/rpc/panel",
-    "description": "Long panel for correlation/factor work. Mix tickers, option/termo codnegs, + CNPJs. Grain is (id, asset_class, date, metric): a CNPJ filing under two families yields one row per family unless p_entity_type narrows it. No ffill. p_metrics NULL = each family's default: close_adj for shares and units, close for other tickers, options and termo, nav for funds. close_adj is quote_history's adjusted close (splits, groupings, bonus shares; anchored to the latest session) and a window it cannot adjust REFUSES 22023 naming ticker, period and cause; close stays raw. Quotes follow the instrument across boards. close_return is p_t/p_{t-1}-1 from unadjusted closes (a split appears as a jump), cash tickers only, and is null across calendar gaps. Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '' = first page, 'date|id|metric|asset_class' = next; a page shorter than 1000 is the last. Universe mode: p_ids empty + p_entity_type walks a whole family (optionally p_min_nav, p_min_months), signed-in callers only.",
+    "description": "Long panel for correlation/factor work. Mix tickers, option/termo codnegs, + CNPJs. Grain is (id, asset_class, date, metric): a CNPJ filing under two families yields one row per family unless p_entity_type narrows it. No ffill. p_metrics NULL = each family's default: close_adj for shares and units, close for other tickers, options and termo, nav for funds. close_adj is quote_history's adjusted close (splits, groupings, bonus shares; anchored to the latest session) and a window it cannot adjust REFUSES 22023 naming ticker, period and cause; close stays raw. Quotes follow the instrument across boards. close_return is p_t/p_{t-1}-1 from the raw closes, cash tickers only. It is NULL across calendar gaps, across a quotation-factor change and across a split, grouping or bonus (DESDOBRAMENTO, GRUPAMENTO, BONIFICACAO) between the two prints, so a share-count change never reads as a return; it is not an adjusted return and not a total return (close_adj holds the adjusted level). Row cap: more than 1000 rows RAISES 22023 (never trimmed) unless p_after pages: '' = first page, 'date|id|metric|asset_class' = next; a page shorter than 1000 is the last. Universe mode: p_ids empty + p_entity_type walks a whole family (optionally p_min_nav, p_min_months), signed-in callers only.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3099,6 +3099,189 @@ export const CONTRACT: Record<string, ContractEntry> = {
       },
       "required": [
         "p_ids"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "portfolio_fees": {
+    "kind": "rpc",
+    "path": "/rpc/portfolio_fees",
+    "description": "Fees per fund, two kinds of number that are never mixed. DISCLOSED (disclosed_*): the fee the fund published, ONE source per fund in this order: the CVM Extrato das Informacoes (cvm_fi_extrato, newest version, one row per fund or class), else the lâmina (cvm_fi_lamina, newest reference month), else cad_fi (cvm_fund_registry taxa_adm / taxa_perfm / inf_taxa_*); disclosed_origin (extrato | lamina | cad_fi), disclosed_source, disclosed_as_of (the filing date), disclosed_age_months and disclosed_age_days say which and how old. Two reading rules on the single administration fee, % a year as filed: a filed 0 is returned as 0 with filed_zero TRUE (read it as not informed, never as a zero cost); a filed value above 5 (or below 0) is NOT returned as the fee: disclosed_taxa_adm is NULL, implausible_filed is TRUE and the value as filed is in taxa_adm_filed_raw. The stored value is never rewritten. A NULL disclosed part is not a zero fee; when the lâmina's classes disclose different fees the single value is NULL and the min / max and disclosed_note say so. An Extrato row that exists is the source, even when its fee is 0 or above 5: it does not fall through to an OLDER source. One exception (v55): when the Extrato filed exactly 0 or above 5, the lâmina's single fee is in (0, 5] and the lâmina is NEWER than the Extrato, the newer lâmina is the source. fee_resolution names the rule: extrato, extrato_lamina_beside (Extrato 0 or above 5, a lâmina fee beside it), extrato_to_check (the same with no lâmina fee), lamina_newer, lamina, cad_fi. The other document's fee is returned as filed whatever the source (lamina_taxa_adm, _min, _max, lamina_n_classes, lamina_age_months; extrato_taxa_adm_filed with extrato_as_of), never rescaled and never a fee to sum; extrato_lamina_ratio is the Extrato over the lâmina when both are above 0, and extrato_scale_factor is 10 or 100 when an Extrato above 5 equals that factor times the lâmina within the two-decimal rounding of both, a flag only. The Extrato's performance fee (extrato_taxa_perfm numeric, extrato_param_taxa_perfm, extrato_calc_taxa_perfm, extrato_inf_taxa_perfm text), entry and exit fees (extrato_existe_* flags, _pr percent and _real reais), custody fee and class note are returned as filed; the row is the class for a CVM 175 fund (no subclass column, a subclass fee is not assumed). lamina_pr_pl_despesa is the declared total expense ratio from the lâmina (with its period and lamina_as_of), whatever the fee source, never added to the administration fee. ESTIMATE (adm_fee_flow, perf_fee_flow and the _pct_annual_est columns): from the balancete accruals (cvm_fi_balancete_resumo): the fee accounts accumulate from each fund's fiscal-year start and are filed negative, so the month's accrual is previous minus current accumulated value (served positive = cost; a negative performance accrual is a reversed provision), annualised x 12 / NAV x 100, NAV = groups 6 + 7 + 8 of the month. In the fiscal-year reset month the accumulated fee falls: fiscal_reset_suspect is TRUE and the estimate is NULL, unless cad_fi DT_INI_EXERC puts the fiscal-year start in that month, in which case the month's accumulated value alone is the accrual. estimate_label says on every row that the estimate is an estimate and why one is missing; it is never presented as the disclosed fee. ETFs (v56): CVM's Extrato, lâmina and cad_fi carry no fee for an ETF, so for a CNPJ in SILO's curated ETF registry etf_ticker names the ticker and etf_site_taxa_adm, etf_site_as_of and etf_site_source give the 'Taxa de administração total' etfsbrasil.com.br prints (etf_market_snapshot, the newest snapshot with a fee, joined by ticker): a third-party site, not a CVM filing, never in disclosed_*, returned as published; etf_site_note says so and why a value is NULL. p_month = the balancete month (NULL = each fund's newest). One row per distinct CNPJ; more than 200 CNPJs RAISES 22023.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_cnpjs": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "p_month": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_cnpjs"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "portfolio_lookthrough": {
+    "kind": "rpc",
+    "path": "/rpc/portfolio_lookthrough",
+    "description": "What a set of funds holds, looked through their fund quotas. One CDA month (p_month, or by default the last complete one: the newest month whose block-2 filing count reaches 90% of the median of the 12 before it, the /holdings rule). From each root, CDA block 2 (fund quotas) is followed recursively, cycle-guarded and capped at p_max_depth levels (1..6, default 4); every fund on the way, root included, lists its own holdings from block 1 (government_bond; repo collateral served apart as repo), block 2 (fund_quota when looked through, else fund_quota_unfiled / fund_quota_depth_cap / fund_quota_cycle), block 4 (stock, debenture with issuer_code = ISIN chars 3-6, other_block4) and block 6 (private_credit with the issuer's CNPJ when it is a PJ and the indexer as filed). weight_in_root = value / holder NAV times the weights down the path, NAV = fact_fund_monthly.vl_patrim_liq of the same month (not the CDA blocks' total: blocks 3, 5, 7, 8 are not ingested); NULL when a NAV on the path is unknown. A fund reached by two paths appears once per path; sum weight_in_root over every row but fund_quota for the exposure. A root with no CDA that month returns one no_cda_filing row. More than 200 CNPJs or more than 1000 rows RAISES 22023 (never trimmed): send fewer funds per call or lower p_max_depth.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_cnpjs": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "p_month": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        },
+        "p_max_depth": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32",
+          "description": "Defaults to `4`.",
+          "default": 4
+        }
+      },
+      "required": [
+        "p_cnpjs"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "portfolio_movement": {
+    "kind": "rpc",
+    "path": "/rpc/portfolio_movement",
+    "description": "Is a fund's month unusual for its own class (movimento incomum). Per CNPJ, for one month (p_month, or the last complete FI month): the fund's monthly QUOTA RETURN, own_value_pct = (month-end vl_quota / previous month's - 1) x 100 from fact_fund_monthly (the one stable quota subclass; a NAV change is not used), set against the same return over every FI fund of its ANBIMA class AS FILED in the CVM Extrato (class_as_filed, the newest Extrato filing, not the class on the month's date; class and subclass split that label at its first ' - ' for display). class_mean_pct and class_sd_pct are the mean and sample standard deviation of the peers' returns winsorized at the class's own 1st and 99th percentile that month (class_p01_pct, class_p99_pct); the fund's own value is not winsorized. z = (own - mean) / sd. level: forte when |z| > 3 (investigator_trigger TRUE), atencao when |z| > 2, normal otherwise (strictly greater: exactly 2 is normal); nao_avaliado with a Portuguese reason when the class has fewer than min_peers (30) peers with a return, its standard deviation is 0, the fund has no class (outside the Extrato, or no classe_anbima), no return (no quota in both months, a quota subclass change), is an ETF, FIDC, FII, FIP or FIAGRO, or the month is not complete; never skipped and never a zero. No fallback to a wider class. Measured on production 2026-10-03 over monthly FI funds in classes of 30 or more: |z| > 2 flags 5.2% to 5.7% of fund-months and |z| > 3 2.4% to 2.9% over six months from 2025-12 to 2026-09 (5.6% and 2.7% in 2026-09). It states a number, a class, a sample size and a month: not a forecast, a verdict or a recommendation. One row per distinct CNPJ; more than 200 CNPJs RAISES 22023.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_cnpjs": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "p_month": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date",
+          "description": "Defaults to `NULL::date`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_cnpjs"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "portfolio_resolve": {
+    "kind": "rpc",
+    "path": "/rpc/portfolio_resolve",
+    "description": "Statement lines to candidate funds. One row per line and candidate (up to 5), ranked: a CNPJ the line carries wins (match_kind cnpj); else a name that is exactly a ticker of SILO's curated ETF registry (cvm_etf_registry) gives that ETF's CNPJ (etf_ticker, v56: api.lookup returns no CNPJ for a ticker); else an exact match on any name the fund ever filed, case, accents and whitespace ignored (exact_current: the registry name or the newest CDA name; exact_history: a former name, matched_period = the last CDA month it was filed under); else trigram over the whole name history (CDA DENOM_SOCIAL since 2005 plus the registry), similarity = greatest(similarity, word_similarity), so an abbreviation scores high. With p_quotas and p_quota_dates the candidate's cvm_fi_diario quota on that exact date is compared, and one within 0.5% ranks first: that is how the XP Bancos master and FIC (same words, quotas 1.952607 and 1.542011 on 2026-09-30) are told apart. ambiguous is TRUE on every row of a line whose top two candidates score within 0.05 and the quota does not separate them: SILO never picks silently, the caller decides. Arrays are parallel, one entry per line. More than 200 lines RAISES 22023; the result is at most one 1000-row page.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "p_names": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "p_cnpjs": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": "Defaults to `NULL::text[]`.",
+          "default": null
+        },
+        "p_quotas": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "description": "Defaults to `NULL::numeric[]`.",
+          "default": null
+        },
+        "p_quota_dates": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "description": "Defaults to `NULL::date[]`.",
+          "default": null
+        }
+      },
+      "required": [
+        "p_names"
       ],
       "additionalProperties": false
     }

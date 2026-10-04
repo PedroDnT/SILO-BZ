@@ -29,7 +29,7 @@ on:
         required: false
         default: "2026"
       rebuild_dashboard:
-        description: "Also fire the Vercel deploy hook after this manual run (every successful scheduled run fires it on its own). Publishes a PRODUCTION deployment of the dashboard at silo-bz-deloslabs.vercel.app — a 25–45 min Evidence build of SELECTs against the same Postgres — so leave it off for re-runs and experiments."
+        description: "Also fire the Vercel deploy hook after this manual run (every scheduled run whose analytical apply succeeded fires it on its own). Publishes a PRODUCTION deployment of the dashboard at silo-bz-deloslabs.vercel.app — a 25–45 min Evidence build of SELECTs against the same Postgres — so leave it off for re-runs and experiments."
         type: boolean
         default: false
 
@@ -58,6 +58,8 @@ jobs:
       # When the secret is unset this is empty and the scrape step self-skips.
       APIFY_TOKEN: "${{ secrets.APIFY_TOKEN }}"
       CVM_DNS_NAMESERVERS: "1.1.1.1,8.8.8.8,9.9.9.9"
+      # Optional repository variable: re-points the BACEN SGS host (issue #537). Empty means the default.
+      BACEN_SGS_BASE_URL: "${{ vars.BACEN_SGS_BASE_URL }}"
       # "all" → fi, fidc, fip, fiagro, fii, securit. fii/securit monthly tables
       # (and the FII registry) are only refreshed daily under "all"; under "core"
       # they go stale and rely solely on manual backfills. Yearly entities only
@@ -111,11 +113,19 @@ jobs:
       # ingest ever runs against a DB missing a migration. One definition, reused
       # by daily / watchdog / backfill — they can no longer drift apart.
       - name: Apply schema + migrations
+        id: schema
         uses: ./.github/actions/apply-schema
         with:
           postgres-url: ${{ secrets.POSTGRES_URL }}
 
+      # NOT continue-on-error: a red source must keep the run red (the tracking
+      # issue below and DB Health depend on it). It is also no longer a gate:
+      # ANALYZE, the analytical apply and the deploy hook read steps.daily.outcome
+      # and still run after it fails (issue #473). Rows that landed are committed
+      # per slice, so the warehouse they refresh is as fresh as the sources that
+      # did land.
       - name: Run daily update
+        id: daily
         if: ${{ github.event_name == 'schedule' || (github.event.inputs && github.event.inputs.mode == 'daily') }}
         run: python -m src.pipeline.run_daily
 
@@ -186,16 +196,24 @@ jobs:
       # the previous catalog version. A stats refresh must never outrank the
       # thing it exists to speed up.
       #
+      # Gate (issue #473): it runs after a FAILED `Run daily update` too, so one
+      # red source no longer skips ANALYZE, the analytical apply and the deploy
+      # hook. `steps.schema.outcome == 'success'` keeps it off when the schema
+      # apply failed (a CVM probe failure skips the schema step too).
+      # `steps.daily.outcome == 'failure' || success()` lets exactly one earlier
+      # failure through, the daily update; a failed backfill step (the other
+      # modes) still skips it, as before.
+      #
       # One psql per table for the same reason: a terminated backend loses only
       # its own table instead of the other 19, and no single statement runs long
       # enough to look like a hung connection.
       - name: Analyze tables post-ingest
-        if: ${{ github.event_name == 'schedule' || (github.event.inputs && (github.event.inputs.mode == 'daily' || github.event.inputs.mode == 'analytics-only' || github.event.inputs.mode == 'b3-backfill' || github.event.inputs.mode == 'b3-cash-dividends' || github.event.inputs.mode == 'b3-trade-consolidated')) }}
+        if: ${{ !cancelled() && steps.schema.outcome == 'success' && (steps.daily.outcome == 'failure' || success()) && (github.event_name == 'schedule' || (github.event.inputs && (github.event.inputs.mode == 'daily' || github.event.inputs.mode == 'analytics-only' || github.event.inputs.mode == 'b3-backfill' || github.event.inputs.mode == 'b3-cash-dividends' || github.event.inputs.mode == 'b3-trade-consolidated'))) }}
         continue-on-error: true
         run: |
           set +e
           failed=0
-          for t in cvm_fi_diario cvm_fi_cda cvm_fi_perfil cvm_fi_balancete_resumo \
+          for t in cvm_fi_diario cvm_fi_cda cvm_fi_perfil cvm_fi_balancete_resumo cvm_fi_lamina cvm_fi_extrato \
                    cvm_fidc_mensal cvm_fidc_tranche cvm_fidc_tranche_flows \
                    cvm_fidc_aging cvm_fidc_setor cvm_fidc_scr cvm_fidc_sacado \
                    cvm_fidc_cedente cvm_fiagro_mensal cvm_fip_periodic \
@@ -223,8 +241,15 @@ jobs:
       # only runs on the scheduled cron — a PR that changes only RPC/matview SQL
       # has no fast way to push it otherwise, short of waiting for 06:00 UTC.
       # CVM history is backfill.yml, not a mode on this workflow.
+      #
+      # It runs after a failed `Run daily update` (issue #473), gated like
+      # ANALYZE above. The run stays red because the daily step failed, and an
+      # apply failure here still turns it red on its own. Accepted risk: with a
+      # red source the matviews and the dashboard reflect partially fresh data
+      # (that source may be a day old); `landed_at` and api.coverage() say which.
       - name: Build / refresh analytical layer
-        if: ${{ github.event_name == 'schedule' || (github.event.inputs && (github.event.inputs.mode == 'daily' || github.event.inputs.mode == 'analytics-only')) }}
+        id: analytical
+        if: ${{ !cancelled() && steps.schema.outcome == 'success' && (steps.daily.outcome == 'failure' || success()) && (github.event_name == 'schedule' || (github.event.inputs && (github.event.inputs.mode == 'daily' || github.event.inputs.mode == 'analytics-only'))) }}
         # NOT continue-on-error. It was, and that is the only reason
         # 04_fact_fund_monthly.sql could fail on every apply from 2026-08-30
         # onwards while the run reported green and the dashboard rebuild fired
@@ -241,8 +266,9 @@ jobs:
       # DuckDB in the browser. Fresh rows in Supabase therefore reach the site
       # only when a build runs.
       #
-      # Every successful SCHEDULED run fires the hook (decision 2026-09-14: the
-      # published snapshot must never be more than a day behind the warehouse).
+      # Every SCHEDULED run whose analytical apply succeeded fires the hook, even
+      # when a source was red (decision 2026-09-14: the published snapshot must
+      # never be more than a day behind the warehouse; issue #473).
       # Firing it HERE is also the cheapest possible timing: ingest and the
       # analytical layer are done, ANALYZE has just refreshed the statistics the
       # source queries plan against, and no other build is competing for the
@@ -253,12 +279,16 @@ jobs:
       #
       # The hook must belong to the `silo` project's production branch;
       # scripts/vercel_should_build.sh never skips a production build, so a hook
-      # on an unchanged commit still refreshes the data. success(): a run whose
-      # ingest or analytical step failed must not publish a snapshot of a
-      # half-written warehouse. continue-on-error: a failed hook must not fail an
-      # ingest whose data already landed.
+      # on an unchanged commit still refreshes the data. The gate: a run whose
+      # analytical apply failed or was skipped by a failed schema step must not
+      # publish a snapshot of a warehouse whose matviews did not rebuild; a red
+      # SOURCE does not block it, because every slice that landed is whole.
+      # `steps.analytical.outcome == 'success' || success()` keeps the modes that
+      # never run the apply (a dispatch with rebuild_dashboard=true) as before.
+      # continue-on-error: a failed hook must not fail an ingest whose data
+      # already landed.
       - name: Trigger dashboard rebuild (Vercel deploy hook)
-        if: ${{ success() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.rebuild_dashboard == 'true')) }}
+        if: ${{ !cancelled() && (steps.analytical.outcome == 'success' || success()) && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.rebuild_dashboard == 'true')) }}
         continue-on-error: true
         env:
           VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}

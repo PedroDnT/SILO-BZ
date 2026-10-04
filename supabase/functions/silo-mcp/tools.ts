@@ -101,8 +101,15 @@ export const TOOL_SPECS: ToolSpec[] = [
   t("curve_history", "B3 reference curve fixed-vertex history"),
   // The research universe (listed shares and units, from the B3 tape).
   t("research_universe", "Research universe: listed shares and units"),
-  // The benchmark index: levels by B3 index code (IBOV), never a ticker.
-  t("index_history", "Index levels (B3), by index code"),
+  // The benchmark index: levels by B3 index code (IBOV, IBXX, ...), never a
+  // ticker. Every code is a total-return index, as B3 labels it.
+  t("index_history", "Index levels (B3 total-return indices), by index code"),
+  // The portfolio-diagnosis reads: statement lines to funds (ambiguity flagged,
+  // never picked), disclosed fee beside a balancete estimate, look-through.
+  t("portfolio_resolve", "Resolve statement lines to funds (name history, quota tie-break)"),
+  t("portfolio_fees", "Fees: disclosed (Extrato, lamina, cad_fi) beside a balancete estimate"),
+  t("portfolio_lookthrough", "Look-through of funds into their holdings (CDA blocks 1, 2, 4, 6)"),
+  t("portfolio_movement", "Is a fund's month unusual for its ANBIMA class (quota return, winsorized z, nao_avaliado with reason)"),
   // Views (GET, PostgREST filters). The B3 lending / flow group is a RATCHET.
   t("funds", "Fund registry (view)"),
   t("quotes", "Cash quotes (view)"),

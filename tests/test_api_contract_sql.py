@@ -116,6 +116,16 @@ RESEARCH_FUNCTIONS = ("api.research_universe",)
 # published under limits.page.functions.paged, not raise_only.
 INDEX_FUNCTIONS = ("api.index_history",)
 
+# v51: the portfolio-diagnosis reads in 31_api_portfolio.sql
+# (tests/test_portfolio_contract.py owns the bodies). Raise-only. v54 adds
+# portfolio_movement (tests/test_portfolio_movement_contract.py).
+PORTFOLIO_FUNCTIONS = (
+    "api.portfolio_resolve",
+    "api.portfolio_fees",
+    "api.portfolio_lookthrough",
+    "api.portfolio_movement",
+)
+
 # The FNET register (v33) and its restatement diff (v40) live in
 # 24_api_fnet.sql, for the same reason: FUNCS does not carry them,
 # tests/test_fnet_api_contract.py owns the bodies. All three are raise-only.
@@ -637,7 +647,7 @@ def test_row_cap_helper_page_size_is_the_one_constant():
     assert set(page["all"]) == {
         f.split(".", 1)[1]
         for f in CAPPED_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS + WAVE3_FUNCTIONS
-        + RATES_FUNCTIONS + RESEARCH_FUNCTIONS + INDEX_FUNCTIONS
+        + RATES_FUNCTIONS + RESEARCH_FUNCTIONS + INDEX_FUNCTIONS + PORTFOLIO_FUNCTIONS
     }
     assert set(page["functions"]["paged"]) == {
         f.split(".", 1)[1] for f in PAGED_FUNCTIONS + INDEX_FUNCTIONS
@@ -645,7 +655,7 @@ def test_row_cap_helper_page_size_is_the_one_constant():
     assert set(page["functions"]["raise_only"]) == {
         f.split(".", 1)[1]
         for f in RAISE_ONLY_FUNCTIONS + SCREEN_FUNCTIONS + FNET_FUNCTIONS + WAVE3_FUNCTIONS
-        + RATES_FUNCTIONS + RESEARCH_FUNCTIONS
+        + RATES_FUNCTIONS + RESEARCH_FUNCTIONS + PORTFOLIO_FUNCTIONS
     }
 
 
@@ -894,11 +904,41 @@ def test_close_return_guards_adjacency_and_quotation_factor():
     ret = panel[panel.index("quote_ret AS ("):]
     ret = ret[: ret.index("option_month AS (")]
     assert (
-        "lag(quotation_factor) OVER w IS DISTINCT FROM quotation_factor" in ret
+        "lag(quotation_factor) OVER w AS prev_quotation_factor" in ret
+        and "r.prev_quotation_factor IS DISTINCT FROM r.quotation_factor" in ret
     ), "a fatcot flip must NULL the return"
-    assert "lag(obs_date) OVER w >= period - 7" in ret, (
+    assert "r.prev_obs_date >= r.period - 7" in ret, (
         "a daily return needs the previous session within 7 calendar days"
     )
+
+
+def test_close_return_is_null_across_a_share_count_event():
+    """#396 step 1: a split, grouping or bonus between the two prints NULLs the
+    return on both grains. Behaviour on rows is executed in
+    tests/sql/quote_history_behaviour.sql; this pins the shape."""
+    panel = _strip_comments(FUNCS["api.panel"])
+    ret = panel[panel.index("quote_ret AS ("):]
+    ret = ret[: ret.index("option_month AS (")]
+    # The two prints are the row and its predecessor, whatever the grain.
+    assert "lag(obs_date)         OVER w AS prev_obs_date" in ret
+    event = re.search(r"WHEN EXISTS \((.*?)\)\s*THEN NULL", ret, re.S)
+    assert event, "quote_ret must NULL the return when a share-count event lies between the prints"
+    body = re.sub(r"\s+", " ", event.group(1))
+    assert "FROM public.b3_corporate_event e" in body
+    assert "e.isin = r.isin" in body
+    assert "e.label IN ('DESDOBRAMENTO', 'GRUPAMENTO', 'BONIFICACAO')" in body, (
+        "the share-count labels api.close_adj_ratio adjusts, and no other"
+    )
+    # An event goes ex the session after last_date_prior: it lies between the
+    # prints when prev <= last_date_prior < current (close_adj_ratio's interval).
+    assert "e.last_date_prior >= r.prev_obs_date" in body
+    assert "e.last_date_prior < r.obs_date" in body
+    # The event guard sits before both grains' arithmetic, so it applies to both.
+    assert ret.index("WHEN EXISTS") < ret.index("r.prev_obs_date >= r.period - 7")
+    assert ret.index("WHEN EXISTS") < ret.index("r.prev_period =")
+    # NULL, not an adjusted return: the arithmetic stays the raw close ratio.
+    assert "r.close / NULLIF(r.prev_close, 0) - 1" in ret
+    assert "close_adj_ratio" not in ret
 
 
 def test_coverage_reports_completeness_and_per_family_rows():
@@ -1508,15 +1548,17 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
     # thirty-seven since v40 (fund_restatement_diff), thirty-nine since v41
     # (fund_holdings, fund_debentures stopped trimming), forty-three since v42
     # (future_curve, future_series, curve, curve_history), forty-four since v43
-    # (research_universe), forty-five since v45 (index_history, which pages). The
+    # (research_universe), forty-five since v45 (index_history, which pages),
+    # forty-eight since v51 (the three portfolio reads), forty-nine since v54
+    # (portfolio_movement). The
     # prose said "eight" for two versions while listing nine — pin the word
     # to the tuples so it cannot drift again.
-    assert "forty-five" in c.lower().split(), "all forty-five capped functions refuse"
+    assert "forty-nine" in c.lower().split(), "all forty-nine capped functions refuse"
     assert (
         len(CAPPED_FUNCTIONS) + len(SCREEN_FUNCTIONS) + len(FNET_FUNCTIONS)
         + len(WAVE3_FUNCTIONS) + len(RATES_FUNCTIONS) + len(RESEARCH_FUNCTIONS)
-        + len(INDEX_FUNCTIONS)
-    ) == 45
+        + len(INDEX_FUNCTIONS) + len(PORTFOLIO_FUNCTIONS)
+    ) == 49
     for fn in WAVE3_FUNCTIONS:
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
     for fn in HEAD_FUNCTIONS:
@@ -1525,7 +1567,7 @@ def test_cap_constraint_says_every_function_refuses_and_which_ones_page():
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
     for fn in RATES_FUNCTIONS:
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
-    for fn in RESEARCH_FUNCTIONS + INDEX_FUNCTIONS:
+    for fn in RESEARCH_FUNCTIONS + INDEX_FUNCTIONS + PORTFOLIO_FUNCTIONS:
         assert fn.split(".", 1)[1] in c, f"the cap constraint must name {fn}"
 
 

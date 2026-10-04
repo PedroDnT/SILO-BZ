@@ -120,7 +120,7 @@ curl -s -X POST "$SILO_URL/rpc/option_history" \
 
 Premiums are COTAHIST as published: no split, dividend or corporate-action adjustment anywhere in this warehouse. `adjusted` is a constant `false` so nothing here can be mistaken for an adjusted series.
 
-`close_return` is deliberately **not offered for options**. In [`panel`](/api-docs/panel) it accepts `ticker` ids only — and even there it is computed from unadjusted closes, so a corporate action prints as a large fake return. Options are the same tape and would inherit the same flaw, with strike and quantity adjustments on top. Take `close` from `option_history` and difference it yourself, where you can see what you are assuming.
+`close_return` is deliberately **not offered for options**. In [`panel`](/api-docs/panel) it accepts `ticker` ids only — and even there it is computed from raw closes and left out across a share-count event (a split, grouping or bonus), which options would need adjusted instead. Options are the same tape and would inherit the same flaw, with strike and quantity adjustments on top. Take `close` from `option_history` and difference it yourself, where you can see what you are assuming.
 
 ### Empty and error behavior
 

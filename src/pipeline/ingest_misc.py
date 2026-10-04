@@ -14,6 +14,9 @@ from src.parsers.mapping import (
 from src.parsers.field_maps import fiagro_mensal as _fiagro
 from src.parsers.field_maps import fip_periodic as _fip
 from src.parsers.field_maps import fund_registry as _reg
+from src.parsers.field_maps import registro_classe as _reg_classe
+from src.parsers.field_maps import registro_fundo as _reg_fundo
+from src.parsers.field_maps import registro_subclasse as _reg_subclasse
 from src.store.pg_client import upsert_rows
 
 logger = logging.getLogger(__name__)
@@ -200,6 +203,85 @@ def ingest_fund_registry_cvm175(conn: Any, raw_rows: List[Dict[str, Any]]) -> in
         _reg.TABLE,
         records,
         conflict_columns=",".join(_reg.CONFLICT),
+    )
+
+
+_REGISTRO_LEVELS = {
+    "registro_fundo": _reg_fundo,
+    "registro_classe": _reg_classe,
+    "registro_subclasse": _reg_subclasse,
+}
+
+
+def _classe_cotas(value: Any) -> Any:
+    """registro_classe.Classe_Cotas as filed: S -> True, N -> False, empty -> None.
+
+    Anything else raises. The generic "bool" coercion maps every unknown value
+    to False, which would turn a code CVM introduces tomorrow into "not a
+    classe de cotas" on 36,000 rows without a word. Failing the slice is louder
+    and cheaper to fix than a wrong flag.
+    """
+    if value is None:
+        return None
+    s = str(value).strip().upper()
+    if s == "S":
+        return True
+    if s == "N":
+        return False
+    raise ValueError(f"registro_classe.Classe_Cotas: unexpected value {value!r} (expected S or N)")
+
+
+def ingest_registro_level(conn: Any, raw_rows: List[Dict[str, Any]], doc_type: str) -> int:
+    """Parse and upsert one CVM 175 registry level, keyed on the registry's own ids.
+
+    doc_type -- registro_fundo | registro_classe | registro_subclasse, the member
+    of registro_fundo_classe.zip the rows came from. Targets cvm_registro_fundo,
+    cvm_registro_classe and cvm_registro_subclasse (migration 67).
+
+    The keys are CVM's ID_Registro_Fundo / ID_Registro_Classe / ID_Subclasse,
+    as filed. A class carries its fund's ID_Registro_Fundo and a subclass its
+    class's ID_Registro_Classe, so the hierarchy is walked by those ids and never
+    by matching CNPJs. A subclass has no CNPJ (registro_subclasse.csv publishes
+    none), and none is stamped on it.
+
+    A row missing a key id is dropped and counted, never filled in. A header
+    that no longer carries a key column raises (assert_map_matches), so a
+    renamed column fails the slice instead of logging an empty 'ok'.
+
+    Returns:
+        number of rows upserted
+    """
+    level = _REGISTRO_LEVELS[doc_type]
+    assert_map_matches(
+        raw_rows, level.FIELD_MAP, dataset=f"fi/{doc_type}", required=level.REQUIRED,
+    )
+    records: List[Dict[str, Any]] = []
+    missing_key = 0
+
+    for row in raw_rows:
+        typed, residual = apply_map(row, level.FIELD_MAP)
+        if any(not typed.get(col) for col in level.REQUIRED):
+            missing_key += 1
+            continue
+        if "classe_cotas" in typed:
+            typed["classe_cotas"] = _classe_cotas(typed["classe_cotas"])
+        typed["raw"] = residual
+        records.append(typed)
+
+    if missing_key:
+        logger.warning(
+            "%s: dropped %d of %d rows with no %s",
+            level.TABLE, missing_key, len(raw_rows), " / ".join(level.REQUIRED),
+        )
+
+    if not records:
+        return 0
+
+    return upsert_rows(
+        conn,
+        level.TABLE,
+        records,
+        conflict_columns=",".join(level.CONFLICT),
     )
 
 

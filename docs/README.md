@@ -7,7 +7,7 @@ folder it is in is in the wrong folder.
 | ------------------------------------------------------------------ | ---------------------------- | ----------------------------------------------------------------------------------------------- |
 | root `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `docs/agents/`, `docs/adr/` | How do I work here?          | Rules, vocabulary, per-dataset notes, decisions                                                 |
 | [`architecture/`](architecture/)                                   | How does it work?            | `SYSTEM.md`, `DATA_FLOW.md`, `OPERATIONS.md`, `DECISIONS.md`                                    |
-| [`reference/`](reference/)                                         | What is true about the data? | `API.md`, `DATABASE_MAINTENANCE.md`, `DATA_INVENTORY.md`, `DATA_MODELING.md`, `CIA_DATA_MAP.md`, `research/` (measured findings), `security/` (role and RLS SQL) |
+| [`reference/`](reference/)                                         | What is true about the data? | `API.md`, `DATABASE_MAINTENANCE.md`, `DATA_INVENTORY.md`, `DATA_MODELING.md`, `CIA_DATA_MAP.md`, `research/` (measured findings), `portfolio/` (the portfolio-diagnosis engine: statement template, BTG PDF reader and runner, engine output schema), `security/` (role and RLS SQL) |
 | [`planning/`](planning/)                                           | What is open?                | Live work only: `OPEN_ITEMS.md`, the roadmap docs, `CHANGELOG.md`                               |
 | [`archive/`](archive/)                                             | What did we decide, and why? | Finished research a live doc cites; changelog rows rolled out of `planning/CHANGELOG.md`                                              |
 

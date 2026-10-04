@@ -35,12 +35,39 @@ jobs:
   publish-check:
     name: Confirm the public host serves the newest build
     runs-on: ubuntu-latest
-    # the deploy hook only fires after a green run; a red one built nothing
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    # A red run can still have fired the hook (a red source does not block it),
+    # so a failed run is let through and the gate step below decides.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure' }}
     timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read # list the run's steps
     steps:
+      - name: Did the failed run fire the deploy hook?
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          proceed=true
+          if [ "${CONCLUSION:-}" = failure ]; then
+            fired=$(curl -fsS \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" |
+              jq '[.jobs[].steps[]? | select(.name == "Trigger dashboard rebuild (Vercel deploy hook)" and .conclusion == "success")] | length')
+            if [ "$fired" -eq 0 ]; then
+              proceed=false
+              echo "The failed run did not fire the deploy hook; no build to check."
+            fi
+          fi
+          echo "proceed=$proceed" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
+        if: ${{ steps.gate.outputs.proceed == 'true' }}
       - name: Promote and verify
+        if: ${{ steps.gate.outputs.proceed == 'true' }}
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           # after a dispatch the build can still be running: wait for it

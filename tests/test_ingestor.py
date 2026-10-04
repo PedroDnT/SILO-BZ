@@ -520,6 +520,91 @@ class TestMonthlyTargets:
         assert ing._monthly_targets("fi", "inf_diario", today) == _daily_month_pairs(today)
 
 
+class TestCdaRefreshFloor:
+    """CDA months stay in the daily window until M+5, loaded or not (#551).
+
+    CVM publishes a CDA month partial and completes it about 90 days after
+    month-end; a partial month has an ok log row, so only a fixed floor brings
+    it back.
+    """
+
+    _ALL_LOADED = [(y, m) for y in (2025, 2026, 2027) for m in range(1, 13)]
+
+    @pytest.mark.parametrize("doc_type", ["cda", "cda_acoes", "cda_cotas", "cda_debentures"])
+    def test_every_block_refetches_through_m_plus_5_even_when_loaded(self, doc_type):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+        ing = CVMIngestor.__new__(CVMIngestor)
+        ing._supabase = _FakeClient(fetch=self._ALL_LOADED)
+        targets = ing._monthly_targets("fi", doc_type, date(2026, 10, 3))
+        assert targets == [(2026, m) for m in range(5, 11)]
+
+    def test_other_monthly_datasets_keep_current_and_previous_only(self):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+        ing = CVMIngestor.__new__(CVMIngestor)
+        ing._supabase = _FakeClient(fetch=self._ALL_LOADED)
+        today = date(2026, 10, 3)
+        assert ing._monthly_targets("fi", "inf_diario", today) == [(2026, 9), (2026, 10)]
+        assert ing._monthly_targets("fidc", "mensal", today) == [(2026, 9), (2026, 10)]
+
+    def test_a_month_leaves_the_floor_after_m_plus_5(self):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+        ing = CVMIngestor.__new__(CVMIngestor)
+        ing._supabase = _FakeClient(fetch=self._ALL_LOADED)
+        targets = ing._monthly_targets("fi", "cda", date(2026, 11, 1))
+        assert (2026, 5) not in targets       # May's M+5 was October
+        assert targets[0] == (2026, 6)
+        assert targets[-1] == (2026, 11)
+
+    def test_floor_crosses_the_year_boundary(self):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+        ing = CVMIngestor.__new__(CVMIngestor)
+        ing._supabase = _FakeClient(fetch=self._ALL_LOADED)
+        targets = ing._monthly_targets("fi", "cda_acoes", date(2027, 2, 10))
+        assert targets == [(2026, 9), (2026, 10), (2026, 11), (2026, 12), (2027, 1), (2027, 2)]
+
+    def test_floor_survives_a_db_error(self):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+
+        class _Boom:
+            def cursor(self):
+                raise RuntimeError("db down")
+
+        ing = CVMIngestor.__new__(CVMIngestor)
+        ing._supabase = _Boom()
+        targets = ing._monthly_targets("fi", "cda_cotas", date(2026, 10, 3))
+        assert targets == [(2026, m) for m in range(5, 11)]
+
+
+class TestFiiPreviousYearInQ1:
+    """January to March, the daily run also re-reads last year's FII files (#551)."""
+
+    @staticmethod
+    def _fii_descriptions(today):
+        from src.pipeline.cvm_pipeline import CVMIngestor
+        ingestor = CVMIngestor(service=object(), cia_fetcher=object(), client=_FakeClient())
+        tasks = ingestor._plan_daily_annual_tasks({"fii"}, today.year, today)
+        try:
+            return [task.description for task in tasks]
+        finally:
+            for task in tasks:
+                task.operation.close()
+
+    def test_february_plans_both_years(self):
+        from src.pipeline.cvm_pipeline import FII_MENSAL_DOC_TYPES, FII_PERIODIC_DOC_TYPES
+        descriptions = self._fii_descriptions(date(2027, 2, 10))
+        per_year = len(FII_MENSAL_DOC_TYPES) + len(FII_PERIODIC_DOC_TYPES) + 1
+        assert len(descriptions) == 2 * per_year
+        for year in (2026, 2027):
+            assert {f"fii/{d} {year}" for d in FII_MENSAL_DOC_TYPES} <= set(descriptions)
+            assert {f"fii/{d} {year}" for d in FII_PERIODIC_DOC_TYPES} <= set(descriptions)
+            assert f"fii/trimestral_imovel {year}" in descriptions
+
+    def test_march_still_plans_previous_year_and_april_does_not(self):
+        assert "fii/trimestral_imovel 2026" in self._fii_descriptions(date(2027, 3, 31))
+        april = self._fii_descriptions(date(2027, 4, 1))
+        assert all(d.endswith(" 2027") for d in april)
+
+
 class TestLogFinishStatus:
     """A not-yet-published month (404) is 'skipped', not a false 'error'."""
 

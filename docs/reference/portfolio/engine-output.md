@@ -1,0 +1,387 @@
+# Portfolio engine output (schema 1.5)
+
+What `python -m src.portfolio.diagnose <statement> [--client mcp|postgrest|fake] [--out report.json]`
+writes: one JSON document. The report writer (Redator and Revisor, `src/portfolio/report/`)
+builds on it, and every number in a report must be a key of this document.
+
+```
+python -m src.portfolio.diagnose docs/reference/portfolio/statement-template.xlsx --client fake \
+    --out tests/fixtures/portfolio/demo_engine_output.json
+```
+
+The input is the spreadsheet template (`statement-template.md`) or, for the BTG performance report,
+the PDF reader and consolidation (`statement-pdf.md`); both give the engine the same `Statement`.
+
+**The schema is stable and append-only within major version 1.** A minor bump (1.0 to 1.1) only adds keys (see "Changes since 1.0") Keys are added, never
+renamed, retyped or removed. A breaking change bumps `schema_version`. The fixture
+`tests/fixtures/portfolio/demo_engine_output.json` is the engine run on the demo template with
+the `FakeClient` and a fixed clock; `tests/test_portfolio_engine.py` regenerates it and compares
+byte for byte, so a change to the engine that moves the fixture fails CI until the fixture is
+regenerated in the same commit. The canned rows (`fake_silo_rows.json`, built by
+`tests/fixtures/portfolio/build_fake_silo_rows.py`) are synthetic, shaped on production
+measurements of 2026-10-03 and on the merged `api.portfolio_*` contract: the values are not data.
+
+## Changes since 1.0
+
+1.5 (catalog v56, owner's decisions of 2026-10-03: "a taxa sim" for the newer lâmina, and "ETFs também têm taxa").
+Keys were added, none renamed, retyped or removed; one value changed meaning. **Changed:** a `lamina_newer` line
+(`headline.kind = "lamina_mais_recente"`) is now a cost: `per_year_brl` is the position value x the lâmina's rate,
+`counted_as_cost` is true, it is summed in `totals.adm_disclosed_fixed_per_year_brl` and counted in
+`fund_value_with_fixed_fee_brl` (so `fund_value_with_lamina_newer_fee_brl` is now a subset of it and no longer part
+of `fund_value_without_disclosed_fee_brl`), and it is compared with the balancete estimate
+(`estimativa_difere_da_divulgada`). It stays `needs_manual_check` with the new `headline.sources_differ_label`
+(`fontes divergem`); the Extrato value beside it is never summed. `extrato_lamina_beside` and `extrato_to_check` are
+unchanged. **New, ETFs:** `identification.lines[].etf_match` and `identity.etf_cnpj` (a ticker line typed `ETF`, or
+`outro` and not a share, mapped to the ETF's CNPJ by `portfolio_resolve` `match_kind = "etf_ticker"`; the line stays a
+ticker for the other blocks); `headline.kind` can be `etf_site` (rule 12); every fee line has `etf_site`; `fees.
+sources_differ_label`, `etf_site_label`; `totals.adm_etf_site_per_year_brl`, `adm_etf_site_portfolio_pct`,
+`adm_fee_per_year_brl`, `adm_fee_portfolio_pct`, `fund_value_with_etf_site_fee_brl`,
+`fund_value_with_etf_site_fee_to_check_brl`, `known_fee_incl_etf_site_fund_value_pct`. A ticker's four-character root
+may now hold digits (B5P211, 5PRE11, TD3511, B3SA3), in the engine and in the PDF reader.
+
+1.4 (catalog v55, issue #552: the Extrato and the lâmina disagree). Keys were added, none renamed, retyped or
+removed. New on every fee line (`lines[]` and `underlying[]`): `fee_resolution` (the tool's rule: `extrato`,
+`extrato_lamina_beside`, `extrato_to_check`, `lamina_newer`, `lamina`, `cad_fi`), `lamina_beside`,
+`extrato_beside` and `scale_flag` (rule 11 below), `disclosed.fee_resolution`; `headline.kind` can be
+`lamina_mais_recente`; three findings (`lamina_ao_lado_do_extrato`, `lamina_mais_recente_que_extrato`,
+`possivel_erro_de_escala_no_extrato`); `fees.lamina_beside_label`, `extrato_beside_label`, `lamina_newer_label`,
+`scale_flag_label`, `check_label`; `totals.fund_value_with_lamina_newer_fee_brl`. Fixed:
+`totals.fund_value_with_implausible_fee_brl` read a top-level key the line never had, so it stayed 0; it now
+holds the lines above 5 % a.a. `needs_manual_check` is also true for `lamina_newer`.
+
+1.3 (catalog v54, *movimento incomum*, owner's decisions of 2026-10-03). Keys were added, none renamed, retyped or
+removed. New: the top-level section `movement` (below), `engine.params.movement_month`, `section_status.movement`, a
+`movement_class` assumption, `--movement-month` on the CLI. Reworded, same keys: the `abnormal_movement` assumption and
+`risk_signals.abnormal_movement` (a string) no longer say the rule is parked: they say it is the `movement` section.
+The movement rule is not a materiality threshold for restatements, which stay parked.
+
+1.2 (wording, owner on #515): a filed fee of 0 or above 5 % a.a. may be correct, so the engine never calls it wrong.
+Labels changed: `0 informado; a conferir` and `valor informado acima de 5% a.a.; a conferir` (a negative value:
+`valor informado negativo; a conferir`, `fees.negative_label`). Numeric handling is unchanged: neither value is a
+cost, summed or compared, the balancete estimate stays beside it, `filed_zero` and `implausible_filed` keep their
+meaning, and the filed value is shown (`headline.filed_pct_year` for a 0, `disclosed.adm_filed_raw` otherwise). New:
+`fees.lines[].needs_manual_check` (true for either case, false otherwise) and `disclosed.needs_manual_check`.
+The labels, the finding texts and the `reason` no longer say "descartado", "implausível" or "erro de escala"; the
+`kind` of the finding (`valor_implausivel_descartado`), the key `disclosed.rejected` and `implausible_*` are kept
+(append-only) and now mean "above the usual range, to be checked".
+
+
+1.1 (catalog v52, the CVM Extrato as the first fee source). Keys were added, none renamed or removed;
+two values changed meaning, as the owner decided on #515, and a consumer that read them must read the new rule:
+
+* `fees.lines[].headline` can be `kind = "zero_informado"`: a filed 0 is no longer `rate_pct_year = 0.0`; it
+  has `rate_pct_year = null`, `filed_pct_year = 0.0` and is never counted as a cost or summed. The tool's 0
+  is still visible as `disclosed.adm_rate_pct_year = 0.0` with `disclosed.filed_zero = true`.
+* `fees.totals.fund_value_without_disclosed_fee_brl` now also holds the lines with a filed 0 or an implausible
+  value (new keys split them out).
+* `fees.lines[].disclosed.source` can be `cvm_fi_extrato`; the provenance wording follows `disclosed.origin`.
+* `fees.lines[].reason` is now always the engine's Portuguese; the tool's English note stays in `disclosed.note`.
+* New: `fees.source_order`, `stale_after_months_by_origin`, `zero_label`, `implausible_label`;
+  `disclosed.*` (origin, age_days, filed_zero, implausible_filed, adm_filed_raw, scope_label, class_note,
+  terms_as_filed, rejected, ...); `expense_ratio` filled; `fees.totals.*_portfolio_pct`;
+  `look_through.top_exposures`, `exposures[].portfolio_pct`, `groups[].total_exposure_portfolio_pct`;
+  `identification.lines[].fund_match.tiebroken_by_quota`; `restatements...tipo_documento`, `reference_date`.
+
+## Conventions
+
+| Convention         | Rule                                                                                                                                                                                                                                                                                                                    |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Money              | BRL as a JSON number rounded to 2 decimals; every key holding reais contains `_brl`.                                                                                                                                                                                                                                    |
+| Percentages        | A number of percent: `1.65` means 1,65 %. Every key holding a percent contains `_pct` (`portfolio_pct`, `rate_pct_year`, `known_fee_fund_value_pct`).                                                                                                                                                                   |
+| Fractions          | `weight_in_line`, `explained_weight`, `unexplained_weight`, `similarity`, `quota_rel_diff`, `quota_on_date` are ratios (0.25 = 25 %). Never named `pct`.                                                                                                                                                                |
+| Dates              | ISO `YYYY-MM-DD`; timestamps UTC `YYYY-MM-DDTHH:MM:SSZ` (the report shows UTC-3 with UTC in parentheses).                                                                                                                                                                                                               |
+| Null               | Not declared at source or not computed, never zero. A reason sits next to it. A disclosed 0 is `0.0`.                                                                                                                                                                                                                   |
+| Sections           | Every section starts with `status` (`complete`, `partial`, `unknown`, `not_applicable`), `reason` (Portuguese, why it is not complete) and `errors` (the verbatim error of each refused call: `call_id`, `tool`, `args`, `error`). A refused call makes its section unknown (or the line, `partial`), never the report. |
+| Sources            | Every number sits beside a `sources` list of `{tool, call_id, args, data_date}`; `call_id` is a row of `provenance`. `tool = "statement"` means the client's own statement (`args.line_no`).                                                                                                                            |
+| Text               | Engine strings are Portuguese and are the wording the report may quote.                                                                                                                                                                                                                                                 |
+| Holder and account | Never present: `statement.holder` holds the fixed tokens `[TITULAR]`, `[CPF]`, `[CONTA]`; accounts are ordinal tokens `C1..Cn` and holders `T1..Tn`.                                                                                                                                                                    |
+
+## Top level
+
+`schema_version`, `generated_at_utc`, `engine` (`version`, `client`, `params`), `statement`,
+`identification`, `fees`, `look_through`, `indexer`, `sector`, `restatements`, `risk_signals`, `movement`,
+`assumptions`, `section_status`, `provenance`.
+
+- `engine.params`: `cda_month` (default: position month - 4), `fee_month` (default: position
+  month - 1), `movement_month` (default: the position month when the position date is a month-end, else the
+  month before, because a month that is not over cannot be judged), `max_depth` (default 4, 1 to 6),
+  `restatement_months`, `max_diff_docs_per_fund`, `sector_lookthrough_top_tickers`. Fixed lags until a
+  `coverage()`-driven default exists.
+- `assumptions[]`: `{id, text}`, each a reading the engine could not verify (`fee_units`,
+  `weight_in_root`, `position_date`, `valuation`, `direct_tesouro`, `economic_group`,
+  `abnormal_movement`, `movement_class`). The report states the ones that touch what it says.
+- `section_status`: `{section: {status, reason}}`, for a cover-page summary.
+- `provenance[]`: every tool call in order: `call_id`, `id` (`p<call_id>`), `tool`, `args`,
+  `requested_at_utc`, `row_count` (null on error), `error` (verbatim, null on success). No retry,
+  no trimming.
+
+## `statement`
+
+`holder`, `corretora`, `source_format` (`xlsx`, `csv`, `pdf`, `mixed`), `stated_total_brl`,
+`sum_of_lines_brl`, `difference_brl`, `tolerance_brl`, `reconciled` (always true: a statement
+that does not reconcile never reaches the engine), `n_lines`, `position_date` (latest of the
+lines), `position_dates`, `notes[]` (which sum checks ran, date gaps, multi-titular), `positions[]`,
+`consolidated`, `accounts[]`.
+
+- `positions[]`: `line_no`, `source_row`, `linha_extrato`, `tipo` (the template's types, plus
+  `caixa` for a current-account line), `codigo`, `quantidade`, `preco_unitario`, `preco_implicito`
+  (true when the unit price is value / quantity), `valor_brl`, `portfolio_pct`, `data_posicao`,
+  and what the statement itself prints, all null for a spreadsheet that has not got them:
+  `vencimento`, `taxa_texto` (the rate exactly as printed), `estrategia_corretora` and
+  `classe_corretora` (the broker's own labels), `conta_ref`, `contas[]` (the per-account lines of
+  a consolidated position: `conta_ref`, `titular_ref`, `valor_brl`, ...), `source`. The valuation
+  of a line is always the statement's.
+- `consolidated` / `accounts[]`: true when several statements were consolidated; `accounts[]` is
+  the per-account view (`conta_ref`, `titular_ref`, `n_lines`, `stated_total_brl`,
+  `sum_of_lines_brl`, `position_date`, `source_format`, `positions[]`). `positions[]` above is the
+  consolidated view: the same asset in several accounts is one line with its `contas`.
+
+## `identification`
+
+`counts` (`identified`, `ambiguous`, `unknown`) and `lines[]`:
+
+- `status`: `identified`, `ambiguous` (candidates and `reason`) or `unknown` (`reason`).
+- `identity`: `kind` (`fund`, `ticker`, `tesouro`, `caixa`), `cnpj`, `name`, `entity_type`,
+  `ticker`, `isin`, `asset_class`, `issuer_cnpj` (a share's issuer, from `company_financials`,
+  because `lookup` returns `cnpj` null for tickers), `tesouro_title`, `tesouro_maturity`.
+- `fund_match`: from `portfolio_resolve`: `candidates[]` (`rank`, `cnpj`, `name`,
+  `matched_name`, `matched_period`, `entity_type`, `match_kind`, `similarity`, `quota_on_date`,
+  `quota_rel_diff`, `ambiguous`, `reason`), `chosen`, `quota_basis` (printed or implied by the
+  statement), `sources`.
+- `etf_match` (1.5): for a ticker line typed `ETF`, or `outro` and not a share, with no fund CNPJ, and for a line
+  typed `ETF` named by its bare ticker (matched in the first call, it never becomes a fund: an ETF files no CDA):
+  the ETF's CNPJ from `portfolio_resolve` (`match_kind = "etf_ticker"`, SILO's curated ETF registry), its `name`,
+  `reason`, `sources`; null otherwise. Used by the fee block only (`identity.etf_cnpj`); the line stays a ticker. A fixed
+  income ETF that `lookup` does not find (it is not in COTAHIST) is identified this way.
+- `ticker_match`: `lookup` row, `reference_quote` (close and date: reference only, never the
+  position's value; its date can be after the position date), `issuer`. A ticker the statement
+  types as `outro` is told share or fund quota by `lookup.asset_class`, never by the engine.
+- `statement_facts`: `vencimento`, `taxa_texto`, `estrategia_corretora`, `classe_corretora`,
+  `conta_ref`, `preco_implicito`: what the statement printed for the line.
+- `valuation`: `{value_brl, basis: "statement", note, sources}`. A Tesouro line has no price
+  series in SILO: the statement's value is the value.
+- `findings[]`: `{kind: "renamed" | "cnpj_conflict", text, ...}`.
+- A CRI, CRA, CDB, LCI, LCA or debenture held directly is `unknown` (SILO has no registry or
+  price for them) with the statement's registry code in the reason; its printed rate and maturity
+  still feed the indexer block.
+
+## `fees`
+
+`month`, `estimate_label` (`estimativa, não divulgada`), `not_found_label` (`taxa divulgada não encontrada`),
+`zero_label` (`0 informado; a conferir`), `implausible_label` (`valor implausível
+descartado`), `source_order` (`extrato`, `lamina`, `cad_fi`), `stale_after_months` (24, the lâmina's),
+`stale_after_months_by_origin` (`extrato` 36, `lamina` 24, `cad_fi` null), `lines[]`, `underlying[]`, `totals`.
+From `portfolio_fees` (catalog v52), one source per fund. The rules (owner, #515, 2026-10-03):
+
+1. **Headline = the disclosed administration fee as filed**, % a year, from ONE source in this order: the CVM
+   Extrato (`disclosed.origin = "extrato"`), the lâmina (`"lamina"`), cad_fi (`"cad_fi"`), else none:
+   `fee_status = "taxa divulgada não encontrada"`. The estimate is never substituted. The provenance sentence
+   follows `disclosed.origin` (an Extrato fee is not a cad_fi fee); `disclosed.as_of_meaning` says what the date
+   means for that origin (the Extrato's `DT_COMPTC`, the lâmina's reference month, or, for cad_fi, the day SILO
+   read the row, with no age claimed). `fee_status` is `divulgada`, `faixa divulgada`, `valor 0 informado
+   (provavelmente não preenchido)`, `valor informado acima de 5% a.a.; a conferir` or the not-found label.
+2. **A filed 0 is not used as a fee, and not called wrong.** `headline.kind = "zero_informado"`, no rate, no R$, `counted_as_cost = false`,
+   never summed; with the attention finding below when the estimate is above 0,05 % a.a.
+3. **A value above 5 % a.a. (or below 0) is to be checked, not called wrong.** `headline` is null,
+   `disclosed.implausible_filed = true`, the value as filed is in `disclosed.adm_filed_raw` and
+   `disclosed.rejected.raw_value`: a plain number (named without `_pct`, so nothing prints it as a rate).
+4. **Age.** The filing date and age are always output (`disclosed.as_of`, `age_months`, `age_days`). `stale`
+   and `stale_label = "defasada"` when older than 36 months for the Extrato (age does not predict error there)
+   and 24 for the lâmina (`disclosed.stale_after_months`).
+5. **The estimate is a separate field**, `estimate`, always labelled `estimativa, não divulgada` with its
+   `method`, beside the disclosed fee or alone, never averaged, never the fee. `estimate.available` is false
+   when the tool gave none (a fiscal-year reset month, no balancete).
+6. **Findings** (`findings[]`, level `atenção` unless stated): `divulgado_zero_balancete_registra_despesa`
+   ("Divulgado 0, balancete registra despesa."); `estimativa_difere_da_divulgada` when the estimate differs
+   from a fixed disclosed fee by more than max(0,25 p.p. a.a.; 25 % of it), worded "Estimativa e divulgada
+   divergem", not that either is wrong; `lamina_defasada` / `taxa_defasada` and `valor_implausivel_descartado`
+   at level `informação`.
+7. **Terms as filed.** `disclosed.perf_as_filed` is the performance fee as text, verbatim, never parsed, never
+   R$. For an Extrato fee `disclosed.terms_as_filed` carries `tp_fundo_classe`, `classe_anbima`, `performance`
+   (`exists`, `taxa_perfm_as_filed`, `param_as_filed`, `calc_as_filed`, `info_as_filed`), `entry` and `exit`
+   (`exists`, `pct_as_filed`, `real_brl_as_filed`) and `custody_max_as_filed`: shown as filed, no reading.
+8. **Class scope.** An Extrato row of a CVM 175 class is `disclosed.scope_label = "taxa da classe"` (an ICVM 555
+   fund: `taxa do fundo`); no subclass fee is assumed.
+9. **`expense_ratio`** (the lâmina's declared total expense ratio, PR_PL_DESPESA) is its own field: `declared_pct`
+   (% of average NAV), `period` (`from`, `to`), `as_of`, `source`, `note`; null with a note when none. Never added
+   to a fee, whatever the fee's source.
+10. **A master's fee is never added to a feeder's.** `underlying[]` lists the funds a statement fund holds (every
+    path), each with its own fee record and `label = "não somada"`, `added_to_totals = false`.
+11. **The Extrato and the lâmina disagree** (catalog v55, #552). When the Extrato filed 0 or above 5 % a.a. and the
+    lâmina is older, has no single fee, or none in (0, 5] (`fee_resolution = "extrato_lamina_beside"`), the Extrato
+    stays the headline as filed and `lamina_beside` carries the lâmina's own fee (`lamina_pct_year`, or the min and
+    max), its `as_of`, `age_months`, `stale` (24 months), `label` `lâmina informa` and `check_label` `a conferir`.
+    When the lâmina's single fee is in (0, 5] and NEWER than the Extrato (`lamina_newer`), the lâmina is the headline
+    (`headline.kind = "lamina_mais_recente"`, its rate and date, `fee_status` `lâmina mais recente que o Extrato; a
+    conferir`) and `extrato_beside` carries the Extrato's value as filed (`filed_value`, a plain number) with its
+    `as_of`. Since 1.5 (owner, 2026-10-03) the newer lâmina's fee is a disclosed fee like any other: `per_year_brl` is
+    set, `counted_as_cost` is true, it is summed and compared with the estimate; the line keeps `needs_manual_check`
+    and `headline.sources_differ_label` (`fontes divergem`), and the Extrato value beside it is never summed. In
+    `extrato_lamina_beside` `needs_manual_check` is true and neither value is a cost, summed or compared. Nothing is
+    rescaled. `scale_flag` (`label` `possível erro de escala no
+    Extrato`, `factor` 10 or 100, `extrato_lamina_ratio`) is present when the tool's `extrato_scale_factor` is set:
+    a flag only. With no lâmina fee (`extrato_to_check`) nothing is shown beside.
+12. **ETFs** (1.5, catalog v56). CVM's Extrato, lâmina and cad_fi hold no fee for any of the 178 active ETFs in
+    `cvm_etf_registry` (measured 2026-10-03). When no CVM source discloses anything for the CNPJ, the headline is the
+    tool's `etf_site_*`: the "Taxa de administração total" etfsbrasil.com.br prints, a third-party site
+    (`headline.kind = "etf_site"`, `origin` `etf_site`, `origin_label` `site etfsbrasil.com.br (terceiros)`, `ticker`,
+    `as_of` the snapshot date, `fee_status` and `basis` `taxa informada pelo site etfsbrasil.com.br (fonte de
+    terceiros, não é documento da CVM)`; `disclosed` stays null). A value in (0, 5] is a cost, summed apart in
+    `totals.adm_etf_site_per_year_brl` and, with the disclosed fees, in `adm_fee_per_year_brl`; a 0, a negative or a
+    value above 5 is `filed_pct_year` with `check_label` (`0 informado; a conferir`, ...), `needs_manual_check`, never
+    summed (`fund_value_with_etf_site_fee_to_check_brl`). `etf_site` on every line carries the site's value, date,
+    source and the tool's note; a CVM source, when one exists, always comes first.
+
+A line: `line_no`, `cnpj`, `fund_name`, `position_value_brl`, `fee_status`, `reason`, `fund_nav_brl`, `disclosed`,
+`headline` (`kind` `fixa` | `faixa` | `zero_informado` | `lamina_mais_recente` | `etf_site`, `rate_pct_year` or the range, `per_year_brl` = position
+value x rate, `origin`, `scope_label`, `as_of`, `age_months`, `stale`), `estimate` (`adm_pct_year`,
+`adm_per_year_brl`, `perf_pct_year`, `perf_per_year_brl`, `fiscal_reset_suspect`, `month`), `expense_ratio`,
+`findings[]`. `totals`: `adm_disclosed_fixed_per_year_brl` and `adm_disclosed_fixed_portfolio_pct`, the range low
+and high, `estimate_adm_per_year_brl` and `estimate_adm_portfolio_pct` (kept apart), `fund_value_with_fixed_fee_brl`,
+`fund_value_with_fee_range_brl`, `fund_value_with_filed_zero_brl`, `fund_value_with_implausible_fee_brl`,
+`fund_value_with_lamina_newer_fee_brl` (a subset of the fixed since 1.5), `fund_value_without_disclosed_fee_brl` (every
+line with no usable fee: none, a filed 0, above 5, or an ETF site value to check), and since 1.5 the ETF keys of rule 12
+(`adm_etf_site_per_year_brl`, `adm_etf_site_portfolio_pct`, `adm_fee_per_year_brl`, `adm_fee_portfolio_pct`,
+`fund_value_with_etf_site_fee_brl`, `fund_value_with_etf_site_fee_to_check_brl`, `known_fee_incl_etf_site_fund_value_pct`). Assumption: the rates are percent a year (`fee_units`; CVM's XML
+specification says so for the Extrato).
+
+## `look_through`
+
+`cda_month`, `max_depth`, `lines[]`, `shared_exposure`. From `portfolio_lookthrough`, one call per
+fund: `depth` 0 is the fund's own holdings, a row is a leaf unless its `asset_kind` is `fund_quota`
+(looked through; its holdings are the rows below).
+
+- `lines[]`: `status` (`complete`, `partial`, `no_holdings`, `unknown`), `exposures[]` (`via`
+  path, `depth`, `block`, `asset_kind`, `asset_key`, `asset_name`, `isin`, `issuer_cnpj`,
+  `issuer_code`, `tp_aplic`, `tp_titpub`, `indexer_code`, `taxa_texto`, `maturity`,
+  `weight_in_line`, `exposure_brl` = position value x `weight_in_root`, `portfolio_pct`, `not_opened_fund`,
+  `period`, `sources`), `fund_nodes[]` (the funds on the way, with `expanded` and
+  `not_expanded_reason`), `explained_weight` and `unexplained_weight` (what no ingested CDA block
+  explains: cash, derivatives, blocks 3, 5, 7, 8; negative when liabilities and derivatives sum
+  above the fund value; never filled), `rows_without_weight` (a NAV on the path unknown),
+  `n_cycle_rows_skipped`. `no_cda_filing` is `no_holdings` (FIDC and FII file no CDA).
+- `shared_exposure`: `economic_group_assessed` (always false) and `note`, `groups[]` with
+  `kind` (`mesmo_ativo`: same asset key or ISIN; `mesmo_emissor_raiz_cnpj`: same 8-digit CNPJ
+  root; `mesmo_codigo_emissor_b3`: same ISIN characters 3 to 6; `mesmo_fundo_investido`: the
+  same fund held by two lines), `label`, `line_nos`, `lines[]` (`exposure_brl` per line,
+  `direct`), `total_exposure_brl`, `total_exposure_portfolio_pct`. Totals of different kinds describe the same positions: do not
+  add them. The Treasury is not an issuer group (its ISIN code and repo collateral are left out of `mesmo_codigo_emissor_b3`).
+* `top_exposures[]`: the same asset summed across lines (direct included), funds not opened and the current account
+  left out: `asset_key`, `asset_name`, `isin`, `exposure_brl`, `portfolio_pct`, `line_nos`, `sources`.
+
+## `indexer` and `sector`
+
+Both put the whole portfolio in classes: the classes sum to `portfolio_value_brl`
+(`sum_check_brl` is the rounding difference) and `sem classificação` is always the last entry,
+even at zero. It also holds the unexplained part of funds, lines the engine could not identify
+or open, and values with no rule, each named in `unclassified_breakdown[]` (`reason`,
+`value_brl`, `portfolio_pct`). `items[]` lists every classified exposure with its rule and
+sources. Neither is ever inferred from a name (`never_inferred_from_name`).
+
+- `indexer`: `rules_version`, `rules_sha256`, `rules_file` (`src/portfolio/rules/indexer_rules.csv`),
+  `classes[]` (`indexer_class`, `value_brl`, `portfolio_pct`, `n_items`), `by_position[]`. The
+  class comes from a published field: CDA block 1 `tp_aplic` / `tp_titpub`, block 6
+  `cd_indexador_posfx`, block 4 `tp_aplic`, a direct Tesouro title, or what the statement prints:
+  the `taxa_texto` of a direct credit line, read by the table's `statement_taxa` regexes only
+  (`IPCA + x`, `x% do CDI`, `CDI + x`, `x% a.a.`...), and the `Conta corrente` line as `caixa
+(conta corrente)`. A rate text with no rule is `sem classificação`.
+- `sector`: `sectors[]` (`sector`, `taxonomy`, ...). Taxonomy `CVM (cia_company.setor)` for
+  listed shares (B3's `short_interest.sector` only as a labelled fallback), `CVM (cvm_fidc_setor)`
+  for FIDC (tab II lettered codes, parents only). FII `segmento_atuacao` and ETF `segment` have no
+  tool in the public contract: `sem classificação` with that reason. `lookthrough_ticker_limit`:
+  shares inside funds are resolved for the largest N tickers only, the rest says so.
+
+## `restatements`
+
+`window`, `assessment` (the thresholds are parked by the owner), `lines[]` for FIDC and FII
+positions: `restatements[]` (`fnet_id`, `previous_fnet_id`, `reference`, `versao`, `modalidade`,
+`delivered_at`, `previous_delivered_at`, `lag_days`, `n_fields_changed`, `diff_status`,
+`assessment`, `leaves[]`, `n_leaves`, `leaves_complete`). Every leaf (`leaf`, `field_path`,
+`old_value`, `new_value`, `old_num`, `new_num`, `delta`, both FNET ids, both dates, `source_url`)
+says `reapresentado, não avaliado`: the engine makes no materiality judgement.
+
+## `risk_signals`
+
+`screens[]` (each tool call with `status` and `n_rows`; `screen_overdue_securit` and
+`screen_dormant_trend` are `not_applicable`: no fund CNPJ), `dormant_coverage_note`,
+`abnormal_movement` (a pointer to `movement`), `lines[]` (`signals[]` with the screen's own row and `screen` /
+`params`, `unknown_screens`). A signal is not a verdict, and no signal is not a health
+certificate. `screen_dormant_funds` is called twice, pinned (`p_dormancy = empty_shell`;
+`p_min_nav = 1000000000`): a parked fund below R$1bn is not covered.
+
+## `movement`
+
+*Movimento incomum* (`src/portfolio/movement.py`, one `portfolio_movement` call per 200 funds, for ONE month). The SQL owns
+the statistics (`31_api_portfolio.sql`, `docs/reference/API.md`); the engine recomputes none of it, applies the owner's
+rules about where a level may appear, and checks the served level against the served `z`.
+
+* **Definition** (`definition`): the fund's monthly **quota return**, month-end `vl_quota` over the previous month's
+  (`fact_fund_monthly`, the one stable subclass; no NAV change), against the same return over every FI fund of its
+  **ANBIMA class as filed in the CVM Extrato** (its newest filing, `class_note`). The class mean and sample sd are taken on
+  values **winsorized** at the class's 1st and 99th percentile of the month; the fund's own value is not winsorized.
+  `z = (own - mean) / sd`.
+* **Levels** (`levels_note`, `thresholds`): `atencao` when `|z|` is strictly above 2 (**table only**), `forte` when strictly
+  above 3 (**text**, and `investigator_trigger` true for the later Investigator), `normal` otherwise (exactly 2 is normal,
+  exactly 3 is `atencao`), `nao_avaliado` when the fund could not be judged. Measured on production 2026-10-03, among
+  the evaluated fund-months: `atencao` or `forte` 5.2% to 5.7%, `forte` 2.4% to 2.9% (six months, 2025-12 to 2026-09).
+* `status`, `reason`, `errors`; `month`, `note` (not a forecast, verdict or recommendation), `counts`
+  (`funds`, `normal`, `atencao`, `forte`, `nao_avaliado`), `investigator_trigger_line_nos`.
+* `lines[]`, one per fund line with a CNPJ: `line_no`, `cnpj`, `fund_name`, `month`, `class` / `subclass` (the filed label
+  split at its first `' - '`, display only), `class_as_filed` (the peer group), `class_as_of`, `n_peers` (funds of the class
+  with a return that month, the fund included), `min_peers` (30), `own_value_pct`, `class_mean_pct`, `class_sd_pct`,
+  `class_p01_pct`, `class_p99_pct`, `z` (4 decimals), `level`, `level_label` (`normal`, `atenção`, `forte`, `não avaliado`),
+  `investigator_trigger`, `in_table` (atencao or forte), `in_text` (forte only), `reason` (Portuguese: what was compared, or
+  why the fund is `nao_avaliado`), `sources`.
+* **Not evaluated, never skipped**: fewer than 30 peers, a class with sd 0, no class (fund outside the Extrato, which covers
+  about 84% of the active FI funds, or no `classe_anbima`), no return (no quota in both months, a quota-subclass change), an
+  ETF, FIDC, FII, FIP or FIAGRO, a month that is not complete, a CNPJ the function did not return, a refused call (the
+  section is `unknown`, with the verbatim error). There is no fallback to a wider class. A level the served `z` contradicts
+  (beyond the 4-decimal rounding) becomes `nao_avaliado` and says so. Lines that are not funds with a CNPJ (shares, Tesouro,
+  cash, unidentified) are in `not_applicable_lines[]` with a reason.
+
+## The report's view (mapping)
+
+`src/portfolio/report/adapt.py` is this table as code: `python -m src.portfolio.report.build engine.json` maps an
+engine document (schema 1.x) to the view the Redator, the Revisor and the renderer read, and it computes no
+figure (every percent it uses is an engine field). The provisional fixture
+`tests/fixtures/portfolio/report_provisional_engine_output.json` is the view's original hand-written shape and
+still renders. The view holds no holder, account or statement-file identifier. Units agree (`_brl` reais,
+`_pct` percent, plain numbers such as `adm_filed_raw` and `age_months` print without a unit).
+
+| Report view | Engine (this schema) |
+| --- | --- |
+| `generated_at`, `valuation_date`, `illustrative` | `generated_at_utc`, `statement.position_date`, `engine.client == "fake"` |
+| `portfolio.total_brl`, `n_lines`, `n_identified` / `n_ambiguous` / `n_unknown` | `statement.sum_of_lines_brl`, `n_lines`, `identification.counts.*` |
+| `lines[i]` (`line_id` L<line_no>, `instrument`, `value_brl`, `weight_pct`) | `statement.positions[i]` (`linha_extrato`, `valor_brl`, `portfolio_pct`) joined to `identification.lines[i]` |
+| `lines[i].identification` (`status`, `method`, `renamed_from`, `renamed_at`, `candidates`) | `status` (an `identified` line the quota separated is `ambiguous`, from `fund_match.tiebroken_by_quota`), `fund_match.chosen.match_kind`, the `renamed` finding, `fund_match.candidates` |
+| `fees.total_disclosed_brl_year`, `total_disclosed_pct_year` | `fees.totals.adm_disclosed_fixed_per_year_brl`, `adm_disclosed_fixed_portfolio_pct` (null without a fixed fee) |
+| `fees.total_estimated_brl_year`, `weighted_estimated_pct_year` | `fees.totals.estimate_adm_per_year_brl`, `estimate_adm_portfolio_pct` |
+| `fees.by_line[i]` `disclosed_pct_year`, `disclosed_brl_year`, `disclosed_origin(_label)`, `disclosed_as_of`, `disclosed_age_months`, `disclosed_stale(_label)`, `disclosed_scope_label` | `fees.lines[i].headline` and `.disclosed` (`rate_pct_year`, `per_year_brl`, `origin`, `origin_label`, `as_of`, `age_months`, `stale`, `stale_label`, `scope_label`) |
+| `fees.by_line[i]` `fee_status`, `label`, `reason`, `filed_zero_label`, `implausible_label`, `implausible_raw` | `fee_status`, `reason`, `disclosed.filed_zero_label`, `implausible_label`, `adm_filed_raw` |
+| `fees.by_line[i]` `estimated_pct_year`, `estimated_brl_year`, `estimate_label`, `month` | `fees.lines[i].estimate` (`adm_pct_year`, `adm_per_year_brl`, `label`, `month`) |
+| `fees.by_line[i]` `expense_ratio_pct`, `expense_ratio_period_from/to`, `perf_as_filed`, `terms_as_filed`, `findings` | `expense_ratio`, `disclosed.perf_as_filed`, `disclosed.terms_as_filed`, `findings` |
+| `fees.by_line[i]` `fee_resolution`, `lamina_newer_label`, `lamina_beside_*` (`label`, `check_label`, `pct_year`, `min_pct_year`, `max_pct_year`, `as_of`, `age_months`, `stale_label`), `extrato_beside_label`, `extrato_beside_value`, `extrato_beside_as_of`, `scale_flag_label`, `scale_factor`, `extrato_lamina_ratio` (1.4) | `fee_resolution`, `headline.basis` for `lamina_mais_recente`, `lamina_beside`, `extrato_beside` (`filed_value`, `as_of`), `scale_flag` (`label`, `factor`, `extrato_lamina_ratio`); `disclosed_pct_year` also holds a `lamina_mais_recente` rate, and since 1.5 its `disclosed_brl_year` too |
+| `fees.by_line[i]` `sources_differ_label`, `etf_ticker`, `etf_site_label`, `etf_site_check_label`, `etf_site_raw`; `disclosed_pct_year`, `disclosed_brl_year`, `disclosed_origin(_label)`, `disclosed_as_of` also for an ETF (1.5) | `headline.sources_differ_label`; for `headline.kind = "etf_site"`: `ticker`, `basis`, `check_label`, `filed_pct_year`, and `rate_pct_year`, `per_year_brl`, `origin`, `origin_label`, `as_of` |
+| `fees.total_etf_site_brl_year`, `total_etf_site_pct_year`, `total_fee_brl_year`, `total_fee_pct_year` (1.5) | `fees.totals.adm_etf_site_per_year_brl`, `adm_etf_site_portfolio_pct`, `adm_fee_per_year_brl`, `adm_fee_portfolio_pct` (null without a summed ETF fee; the last two also need a fixed disclosed fee) |
+| `data_dates.ETFSBRASIL` (1.5) | the newest `headline.as_of` of an `etf_site` fee line: the site is listed as its own source, never as CVM |
+| `fees.underlying[i]` | `fees.underlying[i]` (`parent_line_id` = its `line_no`, `label_not_added` = `label`) |
+| `lookthrough.shared_exposure[i]` (`key`, `level`, `total_brl`, `total_pct`, `legs`) | the 12 largest `look_through.shared_exposure.groups[i]` (`label`, `kind`, `total_exposure_brl`, `total_exposure_portfolio_pct`, `lines`) |
+| `lookthrough.top_underlying[i]` | `look_through.top_exposures[i]` |
+| `indexer.buckets[i]`, `sector.buckets[i]` (`weight_pct`) | `indexer.classes[i]`, `sector.sectors[i]` (`portfolio_pct`) |
+| `restatements.items[i]` | `restatements.lines[i].restatements[j]`; the delinquency leaf is `leaves[leaf = VL_CRED_EXISTE_INAD]` (`old_num`, `new_num`, `delta`) |
+| `risk_screens` (`screens_run`, `hits`, `not_run`) | `risk_signals.screens` (complete count, unknown with reason), `risk_signals.lines[i].signals` |
+| `sections.<name>` | `section_status.<name>` (`lookthrough` is `look_through`, `risk_screens` is `risk_signals`, `abnormal_movement` is `movement` from 1.3); `material_restatement`, `economic_group` from the engine's own notes |
+| `movement` (`status`, `month`, `definition`, `class_note`, `levels_note`, `note`, `min_peers`, `thresholds`, `counts`, `n_not_fund_lines`) | `movement.*` of the same names (`min_peers` from `thresholds`, `n_not_fund_lines` the length of `not_applicable_lines`); absent from the view for an engine document before 1.3 |
+| `movement.by_line[i]` (`line_id`, `fund_name`, `class`, `subclass`, `class_as_filed`, `n_peers`, `own_value_pct`, `class_mean_pct`, `class_sd_pct`, `z`, `level`, `level_label`, `investigator_trigger`, `reason`, `provenance`) | `movement.lines[i]`, copied |
+| `movement.table[i]`, `movement.strong[i]`, `movement.not_evaluated[i]` | the same lines filtered: atencao or forte (the table, the only place `atencao` is shown), forte (the only fund-level path the text may cite), nao_avaliado (with `reason`) |
+| `provenance[i]` (`id`, `endpoint`, `params`, `source`, `data_date`) | `provenance[i]` (`id` = `p<call_id>`, `tool`, `args`); `source` from the tool, `data_date` from the `sources` that cite the call |
+| `data_dates` | the newest `data_date` per source name |
+
+## Tools the engine calls
+
+`portfolio_movement` (catalog v54), `portfolio_resolve` (`etf_ticker` since catalog v56), `portfolio_fees` (catalog v52: the 21 columns of v51, then 25 appended; 10 more in v55, 5 in v56), `portfolio_lookthrough` (merged; the canned
+rows follow their documented columns and have not been run against the live functions), and the
+existing `lookup`, `quote_latest`, `company_financials`, `short_interest`, `fidc_portfolio`,
+`fund_restatements`, `fund_restatement_diff` and the `screen_*` tools. Default client: the public
+read-only MCP `silo-mcp`; fallback `PostgrestClient`. Neither was exercised over a network from the
+build sandbox.

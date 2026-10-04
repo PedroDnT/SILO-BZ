@@ -203,6 +203,8 @@ INGEST_LOG_COLUMNS = frozenset({
     "rows_upserted", "status", "error_msg", "started_at", "finished_at",
     # Lineage, migration 44: which code produced the slice.
     "git_sha", "parser_version",
+    # Stored rows a per-fund replace removed, migration 68.
+    "rows_deleted",
 })
 
 

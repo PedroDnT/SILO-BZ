@@ -35,6 +35,9 @@ TABLE = "cvm_fi_cda"
 # with NULL parts sit in this table (migration 49), and no block-1 row has one. Do not narrow this key without re-running
 # the audit on real yearly files.
 CONFLICT = ("cnpj", "period", "tp_fundo", "tp_aplic", "tp_ativo", "cd_isin", "tp_negoc")
+# uq_fi_cda is NULLS DISTINCT (migration 49). The per-fund replace of a
+# re-read month (pg_client.replace_scoped_rows) compares keys the same way.
+NULLS_DISTINCT = True
 
 FIELD_MAP = {
     "cnpj":               (["CNPJ_FUNDO_CLASSE", "CNPJ_FUNDO"],    "cnpj"),

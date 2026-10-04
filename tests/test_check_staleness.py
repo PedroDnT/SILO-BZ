@@ -143,10 +143,12 @@ def test_unhealed_error_sql_matches_the_health_gate():
     assert "IS NOT DISTINCT FROM e.period_month" in src
     # DB Health #14: historical backfill errors outside the daily lookback
     # must not page the watchdog into a useless run_daily.
-    assert "make_date(e.period_year, e.period_month, 1)" in src
-    assert "EXTRACT(YEAR FROM CURRENT_DATE)::int" in src
-    assert "e.period_year IS NULL" in src
-    assert "DAILY_LOOKBACK_MONTHS" in src
+    assert "_DAILY_WINDOW_SQL" in src
+    assert "daily_window_params()" in src
+    window = cs._DAILY_WINDOW_SQL
+    assert "make_date(e.period_year, e.period_month, 1)" in window
+    assert "EXTRACT(YEAR FROM CURRENT_DATE)::int" in window
+    assert "e.period_year IS NULL" in window
 
 
 def test_daily_lookback_months_matches_the_health_gate():
@@ -198,8 +200,8 @@ def test_stuck_running_sql_matches_the_health_gate():
     assert "e.status = 'running'" in src
     assert "s.status IN ('ok', 'skipped')" in src, "a later ok/skipped heals a stuck row"
     assert "IS NOT DISTINCT FROM e.period_month" in src
-    assert "make_date(e.period_year, e.period_month, 1)" in src, "historical slices must not page the watchdog"
-    assert "DAILY_LOOKBACK_MONTHS" in src
+    assert "_DAILY_WINDOW_SQL" in src, "historical slices must not page the watchdog"
+    assert "daily_window_params()" in src
 
 
 def test_stuck_running_hours_matches_the_health_gate():

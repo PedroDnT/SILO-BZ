@@ -13,10 +13,11 @@ sidebar_position: 7
                       by a date window AND aggregated (see fi_daily_flow.sql).
     fact_fund_monthly / dim_fund — the monthly matviews the rest of the dashboard
                       uses; ETFs are carved out of them (they live on /etf).
-    cvm_fi_cda      — portfolio composition. USABLE FOR MIX, NOT FOR LEVELS: the
-                      table keys on (cnpj, period, tp_aplic, tp_ativo) and upserts
-                      DO UPDATE, so a fund's many security rows inside one bucket
-                      collapse to the last one written instead of summing.
+    cvm_fi_cda      — CDA block 1 only: government bonds and repo, one row per
+                      bond a fund holds (key widened by migration 49, #348), so
+                      sums are real. Not the whole fund book. The newest months
+                      are filed thin and completed late (#476): the sources stop
+                      at the last month whose funds reach 90% of the usual count.
     cvm_fi_perfil   — investor profile. The nr_cotst_* / pr_* columns exist in
                       schema.sql but are NOT in the perfil FIELD_MAP
                       (src/parsers/field_maps/fi_perfil.py), so they normally sit
@@ -93,8 +94,8 @@ select * from supabase.fi_top_funds
 >
 > Two things this page cannot tell you.
 >
-> - The portfolio book comes from CDA, whose natural key collapses security-level
->   rows to one per bucket — a **directional mix, not a market-value census**.
+> - The portfolio book comes from CDA block 1 only (government bonds and repo), so it
+>   is **not the whole fund book**: stocks, fund quotas and debentures are other blocks.
 > - The investor split comes from PERFIL, most of whose holder-count columns are not
 >   lifted by the field map. The coverage tiles state how much resolves before any
 >   chart is drawn from it.
@@ -257,11 +258,12 @@ title="Daily Subscriptions vs Redemptions"
 
 ## Portfolio Allocation
 
-> From `cvm_fi_cda`. **Directional mix, not a market-value census:** the natural key
-> is `(cnpj, period, tp_aplic, tp_ativo)` and the ingest upserts `ON CONFLICT DO
-> UPDATE`, so the many security-level rows inside one bucket collapse to the last
-> written rather than summing. Use the shape and the ranking; treat the R$ levels as
-> a lower bound. Top eight asset types shown individually, the rest bucketed.
+> From `cvm_fi_cda`, CDA block 1 only: government bonds and repo, one row per bond,
+> summed. **Not the whole fund book** (stocks, fund quotas and debentures are other
+> blocks). The chart ends at the last month whose CDA filing is complete: CVM files
+> the newest months thin and fills them in late (2026-06 had about 60% of the usual
+> funds, issue #476), and drawing them would read as a fall. Top eight asset types
+> shown individually, the rest bucketed.
 
 <AreaChart
   data={fi_allocation}
@@ -272,8 +274,8 @@ title="Daily Subscriptions vs Redemptions"
   title="FI Book by Asset Type (tp_ativo)"
 />
 
-> Application types below are at the latest CDA period, on the same lower-bound
-> caveat. `Share of Observed CDA Total` is a share of what was observed, not of
+> Application types below are at the latest complete CDA period, on the same block 1
+> scope. `Share of Observed CDA Total` is a share of what was observed, not of
 > the industry's actual book.
 
 <DataTable data={fi_top_aplic} rows=20>

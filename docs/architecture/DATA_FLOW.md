@@ -21,10 +21,15 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
 
 - A **slice** is one (source, doc_type, period). It ends `ok`, `skipped` (the
   source has not published yet) or `error` (ours to fix).
-- Daily windows heal late publication: CVM 4 months (gap-aware), COTAHIST and
+- Daily windows heal late publication: CVM 4 months (gap-aware), the four CDA
+  blocks every month through M+5 (CVM completes them about 90 days late), last
+  year's FII files from January to March, COTAHIST and
   B3's consolidated trade file (in `run_b3_events`) 7 days, BACEN 30 days. Deep history is manual:
   `backfill.yml`, `market_backfill.yml`, `daily_ingest` `mode=b3-backfill` and
   `mode=b3-trade-consolidated` (B3 kept that file from 2025-06-10 only).
+- A re-read CDA month replaces the rows of each fund in the file, so a
+  dropped or re-filed position goes (`cvm_ingest_log.rows_deleted`). Funds
+  missing from the file keep theirs.
 - The B3 BDI group (lending, investor flow) has no backfill. See the ratchet in
   [SYSTEM](SYSTEM.md).
 
@@ -40,6 +45,10 @@ schema api               1,000-row cap that refuses (22023), NULL never 0, label
   resolved once there because the ISIN join costs seconds per call.
 - `mv_fund_holdings_monthly` (`30_fund_holdings.sql`) is the one daily pass over
   the CDA holdings tables, which have no index on period; `/holdings` reads it.
+- `mv_fund_name_history` (`31_api_portfolio.sql`) holds every name a fund ever
+  filed (CDA and registry) behind a trigram index; `api.portfolio_resolve` reads
+  it, rebuilt by the same apply. `portfolio_lookthrough` reads the CDA tables
+  only by CNPJ and one month.
 - Nothing depends on pg_cron. The live database has none (checked 2026-09-29),
   so the jobs in `08_cron_schedules.sql` do not run.
 

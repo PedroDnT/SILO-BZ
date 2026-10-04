@@ -42,6 +42,13 @@ FI_MONTHLY_TABLES: Dict[str, Tuple[str, str, Optional[int]]] = {
     "balancete":     ("cvm_fi_balancete_resumo", "dt_comptc", None),
     "inf_diario":    ("cvm_fi_diario",    "dt_comptc", 2021),
     "perfil_mensal": ("cvm_fi_perfil",    "period",    None),
+    # The CVM lamina (migration 65). DT_COMPTC is the month end, so the month
+    # window test below still finds the month; published monthly from 2019-01.
+    "lamina":        ("cvm_fi_lamina",    "dt_comptc", None),
+    # The Extrato (migration 66) is a snapshot plus yearly files of versions: it has
+    # no monthly slice, so it is listed only so the doc-type tables agree (a parity
+    # test) and missing_fi_months refuses it (SNAPSHOT_DOC_TYPES).
+    "extrato":       ("cvm_fi_extrato",   "dt_comptc", None),
     "cda":           ("cvm_fi_cda",       "period",    2023),
     # CDA blocks 4 and 2 — holdings, not the aggregate. Same competency grain as
     # `cda` (first-of-month `period`) and the same 2023 cutoff, since they are
@@ -51,6 +58,10 @@ FI_MONTHLY_TABLES: Dict[str, Tuple[str, str, Optional[int]]] = {
     "cda_cotas":     ("cvm_fi_cda_cotas", "period",    2023),
     "cda_debentures": ("cvm_fi_cda_debentures", "period", 2023),
 }
+
+# Doc types with no monthly file: a gap scan by month would report every month
+# in which no fund happened to file as missing and then schedule nothing.
+SNAPSHOT_DOC_TYPES = frozenset({"extrato"})
 
 # CVM publishes a competency month one to two months late. Probing months that
 # cannot exist yet would report permanent phantom gaps, so the scan stops here.
@@ -130,6 +141,12 @@ def missing_fi_months(
         raise ValueError(
             f"unsupported doc_type {doc_type!r}; "
             f"expected one of {sorted(FI_MONTHLY_TABLES)}"
+        )
+
+    if doc_type in SNAPSHOT_DOC_TYPES:
+        raise ValueError(
+            f"{doc_type!r} has no monthly files (a snapshot and yearly files of "
+            "versions), so --repair-gaps does not apply: backfill the year instead"
         )
 
     table, date_col, monthly_from = FI_MONTHLY_TABLES[doc_type]

@@ -52,6 +52,12 @@ jobs:
       # Unhealed errors outside this window are historical backfill; daily_update
       # will never retry them, so they must not fail warehouse health.
       DAILY_LOOKBACK_MONTHS: "4"
+      # The daily run also re-reads the four CDA blocks for every month M until
+      # M+5 ends, and last year's FII files from January to March (#551), so
+      # their slices are in the window too. Both equal the defaults in
+      # src/pipeline/daily_window.py (tests/test_health_workflow.py pins them).
+      CDA_REFRESH_MONTHS: "5"
+      FII_PREVIOUS_YEAR_THROUGH_MONTH: "3"
       DISK_WARN_PCT: "85" # warn past this share of PLAN_DISK_GB, when that is set
       # Fail ABOVE this share (owner, 2026-09-29, OPEN_ITEMS.md item 10). Ingest
       # stops when the allowance fills, so past 90% the retention decision is
@@ -117,6 +123,32 @@ jobs:
 
           echo "## Warehouse health $(date -u +%FT%TZ)" >> "$GITHUB_STEP_SUMMARY"
 
+          # The slices daily_update retries, so the only ones checks 1 and 1b
+          # fail on: undated, current-year yearly, monthly periods inside
+          # DAILY_LOOKBACK_MONTHS, the four CDA blocks for every month M until
+          # M+5 ends, and last year's FII files from January to March (#551).
+          # Same predicate as daily_window.daily_window_sql(), which the
+          # watchdog (scripts/check_staleness.py) runs. A 404 on a month CVM has
+          # not published is logged 'skipped', never 'error', so widening the
+          # window cannot turn CVM's filing calendar into a red run.
+          DAILY_WINDOW="(
+                 e.period_year IS NULL
+              OR (e.period_month IS NULL
+                  AND e.period_year = EXTRACT(YEAR FROM CURRENT_DATE)::int)
+              OR (e.period_month IS NOT NULL
+                  AND make_date(e.period_year, e.period_month, 1)
+                      >= (date_trunc('month', CURRENT_DATE)
+                          - (${DAILY_LOOKBACK_MONTHS}::int - 1) * INTERVAL '1 month')::date)
+              OR (e.entity = 'fi' AND e.doc_type IN ('cda', 'cda_acoes', 'cda_cotas', 'cda_debentures')
+                  AND e.period_month IS NOT NULL
+                  AND make_date(e.period_year, e.period_month, 1)
+                      >= (date_trunc('month', CURRENT_DATE)
+                          - ${CDA_REFRESH_MONTHS}::int * INTERVAL '1 month')::date)
+              OR (e.entity = 'fii' AND e.period_month IS NULL
+                  AND e.period_year = EXTRACT(YEAR FROM CURRENT_DATE)::int - 1
+                  AND EXTRACT(MONTH FROM CURRENT_DATE)::int <= ${FII_PREVIOUS_YEAR_THROUGH_MONTH}::int)
+          )"
+
           # 1. UNHEALED ingest errors in the last MAX_INGEST_ERROR_HOURS,
           #    but only for slices daily_update is responsible for.
           #
@@ -170,16 +202,7 @@ jobs:
                                   AND s.period_year  IS NOT DISTINCT FROM e.period_year
                                   AND s.period_month IS NOT DISTINCT FROM e.period_month
                                   AND s.started_at   > e.started_at)
-                         AND (
-                               e.period_year IS NULL
-                            OR (e.period_month IS NULL
-                                AND e.period_year = EXTRACT(YEAR FROM CURRENT_DATE)::int)
-                            OR (e.period_month IS NOT NULL
-                                AND make_date(e.period_year, e.period_month, 1)
-                                    >= (date_trunc('month', CURRENT_DATE)
-                                        - (${DAILY_LOOKBACK_MONTHS}::int - 1)
-                                          * INTERVAL '1 month')::date)
-                         )
+                         AND ${DAILY_WINDOW}
                     ) unhealed")
           echo "unhealed ingest errors (${MAX_INGEST_ERROR_HOURS}h, daily window): $errs (of ${attempts:-0} error rows)"
           # A non-numeric $errs (psql error text after tr -d space) must not
@@ -205,16 +228,7 @@ jobs:
                            AND s.period_year  IS NOT DISTINCT FROM e.period_year
                            AND s.period_month IS NOT DISTINCT FROM e.period_month
                            AND s.started_at   > e.started_at)
-                  AND (
-                        e.period_year IS NULL
-                     OR (e.period_month IS NULL
-                         AND e.period_year = EXTRACT(YEAR FROM CURRENT_DATE)::int)
-                     OR (e.period_month IS NOT NULL
-                         AND make_date(e.period_year, e.period_month, 1)
-                             >= (date_trunc('month', CURRENT_DATE)
-                                 - (${DAILY_LOOKBACK_MONTHS}::int - 1)
-                                   * INTERVAL '1 month')::date)
-                  )
+                  AND ${DAILY_WINDOW}
                 ORDER BY e.started_at DESC LIMIT 20"
             echo "- ❌ unhealed ingest errors: $errs (daily window)" >> "$GITHUB_STEP_SUMMARY"
             fail=1
@@ -244,16 +258,7 @@ jobs:
                                    AND s.period_year  IS NOT DISTINCT FROM e.period_year
                                    AND s.period_month IS NOT DISTINCT FROM e.period_month
                                    AND s.started_at   > e.started_at)
-                          AND (
-                                e.period_year IS NULL
-                             OR (e.period_month IS NULL
-                                 AND e.period_year = EXTRACT(YEAR FROM CURRENT_DATE)::int)
-                             OR (e.period_month IS NOT NULL
-                                 AND make_date(e.period_year, e.period_month, 1)
-                                     >= (date_trunc('month', CURRENT_DATE)
-                                         - (${DAILY_LOOKBACK_MONTHS}::int - 1)
-                                           * INTERVAL '1 month')::date)
-                          )
+                          AND ${DAILY_WINDOW}
                      ) stuck")
           echo "slices stuck at running for over ${MAX_RUNNING_AGE_HOURS}h (daily window, unhealed): ${stuck:-<none>}"
           if ! [ "${stuck:-}" -ge 0 ] 2>/dev/null; then

@@ -119,6 +119,17 @@ class DatasetConfig:
             "csv_name_pattern": "registro_fundo.csv",
             "description": "CVM-175 fund registry (CNPJ_Fundo) — fund-level name/status/cancel date",
         },
+        # Third member of the same zip (the 24 h on-disk cache serves it from the
+        # download the two above already made). It has no CNPJ column: a subclass
+        # is keyed by (ID_Registro_Classe, ID_Subclasse). Columns per CVM's
+        # novidades page (2024-10-07, 2025-08-20, 2026-01-26); see
+        # src/parsers/field_maps/registro_subclasse.py.
+        "registro_subclasse": {
+            "url_pattern": "{base_url}/FI/CAD/DADOS/registro_fundo_classe.zip",
+            "is_zip": True,
+            "csv_name_pattern": "registro_subclasse.csv",
+            "description": "CVM-175 subclass registry (ID_Subclasse, no CNPJ) — links to its class by ID_Registro_Classe",
+        },
         "inf_diario": {
             "url_pattern": "{base_url}/FI/DOC/INF_DIARIO/DADOS/inf_diario_fi_{year}{month:02d}.zip",
             "is_zip": True,
@@ -156,6 +167,38 @@ class DatasetConfig:
             "url_pattern": "{base_url}/FI/DOC/PERFIL_MENSAL/DADOS/perfil_mensal_fi_{year}{month:02d}.csv",
             "is_zip": False,
             "description": "Monthly investor profile (type, concentration) — monthly CSV",
+        },
+        # The lamina (fi-doc-lamina): the summary sheet each fund files with its
+        # fees, redemption terms and minimums. One zip a month, four members; only
+        # the main one (one row per fund or class and optional subclass) holds
+        # fees. The others (lamina_fi_carteira_, _rentab_ano_, _rentab_mes_) are
+        # not ingested. Probed 2026-10-03 (run 37084697408): 2019-01 onward as
+        # monthly files, header identical in 202409 and 202608.
+        "lamina": {
+            "url_pattern": "{base_url}/FI/DOC/LAMINA/DADOS/lamina_fi_{year}{month:02d}.zip",
+            "is_zip": True,
+            "csv_name_pattern": "lamina_fi_{year}{month:02d}.csv",
+            "description": "Fund lamina (fees, redemption terms, minimums) - monthly ZIP, main member only",
+        },
+        # The Extrato das Informacoes (fi-doc-extrato): the terms and fees each fund
+        # or class files (TAXA_ADM, TAXA_PERFM, entry and exit fees, redemption
+        # terms, CLASSE_ANBIMA). Two plain CSVs, latin-1, ';', 117 columns, no zip.
+        # `extrato` is the current file, a snapshot: the latest version of every
+        # fund or class, one row per CNPJ, refreshed daily (34,155,539 bytes and
+        # 38,796 rows on 2026-10-03). It has no year or month, like `cad`.
+        # `extrato_ano` is one calendar year of versions (extrato_fi_2021.csv ..),
+        # refreshed weekly with re-filings: several rows per CNPJ, one per
+        # DT_COMPTC. Both probed 2026-10-03 (issue #524, run 37090491647); the
+        # header is identical in the current file and the 2020..2026 yearly files.
+        "extrato": {
+            "url_pattern": "{base_url}/FI/DOC/EXTRATO/DADOS/extrato_fi.csv",
+            "is_zip": False,
+            "description": "Fund extrato (fees, terms) - current snapshot, one row per CNPJ (static file, no year/month)",
+        },
+        "extrato_ano": {
+            "url_pattern": "{base_url}/FI/DOC/EXTRATO/DADOS/extrato_fi_{year}.csv",
+            "is_zip": False,
+            "description": "Fund extrato (fees, terms) - yearly file of every version filed that year",
         },
         "balancete": {
             "url_pattern": "{base_url}/FI/DOC/BALANCETE/DADOS/balancete_fi_{year}{month:02d}.zip",
