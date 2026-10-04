@@ -74,7 +74,11 @@ def test_the_share_ratio_is_b3s_rule_and_only_three_labels_adjust():
     # Sessions on or before the cum date are divided; unexpired events adjust nothing.
     assert "e.last_date_prior >= p_trade_date" in ratio
     assert "e.last_date_prior < p_anchor" in ratio
-    assert "round(r.close_unit / api.close_adj_ratio(v_isin, r.trade_date, v_anchor), 6)" in _function("quote_history")
+    # Each row by its own ISIN's ratio, times the later instruments' of its lineage (#381).
+    assert (
+        "round(r.close_unit / (api.close_adj_ratio(r.seg_isin, r.trade_date, r.seg_anchor) * r.seg_tail), 6)"
+        in _function("quote_history")
+    )
 
 
 def test_every_stock_label_that_is_not_adjusted_blocks():
@@ -129,8 +133,28 @@ def test_every_refusal_names_its_reason():
 def test_the_series_follows_the_isin_not_the_latest_board():
     body = _function("quote_history")
     assert "latest.board" not in body
-    assert "q.isin IS NOT DISTINCT FROM v_isin" in body
+    # One (ticker, ISIN) per instrument of the series; boards are not split.
+    assert "AND q.isin IS NOT DISTINCT FROM s.i" in body
     assert "(v_board IS NULL OR q.board = v_board)" in body
+
+
+def test_the_lineage_rule_is_the_owners():
+    """#381 follow-up, docs/adr/0002-ticker-activity-and-lineage.md: an older
+    instrument is spliced only for the same company, the same class, adjacent
+    sessions, no overlap, no stock event at the seam, and one candidate.
+    Rows are executed in tests/sql/quote_history_behaviour.sql."""
+    lin = _function("ticker_lineage")
+    assert "o.cnpj_cia IN (SELECT x.cnpj_cia FROM public.cia_ticker x WHERE x.codneg = v_t)" in lin
+    assert "substr(p.isin, 7, 5) = substr(v_i, 7, 5)" in lin
+    assert "s.trade_date > p.trade_date AND s.trade_date < v_f" in lin
+    assert "o.isin = p.isin AND o.tpmerc = '010' AND o.trade_date >= v_f" in lin
+    assert "e.event_class = 'stock'" in lin
+    assert "EXIT WHEN v_n <> 1;" in lin
+    assert "ILIKE" not in lin and "nome" not in lin.lower()
+    # quote_history looks the lineage up only when a window starts before the
+    # current instrument's first session, and never with p_board.
+    body = _function("quote_history")
+    assert "IF v_board IS NULL AND (v_from IS NULL OR v_from < v_cur_first) THEN" in body
 
 
 def test_the_panel_shares_the_same_adjustment():
