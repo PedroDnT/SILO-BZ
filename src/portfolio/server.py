@@ -69,8 +69,13 @@ class _Refusal(Exception):
         self.status = status
 
 
-def _error(status: int) -> tuple[Response, int]:
-    return jsonify({"erro": MSG[status]}), status
+def _error(status: int, stage: str | None = None) -> tuple[Response, int]:
+    resp = jsonify({"erro": MSG[status]})
+    if stage:
+        # Which step refused, so a deploy smoke can tell an egress or key failure
+        # (stage engine or report) from a bad upload without reading the logs.
+        resp.headers["X-Silo-Stage"] = stage
+    return resp, status
 
 
 def default_client() -> SiloClient:
@@ -190,17 +195,22 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client) -> Fla
                 headers={
                     "Content-Disposition": 'attachment; filename="diagnostico.pdf"',
                     "Cache-Control": "no-store",
+                    # The same fields as the log line, nothing of the statement.
+                    "X-Silo-Narrative": str(narrative.status),
+                    "X-Silo-Provider": str(narrative.provider),
+                    "X-Silo-Cost-Usd": f"{narrative.cost_usd:.4f}",
+                    "X-Silo-Seconds": f"{t3 - t0:.1f}",
                 },
             )
         except _Refusal as r:
             log.info("diagnose %d stage=%s format=%s in_bytes=%d total_s=%.1f", r.status, stage, fmt, size, time.monotonic() - t0)
-            return _error(r.status)
+            return _error(r.status, stage)
         except RequestEntityTooLarge:
             log.info("diagnose 413 stage=%s total_s=%.1f", stage, time.monotonic() - t0)
-            return _error(413)
+            return _error(413, stage)
         except Exception as exc:  # noqa: BLE001 - no traceback in logs or answers: messages can carry amounts
             log.error("diagnose 500 stage=%s format=%s in_bytes=%d error=%s", stage, fmt, size, type(exc).__name__)
-            return _error(500)
+            return _error(500, stage)
 
     @app.errorhandler(HTTPException)
     def http_error(exc: HTTPException):

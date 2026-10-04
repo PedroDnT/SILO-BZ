@@ -46,7 +46,8 @@ after a run    publish_check  also runs when a Daily CVM Ingest run ends green, 
 - A merge deploys nothing to the database. Migrations apply on the next
   workflow run; analytical SQL applies on the next scheduled run or
   `analytics-only`. `silo-mcp` needs `deploy_mcp.yml`; the Cloudflare demo
-  Worker (`deploy/cloudflare/`) needs `deploy_cloudflare.yml`.
+  (`deploy/cloudflare/`, Worker plus engine Container) needs
+  `deploy_cloudflare.yml`, which ends with a paid end-to-end report.
 - A merge does not publish the dashboard either: `vercel.json` disables
   git-triggered production deployments on `main`. Only the deploy hook
   publishes, from a scheduled run whose apply succeeded or a dispatch with

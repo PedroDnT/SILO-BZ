@@ -150,6 +150,7 @@ def test_engine_failure_is_a_fixed_500_with_no_traceback(monkeypatch, caplog, ca
     caplog.set_level(logging.DEBUG)
     r = c.post("/diagnose", data=TEMPLATE.read_bytes(), headers=_auth())
     assert r.status_code == 500 and r.json == {"erro": server.MSG[500]}
+    assert r.headers["X-Silo-Stage"] == "engine"
     assert "Traceback" not in caplog.text
     _assert_no_private(caplog, capfd)
 
@@ -160,6 +161,7 @@ def test_missing_llm_key_is_a_fixed_502(monkeypatch, app):
     _stub_pdf(monkeypatch)
     r = app.post("/diagnose", data=TEMPLATE.read_bytes(), headers=_auth())
     assert r.status_code == 502 and r.json == {"erro": server.MSG[502]}
+    assert r.headers["X-Silo-Stage"] == "report"
 
 
 @pytest.mark.parametrize("multipart", [False, True])
@@ -178,6 +180,9 @@ def test_diagnose_returns_a_pdf_with_the_renderer_stubbed(app, monkeypatch, capl
     assert r.status_code == 200, r.data[:200]
     assert r.mimetype == "application/pdf" and r.data.startswith(b"%PDF")
     assert r.headers["Cache-Control"] == "no-store"
+    assert r.headers["X-Silo-Provider"] == "fake"
+    assert r.headers["X-Silo-Narrative"] and float(r.headers["X-Silo-Cost-Usd"]) >= 0
+    assert float(r.headers["X-Silo-Seconds"]) >= 0
     assert "diagnose 200 format=xlsx" in caplog.text
     _assert_no_private(caplog, capfd)
 
