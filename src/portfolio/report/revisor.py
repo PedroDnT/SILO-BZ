@@ -78,6 +78,8 @@ _ATENCAO_WORD_RE = re.compile(r"aten[cç][aã]o", re.IGNORECASE)
 # lines[i].fund_name, say) is the same claim: the attention level is a table row, not a finding.
 _MOVEMENT_WORD_RE = re.compile(r"movimento", re.IGNORECASE)
 
+# Engine 1.8: a risks row whose severity comes only from the attention level of the movement section is table-only.
+_RISK_ROW_RE = re.compile(r"^risks\.rows\[(\d+)\]")
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _DIGIT_RE = re.compile(r"\d")
 
@@ -134,6 +136,9 @@ def _extreme(engine: dict, path: str, value: Any) -> tuple[str, float] | None:
             return None
         return ("delinquency_change", mag) if mag > DELINQUENCY_CHANGE_BRL_MAX else None
     if "_pct" in key:
+        if "coverage" in key or "fund_value" in key:
+            # engine 1.8: a share of the value held in funds (fee coverage), not a fee rate and not an exposure
+            return None
         if low_path.startswith("fees") or "fee" in key or "taxa" in key:
             return ("fee", float(value)) if float(value) > FEE_PCT_YEAR_MAX else None
         return ("exposure", float(value)) if float(value) > EXPOSURE_PCT_MAX else None
@@ -186,6 +191,14 @@ def check_sentence(engine: dict, sentence: str, sources: set[str]) -> str | None
     for name, aliases in SOURCE_NAMES.items():
         if name not in sources and any(re.search(rf"\b{re.escape(a)}\b", bare) for a in aliases):
             return f"fonte citada fora da proveniência: {name}"
+    for ph in placeholders(sentence):
+        m = _RISK_ROW_RE.match(ph)
+        if m and resolve(engine, f"risks.rows[{m.group(1)}].text_allowed") is False:
+            return f"risco só em tabela (nível atenção do movimento incomum): {{{{{ph}}}}}"
+        # the movement row's semáforo reuses the word "atenção", which for movement is a table-only level
+        if (m and ph.endswith((".severity_label", ".severity"))
+                and resolve(engine, f"risks.rows[{m.group(1)}].id") == "movimento_anormal"):
+            return f"semáforo do movimento incomum só em tabela: {{{{{ph}}}}}"
     movement_phs = [ph for ph in placeholders(sentence) if ph.lower().startswith("movement.")]
     for ph in movement_phs:
         if not ph.lower().startswith(MOVEMENT_TEXT_PATHS):

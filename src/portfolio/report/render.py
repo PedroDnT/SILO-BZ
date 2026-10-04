@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from src.portfolio.report import charts
 from src.portfolio.report.redator import SECTION_TITLES, Finding
 from src.portfolio.report.revisor import Removal
 from src.portfolio.report.values import PLACEHOLDER_RE, format_value, resolve
@@ -323,7 +324,7 @@ def _fees_section(engine: dict) -> str:
             parts.append(f"Estimativa do balancete, à parte e nunca somada à divulgada: <span class=v>{v(engine, 'fees.total_estimated_brl_year')}</span> por ano "
                          f"(<span class=v>{v(engine, 'fees.weighted_estimated_pct_year')}</span> a.a. sobre a carteira).")
         head = f"<p>{' '.join(parts)} <span class=cit>Base: {v(engine, 'fees.basis')}</span></p>"
-    out = head + _table(_FEE_HEADERS, rows)
+    out = head + _table(_FEE_HEADERS, rows) + charts.fee_chart(engine)
     und = fees.get("underlying") or []
     if und:
         urows = []
@@ -348,6 +349,11 @@ def _bucket_table(engine: dict, base: str, label_key: str, label: str) -> str:
 def _exposure_section(engine: dict) -> str:
     lt = engine.get("lookthrough") or {}
     out = []
+    if engine.get("allocation"):
+        out.append("<h3>Por classe de ativo</h3>")
+        out.append(f"<p class=cit>{v(engine, 'allocation.basis')}.</p>")
+        out.append(_bucket_table(engine, "allocation", "asset_class", "Classe"))
+        out.append(charts.allocation_chart(engine))
     if lt.get("month"):
         out.append(f"<p class=cit>Carteiras dos fundos (CDA) de {v(engine, 'lookthrough.month')}; profundidade máxima {v(engine, 'lookthrough.max_depth')}.</p>")
     out.append("<h3>Sobreposição</h3>")
@@ -366,8 +372,10 @@ def _exposure_section(engine: dict) -> str:
         rows = [[v(engine, f"lookthrough.top_underlying[{i}].name"), v(engine, f"lookthrough.top_underlying[{i}].value_brl"),
                  v(engine, f"lookthrough.top_underlying[{i}].weight_pct")] for i in range(len(lt["top_underlying"]))]
         out.append(_table([("Ativo subjacente", False), ("Valor", True), ("Peso", True)], rows))
+    out.append(charts.lookthrough_chart(engine))
     out.append("<h3>Indexador</h3>")
     out.append(_bucket_table(engine, "indexer", "indexer", "Indexador"))
+    out.append(charts.indexer_chart(engine))
     out.append("<h3>Setor</h3>")
     out.append(_bucket_table(engine, "sector", "sector", "Setor"))
     return "\n".join(out)
@@ -390,8 +398,17 @@ def _concentration_section(engine: dict) -> str:
                          v(engine, f"{q}.value_brl"), v(engine, f"{q}.weight_pct"), v(engine, f"{q}.share_of_direct_credit_pct")])
         out.append(_table([("Emissor (como impresso)", False), ("Tipos", False), ("Linhas", False), ("Valor", True),
                            ("Peso na carteira", True), ("Peso no crédito direto", True)], rows))
+        out.append(charts.issuer_chart(engine))
     else:
         out.append("<p>Nenhum crédito direto na carteira.</p>")
+    fidx = charts.fund_positions(engine)
+    if fidx:
+        out.append("<h3>Maiores posições em fundos</h3>")
+        out.append(_table([("Linha", False), ("Fundo", False), ("Valor", True), ("Peso", True)],
+                          [[v(engine, f"lines[{i}].line_id"),
+                            v(engine, f"lines[{i}].fund_name") if engine["lines"][i].get("fund_name") else v(engine, f"lines[{i}].instrument"),
+                            v(engine, f"lines[{i}].value_brl"), v(engine, f"lines[{i}].weight_pct")] for i in fidx]))
+        out.append(charts.fund_chart(engine))
     lad = c.get("maturity_ladder") or {}
     out.append("<h3>Vencimentos</h3>")
     if lad.get("status") == "complete":
@@ -405,6 +422,13 @@ def _concentration_section(engine: dict) -> str:
                      v(engine, "concentration.maturity_ladder.no_maturity.value_brl"),
                      v(engine, "concentration.maturity_ladder.no_maturity.weight_pct")])
         out.append(_table([("Prazo até o vencimento", False), ("Linhas", False), ("Valor", True), ("Peso", True)], rows))
+        years = lad.get("by_year") or []
+        if years:
+            yrows = [[v(engine, f"concentration.maturity_ladder.by_year[{i}].year"), e(", ".join(y.get("line_ids") or [])),
+                      v(engine, f"concentration.maturity_ladder.by_year[{i}].value_brl"),
+                      v(engine, f"concentration.maturity_ladder.by_year[{i}].weight_pct")] for i, y in enumerate(years)]
+            out.append(_table([("Ano do vencimento", False), ("Linhas", False), ("Valor", True), ("Peso", True)], yrows))
+            out.append(charts.maturity_chart(engine))
     else:
         out.append("<p>Nenhuma linha com vencimento impresso no extrato.</p>")
     fgc = c.get("fgc") or {}
@@ -426,6 +450,100 @@ def _concentration_section(engine: dict) -> str:
     for key, title in (("manager", "Concentração por gestor"), ("fund_liquidity", "Liquidez dos fundos")):
         if (c.get(key) or {}).get("status") not in (None, "complete"):
             out.append(f'<p><span class="tag unk">{e(title)}: não avaliada</span> {v(engine, f"concentration.{key}.reason")}.</p>')
+    return "\n".join(out)
+
+
+SEVERITY_CLASS = {"atencao": "sev-a", "moderado": "sev-m", "baixo": "sev-b"}
+
+
+def _threshold_text(engine: dict, q: str, th: dict) -> str:
+    parts = []
+    for level, word in (("atencao", "atenção"), ("moderado", "moderado")):
+        for unit in ("pct", "count"):
+            key = f"{level}_above_{unit}"
+            if th.get(key) is not None:
+                parts.append(f"{word} &gt; {v(engine, f'{q}.{key}')}")
+    return "<br>".join(parts) or "—"
+
+
+def _risks_section(engine: dict) -> str:
+    """Engine 1.8: "Principais riscos", one row per risk, the semáforo from fixed thresholds; every value a path."""
+    rk = engine.get("risks") or {}
+    out = [f"<p class=cit>{v(engine, 'risks.note')} Critério: {v(engine, 'risks.severity_rule')}.</p>"]
+    rows = []
+    for i, r in enumerate(rk.get("rows") or []):
+        q = f"risks.rows[{i}]"
+        if r.get("status") == "avaliado":
+            unit = r.get("unit")
+            value = f"<span class=v>{v(engine, f'{q}.value_{unit}')}</span>"
+            if r.get("subject"):
+                value += f"<br><span class=cit>{v(engine, f'{q}.subject')}</span>"
+            if r.get("value_brl_detail") is not None:
+                lab = f"{v(engine, f'{q}.value_brl_detail_label')}: " if r.get("value_brl_detail_label") else ""
+                value += f"<br><span class=cit>{lab}{v(engine, f'{q}.value_brl_detail')}</span>"
+            if r.get("id") == "indexador":
+                value += "<br><span class=cit>" + " · ".join(
+                    f"{v(engine, f'{q}.parts[{j}].group')} {v(engine, f'{q}.parts[{j}].portfolio_pct')}"
+                    for j, p in enumerate(r.get("parts") or [])
+                    if (p.get("value_brl") or 0) > 0 or p.get("group") == "sem classificação") + "</span>"
+            if (r.get("table_only") or {}).get("n_atencao"):
+                value += (f"<br><span class=cit>fundos em atenção (só nesta tabela): "
+                          f"{v(engine, f'{q}.table_only.n_atencao')}</span>")
+            sev = (f'<span class="sev {SEVERITY_CLASS.get(r.get("severity"), "")}"></span>'
+                   f"{v(engine, f'{q}.severity_label')}")
+            if r.get("check_label"):
+                sev += f'<br><span class="tag unk">{v(engine, f"{q}.check_label")}</span>'
+        else:
+            value = "—"
+            sev = f'<span class="tag unk">{v(engine, f"{q}.status_label")}</span><br><span class=cit>{v(engine, f"{q}.reason")}</span>'
+        rows.append([v(engine, f"{q}.risk"), value, sev, v(engine, f"{q}.explanation"),
+                     _threshold_text(engine, f"{q}.thresholds", r.get("thresholds") or {})])
+    out.append(_table([("Risco", False), ("Valor", False), ("Semáforo", False), ("O que mede", False), ("Limites", False)], rows)
+               .replace("<table>", '<table class="riscos">', 1))
+    return "\n".join(out)
+
+
+def _fee_headline_section(engine: dict) -> str:
+    """Engine 1.8: "Quanto a carteira paga em taxas": the disclosed total, the ETF site's apart, the coverage, and
+    what is not included. The balancete estimate is shown apart and never added."""
+    sm = (engine.get("fees") or {}).get("summary") or {}
+    b = "fees.summary"
+    out = []
+    if sm.get("adm_disclosed_fixed_per_year_brl") is not None:
+        out.append(f'<div class="destaque"><span class="numero">{v(engine, f"{b}.adm_disclosed_fixed_per_year_brl")}</span> por ano '
+                   f'<span class="numero-2">{v(engine, f"{b}.adm_disclosed_fixed_portfolio_pct")} da carteira ao ano</span>'
+                   "<br><span class=cit>taxa de administração divulgada, somada nos fundos com taxa fixa</span></div>")
+    else:
+        out.append('<div class="destaque"><span class="numero-2">Nenhuma taxa de administração fixa divulgada para somar.</span></div>')
+    items = []
+    if sm.get("adm_disclosed_range_low_per_year_brl") is not None:
+        items.append(f"Fundos com classes de taxas diferentes (faixa divulgada), à parte: <span class=v>{v(engine, f'{b}.adm_disclosed_range_low_per_year_brl')}</span> "
+                     f"a <span class=v>{v(engine, f'{b}.adm_disclosed_range_high_per_year_brl')}</span> por ano "
+                     f"({v(engine, f'{b}.adm_disclosed_range_low_portfolio_pct')} a {v(engine, f'{b}.adm_disclosed_range_high_portfolio_pct')} da carteira).")
+    if sm.get("adm_etf_site_per_year_brl") is not None:
+        items.append(f"ETFs, à parte: <span class=v>{v(engine, f'{b}.adm_etf_site_per_year_brl')}</span> por ano "
+                     f"({v(engine, f'{b}.adm_etf_site_portfolio_pct')} da carteira): {v(engine, f'{b}.etf_site_label')}.")
+    if sm.get("fund_value_brl") is not None:
+        items.append(f"Cobertura: dos <span class=v>{v(engine, f'{b}.fund_value_brl')}</span> em fundos "
+                     f"({v(engine, f'{b}.fund_value_portfolio_pct')} da carteira), têm taxa fixa divulgada "
+                     f"<span class=v>{v(engine, f'{b}.coverage_fixed_fund_value_pct')}</span>, faixa divulgada "
+                     f"{v(engine, f'{b}.coverage_range_fund_value_pct')}, taxa de ETF do site {v(engine, f'{b}.coverage_etf_site_fund_value_pct')} "
+                     f"e nenhuma taxa utilizável <span class=v>{v(engine, f'{b}.coverage_without_fee_fund_value_pct')}</span>.")
+    if sm.get("estimate_adm_per_year_brl") is not None:
+        items.append(f"Estimativa do balancete ({v(engine, f'{b}.estimate_label')}), à parte e nunca somada: "
+                     f"{v(engine, f'{b}.estimate_adm_per_year_brl')} por ano ({v(engine, f'{b}.estimate_adm_portfolio_pct')} da carteira).")
+    if items:
+        out.append("<ul>" + "".join(f"<li>{x}</li>" for x in items) + "</ul>")
+    ni = []
+    for i, x in enumerate(sm.get("not_included") or []):
+        q = f"{b}.not_included[{i}]"
+        tail = f" Linhas: {e(', '.join(x.get('line_ids') or []))}." if x.get("line_ids") else ""
+        if x.get("value_brl") is not None:
+            tail += f" Valor: {v(engine, f'{q}.value_brl')}."
+        ni.append(f"<li>{v(engine, f'{q}.text')}.{tail}</li>")
+    if ni:
+        out.append("<h3>Não incluído no total</h3><ul>" + "".join(ni) + "</ul>")
+    out.append(f"<p class=cit>Base: {v(engine, f'{b}.basis')}. O detalhe por fundo está em Custo em taxas.</p>")
     return "\n".join(out)
 
 
@@ -549,12 +667,27 @@ def _method_section(engine: dict, narrative: Narrative) -> str:
         "Grupo econômico não avaliado: não há fonte pública arquivada da estrutura de grupo, e o SILO não infere grupo por nome.",
         "Sem previsão de retorno e sem recomendação de compra, venda ou manutenção de qualquer ativo.",
         "Classificações por indexador e setor seguem regras versionadas; o que não tem regra aparece como \"sem classificação\".",
+        *_risk_method(engine),
+        "Os gráficos são desenhados a partir dos mesmos campos das tabelas ao lado, que continuam sendo o registro preciso; "
+        "um gráfico sem dado não é desenhado, e a seção do que não foi possível avaliar diz por quê.",
         f"Modelo: {model}. Provedor: {e(narrative.provider or '—')}. Custo do texto: US$ {narrative.cost_usd:.4f} "
         f"(teto de US$ {narrative.cost_cap_usd:.2f} por relatório).",
     ]
     # The Revisor's notes (what it removed and why) stay in the Narrative for the logs and the JSON; the client's
     # PDF does not carry them (engine 1.7).
     return "<ul>" + "".join(f"<li>{x}</li>" for x in lines) + "</ul>"
+
+
+def _risk_method(engine: dict) -> list[str]:
+    rk = engine.get("risks") or {}
+    if not rk:
+        return []
+    th = []
+    for i, r in enumerate(rk.get("rows") or []):
+        if r.get("thresholds"):
+            th.append(f"{v(engine, f'risks.rows[{i}].risk')}: "
+                      + _threshold_text(engine, f"risks.rows[{i}].thresholds", r["thresholds"]).replace("<br>", ", "))
+    return [f"Principais riscos: {v(engine, 'risks.severity_rule')}. Limites: {'; '.join(th)}. {v(engine, 'risks.note')}"]
 
 
 def _sources(engine: dict) -> str:
@@ -589,6 +722,10 @@ def render_html(engine: dict, narrative: Narrative, assinatura: str | None = Non
         section("Resumo", _findings_html(engine, narrative, "resumo")
                 + (f"<h3>{e(SECTION_TITLES['achados'])}</h3>" + _findings_html(engine, narrative, "achados")
                    if narrative.status == "complete" and any(f.section == "achados" for f in narrative.kept) else "")),
+        *([section("Principais riscos", _risks_section(engine) + _findings_html(engine, narrative, "riscos"))]
+          if engine.get("risks") else []),
+        *([section("Quanto a carteira paga em taxas", _fee_headline_section(engine))]
+          if (engine.get("fees") or {}).get("summary") else []),
         section("Identificação linha a linha", _ident_section(engine) + _findings_html(engine, narrative, "identificacao")),
         section("Custo em taxas", _fees_section(engine) + _findings_html(engine, narrative, "taxas")),
         section("Exposição", _exposure_section(engine) + _findings_html(engine, narrative, "exposicao")),

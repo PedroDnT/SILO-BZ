@@ -797,3 +797,98 @@ def _totals(lines: list[dict]) -> dict[str, Any]:
         "known_fee_fund_value_pct": pct(v_fixed + v_range, total_value) if total_value else None,
         "known_fee_incl_etf_site_fund_value_pct": pct(v_fixed + v_range + v_etf, total_value) if total_value else None,
     }
+
+
+# --- engine 1.8: "Quanto a carteira paga em taxas" -------------------------------------------------------------------
+
+SUMMARY_TITLE = "Quanto a carteira paga em taxas"
+SUMMARY_BASIS = (
+    "taxa de administração divulgada por fundo (Extrato CVM, lâmina, cad_fi), em R$ por ano = valor da posição x taxa; "
+    "as taxas fixas são somadas, a faixa das linhas com classes de taxas diferentes fica à parte, a taxa de ETF do site "
+    "etfsbrasil.com.br (fonte de terceiros) é somada à parte, e a estimativa do balancete nunca é somada a nenhuma delas"
+)
+NOT_INCLUDED_TEXT = {
+    "performance": "taxa de performance: variável, mostrada por fundo como informada, nunca somada",
+    "carregamento_pgbl": "carregamento de plano PGBL ou VGBL: não é público, não incluído",
+    "spread_credito_direto": (
+        "spread embutido no crédito direto (CDB, LCI, LCA, CRI, CRA, debêntures): não é uma taxa publicada, não incluído"
+    ),
+    "sem_taxa": "fundos sem taxa utilizável (não encontrada, 0 informado ou acima de 5% a.a., a conferir): fora da soma",
+    "fundos_investidos": (
+        "taxa própria dos fundos investidos (master): não somada; a taxa divulgada de um fundo de fundos já inclui a dos "
+        "investidos, salvo as exceções da Res. CVM 175, art. 98"
+    ),
+}
+
+
+def _perf_filed(line: dict[str, Any]) -> bool:
+    d = line.get("disclosed") or {}
+    perf = (d.get("terms_as_filed") or {}).get("performance") or {}
+    return bool(d.get("perf_as_filed")) or str(perf.get("exists") or "").upper() == "S"
+
+
+def summarize(fees: dict[str, Any], portfolio_total: Decimal, direct_credit: dict[str, Any] | None) -> dict[str, Any]:
+    """The fee headline (engine 1.8): the totals the engine already computed, their coverage, and what is left out.
+
+    Never adds the balancete estimate to a disclosed fee, nor the ETF site's fee under "divulgada"; the shares are of
+    the fund value (``coverage_*_fund_value_pct``) or of the portfolio (``*_portfolio_pct``).
+    """
+    t = fees.get("totals") or {}
+
+    def d(key: str) -> Decimal:
+        return dec(t.get(key)) or Decimal("0")
+
+    fund_value = d("fund_value_brl")
+
+    def share(key: str) -> float | None:
+        return pct(d(key), fund_value) if fund_value else None
+
+    lines = fees.get("lines") or []
+    perf_lines = [ln["line_no"] for ln in lines if _perf_filed(ln)]
+    none_lines = [ln["line_no"] for ln in lines
+                  if (ln.get("headline") or {}).get("kind") not in ("fixa", "lamina_mais_recente", "faixa")
+                  and not ((ln.get("headline") or {}).get("kind") == "etf_site" and (ln.get("headline") or {}).get("counted_as_cost"))]
+    dc = direct_credit or {}
+    dc_lines = sorted({n for g in dc.get("groups") or [] for n in g.get("line_nos") or []} | set(dc.get("not_printed_line_nos") or []))
+    not_included = [
+        {"id": "performance", "text": NOT_INCLUDED_TEXT["performance"], "line_nos": perf_lines, "value_brl": None},
+        {"id": "carregamento_pgbl", "text": NOT_INCLUDED_TEXT["carregamento_pgbl"], "line_nos": [], "value_brl": None},
+        {"id": "spread_credito_direto", "text": NOT_INCLUDED_TEXT["spread_credito_direto"], "line_nos": dc_lines,
+         "value_brl": dc.get("direct_credit_value_brl") if dc_lines else None},
+        {"id": "sem_taxa", "text": NOT_INCLUDED_TEXT["sem_taxa"], "line_nos": none_lines,
+         "value_brl": t.get("fund_value_without_disclosed_fee_brl") if none_lines else None},
+    ]
+    if fees.get("underlying"):
+        not_included.append({"id": "fundos_investidos", "text": NOT_INCLUDED_TEXT["fundos_investidos"],
+                             "line_nos": sorted({u["line_no"] for u in fees["underlying"]}), "value_brl": None})
+    has_fixed = any((ln.get("headline") or {}).get("kind") in ("fixa", "lamina_mais_recente") for ln in lines)
+    has_range = any((ln.get("headline") or {}).get("kind") == "faixa" for ln in lines)
+    has_etf = d("fund_value_with_etf_site_fee_brl") > 0
+    return {
+        "title": SUMMARY_TITLE,
+        "basis": SUMMARY_BASIS,
+        "n_fund_lines": len(lines),
+        "fund_value_brl": t.get("fund_value_brl"),
+        "fund_value_portfolio_pct": pct(fund_value, portfolio_total) if portfolio_total else None,
+        # the disclosed fixed fees, summed (null when no line has one, so a 0 never reads as "no cost")
+        "adm_disclosed_fixed_per_year_brl": t.get("adm_disclosed_fixed_per_year_brl") if has_fixed else None,
+        "adm_disclosed_fixed_portfolio_pct": t.get("adm_disclosed_fixed_portfolio_pct") if has_fixed else None,
+        # a fund whose classes file different fees: low and high, apart from the fixed sum
+        "adm_disclosed_range_low_per_year_brl": t.get("adm_disclosed_range_low_per_year_brl") if has_range else None,
+        "adm_disclosed_range_high_per_year_brl": t.get("adm_disclosed_range_high_per_year_brl") if has_range else None,
+        "adm_disclosed_range_low_portfolio_pct": t.get("adm_disclosed_range_low_portfolio_pct") if has_range else None,
+        "adm_disclosed_range_high_portfolio_pct": t.get("adm_disclosed_range_high_portfolio_pct") if has_range else None,
+        # ETF fees from etfsbrasil.com.br, a third-party site: their own sum, never "divulgada"
+        "adm_etf_site_per_year_brl": t.get("adm_etf_site_per_year_brl") if has_etf else None,
+        "adm_etf_site_portfolio_pct": t.get("adm_etf_site_portfolio_pct") if has_etf else None,
+        "etf_site_label": ETF_SITE_LABEL,
+        # coverage: the share of the fund value each kind of fee covers (they sum to 100 within rounding)
+        "coverage_fixed_fund_value_pct": share("fund_value_with_fixed_fee_brl"),
+        "coverage_range_fund_value_pct": share("fund_value_with_fee_range_brl"),
+        "coverage_etf_site_fund_value_pct": share("fund_value_with_etf_site_fee_brl"),
+        "coverage_without_fee_fund_value_pct": share("fund_value_without_disclosed_fee_brl"),
+        "estimate_adm_per_year_brl": t.get("estimate_adm_per_year_brl"),
+        "estimate_adm_portfolio_pct": t.get("estimate_adm_portfolio_pct"),
+        "estimate_label": ESTIMATE_LABEL,
+        "not_included": not_included,
+    }

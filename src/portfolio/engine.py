@@ -16,23 +16,25 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
+from src.portfolio.allocation import compute_allocation
 from src.portfolio.client import SiloClient, utc_now
 from src.portfolio.common import add_months, brl, iso, month_start, statement_source
 from src.portfolio.concentration import compute_concentration
 from src.portfolio.consolidate import merge_same_identity
-from src.portfolio.fees import compute_fees
+from src.portfolio.fees import compute_fees, summarize
 from src.portfolio.identify import LineId, identify
 from src.portfolio.indexer import compute_indexer
 from src.portfolio.lookthrough import add_portfolio_shares, compute_lookthrough
 from src.portfolio.movement import compute_movement, default_movement_month
 from src.portfolio.restatements import compute_restatements
+from src.portfolio.risks import compute_risks
 from src.portfolio.sector import compute_sector
 from src.portfolio.signals import compute_signals
 from src.portfolio.statement import Position, Statement
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "1.7"
+SCHEMA_VERSION = "1.8"
 ENGINE_VERSION = "0.1.0"
 # Documented fixed lags until a coverage()-driven default exists (see engine-output.md).
 CDA_LAG_MONTHS = 4
@@ -114,6 +116,14 @@ ASSUMPTIONS = [
             "Concentração e vencimentos (esquema 1.7) somam só valores do extrato. O emissor é o nome impresso na linha, "
             "sem o tipo e o código do registro; não é grupo econômico. O teste do FGC soma CDB, LCI e LCA por emissor "
             "impresso e fica a conferir: o limite é por CPF e instituição, e o extrato pode ter mais de um titular."
+        ),
+    },
+    {
+        "id": "risks",
+        "text": (
+            "Principais riscos (esquema 1.8): cada linha lê um campo de outra seção, ou uma soma de valores do extrato, "
+            "contra limites fixos do código (src/portfolio/risks.py); o semáforo é atenção, moderado ou baixo. O crédito "
+            "sem cobertura do FGC supõe um só titular e trata o emissor impresso como a instituição: fica a conferir."
         ),
     },
     {
@@ -231,6 +241,8 @@ def run_engine(
     signals = compute_signals(lines, client)
     movement = compute_movement(lines, client, params.movement_month)
     concentration = compute_concentration(lines, stmt.position_date)
+    allocation = compute_allocation(lines)  # engine 1.8
+    fees["summary"] = summarize(fees, stmt.sum_of_lines, concentration.get("issuer"))  # engine 1.8
 
     doc = {
         "schema_version": SCHEMA_VERSION,
@@ -246,6 +258,7 @@ def run_engine(
         "risk_signals": signals,
         "movement": movement,
         "concentration": concentration,
+        "allocation": allocation,
         "assumptions": ASSUMPTIONS,
         "section_status": {
             k: {"status": v["status"], "reason": v["reason"], "reason_codes": list(v.get("reason_codes") or [])}
@@ -259,10 +272,16 @@ def run_engine(
                 ("risk_signals", signals),
                 ("movement", movement),
                 ("concentration", concentration),
+                ("allocation", allocation),
             )
         },
         "provenance": [{**e.as_dict(), "id": f"p{e.call_id}"} for e in client.provenance],
     }
+    # engine 1.8: the main risks read the sections above, so they are built last and placed after them
+    risks = compute_risks(doc)
+    doc = _insert_after(doc, "allocation", "risks", risks)
+    doc["section_status"]["risks"] = {"status": risks["status"], "reason": risks["reason"],
+                                      "reason_codes": list(risks.get("reason_codes") or [])}
     log.info("engine done: %d tool calls", len(client.provenance))
     return doc
 
@@ -273,8 +292,19 @@ def _fee_totals_as_portfolio_pct(fees: dict[str, Any], total: Decimal) -> None:
     for src, dst in (("adm_disclosed_fixed_per_year_brl", "adm_disclosed_fixed_portfolio_pct"),
                      ("adm_etf_site_per_year_brl", "adm_etf_site_portfolio_pct"),
                      ("adm_fee_per_year_brl", "adm_fee_portfolio_pct"),
+                     ("adm_disclosed_range_low_per_year_brl", "adm_disclosed_range_low_portfolio_pct"),  # engine 1.8
+                     ("adm_disclosed_range_high_per_year_brl", "adm_disclosed_range_high_portfolio_pct"),
                      ("estimate_adm_per_year_brl", "estimate_adm_portfolio_pct")):
         t[dst] = float((Decimal(str(t[src])) / total * 100).quantize(Decimal("0.0001"))) if total else None
+
+
+def _insert_after(doc: dict[str, Any], after: str, key: str, value: Any) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for k, v in doc.items():
+        out[k] = v
+        if k == after:
+            out[key] = value
+    return out
 
 
 def _unexplained_values(lines: list[LineId], look: dict[str, Any]) -> dict[int, Decimal]:
