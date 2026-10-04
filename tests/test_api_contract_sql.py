@@ -1039,9 +1039,9 @@ def test_fidc_regime_break_is_in_catalog_and_on_the_coverage_row():
 
     breaks = catalog_payload()["regime_breaks"]
     fidc = [b for b in breaks if b["dataset"] == "funds_fidc" and b["column"] == "delinquency"]
-    assert len(fidc) == 1 and fidc[0]["boundary"] == "2025-01-31"
+    assert len(fidc) == 1 and fidc[0]["boundary"] == "2020-11-30"
     cov = _strip_comments(FUNCS["api.coverage"])
-    assert "WHEN 'fidc'" in cov and "2025-01-31" in cov, (
+    assert "WHEN 'fidc'" in cov and "2020-11-30" in cov, (
         "the funds_fidc coverage row must carry the same boundary in notes"
     )
 
@@ -1820,8 +1820,8 @@ def test_metric_coverage_is_refreshed_and_granted():
 
 
 def test_fund_metrics_point_at_the_measured_coverage_not_a_written_date():
-    """Only one `since` is stated as a constant — the FIDC regime break, which
-    is a published boundary with its own lockstep test. Every other span is
+    """Only one `since` is stated as a constant — the start of CVM's FIDC HIST
+    archive, beside the published regime break with its own lockstep test. Every other span is
     measured, so the catalog points at the function instead of carrying a date
     that can drift silently."""
     from serve.catalog import METRICS, catalog_payload
@@ -1847,6 +1847,6 @@ def test_fund_metrics_point_at_the_measured_coverage_not_a_written_date():
         "a hardcoded `since` is a claim nobody re-measures; only the published "
         f"regime break earns one, got {with_since}"
     )
-    assert METRICS["delinquency"]["since"] == {"fidc": "2025-01-31"}
+    assert METRICS["delinquency"]["since"] == {"fidc": "2013-01-31"}
     for m in fund_metrics:
         assert METRICS[m].get("coverage") == "api.metric_coverage()", m

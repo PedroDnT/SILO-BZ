@@ -1,7 +1,7 @@
 # 0002. A ticker is active only if it trades, and its history follows the company across an ISIN change
 
 Date: 2026-10-04. Status: accepted (owner, 2026-10-04). Context: #381, PRs
-#505 (migration 63), #573 (migration 69) and the lineage PR (catalog v59).
+#505 (migration 63), #573 (migration 69) and #583 (catalog v60).
 
 ## Decision
 

@@ -12,7 +12,7 @@ so the caller marks the narrative unknown as it does for a refusal.
 The provider is chosen by ``SILO_LLM_PROVIDER`` (``anthropic``, ``openai`` or
 ``fake``) and the model by ``SILO_LLM_MODEL``, so the owner can swap the model
 vendor without touching the engine or the report. Defaults: ``anthropic`` runs
-``claude-opus-5-5``; ``openai`` runs ``gpt-6-luna`` at medium reasoning (the
+``claude-opus-5-5``; ``openai`` runs ``gpt-5.1`` at medium reasoning (the
 owner's choice, 2026-10-03); ``SILO_LLM_MODEL`` and ``SILO_LLM_EFFORT`` override
 either. No hosted tool (web search, file search, ...) is ever enabled: the
 Redator and the Revisor read only the masked engine JSON in the prompt; hosted
@@ -41,11 +41,16 @@ from pydantic import BaseModel, ValidationError
 
 DEFAULT_MODEL = "claude-opus-5-5"
 DEFAULT_EFFORT = "medium"
-# The owner's choice for SILO_LLM_PROVIDER=openai (2026-10-03): gpt-6-luna at medium
-# reasoning. Its model page (developers.openai.com/api/docs/models/gpt-6-luna, read
-# 2026-10-03) lists reasoning.effort none, low, medium (default), high, xhigh and max, and
-# structured outputs on the Responses API.
-OPENAI_DEFAULT_MODEL = "gpt-6-luna"
+# The owner's choice for SILO_LLM_PROVIDER=openai (2026-10-04): gpt-5.1 at medium
+# reasoning, replacing gpt-6-luna (2026-10-03), because the repository's OPENAI_API_KEY
+# gets 403 model_not_found on every gpt-6-* model (probe_openai_models.yml lists gpt-5,
+# gpt-5.1, gpt-5-mini, gpt-5-nano, gpt-5-pro, gpt-4o and gpt-4o-mini as callable). Its
+# model page (https://developers.openai.com/api/docs/models/gpt-5.1, read 2026-10-04)
+# lists reasoning.effort none (default), low, medium and high, so medium is sent
+# explicitly, and structured outputs on the Responses API. The same page and
+# https://developers.openai.com/api/docs/deprecations (read 2026-10-04) mark gpt-5.1
+# deprecated on 2026-10-01, shutdown 2027-04-01, recommended replacement gpt-6-sol.
+OPENAI_DEFAULT_MODEL = "gpt-5.1"
 OPENAI_DEFAULT_EFFORT = "medium"
 DEFAULT_MAX_TOKENS = 16000
 COST_CAP_USD = 1.00
@@ -64,12 +69,17 @@ PRICES_TAKEN_ON = "2026-09-25"
 # writes and output; the tuple order is the one above (cache write, then cache read =
 # cached input). Only the Standard tier is priced: Fast mode (2x), Batch and Flex (0.5x)
 # and regional processing (+10%) are not modelled, and the provider sends no service_tier.
-OPENAI_PRICES_TAKEN_ON = "2026-10-03"
+OPENAI_PRICES_TAKEN_ON = "2026-10-04"  # the gpt-5.1 row; the gpt-6 rows were read 2026-10-03
 PRICES_USD_PER_MTOK: dict[str, tuple[float, float, float, float]] = {
     DEFAULT_MODEL: (4.00, 20.00, 5.00, 0.20),
     "gpt-6-astra": (10.00, 50.00, 12.50, 1.00),
     "gpt-6.1-sol": (2.00, 10.00, 2.50, 0.10),
     "gpt-6-luna": (0.10, 0.50, 0.125, 0.01),
+    # gpt-5.1: the pricing page's Standard row (input $1.25, cached input $0.125, output
+    # $10.00, cache writes "-", no long-context columns) and its model page, both read
+    # 2026-10-04. "-" means no separate write fee: written tokens are part of
+    # input_tokens, so they are priced at the input rate here, never as free.
+    "gpt-5.1": (1.25, 10.00, 1.25, 0.125),
 }
 # "Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x
 # output for the full request" (the gpt-6-astra, gpt-6.1-sol and gpt-6-luna model pages,
@@ -400,7 +410,7 @@ def _namespace(doc: Any) -> Any:
 class OpenAIProvider:
     """OpenAI models through the official ``openai`` SDK (Responses API).
 
-    Model ``SILO_LLM_MODEL``, default ``gpt-6-luna``; ``reasoning.effort`` from
+    Model ``SILO_LLM_MODEL``, default ``gpt-5.1``; ``reasoning.effort`` from
     ``SILO_LLM_EFFORT``, default ``medium`` (``off`` sends no reasoning
     parameter, for a model without reasoning). The key is read from
     ``OPENAI_API_KEY`` only and passed explicitly; it is never logged or stored

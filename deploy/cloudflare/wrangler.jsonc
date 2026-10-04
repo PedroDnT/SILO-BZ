@@ -24,7 +24,7 @@
 	// (src/index.ts); "open" turns its internet on.
 	"vars": {
 		"SILO_LLM_PROVIDER": "openai",
-		"SILO_LLM_MODEL": "gpt-6-luna",
+		"SILO_LLM_MODEL": "gpt-5.1",
 		"SILO_LLM_EFFORT": "medium",
 		"EGRESS": "allowlist"
 	},

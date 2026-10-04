@@ -71,7 +71,7 @@ The workflows below are examples of what to do **after** discovery, not a fixed 
 1. `lookup` (`p_query`) / `search_funds` for FIDC CNPJs. Do not invent a ticker-to-fund join.
 2. `panel` with `p_ids: ["PETR4", "<cnpj>", …]`, `p_metrics: ["close_return","delinquency","nav"]`, `p_freq: "month"`.
 3. Pivot locally keeping `asset_class` in the key. Correlate pairwise-complete. **No ffill.**
-4. `delinquency` is BRL outstanding, not a rate: divide by `nav` (both are in the same call). For a FIDC the series **starts** at 2025-01 ([regime break](/api-docs/conventions#regime-breaks)).
+4. `delinquency` is BRL outstanding, not a rate: divide by `nav` (both are in the same call). For a FIDC the series starts at 2013-01 and is on every row from 2020-11 ([regime break](/api-docs/conventions#regime-breaks)).
 5. `close` is unadjusted (a split reads as a jump in `quotes`; `panel`'s `close_return` adjusts the previous close across it); `quote_history`'s `close_adj`, its default field, is continuous across splits and is refused where unproven. A missing month is not a two-month return.
 6. Before reading a null as a gap, call `coverage` and `metric_coverage`.
 

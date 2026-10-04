@@ -303,13 +303,13 @@ def test_panel_metrics_come_from_catalog():
 
 
 def test_close_return_catalog_says_adjusted_across_a_share_count_event():
-    """A split must not read as a return (#396): since catalog v58 close_return
+    """A split must not read as a return (#396): since catalog v59 close_return
     divides the previous close by the event's share ratio. The catalog must say
     that, give the owner's 1:4 example, keep the NULL cases, and not claim the
     v50 behaviour (NULL across every event) or the old one (a jump)."""
     from serve.catalog import CONSTRAINTS, CATALOG_VERSION, METRICS
 
-    assert CATALOG_VERSION >= 58
+    assert CATALOG_VERSION >= 59
     meaning = METRICS["close_return"]["meaning"].lower()
     constraint = next(c for c in CONSTRAINTS if c.startswith("close_return is adjusted"))
     for text in (meaning, constraint.lower()):
