@@ -6,9 +6,9 @@ Container, at `https://silo-demo-health.<account subdomain>.workers.dev`.
 
 | Path             | Answer                                                                                                                                                                                                                                   |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /`          | the upload page (Portuguese): access code, statement file, downloads `diagnostico.pdf`                                                                                                                                                   |
+| `GET /`          | the upload page (Portuguese): access code, statement files (one per account), downloads `diagnostico.pdf`                                                                                                                                                   |
 | `GET /health`    | `200 ok` from the Worker itself, public, no Container                                                                                                                                                                                    |
-| `POST /diagnose` | the statement (template `.xlsx` or BTG `.pdf`, at most 10 MB, raw body or multipart `file`). Token as `x-demo-token` or `Authorization: Bearer`; `401` without it, `503` if the secret is unset, `413` over 10 MB. Returns the engine's answer |
+| `POST /diagnose` | the statement (template `.xlsx` or BTG `.pdf`, extrato or performance report; raw body, or one multipart `file` part per account, consolidated; at most 10 MB in all). Token as `x-demo-token` or `Authorization: Bearer`; `401` without it, `503` if the secret is unset, `413` over 10 MB. Returns the engine's answer |
 | anything else    | `404`                                                                                                                                                                                                                                    |
 
 Each upload gets its own Durable Object, so its own Container instance and disk;

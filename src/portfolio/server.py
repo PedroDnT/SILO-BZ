@@ -4,10 +4,12 @@
     gunicorn "src.portfolio.server:wsgi()"    # what the image runs (deploy/cloudflare/engine/)
 
 ``GET /health`` answers 200. ``POST /diagnose`` takes one statement (the
-spreadsheet template ``.xlsx`` or a BTG performance report ``.pdf``) as a
-multipart field ``file`` or as the raw request body, runs the engine and the
-report exactly as the two CLIs do (``diagnose`` then ``report.build``) and
-returns the PDF.
+spreadsheet template ``.xlsx``, or a BTG PDF: the performance report or the
+"Extrato da Conta Investimento", told apart by content) as a multipart field
+``file`` or as the raw request body, runs the engine and the report exactly as
+the two CLIs do (``diagnose`` then ``report.build``) and returns the PDF.
+Several ``file`` parts (one statement per account, 10 MB in all) are read one by
+one and consolidated (``consolidate.py``) before the engine runs.
 
 Access: ``Authorization: Bearer <DEMO_ACCESS_TOKEN>``. Without the variable set
 every ``/diagnose`` is refused with 503; a missing or wrong token gets 401.
@@ -58,8 +60,8 @@ MSG = {
     404: "Caminho não encontrado.",
     405: "Método não permitido.",
     413: "Arquivo grande demais: o limite é 10 MB.",
-    415: "Formato não suportado: envie a planilha modelo (.xlsx) ou o relatório de performance em PDF.",
-    422: "Não foi possível ler o extrato. Confira se é a planilha modelo ou o relatório de performance do BTG.",
+    415: "Formato não suportado: envie a planilha modelo (.xlsx) ou o PDF do BTG (extrato da conta ou relatório de performance).",
+    422: "Não foi possível ler o extrato. Confira se é a planilha modelo ou um PDF do BTG (extrato da conta ou relatório de performance).",
     500: "Erro interno ao gerar o diagnóstico.",
     502: "O relatório não pôde ser redigido agora. Tente de novo mais tarde.",
     503: "Serviço não configurado.",
@@ -138,9 +140,9 @@ def _sniff(data: bytes) -> str | None:
 
 def _read(data: bytes, fmt: str, workdir: Path) -> Statement:
     if fmt == "pdf":
-        from src.portfolio.statement_pdf import read_pdf_statement_bytes
+        from src.portfolio.statement_pdf_extrato import read_any_pdf_bytes
 
-        stmt, _diag = read_pdf_statement_bytes(data)
+        stmt, _diag, _layout = read_any_pdf_bytes(data)
         return stmt
     path = workdir / "extrato.xlsx"
     path.write_bytes(data)
@@ -160,19 +162,19 @@ def _authorized() -> None:
         raise _Refusal(401)
 
 
-def _upload() -> bytes:
+def _upload() -> list[bytes]:
+    """Every ``file`` part of a multipart upload (one statement per account), or the raw body."""
     if request.content_length is not None and request.content_length > MAX_UPLOAD_BYTES:
         raise _Refusal(413)
     if request.mimetype == "multipart/form-data":
-        f = request.files.get("file")
-        data = f.read() if f is not None else b""
+        parts = [f.read() for f in request.files.getlist("file")]
     else:
-        data = request.get_data(cache=False)
-    if len(data) > MAX_UPLOAD_BYTES:
+        parts = [request.get_data(cache=False)]
+    if sum(len(d) for d in parts) > MAX_UPLOAD_BYTES:
         raise _Refusal(413)
-    if not data:
+    if not parts or not all(parts):
         raise _Refusal(400)
-    return data
+    return parts
 
 
 def engine_rev(root: Path | None = None) -> str:
@@ -216,20 +218,27 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client) -> Fla
         try:
             _authorized()
             stage = "upload"
-            data = _upload()
-            size = len(data)
-            fmt = _sniff(data) or "-"
-            if fmt == "-":
+            parts = _upload()
+            size = sum(len(d) for d in parts)
+            fmts = [_sniff(d) or "-" for d in parts]
+            fmt = "+".join(fmts)
+            if "-" in fmts:
                 raise _Refusal(415)
             with tempfile.TemporaryDirectory(prefix="diag-") as tmp:
                 work = Path(tmp)
                 stage = "read"
                 try:
-                    stmt = _read(data, fmt, work)
+                    stmts = [_read(d, f, work) for d, f in zip(parts, fmts)]
+                    if len(stmts) == 1:
+                        stmt = stmts[0]
+                    else:
+                        from src.portfolio.consolidate import consolidate
+
+                        stmt = consolidate(stmts).statement
                 except Exception as exc:  # noqa: BLE001 - every reader failure is one answer; the type alone is logged
                     log.warning("read failed: %s", type(exc).__name__)
                     raise _Refusal(422) from None
-                del data
+                del parts
                 stage = "engine"
                 t1 = time.monotonic()
                 doc = run_engine(stmt, client_factory(), default_params(stmt.position_date))
@@ -248,9 +257,9 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client) -> Fla
                 pdf = pdf_path.read_bytes()
                 t3 = time.monotonic()
             log.info(
-                "diagnose 200 format=%s in_bytes=%d out_bytes=%d engine_s=%.1f report_s=%.1f total_s=%.1f "
+                "diagnose 200 format=%s files=%d in_bytes=%d out_bytes=%d engine_s=%.1f report_s=%.1f total_s=%.1f "
                 "narrative=%s provider=%s cost_usd=%.4f",
-                fmt, size, len(pdf), t2 - t1, t3 - t2, t3 - t0,
+                fmt, len(fmts), size, len(pdf), t2 - t1, t3 - t2, t3 - t0,
                 narrative.status, narrative.provider, narrative.cost_usd,
             )
             return Response(
