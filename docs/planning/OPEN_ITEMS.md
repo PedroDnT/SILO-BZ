@@ -168,16 +168,14 @@ created none. So a documentation change to `dashboard/pages/` is live on GitHub
 immediately and on the public site the next morning, unless someone dispatches
 `daily_ingest` with `rebuild_dashboard=true`.
 
-## 7. The docs site is on Mintlify's generated subdomain
+## 7. ~~The docs site is on Mintlify's generated subdomain~~ (superseded)
 
-**Blocked 2026-09-25:** DNS record plus Mintlify plan; account action, no repo change.
+**Superseded 2026-10-03 (`docs/scalar-rewrite`):** documentation rewritten from
+scratch on Scalar. Mintlify is no longer the docs host. The `api-docs/` directory
+and `docs.json` remain in the repo but are no longer the source; `scalar/` and
+`scalar.config.json` are. Scalar syncs from GitHub on merge.
 
-`octo-98895abd.mintlify.site` works and is linked correctly from everywhere. But
-a hex-string hostname reads as provisional to a first-time visitor, which is the
-wrong signal for the one surface a stranger is most likely to open.
-
-A custom domain needs a DNS record and a Mintlify plan that allows one — an
-account change, not a repo change, so it cannot be done from here.
+~~**Blocked 2026-09-25:** DNS record plus Mintlify plan; account action, no repo change.~~
 
 ## 8. Production deployments stopped taking the public hostnames
 
@@ -504,6 +502,11 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
   etfsbrasil.com.br fee (`etf_site_*`), summed apart in the engine. Live after an analytical apply and a
   `deploy_mcp.yml` dispatch. Open: the ETF fee is a third-party scrape that self-skips without `APIFY_TOKEN`;
   a CVM-filed ETF fee source (the regulamento) is not ingested.
+- **Catalog v57, engine 1.6** (branch `feat/etf-cotistas-pl`, owner's decision of 2026-10-03): each ETF line
+  also shows the site's cotistas and PL from the fee's snapshot (`etf_site_nr_cotistas`, `etf_site_pl`),
+  credited to etfsbrasil.com.br with the date, never summed. Live after an analytical apply and a
+  `deploy_mcp.yml` dispatch. Open: CVM has no 2026 daily report row for any registry ETF, so the same
+  `APIFY_TOKEN` dependency applies.
 - **CVM 175 levels** (#543, branch `claude/cvm175-levels-543`, migration 67):
   `cvm_registro_fundo` / `_classe` / `_subclasse` let a class reach its fund by
   `ID_Registro_Fundo` and a subclass its class by `ID_Registro_Classe`. Empty until

@@ -39,7 +39,9 @@ survives as an ETF-only compat view), `etf_market_snapshot` (scraped ETF NAV/cot
 into the daily run but **gated on the `APIFY_TOKEN` secret**; it self-skips when the
 token is unset. See `docs/reference/ETF_AND_PERFORMANCE.md`. Its `taxa_adm_pct` is the only ETF fee SILO holds:
 CVM's Extrato, lâmina and cad_fi have none for the 178 active ETFs, checked 2026-10-03. `api.portfolio_fees` serves
-it as `etf_site_*`, a third-party value, never as a disclosed fee, catalog v56), and `b3_cotahist` (B3 COTAHIST
+it as `etf_site_*`, a third-party value, never as a disclosed fee, catalog v56; its `cotistas` and `nav` (R$, the
+site's R$ MM x 1e6) are likewise the only cotistas and PL for a registry ETF, no 2026 `cvm_fi_diario` row, served from
+the fee's row as `etf_site_nr_cotistas` / `etf_site_pl`, catalog v57, never summed), and `b3_cotahist` (B3 COTAHIST
 quotes; daily run fetches the last 7 calendar days, yearly backfill is opt-in.
 Serve cash quotes from `vw_b3_quote_vista` (`tpmerc = '010'`), not the option-heavy parent),
 and the **B3 BDI** group — `b3_lending_open_position`, `b3_lending_rate`,

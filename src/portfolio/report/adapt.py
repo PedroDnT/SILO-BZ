@@ -138,6 +138,10 @@ def _fee_line_view(line_no: int, f: dict, names: dict[int, str]) -> dict:
     xb = f.get("extrato_beside") or {}
     sf = f.get("scale_flag") or {}
     etf = h if h.get("kind") == "etf_site" else {}
+    # engine 1.6 (catalog v57): the ETF's cotistas and PL, read from etf_site (not the headline), so they show whatever the
+    # fee's state: a fee to check, or a CVM source first. Descriptive: never a fee, never summed.
+    es = f.get("etf_site") or {}
+    has_facts = es.get("nr_cotistas") is not None or es.get("pl_brl") is not None
     out = {
         "line_id": f"L{line_no}",
         "cnpj": f.get("cnpj"),
@@ -171,6 +175,10 @@ def _fee_line_view(line_no: int, f: dict, names: dict[int, str]) -> dict:
         "etf_site_label": etf.get("basis"),
         "etf_site_check_label": etf.get("check_label"),
         "etf_site_raw": etf.get("filed_pct_year") if etf.get("check_label") else None,
+        "etf_site_nr_cotistas": es.get("nr_cotistas"),
+        "etf_site_pl_brl": es.get("pl_brl"),
+        "etf_site_as_of": es.get("as_of") if has_facts else None,
+        "etf_facts_label": es.get("facts_label") if has_facts else None,
         "lamina_beside_label": lb.get("label"),
         "lamina_beside_check_label": lb.get("check_label"),
         "lamina_beside_pct_year": lb.get("lamina_pct_year"),
@@ -203,7 +211,7 @@ def _fee_line_view(line_no: int, f: dict, names: dict[int, str]) -> dict:
             for fi in f.get("findings") or []
         ],
         "provenance": _prov(f.get("position_value_source") and [f["position_value_source"]], h.get("sources"), d.get("sources"), e.get("sources"),
-                            lb.get("sources"), xb.get("sources"), sf.get("sources")),
+                            lb.get("sources"), xb.get("sources"), sf.get("sources"), es.get("sources") if has_facts else None),
     }
     return out
 
@@ -473,6 +481,9 @@ def _provenance_view(eng: dict) -> tuple[list[dict], dict[str, str]]:
     fee_lines = [*(fees.get("lines") or []), *(fees.get("underlying") or [])]
     site_dates = [str(h["as_of"]) for h in ((ln.get("headline") or {}) for ln in fee_lines)
                   if h.get("kind") == "etf_site" and h.get("as_of")]
+    # engine 1.6: the site's cotistas and PL date it too, whatever the fee's state
+    site_dates += [str(es["as_of"]) for es in ((ln.get("etf_site") or {}) for ln in fee_lines)
+                   if es.get("as_of") and (es.get("nr_cotistas") is not None or es.get("pl_brl") is not None)]
     if site_dates:
         by_source["ETFSBRASIL"] = max(site_dates)
     return prov, by_source
