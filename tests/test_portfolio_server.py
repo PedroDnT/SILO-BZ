@@ -175,6 +175,27 @@ def test_engine_failure_is_a_fixed_500_with_no_traceback(monkeypatch, caplog, ca
     _assert_no_private(caplog, capfd)
 
 
+def test_provider_error_code_is_named_but_never_free_text(monkeypatch):
+    monkeypatch.setenv(server.TOKEN_ENV, TOKEN)
+
+    class FakeApiError(Exception):
+        status_code = 403
+        code = "unsupported_country_region_territory"
+
+    class FreeText(Exception):
+        status_code = 400
+        code = "MARIA FICTÍCIA tem 12345-6"
+
+    for exc, want in ((FakeApiError("x"), "unsupported_country_region_territory"), (FreeText("x"), None)):
+        def boom(exc=exc):
+            raise exc
+
+        r = server.create_app(client_factory=boom).test_client().post("/diagnose", data=TEMPLATE.read_bytes(), headers=_auth())
+        assert r.status_code == 500
+        assert r.headers.get("X-Silo-Error-Code") == want
+        assert "MARIA" not in str(r.headers)
+
+
 def test_missing_llm_key_is_a_fixed_502(monkeypatch, app):
     monkeypatch.setenv("SILO_LLM_PROVIDER", "anthropic")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
