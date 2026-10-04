@@ -689,9 +689,10 @@ before changing rule 4.
 8. **CVM skip versus error is a substring match** on `"Data not found"`, from
    `ValueError(f"Data not found at {url}")` in `cvm_fetcher.py`. B3 and market use
    typed exceptions. A reworded message would turn a skip into an error.
-9. **Smaller findings, not independently re-checked:** nine `tests/conftest.py`
-   fixtures with no users, and no pipeline-level test for
-   `ingest_etf_market.py`. (ANBIMA's log columns are now tested through
+9. **Smaller findings:** ~~nine `tests/conftest.py` fixtures with no users~~
+   (re-checked 2026-10-04: twelve, removed by owner's OK on
+   `claude/remove-unused-conftest-fixtures`). Still open: no pipeline-level test
+   for `ingest_etf_market.py`. (ANBIMA's log columns are now tested through
    `daily_update`.)
 10. **Stale remote branch `claude/audit-row-gaps`** (merged as #495, with later
     commits lost; the follow-up went out as #496). Delete only if the owner says so.
