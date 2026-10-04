@@ -7,6 +7,7 @@ parser is protected by the offline pre-push suite even though the live scrape is
 paid/rate-limited and never runs in tests.
 """
 
+import asyncio
 import logging
 from pathlib import Path
 from unittest.mock import patch
@@ -337,6 +338,20 @@ class TestIngestEtfMarket:
         assert "dropped 2 scraped records" in caplog.text
         (fin,) = audit_log.finished
         assert (fin["status"], fin["rows"]) == ("ok", 1)
+
+    def test_the_manual_entry_point_runs_the_ingest(self):
+        """`python -m src.pipeline.ingest_etf_market` must await the ingest, not return the coroutine."""
+        conn = object()
+        seen = {}
+
+        async def _fake_ingest(c):
+            seen["conn"] = c
+            return 7
+
+        with patch("src.pipeline.ingest_etf_market.get_pg_client", return_value=conn), \
+             patch("src.pipeline.ingest_etf_market.ingest_etf_market", _fake_ingest):
+            assert asyncio.run(m._run()) == 7
+        assert seen["conn"] is conn
 
     async def test_a_failed_audit_write_does_not_mask_the_ingest(self):
         def _fake_upsert(conn, table, rows, **kw):
