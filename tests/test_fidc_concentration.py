@@ -402,6 +402,9 @@ def test_each_tab_is_backfilled_only_from_its_first_published_month():
         "i": date(2019, 11, 1), "ii": date(2013, 1, 1),
         "viii": date(2013, 1, 1), "x": date(2023, 10, 1),
         "x7": date(2019, 11, 1),  # tab_X_7, migration 45
+        # tranche, flows and aging tabs, every HIST archive (issue #556)
+        "vi": date(2013, 1, 1), "x2": date(2013, 1, 1), "x3": date(2013, 1, 1),
+        "x4": date(2013, 1, 1), "x6": date(2013, 1, 1),
     }
     years = list(range(2013, 2027))
     today = date(2026, 9, 16)

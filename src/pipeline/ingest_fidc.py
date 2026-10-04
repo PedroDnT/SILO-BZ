@@ -68,6 +68,25 @@ def cedente_identifier(raw: Any) -> str | None:
     return None
 
 
+def inadimpl_by_key(rows_vi: List[Dict[str, Any]] | None) -> Dict[tuple, Any]:
+    """Tab_VI's delinquent-credit total per (cnpj, period), as filed.
+
+    TAB_VI_B_VL_DIRCRED_INAD read through the aging map, never the sum of the
+    B1..B10 buckets. Shared by the 2025+ path and the 2013-2024 HIST path, so
+    both eras carry the same column. A blank cell is absent, not zero.
+    """
+    out: Dict[tuple, Any] = {}
+    for row in rows_vi or []:
+        typed_vi, _ = apply_map(row, _aging.FIELD_MAP)
+        cnpj, period = typed_vi.get("cnpj"), typed_vi.get("period")
+        if not cnpj or not period:
+            continue
+        total = typed_vi.get("vl_total_inad")
+        if total is not None:
+            out[(cnpj, period)] = total
+    return out
+
+
 def ingest_fidc_mensal(
     conn: Any,
     raw_rows: List[Dict[str, Any]],
@@ -92,15 +111,7 @@ def ingest_fidc_mensal(
     """
     records: List[Dict[str, Any]] = []
 
-    inadimpl_by_key: Dict[tuple, Any] = {}
-    for row in rows_vi or []:
-        typed_vi, _ = apply_map(row, _aging.FIELD_MAP)
-        cnpj, period = typed_vi.get("cnpj"), typed_vi.get("period")
-        if not cnpj or not period:
-            continue
-        total = typed_vi.get("vl_total_inad")
-        if total is not None:
-            inadimpl_by_key[(cnpj, period)] = total
+    inadimpl = inadimpl_by_key(rows_vi)
 
     carteira_by_key: Dict[tuple, Any] = {}
     for row in rows_ii or []:
@@ -124,7 +135,7 @@ def ingest_fidc_mensal(
             continue
 
         if typed.get("vl_inadimpl") is None:
-            typed["vl_inadimpl"] = inadimpl_by_key.get(
+            typed["vl_inadimpl"] = inadimpl.get(
                 (typed["cnpj"], typed["period"])
             )
         if typed.get("vl_total") is None:

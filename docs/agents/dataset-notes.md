@@ -9,7 +9,9 @@ Storage layout: ~30 tables named `cvm_<entity>_<doctype>` or `bacen_<series>` (p
 `cia_*` and ETF tables and the `cvm_ingest_log` audit table). Trust `src/store/schema.sql`,
 `migrations/` and `src/pipeline/` (`CVMIngestor.daily_update` / `backfill`) as the source
 of truth, not the README's CSV table.
-Wired ingest datasets include `cvm_fidc_tranche`, `cvm_fidc_aging`, `cvm_fidc_cedente` /
+Wired ingest datasets include `cvm_fidc_tranche`, `cvm_fidc_tranche_flows`, `cvm_fidc_aging`
+(tabs X_2/X_3/X_6, X_4, VI, from 2013-01: the HIST archives carry them, and
+`cvm_fidc_mensal.vl_inadimpl` is tab VI's filed total in both eras, issue #556), `cvm_fidc_cedente` /
 `cvm_fidc_sacado` / `cvm_fidc_setor` / `cvm_fidc_scr` (FIDC informe tabs I, VIII, II, X —
 named originators, anonymized top-25 debtors, sector, SCR ladder; migration 38, with
 per-tab first months in `_FIDC_TAB_FIRST_PERIOD`; served by `api.fidc_cedentes` /
