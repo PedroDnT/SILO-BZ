@@ -67,6 +67,24 @@ def test_health(app):
     assert r.status_code == 200 and r.data == b"ok\n"
 
 
+def test_every_answer_carries_the_engine_revision(app):
+    rev = server.engine_rev()
+    assert len(rev) == 12 and int(rev, 16) >= 0
+    assert app.get("/health").headers["X-Silo-Engine-Rev"] == rev
+    assert app.post("/diagnose", data=b"x").headers["X-Silo-Engine-Rev"] == rev
+
+
+def test_engine_rev_ignores_bytecode_and_follows_content(tmp_path):
+    (tmp_path / "a.py").write_text("x = 1\n")
+    (tmp_path / "__pycache__").mkdir()
+    (tmp_path / "__pycache__" / "a.cpython-312.pyc").write_bytes(b"junk")
+    first = server.engine_rev(tmp_path)
+    (tmp_path / "__pycache__" / "a.cpython-312.pyc").write_bytes(b"other")
+    assert server.engine_rev(tmp_path) == first
+    (tmp_path / "a.py").write_text("x = 2\n")
+    assert server.engine_rev(tmp_path) != first
+
+
 def test_health_answers_without_the_token_configured(monkeypatch):
     monkeypatch.delenv(server.TOKEN_ENV, raising=False)
     r = server.create_app(client_factory=_client).test_client().get("/health")
@@ -150,8 +168,32 @@ def test_engine_failure_is_a_fixed_500_with_no_traceback(monkeypatch, caplog, ca
     caplog.set_level(logging.DEBUG)
     r = c.post("/diagnose", data=TEMPLATE.read_bytes(), headers=_auth())
     assert r.status_code == 500 and r.json == {"erro": server.MSG[500]}
+    assert r.headers["X-Silo-Stage"] == "engine"
+    assert r.headers["X-Silo-Error"] == "RuntimeError" and "X-Silo-Error-Status" not in r.headers
+    assert "MARIA" not in str(r.headers)
     assert "Traceback" not in caplog.text
     _assert_no_private(caplog, capfd)
+
+
+def test_provider_error_code_is_named_but_never_free_text(monkeypatch):
+    monkeypatch.setenv(server.TOKEN_ENV, TOKEN)
+
+    class FakeApiError(Exception):
+        status_code = 403
+        code = "unsupported_country_region_territory"
+
+    class FreeText(Exception):
+        status_code = 400
+        code = "MARIA FICTÍCIA tem 12345-6"
+
+    for exc, want in ((FakeApiError("x"), "unsupported_country_region_territory"), (FreeText("x"), None)):
+        def boom(exc=exc):
+            raise exc
+
+        r = server.create_app(client_factory=boom).test_client().post("/diagnose", data=TEMPLATE.read_bytes(), headers=_auth())
+        assert r.status_code == 500
+        assert r.headers.get("X-Silo-Error-Code") == want
+        assert "MARIA" not in str(r.headers)
 
 
 def test_missing_llm_key_is_a_fixed_502(monkeypatch, app):
@@ -160,6 +202,7 @@ def test_missing_llm_key_is_a_fixed_502(monkeypatch, app):
     _stub_pdf(monkeypatch)
     r = app.post("/diagnose", data=TEMPLATE.read_bytes(), headers=_auth())
     assert r.status_code == 502 and r.json == {"erro": server.MSG[502]}
+    assert r.headers["X-Silo-Stage"] == "report"
 
 
 @pytest.mark.parametrize("multipart", [False, True])
@@ -178,6 +221,9 @@ def test_diagnose_returns_a_pdf_with_the_renderer_stubbed(app, monkeypatch, capl
     assert r.status_code == 200, r.data[:200]
     assert r.mimetype == "application/pdf" and r.data.startswith(b"%PDF")
     assert r.headers["Cache-Control"] == "no-store"
+    assert r.headers["X-Silo-Provider"] == "fake"
+    assert r.headers["X-Silo-Narrative"] and float(r.headers["X-Silo-Cost-Usd"]) >= 0
+    assert float(r.headers["X-Silo-Seconds"]) >= 0
     assert "diagnose 200 format=xlsx" in caplog.text
     _assert_no_private(caplog, capfd)
 

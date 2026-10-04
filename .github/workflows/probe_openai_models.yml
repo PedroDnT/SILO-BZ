@@ -1,0 +1,97 @@
+name: Probe OpenAI models
+
+# Dispatch-only diagnostic: which models can the repo secret OPENAI_API_KEY call?
+# The deployed engine got 403 model_not_found for gpt-6-luna (CHANGELOG
+# fix/cloudflare-status-docs). Read-only: no database, no deploy, contents: read.
+# It prints model ids, HTTP statuses and OpenAI error codes only: never the key,
+# never a response body, never error messages (free text). Each candidate costs one
+# minimal Responses API call (input "ok", max_output_tokens 16, store false).
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidates:
+        description: "Comma-separated model ids to try (empty: the repo's cost table plus gpt-5*/gpt-4.1* ids the key lists; at most 8)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: probe-openai-models
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: List models and try each candidate once
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CANDIDATES: ${{ inputs.candidates }}
+        run: |
+          python -u - <<'PY'
+          import ast, json, os, re, sys, urllib.error, urllib.request
+
+          key = os.environ.get("OPENAI_API_KEY", "")
+          if not key:
+              sys.exit("OPENAI_API_KEY is not set")
+          MAX = 8
+          CODE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+
+          def call(method, url, body=None):
+              data = json.dumps(body).encode() if body is not None else None
+              req = urllib.request.Request(url, data=data, method=method, headers={
+                  "Authorization": "Bearer " + key, "Content-Type": "application/json"})
+              try:
+                  with urllib.request.urlopen(req, timeout=60) as r:
+                      return r.status, json.loads(r.read() or b"{}")
+              except urllib.error.HTTPError as e:
+                  try:
+                      payload = json.loads(e.read() or b"{}")
+                  except ValueError:
+                      payload = {}
+                  return e.code, payload
+
+          def err_code(payload):
+              err = payload.get("error") if isinstance(payload, dict) else None
+              code = err.get("code") if isinstance(err, dict) else None
+              return code if isinstance(code, str) and CODE.match(code) else "-"
+
+          # (a) the models this key lists
+          status, payload = call("GET", "https://api.openai.com/v1/models")
+          print(f"GET /v1/models -> HTTP {status} code={err_code(payload) if status != 200 else '-'}")
+          listed = sorted({m.get("id", "") for m in payload.get("data", []) if isinstance(m, dict)}) if status == 200 else []
+          listed = [m for m in listed if m.startswith("gpt-") or m.startswith("o")]
+          print(f"{len(listed)} listed ids starting with gpt- or o:")
+          for m in listed:
+              print("  " + m)
+
+          # (b) candidates: the input, or the cost table plus listed gpt-5*/gpt-4.1*
+          raw = os.environ.get("CANDIDATES", "").strip()
+          if raw:
+              cands = [c.strip() for c in raw.split(",") if c.strip()]
+          else:
+              src = open("src/portfolio/report/llm.py", encoding="utf-8").read()
+              table = []
+              for node in ast.walk(ast.parse(src)):
+                  if isinstance(node, ast.AnnAssign) and getattr(node.target, "id", "") == "PRICES_USD_PER_MTOK":
+                      table = [k.value for k in node.value.keys
+                               if isinstance(k, ast.Constant) and isinstance(k.value, str) and k.value.startswith("gpt-")]
+              family = [m for m in listed if m.startswith("gpt-5") or m.startswith("gpt-4.1")]
+              cands = list(dict.fromkeys(table + family))
+          if len(cands) > MAX:
+              print(f"{len(cands)} candidates, trying the first {MAX}; skipped: {', '.join(cands[MAX:])}")
+              cands = cands[:MAX]
+          print("Responses API probe (model, HTTP status, error code):")
+          for m in cands:
+              status, payload = call("POST", "https://api.openai.com/v1/responses",
+                                     {"model": m, "input": "ok", "max_output_tokens": 16, "store": False})
+              print(f"  {m}  HTTP {status}  code={err_code(payload) if status != 200 else '-'}")
+          PY

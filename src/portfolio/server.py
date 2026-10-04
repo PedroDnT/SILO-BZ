@@ -26,10 +26,12 @@ LLM provider is ``SILO_LLM_PROVIDER`` (``fake`` needs no key).
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import logging
 import os
+import re
 import tempfile
 import time
 from collections.abc import Callable
@@ -69,8 +71,25 @@ class _Refusal(Exception):
         self.status = status
 
 
-def _error(status: int) -> tuple[Response, int]:
-    return jsonify({"erro": MSG[status]}), status
+def _error(status: int, stage: str | None = None, exc: BaseException | None = None) -> tuple[Response, int]:
+    resp = jsonify({"erro": MSG[status]})
+    if stage:
+        # Which step refused, so a deploy smoke can tell an egress or key failure
+        # (stage engine or report) from a bad upload without reading the logs.
+        resp.headers["X-Silo-Stage"] = stage
+    if exc is not None:
+        # The exception's type name (as the log line has it) and, for an HTTP
+        # client error, its status code. Never its message: it can carry amounts.
+        resp.headers["X-Silo-Error"] = type(exc).__name__
+        code = getattr(exc, "status_code", None)
+        if isinstance(code, int):
+            resp.headers["X-Silo-Error-Status"] = str(code)
+        # The provider's machine-readable error code (for example
+        # "unsupported_country_region_territory"): an identifier, never free text.
+        api_code = getattr(exc, "code", None)
+        if isinstance(api_code, str) and re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", api_code):
+            resp.headers["X-Silo-Error-Code"] = api_code
+    return resp, status
 
 
 def default_client() -> SiloClient:
@@ -129,10 +148,33 @@ def _upload() -> bytes:
     return data
 
 
+def engine_rev(root: Path | None = None) -> str:
+    """A content hash of ``src/portfolio`` (every file but bytecode), 12 hex digits.
+
+    The image carries the same files as the checkout (Dockerfile.dockerignore), so
+    a deploy smoke can compute it from the repository and wait until a Cloudflare
+    instance answers with it: a rollout does not wait for instances to change image.
+    """
+    base = root or Path(__file__).resolve().parent
+    h = hashlib.sha256()
+    for f in sorted(p for p in base.rglob("*") if p.is_file()):
+        rel = f.relative_to(base).as_posix()
+        if "__pycache__" in rel.split("/") or rel.endswith(".pyc"):
+            continue
+        h.update(rel.encode() + b"\0" + f.read_bytes() + b"\0")
+    return h.hexdigest()[:12]
+
+
 def create_app(client_factory: Callable[[], SiloClient] = default_client) -> Flask:
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
     app.logger.disabled = True  # Flask's own handler would log tracebacks; this module logs instead
+    rev = engine_rev()
+
+    @app.after_request
+    def stamp(resp: Response) -> Response:
+        resp.headers["X-Silo-Engine-Rev"] = rev
+        return resp
 
     @app.get("/health")
     def health():
@@ -190,17 +232,22 @@ def create_app(client_factory: Callable[[], SiloClient] = default_client) -> Fla
                 headers={
                     "Content-Disposition": 'attachment; filename="diagnostico.pdf"',
                     "Cache-Control": "no-store",
+                    # The same fields as the log line, nothing of the statement.
+                    "X-Silo-Narrative": str(narrative.status),
+                    "X-Silo-Provider": str(narrative.provider),
+                    "X-Silo-Cost-Usd": f"{narrative.cost_usd:.4f}",
+                    "X-Silo-Seconds": f"{t3 - t0:.1f}",
                 },
             )
         except _Refusal as r:
             log.info("diagnose %d stage=%s format=%s in_bytes=%d total_s=%.1f", r.status, stage, fmt, size, time.monotonic() - t0)
-            return _error(r.status)
+            return _error(r.status, stage)
         except RequestEntityTooLarge:
             log.info("diagnose 413 stage=%s total_s=%.1f", stage, time.monotonic() - t0)
-            return _error(413)
+            return _error(413, stage)
         except Exception as exc:  # noqa: BLE001 - no traceback in logs or answers: messages can carry amounts
             log.error("diagnose 500 stage=%s format=%s in_bytes=%d error=%s", stage, fmt, size, type(exc).__name__)
-            return _error(500)
+            return _error(500, stage, exc)
 
     @app.errorhandler(HTTPException)
     def http_error(exc: HTTPException):

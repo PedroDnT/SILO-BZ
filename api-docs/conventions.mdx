@@ -179,9 +179,9 @@ On GET views it is the only truthful signal: `0-999/*` means you hit the cap and
 Where a source format changed so one column means different things on either side of a date, the boundary is published, not smoothed: `catalog().regime_breaks` and that dataset's `coverage` row (`notes`). Read it before differencing anything.
 
 <Warning>
-  **FIDC `delinquency` starts at 2025-01.** CVM's pre-2025 monthly FIDC file carried no delinquency field, so `delinquency` is null on every `fidc` row through **2024-12-31** (not zero, not clean books). From **2025-01-31** it is filed on every row (a fund with none files `0`).
+  **FIDC `delinquency` starts at 2013-01 and is on every row from 2020-11.** It is tab VI's filed total of overdue credits, the same field in CVM's yearly HIST archive (through 2024-12) and the monthly informe (from 2025-01). Through **2020-10-31** a fund with no tab VI row that month is null (not zero, not clean books). From **2020-11-30** it is filed on every row (a fund with none files `0`).
 
-  Start the series at 2025-01. Never chain-link, difference or average across 2024-12 → 2025-01.
+  Never read a pre-2020-11 null as zero or fill it, and never compare a count of reporting funds across 2020-10 → 2020-11.
 </Warning>
 
 #### Default windows serve only complete periods
