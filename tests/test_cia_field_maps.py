@@ -171,6 +171,33 @@ class TestIngestCiaCompany:
         assert ingest_cia_company(MagicMock(), []) == 0
         assert captured_upserts == []
 
+    # #354: CAD publishes one row per market, identical except for TP_MERC.
+    def test_rows_that_differ_only_in_market_become_one_with_every_market(
+        self, captured_upserts
+    ):
+        bolsa = {**CAD_ROW, "TP_MERC": "BOLSA"}
+        balcao = {**CAD_ROW, "TP_MERC": "BALCÃO ORGANIZADO"}
+        n = ingest_cia_company(MagicMock(), [bolsa, balcao, bolsa])
+        assert n == 1
+        rec = captured_upserts[0]["rows"][0]
+        assert rec["tp_merc"] == ["BALCÃO ORGANIZADO", "BOLSA"]
+        assert "TP_MERC" not in rec["raw"]
+
+    def test_blank_market_is_null_not_an_empty_list(self, captured_upserts):
+        ingest_cia_company(MagicMock(), [CAD_ROW])          # TP_MERC is ""
+        assert captured_upserts[0]["rows"][0]["tp_merc"] is None
+
+    def test_rows_that_differ_beyond_market_raise(self, captured_upserts):
+        other = {**CAD_ROW, "TP_MERC": "BOLSA", "SETOR_ATIV": "Bancos"}
+        with pytest.raises(ValueError, match="cd_cvm 25224 differ beyond TP_MERC"):
+            ingest_cia_company(MagicMock(), [CAD_ROW, other])
+        assert captured_upserts == []
+
+    def test_a_raw_only_difference_also_raises(self, captured_upserts):
+        other = {**CAD_ROW, "EMAIL": "outro@exemplo.com.br"}
+        with pytest.raises(ValueError, match="EMAIL"):
+            ingest_cia_company(MagicMock(), [CAD_ROW, other])
+
 
 class TestIngestCiaEvent:
     def test_happy_path(self, captured_upserts):

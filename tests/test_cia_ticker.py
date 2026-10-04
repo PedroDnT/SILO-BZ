@@ -223,6 +223,7 @@ def test_migration_63_is_the_last_definition_and_is_never_a_second_edit_of_25():
         "25_cia_ticker.sql",
         "63_company_ticker_active.sql",
         "69_company_ticker_liquidity.sql",
+        "71_cia_listing_grain.sql",
     ]
     # schema.sql and the analytical layer do not (re)define the view.
     assert "vw_company_ticker" not in Path("src/store/schema.sql").read_text(
@@ -281,3 +282,76 @@ def test_the_behaviour_file_covers_the_liquidity_cases():
     sql = Path("tests/sql/company_ticker_active_behaviour.sql").read_text(encoding="utf-8")
     for case in ("LIQ53=true", "THIN3=false", "STAL3=false", "ZERO3=false", "BRDS3=true", "NOTP3=false"):
         assert case in sql
+
+
+# --- migration 71: keep every published listing row (#354) ---
+
+_M71 = Path("src/store/migrations/71_cia_listing_grain.sql")
+
+# Verbatim from fca_cia_aberta_valor_mobiliario_2026.csv (checked 2026-10-04):
+# one filing lists PDTC3 twice, the "Básico" row it closed on 2021-05-07 and
+# the open "Novo Mercado" row. Under the old key the two collapsed into one.
+_SEGMENT_HISTORY = (
+    "CNPJ_Companhia;Data_Referencia;Versao;ID_Documento;Nome_Empresarial;"
+    "Valor_Mobiliario;Sigla_Classe_Acao_Preferencial;Classe_Acao_Preferencial;"
+    "Codigo_Negociacao;Composicao_BDR_Unit;Mercado;Sigla_Entidade_Administradora;"
+    "Entidade_Administradora;Data_Inicio_Negociacao;Data_Fim_Negociacao;Segmento;"
+    "Data_Inicio_Listagem;Data_Fim_Listagem\n"
+    "02.365.069/0001-44;2026-01-01;1;1;PADTEC;Ações Ordinárias;;;PDTC3;;Bolsa;"
+    "B3;B3 S.A.;2018-01-08;2021-05-07;Básico;2018-01-08;\n"
+    "02.365.069/0001-44;2026-01-01;1;1;PADTEC;Ações Ordinárias;;;PDTC3;;Bolsa;"
+    "B3;B3 S.A.;2021-05-10;;Novo Mercado;2018-01-08;\n"
+)
+
+
+def test_the_key_keeps_a_ticker_listed_twice_in_one_filing(monkeypatch):
+    from src.store.pg_client import _conflict_keys
+
+    rows = list(csv.DictReader(io.StringIO(_SEGMENT_HISTORY), delimiter=";"))
+    _n, cap = _run_ingest(monkeypatch, rows)
+    keys = _conflict_keys(cap["conflict"])
+    distinct = {tuple(r.get(k) for k in keys) for r in cap["records"]}
+    assert len(distinct) == 2, "the closed and the open PDTC3 row must both survive"
+
+
+def test_conflict_matches_the_constraint_migration_71_declares():
+    sql = _M71.read_text(encoding="utf-8")
+    m = re.search(
+        r"ADD CONSTRAINT uq_cia_ticker UNIQUE NULLS NOT DISTINCT\s*\((.*?)\)", sql, re.S
+    )
+    assert m, "migration 71 must declare uq_cia_ticker"
+    cols = [c.strip() for c in m.group(1).replace("\n", " ").split(",")]
+    assert cols == list(fm.CONFLICT)
+    assert cols[-3:] == ["sigla_classe", "dt_inicio_neg", "dt_inicio_list"]
+
+
+def test_migration_71_swaps_the_constraint_only_once():
+    sql = _M71.read_text(encoding="utf-8")
+    # Every schema apply replays the migrations: the swap is guarded on the
+    # live definition, and the constraint keeps its name.
+    assert "pg_get_constraintdef(oid) LIKE '%dt_inicio_list%'" in sql
+    assert "DROP CONSTRAINT IF EXISTS uq_cia_ticker" in sql
+    assert sql.index("IF NOT EXISTS") < sql.index("DROP CONSTRAINT")
+
+
+def test_migration_71_keeps_migration_69_and_adds_a_tie_break():
+    m69 = _view_body(_M69.read_text(encoding="utf-8"))
+    new = _view_body(_M71.read_text(encoding="utf-8"))
+    assert _output_columns(new) == _VIEW_COLUMNS
+    # Same SELECT list and joins as 69: only the ORDER BY grows.
+    assert new[: new.index("ORDER BY t.cnpj_cia")] == m69[: m69.index("ORDER BY t.cnpj_cia")]
+    order = re.sub(r"\s+", " ", new[new.index("ORDER BY t.cnpj_cia") :])
+    assert order == (
+        "ORDER BY t.cnpj_cia, t.codneg, t.data_refer DESC, t.versao DESC, "
+        "(t.dt_fim_neg IS NULL) DESC, t.dt_inicio_neg DESC NULLS LAST, t.id DESC"
+    )
+
+
+def test_migration_71_adds_the_market_list_to_cia_company():
+    sql = _M71.read_text(encoding="utf-8")
+    assert "ALTER TABLE cia_company ADD COLUMN IF NOT EXISTS tp_merc JSONB;" in sql
+
+
+def test_the_behaviour_file_covers_the_segment_history_case():
+    sql = Path("tests/sql/company_ticker_active_behaviour.sql").read_text(encoding="utf-8")
+    assert "SEGA3=true" in sql and "SEGB3=true" in sql

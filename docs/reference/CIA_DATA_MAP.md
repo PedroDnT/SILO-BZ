@@ -70,15 +70,15 @@ separate rows, never merged.
 ## 3. Storage
 
 None of the `cia_*` tables are in `schema.sql`; they live in migrations
-(`04_cia.sql`, `05_cia_account_coluna_df.sql`, `25_cia_ticker.sql`).
+(`04_cia.sql`, `05_cia_account_coluna_df.sql`, `25_cia_ticker.sql`, `71_cia_listing_grain.sql`).
 
 | Table         | Grain / natural key                                                                                                   | Notable types                                                                                                                                                     |
 | ------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cia_company` | PK `cd_cvm`                                                                                                           | `cnpj_cia`, `denom_cia`, `setor`, `segmento`, `situacao` TEXT; `raw` JSONB; trigram index on `denom_cia`                                                          |
+| `cia_company` | PK `cd_cvm`                                                                                                           | `cnpj_cia`, `denom_cia`, `setor`, `segmento`, `situacao` TEXT; `tp_merc` JSONB (every market CAD publishes for the company: one CAD row per market, folded into one, #354); `raw` JSONB; trigram index on `denom_cia` |
 | `cia_filing`  | `(cd_cvm, doc_type, dt_refer, versao)`                                                                                | `dt_refer`/`dt_receb` DATE, `versao` INT, `link_doc` TEXT                                                                                                         |
 | `cia_account` | 9 columns: `(cd_cvm, doc_type, grupo, escopo, dt_refer, ordem_exerc, coluna_df, cd_conta, versao)` NULLS NOT DISTINCT | `vl_conta` **NUMERIC(28,2)**, `cd_conta`/`ds_conta` TEXT, `st_conta_fixa` CHAR(1), `raw` JSONB. **RANGE-partitioned on `dt_refer`**, yearly 2010→2026 + `_future` |
 | `cia_event`   | `(protocolo, versao)`                                                                                                 | `data_entrega` TIMESTAMPTZ, `categoria`/`tipo`/`especie`/`assunto` TEXT, `link_download`                                                                          |
-| `cia_ticker`  | `(cnpj_cia, data_refer, versao, valor_mobiliario, codneg, mercado)` NULLS NOT DISTINCT                                | listing dates DATE, `raw` JSONB; view `vw_company_ticker` picks the newest filing per (CNPJ, ticker)                                                              |
+| `cia_ticker`  | `(cnpj_cia, data_refer, versao, valor_mobiliario, codneg, mercado, sigla_classe, dt_inicio_neg, dt_inicio_list)` NULLS NOT DISTINCT (migration 71, #354: one filing lists a ticker once per segment period) | listing dates DATE, `raw` JSONB; view `vw_company_ticker` picks the newest filing per (CNPJ, ticker), and inside it the row with no end date |
 
 `coluna_df` was added because without it DMPL rows collapsed ~85% under
 last-wins upsert dedup (239k → 29k on one 2023 slice) — the column exists

@@ -2,7 +2,7 @@
 
 Source CSV: cad_cia_aberta.csv (single, static, latin-1, ; delimited).
 URL:        {base}/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv
-Target:     cia_company  (PK = cd_cvm)
+Target:     cia_company  (PK = cd_cvm; tp_merc is set by the ingest)
 
 Header (verified live 2026-05-29 against the production CVM endpoint):
     CNPJ_CIA;DENOM_SOCIAL;DENOM_COMERC;DT_REG;DT_CONST;DT_CANCEL;
@@ -21,6 +21,11 @@ Notes
   in raw for downstream use.
 * ``situacao`` maps from ``SIT`` (registry status); ``SIT_EMISSOR`` is
   more granular but reflects the issuer-state machine and is kept in raw.
+* CAD publishes one row per market a company is registered in (BOLSA,
+  BALCÃO ORGANIZADO, ...), identical except for ``TP_MERC``. The market is a
+  multi-valued attribute, not part of the grain: the ingest folds the rows
+  into one and stores every published value in ``tp_merc`` (a JSON array,
+  migration 71, #354), and raises if the rows differ in anything else.
 * ``cd_cvm`` is the natural primary key; rows missing it are dropped by
   the ingest function. It uses the ``cd_cvm`` coerce (strip leading zeros) so
   the canonical code joins cia_filing / cia_account, which derive cd_cvm from
