@@ -1,4 +1,4 @@
-# Portfolio engine output (schema 1.5)
+# Portfolio engine output (schema 1.6)
 
 What `python -m src.portfolio.diagnose <statement> [--client mcp|postgrest|fake] [--out report.json]`
 writes: one JSON document. The report writer (Redator and Revisor, `src/portfolio/report/`)
@@ -22,6 +22,12 @@ regenerated in the same commit. The canned rows (`fake_silo_rows.json`, built by
 measurements of 2026-10-03 and on the merged `api.portfolio_*` contract: the values are not data.
 
 ## Changes since 1.0
+
+1.6 (catalog v57, owner's decision of 2026-10-03: the report shows each ETF's cotistas and PL). Keys were added,
+none renamed, retyped or removed. CVM has no 2026 daily report row (no cotistas, no PL) for any of the 178 active
+registry ETFs, so every fee line's `etf_site` gains `nr_cotistas` (an int), `pl_brl` (R$, as stored), `facts_label`
+(`etfsbrasil.com.br, site de terceiro`) and `facts_note`, from the same snapshot as the fee (`as_of`); `fees.
+etf_facts_label`. They are descriptive (rule 12): never summed, never a fee base, never `fund_nav_brl`.
 
 1.5 (catalog v56, owner's decisions of 2026-10-03: "a taxa sim" for the newer lâmina, and "ETFs também têm taxa").
 Keys were added, none renamed, retyped or removed; one value changed meaning. **Changed:** a `lamina_newer` line
@@ -230,7 +236,9 @@ From `portfolio_fees` (catalog v52), one source per fund. The rules (owner, #515
     `totals.adm_etf_site_per_year_brl` and, with the disclosed fees, in `adm_fee_per_year_brl`; a 0, a negative or a
     value above 5 is `filed_pct_year` with `check_label` (`0 informado; a conferir`, ...), `needs_manual_check`, never
     summed (`fund_value_with_etf_site_fee_to_check_brl`). `etf_site` on every line carries the site's value, date,
-    source and the tool's note; a CVM source, when one exists, always comes first.
+    source and the tool's note; a CVM source, when one exists, always comes first. Since 1.6 it also carries the
+    site's `nr_cotistas` and `pl_brl` of the same snapshot (`portfolio_fees` `etf_site_nr_cotistas`, `etf_site_pl`),
+    whatever the fee's state: descriptive facts, in no total and no fee computation; null when the site printed none.
 
 A line: `line_no`, `cnpj`, `fund_name`, `position_value_brl`, `fee_status`, `reason`, `fund_nav_brl`, `disclosed`,
 `headline` (`kind` `fixa` | `faixa` | `zero_informado` | `lamina_mais_recente` | `etf_site`, `rate_pct_year` or the range, `per_year_brl` = position
@@ -363,7 +371,8 @@ still renders. The view holds no holder, account or statement-file identifier. U
 | `fees.by_line[i]` `fee_resolution`, `lamina_newer_label`, `lamina_beside_*` (`label`, `check_label`, `pct_year`, `min_pct_year`, `max_pct_year`, `as_of`, `age_months`, `stale_label`), `extrato_beside_label`, `extrato_beside_value`, `extrato_beside_as_of`, `scale_flag_label`, `scale_factor`, `extrato_lamina_ratio` (1.4) | `fee_resolution`, `headline.basis` for `lamina_mais_recente`, `lamina_beside`, `extrato_beside` (`filed_value`, `as_of`), `scale_flag` (`label`, `factor`, `extrato_lamina_ratio`); `disclosed_pct_year` also holds a `lamina_mais_recente` rate, and since 1.5 its `disclosed_brl_year` too |
 | `fees.by_line[i]` `sources_differ_label`, `etf_ticker`, `etf_site_label`, `etf_site_check_label`, `etf_site_raw`; `disclosed_pct_year`, `disclosed_brl_year`, `disclosed_origin(_label)`, `disclosed_as_of` also for an ETF (1.5) | `headline.sources_differ_label`; for `headline.kind = "etf_site"`: `ticker`, `basis`, `check_label`, `filed_pct_year`, and `rate_pct_year`, `per_year_brl`, `origin`, `origin_label`, `as_of` |
 | `fees.total_etf_site_brl_year`, `total_etf_site_pct_year`, `total_fee_brl_year`, `total_fee_pct_year` (1.5) | `fees.totals.adm_etf_site_per_year_brl`, `adm_etf_site_portfolio_pct`, `adm_fee_per_year_brl`, `adm_fee_portfolio_pct` (null without a summed ETF fee; the last two also need a fixed disclosed fee) |
-| `data_dates.ETFSBRASIL` (1.5) | the newest `headline.as_of` of an `etf_site` fee line: the site is listed as its own source, never as CVM |
+| `fees.by_line[i]` `etf_site_nr_cotistas`, `etf_site_pl_brl`, `etf_site_as_of`, `etf_facts_label` (1.6) | `fees.lines[i].etf_site` `nr_cotistas`, `pl_brl`, `as_of`, `facts_label` (the last two null when neither value is present); rendered as "Cotistas: N; PL: R$ X (etfsbrasil.com.br, site de terceiro, coleta de <data>)" |
+| `data_dates.ETFSBRASIL` (1.5) | the newest `headline.as_of` of an `etf_site` fee line, and since 1.6 the `etf_site.as_of` of a line with cotistas or PL: the site is listed as its own source, never as CVM |
 | `fees.underlying[i]` | `fees.underlying[i]` (`parent_line_id` = its `line_no`, `label_not_added` = `label`) |
 | `lookthrough.shared_exposure[i]` (`key`, `level`, `total_brl`, `total_pct`, `legs`) | the 12 largest `look_through.shared_exposure.groups[i]` (`label`, `kind`, `total_exposure_brl`, `total_exposure_portfolio_pct`, `lines`) |
 | `lookthrough.top_underlying[i]` | `look_through.top_exposures[i]` |
@@ -379,7 +388,7 @@ still renders. The view holds no holder, account or statement-file identifier. U
 
 ## Tools the engine calls
 
-`portfolio_movement` (catalog v54), `portfolio_resolve` (`etf_ticker` since catalog v56), `portfolio_fees` (catalog v52: the 21 columns of v51, then 25 appended; 10 more in v55, 5 in v56), `portfolio_lookthrough` (merged; the canned
+`portfolio_movement` (catalog v54), `portfolio_resolve` (`etf_ticker` since catalog v56), `portfolio_fees` (catalog v52: the 21 columns of v51, then 25 appended; 10 more in v55, 5 in v56, 2 in v57), `portfolio_lookthrough` (merged; the canned
 rows follow their documented columns and have not been run against the live functions), and the
 existing `lookup`, `quote_latest`, `company_financials`, `short_interest`, `fidc_portfolio`,
 `fund_restatements`, `fund_restatement_diff` and the `screen_*` tools. Default client: the public

@@ -315,7 +315,7 @@ def test_v56_appends_the_etf_columns_after_the_v55_ones():
     cols = _fee_columns()
     last = cols.index(V55_COLUMNS[-1])
     assert cols[: last + 1][-len(V55_COLUMNS):] == V55_COLUMNS
-    assert cols[last + 1:] == V56_COLUMNS
+    assert cols[last + 1:last + 1 + len(V56_COLUMNS)] == V56_COLUMNS
     assert len(cols) == len(set(cols))
 
 
@@ -348,5 +348,40 @@ def test_catalog_v56_names_the_etf_columns_and_the_lamina_newer_sum():
     text = str(catalog_payload())
     for needle in ("etf_ticker", "etf_site_taxa_adm", "etf_site_note", "match_kind etf_ticker",
                    "For lamina_newer the newer lamina's fee in disclosed_taxa_adm is a disclosed fee like any other"):
+        assert needle in text, needle
+    assert f'"version": {CATALOG_VERSION}' in SQL19
+
+
+# --- catalog v57: an ETF's cotistas and PL from the fee's snapshot (owner, 2026-10-03) -------
+
+V57_COLUMNS = ["etf_site_nr_cotistas", "etf_site_pl"]
+
+
+def test_v57_appends_cotistas_and_pl_last():
+    cols = _fee_columns()
+    last = cols.index(V56_COLUMNS[-1])
+    assert cols[last + 1:] == V57_COLUMNS
+    assert len(cols) == len(set(cols))
+
+
+def test_v57_cotistas_and_pl_come_from_the_fee_row_and_are_never_summed():
+    body = _strip(_function("portfolio_fees"))
+    # the same DISTINCT ON row as the fee: one date (etf_site_as_of) for the three values
+    assert "x.cotistas, x.nav" in body and "x.taxa_adm_pct IS NOT NULL" in body
+    assert "(e ->> 'cotistas')::int AS s_cotistas" in body and "(e ->> 'nav')::numeric AS s_pl" in body
+    assert "es.s_cotistas" in body and "es.s_pl" in body
+    # served as stored: never multiplied or divided on the way out, never in the balancete NAV or a fee flow
+    for bad in ("s_pl *", "s_pl /", "s_cotistas *"):
+        assert bad not in body, bad
+    fn = _function("portfolio_fees")
+    assert "descriptive facts, never summed" in fn
+
+
+def test_catalog_v57_names_cotistas_and_pl():
+    from serve.catalog import CATALOG_VERSION, catalog_payload
+
+    assert CATALOG_VERSION >= 57
+    text = str(catalog_payload())
+    for needle in ("etf_site_nr_cotistas", "etf_site_pl", "SAME snapshot (etf_site_as_of)"):
         assert needle in text, needle
     assert f'"version": {CATALOG_VERSION}' in SQL19

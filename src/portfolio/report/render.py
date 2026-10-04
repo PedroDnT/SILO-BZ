@@ -42,7 +42,7 @@ SOURCE_LABELS = {
     "FNET": "B3 Fundos.NET (FNET)",
     "ANBIMA": "ANBIMA",
     "IBGE": "IBGE",
-    "ETFSBRASIL": "etfsbrasil.com.br (site de terceiros: taxa dos ETFs, não é documento da CVM)",
+    "ETFSBRASIL": "etfsbrasil.com.br (site de terceiros: taxa, cotistas e PL dos ETFs, não é documento da CVM)",
 }
 
 ASSET_LABELS = {
@@ -196,6 +196,7 @@ def _fee_row(engine: dict, q: str, b: dict) -> list[str]:
         if b.get("reason"):
             disclosed += f"<br><span class=cit>{v(engine, f'{q}.reason')}</span>"
     disclosed += _beside_html(engine, q, b)
+    disclosed += _etf_facts_html(engine, q, b)
     origin = "—"
     if b.get("disclosed_origin"):
         origin = v(engine, f"{q}.disclosed_origin_label")
@@ -257,6 +258,24 @@ def _beside_html(engine: dict, q: str, b: dict) -> str:
     if b.get("scale_flag_label"):
         out += f'<br><span class="tag unk">{v(engine, f"{q}.scale_flag_label")}</span>'
     return out
+
+
+def _etf_facts_html(engine: dict, q: str, b: dict) -> str:
+    """An ETF's cotistas and PL from etfsbrasil.com.br (engine 1.6), with the source and the snapshot date.
+
+    Descriptive facts, never a fee and never summed; each part is printed only when the engine carries it.
+    """
+    parts = []
+    if b.get("etf_site_nr_cotistas") is not None:
+        parts.append(f"Cotistas: <span class=v>{v(engine, f'{q}.etf_site_nr_cotistas')}</span>")
+    if b.get("etf_site_pl_brl") is not None:
+        parts.append(f"PL: <span class=v>{v(engine, f'{q}.etf_site_pl_brl')}</span>")
+    if not parts:
+        return ""
+    src = v(engine, f"{q}.etf_facts_label") if b.get("etf_facts_label") else "etfsbrasil.com.br, site de terceiro"
+    if b.get("etf_site_as_of"):
+        src += f", coleta de {v(engine, f'{q}.etf_site_as_of')}"
+    return f"<br><span class=cit>{'; '.join(parts)} ({src})</span>"
 
 
 _FEE_HEADERS = [("Linha", False), ("CNPJ", False), ("Taxa divulgada", False), ("Origem e data", False),
@@ -447,7 +466,8 @@ def _method_section(engine: dict, narrative: Narrative) -> str:
         "é mostrada como tal, \"a conferir\", e um valor acima de 5% a.a. também; nenhum dos dois é usado como custo, somado ou comparado, e nenhum é dado como errado. "
         "Quando a lâmina é mais recente que o Extrato e o Extrato informou 0 ou acima de 5% a.a., a taxa da lâmina é a mostrada e entra na soma, "
         "com a marca \"fontes divergem\" e o valor do Extrato ao lado, fora de qualquer conta. Para ETFs, que não têm taxa no Extrato, na lâmina "
-        "nem no cad_fi, a taxa é a informada pelo site etfsbrasil.com.br (fonte de terceiros), com a data, somada à parte. A estimativa vem do balancete do "
+        "nem no cad_fi, a taxa é a informada pelo site etfsbrasil.com.br (fonte de terceiros), com a data, somada à parte; o número de cotistas e o "
+        "patrimônio líquido do ETF vêm da mesma coleta do mesmo site, como dado descritivo, nunca somados. A estimativa vem do balancete do "
         "fundo (contas COFI 8.1.7, acumuladas no exercício), fica em campo à parte, rotulada \"estimativa, não divulgada\", e nunca substitui "
         "nem se soma à taxa divulgada. A taxa de performance e os demais termos aparecem como o fundo os informou.",
         "Reapresentações são mostradas como \"revisado, não avaliado\": os limiares de materialidade ainda não foram definidos. Movimento anormal de cota e de patrimônio: não avaliado nesta versão.",

@@ -11,6 +11,11 @@ BOVA11 (0.10, in lookup), B5P211 (0.20, a fixed income ETF that lookup does not 
 and POSB11 (0.0 on the site: shown, to check, never summed); and one spreadsheet line typed ``ETF`` and named by its
 bare ticker, IVVB11 (0.23), which the first portfolio_resolve call already matches. The ETF rows are canned in the
 shape of the v56 columns; every number in the assertions comes from them.
+
+Engine 1.6 (catalog v57, owner, 2026-10-03): the same snapshot's cotistas and PL. The canned values are the ones
+etf_market_snapshot held on production for the 2026-10-03 snapshot (read 2026-10-03): BOVA11 106,027 cotistas and
+R$ 15,323,200,000; B5P211 43,321 and R$ 4,334,310,000; IVVB11 241,779 and R$ 7,776,690,000; POSB11 7,170 and
+R$ 590,800,000. They are descriptive: never summed, never a fee base.
 """
 
 from __future__ import annotations
@@ -27,7 +32,7 @@ from src.portfolio.client import FakeClient, load_fake_rows
 from src.portfolio.common import is_ticker
 from src.portfolio.diagnose import FAKE_CLOCK
 from src.portfolio.engine import default_params, run_engine
-from src.portfolio.fees import ETF_SITE_LABEL, ZERO_LABEL
+from src.portfolio.fees import ETF_FACTS_LABEL, ETF_SITE_LABEL, ZERO_LABEL, _etf_site
 from src.portfolio.report import adapt, build
 from src.portfolio.statement import read_statement
 
@@ -46,6 +51,9 @@ NAMED = {  # a line typed ETF and named by its bare ticker (the spreadsheet temp
 }
 ALL = {**ETFS, **NAMED}
 SNAPSHOT = "2026-10-03"
+FACTS = {  # ticker: (cotistas, PL in R$), etf_market_snapshot on production, snapshot 2026-10-03
+    "BOVA11": (106027, 15323200000), "B5P211": (43321, 4334310000), "IVVB11": (241779, 7776690000), "POSB11": (7170, 590800000),
+}
 
 
 def _etf_resolve_row(line_no: int, t: str) -> dict:
@@ -55,8 +63,9 @@ def _etf_resolve_row(line_no: int, t: str) -> dict:
             "reason": "the name is the ticker of an ETF in SILO's curated ETF registry (cvm_etf_registry, ticker to CNPJ)"}
 
 
-def _fee_row(ticker: str) -> dict:
+def _fee_row(ticker: str, facts: bool = True) -> dict:
     cnpj, name, fee, _ = ALL[ticker]
+    cot, pl = FACTS[ticker] if facts else (None, None)
     return {
         "cnpj": cnpj, "fund_name": name, "month": None, "nav": None, "adm_fee_flow": None, "adm_fee_pct_annual_est": None,
         "perf_fee_flow": None, "perf_fee_pct_annual_est": None, "fiscal_reset_suspect": False,
@@ -70,11 +79,14 @@ def _fee_row(ticker: str) -> dict:
         "etf_ticker": ticker, "etf_site_taxa_adm": fee, "etf_site_as_of": SNAPSHOT, "etf_site_source": "etfsbrasil",
         "etf_site_note": f"ETF {ticker}: 'Taxa de administração total' as printed on etfsbrasil.com.br on {SNAPSHOT}, "
                          "a third-party site, not a CVM filing",
+        "etf_site_nr_cotistas": cot, "etf_site_pl": pl,  # v57, the same snapshot
     }
 
 
 class EtfClient(FakeClient):
     """The canned rows, plus the ETF rows: portfolio_fees answers the ETF CNPJs and passes the rest through."""
+
+    facts = True
 
     def _request(self, tool: str, args: dict) -> list[dict]:
         if tool == "portfolio_fees":
@@ -82,7 +94,7 @@ class EtfClient(FakeClient):
             etf = [c for c in args["p_cnpjs"] if c in by_cnpj]
             rest = [c for c in args["p_cnpjs"] if c not in by_cnpj]
             rows = super()._request(tool, {**args, "p_cnpjs": rest}) if rest else []
-            return rows + [_fee_row(by_cnpj[c]) for c in etf]
+            return rows + [_fee_row(by_cnpj[c], self.facts) for c in etf]
         return super()._request(tool, args)
 
 
@@ -123,11 +135,16 @@ def _statement():
                                stated_total=stmt.stated_total + added)
 
 
+def _run(facts: bool = True) -> dict:
+    stmt = _statement()
+    client = EtfClient(_canned(), clock=lambda: FAKE_CLOCK)
+    client.facts = facts
+    return run_engine(stmt, client, default_params(stmt.position_date), clock=lambda: FAKE_CLOCK)
+
+
 @pytest.fixture(scope="module")
 def doc() -> dict:
-    stmt = _statement()
-    return run_engine(stmt, EtfClient(_canned(), clock=lambda: FAKE_CLOCK), default_params(stmt.position_date),
-                      clock=lambda: FAKE_CLOCK)
+    return _run()
 
 
 def _fee_line(doc: dict, ticker: str) -> dict:
@@ -202,10 +219,73 @@ def test_the_report_says_the_fee_is_from_a_third_party_site(doc):
     assert "0,10% a.a." in text and "03/10/2026" in text
     # its own source with the snapshot date, never credited to the CVM
     assert view["data_dates"]["ETFSBRASIL"] == SNAPSHOT
-    assert "etfsbrasil.com.br (site de terceiros: taxa dos ETFs, não é documento da CVM): dados até 03/10/2026" in text
+    assert "etfsbrasil.com.br (site de terceiros: taxa, cotistas e PL dos ETFs, não é documento da CVM): dados até 03/10/2026" in text
     kept = [f for f in narrative.kept if f.section == "taxas"]
     assert any("etf_site_label" in f.text for f in kept)
     # the summary says it too ("importante ressaltar que ETFs também têm taxa")
     assert any(f.section == "resumo" and "total_etf_site_brl_year" in f.text for f in narrative.kept)
     for f in kept:
         assert not re.search(r"\d", re.sub(r"\{\{[^}]+\}\}", "", f.text))  # every number is a placeholder
+
+
+# --- engine 1.6 (catalog v57): the ETF's cotistas and PL from the same snapshot -------------------------
+
+
+def test_every_etf_line_carries_the_sites_cotistas_and_pl_with_the_fees_date(doc):
+    for t, (cot, pl) in FACTS.items():
+        es = _fee_line(doc, t)["etf_site"]
+        assert es["nr_cotistas"] == cot and isinstance(es["nr_cotistas"], int)  # a count, printed without decimals
+        assert es["pl_brl"] == float(pl)  # as stored, never rescaled
+        assert es["as_of"] == SNAPSHOT and es["facts_label"] == ETF_FACTS_LABEL
+        assert "nunca somados" in es["facts_note"]
+
+
+def test_cotistas_and_pl_never_enter_a_total_or_a_fee():
+    with_facts, without = _run(True), _run(False)
+    assert with_facts["fees"]["totals"] == without["fees"]["totals"]
+    for t in FACTS:
+        a, b = _fee_line(with_facts, t), _fee_line(without, t)
+        assert a["headline"] == b["headline"] and a["estimate"] == b["estimate"]
+        assert a["fund_nav_brl"] == b["fund_nav_brl"]  # the site's PL is never the NAV the estimate divides by
+        assert a["position_value_brl"] == b["position_value_brl"]
+    assert with_facts["statement"] == without["statement"]
+    assert with_facts["look_through"] == without["look_through"]
+    # and the facts are absent when the row carries none: null, never zero
+    es = _fee_line(without, "BOVA11")["etf_site"]
+    assert es["nr_cotistas"] is None and es["pl_brl"] is None
+
+
+def test_a_row_without_a_snapshot_has_no_facts_and_the_report_prints_none():
+    row = {"etf_ticker": "YDRO11", "etf_site_taxa_adm": None, "etf_site_as_of": None, "etf_site_source": None,
+           "etf_site_note": "no etfsbrasil.com.br snapshot with a fee for this ticker; NULL is not a zero fee",
+           "etf_site_nr_cotistas": None, "etf_site_pl": None}
+    es = _etf_site(row, {"tool": "portfolio_fees", "call_id": 1})
+    assert es["nr_cotistas"] is None and es["pl_brl"] is None
+    view = adapt._fee_line_view(9, {"cnpj": "1", "etf_site": es}, {})
+    assert view["etf_facts_label"] is None and view["etf_site_as_of"] is None
+    from src.portfolio.report.render import _etf_facts_html
+    assert _etf_facts_html({"x": view}, "x", view) == ""
+    # a non-integral count is not a count: None, never rounded into one
+    assert _etf_site({**row, "etf_site_nr_cotistas": "12.5"}, {})["nr_cotistas"] is None
+
+
+def test_the_report_shows_cotistas_and_pl_with_source_and_date(doc):
+    view = adapt.to_view(doc)
+    by_cnpj = {b["cnpj"]: b for b in view["fees"]["by_line"]}
+    bl = by_cnpj[ETFS["BOVA11"][0]]
+    assert bl["etf_site_nr_cotistas"] == 106027 and bl["etf_site_pl_brl"] == 15323200000.0
+    assert bl["etf_site_as_of"] == SNAPSHOT and bl["etf_facts_label"] == ETF_FACTS_LABEL
+    # the POSB11 fee is to check (0 on the site), but its cotistas and PL still show
+    posb = by_cnpj[ETFS["POSB11"][0]]
+    assert posb["etf_site_check_label"] and posb["etf_site_nr_cotistas"] == 7170
+    html_text, narrative = build.build(view, "fake")
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html_text))
+    assert "Cotistas: 106.027 ; PL: R$ 15,32 bilhões (etfsbrasil.com.br, site de terceiro, coleta de 03/10/2026)" in text
+    assert "Cotistas: 7.170 ; PL: R$ 590,8 milhões (etfsbrasil.com.br, site de terceiro, coleta de 03/10/2026)" in text
+    kept = [f for f in narrative.kept if f.section == "taxas" and "etf_site_nr_cotistas" in f.text]
+    assert len(kept) == len(FACTS)
+    for f in kept:
+        assert "etf_site_pl_brl" in f.text and "etf_facts_label" in f.text and "etf_site_as_of" in f.text
+        assert not re.search(r"\d", re.sub(r"\{\{[^}]+\}\}", "", f.text))  # every number is a placeholder
+    # the totals the report prints are the ones without the facts
+    assert view["fees"]["total_etf_site_brl_year"] == 384.0
