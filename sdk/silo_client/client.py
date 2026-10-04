@@ -37,7 +37,7 @@ DEFAULT_ANON_KEY = "sb_publishable__yfFQsykAglrvc9GS6_PYw_B24ex437"
 #: differ the client warns once — a newer server has endpoints, metrics or
 #: limits this client does not know, an older one lacks some this client
 #: wraps. Neither is an error, both are worth knowing before a long run.
-KNOWN_CATALOG_VERSION = 57  # v57 appends etf_site_nr_cotistas and etf_site_pl to portfolio_fees (an ETF's cotistas and PL from etfsbrasil.com.br, same snapshot as its fee; no SDK wrapper); v56 adds the etf_ticker match to portfolio_resolve and five etf_site_* portfolio_fees columns (an ETF's fee from etfsbrasil.com.br), and says a lamina_newer fee is summed (no SDK wrapper); v55 appends ten portfolio_fees columns for an Extrato of 0 or above 5 beside the lâmina, or a newer lâmina as the source (#552, no SDK wrapper); v54 adds the portfolio_movement read (a fund's monthly quota return against its own ANBIMA class, no SDK wrapper); v53 says index_history holds TOTAL-RETURN indices as B3 labels them and adds eight codes (#416); v52 reads the portfolio_fees disclosed fee from the Extrato first (25 columns appended, no SDK wrapper); v51 adds the portfolio_resolve / portfolio_fees / portfolio_lookthrough reads; v50 close_return is NULL across a split, grouping or bonus (#396); v49 corrects the IBOV11 description; v48 quote_history fields + close_adj default (#410); v47 p_as_of (#414); v46 close_total_return (#418); v45 index_history
+KNOWN_CATALOG_VERSION = 58  # v58 rewrites the FIDC history text: tranches, aging and delinquency from 2013-01, the delinquency regime break at 2020-11 (#556, no new endpoint); v57 appends etf_site_nr_cotistas and etf_site_pl to portfolio_fees (an ETF's cotistas and PL from etfsbrasil.com.br, same snapshot as its fee; no SDK wrapper); v56 adds the etf_ticker match to portfolio_resolve and five etf_site_* portfolio_fees columns (an ETF's fee from etfsbrasil.com.br), and says a lamina_newer fee is summed (no SDK wrapper); v55 appends ten portfolio_fees columns for an Extrato of 0 or above 5 beside the lâmina, or a newer lâmina as the source (#552, no SDK wrapper); v54 adds the portfolio_movement read (a fund's monthly quota return against its own ANBIMA class, no SDK wrapper); v53 says index_history holds TOTAL-RETURN indices as B3 labels them and adds eight codes (#416); v52 reads the portfolio_fees disclosed fee from the Extrato first (25 columns appended, no SDK wrapper); v51 adds the portfolio_resolve / portfolio_fees / portfolio_lookthrough reads; v50 close_return is NULL across a split, grouping or bonus (#396); v49 corrects the IBOV11 description; v48 quote_history fields + close_adj default (#410); v47 p_as_of (#414); v46 close_total_return (#418); v45 index_history
 
 #: How many times prices() / quote_history_all() restart a retrieval whose
 #: pages came back with different data revisions before giving up.
@@ -409,7 +409,7 @@ class SiloClient:
         code produced the newest data — None when the run recorded none
         (before catalog v34, or run outside GitHub Actions); it is never
         borrowed from an older run. `notes` carries a caveat the dates cannot
-        (the `funds_fidc` row: delinquency starts 2025-01), null on rows with
+        (the `funds_fidc` row: delinquency is on every row from 2020-11), null on rows with
         none.
         """
         return self._rpc("coverage", {})

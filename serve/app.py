@@ -354,7 +354,7 @@ def create_app(pool: Optional[ServePool] = None) -> Flask:
             # complete_through before it, and dropping the second column turns
             # "we have some of August" into "we have August".
             # notes: a regime boundary or per-family applicability caveat the
-            # dates cannot carry (funds_fidc: delinquency starts 2025-01).
+            # dates cannot carry (funds_fidc: delinquency on every row from 2020-11).
             # newest_period and landed_at separate three questions one date
             # used to answer wrongly: as_of is the newest ELAPSED period,
             # newest_period is the newest period KEY (which can sit in the
