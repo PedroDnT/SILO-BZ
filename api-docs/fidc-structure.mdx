@@ -22,11 +22,11 @@ Two more members of the monthly FIDC informe, next to the
 | **VI** | the receivables not yet due by days to maturity, and the overdue ones by days past due | `fidc_aging` |
 
 <Warning>
-  **History begins in 2025.** These tabs are ingested from the current-format informe
-  only, and CVM's pre-2025 HIST archive publishes **no equivalent member** for X_2,
-  X_4 or VI. A month before 2025-01 has no rows — not zero, not a gap, and not a
-  backfill anyone can run. It is an upstream limit. `coverage()` states it on the
-  `fidc_tranches` and `fidc_aging` rows.
+  **History begins in 2013-01.** These tabs come from CVM's yearly HIST archive through
+  2024-12 and from the monthly informe from 2025-01; the value columns have the same
+  names in both. `coverage()` states it on the `fidc_tranches` and `fidc_aging` rows.
+  The percentage fields carry CVM's outliers as filed (magnitudes of 1e14 and more),
+  never rescaled: range-check them yourself.
 </Warning>
 
 ### `fidc_tranches`
@@ -126,14 +126,14 @@ BRL as filed; a blank in the filing is `null`, never `0`.
 
 Tab VI covers the receivables acquired **without** substantial retention of risk by the
 originator; tab V, its with-risk twin, is not ingested. The panel's `delinquency` metric
-(FIDC, from 2025-01) is the fund-level total; `fidc_aging` is the ladder under it.
+(FIDC, from 2013-01; on every row from 2020-11) is the fund-level total; `fidc_aging` is the ladder under it.
 
 ### Limits and freshness
 
-- **One 1,000-row page, and both refuse above it** (`22023`). No cursor: a fund's whole
-  post-2025 history is tens of rows, so a larger window means narrowing, not walking. See
+- **One 1,000-row page, and both refuse above it** (`22023`). No cursor: a window
+  that passes one page means narrowing it by date or `p_series`, not walking. See
   [Conventions](/api-docs/conventions).
 - **`coverage()`** carries a `fidc_tranches` row and a `fidc_aging` row, clamped to the FIDC
   family's latest complete month like the concentration rows, with `notes` stating that
-  both begin in 2025-01 because no archive exists.
+  both come from CVM's HIST archive through 2024-12 and the monthly informe after.
 - An unknown CNPJ is an empty array, never a guessed row.

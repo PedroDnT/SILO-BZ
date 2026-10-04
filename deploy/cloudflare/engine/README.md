@@ -2,19 +2,20 @@
 
 The portfolio-diagnosis engine (`src/portfolio/`) and its report behind a small
 HTTP server, `src/portfolio/server.py`, packed as a container image. Built and
-smoke-tested in CI by `engine_image.yml`. **Not deployed:** the Worker in
-`deploy/cloudflare/` still runs the health-only Container.
+smoke-tested in CI by `engine_image.yml`, and deployed as the Container of the
+Worker in `deploy/cloudflare/` by `deploy_cloudflare.yml` (slice E step 2).
 
 | Route | Answer |
 | --- | --- |
 | `GET /health` | `200 ok` |
-| `POST /diagnose` | the statement as multipart field `file` or as the raw body: the spreadsheet template (`.xlsx`) or a BTG performance report (`.pdf`), at most 10 MB. Needs `Authorization: Bearer <DEMO_ACCESS_TOKEN>`. Returns `application/pdf` |
+| `POST /diagnose` | the statement as multipart field `file` or as the raw body: the spreadsheet template (`.xlsx`) or a BTG performance report (`.pdf`), at most 10 MB. Needs `Authorization: Bearer <DEMO_ACCESS_TOKEN>`. Returns `application/pdf` with `X-Silo-Narrative`, `X-Silo-Provider`, `X-Silo-Cost-Usd` and `X-Silo-Seconds` |
 
 Errors are JSON `{"erro": "<mensagem em português>"}` with a fixed message per
 status: 400 empty upload, 401 missing or wrong token, 413 over 10 MB, 415 neither
 xlsx nor PDF, 422 statement unreadable or not reconciling, 502 the report writer
 failed (for example no LLM key), 503 `DEMO_ACCESS_TOKEN` unset (every `/diagnose`
-is refused), 500 anything else.
+is refused), 500 anything else. An error names the step that refused in
+`X-Silo-Stage` (`auth`, `upload`, `read`, `engine`, `report`, `pdf`).
 
 ## Build and run locally
 
@@ -32,8 +33,10 @@ curl -H "Authorization: Bearer $DEMO_ACCESS_TOKEN" \
 
 Without Docker: `pip install -r requirements.txt -r requirements-report.txt`, then
 `python -m src.portfolio.server` (Flask's server on `0.0.0.0:$PORT`). The image
-runs gunicorn, one worker with four threads and a 600 s timeout, as user
-`engine` (uid 10001).
+runs `start.sh`: gunicorn, one worker with four threads and a 600 s timeout, as
+user `engine` (uid 10001). `SSL_CERT_FILE` points at a private copy of certifi's
+roots; with `SILO_TRUST_CF_CA=1` (set by the Worker when egress is allow-listed)
+the Cloudflare egress CA is added to it as soon as the platform writes it.
 
 ## Environment (names only)
 
@@ -46,6 +49,7 @@ runs gunicorn, one worker with four threads and a 600 s timeout, as user
 | `SILO_REPORT_SIGNATURE` | the report's signature line |
 | `SILO_ENGINE_CLIENT` | `mcp` (default, the public read-only `silo-mcp`) or `postgrest`; there is no fake SILO client in the server, so canned rows never meet a real statement |
 | `PORT` | listen port, default 8080 |
+| `SILO_TRUST_CF_CA` | `1` trusts `/etc/cloudflare/certs/cloudflare-containers-ca.crt` (HTTPS egress interception on Cloudflare) |
 
 The engine reads SILO with the public publishable key only; no database secret
 is needed.
@@ -60,10 +64,3 @@ is needed.
   and never a traceback: exceptions are logged by type name only. The engine masks
   the holder before anything else sees the statement.
 - Error answers are fixed messages; nothing of the request is echoed.
-
-## Next (step 2, not in this image's PR)
-
-Point `wrangler.jsonc`'s Container at this Dockerfile with the repository root as
-build context, instance type `standard-1`, route the Worker's upload to
-`/diagnose`, pass `DEMO_ACCESS_TOKEN` and the LLM key as Worker secrets at
-container start, and set the egress allow-list decided on #519.

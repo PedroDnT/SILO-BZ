@@ -133,7 +133,7 @@ Each endpoint's page has the detail; this maps table to endpoint.
 | `anbima_class_monthly` | `anbima_classes` |
 | `bacen_sgs` IPCA set (26 codes), `ibge_ipca_item_monthly` | [`inflation`](/api-docs/inflation) (plus a derived `acc_12m`) and `inflation_items` (weights, plus a derived `contribution`) |
 | `cvm_fidc_cedente`, `_sacado`, `_setor`, `_scr` | `fidc_cedentes`, `fidc_sacados`, `fidc_portfolio`, panel metrics `receivables` / `sacado_top1` / `sacado_top25`, four `coverage()` rows. [FIDC concentration](/api-docs/fidc) |
-| `cvm_fidc_tranche`, `_tranche_flows`, `_aging` | Since v32: `fidc_tranches` and `fidc_aging`, two `coverage()` rows. From 2025-01 only. [FIDC tranches and aging](/api-docs/fidc-structure) |
+| `cvm_fidc_tranche`, `_tranche_flows`, `_aging` | Since v32: `fidc_tranches` and `fidc_aging`, two `coverage()` rows. From 2013-01 (HIST archive through 2024-12). [FIDC tranches and aging](/api-docs/fidc-structure) |
 | `fnet_document`, `fnet_document_filter` | Since v33: `fund_documents` and `fund_restatements`, one `coverage()` row. [Fund documents and restatements](/api-docs/fnet-documents) |
 | `fnet_document_pair`, `fnet_document_diff` | Since v40: `fund_restatement_diff` and `fund_restatements`' `diff_status` / `n_fields_changed`. Restatements delivered from 2026 on; no document body is kept. [Fund documents and restatements](/api-docs/fnet-documents) |
 | `cia_event` | Since v38: `company_events`, one `coverage()` row; from 2015, protocol-less filings are not held. [Company events](/api-docs/company-events) |

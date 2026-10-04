@@ -58,13 +58,13 @@ The Redator's and the Revisor's replies are Pydantic v2 models (`FindingsOutput`
 
 | Provider | Model | Key | Notes |
 | --- | --- | --- | --- |
-| `openai` (current, owner's choice 2026-10-03) | `SILO_LLM_MODEL`, default `gpt-6-luna` | `OPENAI_API_KEY` | Responses API with structured output; reasoning effort `SILO_LLM_EFFORT`, default `medium` (`off` sends none); `store=False`; no hosted tools (web or file search are reserved for the later Investigator) |
+| `openai` (current, owner's choice 2026-10-04) | `SILO_LLM_MODEL`, default `gpt-5.1` (gpt-6-luna until 2026-10-04: the key gets 403 `model_not_found` on every gpt-6 model; gpt-5.1 is deprecated, shutdown 2027-04-01) | `OPENAI_API_KEY` | Responses API with structured output; reasoning effort `SILO_LLM_EFFORT`, default `medium` (`off` sends none); `store=False`; no hosted tools (web or file search are reserved for the later Investigator) |
 | `anthropic` | `SILO_LLM_MODEL`, default `claude-opus-5-5` | `ANTHROPIC_API_KEY` | Messages API with structured output; `SILO_LLM_EFFORT`, `SILO_LLM_FALLBACKS` |
 | `fake` | none | none | Deterministic, for tests and offline runs |
 
 `SILO_LLM_MODEL` is shared by the providers: unset it, or set an OpenAI ID, before switching to `openai` from a Claude ID. The key is read from the environment only, passed explicitly and never logged.
 
-Cap: US$ 1,00 per report, counted from the reply's token usage with a worst-case check before each call. Prices are the table in `llm.py`, read from each provider's official pricing page and dated there (for example `gpt-6-luna` at US$ 0,10 input, 0,01 cached input, 0,50 output per million tokens, read 2026-10-03). An unpriced model is booked at the most expensive row, so the cap errs high. A refusal, a truncated or filtered reply, a validation failure or the cap marks the narrative unknown, and the engine tables still print. Not handled yet: an HTTP error from either SDK (a 429 for an account without credits, a 404 for a wrong model ID) still stops the run.
+Cap: US$ 1,00 per report, counted from the reply's token usage with a worst-case check before each call. Prices are the table in `llm.py`, read from each provider's official pricing page and dated there (for example `gpt-5.1` at US$ 1,25 input, 0,125 cached input, 10,00 output per million tokens, read 2026-10-04; it has no cache-write price, so written tokens are priced as input). An unpriced model is booked at the most expensive row, so the cap errs high. A refusal, a truncated or filtered reply, a validation failure or the cap marks the narrative unknown, and the engine tables still print. Not handled yet: an HTTP error from either SDK (a 429 for an account without credits, a 404 for a wrong model ID) still stops the run.
 
 Swapping vendor means writing one provider class: the engine, the placeholders, the Pydantic models and the Revisor do not change.
 
