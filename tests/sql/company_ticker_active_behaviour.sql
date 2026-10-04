@@ -1,4 +1,4 @@
--- Executed checks for vw_company_ticker.is_active (migrations 63 and 69, #381). The
+-- Executed checks for vw_company_ticker.is_active (migrations 63, 69 and 71, #381, #354). The
 -- Python tests pin the SQL text; this proves the view DOES the right thing on
 -- rows. Synthetic CNPJs (990000000000NN) and tickers, inside a transaction that
 -- is rolled back, so it runs on any database with the schema and migrations
@@ -57,12 +57,30 @@ INSERT INTO cia_ticker
 SELECT '99000000000005', '2026-01-01', 1, 'Ações Ordinárias', c, 'Bolsa', NULL
 FROM unnest(ARRAY['LIQ53', 'THIN3', 'STAL3', 'ZERO3', 'BRDS3', 'NOTP3']) c;
 
+-- Company 06 (migration 71, #354): one filing lists each ticker twice, a
+-- segment change like PDTC3 in the 2026 FCA: a "Básico" row that ended and an
+-- open "Novo Mercado" row. The open row wins whatever the insert order:
+--   SEGA3 : the open row is inserted first, the closed one last  -> active
+--   SEGB3 : the closed row is inserted first, the open one last  -> active
+INSERT INTO cia_ticker
+    (cnpj_cia, data_refer, versao, valor_mobiliario, codneg, mercado, segmento,
+     dt_inicio_neg, dt_fim_neg, dt_inicio_list)
+VALUES
+    ('99000000000006', '2026-01-01', 1, 'Ações Ordinárias', 'SEGA3', 'Bolsa', 'Novo Mercado',
+     '2021-05-10', NULL, '2018-01-08'),
+    ('99000000000006', '2026-01-01', 1, 'Ações Ordinárias', 'SEGA3', 'Bolsa', 'Básico',
+     '2018-01-08', '2021-05-07', '2018-01-08'),
+    ('99000000000006', '2026-01-01', 1, 'Ações Ordinárias', 'SEGB3', 'Bolsa', 'Básico',
+     '2018-01-08', '2021-05-07', '2018-01-08'),
+    ('99000000000006', '2026-01-01', 1, 'Ações Ordinárias', 'SEGB3', 'Bolsa', 'Novo Mercado',
+     '2021-05-10', NULL, '2018-01-08');
+
 -- Tape rows. The tickers the earlier companies expect active (KEPT3, NEWV3,
 -- ONLY3) trade 5 sessions in the window; the inactive ones need no rows.
 INSERT INTO b3_cotahist
     (codneg, trade_date, tpmerc, codbdi, especi, preco_fechamento, fator_cotacao, negocios, isin, raw)
 SELECT c, current_date - k, '010', '02', 'ON', 10, 1, 7, 'BR' || left(c, 4) || 'ACNOR1', '{}'
-FROM unnest(ARRAY['KEPT3', 'NEWV3', 'ONLY3', 'LIQ53', 'BRDS3']) c,
+FROM unnest(ARRAY['KEPT3', 'NEWV3', 'ONLY3', 'LIQ53', 'BRDS3', 'SEGA3', 'SEGB3']) c,
      generate_series(1, 25, 6) k;                     -- 1, 7, 13, 19, 25: 5 sessions
 INSERT INTO b3_cotahist
     (codneg, trade_date, tpmerc, codbdi, especi, preco_fechamento, fator_cotacao, negocios, isin, raw)
@@ -105,10 +123,20 @@ BEGIN
     want := 'BRDS3=true,LIQ53=true,NOTP3=false,STAL3=false,THIN3=false,ZERO3=false';
     ASSERT got = want, format('liquidity per ticker: got %s, want %s', got, want);
 
+    -- Migration 71: both rows of a ticker are stored, the open one is shown.
+    SELECT count(*) INTO n FROM cia_ticker WHERE cnpj_cia = '99000000000006';
+    ASSERT n = 4, format('expected 4 stored rows for company 06, got %s', n);
+    SELECT string_agg(codneg || '=' || is_active::text || ':' || segmento, ',' ORDER BY codneg)
+      INTO got
+      FROM vw_company_ticker
+     WHERE cnpj_cia = '99000000000006';
+    want := 'SEGA3=true:Novo Mercado,SEGB3=true:Novo Mercado';
+    ASSERT got = want, format('segment history: got %s, want %s', got, want);
+
     -- Still one row per (company, ticker), and nothing without a ticker.
     SELECT count(*) INTO n FROM vw_company_ticker
      WHERE cnpj_cia LIKE '990000000000%';
-    ASSERT n = 13, format('expected 13 view rows, got %s', n);
+    ASSERT n = 15, format('expected 15 view rows, got %s', n);
 
     -- The column list and order are the ones migration 25 created.
     SELECT string_agg(column_name, ',' ORDER BY ordinal_position) INTO got

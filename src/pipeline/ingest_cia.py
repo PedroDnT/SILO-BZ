@@ -51,6 +51,13 @@ def ingest_cia_company(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     Rows missing the primary key (cd_cvm) are dropped silently — the source
     CSV is a flat registry and CVM occasionally publishes blank stubs.
 
+    CVM publishes one CAD row per market a company is registered in, and the
+    rows differ only in TP_MERC (107 of 2,567 companies on 2026-10-04, #354).
+    They become one row whose ``tp_merc`` holds every published market,
+    distinct and sorted (NULL when all are blank). Rows of one cd_cvm that
+    differ in anything else raise: that would mean CAD changed its grain, and
+    keeping one of them would drop the others silently.
+
     Args:
         conn      -- _PgClient instance
         raw_rows  -- rows from CVMFetcher.fetch('cia_aberta', 'cad')
@@ -58,19 +65,44 @@ def ingest_cia_company(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     Returns:
         number of rows upserted
     """
-    records: List[Dict[str, Any]] = []
+    by_cd_cvm: Dict[str, Dict[str, Any]] = {}
+    markets: Dict[str, set] = {}
 
     for row in raw_rows:
         typed, residual = apply_map(row, _company.FIELD_MAP)
-        typed["raw"] = residual
 
         if not typed.get("cd_cvm"):
             continue
 
-        records.append(typed)
+        market = (residual.pop("TP_MERC", None) or "").strip()
+        typed["raw"] = residual
+        cd_cvm = typed["cd_cvm"]
+        seen = by_cd_cvm.get(cd_cvm)
+        if seen is None:
+            by_cd_cvm[cd_cvm] = typed
+            markets[cd_cvm] = set()
+        elif seen != typed:
+            differ = sorted(
+                k for k in set(seen) | set(typed) if k != "raw" and seen.get(k) != typed.get(k)
+            ) + sorted(
+                k
+                for k in set(seen["raw"]) | set(typed["raw"])
+                if seen["raw"].get(k) != typed["raw"].get(k)
+            )
+            raise ValueError(
+                f"cia_company: CAD rows for cd_cvm {cd_cvm} differ beyond TP_MERC "
+                f"(in {differ}); refusing to keep one of them"
+            )
+        if market:
+            markets[cd_cvm].add(market)
 
-    if not records:
+    if not by_cd_cvm:
         return 0
+
+    records: List[Dict[str, Any]] = []
+    for cd_cvm, typed in by_cd_cvm.items():
+        typed["tp_merc"] = sorted(markets[cd_cvm]) or None
+        records.append(typed)
 
     return upsert_rows(
         conn,
@@ -137,7 +169,8 @@ def ingest_cia_ticker(conn: Any, raw_rows: List[Dict[str, Any]]) -> int:
     """Parse and upsert FCA valores-mobiliários rows into cia_ticker.
 
     This is the published CNPJ↔ticker map. Natural key
-    (cnpj_cia, data_refer, versao, valor_mobiliario, codneg, mercado) with
+    (cnpj_cia, data_refer, versao, valor_mobiliario, codneg, mercado,
+    sigla_classe, dt_inicio_neg, dt_inicio_list) with
     NULLS NOT DISTINCT — codneg CAN be NULL (unlisted securities) and those
     rows are kept; the vw_company_ticker bridge skips them. Rows without a
     CNPJ or reference date cannot be keyed and are dropped (never coerced).

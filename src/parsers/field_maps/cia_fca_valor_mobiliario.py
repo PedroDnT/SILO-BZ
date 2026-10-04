@@ -4,7 +4,8 @@ Source CSV: fca_cia_aberta_valor_mobiliario_{YYYY}.csv (one member of the
             yearly FCA ZIP, latin-1, ; delimited).
 URL:        {base}/CIA_ABERTA/DOC/FCA/DADOS/fca_cia_aberta_{YYYY}.zip
 Target:     cia_ticker  (UNIQUE on cnpj_cia, data_refer, versao,
-            valor_mobiliario, codneg, mercado — NULLS NOT DISTINCT)
+            valor_mobiliario, codneg, mercado, sigla_classe, dt_inicio_neg,
+            dt_inicio_list — NULLS NOT DISTINCT, migration 71)
 
 Header (verified live 2026-08-27 against fca_cia_aberta_2026.zip):
     CNPJ_Companhia;Data_Referencia;Versao;ID_Documento;Nome_Empresarial;
@@ -25,6 +26,12 @@ Notes
   — but the bridge view naturally skips them.
 * ``Versao`` is part of the key, like cia_event: CVM re-files FCA documents
   and every published version is preserved; consumers take the max.
+* One filing can list the same ticker more than once: a segment change
+  closes the old row and opens a new one (PDTC3: "Básico" ended 2021-05-07,
+  "Novo Mercado" open), and a company files one row per preferred class.
+  ``sigla_classe``, ``dt_inicio_neg`` and ``dt_inicio_list`` are in the key
+  so every such row is kept (#354; measured 2026-10-04, no distinct row lost
+  in 2010, 2020, 2023, 2025 or 2026).
 * ``Nome_Empresarial`` is denormalised (authoritative name in cia_company)
   and falls through to raw.
 """
@@ -37,6 +44,9 @@ CONFLICT = (
     "valor_mobiliario",
     "codneg",
     "mercado",
+    "sigla_classe",
+    "dt_inicio_neg",
+    "dt_inicio_list",
 )
 
 FIELD_MAP = {
