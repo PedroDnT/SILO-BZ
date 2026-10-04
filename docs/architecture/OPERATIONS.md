@@ -41,6 +41,8 @@ after a run    publish_check  also runs when a Daily CVM Ingest run ends green, 
 ## Changes
 
 - PR → `test.yml` (pytest, SQL compile on an ephemeral Postgres) → auto-merge.
+  A PR touching `src/portfolio/` or `deploy/cloudflare/engine/` also runs
+  `engine_image.yml`: it builds and smokes the engine image, publishes nothing.
 - A merge deploys nothing to the database. Migrations apply on the next
   workflow run; analytical SQL applies on the next scheduled run or
   `analytics-only`. `silo-mcp` needs `deploy_mcp.yml`; the Cloudflare demo

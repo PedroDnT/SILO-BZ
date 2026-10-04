@@ -459,7 +459,9 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
 - Hosting on Cloudflare: revised on #519 to one Worker (static assets) plus a
   Container for the Python engine, no Pages. The first safe deploy, a
   health-only Worker and Container (`deploy/cloudflare/`,
-  `deploy_cloudflare.yml`), went green on 2026-10-03; the engine image is next.
+  `deploy_cloudflare.yml`), went green on 2026-10-03. The engine image
+  (`deploy/cloudflare/engine/`, built and smoked by `engine_image.yml`, not
+  deployed) is step 1 of slice E; wiring it to the Worker is next.
 - Engine in Python `src/portfolio/`, set-based `api` functions in
   `31_api_portfolio.sql`, Supabase reached through the read-only `silo-mcp`.
 - Sunday scope: spreadsheet input, blocks 1, 3, 10, 11, 14 (screens), 4, 2, PDF.

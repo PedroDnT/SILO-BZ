@@ -1,0 +1,11 @@
+# The engine image's Python dependencies (deploy/cloudflare/engine/Dockerfile), and nothing
+# of the daily ingest's requirements.txt (no pandas, polars, psycopg2, duckdb).
+# Report pins are copied from requirements-report.txt; keep them equal when that file moves.
+flask>=3.0,<4.0
+gunicorn==26.2.0
+openpyxl>=3.1.0
+anthropic==1.11.0
+openai==3.24.0
+pydantic==2.13.4
+weasyprint==70.0
+pypdf>=4.0

@@ -1,0 +1,101 @@
+name: Probe CVM FIDC headers
+
+# Read-only measurement for issue #556: which tab files CVM's FIDC informe
+# mensal zips hold, and each tab's header line, so the HIST start month for
+# tranche, flows, aging and delinquency is decided on evidence. The session
+# proxy blocks dados.cvm.gov.br, a GitHub runner does not.
+#
+# Public CVM files in, member lists and header lines to the job log out.
+# No secrets, no POSTGRES_URL, no database, no deploy hook, contents: read.
+# Dispatch only; nothing schedules it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      hist_years:
+        description: "HIST yearly zips to read (space-separated years)"
+        required: false
+        default: "2013 2016 2019"
+        type: string
+      monthly:
+        description: "Current monthly zips to read (space-separated YYYYMM)"
+        required: false
+        default: "202608"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: probe-cvm-headers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: List zip members and print each tab's header
+        env:
+          HIST_YEARS: ${{ inputs.hist_years }}
+          MONTHLY: ${{ inputs.monthly }}
+        run: |
+          python -u - <<'PY'
+          import io, os, re, sys, time, urllib.request, zipfile
+          from collections import OrderedDict
+
+          BASE = "https://dados.cvm.gov.br/dados/FIDC/DOC/INF_MENSAL/DADOS"
+          urls = [f"{BASE}/HIST/inf_mensal_fidc_{y}.zip" for y in os.environ["HIST_YEARS"].split()]
+          urls += [f"{BASE}/inf_mensal_fidc_{m}.zip" for m in os.environ["MONTHLY"].split()]
+
+          def fetch(url):
+              last = None
+              for attempt in range(4):
+                  try:
+                      req = urllib.request.Request(url, headers={"User-Agent": "SILO-BZ header probe (issue 556)"})
+                      with urllib.request.urlopen(req, timeout=300) as r:
+                          return r.read()
+                  except Exception as e:  # printed, then retried; the last one fails the step
+                      last = e
+                      print(f"  attempt {attempt + 1} failed: {e!r}")
+                      time.sleep(10 * (attempt + 1))
+              raise RuntimeError(f"{url}: {last!r}")
+
+          failed = []
+          for url in urls:
+              print(f"\n===== {url}")
+              try:
+                  data = fetch(url)
+              except Exception as e:
+                  print(f"FETCH FAILED: {e}")
+                  failed.append(url)
+                  continue
+              z = zipfile.ZipFile(io.BytesIO(data))
+              names = sorted(z.namelist())
+              print(f"bytes={len(data)} members={len(names)}")
+              # Group members by tab: inf_mensal_fidc_tab_X_2_201911.csv -> tab_X_2, 201911
+              by_tab = OrderedDict()
+              for n in names:
+                  m = re.match(r"inf_mensal_fidc_(tab_[A-Z0-9_]+?)_(\d{6})\.csv$", n)
+                  key = m.group(1) if m else n
+                  by_tab.setdefault(key, []).append((m.group(2) if m else "-", n))
+              print("tabs: " + ", ".join(f"{t}({len(v)})" for t, v in by_tab.items()))
+              for tab, members in by_tab.items():
+                  # One block per distinct header, with the months that carry it,
+                  # so a mid-year layout change (CVM's 11/2019) shows as two blocks.
+                  groups = OrderedDict()
+                  for month, n in members:
+                      with z.open(n) as f:
+                          first = f.readline().decode("latin-1").rstrip("\r\n")
+                      groups.setdefault(first, []).append(month)
+                  for header, months in groups.items():
+                      cols = header.split(";")
+                      print(f"--- {tab} n={len(months)} cols={len(cols)} months={','.join(months)}")
+                      print(f"    {header}")
+          if failed:
+              print("\nFailed: " + ", ".join(failed))
+              sys.exit(1)
+          PY
