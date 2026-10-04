@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.7",
+  "schema_version": "1.8",
   "generated_at_utc": "2026-10-03T15:00:00Z",
   "engine": {
     "version": "0.1.0",
@@ -4166,7 +4166,79 @@
       "adm_disclosed_fixed_portfolio_pct": 0.272,
       "adm_etf_site_portfolio_pct": 0.0,
       "adm_fee_portfolio_pct": 0.272,
+      "adm_disclosed_range_low_portfolio_pct": 0.0336,
+      "adm_disclosed_range_high_portfolio_pct": 0.0672,
       "estimate_adm_portfolio_pct": 0.4253
+    },
+    "summary": {
+      "title": "Quanto a carteira paga em taxas",
+      "basis": "taxa de administração divulgada por fundo (Extrato CVM, lâmina, cad_fi), em R$ por ano = valor da posição x taxa; as taxas fixas são somadas, a faixa das linhas com classes de taxas diferentes fica à parte, a taxa de ETF do site etfsbrasil.com.br (fonte de terceiros) é somada à parte, e a estimativa do balancete nunca é somada a nenhuma delas",
+      "n_fund_lines": 6,
+      "fund_value_brl": 4251073.3,
+      "fund_value_portfolio_pct": 68.6053,
+      "adm_disclosed_fixed_per_year_brl": 16851.55,
+      "adm_disclosed_fixed_portfolio_pct": 0.272,
+      "adm_disclosed_range_low_per_year_brl": 2081.71,
+      "adm_disclosed_range_high_per_year_brl": 4163.43,
+      "adm_disclosed_range_low_portfolio_pct": 0.0336,
+      "adm_disclosed_range_high_portfolio_pct": 0.0672,
+      "adm_etf_site_per_year_brl": null,
+      "adm_etf_site_portfolio_pct": null,
+      "etf_site_label": "taxa informada pelo site etfsbrasil.com.br (fonte de terceiros, não é documento da CVM)",
+      "coverage_fixed_fund_value_pct": 24.3522,
+      "coverage_range_fund_value_pct": 32.6461,
+      "coverage_etf_site_fund_value_pct": 0.0,
+      "coverage_without_fee_fund_value_pct": 43.0017,
+      "estimate_adm_per_year_brl": 26355.22,
+      "estimate_adm_portfolio_pct": 0.4253,
+      "estimate_label": "estimativa, não divulgada",
+      "not_included": [
+        {
+          "id": "performance",
+          "text": "taxa de performance: variável, mostrada por fundo como informada, nunca somada",
+          "line_nos": [
+            3
+          ],
+          "value_brl": null
+        },
+        {
+          "id": "carregamento_pgbl",
+          "text": "carregamento de plano PGBL ou VGBL: não é público, não incluído",
+          "line_nos": [],
+          "value_brl": null
+        },
+        {
+          "id": "spread_credito_direto",
+          "text": "spread embutido no crédito direto (CDB, LCI, LCA, CRI, CRA, debêntures): não é uma taxa publicada, não incluído",
+          "line_nos": [
+            9,
+            10,
+            11,
+            12
+          ],
+          "value_brl": 545000.0
+        },
+        {
+          "id": "sem_taxa",
+          "text": "fundos sem taxa utilizável (não encontrada, 0 informado ou acima de 5% a.a., a conferir): fora da soma",
+          "line_nos": [
+            5,
+            6,
+            8
+          ],
+          "value_brl": 1828031.9
+        },
+        {
+          "id": "fundos_investidos",
+          "text": "taxa própria dos fundos investidos (master): não somada; a taxa divulgada de um fundo de fundos já inclui a dos investidos, salvo as exceções da Res. CVM 175, art. 98",
+          "line_nos": [
+            4,
+            5,
+            7
+          ],
+          "value_brl": null
+        }
+      ]
     }
   },
   "look_through": {
@@ -14216,6 +14288,53 @@
           8
         ]
       },
+      "by_year": [
+        {
+          "year": "2027",
+          "value_brl": 120000.0,
+          "portfolio_pct": 1.9366,
+          "n_lines": 1,
+          "line_nos": [
+            10
+          ]
+        },
+        {
+          "year": "2028",
+          "value_brl": 270000.0,
+          "portfolio_pct": 4.3574,
+          "n_lines": 1,
+          "line_nos": [
+            9
+          ]
+        },
+        {
+          "year": "2030",
+          "value_brl": 60000.0,
+          "portfolio_pct": 0.9683,
+          "n_lines": 1,
+          "line_nos": [
+            12
+          ]
+        },
+        {
+          "year": "2031",
+          "value_brl": 95000.0,
+          "portfolio_pct": 1.5331,
+          "n_lines": 1,
+          "line_nos": [
+            11
+          ]
+        },
+        {
+          "year": "2035",
+          "value_brl": 412351.0,
+          "portfolio_pct": 6.6547,
+          "n_lines": 1,
+          "line_nos": [
+            1
+          ]
+        }
+      ],
       "sum_check_brl": 0.0
     },
     "fgc": {
@@ -14260,6 +14379,688 @@
       "reason": "Liquidez dos fundos não avaliada: nenhuma função ou visão pública do SILO (schema api) serve o prazo de pagamento do resgate da lâmina (qt_dia_pagto_resgate)."
     }
   },
+  "allocation": {
+    "status": "complete",
+    "reason": null,
+    "errors": [],
+    "reason_codes": [],
+    "source": "statement",
+    "basis": "tipo impresso no extrato para cada linha (para um ticker do tipo 'outro', a classe que o lookup do SILO informa); somas de valores do extrato",
+    "portfolio_value_brl": 6196424.3,
+    "classes": [
+      {
+        "asset_class": "fundo",
+        "value_brl": 3325633.3,
+        "portfolio_pct": 53.6702,
+        "n_lines": 4,
+        "line_nos": [
+          3,
+          4,
+          5,
+          7
+        ]
+      },
+      {
+        "asset_class": "ação",
+        "value_brl": 988000.0,
+        "portfolio_pct": 15.9447,
+        "n_lines": 1,
+        "line_nos": [
+          2
+        ]
+      },
+      {
+        "asset_class": "FIDC",
+        "value_brl": 750000.0,
+        "portfolio_pct": 12.1038,
+        "n_lines": 1,
+        "line_nos": [
+          6
+        ]
+      },
+      {
+        "asset_class": "crédito privado direto",
+        "value_brl": 545000.0,
+        "portfolio_pct": 8.7954,
+        "n_lines": 4,
+        "line_nos": [
+          9,
+          10,
+          11,
+          12
+        ]
+      },
+      {
+        "asset_class": "título público",
+        "value_brl": 412351.0,
+        "portfolio_pct": 6.6547,
+        "n_lines": 1,
+        "line_nos": [
+          1
+        ]
+      },
+      {
+        "asset_class": "FII",
+        "value_brl": 175440.0,
+        "portfolio_pct": 2.8313,
+        "n_lines": 1,
+        "line_nos": [
+          8
+        ]
+      },
+      {
+        "asset_class": "sem classificação",
+        "value_brl": 0.0,
+        "portfolio_pct": 0.0,
+        "n_lines": 0,
+        "line_nos": []
+      }
+    ],
+    "sum_check_brl": 0.0
+  },
+  "risks": {
+    "status": "partial",
+    "reason": "Há riscos não avaliados por falta de dado.",
+    "errors": [],
+    "reason_codes": [
+      "riscos_nao_avaliados"
+    ],
+    "title": "Principais riscos",
+    "note": "Fatos da carteira com um limite fixo; não é previsão de mercado nem recomendação de compra, venda ou manutenção.",
+    "severity_rule": "semáforo fixo: atenção quando o valor é estritamente maior que o limite de atenção; moderado quando é estritamente maior que o limite moderado; baixo nos demais casos. Os limites estão no código do motor (src/portfolio/risks.py) e são os mesmos para toda carteira",
+    "thresholds": {
+      "concentracao_emissor": {
+        "atencao_above_pct": 10.0,
+        "moderado_above_pct": 5.0
+      },
+      "concentracao_fundo": {
+        "atencao_above_pct": 25.0,
+        "moderado_above_pct": 15.0
+      },
+      "credito_privado": {
+        "atencao_above_pct": 30.0,
+        "moderado_above_pct": 15.0
+      },
+      "credito_sem_fgc": {
+        "atencao_above_pct": 20.0,
+        "moderado_above_pct": 10.0
+      },
+      "fgc_acima_limite": {
+        "atencao_above_count": 0,
+        "moderado_above_count": null
+      },
+      "vencimentos": {
+        "atencao_above_pct": 40.0,
+        "moderado_above_pct": 20.0
+      },
+      "indexador": {
+        "atencao_above_pct": 80.0,
+        "moderado_above_pct": 60.0
+      },
+      "reapresentacoes": {
+        "atencao_above_count": null,
+        "moderado_above_count": 0
+      },
+      "movimento_anormal": {
+        "atencao_above_count": 0,
+        "moderado_above_count": null
+      },
+      "liquidez": {}
+    },
+    "counts": {
+      "atencao": 2,
+      "moderado": 3,
+      "baixo": 4,
+      "nao_avaliado": 1,
+      "nao_se_aplica": 0
+    },
+    "rows": [
+      {
+        "id": "fgc_acima_limite",
+        "risk": "FGC: emissores acima de R$ 250 mil",
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "unit": "count",
+        "value_pct": null,
+        "value_brl": null,
+        "value_count": 1,
+        "subject": "BANCO EXEMPLO",
+        "source_path": "concentration.fgc.n_above_limit",
+        "severity": "atencao",
+        "severity_label": "atenção",
+        "thresholds": {
+          "atencao_above_count": 0,
+          "moderado_above_count": null
+        },
+        "explanation": "emissores impressos cujos CDB, LCI e LCA somam mais que o limite do FGC; a conferir: limite por CPF e instituição",
+        "reason_code": null,
+        "reason": null,
+        "line_nos": [
+          9,
+          10
+        ],
+        "text_allowed": true,
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 9
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 10
+            },
+            "data_date": "2026-09-30"
+          }
+        ],
+        "value_brl_detail": 140000.0,
+        "check_label": "a conferir: limite por CPF e instituição; o extrato consolidado pode ter mais de um titular",
+        "value_brl_detail_label": "excedente somado"
+      },
+      {
+        "id": "movimento_anormal",
+        "risk": "Movimento anormal de cota",
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "unit": "count",
+        "value_pct": null,
+        "value_brl": null,
+        "value_count": 1,
+        "subject": "XP LIQUIDEZ FIC FIF RENDA FIXA",
+        "source_path": "movement.counts.forte",
+        "severity": "atencao",
+        "severity_label": "atenção",
+        "thresholds": {
+          "atencao_above_count": 0,
+          "moderado_above_count": null
+        },
+        "explanation": "fundos com retorno de cota a mais de 3 desvios padrão da média da sua classe ANBIMA no mês (nível forte); um sinal sobre um mês passado",
+        "reason_code": null,
+        "reason": null,
+        "line_nos": [
+          5
+        ],
+        "text_allowed": true,
+        "sources": [
+          {
+            "tool": "portfolio_movement",
+            "call_id": 38,
+            "args": {
+              "p_cnpjs": [
+                "08935128000159",
+                "11728688000147",
+                "32113885000121",
+                "42592315000115",
+                "50088190000119",
+                "51488342000133"
+              ],
+              "p_month": "2026-09-01"
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "portfolio_movement",
+            "call_id": 38,
+            "args": {
+              "p_cnpjs": [
+                "08935128000159",
+                "11728688000147",
+                "32113885000121",
+                "42592315000115",
+                "50088190000119",
+                "51488342000133"
+              ],
+              "p_month": "2026-09-01"
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "portfolio_movement",
+            "call_id": 38,
+            "args": {
+              "p_cnpjs": [
+                "08935128000159",
+                "11728688000147",
+                "32113885000121",
+                "42592315000115",
+                "50088190000119",
+                "51488342000133"
+              ],
+              "p_month": "2026-09-01"
+            },
+            "data_date": "2026-09-30"
+          }
+        ],
+        "table_only": {
+          "n_atencao": 1,
+          "atencao_line_nos": [
+            3
+          ]
+        }
+      },
+      {
+        "id": "concentracao_emissor",
+        "risk": "Concentração: maior emissor de crédito direto",
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "unit": "pct",
+        "value_pct": 6.294,
+        "value_brl": null,
+        "value_count": null,
+        "subject": "BANCO EXEMPLO",
+        "source_path": "concentration.issuer.groups[0].portfolio_pct",
+        "severity": "moderado",
+        "severity_label": "moderado",
+        "thresholds": {
+          "atencao_above_pct": 10.0,
+          "moderado_above_pct": 5.0
+        },
+        "explanation": "parte da carteira no maior emissor de crédito direto, pelo nome impresso no extrato; grupo econômico não avaliado",
+        "reason_code": null,
+        "reason": null,
+        "line_nos": [
+          9,
+          10
+        ],
+        "text_allowed": true,
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 9
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 10
+            },
+            "data_date": "2026-09-30"
+          }
+        ],
+        "value_brl_detail": 390000.0,
+        "value_brl_detail_label": "valor"
+      },
+      {
+        "id": "concentracao_fundo",
+        "risk": "Concentração: maior fundo",
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "unit": "pct",
+        "value_pct": 22.3969,
+        "value_brl": null,
+        "value_count": null,
+        "subject": "XP BANCOS FIC FIF RENDA FIXA",
+        "source_path": "statement.positions[3].portfolio_pct",
+        "severity": "moderado",
+        "severity_label": "moderado",
+        "thresholds": {
+          "atencao_above_pct": 25.0,
+          "moderado_above_pct": 15.0
+        },
+        "explanation": "parte da carteira na maior posição em um único fundo",
+        "reason_code": null,
+        "reason": null,
+        "line_nos": [
+          4
+        ],
+        "text_allowed": true,
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 4
+            },
+            "data_date": "2026-09-30"
+          }
+        ],
+        "value_brl_detail": 1387809.9,
+        "value_brl_detail_label": "valor"
+      },
+      {
+        "id": "reapresentacoes",
+        "risk": "Reapresentações (FIDC e FII)",
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "unit": "count",
+        "value_pct": null,
+        "value_brl": null,
+        "value_count": 3,
+        "subject": null,
+        "source_path": "restatements.lines[].restatements",
+        "severity": "moderado",
+        "severity_label": "moderado",
+        "thresholds": {
+          "atencao_above_count": null,
+          "moderado_above_count": 0
+        },
+        "explanation": "documentos reapresentados pelos FIDC e FII da carteira na janela; reapresentado, não avaliado",
+        "reason_code": null,
+        "reason": null,
+        "line_nos": [
+          6
+        ],
+        "text_allowed": true,
+        "sources": [
+          {
+            "tool": "fund_restatements",
+            "call_id": 24,
+            "args": {
+              "p_cnpj": "32113885000121",
+              "p_from": "2025-09-01",
+              "p_to": "2026-09-30"
+            },
+            "data_date": "2026-07-31"
+          },
+          {
+            "tool": "fund_restatement_diff",
+            "call_id": 25,
+            "args": {
+              "p_cnpj": "32113885000121",
+              "p_fnet_id": 1298163
+            },
+            "data_date": "2026-07-31"
+          },
+          {
+            "tool": "fund_restatements",
+            "call_id": 24,
+            "args": {
+              "p_cnpj": "32113885000121",
+              "p_from": "2025-09-01",
+              "p_to": "2026-09-30"
+            },
+            "data_date": "2026-01-31"
+          },
+          {
+            "tool": "fund_restatement_diff",
+            "call_id": 26,
+            "args": {
+              "p_cnpj": "32113885000121",
+              "p_fnet_id": 1120221
+            },
+            "data_date": "2026-01-31"
+          },
+          {
+            "tool": "fund_restatements",
+            "call_id": 24,
+            "args": {
+              "p_cnpj": "32113885000121",
+              "p_from": "2025-09-01",
+              "p_to": "2026-09-30"
+            },
+            "data_date": "2025-12-31"
+          },
+          {
+            "tool": "fund_restatement_diff",
+            "call_id": 27,
+            "args": {
+              "p_cnpj": "32113885000121",
+              "p_fnet_id": 1086024
+            },
+            "data_date": "2025-12-31"
+          }
+        ],
+        "assessment": "Limiares de materialidade estacionados pelo dono: nenhum julgamento; tudo é 'reapresentado, não avaliado'."
+      },
+      {
+        "id": "credito_privado",
+        "risk": "Crédito privado direto",
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "unit": "pct",
+        "value_pct": 8.7954,
+        "value_brl": null,
+        "value_count": null,
+        "subject": null,
+        "source_path": "concentration.issuer.direct_credit_portfolio_pct",
+        "severity": "baixo",
+        "severity_label": "baixo",
+        "thresholds": {
+          "atencao_above_pct": 30.0,
+          "moderado_above_pct": 15.0
+        },
+        "explanation": "parte da carteira em crédito direto (CDB, LCI, LCA, CRI, CRA, debêntures, CDCA)",
+        "reason_code": null,
+        "reason": null,
+        "line_nos": [
+          9,
+          10,
+          11,
+          12
+        ],
+        "text_allowed": true,
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 9
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 10
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 11
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 12
+            },
+            "data_date": "2026-09-30"
+          }
+        ],
+        "value_brl_detail": 545000.0,
+        "value_brl_detail_label": "valor"
+      },
+      {
+        "id": "credito_sem_fgc",
+        "risk": "Crédito direto sem cobertura do FGC",
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "unit": "pct",
+        "value_pct": 4.7608,
+        "value_brl": null,
+        "value_count": null,
+        "subject": null,
+        "source_path": "concentration.issuer.direct_credit_value_brl - concentration.fgc.issuers[].eligible_value_brl (até concentration.fgc.limit_brl)",
+        "severity": "baixo",
+        "severity_label": "baixo",
+        "thresholds": {
+          "atencao_above_pct": 20.0,
+          "moderado_above_pct": 10.0
+        },
+        "explanation": "crédito direto que o FGC não cobre: CRI, CRA, debêntures, CDCA e o que passa de R$ 250 mil por emissor impresso; a conferir, porque o limite é por CPF e por conglomerado, e o emissor impresso não é o conglomerado",
+        "reason_code": null,
+        "reason": null,
+        "line_nos": [
+          9,
+          10,
+          11,
+          12
+        ],
+        "text_allowed": true,
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 9
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 10
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 11
+            },
+            "data_date": "2026-09-30"
+          },
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 12
+            },
+            "data_date": "2026-09-30"
+          }
+        ],
+        "value_brl_detail": 295000.0,
+        "check_label": "a conferir: limite por CPF e instituição; o extrato consolidado pode ter mais de um titular",
+        "value_brl_detail_label": "valor sem cobertura"
+      },
+      {
+        "id": "vencimentos",
+        "risk": "Vencimentos: maior ano",
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "unit": "pct",
+        "value_pct": 6.6547,
+        "value_brl": null,
+        "value_count": null,
+        "subject": "2035",
+        "source_path": "concentration.maturity_ladder.by_year[4].portfolio_pct",
+        "severity": "baixo",
+        "severity_label": "baixo",
+        "thresholds": {
+          "atencao_above_pct": 40.0,
+          "moderado_above_pct": 20.0
+        },
+        "explanation": "parte da carteira que vence no ano com mais vencimentos impressos no extrato",
+        "reason_code": null,
+        "reason": null,
+        "line_nos": [
+          1
+        ],
+        "text_allowed": true,
+        "sources": [
+          {
+            "tool": "statement",
+            "call_id": null,
+            "args": {
+              "line_no": 1
+            },
+            "data_date": "2026-09-30"
+          }
+        ],
+        "value_brl_detail": 412351.0,
+        "value_brl_detail_label": "valor"
+      },
+      {
+        "id": "indexador",
+        "risk": "Indexador",
+        "status": "avaliado",
+        "status_label": "avaliado",
+        "unit": "pct",
+        "value_pct": 48.464,
+        "value_brl": null,
+        "value_count": null,
+        "subject": "pós-fixado",
+        "source_path": "indexer.classes[].value_brl, somados por grupo sobre indexer.portfolio_value_brl",
+        "severity": "baixo",
+        "severity_label": "baixo",
+        "thresholds": {
+          "atencao_above_pct": 80.0,
+          "moderado_above_pct": 60.0
+        },
+        "explanation": "parte da carteira no maior grupo de indexador (inflação, pré-fixado, pós-fixado, renda variável, câmbio); um fato da carteira, sem previsão de juros ou de inflação",
+        "reason_code": null,
+        "reason": null,
+        "line_nos": [],
+        "text_allowed": true,
+        "sources": [],
+        "parts": [
+          {
+            "group": "inflação",
+            "value_brl": 541623.53,
+            "portfolio_pct": 8.7409
+          },
+          {
+            "group": "pré-fixado",
+            "value_brl": 60000.0,
+            "portfolio_pct": 0.9683
+          },
+          {
+            "group": "pós-fixado",
+            "value_brl": 3003034.51,
+            "portfolio_pct": 48.464
+          },
+          {
+            "group": "renda variável",
+            "value_brl": 1227010.91,
+            "portfolio_pct": 19.8019
+          },
+          {
+            "group": "câmbio",
+            "value_brl": 0.0,
+            "portfolio_pct": 0.0
+          },
+          {
+            "group": "caixa",
+            "value_brl": 0.0,
+            "portfolio_pct": 0.0
+          },
+          {
+            "group": "sem classificação",
+            "value_brl": 1364755.35,
+            "portfolio_pct": 22.0249
+          }
+        ]
+      },
+      {
+        "id": "liquidez",
+        "risk": "Liquidez",
+        "status": "nao_avaliado",
+        "status_label": "não avaliado",
+        "unit": "pct",
+        "value_pct": null,
+        "value_brl": null,
+        "value_count": null,
+        "subject": null,
+        "source_path": null,
+        "severity": null,
+        "severity_label": null,
+        "thresholds": {},
+        "explanation": "prazo para resgatar os fundos e para vender o crédito direto",
+        "reason_code": "liquidez_sem_api",
+        "reason": "o SILO ainda não serve o prazo de resgate da lâmina por uma API pública, e a coluna de liquidez do extrato para o crédito direto ainda não é lida",
+        "line_nos": [],
+        "text_allowed": true,
+        "sources": []
+      }
+    ]
+  },
   "assumptions": [
     {
       "id": "fee_units",
@@ -14288,6 +15089,10 @@
     {
       "id": "concentration",
       "text": "Concentração e vencimentos (esquema 1.7) somam só valores do extrato. O emissor é o nome impresso na linha, sem o tipo e o código do registro; não é grupo econômico. O teste do FGC soma CDB, LCI e LCA por emissor impresso e fica a conferir: o limite é por CPF e instituição, e o extrato pode ter mais de um titular."
+    },
+    {
+      "id": "risks",
+      "text": "Principais riscos (esquema 1.8): cada linha lê um campo de outra seção, ou uma soma de valores do extrato, contra limites fixos do código (src/portfolio/risks.py); o semáforo é atenção, moderado ou baixo. O crédito sem cobertura do FGC supõe um só titular e trata o emissor impresso como a instituição: fica a conferir."
     },
     {
       "id": "abnormal_movement",
@@ -14354,6 +15159,18 @@
       "reason_codes": [
         "gestor_sem_api",
         "liquidez_sem_api"
+      ]
+    },
+    "allocation": {
+      "status": "complete",
+      "reason": null,
+      "reason_codes": []
+    },
+    "risks": {
+      "status": "partial",
+      "reason": "Há riscos não avaliados por falta de dado.",
+      "reason_codes": [
+        "riscos_nao_avaliados"
       ]
     }
   },

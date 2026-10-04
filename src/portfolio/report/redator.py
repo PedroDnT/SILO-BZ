@@ -25,6 +25,7 @@ from src.portfolio.report.llm import LLMError, Provider, validate_output
 SECTIONS = (
     "resumo",
     "achados",
+    "riscos",
     "identificacao",
     "taxas",
     "exposicao",
@@ -35,6 +36,7 @@ SECTIONS = (
 SECTION_TITLES = {
     "resumo": "Resumo",
     "achados": "Achados que ninguém pegaria à mão",
+    "riscos": "Principais riscos",
     "identificacao": "Identificação linha a linha",
     "taxas": "Custo em taxas",
     "exposicao": "Exposição",
@@ -74,7 +76,10 @@ def _walk(doc: Any, path: str = "") -> Any:
 # path that survives is the same path in the full view the renderer fills from. Free-text reasons, request params,
 # endpoints and error text are dropped (a reason can quote a tool or an error; the report says what could not be
 # evaluated in a fixed section written without the model); section status codes stay.
-REDATOR_DROP_KEYS = frozenset({"reason", "error", "errors", "params", "args", "endpoint", "failed", "not_run", "gaps"})
+# Engine 1.8: ``table_only`` (the attention-level movement count of the risks table) and ``tree`` (the look-through
+# diagram's selection, chart-only) are dropped too.
+REDATOR_DROP_KEYS = frozenset({"reason", "error", "errors", "params", "args", "endpoint", "failed", "not_run", "gaps",
+                               "table_only", "tree"})
 
 
 def redator_view(engine: dict) -> dict:
@@ -157,8 +162,9 @@ O que escrever, nesta ordem de importância:
 4. achados: o que ninguém pegaria à mão (fundo renomeado, reapresentação, sinal de risco, linha ambígua, dois fundos com a mesma carteira por baixo).
 5. reapresentacoes: cada reapresentação, com o texto de avaliação que o JSON traz ("revisado, não avaliado"); não julgue materialidade.
 6. sinais_de_risco: telas de risco com ocorrência e telas que não puderam rodar.
-7. resumo: dois a quatro achados curtos para abrir o relatório.
-8. movimento incomum (movement): o retorno mensal da cota de um fundo contra os fundos da sua classe ANBIMA. No texto, cite SOMENTE movement.strong[i] (nível forte): o retorno do fundo (own_value_pct), o mês (month), a classe (class_as_filed), o número de fundos da classe (n_peers), a média e o desvio padrão da classe (class_mean_pct, class_sd_pct) e a distância em desvios padrão (z), sempre por marcador. O nível atenção (movement.table, movement.by_line) NUNCA entra no texto: fica só na tabela do relatório. Um fundo sem veredito (movement.not_evaluated[i]) é escrito como "não avaliado", com o motivo em movement.not_evaluated[i].reason por marcador, nunca como normal. Não é previsão nem recomendação.
+7. resumo: dois a quatro achados curtos para abrir o relatório; dê prioridade aos riscos em atenção e ao custo total em taxas.
+8. riscos (risks, engine 1.8): a tabela "Principais riscos" já traz cada risco com valor, semáforo (severity_label: atenção, moderado ou baixo) e limites fixos. Escreva no máximo três achados curtos sobre as linhas avaliadas de maior semáforo, na ordem de risks.rows (atenção primeiro, depois moderado), sempre por marcador: o nome (risks.rows[i].risk), o valor (risks.rows[i].value_pct, value_brl ou value_count, conforme unit), o assunto (subject) e o semáforo (severity_label), com a explicação fixa (explanation). Nunca recomende comprar, vender, manter ou diversificar, nunca diga o que o investidor deveria fazer e nunca faça previsão de mercado, de juros, de inflação ou de retorno. Uma linha com text_allowed falso não entra no texto, e o semáforo da linha movimento_anormal (severity_label) também não: o movimento forte já é escrito em sinais_de_risco. Linha "não avaliado" ou "não se aplica" não é achado. O custo total em taxas está em fees.summary (adm_disclosed_fixed_per_year_brl, coverage_*_fund_value_pct, not_included): a cobertura é parte do valor em fundos, não taxa.
+9. movimento incomum (movement): o retorno mensal da cota de um fundo contra os fundos da sua classe ANBIMA. No texto, cite SOMENTE movement.strong[i] (nível forte): o retorno do fundo (own_value_pct), o mês (month), a classe (class_as_filed), o número de fundos da classe (n_peers), a média e o desvio padrão da classe (class_mean_pct, class_sd_pct) e a distância em desvios padrão (z), sempre por marcador. O nível atenção (movement.table, movement.by_line) NUNCA entra no texto: fica só na tabela do relatório. Um fundo sem veredito (movement.not_evaluated[i]) é escrito como "não avaliado", com o motivo em movement.not_evaluated[i].reason por marcador, nunca como normal. Não é previsão nem recomendação.
 
 Regras:
 - citations lista os ids de provenance (campo "id" em provenance) que sustentam o achado; pelo menos um, só ids que existem.
@@ -343,6 +349,11 @@ def template_findings(engine: dict) -> dict:
                 add("taxas", "Cotistas e PL do ETF, por site de terceiros",
                     f"No ETF da linha {{{{{q}.line_id}}}}, " + "; ".join(x for x in facts if x)
                     + f" ({{{{{q}.etf_facts_label}}}}{when}). São dados descritivos e não entram em nenhuma soma.", b.get("provenance"))
+        sm = fees.get("summary") or {}
+        if sm.get("coverage_fixed_fund_value_pct") is not None:
+            add("taxas", "Quanto do valor em fundos tem taxa divulgada",
+                "Dos {{fees.summary.fund_value_brl}} em fundos, {{fees.summary.coverage_fixed_fund_value_pct}} têm taxa fixa divulgada "
+                "e {{fees.summary.coverage_without_fee_fund_value_pct}} não têm taxa utilizável, fora da soma.", fee_prov)
         for i, fi in enumerate(fees.get("findings") or []):
             if fi.get("level") == "atenção":
                 q = f"fees.findings[{i}]"
@@ -417,6 +428,22 @@ def template_findings(engine: dict) -> dict:
             add("achados", "Acima do limite do FGC por emissor, a conferir",
                 f"Os títulos cobertos pelo FGC de {{{{{q}.issuer}}}} somam {{{{{q}.eligible_value_brl}}}}, acima de "
                 f"{{{{concentration.fgc.limit_brl}}}} por {{{{{q}.excess_brl}}}}: {{{{concentration.fgc.label}}}}.", line_prov)
+
+    # riscos (engine 1.8): the evaluated rows at atencao, by placeholder only, never a recommendation or forecast
+    rk = engine.get("risks") or {}
+    n_risk = 0
+    for i, r in enumerate(rk.get("rows") or []):
+        if r.get("status") != "avaliado" or r.get("severity") != "atencao" or not r.get("text_allowed", True) or n_risk >= 3:
+            continue
+        if r.get("id") == "movimento_anormal":
+            continue  # the strong movement is its own finding (sinais_de_risco); its semáforo word stays in the table
+        q = f"risks.rows[{i}]"
+        txt = f"{{{{{q}.risk}}}}: {{{{{q}.value_{r.get('unit')}}}}}"
+        if r.get("subject"):
+            txt += f", {{{{{q}.subject}}}}"
+        txt += f", semáforo {{{{{q}.severity_label}}}}. Mede: {{{{{q}.explanation}}}}."
+        add("riscos", "Risco no maior nível do semáforo", txt, r.get("provenance") or line_prov)
+        n_risk += 1
 
     # reapresentacoes
     rs = engine.get("restatements") or {}

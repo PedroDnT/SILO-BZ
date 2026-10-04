@@ -529,6 +529,10 @@ The owner's decisions of 2026-10-02 (UTC-3), recorded on #510:
   the report gains issuer, maturity and FGC tables. Open: CRA/CRI/debenture identification by code (next PR);
   concentration by manager and fund liquidity need an `api` path for the manager's CNPJ and the lâmina's
   `qt_dia_pagto_resgate`, which no function serves today.
+- **Engine 1.8** (branch `feat/portfolio-report-charts-fees-risks`, owner's brief of 2026-10-04): the report gains
+  static SVG charts beside their tables, the fee headline "Quanto a carteira paga em taxas" (`fees.summary`) and
+  "Principais riscos" (`risks`, fixed thresholds in `src/portfolio/risks.py`). Open: the liquidity risk row stays
+  "não avaliado" for the same missing `api` path as above.
 - **CVM 175 levels** (#543, branch `claude/cvm175-levels-543`, migration 67):
   `cvm_registro_fundo` / `_classe` / `_subclasse` let a class reach its fund by
   `ID_Registro_Fundo` and a subclass its class by `ID_Registro_Classe`. Empty until

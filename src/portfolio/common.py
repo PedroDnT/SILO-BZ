@@ -46,6 +46,11 @@ REASON_TEXT = {
     "liquidez_sem_api": "liquidez dos fundos (prazo de resgate da lâmina) não avaliada: o SILO ainda não a serve por uma API pública",
     "sem_linha_taxa": "o SILO não devolveu linha de taxa para este fundo",
     "sem_linha_movimento": "o SILO não devolveu comparação com a classe para este fundo",
+    # engine 1.8: the main risks and the report's charts
+    "sem_emissor_impresso": "crédito direto sem nome de emissor impresso no extrato",
+    "riscos_nao_avaliados": "há riscos não avaliados por falta de dado (lista em Principais riscos)",
+    "sem_carteira_dos_fundos": "nenhum fundo da carteira tem carteira aberta na CDA: o diagrama do look-through não é desenhado",
+    "sem_taxa_em_reais": "nenhum fundo tem taxa fixa em R$ por ano: o gráfico do custo em taxas não é desenhado",
     # identification, per line
     "cnpj_extrato": "CNPJ do extrato; nome não conferido",
     "sem_candidato": "nome e CNPJ sem correspondência nos dados do SILO",

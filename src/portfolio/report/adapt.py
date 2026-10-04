@@ -47,7 +47,8 @@ SCREEN_FAILED = "a tela não rodou: a consulta ao SILO falhou ou foi recusada"
 SECTION_TITLES_PT = {
     "identification": "Identificação", "fees": "Taxas", "lookthrough": "Look-through (carteira dos fundos)",
     "indexer": "Indexador", "sector": "Setor", "restatements": "Reapresentações", "risk_screens": "Telas de risco",
-    "abnormal_movement": "Movimento incomum", "concentration": "Concentração",
+    "abnormal_movement": "Movimento incomum", "concentration": "Concentração", "allocation": "Alocação por classe",
+    "risks": "Principais riscos",
 }
 
 
@@ -276,7 +277,18 @@ def _fees_view(eng: dict, names: dict[int, str]) -> dict:
         "by_line": by_line,
         "findings": findings,
         "underlying": underlying,
+        "summary": _fee_summary_view(fees.get("summary")),
     }
+
+
+def _fee_summary_view(sm: dict | None) -> dict | None:
+    """Engine 1.8: "Quanto a carteira paga em taxas", copied (every figure is the engine's), line numbers as ``L<n>``."""
+    if not isinstance(sm, dict):
+        return None
+    out = {k: v for k, v in sm.items() if k != "not_included"}
+    out["not_included"] = [{"id": x.get("id"), "text": x.get("text"), "line_ids": [f"L{n}" for n in x.get("line_nos") or []],
+                            "value_brl": x.get("value_brl")} for x in sm.get("not_included") or []]
+    return out
 
 
 def _lookthrough_view(eng: dict, names: dict[int, str]) -> dict:
@@ -318,6 +330,7 @@ def _lookthrough_view(eng: dict, names: dict[int, str]) -> dict:
         for t in lt.get("top_exposures") or []
     ]
     return {
+        "tree": _lookthrough_tree(eng, names),
         "status": lt.get("status"),
         "month": lt.get("cda_month"),
         "max_depth": lt.get("max_depth"),
@@ -326,6 +339,79 @@ def _lookthrough_view(eng: dict, names: dict[int, str]) -> dict:
         "economic_group_note": lt["shared_exposure"].get("note"),
         "shared_exposure": shared,
         "top_underlying": top,
+    }
+
+
+TREE_FUNDS = 5
+TREE_ASSETS = 3
+
+
+def _lookthrough_tree(eng: dict, names: dict[int, str]) -> list[dict]:
+    """Engine 1.8 report: portfolio -> fund -> its largest underlying assets, for the look-through diagram.
+
+    A selection only: the funds with an opened portfolio (largest statement value first) and, under each, its largest
+    exposures by ``exposure_brl``; every weight is the engine's ``portfolio_pct``. A fund not opened, a negative
+    exposure (a liability or a short derivative) and a fund with no exposures are left out, so the diagram shows only
+    paths the engine has.
+    """
+    values = {p["line_no"]: p for p in eng["statement"]["positions"]}
+    funds = []
+    for ln in eng["look_through"].get("lines") or []:
+        exps = [x for x in ln.get("exposures") or []
+                if not x.get("not_opened_fund") and (x.get("exposure_brl") or 0) > 0 and x.get("portfolio_pct") is not None]
+        pos = values.get(ln["line_no"])
+        if not exps or pos is None:
+            continue
+        exps.sort(key=lambda x: -(x.get("exposure_brl") or 0))
+        funds.append({
+            "line_id": f"L{ln['line_no']}",
+            "name": names.get(ln["line_no"]),
+            "value_brl": pos.get("valor_brl"),
+            "weight_pct": pos.get("portfolio_pct"),
+            "n_exposures": len(exps),
+            "children": [{"name": x.get("asset_name") or x.get("asset_key"), "value_brl": x.get("exposure_brl"),
+                          "weight_pct": x.get("portfolio_pct")} for x in exps[:TREE_ASSETS]],
+        })
+    funds.sort(key=lambda f: -(f.get("value_brl") or 0))
+    return funds[:TREE_FUNDS]
+
+
+def _allocation_view(eng: dict) -> dict | None:
+    """Engine 1.8: the portfolio by asset class (the statement's type of each line), copied."""
+    a = eng.get("allocation")
+    if not isinstance(a, dict):
+        return None
+    return {
+        "status": a.get("status"),
+        "basis": a.get("basis"),
+        "buckets": [{"asset_class": c.get("asset_class"), "value_brl": c.get("value_brl"), "weight_pct": c.get("portfolio_pct"),
+                     "line_ids": [f"L{n}" for n in c.get("line_nos") or []]} for c in a.get("classes") or []],
+    }
+
+
+def _risks_view(eng: dict) -> dict | None:
+    """Engine 1.8: "Principais riscos", copied. ``table_only`` (the attention-level movement count) stays in the view
+    for the table and is dropped from what the Redator sees; ``text_allowed`` tells the Revisor which rows the text
+    may cite."""
+    r = eng.get("risks")
+    if not isinstance(r, dict):
+        return None
+    rows = []
+    for row in r.get("rows") or []:
+        out = {k: v for k, v in row.items() if k not in ("sources", "line_nos", "reason")}
+        out["line_ids"] = [f"L{n}" for n in row.get("line_nos") or []]
+        # a not-evaluated or not-applicable row says why with the fixed text of its code, never free text
+        out["reason"] = row.get("reason") if row.get("status") != "avaliado" else None
+        out["provenance"] = _prov(row.get("sources"))
+        rows.append(out)
+    return {
+        "status": r.get("status"),
+        "title": r.get("title"),
+        "note": r.get("note"),
+        "severity_rule": r.get("severity_rule"),
+        "thresholds": r.get("thresholds"),
+        "counts": r.get("counts"),
+        "rows": rows,
     }
 
 
@@ -475,8 +561,9 @@ def _sections_view(eng: dict, lines: list[dict]) -> dict:
     ss = eng["section_status"]
     mapping = {"identification": "identification", "fees": "fees", "lookthrough": "look_through", "indexer": "indexer",
                "sector": "sector", "restatements": "restatements", "risk_screens": "risk_signals"}
-    if "concentration" in ss:
-        mapping["concentration"] = "concentration"
+    for key in ("concentration", "allocation", "risks"):
+        if key in ss:
+            mapping[key] = key
     out: dict[str, Any] = {k: _section_entry(ss[v]) for k, v in mapping.items()}
     if isinstance(eng.get("movement"), dict):
         out["abnormal_movement"] = _section_entry(ss["movement"])
@@ -520,6 +607,8 @@ def _concentration_view(eng: dict) -> dict | None:
             "status": lad.get("status"), "basis": lad.get("basis"),
             "buckets": [{"bucket": b.get("bucket"), "value_brl": b.get("value_brl"), "weight_pct": b.get("portfolio_pct"),
                          "line_ids": ids(b.get("line_nos"))} for b in lad.get("buckets") or []],
+            "by_year": [{"year": y.get("year"), "value_brl": y.get("value_brl"), "weight_pct": y.get("portfolio_pct"),
+                         "line_ids": ids(y.get("line_nos"))} for y in lad.get("by_year") or []],
             "no_maturity": {"bucket": (lad.get("no_maturity") or {}).get("bucket"),
                             "value_brl": (lad.get("no_maturity") or {}).get("value_brl"),
                             "weight_pct": (lad.get("no_maturity") or {}).get("portfolio_pct")},
@@ -588,7 +677,34 @@ def _gaps_view(eng: dict, sections: dict, fees: dict, risk: dict, movement: dict
     return gaps
 
 
-COVERED_ABOVE = ("sem_taxa_divulgada", "taxa_a_conferir", "fundos_nao_avaliados", "linhas_nao_identificadas")
+COVERED_ABOVE = ("sem_taxa_divulgada", "taxa_a_conferir", "fundos_nao_avaliados", "linhas_nao_identificadas",
+                 "riscos_nao_avaliados")
+FUND_ASSET_TYPES = ("fundo", "fidc", "fii", "etf", "cota_listada")
+
+
+def _chart_and_risk_gaps(eng: dict, view: dict) -> list[dict]:
+    """Engine 1.8: why a chart is not drawn, and every risk not evaluated, as fixed texts (never free text)."""
+    out: list[dict] = []
+
+    def add(title: str, text: str, line_ids: list[str] | None = None) -> None:
+        out.append({"title": title, "text": text.rstrip(". "), "line_ids": line_ids or [], "value_brl": None, "weight_pct": None})
+
+    already = set(((view.get("sections") or {}).get("concentration") or {}).get("reason_codes") or [])
+    for row in (view.get("risks") or {}).get("rows") or []:
+        if row.get("status") == "nao_avaliado" and row.get("reason_code") not in already:
+            add(f"Principais riscos: {row.get('risk')}", row.get("reason") or GENERIC_GAP)
+    c = view.get("concentration") or {}
+    if c and (c.get("maturity_ladder") or {}).get("status") != "complete":
+        add("Gráfico de vencimentos", reason_text("sem_vencimento"))
+    if c and (c.get("issuer") or {}).get("status") != "complete":
+        add("Gráfico de emissores", reason_text("sem_credito_direto"))
+    fund_lines = [ln["line_id"] for ln in view.get("lines") or [] if ln.get("asset_type") in FUND_ASSET_TYPES]
+    if fund_lines and not (view.get("lookthrough") or {}).get("tree"):
+        add("Diagrama do look-through", reason_text("sem_carteira_dos_fundos"), fund_lines)
+    by_line = (view.get("fees") or {}).get("by_line") or []
+    if by_line and not any(b.get("disclosed_brl_year") is not None for b in by_line):
+        add("Gráfico do custo em taxas", reason_text("sem_taxa_em_reais"))
+    return out
 EXTRA_GAP_TITLES = {
     "material_restatement": "Materialidade das reapresentações",
     "economic_group": "Grupo econômico",
@@ -682,5 +798,12 @@ def to_view(eng: dict) -> dict:
     concentration = _concentration_view(eng)
     if concentration is not None:
         view["concentration"] = concentration
+    allocation = _allocation_view(eng)
+    if allocation is not None:
+        view["allocation"] = allocation
+    risks = _risks_view(eng)
+    if risks is not None:
+        view["risks"] = risks
     view["gaps"] = _gaps_view(eng, view["sections"], view["fees"], view["risk_screens"], movement)
+    view["gaps"] += _chart_and_risk_gaps(eng, view)
     return view
